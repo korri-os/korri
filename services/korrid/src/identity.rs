@@ -173,6 +173,33 @@ impl std::fmt::Debug for DeviceIdentity {
 }
 
 impl DeviceIdentity {
+    /// Remove all device identity state, then create one new unowned identity.
+    pub fn reset(private_state_root: &Path) -> Result<Self, IdentityError> {
+        {
+            let _storage = IDENTITY_STORAGE
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .expect("identity storage mutex poisoned");
+            let directory = private_state_root.join(IDENTITY_DIRECTORY);
+            match fs::symlink_metadata(private_state_root) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+                Ok(_) => return Err(IdentityError::Storage),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(IdentityError::Storage),
+            }
+            match fs::symlink_metadata(&directory) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                    fs::remove_dir_all(&directory).map_err(|_| IdentityError::Storage)?;
+                    sync_directory(private_state_root)?;
+                }
+                Ok(_) => return Err(IdentityError::Storage),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(IdentityError::Storage),
+            }
+        }
+        Self::load_or_create(private_state_root)
+    }
+
     /// Load the fixed device identity or create it once.
     pub fn load_or_create(private_state_root: &Path) -> Result<Self, IdentityError> {
         let _storage = IDENTITY_STORAGE
@@ -1101,6 +1128,44 @@ mod tests {
             .map(|thread| thread.join().unwrap())
             .collect();
         assert!(keys.iter().all(|key| key == &keys[0]));
+    }
+
+    #[test]
+    fn reset_replaces_the_complete_identity_without_following_links() {
+        let root = tempfile::tempdir().unwrap();
+        let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
+        let old_device = identity.device_public_key().unwrap().to_owned();
+        let owner = keys("0000000000000000000000000000000000000000000000000000000000000003");
+        identity
+            .apply_owner_statement(&owner_statement(
+                &owner,
+                &old_device,
+                OwnerStatementStatus::Owned,
+                100,
+            ))
+            .unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_file = outside.path().join("keep");
+        fs::write(&outside_file, "keep").unwrap();
+        symlink(
+            outside.path(),
+            root.path().join(IDENTITY_DIRECTORY).join("outside"),
+        )
+        .unwrap();
+
+        let replacement = DeviceIdentity::reset(root.path()).unwrap();
+
+        assert_ne!(replacement.device_public_key(), Some(old_device.as_str()));
+        assert!(matches!(replacement.state(), IdentityState::Unowned { .. }));
+        assert_eq!(fs::read_to_string(outside_file).unwrap(), "keep");
+        assert_eq!(
+            fs::metadata(root.path().join(IDENTITY_DIRECTORY))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
     }
 
     #[test]

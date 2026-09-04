@@ -341,6 +341,24 @@ fn inherited_control_listener() -> Result<Option<std::os::unix::net::UnixListene
 
 #[tokio::main]
 async fn main() {
+    let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "identity")
+    {
+        match korrid::identity_cli::run_from_environment(&arguments[1..], &private_state_root()) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("korrid identity: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    korrid::relay::RelayList::from_linux_environment(
+        std::env::var("KORRID_RELAYS").ok().as_deref(),
+    )
+    .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
     let mode_value = std::env::var("KORRID_MODE").ok();
     let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
     let (lan_router, local_control_router) = match mode {

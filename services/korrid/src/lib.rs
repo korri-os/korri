@@ -22,6 +22,7 @@ pub mod discovery;
 pub mod enrichment;
 mod game_assets;
 pub mod identity;
+pub mod identity_cli;
 mod peer_rpc;
 pub mod relay;
 pub mod remote_signer;

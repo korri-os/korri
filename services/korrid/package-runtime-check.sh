@@ -47,10 +47,12 @@ pid=$!
 
 healthy=false
 for _ in $(seq 1 100); do
-  if "$curl_bin" --fail --silent --connect-timeout 1 --max-time 2 \
-    http://127.0.0.1:43999/rpc \
+  status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout 1 --max-time 2 \
+    http://127.0.0.1:43999/peer-rpc \
     -H 'content-type: application/json' \
-    -d '{"_tag":"app.catalog.snapshot","payload":{}}' >"$root/catalog.json"; then
+    -d '{"_tag":"app.catalog.snapshot","payload":{}}' || true)"
+  if [[ "$status" == 400 ]]; then
     healthy=true
     break
   fi
@@ -58,15 +60,15 @@ for _ in $(seq 1 100); do
 done
 [[ "$healthy" == true ]] || { printf 'packaged korrid did not start\n' >&2; exit 1; }
 
-"$curl_bin" --fail --silent --connect-timeout 1 --max-time 2 \
+plaintext_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_code}' \
+  --connect-timeout 1 --max-time 2 \
   http://127.0.0.1:43999/rpc \
   -H 'content-type: application/json' \
-  -d '{"_tag":"app.session.prepare","payload":{"gameId":"inputd-gate"}}' \
-  >"$root/prepare.json"
-[[ "$("$jq_bin" -r '.outcome._tag' "$root/prepare.json")" == Err ]]
-[[ "$("$jq_bin" -r '.outcome.payload.code' "$root/prepare.json")" == HostLaunchFailed ]]
-[[ -d "$root/private/host-session" ]]
-[[ "$(stat -c '%a' "$root/private/host-session")" == 700 ]]
-[[ ! -e "$root/home/.local/state/korri/host-session" ]]
+  -d '{"_tag":"app.catalog.snapshot","payload":{}}')"
+[[ "$plaintext_status" == 426 ]]
+[[ -d "$root/private/identity" ]]
+[[ "$(stat -c '%a' "$root/private/identity")" == 700 ]]
+[[ "$(stat -c '%a' "$root/private/identity/device.key")" == 600 ]]
+[[ ! -e "$root/home/.local/state/korri/identity" ]]
 
 printf 'korrid package runtime check passed\n'

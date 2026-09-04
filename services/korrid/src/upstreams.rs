@@ -211,6 +211,12 @@ impl UpstreamRegistry {
                 };
                 let client = match config.kind {
                     UpstreamKind::Legacy => {
+                        if credentials.is_some() {
+                            configuration_error = Some(format!(
+                                "legacy plaintext upstream {label:?} is not supported"
+                            ));
+                            return None;
+                        }
                         RegisteredClient::Legacy(UpstreamClient::new(UpstreamConfig {
                             base_url: config.base_url,
                         }))
@@ -231,6 +237,21 @@ impl UpstreamRegistry {
                                 Some(format!("native upstream {label:?} has no devicePublicKey"));
                             return None;
                         };
+                        if !valid_public_key(&peer_key) {
+                            configuration_error = Some(format!(
+                                "native upstream {label:?} has an invalid devicePublicKey"
+                            ));
+                            return None;
+                        }
+                        if moonlight_address
+                            .as_deref()
+                            .map(str::trim)
+                            .is_none_or(str::is_empty)
+                        {
+                            configuration_error =
+                                Some(format!("native upstream {label:?} has no moonlightAddress"));
+                            return None;
+                        }
                         let Some(credentials) = credentials.as_ref() else {
                             configuration_error =
                                 Some(format!("native upstream {label:?} has no peer credentials"));
@@ -284,22 +305,23 @@ impl UpstreamRegistry {
         if let Ok(json) = std::env::var("KORRID_UPSTREAMS") {
             return Self::from_json_secure("KORRID_UPSTREAMS", &json, credentials);
         }
-        Self::from_file_or_default_secure(
-            path,
-            UpstreamHostConfig::legacy(
-                std::env::var("KORRID_UPSTREAM_LABEL").unwrap_or_else(|_| "aka".into()),
-                UpstreamConfig::from_env().base_url,
-            ),
-            credentials,
-        )
+        Self::from_file_or_empty_secure(path, credentials)
     }
 
-    fn from_file_or_default_secure(
-        path: &Path,
-        fallback: UpstreamHostConfig,
-        credentials: PeerCredentials,
-    ) -> Self {
-        Self::from_file_or_default_inner(path, fallback, Some(credentials))
+    fn from_file_or_empty_secure(path: &Path, credentials: PeerCredentials) -> Self {
+        match Self::from_file_inner(path, Some(credentials.clone())) {
+            Ok(registry) => registry,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
+                hosts: vec![],
+                configuration_error: None,
+                deferred_file_config: Some(DeferredFileConfig {
+                    path: path.to_owned(),
+                    credentials: Some(credentials),
+                    resolved: Arc::new(OnceLock::new()),
+                }),
+            },
+            Err(error) => Self::invalid_file_read(path, error),
+        }
     }
 
     #[cfg(test)]
@@ -307,6 +329,7 @@ impl UpstreamRegistry {
         Self::from_file_or_default_inner(path, fallback, None)
     }
 
+    #[cfg(test)]
     fn from_file_or_default_inner(
         path: &Path,
         fallback: UpstreamHostConfig,
@@ -644,6 +667,13 @@ impl UpstreamRegistry {
     }
 }
 
+fn valid_public_key(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -835,6 +865,52 @@ mod tests {
             duplicate_labels.catalog_snapshot().await,
             Err(UpstreamError::Wire(message)) if message.contains("duplicate upstream label \"zao\"")
         ));
+    }
+
+    #[test]
+    fn secure_configuration_has_no_legacy_or_incomplete_native_fallback() {
+        let private = tempfile::tempdir().unwrap();
+        let credentials = PeerCredentials::load(private.path()).unwrap();
+        let legacy = UpstreamRegistry::from_json_secure(
+            "test",
+            r#"[{"label":"aka","kind":"legacy","baseUrl":"http://aka:3001"}]"#,
+            credentials.clone(),
+        );
+        assert!(legacy
+            .configuration_error
+            .as_deref()
+            .is_some_and(|message| message.contains("legacy plaintext")));
+
+        let missing_key = UpstreamRegistry::from_json_secure(
+            "test",
+            r#"[{"label":"zao","kind":"native","baseUrl":"http://zao:43117","moonlightAddress":"zao:47989"}]"#,
+            credentials.clone(),
+        );
+        assert!(missing_key
+            .configuration_error
+            .as_deref()
+            .is_some_and(|message| message.contains("devicePublicKey")));
+
+        let missing_moonlight = UpstreamRegistry::from_json_secure(
+            "test",
+            &format!(
+                r#"[{{"label":"zao","kind":"native","baseUrl":"http://zao:43117","devicePublicKey":"{}"}}]"#,
+                "11".repeat(32)
+            ),
+            credentials.clone(),
+        );
+        assert!(missing_moonlight
+            .configuration_error
+            .as_deref()
+            .is_some_and(|message| message.contains("moonlightAddress")));
+
+        let missing_file = UpstreamRegistry::from_file_or_empty_secure(
+            &private.path().join("missing-upstreams.json"),
+            credentials,
+        );
+        assert!(missing_file.hosts.is_empty());
+        assert!(missing_file.configuration_error.is_none());
+        assert!(missing_file.deferred_file_config.is_some());
     }
 
     #[test]
