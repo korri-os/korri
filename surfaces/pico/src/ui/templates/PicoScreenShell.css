@@ -1,0 +1,10 @@
+.pico-screen-shell {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr) auto;
+	height: 100%;
+}
+
+.pico-screen-shell-body {
+	min-height: 0;
+	overflow: hidden;
+}

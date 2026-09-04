@@ -1,0 +1,55 @@
+import { PicoCoverArt } from "../atoms/PicoCoverArt"
+
+/**
+ * Where a cart sits on the shelf. The focused cart is the hero; its neighbours
+ * peek in from the sides.
+ */
+export type PicoCartPlacement = "hero" | "side"
+
+/**
+ * One game, drawn as a cartridge.
+ *
+ * Every cart is focusable, including the ones peeking at the edges: focus is
+ * how a d-pad moves the shelf, so a cart that could not take focus would be
+ * unreachable on the hardware Pico is built for. Focusing a cart is what makes
+ * it the hero — the shelf listens rather than the cart deciding.
+ */
+export function PicoCart({
+  title,
+  subtitle,
+  artUrl,
+  placement,
+  resumable = false,
+  onFocus,
+  onActivate,
+}: {
+  readonly title: string
+  readonly subtitle?: string
+  readonly artUrl?: string
+  readonly placement: PicoCartPlacement
+  /** Marks a cart that continues a session rather than starting a new one. */
+  readonly resumable?: boolean
+  readonly onFocus?: () => void
+  readonly onActivate?: () => void
+}) {
+  return (
+    <button
+      aria-label={subtitle === undefined ? title : `${title}, ${subtitle}`}
+      className="pico-cart"
+      data-placement={placement}
+      onClick={onActivate}
+      onFocus={onFocus}
+      type="button"
+    >
+      <span className="pico-cart-window">
+        <PicoCoverArt artUrl={artUrl} title={title} />
+      </span>
+      <span aria-hidden className="pico-cart-notch" />
+      {resumable ? (
+        <span aria-hidden className="pico-cart-resume">
+          ▸
+        </span>
+      ) : null}
+    </button>
+  )
+}

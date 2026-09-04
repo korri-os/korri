@@ -86,14 +86,17 @@ describe("every part is authored so the catalog can use it", () => {
     const offenders = sealed
       .filter((file) => {
         const source = read(file)
-        const root = source.match(/return\s*\(\s*<([A-Za-z][\w.]*)/)?.[1]
+        const root = source.match(/return\s*\(?\s*<([A-Za-z][\w.]*)/)?.[1]
         if (root === undefined) return true
         if (!/^[A-Z]/.test(root)) return true
         const imported = new RegExp(
           `import\\s*\\{[^}]*\\b${root}\\b[^}]*\\}\\s*from`,
         ).test(source)
-        const closesItself = new RegExp(`<${root}\\b[^>]*/>`, "s").test(source)
-        return !imported || !closesItself
+        /* A closing tag means the root wraps children, so generated placement
+         * could only re-render the wrapper and would drop what is inside —
+         * which is exactly the part that silently offers no controls. */
+        const wrapsChildren = new RegExp(`</${root}>`).test(source)
+        return !imported || wrapsChildren
       })
       .map(rel)
       .sort()

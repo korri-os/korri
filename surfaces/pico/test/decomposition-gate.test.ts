@@ -175,7 +175,8 @@ describe("no visual decision is duplicated across files", () => {
   test("no class selector is defined in two stylesheets", () => {
     const owners = new Map<string, Set<string>>()
     for (const file of cssFiles) {
-      const source = readFileSync(file, "utf8")
+      /* Comments name classes while explaining them; only real selectors count. */
+      const source = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")
       for (const [, name] of source.matchAll(CLASS_SELECTOR)) {
         if (name === undefined) continue
         const seen = owners.get(name) ?? new Set<string>()

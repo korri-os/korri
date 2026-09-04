@@ -1,0 +1,77 @@
+/**
+ * Pico's stylesheet entry.
+ *
+ * Import order is the dependency order: the intrinsic generator recipe, then
+ * Pico's knobs and palette, then one stylesheet per component. Every component
+ * stylesheet sits beside its component and owns only class names prefixed with
+ * that component's own name — which is what makes a duplicated visual decision
+ * a build failure rather than a slow drift nobody sees.
+ *
+ * The two faces are vendored, not fetched. A preview and a handheld both have
+ * to render with no network, so a CDN font is a broken surface waiting for an
+ * offline device.
+ */
+@import "@korri/intrinsic-design/recipe.css";
+@import "./pico-tokens.css";
+
+@import "./pages/PicoHome.css";
+@import "./ui/atoms/PicoButton.css";
+@import "./ui/atoms/PicoClock.css";
+@import "./ui/atoms/PicoCoverArt.css";
+@import "./ui/atoms/PicoHint.css";
+@import "./ui/atoms/PicoTally.css";
+@import "./ui/molecules/PicoButtonBar.css";
+@import "./ui/molecules/PicoCart.css";
+@import "./ui/molecules/PicoNotice.css";
+@import "./ui/molecules/PicoStatusBar.css";
+@import "./ui/organisms/PicoCartShelf.css";
+@import "./ui/organisms/PicoLocationPicker.css";
+@import "./ui/templates/PicoScreenShell.css";
+
+@font-face {
+	font-family: "Press Start 2P";
+	src: url("./fonts/press-start-2p.woff2") format("woff2");
+	font-display: block;
+}
+
+@font-face {
+	font-family: "VT323";
+	src: url("./fonts/vt323.woff2") format("woff2");
+	font-display: block;
+}
+
+/**
+ * The screen: Pico's painted surface and its query container, owned by the
+ * composition root rather than by any component. `container-type: size` is what
+ * lets every component below derive from `cqi` against this screen, so a
+ * true-size device reflows instead of zooming. The scale itself comes from
+ * `.pico-theme`, which the same element carries.
+ */
+.pico-screen {
+	position: relative;
+	container-type: size;
+	overflow: hidden;
+	background: var(--pico-bg);
+	color: var(--pico-ink);
+	font-family: var(--pico-font-term);
+	image-rendering: pixelated;
+}
+
+/**
+ * The CRT grille. Decorative and inert: it must never eat a pointer event or
+ * cover a focus ring, so it is a non-interactive overlay under the focus layer.
+ */
+.pico-screen::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: repeating-linear-gradient(
+		0deg,
+		color-mix(in srgb, var(--p8-black) 18%, transparent) 0,
+		color-mix(in srgb, var(--p8-black) 18%, transparent) var(--pico-scanline),
+		transparent var(--pico-scanline),
+		transparent var(--pico-scanline-gap)
+	);
+	mix-blend-mode: multiply;
+}

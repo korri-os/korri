@@ -1,0 +1,50 @@
+/* Bounded media: the cart is capped against the type anchor so art and text
+ * share one ceiling. A raw cqh here is the classic intrinsic bug — the art
+ * runs away from the scale on a tall screen. */
+.pico-cart {
+	position: relative;
+	display: block;
+	width: min(38cqw, calc(var(--pico-base) * 14));
+	aspect-ratio: 3 / 4;
+	padding: var(--pico-space-1);
+	background: var(--pico-chrome);
+	border: var(--pico-edge) solid var(--pico-chrome-edge);
+	cursor: pointer;
+	transition: transform 120ms steps(3, end);
+}
+
+.pico-cart[data-placement="side"] {
+	transform: scale(0.72);
+	filter: saturate(0.5);
+}
+
+.pico-cart:focus-visible {
+	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
+	outline-offset: var(--pico-edge);
+}
+
+.pico-cart-window {
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* The label slot every cartridge shell has. Decorative, and the one detail that
+ * makes the shape read as a cartridge rather than a card. */
+.pico-cart-notch {
+	position: absolute;
+	top: 0;
+	left: 25%;
+	width: 50%;
+	height: var(--pico-space-1);
+	background: var(--pico-chrome-edge);
+}
+
+.pico-cart-resume {
+	position: absolute;
+	right: var(--pico-space-1);
+	bottom: var(--pico-space-1);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ok);
+}

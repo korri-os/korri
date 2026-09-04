@@ -1,0 +1,3 @@
+/* The page composes; the shell and its body own the layout. No rules yet, and
+ * an empty stylesheet is the honest signal that this page has taken no visual
+ * decision of its own — the moment it does, the rule lands here beside it. */

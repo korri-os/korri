@@ -1,0 +1,50 @@
+.pico-cart-shelf {
+	display: grid;
+	grid-template-rows: 1fr auto;
+	gap: var(--pico-space-2);
+	align-content: center;
+	height: 100%;
+	padding: var(--pico-space-2) 0;
+	overflow: hidden;
+}
+
+.pico-cart-shelf-strip {
+	display: flex;
+	gap: var(--pico-space-2);
+	align-items: center;
+	margin: 0;
+	/* Half the container either side, so the first and last cart can still reach
+	 * the middle: a shelf whose ends cannot be centred puts its edge games in a
+	 * place the design never accounts for. */
+	padding: 0 50cqw;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	list-style: none;
+	scrollbar-width: none;
+}
+
+.pico-cart-shelf-slot {
+	flex: 0 0 auto;
+	scroll-snap-align: center;
+}
+
+.pico-cart-shelf-caption {
+	display: grid;
+	gap: var(--pico-space-1);
+	justify-items: center;
+	text-align: center;
+}
+
+.pico-cart-shelf-title {
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text);
+	color: var(--pico-ink);
+	letter-spacing: 0.125em;
+}
+
+.pico-cart-shelf-subtitle {
+	margin: 0;
+	font-size: var(--pico-text-lg);
+	color: var(--pico-ink-dim);
+}

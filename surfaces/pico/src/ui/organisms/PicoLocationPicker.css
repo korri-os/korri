@@ -1,0 +1,35 @@
+.pico-location-picker {
+	display: grid;
+	gap: var(--pico-space-2);
+	place-content: center;
+	justify-items: center;
+	height: 100%;
+	padding: var(--pico-space-3);
+	text-align: center;
+}
+
+.pico-location-picker-title {
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text);
+	color: var(--pico-ink);
+	letter-spacing: 0.125em;
+}
+
+.pico-location-picker-prompt {
+	margin: 0;
+	font-size: var(--pico-text-lg);
+	color: var(--pico-ink-dim);
+}
+
+.pico-location-picker-list {
+	display: grid;
+	gap: var(--pico-space-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pico-location-picker-item {
+	display: grid;
+}

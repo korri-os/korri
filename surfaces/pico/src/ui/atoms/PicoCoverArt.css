@@ -1,0 +1,16 @@
+.pico-cover-art-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.pico-cover-art-initials {
+	display: grid;
+	place-items: center;
+	width: 100%;
+	height: 100%;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-lg);
+	color: var(--pico-ink);
+	background: var(--pico-chrome);
+}

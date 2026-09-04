@@ -1,0 +1,86 @@
+/**
+ * Pico's token substrate — the one file allowed to state a raw value.
+ *
+ * Two layers, deliberately separate:
+ *
+ *  1. The PICO-8 palette. Sixteen fixed colours; this is the brand, and the
+ *     only place a hex may appear. Everything downstream names a role, never a
+ *     colour, so a re-palette is one edit here.
+ *  2. The intrinsic knobs. Pico does not derive its own scale — it feeds
+ *     @korri/intrinsic-design and aliases the result. `--intrinsic-snap: 1px`
+ *     is what keeps a bitmap font on whole pixels; without it the type scale
+ *     lands on fractions and the pixel font blurs.
+ *
+ * The knobs live on `.pico-theme`, a scope separate from the painted screen, so
+ * a preview can take Pico's scale without also taking its CRT grille and body
+ * colour. Applied together on a real screen, the scale re-derives against that
+ * screen's own container — which is how the same components read correctly on a
+ * 3.5" handheld and a lean-back panel with no breakpoints. Applied alone, with
+ * no container to measure, the base simply rests on its floor.
+ */
+
+.pico-theme {
+	/* PICO-8's fixed sixteen. */
+	--p8-black: #000000;
+	--p8-navy: #1d2b53;
+	--p8-maroon: #7e2553;
+	--p8-green: #008751;
+	--p8-brown: #ab5236;
+	--p8-slate: #5f574f;
+	--p8-silver: #c2c3c7;
+	--p8-white: #fff1e8;
+	--p8-red: #ff004d;
+	--p8-orange: #ffa300;
+	--p8-yellow: #ffec27;
+	--p8-lime: #00e436;
+	--p8-blue: #29adff;
+	--p8-lilac: #83769c;
+	--p8-pink: #ff77a8;
+	--p8-peach: #ffccaa;
+
+	/* Roles. Components name these; they never name a --p8-* directly. */
+	--pico-bg: var(--p8-navy);
+	--pico-ink: var(--p8-white);
+	--pico-ink-dim: var(--p8-silver);
+	--pico-accent: var(--p8-yellow);
+	--pico-focus: var(--p8-blue);
+	--pico-warn: var(--p8-red);
+	--pico-ok: var(--p8-lime);
+
+	/* Chrome reads as part of the design: a deeper navy from the body's own
+	 * family, edged in blue rather than a warm slate that would fight it. */
+	--pico-chrome: #0c1430;
+	--pico-chrome-edge: color-mix(in srgb, var(--p8-blue) 32%, var(--pico-chrome));
+
+	/* Intrinsic knobs. 8px floor is one character cell of the bitmap font. */
+	--intrinsic-base-min: 8px;
+	--intrinsic-base-cqi: 2.5;
+	--intrinsic-base-max: 200px;
+	--intrinsic-ratio: 1.25;
+	--intrinsic-space-unit: 0.5em;
+	--intrinsic-snap: 1px;
+
+	/* Aliases onto the derived scale. Nothing below re-implements the maths. */
+	--pico-base: var(--intrinsic-base);
+	--pico-text-sm: var(--intrinsic-text-dn1);
+	--pico-text-xs: var(--intrinsic-text-dn2);
+	--pico-text: var(--intrinsic-text-0);
+	--pico-text-lg: var(--intrinsic-text-up1);
+	--pico-text-xl: var(--intrinsic-text-up2);
+	--pico-space-1: var(--intrinsic-space-1);
+	--pico-space-2: var(--intrinsic-space-2);
+	--pico-space-3: var(--intrinsic-space-3);
+	--pico-space-4: var(--intrinsic-space-4);
+
+	/* Two families, two jobs: the bitmap face for chrome and headings, the
+	 * terminal face for running text it would be unreadable in. */
+	--pico-font-display: "Press Start 2P", monospace;
+	--pico-font-term: "VT323", monospace;
+
+	/* Hairlines and the CRT grille are the one place a device pixel is the
+	 * honest unit: they must not scale with the type ramp or they stop being
+	 * hairlines. Named here so no component restates them. */
+	--pico-edge: 1px;
+	--pico-scanline: 2px;
+	--pico-scanline-gap: 6px;
+}

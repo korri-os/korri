@@ -1,0 +1,8 @@
+.pico-button-bar {
+	display: flex;
+	gap: var(--pico-space-3);
+	align-items: center;
+	padding: var(--pico-space-1) var(--pico-space-2);
+	background: var(--pico-chrome);
+	border-top: var(--pico-edge) solid var(--pico-chrome-edge);
+}

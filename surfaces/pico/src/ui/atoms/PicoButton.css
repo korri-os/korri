@@ -1,0 +1,15 @@
+.pico-button {
+	padding: var(--pico-space-1) var(--pico-space-2);
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-bg);
+	background: var(--pico-accent);
+	border: none;
+	cursor: pointer;
+	letter-spacing: 0.125em;
+}
+
+.pico-button:focus-visible {
+	outline: var(--pico-edge) solid var(--pico-focus);
+	outline-offset: var(--pico-edge);
+}
