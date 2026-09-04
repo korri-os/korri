@@ -4,22 +4,42 @@
 	align-items: center;
 }
 
+/**
+ * The face button.
+ *
+ * Deliberately the one round, shaded element in an interface that is otherwise
+ * hard-edged and flat: it depicts a moulded plastic button on the hardware in
+ * the player's hands, and a square chip reads as a highlighter swipe instead.
+ * The inset highlight and cast shadow are what make it look pressable; the
+ * colour is the gamepad's, so it is recognised before the letter is read.
+ */
 .pico-hint-key {
-	display: grid;
+	display: inline-grid;
 	place-items: center;
-	/* Square, because the thing it depicts is: a wide slab reads as a highlighter
-	 * swipe rather than a button. aspect-ratio sizes the height from the glyph's
-	 * own width, so the cap stays square at every step of the type scale. */
-	aspect-ratio: 1;
-	/* The glyph's own line box is taller than it is wide, and aspect-ratio cannot
-	 * shrink a box below its min-content height — so without this the cap stays
-	 * portrait however square the ratio claims to be. */
+	width: 2.2em;
+	height: 2.2em;
+	/* 50%, not a pill radius: the element is square, so this is exactly a
+	 * circle and states no length the token scale does not own. */
+	border-radius: 50%;
+	/* The glyph's line box is taller than it is wide; without this the circle is
+	 * forced into an oval by its own min-content height. */
 	line-height: 1;
-	padding: calc(var(--pico-space-1) / 2);
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text-xs);
-	color: var(--pico-bg);
-	background: var(--pico-accent);
+	box-shadow:
+		inset 0 0.18em 0 var(--pico-emboss-light),
+		inset 0 -0.18em 0 var(--pico-emboss-dark),
+		0 0.16em 0 var(--pico-cast-shadow);
+}
+
+.pico-hint-key[data-key="a"] {
+	color: var(--pico-key-a-ink);
+	background: var(--pico-key-a);
+}
+
+.pico-hint-key[data-key="b"] {
+	color: var(--pico-key-b-ink);
+	background: var(--pico-key-b);
 }
 
 .pico-hint-label {

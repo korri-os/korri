@@ -20,6 +20,16 @@ const SRC = join(import.meta.dir, "..", "src")
 const TOKENS_CSS = "pico-tokens.css"
 
 /**
+ * A colour or length stated literally rather than named.
+ *
+ * `rgb()`/`rgba()`/`hsl()` are here because a hex is not the only way to write
+ * a raw colour — legacy Pico's button bevel was four rgba() values, and a check
+ * that only knew about hex would have waved it straight through. `color-mix()`
+ * over a token is not matched: it names a role and derives from it.
+ */
+const RAW_VALUE = /#[0-9a-fA-F]{3,8}\b|\b\d+px\b|\b(?:rgba?|hsla?)\(/g
+
+/**
  * What Pico may import. The surface treaty is the whole contract with Korri;
  * the intrinsic core is shared design maths. Anything else — Effect, atoms, a
  * router, another surface, a `@platform` module — would tie Pico to this
@@ -109,7 +119,7 @@ describe("visual decisions live in tokens", () => {
   test("no component states a raw colour or pixel value", () => {
     const offenders = tsxFiles
       .flatMap((file) => {
-        const found = [...read(file).matchAll(/#[0-9a-fA-F]{3,8}\b|\b\d+px\b/g)]
+        const found = [...read(file).matchAll(RAW_VALUE)]
         return found.map((match) => `${rel(file)}: ${match[0]}`)
       })
       .sort()
@@ -121,7 +131,7 @@ describe("visual decisions live in tokens", () => {
     const offenders = cssFiles
       .filter((file) => basename(file) !== TOKENS_CSS)
       .flatMap((file) => {
-        const found = [...read(file).matchAll(/#[0-9a-fA-F]{3,8}\b|\b\d+px\b/g)]
+        const found = [...read(file).matchAll(RAW_VALUE)]
         return found.map((match) => `${rel(file)}: ${match[0]}`)
       })
       .sort()

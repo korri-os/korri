@@ -72,6 +72,20 @@
 	--pico-space-3: var(--intrinsic-space-3);
 	--pico-space-4: var(--intrinsic-space-4);
 
+	/* Face-button colours. The gamepad convention, not a Pico invention: a
+	 * player reads the shape and colour before the letter, so A and B keep the
+	 * hues they have on the hardware. */
+	--pico-key-a: var(--p8-lime);
+	--pico-key-a-ink: var(--p8-black);
+	--pico-key-b: var(--p8-red);
+	--pico-key-b-ink: var(--p8-white);
+
+	/* Moulded-plastic shading. Named as roles so the one element in the design
+	 * allowed to look physical does not scatter raw colour through components. */
+	--pico-emboss-light: color-mix(in srgb, var(--p8-white) 50%, transparent);
+	--pico-emboss-dark: color-mix(in srgb, var(--p8-black) 32%, transparent);
+	--pico-cast-shadow: color-mix(in srgb, var(--p8-black) 55%, transparent);
+
 	/* Two families, two jobs: the bitmap face for chrome and headings, the
 	 * terminal face for running text it would be unreadable in. */
 	--pico-font-display: "Press Start 2P", monospace;

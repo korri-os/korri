@@ -23,7 +23,9 @@ export function PicoHint({
 }) {
   return (
     <span className="pico-hint">
-      <b className="pico-hint-key">{hintKey.toUpperCase()}</b>
+      <b className="pico-hint-key" data-key={hintKey}>
+        {hintKey.toUpperCase()}
+      </b>
       <span className="pico-hint-label">{label}</span>
     </span>
   )
