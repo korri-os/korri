@@ -185,39 +185,20 @@ public class KorriShellActivityLifecycleContractTest {
         String clear = method(source,
                 "private synchronized void clearMoonlightDiscovery()",
                 "private synchronized void installMoonlightDiscovery(");
-        String queryHosts = method(source,
-                "public String queryStreamHosts()",
-                "/** JSON-encoded QueryStreamAppsResult. */");
-        String manager = new String(Files.readAllBytes(Path.of(
-                "src/main/java/com/limelight/computers/ComputerManagerService.java")),
-                StandardCharsets.UTF_8);
-        String prepare = method(manager,
-                "private boolean prepareComputerBlocking(ComputerDetails details)",
-                "/** Commit one fully polled host.");
-        String commit = method(manager,
-                "private boolean commitPreparedComputer(ComputerDetails details)",
-                "public boolean addComputerBlocking(ComputerDetails fakeDetails)");
+        String onResume = method(source, "protected void onResume()",
+                "public void onWindowFocusChanged(boolean hasFocus)");
 
         assertOrdered(install,
                 "KorridServer.moonlightHostCandidates()",
-                "candidate.address, NvHTTP.DEFAULT_HTTP_PORT",
-                "binder.hasComputerAtAddress(address)",
-                "binder.prepareComputerBlocking(details)",
-                "guard.commit(() -> binder.commitPreparedComputer(details))",
+                "details.manualAddress = candidate.manualAddress",
+                "binder.addComputerBlocking(details)",
                 "moonlightHostBootstrap.start()");
+        assertTrue(onResume.contains("moonlightHostBootstrap"));
+        assertTrue(onResume.contains("bootstrap.start()"));
         assertTrue(clear.contains("ownedBootstrap.close()"));
-        assertOrdered(queryHosts,
-                "bootstrap.labelForAddress(",
-                "host.put(\"name\", hostName)");
-        assertFalse(prepare.contains("dbManager.updateComputer"));
-        assertFalse(prepare.contains("addTuple("));
-        assertFalse(commit.contains("pollComputer("));
-        assertFalse(commit.contains("populateExternalAddress("));
-        assertOrdered(commit,
-                "X509Certificate currentCertificate = existing.computer.serverCert",
-                "existing.computer.update(details)",
-                "existing.computer.serverCert = currentCertificate",
-                "existing.computer.rawAppList = currentRawAppList");
+        assertFalse(install.contains("PairingManager"));
+        assertFalse(install.contains("SpinnerDialog"));
+        assertFalse(install.contains("Intent"));
     }
 
     @Test

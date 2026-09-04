@@ -936,16 +936,9 @@ public class KorriShellActivity extends AppCompatActivity {
                 try {
                     List<ComputerDetails> computers = db.getAllComputers();
                     for (ComputerDetails details : computers) {
-                        String hostName = details.name;
-                        KorriMoonlightHostBootstrap bootstrap = moonlightHostBootstrap;
-                        if (bootstrap != null && details.manualAddress != null) {
-                            String configuredLabel = bootstrap.labelForAddress(
-                                    details.manualAddress.address, details.manualAddress.port);
-                            if (configuredLabel != null) hostName = configuredLabel;
-                        }
                         JSONObject host = new JSONObject();
                         host.put("uuid", details.uuid);
-                        host.put("name", hostName);
+                        host.put("name", details.name);
                         items.put(host);
                     }
                 } finally {
@@ -1091,16 +1084,11 @@ public class KorriShellActivity extends AppCompatActivity {
         moonlightHostBootstrap = new KorriMoonlightHostBootstrap(
                 () -> KorriMoonlightHostBootstrap.decodeCandidates(
                         KorridServer.moonlightHostCandidates()),
-                (candidate, guard) -> {
-                    ComputerDetails.AddressTuple address = new ComputerDetails.AddressTuple(
-                            candidate.address, NvHTTP.DEFAULT_HTTP_PORT);
-                    if (binder.hasComputerAtAddress(address)) return guard.current();
+                candidate -> {
                     ComputerDetails details = new ComputerDetails();
                     details.name = candidate.label;
-                    details.manualAddress = address;
-                    if (!binder.prepareComputerBlocking(details)) return false;
-                    return Boolean.TRUE.equals(
-                            guard.commit(() -> binder.commitPreparedComputer(details)));
+                    details.manualAddress = candidate.manualAddress;
+                    return binder.addComputerBlocking(details);
                 },
                 () -> {
                     KorriShellActivity activity = shell.get();

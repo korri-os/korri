@@ -1,5 +1,8 @@
 package com.limelight;
 
+import com.limelight.nvstream.http.ComputerDetails;
+import com.limelight.nvstream.http.NvHTTP;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -14,84 +17,122 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(RobolectricTestRunner.class)
 public class KorriMoonlightHostBootstrapTest {
     @Test
-    public void configuredNativePeersBecomeArtemisHostCandidates() throws Exception {
+    public void configuredNativePeersBecomeArtemisHostCandidates() {
         List<KorriMoonlightHostBootstrap.Candidate> candidates =
                 KorriMoonlightHostBootstrap.decodeCandidates(
                         "{\"_tag\":\"Candidates\",\"items\":["
-                                + "{\"label\":\"zao\",\"address\":\"100.114.19.92\"},"
+                                + "{\"label\":\"zao\",\"address\":\"zao:48000\"},"
                                 + "{\"label\":\"desk\",\"address\":\"desk.example\"}]}"
                 );
 
         assertEquals(2, candidates.size());
         assertEquals("zao", candidates.get(0).label);
-        assertEquals("100.114.19.92", candidates.get(0).address);
-        assertEquals("desk", candidates.get(1).label);
-        assertEquals("desk.example", candidates.get(1).address);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void malformedCandidateResponseIsRejected() throws Exception {
-        KorriMoonlightHostBootstrap.decodeCandidates(
-                "{\"_tag\":\"Candidates\",\"items\":[{\"label\":\"zao\"}]}"
-        );
+        assertEquals("zao", candidates.get(0).manualAddress.address);
+        assertEquals(48000, candidates.get(0).manualAddress.port);
+        assertEquals("desk.example", candidates.get(1).manualAddress.address);
+        assertEquals(NvHTTP.DEFAULT_HTTP_PORT, candidates.get(1).manualAddress.port);
     }
 
     @Test
-    public void successfulBootstrapWakesPortalOnce() {
+    public void malformedPeerBesideValidPeerIsOmitted() {
+        List<KorriMoonlightHostBootstrap.Candidate> candidates =
+                KorriMoonlightHostBootstrap.decodeCandidates(
+                        "{\"_tag\":\"Candidates\",\"items\":["
+                                + "{\"label\":\"broken\",\"address\":\"\"},"
+                                + "{\"label\":\"missing\"},"
+                                + "{\"label\":\"zao\",\"address\":\"127.0.0.1:47989\"}]}"
+                );
+
+        assertEquals(1, candidates.size());
+        assertEquals("zao", candidates.get(0).label);
+    }
+
+    @Test
+    public void noValidCandidateReturnsStableFailure() {
+        try {
+            KorriMoonlightHostBootstrap.decodeCandidates(
+                    "{\"_tag\":\"Candidates\",\"items\":[{\"label\":\"zao\"}]}"
+            );
+            fail("expected invalid candidates");
+        } catch (IllegalArgumentException error) {
+            assertEquals("no valid Moonlight host candidates", error.getMessage());
+        }
+    }
+
+    @Test
+    public void bracketedIpv6AndNonDefaultPortsArePreserved() {
+        ComputerDetails.AddressTuple ipv6 = KorriMoonlightAddressParser.parse("[::1]:48001");
+        ComputerDetails.AddressTuple defaulted = KorriMoonlightAddressParser.parse("[::1]");
+
+        assertEquals("::1", ipv6.address);
+        assertEquals(48001, ipv6.port);
+        assertEquals("::1", defaulted.address);
+        assertEquals(NvHTTP.DEFAULT_HTTP_PORT, defaulted.port);
+    }
+
+    @Test
+    public void permissionDeniedCandidateReadRetriesWithoutBrainRestart() {
+        AtomicInteger reads = new AtomicInteger();
         List<String> registered = new ArrayList<>();
-        AtomicInteger completions = new AtomicInteger();
         KorriMoonlightHostBootstrap bootstrap = new KorriMoonlightHostBootstrap(
-                () -> Arrays.asList(
-                        new KorriMoonlightHostBootstrap.Candidate("zao", "100.114.19.92"),
-                        new KorriMoonlightHostBootstrap.Candidate("desk", "desk.example"),
-                        new KorriMoonlightHostBootstrap.Candidate("ipv6", "[2001:db8::1]")),
-                (candidate, guard) -> Boolean.TRUE.equals(guard.commit(() -> {
-                    registered.add(candidate.label + "@" + candidate.address);
+                () -> {
+                    if (reads.getAndIncrement() == 0) throw new SecurityException("denied");
+                    return Arrays.asList(candidate("zao", "zao:47989"));
+                },
+                candidate -> {
+                    registered.add(candidate.label);
                     return true;
-                })),
-                completions::incrementAndGet,
+                },
+                () -> { },
                 Runnable::run);
 
         bootstrap.start();
+        bootstrap.start();
 
-        assertEquals(Arrays.asList(
-                "zao@100.114.19.92", "desk@desk.example", "ipv6@[2001:db8::1]"), registered);
-        assertEquals("zao", bootstrap.labelForAddress("100.114.19.92", 47989));
-        assertEquals("desk", bootstrap.labelForAddress("DESK.EXAMPLE", 47989));
-        assertEquals("ipv6", bootstrap.labelForAddress("2001:db8::1", 47989));
-        assertNull(bootstrap.labelForAddress("100.114.19.92", 48000));
-        assertEquals(1, completions.get());
+        assertEquals(2, reads.get());
+        assertEquals(Arrays.asList("zao"), registered);
         bootstrap.close();
     }
 
     @Test
-    public void failedCandidatesDoNotSuppressLaterPeers() {
-        List<String> registered = new ArrayList<>();
+    public void successfulHostIsNotRegisteredTwiceAcrossLifecycleRetries() {
+        AtomicInteger registrations = new AtomicInteger();
         AtomicInteger completions = new AtomicInteger();
         KorriMoonlightHostBootstrap bootstrap = new KorriMoonlightHostBootstrap(
-                () -> Arrays.asList(
-                        new KorriMoonlightHostBootstrap.Candidate("offline", "192.0.2.1"),
-                        new KorriMoonlightHostBootstrap.Candidate("zao", "100.114.19.92")),
-                (candidate, guard) -> {
-                    if (candidate.label.equals("offline")) throw new Exception("unreachable");
-                    return Boolean.TRUE.equals(guard.commit(() -> {
-                        registered.add(candidate.label);
-                        return true;
-                    }));
+                () -> Arrays.asList(candidate("zao", "zao:47989")),
+                candidate -> {
+                    registrations.incrementAndGet();
+                    return true;
                 },
                 completions::incrementAndGet,
                 Runnable::run);
 
         bootstrap.start();
+        bootstrap.start();
 
-        assertEquals(Arrays.asList("zao"), registered);
+        assertEquals(1, registrations.get());
         assertEquals(1, completions.get());
+        bootstrap.close();
+    }
+
+    @Test
+    public void failedCandidatesDoNotWakePortal() {
+        AtomicInteger completions = new AtomicInteger();
+        KorriMoonlightHostBootstrap bootstrap = new KorriMoonlightHostBootstrap(
+                () -> Arrays.asList(candidate("zao", "zao:47989")),
+                candidate -> false,
+                completions::incrementAndGet,
+                Runnable::run);
+
+        bootstrap.start();
+
+        assertEquals(0, completions.get());
         bootstrap.close();
     }
 
@@ -100,20 +141,14 @@ public class KorriMoonlightHostBootstrapTest {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger completions = new AtomicInteger();
-        AtomicInteger commits = new AtomicInteger();
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             KorriMoonlightHostBootstrap bootstrap = new KorriMoonlightHostBootstrap(
-                    () -> Arrays.asList(
-                            new KorriMoonlightHostBootstrap.Candidate(
-                                    "zao", "100.114.19.92")),
-                    (candidate, guard) -> {
+                    () -> Arrays.asList(candidate("zao", "zao:47989")),
+                    candidate -> {
                         entered.countDown();
                         release.await(2, TimeUnit.SECONDS);
-                        return Boolean.TRUE.equals(guard.commit(() -> {
-                            commits.incrementAndGet();
-                            return true;
-                        }));
+                        return true;
                     },
                     completions::incrementAndGet,
                     executor);
@@ -124,11 +159,16 @@ public class KorriMoonlightHostBootstrapTest {
             release.countDown();
             executor.shutdown();
             assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
-            assertEquals(0, commits.get());
             assertEquals(0, completions.get());
         } finally {
             release.countDown();
             executor.shutdownNow();
         }
+    }
+
+    private static KorriMoonlightHostBootstrap.Candidate candidate(
+            String label, String address) {
+        return new KorriMoonlightHostBootstrap.Candidate(
+                label, KorriMoonlightAddressParser.parse(address));
     }
 }

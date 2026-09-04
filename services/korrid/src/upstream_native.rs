@@ -59,7 +59,8 @@ impl NativeClient {
             | UpstreamError::MoonlightCertificateBusy
             | UpstreamError::MoonlightHostChanged
             | UpstreamError::MoonlightHostNotFound
-            | UpstreamError::MoonlightHostAmbiguous => error,
+            | UpstreamError::MoonlightHostAmbiguous
+            | UpstreamError::MoonlightHostCandidatesUnavailable => error,
         }
     }
 
