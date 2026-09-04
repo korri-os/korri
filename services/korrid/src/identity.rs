@@ -25,7 +25,8 @@ const OWNER_EVENT_FILE: &str = "owner.event.json";
 const OWNER_EVENT_KIND: u16 = 30_078;
 const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
 const MAX_EVENT_BYTES: usize = 64 * 1024;
-const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 96 * 1024;
+const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IdentityState {
@@ -204,6 +205,11 @@ impl DeviceIdentity {
         }
     }
 
+    /// Return the verified owner statement without exposing the device key.
+    pub fn owner_statement_json(&self) -> Option<String> {
+        self.owner_event.as_ref().map(Event::as_json)
+    }
+
     /// Build the unsigned NIP-78 event that an external person signer signs.
     pub fn owner_statement_template(
         &self,
@@ -307,7 +313,7 @@ impl DeviceIdentity {
         plaintext: &str,
         created_at: u64,
     ) -> Result<SignedEvent, IdentityError> {
-        if plaintext.is_empty() || plaintext.len() > MAX_EVENT_BYTES {
+        if plaintext.is_empty() || plaintext.len() > MAX_ENCRYPTED_PLAINTEXT_BYTES {
             return Err(IdentityError::Encryption);
         }
         let recipient = parse_public_key(recipient_public_key)?;
