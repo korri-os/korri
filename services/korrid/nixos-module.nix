@@ -18,6 +18,103 @@ let
   serviceGroup = "korrid";
   controlGroup = "korri-control";
   controlDirectory = builtins.dirOf cfg.controlSocket;
+  normalizeRelayUrl =
+    value:
+    let
+      originWithSlash = builtins.match "^(wss?://[^/]+)/$" value;
+    in
+    if originWithSlash == null then value else builtins.elemAt originWithSlash 0;
+  relayUrls = map normalizeRelayUrl cfg.relays;
+  validRelayUrl =
+    value:
+    let
+      normalized = normalizeRelayUrl value;
+      secure =
+        builtins.match "^wss://[^[:space:]#/?]+(:[1-9][0-9]*)?(/[^[:space:]#]*)?([?][^[:space:]#]*)?$" normalized
+        != null;
+      loopbackOrigin =
+        origin:
+        lib.hasPrefix origin normalized
+        &&
+          builtins.match "^(:[1-9][0-9]*)?(/[^[:space:]#]*)?([?][^[:space:]#]*)?$" (
+            lib.removePrefix origin normalized
+          ) != null;
+      loopback =
+        builtins.match "^ws://[^[:space:]#]+$" normalized != null
+        && lib.any loopbackOrigin [
+          "ws://localhost"
+          "ws://127.0.0.1"
+          "ws://[::1]"
+        ];
+    in
+    secure || loopback;
+  nativePeersJson = builtins.toJSON (
+    map (peer: {
+      inherit (peer)
+        label
+        baseUrl
+        devicePublicKey
+        moonlightAddress
+        ;
+      kind = "native";
+    }) cfg.nativePeers
+  );
+  relayJson = builtins.toJSON relayUrls;
+  identityExecutable =
+    if bundleCfg.enable then
+      "${bundleCfg.launcherPackage}/bin/korri-bundle-launch korrid"
+    else
+      lib.getExe cfg.package;
+  ownerBindingRead =
+    if cfg.ownerBindingFile == null then
+      {
+        success = true;
+        value = null;
+      }
+    else
+      builtins.tryEval (builtins.readFile cfg.ownerBindingFile);
+  ownerBindingJson =
+    if ownerBindingRead.success && ownerBindingRead.value != null then
+      builtins.tryEval (builtins.fromJSON ownerBindingRead.value)
+    else
+      {
+        success = false;
+        value = null;
+      };
+  secretFieldNames = [
+    "ncryptsec"
+    "nsec"
+    "personprivatekey"
+    "person_private_key"
+    "privatekey"
+    "private_key"
+    "secret"
+    "secretkey"
+    "secret_key"
+  ];
+  containsSecretField =
+    value:
+    if builtins.isAttrs value then
+      lib.any (
+        name: builtins.elem (lib.toLower name) secretFieldNames || containsSecretField value.${name}
+      ) (builtins.attrNames value)
+    else if builtins.isList value then
+      lib.any containsSecretField value
+    else
+      false;
+  ownerBindingTextIsPublic =
+    ownerBindingRead.success
+    && ownerBindingRead.value != null
+    && !(lib.hasInfix "nsec1" (lib.toLower ownerBindingRead.value))
+    && !(lib.hasInfix "ncryptsec1" (lib.toLower ownerBindingRead.value));
+  ownerBindingValidator = pkgs.writeShellScript "korrid-validate-owner-binding" ''
+    set -eu
+    binding=${lib.escapeShellArg (toString cfg.ownerBindingFile)}
+    if [ ! -f "$binding" ] || [ -L "$binding" ]; then
+      echo 'owner binding must be a regular Nix-store file' >&2
+      exit 1
+    fi
+  '';
   validAbsolutePath =
     path:
     lib.hasPrefix "/" path
@@ -78,6 +175,29 @@ in
       type = lib.types.str;
       default = "/run/korrid-control/control.sock";
     };
+    relays = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      description = "Ordered relay URLs. Production relays use wss://; ws:// is limited to loopback tests.";
+    };
+    nativePeers = lib.mkOption {
+      default = [ ];
+      description = "Native peer endpoints serialized to the established KORRID_UPSTREAMS schema.";
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            label = lib.mkOption { type = lib.types.strMatching "^[A-Za-z0-9._-]+$"; };
+            baseUrl = lib.mkOption { type = lib.types.str; };
+            devicePublicKey = lib.mkOption { type = lib.types.str; };
+            moonlightAddress = lib.mkOption { type = lib.types.str; };
+          };
+        }
+      );
+    };
+    ownerBindingFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional public pre-signed NIP-78 owner binding imported before korrid opens its network listener.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -100,11 +220,53 @@ in
         message = "korrid and local-control GIDs must differ from the gameplay GID.";
       }
       {
+        assertion =
+          lib.getName cfg.package == "korrid"
+          && (cfg.package.drvPath or null) == korri.packages.${system}.korrid.drvPath
+          && (cfg.package.outPath or null) == korri.packages.${system}.korrid.outPath;
+        message = "korridLinuxDevice must use the exact Korri korrid package and provenance.";
+      }
+      {
         assertion = lib.hasPrefix "/nix/store/" (toString cfg.deviceConfig);
         message = "korrid deviceConfig must be an immutable Nix-store path.";
       }
       {
-        assertion = validAbsolutePath cfg.privateStateRoot && validAbsolutePath cfg.sunshinePrivateStateRoot;
+        assertion =
+          builtins.length relayUrls >= 1
+          && builtins.length relayUrls <= 8
+          && lib.all validRelayUrl relayUrls
+          && builtins.length (lib.unique relayUrls) == builtins.length relayUrls;
+        message = "korrid relays must contain one to eight unique normalized wss:// URLs, with ws:// allowed only for loopback tests.";
+      }
+      {
+        assertion =
+          let
+            labels = map (peer: peer.label) cfg.nativePeers;
+          in
+          builtins.length labels == builtins.length (lib.unique labels)
+          && lib.all (
+            peer:
+            builtins.match "^https?://[^[:space:]#]+$" peer.baseUrl != null
+            && builtins.match "^[0-9a-f]{64}$" peer.devicePublicKey != null
+            && builtins.match "^[^[:space:]]+$" peer.moonlightAddress != null
+          ) cfg.nativePeers;
+        message = "native peers require unique labels, HTTP(S) baseUrl values, lowercase 32-byte devicePublicKey values, and explicit moonlightAddress values.";
+      }
+      {
+        assertion =
+          cfg.ownerBindingFile == null
+          || (
+            lib.hasPrefix "/nix/store/" (toString cfg.ownerBindingFile)
+            && ownerBindingRead.success
+            && ownerBindingJson.success
+            && ownerBindingTextIsPublic
+            && !containsSecretField ownerBindingJson.value
+          );
+        message = "ownerBindingFile must be a regular public JSON file in the Nix store with no Nostr secret-key form or JSON secret field.";
+      }
+      {
+        assertion =
+          validAbsolutePath cfg.privateStateRoot && validAbsolutePath cfg.sunshinePrivateStateRoot;
         message = "korrid privateStateRoot and sunshinePrivateStateRoot must be normalized absolute paths.";
       }
       {
@@ -145,6 +307,7 @@ in
     systemd.tmpfiles.rules = [
       "d ${controlDirectory} 0750 root ${controlGroup} -"
       "d ${cfg.privateStateRoot} 0700 ${serviceUser} ${serviceGroup} -"
+      "d ${cfg.privateStateRoot}/identity 0700 ${serviceUser} ${serviceGroup} -"
       "d /dev/inputplumber 0700 root root -"
       "d /dev/inputplumber/sources 0700 root root -"
     ];
@@ -169,16 +332,70 @@ in
       };
     };
 
+    systemd.services.korrid-identity = {
+      description = "Prepare the private korrid device identity";
+      before = [ "korrid.service" ];
+      requiredBy = [ "korrid.service" ];
+      environment = {
+        KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
+      }
+      // lib.optionalAttrs bundleCfg.enable {
+        KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        User = serviceUser;
+        Group = serviceGroup;
+        StateDirectory = "korrid";
+        StateDirectoryMode = "0700";
+        UMask = "0077";
+        ExecStartPre = lib.optional (cfg.ownerBindingFile != null) ownerBindingValidator;
+        ExecStart =
+          if cfg.ownerBindingFile == null then
+            "${identityExecutable} identity status"
+          else
+            "${identityExecutable} identity import --file ${cfg.ownerBindingFile}";
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = [ ];
+        AmbientCapabilities = [ ];
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = false;
+        SystemCallArchitectures = "native";
+        ReadWritePaths = [ cfg.privateStateRoot ];
+        InaccessiblePaths = [
+          cfg.storageRoot
+          cfg.sunshinePrivateStateRoot
+          cfg.compositorControlDirectory
+          cfg.certificateControlDirectory
+          "/dev/inputplumber/sources"
+          "/dev/uinput"
+        ];
+      };
+    };
+
     systemd.services.korrid = {
       description = "Korri Linux device daemon";
       wantedBy = [ "multi-user.target" ];
       requires = [
         "korrid-control.socket"
+        "korrid-identity.service"
       ]
       ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
       after = [
         "network.target"
         "korrid-control.socket"
+        "korrid-identity.service"
         "korri-input-source-guard.service"
         "systemd-tmpfiles-setup-dev.service"
         "systemd-tmpfiles-resetup.service"
@@ -186,7 +403,6 @@ in
       ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
       environment = {
         KORRID_MODE = "host";
-        KORRI_BUNDLE_ACTIVE = lib.mkIf bundleCfg.enable bundleCfg.activePath;
         KORRID_ADDRESS = cfg.address;
         KORRID_HOST_CONFIG = toString cfg.deviceConfig;
         KORRID_STORAGE_ROOT = cfg.storageRoot;
@@ -200,8 +416,13 @@ in
         KORRID_CONTROL_PEER_GID = toString cfg.controlGid;
         KORRID_GAMEPLAY_UID = toString cfg.gameplayUid;
         KORRID_GAMEPLAY_GID = toString cfg.gameplayGid;
+        KORRID_RELAYS = relayJson;
+        KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs bundleCfg.enable {
+        KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
       };
       serviceConfig = {
         ExecStart =

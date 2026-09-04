@@ -342,6 +342,29 @@ in
       type = lib.types.str;
       default = "/var/lib/korrid";
     };
+    relays = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      description = "Ordered korrid relay URLs with no built-in public relay.";
+    };
+    nativePeers = lib.mkOption {
+      default = [ ];
+      description = "Native korrid peers used by device-side clients.";
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            label = lib.mkOption { type = lib.types.strMatching "^[A-Za-z0-9._-]+$"; };
+            baseUrl = lib.mkOption { type = lib.types.str; };
+            devicePublicKey = lib.mkOption { type = lib.types.str; };
+            moonlightAddress = lib.mkOption { type = lib.types.str; };
+          };
+        }
+      );
+    };
+    ownerBindingFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Optional public pre-signed owner binding for this Linux device.";
+    };
 
     compositor = {
       renderDevice = lib.mkOption {
@@ -588,6 +611,7 @@ in
       storageRoot = cfg.storageRoot;
       privateStateRoot = cfg.privateStateRoot;
       sunshinePrivateStateRoot = sunshineConfig;
+      inherit (cfg) relays nativePeers ownerBindingFile;
       inherit compositorControlDirectory certificateControlDirectory;
     };
 
@@ -722,12 +746,14 @@ in
       requires = [
         "user-runtime-dir@${toString cfg.gameplayUid}.service"
         "user@${toString cfg.gameplayUid}.service"
-      ] ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
+      ]
+      ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
       after = [
         "systemd-tmpfiles-setup.service"
         "user-runtime-dir@${toString cfg.gameplayUid}.service"
         "user@${toString cfg.gameplayUid}.service"
-      ] ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
+      ]
+      ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
       before = [
         "korrid.service"
         "sunshine.service"
@@ -802,8 +828,14 @@ in
 
     systemd.services.korrid = {
       bindsTo = lib.mkAfter [ "korri-compositor.service" ];
-      requires = lib.mkAfter ([ "korri-compositor.service" ] ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service");
-      after = lib.mkAfter ([ "korri-compositor.service" ] ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service");
+      requires = lib.mkAfter (
+        [ "korri-compositor.service" ]
+        ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service"
+      );
+      after = lib.mkAfter (
+        [ "korri-compositor.service" ]
+        ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service"
+      );
       environment = {
         KORRID_SUNSHINE_CERTIFICATE_CONTROL_SOCKET = certificateControlSocket;
         KORRID_SUNSHINE_CERTIFICATE_CONTROL_GID = toString cfg.serviceIdentities.korridGid;
@@ -812,7 +844,8 @@ in
         # SO_PEERCRED on the connecting side.
         KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_UID = "0";
         KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_GID = "0";
-      } // lib.optionalAttrs cfg.sunshine.inputSeats.enable {
+      }
+      // lib.optionalAttrs cfg.sunshine.inputSeats.enable {
         KORRID_INPUT_SEAT_CONTROL_SOCKET = inputSeatControlSocket;
       };
     };
@@ -825,13 +858,15 @@ in
         "korri-certificate-control.socket"
         "korri-input-source-guard.service"
         "korri-compositor.service"
-      ] ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
+      ]
+      ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
       after = [
         "korri-certificate-control.socket"
         "korri-input-source-guard.service"
         "korri-compositor.service"
         "network-online.target"
-      ] ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
+      ]
+      ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
       wants = [ "network-online.target" ];
       environment = {
         KORRI_CERTIFICATE_CONTROL_UID = toString cfg.serviceIdentities.korridUid;
@@ -902,10 +937,13 @@ in
       };
     };
 
-    services.udev.extraRules = lib.mkAfter (''
-      KERNEL=="uinput", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uinput"
-    '' + lib.optionalString cfg.sunshine.inputSeats.enable ''
-      SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="${cfg.gameplayGroup}", MODE="0660"
-    '');
+    services.udev.extraRules = lib.mkAfter (
+      ''
+        KERNEL=="uinput", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uinput"
+      ''
+      + lib.optionalString cfg.sunshine.inputSeats.enable ''
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="${cfg.gameplayGroup}", MODE="0660"
+      ''
+    );
   };
 }
