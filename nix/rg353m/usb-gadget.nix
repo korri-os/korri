@@ -64,6 +64,11 @@ in
 
   # The host side of the NCM link. NetworkManager must leave it alone.
   networking.networkmanager.unmanaged = [ "usb0" ];
+
+  # services.openssh.openFirewall only opens the port on interfaces present at
+  # build time. usb0 appears at runtime when the gadget binds, so SSH over the
+  # cable is dropped without an explicit interface rule.
+  networking.firewall.interfaces.usb0.allowedTCPPorts = [ 22 ];
   systemd.network = {
     enable = true;
     networks."10-usb-gadget" = {
