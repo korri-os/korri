@@ -31,6 +31,7 @@
     }:
     let
       rg353m = import ./nix/rg353m { inherit nixpkgs; };
+      odin2portal = import ./nix/odin2portal { inherit nixpkgs; };
       nixosModules = {
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };
@@ -100,6 +101,10 @@
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
+          odin2portal-kernel = odin2portal.kernel;
+        }
+        // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          odin2portal-kernel = odin2portal.kernelCross;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
