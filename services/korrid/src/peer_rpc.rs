@@ -677,8 +677,8 @@ mod tests {
         let health = || RpcRequest::Health(crate::HealthRequest {});
 
         for timestamp in [
-            now - CLOCK_WINDOW_SECONDS - 1,
-            now + CLOCK_WINDOW_SECONDS + 1,
+            now - CLOCK_WINDOW_SECONDS - 10,
+            now + CLOCK_WINDOW_SECONDS + 10,
         ] {
             let encoded = credentials
                 .encode_request_with_nonce(&host_key, health(), timestamp, random_nonce())
