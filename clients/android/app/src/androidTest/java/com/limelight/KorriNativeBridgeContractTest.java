@@ -51,6 +51,8 @@ public class KorriNativeBridgeContractTest {
             "backgroundNotice",
             "requestBackgroundNotice",
             "openNotificationSettings",
+            "ownerBindingSnapshot",
+            "startOwnerBinding",
             "systemInfo",
             "bridgeVersion"
     };
@@ -109,6 +111,28 @@ public class KorriNativeBridgeContractTest {
             } else {
                 assertStringField(systemInfo, "message");
             }
+        });
+    }
+
+    @Test
+    public void configurableNip55SignerCreatesAVerifiedOwnerBinding() throws Exception {
+        withReadyBridge((scenario, webView) -> {
+            JSONObject initial = bridgeJson(webView, "ownerBindingSnapshot");
+            assertEquals("Unowned", initial.getJSONObject("identity").getString("_tag"));
+            assertStringField(initial, "deviceFingerprint");
+            assertStringField(initial, "requestedAction");
+            assertStringField(initial, "bindingUri");
+
+            invokeJavascriptNoResult(webView, "window.KorriNative.startOwnerBinding()");
+
+            // The configurable signer answers immediately. Do not poll the
+            // paused WebView while Android owns the signer screen.
+            Thread.sleep(3_000L);
+            JSONObject current = bridgeJson(webView, "ownerBindingSnapshot");
+            assertEquals(current.toString(), "Owned",
+                    current.getJSONObject("identity").getString("_tag"));
+            assertEquals("Approved",
+                    current.getJSONObject("personSigner").getString("_tag"));
         });
     }
 
@@ -217,6 +241,16 @@ public class KorriNativeBridgeContractTest {
         }
         fail("window.KorriNative.bridgeVersion was not exposed within "
                 + BRIDGE_READY_TIMEOUT_MS + "ms; last readiness result was " + lastResult);
+    }
+
+    private static void invokeJavascriptNoResult(WebView webView, String script) throws Exception {
+        CountDownLatch posted = new CountDownLatch(1);
+        webView.post(() -> {
+            webView.evaluateJavascript(script, null);
+            posted.countDown();
+        });
+        assertTrue("JavaScript invocation should reach the WebView",
+                posted.await(JAVASCRIPT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
     }
 
     private static JSONObject bridgeJson(WebView webView, String methodName) throws Exception {

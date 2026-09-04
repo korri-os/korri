@@ -31,10 +31,12 @@ public class KorriTrustedPortalWebViewPolicyTest {
             "openNotificationSettings",
             "openOverlaySettings",
             "openStorageAccessSettings",
+            "ownerBindingSnapshot",
             "queryStreamApps",
             "queryStreamHosts",
             "overlayPermission",
             "requestBackgroundNotice",
+            "startOwnerBinding",
             "startStream",
             "storageAccess",
             "systemInfo"));

@@ -12,6 +12,8 @@ Korri uses Nostr-format keys for person identity and device identity. Each key u
 
 The person controls the person key. Korri does not store that private key. An Android signer supplies signatures through NIP-55. A remote signer supplies signatures through NIP-46.
 
+The Android implementation uses the NIP-55 package-discovery intent, account public-key selection, explicit selected signer package, Activity Result lifecycle, and permission-gated ContentResolver path. Amber is the first named compatible signer, not a package or protocol dependency. Korri persists only the selected signer package, selected public key, and bounded pending public request state. The person key, its generation, and NIP-49 backup remain signer-owned.
+
 Each device stores one device key under the existing private state root. The device key signs daily device traffic. A person key signs only owner statements and later device passes.
 
 ## Protocol sources
@@ -90,7 +92,10 @@ The identity module can:
 - sign the encrypted content as a NIP-01 event,
 - verify the event before decryption,
 - create an unsigned owner template for an external signer,
+- verify that a returned signed event exactly matches its unsigned template and selected person public key,
 - apply an owner binding or an owner revocation.
+
+The Android JNI boundary carries only public identity status, unsigned event templates, selected public keys, and complete signed public event JSON. No person private key operation or field exists at this boundary.
 
 The module limits untrusted event sizes before JSON or Base64 processing.
 
@@ -150,10 +155,18 @@ The tests use BIP-340 signature vector 0 from the official Bitcoin BIPs reposito
 
 The tests reject a changed signed event, a wrong device, a wrong owner, a stale revocation, an invalid key, and a symlinked state root.
 
+## Android owner binding
+
+An unowned Android device publishes its full device public key as the device fingerprint, the requested owner-binding action, one NIP-55 binding URI, and one `Set up owner` action. If no signer is installed, it states that a compatible NIP-55 signer such as Amber is required. The signer lifecycle is explicit: `Unavailable`, `Pending`, `Approved`, `Denied`, `InvalidResponse`, or `Defect`. Only Rust verification can move identity from `Unowned` to `Owned`.
+
+The repository includes the separate `org.korri.signer.test` Android application. It implements the NIP-55 Activity and ContentResolver contracts with configurable approve, deny, delay, malformed, and valid-but-wrong-event behavior. This is the physical proof signer when Amber is absent. Amber interoperability on Bandai remains an external acceptance requirement.
+
 ## Deferred work
 
 The next slices must add:
 
 - relay coordination with NIP-59 wrapping,
-- NIP-55 and NIP-46 adapters on Android,
+- the NIP-46 remote-signer adapter,
 - delivery and device-side installation of externally signed person passes and revocations.
+
+The current environment-driven Linux binary does not have a command framework. The owner-binding import/status CLI stays with the later Nix host-binding slice rather than broadening that binary in this Android slice.

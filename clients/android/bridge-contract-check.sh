@@ -255,6 +255,9 @@ run_contract_test() {
   use_build_sdk_env
   export ANDROID_SERIAL="$SERIAL"
   cd "$ANDROID_CLIENT"
+  ./gradlew :signer-test:assembleDebug
+  timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" install -r \
+    signer-test/build/outputs/apk/debug/signer-test-debug.apk >/dev/null
   set +e
   timeout --kill-after=30s "$CONTRACT_TEST_TIMEOUT_SECONDS" ./gradlew \
     :app:connectedDebugAndroidTest \
