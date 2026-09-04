@@ -20,6 +20,7 @@ pub mod config;
 pub mod discovery;
 pub mod enrichment;
 mod game_assets;
+pub mod identity;
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";

@@ -21,6 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 rand = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 libc = "0.2"
+nostr = { version = "0.45.4", default-features = false, features = ["std", "os-rng", "nip44"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -39,6 +40,7 @@ proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
 proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 
 [dev-dependencies]
+secp256k1 = { version = "0.30", features = ["global-context"] }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
