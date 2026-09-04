@@ -14,6 +14,7 @@ in
   imports = [
     "${modulesPath}/installer/sd-card/sd-image.nix"
     ./expand-root.nix
+    ./gpu.nix
     ./usb-gadget.nix
     ./wifi.nix
   ];
