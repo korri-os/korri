@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="signer_background">#101018</color>
+    <color name="signer_text">#F4F1EA</color>
+    <dimen name="signer_space">24dp</dimen>
+    <style name="SignerTestTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#B9F26C</item>
+        <item name="android:windowBackground">@color/signer_background</item>
+        <item name="android:textColor">@color/signer_text</item>
+    </style>
+</resources>
