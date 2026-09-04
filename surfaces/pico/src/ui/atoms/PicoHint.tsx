@@ -1,3 +1,5 @@
+import { PicoPixelDisc } from "./PicoPixelDisc"
+
 /**
  * The buttons Pico currently names in a hint.
  *
@@ -8,11 +10,15 @@
 export type PicoHintKey = "a" | "b"
 
 /**
- * One button hint: the glyph and what it does here.
+ * One button hint: the face button and what it does here.
  *
- * Hints state what the buttons already do — they are not controls. Pico never
+ * The disc is drawn on a pixel grid rather than rounded by CSS — at this size a
+ * smooth curve is the most obviously non-8-bit thing on the screen. The colour
+ * is the gamepad's, so the button is recognised before the letter is read.
+ *
+ * Hints state what the buttons already do; they are not controls. Pico never
  * makes one clickable, because a hint that can be pressed is a button wearing a
- * hint's clothes, and a handheld user would never find it with a thumb.
+ * hint's clothes, and a thumb would never find it.
  */
 export function PicoHint({
   hintKey,
@@ -23,9 +29,12 @@ export function PicoHint({
 }) {
   return (
     <span className="pico-hint">
-      <b className="pico-hint-key" data-key={hintKey}>
-        {hintKey.toUpperCase()}
-      </b>
+      <span className="pico-hint-key" data-key={hintKey}>
+        <span className="pico-hint-key-disc">
+          <PicoPixelDisc />
+        </span>
+        <b className="pico-hint-key-glyph">{hintKey.toUpperCase()}</b>
+      </span>
       <span className="pico-hint-label">{label}</span>
     </span>
   )

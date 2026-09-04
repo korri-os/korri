@@ -25,6 +25,13 @@ const parts = walk(SRC)
   .filter((file) => file.endsWith(".part.tsx"))
   .sort()
 
+/**
+ * Parts whose whole content is a shape. They are verified by eye, not by text —
+ * listing them here keeps that an explicit decision rather than a blanket
+ * weakening of the assertion for every other part.
+ */
+const TEXTLESS = new Set(["ui/atoms/PicoPixelDisc.atom.part.tsx"])
+
 afterEach(() => cleanup())
 
 test("the surface publishes parts at all", () => {
@@ -42,7 +49,11 @@ test.each(parts.map((file) => [relative(SRC, file), file]))(
 
     const { container } = render(<part.default />)
 
-    expect(container.textContent?.trim().length ?? 0).toBeGreaterThan(0)
+    if (TEXTLESS.has(_label)) {
+      expect(container.querySelectorAll("svg > *").length).toBeGreaterThan(0)
+    } else {
+      expect(container.textContent?.trim().length ?? 0).toBeGreaterThan(0)
+    }
     expect(part.name).toBeTruthy()
   },
 )

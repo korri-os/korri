@@ -5,41 +5,50 @@
 }
 
 /**
- * The face button.
- *
- * Deliberately the one round, shaded element in an interface that is otherwise
- * hard-edged and flat: it depicts a moulded plastic button on the hardware in
- * the player's hands, and a square chip reads as a highlighter swipe instead.
- * The inset highlight and cast shadow are what make it look pressable; the
- * colour is the gamepad's, so it is recognised before the letter is read.
+ * The face button. Its colour drives the disc through `currentColor`, so the
+ * shape and the key stay one decision rather than two that can drift apart.
  */
 .pico-hint-key {
+	position: relative;
 	display: inline-grid;
 	place-items: center;
 	width: 2.2em;
 	height: 2.2em;
-	/* 50%, not a pill radius: the element is square, so this is exactly a
-	 * circle and states no length the token scale does not own. */
-	border-radius: 50%;
-	/* The glyph's line box is taller than it is wide; without this the circle is
-	 * forced into an oval by its own min-content height. */
-	line-height: 1;
-	font-family: var(--pico-font-display);
 	font-size: var(--pico-text-xs);
-	box-shadow:
-		inset 0 0.18em 0 var(--pico-emboss-light),
-		inset 0 -0.18em 0 var(--pico-emboss-dark),
-		0 0.16em 0 var(--pico-cast-shadow);
+}
+
+/* A wrapper this component owns, rather than positioning the disc by the disc's
+ * own class: reaching into a child's names is how two files end up sharing one
+ * decision and drifting apart. */
+.pico-hint-key-disc {
+	position: absolute;
+	inset: 0;
+}
+
+.pico-hint-key-glyph {
+	position: relative;
+	font-family: var(--pico-font-display);
+	/* Sized against the cap, not the bar: the letter fills the disc's flat middle
+	 * without touching the stepped edge, which is roughly the proportion legacy
+	 * struck at 1/2.2 of the cap. */
+	font-size: 0.9em;
+	line-height: 1;
 }
 
 .pico-hint-key[data-key="a"] {
+	color: var(--pico-key-a);
+}
+
+.pico-hint-key[data-key="a"] .pico-hint-key-glyph {
 	color: var(--pico-key-a-ink);
-	background: var(--pico-key-a);
 }
 
 .pico-hint-key[data-key="b"] {
+	color: var(--pico-key-b);
+}
+
+.pico-hint-key[data-key="b"] .pico-hint-key-glyph {
 	color: var(--pico-key-b-ink);
-	background: var(--pico-key-b);
 }
 
 .pico-hint-label {
