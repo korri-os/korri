@@ -27,6 +27,7 @@ KORRI_PLUGIN_ROUTE_REVIEW_IN_SHELL=1 "$CRATE/plugin-route-review.sh"
   KORRI_JOURNEY_EXPECTED_TITLE='Ambient Hostile Title' \
     "$CRATE/android-device-script-review.sh"
 )
+"$CRATE/deploy/test-render-upstreams-android.sh"
 typeshare . --lang=typescript --output-file="$GENERATED_TS"
 # Typeshare 1.13 emits trailing spaces and an extra final blank line.
 sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"

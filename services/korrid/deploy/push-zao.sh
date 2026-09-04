@@ -88,7 +88,8 @@ for _ in $(seq 1 40); do
       "KORRID_PRIVATE_STATE_ROOT=\"\$HOME/.local/state/korrid/private\" \"\$HOME/.local/state/korrid/current/bin/korrid\" identity status" \
       >"$status_file"
     android_upstreams="$(
-      "$root/services/korrid/deploy/render-upstreams-android.sh" "$status_file"
+      ZAO_KORRID_URL="$zao_url" \
+        "$root/services/korrid/deploy/render-upstreams-android.sh" "$status_file"
     )"
     elapsed="$(( $(date +%s) - started ))"
     echo "zao korrid deployed with Neverball and Wario Land 4 in ${elapsed}s ($revision)"

@@ -73,6 +73,13 @@ let
       }
     else
       builtins.tryEval (builtins.readFile cfg.ownerBindingFile);
+  ownerBindingStoreFile =
+    if cfg.ownerBindingFile == null then
+      null
+    else
+      pkgs.writeText "korrid-owner-binding.json" (
+        if ownerBindingRead.success then ownerBindingRead.value else ""
+      );
   ownerBindingJson =
     if ownerBindingRead.success && ownerBindingRead.value != null then
       builtins.tryEval (builtins.fromJSON ownerBindingRead.value)
@@ -109,7 +116,7 @@ let
     && !(lib.hasInfix "ncryptsec1" (lib.toLower ownerBindingRead.value));
   ownerBindingValidator = pkgs.writeShellScript "korrid-validate-owner-binding" ''
     set -eu
-    binding=${lib.escapeShellArg (toString cfg.ownerBindingFile)}
+    binding=${lib.escapeShellArg (toString ownerBindingStoreFile)}
     if [ ! -f "$binding" ] || [ -L "$binding" ]; then
       echo 'owner binding must be a regular Nix-store file' >&2
       exit 1
@@ -354,7 +361,7 @@ in
           if cfg.ownerBindingFile == null then
             "${identityExecutable} identity status"
           else
-            "${identityExecutable} identity import --file ${cfg.ownerBindingFile}";
+            "${identityExecutable} identity import --file ${ownerBindingStoreFile}";
         NoNewPrivileges = true;
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];

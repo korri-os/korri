@@ -11,9 +11,8 @@ let
   deviceConfig = pkgs.writeText "korrid-host.toml" ''
     label = "test"
   '';
-  ownerBindingFile = pkgs.writeText "korrid-owner-binding.json" ''
-    {"id":"public-binding","pubkey":"${builtins.concatStringsSep "" (lib.replicate 64 "1")}"}
-  '';
+  ownerBindingFile = ./test-data/public-owner-binding.json;
+  ownerBindingStoreFile = pkgs.writeText "korrid-owner-binding.json" (builtins.readFile ownerBindingFile);
   peerPublicKey = builtins.concatStringsSep "" (lib.replicate 64 "2");
   androidUpstreamsTemplate = ./deploy/upstreams.android.json;
   base = {
@@ -251,14 +250,19 @@ assert
   };
 assert
   identityService.serviceConfig.ExecStart
-  == "${korridPackage}/bin/korrid identity import --file ${ownerBindingFile}";
+  == "${korridPackage}/bin/korrid identity import --file ${ownerBindingStoreFile}";
 assert builtins.length identityService.serviceConfig.ExecStartPre == 1;
 assert
   let
     validator = builtins.elemAt identityService.serviceConfig.ExecStartPre 0;
+    validatorText = builtins.readFile validator;
   in
   lib.hasInfix "korrid-validate-owner-binding" validator
-  && lib.hasInfix ''[ ! -f "$binding" ] || [ -L "$binding" ]'' (builtins.readFile validator);
+  && lib.hasInfix (builtins.unsafeDiscardStringContext (toString ownerBindingStoreFile)) validatorText
+  && !(
+    lib.hasInfix (builtins.unsafeDiscardStringContext (toString ownerBindingFile)) validatorText
+  )
+  && lib.hasInfix ''[ ! -f "$binding" ] || [ -L "$binding" ]'' validatorText;
 assert identityService.serviceConfig.StateDirectory == "korrid";
 assert identityService.serviceConfig.StateDirectoryMode == "0700";
 assert identityService.serviceConfig.UMask == "0077";
@@ -315,7 +319,7 @@ assert
 assert bundledService.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch korrid";
 assert
   bundled.config.systemd.services.korrid-identity.serviceConfig.ExecStart
-  == "${inputdPackage}/bin/korri-bundle-launch korrid identity import --file ${ownerBindingFile}";
+  == "${inputdPackage}/bin/korri-bundle-launch korrid identity import --file ${ownerBindingStoreFile}";
 assert allAssertionsPass customPaths;
 assert customSocket.socketConfig.ListenStream == "/run/korri-test/control/device.sock";
 assert customService.environment.KORRID_PRIVATE_STATE_ROOT == "/srv/korri-test/recovery";
