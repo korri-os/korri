@@ -1,13 +1,9 @@
 [
   {
-    "label": "aka",
-    "kind": "legacy",
-    "baseUrl": "http://aka:3001"
-  },
-  {
     "label": "zao",
     "kind": "native",
     "baseUrl": "http://zao:43117",
+    "devicePublicKey": "__ZAO_DEVICE_PUBLIC_KEY_FROM_IDENTITY_STATUS__",
     "moonlightAddress": "zao:47989"
   }
 ]

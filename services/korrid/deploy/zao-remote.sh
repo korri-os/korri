@@ -21,6 +21,7 @@ case "$action" in
       "$HOME/.local/libexec" \
       "$HOME/.local/share/korri" \
       "$HOME/.local/state/korrid/profiles"
+    install -d -m 0700 "$HOME/.local/state/korrid/private"
     deployed_documents="$HOME/.local/state/korrid/deployed-documents.sha256"
     candidate_documents="$(cat "$handoff/config.yaml" "$handoff/library.yaml" | sha256sum | cut -d' ' -f1)"
     current_config="$HOME/.local/share/korri/config.yaml"
@@ -74,6 +75,12 @@ case "$action" in
       cp "$HOME/.config/systemd/user/korrid.service" "$previous_unit"
       had_previous_unit=true
     fi
+    previous_environment="$handoff/environment.previous"
+    had_previous_environment=false
+    if [[ -f "$HOME/.config/korrid/environment" ]]; then
+      cp "$HOME/.config/korrid/environment" "$previous_environment"
+      had_previous_environment=true
+    fi
     rollback_install() {
       trap - ERR
       if [[ -n "$previous_current" ]]; then
@@ -104,6 +111,11 @@ case "$action" in
       else
         rm -f "$HOME/.config/systemd/user/korrid.service"
       fi
+      if [[ "$had_previous_environment" == true ]]; then
+        install -m 0600 "$previous_environment" "$HOME/.config/korrid/environment"
+      else
+        rm -f "$HOME/.config/korrid/environment"
+      fi
       systemctl --user daemon-reload
       if [[ -n "$previous_current" ]]; then
         systemctl --user restart korrid.service || true
@@ -122,6 +134,8 @@ case "$action" in
       "$HOME/.config/systemd/user/korrid.service"
     install -m 0644 "$handoff/host.toml" \
       "$HOME/.config/korrid/host.toml"
+    install -m 0600 "$handoff/environment" \
+      "$HOME/.config/korrid/environment"
     install -m 0644 "$handoff/config.yaml" \
       "$HOME/.local/share/korri/config.yaml"
     install -m 0644 "$handoff/library.yaml" \

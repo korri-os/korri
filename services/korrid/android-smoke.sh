@@ -14,7 +14,7 @@ CHECKPOINT_CONFIG="$ROOT/docs/research/retroarch-plugin-route/config.yaml"
 CHECKPOINT_LIBRARY="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$ROOT/docs/research/retroarch-plugin-route/library.yaml}"
 ANDROID_APP_PACKAGE="${KORRI_ANDROID_APP_PACKAGE:-com.playdigious.tmnt}"
 EXPECT_RETROARCH_ROUTE="${KORRI_EXPECT_RETROARCH_ROUTE:-false}"
-UPSTREAMS_CONFIG="${KORRI_ANDROID_UPSTREAMS_CONFIG:-$ROOT/services/korrid/deploy/upstreams.android.json}"
+UPSTREAMS_CONFIG="${KORRI_ANDROID_UPSTREAMS_CONFIG:-$ROOT/.tmp/upstreams.android.json}"
 CURL=(curl --connect-timeout 2 --max-time 5 --retry 2 --retry-connrefused)
 DEBUG_CAPABILITY_SH="${KORRI_ANDROID_DEBUG_CAPABILITY_SH:-$ROOT/services/korrid/android-debug-capability.sh}"
 
@@ -141,6 +141,11 @@ if ! unzip -l "$APK" | grep 'assets/portal/index.html' >/dev/null; then
   exit 1
 fi
 
+if [[ ! -f "$UPSTREAMS_CONFIG" ]]; then
+  echo "secure Android upstream config is missing: $UPSTREAMS_CONFIG" >&2
+  echo "deploy Zao with services/korrid/deploy/push-zao.sh or set KORRI_ANDROID_UPSTREAMS_CONFIG" >&2
+  exit 1
+fi
 adb -s "$DEVICE" push "$UPSTREAMS_CONFIG" "$ANDROID_STORAGE_ROOT/upstreams.json" >/dev/null
 if [[ "$EXPECT_INSTALLED_ROUTE" == true ]]; then
   if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/config.yaml" | cmp -s "$CHECKPOINT_CONFIG" -; then
