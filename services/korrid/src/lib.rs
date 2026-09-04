@@ -24,6 +24,7 @@ mod game_assets;
 pub mod identity;
 mod peer_rpc;
 pub mod relay;
+pub mod remote_signer;
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
