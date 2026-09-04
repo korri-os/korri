@@ -350,7 +350,12 @@ async fn rpc_list_and_invoke_stay_unavailable_without_current_route_context() {
     let root = tempfile::tempdir().expect("host fixture");
     let config = root.path().join("host.toml");
     std::fs::write(&config, "label = \"test\"\n").expect("host config");
-    let app = korrid::host_router(&config);
+    let app = korrid::host_routers_with_storage_and_private(
+        &config,
+        None::<std::path::PathBuf>,
+        root.path().join("private"),
+    )
+    .1;
 
     for request in [
         r#"{"_tag":"app.session.controls","payload":{"launchId":"launch-1"}}"#,

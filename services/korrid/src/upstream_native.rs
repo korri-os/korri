@@ -8,18 +8,42 @@ use crate::{
 };
 use std::time::Duration;
 
-use crate::upstreams::UpstreamError;
+use crate::{
+    peer_rpc::{unix_time, PeerCredentials},
+    upstreams::UpstreamError,
+};
 
-const MAX_NATIVE_RPC_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_NATIVE_RPC_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const NATIVE_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct NativeClient {
     rpc_url: String,
+    expected_peer_public_key: Option<String>,
+    credentials: Option<PeerCredentials>,
     http: reqwest::Client,
 }
 
 impl NativeClient {
+    pub fn new_secure(
+        base_url: String,
+        expected_peer_public_key: String,
+        credentials: PeerCredentials,
+    ) -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(NATIVE_RPC_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("construct native upstream client");
+        Self {
+            rpc_url: format!("{}/peer-rpc", base_url.trim_end_matches('/')),
+            expected_peer_public_key: Some(expected_peer_public_key),
+            credentials: Some(credentials),
+            http,
+        }
+    }
+
+    #[cfg(test)]
     pub fn new(base_url: String) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
@@ -28,6 +52,8 @@ impl NativeClient {
             .expect("construct native upstream client");
         Self {
             rpc_url: format!("{}/rpc", base_url.trim_end_matches('/')),
+            expected_peer_public_key: None,
+            credentials: None,
             http,
         }
     }
@@ -173,10 +199,33 @@ impl NativeClient {
     }
 
     async fn call(&self, request: RpcRequest) -> Result<RpcResponse, UpstreamError> {
+        #[cfg(test)]
+        if self.credentials.is_none() {
+            let response = self
+                .http
+                .post(&self.rpc_url)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
+            return read_plain_test_response(response).await;
+        }
+        let credentials = self
+            .credentials
+            .as_ref()
+            .ok_or_else(|| UpstreamError::Wire("native peer credentials are unavailable".into()))?;
+        let expected_peer_public_key = self
+            .expected_peer_public_key
+            .as_deref()
+            .ok_or_else(|| UpstreamError::Wire("native peer public key is unavailable".into()))?;
+        let encoded = credentials
+            .encode_request(expected_peer_public_key, request, unix_time())
+            .map_err(|error| UpstreamError::Wire(error.to_string()))?;
         let response = self
             .http
             .post(&self.rpc_url)
-            .json(&request)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(encoded.event_json.clone())
             .send()
             .await
             .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
@@ -206,9 +255,45 @@ impl NativeClient {
             }
             body.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&body)
-            .map_err(|_| UpstreamError::Wire("native response is invalid JSON".into()))
+        let event_json = std::str::from_utf8(&body)
+            .map_err(|_| UpstreamError::Wire("native response is invalid UTF-8".into()))?;
+        credentials
+            .decode_response(expected_peer_public_key, &encoded, event_json, unix_time())
+            .map_err(|error| UpstreamError::Wire(error.to_string()))
     }
+}
+
+#[cfg(test)]
+async fn read_plain_test_response(
+    mut response: reqwest::Response,
+) -> Result<RpcResponse, UpstreamError> {
+    let status = response.status();
+    if !status.is_success() {
+        return Err(UpstreamError::Http(status.as_u16()));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_NATIVE_RPC_RESPONSE_BYTES as u64)
+    {
+        return Err(UpstreamError::Wire(
+            "native response exceeds the size limit".into(),
+        ));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| UpstreamError::Wire("native response body could not be read".into()))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_NATIVE_RPC_RESPONSE_BYTES {
+            return Err(UpstreamError::Wire(
+                "native response exceeds the size limit".into(),
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body)
+        .map_err(|_| UpstreamError::Wire("native response is invalid JSON".into()))
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 //! Ordered host registry: selects legacy or native transport per host.
 
 use crate::{
+    peer_rpc::PeerCredentials,
     upstream::{UpstreamClient, UpstreamConfig, UpstreamSessionStatus, UpstreamSessionStop},
     upstream_native::{NativeClient, NATIVE_RPC_TIMEOUT},
     CatalogHostFailure, CatalogSnapshot, Game, MoonlightCertificateProvisioned,
@@ -87,7 +88,12 @@ pub struct UpstreamHostConfig {
     label: String,
     kind: UpstreamKind,
     base_url: String,
+    #[serde(default)]
     moonlight_address: Option<String>,
+    #[serde(default)]
+    device_public_key: Option<String>,
+    #[serde(default)]
+    pass: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -104,15 +110,35 @@ impl UpstreamHostConfig {
             kind: UpstreamKind::Legacy,
             base_url,
             moonlight_address: None,
+            device_public_key: None,
+            pass: None,
         }
     }
 
+    pub fn native_secure(
+        label: impl Into<String>,
+        base_url: String,
+        device_public_key: String,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            kind: UpstreamKind::Native,
+            base_url,
+            moonlight_address: None,
+            device_public_key: Some(device_public_key),
+            pass: None,
+        }
+    }
+
+    #[cfg(test)]
     pub fn native(label: impl Into<String>, base_url: String) -> Self {
         Self {
             label: label.into(),
             kind: UpstreamKind::Native,
             base_url,
             moonlight_address: None,
+            device_public_key: None,
+            pass: None,
         }
     }
 }
@@ -166,6 +192,7 @@ impl RegisteredHost {
 #[derive(Clone)]
 struct DeferredFileConfig {
     path: PathBuf,
+    credentials: Option<PeerCredentials>,
     resolved: Arc<OnceLock<UpstreamRegistry>>,
 }
 
@@ -177,37 +204,75 @@ pub struct UpstreamRegistry {
 }
 
 impl UpstreamRegistry {
-    pub fn new(configs: Vec<UpstreamHostConfig>) -> Self {
-        Self {
-            hosts: configs
-                .into_iter()
-                .map(|config| {
-                    let moonlight_address = match config.kind {
-                        UpstreamKind::Native => config.moonlight_address,
-                        UpstreamKind::Legacy => None,
-                    };
-                    RegisteredHost {
-                        label: config.label,
-                        moonlight_address,
-                        client: match config.kind {
-                            UpstreamKind::Legacy => {
-                                RegisteredClient::Legacy(UpstreamClient::new(UpstreamConfig {
-                                    base_url: config.base_url,
-                                }))
-                            }
-                            UpstreamKind::Native => {
-                                RegisteredClient::Native(NativeClient::new(config.base_url))
-                            }
-                        },
+    fn build(configs: Vec<UpstreamHostConfig>, credentials: Option<PeerCredentials>) -> Self {
+        let mut configuration_error = None;
+        let hosts = configs
+            .into_iter()
+            .filter_map(|config| {
+                let label = config.label;
+                let moonlight_address = match config.kind {
+                    UpstreamKind::Native => config.moonlight_address,
+                    UpstreamKind::Legacy => None,
+                };
+                let client = match config.kind {
+                    UpstreamKind::Legacy => {
+                        RegisteredClient::Legacy(UpstreamClient::new(UpstreamConfig {
+                            base_url: config.base_url,
+                        }))
                     }
+                    UpstreamKind::Native => {
+                        #[cfg(test)]
+                        if credentials.is_none() {
+                            return Some(RegisteredHost {
+                                label,
+                                moonlight_address,
+                                client: RegisteredClient::Native(NativeClient::new(
+                                    config.base_url,
+                                )),
+                            });
+                        }
+                        let Some(peer_key) = config.device_public_key else {
+                            configuration_error =
+                                Some(format!("native upstream {label:?} has no devicePublicKey"));
+                            return None;
+                        };
+                        let Some(credentials) = credentials.as_ref() else {
+                            configuration_error =
+                                Some(format!("native upstream {label:?} has no peer credentials"));
+                            return None;
+                        };
+                        RegisteredClient::Native(NativeClient::new_secure(
+                            config.base_url,
+                            peer_key,
+                            credentials.with_pass(config.pass),
+                        ))
+                    }
+                };
+                Some(RegisteredHost {
+                    label,
+                    moonlight_address,
+                    client,
                 })
-                .collect(),
-            configuration_error: None,
+            })
+            .collect();
+        Self {
+            hosts,
+            configuration_error,
             deferred_file_config: None,
         }
     }
 
-    pub fn from_env_or_file(path: &Path) -> Self {
+    pub fn new_secure(configs: Vec<UpstreamHostConfig>, credentials: PeerCredentials) -> Self {
+        Self::build(configs, Some(credentials))
+    }
+
+    #[cfg(test)]
+    pub fn new(configs: Vec<UpstreamHostConfig>) -> Self {
+        Self::build(configs, None)
+    }
+
+    #[cfg(test)]
+    pub fn from_env_or_file_for_tests(path: &Path) -> Self {
         if let Ok(json) = std::env::var("KORRID_UPSTREAMS") {
             return Self::from_json("KORRID_UPSTREAMS", &json);
         }
@@ -220,16 +285,48 @@ impl UpstreamRegistry {
         )
     }
 
+    pub fn from_env_or_file(path: &Path, credentials: PeerCredentials) -> Self {
+        if let Ok(json) = std::env::var("KORRID_UPSTREAMS") {
+            return Self::from_json_secure("KORRID_UPSTREAMS", &json, credentials);
+        }
+        Self::from_file_or_default_secure(
+            path,
+            UpstreamHostConfig::legacy(
+                std::env::var("KORRID_UPSTREAM_LABEL").unwrap_or_else(|_| "aka".into()),
+                UpstreamConfig::from_env().base_url,
+            ),
+            credentials,
+        )
+    }
+
+    fn from_file_or_default_secure(
+        path: &Path,
+        fallback: UpstreamHostConfig,
+        credentials: PeerCredentials,
+    ) -> Self {
+        Self::from_file_or_default_inner(path, fallback, Some(credentials))
+    }
+
+    #[cfg(test)]
     fn from_file_or_default(path: &Path, fallback: UpstreamHostConfig) -> Self {
-        match Self::from_file(path) {
+        Self::from_file_or_default_inner(path, fallback, None)
+    }
+
+    fn from_file_or_default_inner(
+        path: &Path,
+        fallback: UpstreamHostConfig,
+        credentials: Option<PeerCredentials>,
+    ) -> Self {
+        match Self::from_file_inner(path, credentials.clone()) {
             Ok(registry) => registry,
             Err(error) => {
                 let deferred_file_config = DeferredFileConfig {
                     path: path.to_owned(),
+                    credentials: credentials.clone(),
                     resolved: Arc::new(OnceLock::new()),
                 };
                 let mut registry = if error.kind() == std::io::ErrorKind::NotFound {
-                    Self::new(vec![fallback])
+                    Self::build(vec![fallback], credentials)
                 } else {
                     Self::invalid_file_read(path, error)
                 };
@@ -239,8 +336,9 @@ impl UpstreamRegistry {
         }
     }
 
-    fn from_file(path: &Path) -> std::io::Result<Self> {
-        fs::read_to_string(path).map(|json| Self::from_json(&path.display().to_string(), &json))
+    fn from_file_inner(path: &Path, credentials: Option<PeerCredentials>) -> std::io::Result<Self> {
+        fs::read_to_string(path)
+            .map(|json| Self::from_json_inner(&path.display().to_string(), &json, credentials))
     }
 
     fn invalid_file_read(path: &Path, error: std::io::Error) -> Self {
@@ -250,16 +348,29 @@ impl UpstreamRegistry {
         ))
     }
 
+    fn from_json_secure(source: &str, json: &str, credentials: PeerCredentials) -> Self {
+        Self::from_json_inner(source, json, Some(credentials))
+    }
+
+    #[cfg(test)]
     fn from_json(source: &str, json: &str) -> Self {
+        Self::from_json_inner(source, json, None)
+    }
+
+    fn from_json_inner(source: &str, json: &str, credentials: Option<PeerCredentials>) -> Self {
         match serde_json::from_str(json) {
-            Ok(configs) => Self::from_configs(source, configs),
+            Ok(configs) => Self::from_configs(source, configs, credentials),
             Err(error) => {
                 Self::invalid_configuration(format!("invalid upstream config {source}: {error}"))
             }
         }
     }
 
-    fn from_configs(source: &str, configs: Vec<UpstreamHostConfig>) -> Self {
+    fn from_configs(
+        source: &str,
+        configs: Vec<UpstreamHostConfig>,
+        credentials: Option<PeerCredentials>,
+    ) -> Self {
         let mut labels = BTreeSet::new();
         if let Some(duplicate) = configs
             .iter()
@@ -270,7 +381,7 @@ impl UpstreamRegistry {
                 duplicate.label
             ));
         }
-        Self::new(configs)
+        Self::build(configs, credentials)
     }
 
     fn invalid_configuration(message: String) -> Self {
@@ -288,7 +399,7 @@ impl UpstreamRegistry {
         if let Some(registry) = config.resolved.get() {
             return Cow::Borrowed(registry);
         }
-        match Self::from_file(&config.path) {
+        match Self::from_file_inner(&config.path, config.credentials.clone()) {
             Ok(registry) if registry.configuration_error.is_none() => {
                 Cow::Borrowed(config.resolved.get_or_init(|| registry))
             }

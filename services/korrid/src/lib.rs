@@ -16,11 +16,13 @@ use std::{
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 
+pub mod authorization;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
 mod game_assets;
 pub mod identity;
+mod peer_rpc;
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
@@ -2811,8 +2813,8 @@ fn android_router_with_capability_and_local_root(
     router_with_capability_local_root_and_provision(
         rpc_capability,
         allowed_origin,
-        local_storage_root,
-        default_private_state_root(),
+        local_storage_root.clone(),
+        local_storage_root.join(".private-test"),
         launcher::FileProvisionMode::Deferred,
         signing_key,
         local_launch_reservations,
@@ -2885,13 +2887,26 @@ fn router_with_capability_local_root_provision_and_grants(
         settings_write_lock.clone(),
         folder_selection_grants.clone(),
     );
+    let upstream = configured_upstream.unwrap_or_else(|| {
+        #[cfg(not(test))]
+        {
+            let peer_credentials = peer_rpc::PeerCredentials::load(&private_state_root, None)
+                .expect("load or create the local device identity");
+            upstreams::UpstreamRegistry::from_env_or_file(
+                &local_storage_root.join("upstreams.json"),
+                peer_credentials,
+            )
+        }
+        #[cfg(test)]
+        {
+            upstreams::UpstreamRegistry::from_env_or_file_for_tests(
+                &local_storage_root.join("upstreams.json"),
+            )
+        }
+    });
     let state = AppState {
         mode: ServerMode::Brain(BrainRuntime {
-            upstream: configured_upstream.unwrap_or_else(|| {
-                upstreams::UpstreamRegistry::from_env_or_file(
-                    &local_storage_root.join("upstreams.json"),
-                )
-            }),
+            upstream,
             local_storage_root,
             private_state_root,
             local_file_provision,
@@ -2932,17 +2947,43 @@ fn router_with_capability_local_root_provision_and_grants(
         .with_state(state)
 }
 
-/// Build the LAN-facing native host router. Host RPC is intentionally open
-/// for this trusted-network slice; the brain router remains capability-bound.
+/// Build the LAN-facing native host router.
+/// Production accepts only signed and encrypted peer RPC on `/peer-rpc`.
 pub fn host_router(config_path: impl AsRef<Path>) -> Router {
-    host_router_with_storage(config_path, None::<PathBuf>)
+    #[cfg(test)]
+    {
+        host_routers_with_in_memory_units(config_path).0
+    }
+    #[cfg(not(test))]
+    {
+        host_router_with_storage(config_path, None::<PathBuf>)
+    }
 }
 
 pub fn host_router_with_storage(
     config_path: impl AsRef<Path>,
     storage_root: Option<impl Into<PathBuf>>,
 ) -> Router {
-    host_routers_with_storage_and_private(config_path, storage_root, PathBuf::from("korri-state")).0
+    #[cfg(test)]
+    {
+        let private = tempfile::tempdir().expect("private host state").keep();
+        let runtime = host::HostRuntime::from_paths_with_backend(
+            config_path.as_ref(),
+            storage_root.map(Into::into),
+            private,
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+        );
+        plain_host_routers(runtime).0
+    }
+    #[cfg(not(test))]
+    {
+        host_routers_with_storage_and_private(
+            config_path,
+            storage_root,
+            PathBuf::from("korri-state"),
+        )
+        .0
+    }
 }
 
 /// Build LAN and private-control routers over one singular host runtime.
@@ -2951,12 +2992,13 @@ pub fn host_routers_with_storage_and_private(
     storage_root: Option<impl Into<PathBuf>>,
     private_state_root: impl Into<PathBuf>,
 ) -> (Router, Router) {
+    let private_state_root = private_state_root.into();
     let runtime = host::HostRuntime::from_paths_with_private_state(
         config_path.as_ref(),
         storage_root.map(Into::into),
-        private_state_root.into(),
+        private_state_root.clone(),
     );
-    host_routers(runtime)
+    secure_host_routers(runtime, &private_state_root)
 }
 
 #[cfg(test)]
@@ -2968,7 +3010,7 @@ fn host_routers_with_in_memory_units(config_path: impl AsRef<Path>) -> (Router, 
         private,
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
-    host_routers(runtime)
+    plain_host_routers(runtime)
 }
 
 #[cfg(test)]
@@ -2976,7 +3018,21 @@ fn host_router_with_in_memory_units(config_path: impl AsRef<Path>) -> Router {
     host_routers_with_in_memory_units(config_path).0
 }
 
-fn host_routers(runtime: host::HostRuntime) -> (Router, Router) {
+#[cfg(test)]
+fn secure_host_router_with_in_memory_units(
+    config_path: impl AsRef<Path>,
+    private_state_root: &Path,
+) -> Router {
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        config_path.as_ref(),
+        None,
+        private_state_root.to_owned(),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+    );
+    secure_host_routers(runtime, private_state_root).0
+}
+
+fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let lan = AppState {
         mode: ServerMode::Host(runtime.clone()),
         rpc_capability: None,
@@ -2987,8 +3043,24 @@ fn host_routers(runtime: host::HostRuntime) -> (Router, Router) {
         rpc_capability: None,
         rpc_surface: RpcSurface::LocalControl,
     };
+    (lan, local)
+}
+
+#[cfg(test)]
+fn plain_host_routers(runtime: host::HostRuntime) -> (Router, Router) {
+    let (lan, local) = app_states(runtime);
     (
         Router::new().route("/rpc", post(rpc)).with_state(lan),
+        Router::new().route("/rpc", post(rpc)).with_state(local),
+    )
+}
+
+fn secure_host_routers(runtime: host::HostRuntime, private_state_root: &Path) -> (Router, Router) {
+    let (lan, local) = app_states(runtime);
+    let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
+        .expect("load or create peer RPC identity");
+    (
+        peer.router(),
         Router::new().route("/rpc", post(rpc)).with_state(local),
     )
 }
@@ -3132,7 +3204,21 @@ fn start_local_server_for_platform(
     let moonlight_config_snapshot =
         config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     let server_config_snapshot = moonlight_config_snapshot.clone();
-    let upstream = upstreams::UpstreamRegistry::from_env_or_file(
+    #[cfg(not(test))]
+    let upstream = {
+        let peer_credentials = peer_rpc::PeerCredentials::load(Path::new(&private_state_root), None)
+            .map_err(|error| ServerError::StartFailed {
+                details: error.to_string(),
+            })?;
+        upstreams::UpstreamRegistry::from_env_or_file(
+            Path::new(&local_storage_root)
+                .join("upstreams.json")
+                .as_path(),
+            peer_credentials,
+        )
+    };
+    #[cfg(test)]
+    let upstream = upstreams::UpstreamRegistry::from_env_or_file_for_tests(
         Path::new(&local_storage_root)
             .join("upstreams.json")
             .as_path(),
@@ -7118,7 +7204,22 @@ command = ["game-two"]
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
             adapter,
         );
-        host_routers(runtime)
+        plain_host_routers(runtime)
+    }
+
+    fn secure_host_router_with_certificate_adapter(
+        config_path: &Path,
+        private_state_root: &Path,
+        adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
+    ) -> Router {
+        let runtime = host::HostRuntime::from_paths_with_backends(
+            config_path,
+            None,
+            private_state_root.to_owned(),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            adapter,
+        );
+        secure_host_routers(runtime, private_state_root).0
     }
 
     async fn serve_router(app: Router) -> String {
@@ -7130,6 +7231,52 @@ command = ["game-two"]
 
     const TEST_CLIENT_PEM: &str =
         "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
+
+    #[tokio::test]
+    async fn same_owner_automatically_provisions_and_owner_change_revokes_certificate() {
+        const OWNER: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+        const OTHER_OWNER: &str =
+            "0000000000000000000000000000000000000000000000000000000000000004";
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const CLIENT: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"zao\"\n").unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let client_private = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, OWNER);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        let credentials = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OWNER);
+        let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
+        let server = serve_router(secure_host_router_with_certificate_adapter(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+        ))
+        .await;
+        let client = upstream_native::NativeClient::new_secure(
+            server.clone(),
+            host_key.clone(),
+            credentials,
+        );
+        client
+            .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+            .await
+            .unwrap();
+        assert_eq!(adapter.calls(), vec!["provision:sunshine-host"]);
+
+        std::fs::remove_file(client_private.path().join("identity/owner.event.json")).unwrap();
+        let changed = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OTHER_OWNER);
+        let denied = upstream_native::NativeClient::new_secure(server, host_key, changed)
+            .catalog_snapshot()
+            .await
+            .unwrap_err();
+        assert!(matches!(denied, upstreams::UpstreamError::Http(403)));
+        assert_eq!(
+            adapter.calls(),
+            vec!["provision:sunshine-host", "revoke:sunshine-host"]
+        );
+    }
 
     #[tokio::test]
     async fn host_certificate_rpc_delegates_only_on_lan_and_rejects_invalid_pem() {
