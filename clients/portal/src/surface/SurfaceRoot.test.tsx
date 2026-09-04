@@ -313,6 +313,22 @@ function buildBridge(sources: Sources, calls: Calls): LauncherBridge {
     async openNotificationSettings() {
       return { _tag: "Opened" as const }
     },
+    async ownerBindingSnapshot() {
+      return {
+        identity: {
+          _tag: "Owned" as const,
+          devicePublicKey: "22".repeat(32),
+          ownerPublicKey: "11".repeat(32),
+          eventId: "33".repeat(32),
+          createdAt: 1,
+        },
+        personSigner: { _tag: "Approved" as const, message: "verified" },
+        requestedAction: "Bind this device to your person identity",
+      }
+    },
+    async startOwnerBinding() {
+      return this.ownerBindingSnapshot()
+    },
     async openGameFolderPicker() {
       return { _tag: "Unavailable" as const, message: "no picker in this fixture" }
     },

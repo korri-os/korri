@@ -6,6 +6,7 @@ import type {
 import type {
   BackgroundNoticeResult,
   OverlayPermissionResult,
+  OwnerBindingSnapshot,
   StorageAccessResult,
   StreamHost,
   SystemInfoResult,
@@ -24,6 +25,7 @@ export interface DeviceFacts {
   readonly overlay?: OverlayPermissionResult
   readonly hosts?: readonly StreamHost[]
   readonly systemInfo?: SystemInfoResult
+  readonly ownerBinding?: OwnerBindingSnapshot
   readonly localGameCount?: number
   readonly discovery?: DiscoverySnapshot
 }
@@ -96,7 +98,59 @@ export function settingsFrom(facts: DeviceFacts): readonly SurfaceSettingGroup[]
       ? facts.systemInfo.payload
       : undefined
 
+  const owner = facts.ownerBinding
+  const ownerItems: readonly (SurfaceSettingItem | undefined)[] = owner === undefined
+    ? []
+    : [
+        owner.deviceFingerprint === undefined
+          ? undefined
+          : {
+              id: "device-fingerprint",
+              label: "Device fingerprint",
+              value: owner.deviceFingerprint,
+            },
+        owner.identity._tag === "Owned"
+          ? {
+              id: "owner-public-key",
+              label: "Owner public key",
+              value: owner.identity.ownerPublicKey,
+              description: "Verified signed owner binding",
+            }
+          : owner.identity._tag === "Unowned"
+            ? {
+                id: "owner-requested-action",
+                label: "Requested action",
+                value: owner.requestedAction,
+              }
+            : undefined,
+        owner.identity._tag === "Unowned" && owner.bindingUri !== undefined
+          ? {
+              id: "owner-binding-uri",
+              label: "Binding URI",
+              value: owner.bindingUri,
+              description: owner.signerRequirement,
+            }
+          : undefined,
+        owner.identity._tag === "Unowned"
+          ? {
+              id: "owner-binding",
+              label: "Set up owner",
+              value: owner.personSigner._tag,
+              description: owner.personSigner.message,
+              ...(owner.personSigner._tag === "Pending"
+                ? {}
+                : {
+                    interaction: {
+                      kind: "action" as const,
+                      actionId: "owner-binding",
+                    },
+                  }),
+            }
+          : undefined,
+      ]
+
   const groups = [
+    group("Owner", ownerItems),
     group("Device", [
       facts.settings === undefined
         ? undefined

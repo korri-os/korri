@@ -34,8 +34,9 @@ import type {
 // receipt-based asynchronous game-folder picker. 15 adds opaque local cover
 // asset URL resolution. 16 adds picker single-flight Busy results. 17 removes
 // the obsolete Moonlight trust ceremony. 18 removes public pairing state after
-// korrid-owned provisioning becomes the only trust path.
-export const BRIDGE_VERSION = 18
+// korrid-owned provisioning becomes the only trust path. 19 adds the Android
+// person-signer and verified owner-binding lifecycle.
+export const BRIDGE_VERSION = 19
 
 // ── Local launches (JS -> Kotlin) ───────────────────────────────────────
 
@@ -216,7 +217,42 @@ export interface KorriOverlayMessageSurface {
  * methods (streaming, settings, korrid RPC) are intentionally not part of
  * the treaty yet; they join it when a slice formalizes them.
  */
+export type PersonSignerState =
+  | { readonly _tag: "Unavailable"; readonly message: string }
+  | { readonly _tag: "Pending"; readonly message: string }
+  | { readonly _tag: "Approved"; readonly message: string }
+  | { readonly _tag: "Denied"; readonly message: string }
+  | { readonly _tag: "InvalidResponse"; readonly message: string }
+  | { readonly _tag: "Defect"; readonly message: string }
+
+export type DeviceIdentityState =
+  | { readonly _tag: "Unowned"; readonly devicePublicKey: string }
+  | {
+      readonly _tag: "Owned" | "Revoked"
+      readonly devicePublicKey: string
+      readonly ownerPublicKey: string
+      readonly eventId: string
+      readonly createdAt: number
+    }
+  | { readonly _tag: "Invalid"; readonly reason?: string }
+
+export interface OwnerBindingSnapshot {
+  readonly identity: DeviceIdentityState
+  readonly personSigner: PersonSignerState
+  readonly deviceFingerprint?: string
+  readonly requestedAction: string
+  readonly bindingUri?: string
+  readonly signerRequirement?: string
+}
+
+/** Emitted after an asynchronous signer result changes owner state. */
+export const OWNER_BINDING_CHANGED_EVENT = "korri-owner-binding-changed"
+
 export interface KorriNativeBridgeSurface {
+  /** Public device identity plus the person-signer lifecycle. */
+  ownerBindingSnapshot(): string
+  /** Starts account selection/signing and returns the immediate snapshot. */
+  startOwnerBinding(): string
   /** Returns JSON-encoded `LaunchLocalResult`. */
   launchLocal(specJson: string): string
   /** Returns JSON-encoded `LocalGameAssetUrlResult`. */

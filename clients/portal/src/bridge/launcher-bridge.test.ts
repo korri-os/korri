@@ -328,6 +328,16 @@ describe("createKorriNativeLauncherBridge", () => {
     backgroundNotice: () => JSON.stringify({ _tag: "Visible" }),
     requestBackgroundNotice: () => JSON.stringify({ _tag: "Granted" }),
     openNotificationSettings: () => JSON.stringify({ _tag: "Opened" }),
+    ownerBindingSnapshot: () => JSON.stringify({
+      identity: { _tag: "Unowned", devicePublicKey: "22".repeat(32) },
+      personSigner: { _tag: "Unavailable", message: "Choose a signer" },
+      requestedAction: "Bind this device to your person identity",
+    }),
+    startOwnerBinding: () => JSON.stringify({
+      identity: { _tag: "Unowned", devicePublicKey: "22".repeat(32) },
+      personSigner: { _tag: "Pending", message: "Waiting" },
+      requestedAction: "Bind this device to your person identity",
+    }),
     systemInfo: () =>
       JSON.stringify({
         _tag: "SystemInfo",
@@ -349,7 +359,7 @@ describe("createKorriNativeLauncherBridge", () => {
       }),
     acknowledgeGameFolderPicker: () =>
       JSON.stringify({ _tag: "Acknowledged", generation: "picker-2" }),
-    bridgeVersion: () => 17,
+    bridgeVersion: () => 18,
     ...overrides,
   })
 

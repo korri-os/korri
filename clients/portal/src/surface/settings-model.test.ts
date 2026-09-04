@@ -16,6 +16,34 @@ const group = (facts: DeviceFacts, title: string) =>
   settingsFrom(facts).find(candidate => candidate.title === title)
 
 describe("settingsFrom", () => {
+  it("shows one controller-first setup action with the exact binding facts", () => {
+    const owner = group(
+      {
+        ownerBinding: {
+          identity: { _tag: "Unowned", devicePublicKey: "22".repeat(32) },
+          personSigner: {
+            _tag: "Unavailable",
+            message: "Install a compatible NIP-55 signer such as Amber",
+          },
+          deviceFingerprint: "22".repeat(32),
+          requestedAction: "Bind this device to your person identity",
+          bindingUri: "nostrsigner:%7Btemplate%7D?type=sign_event",
+          signerRequirement: "Install a compatible NIP-55 signer such as Amber",
+        },
+      },
+      "Owner",
+    )
+    expect(owner?.items.map(item => item.id)).toEqual([
+      "device-fingerprint",
+      "owner-requested-action",
+      "owner-binding-uri",
+      "owner-binding",
+    ])
+    expect(owner?.items.filter(item => item.interaction).map(item => item.id)).toEqual([
+      "owner-binding",
+    ])
+  })
+
   it("makes the device name a bounded text setting", () => {
     expect(group({ settings: configuration }, "Device")?.items[0]).toMatchObject({
       id: "device-name",

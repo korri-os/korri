@@ -9,6 +9,7 @@
  * That is what lets Korri swap surfaces without moving this logic.
  */
 import {
+  OWNER_BINDING_CHANGED_EVENT,
   SHELL_RESUMED_EVENT,
   STREAM_APPS_CHANGED_EVENT,
   type GameFolderPickerSnapshot,
@@ -287,6 +288,7 @@ export function useLaunchables(
       health,
       settings,
       systemInfo,
+      ownerBinding,
       discovery,
     ] = await Promise.all([
         korrid.catalogSnapshot(),
@@ -307,6 +309,7 @@ export function useLaunchables(
         korrid.health(),
         korrid.settingsSnapshot(),
         bridge.systemInfo(),
+        bridge.ownerBindingSnapshot(),
         korrid.discoverySnapshot(),
       ])
     const localGamesWithCoverUrls = await resolveLocalGameCoverUrls(
@@ -332,6 +335,7 @@ export function useLaunchables(
       ...(health._tag === "Ok" ? { version: health.payload.version } : {}),
       ...(settings._tag === "Ok" ? { settings: settings.payload } : {}),
       systemInfo,
+      ownerBinding,
       storage,
       notice,
       overlay,
@@ -393,11 +397,14 @@ export function useLaunchables(
       void checkFolderPicker()
     }
     const onStreamAppsChanged = () => void load()
+    const onOwnerBindingChanged = () => void load(true)
     window.addEventListener(SHELL_RESUMED_EVENT, onResumed)
     window.addEventListener(STREAM_APPS_CHANGED_EVENT, onStreamAppsChanged)
+    window.addEventListener(OWNER_BINDING_CHANGED_EVENT, onOwnerBindingChanged)
     return () => {
       window.removeEventListener(SHELL_RESUMED_EVENT, onResumed)
       window.removeEventListener(STREAM_APPS_CHANGED_EVENT, onStreamAppsChanged)
+      window.removeEventListener(OWNER_BINDING_CHANGED_EVENT, onOwnerBindingChanged)
     }
   }, [checkFolderPicker, load])
 
@@ -457,6 +464,33 @@ export function useLaunchables(
 
   const runDeviceAction = useCallback(
     (actionId: string) => {
+      if (actionId === "owner-binding") {
+        if (
+          settingsStatusRef.current._tag === "Saving" &&
+          settingsStatusRef.current.settingId === actionId
+        ) {
+          return
+        }
+        publishSettingsStatus({ _tag: "Saving", settingId: actionId })
+        void bridge.startOwnerBinding().then(snapshot => {
+          if (!mountedRef.current) return
+          setFacts(current => ({ ...current, ownerBinding: snapshot }))
+          switch (snapshot.personSigner._tag) {
+            case "Pending":
+              return
+            case "Approved":
+              publishSettingsStatus({ _tag: "Idle" })
+              return
+            case "Unavailable":
+            case "Denied":
+            case "InvalidResponse":
+            case "Defect":
+              settingsProblem(actionId, snapshot.personSigner.message)
+              return
+          }
+        })
+        return
+      }
       if (actionId === "storage-access") {
         void bridge.openStorageAccessSettings().then(result => {
           if (result._tag === "Unavailable") {

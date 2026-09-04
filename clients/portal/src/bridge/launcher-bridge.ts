@@ -12,6 +12,7 @@ import type {
   RequestBackgroundNoticeResult,
   OpenOverlaySettingsResult,
   OpenStorageSettingsResult,
+  OwnerBindingSnapshot,
   OverlayPermissionResult,
   QueryStreamAppsResult,
   QueryStreamHostsResult,
@@ -55,6 +56,10 @@ export interface LauncherBridge {
   requestBackgroundNotice(): Promise<RequestBackgroundNoticeResult>
   /** Take the user to the system screen where the notice is shown or hidden. */
   openNotificationSettings(): Promise<OpenNotificationSettingsResult>
+  /** Public device identity and external person-signer state. */
+  ownerBindingSnapshot(): Promise<OwnerBindingSnapshot>
+  /** Start the owner binding at the Android signer edge. */
+  startOwnerBinding(): Promise<OwnerBindingSnapshot>
   /** Android and app identity for System information. */
   systemInfo(): Promise<SystemInfoResult>
   /** Open Android's asynchronous folder picker. */
@@ -234,6 +239,12 @@ export function createKorriNativeLauncherBridge(
         return { _tag: "Unavailable", message: describe(error) }
       }
     },
+    async ownerBindingSnapshot() {
+      return JSON.parse(surface.ownerBindingSnapshot()) as OwnerBindingSnapshot
+    },
+    async startOwnerBinding() {
+      return JSON.parse(surface.startOwnerBinding()) as OwnerBindingSnapshot
+    },
     async systemInfo() {
       try {
         return decodeSystemInfo(JSON.parse(surface.systemInfo()))
@@ -287,6 +298,7 @@ export interface InMemoryLauncherBridgeConfig {
   readonly streamApps?: Readonly<Record<string, readonly StreamApp[]>>
   readonly delayMs?: number
   readonly localGameAssetUrls?: Readonly<Record<string, string>>
+  readonly ownerBinding?: OwnerBindingSnapshot
   readonly gameFolderPicker?:
     | { readonly _tag: "Selected"; readonly receipt: string }
     | { readonly _tag: "Cancelled" }
@@ -318,6 +330,18 @@ export function createInMemoryLauncherBridge(
       : new Promise(resolve => setTimeout(resolve, delayMs))
   const storageAccessResult: StorageAccessResult =
     behavior === "storage-denied" ? { _tag: "Denied" } : { _tag: "Granted" }
+  let ownerBinding: OwnerBindingSnapshot = config.ownerBinding ?? {
+    identity: {
+      _tag: "Owned",
+      devicePublicKey: "22".repeat(32),
+      ownerPublicKey: "11".repeat(32),
+      eventId: "33".repeat(32),
+      createdAt: 1,
+    },
+    personSigner: { _tag: "Approved", message: "Owner binding is valid" },
+    deviceFingerprint: "22".repeat(32),
+    requestedAction: "Bind this device to your person identity",
+  }
   let pickerRevision = 0
   let pickerSnapshot: GameFolderPickerSnapshot = {
     version: 1,
@@ -418,6 +442,22 @@ export function createInMemoryLauncherBridge(
       return behavior === "storage-settings-unavailable"
         ? { _tag: "Unavailable", message: "no settings screen in browser dev" }
         : { _tag: "Opened" }
+    },
+    async ownerBindingSnapshot() {
+      await delay()
+      return ownerBinding
+    },
+    async startOwnerBinding() {
+      await delay()
+      if (ownerBinding.identity._tag !== "Unowned") return ownerBinding
+      ownerBinding = {
+        ...ownerBinding,
+        personSigner: {
+          _tag: "Pending",
+          message: "Approve the owner binding in your signer",
+        },
+      }
+      return ownerBinding
     },
     async systemInfo() {
       await delay()
