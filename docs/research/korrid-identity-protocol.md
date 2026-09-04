@@ -20,6 +20,7 @@ The first slice uses these rules:
 
 - NIP-01 defines event IDs, event JSON, secp256k1 keys, and BIP-340 signatures.
 - NIP-44 version 2 defines encryption between two Nostr keys. The receiver verifies the outer event before decryption.
+- NIP-09 defines signed deletion events. Korri uses kind `5` to revoke one exact person-pass event.
 - NIP-78 defines kind `30078` for addressable application data. Korri uses this kind for device owner state.
 - NIP-46 defines remote signing. It also defines disposable client keys and NIP-44 encrypted requests.
 - NIP-55 defines the Android signer interface. The signer keeps the person private key outside Korri.
@@ -99,7 +100,47 @@ NIP-44 has no forward secrecy. A stolen device key can decrypt recorded messages
 
 NIP-44 does not hide all metadata. NIP-59 can hide more relay metadata in the relay slice.
 
-A signature proves the event author. The owner statement connects the device key to the person key. Permission tiers and passes are separate authorization data. They are outside this core slice.
+A signature proves the event author. The owner statement connects the device key to the person key.
+
+## Peer authorization and person passes
+
+Peer-envelope verification produces one authorization context before RPC dispatch. The context is `OwnerDevice`, `Household`, `Guest`, or `Unknown`. Local browser RPC and the private Unix control listener use their existing local contexts. They do not create peer principals.
+
+The authorization module has one exhaustive policy match over every `RpcRequest` variant. `OwnerDevice` can use every peer action. `Household` and `Guest` can use only scopes in a valid person pass. `stream.launch` covers catalog read, Moonlight resolve, Moonlight launch prepare, session prepare/status/stop/controls, and Moonlight certificate attest/provision. These routes select content from the host catalog and Sunshine application set that the owner installed. The scope does not permit local-app launch, discovery writes, settings, secrets, Moonlight launch cancellation, or certificate revocation.
+
+A person pass is a kind `30079` Nostr addressable event. The event author is the owner of the receiving host. The person's signer signs it outside korrid through NIP-55 or NIP-46. korrid stores or carries only the signed event. The event has empty content and these ordered tags:
+
+```text
+["d", "org.korri.person-pass:<32-byte-random-hex>"]
+["device", "<device-public-key>"]
+["tier", "household" | "guest"]
+["expires", "<unix-seconds>"]
+["scope", "catalog.read" | "stream.launch"] ...
+```
+
+A pass must contain at least one known, non-repeated scope. It expires at the exact `expires` second. Its maximum lifetime is 24 hours from the event timestamp. This bounds offline revocation delay.
+
+Pass revocation uses a NIP-09 kind `5` event from the same person key. It has empty content and exactly these tags:
+
+```text
+["e", "<pass-event-id>"]
+["k", "30079"]
+```
+
+The existing kind `30078` owner statement with `status=revoked` revokes a device. korrid accepts signed revocation events as peer-envelope evidence, then persists them only after the carrying peer request is authorized and its replay nonce is accepted. An unauthorized call performs no host, filesystem, process, settings, or Sunshine effect.
+
+## Authorization persistence and Sunshine reconciliation
+
+Authorization state stays under the established korrid private-state root:
+
+```text
+<private-state-root>/identity/authorization-revocations/<event-id>.json
+<private-state-root>/identity/peer-certificates/<device-public-key>
+```
+
+The revocation file is the complete signed Nostr event. The certificate grant record contains the exact Sunshine host UUID, exact Moonlight client certificate, sender owner statement, and either the owner-device basis or complete signed person pass. This extends the existing `peer-certificates` grant seam; no Sunshine or Moonlight certificate protocol changes.
+
+The authorization module derives a deterministic, device-key-sorted reconciliation plan from the local identity, signed revocations, current time, and persisted grants. The peer router applies each planned item through the existing exact Sunshine certificate revoke adapter and deletes a grant only after Sunshine accepts the revoke. Reconciliation runs after peer authorization and before dispatch. Therefore an unauthorized call cannot cause cleanup effects, and a restart reconciles expired or revoked trust before the next authorized launch.
 
 ## Verification
 
@@ -113,10 +154,6 @@ The tests reject a changed signed event, a wrong device, a wrong owner, a stale 
 
 The next slices must add:
 
-- the signed and encrypted RPC envelope,
-- timestamp, nonce, and replay rules,
-- permission tiers and device passes,
 - relay coordination with NIP-59 wrapping,
 - NIP-55 and NIP-46 adapters on Android,
-- the same-owner check for automatic Sunshine certificate provisioning,
-- certificate removal after owner or pass revocation.
+- delivery and device-side installation of externally signed person passes and revocations.
