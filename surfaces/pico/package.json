@@ -1,0 +1,32 @@
+{
+  "name": "@korri/pico",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pico — Korri's 8-bit handheld surface.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pico.css": "./src/pico.css"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@korri/intrinsic-design": "file:../../packages/intrinsic-design"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^18.0.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/bun": "^1.2.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.8.0"
+  }
+}
