@@ -13,6 +13,8 @@ in
 {
   imports = [
     "${modulesPath}/installer/sd-card/sd-image.nix"
+    ./usb-gadget.nix
+    ./wifi.nix
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
@@ -39,6 +41,13 @@ in
     # Start with the stock mainline kernel. It contains the RG353P device tree
     # and the RK3566 storage, display, RK817 audio, and RTL8821CS WiFi drivers.
     kernelPackages = pkgs.linuxPackages_latest;
+    # The stock ST7703 driver sends SETVCOM 0x92 and SETPOWER_EXT 0x25 0x22 to
+    # the rg353v-panel-v2 glass. The panel accepts the sequence, reports ready,
+    # and draws nothing. patches/st7703-rg353v2-init-sequence.patch carries the
+    # corrected values from the vendor BSP device tree, but applying it forces
+    # a full kernel rebuild that the current builder has no disk for. Remote
+    # access over the USB gadget comes first; enable the patch once a builder
+    # has room for the kernel tree.
     kernelParams = [
       "console=ttyS2,1500000n8"
       "console=tty0"
@@ -125,8 +134,8 @@ in
   };
 
   services = {
-    # The first native boot must remain recoverable before WiFi is configured.
-    # SSH still rejects passwords and accepts only the pinned public key.
+    # Root autologin on tty1 and ttyGS0 keeps the device recoverable without
+    # a network. SSH still rejects passwords and accepts only the pinned key.
     getty.autologinUser = "root";
     openssh = {
       enable = true;
