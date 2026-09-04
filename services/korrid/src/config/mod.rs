@@ -449,6 +449,8 @@ pub struct HostPayload {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub plugin: Option<ProviderValueMap>,
     #[serde(default, deserialize_with = "optional_non_null")]
+    pub relays: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "optional_non_null")]
     pub env: Option<BTreeMap<String, String>>,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub cwd: Option<String>,

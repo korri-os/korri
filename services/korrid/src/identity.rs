@@ -5,9 +5,12 @@
 //! NIP-78 supplies the addressable event shape for owner state.
 
 use nostr::{
-    event::{Event, EventBuilder, FinalizeEvent, Kind, Tag},
+    event::{Event, EventBuilder, FinalizeEvent, FinalizeUnsignedEvent, Kind, Tag},
     key::{Keys, PublicKey},
-    nips::nip44::{self, Version as Nip44Version},
+    nips::{
+        nip44::{self, Version as Nip44Version},
+        nip59::{extract_rumor, GiftWrapBuilder},
+    },
     types::Timestamp,
 };
 use serde::{Deserialize, Serialize};
@@ -23,6 +26,8 @@ use zeroize::Zeroizing;
 const IDENTITY_DIRECTORY: &str = "identity";
 const DEVICE_KEY_FILE: &str = "device.key";
 const OWNER_EVENT_FILE: &str = "owner.event.json";
+const NIP46_CLIENT_KEY_FILE: &str = "nip46-client.key";
+const NIP46_CONNECTION_FILE: &str = "nip46.connection.json";
 const OWNER_EVENT_KIND: u16 = 30_078;
 const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
 const MAX_EVENT_BYTES: usize = 64 * 1024;
@@ -68,6 +73,31 @@ pub struct VerifiedEvent {
     pub kind: u16,
     pub tags: Vec<Vec<String>>,
     pub content: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GiftRumor {
+    pub id: String,
+    pub author: String,
+    pub created_at: u64,
+    pub kind: u16,
+    pub tags: Vec<Vec<String>>,
+    pub content: String,
+}
+
+/// A disposable NIP-46 client key. It is separate from the device identity.
+pub struct Nip46ConnectionIdentity {
+    directory: PathBuf,
+    keys: Keys,
+}
+
+impl std::fmt::Debug for Nip46ConnectionIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Nip46ConnectionIdentity")
+            .field("public_key", &self.public_key())
+            .finish()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +154,7 @@ impl OwnerStatementStatus {
 ///
 /// `Keys` stays private. Callers receive only lowercase hexadecimal public keys
 /// and signed JSON events.
+#[derive(Clone)]
 pub struct DeviceIdentity {
     directory: PathBuf,
     keys: Option<Keys>,
@@ -408,6 +439,24 @@ impl DeviceIdentity {
         plaintext: &str,
         created_at: u64,
     ) -> Result<SignedEvent, IdentityError> {
+        self.encrypt_tagged_event(
+            recipient_public_key,
+            kind,
+            vec![vec!["p".into(), recipient_public_key.into()]],
+            plaintext,
+            created_at,
+        )
+    }
+
+    /// Encrypt content while preserving a Korri-owned ordered tag list.
+    pub fn encrypt_tagged_event(
+        &self,
+        recipient_public_key: &str,
+        kind: u16,
+        tags: Vec<Vec<String>>,
+        plaintext: &str,
+        created_at: u64,
+    ) -> Result<SignedEvent, IdentityError> {
         if plaintext.is_empty() || plaintext.len() > MAX_ENCRYPTED_PLAINTEXT_BYTES {
             return Err(IdentityError::Encryption);
         }
@@ -421,11 +470,109 @@ impl DeviceIdentity {
         )
         .map_err(|_| IdentityError::Encryption)?;
         let event = EventBuilder::new(Kind::Custom(kind), encrypted)
-            .tag(Tag::public_key(recipient))
+            .tags(parse_tags(tags)?)
             .custom_created_at(Timestamp::from(created_at))
             .finalize(keys)
             .map_err(|_| IdentityError::Encryption)?;
         Ok(signed_event(event))
+    }
+
+    /// Wrap a private queued coordination message using NIP-59.
+    pub fn gift_wrap(
+        &self,
+        recipient_public_key: &str,
+        rumor_kind: u16,
+        content: &str,
+        created_at: u64,
+        expires_at: u64,
+    ) -> Result<SignedEvent, IdentityError> {
+        if content.is_empty() || content.len() > MAX_EVENT_BYTES || expires_at <= created_at {
+            return Err(IdentityError::Encryption);
+        }
+        let recipient = parse_public_key(recipient_public_key)?;
+        let keys = self.keys.as_ref().ok_or(IdentityError::NoDeviceKey)?;
+        let rumor = EventBuilder::new(Kind::Custom(rumor_kind), content)
+            .tag(Tag::expiration(Timestamp::from(expires_at)))
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize_unsigned(keys.public_key());
+        let event = GiftWrapBuilder::new(recipient, rumor)
+            .extra_tags([Tag::expiration(Timestamp::from(expires_at))])
+            .finalize(keys)
+            .map_err(|_| IdentityError::Encryption)?;
+        Ok(signed_event(event))
+    }
+
+    /// Verify and unwrap one bounded NIP-59 gift wrap for this device.
+    pub fn unwrap_gift_wrap(&self, event_json: &str, now: u64) -> Result<GiftRumor, IdentityError> {
+        if event_json.len() > MAX_ENCRYPTED_PAYLOAD_BYTES {
+            return Err(IdentityError::Decryption);
+        }
+        let event = Event::from_json(event_json).map_err(|_| IdentityError::Decryption)?;
+        event.verify().map_err(|_| IdentityError::Decryption)?;
+        if event.kind != Kind::GiftWrap
+            || !has_exact_recipient(&event, &self.public_key()?.to_hex())
+        {
+            return Err(IdentityError::Decryption);
+        }
+        if event
+            .tags
+            .expiration()
+            .is_some_and(|expiry| expiry.as_secs() <= now)
+        {
+            return Err(IdentityError::Decryption);
+        }
+        let gift = extract_rumor(
+            self.keys.as_ref().ok_or(IdentityError::NoDeviceKey)?,
+            &event,
+        )
+        .map_err(|_| IdentityError::Decryption)?;
+        gift.rumor
+            .verify_id()
+            .map_err(|_| IdentityError::Decryption)?;
+        if gift
+            .rumor
+            .tags
+            .expiration()
+            .is_some_and(|expiry| expiry.as_secs() <= now)
+        {
+            return Err(IdentityError::Decryption);
+        }
+        Ok(GiftRumor {
+            id: gift.rumor.id.ok_or(IdentityError::Decryption)?.to_hex(),
+            author: gift.sender.to_hex(),
+            created_at: gift.rumor.created_at.as_secs(),
+            kind: gift.rumor.kind.as_u16(),
+            tags: gift
+                .rumor
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice().to_vec())
+                .collect(),
+            content: gift.rumor.content,
+        })
+    }
+
+    /// Build one canonical NIP-42 authentication event.
+    pub fn relay_auth_event(
+        &self,
+        relay_url: &str,
+        challenge: &str,
+        created_at: u64,
+    ) -> Result<SignedEvent, IdentityError> {
+        if relay_url.len() > 2048 || challenge.is_empty() || challenge.len() > 4096 {
+            return Err(IdentityError::InvalidEvent(
+                "relay challenge is invalid".into(),
+            ));
+        }
+        self.sign_event(
+            22_242,
+            vec![
+                vec!["relay".into(), relay_url.into()],
+                vec!["challenge".into(), challenge.into()],
+            ],
+            String::new(),
+            created_at,
+        )
     }
 
     /// Verify the signed event before NIP-44 v2 decryption.
@@ -453,6 +600,85 @@ impl DeviceIdentity {
             .as_ref()
             .map(Keys::public_key)
             .ok_or(IdentityError::NoDeviceKey)
+    }
+}
+
+impl Nip46ConnectionIdentity {
+    pub fn load_or_create(private_state_root: &Path) -> Result<Self, IdentityError> {
+        let _storage = IDENTITY_STORAGE
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("identity storage mutex poisoned");
+        let directory = prepare_identity_directory(private_state_root)?;
+        let keys = load_or_create_named_keys(&directory, NIP46_CLIENT_KEY_FILE, "NIP-46 client")?;
+        Ok(Self { directory, keys })
+    }
+
+    pub fn public_key(&self) -> String {
+        self.keys.public_key().to_hex()
+    }
+
+    pub fn sign_encrypted_event(
+        &self,
+        recipient_public_key: &str,
+        kind: u16,
+        plaintext: &str,
+        created_at: u64,
+    ) -> Result<SignedEvent, IdentityError> {
+        if plaintext.is_empty() || plaintext.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::Encryption);
+        }
+        let recipient = parse_public_key(recipient_public_key)?;
+        let content = nip44::encrypt(
+            self.keys.secret_key(),
+            &recipient,
+            plaintext.as_bytes(),
+            Nip44Version::V2,
+        )
+        .map_err(|_| IdentityError::Encryption)?;
+        let event = EventBuilder::new(Kind::Custom(kind), content)
+            .tag(Tag::public_key(recipient))
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(&self.keys)
+            .map_err(|_| IdentityError::Encryption)?;
+        Ok(signed_event(event))
+    }
+
+    pub fn decrypt_event_from(
+        &self,
+        event_json: &str,
+        expected_author: &str,
+    ) -> Result<VerifiedEvent, IdentityError> {
+        let expected_author = parse_public_key(expected_author)?;
+        let event = Event::from_json(event_json).map_err(|_| IdentityError::Decryption)?;
+        event.verify().map_err(|_| IdentityError::Decryption)?;
+        if event.pubkey != expected_author
+            || !has_exact_recipient(&event, &self.keys.public_key().to_hex())
+        {
+            return Err(IdentityError::Decryption);
+        }
+        let mut verified = verified_event(event.clone());
+        verified.content = nip44::decrypt(
+            self.keys.secret_key(),
+            &event.pubkey,
+            event.content.as_bytes(),
+        )
+        .map_err(|_| IdentityError::Decryption)?;
+        Ok(verified)
+    }
+
+    pub fn save_connection_data(&self, json: &str) -> Result<(), IdentityError> {
+        if self.directory.as_os_str().is_empty() || json.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::Storage);
+        }
+        write_private_atomically(&self.directory.join(NIP46_CONNECTION_FILE), json.as_bytes())
+    }
+
+    pub fn load_connection_data(&self) -> Result<Option<String>, IdentityError> {
+        read_bounded_optional(&self.directory.join(NIP46_CONNECTION_FILE), MAX_EVENT_BYTES)?
+            .map(String::from_utf8)
+            .transpose()
+            .map_err(|_| IdentityError::Storage)
     }
 }
 
@@ -608,6 +834,18 @@ fn parse_tags(tags: Vec<Vec<String>>) -> Result<Vec<Tag>, IdentityError> {
         .collect()
 }
 
+fn has_exact_recipient(event: &Event, recipient: &str) -> bool {
+    event
+        .tags
+        .iter()
+        .filter(|tag| {
+            let values = tag.as_slice();
+            values.len() == 2 && values[0] == "p" && values[1] == recipient
+        })
+        .count()
+        == 1
+}
+
 fn parse_public_key(value: &str) -> Result<PublicKey, IdentityError> {
     if value.len() != 64 || !value.bytes().all(is_lower_hex) {
         return Err(IdentityError::InvalidEvent(
@@ -658,9 +896,17 @@ fn prepare_identity_directory(private_state_root: &Path) -> Result<PathBuf, Iden
 }
 
 fn load_or_create_keys(directory: &Path) -> Result<Keys, IdentityError> {
-    let path = directory.join(DEVICE_KEY_FILE);
+    load_or_create_named_keys(directory, DEVICE_KEY_FILE, "device")
+}
+
+fn load_or_create_named_keys(
+    directory: &Path,
+    file_name: &str,
+    label: &str,
+) -> Result<Keys, IdentityError> {
+    let path = directory.join(file_name);
     match read_bounded_optional(&path, 128)? {
-        Some(bytes) => parse_device_keys(bytes),
+        Some(bytes) => parse_named_keys(bytes, label),
         None => {
             let keys = Keys::generate();
             let mut encoded = Zeroizing::new(keys.secret_key().to_secret_hex().into_bytes());
@@ -668,28 +914,31 @@ fn load_or_create_keys(directory: &Path) -> Result<Keys, IdentityError> {
             if write_new_private(&path, &encoded)? {
                 Ok(keys)
             } else {
-                load_existing_keys(&path)
+                load_existing_keys(&path, label)
             }
         }
     }
 }
 
-fn load_existing_keys(path: &Path) -> Result<Keys, IdentityError> {
-    parse_device_keys(read_bounded_optional(path, 128)?.ok_or(IdentityError::Storage)?)
+fn load_existing_keys(path: &Path, label: &str) -> Result<Keys, IdentityError> {
+    parse_named_keys(
+        read_bounded_optional(path, 128)?.ok_or(IdentityError::Storage)?,
+        label,
+    )
 }
 
-fn parse_device_keys(bytes: Vec<u8>) -> Result<Keys, IdentityError> {
+fn parse_named_keys(bytes: Vec<u8>, label: &str) -> Result<Keys, IdentityError> {
     let bytes = Zeroizing::new(bytes);
     let value = std::str::from_utf8(&bytes)
-        .map_err(|_| IdentityError::Invalid("device key is not UTF-8".into()))?
+        .map_err(|_| IdentityError::Invalid(format!("{label} key is not UTF-8")))?
         .trim();
     if value.len() != 64 || !value.bytes().all(is_lower_hex) {
-        return Err(IdentityError::Invalid(
-            "device key is not 32-byte lowercase hexadecimal".into(),
-        ));
+        return Err(IdentityError::Invalid(format!(
+            "{label} key is not 32-byte lowercase hexadecimal"
+        )));
     }
     Keys::parse(value)
-        .map_err(|_| IdentityError::Invalid("device key is not valid secp256k1".into()))
+        .map_err(|_| IdentityError::Invalid(format!("{label} key is not valid secp256k1")))
 }
 
 fn read_bounded_optional(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, IdentityError> {
