@@ -359,7 +359,7 @@ describe("createKorriNativeLauncherBridge", () => {
       }),
     acknowledgeGameFolderPicker: () =>
       JSON.stringify({ _tag: "Acknowledged", generation: "picker-2" }),
-    bridgeVersion: () => 18,
+    bridgeVersion: () => 19,
     ...overrides,
   })
 
