@@ -16,6 +16,9 @@
     wifi = {
       mode = "infrastructure";
       ssid = "vrackie";
+      # RTL8821CS deep power saving caused pairing failures and dropped
+      # connections during the Sunshine feasibility run.
+      powersave = 2;
     };
     wifi-security = {
       key-mgmt = "wpa-psk";
