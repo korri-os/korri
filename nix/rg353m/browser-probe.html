@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <body>
+    <div id="out">pending</div>
+    <script>
+      var o = [];
+      try {
+        var c = document.createElement("canvas");
+        var gl = c.getContext("webgl2") || c.getContext("webgl");
+        if (!gl) {
+          o.push("NO_WEBGL_CONTEXT");
+        } else {
+          var d = gl.getExtension("WEBGL_debug_renderer_info");
+          o.push("VERSION=" + gl.getParameter(gl.VERSION));
+          if (d) {
+            o.push("UNMASKED_VENDOR=" + gl.getParameter(d.UNMASKED_VENDOR_WEBGL));
+            o.push("UNMASKED_RENDERER=" + gl.getParameter(d.UNMASKED_RENDERER_WEBGL));
+          }
+          o.push("MAX_TEXTURE=" + gl.getParameter(gl.MAX_TEXTURE_SIZE));
+        }
+      } catch (e) {
+        o.push("ERR=" + e.message);
+      }
+      document.getElementById("out").textContent = "RESULT[" + o.join(" | ") + "]";
+    </script>
+  </body>
+</html>
