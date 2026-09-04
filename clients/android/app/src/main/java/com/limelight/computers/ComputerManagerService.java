@@ -271,18 +271,6 @@ public class ComputerManagerService extends Service {
             return ComputerManagerService.this.addComputerBlocking(fakeDetails);
         }
 
-        public boolean hasComputerAtAddress(ComputerDetails.AddressTuple address) {
-            return ComputerManagerService.this.hasComputerAtAddress(address);
-        }
-
-        public boolean prepareComputerBlocking(ComputerDetails details) throws InterruptedException {
-            return ComputerManagerService.this.prepareComputerBlocking(details);
-        }
-
-        public boolean commitPreparedComputer(ComputerDetails details) {
-            return ComputerManagerService.this.commitPreparedComputer(details);
-        }
-
         public void removeComputer(ComputerDetails computer) {
             ComputerManagerService.this.removeComputer(computer);
         }
@@ -644,101 +632,6 @@ public class ComputerManagerService extends Service {
             if (tuple.thread != null) {
                 tuple.thread.start();
             }
-        }
-    }
-
-    private boolean hasComputerAtAddress(ComputerDetails.AddressTuple address) {
-        if (address == null) return false;
-        List<PollingTuple> snapshot;
-        synchronized (pollingTuples) {
-            snapshot = new LinkedList<>(pollingTuples);
-        }
-        for (PollingTuple tuple : snapshot) {
-            synchronized (tuple.networkLock) {
-                if (!tuple.retired && address.equals(tuple.computer.manualAddress)) return true;
-            }
-        }
-        return false;
-    }
-
-    /** Run all network work needed to add a host without mutating persistent state. */
-    private boolean prepareComputerBlocking(ComputerDetails details) throws InterruptedException {
-        activePolls.incrementAndGet();
-        try {
-            if (!pollComputer(details)) return false;
-
-            PollingTuple existing = null;
-            synchronized (pollingTuples) {
-                for (PollingTuple tuple : pollingTuples) {
-                    if (details.uuid.equals(tuple.computer.uuid) && !tuple.retired) {
-                        existing = tuple;
-                        break;
-                    }
-                }
-            }
-            if (existing != null) {
-                synchronized (existing.networkLock) {
-                    if (!existing.retired) details.serverCert = existing.computer.serverCert;
-                }
-            }
-
-            if (!pollComputer(details) || details.state != ComputerDetails.State.ONLINE) {
-                return false;
-            }
-            try {
-                if (details.remoteAddress == null) {
-                    InetAddress active = InetAddress.getByName(details.activeAddress.address);
-                    if (active.isSiteLocalAddress()) populateExternalAddress(details);
-                }
-            } catch (UnknownHostException ignored) {}
-            return true;
-        } finally {
-            activePolls.decrementAndGet();
-        }
-    }
-
-    /** Commit one fully polled host. The caller owns any lifecycle commit fence. */
-    private boolean commitPreparedComputer(ComputerDetails details) {
-        if (details.state != ComputerDetails.State.ONLINE || details.uuid == null) return false;
-
-        PollingTuple existing = null;
-        synchronized (pollingTuples) {
-            for (PollingTuple tuple : pollingTuples) {
-                if (details.uuid.equals(tuple.computer.uuid) && !tuple.retired) {
-                    existing = tuple;
-                    break;
-                }
-            }
-        }
-        if (existing != null) {
-            synchronized (existing.networkLock) {
-                if (existing.retired || !getLocalDatabaseReference()) return false;
-                try {
-                    X509Certificate currentCertificate = existing.computer.serverCert;
-                    HostCertificateState currentCertificateState =
-                            existing.computer.certificateState;
-                    String currentRawAppList = existing.computer.rawAppList;
-                    existing.computer.update(details);
-                    existing.computer.serverCert = currentCertificate;
-                    existing.computer.certificateState = currentCertificateState;
-                    existing.computer.rawAppList = currentRawAppList;
-                    if (!dbManager.updateComputer(existing.computer)) return false;
-                    if (listener != null) listener.notifyComputerUpdated(existing.computer);
-                    return true;
-                } finally {
-                    releaseLocalDatabaseReference();
-                }
-            }
-        }
-
-        if (!getLocalDatabaseReference()) return false;
-        try {
-            if (!dbManager.updateComputer(details)) return false;
-            if (listener != null) listener.notifyComputerUpdated(details);
-            addTuple(details);
-            return true;
-        } finally {
-            releaseLocalDatabaseReference();
         }
     }
 
