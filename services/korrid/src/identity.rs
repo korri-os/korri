@@ -539,19 +539,7 @@ fn prepare_identity_directory(private_state_root: &Path) -> Result<PathBuf, Iden
 fn load_or_create_keys(directory: &Path) -> Result<Keys, IdentityError> {
     let path = directory.join(DEVICE_KEY_FILE);
     match read_bounded_optional(&path, 128)? {
-        Some(bytes) => {
-            let bytes = Zeroizing::new(bytes);
-            let value = std::str::from_utf8(&bytes)
-                .map_err(|_| IdentityError::Invalid("device key is not UTF-8".into()))?
-                .trim();
-            if value.len() != 64 || !value.bytes().all(is_lower_hex) {
-                return Err(IdentityError::Invalid(
-                    "device key is not 32-byte hexadecimal".into(),
-                ));
-            }
-            Keys::parse(value)
-                .map_err(|_| IdentityError::Invalid("device key is not valid secp256k1".into()))
-        }
+        Some(bytes) => parse_device_keys(bytes),
         None => {
             let keys = Keys::generate();
             let mut encoded = Zeroizing::new(keys.secret_key().to_secret_hex().into_bytes());
@@ -566,10 +554,19 @@ fn load_or_create_keys(directory: &Path) -> Result<Keys, IdentityError> {
 }
 
 fn load_existing_keys(path: &Path) -> Result<Keys, IdentityError> {
-    let bytes = Zeroizing::new(read_bounded_optional(path, 128)?.ok_or(IdentityError::Storage)?);
+    parse_device_keys(read_bounded_optional(path, 128)?.ok_or(IdentityError::Storage)?)
+}
+
+fn parse_device_keys(bytes: Vec<u8>) -> Result<Keys, IdentityError> {
+    let bytes = Zeroizing::new(bytes);
     let value = std::str::from_utf8(&bytes)
         .map_err(|_| IdentityError::Invalid("device key is not UTF-8".into()))?
         .trim();
+    if value.len() != 64 || !value.bytes().all(is_lower_hex) {
+        return Err(IdentityError::Invalid(
+            "device key is not 32-byte lowercase hexadecimal".into(),
+        ));
+    }
     Keys::parse(value)
         .map_err(|_| IdentityError::Invalid("device key is not valid secp256k1".into()))
 }
