@@ -10,6 +10,9 @@
 
 .pico-launch-stage-kicker {
 	margin: 0;
+	/* Something is happening that Pico cannot measure; a pulse says "working"
+	 * without claiming progress it was never told about. */
+	animation: pico-flicker 900ms steps(1, end) infinite alternate;
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text);
 	color: var(--pico-accent);
@@ -18,6 +21,7 @@
 
 .pico-launch-stage-game {
 	margin: 0;
+	animation: pico-rise 240ms steps(4, end) both;
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text-xs);
 	color: var(--pico-ink);

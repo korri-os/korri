@@ -72,6 +72,22 @@
 	--pico-space-3: var(--intrinsic-space-3);
 	--pico-space-4: var(--intrinsic-space-4);
 
+	/* Cartridge-label colours: the ten palette entries bright enough to carry a
+	 * label. Deliberately the raw palette rather than semantic roles — a label's
+	 * whole job is to be one of the sixteen, so naming them by meaning would be
+	 * inventing meaning they do not have. Kept in step with pico-palette.ts by
+	 * test/pico-palette.test.ts. */
+	--pico-label-0: var(--p8-maroon);
+	--pico-label-1: var(--p8-green);
+	--pico-label-2: var(--p8-brown);
+	--pico-label-3: var(--p8-red);
+	--pico-label-4: var(--p8-orange);
+	--pico-label-5: var(--p8-yellow);
+	--pico-label-6: var(--p8-lime);
+	--pico-label-7: var(--p8-blue);
+	--pico-label-8: var(--p8-lilac);
+	--pico-label-9: var(--p8-pink);
+
 	/* Face-button colours. The gamepad convention, not a Pico invention: a
 	 * player reads the shape and colour before the letter, so A and B keep the
 	 * hues they have on the hardware. */

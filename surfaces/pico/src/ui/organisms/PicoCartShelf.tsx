@@ -46,6 +46,7 @@ export function PicoCartShelf({
           <li className="pico-cart-shelf-slot" key={game.id}>
             <PicoCart
               artUrl={game.artUrl}
+              id={game.id}
               onActivate={() => onLaunch(game.id)}
               onFocus={() => setFocusedIndex(index)}
               placement={index === focusedIndex ? "hero" : "side"}

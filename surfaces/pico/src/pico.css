@@ -13,6 +13,7 @@
  */
 @import "@korri/intrinsic-design/recipe.css";
 @import "./pico-tokens.css";
+@import "./pico-motion.css";
 
 @import "./pages/PicoHome.css";
 @import "./ui/atoms/PicoButton.css";
@@ -97,4 +98,19 @@
 		transparent var(--pico-scanline-gap)
 	);
 	mix-blend-mode: multiply;
+}
+
+/**
+ * Motion is decoration here: every state it dresses is already stated in text,
+ * so honouring the preference costs the user nothing. `!important` because the
+ * declarations it overrides sit on components, and this must win over all of
+ * them without knowing their names. Lives here rather than beside the keyframes
+ * because this file owns the .pico-screen scope.
+ */
+@media (prefers-reduced-motion: reduce) {
+	.pico-screen *,
+	.pico-screen *::before,
+	.pico-screen *::after {
+		animation: none !important;
+	}
 }

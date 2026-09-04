@@ -1,9 +1,13 @@
-.pico-cover-art-image {
+.pico-cover-art-canvas {
+	display: block;
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
+	image-rendering: pixelated;
 }
 
+/* No background: the cart's dithered label is the ground, and painting over it
+ * would throw away the one thing that distinguishes an unillustrated game. */
 .pico-cover-art-initials {
 	display: grid;
 	place-items: center;
@@ -11,6 +15,7 @@
 	height: 100%;
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text-lg);
-	color: var(--pico-ink);
-	background: var(--pico-chrome);
+	color: inherit;
+	text-shadow: var(--pico-edge) var(--pico-edge) 0
+		color-mix(in srgb, var(--p8-black) 45%, transparent);
 }

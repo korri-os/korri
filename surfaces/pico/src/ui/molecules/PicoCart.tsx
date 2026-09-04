@@ -1,3 +1,4 @@
+import { picoLabelFor } from "../../pico-label"
 import { PicoCoverArt } from "../atoms/PicoCoverArt"
 
 /**
@@ -9,12 +10,19 @@ export type PicoCartPlacement = "hero" | "side"
 /**
  * One game, drawn as a cartridge.
  *
+ * A game with no art still gets a label: two palette colours and a dither
+ * derived from its id, so a shelf of unillustrated games reads as a rack of
+ * different cartridges rather than a row of identical rectangles. The choice
+ * travels as data attributes rather than an inline style, which keeps the
+ * colours in the stylesheet where they can be themed and reviewed.
+ *
  * Every cart is focusable, including the ones peeking at the edges: focus is
  * how a d-pad moves the shelf, so a cart that could not take focus would be
  * unreachable on the hardware Pico is built for. Focusing a cart is what makes
  * it the hero — the shelf listens rather than the cart deciding.
  */
 export function PicoCart({
+  id,
   title,
   subtitle,
   artUrl,
@@ -23,6 +31,7 @@ export function PicoCart({
   onFocus,
   onActivate,
 }: {
+  readonly id: string
   readonly title: string
   readonly subtitle?: string
   readonly artUrl?: string
@@ -32,10 +41,15 @@ export function PicoCart({
   readonly onFocus?: () => void
   readonly onActivate?: () => void
 }) {
+  const label = picoLabelFor(id)
   return (
     <button
       aria-label={subtitle === undefined ? title : `${title}, ${subtitle}`}
       className="pico-cart"
+      data-accent={label.accent}
+      data-dither={label.dither}
+      data-fill={label.fill}
+      data-ink={label.ink}
       data-placement={placement}
       onClick={onActivate}
       onFocus={onFocus}

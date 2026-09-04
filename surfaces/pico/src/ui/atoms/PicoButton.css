@@ -12,4 +12,5 @@
 .pico-button:focus-visible {
 	outline: var(--pico-edge) solid var(--pico-focus);
 	outline-offset: var(--pico-edge);
+	animation: pico-cta 900ms steps(3, end) infinite alternate;
 }

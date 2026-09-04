@@ -7,20 +7,123 @@
 	width: min(38cqw, calc(var(--pico-base) * 14));
 	aspect-ratio: 3 / 4;
 	padding: var(--pico-space-1);
-	background: var(--pico-chrome);
 	border: var(--pico-edge) solid var(--pico-chrome-edge);
 	cursor: pointer;
-	transition: transform 120ms steps(3, end);
+	/* Two palette colours in a hard checker — the dither that makes an
+	 * unillustrated cart read as a printed label instead of a filled box. Cell
+	 * size derives from the base so the weave scales with the screen rather than
+	 * turning into moire on a large panel. */
+	background:
+		repeating-conic-gradient(
+			var(--pico-cart-fill) 0% 25%,
+			var(--pico-cart-accent) 0% 50%
+		)
+		0 0 / var(--pico-cart-dither) var(--pico-cart-dither);
+	animation: pico-rise 240ms steps(4, end) both;
+}
+
+.pico-cart[data-dither="0"] {
+	--pico-cart-dither: calc(var(--pico-base) / 2);
+}
+
+.pico-cart[data-dither="1"] {
+	--pico-cart-dither: calc(var(--pico-base) * 0.75);
+}
+
+.pico-cart[data-dither="2"] {
+	--pico-cart-dither: var(--pico-base);
+}
+
+.pico-cart[data-fill="0"] {
+	--pico-cart-fill: var(--pico-label-0);
+}
+
+.pico-cart[data-fill="1"] {
+	--pico-cart-fill: var(--pico-label-1);
+}
+
+.pico-cart[data-fill="2"] {
+	--pico-cart-fill: var(--pico-label-2);
+}
+
+.pico-cart[data-fill="3"] {
+	--pico-cart-fill: var(--pico-label-3);
+}
+
+.pico-cart[data-fill="4"] {
+	--pico-cart-fill: var(--pico-label-4);
+}
+
+.pico-cart[data-fill="5"] {
+	--pico-cart-fill: var(--pico-label-5);
+}
+
+.pico-cart[data-fill="6"] {
+	--pico-cart-fill: var(--pico-label-6);
+}
+
+.pico-cart[data-fill="7"] {
+	--pico-cart-fill: var(--pico-label-7);
+}
+
+.pico-cart[data-fill="8"] {
+	--pico-cart-fill: var(--pico-label-8);
+}
+
+.pico-cart[data-fill="9"] {
+	--pico-cart-fill: var(--pico-label-9);
+}
+
+.pico-cart[data-accent="0"] {
+	--pico-cart-accent: var(--pico-label-0);
+}
+
+.pico-cart[data-accent="1"] {
+	--pico-cart-accent: var(--pico-label-1);
+}
+
+.pico-cart[data-accent="2"] {
+	--pico-cart-accent: var(--pico-label-2);
+}
+
+.pico-cart[data-accent="3"] {
+	--pico-cart-accent: var(--pico-label-3);
+}
+
+.pico-cart[data-accent="4"] {
+	--pico-cart-accent: var(--pico-label-4);
+}
+
+.pico-cart[data-accent="5"] {
+	--pico-cart-accent: var(--pico-label-5);
+}
+
+.pico-cart[data-accent="6"] {
+	--pico-cart-accent: var(--pico-label-6);
+}
+
+.pico-cart[data-accent="7"] {
+	--pico-cart-accent: var(--pico-label-7);
+}
+
+.pico-cart[data-accent="8"] {
+	--pico-cart-accent: var(--pico-label-8);
+}
+
+.pico-cart[data-accent="9"] {
+	--pico-cart-accent: var(--pico-label-9);
 }
 
 .pico-cart[data-placement="side"] {
 	transform: scale(0.72);
-	filter: saturate(0.5);
+	filter: saturate(0.7);
 }
 
 .pico-cart:focus-visible {
 	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
 	outline-offset: var(--pico-edge);
+	/* The focused cart is what the screen wants pressed. */
+	animation: pico-cta 900ms steps(3, end) infinite alternate;
 }
 
 .pico-cart-window {
@@ -28,6 +131,16 @@
 	width: 100%;
 	height: 100%;
 	overflow: hidden;
+}
+
+/* Ink on the label follows the fill's brightness, decided in pico-label.ts so
+ * the rule is testable rather than eyeballed per colour. */
+.pico-cart[data-ink="light"] .pico-cart-window {
+	color: var(--p8-white);
+}
+
+.pico-cart[data-ink="dark"] .pico-cart-window {
+	color: var(--p8-black);
 }
 
 /* The label slot every cartridge shell has. Decorative, and the one detail that
@@ -47,4 +160,5 @@
 	bottom: var(--pico-space-1);
 	font-size: var(--pico-text-sm);
 	color: var(--pico-ok);
+	animation: pico-blink 1.2s steps(1, end) infinite;
 }

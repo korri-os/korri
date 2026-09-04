@@ -27,6 +27,15 @@ const TOKENS_CSS = "pico-tokens.css"
  * that only knew about hex would have waved it straight through. `color-mix()`
  * over a token is not matched: it names a role and derives from it.
  */
+/**
+ * Modules allowed to state the palette literally.
+ *
+ * Quantising an image means measuring distance to each colour, which needs
+ * channels. `pico-palette.test.ts` asserts these values are byte-for-byte the
+ * ones in pico-tokens.css, so writing the palette twice cannot let it drift.
+ */
+const PALETTE_MODULES = new Set(["pico-palette.ts"])
+
 const RAW_VALUE = /#[0-9a-fA-F]{3,8}\b|\b\d+px\b|\b(?:rgba?|hsla?)\(/g
 
 /**
@@ -118,6 +127,7 @@ describe("every part is authored so the catalog can use it", () => {
 describe("visual decisions live in tokens", () => {
   test("no component states a raw colour or pixel value", () => {
     const offenders = tsxFiles
+      .filter((file) => !PALETTE_MODULES.has(basename(file)))
       .flatMap((file) => {
         const found = [...read(file).matchAll(RAW_VALUE)]
         return found.map((match) => `${rel(file)}: ${match[0]}`)

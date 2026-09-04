@@ -1,0 +1,88 @@
+/**
+ * Pico's motion.
+ *
+ * Every step is hard. An 8-bit interface has no easing curves and no fractional
+ * opacity ramps — a blink is on or off, a rise lands on a whole cell — so these
+ * use `steps()` and two-stop keyframes rather than the smooth transitions a web
+ * UI would reach for. Distances are in container units, so motion scales with
+ * the screen exactly like type and spacing do.
+ *
+ * Keyframes live together because several components share them; the
+ * animations themselves are declared by each component, beside the thing that
+ * moves.
+ */
+
+/* A hard on/off blink. No fade: the off state is dim, not absent, so the
+ * element never disappears from a layout that is holding space for it. */
+@keyframes pico-blink {
+	0%,
+	50% {
+		opacity: 1;
+	}
+	50.01%,
+	100% {
+		opacity: 0.2;
+	}
+}
+
+/* Content arriving. Rises a whole cell and lands. */
+@keyframes pico-rise {
+	from {
+		opacity: 0;
+		transform: translateY(4cqh);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* A slower, shallower blink for text that has to stay readable while it
+ * pulses — a kicker that dropped to 0.2 would be unreadable half the time. */
+@keyframes pico-flicker {
+	0%,
+	60% {
+		opacity: 1;
+	}
+	60.01%,
+	100% {
+		opacity: 0.55;
+	}
+}
+
+/* Idle bob, for a thing that is waiting rather than working. */
+@keyframes pico-bob {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(-2.2cqh);
+	}
+}
+
+/* An expanding ring on whatever the screen most wants pressed. */
+@keyframes pico-cta {
+	from {
+		box-shadow: 0 0 0 0 transparent;
+	}
+	to {
+		box-shadow: 0 0 0 0.7cqw
+			color-mix(in srgb, var(--pico-accent) 40%, transparent);
+	}
+}
+
+/* Failure. Three hard offsets, no return easing. */
+@keyframes pico-shake {
+	0% {
+		transform: translateX(0);
+	}
+	33% {
+		transform: translateX(-1.2cqw);
+	}
+	66% {
+		transform: translateX(1.2cqw);
+	}
+	100% {
+		transform: translateX(0);
+	}
+}

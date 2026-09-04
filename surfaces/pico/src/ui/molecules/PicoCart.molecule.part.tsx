@@ -1,14 +1,15 @@
 import { PicoCart } from "./PicoCart"
 
 export const name = "Cart"
-export const note = "Focusable cartridge; focus is what makes it the hero"
+export const note = "Label colours and dither are hashed from the game id"
 
 export default function PicoCartPart() {
   return (
     <PicoCart
+      id="celeste"
       placement="hero"
       resumable={false}
-      subtitle="GBA · This device"
+      subtitle="PICO-8 · This device"
       title="Celeste Classic"
     />
   )
