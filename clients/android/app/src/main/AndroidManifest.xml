@@ -44,6 +44,13 @@
 
     <queries>
         <package android:name="com.korri.retroarch" />
+        <!-- NIP-55 signer discovery. Subsequent signing requests target the
+             exact package returned by account selection. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="nostrsigner" />
+        </intent>
         <!-- Korri is a launcher: it must see the apps it can launch.
              Without this, Android 11+ package visibility hides installed
              games and PackageManager cannot resolve their launcher intents.

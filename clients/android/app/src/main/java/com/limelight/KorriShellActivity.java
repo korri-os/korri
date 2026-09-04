@@ -26,6 +26,9 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -39,6 +42,8 @@ import com.limelight.nvstream.http.NvApp;
 import com.limelight.nvstream.http.NvHTTP;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.ServerHelper;
+import com.limelight.identity.KorriOwnerBindingController;
+import com.limelight.identity.Nip55PersonSigner;
 import com.limelight.korri.overlay.KorriActiveLaunch;
 import com.limelight.korri.overlay.KorriOverlayPermission;
 import com.simonwjackson.korri.korrid.KorriBrainService;
@@ -83,6 +88,12 @@ public class KorriShellActivity extends AppCompatActivity {
     private KorriGameAssetPathHandler gameAssetPathHandler;
     private final CountDownLatch binderReady = new CountDownLatch(1);
     private final KorriGameFolderPickerState gameFolderPicker = new KorriGameFolderPickerState();
+    private KorriOwnerBindingController ownerBindingController;
+    private ActivityResult pendingSignerActivityResult;
+    private final ActivityResultLauncher<Intent> personSignerLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.StartActivityForResult(),
+                    this::onPersonSignerActivityResult);
 
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder binder) {
@@ -123,6 +134,39 @@ public class KorriShellActivity extends AppCompatActivity {
         korridPort = KorriBrainService.ensureRunning(
                 this, portalPolicy.portalOrigin(), localStorageRoot());
         korridCapability = KorridServer.capability();
+        ownerBindingController = new KorriOwnerBindingController(
+                new KorriOwnerBindingController.NativeIdentity() {
+                    @Override
+                    public String status() {
+                        return KorridServer.identityStatus();
+                    }
+
+                    @Override
+                    public String ownerBindingTemplate(long createdAtSeconds) {
+                        return KorridServer.ownerBindingTemplate(createdAtSeconds);
+                    }
+
+                    @Override
+                    public String applyOwnerBinding(
+                            String unsignedTemplateJson,
+                            String expectedOwnerPublicKey,
+                            String signedEventJson) {
+                        return KorridServer.applyOwnerBinding(
+                                unsignedTemplateJson,
+                                expectedOwnerPublicKey,
+                                signedEventJson);
+                    }
+                },
+                this::notifyOwnerBindingChanged);
+        ownerBindingController.attachSigner(new Nip55PersonSigner(
+                this,
+                personSignerLauncher::launch,
+                ownerBindingController));
+        if (pendingSignerActivityResult != null) {
+            ActivityResult result = pendingSignerActivityResult;
+            pendingSignerActivityResult = null;
+            ownerBindingController.onActivityResult(result.getResultCode(), result.getData());
+        }
 
         computerManagerBound = bindService(new Intent(this, ComputerManagerService.class),
                 serviceConnection, BIND_AUTO_CREATE);
@@ -354,6 +398,9 @@ public class KorriShellActivity extends AppCompatActivity {
         // and clear our field before WebView teardown can re-enter lifecycle
         // code. The foreground brain remains owned by KorriBrainService.
         destroyed = true;
+        KorriOwnerBindingController ownedOwnerBindingController = ownerBindingController;
+        ownerBindingController = null;
+        if (ownedOwnerBindingController != null) ownedOwnerBindingController.close();
         clearMoonlightDiscovery();
 
         final WebView ownedWebView = webView;
@@ -376,6 +423,23 @@ public class KorriShellActivity extends AppCompatActivity {
         }
         managerBinder = null;
         super.onDestroy();
+    }
+
+    private void onPersonSignerActivityResult(ActivityResult result) {
+        if (ownerBindingController == null) {
+            pendingSignerActivityResult = result;
+            return;
+        }
+        ownerBindingController.onActivityResult(result.getResultCode(), result.getData());
+    }
+
+    private void notifyOwnerBindingChanged() {
+        if (destroyed || webView == null) return;
+        webView.evaluateJavascript(
+                "window.dispatchEvent(new Event('"
+                        + KorriOwnerBindingController.CHANGED_EVENT
+                        + "'))",
+                null);
     }
 
     @Override
@@ -497,6 +561,24 @@ public class KorriShellActivity extends AppCompatActivity {
         public int bridgeVersion() {
             // Mirrors BRIDGE_VERSION in contracts/bridge/korri-native-bridge.ts.
             return 18;
+        }
+
+        @JavascriptInterface
+        public String ownerBindingSnapshot() {
+            KorriOwnerBindingController controller = ownerBindingController;
+            return controller == null
+                    ? "{\"identity\":{\"_tag\":\"Invalid\"},"
+                        + "\"personSigner\":{\"_tag\":\"Defect\","
+                        + "\"message\":\"Owner binding is unavailable\"}}"
+                    : controller.snapshotJson();
+        }
+
+        @JavascriptInterface
+        public String startOwnerBinding() {
+            KorriOwnerBindingController controller = ownerBindingController;
+            return controller == null
+                    ? ownerBindingSnapshot()
+                    : controller.startOwnerBinding();
         }
 
         @JavascriptInterface
