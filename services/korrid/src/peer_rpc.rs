@@ -1,5 +1,4 @@
 use crate::{
-    authorization::{self, DomainAction},
     dispatch,
     identity::{DeviceIdentity, IdentityState},
     AppState, MoonlightCertificateProvisionOutcome, MoonlightCertificateRevokeOutcome,
@@ -30,7 +29,7 @@ pub const PEER_REQUEST_KIND: u16 = 21_100;
 pub const PEER_RESPONSE_KIND: u16 = 21_101;
 pub const MAX_PEER_EVENT_BYTES: usize = 8 * 1024 * 1024;
 const CLOCK_WINDOW_SECONDS: u64 = 120;
-const NONCE_BYTES: usize = 32;
+const TOKEN_BYTES: usize = 32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PeerRpcError {
@@ -57,19 +56,19 @@ pub enum PeerRpcError {
 struct PeerRequestEnvelope {
     version: u8,
     recipient: String,
+    request_id: String,
     nonce: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     owner_statement: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pass: Option<String>,
     request: RpcRequest,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PeerResponseEnvelope {
     version: u8,
     recipient: String,
+    request_id: String,
     request_event_id: String,
     request_nonce: String,
     response: RpcResponse,
@@ -85,31 +84,21 @@ struct ProvisionedCertificate {
 #[derive(Clone)]
 pub struct PeerCredentials {
     identity: Arc<Mutex<DeviceIdentity>>,
-    pass: Option<String>,
 }
 
 impl PeerCredentials {
-    pub fn load(private_state_root: &Path, pass: Option<String>) -> Result<Self, PeerRpcError> {
+    pub fn load(private_state_root: &Path) -> Result<Self, PeerRpcError> {
         let identity = DeviceIdentity::load_or_create(private_state_root)
             .map_err(|_| PeerRpcError::Identity)?;
         Ok(Self {
             identity: Arc::new(Mutex::new(identity)),
-            pass,
         })
     }
 
     #[cfg(test)]
-    pub fn from_identity(identity: DeviceIdentity, pass: Option<String>) -> Self {
+    pub fn from_identity(identity: DeviceIdentity) -> Self {
         Self {
             identity: Arc::new(Mutex::new(identity)),
-            pass,
-        }
-    }
-
-    pub fn with_pass(&self, pass: Option<String>) -> Self {
-        Self {
-            identity: self.identity.clone(),
-            pass,
         }
     }
 
@@ -128,30 +117,19 @@ impl PeerCredentials {
         request: RpcRequest,
         now: u64,
     ) -> Result<EncodedPeerRequest, PeerRpcError> {
-        let nonce = random_nonce();
-        self.encode_request_with_nonce(recipient, request, now, nonce)
+        self.encode_request_inner(recipient, request, now, random_token(), random_token())
     }
 
     #[cfg(test)]
-    pub fn encode_request_with_nonce(
+    pub fn encode_request_with_tokens(
         &self,
         recipient: &str,
         request: RpcRequest,
         now: u64,
+        request_id: String,
         nonce: String,
     ) -> Result<EncodedPeerRequest, PeerRpcError> {
-        self.encode_request_inner(recipient, request, now, nonce)
-    }
-
-    #[cfg(not(test))]
-    fn encode_request_with_nonce(
-        &self,
-        recipient: &str,
-        request: RpcRequest,
-        now: u64,
-        nonce: String,
-    ) -> Result<EncodedPeerRequest, PeerRpcError> {
-        self.encode_request_inner(recipient, request, now, nonce)
+        self.encode_request_inner(recipient, request, now, request_id, nonce)
     }
 
     fn encode_request_inner(
@@ -159,9 +137,11 @@ impl PeerCredentials {
         recipient: &str,
         request: RpcRequest,
         now: u64,
+        request_id: String,
         nonce: String,
     ) -> Result<EncodedPeerRequest, PeerRpcError> {
-        validate_nonce(&nonce)?;
+        validate_token(&request_id)?;
+        validate_token(&nonce)?;
         let identity = self.identity.lock().map_err(|_| PeerRpcError::Identity)?;
         if !matches!(identity.state(), IdentityState::Owned { .. }) {
             return Err(PeerRpcError::Identity);
@@ -169,9 +149,9 @@ impl PeerCredentials {
         let envelope = PeerRequestEnvelope {
             version: PEER_RPC_VERSION,
             recipient: recipient.into(),
+            request_id: request_id.clone(),
             nonce: nonce.clone(),
             owner_statement: identity.owner_statement_json(),
-            pass: self.pass.clone(),
             request,
         };
         let plaintext = serde_json::to_string(&envelope).map_err(|_| PeerRpcError::Invalid)?;
@@ -181,6 +161,7 @@ impl PeerCredentials {
         Ok(EncodedPeerRequest {
             event_json: event.json,
             event_id: event.id,
+            request_id,
             nonce,
             recipient: recipient.into(),
         })
@@ -193,21 +174,25 @@ impl PeerCredentials {
         event_json: &str,
         now: u64,
     ) -> Result<RpcResponse, PeerRpcError> {
-        let verified =
-            DeviceIdentity::verify_event(event_json).map_err(|_| PeerRpcError::Invalid)?;
+        let verified = DeviceIdentity::verify_encrypted_event(event_json)
+            .map_err(|_| PeerRpcError::Invalid)?;
         if verified.kind != PEER_RESPONSE_KIND || verified.author != expected_peer {
             return Err(PeerRpcError::WrongKind);
         }
         check_time(verified.created_at, now)?;
         let identity = self.identity.lock().map_err(|_| PeerRpcError::Identity)?;
+        let own_key = identity.device_public_key().ok_or(PeerRpcError::Identity)?;
+        if !has_exact_recipient(&verified.tags, own_key) {
+            return Err(PeerRpcError::Binding);
+        }
         let plaintext = identity
             .decrypt_event(event_json)
             .map_err(|_| PeerRpcError::Invalid)?;
         let response: PeerResponseEnvelope =
             serde_json::from_str(&plaintext).map_err(|_| PeerRpcError::Invalid)?;
-        let own_key = identity.device_public_key().ok_or(PeerRpcError::Identity)?;
         if response.version != PEER_RPC_VERSION
             || response.recipient != own_key
+            || response.request_id != request.request_id
             || response.request_event_id != request.event_id
             || response.request_nonce != request.nonce
         {
@@ -220,9 +205,12 @@ impl PeerCredentials {
 pub struct EncodedPeerRequest {
     pub event_json: String,
     pub event_id: String,
+    pub request_id: String,
     pub nonce: String,
     pub recipient: String,
 }
+
+type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 
 #[derive(Clone)]
 pub struct PeerRpcServer {
@@ -230,10 +218,19 @@ pub struct PeerRpcServer {
     identity: Arc<Mutex<DeviceIdentity>>,
     replay: Arc<ReplayGuard>,
     certificate_directory: PathBuf,
+    clock: Clock,
 }
 
 impl PeerRpcServer {
     pub fn new(app: AppState, private_state_root: &Path) -> Result<Self, PeerRpcError> {
+        Self::new_with_clock(app, private_state_root, Arc::new(unix_time))
+    }
+
+    fn new_with_clock(
+        app: AppState,
+        private_state_root: &Path,
+        clock: Clock,
+    ) -> Result<Self, PeerRpcError> {
         let identity = DeviceIdentity::load_or_create(private_state_root)
             .map_err(|_| PeerRpcError::Identity)?;
         Ok(Self {
@@ -241,7 +238,17 @@ impl PeerRpcServer {
             identity: Arc::new(Mutex::new(identity)),
             replay: Arc::new(ReplayGuard::new(private_state_root)?),
             certificate_directory: private_state_root.join("identity/peer-certificates"),
+            clock,
         })
+    }
+
+    #[cfg(test)]
+    pub fn new_at(
+        app: AppState,
+        private_state_root: &Path,
+        now: u64,
+    ) -> Result<Self, PeerRpcError> {
+        Self::new_with_clock(app, private_state_root, Arc::new(move || now))
     }
 
     pub fn router(self) -> Router {
@@ -253,8 +260,8 @@ impl PeerRpcServer {
     }
 
     async fn handle(&self, event_json: &str, now: u64) -> Result<String, PeerRpcError> {
-        let verified =
-            DeviceIdentity::verify_event(event_json).map_err(|_| PeerRpcError::Invalid)?;
+        let verified = DeviceIdentity::verify_encrypted_event(event_json)
+            .map_err(|_| PeerRpcError::Invalid)?;
         if verified.kind != PEER_REQUEST_KIND {
             return Err(PeerRpcError::WrongKind);
         }
@@ -268,6 +275,9 @@ impl PeerRpcServer {
                 .device_public_key()
                 .map(str::to_owned)
                 .ok_or(PeerRpcError::Identity)?;
+            if !has_exact_recipient(&verified.tags, &local_key) {
+                return Err(PeerRpcError::Binding);
+            }
             identity
                 .decrypt_event(event_json)
                 .map_err(|_| PeerRpcError::Invalid)?
@@ -277,16 +287,13 @@ impl PeerRpcServer {
         if envelope.version != PEER_RPC_VERSION || envelope.recipient != local_key {
             return Err(PeerRpcError::Binding);
         }
-        validate_nonce(&envelope.nonce)?;
-        let action = authorization::action_for(&envelope.request);
-        let principal = authorization::principal_for(
+        validate_token(&envelope.request_id)?;
+        validate_token(&envelope.nonce)?;
+        if !has_same_owner(
             &local_state,
             &verified.author,
             envelope.owner_statement.as_deref(),
-            envelope.pass.as_deref(),
-            now,
-        );
-        if !authorization::authorize(&principal, action) {
+        ) {
             self.revoke_recorded_certificate(&verified.author).await;
             return Err(PeerRpcError::Unauthorized);
         }
@@ -294,7 +301,7 @@ impl PeerRpcServer {
             &verified.author,
             &envelope.nonce,
             verified.created_at,
-            action,
+            is_security_mutation(&envelope.request),
         )?;
 
         let provision = provisioned_certificate(&envelope.request);
@@ -321,6 +328,7 @@ impl PeerRpcServer {
         let response_envelope = PeerResponseEnvelope {
             version: PEER_RPC_VERSION,
             recipient: verified.author.clone(),
+            request_id: envelope.request_id,
             request_event_id: verified.id,
             request_nonce: envelope.nonce,
             response,
@@ -400,7 +408,8 @@ async fn peer_rpc(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
         Ok(value) => value,
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
-    match state.handle(event_json, unix_time()).await {
+    let now = (state.clock)();
+    match state.handle(event_json, now).await {
         Ok(response) => (
             StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -438,9 +447,9 @@ impl ReplayGuard {
         sender: &str,
         nonce: &str,
         created_at: u64,
-        action: DomainAction,
+        persist: bool,
     ) -> Result<(), PeerRpcError> {
-        if action.is_security_mutation() {
+        if persist {
             let digest = Sha256::digest(format!("{sender}:{nonce}").as_bytes());
             let path = self.persistent_directory.join(hex::encode(digest));
             OpenOptions::new()
@@ -466,6 +475,44 @@ impl ReplayGuard {
         }
         Ok(())
     }
+}
+
+fn has_exact_recipient(tags: &[Vec<String>], expected: &str) -> bool {
+    tags.len() == 1 && tags[0].as_slice() == ["p", expected]
+}
+
+fn has_same_owner(
+    local_state: &IdentityState,
+    sender_device_public_key: &str,
+    sender_owner_statement: Option<&str>,
+) -> bool {
+    let IdentityState::Owned {
+        owner_public_key: local_owner,
+        ..
+    } = local_state
+    else {
+        return false;
+    };
+    sender_owner_statement
+        .and_then(|statement| {
+            DeviceIdentity::owner_public_key_from_statement(statement, sender_device_public_key)
+                .ok()
+        })
+        .is_some_and(|sender_owner| sender_owner == *local_owner)
+}
+
+fn is_security_mutation(request: &RpcRequest) -> bool {
+    matches!(
+        request,
+        RpcRequest::MoonlightCertificateProvision(_)
+            | RpcRequest::MoonlightCertificateRevoke(_)
+            | RpcRequest::DiscoveryRegisterReceipt(_)
+            | RpcRequest::DiscoveryRemoveLocation(_)
+            | RpcRequest::DiscoveryRescan(_)
+            | RpcRequest::SettingsUpdate(_)
+            | RpcRequest::SteamGridDbCredentialSet(_)
+            | RpcRequest::SteamGridDbCredentialClear(_)
+    )
 }
 
 fn provisioned_certificate(request: &RpcRequest) -> Option<ProvisionedCertificate> {
@@ -495,14 +542,14 @@ fn prepare_private_directory(path: &Path) -> Result<(), PeerRpcError> {
     builder.create(path).map_err(|_| PeerRpcError::Storage)
 }
 
-fn random_nonce() -> String {
-    let bytes: [u8; NONCE_BYTES] = rand::random();
+fn random_token() -> String {
+    let bytes: [u8; TOKEN_BYTES] = rand::random();
     hex::encode(bytes)
 }
 
-fn validate_nonce(nonce: &str) -> Result<(), PeerRpcError> {
-    if nonce.len() != NONCE_BYTES * 2
-        || !nonce
+fn validate_token(token: &str) -> Result<(), PeerRpcError> {
+    if token.len() != TOKEN_BYTES * 2
+        || !token
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
@@ -571,23 +618,66 @@ pub(crate) fn test_owned_credentials(
     device_secret: &str,
     owner_secret: &str,
 ) -> PeerCredentials {
-    PeerCredentials::from_identity(
-        test_owned_identity(private_state_root, device_secret, owner_secret),
-        None,
-    )
+    PeerCredentials::from_identity(test_owned_identity(
+        private_state_root,
+        device_secret,
+        owner_secret,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nostr::{
+        event::{EventBuilder, FinalizeEvent, Kind, Tag},
+        key::Keys,
+        nips::nip44::{self, Version as Nip44Version},
+        types::Timestamp,
+    };
+
+    const NOW: u64 = 1_700_000_000;
+
+    fn token(byte: u8) -> String {
+        hex::encode([byte; TOKEN_BYTES])
+    }
+
+    fn encrypted_event_with_recipients(
+        sender_secret: &str,
+        recipient_secret: &str,
+        additional_recipient_secret: &str,
+        kind: u16,
+        plaintext: &str,
+    ) -> String {
+        let sender = Keys::parse(sender_secret).unwrap();
+        let recipient = Keys::parse(recipient_secret).unwrap().public_key();
+        let additional_recipient = Keys::parse(additional_recipient_secret)
+            .unwrap()
+            .public_key();
+        let content = nip44::encrypt(
+            sender.secret_key(),
+            &recipient,
+            plaintext.as_bytes(),
+            Nip44Version::V2,
+        )
+        .unwrap();
+        EventBuilder::new(Kind::Custom(kind), content)
+            .tags([
+                Tag::public_key(recipient),
+                Tag::public_key(additional_recipient),
+            ])
+            .custom_created_at(Timestamp::from(NOW))
+            .finalize(&sender)
+            .unwrap()
+            .as_json()
+    }
 
     #[test]
-    fn nonce_is_exact_lowercase_hex() {
-        let nonce = random_nonce();
-        assert_eq!(nonce.len(), NONCE_BYTES * 2);
-        validate_nonce(&nonce).unwrap();
-        assert!(validate_nonce(&nonce.to_uppercase()).is_err());
-        assert!(validate_nonce("short").is_err());
+    fn envelope_tokens_are_exact_lowercase_hex() {
+        let value = random_token();
+        assert_eq!(value.len(), TOKEN_BYTES * 2);
+        validate_token(&value).unwrap();
+        assert!(validate_token(&value.to_uppercase()).is_err());
+        assert!(validate_token("short").is_err());
     }
 
     #[test]
@@ -650,10 +740,16 @@ mod tests {
     #[tokio::test]
     async fn same_owner_round_trips_and_plaintext_has_no_fallback() {
         let (host_root, _client_root, credentials, host_key, config) = setup();
-        let app = crate::secure_host_router_with_in_memory_units(&config, host_root.path());
+        let app = crate::secure_host_router_with_in_memory_units_at(&config, host_root.path(), NOW);
         let base = serve(app).await;
-        let client =
-            crate::upstream_native::NativeClient::new_secure(base.clone(), host_key, credentials);
+        let client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key,
+            credentials,
+            NOW,
+            token(1),
+            token(2),
+        );
         let catalog = client.catalog_snapshot().await.unwrap();
         assert_eq!(catalog.games[0].id, "neverball");
 
@@ -666,22 +762,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_tamper_wrong_recipient_stale_future_reflection_and_unknown_owner() {
-        let (host_root, _client_root, credentials, host_key, config) = setup();
-        let base = serve(crate::secure_host_router_with_in_memory_units(
+    async fn peer_router_rejects_oversized_events_before_parsing() {
+        let (host_root, _client_root, _credentials, _host_key, config) = setup();
+        let base = serve(crate::secure_host_router_with_in_memory_units_at(
             &config,
             host_root.path(),
+            NOW,
         ))
         .await;
-        let now = unix_time();
+        assert_eq!(
+            post(&base, "/peer-rpc", "x".repeat(MAX_PEER_EVENT_BYTES + 1))
+                .await
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_tamper_wrong_recipient_stale_future_reflection_and_unknown_owner() {
+        let (host_root, _client_root, credentials, host_key, config) = setup();
+        let base = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        let now = NOW;
         let health = || RpcRequest::Health(crate::HealthRequest {});
 
-        for timestamp in [
+        for (index, timestamp) in [
             now - CLOCK_WINDOW_SECONDS - 10,
             now + CLOCK_WINDOW_SECONDS + 10,
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let encoded = credentials
-                .encode_request_with_nonce(&host_key, health(), timestamp, random_nonce())
+                .encode_request_with_tokens(
+                    &host_key,
+                    health(),
+                    timestamp,
+                    token(10 + index as u8),
+                    token(20 + index as u8),
+                )
                 .unwrap();
             assert_eq!(
                 post(&base, "/peer-rpc", encoded.event_json).await.status(),
@@ -692,11 +815,12 @@ mod tests {
         let other_root = tempfile::tempdir().unwrap();
         let other = test_owned_identity(other_root.path(), OTHER, OWNER);
         let wrong_recipient = credentials
-            .encode_request_with_nonce(
+            .encode_request_with_tokens(
                 other.device_public_key().unwrap(),
                 health(),
                 now,
-                random_nonce(),
+                token(30),
+                token(31),
             )
             .unwrap();
         assert_eq!(
@@ -706,8 +830,29 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
 
+        let owner_statement = credentials.identity.lock().unwrap().owner_statement_json();
+        let multiple_recipients = encrypted_event_with_recipients(
+            CLIENT,
+            HOST,
+            OTHER,
+            PEER_REQUEST_KIND,
+            &serde_json::to_string(&PeerRequestEnvelope {
+                version: PEER_RPC_VERSION,
+                recipient: host_key.clone(),
+                request_id: token(35),
+                nonce: token(36),
+                owner_statement,
+                request: health(),
+            })
+            .unwrap(),
+        );
+        assert_eq!(
+            post(&base, "/peer-rpc", multiple_recipients).await.status(),
+            StatusCode::BAD_REQUEST
+        );
+
         let encoded = credentials
-            .encode_request_with_nonce(&host_key, health(), now, random_nonce())
+            .encode_request_with_tokens(&host_key, health(), now, token(40), token(41))
             .unwrap();
         let mut tampered: serde_json::Value = serde_json::from_str(&encoded.event_json).unwrap();
         tampered["content"] = serde_json::Value::String("changed".into());
@@ -716,6 +861,20 @@ mod tests {
                 .await
                 .status(),
             StatusCode::BAD_REQUEST
+        );
+
+        let replay = credentials
+            .encode_request_with_tokens(&host_key, health(), now, token(42), token(43))
+            .unwrap();
+        assert_eq!(
+            post(&base, "/peer-rpc", replay.event_json.clone())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            post(&base, "/peer-rpc", replay.event_json).await.status(),
+            StatusCode::CONFLICT
         );
 
         let reflection = {
@@ -737,7 +896,7 @@ mod tests {
         let stranger_root = tempfile::tempdir().unwrap();
         let stranger = test_owned_credentials(stranger_root.path(), OTHER, OTHER_OWNER);
         let unknown = stranger
-            .encode_request_with_nonce(&host_key, health(), now, random_nonce())
+            .encode_request_with_tokens(&host_key, health(), now, token(50), token(51))
             .unwrap();
         assert_eq!(
             post(&base, "/peer-rpc", unknown.event_json).await.status(),
@@ -748,9 +907,9 @@ mod tests {
     #[tokio::test]
     async fn security_mutation_nonce_survives_server_restart() {
         let (host_root, _client_root, credentials, host_key, config) = setup();
-        let now = unix_time();
+        let now = NOW;
         let encoded = credentials
-            .encode_request_with_nonce(
+            .encode_request_with_tokens(
                 &host_key,
                 RpcRequest::MoonlightCertificateProvision(
                     crate::MoonlightCertificateProvisionRequest {
@@ -761,12 +920,14 @@ mod tests {
                     },
                 ),
                 now,
-                random_nonce(),
+                token(60),
+                token(61),
             )
             .unwrap();
-        let first = serve(crate::secure_host_router_with_in_memory_units(
+        let first = serve(crate::secure_host_router_with_in_memory_units_at(
             &config,
             host_root.path(),
+            NOW,
         ))
         .await;
         assert_eq!(
@@ -775,9 +936,10 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
-        let restarted = serve(crate::secure_host_router_with_in_memory_units(
+        let restarted = serve(crate::secure_host_router_with_in_memory_units_at(
             &config,
             host_root.path(),
+            NOW,
         ))
         .await;
         assert_eq!(
@@ -791,36 +953,86 @@ mod tests {
     #[test]
     fn response_must_bind_request_id_nonce_sender_and_recipient() {
         let (host_root, _client_root, credentials, host_key, _config) = setup();
-        let now = unix_time();
+        let now = NOW;
         let request = credentials
-            .encode_request_with_nonce(
+            .encode_request_with_tokens(
                 &host_key,
                 RpcRequest::Health(crate::HealthRequest {}),
                 now,
-                random_nonce(),
+                token(70),
+                token(71),
             )
             .unwrap();
         let host = DeviceIdentity::load_or_create(host_root.path()).unwrap();
         let response = PeerResponseEnvelope {
             version: PEER_RPC_VERSION,
             recipient: credentials.public_key().unwrap(),
-            request_event_id: "00".repeat(32),
+            request_id: request.request_id.clone(),
+            request_event_id: request.event_id.clone(),
             request_nonce: request.nonce.clone(),
             response: RpcResponse::Health(crate::HealthOutcome::Ok(crate::Health {
                 version: "test".into(),
             })),
         };
-        let event = host
-            .encrypt_event(
-                &response.recipient,
-                PEER_RESPONSE_KIND,
-                &serde_json::to_string(&response).unwrap(),
-                now,
-            )
-            .unwrap();
+        let mut wrong_request_id = response.clone();
+        wrong_request_id.request_id = token(72);
+        let mut wrong_event_id = response.clone();
+        wrong_event_id.request_event_id = token(73);
+        let mut wrong_nonce = response.clone();
+        wrong_nonce.request_nonce = token(74);
+        let mut wrong_recipient = response.clone();
+        wrong_recipient.recipient = host_key.clone();
+        for invalid in [
+            wrong_request_id,
+            wrong_event_id,
+            wrong_nonce,
+            wrong_recipient,
+        ] {
+            let event = host
+                .encrypt_event(
+                    credentials.public_key().unwrap().as_str(),
+                    PEER_RESPONSE_KIND,
+                    &serde_json::to_string(&invalid).unwrap(),
+                    now,
+                )
+                .unwrap();
+            assert!(matches!(
+                credentials.decode_response(&host_key, &request, &event.json, now),
+                Err(PeerRpcError::Binding)
+            ));
+        }
+
+        let multiple_recipients = encrypted_event_with_recipients(
+            HOST,
+            CLIENT,
+            OTHER,
+            PEER_RESPONSE_KIND,
+            &serde_json::to_string(&response).unwrap(),
+        );
         assert!(matches!(
-            credentials.decode_response(&host_key, &request, &event.json, now),
+            credentials.decode_response(&host_key, &request, &multiple_recipients, now),
             Err(PeerRpcError::Binding)
+        ));
+
+        let stranger = Keys::parse(OTHER).unwrap();
+        let wrong_sender = EventBuilder::new(
+            Kind::Custom(PEER_RESPONSE_KIND),
+            nip44::encrypt(
+                stranger.secret_key(),
+                &Keys::parse(CLIENT).unwrap().public_key(),
+                serde_json::to_string(&response).unwrap().as_bytes(),
+                Nip44Version::V2,
+            )
+            .unwrap(),
+        )
+        .tag(Tag::public_key(Keys::parse(CLIENT).unwrap().public_key()))
+        .custom_created_at(Timestamp::from(now))
+        .finalize(&stranger)
+        .unwrap()
+        .as_json();
+        assert!(matches!(
+            credentials.decode_response(&host_key, &request, &wrong_sender, now),
+            Err(PeerRpcError::WrongKind)
         ));
     }
 }

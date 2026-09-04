@@ -16,7 +16,6 @@ use std::{
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 
-pub mod authorization;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
@@ -2890,7 +2889,7 @@ fn router_with_capability_local_root_provision_and_grants(
     let upstream = configured_upstream.unwrap_or_else(|| {
         #[cfg(not(test))]
         {
-            let peer_credentials = peer_rpc::PeerCredentials::load(&private_state_root, None)
+            let peer_credentials = peer_rpc::PeerCredentials::load(&private_state_root)
                 .expect("load or create the local device identity");
             upstreams::UpstreamRegistry::from_env_or_file(
                 &local_storage_root.join("upstreams.json"),
@@ -3019,9 +3018,10 @@ fn host_router_with_in_memory_units(config_path: impl AsRef<Path>) -> Router {
 }
 
 #[cfg(test)]
-fn secure_host_router_with_in_memory_units(
+fn secure_host_router_with_in_memory_units_at(
     config_path: impl AsRef<Path>,
     private_state_root: &Path,
+    now: u64,
 ) -> Router {
     let runtime = host::HostRuntime::from_paths_with_backend(
         config_path.as_ref(),
@@ -3029,7 +3029,10 @@ fn secure_host_router_with_in_memory_units(
         private_state_root.to_owned(),
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
-    secure_host_routers(runtime, private_state_root).0
+    let (lan, _) = app_states(runtime);
+    peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
+        .expect("load or create peer RPC identity")
+        .router()
 }
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
@@ -3206,7 +3209,7 @@ fn start_local_server_for_platform(
     let server_config_snapshot = moonlight_config_snapshot.clone();
     #[cfg(not(test))]
     let upstream = {
-        let peer_credentials = peer_rpc::PeerCredentials::load(Path::new(&private_state_root), None)
+        let peer_credentials = peer_rpc::PeerCredentials::load(Path::new(&private_state_root))
             .map_err(|error| ServerError::StartFailed {
                 details: error.to_string(),
             })?;
@@ -7207,10 +7210,11 @@ command = ["game-two"]
         plain_host_routers(runtime)
     }
 
-    fn secure_host_router_with_certificate_adapter(
+    fn secure_host_router_with_certificate_adapter_at(
         config_path: &Path,
         private_state_root: &Path,
         adapter: Arc<dyn host::moonlight_certificate::MoonlightCertificateAdapter>,
+        now: u64,
     ) -> Router {
         let runtime = host::HostRuntime::from_paths_with_backends(
             config_path,
@@ -7219,7 +7223,10 @@ command = ["game-two"]
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
             adapter,
         );
-        secure_host_routers(runtime, private_state_root).0
+        let (lan, _) = app_states(runtime);
+        peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
+            .expect("load or create peer RPC identity")
+            .router()
     }
 
     async fn serve_router(app: Router) -> String {
@@ -7248,16 +7255,21 @@ command = ["game-two"]
         let host_key = host_identity.device_public_key().unwrap().to_owned();
         let credentials = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OWNER);
         let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
-        let server = serve_router(secure_host_router_with_certificate_adapter(
+        const NOW: u64 = 1_700_000_000;
+        let server = serve_router(secure_host_router_with_certificate_adapter_at(
             &config,
             host_private.path(),
             adapter.clone(),
+            NOW,
         ))
         .await;
-        let client = upstream_native::NativeClient::new_secure(
+        let client = upstream_native::NativeClient::new_secure_at(
             server.clone(),
             host_key.clone(),
             credentials,
+            NOW,
+            "11".repeat(32),
+            "22".repeat(32),
         );
         client
             .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
@@ -7267,10 +7279,17 @@ command = ["game-two"]
 
         std::fs::remove_file(client_private.path().join("identity/owner.event.json")).unwrap();
         let changed = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OTHER_OWNER);
-        let denied = upstream_native::NativeClient::new_secure(server, host_key, changed)
-            .catalog_snapshot()
-            .await
-            .unwrap_err();
+        let denied = upstream_native::NativeClient::new_secure_at(
+            server,
+            host_key,
+            changed,
+            NOW,
+            "33".repeat(32),
+            "44".repeat(32),
+        )
+        .catalog_snapshot()
+        .await
+        .unwrap_err();
         assert!(matches!(denied, upstreams::UpstreamError::Http(403)));
         assert_eq!(
             adapter.calls(),

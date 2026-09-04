@@ -22,6 +22,16 @@ pub struct NativeClient {
     expected_peer_public_key: Option<String>,
     credentials: Option<PeerCredentials>,
     http: reqwest::Client,
+    #[cfg(test)]
+    fixed_request: Option<FixedPeerRequest>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct FixedPeerRequest {
+    now: u64,
+    request_id: String,
+    nonce: String,
 }
 
 impl NativeClient {
@@ -40,7 +50,27 @@ impl NativeClient {
             expected_peer_public_key: Some(expected_peer_public_key),
             credentials: Some(credentials),
             http,
+            #[cfg(test)]
+            fixed_request: None,
         }
+    }
+
+    #[cfg(test)]
+    pub fn new_secure_at(
+        base_url: String,
+        expected_peer_public_key: String,
+        credentials: PeerCredentials,
+        now: u64,
+        request_id: String,
+        nonce: String,
+    ) -> Self {
+        let mut client = Self::new_secure(base_url, expected_peer_public_key, credentials);
+        client.fixed_request = Some(FixedPeerRequest {
+            now,
+            request_id,
+            nonce,
+        });
+        client
     }
 
     #[cfg(test)]
@@ -55,6 +85,7 @@ impl NativeClient {
             expected_peer_public_key: None,
             credentials: None,
             http,
+            fixed_request: None,
         }
     }
 
@@ -218,9 +249,20 @@ impl NativeClient {
             .expected_peer_public_key
             .as_deref()
             .ok_or_else(|| UpstreamError::Wire("native peer public key is unavailable".into()))?;
-        let encoded = credentials
-            .encode_request(expected_peer_public_key, request, unix_time())
-            .map_err(|error| UpstreamError::Wire(error.to_string()))?;
+        #[cfg(test)]
+        let encoded = match &self.fixed_request {
+            Some(fixed) => credentials.encode_request_with_tokens(
+                expected_peer_public_key,
+                request,
+                fixed.now,
+                fixed.request_id.clone(),
+                fixed.nonce.clone(),
+            ),
+            None => credentials.encode_request(expected_peer_public_key, request, unix_time()),
+        };
+        #[cfg(not(test))]
+        let encoded = credentials.encode_request(expected_peer_public_key, request, unix_time());
+        let encoded = encoded.map_err(|error| UpstreamError::Wire(error.to_string()))?;
         let response = self
             .http
             .post(&self.rpc_url)
@@ -257,8 +299,21 @@ impl NativeClient {
         }
         let event_json = std::str::from_utf8(&body)
             .map_err(|_| UpstreamError::Wire("native response is invalid UTF-8".into()))?;
+        #[cfg(test)]
+        let response_time = self
+            .fixed_request
+            .as_ref()
+            .map(|fixed| fixed.now)
+            .unwrap_or_else(unix_time);
+        #[cfg(not(test))]
+        let response_time = unix_time();
         credentials
-            .decode_response(expected_peer_public_key, &encoded, event_json, unix_time())
+            .decode_response(
+                expected_peer_public_key,
+                &encoded,
+                event_json,
+                response_time,
+            )
             .map_err(|error| UpstreamError::Wire(error.to_string()))
     }
 }

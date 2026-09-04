@@ -292,17 +292,28 @@ impl DeviceIdentity {
         Ok(signed_event(event))
     }
 
-    /// Parse and verify one NIP-01 event.
+    /// Parse and verify one bounded NIP-01 event.
     pub fn verify_event(event_json: &str) -> Result<VerifiedEvent, IdentityError> {
-        if event_json.len() > MAX_EVENT_BYTES {
-            return Err(IdentityError::InvalidEvent("event is too large".into()));
+        verify_event_bounded(event_json, MAX_EVENT_BYTES)
+    }
+
+    /// Parse and verify one bounded event carrying NIP-44 content.
+    pub fn verify_encrypted_event(event_json: &str) -> Result<VerifiedEvent, IdentityError> {
+        verify_event_bounded(event_json, MAX_ENCRYPTED_PAYLOAD_BYTES)
+    }
+
+    /// Verify an owned statement for one exact device and return its owner key.
+    pub fn owner_public_key_from_statement(
+        event_json: &str,
+        expected_device_public_key: &str,
+    ) -> Result<String, IdentityError> {
+        let statement = parse_owner_statement(event_json.as_bytes(), expected_device_public_key)?;
+        if statement.status != OwnerStatementStatus::Owned {
+            return Err(IdentityError::InvalidEvent(
+                "owner statement does not own the device".into(),
+            ));
         }
-        let event = Event::from_json(event_json)
-            .map_err(|_| IdentityError::InvalidEvent("event JSON is malformed".into()))?;
-        event
-            .verify()
-            .map_err(|_| IdentityError::InvalidEvent("event signature is invalid".into()))?;
-        Ok(verified_event(event))
+        Ok(statement.event.pubkey.to_hex())
     }
 
     /// Encrypt content with NIP-44 v2 and sign the containing NIP-01 event.
@@ -471,6 +482,21 @@ fn signed_event(event: Event) -> SignedEvent {
         author: event.pubkey.to_hex(),
         json: event.as_json(),
     }
+}
+
+fn verify_event_bounded(
+    event_json: &str,
+    maximum_bytes: usize,
+) -> Result<VerifiedEvent, IdentityError> {
+    if event_json.len() > maximum_bytes {
+        return Err(IdentityError::InvalidEvent("event is too large".into()));
+    }
+    let event = Event::from_json(event_json)
+        .map_err(|_| IdentityError::InvalidEvent("event JSON is malformed".into()))?;
+    event
+        .verify()
+        .map_err(|_| IdentityError::InvalidEvent("event signature is invalid".into()))?;
+    Ok(verified_event(event))
 }
 
 fn verified_event(event: Event) -> VerifiedEvent {

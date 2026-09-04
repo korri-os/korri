@@ -92,8 +92,6 @@ pub struct UpstreamHostConfig {
     moonlight_address: Option<String>,
     #[serde(default)]
     device_public_key: Option<String>,
-    #[serde(default)]
-    pass: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -111,7 +109,6 @@ impl UpstreamHostConfig {
             base_url,
             moonlight_address: None,
             device_public_key: None,
-            pass: None,
         }
     }
 
@@ -126,7 +123,6 @@ impl UpstreamHostConfig {
             base_url,
             moonlight_address: None,
             device_public_key: Some(device_public_key),
-            pass: None,
         }
     }
 
@@ -138,7 +134,6 @@ impl UpstreamHostConfig {
             base_url,
             moonlight_address: None,
             device_public_key: None,
-            pass: None,
         }
     }
 }
@@ -244,7 +239,7 @@ impl UpstreamRegistry {
                         RegisteredClient::Native(NativeClient::new_secure(
                             config.base_url,
                             peer_key,
-                            credentials.with_pass(config.pass),
+                            credentials.clone(),
                         ))
                     }
                 };
