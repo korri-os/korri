@@ -88,8 +88,9 @@
 	pointer-events: none;
 	background: repeating-linear-gradient(
 		0deg,
-		color-mix(in srgb, var(--p8-black) 18%, transparent) 0,
-		color-mix(in srgb, var(--p8-black) 18%, transparent) var(--pico-scanline),
+		color-mix(in srgb, var(--p8-black) var(--pico-scanline-tint), transparent) 0,
+		color-mix(in srgb, var(--p8-black) var(--pico-scanline-tint), transparent)
+			var(--pico-scanline),
 		transparent var(--pico-scanline),
 		transparent var(--pico-scanline-gap)
 	);

@@ -77,10 +77,17 @@
 	--pico-font-display: "Press Start 2P", monospace;
 	--pico-font-term: "VT323", monospace;
 
-	/* Hairlines and the CRT grille are the one place a device pixel is the
-	 * honest unit: they must not scale with the type ramp or they stop being
-	 * hairlines. Named here so no component restates them. */
+	/* A hairline is the one place a device pixel is the honest unit: it must not
+	 * scale with the type ramp or it stops being a hairline. */
 	--pico-edge: 1px;
-	--pico-scanline: 2px;
-	--pico-scanline-gap: 6px;
+
+	/* The grille is different. A CRT has a fixed number of lines whatever its
+	 * physical size, so the period belongs in screen-relative units, not device
+	 * pixels — pinned to px it drew the same four hard stripes across a small
+	 * bright chip at every screen size and made the button caps look damaged.
+	 * 240 lines is the look; the tint stays light enough to read through. */
+	--pico-scanline-lines: 240;
+	--pico-scanline: calc(100cqh / var(--pico-scanline-lines) / 2);
+	--pico-scanline-gap: calc(100cqh / var(--pico-scanline-lines));
+	--pico-scanline-tint: 12%;
 }

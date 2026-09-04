@@ -7,7 +7,14 @@
 .pico-hint-key {
 	display: grid;
 	place-items: center;
-	min-width: calc(var(--pico-base) * 2);
+	/* Square, because the thing it depicts is: a wide slab reads as a highlighter
+	 * swipe rather than a button. aspect-ratio sizes the height from the glyph's
+	 * own width, so the cap stays square at every step of the type scale. */
+	aspect-ratio: 1;
+	/* The glyph's own line box is taller than it is wide, and aspect-ratio cannot
+	 * shrink a box below its min-content height — so without this the cap stays
+	 * portrait however square the ratio claims to be. */
+	line-height: 1;
 	padding: calc(var(--pico-space-1) / 2);
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text-xs);
