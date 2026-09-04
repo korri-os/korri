@@ -15,6 +15,7 @@ let
     {"id":"public-binding","pubkey":"${builtins.concatStringsSep "" (lib.replicate 64 "1")}"}
   '';
   peerPublicKey = builtins.concatStringsSep "" (lib.replicate 64 "2");
+  androidUpstreamsTemplate = ./deploy/upstreams.android.json;
   base = {
     users.groups.games.gid = 1001;
     users.users.gameplay = {
@@ -124,6 +125,18 @@ let
     services.korridLinuxDevice = {
       enable = true;
       relays = lib.mkForce [ ];
+    };
+  };
+  tooManyRelays = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      relays = lib.mkForce (map (index: "wss://relay-${toString index}.example.com") (lib.range 1 9));
+    };
+  };
+  loopbackRelay = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      relays = lib.mkForce [ "ws://127.0.0.1:7447/" ];
     };
   };
   insecureRelay = evaluate {
@@ -289,6 +302,10 @@ assert !(lib.hasInfix "subject.system_unit" polkit);
 assert lib.hasInfix ''/^korri-game-[0-9a-f]{32}\.service$/'' polkit;
 assert !(lib.hasInfix ''/^korri-game-[0-9a-f]{32}\\.service$/'' polkit);
 assert allAssertionsPass bundled;
+assert allAssertionsPass loopbackRelay;
+assert
+  loopbackRelay.config.systemd.services.korrid.environment.KORRID_RELAYS
+  == ''["ws://127.0.0.1:7447"]'';
 assert builtins.elem "korri-bundle-selector.service" bundledService.requires;
 assert builtins.elem "korri-bundle-selector.service" bundledService.after;
 assert bundledService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
@@ -324,6 +341,7 @@ assert hasFailedAssertion "compositorControlDirectory must be a normalized absol
 assert hasFailedAssertion "certificateControlDirectory must be a normalized absolute path"
   invalidCertificateControlPath;
 assert hasFailedAssertion "one to eight unique normalized" emptyRelays;
+assert hasFailedAssertion "one to eight unique normalized" tooManyRelays;
 assert hasFailedAssertion "one to eight unique normalized" insecureRelay;
 assert hasFailedAssertion "one to eight unique normalized" duplicateNormalizedRelays;
 assert hasFailedAssertion "native peers require" invalidPeerKey;
@@ -339,6 +357,7 @@ assert evaluationRejected invalidControlPath;
 assert evaluationRejected invalidCompositorControlPath;
 assert evaluationRejected invalidCertificateControlPath;
 assert evaluationRejected emptyRelays;
+assert evaluationRejected tooManyRelays;
 assert evaluationRejected insecureRelay;
 assert evaluationRejected duplicateNormalizedRelays;
 assert evaluationRejected invalidPeerKey;
@@ -346,6 +365,14 @@ assert evaluationRejected missingMoonlightAddress;
 assert evaluationRejected wrongPackage;
 assert evaluationRejected secretOwnerBinding;
 assert evaluationRejected secretFieldOwnerBinding;
-pkgs.runCommand "korrid-linux-device-module-check" { } ''
+pkgs.runCommand "korrid-linux-device-module-check" { nativeBuildInputs = [ pkgs.jq ]; } ''
+  jq -e '
+    length == 1
+    and .[0].label == "zao"
+    and .[0].kind == "native"
+    and .[0].baseUrl == "http://zao:43117"
+    and .[0].moonlightAddress == "zao:47989"
+    and .[0].devicePublicKey == "__ZAO_DEVICE_PUBLIC_KEY_FROM_IDENTITY_STATUS__"
+  ' ${androidUpstreamsTemplate} >/dev/null
   touch "$out"
 ''
