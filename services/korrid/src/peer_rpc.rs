@@ -1,4 +1,5 @@
 use crate::{
+    authorization::{self, Authorization, AuthorizationContext},
     dispatch,
     identity::{DeviceIdentity, IdentityState},
     AppState, MoonlightCertificateProvisionOutcome, MoonlightCertificateRevokeOutcome,
@@ -14,10 +15,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::io::Write;
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
-    io::Write,
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -49,6 +51,8 @@ pub enum PeerRpcError {
     Binding,
     #[error("peer RPC storage is unavailable")]
     Storage,
+    #[error("peer certificate trust could not be reconciled")]
+    Trust,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +64,10 @@ struct PeerRequestEnvelope {
     nonce: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     owner_statement: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    person_pass: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    revocations: Vec<String>,
     request: RpcRequest,
 }
 
@@ -74,8 +82,6 @@ struct PeerResponseEnvelope {
     response: RpcResponse,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProvisionedCertificate {
     host_uuid: String,
     client_certificate: String,
@@ -84,6 +90,8 @@ struct ProvisionedCertificate {
 #[derive(Clone)]
 pub struct PeerCredentials {
     identity: Arc<Mutex<DeviceIdentity>>,
+    person_pass: Option<String>,
+    revocations: Vec<String>,
 }
 
 impl PeerCredentials {
@@ -92,6 +100,8 @@ impl PeerCredentials {
             .map_err(|_| PeerRpcError::Identity)?;
         Ok(Self {
             identity: Arc::new(Mutex::new(identity)),
+            person_pass: None,
+            revocations: Vec::new(),
         })
     }
 
@@ -99,6 +109,24 @@ impl PeerCredentials {
     pub fn from_identity(identity: DeviceIdentity) -> Self {
         Self {
             identity: Arc::new(Mutex::new(identity)),
+            person_pass: None,
+            revocations: Vec::new(),
+        }
+    }
+
+    pub fn with_person_pass(&self, person_pass: Option<String>) -> Self {
+        Self {
+            identity: Arc::clone(&self.identity),
+            person_pass,
+            revocations: self.revocations.clone(),
+        }
+    }
+
+    pub fn with_revocations(&self, revocations: Vec<String>) -> Self {
+        Self {
+            identity: Arc::clone(&self.identity),
+            person_pass: self.person_pass.clone(),
+            revocations,
         }
     }
 
@@ -152,6 +180,8 @@ impl PeerCredentials {
             request_id: request_id.clone(),
             nonce: nonce.clone(),
             owner_statement: identity.owner_statement_json(),
+            person_pass: self.person_pass.clone(),
+            revocations: self.revocations.clone(),
             request,
         };
         let plaintext = serde_json::to_string(&envelope).map_err(|_| PeerRpcError::Invalid)?;
@@ -217,7 +247,7 @@ pub struct PeerRpcServer {
     app: AppState,
     identity: Arc<Mutex<DeviceIdentity>>,
     replay: Arc<ReplayGuard>,
-    certificate_directory: PathBuf,
+    authorization: Authorization,
     clock: Clock,
 }
 
@@ -237,7 +267,8 @@ impl PeerRpcServer {
             app,
             identity: Arc::new(Mutex::new(identity)),
             replay: Arc::new(ReplayGuard::new(private_state_root)?),
-            certificate_directory: private_state_root.join("identity/peer-certificates"),
+            authorization: Authorization::load(private_state_root)
+                .map_err(|_| PeerRpcError::Storage)?,
             clock,
         })
     }
@@ -289,24 +320,36 @@ impl PeerRpcServer {
         }
         validate_token(&envelope.request_id)?;
         validate_token(&envelope.nonce)?;
-        if !has_same_owner(
-            &local_state,
-            &verified.author,
-            envelope.owner_statement.as_deref(),
-        ) {
-            self.revoke_recorded_certificate(&verified.author).await;
-            return Err(PeerRpcError::Unauthorized);
-        }
+        let attempt = self
+            .authorization
+            .attempt(
+                &local_state,
+                &verified.author,
+                envelope.owner_statement.as_deref(),
+                envelope.person_pass.as_deref(),
+                &envelope.revocations,
+                now,
+            )
+            .map_err(|_| PeerRpcError::Invalid)?;
+        authorization::authorize(attempt.context(), &envelope.request)
+            .map_err(|_| PeerRpcError::Unauthorized)?;
         self.replay.consume(
             &verified.author,
             &envelope.nonce,
             verified.created_at,
-            is_security_mutation(&envelope.request),
+            authorization::is_security_mutation(&envelope.request),
         )?;
+        self.authorization
+            .commit_revocations(&attempt)
+            .map_err(|_| PeerRpcError::Storage)?;
+        self.reconcile_certificate_trust(&local_state, now).await?;
 
         let provision = provisioned_certificate(&envelope.request);
         let revocation = revoked_certificate(&envelope.request);
-        let response = dispatch(&self.app, envelope.request).await;
+        let context = attempt.context().clone();
+        let response = dispatch(&self.app, &context, envelope.request)
+            .await
+            .map_err(|_| PeerRpcError::Unauthorized)?;
         if let Some(certificate) = provision {
             if matches!(
                 response,
@@ -314,7 +357,16 @@ impl PeerRpcServer {
                     MoonlightCertificateProvisionOutcome::Ok(_)
                 )
             ) {
-                self.record_certificate(&verified.author, &certificate)?;
+                let AuthorizationContext::Peer(principal) = &context else {
+                    unreachable!("a peer attempt always has a peer context")
+                };
+                self.authorization
+                    .record_certificate(
+                        principal,
+                        &certificate.host_uuid,
+                        &certificate.client_certificate,
+                    )
+                    .map_err(|_| PeerRpcError::Storage)?;
             }
         }
         if revocation
@@ -323,7 +375,9 @@ impl PeerRpcServer {
                 RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(_))
             )
         {
-            self.remove_recorded_certificate(&verified.author)?;
+            self.authorization
+                .remove_certificate_grant(&verified.author)
+                .map_err(|_| PeerRpcError::Storage)?;
         }
         let response_envelope = PeerResponseEnvelope {
             version: PEER_RPC_VERSION,
@@ -343,63 +397,37 @@ impl PeerRpcServer {
             .map_err(|_| PeerRpcError::Identity)
     }
 
-    fn certificate_path(&self, device_public_key: &str) -> PathBuf {
-        self.certificate_directory.join(device_public_key)
-    }
-
-    fn record_certificate(
+    async fn reconcile_certificate_trust(
         &self,
-        device_public_key: &str,
-        certificate: &ProvisionedCertificate,
+        local_state: &IdentityState,
+        now: u64,
     ) -> Result<(), PeerRpcError> {
-        prepare_private_directory(&self.certificate_directory)?;
-        let path = self.certificate_path(device_public_key);
-        let temporary = self
-            .certificate_directory
-            .join(format!(".{device_public_key}.tmp"));
-        let bytes = serde_json::to_vec(certificate).map_err(|_| PeerRpcError::Storage)?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&temporary)
+        let revocations = self
+            .authorization
+            .certificate_revocations(local_state, now)
             .map_err(|_| PeerRpcError::Storage)?;
-        file.write_all(&bytes).map_err(|_| PeerRpcError::Storage)?;
-        file.sync_all().map_err(|_| PeerRpcError::Storage)?;
-        fs::rename(temporary, path).map_err(|_| PeerRpcError::Storage)
-    }
-
-    fn remove_recorded_certificate(&self, device_public_key: &str) -> Result<(), PeerRpcError> {
-        match fs::remove_file(self.certificate_path(device_public_key)) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(_) => Err(PeerRpcError::Storage),
+        for revocation in revocations {
+            let response = dispatch(
+                &self.app,
+                &AuthorizationContext::TrustReconciliation,
+                RpcRequest::MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest {
+                    host_uuid: revocation.host_uuid,
+                    client_certificate: revocation.client_certificate,
+                }),
+            )
+            .await
+            .map_err(|_| PeerRpcError::Trust)?;
+            if !matches!(
+                response,
+                RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(_))
+            ) {
+                return Err(PeerRpcError::Trust);
+            }
+            self.authorization
+                .complete_certificate_revocation(&revocation.device_public_key)
+                .map_err(|_| PeerRpcError::Storage)?;
         }
-    }
-
-    async fn revoke_recorded_certificate(&self, device_public_key: &str) {
-        let path = self.certificate_path(device_public_key);
-        let Ok(bytes) = fs::read(&path) else {
-            return;
-        };
-        let Ok(certificate) = serde_json::from_slice::<ProvisionedCertificate>(&bytes) else {
-            return;
-        };
-        let response = dispatch(
-            &self.app,
-            RpcRequest::MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest {
-                host_uuid: certificate.host_uuid,
-                client_certificate: certificate.client_certificate,
-            }),
-        )
-        .await;
-        if matches!(
-            response,
-            RpcResponse::MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome::Ok(_))
-        ) {
-            let _ = fs::remove_file(path);
-        }
+        Ok(())
     }
 }
 
@@ -419,6 +447,9 @@ async fn peer_rpc(State(state): State<PeerRpcServer>, body: Bytes) -> Response {
         Err(PeerRpcError::Unauthorized) => StatusCode::FORBIDDEN.into_response(),
         Err(PeerRpcError::Replay) => StatusCode::CONFLICT.into_response(),
         Err(PeerRpcError::Time) => StatusCode::UNAUTHORIZED.into_response(),
+        Err(PeerRpcError::Trust | PeerRpcError::Storage) => {
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
         Err(_) => StatusCode::BAD_REQUEST.into_response(),
     }
 }
@@ -479,40 +510,6 @@ impl ReplayGuard {
 
 fn has_exact_recipient(tags: &[Vec<String>], expected: &str) -> bool {
     tags.len() == 1 && tags[0].as_slice() == ["p", expected]
-}
-
-fn has_same_owner(
-    local_state: &IdentityState,
-    sender_device_public_key: &str,
-    sender_owner_statement: Option<&str>,
-) -> bool {
-    let IdentityState::Owned {
-        owner_public_key: local_owner,
-        ..
-    } = local_state
-    else {
-        return false;
-    };
-    sender_owner_statement
-        .and_then(|statement| {
-            DeviceIdentity::owner_public_key_from_statement(statement, sender_device_public_key)
-                .ok()
-        })
-        .is_some_and(|sender_owner| sender_owner == *local_owner)
-}
-
-fn is_security_mutation(request: &RpcRequest) -> bool {
-    matches!(
-        request,
-        RpcRequest::MoonlightCertificateProvision(_)
-            | RpcRequest::MoonlightCertificateRevoke(_)
-            | RpcRequest::DiscoveryRegisterReceipt(_)
-            | RpcRequest::DiscoveryRemoveLocation(_)
-            | RpcRequest::DiscoveryRescan(_)
-            | RpcRequest::SettingsUpdate(_)
-            | RpcRequest::SteamGridDbCredentialSet(_)
-            | RpcRequest::SteamGridDbCredentialClear(_)
-    )
 }
 
 fn provisioned_certificate(request: &RpcRequest) -> Option<ProvisionedCertificate> {
@@ -842,6 +839,8 @@ mod tests {
                 request_id: token(35),
                 nonce: token(36),
                 owner_statement,
+                person_pass: None,
+                revocations: Vec::new(),
                 request: health(),
             })
             .unwrap(),

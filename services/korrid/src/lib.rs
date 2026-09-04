@@ -16,6 +16,7 @@ use std::{
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 
+pub mod authorization;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
@@ -1908,8 +1909,13 @@ async fn invoke_current_session_control(
     }
 }
 
-async fn dispatch(state: &AppState, request: RpcRequest) -> RpcResponse {
-    match request {
+async fn dispatch(
+    state: &AppState,
+    authorization: &authorization::AuthorizationContext,
+    request: RpcRequest,
+) -> Result<RpcResponse, authorization::AuthorizationDenied> {
+    authorization::authorize(authorization, &request)?;
+    let response = match request {
         RpcRequest::CatalogSnapshot(_) => {
             let outcome = match &state.mode {
                 ServerMode::Brain(brain) => brain
@@ -2236,12 +2242,12 @@ async fn dispatch(state: &AppState, request: RpcRequest) -> RpcResponse {
                 let registry = match plugin_policy::registry_for_snapshot(&config_state.snapshot) {
                     Ok(registry) => registry,
                     Err(error) => {
-                        return RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(
+                        return Ok(RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(
                             RpcFailure {
                                 code: "PluginPolicyInvalid".into(),
                                 message: error.to_string(),
                             },
-                        ));
+                        )));
                     }
                 };
                 let catalog = launcher::local_games_with_cover_assets(
@@ -2273,12 +2279,12 @@ async fn dispatch(state: &AppState, request: RpcRequest) -> RpcResponse {
                 let registry = match plugin_policy::registry_for_snapshot(&config_state.snapshot) {
                     Ok(registry) => registry,
                     Err(error) => {
-                        return RpcResponse::LocalGameLaunch(LocalGameLaunchOutcome::Err(
+                        return Ok(RpcResponse::LocalGameLaunch(LocalGameLaunchOutcome::Err(
                             RpcFailure {
                                 code: "PluginPolicyInvalid".into(),
                                 message: error.to_string(),
                             },
-                        ));
+                        )));
                     }
                 };
                 enum ActiveLaunchDecision {
@@ -2305,9 +2311,9 @@ async fn dispatch(state: &AppState, request: RpcRequest) -> RpcResponse {
                         .as_ref()
                         .filter(|authority| authority.is_for(&expected_active.launch_id))
                     else {
-                        return RpcResponse::LocalGameLaunch(LocalGameLaunchOutcome::Err(
+                        return Ok(RpcResponse::LocalGameLaunch(LocalGameLaunchOutcome::Err(
                             active_session_conflict(),
-                        ));
+                        )));
                     };
                     if expected_active.game_id.as_deref() != Some(request.game_id.as_str()) {
                         ActiveLaunchDecision::Conflict
@@ -2604,7 +2610,8 @@ async fn dispatch(state: &AppState, request: RpcRequest) -> RpcResponse {
                 ),
             }
         }
-    }
+    };
+    Ok(response)
 }
 
 fn settings_snapshot(
@@ -2696,7 +2703,14 @@ async fn rpc(
             return Err(StatusCode::UNAUTHORIZED);
         }
     }
-    Ok(Json(dispatch(&state, request).await))
+    let authorization = match state.rpc_surface {
+        RpcSurface::Lan => authorization::AuthorizationContext::LocalBrowser,
+        RpcSurface::LocalControl => authorization::AuthorizationContext::LocalUnixControl,
+    };
+    dispatch(&state, &authorization, request)
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::FORBIDDEN)
 }
 
 fn default_local_storage_root() -> PathBuf {
@@ -3836,6 +3850,11 @@ mod tests {
     use axum::{
         body::{to_bytes, Body},
         http::{header, Request, StatusCode},
+    };
+    use nostr::{
+        event::{EventBuilder, FinalizeEvent, Kind, Tag},
+        key::Keys,
+        types::Timestamp,
     };
     use tower::ServiceExt;
 
@@ -7100,6 +7119,7 @@ command = ["game-two"]
     struct RecordingMoonlightCertificates {
         expected_host_uuid: String,
         calls: Mutex<Vec<String>>,
+        exact_revocations: Mutex<Vec<(String, String)>>,
     }
 
     impl RecordingMoonlightCertificates {
@@ -7107,11 +7127,16 @@ command = ["game-two"]
             Arc::new(Self {
                 expected_host_uuid: expected_host_uuid.into(),
                 calls: Mutex::new(Vec::new()),
+                exact_revocations: Mutex::new(Vec::new()),
             })
         }
 
         fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
+        }
+
+        fn exact_revocations(&self) -> Vec<(String, String)> {
+            self.exact_revocations.lock().unwrap().clone()
         }
     }
 
@@ -7145,11 +7170,15 @@ command = ["game-two"]
             })
         }
 
-        fn revoke(&self, host_uuid: &str, _client_certificate: &str) -> Result<bool, RpcFailure> {
+        fn revoke(&self, host_uuid: &str, client_certificate: &str) -> Result<bool, RpcFailure> {
             self.calls
                 .lock()
                 .unwrap()
                 .push(format!("revoke:{host_uuid}"));
+            self.exact_revocations
+                .lock()
+                .unwrap()
+                .push((host_uuid.into(), client_certificate.into()));
             Ok(host_uuid == self.expected_host_uuid)
         }
     }
@@ -7239,21 +7268,69 @@ command = ["game-two"]
     const TEST_CLIENT_PEM: &str =
         "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----\n";
 
+    fn owner_revocation(owner: &Keys, device_public_key: &str, created_at: u64) -> String {
+        EventBuilder::new(Kind::Custom(30_078), "")
+            .tags([
+                Tag::parse(["d", &format!("org.korri.device-owner:{device_public_key}")]).unwrap(),
+                Tag::parse(["device", device_public_key]).unwrap(),
+                Tag::parse(["status", "revoked"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(owner)
+            .unwrap()
+            .as_json()
+    }
+
+    fn stream_pass(
+        owner: &Keys,
+        device_public_key: &str,
+        created_at: u64,
+        expires_at: u64,
+    ) -> String {
+        EventBuilder::new(Kind::Custom(authorization::PERSON_PASS_EVENT_KIND), "")
+            .tags([
+                Tag::parse(["d", &format!("org.korri.person-pass:{}", "11".repeat(32))]).unwrap(),
+                Tag::parse(["device", device_public_key]).unwrap(),
+                Tag::parse(["tier", "guest"]).unwrap(),
+                Tag::parse(["expires", &expires_at.to_string()]).unwrap(),
+                Tag::parse(["scope", authorization::STREAM_LAUNCH_SCOPE]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(owner)
+            .unwrap()
+            .as_json()
+    }
+
+    fn pass_revocation(owner: &Keys, pass_event_id: &str, created_at: u64) -> String {
+        EventBuilder::new(Kind::Custom(5), "")
+            .tags([
+                Tag::parse(["e", pass_event_id]).unwrap(),
+                Tag::parse(["k", &authorization::PERSON_PASS_EVENT_KIND.to_string()]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(created_at))
+            .finalize(owner)
+            .unwrap()
+            .as_json()
+    }
+
     #[tokio::test]
-    async fn same_owner_automatically_provisions_and_owner_change_revokes_certificate() {
-        const OWNER: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+    async fn same_owner_provisions_immediately_and_unauthorized_calls_have_no_effects() {
         const OTHER_OWNER: &str =
             "0000000000000000000000000000000000000000000000000000000000000004";
         const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
         const CLIENT: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        let owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(&config, "label = \"zao\"\n").unwrap();
         let host_private = tempfile::tempdir().unwrap();
         let client_private = tempfile::tempdir().unwrap();
-        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, OWNER);
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
         let host_key = host_identity.device_public_key().unwrap().to_owned();
-        let credentials = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OWNER);
+        let credentials =
+            peer_rpc::test_owned_credentials(client_private.path(), CLIENT, &owner_secret);
+        let client_key = credentials.public_key().unwrap();
         let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
         const NOW: u64 = 1_700_000_000;
         let server = serve_router(secure_host_router_with_certificate_adapter_at(
@@ -7263,34 +7340,295 @@ command = ["game-two"]
             NOW,
         ))
         .await;
-        let client = upstream_native::NativeClient::new_secure_at(
+        upstream_native::NativeClient::new_secure_at(
             server.clone(),
             host_key.clone(),
             credentials,
             NOW,
             "11".repeat(32),
             "22".repeat(32),
-        );
-        client
-            .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
-            .await
-            .unwrap();
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
+        .unwrap();
         assert_eq!(adapter.calls(), vec!["provision:sunshine-host"]);
 
+        let replay_entries_before =
+            std::fs::read_dir(host_private.path().join("identity/security-replay"))
+                .unwrap()
+                .count();
+        let grant_before = std::fs::read(
+            host_private
+                .path()
+                .join("identity/peer-certificates")
+                .join(&client_key),
+        )
+        .unwrap();
         std::fs::remove_file(client_private.path().join("identity/owner.event.json")).unwrap();
-        let changed = peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OTHER_OWNER);
+        let different_owner =
+            peer_rpc::test_owned_credentials(client_private.path(), CLIENT, OTHER_OWNER);
         let denied = upstream_native::NativeClient::new_secure_at(
             server,
             host_key,
-            changed,
+            different_owner,
+            NOW,
+            "33".repeat(32),
+            "44".repeat(32),
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            denied,
+            upstreams::UpstreamError::MoonlightCertificatePeerUnavailable
+        ));
+        assert_eq!(adapter.calls(), vec!["provision:sunshine-host"]);
+        assert_eq!(
+            std::fs::read_dir(host_private.path().join("identity/security-replay"))
+                .unwrap()
+                .count(),
+            replay_entries_before
+        );
+        assert_eq!(
+            std::fs::read(
+                host_private
+                    .path()
+                    .join("identity/peer-certificates")
+                    .join(&client_key),
+            )
+            .unwrap(),
+            grant_before
+        );
+        assert_eq!(
+            std::fs::read_dir(
+                host_private
+                    .path()
+                    .join("identity/authorization-revocations"),
+            )
+            .unwrap()
+            .count(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn owner_and_pass_revocations_reconcile_the_exact_sunshine_certificate() {
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const CLIENT: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        const RELAYER: &str = "0000000000000000000000000000000000000000000000000000000000000007";
+        let owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"zao\"\n").unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let client_private = tempfile::tempdir().unwrap();
+        let relayer_private = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        let client_credentials =
+            peer_rpc::test_owned_credentials(client_private.path(), CLIENT, &owner_secret);
+        let client_key = client_credentials.public_key().unwrap();
+        let relayer =
+            peer_rpc::test_owned_credentials(relayer_private.path(), RELAYER, &owner_secret);
+        let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
+        const NOW: u64 = 1_700_000_000;
+        let server = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+            NOW,
+        ))
+        .await;
+        upstream_native::NativeClient::new_secure_at(
+            server.clone(),
+            host_key.clone(),
+            client_credentials,
+            NOW,
+            "11".repeat(32),
+            "22".repeat(32),
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
+        .unwrap();
+        let relayer =
+            relayer.with_revocations(vec![owner_revocation(&owner, &client_key, NOW + 1)]);
+        upstream_native::NativeClient::new_secure_at(
+            server,
+            host_key,
+            relayer,
             NOW,
             "33".repeat(32),
             "44".repeat(32),
         )
         .catalog_snapshot()
         .await
+        .unwrap();
+        assert_eq!(
+            adapter.exact_revocations(),
+            vec![("sunshine-host".into(), TEST_CLIENT_PEM.into())]
+        );
+    }
+
+    #[tokio::test]
+    async fn guest_stream_pass_provisions_and_expiry_reconciles_before_restart_launch() {
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const GUEST: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        const RELAYER: &str = "0000000000000000000000000000000000000000000000000000000000000007";
+        let owner = Keys::generate();
+        let guest_owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
+        let guest_owner_secret = guest_owner.secret_key().to_secret_hex();
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"neverball\"\ntitle = \"Neverball\"\ncommand = [\"neverball\"]\n",
+        )
+        .unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let guest_private = tempfile::tempdir().unwrap();
+        let relayer_private = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        let guest_credentials =
+            peer_rpc::test_owned_credentials(guest_private.path(), GUEST, &guest_owner_secret);
+        let guest_key = guest_credentials.public_key().unwrap();
+        let pass = stream_pass(&owner, &guest_key, 1_700_000_000, 1_700_000_060);
+        let guest_credentials = guest_credentials.with_person_pass(Some(pass));
+        let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
+        let server = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+            1_700_000_000,
+        ))
+        .await;
+        upstream_native::NativeClient::new_secure_at(
+            server,
+            host_key.clone(),
+            guest_credentials,
+            1_700_000_000,
+            "11".repeat(32),
+            "22".repeat(32),
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
+        .unwrap();
+
+        let restarted = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+            1_700_000_060,
+        ))
+        .await;
+        let relayer =
+            peer_rpc::test_owned_credentials(relayer_private.path(), RELAYER, &owner_secret);
+        let launch = upstream_native::NativeClient::new_secure_at(
+            restarted,
+            host_key,
+            relayer,
+            1_700_000_060,
+            "33".repeat(32),
+            "44".repeat(32),
+        )
+        .prepare_stream("neverball")
+        .await;
+        assert!(launch.is_ok());
+        assert_eq!(
+            adapter.calls(),
+            vec!["provision:sunshine-host", "revoke:sunshine-host"]
+        );
+        assert_eq!(
+            adapter.exact_revocations(),
+            vec![("sunshine-host".into(), TEST_CLIENT_PEM.into())]
+        );
+    }
+
+    #[tokio::test]
+    async fn signed_pass_revocation_removes_a_guest_certificate() {
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const GUEST: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        const RELAYER: &str = "0000000000000000000000000000000000000000000000000000000000000007";
+        let owner = Keys::generate();
+        let guest_owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
+        let guest_owner_secret = guest_owner.secret_key().to_secret_hex();
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"zao\"\n").unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let guest_private = tempfile::tempdir().unwrap();
+        let relayer_private = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        let guest_credentials =
+            peer_rpc::test_owned_credentials(guest_private.path(), GUEST, &guest_owner_secret);
+        let guest_key = guest_credentials.public_key().unwrap();
+        let pass = stream_pass(&owner, &guest_key, 1_700_000_000, 1_700_000_060);
+        let pass_id = identity::DeviceIdentity::verify_event(&pass).unwrap().id;
+        let guest_with_pass = guest_credentials.with_person_pass(Some(pass));
+        let adapter = RecordingMoonlightCertificates::matching("sunshine-host");
+        let server = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+            1_700_000_000,
+        ))
+        .await;
+        upstream_native::NativeClient::new_secure_at(
+            server.clone(),
+            host_key.clone(),
+            guest_with_pass.clone(),
+            1_700_000_000,
+            "11".repeat(32),
+            "22".repeat(32),
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
+        .unwrap();
+        let relayer =
+            peer_rpc::test_owned_credentials(relayer_private.path(), RELAYER, &owner_secret)
+                .with_revocations(vec![pass_revocation(&owner, &pass_id, 1_700_000_001)]);
+        upstream_native::NativeClient::new_secure_at(
+            server,
+            host_key.clone(),
+            relayer,
+            1_700_000_000,
+            "33".repeat(32),
+            "44".repeat(32),
+        )
+        .catalog_snapshot()
+        .await
+        .unwrap();
+        assert_eq!(
+            adapter.exact_revocations(),
+            vec![("sunshine-host".into(), TEST_CLIENT_PEM.into())]
+        );
+
+        let restarted = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            adapter.clone(),
+            1_700_000_000,
+        ))
+        .await;
+        let denied = upstream_native::NativeClient::new_secure_at(
+            restarted,
+            host_key,
+            guest_with_pass,
+            1_700_000_000,
+            "55".repeat(32),
+            "66".repeat(32),
+        )
+        .moonlight_certificate_provision("sunshine-host", TEST_CLIENT_PEM)
+        .await
         .unwrap_err();
-        assert!(matches!(denied, upstreams::UpstreamError::Http(403)));
+        assert!(matches!(
+            denied,
+            upstreams::UpstreamError::MoonlightCertificatePeerUnavailable
+        ));
         assert_eq!(
             adapter.calls(),
             vec!["provision:sunshine-host", "revoke:sunshine-host"]

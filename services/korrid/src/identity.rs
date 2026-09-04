@@ -89,6 +89,15 @@ pub enum OwnerStatementStatus {
     Revoked,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedOwnerStatement {
+    pub event_id: String,
+    pub owner_public_key: String,
+    pub device_public_key: String,
+    pub status: OwnerStatementStatus,
+    pub created_at: u64,
+}
+
 impl OwnerStatementStatus {
     fn as_str(self) -> &'static str {
         match self {
@@ -302,18 +311,33 @@ impl DeviceIdentity {
         verify_event_bounded(event_json, MAX_ENCRYPTED_PAYLOAD_BYTES)
     }
 
+    /// Verify one owner statement for one exact device.
+    pub fn verify_owner_statement(
+        event_json: &str,
+        expected_device_public_key: &str,
+    ) -> Result<VerifiedOwnerStatement, IdentityError> {
+        let statement = parse_owner_statement(event_json.as_bytes(), expected_device_public_key)?;
+        Ok(VerifiedOwnerStatement {
+            event_id: statement.event.id.to_hex(),
+            owner_public_key: statement.event.pubkey.to_hex(),
+            device_public_key: expected_device_public_key.into(),
+            status: statement.status,
+            created_at: statement.event.created_at.as_secs(),
+        })
+    }
+
     /// Verify an owned statement for one exact device and return its owner key.
     pub fn owner_public_key_from_statement(
         event_json: &str,
         expected_device_public_key: &str,
     ) -> Result<String, IdentityError> {
-        let statement = parse_owner_statement(event_json.as_bytes(), expected_device_public_key)?;
+        let statement = Self::verify_owner_statement(event_json, expected_device_public_key)?;
         if statement.status != OwnerStatementStatus::Owned {
             return Err(IdentityError::InvalidEvent(
                 "owner statement does not own the device".into(),
             ));
         }
-        Ok(statement.event.pubkey.to_hex())
+        Ok(statement.owner_public_key)
     }
 
     /// Encrypt content with NIP-44 v2 and sign the containing NIP-01 event.
