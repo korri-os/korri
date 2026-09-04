@@ -3,7 +3,7 @@
 # The RG353P device tree sets usb@fcc00000 to dr_mode = "peripheral", the same
 # controller Android used for adb. Expose an NCM ethernet link and an ACM
 # serial console so a workstation can reach the device with one cable.
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 
 let
   gadgetAddress = "10.42.0.1";
@@ -11,6 +11,9 @@ let
   hostMac = "02:52:47:35:33:01";
   deviceMac = "02:52:47:35:33:02";
   configfsGadget = "/sys/kernel/config/usb_gadget/rg353m";
+  gadgetConfigure = pkgs.callPackage ./usb-gadget-package.nix {
+    inherit deviceMac hostMac;
+  };
 in
 {
   boot.kernelModules = [
@@ -29,36 +32,12 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      ExecStart = lib.getExe gadgetConfigure;
     };
-    path = [ pkgs.coreutils ];
-    script = ''
-      set -euo pipefail
-      gadget=${configfsGadget}
-      mkdir -p "$gadget"
-      cd "$gadget"
-      echo 0x1d6b > idVendor
-      echo 0x0104 > idProduct
-      echo 0x0100 > bcdDevice
-      echo 0x0200 > bcdUSB
-      mkdir -p strings/0x409
-      echo "rg353m-nixos" > strings/0x409/serialnumber
-      echo "Korri" > strings/0x409/manufacturer
-      echo "RG353M NixOS" > strings/0x409/product
-      mkdir -p configs/c.1/strings/0x409
-      echo "NCM + ACM" > configs/c.1/strings/0x409/configuration
-      echo 250 > configs/c.1/MaxPower
-      mkdir -p functions/ncm.usb0
-      echo ${hostMac} > functions/ncm.usb0/host_addr
-      echo ${deviceMac} > functions/ncm.usb0/dev_addr
-      mkdir -p functions/acm.usb0
-      ln -sf functions/ncm.usb0 configs/c.1/
-      ln -sf functions/acm.usb0 configs/c.1/
-      udc="$(ls /sys/class/udc | head -n 1)"
-      test -n "$udc"
-      echo "$udc" > UDC
-    '';
     preStop = ''
-      echo "" > ${configfsGadget}/UDC || true
+      if ! echo "" > ${configfsGadget}/UDC; then
+        echo "failed to unbind the RG353M USB gadget" >&2
+      fi
     '';
   };
 

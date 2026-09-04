@@ -101,7 +101,12 @@
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
         };
-        checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux inputplumber.checks;
+        checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
+          inputplumber.checks
+          // {
+            rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
+          }
+        );
       }
     );
 }
