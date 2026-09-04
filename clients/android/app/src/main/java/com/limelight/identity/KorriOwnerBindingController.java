@@ -119,13 +119,9 @@ public final class KorriOwnerBindingController implements PersonSigner.Listener,
     }
 
     static String bindingUri(String unsignedTemplateJson) {
-        return Uri.fromParts("nostrsigner", unsignedTemplateJson, null)
-                .buildUpon()
-                .appendQueryParameter("type", "sign_event")
-                .appendQueryParameter("returnType", "event")
-                .appendQueryParameter("compressionType", "none")
-                .build()
-                .toString();
+        return "nostrsigner:"
+                + Uri.encode(unsignedTemplateJson)
+                + "?type=sign_event&returnType=event&compressionType=none";
     }
 
     private String defectSnapshot(Exception error) {

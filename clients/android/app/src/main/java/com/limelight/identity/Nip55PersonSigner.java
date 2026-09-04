@@ -219,7 +219,7 @@ public final class Nip55PersonSigner implements PersonSigner {
         persistPending(PHASE_SIGN, id, template, startedAt);
         Intent intent = new Intent(
                 Intent.ACTION_VIEW,
-                Uri.fromParts("nostrsigner", template, null));
+                Uri.parse("nostrsigner:" + Uri.encode(template)));
         intent.addCategory(Intent.CATEGORY_BROWSABLE);
         intent.setPackage(signerPackage);
         intent.putExtra("type", "sign_event");

@@ -16,6 +16,7 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 use zeroize::Zeroizing;
 
@@ -27,6 +28,7 @@ const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
+static IDENTITY_STORAGE: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "_tag", rename_all_fields = "camelCase")]
@@ -142,6 +144,10 @@ impl std::fmt::Debug for DeviceIdentity {
 impl DeviceIdentity {
     /// Load the fixed device identity or create it once.
     pub fn load_or_create(private_state_root: &Path) -> Result<Self, IdentityError> {
+        let _storage = IDENTITY_STORAGE
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("identity storage mutex poisoned");
         let directory = prepare_identity_directory(private_state_root)?;
         let keys = match load_or_create_keys(&directory) {
             Ok(keys) => keys,
@@ -618,11 +624,15 @@ fn is_lower_hex(byte: u8) -> bool {
 
 fn prepare_identity_directory(private_state_root: &Path) -> Result<PathBuf, IdentityError> {
     if !private_state_root.exists() {
-        DirBuilder::new()
+        match DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(private_state_root)
-            .map_err(|_| IdentityError::Storage)?;
+        {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err(IdentityError::Storage),
+        }
     }
     let root_metadata =
         fs::symlink_metadata(private_state_root).map_err(|_| IdentityError::Storage)?;
@@ -631,11 +641,11 @@ fn prepare_identity_directory(private_state_root: &Path) -> Result<PathBuf, Iden
     }
     let directory = private_state_root.join(IDENTITY_DIRECTORY);
     if !directory.exists() {
-        DirBuilder::new()
-            .mode(0o700)
-            .create(&directory)
-            .map_err(|_| IdentityError::Storage)?;
-        sync_directory(private_state_root)?;
+        match DirBuilder::new().mode(0o700).create(&directory) {
+            Ok(()) => sync_directory(private_state_root)?,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err(IdentityError::Storage),
+        }
     }
     let metadata = fs::symlink_metadata(&directory).map_err(|_| IdentityError::Storage)?;
     if !metadata.is_dir()
@@ -655,7 +665,7 @@ fn load_or_create_keys(directory: &Path) -> Result<Keys, IdentityError> {
             let keys = Keys::generate();
             let mut encoded = Zeroizing::new(keys.secret_key().to_secret_hex().into_bytes());
             encoded.push(b'\n');
-            if write_new_private_atomically(&path, &encoded)? {
+            if write_new_private(&path, &encoded)? {
                 Ok(keys)
             } else {
                 load_existing_keys(&path)
@@ -706,36 +716,23 @@ fn read_bounded_optional(path: &Path, limit: usize) -> Result<Option<Vec<u8>>, I
     Ok(Some(bytes))
 }
 
-fn write_new_private_atomically(path: &Path, content: &[u8]) -> Result<bool, IdentityError> {
+fn write_new_private(path: &Path, content: &[u8]) -> Result<bool, IdentityError> {
     let parent = path.parent().ok_or(IdentityError::Storage)?;
-    let temporary = private_temporary_path(path);
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
-            .map_err(|_| IdentityError::Storage)?;
-        file.write_all(content)
-            .map_err(|_| IdentityError::Storage)?;
-        file.sync_all().map_err(|_| IdentityError::Storage)?;
-        match fs::hard_link(&temporary, path) {
-            Ok(()) => {
-                fs::remove_file(&temporary).map_err(|_| IdentityError::Storage)?;
-                sync_directory(parent)?;
-                Ok(true)
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                fs::remove_file(&temporary).map_err(|_| IdentityError::Storage)?;
-                Ok(false)
-            }
-            Err(_) => Err(IdentityError::Storage),
-        }
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
+    let mut file = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(_) => return Err(IdentityError::Storage),
+    };
+    file.write_all(content)
+        .map_err(|_| IdentityError::Storage)?;
+    file.sync_all().map_err(|_| IdentityError::Storage)?;
+    sync_directory(parent)?;
+    Ok(true)
 }
 
 fn write_private_atomically(path: &Path, content: &[u8]) -> Result<(), IdentityError> {
@@ -829,6 +826,32 @@ mod tests {
 
         let second = DeviceIdentity::load_or_create(root.path()).unwrap();
         assert_eq!(second.device_public_key(), Some(public_key.as_str()));
+    }
+
+    #[test]
+    fn concurrent_first_loads_share_one_valid_identity_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("new-private-root");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    DeviceIdentity::load_or_create(&path)
+                        .unwrap()
+                        .device_public_key()
+                        .unwrap()
+                        .to_owned()
+                })
+            })
+            .collect();
+        let keys: Vec<_> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect();
+        assert!(keys.iter().all(|key| key == &keys[0]));
     }
 
     #[test]

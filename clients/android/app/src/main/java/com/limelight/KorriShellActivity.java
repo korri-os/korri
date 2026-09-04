@@ -160,7 +160,7 @@ public class KorriShellActivity extends AppCompatActivity {
                 this::notifyOwnerBindingChanged);
         ownerBindingController.attachSigner(new Nip55PersonSigner(
                 this,
-                personSignerLauncher::launch,
+                this::launchPersonSigner,
                 ownerBindingController));
         if (pendingSignerActivityResult != null) {
             ActivityResult result = pendingSignerActivityResult;
@@ -425,6 +425,24 @@ public class KorriShellActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    private void launchPersonSigner(Intent intent) {
+        // Return the Pending bridge result before Android pauses this WebView
+        // to show the signer. The persisted request and its timeout already
+        // exist before this runnable is queued.
+        runOnUiThread(() -> {
+            try {
+                personSignerLauncher.launch(intent);
+            } catch (RuntimeException error) {
+                KorriOwnerBindingController controller = ownerBindingController;
+                if (controller != null) {
+                    controller.onPersonSignerState(
+                            com.limelight.identity.PersonSigner.State.defect(
+                                    "Android could not open the selected signer"));
+                }
+            }
+        });
+    }
+
     private void onPersonSignerActivityResult(ActivityResult result) {
         if (ownerBindingController == null) {
             pendingSignerActivityResult = result;
@@ -434,12 +452,15 @@ public class KorriShellActivity extends AppCompatActivity {
     }
 
     private void notifyOwnerBindingChanged() {
-        if (destroyed || webView == null) return;
-        webView.evaluateJavascript(
-                "window.dispatchEvent(new Event('"
-                        + KorriOwnerBindingController.CHANGED_EVENT
-                        + "'))",
-                null);
+        runOnUiThread(() -> {
+            WebView current = webView;
+            if (destroyed || current == null) return;
+            current.evaluateJavascript(
+                    "window.dispatchEvent(new Event('"
+                            + KorriOwnerBindingController.CHANGED_EVENT
+                            + "'))",
+                    null);
+        });
     }
 
     @Override
