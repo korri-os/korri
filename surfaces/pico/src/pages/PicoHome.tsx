@@ -48,8 +48,14 @@ export function PicoHome({
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
 
+  /* Working states get the weave; everything else sits on the starfield. A
+   * screen that is waiting should look busier than one that is merely idle. */
+  const backdrop =
+    view._tag === "Busy" || view._tag === "Running" ? "dither" : "stars"
+
   return (
     <PicoScreenShell
+      backdrop={backdrop}
       clockLabel={clockLabel}
       hints={view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS}
       label="PICO ▸ LIBRARY"

@@ -1,0 +1,50 @@
+.pico-backdrop {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+}
+
+/**
+ * Two dot layers at different tile sizes drifting by different offsets — the
+ * cheapest honest parallax there is, and it costs one element.
+ */
+.pico-backdrop[data-field="stars"] {
+	background:
+		radial-gradient(
+				0.25cqw 0.25cqw at 30% 30%,
+				var(--p8-white) 99%,
+				transparent 100%
+			)
+			0 0 / 7cqw 7cqw,
+		radial-gradient(
+				0.3cqw 0.3cqw at 70% 60%,
+				var(--p8-silver) 99%,
+				transparent 100%
+			)
+			0 0 / 11cqw 11cqw;
+	opacity: 0.5;
+	animation: pico-drift 6s linear infinite;
+}
+
+/**
+ * A diagonal weave over a soft glow. Scrolls in eight hard steps so the motion
+ * reads as redrawn frames rather than a slide.
+ */
+.pico-backdrop[data-field="dither"] {
+	background:
+		repeating-linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--p8-blue) 16%, transparent) 0 3cqw,
+			color-mix(in srgb, var(--p8-lilac) 10%, transparent) 3cqw 6cqw
+		),
+		radial-gradient(
+			circle at 30% 30%,
+			color-mix(in srgb, var(--pico-accent) 18%, transparent),
+			transparent 55%
+		);
+	background-size:
+		12cqw 12cqw,
+		100% 100%;
+	animation: pico-scroll 1.6s steps(8) infinite;
+}

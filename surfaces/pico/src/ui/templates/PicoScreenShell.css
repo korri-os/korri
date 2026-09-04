@@ -5,6 +5,15 @@
 }
 
 .pico-screen-shell-body {
+	position: relative;
 	min-height: 0;
 	overflow: hidden;
+}
+
+/* Above the backdrop. Without a stacking context of its own the content shares
+ * one with a decoration, and a drifting gradient starts covering text. */
+.pico-screen-shell-content {
+	position: relative;
+	z-index: 1;
+	height: 100%;
 }

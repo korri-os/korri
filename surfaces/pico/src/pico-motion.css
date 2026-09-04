@@ -86,3 +86,22 @@
 		transform: translateX(0);
 	}
 }
+
+/* The starfield's two layers drift by different amounts, which is the parallax.
+ * Linear, because stars do not accelerate. */
+@keyframes pico-drift {
+	to {
+		background-position:
+			7cqw 7cqw,
+			-11cqw 11cqw;
+	}
+}
+
+/* The dither weave advances one tile per cycle; steps() does the rest. */
+@keyframes pico-scroll {
+	to {
+		background-position:
+			12cqw 12cqw,
+			0 0;
+	}
+}

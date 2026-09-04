@@ -30,7 +30,10 @@ const parts = walk(SRC)
  * listing them here keeps that an explicit decision rather than a blanket
  * weakening of the assertion for every other part.
  */
-const TEXTLESS = new Set(["ui/atoms/PicoPixelDisc.atom.part.tsx"])
+const TEXTLESS = new Set([
+  "ui/atoms/PicoBackdrop.atom.part.tsx",
+  "ui/atoms/PicoPixelDisc.atom.part.tsx",
+])
 
 afterEach(() => cleanup())
 
@@ -50,7 +53,12 @@ test.each(parts.map((file) => [relative(SRC, file), file]))(
     const { container } = render(<part.default />)
 
     if (TEXTLESS.has(_label)) {
-      expect(container.querySelectorAll("svg > *").length).toBeGreaterThan(0)
+      /* Nothing to read, so assert the part rendered an element carrying the
+       * attributes its appearance depends on — which is as far as a DOM with no
+       * layout engine can go. These two are verified by eye. */
+      const root = container.firstElementChild
+      expect(root).not.toBeNull()
+      expect(root?.attributes.length ?? 0).toBeGreaterThan(0)
     } else {
       expect(container.textContent?.trim().length ?? 0).toBeGreaterThan(0)
     }

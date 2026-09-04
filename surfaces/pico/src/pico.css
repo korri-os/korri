@@ -16,6 +16,7 @@
 @import "./pico-motion.css";
 
 @import "./pages/PicoHome.css";
+@import "./ui/atoms/PicoBackdrop.css";
 @import "./ui/atoms/PicoButton.css";
 @import "./ui/atoms/PicoClock.css";
 @import "./ui/atoms/PicoCoverArt.css";
