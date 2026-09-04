@@ -7,5 +7,7 @@
 
 .pico-tally-separator {
 	padding: 0 calc(var(--pico-space-1) / 2);
-	color: var(--pico-chrome-edge);
+	/* Dimmer than the figures but still legible: at chrome-edge it vanished into
+	 * the body and "1 / 4" read as two unrelated numbers. */
+	color: color-mix(in srgb, var(--pico-ink-dim) 55%, var(--pico-bg));
 }

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoTally } from "../atoms/PicoTally"
 import { PicoCart } from "../molecules/PicoCart"
@@ -7,13 +7,14 @@ import { PicoCart } from "../molecules/PicoCart"
  * The shelf: every game as a cartridge, the focused one held in the middle.
  *
  * Focus is the selection. The shelf tracks which cart has it so the hero and
- * the caption follow the d-pad, and the browser's own focus scrolling keeps
- * that cart on screen — no scroll maths, and it behaves identically for a
- * thumbstick, a Tab key, and a screen reader's cursor.
+ * the caption follow the d-pad, and it centres that cart itself rather than
+ * leaving it to the browser's focus scrolling — which does nothing at all
+ * before the first focus, so the shelf would otherwise open with its hero
+ * sitting off to one side.
  *
  * The index is view state, not app state: nothing outside this section needs to
- * know where the cursor is, and hoisting it would make every neighbour re-render
- * on a movement that concerns only the shelf.
+ * know where the cursor is, and hoisting it would make every neighbour
+ * re-render on a movement that concerns only the shelf.
  */
 export function PicoCartShelf({
   games,
@@ -23,11 +24,24 @@ export function PicoCartShelf({
   readonly onLaunch: (gameId: string) => void
 }) {
   const [focusedIndex, setFocusedIndex] = useState(0)
+  const stripRef = useRef<HTMLUListElement>(null)
   const focused = games[focusedIndex] ?? games[0]
+
+  useEffect(() => {
+    const strip = stripRef.current
+    const slot = strip?.children[focusedIndex]
+    if (strip === null || !(slot instanceof HTMLElement)) return
+    /* Sets the strip's own scroll rather than calling scrollIntoView, which
+     * walks up and moves every scrollable ancestor with it — a surface that can
+     * scroll the page it is embedded in is a surface that misbehaves inside a
+     * gallery or a host that stacks it with anything else. */
+    strip.scrollLeft =
+      slot.offsetLeft - (strip.clientWidth - slot.clientWidth) / 2
+  }, [focusedIndex])
 
   return (
     <section className="pico-cart-shelf">
-      <ul className="pico-cart-shelf-strip">
+      <ul className="pico-cart-shelf-strip" ref={stripRef}>
         {games.map((game, index) => (
           <li className="pico-cart-shelf-slot" key={game.id}>
             <PicoCart

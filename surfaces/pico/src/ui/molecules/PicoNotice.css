@@ -5,6 +5,7 @@
 	justify-items: center;
 	height: 100%;
 	padding: var(--pico-space-3);
+	overflow-y: auto;
 	text-align: center;
 }
 
@@ -23,6 +24,6 @@
 .pico-notice-message {
 	margin: 0;
 	max-width: 24ch;
-	font-size: var(--pico-text-lg);
+	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
 }

@@ -1,11 +1,12 @@
 .pico-cart-shelf {
 	display: grid;
-	grid-template-rows: 1fr auto;
+	/* minmax(0, 1fr) not 1fr: a bare 1fr refuses to shrink below its content,
+	 * so the strip pushes the caption off the bottom of a short screen and the
+	 * position tally is the first thing to disappear. */
+	grid-template-rows: minmax(0, 1fr) auto;
 	gap: var(--pico-space-2);
-	align-content: center;
 	height: 100%;
 	padding: var(--pico-space-2) 0;
-	overflow: hidden;
 }
 
 .pico-cart-shelf-strip {
@@ -17,6 +18,7 @@
 	 * the middle: a shelf whose ends cannot be centred puts its edge games in a
 	 * place the design never accounts for. */
 	padding: 0 50cqw;
+	min-height: 0;
 	overflow-x: auto;
 	scroll-snap-type: x mandatory;
 	list-style: none;
@@ -45,6 +47,6 @@
 
 .pico-cart-shelf-subtitle {
 	margin: 0;
-	font-size: var(--pico-text-lg);
+	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
 }
