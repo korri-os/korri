@@ -5,9 +5,10 @@ use crate::{
     active_android_launch, authorize_local_launch_spec, authorize_moonlight_launch_spec,
     authorize_platform_instruction, clear_active_android_launch, clear_moonlight_executor_state,
     issue_folder_selection_receipt, korrid_version, local_server_capability,
-    publish_local_active_launch, publish_moonlight_active_launch, publish_moonlight_executor_state,
-    start_embedded_android_server, stop_local_server, MoonlightCertificateProvisionOutcome,
-    MoonlightCertificateProvisionRequest, MoonlightLaunchAuthorization, RpcRequest, RpcResponse,
+    moonlight_host_candidates, publish_local_active_launch, publish_moonlight_active_launch,
+    publish_moonlight_executor_state, start_embedded_android_server, stop_local_server,
+    MoonlightCertificateProvisionOutcome, MoonlightCertificateProvisionRequest,
+    MoonlightLaunchAuthorization, RpcRequest, RpcResponse,
 };
 use jni::{
     objects::{JClass, JObject, JString, JValue},
@@ -83,6 +84,33 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_capabili
         },
         None => {
             let _ = env.throw_new("java/lang/IllegalStateException", "korrid is not running");
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_moonlightHostCandidates(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let json = match moonlight_host_candidates() {
+        Ok(candidates) => serde_json::json!({
+            "_tag": "Candidates",
+            "items": candidates
+                .into_iter()
+                .map(|candidate| serde_json::json!({
+                    "label": candidate.label,
+                    "address": candidate.address,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+        Err(_) => serde_json::json!({"_tag": "Failed"}),
+    };
+    match env.new_string(json.to_string()) {
+        Ok(value) => value.into_raw(),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
             ptr::null_mut()
         }
     }

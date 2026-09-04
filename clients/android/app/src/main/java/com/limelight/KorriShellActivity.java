@@ -79,6 +79,7 @@ public class KorriShellActivity extends AppCompatActivity {
     private volatile boolean destroyed;
     private volatile KorriMoonlightProvisioning moonlightProvisioning;
     private volatile KorriMoonlightDiscovery moonlightDiscovery;
+    private volatile KorriMoonlightHostBootstrap moonlightHostBootstrap;
     private KorriGameAssetPathHandler gameAssetPathHandler;
     private final CountDownLatch binderReady = new CountDownLatch(1);
     private final KorriGameFolderPickerState gameFolderPicker = new KorriGameFolderPickerState();
@@ -385,6 +386,8 @@ public class KorriShellActivity extends AppCompatActivity {
         // picker, or settings lets the web surface refresh its state.
         KorriBrainService.setOverlayArmed(false);
         applyImmersiveFullscreen();
+        KorriMoonlightHostBootstrap bootstrap = moonlightHostBootstrap;
+        if (bootstrap != null) bootstrap.start();
         if (webView != null) {
             webView.evaluateJavascript(
                     "window.dispatchEvent(new Event('korri-shell-resumed'))", null);
@@ -933,9 +936,16 @@ public class KorriShellActivity extends AppCompatActivity {
                 try {
                     List<ComputerDetails> computers = db.getAllComputers();
                     for (ComputerDetails details : computers) {
+                        String hostName = details.name;
+                        KorriMoonlightHostBootstrap bootstrap = moonlightHostBootstrap;
+                        if (bootstrap != null && details.manualAddress != null) {
+                            String configuredLabel = bootstrap.labelForAddress(
+                                    details.manualAddress.address, details.manualAddress.port);
+                            if (configuredLabel != null) hostName = configuredLabel;
+                        }
                         JSONObject host = new JSONObject();
                         host.put("uuid", details.uuid);
-                        host.put("name", details.name);
+                        host.put("name", hostName);
                         items.put(host);
                     }
                 } finally {
@@ -1042,17 +1052,22 @@ public class KorriShellActivity extends AppCompatActivity {
     }
 
     private synchronized void clearMoonlightDiscovery() {
-        KorriMoonlightDiscovery owned = moonlightDiscovery;
+        KorriMoonlightDiscovery ownedDiscovery = moonlightDiscovery;
+        KorriMoonlightHostBootstrap ownedBootstrap = moonlightHostBootstrap;
         moonlightDiscovery = null;
+        moonlightHostBootstrap = null;
         moonlightProvisioning = null;
-        if (owned != null) owned.close();
+        if (ownedDiscovery != null) ownedDiscovery.close();
+        if (ownedBootstrap != null) ownedBootstrap.close();
     }
 
     private synchronized void installMoonlightDiscovery(
             ComputerManagerService.ComputerManagerBinder binder) {
         if (destroyed || managerBinder != binder) return;
-        KorriMoonlightDiscovery previous = moonlightDiscovery;
-        if (previous != null) previous.close();
+        KorriMoonlightDiscovery previousDiscovery = moonlightDiscovery;
+        KorriMoonlightHostBootstrap previousBootstrap = moonlightHostBootstrap;
+        if (previousDiscovery != null) previousDiscovery.close();
+        if (previousBootstrap != null) previousBootstrap.close();
         android.content.Context application = getApplicationContext();
         java.lang.ref.WeakReference<KorriShellActivity> shell =
                 new java.lang.ref.WeakReference<>(this);
@@ -1073,6 +1088,25 @@ public class KorriShellActivity extends AppCompatActivity {
                     KorriShellActivity activity = shell.get();
                     if (activity != null) activity.notifyStreamAppsChanged();
                 });
+        moonlightHostBootstrap = new KorriMoonlightHostBootstrap(
+                () -> KorriMoonlightHostBootstrap.decodeCandidates(
+                        KorridServer.moonlightHostCandidates()),
+                (candidate, guard) -> {
+                    ComputerDetails.AddressTuple address = new ComputerDetails.AddressTuple(
+                            candidate.address, NvHTTP.DEFAULT_HTTP_PORT);
+                    if (binder.hasComputerAtAddress(address)) return guard.current();
+                    ComputerDetails details = new ComputerDetails();
+                    details.name = candidate.label;
+                    details.manualAddress = address;
+                    if (!binder.prepareComputerBlocking(details)) return false;
+                    return Boolean.TRUE.equals(
+                            guard.commit(() -> binder.commitPreparedComputer(details)));
+                },
+                () -> {
+                    KorriShellActivity activity = shell.get();
+                    if (activity != null) activity.notifyStreamAppsChanged();
+                });
+        moonlightHostBootstrap.start();
     }
 
     private void notifyStreamAppsChanged() {

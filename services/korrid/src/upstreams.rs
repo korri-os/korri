@@ -24,6 +24,7 @@ pub(crate) const MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT: Duration =
 #[cfg(any(target_os = "android", test))]
 pub(crate) const MOONLIGHT_CERTIFICATE_CALLER_TIMEOUT: Duration =
     Duration::from_secs(MOONLIGHT_CERTIFICATE_BROKER_TIMEOUT.as_secs() + 1);
+const MAX_MOONLIGHT_HOST_CANDIDATES: usize = 16;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum UpstreamError {
@@ -72,6 +73,12 @@ impl UpstreamError {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MoonlightHostCandidate {
+    pub label: String,
+    pub address: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamHostConfig {
@@ -114,6 +121,7 @@ enum RegisteredClient {
 #[derive(Clone)]
 struct RegisteredHost {
     label: String,
+    native_base_url: Option<String>,
     client: RegisteredClient,
 }
 
@@ -168,18 +176,25 @@ impl UpstreamRegistry {
         Self {
             hosts: configs
                 .into_iter()
-                .map(|config| RegisteredHost {
-                    label: config.label,
-                    client: match config.kind {
-                        UpstreamKind::Legacy => {
-                            RegisteredClient::Legacy(UpstreamClient::new(UpstreamConfig {
-                                base_url: config.base_url,
-                            }))
-                        }
-                        UpstreamKind::Native => {
-                            RegisteredClient::Native(NativeClient::new(config.base_url))
-                        }
-                    },
+                .map(|config| {
+                    let native_base_url = match config.kind {
+                        UpstreamKind::Native => Some(config.base_url.clone()),
+                        UpstreamKind::Legacy => None,
+                    };
+                    RegisteredHost {
+                        label: config.label,
+                        native_base_url,
+                        client: match config.kind {
+                            UpstreamKind::Legacy => {
+                                RegisteredClient::Legacy(UpstreamClient::new(UpstreamConfig {
+                                    base_url: config.base_url,
+                                }))
+                            }
+                            UpstreamKind::Native => {
+                                RegisteredClient::Native(NativeClient::new(config.base_url))
+                            }
+                        },
+                    }
                 })
                 .collect(),
             configuration_error: None,
@@ -203,16 +218,19 @@ impl UpstreamRegistry {
     fn from_file_or_default(path: &Path, fallback: UpstreamHostConfig) -> Self {
         match Self::from_file(path) {
             Ok(registry) => registry,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(error) => {
                 let deferred_file_config = DeferredFileConfig {
                     path: path.to_owned(),
                     resolved: Arc::new(OnceLock::new()),
                 };
-                let mut registry = Self::new(vec![fallback]);
+                let mut registry = if error.kind() == std::io::ErrorKind::NotFound {
+                    Self::new(vec![fallback])
+                } else {
+                    Self::invalid_file_read(path, error)
+                };
                 registry.deferred_file_config = Some(deferred_file_config);
                 registry
             }
-            Err(error) => Self::invalid_file_read(path, error),
         }
     }
 
@@ -273,6 +291,51 @@ impl UpstreamRegistry {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Cow::Borrowed(self),
             Err(error) => Cow::Owned(Self::invalid_file_read(&config.path, error)),
         }
+    }
+
+    pub fn moonlight_host_candidates(&self) -> Result<Vec<MoonlightHostCandidate>, UpstreamError> {
+        let registry = self.resolved();
+        if let Some(error) = &registry.configuration_error {
+            return Err(UpstreamError::Wire(error.clone()));
+        }
+        let candidates = registry
+            .hosts
+            .iter()
+            .filter_map(|host| {
+                host.native_base_url
+                    .as_deref()
+                    .map(|base_url| (host.label.as_str(), base_url))
+            })
+            .filter_map(|(label, base_url)| {
+                let url = reqwest::Url::parse(base_url).ok()?;
+                if !matches!(url.scheme(), "http" | "https") {
+                    return None;
+                }
+                let address = url.host_str()?.trim();
+                if address.is_empty() {
+                    return None;
+                }
+                Some(MoonlightHostCandidate {
+                    label: label.into(),
+                    address: address.into(),
+                })
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() > MAX_MOONLIGHT_HOST_CANDIDATES {
+            return Err(UpstreamError::Wire(format!(
+                "more than {MAX_MOONLIGHT_HOST_CANDIDATES} native Moonlight hosts are configured"
+            )));
+        }
+        let mut addresses = BTreeSet::new();
+        if candidates
+            .iter()
+            .any(|candidate| !addresses.insert(candidate.address.to_lowercase()))
+        {
+            return Err(UpstreamError::Wire(
+                "duplicate native Moonlight host address is configured".into(),
+            ));
+        }
+        Ok(candidates)
     }
 
     pub async fn catalog_snapshot(&self) -> Result<CatalogSnapshot, UpstreamError> {
@@ -610,6 +673,39 @@ mod tests {
         assert_eq!(*prepared.lock().unwrap(), vec!["shared"]);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_file_config_is_retried_after_storage_access_becomes_available() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("upstreams.json");
+        std::fs::write(
+            &path,
+            r#"[{"label":"zao","kind":"native","baseUrl":"http://100.114.19.92:39217"}]"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let registry = UpstreamRegistry::from_file_or_default(
+            &path,
+            UpstreamHostConfig::legacy("fallback", "http://fallback.invalid".into()),
+        );
+        assert!(matches!(
+            registry.moonlight_host_candidates(),
+            Err(UpstreamError::Wire(message)) if message.contains("could not read upstream config")
+        ));
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            registry.moonlight_host_candidates().unwrap(),
+            vec![MoonlightHostCandidate {
+                label: "zao".into(),
+                address: "100.114.19.92".into(),
+            }]
+        );
+    }
+
     #[tokio::test]
     async fn config_json_preserves_order_and_surfaces_parse_errors() {
         let registry = UpstreamRegistry::from_json(
@@ -644,6 +740,81 @@ mod tests {
         assert!(matches!(
             duplicate_labels.catalog_snapshot().await,
             Err(UpstreamError::Wire(message)) if message.contains("duplicate upstream label \"zao\"")
+        ));
+    }
+
+    #[test]
+    fn moonlight_host_candidates_use_only_configured_native_peer_addresses() {
+        let registry = UpstreamRegistry::from_json(
+            "test",
+            r#"[
+                {"label":"aka","kind":"legacy","baseUrl":"http://aka.example:3000"},
+                {"label":"zao","kind":"native","baseUrl":"http://100.114.19.92:39217"},
+                {"label":"desk","kind":"native","baseUrl":"https://desk.example:443/korri"}
+            ]"#,
+        );
+
+        assert_eq!(
+            registry.moonlight_host_candidates().unwrap(),
+            vec![
+                MoonlightHostCandidate {
+                    label: "zao".into(),
+                    address: "100.114.19.92".into(),
+                },
+                MoonlightHostCandidate {
+                    label: "desk".into(),
+                    address: "desk.example".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn moonlight_host_candidates_skip_invalid_native_peer_urls() {
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("broken", "not a URL".into()),
+            UpstreamHostConfig::native("wrong-scheme", "file:///tmp/zao".into()),
+            UpstreamHostConfig::native("zao", "http://100.114.19.92:39217".into()),
+        ]);
+
+        assert_eq!(
+            registry.moonlight_host_candidates().unwrap(),
+            vec![MoonlightHostCandidate {
+                label: "zao".into(),
+                address: "100.114.19.92".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn moonlight_host_candidates_reject_more_than_sixteen_valid_hosts() {
+        let registry = UpstreamRegistry::new(
+            (0..17)
+                .map(|index| {
+                    UpstreamHostConfig::native(
+                        format!("host-{index}"),
+                        format!("http://192.0.2.{}:39217", index + 1),
+                    )
+                })
+                .collect(),
+        );
+
+        assert!(matches!(
+            registry.moonlight_host_candidates(),
+            Err(UpstreamError::Wire(message)) if message.contains("more than 16")
+        ));
+    }
+
+    #[test]
+    fn moonlight_host_candidates_reject_duplicate_native_addresses() {
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("zao", "http://ZAO.example:39217".into()),
+            UpstreamHostConfig::native("duplicate", "https://zao.example:443".into()),
+        ]);
+
+        assert!(matches!(
+            registry.moonlight_host_candidates(),
+            Err(UpstreamError::Wire(message)) if message.contains("duplicate")
         ));
     }
 

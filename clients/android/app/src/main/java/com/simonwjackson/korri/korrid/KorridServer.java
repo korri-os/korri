@@ -20,6 +20,8 @@ public final class KorridServer {
     private static native int start(
             String allowedOrigin, String localStorageRoot, String privateStateRoot);
     public static native String capability();
+    /** Native peer labels and addresses that Artemis may probe for Moonlight hosts. */
+    public static native String moonlightHostCandidates();
     /** Provision this process's public Moonlight certificate through the embedded brain. */
     public static native String provisionMoonlightCertificate(
             String hostUuid, String publicClientCertificate);

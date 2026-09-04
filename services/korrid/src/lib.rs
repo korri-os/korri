@@ -2854,6 +2854,7 @@ fn router_with_capability_local_root_and_provision(
         native_platform,
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
+        None,
     )
 }
 
@@ -2872,6 +2873,7 @@ fn router_with_capability_local_root_provision_and_grants(
     native_platform: NativePlatform,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
+    configured_upstream: Option<upstreams::UpstreamRegistry>,
 ) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
@@ -2884,9 +2886,11 @@ fn router_with_capability_local_root_provision_and_grants(
     );
     let state = AppState {
         mode: ServerMode::Brain(BrainRuntime {
-            upstream: upstreams::UpstreamRegistry::from_env_or_file(
-                &local_storage_root.join("upstreams.json"),
-            ),
+            upstream: configured_upstream.unwrap_or_else(|| {
+                upstreams::UpstreamRegistry::from_env_or_file(
+                    &local_storage_root.join("upstreams.json"),
+                )
+            }),
             local_storage_root,
             private_state_root,
             local_file_provision,
@@ -3028,6 +3032,7 @@ struct ServerHandle {
     moonlight_config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     native_platform: NativePlatform,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
+    upstream: upstreams::UpstreamRegistry,
     stop: oneshot::Sender<()>,
     thread: JoinHandle<()>,
 }
@@ -3126,6 +3131,12 @@ fn start_local_server_for_platform(
     let moonlight_config_snapshot =
         config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     let server_config_snapshot = moonlight_config_snapshot.clone();
+    let upstream = upstreams::UpstreamRegistry::from_env_or_file(
+        Path::new(&local_storage_root)
+            .join("upstreams.json")
+            .as_path(),
+    );
+    let server_upstream = upstream.clone();
     let (stop, stopped) = oneshot::channel();
     let thread = std::thread::Builder::new()
         .name("korrid".into())
@@ -3151,6 +3162,7 @@ fn start_local_server_for_platform(
                         native_platform,
                         server_config_snapshot,
                         server_folder_selection_grants,
+                        Some(server_upstream),
                     ),
                 )
                 .with_graceful_shutdown(async {
@@ -3177,6 +3189,7 @@ fn start_local_server_for_platform(
         moonlight_config_snapshot,
         native_platform,
         folder_selection_grants,
+        upstream,
         stop,
         thread,
     });
@@ -3210,6 +3223,20 @@ pub fn local_server_capability() -> Option<String> {
         .expect("server mutex poisoned")
         .as_ref()
         .map(|server| server.rpc_capability.clone())
+}
+
+pub fn moonlight_host_candidates() -> Result<Vec<upstreams::MoonlightHostCandidate>, ServerError> {
+    let upstream = server_slot()
+        .lock()
+        .expect("server mutex poisoned")
+        .as_ref()
+        .map(|server| server.upstream.clone())
+        .ok_or(ServerError::NotRunning)?;
+    upstream
+        .moonlight_host_candidates()
+        .map_err(|error| ServerError::StartFailed {
+            details: error.to_string(),
+        })
 }
 
 pub fn issue_folder_selection_receipt(
@@ -4688,6 +4715,7 @@ mod tests {
             NativePlatform::Standalone,
             config::snapshot::ConfigSnapshotCoordinator::new(readable),
             grants,
+            None,
         )
     }
 

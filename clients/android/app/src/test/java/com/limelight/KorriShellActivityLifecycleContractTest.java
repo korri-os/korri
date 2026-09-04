@@ -177,6 +177,50 @@ public class KorriShellActivityLifecycleContractTest {
     }
 
     @Test
+    public void firstInstallBootstrapsArtemisHostsFromKorridNativePeers() throws Exception {
+        String source = source();
+        String install = method(source,
+                "private synchronized void installMoonlightDiscovery(",
+                "private void notifyStreamAppsChanged()");
+        String clear = method(source,
+                "private synchronized void clearMoonlightDiscovery()",
+                "private synchronized void installMoonlightDiscovery(");
+        String queryHosts = method(source,
+                "public String queryStreamHosts()",
+                "/** JSON-encoded QueryStreamAppsResult. */");
+        String manager = new String(Files.readAllBytes(Path.of(
+                "src/main/java/com/limelight/computers/ComputerManagerService.java")),
+                StandardCharsets.UTF_8);
+        String prepare = method(manager,
+                "private boolean prepareComputerBlocking(ComputerDetails details)",
+                "/** Commit one fully polled host.");
+        String commit = method(manager,
+                "private boolean commitPreparedComputer(ComputerDetails details)",
+                "public boolean addComputerBlocking(ComputerDetails fakeDetails)");
+
+        assertOrdered(install,
+                "KorridServer.moonlightHostCandidates()",
+                "candidate.address, NvHTTP.DEFAULT_HTTP_PORT",
+                "binder.hasComputerAtAddress(address)",
+                "binder.prepareComputerBlocking(details)",
+                "guard.commit(() -> binder.commitPreparedComputer(details))",
+                "moonlightHostBootstrap.start()");
+        assertTrue(clear.contains("ownedBootstrap.close()"));
+        assertOrdered(queryHosts,
+                "bootstrap.labelForAddress(",
+                "host.put(\"name\", hostName)");
+        assertFalse(prepare.contains("dbManager.updateComputer"));
+        assertFalse(prepare.contains("addTuple("));
+        assertFalse(commit.contains("pollComputer("));
+        assertFalse(commit.contains("populateExternalAddress("));
+        assertOrdered(commit,
+                "X509Certificate currentCertificate = existing.computer.serverCert",
+                "existing.computer.update(details)",
+                "existing.computer.serverCert = currentCertificate",
+                "existing.computer.rawAppList = currentRawAppList");
+    }
+
+    @Test
     public void serviceBindingIsReleasedByBindingOwnershipRatherThanCallbackTiming() throws Exception {
         String source = source();
         String onCreate = method(source, "protected void onCreate(Bundle savedInstanceState)",
