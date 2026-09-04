@@ -102,9 +102,11 @@
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
           odin2portal-kernel = odin2portal.kernel;
+          odin2portal-firmware = odin2portal.firmware;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           odin2portal-kernel = odin2portal.kernelCross;
+          odin2portal-firmware = odin2portal.firmwareCross;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
