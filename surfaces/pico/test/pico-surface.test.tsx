@@ -7,7 +7,7 @@
  * its data never arrives.
  */
 import { afterEach, describe, expect, test } from "bun:test"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { PicoSurface } from "../src/PicoSurface"
@@ -134,6 +134,129 @@ describe("when there is no shelf to show", () => {
     fireEvent.click(screen.getByRole("button", { name: "TRY AGAIN" }))
 
     expect(host.calls).toEqual(["reload"])
+  })
+})
+
+describe("while Korri is doing something with a game", () => {
+  test("says what is happening instead of showing the shelf", () => {
+    render(
+      <PicoSurface
+        host={createFixtureHost()}
+        model={model({
+          status: { _tag: "Busy", kicker: "STARTING", detail: "Mounting the card" },
+        })}
+      />,
+    )
+
+    expect(screen.getByText("STARTING")).toBeTruthy()
+    expect(screen.getByText("Mounting the card")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Celeste Classic/ })).toBeNull()
+  })
+
+  test("names the game that is running", () => {
+    render(
+      <PicoSurface
+        host={createFixtureHost()}
+        model={model({
+          status: { _tag: "Running", kicker: "PLAYING", gameId: "hollow" },
+        })}
+      />,
+    )
+
+    expect(screen.getByText("PLAYING")).toBeTruthy()
+    expect(screen.getByText("Hollow Knight")).toBeTruthy()
+  })
+
+  test("states a failure against the game it belongs to", () => {
+    const host = createFixtureHost()
+    render(
+      <PicoSurface
+        host={host}
+        model={model({
+          status: {
+            _tag: "Problem",
+            kicker: "COULD NOT START",
+            reason: "zao did not answer.",
+            canRetry: true,
+            gameTitle: "Tetris",
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByText("Tetris — zao did not answer.")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "TRY AGAIN" }))
+    expect(host.calls).toEqual(["retry"])
+
+    fireEvent.click(screen.getByRole("button", { name: "OK" }))
+    expect(host.calls).toEqual(["retry", "dismiss"])
+  })
+
+  test("offers no retry when Korri says it cannot be retried", () => {
+    render(
+      <PicoSurface
+        host={createFixtureHost()}
+        model={model({
+          status: {
+            _tag: "Problem",
+            kicker: "NOT PLAYABLE",
+            reason: "That copy is missing.",
+            canRetry: false,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "TRY AGAIN" })).toBeNull()
+    expect(screen.getByRole("button", { name: "OK" })).toBeTruthy()
+  })
+})
+
+describe("the Back button", () => {
+  test("withdraws a launch-location question without launching", () => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={model()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /Tetris/ }))
+    expect(screen.getByText("PLAY WHERE?")).toBeTruthy()
+
+    act(() => host.press("back"))
+
+    expect(screen.queryByText("PLAY WHERE?")).toBeNull()
+    expect(screen.getByRole("button", { name: /Tetris/ })).toBeTruthy()
+    expect(host.calls).toEqual([])
+  })
+
+  test("acknowledges a failure the user has seen", () => {
+    const host = createFixtureHost()
+    render(
+      <PicoSurface
+        host={host}
+        model={model({
+          status: {
+            _tag: "Problem",
+            kicker: "COULD NOT START",
+            reason: "zao did not answer.",
+            canRetry: true,
+          },
+        })}
+      />,
+    )
+
+    act(() => host.press("back"))
+
+    expect(host.calls).toEqual(["dismiss"])
+  })
+
+  test("falls through to the host when there is nothing local to withdraw", () => {
+    // Leaving the surface is the host's decision, not Pico's.
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={model()} />)
+
+    act(() => host.press("back"))
+
+    expect(host.calls).toEqual([])
   })
 })
 

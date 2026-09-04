@@ -1,35 +1,32 @@
-.pico-notice {
+.pico-launch-stage {
 	display: grid;
 	gap: var(--pico-space-2);
 	place-content: center;
 	justify-items: center;
 	height: 100%;
 	padding: var(--pico-space-3);
-	overflow-y: auto;
 	text-align: center;
 }
 
-.pico-notice-kicker {
+.pico-launch-stage-kicker {
 	margin: 0;
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text);
+	color: var(--pico-accent);
+	letter-spacing: 0.125em;
+}
+
+.pico-launch-stage-game {
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
 	color: var(--pico-ink);
 	letter-spacing: 0.125em;
 }
 
-.pico-notice[data-tone="warn"] .pico-notice-kicker {
-	color: var(--pico-warn);
-}
-
-.pico-notice-message {
+.pico-launch-stage-detail {
 	margin: 0;
 	max-width: 24ch;
 	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
-}
-
-.pico-notice-actions {
-	display: flex;
-	gap: var(--pico-space-2);
-	justify-content: center;
 }

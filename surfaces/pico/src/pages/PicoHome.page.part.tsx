@@ -8,7 +8,9 @@ export default function PicoHomePart() {
   return (
     <PicoHome
       clockLabel="10:24"
-      onLaunch={() => undefined}
+      onChooseLocation={() => undefined}
+      onDismiss={() => undefined}
+      onLaunchGame={() => undefined}
       onRetry={() => undefined}
       view={{
         _tag: "Shelf",

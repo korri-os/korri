@@ -25,6 +25,7 @@
 @import "./ui/molecules/PicoNotice.css";
 @import "./ui/molecules/PicoStatusBar.css";
 @import "./ui/organisms/PicoCartShelf.css";
+@import "./ui/organisms/PicoLaunchStage.css";
 @import "./ui/organisms/PicoLocationPicker.css";
 @import "./ui/templates/PicoScreenShell.css";
 

@@ -50,6 +50,7 @@ src/
   pico-tokens.css     the only file allowed a raw colour or pixel value
   pico.css            entry: recipe, tokens, one stylesheet per component
   PicoSurface.tsx     the composition root — the only file that reads the treaty
+  pico-screen-view.ts what the screen shows, decided once: status outranks catalog
   pico-home-view.ts   catalog -> the home's own tagged state, converted once
   ui/atoms|molecules|organisms|templates
   pages/
@@ -69,5 +70,5 @@ Stated plainly so nobody mistakes absence for completeness:
 - **No game detail, settings, or search.** Home only.
 - **No portal wiring.** `clients/portal` still mounts Shift directly; switching
   surfaces is a portal change, not a surface one.
-- **Back is not wired.** The button bar names it; nothing subscribes to the
-  treaty's semantic input yet.
+- **Only `back` is wired.** `options`, `menu`, and `system` have no meaning on
+  this screen yet, so nothing subscribes to them.
