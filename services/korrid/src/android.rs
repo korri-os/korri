@@ -2,9 +2,10 @@
 //! clients/android/.../korrid/KorridServer.java.
 
 use crate::{
-    active_android_launch, authorize_local_launch_spec, authorize_moonlight_launch_spec,
-    authorize_platform_instruction, clear_active_android_launch, clear_moonlight_executor_state,
-    issue_folder_selection_receipt, korrid_version, local_server_capability,
+    active_android_launch, apply_local_owner_binding, authorize_local_launch_spec,
+    authorize_moonlight_launch_spec, authorize_platform_instruction, clear_active_android_launch,
+    clear_moonlight_executor_state, issue_folder_selection_receipt, korrid_version,
+    local_identity_status_json, local_owner_binding_template, local_server_capability,
     moonlight_host_candidates, publish_local_active_launch, publish_moonlight_active_launch,
     publish_moonlight_executor_state, start_embedded_android_server, stop_local_server,
     MoonlightCertificateProvisionOutcome, MoonlightCertificateProvisionRequest,
@@ -87,6 +88,85 @@ pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_capabili
             ptr::null_mut()
         }
     }
+}
+
+fn string_result(env: &mut JNIEnv, result: Result<String, crate::ServerError>) -> jstring {
+    match result {
+        Ok(json) => match env.new_string(json) {
+            Ok(value) => value.into_raw(),
+            Err(error) => {
+                let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+                ptr::null_mut()
+            }
+        },
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", error.to_string());
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_identityStatus(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    string_result(&mut env, local_identity_status_json())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_ownerBindingTemplate(
+    mut env: JNIEnv,
+    _class: JClass,
+    created_at: jni::sys::jlong,
+) -> jstring {
+    if created_at < 0 {
+        let _ = env.throw_new(
+            "java/lang/IllegalArgumentException",
+            "created_at must be non-negative",
+        );
+        return ptr::null_mut();
+    }
+    string_result(&mut env, local_owner_binding_template(created_at as u64))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_simonwjackson_korri_korrid_KorridServer_applyOwnerBinding(
+    mut env: JNIEnv,
+    _class: JClass,
+    unsigned_template_json: JString,
+    expected_owner_public_key: JString,
+    signed_event_json: JString,
+) -> jstring {
+    let unsigned_template_json: String = match env.get_string(&unsigned_template_json) {
+        Ok(value) => value.into(),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return ptr::null_mut();
+        }
+    };
+    let expected_owner_public_key: String = match env.get_string(&expected_owner_public_key) {
+        Ok(value) => value.into(),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return ptr::null_mut();
+        }
+    };
+    let signed_event_json: String = match env.get_string(&signed_event_json) {
+        Ok(value) => value.into(),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalArgumentException", error.to_string());
+            return ptr::null_mut();
+        }
+    };
+    string_result(
+        &mut env,
+        apply_local_owner_binding(
+            &unsigned_template_json,
+            &expected_owner_public_key,
+            &signed_event_json,
+        ),
+    )
 }
 
 #[no_mangle]

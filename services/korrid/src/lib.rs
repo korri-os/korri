@@ -3112,6 +3112,7 @@ pub enum ServerError {
 struct ServerHandle {
     port: u16,
     rpc_capability: String,
+    private_state_root: PathBuf,
     launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
     active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
@@ -3218,6 +3219,7 @@ fn start_local_server_for_platform(
     let allowed_origin = allowed_origin.to_owned();
     let local_storage_root = local_storage_root.to_owned();
     let private_state_root = private_state_root.to_owned();
+    let handle_private_state_root = PathBuf::from(&private_state_root);
     let moonlight_config_snapshot =
         config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     let server_config_snapshot = moonlight_config_snapshot.clone();
@@ -3283,6 +3285,7 @@ fn start_local_server_for_platform(
     *slot = Some(ServerHandle {
         port,
         rpc_capability,
+        private_state_root: handle_private_state_root,
         launch_signing_key,
         local_launch_reservations,
         active_android_launch,
@@ -3311,6 +3314,66 @@ pub fn stop_local_server() -> Result<(), ServerError> {
         details: "server thread panicked".into(),
     })?;
     Ok(())
+}
+
+fn running_private_state_root() -> Result<PathBuf, ServerError> {
+    server_slot()
+        .lock()
+        .expect("server mutex poisoned")
+        .as_ref()
+        .map(|handle| handle.private_state_root.clone())
+        .ok_or(ServerError::NotRunning)
+}
+
+pub fn local_identity_status_json() -> Result<String, ServerError> {
+    let root = running_private_state_root()?;
+    let identity = identity::DeviceIdentity::load_or_create(&root).map_err(|error| {
+        ServerError::StartFailed {
+            details: error.to_string(),
+        }
+    })?;
+    serde_json::to_string(identity.state()).map_err(|error| ServerError::StartFailed {
+        details: error.to_string(),
+    })
+}
+
+pub fn local_owner_binding_template(created_at: u64) -> Result<String, ServerError> {
+    let root = running_private_state_root()?;
+    let identity = identity::DeviceIdentity::load_or_create(&root).map_err(|error| {
+        ServerError::StartFailed {
+            details: error.to_string(),
+        }
+    })?;
+    identity
+        .owner_statement_template(identity::OwnerStatementStatus::Owned, created_at)
+        .map_err(|error| ServerError::StartFailed {
+            details: error.to_string(),
+        })
+}
+
+pub fn apply_local_owner_binding(
+    unsigned_template_json: &str,
+    expected_owner_public_key: &str,
+    signed_event_json: &str,
+) -> Result<String, ServerError> {
+    let root = running_private_state_root()?;
+    let mut identity = identity::DeviceIdentity::load_or_create(&root).map_err(|error| {
+        ServerError::StartFailed {
+            details: error.to_string(),
+        }
+    })?;
+    identity
+        .apply_signed_owner_binding(
+            unsigned_template_json,
+            expected_owner_public_key,
+            signed_event_json,
+        )
+        .map_err(|error| ServerError::StartFailed {
+            details: error.to_string(),
+        })?;
+    serde_json::to_string(identity.state()).map_err(|error| ServerError::StartFailed {
+        details: error.to_string(),
+    })
 }
 
 pub fn local_server_port() -> Option<u16> {

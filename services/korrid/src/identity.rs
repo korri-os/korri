@@ -10,7 +10,7 @@ use nostr::{
     nips::nip44::{self, Version as Nip44Version},
     types::Timestamp,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, DirBuilder, File, OpenOptions},
     io::{Read, Write},
@@ -28,7 +28,8 @@ const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ENCRYPTED_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "_tag", rename_all_fields = "camelCase")]
 pub enum IdentityState {
     Unowned {
         device_public_key: String,
@@ -236,6 +237,59 @@ impl DeviceIdentity {
             .map_err(|_| IdentityError::InvalidEvent("owner template cannot be serialized".into()))
     }
 
+    /// Verify that an external signer signed this exact owner-binding template,
+    /// then store it. No signer private material crosses this boundary.
+    pub fn apply_signed_owner_binding(
+        &mut self,
+        unsigned_template_json: &str,
+        expected_owner_public_key: &str,
+        signed_event_json: &str,
+    ) -> Result<(), IdentityError> {
+        let expected_owner = parse_public_key(expected_owner_public_key)?;
+        let supplied_template: OwnerStatementTemplate =
+            serde_json::from_str(unsigned_template_json).map_err(|_| {
+                IdentityError::InvalidEvent("owner template JSON is malformed".into())
+            })?;
+        let device_public_key = self.public_key()?.to_hex();
+        let expected_template = OwnerStatementTemplate {
+            kind: OWNER_EVENT_KIND,
+            created_at: supplied_template.created_at,
+            tags: owner_tags(&device_public_key, OwnerStatementStatus::Owned),
+            content: String::new(),
+        };
+        if supplied_template != expected_template {
+            return Err(IdentityError::InvalidEvent(
+                "owner template does not request this device binding".into(),
+            ));
+        }
+        if signed_event_json.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::InvalidEvent(
+                "owner statement is too large".into(),
+            ));
+        }
+        let signed = Event::from_json(signed_event_json)
+            .map_err(|_| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
+        signed
+            .verify()
+            .map_err(|_| IdentityError::InvalidEvent("owner signature is invalid".into()))?;
+        let signed_tags: Vec<Vec<String>> = signed
+            .tags
+            .iter()
+            .map(|tag| tag.as_slice().to_vec())
+            .collect();
+        if signed.pubkey != expected_owner
+            || signed.kind.as_u16() != supplied_template.kind
+            || signed.created_at.as_secs() != supplied_template.created_at
+            || signed_tags != supplied_template.tags
+            || signed.content != supplied_template.content
+        {
+            return Err(IdentityError::InvalidEvent(
+                "signer returned a different event".into(),
+            ));
+        }
+        self.apply_owner_statement(signed_event_json)
+    }
+
     /// Store a newer valid owner statement for this exact device.
     pub fn apply_owner_statement(&mut self, event_json: &str) -> Result<(), IdentityError> {
         if matches!(
@@ -396,7 +450,8 @@ impl DeviceIdentity {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct OwnerStatementTemplate {
     kind: u16,
     created_at: u64,
@@ -824,6 +879,60 @@ mod tests {
         );
         assert!(value.get("pubkey").is_none());
         assert!(value.get("sig").is_none());
+    }
+
+    #[test]
+    fn strictly_accepts_only_the_exact_externally_signed_owner_template() {
+        let root = tempfile::tempdir().unwrap();
+        let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
+        let device = identity.device_public_key().unwrap().to_owned();
+        let owner = keys("0000000000000000000000000000000000000000000000000000000000000003");
+        let other = keys("0000000000000000000000000000000000000000000000000000000000000004");
+        let template = identity
+            .owner_statement_template(OwnerStatementStatus::Owned, 100)
+            .unwrap();
+        let signed = owner_statement(&owner, &device, OwnerStatementStatus::Owned, 100);
+
+        identity
+            .apply_signed_owner_binding(&template, &owner.public_key().to_hex(), &signed)
+            .unwrap();
+        assert!(matches!(identity.state(), IdentityState::Owned { .. }));
+
+        let second_root = tempfile::tempdir().unwrap();
+        let mut second = DeviceIdentity::load_or_create(second_root.path()).unwrap();
+        let second_device = second.device_public_key().unwrap().to_owned();
+        let second_template = second
+            .owner_statement_template(OwnerStatementStatus::Owned, 100)
+            .unwrap();
+        let wrong_author =
+            owner_statement(&other, &second_device, OwnerStatementStatus::Owned, 100);
+        assert!(second
+            .apply_signed_owner_binding(
+                &second_template,
+                &owner.public_key().to_hex(),
+                &wrong_author,
+            )
+            .is_err());
+        let wrong_time = owner_statement(&owner, &second_device, OwnerStatementStatus::Owned, 101);
+        assert!(
+            second
+                .apply_signed_owner_binding(
+                    &second_template,
+                    &owner.public_key().to_hex(),
+                    &wrong_time,
+                )
+                .is_err()
+        );
+        let mut changed_template: serde_json::Value =
+            serde_json::from_str(&second_template).unwrap();
+        changed_template["content"] = serde_json::Value::String("changed".into());
+        assert!(second
+            .apply_signed_owner_binding(
+                &changed_template.to_string(),
+                &owner.public_key().to_hex(),
+                &owner_statement(&owner, &second_device, OwnerStatementStatus::Owned, 100),
+            )
+            .is_err());
     }
 
     #[test]

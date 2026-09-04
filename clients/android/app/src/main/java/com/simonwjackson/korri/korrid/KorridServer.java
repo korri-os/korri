@@ -22,6 +22,15 @@ public final class KorridServer {
     public static native String capability();
     /** Native peer labels and addresses that Artemis may probe for Moonlight hosts. */
     public static native String moonlightHostCandidates();
+    /** Public identity state only. The person private key never enters Korri. */
+    public static native String identityStatus();
+    /** Unsigned NIP-78 template for the selected person signer. */
+    public static native String ownerBindingTemplate(long createdAt);
+    /** Verifies and stores one signed public event against the exact template. */
+    public static native String applyOwnerBinding(
+            String unsignedTemplateJson,
+            String expectedOwnerPublicKey,
+            String signedEventJson);
     /** Provision this process's public Moonlight certificate through the embedded brain. */
     public static native String provisionMoonlightCertificate(
             String hostUuid, String publicClientCertificate);
