@@ -161,12 +161,55 @@ An unowned Android device publishes its full device public key as the device fin
 
 The repository includes the separate `org.korri.signer.test` Android application. It implements the NIP-55 Activity and ContentResolver contracts with configurable approve, deny, delay, malformed, and valid-but-wrong-event behavior. This is the physical proof signer when Amber is absent. Amber interoperability on Bandai remains an external acceptance requirement.
 
+## Relay coordination
+
+`RelayCoordinator` is the only relay-facing product contract. It publishes endpoint announcements and queued coordination commands. It converts relay events into `EndpointRecord` and `CoordinationCommand` values. It does not import or dispatch product RPC types.
+
+Korri reads every configured relay. It deduplicates by NIP-01 event ID. It publishes to every configured relay. One accepted publish is success. A mixed result is `PublishState::Partial`. Korri has no built-in public relay.
+
+Android and other device settings use the ordered `host.relays` list in `config.yaml`. Linux can supply the same ordered list as a JSON array in `KORRID_RELAYS`. Production URLs must use `wss://`. `ws://` is accepted only for loopback test relays.
+
+The production adapter uses bounded WebSocket connections and supports NIP-42 challenges. The deterministic in-process relay follows NIP-01 replacement and subscription ordering. Both adapters bound event size, read results, stored events, response bytes, subscriptions, and reconnect delay. NIP-11 documents are accepted with unknown fields ignored and are rejected above the local response bound. NIP-65 relay-list events do not override Korri's configured list.
+
+### Endpoint announcements
+
+A current endpoint announcement is a signed, NIP-44-encrypted NIP-78 kind `30078` addressable event. It is published separately for each known recipient device. Its ordered tags are:
+
+```text
+["d", "org.korri.endpoint:<recipient-device-public-key>"]
+["p", "<recipient-device-public-key>"]
+["expiration", "<unix-seconds>"]
+```
+
+The encrypted `EndpointRecord` binds the publishing device key, owner key, positive generation, ordered endpoint candidates, issued time, and expiry. The event author must equal the record's device key. The outer expiration must equal the record expiry. A higher generation replaces a lower generation. At one generation, a later issued time wins.
+
+Relay endpoints are candidate addresses only. They do not create a NAT route. The static configured native peer directory remains a separate `ConfiguredNativePeerDirectory` adapter. Relay traffic never carries interactive RPC, catalog data, artwork, saves, controller input, or stream data.
+
+### Private queued commands
+
+Private queued commands use stored NIP-59 kind `1059` gift wraps with NIP-44 v2 at both layers. The signed seal author is the sending device. The inner rumor uses Korri kind `29100` and carries one bounded tagged command. Both the gift wrap and rumor carry NIP-40 expiry. korrid rejects expired events locally even when a relay retains them.
+
+The first command asks an already-running idle korrid to act. It is not hardware wake. If no process is connected, the relay retains the event until korrid reconnects or the command expires. Owner-binding requests and externally signed owner-binding responses use the same private queue.
+
+### NIP-46 remote signer
+
+The remote signer implements the Korri-owned `PersonSigner` contract. It uses NIP-46 kind `24133` request and response events through the same relay coordinator. korrid generates a separate disposable NIP-46 client key. It never reuses the device identity key.
+
+A connection requests exactly `sign_event:30078`. Every request has a random ID. A response must use the same ID, be signed by the configured remote-signer key, be addressed to the exact client key, fit the response bound, and decrypt as NIP-44 v2. A `sign_event` result must be a valid NIP-01 event from the selected user key and must exactly match the requested owner template.
+
+The protected identity directory adds:
+
+```text
+nip46-client.key
+nip46.connection.json
+```
+
+Both files use mode `0600`. The connection document contains the NIP-46 client public key, remote-signer public key, selected user public key when known, relay URLs from the connection token, and optional one-use connection secret. Public connection data is protected with the client secret because exposing the relationship can still reveal account metadata.
+
 ## Deferred work
 
 The next slices must add:
 
-- relay coordination with NIP-59 wrapping,
-- the NIP-46 remote-signer adapter,
 - delivery and device-side installation of externally signed person passes and revocations.
 
 The current environment-driven Linux binary does not have a command framework. The owner-binding import/status CLI stays with the later Nix host-binding slice rather than broadening that binary in this Android slice.
