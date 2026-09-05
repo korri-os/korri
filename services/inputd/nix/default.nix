@@ -21,10 +21,20 @@ let
   retroarchInputplumberAutoconfig = pkgs.callPackage ./retroarch-inputplumber-autoconfig.nix { };
   sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
   sunshinePatchPaths = map (record: record.path) sunshineApprovedPatches.patches;
-  sunshinePatchManifest = builtins.concatStringsSep "\n" (
-    map (record: "patch=${record.name} sha256=${record.sha256}") sunshineApprovedPatches.patches
-  ) + "\n";
+  sunshinePatchManifest =
+    builtins.concatStringsSep "\n" (
+      map (record: "patch=${record.name} sha256=${record.sha256}") sunshineApprovedPatches.patches
+    )
+    + "\n";
   sunshinePatchManifestFile = pkgs.writeText "sunshine-korri-approved-patch-manifest" sunshinePatchManifest;
+  sunshineApprovedBaseDerivations =
+    sunshineApprovedPatches.approvedBaseDerivationsByProfile.${sunshinePackage.korriBuildProfile}
+      or [ ];
+  sunshineBasePackage = pkgs.sunshine.override {
+    cudaSupport = sunshinePackage.korriCudaEnabled;
+  };
+  sunshineApprovedDeviceBaseDerivation =
+    sunshineApprovedPatches.approvedDeviceBaseDerivations.${sunshinePackage.korriBuildProfile} or null;
   androidMoonlightRoot = ../../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src;
   inputdPackage = import ../package.nix { inherit pkgs crane; };
   devApp = import ./dev-app.nix {
@@ -62,9 +72,22 @@ in
     sunshine-korri-package = pkgs.runCommand "sunshine-korri-package-check" { } ''
       test -f ${sunshinePackage}/bin/sunshine
       test -x ${sunshinePackage}/bin/sunshine
-      test ! -L ${sunshinePackage}/bin/sunshine
-      test -L ${sunshinePackage}/bin/.sunshine-wrapped
-      grep -F '"${sunshinePackage}/bin/.sunshine-wrapped"' ${sunshinePackage}/bin/sunshine >/dev/null
+      ${
+        if sunshinePackage.korriCudaEnabled then
+          ''
+            test ! -L ${sunshinePackage}/bin/sunshine
+            test -L ${sunshinePackage}/bin/.sunshine-wrapped
+            grep -F '"${sunshinePackage}/bin/.sunshine-wrapped"' ${sunshinePackage}/bin/sunshine >/dev/null
+          ''
+        else
+          ''
+            test -L ${sunshinePackage}/bin/sunshine
+            case "$(readlink -f ${sunshinePackage}/bin/sunshine)" in
+              ${sunshinePackage}/bin/sunshine-*) ;;
+              *) exit 1 ;;
+            esac
+          ''
+      }
       test "${sunshinePackage.pname}" = sunshine-korri
       test "${sunshinePackage.version}" = "${pkgs.sunshine.version}-korri"
       test "${toString (builtins.length sunshinePackage.korriPatchNames)}" = 15
@@ -72,22 +95,27 @@ in
       test "${sunshinePackage.korriApprovedBaseSunshineSourceHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
       test "${pkgs.sunshine.src.outputHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
       test "${sunshinePackage.korriBaseSunshineSource}" = "${builtins.unsafeDiscardStringContext (toString pkgs.sunshine.src)}"
-      test "${sunshinePackage.korriBaseSunshineDerivation}" = "${
-        builtins.unsafeDiscardStringContext (pkgs.sunshine.override { cudaSupport = true; }).drvPath
+      test "${sunshinePackage.korriBuildProfile}" = "${system}-${
+        if sunshinePackage.korriCudaEnabled then "cuda" else "software"
       }"
-      test "${toString (builtins.elem sunshinePackage.korriBaseSunshineDerivation sunshineApprovedPatches.approvedBaseDerivations)}" = 1
+      test "${sunshinePackage.korriBaseSunshineDerivation}" = "${builtins.unsafeDiscardStringContext sunshineBasePackage.drvPath}"
+      test "${toString (builtins.elem sunshinePackage.korriBaseSunshineDerivation sunshineApprovedBaseDerivations)}" = 1
       test "${sunshinePackage.korriApprovedBaseSunshineDerivation}" = "${sunshinePackage.korriBaseSunshineDerivation}"
-      test "${toString (builtins.elem sunshineApprovedPatches.approvedDeviceBaseDerivation sunshineApprovedPatches.approvedBaseDerivations)}" = 1
+      test "${toString (sunshineApprovedDeviceBaseDerivation != null)}" = 1
       test "${sunshinePackage.korriReviewedLibavcodecVersion}" = "${sunshineApprovedPatches.reviewedLibavcodecVersion}"
       test "${sunshinePackage.korriReviewedFfmpegCommit}" = "${sunshineApprovedPatches.reviewedFfmpegCommit}"
       test "${sunshinePackage.korriReviewedFfmpegSourceHash}" = "${sunshineApprovedPatches.reviewedFfmpegSourceHash}"
       test "${toString sunshinePackage.korriReviewedNvencApiMajor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMajor}"
       test "${toString sunshinePackage.korriReviewedNvencApiMinor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMinor}"
-      test "${toString sunshinePackage.korriCudaEnabled}" = 1
+      test "${toString sunshinePackage.korriCudaEnabled}" = "${toString (system == "x86_64-linux")}"
       test "${sunshinePackage.korriPatchSetSha256}" = "${sunshineApprovedPatches.patchSetSha256}"
       provenance=${sunshinePackage}/${sunshinePackage.korriProvenanceRelativePath}
       test -f "$provenance"
       grep -Fx 'package=sunshine-korri' "$provenance" >/dev/null
+      grep -Fx 'build_profile=${sunshinePackage.korriBuildProfile}' "$provenance" >/dev/null
+      grep -Fx 'cuda_enabled=${
+        if sunshinePackage.korriCudaEnabled then "1" else "0"
+      }' "$provenance" >/dev/null
       grep -Fx 'approved_base_sunshine_source_hash=${sunshineApprovedPatches.approvedBaseSourceHash}' "$provenance" >/dev/null
       grep -Fx 'approved_base_sunshine_derivation=${sunshinePackage.korriBaseSunshineDerivation}' "$provenance" >/dev/null
       grep -Fx 'reviewed_ffmpeg_commit=${sunshineApprovedPatches.reviewedFfmpegCommit}' "$provenance" >/dev/null
@@ -171,12 +199,22 @@ in
       # Linux resolves /proc/PID/exe through the bin/sunshine symlink. Exercise
       # the gate's exact resolver against the shipped versioned target.
       declared=${sunshinePackage}/bin/sunshine
-      wrapped=${sunshinePackage}/bin/.sunshine-wrapped
       test -f "$declared"
-      test ! -L "$declared"
-      test -L "$wrapped"
-      grep -F 'bin/.sunshine-wrapped' "$declared" >/dev/null
-      running="$(readlink -f -- "$wrapped")"
+      ${
+        if sunshinePackage.korriCudaEnabled then
+          ''
+            wrapped=${sunshinePackage}/bin/.sunshine-wrapped
+            test ! -L "$declared"
+            test -L "$wrapped"
+            grep -F 'bin/.sunshine-wrapped' "$declared" >/dev/null
+            running="$(readlink -f -- "$wrapped")"
+          ''
+        else
+          ''
+            test -L "$declared"
+            running="$(readlink -f -- "$declared")"
+          ''
+      }
       case "$running" in
         ${sunshinePackage}/bin/sunshine-*) ;;
         *) echo "Sunshine did not resolve to its versioned package target" >&2; exit 1 ;;

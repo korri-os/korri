@@ -9,6 +9,7 @@
 }:
 let
   lib = pkgs.lib;
+  isX86_64 = pkgs.stdenv.hostPlatform.isx86_64;
   peerPublicKey = builtins.concatStringsSep "" (pkgs.lib.replicate 64 "3");
   evaluate =
     extra:
@@ -94,6 +95,28 @@ let
   vaapi = evaluate {
     services.korriLinuxHost.sunshine.encoder = "vaapi";
   };
+  physicalSoftware = evaluate {
+    services.korriLinuxHost = {
+      compositor = {
+        backend = "drm";
+        drmDevice = "/dev/dri/card0";
+        renderDevice = "/dev/dri/renderD128";
+        outputName = "DSI-1";
+        mode = "640x480@60Hz";
+        renderer = "gles2";
+      };
+      sunshine = {
+        capture = "kms";
+        encoder = "software";
+      };
+    };
+  };
+  missingDrmDevice = evaluate {
+    services.korriLinuxHost.compositor.backend = "drm";
+  };
+  kmsWithoutDrm = evaluate {
+    services.korriLinuxHost.sunshine.capture = "kms";
+  };
   wrongGameplayUid = evaluate {
     users.users.gameplay.uid = lib.mkForce 1002;
   };
@@ -134,6 +157,11 @@ let
   inputSeatSunshine = inputSeats.config.systemd.services.sunshine;
   nvencCompositor = nvenc.config.systemd.services.korri-compositor;
   vaapiCompositor = vaapi.config.systemd.services.korri-compositor;
+  physicalSoftwareCompositor = physicalSoftware.config.systemd.services.korri-compositor;
+  physicalSoftwareSunshine = physicalSoftware.config.systemd.services.sunshine;
+  physicalSoftwareReadiness = builtins.readFile (
+    builtins.elemAt physicalSoftwareCompositor.serviceConfig.ExecStartPost 1
+  );
   deviceConfig = cfg.services.korridLinuxDevice.deviceConfig;
   nvencDeviceConfig = nvenc.config.services.korridLinuxDevice.deviceConfig;
   highRefreshDeviceConfig = highRefresh.config.services.korridLinuxDevice.deviceConfig;
@@ -141,9 +169,14 @@ let
   sunshineExec = pkgs.writeText "korri-linux-host-sunshine-exec" sunshine.serviceConfig.ExecStart;
   compositorExec = pkgs.writeText "korri-linux-host-compositor-exec" compositor.serviceConfig.ExecStart;
   highRefreshCompositorExec = pkgs.writeText "korri-linux-host-high-refresh-compositor-exec" highRefresh.config.systemd.services.korri-compositor.serviceConfig.ExecStart;
-  highRefreshPerformance = highRefresh.config.systemd.services.korri-streaming-performance-profile;
-  highRefreshPerformanceExec = pkgs.writeText "korri-linux-host-high-refresh-performance-exec" highRefreshPerformance.serviceConfig.ExecStart;
-  highRefreshPerformanceStop = pkgs.writeText "korri-linux-host-high-refresh-performance-stop" highRefreshPerformance.serviceConfig.ExecStop;
+  highRefreshPerformance =
+    if isX86_64 then highRefresh.config.systemd.services.korri-streaming-performance-profile else null;
+  highRefreshPerformanceExec = pkgs.writeText "korri-linux-host-high-refresh-performance-exec" (
+    if isX86_64 then highRefreshPerformance.serviceConfig.ExecStart else ""
+  );
+  highRefreshPerformanceStop = pkgs.writeText "korri-linux-host-high-refresh-performance-stop" (
+    if isX86_64 then highRefreshPerformance.serviceConfig.ExecStop else ""
+  );
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
   udevRules = pkgs.writeText "korri-linux-host-udev-rules" cfg.services.udev.extraRules;
   inputSeatUdevRules = pkgs.writeText "korri-linux-host-input-seat-udev-rules" inputSeats.config.services.udev.extraRules;
@@ -210,15 +243,24 @@ assert builtins.elem "-/run/korri-input-seat"
   inputSeats.config.systemd.services.korri-inputd.serviceConfig.InaccessiblePaths;
 assert cfg.services.korriLinuxHost.sunshine.encoder == "auto";
 assert sunshine.environment.SUNSHINE_LIVE_SETTINGS_MVP == "1";
-assert allAssertionsPass nvenc;
+assert
+  if sunshinePackage.korriCudaEnabled then
+    allAssertionsPass nvenc
+  else
+    hasFailedAssertion "requires a CUDA-enabled sunshine package" nvenc;
 assert allAssertionsPass vaapi;
+assert allAssertionsPass physicalSoftware;
+assert hasFailedAssertion "DRM compositor requires" missingDrmDevice;
+assert hasFailedAssertion "KMS capture requires" kmsWithoutDrm;
 assert !(builtins.hasAttr "korri-streaming-performance-profile" cfg.systemd.services);
-assert builtins.elem "korri-streaming-performance-profile.service"
-  highRefresh.config.systemd.services.korri-compositor.requires;
-assert builtins.elem "korri-streaming-performance-profile.service"
-  highRefresh.config.systemd.services.korri-compositor.after;
-assert highRefreshPerformance.serviceConfig.Type == "oneshot";
-assert highRefreshPerformance.serviceConfig.RemainAfterExit;
+assert
+  isX86_64
+  == builtins.elem "korri-streaming-performance-profile.service" highRefresh.config.systemd.services.korri-compositor.requires;
+assert
+  isX86_64
+  == builtins.elem "korri-streaming-performance-profile.service" highRefresh.config.systemd.services.korri-compositor.after;
+assert !isX86_64 || highRefreshPerformance.serviceConfig.Type == "oneshot";
+assert !isX86_64 || highRefreshPerformance.serviceConfig.RemainAfterExit;
 assert
   nvenc.config.systemd.services.sunshine.environment.LD_LIBRARY_PATH == "/run/opengl-driver/lib";
 assert nvenc.config.systemd.services.sunshine.environment.SUNSHINE_STRICT_ENCODER == "1";
@@ -247,7 +289,39 @@ assert
 assert
   !(builtins.hasAttr "SUNSHINE_LIVE_SETTINGS_MVP" noRuntimeSettings.config.systemd.services.sunshine.environment);
 assert cfg.hardware.graphics.enable;
-assert builtins.elem pkgs.intel-media-driver cfg.hardware.graphics.extraPackages;
+assert
+  !pkgs.stdenv.hostPlatform.isx86_64
+  || builtins.elem pkgs.intel-media-driver cfg.hardware.graphics.extraPackages;
+assert physicalSoftware.config.hardware.graphics.extraPackages == [ ];
+assert physicalSoftware.config.services.seatd.enable;
+assert !(builtins.elem "seat" physicalSoftware.config.users.users.gameplay.extraGroups);
+assert builtins.elem "seat" physicalSoftwareCompositor.serviceConfig.SupplementaryGroups;
+assert !(builtins.elem "seat" physicalSoftwareSunshine.serviceConfig.SupplementaryGroups);
+assert !(builtins.elem "seat" compositor.serviceConfig.SupplementaryGroups);
+assert physicalSoftwareCompositor.environment.WLR_BACKENDS == "drm";
+assert physicalSoftwareCompositor.environment.WLR_DRM_DEVICES == "/dev/dri/card0";
+assert physicalSoftwareCompositor.environment.WLR_RENDER_DRM_DEVICE == "/dev/dri/renderD128";
+assert !(builtins.hasAttr "WLR_LIBINPUT_NO_DEVICES" physicalSoftwareCompositor.environment);
+assert builtins.elem "seatd.service" physicalSoftwareCompositor.requires;
+assert builtins.elem "seatd.service" physicalSoftwareCompositor.after;
+assert physicalSoftware.config.services.sunshine.capSysAdmin;
+assert !physicalSoftwareSunshine.serviceConfig.NoNewPrivileges;
+assert !physicalSoftwareSunshine.serviceConfig.PrivatePIDs;
+assert
+  physicalSoftwareSunshine.serviceConfig.CapabilityBoundingSet == [
+    "CAP_SETPCAP"
+    "CAP_SYS_ADMIN"
+  ];
+assert physicalSoftwareSunshine.serviceConfig.ExecCondition == [ ];
+assert !(builtins.hasAttr "LD_LIBRARY_PATH" physicalSoftwareSunshine.environment);
+assert !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" physicalSoftwareSunshine.environment);
+assert
+  physicalSoftwareSunshine.serviceConfig.ExecStart
+  == "/run/wrappers/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null capture=kms encoder=software";
+assert lib.hasInfix "DSI-1" physicalSoftwareReadiness;
+assert lib.hasInfix ".active == true" physicalSoftwareReadiness;
+assert lib.hasInfix ".rect.width == $width" physicalSoftwareReadiness;
+assert lib.hasInfix ".rect.height == $height" physicalSoftwareReadiness;
 assert builtins.elem "uinput" cfg.boot.kernelModules;
 assert cfg.users.users.korri-inputd.uid == 977;
 assert cfg.users.groups.korri-control.gid == 977;
@@ -312,6 +386,9 @@ assert builtins.elem "korri-certificate-control.socket" sunshine.after;
 assert sunshine.serviceConfig.Sockets == [ "korri-certificate-control.socket" ];
 assert builtins.elem "d /run/korri-certificate-control 0751 root korrid -"
   cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /home/gameplay/.config 0700 gameplay games -" cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /home/gameplay/.config/sunshine 0700 gameplay games -"
+  cfg.systemd.tmpfiles.rules;
 assert
   sunshine.serviceConfig.ExecStart
   == "${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null";
@@ -358,6 +435,10 @@ assert builtins.elem "korri-input-source-guard.service" sunshine.requires;
 assert builtins.elem "korri-compositor.service" sunshine.requires;
 assert builtins.elem "/dev/inputplumber/sources" sunshine.serviceConfig.InaccessiblePaths;
 assert builtins.elem "/run/korri-compositor" sunshine.serviceConfig.InaccessiblePaths;
+# The readiness probe reads the Sway IPC socket the sandbox hides, so it must
+# run with full privileges outside the unit's mount namespace.
+assert lib.hasPrefix "+/nix/store/" sunshine.serviceConfig.ExecStartPre;
+assert lib.hasSuffix "-korri-wait-for-compositor" sunshine.serviceConfig.ExecStartPre;
 assert builtins.elem 39217 cfg.networking.firewall.interfaces.tailscale0.allowedTCPPorts;
 assert builtins.hasAttr "workspace-next" cfg.services.korriLinuxInput.inputd.actions;
 assert
@@ -411,57 +492,59 @@ pkgs.runCommand "korri-linux-host-module-check" { } ''
     grep -F -- '--config /nix/store/' ${compositorExec} >/dev/null
     high_refresh_compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${highRefreshCompositorExec} | head -n1)"
     grep -F 'output HEADLESS-1 mode 1920x1080@120Hz' "$high_refresh_compositor_config" >/dev/null
-    performance_script="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-streaming-performance-profile' ${highRefreshPerformanceExec} | head -n1)"
-    test -x "$performance_script"
-    grep -F 'performance' "$performance_script" >/dev/null
-    grep -F "printf '60\\n'" "$performance_script" >/dev/null
-    grep -F "printf '40\\n'" "$performance_script" >/dev/null
-    grep -F "printf '100\\n'" "$performance_script" >/dev/null
-    grep -F "printf '16\\n'" "$performance_script" >/dev/null
-    grep -F 'balanced' "$performance_script" >/dev/null
-    grep -F ' start' ${highRefreshPerformanceExec} >/dev/null
-    grep -F ' stop' ${highRefreshPerformanceStop} >/dev/null
-    profile_test="$TMPDIR/performance-profile"
-    mkdir "$profile_test"
-    printf 'balanced\n' >"$profile_test/profile"
-    printf 'cool quiet balanced performance\n' >"$profile_test/choices"
-    printf '16\n' >"$profile_test/min"
-    printf '100\n' >"$profile_test/max"
-    run_profile() {
-      KORRI_PLATFORM_PROFILE_PATH="$profile_test/profile" \
-      KORRI_PLATFORM_PROFILE_CHOICES_PATH="$profile_test/choices" \
-      KORRI_INTEL_PSTATE_MIN_PATH="$profile_test/min" \
-      KORRI_INTEL_PSTATE_MAX_PATH="$profile_test/max" \
-        "$performance_script" "$1"
-    }
-    run_profile start
-    test "$(cat "$profile_test/profile")" = performance
-    test "$(cat "$profile_test/min")" = 40
-    test "$(cat "$profile_test/max")" = 60
-    chmod 400 "$profile_test/profile"
-    set +e
-    run_profile stop >/dev/null 2>&1
-    failed_stop_status=$?
-    set -e
-    chmod 600 "$profile_test/profile"
-    test "$failed_stop_status" -ne 0
-    test "$(cat "$profile_test/profile")" = performance
-    test "$(cat "$profile_test/min")" = 40
-    test "$(cat "$profile_test/max")" = 60
-    run_profile stop
-    test "$(cat "$profile_test/profile")" = balanced
-    test "$(cat "$profile_test/min")" = 16
-    test "$(cat "$profile_test/max")" = 100
-    chmod 400 "$profile_test/min"
-    set +e
-    run_profile start >/dev/null 2>&1
-    failed_start_status=$?
-    set -e
-    chmod 600 "$profile_test/min"
-    test "$failed_start_status" -ne 0
-    test "$(cat "$profile_test/profile")" = balanced
-    test "$(cat "$profile_test/min")" = 16
-    test "$(cat "$profile_test/max")" = 100
+    ${lib.optionalString isX86_64 ''
+      performance_script="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-streaming-performance-profile' ${highRefreshPerformanceExec} | head -n1)"
+      test -x "$performance_script"
+      grep -F 'performance' "$performance_script" >/dev/null
+      grep -F "printf '60\\n'" "$performance_script" >/dev/null
+      grep -F "printf '40\\n'" "$performance_script" >/dev/null
+      grep -F "printf '100\\n'" "$performance_script" >/dev/null
+      grep -F "printf '16\\n'" "$performance_script" >/dev/null
+      grep -F 'balanced' "$performance_script" >/dev/null
+      grep -F ' start' ${highRefreshPerformanceExec} >/dev/null
+      grep -F ' stop' ${highRefreshPerformanceStop} >/dev/null
+      profile_test="$TMPDIR/performance-profile"
+      mkdir "$profile_test"
+      printf 'balanced\n' >"$profile_test/profile"
+      printf 'cool quiet balanced performance\n' >"$profile_test/choices"
+      printf '16\n' >"$profile_test/min"
+      printf '100\n' >"$profile_test/max"
+      run_profile() {
+        KORRI_PLATFORM_PROFILE_PATH="$profile_test/profile" \
+        KORRI_PLATFORM_PROFILE_CHOICES_PATH="$profile_test/choices" \
+        KORRI_INTEL_PSTATE_MIN_PATH="$profile_test/min" \
+        KORRI_INTEL_PSTATE_MAX_PATH="$profile_test/max" \
+          "$performance_script" "$1"
+      }
+      run_profile start
+      test "$(cat "$profile_test/profile")" = performance
+      test "$(cat "$profile_test/min")" = 40
+      test "$(cat "$profile_test/max")" = 60
+      chmod 400 "$profile_test/profile"
+      set +e
+      run_profile stop >/dev/null 2>&1
+      failed_stop_status=$?
+      set -e
+      chmod 600 "$profile_test/profile"
+      test "$failed_stop_status" -ne 0
+      test "$(cat "$profile_test/profile")" = performance
+      test "$(cat "$profile_test/min")" = 40
+      test "$(cat "$profile_test/max")" = 60
+      run_profile stop
+      test "$(cat "$profile_test/profile")" = balanced
+      test "$(cat "$profile_test/min")" = 16
+      test "$(cat "$profile_test/max")" = 100
+      chmod 400 "$profile_test/min"
+      set +e
+      run_profile start >/dev/null 2>&1
+      failed_start_status=$?
+      set -e
+      chmod 600 "$profile_test/min"
+      test "$failed_start_status" -ne 0
+      test "$(cat "$profile_test/profile")" = balanced
+      test "$(cat "$profile_test/min")" = 16
+      test "$(cat "$profile_test/max")" = 100
+    ''}
     grep -Fx '${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null' ${sunshineExec} >/dev/null
     grep -F 'TAG-="uaccess"' ${udevRules} >/dev/null
     grep -F 'ATTRS{name}=="Korri Seat P[1-4]"' ${inputSeatUdevRules} >/dev/null

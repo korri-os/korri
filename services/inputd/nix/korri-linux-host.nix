@@ -9,6 +9,9 @@ let
   cfg = config.services.korriLinuxHost;
   system = pkgs.stdenv.hostPlatform.system;
   sunshineApproved = import ../../sunshine/approved-patches.nix;
+  sunshineApprovedBaseDerivations =
+    sunshineApproved.approvedBaseDerivationsByProfile.${cfg.sunshine.package.korriBuildProfile or ""}
+      or [ ];
   gameplayHome = config.users.users.${cfg.gameplayUser}.home or "/home/${cfg.gameplayUser}";
   gameplayRuntimeDir = "/run/user/${toString cfg.gameplayUid}";
   compositorControlDirectory = "/run/korri-compositor";
@@ -28,12 +31,18 @@ let
   compositorWidth = builtins.elemAt compositorMode 0;
   compositorHeight = builtins.elemAt compositorMode 1;
   compositorRefreshRate = builtins.elemAt compositorMode 2;
-  highRefreshPerformance = lib.toInt compositorRefreshRate >= 120;
+  highRefreshPerformance =
+    pkgs.stdenv.hostPlatform.isx86_64 && lib.toInt compositorRefreshRate >= 120;
   sunshineConfig =
     if cfg.sunshine.configDirectory == null then
       "${gameplayHome}/.config/sunshine"
     else
       cfg.sunshine.configDirectory;
+  sunshineExecutable =
+    if cfg.sunshine.capture == "kms" then
+      "${config.security.wrapperDir}/sunshine"
+    else
+      lib.getExe cfg.sunshine.package;
   streamingValidationMotion = pkgs.stdenv.mkDerivation {
     pname = "korri-streaming-validation-motion";
     version = "0.0.0";
@@ -252,12 +261,20 @@ let
     while [ "$attempt" -lt 60 ]; do
       if [ -S ${lib.escapeShellArg "${gameplayRuntimeDir}/${waylandDisplay}"} ] \
         && [ -S ${lib.escapeShellArg xwaylandSocket} ]; then
-        exit 0
+        outputs="$(${pkgs.sway}/bin/swaymsg -s ${lib.escapeShellArg compositorControlSocket} -t get_outputs -r 2>/dev/null || true)"
+        if printf '%s\n' "$outputs" | ${pkgs.jq}/bin/jq -e \
+          --arg name ${lib.escapeShellArg cfg.compositor.outputName} \
+          --argjson width ${lib.escapeShellArg compositorWidth} \
+          --argjson height ${lib.escapeShellArg compositorHeight} \
+          '.[] | select(.name == $name and .active == true and .rect.width == $width and .rect.height == $height)' \
+          >/dev/null; then
+          exit 0
+        fi
       fi
       attempt=$((attempt + 1))
       ${pkgs.coreutils}/bin/sleep 0.25
     done
-    echo "Sway displays ${waylandDisplay} and ${xwaylandDisplay} did not become ready" >&2
+    echo "Sway output ${cfg.compositor.outputName} did not become active at ${compositorWidth}x${compositorHeight}" >&2
     exit 1
   '';
   requireNvencRuntime = pkgs.writeShellScript "korri-require-nvenc-runtime" ''
@@ -367,6 +384,19 @@ in
     };
 
     compositor = {
+      backend = lib.mkOption {
+        type = lib.types.enum [
+          "headless"
+          "drm"
+        ];
+        default = "headless";
+        description = "wlroots output backend used by the Korri compositor.";
+      };
+      drmDevice = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Primary DRM/KMS card used by a physical compositor.";
+      };
       renderDevice = lib.mkOption {
         type = lib.types.str;
         description = "Exact DRM render node used by the headless compositor.";
@@ -432,11 +462,22 @@ in
         type = lib.types.bool;
         default = true;
       };
+      capture = lib.mkOption {
+        type = lib.types.enum [
+          "auto"
+          "wlr"
+          "kms"
+          "x11"
+        ];
+        default = "auto";
+        description = "Sunshine capture backend selected through Korri's immutable service argv.";
+      };
       encoder = lib.mkOption {
         type = lib.types.enum [
           "auto"
           "vaapi"
           "nvenc"
+          "software"
         ];
         default = "auto";
         description = "Sunshine encoder selected through Korri's immutable service argv.";
@@ -520,7 +561,10 @@ in
           &&
             (cfg.sunshine.package.korriReviewedNvencApiMinor or null) == sunshineApproved.reviewedNvencApiMinor
           && builtins.elem (cfg.sunshine.package.korriBaseSunshineDerivation or ""
-          ) sunshineApproved.approvedBaseDerivations
+          ) sunshineApprovedBaseDerivations
+          &&
+            (cfg.sunshine.package.korriBuildProfile or null)
+            == "${system}-${if cfg.sunshine.package.korriCudaEnabled or false then "cuda" else "software"}"
           &&
             (cfg.sunshine.package.korriApprovedBaseSunshineDerivation or null)
             == (cfg.sunshine.package.korriBaseSunshineDerivation or null)
@@ -537,6 +581,10 @@ in
             cfg.sunshine.package.korriPatchNames or [ ]
           );
         message = "services.korriLinuxHost must use the exact approved sunshine-korri package and provenance contract.";
+      }
+      {
+        assertion = cfg.sunshine.encoder != "nvenc" || (cfg.sunshine.package.korriCudaEnabled or false);
+        message = "services.korriLinuxHost sunshine encoder nvenc requires a CUDA-enabled sunshine package.";
       }
       {
         assertion = lib.all validAbsolutePath [
@@ -564,6 +612,19 @@ in
       {
         assertion = lib.hasPrefix "/dev/dri/" cfg.compositor.renderDevice;
         message = "services.korriLinuxHost compositor renderDevice must be under /dev/dri/.";
+      }
+      {
+        assertion =
+          cfg.compositor.backend != "drm"
+          || (
+            cfg.compositor.drmDevice != null
+            && builtins.match "^/dev/dri/card[0-9]+$" cfg.compositor.drmDevice != null
+          );
+        message = "services.korriLinuxHost DRM compositor requires an exact /dev/dri/cardN device.";
+      }
+      {
+        assertion = cfg.sunshine.capture != "kms" || cfg.compositor.backend == "drm";
+        message = "services.korriLinuxHost KMS capture requires the physical DRM compositor backend.";
       }
       {
         assertion = lib.all (name: builtins.match "[A-Za-z0-9_.:-]+" name != null) cfg.firewallInterfaces;
@@ -620,17 +681,30 @@ in
       autoStart = false;
       openFirewall = cfg.sunshine.openFirewall;
       package = cfg.sunshine.package;
+      capSysAdmin = cfg.sunshine.capture == "kms";
     };
     systemd.user.services.sunshine.enable = lib.mkForce false;
 
     hardware.graphics = {
       enable = true;
-      extraPackages = lib.mkAfter [ pkgs.intel-media-driver ];
+      extraPackages = lib.mkAfter (
+        lib.optionals (
+          pkgs.stdenv.hostPlatform.isx86_64
+          && builtins.elem cfg.sunshine.encoder [
+            "auto"
+            "vaapi"
+          ]
+        ) [ pkgs.intel-media-driver ]
+      );
     };
+
+    services.seatd.enable = cfg.compositor.backend == "drm";
 
     users.users.${cfg.gameplayUser} = {
       uid = lib.mkDefault cfg.gameplayUid;
       group = lib.mkDefault cfg.gameplayGroup;
+      # Only the compositor unit joins `seat` through SupplementaryGroups.
+      # Game processes run as this user and must not reach /run/seatd.sock.
       extraGroups = lib.mkAfter [
         "render"
         "video"
@@ -640,6 +714,8 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.storageRoot} 0700 korrid korrid -"
       "d ${certificateControlDirectory} 0751 root korrid -"
+      "d ${gameplayHome}/.config 0700 ${cfg.gameplayUser} ${cfg.gameplayGroup} -"
+      "d ${sunshineConfig} 0700 ${cfg.gameplayUser} ${cfg.gameplayGroup} -"
     ];
 
     systemd.sockets.korri-certificate-control = {
@@ -737,7 +813,7 @@ in
     };
 
     systemd.services.korri-compositor = {
-      description = "Korri headless Sway compositor";
+      description = "Korri Sway compositor";
       wantedBy = [ "multi-user.target" ];
       wants = [
         "korrid.service"
@@ -747,12 +823,14 @@ in
         "user-runtime-dir@${toString cfg.gameplayUid}.service"
         "user@${toString cfg.gameplayUid}.service"
       ]
+      ++ lib.optional (cfg.compositor.backend == "drm") "seatd.service"
       ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
       after = [
         "systemd-tmpfiles-setup.service"
         "user-runtime-dir@${toString cfg.gameplayUid}.service"
         "user@${toString cfg.gameplayUid}.service"
       ]
+      ++ lib.optional (cfg.compositor.backend == "drm") "seatd.service"
       ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
       before = [
         "korrid.service"
@@ -772,11 +850,18 @@ in
         DBUS_SESSION_BUS_ADDRESS = "unix:path=${gameplayRuntimeDir}/bus";
         XDG_CURRENT_DESKTOP = "sway";
         SWAYSOCK = compositorControlSocket;
-        WLR_BACKENDS = "headless";
-        WLR_LIBINPUT_NO_DEVICES = "1";
         WLR_RENDERER = cfg.compositor.renderer;
         WLR_RENDER_DRM_DEVICE = cfg.compositor.renderDevice;
         WLR_NO_HARDWARE_CURSORS = "1";
+      }
+      // lib.optionalAttrs (cfg.compositor.backend == "headless") {
+        WLR_BACKENDS = "headless";
+        WLR_LIBINPUT_NO_DEVICES = "1";
+      }
+      // lib.optionalAttrs (cfg.compositor.backend == "drm") {
+        LIBSEAT_BACKEND = "seatd";
+        WLR_BACKENDS = "drm";
+        WLR_DRM_DEVICES = cfg.compositor.drmDevice;
       }
       // lib.optionalAttrs (cfg.sunshine.encoder == "nvenc") {
         GBM_BACKEND = "nvidia-drm";
@@ -790,7 +875,8 @@ in
         SupplementaryGroups = [
           "video"
           "render"
-        ];
+        ]
+        ++ lib.optional (cfg.compositor.backend == "drm") "seat";
         RuntimeDirectory = "korri-compositor";
         RuntimeDirectoryMode = "0700";
         ExecStartPre = "+${cleanupCompositorSockets}";
@@ -902,19 +988,31 @@ in
         ];
         WorkingDirectory = gameplayHome;
         ExecCondition = lib.optional (cfg.sunshine.encoder == "nvenc") requireNvencRuntime;
-        ExecStartPre = waitForCompositor;
+        # The readiness probe talks to the Sway IPC socket, which this unit
+        # deliberately hides from Sunshine through InaccessiblePaths. Run the
+        # probe outside the sandbox so the sandbox stays intact.
+        ExecStartPre = "+${waitForCompositor}";
         Sockets = [ "korri-certificate-control.socket" ];
-        ExecStart = "${lib.getExe cfg.sunshine.package} ${sunshineConfig}/sunshine.conf log_path=/dev/null${
-          lib.optionalString (cfg.sunshine.encoder != "auto") " encoder=${cfg.sunshine.encoder}"
-        }";
+        ExecStart = "${sunshineExecutable} ${sunshineConfig}/sunshine.conf log_path=/dev/null${
+          lib.optionalString (cfg.sunshine.capture != "auto") " capture=${cfg.sunshine.capture}"
+        }${lib.optionalString (cfg.sunshine.encoder != "auto") " encoder=${cfg.sunshine.encoder}"}";
         Restart = "on-failure";
         RestartSec = 5;
         UMask = "0077";
-        NoNewPrivileges = true;
-        CapabilityBoundingSet = [ ];
+        NoNewPrivileges = cfg.sunshine.capture != "kms";
+        # The NixOS capability wrapper raises CAP_SYS_ADMIN into the ambient
+        # set by exercising CAP_SETPCAP first, so both must stay in the bound.
+        CapabilityBoundingSet = lib.optionals (cfg.sunshine.capture == "kms") [
+          "CAP_SETPCAP"
+          "CAP_SYS_ADMIN"
+        ];
         AmbientCapabilities = [ ];
         PrivateTmp = false;
-        PrivatePIDs = true;
+        # Observed on systemd 258 (RG353M): with a private PID namespace the
+        # LISTEN_PID passed for the certificate socket is the outer PID, so the
+        # patched activation check rejects it. Keep the namespace for the
+        # headless hosts where it is verified and drop it for KMS capture.
+        PrivatePIDs = cfg.sunshine.capture != "kms";
         PrivateDevices = false;
         ProtectSystem = "strict";
         ProtectHome = "read-only";
