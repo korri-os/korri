@@ -41,7 +41,10 @@
     in
     {
       inherit nixosModules;
-      nixosConfigurations.rg353m = rg353m.configuration;
+      nixosConfigurations = {
+        rg353m = rg353m.configuration;
+        odin2portal = odin2portal.configuration;
+      };
     }
     // flake-utils.lib.eachDefaultSystem (
       system:
@@ -103,6 +106,7 @@
           rg353m-uboot = rg353m.uboot;
           odin2portal-kernel = odin2portal.kernel;
           odin2portal-firmware = odin2portal.firmware;
+          odin2portal-sd-image = odin2portal.sdImage;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           odin2portal-kernel = odin2portal.kernelCross;

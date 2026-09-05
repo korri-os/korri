@@ -1,11 +1,14 @@
-# AYN Odin 2 Portal composition. The slices so far are the kernel and the
-# device firmware: prove the ROCKNIX SM8550 tree builds under Nix, produces
-# the Portal DTB, and that every blob the device trees name is available.
+# AYN Odin 2 Portal composition.
 #
-# The aarch64 builder (fuji) lacks the disk for a kernel compile, so both
-# packages are also exposed built from x86_64. For the kernel that is a real
-# cross-compile; the firmware is pure data whose builder simply runs on the
-# build platform. The native attributes stay for an aarch64 builder.
+# The device keeps its Android install. This image lives entirely on an SD
+# card and boots through the U-Boot that AYN ships in `loader_a`, reached by
+# switching BOOT MODE from Android to Loader. Nothing here writes to internal
+# storage.
+#
+# The kernel and firmware are exposed both natively and cross-built from
+# x86_64. The aarch64 builder cannot spare the ~30 GB a kernel compile needs,
+# so the system is assembled from the cross-built kernel while the rest of the
+# closure substitutes from cache.
 { nixpkgs }:
 
 let
@@ -19,10 +22,28 @@ let
     };
   pkgs = mkPkgs "aarch64-linux";
   crossPkgs = (mkPkgs "x86_64-linux").pkgsCross.aarch64-multiplatform;
-in
-{
+
   kernel = pkgs.callPackage ./kernel { };
   kernelCross = crossPkgs.callPackage ./kernel { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
+
+  configuration = nixpkgs.lib.nixosSystem {
+    system = "aarch64-linux";
+    specialArgs = {
+      odinKernel = kernelCross;
+      odinFirmware = firmwareCross;
+    };
+    modules = [ ./sd-image.nix ];
+  };
+in
+{
+  inherit
+    kernel
+    kernelCross
+    firmware
+    firmwareCross
+    configuration
+    ;
+  sdImage = configuration.config.system.build.sdImage;
 }

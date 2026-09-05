@@ -30,6 +30,10 @@
   fetchurl,
   linuxManualConfig,
   stdenv,
+  # linuxPackagesFor re-invokes this function through `override` to attach
+  # kernel features; accept and ignore what it passes.
+  features ? { },
+  ...
 }:
 
 let
