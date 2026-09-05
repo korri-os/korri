@@ -189,6 +189,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionFreeze(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionThaw(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SourceStatus(_) => PeerPolicy::CatalogOrStreamScope,
+        RpcRequest::PeerList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
@@ -962,6 +963,10 @@ mod tests {
         let stream = Scope(super::Scope::StreamLaunch);
         let cases = vec![
             (
+                request(serde_json::json!({"_tag":"app.peer.list","payload":{}})),
+                Owner,
+            ),
+            (
                 request(serde_json::json!({"_tag":"app.catalog.snapshot","payload":{}})),
                 Both,
             ),
@@ -1094,7 +1099,7 @@ mod tests {
                 Owner,
             ),
         ];
-        assert_eq!(cases.len(), 26);
+        assert_eq!(cases.len(), 27);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }

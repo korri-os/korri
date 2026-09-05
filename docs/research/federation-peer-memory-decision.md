@@ -30,6 +30,53 @@ Grounding: `legacy:product/apps/portal/peers/peer-store.ts`,
 `services/korrid/src/identity.rs`, `services/korrid/src/authorization.rs`, and
 `services/korrid/src/relay.rs`.
 
+## B5 owner-only peer snapshot wire
+
+`services/korrid/src/lib.rs` owns `PeerListRequest`, `PeerListEntry`,
+`PeerListState`, `PeerList`, and `PeerListOutcome`. Typeshare generates the
+portal treaty. This is an RPC projection, not a new persisted schema.
+
+| Wire element | Exact grounding |
+| --- | --- |
+| `app.peer.list`, empty `payload: {}` | Approved B5 PeerList operation; follows `app.local-games.list` and the existing empty request structs. |
+| Response `outcome`, tagged `Ok` / `Err`, `payload` | Existing `RpcResponse`, `SourceStatusOutcome`, and `RpcFailure` envelopes in `lib.rs`. Success contains `PeerList.peers`, a collection like `LocalGames.games`. |
+| `devicePublicKey` | `federation::PeerSnapshot.device_public_key`; the directory derives canonical keys from verified same-owner membership. Existing wire camelCase convention. |
+| `label` | Existing effective registry order in `UpstreamRegistry::resolved`: configured static label when available, then `current_endpoint.or(remembered_endpoint).label`, then the full key. The endpoint label is signed metadata, not a name-service lookup. |
+| `state` | Exact `federation::PeerState` cases: `loading`, `ready`, `failed`. Lowercase string enum follows the existing SourceStatus state enums. No endpoint or static URL is treated as proof of readiness. |
+| `updatedAt` | Exact `PeerSnapshot.updated_at` local observation clock, in **Unix seconds**, not milliseconds, ISO text, endpoint issue time, or last-seen time. It is initialized on roster insertion / memory reopen and updated by native operation completion with a nondecreasing high-water mark. Rust uses checked `typeshare::U53` to preserve the existing integer seconds in JavaScript's `number`; an unrepresentable value fails the snapshot rather than rounding. |
+| `lastError` | `PeerState::Failed.error`. The native candidate-operation producer already replaces raw transport / peer errors with `Authenticated peer operation failed`. Loading and ready omit the field with the established `Option`, `default`, `skip_serializing_if` convention. No address, signed evidence, pass, or storage path is added to the projection. |
+
+Dispatch authorizes before reading one `FederationDirectory::snapshot()`. It
+performs no network operation and does not refresh or mutate peer liveness.
+The directory already excludes revoked keys and sorts by its `BTreeMap` key.
+Static metadata is read through a narrow registry accessor without taking a
+second directory snapshot. Host mode has no static upstream registry. Invalid
+static configuration supplies no label override; it does not hide verified
+peers. Directory validation or timestamp conversion failure returns the fixed
+`PeerListUnavailable` / `peer directory unavailable` failure. A factory without
+a directory returns an empty list; production host and brain composition keep
+the shared directory from B4.
+
+`OwnerDeviceOnly` permits authenticated same-owner devices. Scoped household
+and guest passes, including passes with both catalog and stream scopes, and
+unknown peers are denied. LocalBrowser still requires the listener's bearer
+capability. LocalUnixControl keeps the existing private-listener authority.
+Plaintext PeerList on `/peer-rpc` is rejected like every other plaintext call.
+
+The portal adds `peerList()` to the HTTP and in-memory clients. HTTP checks the
+response operation tag. Configured in-memory responses are cloned on input and
+output; the default browser sandbox returns an empty list. There is no polling,
+bridge event, surface change, or effect tied to the new method.
+
+Cost and limit: a static-only peer has no directory liveness row in B3. It is
+therefore absent until verified membership enters the directory; B5 does not
+fabricate a loading row or add another registry. PeerList itself cannot change
+loading to ready or detect an offline peer. A native catalog / source / session
+operation must observe that result. Remembered labels remain usable after
+endpoint expiry. Offline revocation remains delayed until verified evidence
+arrives. Future state producers must preserve the existing error-sanitization
+boundary before supplying `PeerState::Failed`.
+
 ## B2 implementation schema
 
 The implementation is `services/korrid/src/federation/`. It has one aggregate

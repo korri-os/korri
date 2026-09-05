@@ -263,6 +263,9 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
         },
       }
     },
+    async peerList() {
+      return { _tag: "Ok", payload: { peers: [] } }
+    },
     async sourceStatus(): Promise<SourceStatusOutcome> {
       return {
         _tag: "Ok",

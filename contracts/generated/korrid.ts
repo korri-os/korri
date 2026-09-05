@@ -280,6 +280,29 @@ export interface MoonlightLaunchSpec {
 export interface MoonlightResolveRequest {
 }
 
+export enum PeerListState {
+	Loading = "loading",
+	Ready = "ready",
+	Failed = "failed",
+}
+
+export interface PeerListEntry {
+	devicePublicKey: string;
+	label: string;
+	state: PeerListState;
+	/** Local state observation time in Unix seconds, not endpoint issue time. */
+	updatedAt: number;
+	lastError?: string;
+}
+
+export interface PeerList {
+	/** Verified peers in ascending device-public-key order. */
+	peers: PeerListEntry[];
+}
+
+export interface PeerListRequest {
+}
+
 export type SessionControlValue =
 	| { kind: "toggle", value: boolean }
 	| { kind: "choice", value: string }
@@ -597,6 +620,10 @@ export type MoonlightResolveOutcome =
 	| { _tag: "Available", payload: ResolvedMoonlight }
 	| { _tag: "Unavailable", payload: RpcFailure };
 
+export type PeerListOutcome =
+	| { _tag: "Ok", payload: PeerList }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type RpcRequest =
 	| { _tag: "app.catalog.snapshot", payload: CatalogSnapshotRequest }
 	| { _tag: "app.moonlight.resolve", payload: MoonlightResolveRequest }
@@ -611,6 +638,7 @@ export type RpcRequest =
 	| { _tag: "app.session.freeze", payload: SessionFreezeRequest }
 	| { _tag: "app.session.thaw", payload: SessionThawRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
+	| { _tag: "app.peer.list", payload: PeerListRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -639,6 +667,7 @@ export type RpcResponse =
 	| { _tag: "app.session.freeze", outcome: SessionFreezeOutcome }
 	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
+	| { _tag: "app.peer.list", outcome: PeerListOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }

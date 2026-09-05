@@ -847,6 +847,39 @@ pub struct SessionFreezeResult {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PeerListRequest {}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PeerListState {
+    Loading,
+    Ready,
+    Failed,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerListEntry {
+    pub device_public_key: String,
+    pub label: String,
+    pub state: PeerListState,
+    /** Local state observation time in Unix seconds, not endpoint issue time. */
+    pub updated_at: typeshare::U53,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PeerList {
+    /** Verified peers in ascending device-public-key order. */
+    pub peers: Vec<PeerListEntry>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceStatusRequest {
     /** Selects exactly one native peer by its expected device public key. */
@@ -1126,6 +1159,14 @@ pub enum SourceStatusOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+pub enum PeerListOutcome {
+    Ok(PeerList),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
 pub enum HealthOutcome {
     Ok(Health),
     Err(RpcFailure),
@@ -1161,6 +1202,8 @@ pub enum RpcRequest {
     SessionThaw(SessionThawRequest),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusRequest),
+    #[serde(rename = "app.peer.list")]
+    PeerList(PeerListRequest),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsRequest),
     #[serde(rename = "app.session.control.invoke")]
@@ -1219,6 +1262,8 @@ pub enum RpcResponse {
     SessionThaw(SessionFreezeOutcome),
     #[serde(rename = "app.source.status")]
     SourceStatus(SourceStatusOutcome),
+    #[serde(rename = "app.peer.list")]
+    PeerList(PeerListOutcome),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsOutcome),
     #[serde(rename = "app.session.control.invoke")]
@@ -2224,6 +2269,60 @@ fn strip_play_stats(mut snapshot: CatalogSnapshot) -> CatalogSnapshot {
     snapshot
 }
 
+fn peer_list(state: &AppState) -> PeerListOutcome {
+    let result = (|| {
+        let peers = state
+            .federation
+            .as_ref()
+            .map(federation::FederationDirectory::snapshot)
+            .transpose()?
+            .unwrap_or_default();
+        let labels = match &state.mode {
+            ServerMode::Brain(brain) => brain.upstream.configured_peer_labels(),
+            ServerMode::Host(_) => Default::default(),
+        };
+        let peers = peers
+            .into_iter()
+            .map(|peer| {
+                let label = labels
+                    .get(&peer.device_public_key)
+                    .cloned()
+                    .or_else(|| {
+                        peer.current_endpoint
+                            .as_ref()
+                            .or(peer.remembered_endpoint.as_ref())
+                            .and_then(|endpoint| endpoint.label.clone())
+                    })
+                    .unwrap_or_else(|| peer.device_public_key.clone());
+                let (state, last_error) = match peer.state {
+                    federation::PeerState::Loading => (PeerListState::Loading, None),
+                    federation::PeerState::Ready => (PeerListState::Ready, None),
+                    // Native candidate operations already sanitize this at the producer.
+                    federation::PeerState::Failed { error } => (PeerListState::Failed, Some(error)),
+                };
+                Ok(PeerListEntry {
+                    device_public_key: peer.device_public_key,
+                    label,
+                    state,
+                    updated_at: peer
+                        .updated_at
+                        .try_into()
+                        .map_err(|_| federation::FederationError::Bounds)?,
+                    last_error,
+                })
+            })
+            .collect::<Result<Vec<_>, federation::FederationError>>()?;
+        Ok::<_, federation::FederationError>(PeerList { peers })
+    })();
+    match result {
+        Ok(peers) => PeerListOutcome::Ok(peers),
+        Err(_) => PeerListOutcome::Err(RpcFailure {
+            code: "PeerListUnavailable".into(),
+            message: "peer directory unavailable".into(),
+        }),
+    }
+}
+
 async fn dispatch(
     state: &AppState,
     authorization: &authorization::AuthorizationContext,
@@ -2231,6 +2330,7 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let response = match request {
+        RpcRequest::PeerList(_) => RpcResponse::PeerList(peer_list(state)),
         RpcRequest::CatalogSnapshot(_) => {
             let outcome = match &state.mode {
                 ServerMode::Brain(brain) => brain
@@ -4530,6 +4630,9 @@ mod android;
 
 #[cfg(test)]
 mod tests {
+    mod peer_list {
+        include!("peer_list_tests.rs");
+    }
     mod federation_lifecycle {
         include!("federation/lifecycle_tests.rs");
     }

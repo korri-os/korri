@@ -37,6 +37,7 @@ import type {
   SettingsSnapshotOutcome,
   SettingsUpdateOutcome,
   SourceStatusOutcome,
+  PeerListOutcome,
 } from "@contracts/generated/korrid"
 import {
   AndroidMoonlightEffect,
@@ -89,6 +90,7 @@ export interface KorridClient {
   sessionThaw(expectedLaunchId: string): Promise<SessionFreezeOutcome>
   /** Readiness of exactly one native peer, selected by its device key. */
   sourceStatus(devicePublicKey: string): Promise<SourceStatusOutcome>
+  peerList(): Promise<PeerListOutcome>
   sessionControls(launchId: string): Promise<SessionControlsOutcome>
   invokeSessionControl(
     launchId: string,
@@ -491,6 +493,20 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
+    async peerList() {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.peer.list",
+          payload: {},
+        })
+        if (response._tag !== "app.peer.list") {
+          throw new Error("korrid returned an unexpected PeerList response tag")
+        }
+        return response.outcome
+      } catch (error) {
+        return unreachable(error)
+      }
+    },
     async sourceStatus(devicePublicKey) {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -545,6 +561,8 @@ export interface InMemoryKorridClientConfig {
   readonly localLaunchSpecs?: Readonly<Record<string, LaunchSpec>>
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
   readonly discovery?: DiscoverySnapshot
+  /** Snapshot fixture only; catalog games do not imply peer liveness. */
+  readonly peerList?: PeerListOutcome
   readonly discoveryReceipts?: readonly string[]
   /** Seed an active host session for now-playing flows. */
   readonly activeSession?: ActiveSession
@@ -627,6 +645,9 @@ export function createInMemoryKorridClient(
   config: InMemoryKorridClientConfig = {},
 ): KorridClient {
   const behavior = config.behavior ?? "ok"
+  const peerList: PeerListOutcome = structuredClone(
+    config.peerList ?? { _tag: "Ok", payload: { peers: [] } },
+  )
   const games = config.games ?? sampleGames
   const moonlight = config.moonlight ?? {
     _tag: "Unavailable" as const,
@@ -961,6 +982,9 @@ export function createInMemoryKorridClient(
     },
     async sessionThaw(expectedLaunchId) {
       return setFreezer(expectedLaunchId, SessionFreezerState.Running)
+    },
+    async peerList() {
+      return structuredClone(peerList)
     },
     async sourceStatus(devicePublicKey) {
       // The fixture knows a peer only through the games it contributed.

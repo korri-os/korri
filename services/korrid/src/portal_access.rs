@@ -20,6 +20,7 @@ impl PortalPermission {
             | RpcRequest::SettingsSnapshot(_)
             | RpcRequest::DiscoverySnapshot(_)
             | RpcRequest::MoonlightResolve(_)
+            | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_) => true,
             RpcRequest::MoonlightLaunchPrepare(_)
             | RpcRequest::MoonlightLaunchCancel(_)
@@ -158,6 +159,16 @@ mod tests {
         assert!(PortalPermission::LocalSessions.permits(&stop));
         assert!(!PortalPermission::ReadOnly.permits(&stop));
         assert!(PortalPermission::Full.permits(&stop));
+    }
+
+    #[test]
+    fn peer_list_reads_authenticated_peer_state_under_every_permission() {
+        // The handler only reads the federation directory, and authorization
+        // already limits it to the owner's own devices.
+        let request = RpcRequest::PeerList(crate::PeerListRequest {});
+        assert!(PortalPermission::ReadOnly.permits(&request));
+        assert!(PortalPermission::LocalSessions.permits(&request));
+        assert!(PortalPermission::Full.permits(&request));
     }
 
     #[test]

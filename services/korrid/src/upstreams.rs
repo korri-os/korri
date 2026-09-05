@@ -649,6 +649,19 @@ impl UpstreamRegistry {
         }
     }
 
+    /// Static metadata only: do not take another directory snapshot or probe peers.
+    pub(crate) fn configured_peer_labels(&self) -> std::collections::BTreeMap<String, String> {
+        let registry = self.resolved_static();
+        if registry.configuration_error.is_some() {
+            return Default::default();
+        }
+        registry
+            .hosts
+            .iter()
+            .filter_map(|host| host.native_route_key().map(|key| (key, host.label.clone())))
+            .collect()
+    }
+
     pub fn moonlight_host_candidates(&self) -> Result<Vec<MoonlightHostCandidate>, UpstreamError> {
         let registry = self.resolved()?;
         if let Some(error) = &registry.configuration_error {
