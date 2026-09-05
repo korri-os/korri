@@ -2,10 +2,11 @@
   "name": "@korri/pico",
   "private": true,
   "version": "0.1.0",
-  "description": "Pico — Korri's 8-bit handheld surface.",
+  "description": "Pico \u2014 Korri's 8-bit handheld surface.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./preview": "./src/preview.ts",
     "./pico.css": "./src/pico.css"
   },
   "scripts": {
