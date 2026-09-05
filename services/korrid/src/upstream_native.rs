@@ -9,7 +9,7 @@ use crate::{
     SessionStatusRequest, SessionStopOutcome, SessionStopPhase, SessionStopRequest,
     SessionThawRequest, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     peer_rpc::{unix_time, PeerCredentials},
@@ -22,7 +22,10 @@ pub(crate) const NATIVE_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct NativeClient {
-    rpc_url: String,
+    // Secure constructors retain raw input until peer_origin validates it.
+    origins: Vec<String>,
+    directory: Option<Arc<crate::federation::FederationDirectory>>,
+    operation_timeout: Duration,
     expected_peer_public_key: Option<String>,
     credentials: Option<PeerCredentials>,
     http: reqwest::Client,
@@ -44,13 +47,23 @@ impl NativeClient {
         expected_peer_public_key: String,
         credentials: PeerCredentials,
     ) -> Self {
+        Self::new_secure_candidates(vec![base_url], expected_peer_public_key, credentials)
+    }
+
+    pub(crate) fn new_secure_candidates(
+        candidates: Vec<String>,
+        expected_peer_public_key: String,
+        credentials: PeerCredentials,
+    ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(NATIVE_RPC_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("construct native upstream client");
         Self {
-            rpc_url: format!("{}/peer-rpc", base_url.trim_end_matches('/')),
+            origins: candidates,
+            directory: None,
+            operation_timeout: NATIVE_RPC_TIMEOUT,
             expected_peer_public_key: Some(expected_peer_public_key),
             credentials: Some(credentials),
             http,
@@ -85,12 +98,57 @@ impl NativeClient {
             .build()
             .expect("construct native upstream client");
         Self {
-            rpc_url: format!("{}/rpc", base_url.trim_end_matches('/')),
+            origins: vec![base_url.trim_end_matches('/').to_owned()],
+            directory: None,
+            operation_timeout: NATIVE_RPC_TIMEOUT,
             expected_peer_public_key: None,
             credentials: None,
             http,
             fixed_request: None,
         }
+    }
+
+    pub fn with_candidates(mut self, candidates: Vec<String>) -> Result<Self, UpstreamError> {
+        let mut origins = Vec::new();
+        for candidate in candidates {
+            let origin = crate::federation::peer_origin(&candidate)
+                .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))?;
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+        self.origins = origins;
+        Ok(self)
+    }
+
+    pub(crate) fn with_directory(
+        mut self,
+        directory: crate::federation::FederationDirectory,
+    ) -> Self {
+        self.directory = Some(Arc::new(directory));
+        self
+    }
+
+    pub(crate) fn candidate_origins(&self) -> Vec<String> {
+        self.origins.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.operation_timeout = timeout;
+        self
+    }
+
+    pub(crate) fn ensure_not_revoked(&self) -> Result<(), UpstreamError> {
+        if let (Some(directory), Some(key)) = (&self.directory, &self.expected_peer_public_key) {
+            if directory
+                .peer_is_revoked(key)
+                .map_err(|_| UpstreamError::SourcePeerNotFound)?
+            {
+                return Err(UpstreamError::SourcePeerNotFound);
+            }
+        }
+        Ok(())
     }
 
     fn tagged_failure(failure: RpcFailure) -> UpstreamError {
@@ -372,13 +430,115 @@ impl NativeClient {
         if self.credentials.is_none() {
             let response = self
                 .http
-                .post(&self.rpc_url)
+                .post(format!("{}/rpc", self.origins[0]))
                 .json(&request)
                 .send()
                 .await
                 .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
             return read_plain_test_response(response).await;
         }
+        let key = self
+            .expected_peer_public_key
+            .as_deref()
+            .ok_or_else(|| UpstreamError::Wire("native peer public key is unavailable".into()))?;
+        let token = if let Some(directory) = &self.directory {
+            if directory
+                .peer_is_revoked(key)
+                .map_err(|_| UpstreamError::SourcePeerNotFound)?
+            {
+                return Err(UpstreamError::SourcePeerNotFound);
+            }
+            // Static-only peers have no live directory row. Do not manufacture
+            // membership or unsigned remembered evidence for them.
+            if directory
+                .snapshot()
+                .map_err(|_| UpstreamError::SourcePeerNotFound)?
+                .iter()
+                .any(|peer| peer.device_public_key == key)
+            {
+                Some(
+                    directory
+                        .begin_peer_work(key)
+                        .map_err(|_| UpstreamError::SourcePeerNotFound)?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let result = self.call_candidates(&request).await;
+        if let (Some(directory), Some(token)) = (&self.directory, token) {
+            let state = match &result {
+                Ok(_) => crate::federation::PeerState::Ready,
+                Err(_) => crate::federation::PeerState::Failed {
+                    error: "Authenticated peer operation failed".into(),
+                },
+            };
+            // A superseded/configuration-changed/revoked completion cannot
+            // overwrite a newer state. Network results never restore membership.
+            let _ = directory.set_peer_state(&token, key, state);
+        }
+        self.ensure_not_revoked()?;
+        result
+    }
+
+    async fn call_candidates(&self, request: &RpcRequest) -> Result<RpcResponse, UpstreamError> {
+        let read_only = matches!(
+            request,
+            RpcRequest::CatalogSnapshot(_)
+                | RpcRequest::SessionStatus(_)
+                | RpcRequest::SourceStatus(_)
+        );
+        let mut candidates = self
+            .candidate_origins()
+            .into_iter()
+            .map(|origin| {
+                crate::federation::peer_origin(&origin)
+                    .map(|origin| format!("{origin}/peer-rpc"))
+                    .map_err(|_| UpstreamError::Wire("invalid peer origin".into()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut seen = std::collections::BTreeSet::new();
+        candidates.retain(|url| seen.insert(url.clone()));
+        let deadline = tokio::time::Instant::now() + self.operation_timeout;
+        let mut last_error = UpstreamError::Unreachable("no eligible peer endpoint".into());
+        for (index, url) in candidates.iter().enumerate() {
+            self.ensure_not_revoked()?;
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            // Share one aggregate deadline; a dead first route must leave time
+            // for later routes. A timeout after send is ambiguous for mutations.
+            let budget = remaining / (candidates.len() - index) as u32;
+            let attempt = tokio::time::timeout(budget, self.attempt(url, request.clone())).await;
+            match attempt {
+                Ok(Ok(response)) => return checked_response(request, response),
+                Ok(Err(failure)) => {
+                    let retry = failure.before_send
+                        || (read_only && !matches!(failure.error, UpstreamError::Http(400..=499)));
+                    last_error = failure.error;
+                    if !retry {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    last_error = UpstreamError::Unreachable("peer operation timed out".into());
+                    if !read_only {
+                        break;
+                    }
+                }
+            }
+        }
+        Err(last_error)
+    }
+
+    async fn attempt(
+        &self,
+        rpc_url: &str,
+        request: RpcRequest,
+    ) -> Result<RpcResponse, AttemptFailure> {
         let credentials = self
             .credentials
             .as_ref()
@@ -403,23 +563,26 @@ impl NativeClient {
         let encoded = encoded.map_err(|error| UpstreamError::Wire(error.to_string()))?;
         let response = self
             .http
-            .post(&self.rpc_url)
+            .post(rpc_url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(encoded.event_json.clone())
             .send()
             .await
-            .map_err(|error| UpstreamError::Unreachable(error.to_string()))?;
+            .map_err(|error| AttemptFailure {
+                before_send: error.is_connect(),
+                error: UpstreamError::Unreachable("peer transport failed".into()),
+            })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(UpstreamError::Http(status.as_u16()));
+            return Err(UpstreamError::Http(status.as_u16()).into());
         }
         if response
             .content_length()
             .is_some_and(|length| length > MAX_NATIVE_RPC_RESPONSE_BYTES as u64)
         {
-            return Err(UpstreamError::Wire(
-                "native response exceeds the size limit".into(),
-            ));
+            return Err(
+                UpstreamError::Wire("native response exceeds the size limit".into()).into(),
+            );
         }
         let mut response = response;
         let mut body = Vec::new();
@@ -429,9 +592,9 @@ impl NativeClient {
             .map_err(|_| UpstreamError::Wire("native response body could not be read".into()))?
         {
             if body.len().saturating_add(chunk.len()) > MAX_NATIVE_RPC_RESPONSE_BYTES {
-                return Err(UpstreamError::Wire(
-                    "native response exceeds the size limit".into(),
-                ));
+                return Err(
+                    UpstreamError::Wire("native response exceeds the size limit".into()).into(),
+                );
             }
             body.extend_from_slice(&chunk);
         }
@@ -452,8 +615,92 @@ impl NativeClient {
                 event_json,
                 response_time,
             )
-            .map_err(|error| UpstreamError::Wire(error.to_string()))
+            .map_err(|_| UpstreamError::Wire("peer response authentication failed".into()).into())
     }
+}
+
+struct AttemptFailure {
+    error: UpstreamError,
+    before_send: bool,
+}
+
+impl From<UpstreamError> for AttemptFailure {
+    fn from(error: UpstreamError) -> Self {
+        Self {
+            error,
+            before_send: false,
+        }
+    }
+}
+
+/// Validate the operation tag before marking a directory attempt ready. Typed
+/// application failures are terminal even on a read; never try another origin.
+fn checked_response(
+    request: &RpcRequest,
+    response: RpcResponse,
+) -> Result<RpcResponse, UpstreamError> {
+    let failure = match (request, &response) {
+        (RpcRequest::CatalogSnapshot(_), RpcResponse::CatalogSnapshot(outcome)) => match outcome {
+            CatalogSnapshotOutcome::Ok(_) => None,
+            CatalogSnapshotOutcome::Err(e) => Some(e),
+        },
+        (RpcRequest::SourceStatus(_), RpcResponse::SourceStatus(outcome)) => match outcome {
+            SourceStatusOutcome::Ok(_) => None,
+            SourceStatusOutcome::Err(e) => Some(e),
+        },
+        (RpcRequest::SessionStatus(_), RpcResponse::SessionStatus(outcome)) => match outcome {
+            SessionStatusOutcome::Ok(_) => None,
+            SessionStatusOutcome::Err(e)
+                if matches!(e.code.as_str(), "SessionCompleted" | "NoActiveSession") =>
+            {
+                None
+            }
+            SessionStatusOutcome::Err(e) => Some(e),
+        },
+        (RpcRequest::SessionPrepare(_), RpcResponse::SessionPrepare(outcome)) => match outcome {
+            SessionPrepareOutcome::Ok(_) => None,
+            SessionPrepareOutcome::Err(e) => Some(e),
+        },
+        (RpcRequest::SessionStop(_), RpcResponse::SessionStop(outcome)) => match outcome {
+            SessionStopOutcome::Ok(_) => None,
+            SessionStopOutcome::Err(e) => Some(e),
+        },
+        (RpcRequest::SessionFreeze(_), RpcResponse::SessionFreeze(outcome))
+        | (RpcRequest::SessionThaw(_), RpcResponse::SessionThaw(outcome)) => match outcome {
+            SessionFreezeOutcome::Ok(_) => None,
+            SessionFreezeOutcome::Err(e) => Some(e),
+        },
+        (
+            RpcRequest::MoonlightCertificateAttest(_),
+            RpcResponse::MoonlightCertificateAttest(outcome),
+        ) => match outcome {
+            MoonlightCertificateAttestOutcome::Ok(_) => None,
+            MoonlightCertificateAttestOutcome::Err(e) => Some(e),
+        },
+        (
+            RpcRequest::MoonlightCertificateProvision(_),
+            RpcResponse::MoonlightCertificateProvision(outcome),
+        ) => match outcome {
+            MoonlightCertificateProvisionOutcome::Ok(_) => None,
+            MoonlightCertificateProvisionOutcome::Err(e) => Some(e),
+        },
+        (
+            RpcRequest::MoonlightCertificateRevoke(_),
+            RpcResponse::MoonlightCertificateRevoke(outcome),
+        ) => match outcome {
+            MoonlightCertificateRevokeOutcome::Ok(_) => None,
+            MoonlightCertificateRevokeOutcome::Err(e) => Some(e),
+        },
+        _ => {
+            return Err(UpstreamError::Wire(
+                "peer returned a different operation tag".into(),
+            ))
+        }
+    };
+    if let Some(failure) = failure {
+        return Err(NativeClient::tagged_failure(failure.clone()));
+    }
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -689,7 +936,7 @@ command = ["neverball"]
     #[test]
     fn native_client_preserves_configured_ipv6_and_non_default_ports() {
         let client = NativeClient::new("http://[2001:db8::1]:49231/".into());
-        assert_eq!(client.rpc_url, "http://[2001:db8::1]:49231/rpc");
+        assert_eq!(client.origins, vec!["http://[2001:db8::1]:49231"]);
     }
 
     #[tokio::test]

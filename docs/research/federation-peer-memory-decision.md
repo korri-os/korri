@@ -108,8 +108,8 @@ Expiry removes only current-relay eligibility. The same authenticated endpoint
 remains an indefinite remembered fallback and retains its generation high-water
 mark. Load verifies historical endpoint evidence at its original issue time;
 only the current projection applies today's expiry. New expired announcements
-are not accepted. B3 still owns strict HTTP(S) origin validation and candidate
-failover; B2 preserves the existing endpoint URL semantics.
+are not accepted. B2 preserved the existing endpoint URL semantics. B3 adds the
+strict origin validation and candidate failover described below.
 
 `begin_work` returns an identity/configuration/membership token. Changes to those
 inputs invalidate stale commits. `begin_peer_work` also assigns a per-peer
@@ -158,3 +158,88 @@ checks. Network I/O stays outside both aggregate and shared-identity locks, but
 private I/O runs inside the serialized mutation. One live process owns each
 private root; the open guard is not a cross-process lock. Remembered peers remain
 usable during relay outage, so unseen revocations remain delayed indefinitely.
+
+## B3 authenticated native routing
+
+`CoordinationSnapshot.endpoints` now carries `EndpointEvidence { record,
+event_json }`. This is an in-memory receive result, not a new wire or persisted
+schema. Feed `event_json` unchanged to `apply_endpoint_event` with the work token
+captured before the relay read. The decoded record is not an insertion API.
+
+`federation::peer_origin` is the shared Rust policy for static candidates,
+received endpoint records and reloaded signed memory. It accepts HTTP(S) origins
+of at most 2,048 bytes. It rejects credentials, whitespace/control characters,
+backslashes, queries, fragments, non-root paths, an empty explicit port and port
+zero. URL parsing enforces the port upper bound. Default ports, host case and a
+single root slash normalize for candidate deduplication. Secure client constructors
+retain raw candidates until this validation, before removing a root slash or
+appending the RPC path. A raw double slash is rejected, not repaired. The public
+constructor still returns a client; invalid input fails the operation before
+network I/O. Relay WebSocket URLs keep their separate policy. No old endpoint
+reader or runtime migration exists.
+
+`UpstreamRegistry::with_federation` attaches the one shared directory to an
+existing secure registry. Every operation composes the same effective set from
+explicit configuration and verified directory snapshots. Device keys identify
+peers. Static labels and Moonlight addresses override authenticated metadata;
+without a label, a roster peer uses its full device key. A roster peer does not
+need Moonlight metadata for catalog, source or session operations. Existing
+static configuration errors still fail closed. Duplicate effective labels cannot
+select a launch by first match; the existing label selector returns an error.
+Selected remote routes and the mutation mutex remain shared across snapshots
+and deferred static-file resolution.
+
+The candidate order is static, eligible current endpoints, then remembered
+endpoints, with canonical-origin duplicates removed without changing order.
+B2 remembers one latest signed endpoint record, not an independent history of
+old endpoint records. Current and remembered candidates can therefore be the
+same list; expiry removes current eligibility without removing remembered use.
+This slice adds no older-address history or new persistence fields.
+
+`NativeClient` owns attempts beneath all typed operations. Each attempt signs a
+fresh encrypted request and checks the expected responder key. One five-second
+network-operation budget is divided among the remaining candidates. Catalog,
+source status and session status can continue after transport or response
+authentication failure. Authenticated application failures and HTTP 4xx failures
+are terminal. No request changes to plaintext or follows a redirect.
+
+Prepare, stop, freeze, thaw and all certificate operations retry only a failure
+classified by reqwest as connection establishment failure. A lost/incomplete
+response, timeout, HTTP response or wrong-key response is ambiguous after send
+and is never replayed. No idempotency or retry wire fields were added. Cost:
+an operation can have taken effect even when its caller receives an error.
+Session recovery can inspect an existing session; an error is not proof that a
+mutation had no effect. The per-candidate budget can also end a slow mutation
+before the total five seconds have elapsed.
+
+A directory peer operation captures its B2 per-peer token and commits Ready or
+Failed only after the candidate sequence and typed response check finish.
+Failures use fixed local text, not remote bodies, URLs or credentials. Equal
+outer native timeouts were removed so they cannot cancel the final state update.
+Superseded completions cannot replace a newer live state. The shared Authorization
+revocation query also applies to static peers with no roster row, before each
+attempt and again at completion. Static overrides cannot restore a revoked key.
+Registry fan-out also rechecks each native identity when consuming buffered
+results, after all peers finish. Revoked catalog results become host failures;
+revoked recovery results make recovery incomplete; revoked certificate results
+cannot attest a match. This adds authorization reads and cannot retract results
+already delivered to callers.
+
+Verified terminal revocation retires only the exact selected device key and
+launch ID through compare-and-clear. Prepare keeps its existing mutation lock
+and can then select another authorized peer. Status, stop, freeze and thaw that
+encounter the revoked selection return `SourcePeerNotFound`, not a successful
+remote stop. Later status describes only the remaining controlled sessions.
+Disappearance, configuration changes, transport failures and authorization-read
+errors do not retire the selection. Cost: Korri relinquishes control of the old
+launch; remote execution may continue. Retirement does not send a stop to a
+revoked peer and does not prove that execution stopped.
+
+Brain construction now opens the directory with its existing credential clone
+and one authorization authority. B4 must retain these same objects for discovery
+and identity reload. A future Linux composition with inbound peer RPC must also
+pass that authorization instance to the RPC server, not load another cache.
+No coordinator, publication task or lifecycle hook is started by B3. Private
+roots must already satisfy the B2 rules; runtime code does not chmod or repair
+existing state. This adds startup failure on nonprivate or invalid memory rather
+than silently using an empty directory.

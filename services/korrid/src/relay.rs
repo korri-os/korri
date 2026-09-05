@@ -26,7 +26,6 @@ const ENDPOINT_EVENT_PREFIX: &str = "org.korri.endpoint:";
 const MAX_RELAYS: usize = 8;
 const MAX_RELAY_URL_BYTES: usize = 2_048;
 const MAX_ENDPOINT_CANDIDATES: usize = 8;
-const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_STORED_EVENTS_PER_RELAY: usize = 256;
 const MAX_READ_EVENTS: usize = 128;
@@ -156,11 +155,11 @@ impl EndpointRecord {
                 "endpoint record has an invalid candidate count".into(),
             ));
         }
-        if self.candidates.iter().any(|candidate| {
-            candidate.is_empty()
-                || candidate.len() > MAX_ENDPOINT_BYTES
-                || Url::parse(candidate).is_err()
-        }) {
+        if self
+            .candidates
+            .iter()
+            .any(|candidate| crate::federation::peer_origin(candidate).is_err())
+        {
             return Err(RelayError::InvalidEvent(
                 "endpoint candidate is invalid".into(),
             ));
@@ -242,9 +241,17 @@ impl QueuedMessage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoordinationSnapshot {
-    pub endpoints: Vec<EndpointRecord>,
+    pub endpoints: Vec<EndpointEvidence>,
     pub commands: Vec<CoordinationCommand>,
     pub rejected_events: usize,
+}
+
+/// Original signed ciphertext is required for the directory's membership join
+/// and durable re-verification. A decoded record is not sufficient evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EndpointEvidence {
+    pub record: EndpointRecord,
+    pub event_json: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -735,7 +742,7 @@ where
             };
             let (events, failed_reads) = self.read_all(&filter).await;
             let mut seen = BTreeSet::new();
-            let mut endpoints: BTreeMap<String, EndpointRecord> = BTreeMap::new();
+            let mut endpoints: BTreeMap<String, EndpointEvidence> = BTreeMap::new();
             let mut commands = Vec::new();
             let mut rejected = failed_reads;
             for delivered in events.into_iter().take(MAX_READ_EVENTS) {
@@ -763,10 +770,16 @@ where
                             Ok(endpoint) => {
                                 let replace = endpoints
                                     .get(&endpoint.device_public_key)
-                                    .map(|current| endpoint_is_newer(&endpoint, current))
+                                    .map(|current| endpoint_is_newer(&endpoint, &current.record))
                                     .unwrap_or(true);
                                 if replace {
-                                    endpoints.insert(endpoint.device_public_key.clone(), endpoint);
+                                    endpoints.insert(
+                                        endpoint.device_public_key.clone(),
+                                        EndpointEvidence {
+                                            record: endpoint,
+                                            event_json: delivered.event_json.clone(),
+                                        },
+                                    );
                                 }
                             }
                             Err(_) => rejected += 1,
@@ -983,15 +996,9 @@ impl ConfiguredNativePeerDirectory {
         let mut configured = BTreeMap::new();
         for peer in peers {
             validate_public_key(&peer.device_public_key)?;
-            if peer.endpoint.len() > MAX_ENDPOINT_BYTES || Url::parse(&peer.endpoint).is_err() {
-                return Err(RelayError::Configuration(
-                    "native peer endpoint is invalid".into(),
-                ));
-            }
-            if configured
-                .insert(peer.device_public_key, peer.endpoint)
-                .is_some()
-            {
+            let origin = crate::federation::peer_origin(&peer.endpoint)
+                .map_err(|_| RelayError::Configuration("native peer endpoint is invalid".into()))?;
+            if configured.insert(peer.device_public_key, origin).is_some() {
                 return Err(RelayError::Configuration(
                     "native peer is duplicated".into(),
                 ));
@@ -1021,8 +1028,12 @@ impl RelayEndpointDirectory {
             records: snapshot
                 .endpoints
                 .iter()
-                .cloned()
-                .map(|record| (record.device_public_key.clone(), record))
+                .map(|evidence| {
+                    (
+                        evidence.record.device_public_key.clone(),
+                        evidence.record.clone(),
+                    )
+                })
                 .collect(),
         }
     }
@@ -2548,9 +2559,9 @@ mod tests {
             .await
             .unwrap();
         let snapshot = reader.receive(111).await.unwrap();
-        assert_eq!(snapshot.endpoints[0].generation, 2);
+        assert_eq!(snapshot.endpoints[0].record.generation, 2);
         assert_eq!(
-            snapshot.endpoints[0].candidates,
+            snapshot.endpoints[0].record.candidates,
             vec!["http://10.0.0.4:43117"]
         );
         assert!(network.stored_event_count("ws://127.0.0.1:17001") <= 2);

@@ -9,6 +9,7 @@ use korrid::config::settings::{
 };
 use korrid::config::snapshot::{DEVICE_FILE_NAME, GAMES_FILE_NAME};
 use serde_json::Value;
+use std::os::unix::fs::PermissionsExt;
 use tower::ServiceExt;
 
 fn readable_root() -> tempfile::TempDir {
@@ -89,6 +90,7 @@ fn sensitive_repository_reports_unavailable_private_root_without_token_leak() {
 async fn sensitive_rpc_actions_never_return_or_write_the_token_to_readable_config() {
     let readable = readable_root();
     let private = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let app = korrid::router_with_capability_and_roots(
         "test-cap",
         "https://appassets.androidplatform.net",
@@ -145,6 +147,7 @@ async fn sensitive_rpc_actions_never_return_or_write_the_token_to_readable_confi
 async fn sensitive_rpc_does_not_participate_in_revision_conflicts() {
     let readable = readable_root();
     let private = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let app = korrid::router_with_capability_and_roots(
         "test-cap",
         "https://appassets.androidplatform.net",

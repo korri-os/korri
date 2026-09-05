@@ -331,6 +331,13 @@ impl Authorization {
         })
     }
 
+    /// Outbound static routes lack an owner statement, but cannot override
+    /// terminal device revocations accepted by this shared authority.
+    pub fn is_device_revoked(&self, owner: &str, device: &str) -> Result<bool, AuthorizationError> {
+        let state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
+        Ok(is_owner_device_revoked(&state.revocations, owner, device))
+    }
+
     pub fn attempt(
         &self,
         local: &IdentityState,

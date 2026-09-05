@@ -1,6 +1,6 @@
 #[path = "fixtures/readable.rs"]
 mod readable;
-use std::time::Duration;
+use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 use korrid::{
     local_server_capability, start_local_server, stop_local_server, verify_local_launch_spec,
@@ -48,6 +48,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
     std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
 
     let private = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let port = start_local_server(
         "https://portal.example",
         root.path().to_str().expect("UTF-8 temp path"),

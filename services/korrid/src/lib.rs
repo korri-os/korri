@@ -3339,10 +3339,20 @@ fn brain_app_state(
         {
             let peer_credentials = peer_rpc::PeerCredentials::load(&private_state_root)
                 .expect("load or create the local device identity");
+            let authorization = authorization::Authorization::load(&private_state_root)
+                .expect("load peer authorization");
+            let directory = federation::FederationDirectory::open(
+                &private_state_root,
+                peer_credentials.clone(),
+                authorization,
+                Arc::new(peer_rpc::unix_time),
+            )
+            .expect("open verified peer memory");
             upstreams::UpstreamRegistry::from_env_or_file(
                 &local_storage_root.join("upstreams.json"),
                 peer_credentials,
             )
+            .with_federation(directory)
         }
         #[cfg(test)]
         {
@@ -3685,12 +3695,26 @@ fn start_local_server_for_platform(
             .map_err(|error| ServerError::StartFailed {
                 details: error.to_string(),
             })?;
+        let authorization = authorization::Authorization::load(Path::new(&private_state_root))
+            .map_err(|error| ServerError::StartFailed {
+                details: error.to_string(),
+            })?;
+        let directory = federation::FederationDirectory::open(
+            Path::new(&private_state_root),
+            peer_credentials.clone(),
+            authorization,
+            Arc::new(peer_rpc::unix_time),
+        )
+        .map_err(|error| ServerError::StartFailed {
+            details: error.to_string(),
+        })?;
         upstreams::UpstreamRegistry::from_env_or_file(
             Path::new(&local_storage_root)
                 .join("upstreams.json")
                 .as_path(),
             peer_credentials,
         )
+        .with_federation(directory)
     };
     #[cfg(test)]
     let upstream = upstreams::UpstreamRegistry::from_env_or_file_for_tests(
@@ -8015,14 +8039,14 @@ command = ["game-two"]
         assert_eq!(failure.code, "ConfirmationRequired");
     }
     #[derive(Default)]
-    struct RecordingMoonlightCertificates {
+    pub(super) struct RecordingMoonlightCertificates {
         expected_host_uuid: String,
         calls: Mutex<Vec<String>>,
         exact_revocations: Mutex<Vec<(String, String)>>,
     }
 
     impl RecordingMoonlightCertificates {
-        fn matching(expected_host_uuid: &str) -> Arc<Self> {
+        pub(super) fn matching(expected_host_uuid: &str) -> Arc<Self> {
             Arc::new(Self {
                 expected_host_uuid: expected_host_uuid.into(),
                 calls: Mutex::new(Vec::new()),
@@ -8030,7 +8054,7 @@ command = ["game-two"]
             })
         }
 
-        fn calls(&self) -> Vec<String> {
+        pub(super) fn calls(&self) -> Vec<String> {
             self.calls.lock().unwrap().clone()
         }
 

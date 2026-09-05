@@ -33,6 +33,39 @@ pub enum FederationError {
     Bounds,
     #[error("endpoint publication progression exceeds the clock or counter bound")]
     Publication,
+    #[error("peer endpoint must be a bounded HTTP(S) origin")]
+    Endpoint,
+}
+
+/// One policy for static, relay and remembered peer endpoints. Check the raw
+/// authority/path too: URL parsing alone silently repairs credentials, dot paths,
+/// backslashes and whitespace. Relay WebSocket URLs use their separate policy.
+pub fn peer_origin(value: &str) -> Result<String, FederationError> {
+    if value.is_empty()
+        || value.len() > 2048
+        || value.chars().any(|c| c.is_control() || c.is_whitespace())
+        || value.contains('\\')
+    {
+        return Err(FederationError::Endpoint);
+    }
+    let (_, rest) = value.split_once("://").ok_or(FederationError::Endpoint)?;
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if !path.is_empty() || authority.contains(['@', '?', '#']) || authority.ends_with(':') {
+        return Err(FederationError::Endpoint);
+    }
+    let url = url::Url::parse(value).map_err(|_| FederationError::Endpoint)?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+        || url.port_or_known_default().is_none_or(|port| port == 0)
+    {
+        return Err(FederationError::Endpoint);
+    }
+    Ok(url.origin().ascii_serialization())
 }
 
 /// In-memory only; this is not the future PeerList wire contract.
@@ -209,6 +242,21 @@ impl FederationDirectory {
             root: root.into(),
             clock,
         })
+    }
+
+    /// Static configuration supplies no owner statement. It still must not
+    /// override terminal revocations held by the shared secure-RPC authority.
+    pub fn peer_is_revoked(&self, device: &str) -> Result<bool, FederationError> {
+        self.credentials
+            .with_identity(|identity| {
+                let Some(owner) = owner_key(identity) else {
+                    return Ok(true);
+                };
+                self.authorization
+                    .is_device_revoked(owner, device)
+                    .map_err(|_| FederationError::Identity)
+            })
+            .map_err(|_| FederationError::Identity)?
     }
 
     pub fn begin_work(&self) -> Result<WorkToken, FederationError> {

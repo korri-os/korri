@@ -418,10 +418,11 @@ async fn standalone_brain_reports_typed_moonlight_unavailable() {
     let root = tempfile::tempdir().expect("Moonlight config root");
     std::fs::write(root.path().join("device.yaml"), "{}\n").expect("default config");
     readable::write(root.path().join("catalog/games.yaml"), "{}\n").expect("empty library");
-    let app = korrid::router_with_capability_and_local_root(
+    let app = korrid::router_with_capability_and_roots(
         "moonlight-test-capability",
         "https://appassets.androidplatform.net",
         root.path(),
+        root.path().join("private"),
     );
 
     let body = moonlight_outcome(app).await;
@@ -449,10 +450,11 @@ async fn standalone_brain_refuses_to_prepare_moonlight_launches() {
         serde_json::from_slice::<serde_json::Value>(&body).expect("typed response")
     };
 
-    let standalone = korrid::router_with_capability_and_local_root(
+    let standalone = korrid::router_with_capability_and_roots(
         "moonlight-test-capability",
         "https://appassets.androidplatform.net",
         root.path(),
+        root.path().join("private"),
     );
     let response = standalone
         .oneshot(request())

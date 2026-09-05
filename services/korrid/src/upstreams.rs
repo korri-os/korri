@@ -285,18 +285,11 @@ enum FreezerVerb {
     Thaw,
 }
 
-impl FreezerVerb {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Freeze => "freeze",
-            Self::Thaw => "thaw",
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct UpstreamRegistry {
     hosts: Vec<RegisteredHost>,
+    credentials: Option<PeerCredentials>,
+    directory: Option<crate::federation::FederationDirectory>,
     configuration_error: Option<String>,
     deferred_file_config: Option<DeferredFileConfig>,
     selected_remote_session: Arc<Mutex<Option<SelectedRemoteSession>>>,
@@ -331,15 +324,22 @@ impl UpstreamRegistry {
                         }))
                     }
                     UpstreamKind::Native => {
+                        let base_url = match crate::federation::peer_origin(&config.base_url) {
+                            Ok(origin) => origin,
+                            Err(_) => {
+                                configuration_error = Some(format!(
+                                    "native upstream {label:?} has an invalid baseUrl origin"
+                                ));
+                                return None;
+                            }
+                        };
                         #[cfg(test)]
                         if credentials.is_none() {
                             return Some(RegisteredHost {
                                 label,
                                 moonlight_address,
                                 device_public_key,
-                                client: RegisteredClient::Native(NativeClient::new(
-                                    config.base_url,
-                                )),
+                                client: RegisteredClient::Native(NativeClient::new(base_url)),
                             });
                         }
                         let Some(peer_key) = config.device_public_key else {
@@ -368,7 +368,7 @@ impl UpstreamRegistry {
                             return None;
                         };
                         RegisteredClient::Native(NativeClient::new_secure(
-                            config.base_url,
+                            base_url,
                             peer_key,
                             credentials.clone(),
                         ))
@@ -384,6 +384,8 @@ impl UpstreamRegistry {
             .collect();
         Self {
             hosts,
+            credentials,
+            directory: None,
             configuration_error,
             deferred_file_config: None,
             selected_remote_session: Arc::new(Mutex::new(None)),
@@ -426,6 +428,8 @@ impl UpstreamRegistry {
             Ok(registry) => registry,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
                 hosts: vec![],
+                credentials: Some(credentials.clone()),
+                directory: None,
                 configuration_error: None,
                 deferred_file_config: Some(DeferredFileConfig {
                     path: path.to_owned(),
@@ -533,6 +537,8 @@ impl UpstreamRegistry {
     fn invalid_configuration(message: String) -> Self {
         Self {
             hosts: vec![],
+            credentials: None,
+            directory: None,
             configuration_error: Some(message),
             deferred_file_config: None,
             selected_remote_session: Arc::new(Mutex::new(None)),
@@ -540,7 +546,89 @@ impl UpstreamRegistry {
         }
     }
 
-    fn resolved(&self) -> Cow<'_, Self> {
+    /// Attach the single directory opened with the same credentials and
+    /// Authorization as the local runtime. No discovery task is started here.
+    pub fn with_federation(mut self, directory: crate::federation::FederationDirectory) -> Self {
+        self.directory = Some(directory);
+        self
+    }
+
+    fn resolved(&self) -> Result<Cow<'_, Self>, UpstreamError> {
+        let configured = self.resolved_static();
+        if let Some(error) = &configured.configuration_error {
+            return Err(UpstreamError::Wire(error.clone()));
+        }
+        let Some(directory) = &self.directory else {
+            return Ok(configured);
+        };
+        let peers = directory
+            .snapshot()
+            .map_err(|_| UpstreamError::Wire("peer directory unavailable".into()))?;
+        let mut registry = configured.into_owned();
+        registry.directory = Some(directory.clone());
+        registry.credentials = self.credentials.clone();
+        registry.selected_remote_session = self.selected_remote_session.clone();
+        registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
+        let mut seen = BTreeSet::new();
+        let mut hosts = Vec::new();
+        for mut host in registry.hosts {
+            if let Some(key) = host.native_route_key() {
+                if !seen.insert(key.clone())
+                    || directory
+                        .peer_is_revoked(&key)
+                        .map_err(|_| UpstreamError::SourcePeerNotFound)?
+                {
+                    continue;
+                }
+                let RegisteredClient::Native(client) = host.client else {
+                    unreachable!()
+                };
+                let mut candidates = client.candidate_origins();
+                if let Some(peer) = peers.iter().find(|p| p.device_public_key == key) {
+                    candidates.extend(endpoint_candidates(peer));
+                }
+                host.client = RegisteredClient::Native(
+                    client
+                        .with_candidates(candidates)?
+                        .with_directory(directory.clone()),
+                );
+            }
+            hosts.push(host);
+        }
+        for peer in peers {
+            if !seen.insert(peer.device_public_key.clone()) {
+                continue;
+            }
+            let credentials = registry
+                .credentials
+                .clone()
+                .ok_or_else(|| UpstreamError::Wire("peer credentials unavailable".into()))?;
+            let metadata = peer
+                .current_endpoint
+                .as_ref()
+                .or(peer.remembered_endpoint.as_ref());
+            let label = metadata
+                .and_then(|e| e.label.clone())
+                .unwrap_or_else(|| peer.device_public_key.clone());
+            let moonlight_address = metadata.and_then(|e| e.moonlight_address.clone());
+            let client = NativeClient::new_secure_candidates(
+                endpoint_candidates(&peer),
+                peer.device_public_key.clone(),
+                credentials,
+            )
+            .with_directory(directory.clone());
+            hosts.push(RegisteredHost {
+                label,
+                moonlight_address,
+                device_public_key: Some(peer.device_public_key),
+                client: RegisteredClient::Native(client),
+            });
+        }
+        registry.hosts = hosts;
+        Ok(Cow::Owned(registry))
+    }
+
+    fn resolved_static(&self) -> Cow<'_, Self> {
         let Some(config) = &self.deferred_file_config else {
             return Cow::Borrowed(self);
         };
@@ -548,7 +636,11 @@ impl UpstreamRegistry {
             return Cow::Borrowed(registry);
         }
         match Self::from_file_inner(&config.path, config.credentials.clone()) {
-            Ok(registry) if registry.configuration_error.is_none() => {
+            Ok(mut registry) if registry.configuration_error.is_none() => {
+                // The deferred file is static configuration only. Selection and
+                // mutation ordering belong to the runtime, not a rebuilt registry.
+                registry.selected_remote_session = self.selected_remote_session.clone();
+                registry.remote_prepare_mutation = self.remote_prepare_mutation.clone();
                 Cow::Borrowed(config.resolved.get_or_init(|| registry))
             }
             Ok(registry) => Cow::Owned(registry),
@@ -558,7 +650,7 @@ impl UpstreamRegistry {
     }
 
     pub fn moonlight_host_candidates(&self) -> Result<Vec<MoonlightHostCandidate>, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         if let Some(error) = &registry.configuration_error {
             return Err(UpstreamError::Wire(error.clone()));
         }
@@ -586,7 +678,7 @@ impl UpstreamRegistry {
     }
 
     pub async fn catalog_snapshot(&self) -> Result<CatalogSnapshot, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry.catalog_snapshot_resolved().await
     }
 
@@ -596,6 +688,11 @@ impl UpstreamRegistry {
         }
         let qualify_legacy_host = self.hosts.len() > 1;
         let results = join_all(self.hosts.iter().map(|host| async move {
+            // NativeClient owns its aggregate deadline and records the completed
+            // attempt. An outer equal deadline would cancel that state commit.
+            if matches!(host.client, RegisteredClient::Native(_)) {
+                return host.catalog(qualify_legacy_host).await;
+            }
             timeout(CATALOG_HOST_TIMEOUT, host.catalog(qualify_legacy_host))
                 .await
                 .unwrap_or_else(|_| {
@@ -611,6 +708,11 @@ impl UpstreamRegistry {
         let mut first_error = None;
         let mut successes = 0;
         for (host, result) in self.hosts.iter().zip(results) {
+            // Another peer can hold fan-out open after this response completed.
+            let result = match &host.client {
+                RegisteredClient::Native(client) => client.ensure_not_revoked().and(result),
+                RegisteredClient::Legacy(_) => result,
+            };
             match result {
                 Ok(mut host_games) => {
                     successes += 1;
@@ -640,7 +742,7 @@ impl UpstreamRegistry {
     }
 
     async fn moonlight_native_peer(&self, host_uuid: &str) -> Result<NativeClient, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         let native: Vec<NativeClient> = registry
             .hosts
             .iter()
@@ -657,6 +759,7 @@ impl UpstreamRegistry {
         .await;
         let mut matched = Vec::new();
         for (client, result) in native.into_iter().zip(results) {
+            client.ensure_not_revoked()?;
             if result?.matched {
                 matched.push(client);
             }
@@ -708,7 +811,7 @@ impl UpstreamRegistry {
         game_id: &str,
         host_label: Option<&str>,
     ) -> Result<SessionPrepared, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry.prepare_stream_resolved(game_id, host_label).await
     }
 
@@ -718,13 +821,20 @@ impl UpstreamRegistry {
         host_label: Option<&str>,
     ) -> Result<SessionPrepared, UpstreamError> {
         let host = match host_label {
-            Some(label) => self
-                .hosts
-                .iter()
-                .find(|host| host.label == label)
-                .ok_or_else(|| {
+            Some(label) => {
+                let mut matches = self.hosts.iter().filter(|host| host.label == label);
+                let host = matches.next().ok_or_else(|| {
                     UpstreamError::Failure(format!("upstream host {label:?} is not configured"))
-                })?,
+                })?;
+                // Authenticated display labels are not unique device identities.
+                // The existing label selector must not guess between peers.
+                if matches.next().is_some() {
+                    return Err(UpstreamError::Failure(
+                        "upstream host label is ambiguous".into(),
+                    ));
+                }
+                host
+            }
             None if self.hosts.len() == 1 => &self.hosts[0],
             None if self.hosts.is_empty() => {
                 return Err(UpstreamError::Failure(
@@ -776,28 +886,30 @@ impl UpstreamRegistry {
 
     async fn ensure_remote_prepare_available(&self) -> Result<(), UpstreamError> {
         if let Some(selected) = self.selected() {
-            match self.selected_status(&selected).await? {
-                UpstreamSessionStatus::SessionStatus {
-                    active: Some(active),
-                } => {
-                    return if active.launch_id == selected.launch_id {
-                        Err(UpstreamError::ActiveRemoteSessionConflict)
-                    } else {
-                        Err(UpstreamError::SelectedRemoteSessionReplaced)
+            if !self.retire_selected_if_revoked(&selected)? {
+                match self.selected_status(&selected).await? {
+                    UpstreamSessionStatus::SessionStatus {
+                        active: Some(active),
+                    } => {
+                        return if active.launch_id == selected.launch_id {
+                            Err(UpstreamError::ActiveRemoteSessionConflict)
+                        } else {
+                            Err(UpstreamError::SelectedRemoteSessionReplaced)
+                        }
                     }
-                }
-                UpstreamSessionStatus::SessionStatus { active: None } => {
-                    self.clear_selected_if(&selected);
-                }
-                UpstreamSessionStatus::SessiondNotConfigured {} => {
-                    return Err(UpstreamError::Failure(
-                        "selected legacy session status is not configured".into(),
-                    ))
-                }
-                UpstreamSessionStatus::HostUnavailable {} => {
-                    return Err(UpstreamError::Unreachable(
-                        "selected legacy session status is unavailable".into(),
-                    ))
+                    UpstreamSessionStatus::SessionStatus { active: None } => {
+                        self.clear_selected_if(&selected);
+                    }
+                    UpstreamSessionStatus::SessiondNotConfigured {} => {
+                        return Err(UpstreamError::Failure(
+                            "selected legacy session status is not configured".into(),
+                        ))
+                    }
+                    UpstreamSessionStatus::HostUnavailable {} => {
+                        return Err(UpstreamError::Unreachable(
+                            "selected legacy session status is unavailable".into(),
+                        ))
+                    }
                 }
             }
         }
@@ -819,7 +931,7 @@ impl UpstreamRegistry {
     }
 
     pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry.session_status_resolved().await
     }
 
@@ -854,7 +966,7 @@ impl UpstreamRegistry {
         expected_launch_id: Option<&str>,
         force: bool,
     ) -> Result<UpstreamSessionStop, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry
             .session_stop_resolved(expected_launch_id, force)
             .await
@@ -902,7 +1014,7 @@ impl UpstreamRegistry {
         &self,
         device_public_key: &str,
     ) -> Result<SourceStatus, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry.source_status_resolved(device_public_key).await
     }
 
@@ -919,21 +1031,14 @@ impl UpstreamRegistry {
         let RegisteredClient::Native(client) = &host.client else {
             unreachable!("native_host_by_route_key returned a legacy client")
         };
-        timeout(
-            CATALOG_HOST_TIMEOUT,
-            client.source_status(device_public_key),
-        )
-        .await
-        .map_err(|_| {
-            UpstreamError::Unreachable(format!("host {:?} source status timed out", host.label))
-        })?
+        client.source_status(device_public_key).await
     }
 
     pub async fn session_freeze(
         &self,
         expected_launch_id: Option<&str>,
     ) -> Result<SessionFreezeResult, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry
             .session_freezer_resolved(expected_launch_id, FreezerVerb::Freeze)
             .await
@@ -943,7 +1048,7 @@ impl UpstreamRegistry {
         &self,
         expected_launch_id: Option<&str>,
     ) -> Result<SessionFreezeResult, UpstreamError> {
-        let registry = self.resolved();
+        let registry = self.resolved()?;
         registry
             .session_freezer_resolved(expected_launch_id, FreezerVerb::Thaw)
             .await
@@ -982,6 +1087,9 @@ impl UpstreamRegistry {
         let SelectedRemoteRoute::Native { device_public_key } = &selected.route else {
             return Err(UpstreamError::FreezerUnsupportedOnLegacyRoute);
         };
+        if self.retire_selected_if_revoked(&selected)? {
+            return Err(UpstreamError::SourcePeerNotFound);
+        }
         let host = self
             .native_host_by_route_key(device_public_key)
             .ok_or_else(|| UpstreamError::Wire("selected native peer disappeared".into()))?;
@@ -994,13 +1102,7 @@ impl UpstreamRegistry {
                 FreezerVerb::Thaw => client.session_thaw(&selected.launch_id).await,
             }
         };
-        let result = timeout(CATALOG_HOST_TIMEOUT, call).await.map_err(|_| {
-            UpstreamError::Unreachable(format!(
-                "host {:?} session {} timed out",
-                host.label,
-                verb.name()
-            ))
-        })?;
+        let result = call.await;
         match result {
             Ok(result) => Ok(result),
             Err(UpstreamError::Tagged { code, .. }) if code == "NoActiveSession" => {
@@ -1018,6 +1120,9 @@ impl UpstreamRegistry {
         &self,
         selected: &SelectedRemoteSession,
     ) -> Result<UpstreamSessionStatus, UpstreamError> {
+        if self.retire_selected_if_revoked(selected)? {
+            return Err(UpstreamError::SourcePeerNotFound);
+        }
         match &selected.route {
             SelectedRemoteRoute::Native { device_public_key } => {
                 let host = self
@@ -1025,14 +1130,7 @@ impl UpstreamRegistry {
                     .ok_or_else(|| {
                         UpstreamError::Wire("selected native peer disappeared".into())
                     })?;
-                timeout(CATALOG_HOST_TIMEOUT, host.native_session_status())
-                    .await
-                    .map_err(|_| {
-                        UpstreamError::Unreachable(format!(
-                            "host {:?} session status timed out",
-                            host.label
-                        ))
-                    })?
+                host.native_session_status().await
             }
             SelectedRemoteRoute::Legacy { label } => {
                 let host = self.legacy_host_by_label(label).ok_or_else(|| {
@@ -1072,14 +1170,8 @@ impl UpstreamRegistry {
             return Ok(None);
         }
         let results = join_all(native_hosts.iter().map(|host| async move {
-            timeout(CATALOG_HOST_TIMEOUT, host.native_session_status())
+            host.native_session_status()
                 .await
-                .map_err(|_| {
-                    UpstreamError::Unreachable(format!(
-                        "host {:?} session status timed out",
-                        host.label
-                    ))
-                })?
                 .map(|status| (*host, status))
         }))
         .await;
@@ -1088,6 +1180,13 @@ impl UpstreamRegistry {
         for result in results {
             match result {
                 Ok((host, status)) => {
+                    let RegisteredClient::Native(client) = &host.client else {
+                        unreachable!("native recovery returned a legacy client")
+                    };
+                    if client.ensure_not_revoked().is_err() {
+                        failed = true;
+                        continue;
+                    }
                     if let Some(session) = active_session(&status) {
                         active.push((host, session.clone(), status));
                     }
@@ -1121,6 +1220,9 @@ impl UpstreamRegistry {
         selected: &SelectedRemoteSession,
         force: bool,
     ) -> Result<UpstreamSessionStop, UpstreamError> {
+        if self.retire_selected_if_revoked(selected)? {
+            return Err(UpstreamError::SourcePeerNotFound);
+        }
         let result = match &selected.route {
             SelectedRemoteRoute::Native { device_public_key } => {
                 let host = self
@@ -1140,17 +1242,7 @@ impl UpstreamRegistry {
                     self.clear_selected_if(selected);
                     return Ok(UpstreamSessionStop::NothingToStop {});
                 }
-                timeout(
-                    CATALOG_HOST_TIMEOUT,
-                    client.session_stop(&selected.launch_id, force),
-                )
-                .await
-                .map_err(|_| {
-                    UpstreamError::Unreachable(format!(
-                        "host {:?} session stop timed out",
-                        host.label
-                    ))
-                })??
+                client.session_stop(&selected.launch_id, force).await?
             }
             SelectedRemoteRoute::Legacy { label } => {
                 let host = self.legacy_host_by_label(label).ok_or_else(|| {
@@ -1224,6 +1316,26 @@ impl UpstreamRegistry {
         client.session_stop(force).await
     }
 
+    fn retire_selected_if_revoked(
+        &self,
+        selected: &SelectedRemoteSession,
+    ) -> Result<bool, UpstreamError> {
+        if let (Some(directory), SelectedRemoteRoute::Native { device_public_key }) =
+            (&self.directory, &selected.route)
+        {
+            if directory
+                .peer_is_revoked(device_public_key)
+                .map_err(|_| UpstreamError::SourcePeerNotFound)?
+            {
+                // Relinquish only this exact selection. Revocation is not
+                // evidence that the old remote execution stopped.
+                self.clear_selected_if(selected);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn selected(&self) -> Option<SelectedRemoteSession> {
         self.selected_remote_session
             .lock()
@@ -1277,6 +1389,14 @@ impl UpstreamRegistry {
             .iter()
             .find(|host| matches!(&host.client, RegisteredClient::Legacy(_)))
     }
+}
+
+fn endpoint_candidates(peer: &crate::federation::PeerSnapshot) -> Vec<String> {
+    peer.current_endpoint
+        .iter()
+        .chain(peer.remembered_endpoint.iter())
+        .flat_map(|endpoint| endpoint.candidates.iter().cloned())
+        .collect()
 }
 
 fn active_session(
@@ -1711,7 +1831,7 @@ mod tests {
                 {"label":"missing","kind":"native","baseUrl":"http://missing.example:43117"},
                 {"label":"malformed","kind":"native","baseUrl":"http://malformed.example:43117","moonlightAddress":"   "},
                 {"label":"zao","kind":"native","baseUrl":"http://zao:43117","moonlightAddress":"zao:48000"},
-                {"label":"desk","kind":"native","baseUrl":"https://desk.example:443/korri","moonlightAddress":"[::1]:47989"}
+                {"label":"desk","kind":"native","baseUrl":"https://desk.example:443/","moonlightAddress":"[::1]:47989"}
             ]"#,
         );
 
@@ -2470,6 +2590,31 @@ command = ["native-game"]
             Err(UpstreamError::Unreachable(_))
         ));
         assert_eq!(registry.selected().as_ref(), Some(&selected));
+    }
+
+    #[tokio::test]
+    async fn selected_peer_disappearance_does_not_retire_control() {
+        let a = native_server("A", "one").await;
+        let b = native_server("B", "two").await;
+        let mut registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native("A", a),
+            UpstreamHostConfig::native("B", b),
+        ]);
+        let prepared = registry.prepare_stream("one", Some("A")).await.unwrap();
+        // A configuration change is not verified terminal revocation.
+        registry.hosts.retain(|host| host.label == "B");
+        assert!(matches!(registry.session_status().await,
+            Err(UpstreamError::Wire(message)) if message == "selected native peer disappeared"));
+        assert!(matches!(registry.prepare_stream("two", Some("B")).await,
+            Err(UpstreamError::Wire(message)) if message == "selected native peer disappeared"));
+        assert!(matches!(
+            registry.session_stop(Some("wrong-launch"), false).await,
+            Err(UpstreamError::StaleLaunchIdentity)
+        ));
+        assert!(
+            matches!(registry.session_stop(Some(&prepared.launch_id), false).await,
+            Err(UpstreamError::Wire(message)) if message == "selected native peer disappeared")
+        );
     }
 
     #[tokio::test]

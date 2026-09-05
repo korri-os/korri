@@ -1,6 +1,8 @@
 use super::*;
 #[path = "additional_tests.rs"]
 mod additional;
+#[path = "routing_tests.rs"]
+mod routing;
 use crate::relay::ENDPOINT_EVENT_KIND;
 use nostr::{
     event::{EventBuilder, FinalizeEvent, Kind, Tag},
