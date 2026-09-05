@@ -30,7 +30,10 @@
       proseql,
     }:
     let
-      rg353m = import ./nix/rg353m { inherit nixpkgs; };
+      rg353m = import ./nix/rg353m {
+        inherit nixpkgs;
+        korri = self;
+      };
       odin2portal = import ./nix/odin2portal { inherit nixpkgs; };
       nixosModules = {
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
@@ -63,6 +66,7 @@
         };
         sunshinePackage = pkgs.callPackage ./services/sunshine/package.nix {
           sunshine = pkgs.sunshine;
+          cudaSupport = system == "x86_64-linux";
         };
         inputplumber = import ./services/inputd/nix {
           inherit

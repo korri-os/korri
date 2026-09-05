@@ -1,10 +1,14 @@
-{ nixpkgs }:
+{ nixpkgs, korri }:
 
 let
   system = "aarch64-linux";
   configuration = nixpkgs.lib.nixosSystem {
     inherit system;
-    modules = [ ./sd-image.nix ];
+    specialArgs = { inherit korri; };
+    modules = [
+      (import ../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      ./sd-image.nix
+    ];
   };
 in
 {
