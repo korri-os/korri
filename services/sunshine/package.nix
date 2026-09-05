@@ -2,6 +2,10 @@
   sunshine,
   cudaSupport ? true,
   ffmpegV4l2m2m ? null,
+  rkmppSupport ? false,
+  ffmpegRkmpp ? null,
+  rockchipMpp ? null,
+  libdrm ? null,
 }:
 
 let
@@ -16,8 +20,18 @@ baseSunshine.overrideAttrs (
       if cudaSupport then "cuda" else "software"
     }";
     buildProfile =
-      if v4l2m2mEnabled then "${baseSunshine.stdenv.hostPlatform.system}-v4l2m2m" else baseBuildProfile;
-    approvedBaseDerivations = approved.approvedBaseDerivationsByProfile.${baseBuildProfile} or [ ];
+      if rkmppSupport then
+        "${baseSunshine.stdenv.hostPlatform.system}-rkmpp"
+      else if v4l2m2mEnabled then
+        "${baseSunshine.stdenv.hostPlatform.system}-v4l2m2m"
+      else
+        baseBuildProfile;
+    # RKMPP is approved under its own profile key because it appends Sunshine
+    # patches. V4L2 M2M only patches FFmpeg, so it keeps the base profile's
+    # approved upstream derivation.
+    approvedBaseDerivations =
+      approved.approvedBaseDerivationsByProfile.${buildProfile}
+        or approved.approvedBaseDerivationsByProfile.${baseBuildProfile} or [ ];
     baseSunshineSource = builtins.unsafeDiscardStringContext (toString baseSunshine.src);
     baseSunshineSourceHash = baseSunshine.src.outputHash;
     baseSunshineDerivation = builtins.unsafeDiscardStringContext baseSunshine.drvPath;
@@ -39,11 +53,16 @@ baseSunshine.overrideAttrs (
       else
         builtins.head matchingApprovedBaseDerivations;
     provenanceRelativePath = "share/korri/sunshine-korri/provenance";
+    # Only RKMPP appends Sunshine patches; every other profile ships the base set.
+    approvedPatchDefinitions =
+      approved.patches ++ (if rkmppSupport then approved.rkmppPatches else [ ]);
+    expectedPatchSetSha256 =
+      if rkmppSupport then approved.rkmppPatchSetSha256 else approved.patchSetSha256;
     patchRecords = map (record: {
       inherit (record) name path sha256;
       actualName = builtins.baseNameOf record.path;
       actualSha256 = builtins.hashFile "sha256" record.path;
-    }) approved.patches;
+    }) approvedPatchDefinitions;
     patchesApproved = builtins.all (
       record: record.name == record.actualName && record.sha256 == record.actualSha256
     ) patchRecords;
@@ -103,7 +122,7 @@ baseSunshine.overrideAttrs (
       v4l2m2m_enabled=${if v4l2m2mEnabled then "1" else "0"}
       ${v4l2m2mProvenance}reviewed_nvenc_api=${toString approved.reviewedNvencApiMajor}.${toString approved.reviewedNvencApiMinor}
       executable=bin/sunshine
-      patch_set_sha256=${approved.patchSetSha256}
+      patch_set_sha256=${expectedPatchSetSha256}
       ${patchLines}
     '';
   in
@@ -113,6 +132,14 @@ baseSunshine.overrideAttrs (
     throw "sunshine-korri base source hash changed; review the approved source before building"
   else if cudaSupport != cudaEnabled then
     throw "sunshine-korri CUDA inputs do not match the selected ${buildProfile} profile"
+  else if rkmppSupport && cudaSupport then
+    throw "sunshine-korri RKMPP and CUDA profiles are mutually exclusive"
+  else if rkmppSupport && v4l2m2mEnabled then
+    throw "sunshine-korri RKMPP and V4L2 M2M profiles are mutually exclusive"
+  else if rkmppSupport && baseSunshine.stdenv.hostPlatform.system != "aarch64-linux" then
+    throw "sunshine-korri RKMPP is approved only for aarch64-linux"
+  else if rkmppSupport && (ffmpegRkmpp == null || rockchipMpp == null || libdrm == null) then
+    throw "sunshine-korri RKMPP requires the reviewed FFmpeg bundle, Rockchip MPP, and libdrm"
   else if v4l2m2mEnabled && cudaSupport then
     throw "sunshine-korri V4L2 M2M profile cannot include CUDA inputs"
   else if v4l2m2mEnabled && baseSunshine.stdenv.hostPlatform.system != "aarch64-linux" then
@@ -123,7 +150,7 @@ baseSunshine.overrideAttrs (
     throw "sunshine-korri base derivation carries unapproved patches"
   else if !patchesApproved then
     throw "sunshine-korri patch content differs from services/sunshine/approved-patches.nix"
-  else if actualPatchSetSha256 != approved.patchSetSha256 then
+  else if actualPatchSetSha256 != expectedPatchSetSha256 then
     throw "sunshine-korri ordered patch-set digest differs from services/sunshine/approved-patches.nix"
   else if !v4l2m2mPatchApproved then
     throw "sunshine-korri FFmpeg V4L2 M2M patch content differs from services/sunshine/approved-patches.nix"
@@ -137,11 +164,32 @@ baseSunshine.overrideAttrs (
       version = "${approved.baseSunshineVersion}-korri";
       __intentionallyOverridingVersion = true;
 
-      patches = map (record: record.path) approved.patches;
+      patches = map (record: record.path) approvedPatchDefinitions;
 
       cmakeFlags =
         (old.cmakeFlags or [ ])
-        ++ (if v4l2m2mEnabled then [ "-DFFMPEG_PREPARED_BINARIES=${ffmpegV4l2m2m}" ] else [ ]);
+        ++ (if v4l2m2mEnabled then [ "-DFFMPEG_PREPARED_BINARIES=${ffmpegV4l2m2m}" ] else [ ])
+        ++ (
+          if rkmppSupport then
+            [
+              "-DFFMPEG_PREPARED_BINARIES=${ffmpegRkmpp}"
+              "-DFFMPEG_PLATFORM_LIBRARIES=numa;va;va-drm;va-x11;X11;rockchip_mpp;drm"
+            ]
+          else
+            [ ]
+        );
+
+      buildInputs =
+        (old.buildInputs or [ ])
+        ++ (
+          if rkmppSupport then
+            [
+              rockchipMpp
+              libdrm
+            ]
+          else
+            [ ]
+        );
 
       postInstall = (old.postInstall or "") + ''
         install -d -m755 "$out/${builtins.dirOf provenanceRelativePath}"
@@ -153,7 +201,7 @@ baseSunshine.overrideAttrs (
       passthru = (old.passthru or { }) // {
         korriProvenanceRelativePath = provenanceRelativePath;
         korriPatchNames = patchNames;
-        korriPatchSetSha256 = approved.patchSetSha256;
+        korriPatchSetSha256 = expectedPatchSetSha256;
         korriBuildProfile = buildProfile;
         korriBaseBuildProfile = baseBuildProfile;
         korriBaseSunshineVersion = approved.baseSunshineVersion;
@@ -169,6 +217,7 @@ baseSunshine.overrideAttrs (
         korriV4l2m2mEnabled = v4l2m2mEnabled;
         korriV4l2m2mPatchNames = map (record: record.name) approved.v4l2m2mPatches;
         korriV4l2m2mPatchSetSha256 = approved.v4l2m2mPatchSetSha256;
+        korriRkmppEnabled = rkmppSupport;
         korriReviewedNvencApiMajor = approved.reviewedNvencApiMajor;
         korriReviewedNvencApiMinor = approved.reviewedNvencApiMinor;
         korriCudaEnabled = cudaEnabled;

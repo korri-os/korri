@@ -37,11 +37,15 @@ let
     name = builtins.baseNameOf path;
     sha256 = builtins.hashFile "sha256" path;
   }) patchPaths;
+  approvedPatchDefinitions =
+    approved.patches ++ (if sunshinePackage.korriRkmppEnabled then [ approved.rkmppPatch ] else [ ]);
   approvedPatchRecords = map (record: {
     inherit (record) name sha256;
-  }) approved.patches;
+  }) approvedPatchDefinitions;
+  expectedPatchSetSha256 =
+    if sunshinePackage.korriRkmppEnabled then approved.rkmppPatchSetSha256 else approved.patchSetSha256;
   patchManifestLines = builtins.concatStringsSep "\n" (
-    map (record: "patch=${record.name} sha256=${record.sha256}") approved.patches
+    map (record: "patch=${record.name} sha256=${record.sha256}") approvedPatchDefinitions
   );
   approvedProfileBaseDerivations =
     approved.approvedBaseDerivationsByProfile.${sunshinePackage.korriBuildProfile} or [ ];
@@ -64,14 +68,14 @@ let
     v4l2m2m_enabled=0
     reviewed_nvenc_api=${toString approved.reviewedNvencApiMajor}.${toString approved.reviewedNvencApiMinor}
     executable=bin/sunshine
-    patch_set_sha256=${approved.patchSetSha256}
+    patch_set_sha256=${expectedPatchSetSha256}
     ${patchManifestLines}
   '';
   checks = [
     (check "the checked-in patch approval is exact" (
       actualPatchRecords == approvedPatchRecords
-      && sunshinePackage.korriPatchNames == map (record: record.name) approved.patches
-      && sunshinePackage.korriPatchSetSha256 == approved.patchSetSha256
+      && sunshinePackage.korriPatchNames == map (record: record.name) approvedPatchDefinitions
+      && sunshinePackage.korriPatchSetSha256 == expectedPatchSetSha256
       && sunshinePackage.korriBaseSunshineVersion == approved.baseSunshineVersion
       && sunshinePackage.korriApprovedBaseSunshineSourceHash == approved.approvedBaseSourceHash
       && builtins.elem sunshinePackage.korriBaseSunshineDerivation approvedProfileBaseDerivations
@@ -480,5 +484,5 @@ else
       cmp expected-provenance "$provenance"
 
       mkdir -p "$out"
-      printf '%s\n' '${approved.patchSetSha256}' > "$out/patch-set-sha256"
+      printf '%s\n' '${expectedPatchSetSha256}' > "$out/patch-set-sha256"
     ''

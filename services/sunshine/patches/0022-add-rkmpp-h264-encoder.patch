@@ -1,0 +1,61 @@
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -1331,6 +1331,36 @@
+     LIMITED_GOP_SIZE | PARALLEL_ENCODING | NO_RC_BUF_LIMIT
+   };
+ 
++  encoder_t rkmpp {
++    "rkmpp"sv,
++    std::make_unique<encoder_platform_formats_avcodec>(
++      AV_HWDEVICE_TYPE_NONE,
++      AV_HWDEVICE_TYPE_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NV12,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      nullptr
++    ),
++    {},  // AV1: RKVENC-v1 (RK3566/RK3568) has no AV1 encoder
++    {},  // HEVC: RKVENC-v1 has no HEVC encoder
++    {
++      // Common options
++      {
++        {"rc_mode"s, "CBR"s},
++        {"intra_refresh"s, false},
++      },
++      {},  // SDR-specific options
++      {},  // HDR-specific options
++      {},  // YUV444 SDR-specific options
++      {},  // YUV444 HDR-specific options
++      {},  // Fallback options
++      "h264_rkmpp"s,
++    },
++    H264_ONLY | LIMITED_GOP_SIZE | SINGLE_SLICE_ONLY | PARALLEL_ENCODING | NO_RC_BUF_LIMIT
++  };
++
+   encoder_t vaapi {
+     "vaapi"sv,
+     std::make_unique<encoder_platform_formats_avcodec>(
+@@ -1468,6 +1498,7 @@
+ #ifdef __linux__
+     &vaapi,
+     &v4l2m2m,
++    &rkmpp,
+ #endif
+ #ifdef __APPLE__
+     &videotoolbox,
+@@ -2582,7 +2613,12 @@
+ 
+       std::optional<std::chrono::steady_clock::time_point> frame_timestamp;
+ 
+-      if (!requested_idr_frame && runtime_fps > 0 && runtime_fps < (std::uint32_t) config.framerate) {
++      // The RKMPP encoder returns immediately in async mode, so without pacing
++      // the encode loop spins at the KMS capture rate and burns a full core on
++      // BGRA->NV12 conversion. Always pace it to the negotiated frame rate.
++      const bool pace_rkmpp = encoder.name == "rkmpp";
++      if (!requested_idr_frame && runtime_fps > 0 &&
++          (pace_rkmpp || runtime_fps < (std::uint32_t) config.framerate)) {
+         auto now = std::chrono::steady_clock::now();
+         if (now < next_runtime_frame) {
+           std::this_thread::sleep_until(next_runtime_frame);

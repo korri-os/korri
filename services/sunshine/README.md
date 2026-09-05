@@ -148,6 +148,16 @@ Each accepted connection carries one JSON frame of at most 16384 bytes. The non-
 
 The adapter does not replace TLS. It replaces only the manual GameStream pairing ceremony. The Moonlight private key remains on the Android device, and Sunshine's private key remains in Sunshine's existing state directory. The NixOS socket unit and namespace isolation are supplied by the Linux host module in the consuming slice. Physical device acceptance remains separate.
 
+## Rockchip RKMPP hardware encoding
+
+The `aarch64-linux-rkmpp` profile adds patch `0021` after every base patch. It defines an `rkmpp` encoder that uses FFmpeg's `h264_rkmpp` (Rockchip MPP, RKVENC hardware) in CBR mode with a single slice and no intra refresh. The encoder advertises only H.264 because RKVENC-v1 on RK3566 has no HEVC or AV1 encoder. The patch also paces the encode loop to the negotiated frame rate. Without pacing, the asynchronous MPP encoder returns immediately and the loop spins at the KMS capture rate.
+
+The profile links Sunshine against `ffmpeg-rkmpp-static.nix`. That derivation builds Sunshine's own `build-deps` recipe against the reviewed FFmpeg commit from `approved-patches.nix`, so the libavcodec ABI matches the other profiles, and adds the RKMPP encoder and hardware context from `patches/ffmpeg/`. `0001` is the encoder and hardware context lifted from the `ffmpeg-rockchip` fork. `0002` removes the fork's use of two APIs that do not exist at the reviewed commit. The build enables only `h264_rkmpp`, `libdrm`, and `rkmpp` on top of the shared configure flags.
+
+The profile is approved only for `aarch64-linux`, is mutually exclusive with CUDA, and keeps the same reviewed upstream base derivation as the software profile. The host module's `sunshine.encoder = "rkmpp"` requires the RKMPP-enabled package.
+
+Measured on RG353M at 640x480@30 with KMS capture: RKVENC serviced one interrupt per delivered frame, the encoder thread used about 1% CPU, and Sunshine's total CPU fell from about 170% (libx264) to about 135%. The remaining load is Sunshine's GPU-to-RAM readback and BGRA-to-NV12 software conversion. A zero-copy DRM_PRIME capture path is tracked separately.
+
 ## Package provenance
 
 The installed package contains `share/korri/sunshine-korri/provenance`. This mode-`0444` file records:
@@ -170,7 +180,7 @@ The installed package contains `share/korri/sunshine-korri/provenance`. This mod
 - each ordered Korri patch name and SHA-256 value,
 - one SHA-256 value for the complete ordered patch set.
 
-Nix also exposes the provenance path, build profile, CUDA state, V4L2 M2M state, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digests through package passthru values. `approved-patches.nix` is the independent approval record. The approved profiles currently cover x86_64 Linux with CUDA, aarch64 Linux with software encoding, and a separate aarch64 Linux V4L2 M2M profile. Package evaluation fails when the profile, base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
+Nix also exposes the provenance path, build profile, CUDA state, V4L2 M2M state, RKMPP state, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digests through package passthru values. `approved-patches.nix` is the independent approval record. The approved profiles currently cover x86_64 Linux with CUDA, aarch64 Linux with software encoding, a separate aarch64 Linux V4L2 M2M profile, and a separate aarch64 Linux RKMPP profile. V4L2 M2M patches only FFmpeg, so it keeps the base ordered patch-set digest; RKMPP appends Sunshine patches after the base set and therefore carries its own digest. Package evaluation fails when the profile, base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
 
 ## Removal/upstream policy
 

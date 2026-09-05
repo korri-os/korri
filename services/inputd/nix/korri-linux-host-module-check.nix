@@ -3,6 +3,7 @@
   module,
   sunshinePackage,
   sunshineV4l2m2mPackage ? null,
+  sunshineRkmppPackage ? null,
   inputdPackage,
   inputplumberKorri,
   korridPackage,
@@ -97,6 +98,9 @@ let
   };
   v4l2m2m = evaluate {
     services.korriLinuxHost.sunshine.encoder = "v4l2m2m";
+  };
+  rkmpp = evaluate {
+    services.korriLinuxHost.sunshine.encoder = "rkmpp";
   };
   physicalSoftware = evaluate {
     services.korriLinuxHost = {
@@ -257,6 +261,11 @@ assert
     allAssertionsPass v4l2m2m
   else
     hasFailedAssertion "requires the approved V4L2 M2M Sunshine package" v4l2m2m;
+assert
+  if sunshineRkmppPackage != null then
+    allAssertionsPass rkmpp
+  else
+    hasFailedAssertion "requires an RKMPP-enabled sunshine package" rkmpp;
 assert allAssertionsPass physicalSoftware;
 assert hasFailedAssertion "DRM compositor requires" missingDrmDevice;
 assert hasFailedAssertion "KMS capture requires" kmsWithoutDrm;
@@ -274,6 +283,12 @@ assert
 assert nvenc.config.systemd.services.sunshine.environment.SUNSHINE_STRICT_ENCODER == "1";
 assert !(builtins.hasAttr "LD_LIBRARY_PATH" sunshine.environment);
 assert !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" sunshine.environment);
+assert
+  !(sunshinePackage.korriRkmppEnabled or false)
+  || rkmpp.config.systemd.services.sunshine.environment.SUNSHINE_STRICT_ENCODER == "1";
+assert
+  !(sunshinePackage.korriRkmppEnabled or false)
+  || !(builtins.hasAttr "LD_LIBRARY_PATH" rkmpp.config.systemd.services.sunshine.environment);
 assert !(builtins.hasAttr "LD_LIBRARY_PATH" vaapi.config.systemd.services.sunshine.environment);
 assert
   !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" vaapi.config.systemd.services.sunshine.environment);

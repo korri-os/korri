@@ -17,6 +17,11 @@ let
   patchName = builtins.baseNameOf patchPath;
   approvedPatch = lib.findFirst (record: record.name == patchName) null approved.patches;
   patchSha256 = builtins.hashFile "sha256" patchPath;
+  expectedPatchSetSha256 =
+    if sunshinePackage.korriRkmppEnabled or false then
+      approved.rkmppPatchSetSha256
+    else
+      approved.patchSetSha256;
   patchedSource = pkgs.applyPatches {
     name = "sunshine-korri-certificate-control-source";
     src = pkgs.sunshine.src;
@@ -28,7 +33,7 @@ let
       && patchSha256 == approvedPatch.sha256
       && contains "approved-patches.nix" packageSource
       && builtins.elem patchName sunshinePackage.korriPatchNames
-      && sunshinePackage.korriPatchSetSha256 == approved.patchSetSha256
+      && sunshinePackage.korriPatchSetSha256 == expectedPatchSetSha256
     ))
     (check "the private adapter consumes one root-owned systemd seqpacket socket" (
       contains "LISTEN_FDS" patch

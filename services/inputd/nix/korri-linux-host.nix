@@ -13,18 +13,30 @@ let
   approvedSunshinePackages = [
     sunshinePackages.sunshine-korri
   ]
-  ++ lib.optional (builtins.hasAttr "sunshine-korri-v4l2m2m" sunshinePackages) sunshinePackages.sunshine-korri-v4l2m2m;
+  ++ lib.optional (builtins.hasAttr "sunshine-korri-v4l2m2m" sunshinePackages) sunshinePackages.sunshine-korri-v4l2m2m
+  ++ lib.optional (
+    builtins.hasAttr "sunshine-korri-rkmpp" sunshinePackages
+  ) sunshinePackages.sunshine-korri-rkmpp;
   sunshinePackageIsApproved = builtins.any (
     package:
     (cfg.sunshine.package.drvPath or null) == package.drvPath
     && (cfg.sunshine.package.outPath or null) == package.outPath
   ) approvedSunshinePackages;
   sunshineBaseBuildProfile = cfg.sunshine.package.korriBaseBuildProfile or "";
+  sunshineRkmppEnabled = cfg.sunshine.package.korriRkmppEnabled or false;
   sunshineExpectedBuildProfile =
-    if cfg.sunshine.package.korriV4l2m2mEnabled or false then
+    if sunshineRkmppEnabled then
+      "${system}-rkmpp"
+    else if cfg.sunshine.package.korriV4l2m2mEnabled or false then
       "${system}-v4l2m2m"
     else
       sunshineBaseBuildProfile;
+  # Only RKMPP appends Sunshine patches, so only it carries a second digest.
+  sunshineExpectedPatchSetSha256 =
+    if sunshineRkmppEnabled then
+      sunshineApproved.rkmppPatchSetSha256
+    else
+      sunshineApproved.patchSetSha256;
   sunshineApprovedBaseDerivations =
     sunshineApproved.approvedBaseDerivationsByProfile.${sunshineBaseBuildProfile} or [ ];
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
@@ -464,7 +476,9 @@ in
       package = lib.mkOption {
         type = lib.types.package;
         default =
-          if
+          if cfg.sunshine.encoder == "rkmpp" && builtins.hasAttr "sunshine-korri-rkmpp" sunshinePackages then
+            sunshinePackages.sunshine-korri-rkmpp
+          else if
             cfg.sunshine.encoder == "v4l2m2m" && builtins.hasAttr "sunshine-korri-v4l2m2m" sunshinePackages
           then
             sunshinePackages.sunshine-korri-v4l2m2m
@@ -498,6 +512,7 @@ in
           "vaapi"
           "nvenc"
           "v4l2m2m"
+          "rkmpp"
           "software"
         ];
         default = "auto";
@@ -564,7 +579,7 @@ in
         assertion =
           lib.getName cfg.sunshine.package == "sunshine-korri"
           && sunshinePackageIsApproved
-          && (cfg.sunshine.package.korriPatchSetSha256 or null) == sunshineApproved.patchSetSha256
+          && (cfg.sunshine.package.korriPatchSetSha256 or null) == sunshineExpectedPatchSetSha256
           && (cfg.sunshine.package.korriBaseSunshineVersion or null) == sunshineApproved.baseSunshineVersion
           &&
             (cfg.sunshine.package.korriApprovedBaseSunshineSourceHash or null)
@@ -612,6 +627,10 @@ in
         assertion =
           cfg.sunshine.encoder != "v4l2m2m" || (cfg.sunshine.package.korriV4l2m2mEnabled or false);
         message = "services.korriLinuxHost sunshine encoder v4l2m2m requires the approved V4L2 M2M Sunshine package.";
+      }
+      {
+        assertion = cfg.sunshine.encoder != "rkmpp" || sunshineRkmppEnabled;
+        message = "services.korriLinuxHost sunshine encoder rkmpp requires an RKMPP-enabled sunshine package.";
       }
       {
         assertion = lib.all validAbsolutePath [
@@ -1014,6 +1033,9 @@ in
           (builtins.elem cfg.sunshine.encoder [
             "nvenc"
             "v4l2m2m"
+            # Refuse the libx264 fallback: it costs 170% CPU on RK3566 and would
+            # hide an RKVENC regression behind a working stream.
+            "rkmpp"
           ])
           {
             SUNSHINE_STRICT_ENCODER = "1";

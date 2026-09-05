@@ -10,6 +10,7 @@
   korridPackage,
   sunshinePackage,
   sunshineV4l2m2mPackage ? null,
+  sunshineRkmppPackage ? null,
 }:
 
 let
@@ -21,13 +22,21 @@ let
   inputplumberKorri = inputplumberData.compose { inherit inputplumberRuntime; };
   retroarchInputplumberAutoconfig = pkgs.callPackage ./retroarch-inputplumber-autoconfig.nix { };
   sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
-  sunshinePatchPaths = map (record: record.path) sunshineApprovedPatches.patches;
+  sunshinePatchDefinitions =
+    sunshineApprovedPatches.patches
+    ++ (if sunshinePackage.korriRkmppEnabled then [ sunshineApprovedPatches.rkmppPatch ] else [ ]);
+  sunshinePatchPaths = map (record: record.path) sunshinePatchDefinitions;
   sunshinePatchManifest =
     builtins.concatStringsSep "\n" (
-      map (record: "patch=${record.name} sha256=${record.sha256}") sunshineApprovedPatches.patches
+      map (record: "patch=${record.name} sha256=${record.sha256}") sunshinePatchDefinitions
     )
     + "\n";
   sunshinePatchManifestFile = pkgs.writeText "sunshine-korri-approved-patch-manifest" sunshinePatchManifest;
+  sunshineExpectedPatchSetSha256 =
+    if sunshinePackage.korriRkmppEnabled then
+      sunshineApprovedPatches.rkmppPatchSetSha256
+    else
+      sunshineApprovedPatches.patchSetSha256;
   sunshineApprovedBaseDerivations =
     sunshineApprovedPatches.approvedBaseDerivationsByProfile.${sunshinePackage.korriBuildProfile}
       or [ ];
@@ -69,6 +78,9 @@ in
     korri-bundle = korriBundle;
     sunshine-korri = sunshinePackage;
   }
+  // pkgs.lib.optionalAttrs (sunshineRkmppPackage != null) {
+    sunshine-korri-rkmpp = sunshineRkmppPackage;
+  }
   // pkgs.lib.optionalAttrs (sunshineV4l2m2mPackage != null) {
     sunshine-korri-v4l2m2m = sunshineV4l2m2mPackage;
     sunshine-v4l2m2m-probe = import ../../sunshine/v4l2m2m-probe.nix {
@@ -104,7 +116,12 @@ in
       test "${pkgs.sunshine.src.outputHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
       test "${sunshinePackage.korriBaseSunshineSource}" = "${builtins.unsafeDiscardStringContext (toString pkgs.sunshine.src)}"
       test "${sunshinePackage.korriBuildProfile}" = "${system}-${
-        if sunshinePackage.korriCudaEnabled then "cuda" else "software"
+        if sunshinePackage.korriRkmppEnabled then
+          "rkmpp"
+        else if sunshinePackage.korriCudaEnabled then
+          "cuda"
+        else
+          "software"
       }"
       test "${sunshinePackage.korriBaseSunshineDerivation}" = "${builtins.unsafeDiscardStringContext sunshineBasePackage.drvPath}"
       test "${toString (builtins.elem sunshinePackage.korriBaseSunshineDerivation sunshineApprovedBaseDerivations)}" = 1
@@ -116,7 +133,8 @@ in
       test "${toString sunshinePackage.korriReviewedNvencApiMajor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMajor}"
       test "${toString sunshinePackage.korriReviewedNvencApiMinor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMinor}"
       test "${toString sunshinePackage.korriCudaEnabled}" = "${toString (system == "x86_64-linux")}"
-      test "${sunshinePackage.korriPatchSetSha256}" = "${sunshineApprovedPatches.patchSetSha256}"
+      test "${toString sunshinePackage.korriRkmppEnabled}" = "${toString (system == "aarch64-linux")}"
+      test "${sunshinePackage.korriPatchSetSha256}" = "${sunshineExpectedPatchSetSha256}"
       provenance=${sunshinePackage}/${sunshinePackage.korriProvenanceRelativePath}
       test -f "$provenance"
       grep -Fx 'package=sunshine-korri' "$provenance" >/dev/null

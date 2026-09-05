@@ -79,6 +79,9 @@
             }
           else
             null;
+        # The RG353M composes its own RKMPP Sunshine because the encoder needs
+        # Rockchip MPP and the device kernel service, not just an FFmpeg bundle.
+        sunshineRkmppPackage = if system == "aarch64-linux" then rg353m.sunshineRkmpp else null;
         inputplumber = import ./services/inputd/nix {
           inherit
             pkgs
@@ -87,6 +90,7 @@
             korridPackage
             sunshinePackage
             sunshineV4l2m2mPackage
+            sunshineRkmppPackage
             ;
           inputplumberNixpkgs = inputplumber-nixpkgs;
           korriBundleModule = nixosModules.korri-bundle;
@@ -127,6 +131,8 @@
           rg353m-rk-mpp-service-module = rg353m.rkMppServiceModule;
           rg353m-rockchip-mpp = rg353m.rockchipMpp;
           rg353m-ffmpeg-rockchip = rg353m.ffmpegRockchip;
+          rg353m-sunshine-ffmpeg-rkmpp = rg353m.sunshineFfmpegRkmpp;
+          rg353m-sunshine-rkmpp = rg353m.sunshineRkmpp;
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
           odin2portal-kernel = odin2portal.kernel;

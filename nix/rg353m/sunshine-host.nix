@@ -75,14 +75,17 @@ in
     };
 
     sunshine = {
-      package = korri.packages.${system}.sunshine-korri;
+      # The RG353M runs the RKMPP profile, a sibling of the generic
+      # sunshine-korri package rather than a replacement for it.
+      package = korri.packages.${system}.sunshine-korri-rkmpp;
       capture = "kms";
-      encoder = "software";
+      # RKVENC hardware H.264 through the Rockchip MPP encoder. Software x264
+      # used 170-180% CPU and reached 72 C at 640x480@30.
+      encoder = "rkmpp";
       openFirewall = false;
     };
   };
 
-  # The complete Sunshine path sustained about 36 fps at native resolution.
   # schedutil completed the sustained CPU tests; ondemand reached 93.75 C and
   # rebooted the device.
   powerManagement.cpuFreqGovernor = "schedutil";
@@ -115,8 +118,12 @@ in
 
   assertions = [
     {
-      assertion = config.services.sunshine.package == korri.packages.${system}.sunshine-korri;
-      message = "The RG353M host must use the approved sunshine-korri package.";
+      assertion = config.services.sunshine.package == korri.packages.${system}.sunshine-korri-rkmpp;
+      message = "The RG353M host must use the approved sunshine-korri RKMPP package.";
+    }
+    {
+      assertion = config.services.sunshine.package.korriRkmppEnabled or false;
+      message = "The RG353M host must use the RKMPP-enabled sunshine-korri profile.";
     }
     {
       # Guard the fix above: a bare cardN name reintroduces the probe-order race.

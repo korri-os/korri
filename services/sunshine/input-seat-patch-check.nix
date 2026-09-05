@@ -19,13 +19,18 @@ let
   patchName = builtins.baseNameOf patchPath;
   approvedPatch = lib.findFirst (record: record.name == patchName) null approved.patches;
   patchSha256 = builtins.hashFile "sha256" patchPath;
+  expectedPatchSetSha256 =
+    if sunshinePackage.korriRkmppEnabled or false then
+      approved.rkmppPatchSetSha256
+    else
+      approved.patchSetSha256;
   checks = [
     (check "the approved input-seat patch is exact and applied" (
       approvedPatch != null
       && patchSha256 == approvedPatch.sha256
       && contains "approved-patches.nix" packageSource
       && builtins.elem patchName sunshinePackage.korriPatchNames
-      && sunshinePackage.korriPatchSetSha256 == approved.patchSetSha256
+      && sunshinePackage.korriPatchSetSha256 == expectedPatchSetSha256
       && sunshinePackage.korriApprovedBaseSunshineSourceHash == approved.approvedBaseSourceHash
       && pkgs.sunshine.src.outputHash == approved.approvedBaseSourceHash
     ))
@@ -148,7 +153,7 @@ else
       test -f "$provenance"
       grep -Fx 'approved_base_sunshine_source_hash=${approved.approvedBaseSourceHash}' "$provenance" >/dev/null
       grep -Fx 'patch=${patchName} sha256=${approvedPatch.sha256}' "$provenance" >/dev/null
-      grep -Fx 'patch_set_sha256=${approved.patchSetSha256}' "$provenance" >/dev/null
+      grep -Fx 'patch_set_sha256=${expectedPatchSetSha256}' "$provenance" >/dev/null
 
       # This checks the declared AF_UNIX SOCK_SEQPACKET transport model under
       # backpressure. The package build above proves that patch 0015 compiles;

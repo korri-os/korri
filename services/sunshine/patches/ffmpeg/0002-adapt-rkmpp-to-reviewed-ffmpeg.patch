@@ -1,0 +1,47 @@
+diff --git a/libavcodec/rkmppenc.c b/libavcodec/rkmppenc.c
+index 135bb0d..3b87595 100644
+--- a/libavcodec/rkmppenc.c
++++ b/libavcodec/rkmppenc.c
+@@ -952,7 +952,6 @@ static int rkmpp_get_packet(AVCodecContext *avctx, AVPacket *packet, int timeout
+     MppFrame mpp_frame = NULL;
+     MppBuffer mpp_buf = NULL;
+     int key_frame = 0;
+-    int avg_qp = -1;
+     int ret;
+ 
+     if ((ret = r->mapi->control(r->mctx, MPP_SET_OUTPUT_TIMEOUT, (MppParam)&timeout)) != MPP_OK) {
+@@ -1003,12 +1002,6 @@ static int rkmpp_get_packet(AVCodecContext *avctx, AVPacket *packet, int timeout
+     if (key_frame)
+         packet->flags |= AV_PKT_FLAG_KEY;
+ 
+-    mpp_meta_get_s32(mpp_meta, KEY_ENC_AVERAGE_QP, &avg_qp);
+-    if (avg_qp >= 0)
+-        ff_encode_add_stats_side_data(packet, avg_qp * FF_QP2LAMBDA, NULL, 0,
+-                                      (packet->flags & AV_PKT_FLAG_KEY) ?
+-                                      AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P);
+-
+     if ((ret = mpp_meta_get_frame(mpp_meta, KEY_INPUT_FRAME, &mpp_frame)) != MPP_OK) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to get key input frame from packet meta: %d\n", ret);
+         ret = AVERROR_EXTERNAL;
+diff --git a/libavutil/hwcontext_rkmpp.c b/libavutil/hwcontext_rkmpp.c
+index a03f802..6c75586 100644
+--- a/libavutil/hwcontext_rkmpp.c
++++ b/libavutil/hwcontext_rkmpp.c
+@@ -60,7 +60,6 @@ static const struct {
+     /* semi-planar YUV 10-bit */
+     { AV_PIX_FMT_P010,      DRM_FORMAT_P010,     },
+     { AV_PIX_FMT_P210,      DRM_FORMAT_P210,     },
+-    { AV_PIX_FMT_NV15,      DRM_FORMAT_NV15,     },
+     { AV_PIX_FMT_NV20,      DRM_FORMAT_NV20,     },
+     /* packed YUV */
+     { AV_PIX_FMT_YUYV422,   DRM_FORMAT_YUYV,     },
+@@ -174,8 +173,7 @@ static int rkmpp_get_aligned_linesize(enum AVPixelFormat pix_fmt, int width, int
+                                 pixdesc->comp[1].plane != pixdesc->comp[2].plane;
+     int linesize;
+ 
+-    if (pix_fmt == AV_PIX_FMT_NV15 ||
+-        pix_fmt == AV_PIX_FMT_NV20) {
++    if (pix_fmt == AV_PIX_FMT_NV20) {
+         const int width_align_256_odds = FFALIGN(width, 256) | 256;
+         return FFALIGN(width_align_256_odds * 10 / 8, 64);
+     }

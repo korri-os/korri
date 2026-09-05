@@ -23,6 +23,18 @@ rec {
   ffmpegRockchip = configuration.pkgs.callPackage ./ffmpeg-rockchip.nix {
     inherit rockchipMpp;
   };
+  sunshineFfmpegRkmpp =
+    configuration.pkgs.callPackage ../../services/sunshine/ffmpeg-rkmpp-static.nix
+      {
+        inherit rockchipMpp;
+      };
+  sunshineRkmpp = configuration.pkgs.callPackage ../../services/sunshine/package.nix {
+    sunshine = configuration.pkgs.sunshine;
+    cudaSupport = false;
+    rkmppSupport = true;
+    ffmpegRkmpp = sunshineFfmpegRkmpp;
+    inherit rockchipMpp;
+  };
   sdImage = configuration.config.system.build.sdImage;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   inputplumberData = pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };

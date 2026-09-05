@@ -6,6 +6,7 @@ rec {
     "x86_64-linux-cuda" = "/nix/store/5hmg1ff3wjkzcmspssckdlydk0d5bbjz-sunshine-2025.924.154138.drv";
     "aarch64-linux-software" =
       "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv";
+    "aarch64-linux-rkmpp" = "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv";
   };
   approvedBaseDerivationsByProfile = {
     "x86_64-linux-cuda" = [
@@ -16,6 +17,10 @@ rec {
     ];
     "aarch64-linux-software" = [
       # Korri nixpkgs revision a6531044f6d0bef691ea18d4d4ce44d0daa6e816.
+      "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv"
+    ];
+    "aarch64-linux-rkmpp" = [
+      # Same reviewed CUDA-free upstream recipe; RKMPP is added only downstream.
       "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv"
     ];
   };
@@ -128,4 +133,21 @@ rec {
       sha256 = "64e51b7085e2678d2abb04aafb5d9a4c8d961a2f2b6ced7c7636f85ec67a66b3";
     }
   ];
+
+  # Applied after every base patch, only for the aarch64-linux-rkmpp profile.
+  # It adds the Rockchip MPP H.264 encoder definition and paces its encode
+  # loop to the negotiated frame rate.
+  rkmppPatch = {
+    name = "0022-add-rkmpp-h264-encoder.patch";
+    path = ./patches/0022-add-rkmpp-h264-encoder.patch;
+    sha256 = "36d8f96b01b68e9b4cbad4edc7f03d46b64eb5e291d116fe57470398d846b054";
+  };
+
+  rkmppPatches = [
+    rkmppPatch
+  ];
+
+  # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
+  # complete base-plus-RKMPP patch order.
+  rkmppPatchSetSha256 = "60fb9d9e130df9acaa21912b57ce9dcc8fabfa75ad2a89bcc3cfe6584cd99cb5";
 }
