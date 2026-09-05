@@ -25,9 +25,27 @@ rec {
   reviewedLibavcodecVersion = "62.11.100";
   reviewedFfmpegCommit = "61c50407fd429a5e2ec616e2e846c3fe3743879a";
   reviewedFfmpegSourceHash = "sha256-LKQUfHb9/Z4uvPx4vrtAOPL95Un9/C26lvCbQZ51avk=";
+  reviewedBuildDepsCommit = "2851db101eeddae8f02489d48a52a4d83e6f7e7b";
+  reviewedBuildDepsSourceHash = "sha256-ojpcgvn2DItXQp1lqrL4eVdv0MXwcAo0eGfcqzZQvz4=";
+  v4l2m2mPatches = [
+    {
+      name = "0001-fix-v4l2m2m-buffer-alignment.patch";
+      path = ./patches/ffmpeg/0001-fix-v4l2m2m-buffer-alignment.patch;
+      sha256 = "11f484533ca7cc2296c67d145fc95cc77dda4e99ac601cdec8e8682db2b1856f";
+      upstreamPullRequest = "https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/24328";
+      upstreamCommit = "3fda94e1309bead4d39ea4b2cc42d13f8cdf48b4";
+      sourceArchive = "https://www.mail-archive.com/ffmpeg-devel@ffmpeg.org/msg190438.html";
+    }
+    {
+      name = "0002-add-v4l2m2m-repeat-headers.patch";
+      path = ./patches/ffmpeg/0002-add-v4l2m2m-repeat-headers.patch;
+      sha256 = "80830fb6bb168281d14ff537c9691b0bfb036db53bdb01d47f72b16b2847666c";
+    }
+  ];
+  v4l2m2mPatchSetSha256 = "e918232613be4264d0c7c55900ff030674cc66e3f8f37f4daa0c59f1051960a6";
   reviewedNvencApiMajor = 12;
   reviewedNvencApiMinor = 0;
-  patchSetSha256 = "e330647511163d07c252901908e7c29c435b36459246201162be58bb2eb007d5";
+  patchSetSha256 = "f1db3d0ec2038672d7fe1feb1df5ab94205921805ec1975a6ba87e7674e91911";
   patches = [
     {
       name = "0001-add-runtime-settings-protocol-surface.patch";
@@ -103,6 +121,11 @@ rec {
       name = "0020-add-korrid-certificate-control.patch";
       path = ./patches/0020-add-korrid-certificate-control.patch;
       sha256 = "5ab5b2b5a464c4839f18aa1fc0f304b42b5b8c941fbc4ad5605b34eeaff525e0";
+    }
+    {
+      name = "0021-add-v4l2m2m-encoder.patch";
+      path = ./patches/0021-add-v4l2m2m-encoder.patch;
+      sha256 = "64e51b7085e2678d2abb04aafb5d9a4c8d961a2f2b6ced7c7636f85ec67a66b3";
     }
   ];
 }

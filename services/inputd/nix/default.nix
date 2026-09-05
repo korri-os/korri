@@ -9,6 +9,7 @@
   korriLinuxHostModule,
   korridPackage,
   sunshinePackage,
+  sunshineV4l2m2mPackage ? null,
 }:
 
 let
@@ -67,6 +68,13 @@ in
     korri-inputd = inputdPackage;
     korri-bundle = korriBundle;
     sunshine-korri = sunshinePackage;
+  }
+  // pkgs.lib.optionalAttrs (sunshineV4l2m2mPackage != null) {
+    sunshine-korri-v4l2m2m = sunshineV4l2m2mPackage;
+    sunshine-v4l2m2m-probe = import ../../sunshine/v4l2m2m-probe.nix {
+      inherit pkgs;
+      ffmpeg = pkgs.callPackage ../../sunshine/ffmpeg-v4l2m2m-static.nix { };
+    };
   };
   checks = {
     sunshine-korri-package = pkgs.runCommand "sunshine-korri-package-check" { } ''
@@ -90,7 +98,7 @@ in
       }
       test "${sunshinePackage.pname}" = sunshine-korri
       test "${sunshinePackage.version}" = "${pkgs.sunshine.version}-korri"
-      test "${toString (builtins.length sunshinePackage.korriPatchNames)}" = 15
+      test "${toString (builtins.length sunshinePackage.korriPatchNames)}" = 16
       test "${sunshinePackage.korriBaseSunshineVersion}" = "${sunshineApprovedPatches.baseSunshineVersion}"
       test "${sunshinePackage.korriApprovedBaseSunshineSourceHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
       test "${pkgs.sunshine.src.outputHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
@@ -146,6 +154,15 @@ in
       patchPath = ../../sunshine/patches/0020-add-korrid-certificate-control.patch;
       packagePath = ../../sunshine/package.nix;
       testPath = ../../sunshine/test-certificate-control.cpp;
+    };
+    sunshine-korri-v4l2m2m = import ../../sunshine/v4l2m2m-check.nix {
+      inherit pkgs sunshinePackage sunshineV4l2m2mPackage;
+      approvedPatchesPath = ../../sunshine/approved-patches.nix;
+      patchPath = ../../sunshine/patches/0021-add-v4l2m2m-encoder.patch;
+      ffmpegPatchPath = ../../sunshine/patches/ffmpeg/0001-fix-v4l2m2m-buffer-alignment.patch;
+      ffmpegPackagePath = ../../sunshine/ffmpeg-v4l2m2m-static.nix;
+      packagePath = ../../sunshine/package.nix;
+      readmePath = ../../sunshine/README.md;
     };
     sunshine-korri-android-client-protocol = import ../../sunshine/android-client-protocol-check.nix {
       inherit pkgs;
@@ -271,6 +288,7 @@ in
       inherit
         pkgs
         sunshinePackage
+        sunshineV4l2m2mPackage
         inputdPackage
         inputplumberKorri
         korridPackage

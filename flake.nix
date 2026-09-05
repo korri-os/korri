@@ -68,6 +68,15 @@
           sunshine = pkgs.sunshine;
           cudaSupport = system == "x86_64-linux";
         };
+        sunshineV4l2m2mPackage =
+          if system == "aarch64-linux" then
+            pkgs.callPackage ./services/sunshine/package.nix {
+              sunshine = pkgs.sunshine;
+              cudaSupport = false;
+              ffmpegV4l2m2m = pkgs.callPackage ./services/sunshine/ffmpeg-v4l2m2m-static.nix { };
+            }
+          else
+            null;
         inputplumber = import ./services/inputd/nix {
           inherit
             pkgs
@@ -75,6 +84,7 @@
             crane
             korridPackage
             sunshinePackage
+            sunshineV4l2m2mPackage
             ;
           inputplumberNixpkgs = inputplumber-nixpkgs;
           korriBundleModule = nixosModules.korri-bundle;

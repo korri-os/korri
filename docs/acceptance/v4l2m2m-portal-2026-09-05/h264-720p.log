@@ -1,0 +1,61 @@
+Moonlight Embedded 2.7.0 (SDL;ALSA;PULSE)
+Connecting to 192.168.1.103...
+GPU: , GFE: 3.23.0.74 (, 7.1.431.-1)
+Server codec flags: 0x101
+Platform SDL2 (software decoding)
+View-only mode enabled, no input will be sent to the host computer
+Stream 1280 x 720, 60 fps, 10000 kbps
+RTSP port: 48010
+Initializing platform...done
+Resolving host name...done
+Initializing audio stream...done
+Starting RTSP handshake...Reference frame invalidation is not supported by this host
+Audio port: 48000
+Video port: 47998
+Control port: 47999
+done
+Initializing control stream...done
+Initializing video stream...done
+Initializing input stream...done
+Starting control stream...done
+Starting video stream...Couldn't open codec: h264_v4l2m2m
+Using FFmpeg decoder: h264
+done
+Starting audio stream...done
+Starting input stream...done
+Received first video packet after 900 ms
+Network dropped 4 frames (frames 553 to 556)
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+IDR frame request sent
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Waiting for IDR frame
+Stopping input stream...done
+Stopping audio stream...No audio traffic was ever received from the host!
+ENet wait interrupted
+Control stream connection failed: 4
+done
+Stopping video stream...done
+Stopping control stream...ENet peer acknowledged disconnection
+done
+Cleaning up input stream...done
+Cleaning up video stream...done
+Cleaning up control stream...done
+Cleaning up audio stream...done
+Cleaning up platform...done
+Sending app quit request ...

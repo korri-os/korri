@@ -1,0 +1,33 @@
+Subject: [PATCH] media: qcom: iris: subscribe to encoded picture types
+
+Korri-local patch against Linux v7.2. The decoder already subscribes to
+HFI_PROP_PICTURE_TYPE and the response handler already maps it to V4L2
+keyframe flags. Encoder sessions skip all subscriptions, leaving every
+encoded packet unmarked, including real IDRs observed on the Odin 2 Portal.
+Request the same property on the encoder bitstream port.
+
+This is not an upstream commit. Remove when upstream reports encoder
+picture types through the same V4L2 buffer flags.
+
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen2_command.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen2_command.c
+@@ -1060,8 +1060,17 @@
+ 
+ 	payload[0] = HFI_MODE_PROPERTY;
+ 
+-	if (inst->domain == ENCODER)
+-		return 0;
++	if (inst->domain == ENCODER) {
++		/* Raw input has no coded picture type. Request it on bitstream output. */
++		if (V4L2_TYPE_IS_OUTPUT(plane))
++			return 0;
++		payload[1] = HFI_PROP_PICTURE_TYPE;
++		return iris_hfi_gen2_session_subscribe_mode(inst,
++						HFI_CMD_SUBSCRIBE_MODE,
++						plane,
++						HFI_PAYLOAD_U32_ARRAY,
++						payload, 2 * sizeof(u32));
++	}
+ 
+ 	if (V4L2_TYPE_IS_OUTPUT(plane)) {
+ 		subscribe_prop_size = core->iris_firmware_data->dec_input_prop_size;

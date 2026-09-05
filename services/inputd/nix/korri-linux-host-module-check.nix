@@ -2,6 +2,7 @@
   pkgs,
   module,
   sunshinePackage,
+  sunshineV4l2m2mPackage ? null,
   inputdPackage,
   inputplumberKorri,
   korridPackage,
@@ -56,7 +57,6 @@ let
                 moonlightAddress = "zao:47989";
               }
             ];
-            sunshine.package = sunshinePackage;
             compositor.renderDevice = "/dev/dri/renderD128";
           };
         }
@@ -94,6 +94,9 @@ let
   };
   vaapi = evaluate {
     services.korriLinuxHost.sunshine.encoder = "vaapi";
+  };
+  v4l2m2m = evaluate {
+    services.korriLinuxHost.sunshine.encoder = "v4l2m2m";
   };
   physicalSoftware = evaluate {
     services.korriLinuxHost = {
@@ -249,6 +252,11 @@ assert
   else
     hasFailedAssertion "requires a CUDA-enabled sunshine package" nvenc;
 assert allAssertionsPass vaapi;
+assert
+  if sunshineV4l2m2mPackage != null then
+    allAssertionsPass v4l2m2m
+  else
+    hasFailedAssertion "requires the approved V4L2 M2M Sunshine package" v4l2m2m;
 assert allAssertionsPass physicalSoftware;
 assert hasFailedAssertion "DRM compositor requires" missingDrmDevice;
 assert hasFailedAssertion "KMS capture requires" kmsWithoutDrm;
@@ -269,6 +277,11 @@ assert !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" sunshine.environment);
 assert !(builtins.hasAttr "LD_LIBRARY_PATH" vaapi.config.systemd.services.sunshine.environment);
 assert
   !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" vaapi.config.systemd.services.sunshine.environment);
+assert v4l2m2m.config.systemd.services.sunshine.environment.SUNSHINE_STRICT_ENCODER == "1";
+assert
+  v4l2m2m.config.systemd.services.sunshine.serviceConfig.ExecStart == "${
+    if sunshineV4l2m2mPackage != null then sunshineV4l2m2mPackage else sunshinePackage
+  }/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null encoder=v4l2m2m";
 assert builtins.length nvenc.config.systemd.services.sunshine.serviceConfig.ExecCondition == 1;
 assert vaapi.config.systemd.services.sunshine.serviceConfig.ExecCondition == [ ];
 assert

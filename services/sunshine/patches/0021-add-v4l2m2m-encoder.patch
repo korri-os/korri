@@ -1,0 +1,68 @@
+From 7fce414d7cc32d8e8eea2594d1077d0d40235abc Mon Sep 17 00:00:00 2001
+From: Korri Contributors <korri@local>
+Date: Thu, 13 Aug 2026 12:00:00 +0000
+Subject: [PATCH] Add V4L2 M2M encoder backend
+
+Expose FFmpeg's h264_v4l2m2m and hevc_v4l2m2m encoders as one strict
+Sunshine encoder profile. Input frames stay in host NV12 memory and enter the
+kernel encoder through FFmpeg's V4L2 M2M wrapper.
+---
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -1301,6 +1301,36 @@
+   };
+ 
+ #ifdef __linux__
++  static encoder_t::codec_t v4l2m2m_codec(std::string_view name) {
++    return {
++      {{"repeat_headers"s, 1}},
++      {},  // SDR-specific options
++      {},  // HDR-specific options
++      {},  // YUV444 SDR-specific options
++      {},  // YUV444 HDR-specific options
++      {},  // Fallback options
++      std::string {name},
++    };
++  }
++
++  encoder_t v4l2m2m {
++    "v4l2m2m"sv,
++    std::make_unique<encoder_platform_formats_avcodec>(
++      AV_HWDEVICE_TYPE_NONE,
++      AV_HWDEVICE_TYPE_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NV12,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      AV_PIX_FMT_NONE,
++      nullptr
++    ),
++    {},
++    v4l2m2m_codec("hevc_v4l2m2m"sv),
++    v4l2m2m_codec("h264_v4l2m2m"sv),
++    LIMITED_GOP_SIZE | PARALLEL_ENCODING | NO_RC_BUF_LIMIT
++  };
++
+   encoder_t vaapi {
+     "vaapi"sv,
+     std::make_unique<encoder_platform_formats_avcodec>(
+@@ -1437,6 +1467,7 @@
+ #endif
+ #ifdef __linux__
+     &vaapi,
++    &v4l2m2m,
+ #endif
+ #ifdef __APPLE__
+     &videotoolbox,
+--- a/src/video.h
++++ b/src/video.h
+@@ -278,6 +278,7 @@
+ 
+ #ifdef __linux__
+   extern encoder_t vaapi;
++  extern encoder_t v4l2m2m;
+ #endif
+ 
+ #ifdef __APPLE__
+-- 
+2.52.0

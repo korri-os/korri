@@ -9,9 +9,24 @@ let
   cfg = config.services.korriLinuxHost;
   system = pkgs.stdenv.hostPlatform.system;
   sunshineApproved = import ../../sunshine/approved-patches.nix;
+  sunshinePackages = korri.packages.${system};
+  approvedSunshinePackages = [
+    sunshinePackages.sunshine-korri
+  ]
+  ++ lib.optional (builtins.hasAttr "sunshine-korri-v4l2m2m" sunshinePackages) sunshinePackages.sunshine-korri-v4l2m2m;
+  sunshinePackageIsApproved = builtins.any (
+    package:
+    (cfg.sunshine.package.drvPath or null) == package.drvPath
+    && (cfg.sunshine.package.outPath or null) == package.outPath
+  ) approvedSunshinePackages;
+  sunshineBaseBuildProfile = cfg.sunshine.package.korriBaseBuildProfile or "";
+  sunshineExpectedBuildProfile =
+    if cfg.sunshine.package.korriV4l2m2mEnabled or false then
+      "${system}-v4l2m2m"
+    else
+      sunshineBaseBuildProfile;
   sunshineApprovedBaseDerivations =
-    sunshineApproved.approvedBaseDerivationsByProfile.${cfg.sunshine.package.korriBuildProfile or ""}
-      or [ ];
+    sunshineApproved.approvedBaseDerivationsByProfile.${sunshineBaseBuildProfile} or [ ];
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
   runtimeDir = "/run/user/${toString cfg.runtimeUid}";
   compositorControlDirectory = "/run/korri-compositor";
@@ -448,8 +463,14 @@ in
     sunshine = {
       package = lib.mkOption {
         type = lib.types.package;
-        default = korri.packages.${system}.sunshine-korri;
-        defaultText = lib.literalExpression "korri.packages.${system}.sunshine-korri";
+        default =
+          if
+            cfg.sunshine.encoder == "v4l2m2m" && builtins.hasAttr "sunshine-korri-v4l2m2m" sunshinePackages
+          then
+            sunshinePackages.sunshine-korri-v4l2m2m
+          else
+            sunshinePackages.sunshine-korri;
+        defaultText = lib.literalExpression "the approved sunshine-korri profile for the selected encoder";
         description = "Korri-owned patched Sunshine package.";
       };
       configDirectory = lib.mkOption {
@@ -476,6 +497,7 @@ in
           "auto"
           "vaapi"
           "nvenc"
+          "v4l2m2m"
           "software"
         ];
         default = "auto";
@@ -541,8 +563,7 @@ in
       {
         assertion =
           lib.getName cfg.sunshine.package == "sunshine-korri"
-          && (cfg.sunshine.package.drvPath or null) == korri.packages.${system}.sunshine-korri.drvPath
-          && (cfg.sunshine.package.outPath or null) == korri.packages.${system}.sunshine-korri.outPath
+          && sunshinePackageIsApproved
           && (cfg.sunshine.package.korriPatchSetSha256 or null) == sunshineApproved.patchSetSha256
           && (cfg.sunshine.package.korriBaseSunshineVersion or null) == sunshineApproved.baseSunshineVersion
           &&
@@ -562,8 +583,9 @@ in
           && builtins.elem (cfg.sunshine.package.korriBaseSunshineDerivation or ""
           ) sunshineApprovedBaseDerivations
           &&
-            (cfg.sunshine.package.korriBuildProfile or null)
+            sunshineBaseBuildProfile
             == "${system}-${if cfg.sunshine.package.korriCudaEnabled or false then "cuda" else "software"}"
+          && (cfg.sunshine.package.korriBuildProfile or null) == sunshineExpectedBuildProfile
           &&
             (cfg.sunshine.package.korriApprovedBaseSunshineDerivation or null)
             == (cfg.sunshine.package.korriBaseSunshineDerivation or null)
@@ -578,12 +600,18 @@ in
           )
           && builtins.elem "0020-add-korrid-certificate-control.patch" (
             cfg.sunshine.package.korriPatchNames or [ ]
-          );
+          )
+          && builtins.elem "0021-add-v4l2m2m-encoder.patch" (cfg.sunshine.package.korriPatchNames or [ ]);
         message = "services.korriLinuxHost must use the exact approved sunshine-korri package and provenance contract.";
       }
       {
         assertion = cfg.sunshine.encoder != "nvenc" || (cfg.sunshine.package.korriCudaEnabled or false);
         message = "services.korriLinuxHost sunshine encoder nvenc requires a CUDA-enabled sunshine package.";
+      }
+      {
+        assertion =
+          cfg.sunshine.encoder != "v4l2m2m" || (cfg.sunshine.package.korriV4l2m2mEnabled or false);
+        message = "services.korriLinuxHost sunshine encoder v4l2m2m requires the approved V4L2 M2M Sunshine package.";
       }
       {
         assertion = lib.all validAbsolutePath [
@@ -975,8 +1003,16 @@ in
       }
       // lib.optionalAttrs (cfg.sunshine.encoder == "nvenc") {
         LD_LIBRARY_PATH = "/run/opengl-driver/lib";
-        SUNSHINE_STRICT_ENCODER = "1";
-      };
+      }
+      //
+        lib.optionalAttrs
+          (builtins.elem cfg.sunshine.encoder [
+            "nvenc"
+            "v4l2m2m"
+          ])
+          {
+            SUNSHINE_STRICT_ENCODER = "1";
+          };
       serviceConfig = {
         Type = "simple";
         User = cfg.runtimeUser;

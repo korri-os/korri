@@ -11,6 +11,24 @@ The package is intentionally an umbrella, not a single-feature fork. Patches may
 
 ## Current patches
 
+### V4L2 M2M encoder profile
+
+Patch `0021-add-v4l2m2m-encoder.patch` exposes Sunshine encoder name `v4l2m2m`. It maps H.264 to FFmpeg `h264_v4l2m2m` and HEVC to `hevc_v4l2m2m`. The backend accepts host-memory NV12 frames and relies on the Linux V4L2 M2M codec API. The Linux-host module selects it with `services.korriLinuxHost.sunshine.encoder = "v4l2m2m"`, selects the approved aarch64 package profile, and sets `SUNSHINE_STRICT_ENCODER=1` so an unavailable device or codec rejects the stream instead of falling back to software.
+
+The `sunshine-korri-v4l2m2m` package uses the same reviewed Sunshine source and Korri patch set as `sunshine-korri`. It replaces only Sunshine's prepared FFmpeg libraries. Those libraries come from historical `build-deps` commit `2851db101eeddae8f02489d48a52a4d83e6f7e7b`, which introduced the reviewed FFmpeg commit `61c50407fd429a5e2ec616e2e846c3fe3743879a`. Korri applies the buffer-layout fix from FFmpeg PR `#24328`. The fix copies visible rows into the driver-aligned storage width and height. This prevents the `ff_v4l2_buffer_avframe_to_buf()` crash seen with the `qcom-iris` encoder at standard `1280x720` and `1920x1080` frame sizes.
+
+The Odin 2 Portal kernel carries upstream Linux commit `6f62dcefd2494aa9ac01538372353bf07755491e`, `media: qcom: iris: Add request key frame support for encoder`. It maps `V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME` to the Iris encoder's request-sync-frame property. Sunshine needs this control for Moonlight recovery requests and stream refreshes after loss.
+
+Rockchip RKMPP is a separate encoder profile. The RG353M implementation uses `h264_rkmpp` and `/dev/mpp_service`; it does not use V4L2 M2M. The standard `sunshine-korri` aarch64 software profile remains unchanged so this Portal profile does not replace or pre-empt the RG353M path.
+
+A second, Korri-local FFmpeg patch adds `repeat_headers=1`. Sunshine sets this option to join the sequence header to the first frame and repeat parameter sets at every IDR. Encoder creation fails if the requested header controls do not read back correctly. The default FFmpeg behavior is unchanged when the option is absent. Remove this patch when the reviewed FFmpeg version supplies equivalent in-band header controls.
+
+A second, Korri-local Iris patch subscribes to `HFI_PROP_PICTURE_TYPE` on encoder bitstream output. Linux 7.2 otherwise skips encoder property subscriptions, so even actual IDRs have no V4L2 keyframe flag. The existing response handler maps this property to the flags FFmpeg and Sunshine use. Remove the patch when upstream reports encoder picture types correctly.
+
+The cost is one separately built static FFmpeg/CBS package, two FFmpeg patches, and two Portal kernel patches. Frames use host memory rather than a zero-copy capture path. HDR, 4:4:4, AV1, and live bitrate changes are not supported by this profile. No software fallback is added. Remove each upstream backport when the reviewed dependency includes its fix; review the two local changes separately.
+
+Physical probe and Moonlight results, including unresolved Wi-Fi packet loss, are recorded in [the Portal acceptance report](../../docs/acceptance/sunshine-korri-v4l2m2m-portal-2026-09-05.md). These results do not establish a production-ready host session or a sustained moving-content frame rate.
+
 ### Runtime settings patch series
 
 Experimental live runtime-settings MVP split by review concern:
@@ -144,12 +162,15 @@ The installed package contains `share/korri/sunshine-korri/provenance`. This mod
 - the exact observed base Sunshine derivation path,
 - the reviewed libavcodec version,
 - the exact reviewed FFmpeg commit and source hash,
+- whether the V4L2 M2M FFmpeg profile is enabled,
+- the reviewed `build-deps` commit and source hash,
+- the V4L2 M2M FFmpeg patch name, hash, and patch-set hash,
 - the reviewed NVENC API major and minor version,
 - the Sunshine executable path,
 - each ordered Korri patch name and SHA-256 value,
 - one SHA-256 value for the complete ordered patch set.
 
-Nix also exposes the provenance path, build profile, CUDA state, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digest through package passthru values. `approved-patches.nix` is the independent approval record. The approved profiles currently cover x86_64 Linux with CUDA and aarch64 Linux with software encoding. Package evaluation fails when the profile, base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
+Nix also exposes the provenance path, build profile, CUDA state, V4L2 M2M state, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digests through package passthru values. `approved-patches.nix` is the independent approval record. The approved profiles currently cover x86_64 Linux with CUDA, aarch64 Linux with software encoding, and a separate aarch64 Linux V4L2 M2M profile. Package evaluation fails when the profile, base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
 
 ## Removal/upstream policy
 

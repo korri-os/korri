@@ -23,10 +23,9 @@ let
     patches = map (record: record.path) approved.patches;
   };
   checks = [
-    (check "the certificate-control patch is exact and applied last" (
+    (check "the certificate-control patch is exact and approved" (
       approvedPatch != null
       && patchSha256 == approvedPatch.sha256
-      && (lib.last approved.patches).name == patchName
       && contains "approved-patches.nix" packageSource
       && builtins.elem patchName sunshinePackage.korriPatchNames
       && sunshinePackage.korriPatchSetSha256 == approved.patchSetSha256
@@ -95,47 +94,54 @@ if failures != [ ] then
 else
   pkgs.runCommand "sunshine-korri-certificate-control-check"
     {
-      nativeBuildInputs = [ pkgs.stdenv.cc pkgs.openssl pkgs.python3 ];
-      buildInputs = [ pkgs.openssl pkgs.nlohmann_json ];
+      nativeBuildInputs = [
+        pkgs.stdenv.cc
+        pkgs.openssl
+        pkgs.python3
+      ];
+      buildInputs = [
+        pkgs.openssl
+        pkgs.nlohmann_json
+      ];
     }
     ''
-      test -x ${sunshinePackage}/bin/sunshine
-      grep -F 'bool erase_all_clients();' ${patchedSource}/src/nvhttp.h >/dev/null
-      grep -F 'bool erase_all_clients() {' ${patchedSource}/src/nvhttp.cpp >/dev/null
-      grep -F 'if (!nvhttp::erase_all_clients()) {' ${patchedSource}/src/confighttp.cpp >/dev/null
-      python3 - ${patchedSource}/src/confighttp.cpp <<'PY'
-import pathlib
-import sys
+            test -x ${sunshinePackage}/bin/sunshine
+            grep -F 'bool erase_all_clients();' ${patchedSource}/src/nvhttp.h >/dev/null
+            grep -F 'bool erase_all_clients() {' ${patchedSource}/src/nvhttp.cpp >/dev/null
+            grep -F 'if (!nvhttp::erase_all_clients()) {' ${patchedSource}/src/confighttp.cpp >/dev/null
+            python3 - ${patchedSource}/src/confighttp.cpp <<'PY'
+      import pathlib
+      import sys
 
-source = pathlib.Path(sys.argv[1]).read_text()
-start = source.index("void unpairAll(")
-end = source.index("/**", start + 1)
-body = source[start:end]
-failure = body.index('if (!nvhttp::erase_all_clients()) {')
-failure_status = body.index('output_tree["status"] = false;', failure)
-failure_return = body.index('return;', failure_status)
-success_status = body.index('output_tree["status"] = true;', failure_return)
-terminate = body.index('proc::proc.terminate();', success_status)
-assert failure < failure_status < failure_return < success_status < terminate
-PY
-      work="$TMPDIR/certs"
-      mkdir -p "$work"
-      ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
-        -subj /CN=client-one -keyout "$work/client-one.key" -out "$work/client-one.crt" \
-        -days 1 >/dev/null 2>&1
-      ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
-        -subj /CN=client-two -keyout "$work/client-two.key" -out "$work/client-two.crt" \
-        -days 1 >/dev/null 2>&1
-      ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
-        -subj /CN=server -keyout "$work/server.key" -out "$work/server.crt" \
-        -days 1 >/dev/null 2>&1
-      c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic -pthread \
-        -I${patchedSource}/src \
-        ${testPath} ${patchedSource}/src/korri_certificate_control.cpp \
-        ${patchedSource}/src/crypto.cpp \
-        -lcrypto -o "$work/test-certificate-control"
-      "$work/test-certificate-control" \
-        "$work/client-one.crt" "$work/client-two.crt" "$work/server.crt"
-      mkdir -p "$out"
-      printf '%s\n' '${approvedPatch.sha256}' > "$out/certificate-control-patch-sha256"
+      source = pathlib.Path(sys.argv[1]).read_text()
+      start = source.index("void unpairAll(")
+      end = source.index("/**", start + 1)
+      body = source[start:end]
+      failure = body.index('if (!nvhttp::erase_all_clients()) {')
+      failure_status = body.index('output_tree["status"] = false;', failure)
+      failure_return = body.index('return;', failure_status)
+      success_status = body.index('output_tree["status"] = true;', failure_return)
+      terminate = body.index('proc::proc.terminate();', success_status)
+      assert failure < failure_status < failure_return < success_status < terminate
+      PY
+            work="$TMPDIR/certs"
+            mkdir -p "$work"
+            ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
+              -subj /CN=client-one -keyout "$work/client-one.key" -out "$work/client-one.crt" \
+              -days 1 >/dev/null 2>&1
+            ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
+              -subj /CN=client-two -keyout "$work/client-two.key" -out "$work/client-two.crt" \
+              -days 1 >/dev/null 2>&1
+            ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:2048 -nodes \
+              -subj /CN=server -keyout "$work/server.key" -out "$work/server.crt" \
+              -days 1 >/dev/null 2>&1
+            c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic -pthread \
+              -I${patchedSource}/src \
+              ${testPath} ${patchedSource}/src/korri_certificate_control.cpp \
+              ${patchedSource}/src/crypto.cpp \
+              -lcrypto -o "$work/test-certificate-control"
+            "$work/test-certificate-control" \
+              "$work/client-one.crt" "$work/client-two.crt" "$work/server.crt"
+            mkdir -p "$out"
+            printf '%s\n' '${approvedPatch.sha256}' > "$out/certificate-control-patch-sha256"
     ''

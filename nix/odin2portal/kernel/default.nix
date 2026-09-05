@@ -46,8 +46,15 @@ let
   version = "7.2";
   patchDir = ./patches;
   brokenDpuPatchName = "0000-version-0010-msm-resource-cleanup.patch";
+  forceKeyFramePatchName = "9999-media-qcom-iris-add-request-key-frame-support.patch";
+  forceKeyFramePatchSha256 = "c9fdefc00ef27279be44d75cf050ade770e6fdab9f60b2a6c0f9016915102e3b";
+  pictureTypePatchName = "9999-media-qcom-iris-subscribe-encoder-picture-type.patch";
+  pictureTypePatchSha256 = "de6538370f5f492728f74c56a130620f2f973a807b66c459aef80373106dd82b";
   patchNames =
     assert !builtins.pathExists (patchDir + "/${brokenDpuPatchName}");
+    assert
+      builtins.hashFile "sha256" (patchDir + "/${forceKeyFramePatchName}") == forceKeyFramePatchSha256;
+    assert builtins.hashFile "sha256" (patchDir + "/${pictureTypePatchName}") == pictureTypePatchSha256;
     lib.sort lib.lessThan (
       builtins.filter (name: lib.hasSuffix ".patch" name) (builtins.attrNames (builtins.readDir patchDir))
     );
@@ -88,6 +95,13 @@ kernel.overrideAttrs (previous: {
   '';
 
   passthru = (previous.passthru or { }) // {
-    inherit dtbName;
+    inherit
+      dtbName
+      forceKeyFramePatchName
+      forceKeyFramePatchSha256
+      pictureTypePatchName
+      pictureTypePatchSha256
+      ;
+    forceKeyFrameUpstreamCommit = "6f62dcefd2494aa9ac01538372353bf07755491e";
   };
 })
