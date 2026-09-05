@@ -32,6 +32,15 @@
 #
 # Regenerate the pin list after a ROCKNIX bump with
 # nix/odin2portal/firmware/update-hashes.sh.
+#
+# A fourth class is the Adreno 740 GPU firmware. The 7.0 msm driver names
+# three files for chip 0x43050a01 (a6xx_catalog.c): a740_sqe.fw,
+# gmu_gen70200.bin, and a740_zap.mdt, which the driver resolves to
+# sm8550/a740_zap.mbn. All three are in linux-firmware, but the release the
+# pinned nixpkgs ships (20251125) predates them, so the GPU probed with no
+# microcode and 3D never came up. They are fetched from the linux-firmware
+# tree at tag 20260309 -- the first release carrying them -- until the
+# nixpkgs pin catches up, at which point this block deletes itself.
 {
   lib,
   fetchurl,
@@ -109,16 +118,45 @@ let
     }
   ];
 
-  fetched = map (
-    file:
-    file
-    // {
-      src = fetchurl {
-        url = "${base}/${file.path}";
-        inherit (file) hash;
-      };
+  linuxFirmwareTag = "20260309";
+  linuxFirmwareBase = "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain";
+  adrenoFiles = [
+    {
+      path = "qcom/a740_sqe.fw";
+      hash = "sha256-lv7jNkJLE5EA/GC1tFqQc2Dks5Ntfh0AQGub2AykhHM=";
     }
-  ) files;
+    {
+      path = "qcom/gmu_gen70200.bin";
+      hash = "sha256-GipBnDkEbTFB/F/tWqf5cd4ttAzHodiWk8Pib61k3Zg=";
+    }
+    {
+      path = "qcom/sm8550/a740_zap.mbn";
+      hash = "sha256-OGu9wlrpSpOY4z51gO7P3O9sRyaCoeMSPhN0vP/nzeM=";
+    }
+  ];
+
+  fetched =
+    map (
+      file:
+      file
+      // {
+        src = fetchurl {
+          url = "${base}/${file.path}";
+          inherit (file) hash;
+        };
+      }
+    ) files
+    ++ map (
+      file:
+      file
+      // {
+        src = fetchurl {
+          url = "${linuxFirmwareBase}/${file.path}?h=${linuxFirmwareTag}";
+          name = baseNameOf file.path;
+          inherit (file) hash;
+        };
+      }
+    ) adrenoFiles;
 
   install = lib.concatMapStringsSep "\n" (file: ''
     install -Dm444 ${file.src} "$out/lib/firmware/${file.path}"
@@ -126,10 +164,10 @@ let
 in
 runCommand "odin2portal-firmware"
   {
-    passthru.firmwarePaths = map (file: file.path) files;
+    passthru.firmwarePaths = map (file: file.path) (files ++ adrenoFiles);
 
     meta = {
-      description = "AYN Odin 2 Portal ADSP, CDSP, WiFi board, audio topology, and Venus firmware";
+      description = "AYN Odin 2 Portal ADSP, CDSP, Adreno 740, WiFi board, audio topology, and Venus firmware";
       # Proprietary vendor firmware redistributed by ROCKNIX. Fetched by
       # hash, never vendored into this repository.
       license = lib.licenses.unfreeRedistributableFirmware;

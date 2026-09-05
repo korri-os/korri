@@ -1,14 +1,16 @@
-# Correct first-boot root expansion for mmcblk-rooted SD images.
+# First-boot root expansion for a GPT image on an mmcblk-rooted card.
 #
-# The upstream sd-image expansion reads the partition number from
-# `lsblk -npo MAJ:MIN`, taking the minor number. That holds for /dev/sda2
-# (8:2) but not for /dev/mmcblk1p2, whose minor is 98. sfdisk then fails on a
-# partition that does not exist, and because the first-boot script runs under
-# `set -e`, everything after it is skipped, including the
-# `nix-store --load-db` that registers the shipped store. The result is a root
-# filesystem stuck at image size and an unusable Nix database.
+# Two things the upstream sd-image expansion gets wrong here. It reads the
+# partition number from `lsblk -npo MAJ:MIN`, which holds for /dev/sda2
+# (8:2) but not for /dev/mmcblk0p2, whose minor is 98; sysfs states the
+# number directly. And it assumes MBR: on a GPT disk the backup header sits
+# where the image ended, not where the card ends, so growing the partition
+# past it corrupts the table. sgdisk -e relocates the backup header to the
+# true end of the disk first.
 #
-# Read the partition number from sysfs instead, where it is stated directly.
+# The script runs under `set -e` in boot.postBootCommands, so every step
+# that may legitimately fail on a rerun is allowed to, and the Nix database
+# registration at the end must still be reached.
 { config, pkgs, ... }:
 
 {
@@ -23,6 +25,7 @@
       bootDevice="$(${pkgs.util-linux}/bin/lsblk -npo PKNAME "$rootPart")"
       partNum="$(cat "/sys/class/block/$(${pkgs.coreutils}/bin/basename "$rootPart")/partition")"
 
+      ${pkgs.gptfdisk}/bin/sgdisk -e "$bootDevice" || true
       echo ",+," | ${pkgs.util-linux}/bin/sfdisk -N"$partNum" --no-reread --force "$bootDevice" || true
       ${pkgs.util-linux}/bin/partx -u "$bootDevice" || true
       ${pkgs.e2fsprogs}/bin/resize2fs "$rootPart" || true
