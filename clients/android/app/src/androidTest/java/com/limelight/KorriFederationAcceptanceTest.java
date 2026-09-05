@@ -42,24 +42,36 @@ public class KorriFederationAcceptanceTest {
     private static final String LABEL = "federation-acceptance";
     private int port;
     private String capability;
+    private int controlPort;
+    private String controlToken;
 
     @Test
-    public void ownedAndroidControlsExactPeerSessionAndRecordsOnePlay() throws Exception {
+    public void relayDiscoveryRememberedPeersAndExactSession() throws Exception {
         String peerKey = argument("federationDeviceKey");
         int peerPort = Integer.parseInt(argument("federationPort"));
+        controlPort = Integer.parseInt(argument("federationControlPort"));
+        controlToken = argument("federationControlToken");
+        int relayPort = Integer.parseInt(argument("federationRelayPort"));
+        int unavailablePort = Integer.parseInt(argument("federationUnavailablePort"));
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File peers = new File("/storage/emulated/0/korri/upstreams.json");
         assertTrue(peers.getParentFile().isDirectory() || peers.getParentFile().mkdirs());
         assertFalse("Fresh AVD must not contain peer configuration", peers.exists());
-        // UpstreamHostConfig in services/korrid/src/upstreams.rs is the producer treaty.
-        JSONObject peer = new JSONObject().put("label", LABEL).put("kind", "native")
-                .put("baseUrl", "http://127.0.0.1:" + peerPort).put("devicePublicKey", peerKey)
-                .put("moonlightAddress", "127.0.0.1:9");
-        Files.write(peers.toPath(), new JSONArray().put(peer).toString().getBytes(StandardCharsets.UTF_8));
+        File config = new File(peers.getParentFile(), "device.yaml");
+        assertFalse("Fresh AVD must not contain settings", config.exists());
+        // Existing HostPayload.relays in config/settings.rs. No static peer file.
+        JSONArray relays = new JSONArray().put("ws://127.0.0.1:" + unavailablePort)
+                .put("ws://127.0.0.1:" + relayPort);
+        Files.write(config.toPath(), ("host:\n  relays: " + relays + "\n").getBytes(StandardCharsets.UTF_8));
+        String androidKey;
         try {
             try (ActivityScenario<KorriShellActivity> scenario = ActivityScenario.launch(KorriShellActivity.class)) {
                 WebView web = readyWebView(scenario);
                 assertEquals("Unowned", bridge(web, "ownerBindingSnapshot").getJSONObject("identity").getString("_tag"));
+                readAuthority(web);
+                int originalPort = port;
+                String originalCapability = capability;
+                assertEquals(0, ok("app.peer.list", new JSONObject()).getJSONArray("peers").length());
                 // Invoke asynchronously: the signer temporarily pauses the WebView.
                 InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
                         web.evaluateJavascript("window.KorriNative.startOwnerBinding()", null));
@@ -75,18 +87,23 @@ public class KorriFederationAcceptanceTest {
                 assertEquals("Approved", binding.getJSONObject("personSigner").getString("_tag"));
                 assertEquals("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
                         binding.getJSONObject("identity").getString("ownerPublicKey"));
-                assertNotEquals(peerKey, binding.getJSONObject("identity").getString("devicePublicKey"));
+                androidKey = binding.getJSONObject("identity").getString("devicePublicKey");
+                assertNotEquals(peerKey, androidKey);
                 readAuthority(web);
-            }
-            // Bundle A peer credentials are startup snapshots. Restart the actual service,
-            // not an alternate test server, then read the new bridge authority.
-            String oldCapability = capability;
-            stopBrain(context);
-            try (ActivityScenario<KorriShellActivity> scenario = ActivityScenario.launch(KorriShellActivity.class)) {
-                readAuthority(readyWebView(scenario));
-                assertNotEquals("Restart must rotate local authority", oldCapability, capability);
+                assertEquals("Binding must retain the running listener", originalPort, port);
+                assertEquals("Binding must retain the running capability", originalCapability, capability);
+                ok("app.peer.list", new JSONObject()); // Original authority works immediately.
+                JSONObject discovered = awaitPeer(peerKey);
+                String initialState = discovered.getString("state");
+                assertTrue(discovered.toString(), initialState.equals("loading") || initialState.equals("ready") || initialState.equals("failed"));
+                // The actual portal is also a catalog consumer. It can race this
+                // observation; only a native operation (not discovery) changes loading.
+                android.util.Log.i("FederationAcceptance", "first roster state=" + initialState);
+                awaitRelayEvidence(peerKey, androidKey);
+                assertFalse("Discovery must not create a static file", peers.exists());
                 assertPlaintextRejected(peerPort);
-                JSONObject game = onlyGame();
+                JSONObject game = awaitGame();
+                assertPeer(peerKey, "ready", 0);
                 JSONObject source = game.getJSONObject("source");
                 assertEquals(peerKey, source.getString("devicePublicKey"));
                 assertEquals(LABEL, source.getString("label"));
@@ -121,11 +138,138 @@ public class KorriFederationAcceptanceTest {
                     assertTrue(stats.toString(), stats.getDouble("totalPlaytimeSeconds") > 0);
                     assertFalse(stats.getString("lastPlayed").isEmpty());
                 }
+                assertFalse(peers.exists());
+                assertTrue(fixture("/relay/stop").getBoolean("relayStopped"));
+            }
+            String oldCapability = capability;
+            stopBrain(context);
+            try (ActivityScenario<KorriShellActivity> scenario = ActivityScenario.launch(KorriShellActivity.class)) {
+                WebView web = readyWebView(scenario);
+                readAuthority(web);
+                assertNotEquals("Intentional restart rotates local authority", oldCapability, capability);
+                JSONObject identity = bridge(web, "ownerBindingSnapshot").getJSONObject("identity");
+                assertEquals("Owned", identity.getString("_tag"));
+                assertEquals("Same private root must retain the device", androidKey, identity.getString("devicePublicKey"));
+                assertFalse(peers.exists());
+                assertTrue(fixture("/evidence").getBoolean("relayStopped"));
+                awaitPeer(peerKey);
+                JSONObject rememberedGame = awaitGame();
+                assertEquals(1, rememberedGame.getJSONObject("playStats").getInt("playCount"));
+                long readyTime = assertPeer(peerKey, "ready", 0);
+                android.util.Log.i("FederationAcceptance", "remembered catalog ready after Android restart with relay stopped");
+                fixture("/host/stop");
+                // With the only host offline, the catalog contract returns Err;
+                // partial-failure snapshots require at least one successful host.
+                JSONObject offline = call("app.catalog.snapshot", new JSONObject());
+                assertEquals(offline.toString(), "Err", offline.getString("_tag"));
+                assertEquals("UpstreamUnreachable", offline.getJSONObject("payload").getString("code"));
+                assertFalse(offline.getJSONObject("payload").has("games"));
+                long failedTime = assertPeer(peerKey, "failed", readyTime);
+                android.util.Log.i("FederationAcceptance", "host offline: generic failed state");
+                JSONObject restarted = fixture("/host/start");
+                assertEquals(peerPort, restarted.getInt("hostPort"));
+                assertEquals(peerKey, restarted.getString("hostKey"));
+                assertEquals(1, awaitGame().getJSONObject("playStats").getInt("playCount"));
+                assertPeer(peerKey, "ready", failedTime);
+                assertFalse(peers.exists());
+                android.util.Log.i("FederationAcceptance", "same host identity/port/state recovered ready; one completed play");
             }
         } finally {
             stopBrain(context);
-            Files.deleteIfExists(peers.toPath());
+            Files.deleteIfExists(config.toPath());
         }
+    }
+
+    private JSONObject awaitPeer(String key) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 150_000;
+        do {
+            JSONArray entries = ok("app.peer.list", new JSONObject()).getJSONArray("peers");
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject entry = entries.getJSONObject(i);
+                if (key.equals(entry.getString("devicePublicKey"))) return entry;
+            }
+            SystemClock.sleep(250);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        throw new AssertionError("Host key did not enter the actual owner roster");
+    }
+
+    private long assertPeer(String key, String state, long previousTime) throws Exception {
+        JSONObject entry = awaitPeer(key);
+        assertEquals(entry.toString(), LABEL, entry.getString("label"));
+        assertEquals(entry.toString(), state, entry.getString("state"));
+        long updated = entry.getLong("updatedAt");
+        assertTrue(entry.toString(), updated >= previousTime && updated > 1_700_000_000L && updated < 10_000_000_000L);
+        if ("failed".equals(state)) assertEquals("Authenticated peer operation failed", entry.getString("lastError"));
+        else assertFalse(entry.toString(), entry.has("lastError"));
+        return updated;
+    }
+
+    private void awaitRelayEvidence(String hostKey, String androidKey) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 150_000;
+        do {
+            JSONArray events = fixture("/evidence").getJSONArray("events");
+            boolean hostOwner = false, androidOwner = false, endpoint = false;
+            for (int i = 0; i < events.length(); i++) {
+                JSONObject event = events.getJSONObject(i);
+                assertEquals(30078, event.getInt("kind"));
+                String address = eventTag(event, "d");
+                if (address.startsWith("org.korri.device-owner:")) {
+                    assertEquals("f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9", event.getString("pubkey"));
+                    assertEquals("", event.getString("content"));
+                    hostOwner |= address.equals("org.korri.device-owner:" + hostKey);
+                    androidOwner |= address.equals("org.korri.device-owner:" + androidKey);
+                } else {
+                    assertTrue(address, address.startsWith("org.korri.endpoint:"));
+                    assertFalse(event.getString("content").startsWith("{"));
+                    endpoint |= hostKey.equals(event.getString("pubkey")) && androidKey.equals(eventTag(event, "p"));
+                }
+            }
+            if (hostOwner && androidOwner && endpoint) {
+                android.util.Log.i("FederationAcceptance", "two owner statements and recipient-encrypted endpoint; one unavailable relay plus one working");
+                return;
+            }
+            SystemClock.sleep(250);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        throw new AssertionError("Relay did not contain both owners and the host endpoint for Android");
+    }
+
+    private static String eventTag(JSONObject event, String name) throws Exception {
+        JSONArray tags = event.getJSONArray("tags");
+        for (int i = 0; i < tags.length(); i++) {
+            JSONArray tag = tags.getJSONArray(i);
+            if (name.equals(tag.getString(0))) return tag.getString(1);
+        }
+        return "";
+    }
+
+    private JSONObject fixture(String route) throws Exception {
+        HttpURLConnection connection = connection(controlPort, route);
+        try {
+            connection.setRequestProperty("Authorization", "Bearer " + controlToken);
+            connection.getOutputStream().write("{}".getBytes(StandardCharsets.UTF_8));
+            assertEquals(route, 200, connection.getResponseCode());
+            return new JSONObject(readBounded(connection.getInputStream()));
+        } finally { connection.disconnect(); }
+    }
+
+    private JSONObject awaitGame() throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 150_000;
+        JSONObject outcome;
+        do {
+            outcome = call("app.catalog.snapshot", new JSONObject());
+            if ("Err".equals(outcome.getString("_tag"))) {
+                // Relay publication precedes Android's next discovery read. No
+                // eligible endpoint is a bounded waiting state, not a ready catalog.
+                assertEquals(outcome.toString(), "UpstreamUnreachable",
+                        outcome.getJSONObject("payload").getString("code"));
+            } else {
+                assertEquals(outcome.toString(), "Ok", outcome.getString("_tag"));
+                JSONObject catalog = outcome.getJSONObject("payload");
+                if (catalog.getJSONArray("games").length() == 1 && (!catalog.has("failures") || catalog.getJSONArray("failures").length() == 0)) return catalog.getJSONArray("games").getJSONObject(0);
+            }
+            SystemClock.sleep(250);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        throw new AssertionError("Catalog did not become ready: " + outcome);
     }
 
     private JSONObject onlyGame() throws Exception {

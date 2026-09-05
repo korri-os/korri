@@ -175,6 +175,16 @@ Hosts with no advertised candidates must not reserve or publish an empty record.
 
 ### Private I/O and limits
 
+Android resolves only the system-owned user-directory prefix before passing the
+private root to Rust. An API 34 app process sees `/data/user/0` as a symlink to
+`/data/data`, even when run-as sees a directory.
+[Android 14 `ContextImpl.getNoBackupFilesDir()`](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/core/java/android/app/ContextImpl.java#849)
+places the no-backup directory directly inside the app data directory. The shell resolves
+that app directory's parent, then appends the unchanged app directory, no-backup
+leaf and `korrid-state`. It does not canonicalize app-owned paths: Rust must still
+reject symlinked app, no-backup, private-root and federation directories. This is
+platform path resolution, not a second storage location or a permission repair.
+
 The private root and federation directory must be `0700`; the document must be
 `0600`. Validate path ancestors and reject symlinked directories, linked files,
 nonregular files, incorrect modes and oversized reads. One process may open only
@@ -358,3 +368,58 @@ works. There is no second roster protocol or plaintext fallback. Cancellation
 bounds asynchronous network work, not synchronous signature verification or
 private-filesystem operations already in progress. Public-relay policy, real
 wireless routing and Android physical lifecycle behavior remain acceptance work.
+
+## B6 emulator environment and acceptance (2026-09-05)
+
+The ordered discovery/session/remembered-restart acceptance passed on two fresh
+API 34 `google_apis` x86_64 AVDs. The six native bridge tests passed between them,
+serially. Neither B6 run used `upstreams.json`. Both retained binding authority,
+verified the encrypted relay/native-peer path, completed exactly one play,
+restarted Android with the relay stopped, and recovered the same host after an
+observed outage. Each helper trace contains exactly one launch, freeze, thaw and
+stop. Full `korrid-check` also passed.
+
+Fresh online AVDs were not a stable fixture: GMS Chimera changed its module
+configuration, killed `com.google.android.gms.persistent`, and Android killed
+Korri because it depended on GMS FontsProvider (exit reason 12). Android's
+`device_config set_sync_disabled_for_tests persistent` did **not** stop Chimera:
+the owned-AVD experiment verified that setting, then observed module-change
+restarts. [Android 14 SettingsProvider](https://android.googlesource.com/platform/frameworks/base/+/android-14.0.0_r1/packages/SettingsProvider/src/com/android/providers/settings/SettingsProvider.java#1171)
+gates `setAllConfigSettings`; this is not a control for GMS's private Chimera
+module configuration.
+
+The shared emulator harness now starts a rejecting loopback proxy before boot
+and supplies the emulator's official `-http-proxy` transport option. Its own
+`-help-http-proxy` documents redirection of all guest TCP connections. The proxy
+never forwards a request. The harness waits at most 30 seconds for an actual
+TEST-NET connection to reach that proxy, then verifies an HTTP response over ADB
+reverse. It checks the owned AVD name, lock, process and explicit serial before
+probing. No Android setting, package, font or essential dependency is disabled.
+A host-side FIFO keeps the reverse probe's stdin open until its response; ADB
+reverse does not preserve the guest TCP half-close. No initialization sleep or
+instrumentation retry is used.
+
+All three final runs retained the same GMS persistent PID through instrumentation
+and reported no Chimera module restart or Korri dependency death. GMS remained
+enabled; Chimera logged actual network sync errors rather than updated modules.
+Evidence: `/tmp/federation-isolation-b6-first.log`,
+`/tmp/federation-isolation-bridge.log`,
+`/tmp/federation-isolation-b6-fresh-repeat.log`; retained Android diagnostics are
+`/tmp/korri-android-evidence.Ad7HvnvNWH`, `YIyW8p9Nr4` and `grbjLqsRoh` under the
+same prefix. `/tmp/federation-emulator-stability-fix.md` records causal evidence,
+fixture corrections, full-gate results and the earlier failed setup experiments.
+
+A newly reached session assertion also exposed a fixture-only environment bug:
+the executable systemd helper has a Nix shebang, but its isolated environment
+omitted `NIX_PATH`. The helper could not resolve `nixpkgs`, so real session
+recovery correctly failed closed. The fixture now includes this toolchain
+variable alongside `PATH`; a test executes the actual helper with that exact
+environment. No production session behavior or lifecycle assertion changed.
+
+Cost: these are isolated loopback federation/bridge fixtures, **not Google-services
+integration tests**. External TCP, including downloadable fonts and Google module
+updates, is unavailable. The emulator proxy does not isolate UDP/DNS. This is not
+a general network-security sandbox, a public-relay proof, or a physical-device
+result. GMS sync continues to attempt work; an image with a different bootstrap
+transport may need a reviewed harness change. Run
+`clients/android/test/emulator-bootstrap-check.sh` for proxy and ownership guards.

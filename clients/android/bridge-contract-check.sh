@@ -21,6 +21,9 @@ ADB_TIMEOUT_SECONDS=10
 RUN_DIR=""
 EMULATOR_PID=""
 EMULATOR_LOG=""
+BOOTSTRAP_PROXY_PID=""
+BOOTSTRAP_PROXY_PORT=""
+GMS_PERSISTENT_PID=""
 LOCK_FILE="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/korri-android-bridge-contract-${UID}-${EMULATOR_PORT}.lock"
 LOCK_ACQUIRED=false
 BUILD_ANDROID_HOME="${ANDROID_HOME:-}"
@@ -50,6 +53,10 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
 
+  if [[ "$status" -ne 0 && -n "$RUN_DIR" ]]; then
+    capture_android_diagnostics
+  fi
+
   if declare -F cleanup_acceptance_fixture >/dev/null; then
     cleanup_acceptance_fixture || cleanup_failed=true
   fi
@@ -77,6 +84,19 @@ cleanup() {
     wait "$EMULATOR_PID" >/dev/null 2>&1 || true
   fi
 
+  if [[ -n "$BOOTSTRAP_PROXY_PID" ]]; then
+    kill -TERM "$BOOTSTRAP_PROXY_PID" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+      if ! kill -0 "$BOOTSTRAP_PROXY_PID" 2>/dev/null; then break; fi
+      sleep 0.1
+    done
+    if kill -0 "$BOOTSTRAP_PROXY_PID" 2>/dev/null; then
+      kill -KILL "$BOOTSTRAP_PROXY_PID" 2>/dev/null || true
+      cleanup_failed=true
+    fi
+    wait "$BOOTSTRAP_PROXY_PID" || cleanup_failed=true
+  fi
+
   if [[ -n "$RUN_DIR" && -e "$RUN_DIR" ]]; then
     rm -rf "$RUN_DIR" || cleanup_failed=true
   fi
@@ -97,6 +117,29 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+capture_android_diagnostics() {
+  local kind="${1:-failure}"
+  local lifecycle_status=0
+  DIAGNOSTICS_DIR="$(mktemp -d "/tmp/korri-android-$kind.XXXXXXXXXX")"
+  # AGP leaves APKs installed until this isolated AVD is deleted, so run-as and
+  # exit-info remain available after instrumentation failure.
+  # Capture before service/fixture/emulator cleanup. SIGKILL may have no Java
+  # stack; filtered main-buffer logs alone cannot establish its cause.
+  if [[ -n "$EMULATOR_PID" ]]; then
+    timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" logcat -b all -d >"$DIAGNOSTICS_DIR/all-buffers.log" 2>&1 || lifecycle_status=1
+    timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell dumpsys activity exit-info com.simonwjackson.korri.debug >"$DIAGNOSTICS_DIR/application-exit-info.log" 2>&1 || lifecycle_status=1
+    timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" reverse --list >"$DIAGNOSTICS_DIR/reverse-mappings.log" 2>&1 || true
+    # Metadata only, as the app UID. Do not read identity or memory document bytes.
+    timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell run-as com.simonwjackson.korri.debug sh -c \
+      "'stat -c \"%a %F %n\" / /data /data/user /data/user/0 /data/data /data/user/0/com.simonwjackson.korri.debug /data/user/0/com.simonwjackson.korri.debug/no_backup /data/user/0/com.simonwjackson.korri.debug/no_backup/korrid-state; readlink -f /data/user/0/com.simonwjackson.korri.debug/no_backup/korrid-state'" \
+      >"$DIAGNOSTICS_DIR/private-path-metadata.log" 2>&1 || true
+  fi
+  if [[ -f "$EMULATOR_LOG" ]]; then cp "$EMULATOR_LOG" "$DIAGNOSTICS_DIR/emulator.log"; fi
+  if [[ -f "$RUN_DIR/bootstrap-proxy.log" ]]; then cp "$RUN_DIR/bootstrap-proxy.log" "$DIAGNOSTICS_DIR/"; fi
+  echo "Android $kind diagnostics (no private roots): $DIAGNOSTICS_DIR" >&2
+  if [[ "$kind" == evidence ]]; then return "$lifecycle_status"; fi
+}
 
 print_emulator_diagnostics() {
   echo "-- adb devices" >&2
@@ -192,6 +235,68 @@ create_avd() {
     --package "$AVD_PACKAGE" >/dev/null
 }
 
+assert_owned_emulator() {
+  [[ "$LOCK_ACQUIRED" == true && -n "$EMULATOR_PID" && -n "$RUN_DIR" ]] || return 1
+  [[ -d "$RUN_DIR/avd/$AVD_NAME.avd" && "$SERIAL" == "emulator-$EMULATOR_PORT" ]] || return 1
+  kill -0 "$EMULATOR_PID" || return 1
+  [[ "$(timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" emu avd name | tr -d '\r')" == "$AVD_NAME"$'\nOK' ]]
+}
+
+start_bootstrap_proxy() {
+  [[ "$LOCK_ACQUIRED" == true && -d "$RUN_DIR" ]] || return 1
+  bun "$ANDROID_CLIENT/test/emulator-bootstrap-proxy.ts" "$RUN_DIR/bootstrap-proxy-ready" \
+    >"$RUN_DIR/bootstrap-proxy.log" 2>&1 &
+  BOOTSTRAP_PROXY_PID=$!
+  local deadline=$((SECONDS + 10))
+  while [[ ! -s "$RUN_DIR/bootstrap-proxy-ready" ]]; do
+    kill -0 "$BOOTSTRAP_PROXY_PID"
+    (( SECONDS < deadline )) || return 1
+    sleep 0.1
+  done
+  read -r BOOTSTRAP_PROXY_PORT <"$RUN_DIR/bootstrap-proxy-ready"
+  [[ "$BOOTSTRAP_PROXY_PORT" =~ ^[0-9]+$ ]]
+}
+
+verify_bootstrap_isolation() {
+  assert_owned_emulator || return 1
+  kill -0 "$BOOTSTRAP_PROXY_PID" || return 1
+  # TEST-NET, not a public service. The emulator must send this to our rejecting
+  # proxy. A timeout or a successful direct connection without that record fails.
+  local deadline=$((SECONDS + 30))
+  until grep -qx 'denied 198.51.100.1:443' "$RUN_DIR/bootstrap-proxy.log"; do
+    kill -0 "$BOOTSTRAP_PROXY_PID" || return 1
+    if (( SECONDS >= deadline )); then
+      echo 'Guest TCP did not reach the rejecting proxy within 30 seconds' >&2
+      return 1
+    fi
+    timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell \
+      'printf "probe\\n" | toybox nc -w 3 198.51.100.1 443' >/dev/null 2>&1 || true
+    # Poll the real transport, which may come up after sys.boot_completed.
+    sleep 0.1
+  done
+  # ADB reverse bypasses guest egress and must still reach the real loopback
+  # listener. This is the same transport used by federation's HTTP/WebSocket RPC.
+  timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" reverse "tcp:$BOOTSTRAP_PROXY_PORT" "tcp:$BOOTSTRAP_PROXY_PORT"
+  local response
+  # ADB reverse closes both directions on a guest half-close. Keep nc's stdin
+  # open with an owned FIFO until the server closes its response, bounded by -W.
+  mkfifo "$RUN_DIR/loopback-probe-input"
+  exec 3<>"$RUN_DIR/loopback-probe-input"
+  printf 'GET / HTTP/1.1\r\nHost: loopback\r\n\r\n' >&3
+  response="$(timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell -T \
+    toybox nc -w 3 -W 3 127.0.0.1 "$BOOTSTRAP_PROXY_PORT" <&3 | tr -d '\r')"
+  exec 3>&-
+  rm "$RUN_DIR/loopback-probe-input"
+  timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" reverse --remove "tcp:$BOOTSTRAP_PROXY_PORT"
+  if [[ "$response" != $'HTTP/1.1 403 Forbidden\nContent-Length: 0\nConnection: close' ]]; then
+    printf 'ADB reverse probe returned unexpected response: %q\n' "$response" >&2
+    return 1
+  fi
+  GMS_PERSISTENT_PID="$(timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell pidof com.google.android.gms.persistent | tr -d '\r')"
+  [[ "$GMS_PERSISTENT_PID" =~ ^[0-9]+$ ]]
+  echo "-- external TCP rejected; real ADB reverse loopback verified; GMS persistent PID=$GMS_PERSISTENT_PID"
+}
+
 boot_emulator() {
   local emulator="$EMULATOR_ANDROID_SDK_ROOT/emulator/emulator"
   use_emulator_sdk_env
@@ -199,7 +304,12 @@ boot_emulator() {
   if [[ ! -e /dev/kvm ]]; then
     echo "-- /dev/kvm is absent; emulator will rely on software acceleration and may time out under the bounded boot wait" >&2
   fi
+  start_bootstrap_proxy
+  # Emulator -help-http-proxy: ALL guest TCP uses this proxy. Apply before boot,
+  # not Android's advisory HTTP proxy setting. UDP is not isolated by this option.
   "$emulator" \
+    -http-proxy "http://127.0.0.1:$BOOTSTRAP_PROXY_PORT" \
+    -no-metrics \
     -avd "$AVD_NAME" \
     -port "$EMULATOR_PORT" \
     -no-window \
@@ -224,6 +334,7 @@ boot_emulator() {
       if [[ "$boot_completed" == "1" ]]; then
         timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell input keyevent 82 >/dev/null 2>&1 || true
         echo "-- emulator boot completed"
+        verify_bootstrap_isolation
         return 0
       fi
     fi
@@ -231,6 +342,22 @@ boot_emulator() {
   done
 
   fail_with_emulator_diagnostics "Timed out after ${BOOT_TIMEOUT_SECONDS}s waiting for Android boot completion; last adb state='$device_state', sys.boot_completed='$boot_completed'"
+}
+
+verify_emulator_lifecycle() {
+  assert_owned_emulator
+  kill -0 "$BOOTSTRAP_PROXY_PID"
+  # Retain successful lifecycle evidence too; a passing instrumentation summary
+  # alone does not show that the bootstrap restart mechanism was absent.
+  capture_android_diagnostics evidence
+  if grep -q 'Module config changed, forcing restart' "$DIAGNOSTICS_DIR/all-buffers.log" ||
+     grep -q 'DEPENDENCY DIED' "$DIAGNOSTICS_DIR/application-exit-info.log"; then
+    echo 'Unexpected module restart or dependency death in isolated emulator' >&2
+    return 1
+  fi
+  timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell pm list packages -e com.google.android.gms | grep -qx 'package:com.google.android.gms'
+  [[ "$(timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" shell pidof com.google.android.gms.persistent | tr -d '\r')" == "$GMS_PERSISTENT_PID" ]]
+  echo "-- no Chimera module restart or Korri dependency death; enabled GMS retained PID=$GMS_PERSISTENT_PID"
 }
 
 project_bridge_version() {
@@ -265,6 +392,7 @@ run_contract_test() {
   set +e
   timeout --kill-after=30s "$CONTRACT_TEST_TIMEOUT_SECONDS" ./gradlew \
     :app:connectedDebugAndroidTest \
+    -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
     -Pandroid.testInstrumentationRunnerArguments.bridgeVersion="$bridge_version" \
     -Pandroid.testInstrumentationRunnerArguments.class=com.limelight.KorriNativeBridgeContractTest
   status=$?
@@ -299,6 +427,7 @@ bridge_contract_main() {
   create_avd
   boot_emulator
   run_contract_test "$bridge_version"
+  verify_emulator_lifecycle
   echo "bridge contract check passed on $SERIAL"
 }
 
