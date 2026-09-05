@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "promotedGeneratedTakes": [],
+  "workspace": {
+    "version": 1,
+    "objects": [],
+    "selectedStoryIds": [],
+    "selectedObjectId": null,
+    "activeSourceId": "default",
+    "workshopScreenId": null,
+    "camera": {
+      "x": 24,
+      "y": 24,
+      "scale": 1
+    }
+  }
+}
