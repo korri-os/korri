@@ -41,7 +41,7 @@ impl Snapshot {
             mode: raw.st_mode,
             uid: raw.st_uid,
             gid: raw.st_gid,
-            nlink: raw.st_nlink,
+            nlink: raw.st_nlink.into(),
             size: raw.st_size,
             mtime_sec: raw.st_mtime,
             mtime_nsec: raw.st_mtime_nsec,
