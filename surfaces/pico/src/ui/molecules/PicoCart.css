@@ -1,10 +1,21 @@
-/* Bounded media: the cart is capped against the type anchor so art and text
- * share one ceiling. A raw cqh here is the classic intrinsic bug — the art
- * runs away from the scale on a tall screen. */
+/* Bounded media, capped on both axes.
+ *
+ * The slot gives a definite height, so the cart takes it and derives its width
+ * from the ratio — that is what keeps a cartridge portrait on a wide, short
+ * body, where sizing from width instead produced a landscape rectangle that
+ * stops reading as a cartridge at all. `max-width` caps it against the type
+ * anchor so art and text still share one ceiling, and shrinks both axes
+ * together when it binds.
+ *
+ * Deliberately not cqh: the height of a screen whose own height comes from its
+ * host is not definite everywhere Pico mounts, and a zero there means invisible
+ * carts rather than merely small ones. */
 .pico-cart {
 	position: relative;
 	display: block;
-	width: min(38cqw, calc(var(--pico-base) * 14));
+	height: 100%;
+	width: auto;
+	max-width: min(38cqw, calc(var(--pico-base) * 14));
 	aspect-ratio: 3 / 4;
 	padding: var(--pico-space-1);
 	border: var(--pico-edge) solid var(--pico-chrome-edge);

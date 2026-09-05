@@ -11,7 +11,13 @@
  * to render with no network, so a CDN font is a broken surface waiting for an
  * offline device.
  */
-@import "@korri/intrinsic-design/recipe.css";
+/* A relative path, not the package name: a host that compiles this surface from
+ * source resolves CSS imports from its own tree, and the portal has no
+ * @korri/intrinsic-design installed under that name. The bare specifier
+ * resolved only where the surface's own node_modules happened to exist, which
+ * is a build that works on the machine that just ran the surface's tests and
+ * silently drops the whole scale everywhere else. Shift learned this first. */
+@import "../../../packages/intrinsic-design/recipe.css";
 @import "./pico-tokens.css";
 @import "./pico-motion.css";
 

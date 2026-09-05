@@ -62,7 +62,12 @@
 }
 
 .pico-cart-shelf-slot {
+	/* A definite height for the cart's max-height to cap against, without
+	 * stretching the row: the strip's own height is the shelf's track. */
+	height: 100%;
+	display: flex;
 	flex: 0 0 auto;
+	align-items: center;
 	scroll-snap-align: center;
 }
 
