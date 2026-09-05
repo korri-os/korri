@@ -2,19 +2,24 @@ import type {
   SurfaceHost,
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
-import { ShiftSurface } from "@korri/shift"
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import type { InputBus } from "../input/bus"
+import type { PortalSurface } from "../surface/surface-registry"
 import type { OverlayController } from "./overlay-controller"
 
 export interface OverlayRootProps {
   readonly bus: InputBus
   readonly controller: OverlayController
+  readonly surface: PortalSurface
 }
 
 /** Dedicated portal composition: one controller-backed model, one treaty host,
- * and the normal ShiftSurface entry. The portal never reaches into Shift's sheet. */
-export function OverlayRoot({ bus, controller }: OverlayRootProps) {
+ * and the surface's own entry. The portal never reaches into a surface's sheet. */
+export function OverlayRoot({
+  bus,
+  controller,
+  surface,
+}: OverlayRootProps) {
   const model = useSyncExternalStore(
     controller.subscribe,
     controller.model,
@@ -53,5 +58,5 @@ export function OverlayRoot({ bus, controller }: OverlayRootProps) {
     [bus, controller],
   )
 
-  return <ShiftSurface model={model} host={host} />
+  return surface.render({ model, host })
 }

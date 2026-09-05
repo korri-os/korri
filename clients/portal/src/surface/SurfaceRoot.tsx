@@ -3,19 +3,19 @@
  *
  * The portal owns the facts and the effects; the surface owns the pixels. This
  * component is the only place that knows both, and it knows the surface only
- * through the treaty — swapping Shift for another surface is a change to the
- * import below and nothing else.
+ * through the treaty — which surface renders is decided in the composition root
+ * and handed in, so this file names none of them.
  */
 import type {
   SurfaceHost,
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
-import { ShiftSurface } from "@korri/shift"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { LauncherBridge } from "../bridge/launcher-bridge"
 import type { InputBus } from "../input/bus"
 import type { KorridClient } from "../korrid/client"
 import { settingsFrom } from "./settings-model"
+import type { PortalSurface } from "./surface-registry"
 import {
   entryForId,
   entryForLaunchLocation,
@@ -46,9 +46,15 @@ export interface SurfaceRootProps {
   readonly bus: InputBus
   readonly bridge: LauncherBridge
   readonly korrid: KorridClient
+  readonly surface: PortalSurface
 }
 
-export function SurfaceRoot({ bus, bridge, korrid }: SurfaceRootProps) {
+export function SurfaceRoot({
+  bus,
+  bridge,
+  korrid,
+  surface,
+}: SurfaceRootProps) {
   const launchables = useLaunchables(bridge, korrid)
   const clockLabel = useClockLabel()
   const {
@@ -130,5 +136,5 @@ export function SurfaceRoot({ bus, bridge, korrid }: SurfaceRootProps) {
     ],
   )
 
-  return <ShiftSurface model={model} host={host} />
+  return surface.render({ model, host })
 }

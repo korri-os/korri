@@ -38,6 +38,7 @@ import {
   MoonlightImplementation,
 } from "@contracts/generated/korrid"
 import type { KorridClient } from "../korrid/client"
+import type { PortalSurface } from "./surface-registry"
 // The portal compiles Shift from source, but Bun resolves Shift's peer React
 // from the surface package once its dependencies are installed. Derive that
 // package location through the same alias the product imports, then keep this
@@ -64,6 +65,19 @@ let loadedSurfaceRoot:
 async function surfaceRootComponent() {
   loadedSurfaceRoot ??= (await import("./SurfaceRoot")).SurfaceRoot
   return loadedSurfaceRoot
+}
+
+/* Built from Shift's public entry, loaded after the React mocks above for the
+ * same reason SurfaceRoot itself is. Loading the registry would pull every
+ * surface package in at once; what it chooses is covered by its own test. */
+async function catalogSurface(): Promise<PortalSurface> {
+  const { ShiftSurface } = await import("@korri/shift")
+  return {
+    id: "shift",
+    title: "Shift",
+    presentations: ["catalog"],
+    render: ({ model, host }) => <ShiftSurface host={host} model={model} />,
+  }
 }
 
 const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms))
@@ -384,12 +398,14 @@ async function renderSurfaceRoot(sources: Sources, calls: Calls): Promise<Surfac
 
   try {
     const SurfaceRoot = await surfaceRootComponent()
+    const surface = await catalogSurface()
     await act(async () => {
       root.render(
         <SurfaceRoot
           bus={bus}
           bridge={buildBridge(sources, calls)}
           korrid={buildKorrid(sources, calls)}
+          surface={surface}
         />,
       )
     })

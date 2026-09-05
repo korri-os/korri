@@ -29,6 +29,8 @@ import {
   createFixtureLifecycleAdapter,
   SessionScreen,
 } from "./session/SessionScreen"
+import { resolveSurfacePreference } from "./surface/surface-preference"
+import { portalSurfaceFor } from "./surface/surface-registry"
 import { SurfaceRoot } from "./surface/SurfaceRoot"
 import "./index.css"
 
@@ -43,6 +45,14 @@ const rootElement = document.getElementById("app")
 if (!rootElement) throw new Error("#app element not found")
 const root = ReactDOM.createRoot(rootElement)
 const query = new URLSearchParams(window.location.search)
+
+/* Which surface the user has chosen, resolved once. The registry decides
+ * whether that choice can serve a given presentation; a surface with no
+ * gameplay overlay still gets to own the catalog. */
+const preferredSurfaceId = resolveSurfacePreference(
+  window.location,
+  window.localStorage,
+)
 
 // The session screen is the same bundled app booted with a query param
 // (treaty: SESSION_SCREEN_PARAM). Inside the stream Activity's overlay the
@@ -86,7 +96,13 @@ if (isSessionScreen) {
         })
       },
       mount(controller) {
-        root.render(<OverlayRoot bus={bus} controller={controller} />)
+        root.render(
+          <OverlayRoot
+            bus={bus}
+            controller={controller}
+            surface={portalSurfaceFor("gameplay-overlay", preferredSurfaceId)}
+          />,
+        )
       },
       unmount() {
         root.unmount()
@@ -98,6 +114,7 @@ if (isSessionScreen) {
       <OverlayRoot
         bus={bus}
         controller={createInMemoryOverlayController()}
+        surface={portalSurfaceFor("gameplay-overlay", preferredSurfaceId)}
       />,
     )
   }
@@ -124,5 +141,12 @@ if (isSessionScreen) {
         )
       : createInMemoryKorridClient()
 
-  root.render(<SurfaceRoot bus={bus} bridge={bridge} korrid={korrid} />)
+  root.render(
+    <SurfaceRoot
+      bridge={bridge}
+      bus={bus}
+      korrid={korrid}
+      surface={portalSurfaceFor("catalog", preferredSurfaceId)}
+    />,
+  )
 }

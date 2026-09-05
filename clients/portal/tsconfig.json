@@ -14,13 +14,15 @@
     "types": ["@types/bun"],
     "paths": {
       "@contracts/*": ["../../contracts/*"],
-      "@korri/shift": ["../../surfaces/shift/src/index.ts"]
+      "@korri/shift": ["../../surfaces/shift/src/index.ts"],
+      "@korri/pico": ["../../surfaces/pico/src/index.ts"]
     }
   },
   "include": [
     "src",
     "vite.config.ts",
     "../../contracts",
-    "../../surfaces/shift/src"
+    "../../surfaces/shift/src",
+    "../../surfaces/pico/src"
   ]
 }
