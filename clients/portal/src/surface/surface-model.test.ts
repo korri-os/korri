@@ -64,6 +64,50 @@ describe("surfaceModelFrom", () => {
     expect(game.coverArtUrl).toBeUndefined()
     expect(game.wideArtUrl).toBeUndefined()
     expect(game.subtitle).toBe("GBA")
+    expect(game.lastPlayedAt).toBeUndefined()
+    expect(game.playCount).toBeUndefined()
+    expect(game.totalPlaytimeSeconds).toBeUndefined()
+  })
+
+  test("publishes play facts as UTC millis and merges folded copies", () => {
+    const model = surfaceModelFrom(
+      ready([
+        {
+          ...localGame,
+          game: {
+            ...localGame.game,
+            playStats: {
+              lastPlayed: "2026-08-15T10:00:00Z",
+              playCount: 2,
+              totalPlaytimeSeconds: 600,
+            },
+          },
+          alternatives: [
+            {
+              kind: "remote",
+              game: {
+                id: "wl4",
+                title: "Wario Land 4",
+                host: "zao",
+                playStats: {
+                  lastPlayed: "2026-09-04T18:00:00Z",
+                  playCount: 1,
+                  totalPlaytimeSeconds: 1200,
+                },
+              },
+            },
+          ],
+        },
+        hostGame,
+      ]),
+    )
+
+    if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
+    const [wario, neverball] = model.catalog.games
+    expect(wario?.lastPlayedAt).toBe(Date.UTC(2026, 8, 4, 18, 0, 0))
+    expect(wario?.playCount).toBe(3)
+    expect(wario?.totalPlaytimeSeconds).toBe(1800)
+    expect(neverball?.lastPlayedAt).toBeUndefined()
   })
 
   test("publishes trusted local cover art resolved by the host", () => {

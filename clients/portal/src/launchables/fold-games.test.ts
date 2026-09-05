@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { Game, GameIdentity, LocalGame } from "@contracts/generated/korrid"
-import { foldGameCopies } from "./fold-games"
+import { foldGameCopies, mergePlayStats } from "./fold-games"
 
 const hash = (value: string): GameIdentity => ({ kind: "hash", value })
 const provider = (ref: string): GameIdentity => ({
@@ -65,5 +65,63 @@ describe("foldGameCopies", () => {
 
   it("never folds games without an identity", () => {
     expect(foldGameCopies([local("wl4")], [remote("wl4", "zao")])).toHaveLength(2)
+  })
+})
+
+describe("mergePlayStats", () => {
+  it("is absent when no copy has been played", () => {
+    expect(
+      mergePlayStats([
+        { kind: "local", game: local("wl4") },
+        { kind: "remote", game: remote("wl4", "zao") },
+      ]),
+    ).toBeUndefined()
+  })
+
+  it("preserves a single played copy exactly", () => {
+    const stats = {
+      lastPlayed: "2026-09-01T10:00:00Z",
+      playCount: 3,
+      totalPlaytimeSeconds: 900,
+    }
+    expect(
+      mergePlayStats([
+        { kind: "local", game: local("wl4") },
+        { kind: "remote", game: { ...remote("wl4", "zao"), playStats: stats } },
+      ]),
+    ).toEqual(stats)
+  })
+
+  it("takes the newest lastPlayed and sums counts across copies", () => {
+    expect(
+      mergePlayStats([
+        {
+          kind: "local",
+          game: {
+            ...local("wl4"),
+            playStats: {
+              lastPlayed: "2026-08-15T10:00:00Z",
+              playCount: 2,
+              totalPlaytimeSeconds: 600,
+            },
+          },
+        },
+        {
+          kind: "remote",
+          game: {
+            ...remote("wl4", "zao"),
+            playStats: {
+              lastPlayed: "2026-09-04T18:00:00Z",
+              playCount: 1,
+              totalPlaytimeSeconds: 1200,
+            },
+          },
+        },
+      ]),
+    ).toEqual({
+      lastPlayed: "2026-09-04T18:00:00Z",
+      playCount: 3,
+      totalPlaytimeSeconds: 1800,
+    })
   })
 })

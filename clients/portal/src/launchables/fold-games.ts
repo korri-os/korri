@@ -2,6 +2,7 @@ import type {
   Game,
   GameIdentity,
   LocalGame,
+  PlayStats,
 } from "@contracts/generated/korrid"
 
 export type PortalLocalGame = LocalGame & { readonly coverArtUrl?: string }
@@ -46,6 +47,41 @@ export function foldGameCopies(
         .sort(compareCopies),
     }
   })
+}
+
+/**
+ * Play stats for one folded game. Play history is game-centric, not
+ * host-centric: the newest lastPlayed across every copy wins, counts and
+ * playtime sum. Returns undefined when no copy has been played, so Recent
+ * can keep treating absence as the never-played signal.
+ */
+export function mergePlayStats(
+  copies: readonly PortalGameCopy[],
+): PlayStats | undefined {
+  const played = copies
+    .map(copy => copy.game.playStats)
+    .filter((stats): stats is PlayStats => stats !== undefined)
+  if (played.length === 0) return undefined
+  if (played.length === 1) return played[0]
+
+  let lastPlayed: string | undefined
+  let playCount = 0
+  let totalPlaytimeSeconds = 0
+  for (const stats of played) {
+    if (
+      stats.lastPlayed !== undefined &&
+      (lastPlayed === undefined || stats.lastPlayed > lastPlayed)
+    ) {
+      lastPlayed = stats.lastPlayed
+    }
+    playCount += stats.playCount
+    totalPlaytimeSeconds += stats.totalPlaytimeSeconds
+  }
+  return {
+    ...(lastPlayed === undefined ? {} : { lastPlayed }),
+    playCount,
+    totalPlaytimeSeconds,
+  }
 }
 
 function identityKey(identity: GameIdentity | undefined): string | undefined {

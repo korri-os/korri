@@ -66,6 +66,16 @@ export interface SurfaceGame {
   readonly wideArtUrl?: string
   /** True when confirming continues an existing session rather than starting. */
   readonly resumable?: boolean
+  /**
+   * Newest recorded session end, as UTC epoch milliseconds. Absent when Korri
+   * has never recorded a session for this game. Surfaces format it; Korri
+   * never ships a label.
+   */
+  readonly lastPlayedAt?: number
+  /** Recorded sessions. Absent together with lastPlayedAt. */
+  readonly playCount?: number
+  /** Summed recorded session length. Absent together with lastPlayedAt. */
+  readonly totalPlaytimeSeconds?: number
 }
 
 /**

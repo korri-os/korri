@@ -17,7 +17,8 @@ import type {
   SurfaceSettingsStatus,
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
-import type { PortalGameCopy } from "../launchables/fold-games"
+import { mergePlayStats, type PortalGameCopy } from "../launchables/fold-games"
+import type { PlayStats } from "@contracts/generated/korrid"
 import {
   entryKey,
   type LaunchablesState,
@@ -134,6 +135,26 @@ export function entryForLaunchLocation(
     : { kind: "game", game: copy.game }
 }
 
+/**
+ * Play facts for a game entry, in surface terms. Merges every folded copy so
+ * a game played on Zao and on this tablet reads as one history. Parses the
+ * UTC ISO string once here; surfaces never see the string.
+ */
+function playFactsForEntry(
+  entry: PortalEntry,
+): Pick<SurfaceGame, "lastPlayedAt" | "playCount" | "totalPlaytimeSeconds"> {
+  if (entry.kind !== "local-game" && entry.kind !== "game") return {}
+  const stats: PlayStats | undefined = mergePlayStats(orderedCopiesForEntry(entry))
+  if (stats === undefined || stats.lastPlayed === undefined) return {}
+  const lastPlayedAt = Date.parse(stats.lastPlayed)
+  if (Number.isNaN(lastPlayedAt)) return {}
+  return {
+    lastPlayedAt,
+    playCount: stats.playCount,
+    totalPlaytimeSeconds: stats.totalPlaytimeSeconds,
+  }
+}
+
 function alternativeLocation(entry: PortalEntry): string | undefined {
   if (entry.kind !== "local-game" && entry.kind !== "game") return undefined
   const primaryKey =
@@ -174,6 +195,7 @@ function gameFromEntry(entry: PortalEntry): SurfaceGame | null {
           ? {}
           : { coverArtUrl: entry.game.coverArtUrl }),
         ...(launchLocations.length < 2 ? {} : { launchLocations }),
+        ...playFactsForEntry(entry),
       }
     }
     case "game": {
@@ -186,6 +208,7 @@ function gameFromEntry(entry: PortalEntry): SurfaceGame | null {
         section: entry.game.host ?? "Other devices",
         ...(subtitle.length === 0 ? {} : { subtitle }),
         ...(launchLocations.length < 2 ? {} : { launchLocations }),
+        ...playFactsForEntry(entry),
       }
     }
     default:
