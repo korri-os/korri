@@ -136,6 +136,8 @@ The installed package contains `share/korri/sunshine-korri/provenance`. This mod
 
 - the provenance format,
 - the package name,
+- the approved platform build profile,
+- whether the build contains CUDA support,
 - the base Sunshine version,
 - the independently approved base Sunshine source hash,
 - the exact observed base Sunshine source store path,
@@ -147,7 +149,7 @@ The installed package contains `share/korri/sunshine-korri/provenance`. This mod
 - each ordered Korri patch name and SHA-256 value,
 - one SHA-256 value for the complete ordered patch set.
 
-Nix also exposes the provenance path, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digest through package passthru values. `approved-patches.nix` is the independent approval record. Package evaluation fails when the base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
+Nix also exposes the provenance path, build profile, CUDA state, approved base source hash, observed base source and derivation paths, ordered patch names, and patch-set digest through package passthru values. `approved-patches.nix` is the independent approval record. The approved profiles currently cover x86_64 Linux with CUDA and aarch64 Linux with software encoding. Package evaluation fails when the profile, base version, base source hash, one patch hash, or the ordered patch-set digest changes. The host module also requires the exact approved final derivation and output, so an `overrideAttrs` derivative cannot preserve trusted metadata while replacing the executable or patches. Deployment checks must use these values to attest the exact package. The manifest contains no secret or device-specific value.
 
 ## Removal/upstream policy
 

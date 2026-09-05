@@ -1,13 +1,27 @@
-{
+rec {
   baseSunshineVersion = "2025.924.154138";
   approvedBaseSourceHash = "sha256-QrPfZqd9pgufohUjxlTpO6V0v7B41UrXHZaESsFjZ48=";
   approvedDeviceBaseDerivation = "/nix/store/5hmg1ff3wjkzcmspssckdlydk0d5bbjz-sunshine-2025.924.154138.drv";
-  approvedBaseDerivations = [
-    # Korri nixpkgs revision a6531044f6d0bef691ea18d4d4ce44d0daa6e816.
-    "/nix/store/63c39c0mjs72ixh20hs18r8l8zh3wix7-sunshine-2025.924.154138.drv"
-    # Mountainous nixpkgs revision c06b4ae3d6599a672a6210b7021d699c351eebda.
-    "/nix/store/5hmg1ff3wjkzcmspssckdlydk0d5bbjz-sunshine-2025.924.154138.drv"
-  ];
+  approvedDeviceBaseDerivations = {
+    "x86_64-linux-cuda" = "/nix/store/5hmg1ff3wjkzcmspssckdlydk0d5bbjz-sunshine-2025.924.154138.drv";
+    "aarch64-linux-software" =
+      "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv";
+  };
+  approvedBaseDerivationsByProfile = {
+    "x86_64-linux-cuda" = [
+      # Korri nixpkgs revision a6531044f6d0bef691ea18d4d4ce44d0daa6e816.
+      "/nix/store/63c39c0mjs72ixh20hs18r8l8zh3wix7-sunshine-2025.924.154138.drv"
+      # Mountainous nixpkgs revision c06b4ae3d6599a672a6210b7021d699c351eebda.
+      "/nix/store/5hmg1ff3wjkzcmspssckdlydk0d5bbjz-sunshine-2025.924.154138.drv"
+    ];
+    "aarch64-linux-software" = [
+      # Korri nixpkgs revision a6531044f6d0bef691ea18d4d4ce44d0daa6e816.
+      "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv"
+    ];
+  };
+  approvedBaseDerivations = builtins.concatLists (
+    builtins.attrValues approvedBaseDerivationsByProfile
+  );
   reviewedLibavcodecVersion = "62.11.100";
   reviewedFfmpegCommit = "61c50407fd429a5e2ec616e2e846c3fe3743879a";
   reviewedFfmpegSourceHash = "sha256-LKQUfHb9/Z4uvPx4vrtAOPL95Un9/C26lvCbQZ51avk=";

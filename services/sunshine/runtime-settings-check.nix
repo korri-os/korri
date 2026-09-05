@@ -43,9 +43,16 @@ let
   patchManifestLines = builtins.concatStringsSep "\n" (
     map (record: "patch=${record.name} sha256=${record.sha256}") approved.patches
   );
+  approvedProfileBaseDerivations =
+    approved.approvedBaseDerivationsByProfile.${sunshinePackage.korriBuildProfile} or [ ];
+  expectedBaseSunshine = pkgs.sunshine.override {
+    cudaSupport = sunshinePackage.korriCudaEnabled;
+  };
   expectedProvenance = ''
     format=1
     package=sunshine-korri
+    build_profile=${sunshinePackage.korriBuildProfile}
+    cuda_enabled=${if sunshinePackage.korriCudaEnabled then "1" else "0"}
     base_sunshine_version=${approved.baseSunshineVersion}
     approved_base_sunshine_source_hash=${approved.approvedBaseSourceHash}
     base_sunshine_source=${sunshinePackage.korriBaseSunshineSource}
@@ -66,7 +73,7 @@ let
       && sunshinePackage.korriPatchSetSha256 == approved.patchSetSha256
       && sunshinePackage.korriBaseSunshineVersion == approved.baseSunshineVersion
       && sunshinePackage.korriApprovedBaseSunshineSourceHash == approved.approvedBaseSourceHash
-      && builtins.elem sunshinePackage.korriBaseSunshineDerivation approved.approvedBaseDerivations
+      && builtins.elem sunshinePackage.korriBaseSunshineDerivation approvedProfileBaseDerivations
       && sunshinePackage.korriApprovedBaseSunshineDerivation == sunshinePackage.korriBaseSunshineDerivation
       && pkgs.sunshine.src.outputHash == approved.approvedBaseSourceHash
       && sunshinePackage.korriReviewedLibavcodecVersion == approved.reviewedLibavcodecVersion
@@ -74,7 +81,6 @@ let
       && sunshinePackage.korriReviewedFfmpegSourceHash == approved.reviewedFfmpegSourceHash
       && sunshinePackage.korriReviewedNvencApiMajor == approved.reviewedNvencApiMajor
       && sunshinePackage.korriReviewedNvencApiMinor == approved.reviewedNvencApiMinor
-      && sunshinePackage.korriCudaEnabled
     ))
     (check "Wayland CUDA capture uses the approved RAM transfer path" (
       builtins.elem "0017-use-wayland-ram-capture-for-cuda.patch" sunshinePackage.korriPatchNames
@@ -411,8 +417,8 @@ let
         == builtins.unsafeDiscardStringContext (toString pkgs.sunshine.src)
       &&
         sunshinePackage.korriBaseSunshineDerivation
-        == builtins.unsafeDiscardStringContext (pkgs.sunshine.override { cudaSupport = true; }).drvPath
-      && builtins.elem sunshinePackage.korriBaseSunshineDerivation approved.approvedBaseDerivations
+        == builtins.unsafeDiscardStringContext expectedBaseSunshine.drvPath
+      && builtins.elem sunshinePackage.korriBaseSunshineDerivation approvedProfileBaseDerivations
       && sunshinePackage.korriApprovedBaseSunshineDerivation == sunshinePackage.korriBaseSunshineDerivation
       && contains "Package provenance" readme
     ))

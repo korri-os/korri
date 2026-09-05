@@ -1,29 +1,39 @@
-{ sunshine }:
+{
+  sunshine,
+  cudaSupport ? true,
+}:
 
 let
-  sunshineWithCuda = sunshine.override { cudaSupport = true; };
+  baseSunshine = sunshine.override { inherit cudaSupport; };
 in
-sunshineWithCuda.overrideAttrs (
+baseSunshine.overrideAttrs (
   old:
   let
     approved = import ./approved-patches.nix;
-    baseSunshineSource = builtins.unsafeDiscardStringContext (toString sunshineWithCuda.src);
-    baseSunshineSourceHash = sunshineWithCuda.src.outputHash;
-    baseSunshineDerivation = builtins.unsafeDiscardStringContext sunshineWithCuda.drvPath;
+    buildProfile = "${baseSunshine.stdenv.hostPlatform.system}-${
+      if cudaSupport then "cuda" else "software"
+    }";
+    approvedBaseDerivations = approved.approvedBaseDerivationsByProfile.${buildProfile} or [ ];
+    baseSunshineSource = builtins.unsafeDiscardStringContext (toString baseSunshine.src);
+    baseSunshineSourceHash = baseSunshine.src.outputHash;
+    baseSunshineDerivation = builtins.unsafeDiscardStringContext baseSunshine.drvPath;
     basePatches = old.patches or [ ];
     cudaEnabled =
-      !(builtins.elem "-DSUNSHINE_ENABLE_CUDA:BOOL=FALSE" sunshineWithCuda.cmakeFlags)
+      !(builtins.elem "-DSUNSHINE_ENABLE_CUDA:BOOL=FALSE" baseSunshine.cmakeFlags)
       && builtins.any (
         input: builtins.match ".*cuda_nvcc.*" (toString input) != null
-      ) sunshineWithCuda.nativeBuildInputs
+      ) baseSunshine.nativeBuildInputs
       && builtins.any (
         input: builtins.match ".*(cuda_cudart|cuda-merged).*" (toString input) != null
-      ) sunshineWithCuda.buildInputs;
-    approvedBaseSunshineDerivation = builtins.head (
-      builtins.filter (
-        candidate: candidate == baseSunshineDerivation
-      ) approved.approvedBaseDerivations
-    );
+      ) baseSunshine.buildInputs;
+    matchingApprovedBaseDerivations = builtins.filter (
+      candidate: candidate == baseSunshineDerivation
+    ) approvedBaseDerivations;
+    approvedBaseSunshineDerivation =
+      if matchingApprovedBaseDerivations == [ ] then
+        null
+      else
+        builtins.head matchingApprovedBaseDerivations;
     provenanceRelativePath = "share/korri/sunshine-korri/provenance";
     patchRecords = map (record: {
       inherit (record) name path sha256;
@@ -44,6 +54,8 @@ sunshineWithCuda.overrideAttrs (
     provenance = ''
       format=1
       package=sunshine-korri
+      build_profile=${buildProfile}
+      cuda_enabled=${if cudaEnabled then "1" else "0"}
       base_sunshine_version=${approved.baseSunshineVersion}
       approved_base_sunshine_source_hash=${approved.approvedBaseSourceHash}
       base_sunshine_source=${baseSunshineSource}
@@ -62,10 +74,10 @@ sunshineWithCuda.overrideAttrs (
     throw "sunshine-korri base version changed; review the approved patch set before building"
   else if baseSunshineSourceHash != approved.approvedBaseSourceHash then
     throw "sunshine-korri base source hash changed; review the approved source before building"
-  else if !cudaEnabled then
-    throw "sunshine-korri CUDA support is not present in the actual build inputs"
-  else if !(builtins.elem baseSunshineDerivation approved.approvedBaseDerivations) then
-    throw "sunshine-korri CUDA base derivation changed; review the complete upstream recipe before building"
+  else if cudaSupport != cudaEnabled then
+    throw "sunshine-korri CUDA inputs do not match the selected ${buildProfile} profile"
+  else if approvedBaseSunshineDerivation == null then
+    throw "sunshine-korri ${buildProfile} base derivation changed; review the complete upstream recipe before building"
   else if basePatches != [ ] then
     throw "sunshine-korri base derivation carries unapproved patches"
   else if !patchesApproved then
@@ -91,6 +103,7 @@ sunshineWithCuda.overrideAttrs (
         korriProvenanceRelativePath = provenanceRelativePath;
         korriPatchNames = patchNames;
         korriPatchSetSha256 = approved.patchSetSha256;
+        korriBuildProfile = buildProfile;
         korriBaseSunshineVersion = approved.baseSunshineVersion;
         korriApprovedBaseSunshineSourceHash = approved.approvedBaseSourceHash;
         korriBaseSunshineSource = baseSunshineSource;
