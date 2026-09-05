@@ -313,7 +313,13 @@ describe("useLaunchables discovery actions", () => {
     const { bridge, calls: bridgeCalls } = createRecordingLauncherBridge()
     const { client, calls: clientCalls } = createRecordingKorridClient(
       {
-        games: [{ id: "wl4", title: "Wario Land 4" }],
+        games: [
+          {
+            id: "wl4",
+            title: "Wario Land 4",
+            source: { label: "zao", isLocal: false },
+          },
+        ],
       },
       { registerGate, removeGate, rescanGate },
     )
@@ -435,7 +441,13 @@ describe("useLaunchables discovery actions", () => {
     const { client, calls } = createRecordingKorridClient(
       {
         discovery,
-        games: [{ id: "wl4", title: "Wario Land 4" }],
+        games: [
+          {
+            id: "wl4",
+            title: "Wario Land 4",
+            source: { label: "zao", isLocal: false },
+          },
+        ],
       },
       { failRemoveLocationIds: ["keep-me"], removeGate },
     )

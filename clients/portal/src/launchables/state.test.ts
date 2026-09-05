@@ -21,6 +21,8 @@ const nowPlayingEntry = (state: State): PortalEntry => {
   return entry
 }
 
+const source = (label: string) => ({ label, isLocal: false }) as const
+
 const officeHost = { uuid: "h1", name: "Office PC" } as const
 
 const officeApps = {
@@ -38,8 +40,8 @@ const gamesOk: CatalogSnapshotOutcome = {
   _tag: "Ok",
   payload: {
     games: [
-      { id: "skate3", title: "Skate 3" },
-      { id: "neverball", title: "Neverball" },
+      { id: "skate3", title: "Skate 3", source: source("aka") },
+      { id: "neverball", title: "Neverball", source: source("zao") },
     ],
   },
 }
@@ -88,7 +90,13 @@ describe("LaunchablesState.fromSources", () => {
         _tag: "Ok",
         payload: {
           games: [
-            { id: "wl4", title: "Wario Land 4", host: "zao", identity },
+            {
+              id: "wl4",
+              title: "Wario Land 4",
+              host: "zao",
+              identity,
+              source: source("zao"),
+            },
           ],
         },
       },
@@ -127,6 +135,7 @@ describe("LaunchablesState.fromSources", () => {
               title: "Wario Land 4",
               host: "zao",
               identity,
+              source: source("zao"),
             },
           },
         ],
@@ -206,7 +215,14 @@ describe("LaunchablesState.fromSources", () => {
     const state = LaunchablesState.fromSources([officeApps], {
       _tag: "Ok",
       payload: {
-        games: [{ id: "legacy", title: "Legacy game", host: "aka" }],
+        games: [
+          {
+            id: "legacy",
+            title: "Legacy game",
+            host: "aka",
+            source: source("aka"),
+          },
+        ],
         failures: [
           {
             host: "zao",
@@ -261,11 +277,21 @@ describe("hosted game identity", () => {
       [
         entryKey({
           kind: "game",
-          game: { id: "shared", title: "Shared", host: "aka" },
+          game: {
+            id: "shared",
+            title: "Shared",
+            host: "aka",
+            source: source("aka"),
+          },
         }),
         entryKey({
           kind: "game",
-          game: { id: "shared", title: "Shared", host: "zao" },
+          game: {
+            id: "shared",
+            title: "Shared",
+            host: "zao",
+            source: source("zao"),
+          },
         }),
       ],
     ).toEqual(["game:aka:shared", "game:zao:shared"])

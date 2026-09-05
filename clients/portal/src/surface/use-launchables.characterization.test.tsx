@@ -87,6 +87,7 @@ const remoteGame = (host = "zao"): Game => ({
   id: "wl4",
   title: "Wario Land 4",
   host,
+  source: { label: host, isLocal: false },
 })
 
 const activeSession = (overrides: Partial<ActiveSession> = {}): ActiveSession => ({
@@ -675,13 +676,29 @@ describe("useLaunchables sequence guards", () => {
       view.current().reload()
     })
 
-    second.resolve(catalogOk([{ id: "new", title: "New Game" }]))
+    second.resolve(
+      catalogOk([
+        {
+          id: "new",
+          title: "New Game",
+          source: { label: "zao", isLocal: false },
+        },
+      ]),
+    )
     await waitFor(
       () => expect(findGameEntry(view.current().state, "New Game")).toBeDefined(),
       "expected second load",
     )
 
-    first.resolve(catalogOk([{ id: "old", title: "Old Game" }]))
+    first.resolve(
+      catalogOk([
+        {
+          id: "old",
+          title: "Old Game",
+          source: { label: "zao", isLocal: false },
+        },
+      ]),
+    )
     await act(async () => {
       await sleep()
     })
@@ -869,8 +886,9 @@ describe("useLaunchables sequence guards", () => {
     expect(view.current().settingsStatus).toEqual({ _tag: "Idle" })
   })
 
-  test("successful stop remains Stopping until status observes the session gone", async () => {
+  test("successful stop passes the exact launch identity and remains Stopping until status observes the session gone", async () => {
     let stopCalls = 0
+    let stoppedLaunchId: string | undefined
     let statusCalls = 0
     const session = activeSession()
     const korrid = buildKorrid({
@@ -880,8 +898,9 @@ describe("useLaunchables sequence guards", () => {
           ? { _tag: "Ok", payload: { active: session } }
           : { _tag: "Ok", payload: {} }
       },
-      async sessionStop(): Promise<SessionStopOutcome> {
+      async sessionStop(expectedLaunchId): Promise<SessionStopOutcome> {
         stopCalls += 1
+        stoppedLaunchId = expectedLaunchId
         return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
       },
     })
@@ -895,6 +914,7 @@ describe("useLaunchables sequence guards", () => {
     })
 
     expect(stopCalls).toBe(1)
+    expect(stoppedLaunchId).toBe(session.launchId)
     await waitFor(
       () => expect(view.current().state._tag).toBe("Stopping"),
       "expected stopping publication",

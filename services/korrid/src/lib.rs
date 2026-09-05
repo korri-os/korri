@@ -54,6 +54,16 @@ pub struct GameProviderIdentity {
 }
 
 #[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_public_key: Option<String>,
+    pub label: String,
+    pub is_local: bool,
+}
+
+#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Game {
     pub id: String,
@@ -64,6 +74,7 @@ pub struct Game {
     pub identity: Option<GameIdentity>,
     #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
     pub play_stats: Option<PlayStats>,
+    pub source: GameSource,
 }
 
 #[typeshare]
@@ -753,7 +764,7 @@ pub struct SessionStatus {
 pub struct SessionStopRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force: Option<bool>,
-    /** Required by the private host control listener. LAN host dispatch remains rejected. */
+    /** Required by every host surface for an exact stop. */
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_launch_id: Option<String>,
 }
@@ -1320,24 +1331,28 @@ fn host_session_status_outcome(
 ) -> SessionStatusOutcome {
     use host::control::HostSessionStatus;
     match result {
-        Ok(HostSessionStatus::Running { launch_id }) => SessionStatusOutcome::Ok(SessionStatus {
-            active: Some(ActiveSession {
-                launch_id,
-                host: None,
-                game_id: None,
-                title: None,
-                phase: Some("running".into()),
-            }),
-        }),
-        Ok(HostSessionStatus::Stopping { launch_id }) => SessionStatusOutcome::Ok(SessionStatus {
-            active: Some(ActiveSession {
-                launch_id,
-                host: None,
-                game_id: None,
-                title: None,
-                phase: Some("stopping".into()),
-            }),
-        }),
+        Ok(HostSessionStatus::Running { launch_id, game_id }) => {
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id,
+                    host: None,
+                    game_id,
+                    title: None,
+                    phase: Some("running".into()),
+                }),
+            })
+        }
+        Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id,
+                    host: None,
+                    game_id,
+                    title: None,
+                    phase: Some("stopping".into()),
+                }),
+            })
+        }
         Ok(HostSessionStatus::Completed { launch_id }) => SessionStatusOutcome::Err(RpcFailure {
             code: "SessionCompleted".into(),
             message: format!("host launch {launch_id} completed"),
@@ -2190,11 +2205,11 @@ async fn dispatch(
             (ServerMode::Brain(brain), RpcSurface::Lan) => RpcResponse::SessionStatus(
                 session_status_outcome(brain.upstream.session_status().await),
             ),
-            (ServerMode::Host(host), RpcSurface::LocalControl) => {
+            (ServerMode::Host(host), RpcSurface::Lan)
+            | (ServerMode::Host(host), RpcSurface::LocalControl) => {
                 RpcResponse::SessionStatus(host_session_status_outcome(host.session_status().await))
             }
-            (ServerMode::Host(_), RpcSurface::Lan)
-            | (ServerMode::Brain(_), RpcSurface::LocalControl) => {
+            (ServerMode::Brain(_), RpcSurface::LocalControl) => {
                 RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
                     code: "SessionStatusUnsupported".into(),
                     message: "session status is unavailable on this listener".into(),
@@ -2206,11 +2221,15 @@ async fn dispatch(
                 RpcResponse::SessionStop(session_stop_outcome(
                     brain
                         .upstream
-                        .session_stop(request.force.unwrap_or(false))
+                        .session_stop(
+                            request.expected_launch_id.as_deref(),
+                            request.force.unwrap_or(false),
+                        )
                         .await,
                 ))
             }
-            (ServerMode::Host(host), RpcSurface::LocalControl) => {
+            (ServerMode::Host(host), RpcSurface::Lan)
+            | (ServerMode::Host(host), RpcSurface::LocalControl) => {
                 let outcome = request
                     .expected_launch_id
                     .as_deref()
@@ -2225,8 +2244,7 @@ async fn dispatch(
                 };
                 RpcResponse::SessionStop(host_session_stop_outcome(outcome))
             }
-            (ServerMode::Host(_), RpcSurface::Lan)
-            | (ServerMode::Brain(_), RpcSurface::LocalControl) => {
+            (ServerMode::Brain(_), RpcSurface::LocalControl) => {
                 RpcResponse::SessionStop(SessionStopOutcome::Err(RpcFailure {
                     code: "SessionStopUnsupported".into(),
                     message: "session stop is unavailable on this listener".into(),
@@ -5215,6 +5233,10 @@ command = ["neverball"]
         assert_eq!(body["outcome"]["_tag"], "Ok");
         assert_eq!(body["outcome"]["payload"]["games"][0]["id"], "neverball");
         assert_eq!(body["outcome"]["payload"]["games"][0]["host"], "zao");
+        let source = &body["outcome"]["payload"]["games"][0]["source"];
+        assert_eq!(source["label"], "zao");
+        assert_eq!(source["isLocal"], true);
+        assert_eq!(source["devicePublicKey"].as_str().unwrap().len(), 64);
     }
 
     #[tokio::test]
@@ -5274,7 +5296,10 @@ command = ["sh", "-c", "sleep 1"]
         tokio::spawn(async move { axum::serve(listener, host).await.unwrap() });
         std::fs::write(
             root.path().join("upstreams.json"),
-            format!(r#"[{{"label":"zao","kind":"native","baseUrl":"http://{address}"}}]"#),
+            format!(
+                r#"[{{"label":"zao","kind":"native","baseUrl":"http://{address}","devicePublicKey":"{}"}}]"#,
+                "11".repeat(32)
+            ),
         )
         .unwrap();
         let brain = router_with_capability_and_local_root(
@@ -5291,16 +5316,50 @@ command = ["sh", "-c", "sleep 1"]
         .await;
         assert_eq!(catalog["outcome"]["payload"]["games"][0]["host"], "zao");
         let prepared = rpc_body_authorized(
-            brain,
+            brain.clone(),
             r#"{"_tag":"app.session.prepare","payload":{"gameId":"neverball","host":"zao"}}"#,
             Some("right-token"),
         )
         .await;
         assert_eq!(prepared["outcome"]["_tag"], "Ok");
+        let launch_id = prepared["outcome"]["payload"]["launchId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let stale = rpc_body_authorized(
+            brain.clone(),
+            r#"{"_tag":"app.session.stop","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+            Some("right-token"),
+        )
+        .await;
+        assert_eq!(stale["outcome"]["payload"]["code"], "StaleLaunchIdentity");
+        let status = rpc_body_authorized(
+            brain.clone(),
+            r#"{"_tag":"app.session.status","payload":{}}"#,
+            Some("right-token"),
+        )
+        .await;
+        assert_eq!(
+            status["outcome"]["payload"]["active"]["launchId"],
+            launch_id
+        );
+
+        let stopped = rpc_body_authorized(
+            brain,
+            &serde_json::json!({
+                "_tag": "app.session.stop",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+            Some("right-token"),
+        )
+        .await;
+        assert_eq!(stopped["outcome"]["_tag"], "Ok");
     }
 
     #[tokio::test]
-    async fn host_router_rejects_brain_and_unmanaged_session_operations() {
+    async fn host_router_rejects_brain_operations_and_requires_exact_session_stop() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(&config, "label = \"zao\"\n").unwrap();
@@ -5313,11 +5372,11 @@ command = ["sh", "-c", "sleep 1"]
             ),
             (
                 r#"{"_tag":"app.session.status","payload":{}}"#,
-                "SessionStatusUnsupported",
+                "NoActiveSession",
             ),
             (
                 r#"{"_tag":"app.session.stop","payload":{}}"#,
-                "SessionStopUnsupported",
+                "ExpectedLaunchIdRequired",
             ),
         ] {
             let body = rpc_body(app.clone(), request).await;
@@ -5327,7 +5386,7 @@ command = ["sh", "-c", "sleep 1"]
     }
 
     #[tokio::test]
-    async fn private_host_control_is_exact_while_lan_control_stays_rejected() {
+    async fn private_and_lan_host_control_require_exact_stop_identity() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(
@@ -5367,10 +5426,10 @@ command = ["game-two"]
         let lan_status =
             tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.status","payload":{}}"#).await;
         assert_eq!(
-            lan_status["outcome"]["payload"]["code"],
-            "SessionStatusUnsupported"
+            lan_status["outcome"]["payload"]["active"]["launchId"],
+            first
         );
-        assert!(lan_status.to_string().find(&first).is_none());
+        assert_eq!(lan_status["outcome"]["payload"]["active"]["gameId"], "one");
         let status = unix_rpc_body(
             socket_path.clone(),
             r#"{"_tag":"app.session.status","payload":{}}"#,
@@ -5379,18 +5438,11 @@ command = ["game-two"]
         assert_eq!(status["outcome"]["payload"]["active"]["launchId"], first);
         assert_eq!(status["outcome"]["payload"]["active"]["phase"], "running");
 
-        let lan_stop = tcp_rpc_body(
-            tcp_address,
-            &serde_json::json!({
-                "_tag": "app.session.stop",
-                "payload": { "expectedLaunchId": first }
-            })
-            .to_string(),
-        )
-        .await;
+        let lan_stop =
+            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.stop","payload":{}}"#).await;
         assert_eq!(
             lan_stop["outcome"]["payload"]["code"],
-            "SessionStopUnsupported"
+            "ExpectedLaunchIdRequired"
         );
         assert!(lan_stop.to_string().find(&first).is_none());
 

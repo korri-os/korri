@@ -71,12 +71,19 @@ export interface PlayStats {
 	totalPlaytimeSeconds: number;
 }
 
+export interface GameSource {
+	devicePublicKey?: string;
+	label: string;
+	isLocal: boolean;
+}
+
 export interface Game {
 	id: string;
 	title: string;
 	host?: string;
 	identity?: GameIdentity;
 	playStats?: PlayStats;
+	source: GameSource;
 }
 
 export interface CatalogSnapshot {
@@ -426,7 +433,7 @@ export interface SessionStatusRequest {
 
 export interface SessionStopRequest {
 	force?: boolean;
-	/** Required by the private host control listener. LAN host dispatch remains rejected. */
+	/** Required by every host surface for an exact stop. */
 	expectedLaunchId?: string;
 }
 

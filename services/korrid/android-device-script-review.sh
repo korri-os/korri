@@ -488,7 +488,7 @@ for retained_stage in \
   stream-overlay-open \
   stream-connection-loss-narrated \
   stream-graceful-return \
-  stream-host-stop-unsupported \
+  stream-host-stop \
   permission-disabled \
   permission-recovered; do
   awk -v stage="$retained_stage" -v stop="$overlay_direct_line" '
@@ -499,7 +499,8 @@ for retained_stage in \
     exit 1
   }
 done
-grep -F 'SessionStopUnsupported' "$OVERLAY_ACCEPTANCE" >/dev/null
+grep -F '\"expectedLaunchId\":\"$parity_launch_id\"' "$OVERLAY_ACCEPTANCE" >/dev/null
+grep -F 'exact secure host stop' "$OVERLAY_ACCEPTANCE" >/dev/null
 grep -F '"KorriGameLifecycle"' "$ANDROID_GAME" >/dev/null
 grep -F '"KorriOverlay"' "$OVERLAY_SERVICE" >/dev/null
 grep -F 'logVisibility(null, suspendedLaunchId, "foreground-mismatch", "suspended")' "$OVERLAY_SERVICE" >/dev/null

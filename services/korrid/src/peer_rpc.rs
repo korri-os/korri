@@ -739,16 +739,72 @@ mod tests {
         let (host_root, _client_root, credentials, host_key, config) = setup();
         let app = crate::secure_host_router_with_in_memory_units_at(&config, host_root.path(), NOW);
         let base = serve(app).await;
-        let client = crate::upstream_native::NativeClient::new_secure_at(
+        let catalog_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),
-            host_key,
-            credentials,
+            host_key.clone(),
+            credentials.clone(),
             NOW,
             token(1),
             token(2),
         );
-        let catalog = client.catalog_snapshot().await.unwrap();
+        let catalog = catalog_client.catalog_snapshot().await.unwrap();
         assert_eq!(catalog.games[0].id, "neverball");
+
+        let prepare_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(3),
+            token(4),
+        );
+        let prepared = prepare_client.prepare_stream("neverball").await.unwrap();
+        let status_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(5),
+            token(6),
+        );
+        let crate::upstream::UpstreamSessionStatus::SessionStatus {
+            active: Some(active),
+        } = status_client.session_status().await.unwrap()
+        else {
+            panic!("secure peer status must report the prepared session")
+        };
+        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.game_id.as_deref(), Some("neverball"));
+        let stale_stop_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(7),
+            token(8),
+        );
+        assert!(matches!(
+            stale_stop_client
+                .session_stop("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)
+                .await,
+            Err(crate::upstreams::UpstreamError::Tagged { code, .. })
+                if code == "StaleLaunchIdentity"
+        ));
+        let stop_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key,
+            credentials,
+            NOW,
+            token(9),
+            token(10),
+        );
+        assert!(matches!(
+            stop_client
+                .session_stop(&prepared.launch_id, false)
+                .await
+                .unwrap(),
+            crate::upstream::UpstreamSessionStop::Stopped { .. }
+        ));
 
         let plaintext =
             serde_json::to_string(&RpcRequest::Health(crate::HealthRequest {})).unwrap();
@@ -921,6 +977,47 @@ mod tests {
                 now,
                 token(60),
                 token(61),
+            )
+            .unwrap();
+        let first = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        assert_eq!(
+            post(&first, "/peer-rpc", encoded.event_json.clone())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let restarted = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        assert_eq!(
+            post(&restarted, "/peer-rpc", encoded.event_json)
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[tokio::test]
+    async fn session_stop_nonce_survives_server_restart() {
+        let (host_root, _client_root, credentials, host_key, config) = setup();
+        let encoded = credentials
+            .encode_request_with_tokens(
+                &host_key,
+                RpcRequest::SessionStop(crate::SessionStopRequest {
+                    force: None,
+                    expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+                }),
+                NOW,
+                token(62),
+                token(63),
             )
             .unwrap();
         let first = serve(crate::secure_host_router_with_in_memory_units_at(

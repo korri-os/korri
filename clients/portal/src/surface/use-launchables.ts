@@ -924,7 +924,7 @@ export function useLaunchables(
       // cannot be issued twice.
       const stopRequested = LaunchablesState.beginStopping(current, entry)
       publish(stopRequested)
-      void korrid.sessionStop().then(outcome => {
+      void korrid.sessionStop(entry.session.launchId).then(outcome => {
         if (!mountedRef.current || operation !== actionSeq.current) return
         const stopping = LaunchablesState.withStopOutcome(
           stopRequested,

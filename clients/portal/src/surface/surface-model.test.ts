@@ -20,13 +20,20 @@ const ready = (
       : { message: notice, ...(subject ? { subject } : {}) },
 })
 
+const source = (label: string) => ({ label, isLocal: false }) as const
+
 const localGame: PortalEntry = {
   kind: "local-game",
   game: { id: "wl4", title: "Wario Land 4", system: "GBA" },
 }
 const hostGame: PortalEntry = {
   kind: "game",
-  game: { id: "neverball", title: "Neverball", host: "zao" },
+  game: {
+    id: "neverball",
+    title: "Neverball",
+    host: "zao",
+    source: source("zao"),
+  },
 }
 const nowPlaying: PortalEntry = {
   kind: "now-playing",
@@ -140,11 +147,11 @@ describe("surfaceModelFrom", () => {
           alternatives: [
             {
               kind: "remote",
-              game: { id: "wl4", title: "Wario Land 4", host: "zao" },
+              game: { id: "wl4", title: "Wario Land 4", host: "zao", source: source("zao") },
             },
             {
               kind: "remote",
-              game: { id: "wl4-aka", title: "Wario Land 4", host: "aka" },
+              game: { id: "wl4-aka", title: "Wario Land 4", host: "aka", source: source("aka") },
             },
           ],
         },
@@ -167,7 +174,7 @@ describe("surfaceModelFrom", () => {
       alternatives: [
         {
           kind: "remote",
-          game: { id: "wl4", title: "Wario Land 4", host: "zao" },
+          game: { id: "wl4", title: "Wario Land 4", host: "zao", source: source("zao") },
         },
       ],
     }
@@ -180,7 +187,7 @@ describe("surfaceModelFrom", () => {
 
     expect(entryForLaunchLocation(folded, zao.id)).toEqual({
       kind: "game",
-      game: { id: "wl4", title: "Wario Land 4", host: "zao" },
+      game: { id: "wl4", title: "Wario Land 4", host: "zao", source: source("zao") },
     })
   })
 

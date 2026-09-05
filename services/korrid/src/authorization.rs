@@ -147,6 +147,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionStatus(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionStop(request) if request.force.unwrap_or(false) => {
+            PeerPolicy::OwnerDeviceOnly
+        }
         RpcRequest::SessionStop(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
@@ -192,7 +195,8 @@ pub fn authorize(
 pub fn is_security_mutation(request: &RpcRequest) -> bool {
     matches!(
         request,
-        RpcRequest::MoonlightCertificateProvision(_)
+        RpcRequest::SessionStop(_)
+            | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
             | RpcRequest::DiscoveryRegisterReceipt(_)
             | RpcRequest::DiscoveryRemoveLocation(_)
@@ -1027,6 +1031,7 @@ mod tests {
             request(
                 serde_json::json!({"_tag":"app.moonlight.certificate.provision","payload":{"hostUuid":"h","clientCertificate":"c"}}),
             ),
+            request(serde_json::json!({"_tag":"app.session.stop","payload":{"force":true}})),
         ];
         for request in requests {
             assert!(authorize(&owner, &request).is_ok());
@@ -1082,6 +1087,7 @@ mod tests {
                 ),
                 request(serde_json::json!({"_tag":"system.health","payload":{}})),
                 request(serde_json::json!({"_tag":"system.settings.snapshot","payload":{}})),
+                request(serde_json::json!({"_tag":"app.session.stop","payload":{"force":true}})),
             ] {
                 assert!(authorize(attempt.context(), &request).is_err());
             }

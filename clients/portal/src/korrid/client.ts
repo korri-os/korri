@@ -77,7 +77,7 @@ export interface KorridClient {
   localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
-  sessionStop(): Promise<SessionStopOutcome>
+  sessionStop(expectedLaunchId: string): Promise<SessionStopOutcome>
   sessionControls(launchId: string): Promise<SessionControlsOutcome>
   invokeSessionControl(
     launchId: string,
@@ -447,11 +447,11 @@ export function createHttpKorridClient(
         return statusUnavailable(error)
       }
     },
-    async sessionStop() {
+    async sessionStop(expectedLaunchId) {
       try {
         const response = await callKorrid(baseUrl, capability, {
           _tag: "app.session.stop",
-          payload: {},
+          payload: { expectedLaunchId },
         })
         return response.outcome
       } catch (error) {
@@ -510,8 +510,16 @@ export interface InMemoryKorridClientConfig {
 }
 
 const sampleGames: readonly Game[] = [
-  { id: "skate3", title: "Skate 3" },
-  { id: "neverball", title: "Neverball" },
+  {
+    id: "skate3",
+    title: "Skate 3",
+    source: { label: "browser", isLocal: true },
+  },
+  {
+    id: "neverball",
+    title: "Neverball",
+    source: { label: "browser", isLocal: true },
+  },
 ]
 
 function updateInMemoryControl(
@@ -858,11 +866,20 @@ export function createInMemoryKorridClient(
         ? { _tag: "Ok", payload: {} }
         : { _tag: "Ok", payload: { active: activeSession } }
     },
-    async sessionStop() {
+    async sessionStop(expectedLaunchId) {
       if (behavior === "stop-fail") {
         return {
           _tag: "Err",
           payload: { code: "HostUnavailable", message: "configured to fail" },
+        }
+      }
+      if (activeSession?.launchId !== expectedLaunchId) {
+        return {
+          _tag: "Err",
+          payload: {
+            code: "StaleLaunchIdentity",
+            message: "The gameplay session changed.",
+          },
         }
       }
       activeSession = undefined

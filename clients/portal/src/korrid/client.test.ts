@@ -177,6 +177,30 @@ describe("callKorrid", () => {
     })
   })
 
+  it("stops only the supplied launch identity", async () => {
+    let body: unknown
+    globalThis.fetch = (async (_input, init) => {
+      body = JSON.parse(String(init?.body))
+      return new Response(
+        JSON.stringify({
+          _tag: "app.session.stop",
+          outcome: { _tag: "Ok", payload: { phase: "stopped" } },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    await createHttpKorridClient(
+      "http://127.0.0.1:43117",
+      "capability",
+    ).sessionStop("launch-1")
+
+    expect(body).toEqual({
+      _tag: "app.session.stop",
+      payload: { expectedLaunchId: "launch-1" },
+    })
+  })
+
   it("lists and invokes controls only for the supplied launch identity", async () => {
     const bodies: unknown[] = []
     globalThis.fetch = (async (_input, init) => {

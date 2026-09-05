@@ -99,6 +99,7 @@ const remoteGame = (host: string, id = "wl4"): Game => ({
   title: "Wario Land 4",
   host,
   identity,
+  source: { label: host, isLocal: false },
 })
 
 const streamHost = (name: string, uuid = `${name}-uuid`): StreamHost => ({

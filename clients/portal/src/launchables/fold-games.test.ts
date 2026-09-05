@@ -21,6 +21,7 @@ const remote = (
   id,
   title: id,
   host,
+  source: { label: host, isLocal: false },
   ...(identity === undefined ? {} : { identity }),
 })
 

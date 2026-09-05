@@ -22,9 +22,17 @@ use super::systemd_unit::{LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUni
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HostSessionStatus {
-    Running { launch_id: String },
-    Stopping { launch_id: String },
-    Completed { launch_id: String },
+    Running {
+        launch_id: String,
+        game_id: Option<String>,
+    },
+    Stopping {
+        launch_id: String,
+        game_id: Option<String>,
+    },
+    Completed {
+        launch_id: String,
+    },
     NoActive,
     RecoveryBlocked,
 }
@@ -551,11 +559,17 @@ impl HostSessionControl {
 
 fn status_from_state(state: &ActiveState) -> HostSessionStatus {
     match state {
-        ActiveState::Running { launch_id, .. } => HostSessionStatus::Running {
+        ActiveState::Running {
+            launch_id, game_id, ..
+        } => HostSessionStatus::Running {
             launch_id: launch_id.clone(),
+            game_id: game_id.clone(),
         },
-        ActiveState::Stopping { launch_id, .. } => HostSessionStatus::Stopping {
+        ActiveState::Stopping {
+            launch_id, game_id, ..
+        } => HostSessionStatus::Stopping {
             launch_id: launch_id.clone(),
+            game_id: game_id.clone(),
         },
         ActiveState::Completed { launch_id } => HostSessionStatus::Completed {
             launch_id: launch_id.clone(),
@@ -796,7 +810,8 @@ mod tests {
         assert_eq!(
             recovered.status(),
             HostSessionStatus::Running {
-                launch_id: prepared.launch_id
+                launch_id: prepared.launch_id,
+                game_id: None,
             }
         );
         assert_eq!(
@@ -1321,14 +1336,16 @@ mod tests {
         assert_eq!(
             control.status(),
             HostSessionStatus::Running {
-                launch_id: id.into()
+                launch_id: id.into(),
+                game_id: None,
             }
         );
         alive.store(false, Ordering::SeqCst);
         assert_eq!(
             control.status(),
             HostSessionStatus::Running {
-                launch_id: id.into()
+                launch_id: id.into(),
+                game_id: None,
             }
         );
         assert_eq!(manager.starts.load(Ordering::SeqCst), 2);
@@ -1378,7 +1395,8 @@ mod tests {
         assert_eq!(
             control.status(),
             HostSessionStatus::Stopping {
-                launch_id: id.into()
+                launch_id: id.into(),
+                game_id: None,
             }
         );
         assert_eq!(manager.starts.load(Ordering::SeqCst), 0);

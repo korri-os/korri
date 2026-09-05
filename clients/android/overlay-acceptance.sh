@@ -956,14 +956,12 @@ capture_evidence() {
     terminal-rpc)
       assert_overlay_window absent
       jq -e '
-        .hostStop.outcome._tag == "Err"
-        and .hostStop.outcome.payload.code == "SessionStopUnsupported"
-        and .disconnect.outcome._tag == "Ok"
-        and .disconnect.outcome.payload._tag == "Completed"
+        .hostStop.outcome._tag == "Ok"
+        and (.hostStop.outcome.payload.phase == "stopped" or .hostStop.outcome.payload.phase == "pending")
         and .finalStatus.outcome._tag == "Ok"
         and (.finalStatus.outcome.payload.active | not)
       ' <<<"$rpc_responses" >/dev/null
-      exact_checkpoint_predicate="exact host-stop rejection and disconnect completion for launchId=$expected_launch_id"
+      exact_checkpoint_predicate="exact host stop and idle status for launchId=$expected_launch_id"
       ;;
     service-disabled)
       assert_overlay_window absent
@@ -1390,48 +1388,33 @@ if [[ "$semantic_final" != "$semantic_original" ]]; then
 fi
 SEMANTIC_VALUES_EQUAL=true
 
-begin_evidence_checkpoint stream-host-stop-unsupported
+begin_evidence_checkpoint stream-host-stop
 checkpoint 'STREAM TERMINAL PROBE READY' \
   'Leave the exact recorded stream active after restoring every reversible value.' \
-  'Do not claim host Quit success: this Zao checkpoint expects SessionStopUnsupported.'
-host_stop_response="$(rpc '{"_tag":"app.session.stop","payload":{}}')"
-jq -e '.outcome._tag == "Err" and .outcome.payload.code == "SessionStopUnsupported"' \
+  'Stop that exact launch through the secure remote-session route.'
+host_stop_response="$(rpc "{\"_tag\":\"app.session.stop\",\"payload\":{\"expectedLaunchId\":\"$parity_launch_id\"}}")"
+jq -e '.outcome._tag == "Ok" and (.outcome.payload.phase == "stopped" or .outcome.payload.phase == "pending")' \
   <<<"$host_stop_response" >/dev/null || {
-    echo "Zao host stop did not report SessionStopUnsupported: $host_stop_response" >&2
+    echo "Zao host stop did not accept the exact launch identity: $host_stop_response" >&2
     exit 1
   }
-host_survival_status="$(rpc '{"_tag":"app.session.status","payload":{}}')"
-jq -e --arg launchId "$parity_launch_id" \
-  '.outcome._tag == "Ok" and .outcome.payload.active.launchId == $launchId' \
-  <<<"$host_survival_status" >/dev/null || {
-    echo 'stream did not survive the expected host-stop effect error' >&2
-    exit 1
-  }
-host_survival_controls="$(controls_for_launch "$parity_launch_id")"
-jq -e '.outcome._tag == "Ok"' <<<"$host_survival_controls" >/dev/null
-disconnect_response="$(invoke_control "$parity_launch_id" '@korri:moonlight/disconnect')"
-jq -e '.outcome._tag == "Ok" and .outcome.payload._tag == "Completed"' \
-  <<<"$disconnect_response" >/dev/null
 for _ in $(seq 1 20); do
-  disconnect_status="$(rpc '{"_tag":"app.session.status","payload":{}}')"
+  host_stop_status="$(rpc '{"_tag":"app.session.status","payload":{}}')"
   jq -e '.outcome._tag == "Ok" and (.outcome.payload.active | not)' \
-    <<<"$disconnect_status" >/dev/null && break
+    <<<"$host_stop_status" >/dev/null && break
   sleep 0.25
 done
 jq -e '.outcome._tag == "Ok" and (.outcome.payload.active | not)' \
-  <<<"$disconnect_status" >/dev/null || {
-    echo 'stream did not become idle after separate exact Disconnect' >&2
+  <<<"$host_stop_status" >/dev/null || {
+    echo 'stream did not become idle after the exact secure host stop' >&2
     exit 1
   }
 assert_overlay_window absent
 terminal_evidence="$(jq -cn \
   --argjson stop "$host_stop_response" \
-  --argjson survival "$host_survival_status" \
-  --argjson controls "$host_survival_controls" \
-  --argjson disconnect "$disconnect_response" \
-  --argjson finalStatus "$disconnect_status" \
-  '{hostStop:$stop,streamSurvival:$survival,controls:$controls,disconnect:$disconnect,finalStatus:$finalStatus}')"
-capture_evidence stream-host-stop-unsupported "$terminal_evidence" \
+  --argjson finalStatus "$host_stop_status" \
+  '{hostStop:$stop,finalStatus:$finalStatus}')"
+capture_evidence stream-host-stop "$terminal_evidence" \
   "$parity_launch_id" 'terminal-rpc' idle
 printf '%s\n' 'DECODER/HOST FAILURE: REPOSITORY-ONLY — deterministic repository tests cover these failures; this device run does not claim them as passed.'
 

@@ -5,11 +5,14 @@ use crate::{
     MoonlightCertificateProvisioned, MoonlightCertificateRevokeOutcome,
     MoonlightCertificateRevokeRequest, MoonlightCertificateRevoked, RpcFailure, RpcRequest,
     RpcResponse, SessionPrepareOutcome, SessionPrepareRequest, SessionPrepared,
+    SessionStatusOutcome, SessionStatusRequest, SessionStopOutcome, SessionStopPhase,
+    SessionStopRequest,
 };
 use std::time::Duration;
 
 use crate::{
     peer_rpc::{unix_time, PeerCredentials},
+    upstream::{UpstreamActiveSession, UpstreamSessionStatus, UpstreamSessionStop},
     upstreams::UpstreamError,
 };
 
@@ -117,6 +120,12 @@ impl NativeClient {
             | UpstreamError::MoonlightHostChanged
             | UpstreamError::MoonlightHostNotFound
             | UpstreamError::MoonlightHostAmbiguous
+            | UpstreamError::AmbiguousActiveSessions
+            | UpstreamError::SelectedRemoteSessionReplaced
+            | UpstreamError::NativeSessionRecoveryIncomplete
+            | UpstreamError::ActiveRemoteSessionConflict
+            | UpstreamError::ExpectedLaunchIdRequired
+            | UpstreamError::StaleLaunchIdentity
             | UpstreamError::MoonlightHostCandidatesUnavailable => error,
         }
     }
@@ -225,6 +234,68 @@ impl NativeClient {
             }
             response => Err(UpstreamError::Wire(format!(
                 "native prepare returned {response:?}"
+            ))),
+        }
+    }
+
+    pub async fn session_status(&self) -> Result<UpstreamSessionStatus, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionStatus(SessionStatusRequest {}))
+            .await?
+        {
+            RpcResponse::SessionStatus(SessionStatusOutcome::Ok(status)) => {
+                Ok(UpstreamSessionStatus::SessionStatus {
+                    active: status.active.map(|active| UpstreamActiveSession {
+                        launch_id: active.launch_id,
+                        host: active.host,
+                        game_id: active.game_id,
+                        title: active.title,
+                        phase: active.phase,
+                    }),
+                })
+            }
+            RpcResponse::SessionStatus(SessionStatusOutcome::Err(failure))
+                if matches!(
+                    failure.code.as_str(),
+                    "SessionCompleted" | "NoActiveSession"
+                ) =>
+            {
+                Ok(UpstreamSessionStatus::SessionStatus { active: None })
+            }
+            RpcResponse::SessionStatus(SessionStatusOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native session status returned {response:?}"
+            ))),
+        }
+    }
+
+    pub async fn session_stop(
+        &self,
+        expected_launch_id: &str,
+        force: bool,
+    ) -> Result<UpstreamSessionStop, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionStop(SessionStopRequest {
+                force: force.then_some(true),
+                expected_launch_id: Some(expected_launch_id.into()),
+            }))
+            .await?
+        {
+            RpcResponse::SessionStop(SessionStopOutcome::Ok(result)) => match result.phase {
+                SessionStopPhase::Stopped => Ok(UpstreamSessionStop::Stopped {
+                    launch_id: Some(expected_launch_id.into()),
+                }),
+                SessionStopPhase::Pending => Ok(UpstreamSessionStop::StopPending {
+                    launch_id: Some(expected_launch_id.into()),
+                }),
+            },
+            RpcResponse::SessionStop(SessionStopOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native session stop returned {response:?}"
             ))),
         }
     }
@@ -438,6 +509,21 @@ command = ["neverball"]
 
         let prepared = client.prepare_stream("neverball").await.unwrap();
         assert_eq!(prepared.game_id, "neverball");
+        let UpstreamSessionStatus::SessionStatus {
+            active: Some(active),
+        } = client.session_status().await.unwrap()
+        else {
+            panic!("native host must report the prepared session")
+        };
+        assert_eq!(active.launch_id, prepared.launch_id);
+        assert_eq!(active.game_id.as_deref(), Some("neverball"));
+        assert!(matches!(
+            client
+                .session_stop(&prepared.launch_id, false)
+                .await
+                .unwrap(),
+            UpstreamSessionStop::Stopped { .. }
+        ));
     }
 
     #[test]

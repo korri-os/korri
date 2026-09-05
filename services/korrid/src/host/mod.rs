@@ -12,8 +12,9 @@ use crate::{
         resolver::{resolve_launchable_routes_for_platform, RoutePlatform},
         snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
     },
+    identity::DeviceIdentity,
     launcher::linux_retroarch,
-    plugin_policy, CatalogSnapshot, Game, GameIdentity, RpcFailure, SessionPrepared,
+    plugin_policy, CatalogSnapshot, Game, GameIdentity, GameSource, RpcFailure, SessionPrepared,
 };
 use config::{HostConfig, HostConfigError};
 use moonlight_certificate::MoonlightCertificateAdapter;
@@ -102,6 +103,7 @@ pub struct HostRuntime {
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<Result<DynamicHostRuntime, RpcFailure>>,
+    device_public_key: Option<String>,
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
 }
@@ -126,10 +128,14 @@ impl HostRuntime {
             .ok()
             .map(|config| HostLauncher::new(config, &private_state_root));
         let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
+        let device_public_key = DeviceIdentity::load_or_create(&private_state_root)
+            .ok()
+            .and_then(|identity| identity.device_public_key().map(str::to_owned));
         Self {
             config,
             launcher,
             dynamic,
+            device_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -150,10 +156,14 @@ impl HostRuntime {
             .ok()
             .map(|config| HostLauncher::with_backend(config, &private_state_root, backend));
         let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
+        let device_public_key = DeviceIdentity::load_or_create(&private_state_root)
+            .ok()
+            .and_then(|identity| identity.device_public_key().map(str::to_owned));
         Self {
             config,
             launcher,
             dynamic,
+            device_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -182,6 +192,11 @@ impl HostRuntime {
             .as_ref()
             .map(|launcher| launcher.control().load_all_play_stats())
             .unwrap_or_default();
+        let source = GameSource {
+            device_public_key: self.device_public_key.clone(),
+            label: config.label.clone(),
+            is_local: true,
+        };
         let mut games: Vec<Game> = config
             .games
             .iter()
@@ -194,6 +209,7 @@ impl HostRuntime {
                     .get(&game.id)
                     .cloned()
                     .filter(|s| s.play_count > 0 || s.last_played.is_some()),
+                source: source.clone(),
             })
             .collect();
         if let Some(dynamic) = &self.dynamic {
@@ -214,6 +230,7 @@ impl HostRuntime {
                         .get(&game.id)
                         .cloned()
                         .filter(|s| s.play_count > 0 || s.last_played.is_some()),
+                    source: source.clone(),
                 });
             }
         }
