@@ -65,6 +65,7 @@
 @import "./ui/organisms/PicoGameHero.css";
 @import "./ui/organisms/PicoResumeList.css";
 @import "./ui/organisms/PicoGameActions.css";
+@import "./ui/organisms/PicoAttract.css";
 
 @font-face {
 	font-family: "Press Start 2P";
@@ -99,6 +100,13 @@
  * true-size device reflows instead of zooming. The scale itself comes from
  * `.pico-theme`, which the same element carries.
  */
+/* The catalog's own layer. It exists to catch a press that is only meant to
+ * wake the screen, so that press can be stopped before it reaches a control. */
+.pico-catalog-surface {
+	position: relative;
+	height: 100%;
+}
+
 .pico-screen {
 	position: relative;
 	container-type: size;

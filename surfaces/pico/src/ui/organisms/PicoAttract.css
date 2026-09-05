@@ -1,0 +1,52 @@
+.pico-attract {
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	display: grid;
+	/* An explicit column that cannot exceed the screen: the rail is deliberately
+	 * wider than the display, and a max-content column would let it push the
+	 * wordmark and the hint off to one side. */
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: 1fr auto 1fr;
+	align-items: center;
+	justify-items: center;
+	gap: var(--pico-space-2);
+	overflow: hidden;
+	background: var(--pico-bg);
+	animation: pico-rise 400ms steps(4, end) both;
+}
+
+.pico-attract-wordmark {
+	align-self: end;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xl);
+	color: var(--pico-ink);
+	letter-spacing: 0.25em;
+	text-shadow: var(--pico-edge) var(--pico-edge) 0 var(--pico-cast-shadow);
+}
+
+.pico-attract-rail {
+	display: flex;
+	width: max-content;
+	align-items: center;
+	gap: var(--pico-space-2);
+	width: 100%;
+	/* Travels one full set and meets its own copy, so the loop has no seam. */
+	animation: pico-attract-drift 24s linear infinite;
+}
+
+.pico-attract-cart {
+	flex: 0 0 auto;
+	container-type: size;
+	height: calc(var(--pico-base) * 6);
+	aspect-ratio: 3 / 4;
+}
+
+.pico-attract-hint {
+	align-self: start;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-ink-dim);
+	letter-spacing: 0.125em;
+	animation: pico-blink 1.4s steps(1, end) infinite;
+}

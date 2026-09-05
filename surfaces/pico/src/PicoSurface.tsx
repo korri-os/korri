@@ -4,13 +4,15 @@ import type {
   SurfaceHost,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
+import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
 import { picoDetailViewFromGame } from "./pico-detail-view"
+import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
 import { PICO_ALL_SECTIONS, picoLibraryViewFrom } from "./pico-library-view"
 import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
@@ -131,6 +133,30 @@ function PicoCatalogSurface({
   /* A destructive game action awaiting a yes. Korri's game actions carry no
    * confirmation copy of their own, so the question is built from the label. */
   const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
+  const [attracting, setAttracting] = useState(false)
+  /* Bumped by any activity; the idle timer restarts on every change. */
+  const [awake, setAwake] = useState(0)
+  /* A ref as well as state, because the input handlers are registered once and
+   * would otherwise close over whether attract was showing when they were made
+   * rather than whether it is showing when the button is actually pressed. */
+  const attractingRef = useRef(false)
+  attractingRef.current = attracting
+
+  /**
+   * Note the activity, and report whether it was spent waking the screen.
+   *
+   * A press that dismisses attract does nothing else. Picking a device up and
+   * touching it must not start a game, cycle a mode or open settings — the
+   * first press is how you get the screen back, and anything more is the device
+   * acting on an intention nobody had.
+   */
+  const wake = useCallback(() => {
+    setAwake((count) => count + 1)
+    if (!attractingRef.current) return false
+    attractingRef.current = false
+    setAttracting(false)
+    return true
+  }, [])
   const [query, setQuery] = useState("")
   const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
@@ -139,12 +165,28 @@ function PicoCatalogSurface({
   >(undefined)
   const view = picoScreenViewFromModel(model)
 
+  /* Attract shows only over a shelf that is sitting there: never over a running
+   * game, a launch, a failure, or a library Korri is still reading — those are
+   * all screens the user is waiting on, and hiding one behind decoration would
+   * lose the thing they are waiting for. */
+  const canAttract = view._tag === "Shelf"
+
+  useEffect(() => {
+    if (!canAttract) {
+      setAttracting(false)
+      return
+    }
+    const timer = setTimeout(() => setAttracting(true), PICO_ATTRACT_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [canAttract, awake])
+
   useEffect(() => {
     const offBack = host.input.on("back", () => {
       /* Back withdraws the most local thing first: a confirmation, then a
        * launch-location question, then settings, then a game's own screen, then
        * a failure notice. Leaving the surface is the host's to decide, so past
        * that Pico does nothing and the press falls through. */
+      if (wake()) return
       setAskingAction((pending) => {
         if (pending !== undefined) return undefined
         setAsking((question) => {
@@ -172,12 +214,15 @@ function PicoCatalogSurface({
       })
     })
     const offSystem = host.input.on("system", () => {
+      if (wake()) return
       setSettingsOpen((open) => !open)
     })
     const offOptions = host.input.on("options", () => {
+      if (wake()) return
       setFinding((open) => !open)
     })
     const offMenu = host.input.on("menu", () => {
+      if (wake()) return
       setMode((current) =>
         current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
       )
@@ -223,6 +268,21 @@ function PicoCatalogSurface({
 
   return (
     <>
+      <div
+        className="pico-catalog-surface"
+        onKeyDownCapture={(event) => {
+          if (wake()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
+        onPointerDownCapture={(event) => {
+          if (wake()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
+      >
       {settings ? (
         <PicoSettings
           asking={asking}
@@ -282,6 +342,10 @@ function PicoCatalogSurface({
           view={view}
         />
       )}
+      {attracting ? (
+        <PicoAttract games={view._tag === "Shelf" ? view.games : []} />
+      ) : null}
+      </div>
     </>
   )
 }

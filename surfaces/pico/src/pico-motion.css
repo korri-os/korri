@@ -147,3 +147,11 @@
 		transform: translateX(calc(-100% + 100cqw));
 	}
 }
+
+/* The attract rail travels exactly one set of carts, so its copy lands where it
+ * started and the loop has no visible seam. */
+@keyframes pico-attract-drift {
+	to {
+		transform: translateX(-50%);
+	}
+}
