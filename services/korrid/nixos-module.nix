@@ -48,6 +48,39 @@ let
         ];
     in
     secure || loopback;
+  validIpv6 =
+    address:
+    let
+      compressed = lib.splitString "::" address;
+      groups = lib.filter (part: part != "") (lib.splitString ":" address);
+      validGroup = part: builtins.match "[0-9a-fA-F]{1,4}" part != null;
+    in
+    lib.all validGroup groups
+    && !(lib.hasInfix ":::" address)
+    && (!(lib.hasPrefix ":" address) || lib.hasPrefix "::" address)
+    && (!(lib.hasSuffix ":" address) || lib.hasSuffix "::" address)
+    && (
+      if builtins.length compressed == 2 then
+        builtins.length groups < 8
+      else
+        builtins.length compressed == 1
+        && builtins.length groups == 8
+        && !(lib.hasPrefix ":" address)
+        && !(lib.hasSuffix ":" address)
+    );
+  validPeerOrigin =
+    value:
+    let
+      parts = builtins.match "^https?://([A-Za-z0-9._-]+|[[][0-9a-fA-F:]+[]])(:([0-9]+))?/?$" value;
+      port = if parts == null then null else builtins.elemAt parts 2;
+      host = if parts == null then "" else builtins.elemAt parts 0;
+    in
+    builtins.stringLength value <= 2048
+    && parts != null
+    && (!(lib.hasPrefix "[" host) || validIpv6 (lib.removeSuffix "]" (lib.removePrefix "[" host)))
+    && (
+      port == null || (builtins.stringLength port <= 5 && lib.toInt port >= 1 && lib.toInt port <= 65535)
+    );
   nativePeersJson = builtins.toJSON (
     map (peer: {
       inherit (peer)
@@ -186,6 +219,16 @@ in
       type = lib.types.listOf lib.types.str;
       description = "Ordered relay URLs. Production relays use wss://; ws:// is limited to loopback tests.";
     };
+    advertisedEndpoints = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Reachable HTTP(S) peer origins advertised to verified same-owner devices. Empty is query-only.";
+    };
+    moonlightAddress = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional Moonlight address in authenticated endpoint announcements.";
+    };
     nativePeers = lib.mkOption {
       default = [ ];
       description = "Native peer endpoints serialized to the established KORRID_UPSTREAMS schema.";
@@ -244,6 +287,23 @@ in
           && lib.all validRelayUrl relayUrls
           && builtins.length (lib.unique relayUrls) == builtins.length relayUrls;
         message = "korrid relays must contain one to eight unique normalized wss:// URLs, with ws:// allowed only for loopback tests.";
+      }
+      {
+        assertion =
+          builtins.length cfg.advertisedEndpoints <= 8 && lib.all validPeerOrigin cfg.advertisedEndpoints;
+        message = "korrid advertisedEndpoints must contain at most eight bounded HTTP(S) origins with no credentials, query, fragment or non-root path, and ports in 1..65535.";
+      }
+      {
+        assertion =
+          cfg.advertisedEndpoints == [ ]
+          || cfg.moonlightAddress == null
+          || (
+            builtins.stringLength cfg.moonlightAddress >= 1
+            && builtins.stringLength cfg.moonlightAddress <= 256
+            && builtins.match ".*[[:cntrl:]].*" cfg.moonlightAddress == null
+            && builtins.match "[[:space:]]*" cfg.moonlightAddress == null
+          );
+        message = "korrid advertised moonlightAddress must be null or bounded nonblank text without control characters.";
       }
       {
         assertion =
@@ -412,6 +472,8 @@ in
       ]
       ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
       environment = {
+        HOSTNAME = config.networking.hostName;
+        KORRID_ADVERTISED_ENDPOINTS = builtins.toJSON cfg.advertisedEndpoints;
         KORRID_MODE = "host";
         KORRID_ADDRESS = cfg.address;
         KORRID_HOST_CONFIG = toString cfg.deviceConfig;
@@ -430,6 +492,9 @@ in
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs (cfg.moonlightAddress != null) {
+        KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
       }
       // lib.optionalAttrs bundleCfg.enable {
         KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;

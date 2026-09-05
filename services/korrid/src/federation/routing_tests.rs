@@ -95,7 +95,7 @@ async fn host(f: &Fixture) -> String {
         f._peer_root.path().into(),
         Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
     );
-    serve(crate::secure_host_routers(runtime, f._peer_root.path()).0).await
+    serve(crate::secure_host_routers(runtime, f._peer_root.path(), None).0).await
 }
 
 async fn unavailable() -> String {
@@ -188,7 +188,7 @@ async fn roster_only_moonlight_metadata_and_certificate_operations_use_the_same_
         Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         adapter.clone(),
     );
-    let url = serve(crate::secure_host_routers(runtime, f._peer_root.path()).0).await;
+    let url = serve(crate::secure_host_routers(runtime, f._peer_root.path(), None).0).await;
     let mut endpoint = f.endpoint(1, 1000);
     endpoint.candidates = vec![url];
     endpoint.label = None;
@@ -721,7 +721,7 @@ async fn second_peer(f: &Fixture) -> (tempfile::TempDir, String, String) {
         Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         crate::tests::RecordingMoonlightCertificates::matching("different-host"),
     );
-    let url = serve(crate::secure_host_routers(runtime, root.path()).0).await;
+    let url = serve(crate::secure_host_routers(runtime, root.path(), None).0).await;
     (root, key, url)
 }
 
@@ -749,7 +749,7 @@ async fn revoked_buffered_result_is_unavailable(operation: BufferedOperation) {
         Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
         crate::tests::RecordingMoonlightCertificates::matching("sunshine-host"),
     );
-    let a_url = serve(crate::secure_host_routers(runtime, f._peer_root.path()).0).await;
+    let a_url = serve(crate::secure_host_routers(runtime, f._peer_root.path(), None).0).await;
     if matches!(operation, BufferedOperation::Recovery) {
         NativeClient::new_secure(a_url.clone(), f.key(), f.credentials.clone())
             .prepare_stream("game")

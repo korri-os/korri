@@ -78,6 +78,39 @@ let
   withAudio = evaluate {
     services.korriLinuxHost.audio.enable = true;
   };
+  advertised = evaluate {
+    services.korriLinuxHost.advertisedEndpoints = [ "http://consumer:39217" ];
+    services.korriLinuxHost.moonlightAddress = "consumer:47989";
+  };
+  ipv6Advertisements = evaluate {
+    services.korriLinuxHost.advertisedEndpoints = [
+      "http://[::]"
+      "http://[::1]:43117"
+      "http://[1::]"
+      "http://[1::2]"
+      "http://[1:2:3:4:5:6:7:8]"
+    ];
+  };
+  invalidAdvertisements =
+    map
+      (
+        value:
+        evaluate {
+          services.korriLinuxHost.advertisedEndpoints = [ value ];
+        }
+      )
+      [
+        "ws://consumer:39217"
+        "http://[:1::2]"
+        "http://[1::2:]"
+      ];
+  queryOnlyEmptyMoonlight = evaluate {
+    services.korriLinuxHost.moonlightAddress = "";
+  };
+  invalidMoonlight = evaluate {
+    services.korriLinuxHost.advertisedEndpoints = [ "http://consumer:39217" ];
+    services.korriLinuxHost.moonlightAddress = "";
+  };
   noValidation = evaluate {
     services.korriLinuxHost.validation.enable = false;
   };
@@ -419,6 +452,23 @@ assert inputd.serviceConfig.User == "korri-inputd";
 assert korrid.serviceConfig.User == "korrid";
 assert korrid.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert korrid.environment.KORRID_RELAYS == ''["wss://relay.example.com"]'';
+assert korrid.environment.HOSTNAME == "consumer";
+assert allAssertionsPass advertised;
+assert allAssertionsPass ipv6Advertisements;
+assert lib.all (hasFailedAssertion "advertisedEndpoints") invalidAdvertisements;
+assert allAssertionsPass queryOnlyEmptyMoonlight;
+assert hasFailedAssertion "moonlightAddress" invalidMoonlight;
+assert
+  advertised.config.systemd.services.korrid.environment.KORRID_ADVERTISED_ENDPOINTS
+  == ''["http://consumer:39217"]'';
+assert
+  advertised.config.systemd.services.korrid.environment.KORRID_MOONLIGHT_ADDRESS == "consumer:47989";
+assert korrid.environment.KORRID_ADVERTISED_ENDPOINTS == "[]";
+assert
+  cfg.services.korridLinuxDevice.advertisedEndpoints
+  == cfg.services.korriLinuxHost.advertisedEndpoints;
+assert
+  cfg.services.korridLinuxDevice.moonlightAddress == cfg.services.korriLinuxHost.moonlightAddress;
 assert
   korrid.environment.KORRID_UPSTREAMS
   == ''[{"baseUrl":"http://zao:43117","devicePublicKey":"${peerPublicKey}","kind":"native","label":"zao","moonlightAddress":"zao:47989"}]'';

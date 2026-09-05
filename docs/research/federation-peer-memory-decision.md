@@ -243,3 +243,71 @@ No coordinator, publication task or lifecycle hook is started by B3. Private
 roots must already satisfy the B2 rules; runtime code does not chmod or repair
 existing state. This adds startup failure on nonprivate or invalid memory rather
 than silently using an empty directory.
+
+## B4 discovery and lifecycle
+
+`federation::coordinator::FederationResources::open` composes one credentials
+mutex, one Authorization and one directory for a private root. Production brain
+registries and Linux inbound peer RPC receive these same clones. `AppState`
+retains the actual directory for later snapshot consumers. The coordinator
+creates its short-lived relay signer from the current credentials snapshot on
+each cycle; it does not load an independent signing identity.
+
+Discovery runs immediately. Successful or partially successful relay observations
+poll again after 60 seconds. Total operation failure retries after 5 seconds,
+doubles the delay, and stops increasing at 5 minutes. An empty successful read
+is not a relay outage. `CoordinationSnapshot.all_relay_reads_failed` carries that
+transport distinction explicitly; signer packet reads keep their old contract.
+Global relay failure does not mark reachable remembered peers Failed. Native
+operations remain the authority for peer Ready/Failed state.
+
+Each cycle publishes the stored, person-signed owner event unchanged, reads the
+same-owner roster, and applies both latest and terminal-revocation signed
+sources with the directory work token. It then captures a fresh token before
+reading endpoint ciphertext and commits that original evidence. A bounded relay
+snapshot is never an instruction to delete absent peers.
+
+A nonempty local advertisement reserves its generation and NIP timestamp before
+any endpoint publication. Both EndpointRecord issue time and the outer event
+use that timestamp. Lifetime is 24 hours; renewal is after 6 hours. Startup and
+changed publication inputs make a new reservation. Per-recipient successful
+generations are held in memory. A newly observed owned recipient gets the
+current generation in that cycle, without waiting for renewal. Partial writes
+remain pending and retry on the next poll; total write failure uses backoff.
+A crash burns a reservation and restart makes a newer one. No publication state
+or recipient-delivery schema was added to the private document.
+
+Linux keeps `KORRID_RELAYS`. `KORRID_ADVERTISED_ENDPOINTS` is a JSON array of
+strict HTTP(S) origins; its default is empty and valid query-only operation.
+`KORRID_MOONLIGHT_ADDRESS` is optional. The reloaded readable `host.title` supplies
+the authenticated label; the NixOS service supplies standard `HOSTNAME` from
+`networking.hostName` as the fallback. Both existing Nix module interfaces expose
+`advertisedEndpoints` (default `[]`) and nullable `moonlightAddress`. There is no
+new readable config field or label option. WebSocket rules apply only to relays,
+not peer endpoints.
+
+Android explicitly reloads the existing config coordinator and checks its
+SnapshotAuthorization before reading `host.relays`. Android publishes its owner
+event but never constructs an empty endpoint record, because the embedded brain
+has no reachable peer listener. Successful settings updates wake discovery;
+ordinary polling also reloads readable configuration. After local owner binding
+is durably applied, the original shared credentials reload and the directory's
+work epoch advances before waking discovery. Port, browser capability and
+WebView lifetime do not change.
+
+A wake cancels the current asynchronous cycle before fresh signing/relay work.
+Shutdown cancels and joins discovery, including blocked WebSocket handshakes,
+reads and publications. Android owns the task inside its Tokio runtime and joins
+it before the server thread exits. Stop releases the server-slot mutex before
+the blocking thread join. Linux joins after SIGTERM, SIGINT or either serving
+surface fails. Tokio's signal feature supplies Linux signal handling; no second
+signal runtime or polling signal handler was introduced.
+
+Cost and limits: a new unremembered device needs a working relay or explicit
+static configuration. Offline revocations remain delayed indefinitely; remembered
+endpoints do not prove current membership freshness or reachability. Relays can
+reject delegated person-authored EVENT publication even when device NIP-42 auth
+works. There is no second roster protocol or plaintext fallback. Cancellation
+bounds asynchronous network work, not synchronous signature verification or
+private-filesystem operations already in progress. Public-relay policy, real
+wireless routing and Android physical lifecycle behavior remain acceptance work.

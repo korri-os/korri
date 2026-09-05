@@ -1,5 +1,6 @@
 //! Verified peer memory and live state. Clone this aggregate, never open a
 //! second writer. Callers do network work between begin_work and commit methods.
+pub mod coordinator;
 mod store;
 
 use crate::{

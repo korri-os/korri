@@ -1,6 +1,12 @@
 use super::*;
 #[path = "additional_tests.rs"]
 mod additional;
+#[path = "coordinator_effect_tests.rs"]
+mod coordinator_effect_tests;
+#[path = "coordinator_io_tests.rs"]
+mod coordinator_io_tests;
+#[path = "coordinator_tests.rs"]
+mod coordinator_tests;
 #[path = "routing_tests.rs"]
 mod routing;
 use crate::relay::ENDPOINT_EVENT_KIND;

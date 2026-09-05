@@ -188,6 +188,27 @@ async fn serve_host_surfaces(
     first_server_exit(lan_server, local_server).await
 }
 
+async fn serve_with_discovery<S, Q, D>(
+    serving: S,
+    shutdown: Q,
+    control: korrid::federation::coordinator::DiscoveryControl,
+    discovery: D,
+) -> Option<(&'static str, io::Result<()>)>
+where
+    S: std::future::Future<Output = (&'static str, io::Result<()>)>,
+    Q: std::future::Future<Output = ()>,
+    D: std::future::Future<Output = ()> + Send + 'static,
+{
+    let discovery = tokio::spawn(discovery);
+    let result = tokio::select! {
+        _ = shutdown => None,
+        result = serving => Some(result),
+    };
+    control.cancel();
+    discovery.await.expect("join relay discovery");
+    result
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {
     Brain,
@@ -284,18 +305,23 @@ fn private_state_root() -> PathBuf {
     )
 }
 
-fn brain_router() -> Router {
+fn brain_router(
+    resources: korrid::federation::coordinator::FederationResources,
+    wake: korrid::federation::coordinator::DiscoveryControl,
+) -> Router {
     let capability = std::env::var("KORRID_RPC_CAPABILITY")
         .expect("KORRID_RPC_CAPABILITY must be set for the brain server");
     let allowed_origin = std::env::var("KORRID_PORTAL_ORIGIN")
         .unwrap_or_else(|_| "https://appassets.androidplatform.net".into());
-    korrid::router_with_capability_and_roots(
+    korrid::router_with_capability_and_federation(
         &capability,
         &allowed_origin,
         std::env::var_os("KORRI_LOCAL_STORAGE_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::temp_dir().join("korri")),
         private_state_root(),
+        Some(resources),
+        Some(wake),
     )
 }
 
@@ -463,23 +489,67 @@ async fn main() {
         }
         return;
     }
-    korrid::relay::RelayList::from_linux_environment(
+    use korrid::federation::coordinator::{
+        Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources,
+    };
+    use std::sync::Arc;
+    let relays = korrid::relay::RelayList::from_linux_environment(
         std::env::var("KORRID_RELAYS").ok().as_deref(),
     )
     .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
+    let advertised_endpoints = std::env::var("KORRID_ADVERTISED_ENDPOINTS")
+        .ok()
+        .map(|json| {
+            serde_json::from_str::<Vec<String>>(&json)
+                .expect("KORRID_ADVERTISED_ENDPOINTS must be a JSON array")
+        })
+        .unwrap_or_default();
+    let initial_inputs = DiscoveryInputs {
+        relays,
+        advertised_endpoints,
+        label: std::env::var("HOSTNAME").ok(),
+        moonlight_address: std::env::var("KORRID_MOONLIGHT_ADDRESS").ok(),
+    };
+    initial_inputs
+        .validate()
+        .expect("valid advertised endpoints and metadata");
+    let resources =
+        FederationResources::open(&private_state_root()).expect("open federation authority");
     let mode_value = std::env::var("KORRID_MODE").ok();
     let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
+    let config_root = match mode {
+        Mode::Host => host_storage_root(),
+        Mode::Brain => std::env::var_os("KORRI_LOCAL_STORAGE_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("korri")),
+    };
+    let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
+    let (wake, discovery) = Discovery::new(
+        resources.directory.clone(),
+        resources.credentials.clone(),
+        Arc::new(move || DiscoveryInputs::linux(&config, &initial_inputs)),
+        Arc::new(korrid::relay::WebSocketRelayTransport::new()),
+        DiscoveryTiming::default(),
+        Arc::new(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        }),
+    )
+    .start();
     let (lan_router, local_control_router) = match mode {
-        Mode::Brain => (brain_router(), None),
+        Mode::Brain => (brain_router(resources, wake.clone()), None),
         Mode::Host => {
             let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
             let portal = host_portal_access(origin.as_deref(), credentials.as_deref())
                 .unwrap_or_else(|error| panic!("invalid portal access: {error}"));
-            let (lan, local) = korrid::host_routers_with_storage_and_private(
+            let (lan, local) = korrid::host_routers_with_federation(
                 host_config_path(),
                 Some(host_storage_root()),
                 private_state_root(),
+                resources,
                 portal,
             );
             (lan, Some(local))
@@ -492,30 +562,42 @@ async fn main() {
         .await
         .expect("bind korrid server");
 
-    if let Some(local_router) = local_control_router {
-        if let Some(listener) =
-            inherited_control_listener().unwrap_or_else(|error| panic!("{error}"))
-        {
-            let listener = tokio::net::UnixListener::from_std(listener)
-                .expect("adopt inherited local control listener");
-            let expected = ExpectedControlPeer::from_environment()
-                .unwrap_or_else(|error| panic!("invalid local control peer identity: {error}"));
-            let (local_listener, local_failure) = AuthorizedUnixListener::new(listener, expected);
-            let (name, result) = serve_host_surfaces(
-                lan_listener,
-                lan_router,
-                local_listener,
-                local_failure,
-                local_router,
-            )
-            .await;
-            result.unwrap_or_else(|error| panic!("serve {name} korrid: {error}"));
-            panic!("{name} korrid server exited unexpectedly");
+    // Install both signal handlers before spawning discovery. Either serving
+    // failure and either shutdown signal cancel and join the same task.
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("install SIGTERM handler");
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+        .expect("install SIGINT handler");
+    let local = local_control_router.and_then(|router| {
+        inherited_control_listener()
+            .unwrap_or_else(|error| panic!("{error}"))
+            .map(|listener| {
+                let listener = tokio::net::UnixListener::from_std(listener)
+                    .expect("adopt inherited local control listener");
+                let expected = ExpectedControlPeer::from_environment()
+                    .unwrap_or_else(|error| panic!("invalid local control peer identity: {error}"));
+                let (listener, failure) = AuthorizedUnixListener::new(listener, expected);
+                (router, listener, failure)
+            })
+    });
+    let serving = async move {
+        if let Some((router, listener, failure)) = local {
+            serve_host_surfaces(lan_listener, lan_router, listener, failure, router).await
+        } else {
+            ("LAN", axum::serve(lan_listener, lan_router).await)
         }
+    };
+    let shutdown = async move {
+        tokio::select! {
+            _ = terminate.recv() => {},
+            _ = interrupt.recv() => {},
+        }
+    };
+    let result = serve_with_discovery(serving, shutdown, wake, discovery).await;
+    if let Some((name, result)) = result {
+        result.unwrap_or_else(|error| panic!("serve {name} korrid: {error}"));
+        panic!("{name} korrid server exited unexpectedly");
     }
-    axum::serve(lan_listener, lan_router)
-        .await
-        .expect("serve korrid");
 }
 
 #[cfg(test)]
@@ -658,6 +740,58 @@ mod tests {
             assert!(!credential_is_private(&file).unwrap());
         }
         assert!(!credential_is_private(&fs::File::open(std::env::temp_dir()).unwrap()).unwrap());
+    }
+
+    #[tokio::test]
+    async fn either_server_failure_cancels_and_joins_the_directory_owner() {
+        use korrid::federation::coordinator::{
+            Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources,
+        };
+        use std::{os::unix::fs::PermissionsExt, sync::Arc};
+        for failure in ["LAN", "local control"] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            let resources = FederationResources::open(root.path()).unwrap();
+            let relays =
+                korrid::relay::RelayList::configured(vec!["ws://localhost:7001".into()]).unwrap();
+            let transport = Arc::new(korrid::relay::InProcessRelayNetwork::new(&relays));
+            let (control, discovery) = Discovery::new(
+                resources.directory.clone(),
+                resources.credentials.clone(),
+                Arc::new(move || {
+                    Ok(DiscoveryInputs {
+                        relays: Some(relays.clone()),
+                        advertised_endpoints: vec![],
+                        label: None,
+                        moonlight_address: None,
+                    })
+                }),
+                transport,
+                DiscoveryTiming::default(),
+                Arc::new(|| 1000),
+            )
+            .start();
+            drop(resources);
+            let server = |name| async move {
+                if name != failure {
+                    std::future::pending::<()>().await;
+                }
+                tokio::task::yield_now().await;
+                Err(io::Error::other("configured serving failure"))
+            };
+            let result = serve_with_discovery(
+                first_server_exit(server("LAN"), server("local control")),
+                std::future::pending(),
+                control,
+                discovery,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.0, failure);
+            assert!(result.1.is_err());
+            // A detached directory owner would keep the private-root writer lease.
+            FederationResources::open(root.path()).unwrap();
+        }
     }
 
     #[test]

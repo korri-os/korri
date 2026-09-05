@@ -6,6 +6,9 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use federation::coordinator::{
+    Discovery, DiscoveryControl, DiscoveryInputs, DiscoveryTiming, FederationResources,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener},
@@ -1315,6 +1318,9 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    // Retain the actual shared directory for snapshot-only B5 consumers.
+    federation: Option<federation::FederationDirectory>,
+    federation_wake: Option<DiscoveryControl>,
     mode: ServerMode,
     portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
@@ -2930,6 +2936,9 @@ async fn dispatch(
                 });
                 if outcome.is_ok() {
                     brain.config_snapshot.reload();
+                    if let Some(wake) = &state.federation_wake {
+                        let _ = wake.wake();
+                    }
                 }
                 RpcResponse::SettingsUpdate(
                     outcome
@@ -3148,6 +3157,24 @@ pub fn router_with_capability_and_roots(
     local_storage_root: impl AsRef<Path>,
     private_state_root: impl AsRef<Path>,
 ) -> Router {
+    router_with_capability_and_federation(
+        rpc_capability,
+        allowed_origin,
+        local_storage_root,
+        private_state_root,
+        None,
+        None,
+    )
+}
+
+pub fn router_with_capability_and_federation(
+    rpc_capability: &str,
+    allowed_origin: &str,
+    local_storage_root: impl AsRef<Path>,
+    private_state_root: impl AsRef<Path>,
+    resources: Option<FederationResources>,
+    wake: Option<DiscoveryControl>,
+) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let signing_key = generate_launch_signing_key();
     let local_launch_reservations =
@@ -3156,7 +3183,7 @@ pub fn router_with_capability_and_roots(
         signing_key.clone(),
     )));
     let config_snapshot = config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
-    router_with_capability_local_root_and_provision(
+    router_with_capability_local_root_provision_and_grants(
         rpc_capability,
         allowed_origin,
         local_storage_root,
@@ -3170,6 +3197,10 @@ pub fn router_with_capability_and_roots(
         Arc::new(Mutex::new(None)),
         NativePlatform::Standalone,
         config_snapshot,
+        discovery::FolderSelectionGrantStore::default(),
+        None,
+        resources,
+        wake,
     )
 }
 
@@ -3267,6 +3298,8 @@ fn router_with_capability_local_root_and_provision(
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
         None,
+        None,
+        None,
     )
 }
 
@@ -3286,6 +3319,8 @@ fn router_with_capability_local_root_provision_and_grants(
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
+    resources: Option<FederationResources>,
+    federation_wake: Option<DiscoveryControl>,
 ) -> Router {
     let (state, _) = brain_app_state(
         rpc_capability,
@@ -3303,6 +3338,8 @@ fn router_with_capability_local_root_provision_and_grants(
         config_snapshot,
         folder_selection_grants,
         configured_upstream,
+        resources,
+        federation_wake,
     );
     portal_router_from_state(state)
 }
@@ -3324,6 +3361,8 @@ fn brain_app_state(
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
+    resources: Option<FederationResources>,
+    federation_wake: Option<DiscoveryControl>,
 ) -> (AppState, NativePlatform) {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
@@ -3334,31 +3373,28 @@ fn brain_app_state(
         settings_write_lock.clone(),
         folder_selection_grants.clone(),
     );
+    #[cfg(not(test))]
+    let resources = resources.or_else(|| {
+        Some(FederationResources::open(&private_state_root).expect("open federation authority"))
+    });
     let upstream = configured_upstream.unwrap_or_else(|| {
-        #[cfg(not(test))]
-        {
-            let peer_credentials = peer_rpc::PeerCredentials::load(&private_state_root)
-                .expect("load or create the local device identity");
-            let authorization = authorization::Authorization::load(&private_state_root)
-                .expect("load peer authorization");
-            let directory = federation::FederationDirectory::open(
-                &private_state_root,
-                peer_credentials.clone(),
-                authorization,
-                Arc::new(peer_rpc::unix_time),
-            )
-            .expect("open verified peer memory");
+        if let Some(resources) = &resources {
             upstreams::UpstreamRegistry::from_env_or_file(
                 &local_storage_root.join("upstreams.json"),
-                peer_credentials,
+                resources.credentials.clone(),
             )
-            .with_federation(directory)
-        }
-        #[cfg(test)]
-        {
-            upstreams::UpstreamRegistry::from_env_or_file_for_tests(
-                &local_storage_root.join("upstreams.json"),
-            )
+            .with_federation(resources.directory.clone())
+        } else {
+            #[cfg(test)]
+            {
+                upstreams::UpstreamRegistry::from_env_or_file_for_tests(
+                    &local_storage_root.join("upstreams.json"),
+                )
+            }
+            #[cfg(not(test))]
+            {
+                unreachable!("production federation composed above")
+            }
         }
     });
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
@@ -3368,6 +3404,8 @@ fn brain_app_state(
         portal_access.allow_bundled_android_origin();
     }
     let state = AppState {
+        federation: resources.map(|resources| resources.directory),
+        federation_wake,
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
             local_storage_root,
@@ -3458,12 +3496,34 @@ pub fn host_routers_with_storage_and_private(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
     let private_state_root = private_state_root.into();
+    let resources =
+        FederationResources::open(&private_state_root).expect("open federation authority");
+    host_routers_with_federation(
+        config_path,
+        storage_root,
+        private_state_root,
+        resources,
+        portal_access,
+    )
+}
+
+/// Build the same routers over federation resources the caller already owns,
+/// so one process shares a single directory, credentials and authorization
+/// with its discovery coordinator.
+pub fn host_routers_with_federation(
+    config_path: impl AsRef<Path>,
+    storage_root: Option<impl Into<PathBuf>>,
+    private_state_root: impl Into<PathBuf>,
+    resources: FederationResources,
+    portal_access: Option<PortalAccess>,
+) -> (Router, Router) {
+    let private_state_root = private_state_root.into();
     let runtime = host::HostRuntime::from_paths_with_private_state(
         config_path.as_ref(),
         storage_root.map(Into::into),
         private_state_root.clone(),
     );
-    secure_host_routers(runtime, &private_state_root, portal_access)
+    secure_host_routers_with_federation(runtime, &private_state_root, resources, portal_access)
 }
 
 #[cfg(test)]
@@ -3503,11 +3563,15 @@ fn secure_host_router_with_in_memory_units_at(
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let lan = AppState {
+        federation: None,
+        federation_wake: None,
         mode: ServerMode::Host(runtime.clone()),
         portal_access: None,
         rpc_surface: RpcSurface::Lan,
     };
     let local = AppState {
+        federation: None,
+        federation_wake: None,
         mode: ServerMode::Host(runtime),
         portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
@@ -3529,19 +3593,49 @@ pub(crate) fn plain_host_routers_for_tests(runtime: host::HostRuntime) -> (Route
     plain_host_routers(runtime)
 }
 
+/// Give the browser its own `/rpc` router over the LAN state, carrying the
+/// portal's capability and origin without the private-control authority.
+fn portal_router_for(lan: &AppState, portal_access: Option<PortalAccess>) -> Option<Router> {
+    portal_access.map(|access| {
+        let mut browser = lan.clone();
+        browser.portal_access = Some(access);
+        portal_router_from_state(browser)
+    })
+}
+
+#[cfg(test)]
 fn secure_host_routers(
     runtime: host::HostRuntime,
     private_state_root: &Path,
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
     let (lan, local) = app_states(runtime);
-    let portal = portal_access.map(|access| {
-        let mut browser = lan.clone();
-        browser.portal_access = Some(access);
-        portal_router_from_state(browser)
-    });
+    let portal = portal_router_for(&lan, portal_access);
     let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
         .expect("load or create peer RPC identity");
+    (
+        peer.router(portal),
+        Router::new().route("/rpc", post(rpc)).with_state(local),
+    )
+}
+
+fn secure_host_routers_with_federation(
+    runtime: host::HostRuntime,
+    private_state_root: &Path,
+    resources: FederationResources,
+    portal_access: Option<PortalAccess>,
+) -> (Router, Router) {
+    let (mut lan, mut local) = app_states(runtime);
+    lan.federation = Some(resources.directory.clone());
+    local.federation = Some(resources.directory);
+    let portal = portal_router_for(&lan, portal_access);
+    let peer = peer_rpc::PeerRpcServer::with_shared_authority(
+        lan,
+        private_state_root,
+        resources.credentials,
+        resources.authorization,
+    )
+    .expect("load peer replay authority");
     (
         peer.router(portal),
         Router::new().route("/rpc", post(rpc)).with_state(local),
@@ -3590,6 +3684,8 @@ struct ServerHandle {
     native_platform: NativePlatform,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     upstream: upstreams::UpstreamRegistry,
+    federation: FederationResources,
+    federation_wake: DiscoveryControl,
     stop: oneshot::Sender<()>,
     thread: JoinHandle<()>,
 }
@@ -3689,39 +3785,29 @@ fn start_local_server_for_platform(
     let moonlight_config_snapshot =
         config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     let server_config_snapshot = moonlight_config_snapshot.clone();
-    #[cfg(not(test))]
-    let upstream = {
-        let peer_credentials = peer_rpc::PeerCredentials::load(Path::new(&private_state_root))
-            .map_err(|error| ServerError::StartFailed {
+    let federation =
+        FederationResources::open(Path::new(&private_state_root)).map_err(|error| {
+            ServerError::StartFailed {
                 details: error.to_string(),
-            })?;
-        let authorization = authorization::Authorization::load(Path::new(&private_state_root))
-            .map_err(|error| ServerError::StartFailed {
-                details: error.to_string(),
-            })?;
-        let directory = federation::FederationDirectory::open(
-            Path::new(&private_state_root),
-            peer_credentials.clone(),
-            authorization,
-            Arc::new(peer_rpc::unix_time),
-        )
-        .map_err(|error| ServerError::StartFailed {
-            details: error.to_string(),
+            }
         })?;
-        upstreams::UpstreamRegistry::from_env_or_file(
-            Path::new(&local_storage_root)
-                .join("upstreams.json")
-                .as_path(),
-            peer_credentials,
-        )
-        .with_federation(directory)
-    };
-    #[cfg(test)]
-    let upstream = upstreams::UpstreamRegistry::from_env_or_file_for_tests(
-        Path::new(&local_storage_root)
-            .join("upstreams.json")
-            .as_path(),
-    );
+    let upstream = upstreams::UpstreamRegistry::from_env_or_file(
+        &Path::new(&local_storage_root).join("upstreams.json"),
+        federation.credentials.clone(),
+    )
+    .with_federation(federation.directory.clone());
+    let server_federation = federation.clone();
+    let relay_config = moonlight_config_snapshot.clone();
+    let (federation_wake, discovery) = Discovery::new(
+        federation.directory.clone(),
+        federation.credentials.clone(),
+        Arc::new(move || DiscoveryInputs::android(&relay_config)),
+        Arc::new(relay::WebSocketRelayTransport::new()),
+        DiscoveryTiming::default(),
+        Arc::new(peer_rpc::unix_time),
+    )
+    .start();
+    let server_federation_wake = federation_wake.clone();
     let server_upstream = upstream.clone();
     let (stop, stopped) = oneshot::channel();
     let thread = std::thread::Builder::new()
@@ -3731,7 +3817,8 @@ fn start_local_server_for_platform(
             runtime.block_on(async move {
                 let listener = tokio::net::TcpListener::from_std(listener)
                     .expect("convert localhost listener");
-                axum::serve(
+                let shutdown_discovery = server_federation_wake.clone();
+                let server = axum::serve(
                     listener,
                     router_with_capability_local_root_provision_and_grants(
                         &server_capability,
@@ -3749,13 +3836,22 @@ fn start_local_server_for_platform(
                         server_config_snapshot,
                         server_folder_selection_grants,
                         Some(server_upstream),
+                        Some(server_federation),
+                        Some(server_federation_wake.clone()),
                     ),
                 )
-                .with_graceful_shutdown(async {
+                .with_graceful_shutdown(async move {
                     let _ = stopped.await;
-                })
-                .await
-                .expect("serve korrid");
+                    // Keep existing RPC draining, but do not wait for it to
+                    // cancel a blocked relay operation.
+                    shutdown_discovery.cancel();
+                });
+                // Both tasks live inside this runtime and are joined before it exits.
+                let discovery = tokio::spawn(discovery);
+                let result = server.await;
+                server_federation_wake.cancel();
+                discovery.await.expect("join relay discovery");
+                result.expect("serve korrid");
             });
         })
         .map_err(|error| ServerError::StartFailed {
@@ -3777,6 +3873,8 @@ fn start_local_server_for_platform(
         native_platform,
         folder_selection_grants,
         upstream,
+        federation,
+        federation_wake,
         stop,
         thread,
     });
@@ -3836,7 +3934,15 @@ pub fn apply_local_owner_binding(
     expected_owner_public_key: &str,
     signed_event_json: &str,
 ) -> Result<String, ServerError> {
-    let root = running_private_state_root()?;
+    let (root, credentials, wake) = {
+        let slot = server_slot().lock().expect("server mutex poisoned");
+        let server = slot.as_ref().ok_or(ServerError::NotRunning)?;
+        (
+            server.private_state_root.clone(),
+            server.federation.credentials.clone(),
+            server.federation_wake.clone(),
+        )
+    };
     let mut identity = identity::DeviceIdentity::load_or_create(&root).map_err(|error| {
         ServerError::StartFailed {
             details: error.to_string(),
@@ -3851,6 +3957,16 @@ pub fn apply_local_owner_binding(
         .map_err(|error| ServerError::StartFailed {
             details: error.to_string(),
         })?;
+    // Persist first, then replace inside the original credentials mutex. Existing
+    // clients and discovery see the binding without rotating browser authority.
+    credentials
+        .reload_identity(&root)
+        .map_err(|error| ServerError::StartFailed {
+            details: error.to_string(),
+        })?;
+    wake.wake().map_err(|error| ServerError::StartFailed {
+        details: error.to_string(),
+    })?;
     serde_json::to_string(identity.state()).map_err(|error| ServerError::StartFailed {
         details: error.to_string(),
     })
@@ -4414,6 +4530,9 @@ mod android;
 
 #[cfg(test)]
 mod tests {
+    mod federation_lifecycle {
+        include!("federation/lifecycle_tests.rs");
+    }
     use super::*;
     use axum::{
         body::{to_bytes, Body},
@@ -5393,6 +5512,8 @@ mod tests {
             NativePlatform::Standalone,
             config::snapshot::ConfigSnapshotCoordinator::new(readable),
             grants,
+            None,
+            None,
             None,
         )
     }
@@ -6405,6 +6526,11 @@ command = ["game-two"]
         std::fs::create_dir_all(root.path().join("roms")).unwrap();
         std::fs::write(root.path().join("roms/wl4.gba"), b"123456789").unwrap();
         let private = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(
+            private.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
         let port = start_local_server(
             "https://portal.example",
             root.path().to_str().expect("UTF-8 temp path"),
@@ -7484,6 +7610,11 @@ command = ["game-two"]
         write_wl4_plugin_config(root.path());
         std::fs::create_dir_all(root.path().join("roms")).unwrap();
         std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        std::fs::set_permissions(
+            private_root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
         let first_port = start_local_server(
             "https://portal.example",
             root.path().to_str().expect("UTF-8 temp path"),
@@ -8427,6 +8558,8 @@ command = ["game-two"]
             config::snapshot::ConfigSnapshotCoordinator::new(brain_storage.path()),
             discovery::FolderSelectionGrantStore::default(),
             Some(registry),
+            None,
+            None,
         );
         let owner_statement = host_identity.owner_statement_json().unwrap();
         let request = || RpcRequest::CatalogSnapshot(CatalogSnapshotRequest {});

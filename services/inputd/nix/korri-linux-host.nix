@@ -431,6 +431,16 @@ in
       type = lib.types.listOf lib.types.str;
       description = "Ordered korrid relay URLs with no built-in public relay.";
     };
+    advertisedEndpoints = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Reachable HTTP(S) peer origins. Empty keeps relay discovery query-only.";
+    };
+    moonlightAddress = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional Moonlight address in authenticated endpoint announcements.";
+    };
     nativePeers = lib.mkOption {
       default = [ ];
       description = "Native korrid peers used by device-side clients.";
@@ -772,7 +782,13 @@ in
       storageRoot = cfg.storageRoot;
       privateStateRoot = cfg.privateStateRoot;
       sunshinePrivateStateRoot = sunshineConfig;
-      inherit (cfg) relays nativePeers ownerBindingFile;
+      inherit (cfg)
+        relays
+        nativePeers
+        ownerBindingFile
+        advertisedEndpoints
+        moonlightAddress
+        ;
       inherit compositorControlDirectory certificateControlDirectory;
     };
 

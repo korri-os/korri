@@ -67,6 +67,54 @@ let
       ];
     };
   enabled = evaluate { services.korridLinuxDevice.enable = true; };
+  advertised = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      advertisedEndpoints = [
+        "https://device.example:443/"
+        "http://[::1]:43117"
+      ];
+      moonlightAddress = "device:47989";
+    };
+  };
+  invalidAdvertisements =
+    map
+      (
+        value:
+        evaluate {
+          services.korridLinuxDevice.enable = true;
+          services.korridLinuxDevice.advertisedEndpoints = [ value ];
+        }
+      )
+      [
+        "ws://localhost:43117"
+        "https://u@host"
+        "http://host/path"
+        "http://host?x"
+        "http://host#x"
+        "http://host:0"
+        "http://host:65536"
+        "http://host:"
+        "http://host//"
+        "http://host/../"
+        "http://host\\\\x"
+        "http://host:abc"
+        "http://host "
+        "http://[abc]"
+        "http://[:::1]"
+        "http://[:1::2]"
+        "http://[1::2:]"
+        "http://[1:2:3:4:5:6:7:8:9]"
+      ];
+  queryOnlyEmptyMoonlight = evaluate {
+    services.korridLinuxDevice.enable = true;
+    services.korridLinuxDevice.moonlightAddress = "";
+  };
+  invalidMoonlight = evaluate {
+    services.korridLinuxDevice.enable = true;
+    services.korridLinuxDevice.advertisedEndpoints = [ "http://device:43117" ];
+    services.korridLinuxDevice.moonlightAddress = "";
+  };
   bundled = evaluate {
     services.korriBundle = {
       enable = true;
@@ -210,10 +258,22 @@ let
   bundledService = bundled.config.systemd.services.korrid;
 in
 assert allAssertionsPass enabled;
+assert allAssertionsPass advertised;
+assert
+  advertised.config.systemd.services.korrid.environment.KORRID_ADVERTISED_ENDPOINTS
+  == ''["https://device.example:443/","http://[::1]:43117"]'';
+assert
+  advertised.config.systemd.services.korrid.environment.KORRID_MOONLIGHT_ADDRESS == "device:47989";
+assert !(service.environment ? KORRID_MOONLIGHT_ADDRESS);
+assert lib.all (hasFailedAssertion "advertisedEndpoints") invalidAdvertisements;
+assert allAssertionsPass queryOnlyEmptyMoonlight;
+assert hasFailedAssertion "moonlightAddress" invalidMoonlight;
 assert service.serviceConfig.User == "korrid";
 assert service.serviceConfig.User != "korri";
 assert
   builtins.removeAttrs service.environment [ "PATH" ] == {
+    HOSTNAME = enabled.config.networking.hostName;
+    KORRID_ADVERTISED_ENDPOINTS = "[]";
     KORRID_ADDRESS = "127.0.0.1:43117";
     KORRID_CERTIFICATE_CONTROL_DIRECTORY = "/run/korri-certificate-control";
     KORRID_COMPOSITOR_CONTROL_DIRECTORY = "/run/korri-compositor";

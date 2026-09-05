@@ -295,10 +295,27 @@ pub struct PeerRpcServer {
 }
 
 impl PeerRpcServer {
+    #[cfg(test)]
     pub fn new(app: AppState, private_state_root: &Path) -> Result<Self, PeerRpcError> {
         Self::new_with_clock(app, private_state_root, Arc::new(unix_time))
     }
 
+    pub(crate) fn with_shared_authority(
+        app: AppState,
+        private_state_root: &Path,
+        credentials: PeerCredentials,
+        authorization: Authorization,
+    ) -> Result<Self, PeerRpcError> {
+        Ok(Self {
+            app,
+            identity: credentials.identity.clone(),
+            replay: Arc::new(ReplayGuard::new(private_state_root)?),
+            authorization,
+            clock: Arc::new(unix_time),
+        })
+    }
+
+    #[cfg(test)]
     fn new_with_clock(
         app: AppState,
         private_state_root: &Path,

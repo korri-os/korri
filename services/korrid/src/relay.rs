@@ -241,6 +241,8 @@ impl QueuedMessage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoordinationSnapshot {
+    /// Transport outcome, independent of whether a successful read found events.
+    pub all_relay_reads_failed: bool,
     pub endpoints: Vec<EndpointEvidence>,
     pub commands: Vec<CoordinationCommand>,
     pub rejected_events: usize,
@@ -796,6 +798,7 @@ where
             }
             commands.sort_by_key(command_order);
             Ok(CoordinationSnapshot {
+                all_relay_reads_failed: failed_reads == self.relays.as_slice().len(),
                 endpoints: endpoints.into_values().collect(),
                 commands,
                 rejected_events: rejected,
