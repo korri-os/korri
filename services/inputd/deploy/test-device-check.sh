@@ -973,22 +973,32 @@ RESTORE_SOURCE="$(awk '
   found { print }
   found && /^}$/ { exit }
 ' "$GATE")"
-stop_line="$(grep -n 'remote_stop_candidate_services' <<<"$RESTORE_SOURCE" | cut -d: -f1)"
-raw_line="$(grep -n 'remote_restore_raw_joystick_udev' <<<"$RESTORE_SOURCE" | cut -d: -f1)"
+PREPARATION_SOURCE="$(awk '
+  /^remote_quiesce_for_private_state_cut\(\) \{/ { found=1 }
+  found { print }
+  found && /^}$/ { exit }
+' "$GATE")"
+stop_line="$(grep -n 'remote_stop_candidate_services' <<<"$PREPARATION_SOURCE" | cut -d: -f1)"
+raw_line="$(grep -n 'remote_restore_raw_joystick_udev' <<<"$PREPARATION_SOURCE" | cut -d: -f1)"
 # shellcheck disable=SC2016 # Literal production function call.
-clear_line="$(grep -n 'clear_bundle_selector_root "$BUNDLE_SELECTOR_ROOT" 0 0' <<<"$RESTORE_SOURCE" | cut -d: -f1)"
+clear_line="$(grep -n 'clear_bundle_selector_root "$BUNDLE_SELECTOR_ROOT" 0 0' <<<"$PREPARATION_SOURCE" | cut -d: -f1)"
+prepare_line="$(grep -n 'remote_quiesce_for_private_state_cut' <<<"$RESTORE_SOURCE" | cut -d: -f1)"
 # shellcheck disable=SC2016 # Literal production function call.
 activate_line="$(grep -n 'remote_activate_generation "$rollback"' <<<"$RESTORE_SOURCE" | head -n1 | cut -d: -f1)"
 # shellcheck disable=SC2016 # Literal production function call.
 bundle_line="$(grep -n 'remote_switch_generation_bundle "$rollback"' <<<"$RESTORE_SOURCE" | cut -d: -f1)"
 [[ -n "$stop_line" && -n "$raw_line" && -n "$clear_line" && -n "$activate_line" && -n "$bundle_line" ]]
-[[ "$stop_line" -lt "$raw_line" && "$raw_line" -lt "$clear_line" && "$clear_line" -lt "$activate_line" && "$activate_line" -lt "$bundle_line" ]]
+[[ "$stop_line" -lt "$raw_line" && "$raw_line" -lt "$clear_line" && "$prepare_line" -lt "$activate_line" && "$activate_line" -lt "$bundle_line" ]]
 run_modeled_restore() (
   model="$1"
   log="$TMP/modeled-restore-$model.log"
   : >"$log"
   # shellcheck disable=SC2329 # The extracted production function calls these test doubles indirectly.
   fail() { printf '%s\n' "$1" >&2; exit 1; }
+  # shellcheck disable=SC2329
+  remote_system_unit_active() { printf 'false\n'; }
+  # shellcheck disable=SC2329
+  remote_user_unit_active() { printf 'false\n'; }
   # shellcheck disable=SC2329
   remote_quiesce_launch_authority() { printf 'quiesce\n' >>"$log"; }
   # shellcheck disable=SC2329
@@ -1015,6 +1025,9 @@ run_modeled_restore() (
   remote_generation() { printf '%s\n' /nix/store/11111111111111111111111111111111-nixos-system-rollback-1; }
   # shellcheck disable=SC2034 # The extracted production function reads this global.
   BUNDLE_SELECTOR_ROOT=/nix/var/nix/gcroots/korri-bundle
+  # shellcheck disable=SC2034
+  KORRID_CONTROL_SOCKET_UNIT=korrid-control.socket
+  eval "$PREPARATION_SOURCE"
   eval "$RESTORE_SOURCE"
   remote_restore /nix/store/11111111111111111111111111111111-nixos-system-rollback-1 \
     false korri false false false false false false 700 600
@@ -1057,7 +1070,7 @@ run_nvenc_log_gate "$wayland_capture"$'New streaming session started [active ses
 # stat(1) canonicalizes 0700/0600 to 700/600; candidate calls must use the
 # canonical forms so post-chmod verification compares equal.
 # shellcheck disable=SC2016
-[[ "$(grep -Fc 'remote_set_pairing_state_modes "$runtime_user" 700 600' "$GATE")" -eq 2 ]]
+[[ "$(grep -Fc 'remote_set_pairing_state_modes "$runtime_user" 700 600' "$GATE")" -eq 1 ]]
 
 # Exercise the production primary-group policy directly. The remote endpoint
 # model cannot reproduce a forged primary GID without replacing /proc.
@@ -1116,6 +1129,7 @@ PRIVATE_SESSION_SOURCE="$(awk '
   found && /^}$/ { exit }
 ' "$GATE")"
 [[ "$PRIVATE_SESSION_SOURCE" == remote_private_session_state_absent* ]]
+# shellcheck disable=SC2030 # Each fixture intentionally owns its session root.
 run_private_session_state_check() (
   local root="$1"
   eval "$PRIVATE_SESSION_SOURCE"
@@ -1144,6 +1158,7 @@ OBSOLETE_SESSION_SOURCE="$(awk '
   found && /^}$/ { exit }
 ' "$GATE")"
 [[ "$OBSOLETE_SESSION_SOURCE" == remote_remove_obsolete_launch_id_atom* ]]
+# shellcheck disable=SC2031 # The fixture sets its own root; it does not inherit another fixture's value.
 run_obsolete_session_cut() (
   local root="$1"
   eval "$OBSOLETE_SESSION_SOURCE"
@@ -1254,7 +1269,7 @@ assert_fails_with 'orphan bundle selector root ownership or mode is invalid' \
 ln -s "$TMP" "$TMP/selector-root-link"
 assert_fails_with 'orphan bundle selector root is a symbolic link' \
   run_selector_clear "$TMP/selector-root-link"
-[[ "$(grep -Fc 'remote_clear_orphan_bundle_selector' "$GATE")" -eq 3 ]]
+[[ "$(grep -Fc 'remote_clear_orphan_bundle_selector' "$GATE")" -eq 2 ]]
 
 SELECTOR_SERVICE_SOURCE="$(awk '
   /^remote_bundle_selector_service_loaded\(\) \{/ { found=1 }
@@ -1565,7 +1580,8 @@ REMOTE_RESTORE_SOURCE="$(awk '
   found { print }
   found && /^}$/ { exit }
 ' "$GATE")"
-grep -F 'remote_restore_raw_joystick_udev' <<<"$REMOTE_RESTORE_SOURCE" >/dev/null
+grep -F 'remote_quiesce_for_private_state_cut' <<<"$REMOTE_RESTORE_SOURCE" >/dev/null
+grep -F 'remote_restore_raw_joystick_udev' <<<"$PREPARATION_SOURCE" >/dev/null
 [[ "$(grep -Fc 'remote_restore_raw_joystick_udev' "$GATE")" -eq 2 ]]
 
 CURRENT_AUTHORITY_SOURCE="$(awk '
@@ -1616,7 +1632,9 @@ user_stop_line="$(grep -n '^user stop korrid.service$' <<<"$authority_quiesce_lo
 [[ "$socket_stop_line" =~ ^[0-9]+$ && "$service_stop_line" =~ ^[0-9]+$ && "$user_stop_line" =~ ^[0-9]+$ ]]
 [[ "$socket_stop_line" -lt "$service_stop_line" && "$service_stop_line" -lt "$user_stop_line" ]]
 
+# shellcheck disable=SC2016 # Literal production source invariants.
 grep -F 'systemctl stop "$KORRID_CONTROL_SOCKET_UNIT"' "$GATE" >/dev/null
+# shellcheck disable=SC2016
 grep -F 'systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT"' "$GATE" >/dev/null
 
 for authority_cut_function in remote_activate_test remote_restore remote_inject_health_failure remote_persistent_switch; do
@@ -1625,12 +1643,25 @@ for authority_cut_function in remote_activate_test remote_restore remote_inject_
     found { print }
     found && /^}$/ { exit }
   ' "$GATE")"
-  quiesce_line="$(grep -n 'remote_quiesce_launch_authority' <<<"$authority_cut_source" | head -n1 | cut -d: -f1)"
-  refuse_line="$(grep -n 'remote_refuse_active_game' <<<"$authority_cut_source" | head -n1 | cut -d: -f1)"
-  [[ "$quiesce_line" =~ ^[0-9]+$ && "$refuse_line" =~ ^[0-9]+$ && "$quiesce_line" -lt "$refuse_line" ]]
+  # shellcheck disable=SC2016 # Literal production source invariant.
+  grep -F 'remote_quiesce_for_private_state_cut "$runtime_user"' <<<"$authority_cut_source" | grep -F '|| return $?' >/dev/null
 done
+# shellcheck disable=SC2016 # Literal production source invariant.
 grep -F 'rollback-gates) remote_rollback_gates "${1:?}"' "$GATE" >/dev/null
-grep -F 'run_remote_attempt rollback-gates "$GAMEPLAY_USER"' "$GATE" >/dev/null
+# Execute both real rollback-reboot call sites with only the public runtime
+# user initialized. A removed variable must fail here, not on a device.
+run_rollback_gate_call() (
+  [[ "$RUNTIME_USER" == korri ]]
+  unset GAMEPLAY_USER
+  # shellcheck disable=SC2329 # Invoked by the extracted production call.
+  run_remote_attempt() { [[ "$1" == rollback-gates && "$2" == "$RUNTIME_USER" ]]; }
+  eval "${1%% | tee*}"
+)
+while IFS= read -r rollback_gate_call; do
+  run_rollback_gate_call "$rollback_gate_call"
+done < <(grep 'run_remote_attempt rollback-gates ' "$GATE")
+# shellcheck disable=SC2016 # Both production call sites must name the public variable.
+[[ "$(grep -Fc 'run_remote_attempt rollback-gates "$RUNTIME_USER"' "$GATE")" -eq 2 ]]
 
 ACTIVE_GAME_SOURCE="$(awk '
   /^remote_refuse_active_game\(\) \{/ { found=1 }
@@ -1687,6 +1718,9 @@ run_production_active_game_check() (
   remote_private_session_state_absent() {
     [[ "$private_state" == empty ]]
   }
+  # shellcheck disable=SC2329
+  remote_user_systemctl() { return 0; }
+  # shellcheck disable=SC2329 # Invoked by the production function loaded below.
   remote_remove_obsolete_launch_id_atom() {
     case "$private_state" in
       empty) return 0 ;;
@@ -1718,6 +1752,224 @@ grep -Fx 'active-game-check=clear source=rpc' \
   < <(run_production_active_game_check rpc-none obsolete) >/dev/null
 assert_fails_with 'obsolete private launch state cannot be removed safely' \
   run_production_active_game_check rpc-none ambiguous
+
+# Exercise each real quiesce/check entry point against a file-backed manager.
+# No host systemctl, sudo, game signal, or activation command can run here.
+run_pre_activation_refusal() (
+  local entry="$1" initial="$2" refusal="$3" fixture="$TMP/refusal-$1-$2-$3" name status
+  # shellcheck disable=SC2034 # The extracted production functions read these locals.
+  local KORRID_CONTROL_SOCKET_UNIT=korrid-control.socket KORRID_HOST_SESSION_ROOT="$fixture/session"
+  # shellcheck disable=SC2034
+  local BUNDLE_SELECTOR_ROOT="$fixture/selector" OLD_USER_UNITS=(korrid.service sunshine.service x11-headless.service)
+  mkdir -p "$fixture/state" "$fixture/session"
+  chmod 0700 "$fixture/session"
+  printf false >"$fixture/state/socket"
+  printf false >"$fixture/state/system"
+  printf false >"$fixture/state/user"
+  case "$initial" in
+    system) printf true >"$fixture/state/system"; printf true >"$fixture/state/socket" ;;
+    service) printf true >"$fixture/state/system" ;;
+    socket) printf true >"$fixture/state/socket" ;;
+    user) printf true >"$fixture/state/user" ;;
+    none) ;;
+  esac
+  printf true >"$fixture/state/sunshine"
+  printf false >"$fixture/state/x11"
+  [[ "$refusal" != old-unit-stop ]] || printf true >"$fixture/state/x11"
+  cp -r "$fixture/state" "$fixture/before"
+  mkdir -m 0700 "$fixture/selector"
+  ln -s /tmp/mutable-bundle "$fixture/selector/active"
+  printf '%s' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >"$fixture/session/launch-id"
+  chmod 0600 "$fixture/session/launch-id"
+  if [[ "$refusal" == record ]]; then
+    # Deployment treats this record as opaque; assert byte preservation, not a schema.
+    printf '%s' 'retained recovery bytes' >"$fixture/session/active.json"
+    chmod 0600 "$fixture/session/active.json"
+  fi
+  case "$refusal" in
+    orphan-selector|old-unit-stop|pairing-mode|candidate-activated)
+      rm "$fixture/session/launch-id" ;;
+  esac
+  case "$refusal" in
+    old-unit-stop|pairing-mode|candidate-activated) rm "$fixture/selector/active" ;;
+  esac
+  cp -r "$fixture/session" "$fixture/session-before"
+  # shellcheck disable=SC2329 # Called by production functions below.
+  fail() { printf 'device gate: %s\n' "$*" >&2; exit 1; }
+  # shellcheck disable=SC2329
+  systemctl() {
+    printf 'system %s\n' "$*" >>"$fixture/log"
+    local key unit="${*: -1}"
+    [[ "$1" != show ]] || unit="$2"
+    case "$unit" in
+      korrid-control.socket) key=socket ;;
+      korrid.service) key=system ;;
+      korri-bundle-selector.service)
+        case "$1" in show) printf 'not-found\n' ;; stop) ;; *) fail "unexpected selector operation: $*" ;; esac
+        return 0 ;;
+      korri-inputd.service|x11-headless.service|korri-compositor.service|sunshine.service)
+        [[ "$1" == is-active ]] || fail "unexpected candidate operation: $*"
+        return 1 ;;
+      'korri-game-*.service')
+        [[ "$refusal" != unavailable ]] || return 69
+        case "$refusal" in
+          running|frozen) printf 'korri-game-real.service loaded active %s\n' "$refusal" ;;
+        esac
+        return 0 ;;
+      *) fail "unexpected system manager operation: $*" ;;
+    esac
+    case "$1" in
+      show)
+        [[ "$refusal" != system-unavailable ]] || return 69
+        case "$(<"$fixture/state/$key")" in
+          true) printf 'active\n' ;;
+          false) printf 'inactive\n' ;;
+          *) printf '%s\n' "$(<"$fixture/state/$key")" ;;
+        esac ;;
+      is-active) [[ "$(<"$fixture/state/$key")" == true ]] ;;
+      stop)
+        [[ "$refusal:$key" != stop-failure:system ]] || return 1
+        if [[ "$refusal:$key" == authority-transition:system ]]; then
+          printf deactivating >"$fixture/state/$key"
+        else
+          printf false >"$fixture/state/$key"
+        fi ;;
+      start) printf true >"$fixture/state/$key" ;;
+      *) fail "unexpected system manager operation: $*" ;;
+    esac
+  }
+  # shellcheck disable=SC2329
+  remote_user_systemctl() {
+    [[ "$1" == korri ]] || fail "unexpected runtime user: $1"
+    printf 'user %s\n' "${*:2}" >>"$fixture/log"
+    local key
+    case "${3:-}" in
+      korrid.service) key=user ;;
+      sunshine.service) key=sunshine ;;
+      x11-headless.service) key=x11 ;;
+    esac
+    case "${*:2}" in
+      'stop '*)
+        [[ "$refusal:$key" != old-unit-stop:x11 ]] || return 1
+        printf false >"$fixture/state/$key" ;;
+      'start '*) printf true >"$fixture/state/$key" ;;
+      'show '*'-p ActiveState --value')
+        if [[ "$(<"$fixture/state/$key")" == true ]]; then printf 'active\n'; else printf 'inactive\n'; fi ;;
+      'list-units '*)
+        [[ "$refusal" != user-unavailable ]] || return 69
+        [[ "$refusal" != user-game ]] || printf 'korri-game-real.service loaded active running\n' ;;
+      *) fail "unexpected user manager operation: $*" ;;
+    esac
+  }
+  # shellcheck disable=SC2329
+  remote_control_socket_present() { return 1; }
+  # shellcheck disable=SC2329
+  sudo() {
+    [[ "$refusal:$*" == 'candidate-activated:-n nix-env -p /nix/var/nix/profiles/system --set /unused/candidate' ]] \
+      || fail 'unexpected privileged mutation'
+  }
+  for name in remote_current_launch_authority remote_quiesce_launch_authority \
+    remote_launch_authority_quiesced remote_restore_launch_authority \
+    remote_restore_old_user_unit_activity remote_user_unit_active remote_system_unit_active \
+    remote_remove_obsolete_launch_id_atom remote_private_session_state_absent \
+    remote_refuse_active_game remote_quiesce_for_private_state_cut \
+    remote_clear_orphan_bundle_selector remote_bundle_selector_service_loaded \
+    remote_generation_has_bundle_selector remote_quiesce_old_user_units remote_restore "$entry"; do
+    source_gate_function "$name"
+  done
+  source_gate_function clear_bundle_selector_root
+  # Keep real selector validation while matching this unprivileged fixture's owner.
+  eval "$(declare -f clear_bundle_selector_root | sed '1s/clear_bundle_selector_root/fixture_clear_bundle_selector_root/')"
+  # shellcheck disable=SC2329
+  clear_bundle_selector_root() { fixture_clear_bundle_selector_root "$1" "$(id -u)" "$(id -g)"; }
+  # shellcheck disable=SC2329
+  remote_stop_candidate_services() { printf 'stop-candidate\n' >>"$fixture/log"; }
+  # shellcheck disable=SC2329
+  remote_restore_raw_joystick_udev() { printf 'restore-raw\n' >>"$fixture/log"; }
+  # shellcheck disable=SC2329
+  remote_set_pairing_state_modes() {
+    [[ "$1:$2:$3" == korri:700:600 ]] || fail 'unexpected pairing context'
+    printf 'pairing-modes\n' >>"$fixture/log"
+    [[ "$refusal" != pairing-mode ]] || return 71
+  }
+  # shellcheck disable=SC2329
+  remote_activate_generation() {
+    [[ "$refusal" == candidate-activated ]] || fail 'unexpected activation'
+    printf true >"$fixture/state/system"
+    printf true >"$fixture/state/socket"
+    cp -r "$fixture/state" "$fixture/activated"
+    fail 'failure after candidate activation'
+  }
+  if (
+    case "$entry" in
+      remote_restore|remote_inject_health_failure)
+        "$entry" /unused/rollback false korri false false false false false false 700 600 ;;
+      remote_rollback_gates) "$entry" korri ;;
+      *) "$entry" /unused/candidate korri ;;
+    esac
+  ) >"$fixture/output" 2>&1; then status=0; else status=$?; fi
+  [[ "$status" != 0 ]] || { printf 'accepted unsafe cut: %s\n' "$fixture" >&2; exit 1; }
+  diff -r "$fixture/session-before" "$fixture/session"
+  if [[ "$refusal" == candidate-activated ]]; then
+    grep -F 'failure after candidate activation' "$fixture/output" >/dev/null
+    diff -r "$fixture/activated" "$fixture/state"
+    return 0
+  fi
+  diff -r "$fixture/before" "$fixture/state" || {
+    printf 'refusal did not restore prior launch authority: %s\n' "$fixture" >&2
+    cat "$fixture/output" >&2
+    exit 1
+  }
+  if grep -E 'unexpected (system|user) manager operation|unexpected privileged mutation|command not found' "$fixture/output"; then
+    fail 'refusal reached an unexpected operation'
+  fi
+  if [[ "$refusal" == orphan-selector ]]; then
+    grep -Fx 'active-game-check=clear source=local-state' "$fixture/output" >/dev/null
+    grep -F 'orphan bundle selector target is invalid: active' "$fixture/output" >/dev/null
+    [[ "$(readlink "$fixture/selector/active")" == /tmp/mutable-bundle ]]
+    if grep -E '(start|stop|kill).*korri-game-' "$fixture/log"; then
+      fail 'selector refusal touched a game unit'
+    fi
+    if (remote_restore /unused/rollback false korri false false false false false false 700 600) \
+      >"$fixture/rollback-output" 2>&1; then
+      fail 'rollback unexpectedly accepted the same invalid selector'
+    fi
+    grep -F 'orphan bundle selector target is invalid: active' "$fixture/rollback-output" >/dev/null
+    diff -r "$fixture/before" "$fixture/state"
+    diff -r "$fixture/session-before" "$fixture/session"
+  elif [[ "$refusal" == old-unit-stop ]]; then
+    grep -F 'old user unit remained active: x11-headless.service' "$fixture/output" >/dev/null
+  elif [[ "$refusal" == pairing-mode ]]; then
+    [[ "$status" == 71 ]]
+    grep -Fx 'pairing-modes' "$fixture/log" >/dev/null
+  fi
+)
+for refusal_entry in remote_activate_test remote_restore remote_inject_health_failure remote_persistent_switch remote_rollback_gates; do
+  for prior_authority in system service socket user none; do
+    for refusal_reason in running frozen record unavailable user-game user-unavailable; do
+      run_pre_activation_refusal "$refusal_entry" "$prior_authority" "$refusal_reason"
+    done
+  done
+  run_pre_activation_refusal "$refusal_entry" system stop-failure
+  run_pre_activation_refusal "$refusal_entry" system authority-transition
+  run_pre_activation_refusal "$refusal_entry" system system-unavailable
+done
+
+# A successful private-state check must not discard restoration before a later
+# orphan-selector refusal. A rollback can meet the same invalid selector.
+for refusal_entry in remote_activate_test remote_persistent_switch remote_restore; do
+  for prior_authority in system service socket user none; do
+    run_pre_activation_refusal "$refusal_entry" "$prior_authority" orphan-selector
+  done
+done
+
+for refusal_entry in remote_activate_test remote_persistent_switch; do
+  for prior_authority in system service socket user none; do
+    for refusal_reason in old-unit-stop pairing-mode candidate-activated; do
+      run_pre_activation_refusal "$refusal_entry" "$prior_authority" "$refusal_reason"
+    done
+  done
+done
 
 # Observe both instantaneous failures and restart-counter growth. A service
 # that happens to be active during one sample still enters the baseline when

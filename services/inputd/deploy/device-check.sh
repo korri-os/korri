@@ -103,6 +103,16 @@ remote_user_systemctl() {
     systemctl --user "$@"
 }
 
+remote_system_unit_active() {
+  local unit="$1" state
+  state="$(systemctl show "$unit" -p ActiveState --value)" || return 1
+  case "$state" in
+    active) printf 'true\n' ;;
+    inactive|failed) printf 'false\n' ;;
+    *) printf 'unexpected system unit ActiveState for %s: %s\n' "$unit" "${state:-<empty>}" >&2; return 1 ;;
+  esac
+}
+
 remote_user_unit_active() {
   local runtime_user="$1" unit="$2" state
   state="$(remote_user_systemctl "$runtime_user" show "$unit" -p ActiveState --value)" || return 1
@@ -201,6 +211,10 @@ remote_refuse_active_game() {
     --no-legend --plain 'korri-game-*.service' 2>/dev/null)" \
     || fail 'Korri game unit state is unavailable; refusing service mutation'
   [[ -z "$live_units" ]] || fail 'a Korri game unit is live; refusing service mutation'
+  live_units="$(remote_user_systemctl "$runtime_user" list-units --type=service \
+    --state=activating,active,reloading,deactivating --no-legend --plain 'korri-game-*.service' 2>/dev/null)" \
+    || fail 'user Korri game unit state is unavailable; refusing service mutation'
+  [[ -z "$live_units" ]] || fail 'a user Korri game unit is live; refusing service mutation'
   remote_remove_obsolete_launch_id_atom \
     || fail 'obsolete private launch state cannot be removed safely; refusing service mutation'
   remote_private_session_state_absent \
@@ -251,10 +265,10 @@ clear_bundle_selector_root() {
       || fail "orphan bundle selector target is unavailable: $name"
     [[ "$target" =~ ^/nix/store/[0-9a-df-np-sv-z]{32}-korri-bundle-[A-Za-z0-9+._?=-]+$ ]] \
       || fail "orphan bundle selector target is invalid: $name"
-    rm -- "$selector"
+    rm -- "$selector" || return $?
   done
-  rmdir -- "$root"
-  sync -f "${root%/*}"
+  rmdir -- "$root" || return $?
+  sync -f "${root%/*}" || return $?
   printf 'bundle-selector=cleared-orphan\n'
 }
 
@@ -325,7 +339,7 @@ remote_current_launch_authority() {
 
 remote_quiesce_launch_authority() {
   local runtime_user="$1" authority state
-  authority="$(remote_current_launch_authority "$runtime_user")"
+  authority="$(remote_current_launch_authority "$runtime_user")" || return $?
   # Stop socket activation before the system service. Otherwise the status
   # probe itself can restart korrid between the inactivity proof and the cut.
   systemctl stop "$KORRID_CONTROL_SOCKET_UNIT" >/dev/null 2>&1 || true
@@ -342,9 +356,11 @@ remote_quiesce_launch_authority() {
 }
 
 remote_launch_authority_quiesced() {
-  local runtime_user="$1" state
-  ! systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT" || return 1
-  ! systemctl is-active --quiet korrid.service || return 1
+  local runtime_user="$1" state unit
+  for unit in "$KORRID_CONTROL_SOCKET_UNIT" korrid.service; do
+    state="$(remote_system_unit_active "$unit")" || return 1
+    [[ "$state" == false ]] || return 1
+  done
   state="$(remote_user_unit_active "$runtime_user" korrid.service)" || return 1
   [[ "$state" == false ]]
 }
@@ -362,6 +378,49 @@ remote_restore_launch_authority() {
     systemctl stop korrid.service >/dev/null 2>&1 || true
   fi
   remote_restore_old_user_unit_activity "$runtime_user" korrid.service "$user_was_active"
+}
+
+# Preparation refusal is not a generation rollback: rollback may hit the same
+# invalid selector. Keep restoration scoped through every pre-activation step,
+# without replacing the caller's trap or restarting old authority after handoff.
+remote_quiesce_for_private_state_cut() {
+  (
+    local runtime_user="$1" preparation="${2:?}" rollback_has_bundle_selector="${3:-false}"
+    local socket_was_active system_was_active user_was_active sunshine_was_active x11_was_active
+    socket_was_active="$(remote_system_unit_active "$KORRID_CONTROL_SOCKET_UNIT")" \
+      || fail 'system korrid socket activity is unavailable before private-state cut'
+    system_was_active="$(remote_system_unit_active korrid.service)" \
+      || fail 'system korrid activity is unavailable before private-state cut'
+    user_was_active="$(remote_user_unit_active "$runtime_user" korrid.service)" \
+      || fail 'old user korrid active state is unavailable before private-state cut'
+    sunshine_was_active="$(remote_user_unit_active "$runtime_user" sunshine.service)" \
+      || fail 'old user Sunshine activity is unavailable before private-state cut'
+    x11_was_active="$(remote_user_unit_active "$runtime_user" x11-headless.service)" \
+      || fail 'old user X11 activity is unavailable before private-state cut'
+    trap 'remote_restore_old_user_unit_activity "$runtime_user" x11-headless.service "$x11_was_active"
+      remote_restore_old_user_unit_activity "$runtime_user" sunshine.service "$sunshine_was_active"
+      remote_restore_launch_authority "$runtime_user" "$socket_was_active" "$system_was_active" "$user_was_active"' EXIT
+    remote_quiesce_launch_authority "$runtime_user" || return $?
+    remote_refuse_active_game "$runtime_user" || return $?
+    case "$preparation" in
+      candidate)
+        remote_clear_orphan_bundle_selector || return $?
+        remote_quiesce_old_user_units "$runtime_user" || return $?
+        remote_set_pairing_state_modes "$runtime_user" 700 600 >/dev/null || return $? ;;
+      rollback)
+        remote_stop_candidate_services || return $?
+        remote_restore_raw_joystick_udev || return $?
+        if [[ "$rollback_has_bundle_selector" == false ]]; then
+          systemctl stop korri-bundle-selector.service >/dev/null 2>&1 || true
+          clear_bundle_selector_root "$BUNDLE_SELECTOR_ROOT" 0 0 || return $?
+        fi ;;
+      health-failure) ;;
+      *) fail "unknown private-state preparation: $preparation" ;;
+    esac
+    # The caller now owns activation (including partial activation failure),
+    # profile mutation, or intentional health-failure injection.
+    trap - EXIT
+  )
 }
 
 remote_quiesce_old_user_units() {
@@ -700,8 +759,8 @@ remote_set_pairing_state_modes() {
   [[ "$config_mode" =~ ^[0-7]{3,4}$ && "$state_mode" =~ ^[0-7]{3,4}$ ]] || return 1
   before="$(remote_pairing_state_modes "$runtime_user")" || return 1
   home="$(getent passwd "$runtime_user" | cut -d: -f6)" || return 1
-  chmod "$config_mode" -- "$home/.config/sunshine"
-  chmod "$state_mode" -- "$home/.config/sunshine/sunshine_state.json"
+  chmod "$config_mode" -- "$home/.config/sunshine" || return $?
+  chmod "$state_mode" -- "$home/.config/sunshine/sunshine_state.json" || return $?
   after="$(remote_pairing_state_modes "$runtime_user")" || return 1
   [[ "$after" == "$config_mode:$state_mode" ]] || return 1
   printf 'pairing-modes=%s->%s\n' "$before" "$after"
@@ -1224,7 +1283,7 @@ remote_start_candidate_services() {
 remote_stop_candidate_services() {
   local unit
   for unit in sunshine.service korrid.service korri-compositor.service korri-inputd.service inputplumber.service; do
-    systemctl stop "$unit" >/dev/null
+    systemctl stop "$unit" >/dev/null || return $?
     ! systemctl is-active --quiet "$unit" || fail "candidate system service remained active: $unit"
   done
 }
@@ -1523,11 +1582,7 @@ remote_activate_generation() {
 
 remote_activate_test() {
   local candidate="$1" runtime_user="$2"
-  remote_quiesce_launch_authority "$runtime_user"
-  remote_refuse_active_game "$runtime_user"
-  remote_clear_orphan_bundle_selector
-  remote_quiesce_old_user_units "$runtime_user"
-  remote_set_pairing_state_modes "$runtime_user" 700 600 >/dev/null
+  remote_quiesce_for_private_state_cut "$runtime_user" candidate || return $?
   remote_activate_generation "$candidate" test
   remote_switch_generation_bundle "$candidate"
   remote_disable_old_user_units "$runtime_user"
@@ -1538,16 +1593,10 @@ remote_restore() {
   local rollback="$1" persistent="$2" runtime_user="$3" rollback_has_bundle_selector=false
   shift 3
   [[ "$#" -eq 8 ]] || fail 'rollback requires all old user-unit states and pairing modes'
-  remote_quiesce_launch_authority "$runtime_user"
-  remote_refuse_active_game "$runtime_user"
-  remote_stop_candidate_services
-  remote_restore_raw_joystick_udev
   if remote_generation_has_bundle_selector "$rollback"; then
     rollback_has_bundle_selector=true
-  else
-    systemctl stop korri-bundle-selector.service >/dev/null 2>&1 || true
-    clear_bundle_selector_root "$BUNDLE_SELECTOR_ROOT" 0 0
   fi
+  remote_quiesce_for_private_state_cut "$runtime_user" rollback "$rollback_has_bundle_selector" || return $?
   if [[ "$persistent" == true ]]; then
     sudo -n nix-env -p /nix/var/nix/profiles/system --set "$rollback"
     remote_activate_generation "$rollback" switch
@@ -1646,14 +1695,16 @@ remote_automated_gates() {
 }
 
 remote_rollback_gates() {
-  local runtime_user="$1" socket_was_active=false system_was_active=false user_was_active=false state
-  systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT" && socket_was_active=true
-  systemctl is-active --quiet korrid.service && system_was_active=true
+  local runtime_user="$1" socket_was_active system_was_active user_was_active=false state
+  socket_was_active="$(remote_system_unit_active "$KORRID_CONTROL_SOCKET_UNIT")" \
+    || fail 'system korrid socket activity is unavailable before rollback gate'
+  system_was_active="$(remote_system_unit_active korrid.service)" \
+    || fail 'system korrid activity is unavailable before rollback gate'
   state="$(remote_user_unit_active "$runtime_user" korrid.service)" \
     || fail 'old user korrid active state is unavailable before rollback gate'
   [[ "$state" != true ]] || user_was_active=true
-  remote_quiesce_launch_authority "$runtime_user"
   trap 'remote_restore_launch_authority "$runtime_user" "$socket_was_active" "$system_was_active" "$user_was_active"' EXIT
+  remote_quiesce_launch_authority "$runtime_user" || fail 'launch authority could not be quiesced for rollback gate'
   remote_refuse_active_game "$runtime_user"
   remote_temporary_artifacts_dirty && fail 'temporary U7 artifacts remain after rollback'
   remote_private_session_state_absent || fail 'private launch recovery state remains after rollback'
@@ -1665,8 +1716,7 @@ remote_rollback_gates() {
 remote_inject_health_failure() {
   local rollback="$1" persistent="$2" runtime_user="$3" status='' attempt
   shift 3
-  remote_quiesce_launch_authority "$runtime_user"
-  remote_refuse_active_game "$runtime_user"
+  remote_quiesce_for_private_state_cut "$runtime_user" health-failure || return $?
   sudo -n systemctl stop inputplumber.service
   for ((attempt = 1; attempt <= POLL_ATTEMPTS; attempt++)); do
     status="$(systemctl show korri-inputd.service -p StatusText --value 2>/dev/null || true)"
@@ -1679,11 +1729,7 @@ remote_inject_health_failure() {
 
 remote_persistent_switch() {
   local candidate="$1" runtime_user="$2"
-  remote_quiesce_launch_authority "$runtime_user"
-  remote_refuse_active_game "$runtime_user"
-  remote_clear_orphan_bundle_selector
-  remote_quiesce_old_user_units "$runtime_user"
-  remote_set_pairing_state_modes "$runtime_user" 700 600 >/dev/null
+  remote_quiesce_for_private_state_cut "$runtime_user" candidate || return $?
   sudo -n nix-env -p /nix/var/nix/profiles/system --set "$candidate"
   remote_activate_generation "$candidate" switch
   remote_switch_generation_bundle "$candidate"
@@ -2423,7 +2469,7 @@ if [[ "$MODE" == reconcile ]]; then
       reconcile_active=false
       verification_active=true
       start_attempt rollback-reboot-verifying
-      run_remote_attempt rollback-gates "$GAMEPLAY_USER" | tee "$LEDGER/reconcile-rollback-reboot.txt"
+      run_remote_attempt rollback-gates "$RUNTIME_USER" | tee "$LEDGER/reconcile-rollback-reboot.txt"
       compare_baseline
       finish_attempt
       verification_active=false
@@ -2559,7 +2605,7 @@ case "$MODE" in
     verification_resume_state='rollback-await-reboot'
     verification_active=true
     start_attempt rollback-reboot-verifying
-    run_remote_attempt rollback-gates "$GAMEPLAY_USER" | tee "$LEDGER/rollback-reboot.txt"
+    run_remote_attempt rollback-gates "$RUNTIME_USER" | tee "$LEDGER/rollback-reboot.txt"
     compare_baseline
     finish_attempt
     verification_active=false

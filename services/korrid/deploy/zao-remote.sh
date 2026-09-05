@@ -1,36 +1,59 @@
 #!/run/current-system/sw/bin/bash
 set -euo pipefail
 
-# Stop the only process that can prepare a game before the one-off cut from
-# the obsolete launch-id atom. The game unit proof then closes the race: no
-# new prepare can start between the proof and the removal.
+# This installer owns only the user service. Refuse a system launch authority
+# instead of stopping it. Prove both managers idle before the one-off cut; a
+# failed cut restores only prior user-service activity, not game or install state.
 quiesce_and_cut_obsolete_session() {
-  local session_root="$HOME/.local/state/korrid/private/host-session"
-  local active_units entries atom mode
-  systemctl --user stop korrid.service >/dev/null 2>&1 || true
-  ! systemctl --user is-active --quiet korrid.service \
-    || { echo "korrid launch authority remained active" >&2; return 1; }
-  active_units="$(systemctl --user list-units --type=service \
-    --state=activating,active,reloading,deactivating --no-legend --plain \
-    'korri-game-*.service' 2>/dev/null)" \
-    || { echo "Korri game unit state is unavailable" >&2; return 1; }
-  [[ -z "$active_units" ]] \
-    || { echo "a Korri game unit is live" >&2; return 1; }
-  [[ ! -L "$session_root" ]] || return 1
-  [[ -e "$session_root" ]] || return 0
-  [[ -d "$session_root" ]] || return 1
-  mode="$(stat -Lc '%a' -- "$session_root" 2>/dev/null)" || return 1
-  [[ "$mode" == 700 ]] || return 1
-  entries="$(find "$session_root" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null)" \
-    || return 1
-  [[ -n "$entries" ]] || return 0
-  [[ "$entries" == launch-id ]] || return 1
-  atom="$session_root/launch-id"
-  [[ ! -L "$atom" && -f "$atom" ]] || return 1
-  [[ "$(stat -Lc '%a' -- "$atom" 2>/dev/null)" == 600 ]] || return 1
-  [[ "$(cat -- "$atom" 2>/dev/null)" =~ ^[0-9a-f]{32}$ ]] || return 1
-  rm -- "$atom"
-  sync -f "$session_root"
+  (
+    local session_root="$HOME/.local/state/korrid/private/host-session"
+    local active_units entries atom mode manager unit state previous_user_state
+    # The system manager hosts the shipped game backend and activation socket.
+    # A failed query is not an inactivity proof.
+    for unit in korrid.service korrid-control.socket; do
+      state="$(systemctl --system show "$unit" -p ActiveState --value)" || return 1
+      case "$state" in
+        inactive|failed) ;;
+        *) echo "system launch authority is not inactive: $unit ($state)" >&2; return 1 ;;
+      esac
+    done
+    previous_user_state="$(systemctl --user show korrid.service -p ActiveState --value)" || return 1
+    case "$previous_user_state" in
+      active|inactive|failed) ;;
+      *) echo "user launch authority activity is unsettled" >&2; return 1 ;;
+    esac
+    trap 'if [[ "$previous_user_state" == active ]]; then systemctl --user start korrid.service; else systemctl --user stop korrid.service; fi' EXIT
+    systemctl --user stop korrid.service >/dev/null 2>&1 || true
+    state="$(systemctl --user show korrid.service -p ActiveState --value)" || return 1
+    case "$state" in
+      inactive|failed) ;;
+      *) echo "korrid launch authority remained active" >&2; return 1 ;;
+    esac
+    for manager in --system --user; do
+      active_units="$(systemctl "$manager" list-units --type=service \
+        --state=activating,active,reloading,deactivating --no-legend --plain \
+        'korri-game-*.service' 2>/dev/null)" \
+        || { echo "$manager Korri game unit state is unavailable" >&2; return 1; }
+      [[ -z "$active_units" ]] \
+        || { echo "a $manager Korri game unit is live" >&2; return 1; }
+    done
+    [[ ! -L "$session_root" ]] || return 1
+    [[ -e "$session_root" ]] || { trap - EXIT; return 0; }
+    [[ -d "$session_root" ]] || return 1
+    mode="$(stat -Lc '%a' -- "$session_root" 2>/dev/null)" || return 1
+    [[ "$mode" == 700 ]] || return 1
+    entries="$(find "$session_root" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null)" \
+      || return 1
+    [[ -n "$entries" ]] || { trap - EXIT; return 0; }
+    [[ "$entries" == launch-id ]] || return 1
+    atom="$session_root/launch-id"
+    [[ ! -L "$atom" && -f "$atom" ]] || return 1
+    [[ "$(stat -Lc '%a' -- "$atom" 2>/dev/null)" == 600 ]] || return 1
+    [[ "$(cat -- "$atom" 2>/dev/null)" =~ ^[0-9a-f]{32}$ ]] || return 1
+    rm -- "$atom" || return 1
+    sync -f "$session_root" || return 1
+    trap - EXIT
+  )
 }
 
 action="${1:-}"
@@ -160,7 +183,12 @@ case "$action" in
     }
     trap rollback_install ERR
 
-    quiesce_and_cut_obsolete_session
+    if ! quiesce_and_cut_obsolete_session; then
+      # No installation has changed yet. The cut restored prior activity;
+      # generation rollback would unnecessarily rewrite files and restart korrid.
+      trap - ERR
+      exit 1
+    fi
 
     ln -sfn "$profile" "$HOME/.local/state/korrid/current.next"
     mv -Tf \
