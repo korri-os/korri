@@ -50,6 +50,10 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
 
+  if declare -F cleanup_acceptance_fixture >/dev/null; then
+    cleanup_acceptance_fixture || cleanup_failed=true
+  fi
+
   if [[ -n "$EMULATOR_PID" ]]; then
     timeout "$ADB_TIMEOUT_SECONDS" adb -s "$SERIAL" emu kill >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
@@ -272,25 +276,34 @@ run_contract_test() {
   fi
 }
 
-acquire_lock
-reject_unsafe_emulator_concurrency
-RUN_DIR="$(mktemp -d -t korri-bridge-contract.XXXXXXXXXX)"
-EMULATOR_LOG="$RUN_DIR/emulator.log"
-export ANDROID_AVD_HOME="$RUN_DIR/avd"
-export ANDROID_EMULATOR_HOME="$RUN_DIR/emulator-home"
+initialize_emulator_run() {
+  acquire_lock
+  reject_unsafe_emulator_concurrency
+  RUN_DIR="$(mktemp -d -t korri-bridge-contract.XXXXXXXXXX)"
+  EMULATOR_LOG="$RUN_DIR/emulator.log"
+  export ANDROID_AVD_HOME="$RUN_DIR/avd"
+  export ANDROID_EMULATOR_HOME="$RUN_DIR/emulator-home"
+  materialize_emulator_sdk
+}
 
-materialize_emulator_sdk
+bridge_contract_main() {
+  initialize_emulator_run
+  local bridge_version
+  bridge_version="$(project_bridge_version)"
+  if ! [[ "$bridge_version" =~ ^[0-9]+$ ]]; then
+    echo "Projected BRIDGE_VERSION is not an integer: $bridge_version" >&2
+    exit 1
+  fi
+  bundle_portal_assets
+  build_x86_64_korrid
+  create_avd
+  boot_emulator
+  run_contract_test "$bridge_version"
+  echo "bridge contract check passed on $SERIAL"
+}
 
-bridge_version="$(project_bridge_version)"
-if ! [[ "$bridge_version" =~ ^[0-9]+$ ]]; then
-  echo "Projected BRIDGE_VERSION is not an integer: $bridge_version" >&2
-  exit 1
+# Federation acceptance uses this same lock, SDK, build, AVD, and cleanup lifecycle.
+# Executing this file still runs only the original bridge contract gate.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  bridge_contract_main
 fi
-bundle_portal_assets
-build_x86_64_korrid
-
-create_avd
-boot_emulator
-run_contract_test "$bridge_version"
-
-echo "bridge contract check passed on $SERIAL"

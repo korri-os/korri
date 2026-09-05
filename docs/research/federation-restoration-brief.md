@@ -170,11 +170,13 @@ Backlog item: `work/items/parking-lot/01M1NGVGXPBTHFRDGZHNJQ1HYP-route-remote-se
 
 ### A7. Play-log recording and play stats
 
-- Record one play-log entry per session on the host: game id, launch id, start time, end time.
+- Preserve the legacy producer's completed document: `PlayLog { userId, gameId, entries }`, where each entry has `occurredAt`, `durationSeconds`, and optional `releaseId`. The path uses the legacy `encodeURIComponent` codec.
+- The legacy file writer converted every `Date` with `toISOString()` before each write. Main therefore preserves producer-emitted UTC RFC 3339 timestamps and finite nonnegative elapsed durations. It does not promise to accept every permissive string that the legacy JavaScript decoder could temporarily turn into a `Date`. A permissive-only or malformed existing file reads as empty, as in legacy, but a later write must refuse to overwrite it.
+- Keep launch id, start time, and completion-pending recovery facts in the private active-session journal, not in the legacy completed document. A completion remains pending until its exact entry is durable. Retention may discard only older pre-existing entries; it must never discard the pending completion.
 - Store the log in the private state root. Use the same atomic write pattern as the identity module.
-- Derive `playStats` per game: `lastPlayed`, `playCount`, `totalPlaytimeSeconds`.
+- Derive `playStats` per game: `lastPlayed`, `playCount`, `totalPlaytimeSeconds`. Aggregate numeric overflow is an unavailable play log, never a non-finite wire value.
 - Add `playStats: Option<PlayStats>` to `Game`. The local catalog and each peer catalog carry it.
-- Legacy sources for behavior only: `product/platform/library/play-log-store.ts`, `product/platform/library/play-stats.ts`.
+- Legacy sources: `product/platform/library/config/records/play-log.ts`, `product/platform/library/play-log-store.ts`, and `product/platform/library/play-stats.ts`.
 
 ### Bundle A verification
 
@@ -184,6 +186,67 @@ Backlog item: `work/items/parking-lot/01M1NGVGXPBTHFRDGZHNJQ1HYP-route-remote-se
 - Device: Bandai catalog shows Zao games with Zao's device key as `source.devicePublicKey` and `isLocal: false`.
 - Device: after one play on Zao, the Bandai catalog shows Zao's `playStats` for that game.
 - Full gate: `nix run .#korrid-check`.
+
+### Android protocol acceptance (A6)
+
+Verified on Zao on 2026-09-05 with `nix run .#android-federation-acceptance-check`,
+then `nix run .#android-bridge-contract-check`, run serially. The final runs passed
+one ordered federation test and all six existing bridge tests on API 34 x86_64.
+
+After review, the executable fixture was tightened to reject any launch argument
+vector other than the complete production vector and exactly `-- /bin/true`.
+All 18 malformed-invocation checks and ShellCheck passed. Two emulator runs then
+failed when Android killed the instrumentation process with SIGKILL, without an
+assertion failure. An unchanged diagnostic run passed the entire gate on
+2026-09-05 (`proc_b319`, exit 0, 96 seconds). The SIGKILL cause is unresolved.
+Failure artifacts were retained under `/tmp/federation-a6-sigkill-634242` and
+`/tmp/federation-a6-sigkill-641877`. These paths are local investigation evidence,
+not durable build artifacts.
+
+The federation task reuses the bridge script's lock, SDK, build, boot, and cleanup
+functions. It starts the real secure host router with a fresh device identity and
+private temporary state. The existing signer-test person (secret 3) signs the host
+binding and answers Android's real NIP-55 request. No existing device identity is
+read or changed. Android writes the existing `UpstreamHostConfig` JSON shape before
+its first Activity launch. An ADB reverse makes only the temporary loopback host
+reachable. Plaintext `/peer-rpc` receives HTTP 400; accepted calls travel through
+the real embedded brain's capability-bound `/rpc` and encrypted native peer client.
+
+Bundle A credentials are startup snapshots. After binding, the test stops the
+actual Android brain service, proves shutdown through its JNI capability contract,
+relaunches the Activity, and reads the rotated bridge capability. It checks source
+identity, catalog readiness, session prepare/status, freeze/thaw and repeated
+no-change results, stale-stop rejection, exact stop, repeated stop/status/catalog
+reads, one completed play, and positive elapsed duration. A missing certificate
+socket deliberately gives `streamControl: disabled`; prepare does not need video.
+
+The executable fixture implements only launch-unit operations in temporary files.
+Production `SystemdLaunchUnitBackend` still constructs and executes each helper
+command. The gate requires exactly one launch, freeze, thaw, and stop helper call.
+It clears inherited `KORRID_*` settings so no caller-provided live socket or helper
+can enter the fixture. RPC, signer, boot, helper, instrumentation, and shutdown
+waits are bounded. Cleanup removes the reverse, terminates the fixture process
+group, stops the emulator, and deletes the temporary AVD and identities.
+
+Cost and limits: this is protocol acceptance, not proof of real cgroup freezing,
+Sunshine readiness, video, controller overlays, or physical Android lifecycle.
+Those Bandai checks remain deferred. One earlier bridge run hit its existing
+2-second JavaScript callback timeout; two subsequent unchanged bridge runs passed.
+The cause of that intermittent timeout is not established.
+
+### Bundle A integration verification
+
+The rebase preserves Android-local play history in `src/play_log.rs` and
+per-person authenticated host history in `src/host/play_log.rs`. Both use one
+wire `PlayStats` with floating-point elapsed seconds. Host catalogs do not read
+Android-local history. The full `nix run .#korrid-check` passed after these repairs
+on 2026-09-05 (`proc_6e7f`, exit 0, 730 seconds).
+
+Deployment preparation now restores the exact prior launch-authority activity
+when it refuses before activation. The standalone cut checks both systemd
+managers before removing obsolete recovery state. Targeted deployment shell
+suites, ShellCheck, and shell syntax checks passed after the final guard changes.
+These were local file-backed tests. No live Zao activation was performed.
 
 ## Bundle B: Relay discovery and peer memory
 

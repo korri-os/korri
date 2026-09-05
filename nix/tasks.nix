@@ -311,6 +311,20 @@ let
       '';
     };
 
+    android-federation-acceptance-check = {
+      description = "Prove same-owner encrypted federation and exact sessions in an isolated API 34 x86_64 emulator.";
+      needsProseql = true;
+      runtimeInputs = androidBridgeInputs;
+      env = androidBridgeEnv // {
+        KORRI_PORTAL_BUNDLE = "${packages.portal-bundle}/bin/portal-bundle";
+      };
+      script = ''
+        ${androidSetup}
+        export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/korrid-target"
+        exec bash "$KORRI_ROOT/clients/android/federation-acceptance-check.sh" "$@"
+      '';
+    };
+
     android-bridge-contract-check = {
       description = "Run the native bridge contract check in an isolated API 34 x86_64 emulator.";
       needsProseql = true;
