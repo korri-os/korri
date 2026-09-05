@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { PicoShelfGame } from "../../pico-shelf-game"
+import { PicoKeyArt } from "../atoms/PicoKeyArt"
 import { PicoTally } from "../atoms/PicoTally"
 import { PicoCart } from "../molecules/PicoCart"
 
@@ -24,7 +25,9 @@ export function PicoCartShelf({
   readonly onLaunch: (gameId: string) => void
 }) {
   const [focusedIndex, setFocusedIndex] = useState(0)
+  const [subtitleOverflows, setSubtitleOverflows] = useState(false)
   const stripRef = useRef<HTMLUListElement>(null)
+  const subtitleRef = useRef<HTMLParagraphElement>(null)
   const focused = games[focusedIndex] ?? games[0]
 
   useEffect(() => {
@@ -39,8 +42,21 @@ export function PicoCartShelf({
       slot.offsetLeft - (strip.clientWidth - slot.clientWidth) / 2
   }, [focusedIndex])
 
+  /* Scroll a caption only when it actually does not fit. An unconditional
+   * marquee makes every short subtitle move for no reason, which is noise
+   * rather than character. Measured after layout because it depends on the
+   * rendered width, not on the string. */
+  useLayoutEffect(() => {
+    const node = subtitleRef.current
+    if (node === null) return
+    setSubtitleOverflows(node.scrollWidth > node.clientWidth + 1)
+  }, [focused?.subtitle])
+
   return (
     <section className="pico-cart-shelf">
+      <div className="pico-cart-shelf-art">
+        <PicoKeyArt src={focused?.wideArtUrl} />
+      </div>
       <ul className="pico-cart-shelf-strip" ref={stripRef}>
         {games.map((game, index) => (
           <li className="pico-cart-shelf-slot" key={game.id}>
@@ -59,7 +75,15 @@ export function PicoCartShelf({
       </ul>
       <div className="pico-cart-shelf-caption">
         <h1 className="pico-cart-shelf-title">{focused?.title ?? ""}</h1>
-        <p className="pico-cart-shelf-subtitle">{focused?.subtitle ?? ""}</p>
+        <p
+          className="pico-cart-shelf-subtitle"
+          data-marquee={subtitleOverflows ? "" : undefined}
+          ref={subtitleRef}
+        >
+          <span className="pico-cart-shelf-subtitle-run">
+            {focused?.subtitle ?? ""}
+          </span>
+        </p>
         <PicoTally position={focusedIndex + 1} total={games.length} />
       </div>
     </section>

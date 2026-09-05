@@ -105,3 +105,45 @@
 			0 0;
 	}
 }
+
+/* Barber pole. Work that is happening at an unknown rate: the stripes move, the
+ * bar never fills, and nothing claims a percentage Korri did not publish. */
+@keyframes pico-barber {
+	to {
+		background-position: 1.2cqw 0;
+	}
+}
+
+/* The palette cycle. Straight through the bright half of the sixteen, one hard
+ * step per colour — the loudest thing PICO-8 does with text. */
+@keyframes pico-palette-cycle {
+	0% {
+		color: var(--p8-red);
+	}
+	20% {
+		color: var(--p8-orange);
+	}
+	40% {
+		color: var(--p8-yellow);
+	}
+	60% {
+		color: var(--p8-lime);
+	}
+	80% {
+		color: var(--p8-blue);
+	}
+	100% {
+		color: var(--p8-pink);
+	}
+}
+
+/* A caption too long for its line, moving far enough to show the end and back.
+ * Only applied when the text genuinely overflows. */
+@keyframes pico-marquee {
+	from {
+		transform: translateX(0);
+	}
+	to {
+		transform: translateX(calc(-100% + 100cqw));
+	}
+}

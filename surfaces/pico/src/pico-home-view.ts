@@ -42,6 +42,9 @@ export function picoHomeViewFromCatalog(catalog: SurfaceCatalog): PicoHomeView {
               ...(game.coverArtUrl === undefined
                 ? {}
                 : { artUrl: game.coverArtUrl }),
+              ...(game.wideArtUrl === undefined
+                ? {}
+                : { wideArtUrl: game.wideArtUrl }),
               ...(game.resumable === undefined
                 ? {}
                 : { resumable: game.resumable }),

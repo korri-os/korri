@@ -1,4 +1,5 @@
 .pico-cart-shelf {
+	position: relative;
 	display: grid;
 	/* minmax(0, 1fr) not 1fr: a bare 1fr refuses to shrink below its content,
 	 * so the strip pushes the caption off the bottom of a short screen and the
@@ -9,7 +10,42 @@
 	padding: var(--pico-space-2) 0;
 }
 
+/* The shelf owns where its backdrop sits. An absolutely positioned child of a
+ * grid is sized against its grid area, not the container, so the art has to be
+ * lifted out of the track structure by an element this component controls
+ * rather than by reaching into the atom's own class. */
+.pico-cart-shelf-art {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+}
+
+/* A scrim, so the caption always sits on the ground colour rather than on
+ * whatever the art happens to be bright in. Without it legibility depends on
+ * the picture, which means it is legible until someone adds a game with a pale
+ * sky in the bottom third. Hard stops, not a smooth ramp: this is the same
+ * interface everywhere else. */
+.pico-cart-shelf-art::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(
+		180deg,
+		transparent 0%,
+		transparent 52%,
+		color-mix(in srgb, var(--pico-bg) 70%, transparent) 52%,
+		color-mix(in srgb, var(--pico-bg) 70%, transparent) 66%,
+		var(--pico-bg) 66%
+	);
+}
+
 .pico-cart-shelf-strip {
+	/* Above the key art. A positioned element with z-index 0 paints over
+	 * ordinary in-flow content, so the backdrop would cover the shelf unless
+	 * everything that must stay legible is positioned too. */
+	position: relative;
+	z-index: 1;
 	display: flex;
 	gap: var(--pico-space-2);
 	align-items: center;
@@ -31,6 +67,8 @@
 }
 
 .pico-cart-shelf-caption {
+	position: relative;
+	z-index: 1;
 	display: grid;
 	gap: var(--pico-space-1);
 	justify-items: center;
@@ -47,6 +85,19 @@
 
 .pico-cart-shelf-subtitle {
 	margin: 0;
+	max-width: 100cqw;
+	overflow: hidden;
 	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
+	white-space: nowrap;
+}
+
+.pico-cart-shelf-subtitle-run {
+	display: inline-block;
+}
+
+/* Set only when the text measured wider than its line, so a short caption
+ * never moves. */
+.pico-cart-shelf-subtitle[data-marquee] .pico-cart-shelf-subtitle-run {
+	animation: pico-marquee 6s linear infinite alternate;
 }

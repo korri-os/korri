@@ -21,6 +21,7 @@
 @import "./ui/atoms/PicoClock.css";
 @import "./ui/atoms/PicoCoverArt.css";
 @import "./ui/atoms/PicoHint.css";
+@import "./ui/atoms/PicoKeyArt.css";
 @import "./ui/atoms/PicoPixelDisc.css";
 @import "./ui/atoms/PicoTally.css";
 @import "./ui/molecules/PicoButtonBar.css";

@@ -10,12 +10,11 @@
 
 .pico-launch-stage-kicker {
 	margin: 0;
-	/* Something is happening that Pico cannot measure; a pulse says "working"
-	 * without claiming progress it was never told about. */
-	animation: pico-flicker 900ms steps(1, end) infinite alternate;
+	/* Something is happening that Pico cannot measure. Cycling the palette says
+	 * "working" the way this interface says everything else. */
+	animation: pico-palette-cycle 1.5s steps(1, end) infinite;
 	font-family: var(--pico-font-display);
 	font-size: var(--pico-text);
-	color: var(--pico-accent);
 	letter-spacing: 0.125em;
 }
 
@@ -33,4 +32,18 @@
 	max-width: 24ch;
 	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
+}
+
+/* Indeterminate by construction: stripes travelling through a bar that is
+ * always full. A bar that filled would be a promise about time. */
+.pico-launch-stage-bar {
+	width: 60cqw;
+	height: var(--pico-space-2);
+	background: repeating-linear-gradient(
+		135deg,
+		var(--pico-accent) 0 1.2cqw,
+		var(--pico-chrome) 1.2cqw 2.4cqw
+	);
+	background-size: 2.4cqw 100%;
+	animation: pico-barber 600ms linear infinite;
 }

@@ -1,11 +1,11 @@
 /**
  * What the screen shows while Korri is doing something with a game.
  *
- * Deliberately calm and almost empty. This is on screen for the seconds
- * between a press and a game appearing, and anything busy here — a spinner
- * racing, a progress bar guessing — would be inventing detail Korri has not
- * published. The kicker is Korri's own headline; the detail line is shown only
- * when there is one.
+ * Deliberately empty of facts. This is on screen for the seconds between a
+ * press and a game appearing, and Korri publishes no percentage — so the bar
+ * here is a barber pole that moves without ever filling, which says "working"
+ * without claiming progress. The kicker is Korri's own headline; the detail
+ * line is shown only when there is one.
  */
 export function PicoLaunchStage({
   kicker,
@@ -25,6 +25,7 @@ export function PicoLaunchStage({
       {detail === undefined ? null : (
         <p className="pico-launch-stage-detail">{detail}</p>
       )}
+      <span aria-hidden className="pico-launch-stage-bar" />
     </section>
   )
 }

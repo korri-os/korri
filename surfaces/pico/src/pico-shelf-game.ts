@@ -21,6 +21,8 @@ export interface PicoShelfGame {
   readonly title: string
   readonly subtitle?: string
   readonly artUrl?: string
+  /** Wide art for the shelf's backdrop. Absent for most games. */
+  readonly wideArtUrl?: string
   readonly resumable?: boolean
   /**
    * Present only when Korri says there is a real choice. Pico must ask; picking
