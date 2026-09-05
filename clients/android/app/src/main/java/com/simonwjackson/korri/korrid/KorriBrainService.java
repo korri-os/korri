@@ -14,6 +14,7 @@ import com.limelight.korri.overlay.KorriActiveLaunch;
 import com.limelight.korri.overlay.KorriOverlayBridge;
 
 import java.io.File;
+import java.io.IOException;
 
 /**
  * Keeps korrid alive while Korri is not on screen.
@@ -209,8 +210,20 @@ public final class KorriBrainService extends Service {
     }
 
     public static String privateStateRoot(Context context) {
-        File root = new File(context.getApplicationContext().getNoBackupFilesDir(), "korrid-state");
-        return root.getAbsolutePath();
+        File noBackup = context.getApplicationContext().getNoBackupFilesDir();
+        // ContextImpl places no_backup directly inside the app data directory.
+        // Android can symlink its user-directory prefix in the app mount namespace.
+        // Resolve only that system-owned prefix. Keep app-owned symlinks visible
+        // to Rust's strict private-storage validation, including korrid-state itself.
+        File appData = noBackup.getParentFile();
+        try {
+            File userData = appData.getParentFile().getCanonicalFile();
+            File resolvedAppData = new File(userData, appData.getName());
+            return new File(new File(resolvedAppData, noBackup.getName()), "korrid-state")
+                    .getAbsolutePath();
+        } catch (IOException error) {
+            throw new IllegalStateException("failed to resolve Android private storage prefix", error);
+        }
     }
 
     public static Intent launchIntent(
