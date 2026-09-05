@@ -24,39 +24,59 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 
 ## Slices
 
-1. Kernel package (this slice). Rebuild the ROCKNIX SM8550 kernel under Nix
-   from the rev nix-on-rocks pins and sobo runs: Linux 7.0.2, 5 mainline +
-   48 SM8550 patches, AYN DTS, SM8550 defconfig. Output: `Image`, modules,
-   `qcs8550-ayn-odin2portal.dtb`. Exposed as
-   `packages.{aarch64,x86_64}-linux.odin2portal-kernel` (native and cross).
-2. Firmware package. 129 files / 121 MB from
-   `projects/ROCKNIX/devices/SM8550/filesystem/.../lib/firmware`
-   (adsp, cdsp, a740_zap, ath12k WCN7850, VPU, aw883xx). Proprietary; a
-   local derivation kept out of git, same posture as the stock Android
-   images in `clients/android/firmware/odin2portal/`.
-3. Boot image. `mkbootimg` (nixpkgs `android-tools`) header v0, gzip
-   `Image` + DTB concatenated, NixOS initrd, cmdline `root=LABEL=...`.
-   Copies ROCKNIX `makeinstall_target` in `packages/linux/package.mk`.
-4. Tethered first boot: `fastboot boot` with root on SD. Target: SSH over
-   WiFi, the same bar as the RG353M first slice.
-5. Port the guest userspace from
-   `legacy:product/systems/nixos/images/platforms/rocknix-sm8550.nix`
-   (Sway, gamescope, PipeWire + AYN UCM, inputplumber, fan curve, clock
-   governor, fake suspend, seat ACLs). Drop the nix-on-rocks device-facts
-   layer and the `nsenter` deploy.
+1. **Kernel** — done (`ee4af7f3`). Linux 7.0.2, 5 mainline + 48 SM8550
+   patches, AYN DTS, ROCKNIX defconfig. Cross-built from x86_64 because
+   fuji cannot spare the ~30 GB a kernel compile needs.
+2. **Firmware** — done (`897af5a1`, extended in `6b96bafd`). 15 AYN blobs
+   plus the three Adreno 740 files, all pinned by hash, none in git. Two are
+   corrections rather than additions: ath12k `board-2.bin` and
+   `vpu30_p4.mbn` differ from the nixpkgs copies and ROCKNIX's win.
+3. **Boot** — done (`3f6c9c77`, `6b96bafd`). Not mkbootimg: AYN ships U-Boot
+   2025.01 in `loader_a`, reached by BOOT MODE = Loader, and it runs
+   `bootefi bootmgr`. So the card is a GPT disk with an ESP carrying
+   systemd-boot. Nothing on internal storage is written.
+4. **First boot** — done. Root shell on the panel, then SSH over WiFi.
+5. **Platform policy** — done (`08fe8858`). Governors, GMU guard, fan curve,
+   kernel cmdline, audio UCM. Ported from ROCKNIX/legacy, each verified on
+   hardware.
+6. **Userspace** — not started. Sway, gamescope, inputplumber, korrid from
+   `legacy:product/systems/nixos/images/platforms/rocknix-sm8550.nix`.
+
+## Verified on device
+
+| | |
+|---|---|
+| Boot | 35 s, U-Boot -> systemd-boot -> NixOS |
+| GPU | Turnip Adreno 740, GL 4.6, glmark2 1624 |
+| WiFi | `vrackie` autoconnect, 1080 Mbit/s TX |
+| Audio | UCM HiFi: Speaker/Headphones/DisplayPort; 440 Hz tone audible |
+| Thermals | fan 0 RPM at 32 C under the whisper curve |
+| GMU guard | `cpu0/cpuidle/state1` held disabled |
+| Android | untouched; BOOT MODE = Android returns to it |
 
 ## Open questions
 
-- Generations. ABL boots one `/KERNEL`; there is no NixOS boot menu.
-  Rollback of kernel/initrd means swapping the file. Userspace rollback
-  through `nixos-rebuild --rollback` still works. Decide between a
-  `/KERNEL.prev` convention and treating the SD/USB source as the recovery
-  lane.
-- Whether stock ABL can boot from SD at all is irrelevant while sobo runs
-  ROCKNIX-ABL, but matters for a second device.
-- The AYN DTS series (`ayntec,odin2portal`, v8, 2026-05-03) is not in
-  torvalds master yet. Until it lands the patch queue is re-synced by hand
-  on every kernel bump.
+- **Userspace session owner.** PipeWire carries `ConditionUser=!root` and
+  this image logs in as root, so no sink exists yet. Sinks appear when a
+  real session user owns the graph (legacy: the Korri runtime user under
+  greetd). Blocks slice 6, not the substrate.
+- **Fake suspend.** S3 does not work on this SoC. sleep/suspend/hibernate
+  are disabled and logind ignores the power key so a failed resume cannot
+  masquerade as a hang. The real behaviour is a product concern owned by
+  the session and input layers.
+- **SD bus mode.** The card negotiates plain high speed (~25 MB/s), not
+  SDR104. armbian carries
+  `0217-arm64-dts-Switch-to-downstream-sdhc-driver-for-Odin2.patch` for
+  exactly this. Measure before applying.
+- **`firewall.service` fails.** The ROCKNIX config likely lacks the
+  netfilter modules NixOS wants; legacy hit the same thing and ran
+  Tailscale with `--netfilter-mode=off`. Owner deferred it.
+- **First switch on a fresh card** needs `--install-bootloader`: U-Boot's
+  UEFI keeps no EFI variables, so `bootctl status` exits non-zero and the
+  builder reads that as no bootloader present. Later switches are
+  unattended.
+- The AYN DTS series (`ayntec,odin2portal`, v8, 2026-05-03) is still not in
+  torvalds master, so the patch queue is re-synced by hand on kernel bumps.
 
 ## Evidence
 
