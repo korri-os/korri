@@ -11,7 +11,7 @@ export default function PicoCartShelfPart() {
         { id: "hollow", resumable: true, subtitle: "GBA · This device", title: "Hollow Knight" },
         { id: "tetris", subtitle: "GB · zao", title: "Tetris" },
       ]}
-      onLaunch={() => undefined}
+      onOpen={() => undefined}
     />
   )
 }

@@ -98,6 +98,9 @@ export const fixtureModel: SurfaceModel = {
         title: "Hollow Knight",
         subtitle: "Switch · This device",
         resumable: true,
+        playCount: 3,
+        totalPlaytimeSeconds: 7_800,
+        lastPlayedAt: 1_757_000_000_000,
       },
       {
         id: "tetris",

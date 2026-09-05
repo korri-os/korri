@@ -1,0 +1,48 @@
+.pico-game-detail {
+	/* Above the key art stage, for the same reason the shelf's strip is. */
+	position: relative;
+	z-index: 1;
+	height: 100%;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--pico-space-2);
+	padding: var(--pico-space-2) 5cqw;
+	overflow: hidden;
+}
+
+.pico-game-detail-stats {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: var(--pico-space-1) var(--pico-space-3);
+}
+
+.pico-game-detail-unplayed {
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-ink-dim);
+	letter-spacing: 0.125em;
+}
+
+.pico-game-detail-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: var(--pico-space-2);
+	margin-top: var(--pico-space-1);
+}
+
+@container (min-aspect-ratio: 16 / 10) {
+	.pico-game-detail {
+		align-items: flex-start;
+		padding-inline: 8cqw;
+	}
+
+	.pico-game-detail-stats,
+	.pico-game-detail-actions {
+		justify-content: flex-start;
+	}
+}

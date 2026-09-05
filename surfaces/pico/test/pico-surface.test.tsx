@@ -62,20 +62,75 @@ describe("the shelf", () => {
 })
 
 describe("launching", () => {
-  test("launches directly when Korri offers no choice", () => {
+  test("opens the game rather than launching it blind", () => {
     const host = createFixtureHost()
     render(<PicoSurface host={host} model={model()} />)
 
     fireEvent.click(screen.getByRole("button", { name: /Celeste Classic/ }))
 
+    expect(host.calls).toEqual([])
+    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Celeste Classic" })).toBeTruthy()
+  })
+})
+
+describe("a game's own screen", () => {
+  const open = (name: RegExp) => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={model()} />)
+    fireEvent.click(screen.getByRole("button", { name }))
+    return host
+  }
+
+  test("states what Korri knows about the game and nothing more", () => {
+    open(/Hollow Knight/)
+
+    expect(screen.getByText("Switch · This device")).toBeTruthy()
+    expect(screen.getByText("3")).toBeTruthy()
+    expect(screen.getByText("PLAYS")).toBeTruthy()
+    expect(screen.getByText("2H 10M")).toBeTruthy()
+    expect(screen.getByText("PLAYED")).toBeTruthy()
+  })
+
+  test("says never played instead of inventing a count", () => {
+    open(/Celeste Classic/)
+
+    expect(screen.getByText("NEVER PLAYED")).toBeTruthy()
+    expect(screen.queryByText("PLAYS")).toBeNull()
+  })
+
+  test("offers CONTINUE when Korri says the game resumes", () => {
+    open(/Hollow Knight/)
+    expect(screen.getByRole("button", { name: /CONTINUE/ })).toBeTruthy()
+  })
+
+  test("offers PLAY when it does not", () => {
+    open(/Celeste Classic/)
+    expect(screen.getByRole("button", { name: /PLAY/ })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /CONTINUE/ })).toBeNull()
+  })
+
+  test("launches directly when Korri offers no choice", () => {
+    const host = open(/Celeste Classic/)
+
+    fireEvent.click(screen.getByRole("button", { name: /PLAY/ }))
+
     expect(host.calls).toEqual(["launch:celeste"])
   })
 
-  test("asks where to play rather than picking for the user", () => {
-    const host = createFixtureHost()
-    render(<PicoSurface host={host} model={model()} />)
+  test("returns to the shelf on Back", () => {
+    const host = open(/Celeste Classic/)
 
-    fireEvent.click(screen.getByRole("button", { name: /Tetris/ }))
+    act(() => host.press("back"))
+
+    expect(screen.queryByText("PICO ▸ GAME")).toBeNull()
+    expect(screen.getByText("PICO ▸ LIBRARY")).toBeTruthy()
+    expect(host.calls).toEqual([])
+  })
+
+  test("asks where to play rather than picking for the user", () => {
+    const host = open(/Tetris/)
+    fireEvent.click(screen.getByRole("button", { name: /PLAY/ }))
 
     // Nothing has been launched yet: the question is the whole point.
     expect(host.calls).toEqual([])
@@ -85,10 +140,8 @@ describe("launching", () => {
   })
 
   test("sends the location the user chose, unchanged", () => {
-    const host = createFixtureHost()
-    render(<PicoSurface host={host} model={model()} />)
-
-    fireEvent.click(screen.getByRole("button", { name: /Tetris/ }))
+    const host = open(/Tetris/)
+    fireEvent.click(screen.getByRole("button", { name: /PLAY/ }))
     fireEvent.click(screen.getByRole("button", { name: "zao" }))
 
     expect(host.calls).toEqual(["launch:tetris:zao"])
@@ -214,17 +267,19 @@ describe("while Korri is doing something with a game", () => {
 })
 
 describe("the Back button", () => {
-  test("withdraws a launch-location question without launching", () => {
+  test("withdraws a launch-location question before leaving the game", () => {
     const host = createFixtureHost()
     render(<PicoSurface host={host} model={model()} />)
 
     fireEvent.click(screen.getByRole("button", { name: /Tetris/ }))
+    fireEvent.click(screen.getByRole("button", { name: /PLAY/ }))
     expect(screen.getByText("PLAY WHERE?")).toBeTruthy()
 
     act(() => host.press("back"))
 
+    // The question is gone; the game's screen is still up.
     expect(screen.queryByText("PLAY WHERE?")).toBeNull()
-    expect(screen.getByRole("button", { name: /Tetris/ })).toBeTruthy()
+    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 

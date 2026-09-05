@@ -125,6 +125,17 @@
 	--pico-cart-accent: var(--pico-label-9);
 }
 
+.pico-cart[data-placement="still"] {
+	margin: 0;
+	cursor: default;
+	/* A still fills the box it is given. The shelf's cap is against the screen,
+	 * but a still sits inside its own container, and 38cqw of a box already
+	 * sized to the cart is a cart one third as wide as its own frame — the
+	 * legacy detail screen had the same override for the same reason. */
+	width: 100%;
+	max-width: none;
+}
+
 .pico-cart[data-placement="side"] {
 	transform: scale(0.72);
 	filter: saturate(0.7);

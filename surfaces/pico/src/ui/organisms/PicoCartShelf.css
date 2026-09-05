@@ -14,32 +14,6 @@
  * grid is sized against its grid area, not the container, so the art has to be
  * lifted out of the track structure by an element this component controls
  * rather than by reaching into the atom's own class. */
-.pico-cart-shelf-art {
-	position: absolute;
-	inset: 0;
-	z-index: 0;
-	pointer-events: none;
-}
-
-/* A scrim, so the caption always sits on the ground colour rather than on
- * whatever the art happens to be bright in. Without it legibility depends on
- * the picture, which means it is legible until someone adds a game with a pale
- * sky in the bottom third. Hard stops, not a smooth ramp: this is the same
- * interface everywhere else. */
-.pico-cart-shelf-art::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(
-		180deg,
-		transparent 0%,
-		transparent 52%,
-		color-mix(in srgb, var(--pico-bg) 70%, transparent) 52%,
-		color-mix(in srgb, var(--pico-bg) 70%, transparent) 66%,
-		var(--pico-bg) 66%
-	);
-}
-
 .pico-cart-shelf-strip {
 	/* Above the key art. A positioned element with z-index 0 paints over
 	 * ordinary in-flow content, so the backdrop would cover the shelf unless

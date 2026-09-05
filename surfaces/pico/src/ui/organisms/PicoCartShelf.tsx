@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { PicoShelfGame } from "../../pico-shelf-game"
-import { PicoKeyArt } from "../atoms/PicoKeyArt"
 import { PicoTally } from "../atoms/PicoTally"
 import { PicoCart } from "../molecules/PicoCart"
+import { PicoKeyArtStage } from "../molecules/PicoKeyArtStage"
 
 /**
  * The shelf: every game as a cartridge, the focused one held in the middle.
@@ -19,10 +19,10 @@ import { PicoCart } from "../molecules/PicoCart"
  */
 export function PicoCartShelf({
   games,
-  onLaunch,
+  onOpen,
 }: {
   readonly games: readonly PicoShelfGame[]
-  readonly onLaunch: (gameId: string) => void
+  readonly onOpen: (gameId: string) => void
 }) {
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [subtitleOverflows, setSubtitleOverflows] = useState(false)
@@ -54,16 +54,14 @@ export function PicoCartShelf({
 
   return (
     <section className="pico-cart-shelf">
-      <div className="pico-cart-shelf-art">
-        <PicoKeyArt src={focused?.wideArtUrl} />
-      </div>
+      <PicoKeyArtStage src={focused?.wideArtUrl} />
       <ul className="pico-cart-shelf-strip" ref={stripRef}>
         {games.map((game, index) => (
           <li className="pico-cart-shelf-slot" key={game.id}>
             <PicoCart
               artUrl={game.artUrl}
               id={game.id}
-              onActivate={() => onLaunch(game.id)}
+              onActivate={() => onOpen(game.id)}
               onFocus={() => setFocusedIndex(index)}
               placement={index === focusedIndex ? "hero" : "side"}
               resumable={game.resumable ?? false}

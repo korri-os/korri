@@ -222,7 +222,7 @@ describe("the scale is Pico's own", () => {
     const surface = readFileSync(join(SRC, "PicoSurface.tsx"), "utf8")
     const themeClass = surface.match(/className="([^"]*\bpico-theme\b[^"]*)"/)
     expect(themeClass).not.toBeNull()
-    expect(themeClass![1].split(/\s+/)).toContain("intrinsic")
+    expect((themeClass?.[1] ?? "").split(/\s+/)).toContain("intrinsic")
   })
 
   test("the knobs are declared where the scale is derived", () => {

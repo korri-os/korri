@@ -1,0 +1,27 @@
+.pico-title {
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-weight: normal;
+	line-height: 1.2;
+	color: var(--pico-ink);
+	/* Legacy's hard one-cell drop shadow, which is what lifts display text off a
+	 * dithered field. In cqw there so it scales with the screen; the edge token
+	 * is the same idea already named. */
+	text-shadow: var(--pico-edge) var(--pico-edge) 0 var(--pico-cast-shadow);
+}
+
+.pico-title[data-size="sm"] {
+	font-size: var(--pico-text-sm);
+}
+
+.pico-title[data-size="md"] {
+	font-size: var(--pico-text);
+}
+
+.pico-title[data-size="lg"] {
+	font-size: var(--pico-text-lg);
+}
+
+.pico-title[data-size="xl"] {
+	font-size: var(--pico-text-xl);
+}

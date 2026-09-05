@@ -33,6 +33,7 @@ const parts = walk(SRC)
 const TEXTLESS = new Set([
   "ui/atoms/PicoBackdrop.atom.part.tsx",
   "ui/atoms/PicoKeyArt.atom.part.tsx",
+  "ui/molecules/PicoKeyArtStage.molecule.part.tsx",
   "ui/atoms/PicoPixelDisc.atom.part.tsx",
 ])
 

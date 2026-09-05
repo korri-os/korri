@@ -20,7 +20,6 @@
 @import "../../../packages/intrinsic-design/recipe.css";
 @import "./pico-tokens.css";
 @import "./pico-motion.css";
-
 @import "./pages/PicoHome.css";
 @import "./ui/atoms/PicoBackdrop.css";
 @import "./ui/atoms/PicoButton.css";
@@ -29,12 +28,18 @@
 @import "./ui/atoms/PicoHint.css";
 @import "./ui/atoms/PicoKeyArt.css";
 @import "./ui/atoms/PicoPixelDisc.css";
+@import "./ui/atoms/PicoStat.css";
+@import "./ui/atoms/PicoSub.css";
 @import "./ui/atoms/PicoTally.css";
+@import "./ui/atoms/PicoTitle.css";
 @import "./ui/molecules/PicoButtonBar.css";
 @import "./ui/molecules/PicoCart.css";
+@import "./ui/molecules/PicoDetailHead.css";
+@import "./ui/molecules/PicoKeyArtStage.css";
 @import "./ui/molecules/PicoNotice.css";
 @import "./ui/molecules/PicoStatusBar.css";
 @import "./ui/organisms/PicoCartShelf.css";
+@import "./ui/organisms/PicoGameDetail.css";
 @import "./ui/organisms/PicoLaunchStage.css";
 @import "./ui/organisms/PicoLocationPicker.css";
 @import "./ui/templates/PicoScreenShell.css";

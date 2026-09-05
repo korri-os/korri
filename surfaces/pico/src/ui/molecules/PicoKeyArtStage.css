@@ -1,0 +1,23 @@
+.pico-key-art-stage {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+}
+
+/* A scrim, so whatever sits on the stage always meets the ground colour rather
+ * than whatever the art happens to be bright in. Hard stops, not a smooth
+ * ramp: this is the same interface everywhere else. */
+.pico-key-art-stage::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(
+		180deg,
+		transparent 0%,
+		transparent 52%,
+		color-mix(in srgb, var(--pico-bg) 70%, transparent) 52%,
+		color-mix(in srgb, var(--pico-bg) 70%, transparent) 66%,
+		var(--pico-bg) 66%
+	);
+}

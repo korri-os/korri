@@ -1,0 +1,6 @@
+.pico-sub {
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text);
+	color: var(--pico-accent);
+	letter-spacing: 0.0625em;
+}

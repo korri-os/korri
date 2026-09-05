@@ -5,7 +5,13 @@ import { PicoCoverArt } from "../atoms/PicoCoverArt"
  * Where a cart sits on the shelf. The focused cart is the hero; its neighbours
  * peek in from the sides.
  */
-export type PicoCartPlacement = "hero" | "side"
+/**
+ * `hero` and `side` are shelf positions and are buttons. `still` is a cart as
+ * artwork — on a game's own screen it is what the screen is about, not a
+ * control, so it renders as a plain figure and takes no focus. One component,
+ * because a second cart would be the same label drawn twice.
+ */
+export type PicoCartPlacement = "hero" | "side" | "still"
 
 /**
  * One game, drawn as a cartridge.
@@ -42,8 +48,9 @@ export function PicoCart({
   readonly onActivate?: () => void
 }) {
   const label = picoLabelFor(id)
+  const Tag = placement === "still" ? "figure" : "button"
   return (
-    <button
+    <Tag
       aria-label={subtitle === undefined ? title : `${title}, ${subtitle}`}
       className="pico-cart"
       data-accent={label.accent}
@@ -51,9 +58,9 @@ export function PicoCart({
       data-fill={label.fill}
       data-ink={label.ink}
       data-placement={placement}
-      onClick={onActivate}
-      onFocus={onFocus}
-      type="button"
+      {...(placement === "still"
+        ? {}
+        : { onClick: onActivate, onFocus, type: "button" as const })}
     >
       <span className="pico-cart-window">
         <PicoCoverArt artUrl={artUrl} title={title} />
@@ -64,6 +71,6 @@ export function PicoCart({
           ▸
         </span>
       ) : null}
-    </button>
+    </Tag>
   )
 }

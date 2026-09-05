@@ -1,0 +1,46 @@
+.pico-detail-head {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: var(--pico-space-2);
+	min-width: 0;
+}
+
+.pico-detail-head-art {
+	flex: 0 0 auto;
+	/* Bounded by the type scale rather than a raw cqh: legacy found the cart has
+	 * to share the base's ceiling or it runs away from the text on big screens.
+	 * Its own container, so the cart's initials can size against the art. */
+	container-type: size;
+	height: min(42cqh, calc(var(--pico-base) * 11));
+	aspect-ratio: 3 / 4;
+}
+
+.pico-detail-head-info {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--pico-space-1);
+	min-width: 0;
+}
+
+/* Legacy's art-direction seam: a wide, lean-back screen puts art beside the
+ * words instead of above them. Keyed off the screen's true aspect ratio so a
+ * squarish handheld stays stacked and a 16:9 panel splits. */
+@container (min-aspect-ratio: 16 / 10) {
+	.pico-detail-head {
+		flex-direction: row;
+		text-align: left;
+		gap: var(--pico-space-4);
+	}
+
+	.pico-detail-head-art {
+		height: min(60cqh, calc(var(--pico-base) * 12));
+	}
+
+	.pico-detail-head-info {
+		flex: 1;
+		align-items: flex-start;
+	}
+}

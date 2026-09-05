@@ -31,7 +31,7 @@ const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 export function PicoHome({
   view,
   placing,
-  onLaunchGame,
+  onOpenGame,
   onChooseLocation,
   onRetry,
   onDismiss,
@@ -40,7 +40,8 @@ export function PicoHome({
   readonly view: PicoScreenView
   /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
-  readonly onLaunchGame: (gameId: string) => void
+  /** Selecting a cart opens the game's own screen; launching happens there. */
+  readonly onOpenGame: (gameId: string) => void
   readonly onChooseLocation: (locationId: string) => void
   readonly onRetry: () => void
   readonly onDismiss: () => void
@@ -69,7 +70,7 @@ export function PicoHome({
       ) : null}
 
       {view._tag === "Shelf" && !asking ? (
-        <PicoCartShelf games={view.games} onLaunch={onLaunchGame} />
+        <PicoCartShelf games={view.games} onOpen={onOpenGame} />
       ) : null}
 
       {view._tag === "Loading" ? (

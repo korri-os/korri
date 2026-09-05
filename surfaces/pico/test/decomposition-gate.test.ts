@@ -207,7 +207,7 @@ describe("every component has a consumer", () => {
   for (const file of [...componentFiles, join(SRC, "PicoSurface.tsx")]) {
     const src = readFileSync(file, "utf8")
     for (const m of src.matchAll(/from\s+"\.[^"]*\/([A-Za-z0-9]+)"/g)) {
-      importedNames.add(m[1])
+      if (m[1] !== undefined) importedNames.add(m[1])
     }
   }
 
@@ -229,7 +229,8 @@ describe("every component has a consumer", () => {
     while (queue.length > 0) {
       const src = queue.pop()!
       for (const m of src.matchAll(/from\s+"(\.[^"]*)"/g)) {
-        const name = m[1].split("/").at(-1)!
+        const name = m[1]?.split("/").at(-1)
+        if (name === undefined) continue
         if (reachable.has(name)) continue
         reachable.add(name)
         const hit = componentFiles.find((f) => basename(f, ".tsx") === name)
@@ -256,5 +257,26 @@ describe("parts demonstrate only what Korri publishes", () => {
       return buildsGame && !importsFixtures
     })
     expect(offenders.map((f) => relative(SRC, f))).toEqual([])
+  })
+})
+
+describe("every stylesheet is reachable", () => {
+  /**
+   * A component's CSS sits beside it, and pico.css imports each one by hand. A
+   * file that is written and never imported styles nothing — the component
+   * renders in the browser's defaults and looks like a bug in the component,
+   * which is exactly how the detail screen first appeared: unstyled headings
+   * in the terminal face and no dither on a cart the shelf drew fine.
+   */
+  test("every component stylesheet is imported by pico.css", () => {
+    const entry = readFileSync(join(SRC, "pico.css"), "utf8")
+    const imported = new Set(
+      [...entry.matchAll(/@import\s+"\.\/([^"]+)"/g)].map((m) => m[1]),
+    )
+    const missing = allFiles
+      .filter((f) => f.endsWith(".css") && basename(f) !== "pico.css")
+      .map((f) => relative(SRC, f))
+      .filter((rel) => !imported.has(rel))
+    expect(missing).toEqual([])
   })
 })
