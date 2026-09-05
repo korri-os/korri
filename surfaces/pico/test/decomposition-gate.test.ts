@@ -193,3 +193,68 @@ describe("no visual decision is duplicated across files", () => {
     expect(duplicated).toEqual([])
   })
 })
+
+describe("every component has a consumer", () => {
+  /**
+   * Legacy's kit was 94 components imported by zero routed screens. A gallery
+   * makes an orphan look finished, so the rule is structural: every atom,
+   * molecule, organism and template must be imported by some other component
+   * or page — its part alone does not count, because a part exists to review
+   * the component, not to use it. Pages are consumed by the surface binding and
+   * are checked separately.
+   */
+  const importedNames = new Set<string>()
+  for (const file of [...componentFiles, join(SRC, "PicoSurface.tsx")]) {
+    const src = readFileSync(file, "utf8")
+    for (const m of src.matchAll(/from\s+"\.[^"]*\/([A-Za-z0-9]+)"/g)) {
+      importedNames.add(m[1])
+    }
+  }
+
+  test("no atom, molecule, organism or template is imported by nothing", () => {
+    const orphans = componentFiles
+      .filter((file) => /\/ui\/(atoms|molecules|organisms|templates)\//.test(file))
+      .map((file) => basename(file, ".tsx"))
+      .filter((name) => !importedNames.has(name))
+    expect(orphans).toEqual([])
+  })
+
+  test("every page is reached from the surface binding", () => {
+    const binding = readFileSync(join(SRC, "PicoSurface.tsx"), "utf8")
+    const pages = componentFiles
+      .filter((file) => file.includes("/pages/"))
+      .map((file) => basename(file, ".tsx"))
+    const reachable = new Set<string>()
+    const queue = [binding]
+    while (queue.length > 0) {
+      const src = queue.pop()!
+      for (const m of src.matchAll(/from\s+"(\.[^"]*)"/g)) {
+        const name = m[1].split("/").at(-1)!
+        if (reachable.has(name)) continue
+        reachable.add(name)
+        const hit = componentFiles.find((f) => basename(f, ".tsx") === name)
+        if (hit) queue.push(readFileSync(hit, "utf8"))
+      }
+    }
+    expect(pages.filter((p) => !reachable.has(p))).toEqual([])
+  })
+})
+
+describe("parts demonstrate only what Korri publishes", () => {
+  /**
+   * A part that hand-writes `{ id, title, friends: 4 }` proves a field Korri
+   * does not have, and a reviewer approving it approves a screen that can only
+   * ever show fixtures. Parts therefore draw their game and model data from
+   * `fixtures/`, which is typed against `SurfaceModel` — so inventing a field is
+   * a type error there rather than a design decision here.
+   */
+  test("no part builds a game or model literal of its own", () => {
+    const offenders = partFiles.filter((file) => {
+      const src = readFileSync(file, "utf8")
+      const buildsGame = /\b(id|title):\s*"[^"]+",?\s*\n?\s*(title|id|coverArtUrl|section):/.test(src)
+      const importsFixtures = /from\s+"[^"]*fixtures\//.test(src)
+      return buildsGame && !importsFixtures
+    })
+    expect(offenders.map((f) => relative(SRC, f))).toEqual([])
+  })
+})
