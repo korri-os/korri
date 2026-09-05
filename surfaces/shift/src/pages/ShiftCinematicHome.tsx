@@ -56,6 +56,8 @@ export interface ShiftCinematicGame {
   readonly subtitle?: string
   /** Confirming continues an existing session rather than starting fresh. */
   readonly resumable?: boolean
+  /** Newest recorded session end, UTC millis. Drives Continue ordering. */
+  readonly lastPlayedAt?: number
   /** Discovery/recommended pick — draws a "Fresh" tile marker + hero reason chip. */
   readonly fresh?: boolean
   /** Rail section this game belongs to (e.g. "Continue", "Fresh picks"); the rail

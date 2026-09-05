@@ -17,7 +17,10 @@ import {
   fixtureModel,
 } from "../src/fixtures/fixture-host"
 import {
+  shiftDetailGameFromSurfaceGame,
+  shiftGameFromSurfaceGame,
   shiftHomeGamesFromCatalog,
+  shiftLibraryGameFromSurfaceGame,
   ShiftSurface,
 } from "../src/ShiftSurface"
 import { shiftPartPreviews } from "../src/preview"
@@ -84,6 +87,69 @@ describe("ShiftSurface", () => {
         section: "Random",
       },
     ])
+  })
+
+  test("Continue leads with the running session, then recently played newest first", () => {
+    const day = 24 * 60 * 60 * 1000
+    const games = [
+      { id: "old", title: "Old", tileArtUrl: "", wideArtUrl: "", lastPlayedAt: 1 * day },
+      { id: "never", title: "Never", tileArtUrl: "", wideArtUrl: "" },
+      { id: "new", title: "New", tileArtUrl: "", wideArtUrl: "", lastPlayedAt: 3 * day },
+      {
+        id: "running",
+        title: "Running",
+        tileArtUrl: "",
+        wideArtUrl: "",
+        resumable: true,
+      },
+      { id: "mid", title: "Mid", tileArtUrl: "", wideArtUrl: "", lastPlayedAt: 2 * day },
+    ]
+
+    const home = shiftHomeGamesFromCatalog(games, () => 0)
+    expect(home.map(game => [game.id, game.section])).toEqual([
+      ["running", "Continue"],
+      ["new", "Continue"],
+      ["mid", "Continue"],
+      ["old", "Continue"],
+      ["never", "Random"],
+    ])
+  })
+
+  test("formats Korri's raw play facts into Shift's own labels", () => {
+    const now = new Date("2026-09-04T18:00:00.000Z")
+    const played = {
+      id: "wl4",
+      title: "Wario Land 4",
+      lastPlayedAt: Date.UTC(2026, 8, 4, 15, 0, 0),
+      playCount: 3,
+      totalPlaytimeSeconds: 5400,
+    }
+
+    const scene = shiftGameFromSurfaceGame(played, now)
+    expect(scene.lastPlayedLabel).toBe("3h ago")
+    expect(scene.playtimeLabel).toBe("1.5h")
+    expect(scene.lastPlayedAt).toBe(played.lastPlayedAt)
+
+    const detail = shiftDetailGameFromSurfaceGame(played, now)
+    expect(detail.lastPlayedLabel).toBe("3h ago")
+    expect(detail.playtimeLabel).toBe("1.5h")
+
+    const library = shiftLibraryGameFromSurfaceGame(played)
+    expect(library.lastPlayedAt).toBe(played.lastPlayedAt)
+    expect(library.playtimeMinutes).toBe(90)
+
+    const never = shiftDetailGameFromSurfaceGame(
+      { id: "n", title: "Never" },
+      now,
+    )
+    expect(never.lastPlayedLabel).toBeUndefined()
+    expect(never.playtimeLabel).toBeUndefined()
+
+    const running = shiftDetailGameFromSurfaceGame(
+      { ...played, resumable: true },
+      now,
+    )
+    expect(running.lastPlayedLabel).toBe("Ready to continue")
   })
 
   test("draws a title monogram when the host has no cover art", () => {

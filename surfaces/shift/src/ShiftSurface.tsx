@@ -24,6 +24,7 @@ import { ShiftHomeLoadErrorBody } from "./pages/ShiftHomeLoadErrorBody"
 import { ShiftHomeLoadingBody } from "./pages/ShiftHomeLoadingBody"
 import { ShiftDetailSplit } from "./pages/ShiftDetailSplit"
 import { ShiftLibraryLens } from "./pages/ShiftLibraryLens"
+import { playtimeLabel, relativeLastPlayed } from "./play-labels"
 import type { ShiftLibraryGame } from "./pages/shift-library-game"
 import type { ShiftGameDetailView } from "./pages/shift-game-detail-view"
 import { ShiftSettings } from "./pages/ShiftSettings"
@@ -43,7 +44,9 @@ export interface ShiftSurfaceProps {
  */
 export function shiftGameFromSurfaceGame(
   game: SurfaceGame,
+  now: Date = new Date(),
 ): ShiftCinematicGame {
+  const labels = playLabels(game, now)
   return {
     id: game.id,
     title: game.title,
@@ -52,27 +55,65 @@ export function shiftGameFromSurfaceGame(
     ...(game.section === undefined ? {} : { section: game.section }),
     ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
     ...(game.resumable === undefined ? {} : { resumable: game.resumable }),
+    ...(game.lastPlayedAt === undefined
+      ? {}
+      : { lastPlayedAt: game.lastPlayedAt }),
+    ...labels,
   }
 }
 
 export function shiftLibraryGameFromSurfaceGame(
   game: SurfaceGame,
 ): ShiftLibraryGame {
+  const minutes =
+    game.totalPlaytimeSeconds === undefined
+      ? undefined
+      : Math.round(game.totalPlaytimeSeconds / 60)
   return {
     id: game.id,
     title: game.title,
     artUrl: game.coverArtUrl ?? "",
+    ...(game.lastPlayedAt === undefined
+      ? {}
+      : { lastPlayedAt: game.lastPlayedAt }),
+    ...(minutes === undefined ? {} : { playtimeMinutes: minutes }),
   }
 }
 
 export function shiftDetailGameFromSurfaceGame(
   game: SurfaceGame,
+  now: Date = new Date(),
 ): ShiftGameDetailView {
+  const labels = playLabels(game, now)
   return {
     id: game.id,
     title: game.title,
     artUrl: game.coverArtUrl ?? "",
+    ...labels,
+    // A running session outranks history: it is the thing you continue.
     ...(game.resumable ? { lastPlayedLabel: "Ready to continue" } : {}),
+  }
+}
+
+/**
+ * Format Korri's raw play facts into Shift's words. Shift owns the phrasing;
+ * Korri only ever sends a timestamp and a count of seconds.
+ */
+function playLabels(
+  game: SurfaceGame,
+  now: Date,
+): { readonly lastPlayedLabel?: string; readonly playtimeLabel?: string } {
+  const lastPlayedLabel =
+    game.lastPlayedAt === undefined
+      ? undefined
+      : relativeLastPlayed(new Date(game.lastPlayedAt), now)
+  const playtime =
+    game.totalPlaytimeSeconds === undefined
+      ? undefined
+      : playtimeLabel(Math.round(game.totalPlaytimeSeconds / 60))
+  return {
+    ...(lastPlayedLabel === undefined ? {} : { lastPlayedLabel }),
+    ...(playtime === undefined ? {} : { playtimeLabel: playtime }),
   }
 }
 
@@ -82,18 +123,22 @@ const HOME_CONTINUE_CAP = 8
  * Keep Home curated, as the legacy Shift route did: active/recent work first,
  * then one rotating pick. The complete catalog belongs behind Library.
  *
- * The current surface treaty only exposes whether a game is resumable, not a
- * last-played timestamp, so resumable games are the honest Continue section.
- * `randomIndex` is injected to keep this rule deterministic in tests.
+ * Continue is the running session first, then games with a recorded
+ * lastPlayedAt newest-first, capped. A game Korri has never seen played does
+ * not appear here. `randomIndex` is injected to keep the pick deterministic
+ * in tests.
  */
 export function shiftHomeGamesFromCatalog(
   games: readonly ShiftCinematicGame[],
   randomIndex: (count: number) => number = count =>
     Math.floor(Math.random() * count),
 ): readonly ShiftCinematicGame[] {
-  const continuing = games
-    .filter(game => game.resumable)
-    .slice(0, HOME_CONTINUE_CAP)
+  const running = games.filter(game => game.resumable)
+  const runningIds = new Set(running.map(game => game.id))
+  const recent = games
+    .filter(game => !runningIds.has(game.id) && game.lastPlayedAt !== undefined)
+    .sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0))
+  const continuing = [...running, ...recent].slice(0, HOME_CONTINUE_CAP)
   const continuingIds = new Set(continuing.map(game => game.id))
   const candidates = games.filter(game => !continuingIds.has(game.id))
   const random =
@@ -137,7 +182,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
 
   const surfaceGames = model.catalog._tag === "Ready" ? model.catalog.games : []
   const allGames = useMemo(
-    () => surfaceGames.map(shiftGameFromSurfaceGame),
+    () => surfaceGames.map(game => shiftGameFromSurfaceGame(game)),
     [surfaceGames],
   )
   // Stable per Home visit: ordinary re-renders must not reshuffle the pick.
@@ -150,7 +195,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     [allGames, homeRandomSeed],
   )
   const libraryGames = useMemo(
-    () => surfaceGames.map(shiftLibraryGameFromSurfaceGame),
+    () => surfaceGames.map(game => shiftLibraryGameFromSurfaceGame(game)),
     [surfaceGames],
   )
 
