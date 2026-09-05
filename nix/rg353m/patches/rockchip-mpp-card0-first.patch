@@ -1,0 +1,26 @@
+From: Korri RG353M bring-up <noreply@korri.dev>
+Subject: [PATCH] allocator: prefer the KMS card before Panfrost render node
+
+On the RG353M, renderD128 is the Panfrost render node. It opens successfully
+but cannot service DRM_IOCTL_MODE_CREATE_DUMB, so MPP never reaches card0.
+Rockchip DRM card0 provides the dumb-buffer allocator required by MPP.
+
+---
+ osal/allocator/allocator_drm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+--- a/osal/allocator/allocator_drm.c
++++ b/osal/allocator/allocator_drm.c
+@@ -52,10 +52,10 @@ typedef struct {
+     RK_U32  flags;
+ } allocator_ctx_drm;
+ 
+-/* use renderD128 first to avoid GKI kernel permission issue */
++/* card0 is Rockchip DRM; renderD128 is Panfrost on the RG353M. */
+ static const char *dev_drm[] = {
+-    "/dev/dri/renderD128",
+     "/dev/dri/card0",
++    "/dev/dri/renderD128",
+ };
+ 
+ static RK_U32 to_rockchip_gem_mem_flag(RK_U32 flags)

@@ -11,10 +11,17 @@ let
     ];
   };
 in
-{
+rec {
   inherit configuration;
   portalPreviewConfiguration = configuration.extendModules {
     modules = [ (import ./portal-preview.nix { inherit korri; }) ];
+  };
+  rkMppServiceModule =
+    configuration.config.boot.kernelPackages.callPackage ./rk-mpp-service-module.nix
+      { };
+  rockchipMpp = configuration.pkgs.callPackage ./rockchip-mpp.nix { };
+  ffmpegRockchip = configuration.pkgs.callPackage ./ffmpeg-rockchip.nix {
+    inherit rockchipMpp;
   };
   sdImage = configuration.config.system.build.sdImage;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };

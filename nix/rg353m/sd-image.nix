@@ -16,6 +16,7 @@ in
     ./expand-root.nix
     ./browser-bench.nix
     ./gpu.nix
+    ./rk-mpp-service.nix
     ./sunshine-host.nix
     ./usb-gadget.nix
     ./wifi.nix

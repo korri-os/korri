@@ -124,6 +124,9 @@
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
+          rg353m-rk-mpp-service-module = rg353m.rkMppServiceModule;
+          rg353m-rockchip-mpp = rg353m.rockchipMpp;
+          rg353m-ffmpeg-rockchip = rg353m.ffmpegRockchip;
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
           odin2portal-kernel = odin2portal.kernel;
