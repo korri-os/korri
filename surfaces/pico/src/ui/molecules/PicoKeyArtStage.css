@@ -6,18 +6,24 @@
 }
 
 /* A scrim, so whatever sits on the stage always meets the ground colour rather
- * than whatever the art happens to be bright in. Hard stops, not a smooth
- * ramp: this is the same interface everywhere else. */
+ * than whatever the art happens to be bright in. Hard stops, not a smooth ramp:
+ * this is the same interface everywhere else.
+ *
+ * Three bands, not two. The top band is a base tint over the whole stage: the
+ * carts are centred and tall, so they cross the middle of the art, and with a
+ * transparent top they sat on whatever the picture happened to be — a cart on a
+ * bright sky and a cart on a dark cave read as two different components. The
+ * lower bands stay heavier because that is where the caption and tally are. */
 .pico-key-art-stage::after {
 	content: "";
 	position: absolute;
 	inset: 0;
 	background: linear-gradient(
 		180deg,
-		transparent 0%,
-		transparent 52%,
-		color-mix(in srgb, var(--pico-bg) 70%, transparent) 52%,
-		color-mix(in srgb, var(--pico-bg) 70%, transparent) 66%,
+		color-mix(in srgb, var(--pico-bg) 45%, transparent) 0%,
+		color-mix(in srgb, var(--pico-bg) 45%, transparent) 52%,
+		color-mix(in srgb, var(--pico-bg) 78%, transparent) 52%,
+		color-mix(in srgb, var(--pico-bg) 78%, transparent) 66%,
 		var(--pico-bg) 66%
 	);
 }

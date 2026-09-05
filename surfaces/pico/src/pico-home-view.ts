@@ -48,6 +48,7 @@ export function picoHomeViewFromCatalog(catalog: SurfaceCatalog): PicoHomeView {
               ...(game.resumable === undefined
                 ? {}
                 : { resumable: game.resumable }),
+              ...(game.section === undefined ? {} : { section: game.section }),
               ...(game.launchLocations === undefined
                 ? {}
                 : {

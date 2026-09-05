@@ -45,6 +45,13 @@ describe("the shelf", () => {
     expect(screen.getByText("HK")).toBeTruthy()
   })
 
+  test("names the collection the focused game belongs to", () => {
+    render(<PicoSurface host={createFixtureHost()} model={model()} />)
+    // Korri grouped the first game under "Continue"; crossing into another
+    // group is the only way a one-row shelf can show a boundary.
+    expect(screen.getByText("CONTINUE")).toBeTruthy()
+  })
+
   test("follows focus with the caption and the position", () => {
     render(<PicoSurface host={createFixtureHost()} model={model()} />)
 

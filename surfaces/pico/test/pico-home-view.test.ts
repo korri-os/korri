@@ -70,3 +70,28 @@ describe("picoHomeViewFromCatalog", () => {
     expect(picoHomeViewFromCatalog({ _tag: "Empty" })._tag).toBe("Empty")
   })
 })
+
+describe("sections", () => {
+  test("carries the section Korri grouped a game under", () => {
+    const view = picoHomeViewFromCatalog({
+      _tag: "Ready",
+      games: [
+        { id: "a", title: "A", section: "Continue" },
+        { id: "b", title: "B", section: "This device" },
+      ],
+    })
+    expect(view._tag).toBe("Shelf")
+    if (view._tag !== "Shelf") return
+    expect(view.games[0]?.section).toBe("Continue")
+    expect(view.games[1]?.section).toBe("This device")
+  })
+
+  test("leaves it absent when Korri did not group", () => {
+    const view = picoHomeViewFromCatalog({
+      _tag: "Ready",
+      games: [{ id: "a", title: "A" }],
+    })
+    if (view._tag !== "Shelf") return
+    expect(view.games[0]?.section).toBeUndefined()
+  })
+})

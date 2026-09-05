@@ -4,7 +4,9 @@
 	/* minmax(0, 1fr) not 1fr: a bare 1fr refuses to shrink below its content,
 	 * so the strip pushes the caption off the bottom of a short screen and the
 	 * position tally is the first thing to disappear. */
-	grid-template-rows: minmax(0, 1fr) auto;
+	/* Section caption, strip, caption+tally. The caption rows are `auto` so the
+	 * strip is the only thing that gives way on a short screen. */
+	grid-template-rows: auto minmax(0, 1fr) auto;
 	gap: var(--pico-space-2);
 	height: 100%;
 	padding: var(--pico-space-2) 0;
@@ -14,6 +16,20 @@
  * grid is sized against its grid area, not the container, so the art has to be
  * lifted out of the track structure by an element this component controls
  * rather than by reaching into the atom's own class. */
+/* The collection the focused cart belongs to. Korri delivers games grouped and
+ * consecutive, so on a one-row shelf the caption changing as you scroll IS the
+ * group boundary — it is the only place a single strip can show one. */
+.pico-cart-shelf-section {
+	position: relative;
+	z-index: 1;
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-accent);
+	letter-spacing: 0.125em;
+	text-align: center;
+}
+
 .pico-cart-shelf-strip {
 	/* Above the key art. A positioned element with z-index 0 paints over
 	 * ordinary in-flow content, so the backdrop would cover the shelf unless

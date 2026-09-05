@@ -25,6 +25,12 @@ export interface PicoShelfGame {
   readonly wideArtUrl?: string
   readonly resumable?: boolean
   /**
+   * The caption Korri grouped this game under. Absent when Korri grouped
+   * nothing — a shelf that invented "All games" would be labelling its own
+   * guess as Korri's word.
+   */
+  readonly section?: string
+  /**
    * Present only when Korri says there is a real choice. Pico must ask; picking
    * the first one silently would start a game on the wrong machine, which is
    * the one launch mistake a user cannot undo from the couch.
