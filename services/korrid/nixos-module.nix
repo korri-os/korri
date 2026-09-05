@@ -380,12 +380,15 @@ in
         MemoryDenyWriteExecute = false;
         SystemCallArchitectures = "native";
         ReadWritePaths = [ cfg.privateStateRoot ];
+        # Runtime directories owned by later units may not exist yet when
+        # identity runs at boot. systemd fails namespace setup for a missing
+        # path unless it is marked optional, so hide these only when present.
         InaccessiblePaths = [
           cfg.storageRoot
-          cfg.sunshinePrivateStateRoot
-          cfg.compositorControlDirectory
-          cfg.certificateControlDirectory
-          "/dev/inputplumber/sources"
+          "-${cfg.sunshinePrivateStateRoot}"
+          "-${cfg.compositorControlDirectory}"
+          "-${cfg.certificateControlDirectory}"
+          "-/dev/inputplumber/sources"
           "/dev/uinput"
         ];
       };

@@ -12,7 +12,9 @@ let
     label = "test"
   '';
   ownerBindingFile = ./test-data/public-owner-binding.json;
-  ownerBindingStoreFile = pkgs.writeText "korrid-owner-binding.json" (builtins.readFile ownerBindingFile);
+  ownerBindingStoreFile = pkgs.writeText "korrid-owner-binding.json" (
+    builtins.readFile ownerBindingFile
+  );
   peerPublicKey = builtins.concatStringsSep "" (lib.replicate 64 "2");
   androidUpstreamsTemplate = ./deploy/upstreams.android.json;
   base = {
@@ -259,9 +261,7 @@ assert
   in
   lib.hasInfix "korrid-validate-owner-binding" validator
   && lib.hasInfix (builtins.unsafeDiscardStringContext (toString ownerBindingStoreFile)) validatorText
-  && !(
-    lib.hasInfix (builtins.unsafeDiscardStringContext (toString ownerBindingFile)) validatorText
-  )
+  && !(lib.hasInfix (builtins.unsafeDiscardStringContext (toString ownerBindingFile)) validatorText)
   && lib.hasInfix ''[ ! -f "$binding" ] || [ -L "$binding" ]'' validatorText;
 assert identityService.serviceConfig.StateDirectory == "korrid";
 assert identityService.serviceConfig.StateDirectoryMode == "0700";
@@ -269,7 +269,10 @@ assert identityService.serviceConfig.UMask == "0077";
 assert identityService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
 assert identityService.serviceConfig.ReadWritePaths == [ "/var/lib/korrid" ];
 assert builtins.elem "/var/lib/korri" identityService.serviceConfig.InaccessiblePaths;
-assert builtins.elem "/home/gameplay/.config/sunshine"
+assert builtins.elem "-/home/gameplay/.config/sunshine"
+  identityService.serviceConfig.InaccessiblePaths;
+assert builtins.elem "-/run/korri-compositor" identityService.serviceConfig.InaccessiblePaths;
+assert builtins.elem "-/run/korri-certificate-control"
   identityService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "/dev/uinput" identityService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "korrid-control.socket" service.requires;
