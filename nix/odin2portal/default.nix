@@ -29,6 +29,7 @@ let
   rescueKernelCross = crossPkgs.callPackage ./kernel-rescue-7.0.2 { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
+  rocknix = pkgs.callPackage ./rocknix { };
 
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
@@ -36,6 +37,7 @@ let
       odinKernel = kernelCross;
       odinRescueKernel = rescueKernelCross;
       odinFirmware = firmwareCross;
+      odinRocknix = rocknix;
     };
     modules = [ ./sd-image.nix ];
   };
@@ -48,6 +50,7 @@ in
     rescueKernelCross
     firmware
     firmwareCross
+    rocknix
     configuration
     ;
   sdImage = configuration.config.system.build.sdImage;

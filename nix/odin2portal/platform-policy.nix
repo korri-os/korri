@@ -1,8 +1,9 @@
 # Runtime policy ROCKNIX applies to the SM8550 that a bare NixOS boot does
-# not. None of this is a kernel patch; the 53 in kernel/patches are the whole
+# not. None of this is a kernel patch; the 58 in kernel/patches are the
 # ROCKNIX kernel queue and are already in. These are the userspace decisions
 # ROCKNIX makes at boot, ported from the same rev the kernel came from
-# (f080b462) and from what legacy measured on this hardware.
+# (1178bc22) and from what legacy measured on this hardware. Harvested
+# ROCKNIX userspace patches and data files live in ./rocknix.
 #
 # Each entry names its source and what breaks without it, so the next
 # kernel bump can retire the ones that upstream absorbs.
@@ -10,6 +11,7 @@
   config,
   lib,
   pkgs,
+  odinRocknix,
   ...
 }:
 
@@ -129,7 +131,14 @@ in
     alsa.enable = true;
     pulse.enable = true;
     wireplumber.enable = true;
+    # ROCKNIX SM8550 quantum floor (rocknix/pipewire/). 960 frames = 20 ms.
+    extraConfig.pipewire."10-sm8550-quantum" = odinRocknix.pipewireQuantum.pipewire;
+    extraConfig.pipewire-pulse."10-sm8550-quantum" = odinRocknix.pipewireQuantum.pipewire-pulse;
   };
+
+  # ROCKNIX hwdb: the ft5x06 touch panel reports BTN_TOUCH as EV_KEY, which
+  # makes wlroots count it as a keyboard. Mark it touch-only.
+  services.udev.packages = [ odinRocknix.hwdb ];
   environment.sessionVariables.ALSA_CONFIG_UCM2 = ucmPath;
   systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2 = ucmPath;
   systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2 = ucmPath;

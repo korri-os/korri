@@ -1,0 +1,49 @@
+Rebased onto gamescope 3.16.18 from the ROCKNIX original kept alongside as
+.rocknix. Upstream moved the m_bConstrained assignments into the two
+branches of the if; the replacement body is otherwise the same.
+
+--- a/src/steamcompmgr.cpp	2026-09-05 00:25:57.295558852 -0600
++++ b/src/steamcompmgr.cpp	2026-09-05 00:25:57.314323803 -0600
+@@ -1569,21 +1569,30 @@
+ 
+ void MouseCursor::UpdatePosition()
+ {
++	Window root_ret, child_ret;
++	int root_x = m_x, root_y = m_y, win_x = 0, win_y = 0;
++	unsigned int mask;
++	XQueryPointer( m_ctx->dpy, DefaultRootWindow( m_ctx->dpy ),
++	               &root_ret, &child_ret,
++	               &root_x, &root_y,
++	               &win_x, &win_y,
++	               &mask );
++
+ 	wlserver_lock();
+-	struct wlr_pointer_constraint_v1 *pConstraint = wlserver.GetCursorConstraint();
+-	if ( pConstraint && pConstraint->current.cursor_hint.enabled )
+-	{
+-		m_x = pConstraint->current.cursor_hint.x;
+-		m_y = pConstraint->current.cursor_hint.y;
+-		m_bConstrained = true;
+-	}
+-	else
++	m_bConstrained = !!wlserver.GetCursorConstraint();
++	wlserver_unlock();
++
++	if ( root_x != m_x || root_y != m_y )
+ 	{
+-		m_x = wlserver.mouse_surface_cursorx;
+-		m_y = wlserver.mouse_surface_cursory;
+-		m_bConstrained = false;
++		m_x = root_x;
++		m_y = root_y;
++		if ( !m_imageEmpty )
++		{
++			wlserver.ulLastMovedCursorTime = get_time_in_nanos();
++			wlserver.bCursorHidden = !wlserver.bCursorHasImage;
++			hasRepaintNonBasePlane = true;
++		}
+ 	}
+-	wlserver_unlock();
+ }
+ 
+ void MouseCursor::checkSuspension()

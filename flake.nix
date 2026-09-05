@@ -112,6 +112,10 @@
           odin2portal-rescue-kernel = odin2portal.rescueKernel;
           odin2portal-firmware = odin2portal.firmware;
           odin2portal-sd-image = odin2portal.sdImage;
+          odin2portal-gamescope = odin2portal.rocknix.gamescope;
+          odin2portal-mangohud = odin2portal.rocknix.mangohud;
+          odin2portal-alsa-lib = odin2portal.rocknix.alsaLib;
+          odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           odin2portal-kernel = odin2portal.kernelCross;
