@@ -31,9 +31,11 @@ describe("cycling the mode", () => {
     expect(screen.queryByRole("list", { name: "Shelf" })).toBeNull()
   })
 
-  test("menu again returns to the shelf", () => {
+  test("menu again reaches the hero, and once more comes home", () => {
     const host = open()
     act(() => host.press("menu"))
+    act(() => host.press("menu"))
+    expect(screen.getByRole("list", { name: "Resume" })).toBeTruthy()
     act(() => host.press("menu"))
     expect(screen.getByRole("list", { name: "Shelf" })).toBeTruthy()
   })
@@ -46,6 +48,7 @@ describe("cycling the mode", () => {
 
   test("never asks Korri for anything to change mode", () => {
     const host = open()
+    act(() => host.press("menu"))
     act(() => host.press("menu"))
     act(() => host.press("menu"))
     expect(host.calls).toEqual([])

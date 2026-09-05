@@ -1,0 +1,13 @@
+.pico-stat-run {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--pico-space-1) var(--pico-space-3);
+}
+
+.pico-stat-run-empty {
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-ink-dim);
+	letter-spacing: 0.125em;
+}

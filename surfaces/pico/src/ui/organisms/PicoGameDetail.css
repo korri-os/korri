@@ -13,20 +13,6 @@
 	overflow: hidden;
 }
 
-.pico-game-detail-stats {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: var(--pico-space-1) var(--pico-space-3);
-}
-
-.pico-game-detail-unplayed {
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
-}
-
 .pico-game-detail-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -41,7 +27,6 @@
 		padding-inline: 8cqw;
 	}
 
-	.pico-game-detail-stats,
 	.pico-game-detail-actions {
 		justify-content: flex-start;
 	}

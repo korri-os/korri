@@ -1,0 +1,50 @@
+.pico-game-hero {
+	position: relative;
+	min-height: 0;
+	display: flex;
+	align-items: center;
+	overflow: hidden;
+}
+
+.pico-game-hero-open {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: var(--pico-space-3);
+	width: 100%;
+	height: 100%;
+	padding: var(--pico-space-2) var(--pico-space-3);
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	background: transparent;
+	border: none;
+	cursor: pointer;
+}
+
+.pico-game-hero-open:focus-visible {
+	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
+	outline-offset: calc(var(--pico-edge) * -2);
+}
+
+.pico-game-hero-art {
+	flex: 0 0 auto;
+	container-type: size;
+	height: min(70cqh, calc(var(--pico-base) * 9));
+	aspect-ratio: 3 / 4;
+}
+
+.pico-game-hero-info {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--pico-space-1) / 2);
+	min-width: 0;
+}
+
+.pico-game-hero-reason {
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-accent);
+	letter-spacing: 0.125em;
+}

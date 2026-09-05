@@ -1,3 +1,13 @@
 /* The page composes; the shell and its body own the layout. No rules yet, and
  * an empty stylesheet is the honest signal that this page has taken no visual
  * decision of its own — the moment it does, the rule lands here beside it. */
+
+/* Hero mode: one game large, then everything that can be picked up. The hero
+ * takes the room it needs and the list takes what is left, rather than a split
+ * that leaves a two-item list scrolling inside half a screen. */
+.pico-home-hero {
+	display: grid;
+	grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+	height: 100%;
+	min-height: 0;
+}

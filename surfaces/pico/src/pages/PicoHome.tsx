@@ -1,9 +1,12 @@
-import { picoCollectionsFrom } from "../pico-library-view"
+import { picoDetailViewFromGame } from "../pico-detail-view"
+import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
 import { PicoNotice } from "../ui/molecules/PicoNotice"
 import { PicoCartGrid } from "../ui/organisms/PicoCartGrid"
 import { PicoCartShelf } from "../ui/organisms/PicoCartShelf"
+import { PicoGameHero } from "../ui/organisms/PicoGameHero"
+import { PicoResumeList } from "../ui/organisms/PicoResumeList"
 import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage"
 import { PicoLocationPicker } from "../ui/organisms/PicoLocationPicker"
 import { PicoScreenShell } from "../ui/templates/PicoScreenShell"
@@ -16,6 +19,14 @@ const SHELF_HINTS = [
 
 /** With nothing to act on, the only honest hint left is the way out. */
 const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
+
+/* The mode is in the breadcrumb rather than a badge of its own: the user is
+ * already reading that line to know where they are. */
+const MODE_LABELS: Record<PicoHomeMode, string> = {
+  shelf: "PICO ▸ LIBRARY",
+  grid: "PICO ▸ LIBRARY · GRID",
+  hero: "PICO ▸ LIBRARY · HERO",
+}
 
 /**
  * Pico's home screen.
@@ -30,7 +41,7 @@ const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
  * tell a missing file from an unreachable host, and guessing would put a wrong
  * explanation in front of the user.
  */
-export type PicoHomeMode = "shelf" | "grid"
+export type PicoHomeMode = "shelf" | "grid" | "hero"
 
 export function PicoHome({
   view,
@@ -66,7 +77,7 @@ export function PicoHome({
       backdrop={backdrop}
       clockLabel={clockLabel}
       hints={view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS}
-      label={mode === "grid" ? "PICO ▸ LIBRARY · GRID" : "PICO ▸ LIBRARY"}
+      label={MODE_LABELS[mode]}
     >
       {asking && placing !== undefined ? (
         <PicoLocationPicker
@@ -78,6 +89,27 @@ export function PicoHome({
 
       {view._tag === "Shelf" && !asking && mode === "shelf" ? (
         <PicoCartShelf games={view.games} onOpen={onOpenGame} />
+      ) : null}
+
+      {view._tag === "Shelf" && !asking && mode === "hero" ? (
+        <div className="pico-home-hero">
+          {(() => {
+            const pick = picoHeroPick(view.games)
+            if (pick === undefined) return null
+            return (
+              <PicoGameHero
+                game={pick.game}
+                onOpen={() => onOpenGame(pick.game.id)}
+                reason={pick.reason}
+                stats={picoDetailViewFromGame(pick.game).stats}
+              />
+            )
+          })()}
+          <PicoResumeList
+            games={view.games.filter((game) => game.resumable === true)}
+            onOpen={onOpenGame}
+          />
+        </div>
       ) : null}
 
       {view._tag === "Shelf" && !asking && mode === "grid" ? (

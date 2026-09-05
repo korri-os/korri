@@ -88,3 +88,27 @@ export function picoCollectionsFrom(
   }
   return collections
 }
+
+/**
+ * Which game leads the hero, and why.
+ *
+ * Korri publishes no "featured" flag, and inventing one would be an editorial
+ * claim the device has no basis for. The most recently played game is a fact
+ * Korri does publish, so that is the rule — and the screen names it, so the
+ * user reads "last played" rather than assuming a recommendation.
+ */
+export function picoHeroPick(
+  games: readonly PicoShelfGame[],
+): { readonly game: PicoShelfGame; readonly reason?: string } | undefined {
+  const timed = games.filter((game) => game.lastPlayedAt !== undefined)
+  const latest = timed.reduce<PicoShelfGame | undefined>(
+    (best, game) =>
+      best === undefined || (game.lastPlayedAt ?? 0) > (best.lastPlayedAt ?? 0)
+        ? game
+        : best,
+    undefined,
+  )
+  if (latest !== undefined) return { game: latest, reason: "LAST PLAYED" }
+  const first = games[0]
+  return first === undefined ? undefined : { game: first }
+}

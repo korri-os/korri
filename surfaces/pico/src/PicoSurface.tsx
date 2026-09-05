@@ -170,7 +170,9 @@ function PicoCatalogSurface({
       setFinding((open) => !open)
     })
     const offMenu = host.input.on("menu", () => {
-      setMode((current) => (current === "shelf" ? "grid" : "shelf"))
+      setMode((current) =>
+        current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
+      )
     })
     return () => {
       offBack()

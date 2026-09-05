@@ -31,6 +31,13 @@ export interface PicoShelfGame {
    */
   readonly section?: string
   /**
+   * When Korri last saw this game played, and how much. Present only when Korri
+   * said so — the hero picks by these and states nothing it was not given.
+   */
+  readonly lastPlayedAt?: number
+  readonly playCount?: number
+  readonly totalPlaytimeSeconds?: number
+  /**
    * Present only when Korri says there is a real choice. Pico must ask; picking
    * the first one silently would start a game on the wrong machine, which is
    * the one launch mistake a user cannot undo from the couch.

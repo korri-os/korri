@@ -1,7 +1,7 @@
 import type { PicoDetailView } from "../../pico-detail-view"
 import { PicoButton } from "../atoms/PicoButton"
-import { PicoStat } from "../atoms/PicoStat"
 import { PicoDetailHead } from "../molecules/PicoDetailHead"
+import { PicoStatRun } from "../molecules/PicoStatRun"
 
 /**
  * One game, on its own screen.
@@ -26,15 +26,7 @@ export function PicoGameDetail({
         subtitle={game.subtitle}
         title={game.title}
       />
-      <div className="pico-game-detail-stats">
-        {game.stats.length === 0 ? (
-          <span className="pico-game-detail-unplayed">NEVER PLAYED</span>
-        ) : (
-          game.stats.map((stat) => (
-            <PicoStat caption={stat.caption} figure={stat.figure} key={stat.caption} />
-          ))
-        )}
-      </div>
+      <PicoStatRun stats={game.stats} />
       <div className="pico-game-detail-actions">
         <PicoButton label={`▶ ${game.primaryLabel}`} onPress={onPlay} />
       </div>

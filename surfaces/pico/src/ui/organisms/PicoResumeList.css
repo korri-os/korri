@@ -1,0 +1,27 @@
+.pico-resume-list {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--pico-space-1) / 2);
+	min-height: 0;
+	padding: 0 var(--pico-space-3) var(--pico-space-1);
+	overflow-y: auto;
+}
+
+.pico-resume-list-title {
+	margin: 0;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	font-weight: normal;
+	color: var(--pico-ink-dim);
+	letter-spacing: 0.125em;
+}
+
+.pico-resume-list-run {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}

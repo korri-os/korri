@@ -49,6 +49,15 @@ export function picoHomeViewFromCatalog(catalog: SurfaceCatalog): PicoHomeView {
                 ? {}
                 : { resumable: game.resumable }),
               ...(game.section === undefined ? {} : { section: game.section }),
+              ...(game.lastPlayedAt === undefined
+                ? {}
+                : { lastPlayedAt: game.lastPlayedAt }),
+              ...(game.playCount === undefined
+                ? {}
+                : { playCount: game.playCount }),
+              ...(game.totalPlaytimeSeconds === undefined
+                ? {}
+                : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
               ...(game.launchLocations === undefined
                 ? {}
                 : {
