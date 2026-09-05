@@ -1,4 +1,4 @@
-import { fixtureModel } from "../../fixtures/fixture-host"
+import { createFixtureHost, fixtureModel } from "../../fixtures/fixture-host"
 import { picoDetailViewFromGame } from "../../pico-detail-view"
 import { PicoGameDetail } from "./PicoGameDetail"
 
@@ -9,5 +9,5 @@ export default function PicoGameDetailPart() {
   const game = fixtureModel.catalog._tag === "Ready"
     ? fixtureModel.catalog.games[1]!
     : { id: "x", title: "x" }
-  return <PicoGameDetail game={picoDetailViewFromGame(game)} onPlay={() => undefined} />
+  return <PicoGameDetail actions={createFixtureHost().gameActions(game.id)} game={picoDetailViewFromGame(game)} onPlay={() => undefined} onRunAction={() => undefined} />
 }

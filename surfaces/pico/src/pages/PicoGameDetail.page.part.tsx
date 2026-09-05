@@ -1,4 +1,4 @@
-import { fixtureModel } from "../fixtures/fixture-host"
+import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
 import { picoDetailViewFromGame } from "../pico-detail-view"
 import { PicoGameDetail } from "./PicoGameDetail"
 
@@ -12,9 +12,13 @@ export default function PicoGameDetailPagePart() {
   return (
     <PicoGameDetail
       clockLabel={fixtureModel.clockLabel}
+      actions={createFixtureHost().gameActions(game.id)}
       game={picoDetailViewFromGame(game)}
       onChooseLocation={() => undefined}
+      onCancelAction={() => undefined}
+      onConfirmAction={() => undefined}
       onPlay={() => undefined}
+      onRunAction={() => undefined}
     />
   )
 }

@@ -342,3 +342,45 @@ describe("presentations Pico does not implement", () => {
     expect(screen.queryByText("PICO ▸ LIBRARY")).toBeNull()
   })
 })
+
+describe("a game's own actions", () => {
+  const open = (name: RegExp) => {
+    const host = createFixtureHost()
+    render(<PicoSurface host={host} model={model()} />)
+    fireEvent.click(screen.getByRole("button", { name }))
+    return host
+  }
+
+  test("offers the actions Korri publishes for that game", () => {
+    open(/Hollow Knight/)
+    expect(screen.getByRole("button", { name: /Remove from device/ })).toBeTruthy()
+  })
+
+  test("runs one against the game it belongs to", () => {
+    const host = open(/Hollow Knight/)
+    fireEvent.click(screen.getByRole("button", { name: /Verify files/ }))
+    expect(host.calls).toEqual(["gameAction:hollow:verify"])
+  })
+
+  test("asks before a destructive one", () => {
+    const host = open(/Hollow Knight/)
+    fireEvent.click(screen.getByRole("button", { name: /Remove from device/ }))
+    expect(host.calls).toEqual([])
+    expect(screen.getByText("REMOVE FROM DEVICE?")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "REMOVE FROM DEVICE" }))
+    expect(host.calls).toEqual(["gameAction:hollow:remove"])
+  })
+
+  test("shows a disabled action dimmed with Korri's reason", () => {
+    open(/Hollow Knight/)
+    const button = screen.getByRole("button", { name: /Move to SD/ })
+    expect(button.hasAttribute("disabled")).toBe(true)
+    expect(screen.getByText("No card inserted")).toBeTruthy()
+  })
+
+  test("says nothing at all when Korri offers none", () => {
+    open(/Celeste Classic/)
+    expect(screen.queryByRole("button", { name: /Verify files/ })).toBeNull()
+    expect(screen.queryByText("ACTIONS")).toBeNull()
+  })
+})

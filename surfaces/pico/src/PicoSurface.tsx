@@ -1,4 +1,5 @@
 import type {
+  SurfaceAction,
   SurfaceGameplayOverlayPresentation,
   SurfaceHost,
   SurfaceModel,
@@ -127,6 +128,9 @@ function PicoCatalogSurface({
   /* How home lays the library out. View state, not device state: it is about
    * this person in this chair, and Korri has no opinion on it. */
   const [mode, setMode] = useState<PicoHomeMode>("shelf")
+  /* A destructive game action awaiting a yes. Korri's game actions carry no
+   * confirmation copy of their own, so the question is built from the label. */
+  const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
   const [query, setQuery] = useState("")
   const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
@@ -141,9 +145,11 @@ function PicoCatalogSurface({
        * launch-location question, then settings, then a game's own screen, then
        * a failure notice. Leaving the surface is the host's to decide, so past
        * that Pico does nothing and the press falls through. */
-      setAsking((question) => {
-        if (question !== undefined) return undefined
-        setPlacing((current) => {
+      setAskingAction((pending) => {
+        if (pending !== undefined) return undefined
+        setAsking((question) => {
+          if (question !== undefined) return undefined
+          setPlacing((current) => {
           if (current !== undefined) return undefined
           setSettingsOpen((open) => {
             if (open) return false
@@ -154,13 +160,15 @@ function PicoCatalogSurface({
                 if (model.status._tag === "Problem") host.dismiss()
                 return viewing
               })
-              return searching
+                return searching
+              })
+              return open
             })
-            return open
+            return current
           })
-          return current
+          return question
         })
-        return question
+        return pending
       })
     })
     const offSystem = host.input.on("system", () => {
@@ -243,10 +251,23 @@ function PicoCatalogSurface({
         />
       ) : viewing !== undefined ? (
         <PicoGameDetail
+          actions={host.gameActions(viewing.id)}
+          askingAction={askingAction}
           clockLabel={model.clockLabel}
           game={picoDetailViewFromGame(viewing)}
+          onCancelAction={() => setAskingAction(undefined)}
           onChooseLocation={chooseLocation}
+          onConfirmAction={() => {
+            if (askingAction !== undefined) {
+              host.runGameAction(viewing.id, askingAction.id)
+            }
+            setAskingAction(undefined)
+          }}
           onPlay={() => launchGame(viewing.id)}
+          onRunAction={(action) => {
+            if (action.destructive === true) setAskingAction(action)
+            else host.runGameAction(viewing.id, action.id)
+          }}
           placing={placing}
         />
       ) : (

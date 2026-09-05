@@ -54,8 +54,28 @@ export function createFixtureHost(): FixtureHost {
     dismissSettingsProblem() {
       calls.push("dismissSettingsProblem")
     },
-    gameActions(): readonly SurfaceAction[] {
-      return []
+    /* Korri publishes actions per game, and only for some games. Hollow Knight
+     * carries one of each shape the treaty allows: plain, destructive, and
+     * present-but-inert. A game action has no disabledReason — that field is
+     * the gameplay overlay's — so an inert one explains itself through the
+     * description Korri may attach to any action, or not at all. */
+    gameActions(gameId): readonly SurfaceAction[] {
+      if (gameId !== "hollow") return []
+      return [
+        { id: "verify", label: "Verify files", enabled: true },
+        {
+          id: "sd",
+          label: "Move to SD",
+          description: "No card inserted",
+          enabled: false,
+        },
+        {
+          id: "remove",
+          label: "Remove from device",
+          enabled: true,
+          destructive: true,
+        },
+      ]
     },
     runGameAction(gameId, actionId) {
       calls.push(`gameAction:${gameId}:${actionId}`)

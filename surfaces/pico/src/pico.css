@@ -64,6 +64,7 @@
 @import "./ui/molecules/PicoStatRun.css";
 @import "./ui/organisms/PicoGameHero.css";
 @import "./ui/organisms/PicoResumeList.css";
+@import "./ui/organisms/PicoGameActions.css";
 
 @font-face {
 	font-family: "Press Start 2P";
