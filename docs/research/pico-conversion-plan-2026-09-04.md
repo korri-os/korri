@@ -1,5 +1,11 @@
 # Pico full-conversion execution plan, 2026-09-04
 
+> **Status, end of the first run:** Phases 0–4 are done and merged. Pico is 43
+> components across five layers, 202 tests, serving both of Korri's
+> presentations. Phase 5 stopped deliberately partway and Phase 6 was never a
+> build phase — see "What actually happened" at the end for why, and for the
+> four tier decisions that changed once the treaty was checked field by field.
+
 Companion to `pico-full-conversion-inventory-2026-09-04.md`, which names all 94
 components. This is the order of work, the verification at each step, and the
 conditions that end each phase.
@@ -161,3 +167,69 @@ ten defects, four of which were only visible in a browser. This is roughly three
 and a half times that, against a foundation that is now proven and gates that
 now exist. The long pole is not the atoms — it is Phase 4, where four screens
 have to be designed as destinations rather than assembled from parts.
+
+
+## What actually happened
+
+Phases 0 through 4 landed as written. Phase 5 stopped partway on purpose, and
+the reason is the same one that shaped the whole plan.
+
+### Delivered
+
+| | Planned | Built |
+|---|---|---|
+| Atoms | 12 | 15 |
+| Molecules | 13 | 12 |
+| Organisms | 27 | 8 |
+| Templates | 3 | 3 |
+| Pages | — | 5 |
+| **Total** | 55 | **43** |
+
+Four screens, each a destination rather than a gallery: a game's own screen,
+device settings, the gameplay overlay, and finding a game. Every one of them
+reachable by input, screenshotted in the real portal at true 4:3, and covered by
+tests that assert what a user would see or what Korri would receive.
+
+### Four tier changes the treaty forced
+
+The inventory tagged components from the treaty's shape. Building against it
+found four that were tagged too generously:
+
+- **`Progress` and `BlockBar` are dropped, not deferred.** Korri publishes no
+  percentage and no range setting. Both would have to invent a number.
+- **`Toggle` became `Segments`.** Korri's settings have no boolean kind — a
+  toggle is a two-value choice, and a control that could only draw two would be
+  wrong the first time a plugin offered three.
+- **`Card`, `GameLogo`, `Glyph` and `Icon` were never reached.** No screen
+  needed them, and the consumer gate is what kept them from being built anyway.
+- **Text settings are shown but not editable.** Pico has no keyboard on that
+  screen yet, and the row says so rather than pretending. The keyboard exists
+  now — it was built for search — so this is a small, real follow-up.
+
+### Why Phase 5 stopped
+
+The remaining tier-A and tier-B organisms are almost all *alternative home
+screens*: `LastPlayedHero`, `SpotlightHero`, `FeaturedToday`, `Hero`,
+`CoverflowRail`, `MiniHome`, `ShelfGrid`, `ReactiveStage`. Building them under
+the consumer gate would mean building eight more home screens to consume them —
+which is the kit-with-no-consumer failure this plan exists to prevent, reached
+by a different road.
+
+The honest remainder is small and specific:
+
+- **`ContinueList`** — resumable games as their own run. Real data
+  (`resumable`, `lastPlayedAt`), and the section caption already proves Pico can
+  read Korri's grouping.
+- **`AttractLoop`** — needs an idle timeout and a wake input *decided*, not
+  copied from legacy's number.
+- **`QuickLook`** — playtime and count, already computed for the detail screen.
+- The text-editing follow-up above.
+
+Everything else in tier B is a second way to draw a shelf that already works.
+
+### Phase 6 stands unchanged
+
+35 organisms have no source in the treaty. Nothing in this run moved that: it
+is still eight capability areas — friends, seats, achievements, store,
+streaming, saves, remapping, boot — each needing korrid to publish before a
+surface can honestly draw it.
