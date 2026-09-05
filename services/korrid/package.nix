@@ -46,6 +46,10 @@ let
   '';
   commonArgs = {
     inherit src;
+    # crane reads Cargo.lock and .cargo/config.toml during evaluation. Vendor
+    # from the filtered checkout so evaluating this package for another
+    # platform does not force a build of the composed source derivation.
+    cargoVendorDir = craneLib.vendorCargoDeps { src = cleanSource; };
     pname = "korrid";
     version = "0.0.0";
     strictDeps = true;
@@ -58,9 +62,15 @@ let
     LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
   };
   cargoArtifacts = craneLib.buildDepsOnly (
-    commonArgs
+    (builtins.removeAttrs commonArgs [ "src" ])
     // {
-      extraDummyScript = proseqlSource.dummySourceScript;
+      # The dummy source is derived by reading the crate layout during
+      # evaluation. Use the filtered checkout for the same reason as the vendor
+      # directory above; the proseql cache link is re-added by the script.
+      dummySrc = craneLib.mkDummySrc {
+        src = cleanSource;
+        extraDummyScript = proseqlSource.dummySourceScript;
+      };
     }
   );
 in
