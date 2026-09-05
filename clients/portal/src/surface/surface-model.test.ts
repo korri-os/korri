@@ -96,6 +96,11 @@ describe("surfaceModelFrom", () => {
                 id: "wl4",
                 title: "Wario Land 4",
                 host: "zao",
+                source: {
+                  devicePublicKey: "zao-key",
+                  label: "zao",
+                  isLocal: false,
+                },
                 playStats: {
                   lastPlayed: "2026-09-04T18:00:00Z",
                   playCount: 1,

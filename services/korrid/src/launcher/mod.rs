@@ -26,7 +26,7 @@ pub use types::{
     PlatformInstructionVerificationFailure, PlatformInstructionVerifier, ProvisionedFile,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LocalGameCatalog {
     pub games: Vec<LocalGame>,
     pub diagnostics: Vec<RouteDiagnostic>,

@@ -9,6 +9,8 @@ use typeshare::typeshare;
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::PlayStats;
+
 pub const DEFAULT_PLAY_LOG_THRESHOLD_SECONDS: u64 = 0;
 const PLAY_LOGS_DIR: &str = "play-logs";
 
@@ -29,17 +31,6 @@ pub struct PlayEntry {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayStats {
-    /// UTC timestamp of newest session, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_played: Option<String>,
-    pub play_count: u32,
-    pub total_playtime_seconds: u32,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PlayLog {
     pub game_id: String,
     pub entries: Vec<PlayEntry>,
@@ -50,7 +41,7 @@ pub fn derive_play_stats(entries: &[PlayEntry]) -> PlayStats {
         return PlayStats {
             last_played: None,
             play_count: 0,
-            total_playtime_seconds: 0,
+            total_playtime_seconds: 0.0,
         };
     }
 
@@ -67,7 +58,7 @@ pub fn derive_play_stats(entries: &[PlayEntry]) -> PlayStats {
     PlayStats {
         last_played: Some(newest.clone()),
         play_count: entries.len() as u32,
-        total_playtime_seconds,
+        total_playtime_seconds: f64::from(total_playtime_seconds),
     }
 }
 
@@ -151,7 +142,7 @@ impl PlayLogRepository {
             .unwrap_or_else(|_| PlayStats {
                 last_played: None,
                 play_count: 0,
-                total_playtime_seconds: 0,
+                total_playtime_seconds: 0.0,
             })
     }
 
@@ -248,7 +239,7 @@ mod tests {
         let stats = derive_play_stats(&[]);
         assert_eq!(stats.last_played, None);
         assert_eq!(stats.play_count, 0);
-        assert_eq!(stats.total_playtime_seconds, 0);
+        assert_eq!(stats.total_playtime_seconds, 0.0);
     }
 
     #[test]
@@ -261,7 +252,7 @@ mod tests {
         let stats = derive_play_stats(&entries);
         assert_eq!(stats.last_played, Some("2026-09-01T12:00:00Z".into()));
         assert_eq!(stats.play_count, 1);
-        assert_eq!(stats.total_playtime_seconds, 300);
+        assert_eq!(stats.total_playtime_seconds, 300.0);
     }
 
     #[test]
@@ -286,7 +277,7 @@ mod tests {
         let stats = derive_play_stats(&entries);
         assert_eq!(stats.last_played, Some("2026-09-04T18:00:00Z".into()));
         assert_eq!(stats.play_count, 3);
-        assert_eq!(stats.total_playtime_seconds, 2200);
+        assert_eq!(stats.total_playtime_seconds, 2200.0);
     }
 
     #[test]
@@ -316,14 +307,14 @@ mod tests {
             .record_session("game-1", "2026-09-01T10:00:00Z", 150, None)
             .unwrap();
         assert_eq!(stats1.play_count, 1);
-        assert_eq!(stats1.total_playtime_seconds, 150);
+        assert_eq!(stats1.total_playtime_seconds, 150.0);
         assert_eq!(stats1.last_played, Some("2026-09-01T10:00:00Z".into()));
 
         let stats2 = repo
             .record_session("game-1", "2026-09-02T12:00:00Z", 350, Some("rel-1"))
             .unwrap();
         assert_eq!(stats2.play_count, 2);
-        assert_eq!(stats2.total_playtime_seconds, 500);
+        assert_eq!(stats2.total_playtime_seconds, 500.0);
         assert_eq!(stats2.last_played, Some("2026-09-02T12:00:00Z".into()));
 
         let loaded = repo.load_stats("game-1");

@@ -28,7 +28,7 @@ pub mod play_log;
 pub mod relay;
 pub mod remote_signer;
 
-pub use play_log::{PlayEntry, PlayLog, PlayStats};
+pub use play_log::{PlayEntry, PlayLog};
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
@@ -87,13 +87,11 @@ pub struct Game {
     pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<GameIdentity>,
-    #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
-    pub play_stats: Option<PlayStats>,
     pub source: GameSource,
     /// Play statistics for the authenticated person who asked. A host
     /// derives them from its own play log; a brain forwards what the peer
     /// returned for the brain's own identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
     pub play_stats: Option<PlayStats>,
 }
 
@@ -3321,7 +3319,7 @@ fn brain_app_state(
     local_launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: RetroarchControlSlot,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     native_platform: NativePlatform,
@@ -6993,7 +6991,7 @@ command = ["game-two"]
             .expect("wl4 is listed");
         assert_eq!(wl4["playStats"]["playCount"], 2);
         assert!(wl4["playStats"]["lastPlayed"].is_string());
-        assert!(wl4["playStats"]["totalPlaytimeSeconds"].is_u64());
+        assert!(wl4["playStats"]["totalPlaytimeSeconds"].is_f64());
 
         spec["files"][0]["content"] = serde_json::Value::String("tampered".into());
         assert!(!verify_local_launch_spec(

@@ -30,7 +30,7 @@ where
 }
 
 #[typeshare]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LocalGame {
     pub id: String,
     pub title: String,

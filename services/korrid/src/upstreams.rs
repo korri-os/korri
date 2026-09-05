@@ -231,7 +231,6 @@ impl RegisteredHost {
                             id: entry.id,
                             host: qualify_legacy_host.then(|| self.label.clone()),
                             identity,
-                            play_stats: None,
                             source: GameSource {
                                 device_public_key: None,
                                 label: self.label.clone(),

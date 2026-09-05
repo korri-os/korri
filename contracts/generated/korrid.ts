@@ -64,13 +64,6 @@ export type GameIdentity =
 	| { kind: "hash", value: string }
 	| { kind: "provider", value: GameProviderIdentity };
 
-export interface PlayStats {
-	/** UTC timestamp of newest session, if any. */
-	lastPlayed?: string;
-	playCount: number;
-	totalPlaytimeSeconds: number;
-}
-
 export interface GameSource {
 	devicePublicKey?: string;
 	label: string;
@@ -94,7 +87,6 @@ export interface Game {
 	title: string;
 	host?: string;
 	identity?: GameIdentity;
-	playStats?: PlayStats;
 	source: GameSource;
 	/**
 	 * Play statistics for the authenticated person who asked. A host
