@@ -39,6 +39,7 @@
     "${modulesPath}/installer/sd-card/sd-image.nix"
     ./expand-root.nix
     ./platform-policy.nix
+    ./runtime-user.nix
     ./wifi.nix
   ];
 

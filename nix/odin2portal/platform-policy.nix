@@ -115,12 +115,11 @@ in
   # Verified on device: the profile resolves through the real conf.d lookup,
   # `HiFi` exposes Speaker, Headphones, and DisplayPort, and enabling Speaker
   # runs the codec and aw88166 cset sequence. A 440 Hz tone through
-  # hw:AYNOdin2,0 was audible from the speakers. PipeWire itself does not run
-  # here yet: it carries ConditionUser=!root, and this bring-up image logs
-  # in as root. Sinks appear when a real session user owns the graph, which
-  # is the product layer's job (legacy: the Korri runtime user under
-  # greetd). Until then, direct ALSA through hw:0 works, and the two
-  # AudioReach warnings at boot (`CMD timeout for [1001021]`,
+  # hw:AYNOdin2,0 was audible from the speakers. The normal `korri` user owns
+  # the PipeWire graph. Its lingering user manager starts at boot without
+  # greetd, while the root recovery console remains available. The user has
+  # direct audio-group access because its boot-only manager has no interactive
+  # logind seat ACL. The two AudioReach warnings at boot (`CMD timeout for [1001021]`,
   # `soundwire dout-ports mismatch`) are benign: they occur before any
   # profile is applied and do not recur once UCM has run.
   services.pipewire = {

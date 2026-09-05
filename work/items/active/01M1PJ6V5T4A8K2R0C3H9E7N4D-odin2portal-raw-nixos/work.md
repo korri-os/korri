@@ -39,8 +39,10 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 5. **Platform policy** — done (`08fe8858`). Governors, GMU guard, fan curve,
    kernel cmdline, audio UCM. Ported from ROCKNIX/legacy, each verified on
    hardware.
-6. **Userspace** — not started. Sway, gamescope, inputplumber, korrid from
-   `legacy:product/systems/nixos/images/platforms/rocknix-sm8550.nix`.
+6. **Userspace** — runtime identity bootstrap done. `korri:korri` uses UID/GID
+   `1000`, home `/home/korri`, and a lingering user manager. PipeWire and
+   WirePlumber run without greetd. Compositor, input, and game services have
+   not started.
 
 ## Verified on device
 
@@ -49,17 +51,13 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 | Boot | 35 s, U-Boot -> systemd-boot -> NixOS |
 | GPU | Turnip Adreno 740, GL 4.6, glmark2 1624 |
 | WiFi | `vrackie` autoconnect, 1080 Mbit/s TX |
-| Audio | UCM HiFi: Speaker/Headphones/DisplayPort; 440 Hz tone audible |
+| Audio | `korri` PipeWire graph; UCM HiFi Speaker/Headphones sinks; 440 Hz tone audible |
 | Thermals | fan 0 RPM at 32 C under the whisper curve |
 | GMU guard | `cpu0/cpuidle/state1` held disabled |
 | Android | untouched; BOOT MODE = Android returns to it |
 
 ## Open questions
 
-- **Userspace session owner.** PipeWire carries `ConditionUser=!root` and
-  this image logs in as root, so no sink exists yet. Sinks appear when a
-  real session user owns the graph (legacy: the Korri runtime user under
-  greetd). Blocks slice 6, not the substrate.
 - **Fake suspend.** S3 does not work on this SoC. sleep/suspend/hibernate
   are disabled and logind ignores the power key so a failed resume cannot
   masquerade as a hang. The real behaviour is a product concern owned by
