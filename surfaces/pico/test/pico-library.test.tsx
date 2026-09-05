@@ -127,3 +127,51 @@ describe("choosing a result", () => {
     expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
   })
 })
+
+describe("ordering the results", () => {
+  test("keeps Korri's order until asked otherwise", () => {
+    open()
+    const rows = screen.getAllByRole("button", { name: /·/ })
+    expect(rows[0]?.textContent).toContain("Celeste Classic")
+  })
+
+  test("offers only orders it can derive from published facts", () => {
+    open()
+    for (const order of ["KORRI", "A-Z", "MOST PLAYED", "RECENT"]) {
+      expect(screen.getByRole("button", { name: order })).toBeTruthy()
+    }
+  })
+
+  test("sorts by title", () => {
+    open()
+    fireEvent.click(screen.getByRole("button", { name: "A-Z" }))
+    const rows = screen.getAllByRole("button", { name: /·/ })
+    expect(rows[0]?.textContent).toContain("Celeste Classic")
+    expect(rows.at(-1)?.textContent).toContain("Tetris")
+  })
+
+  test("sorts by how much a game has been played", () => {
+    open()
+    fireEvent.click(screen.getByRole("button", { name: "MOST PLAYED" }))
+    const rows = screen.getAllByRole("button", { name: /·/ })
+    expect(rows[0]?.textContent).toContain("Hollow Knight")
+  })
+
+  test("puts games Korri has never timed last rather than first", () => {
+    open()
+    fireEvent.click(screen.getByRole("button", { name: "RECENT" }))
+    const rows = screen.getAllByRole("button", { name: /·/ })
+    // Hollow Knight is the only fixture with a lastPlayedAt; everything else is
+    // unknown, and unknown is not "a long time ago".
+    expect(rows[0]?.textContent).toContain("Hollow Knight")
+  })
+
+  test("orders within the collection, not across it", () => {
+    open()
+    fireEvent.click(screen.getByRole("button", { name: "CONTINUE" }))
+    fireEvent.click(screen.getByRole("button", { name: "A-Z" }))
+    const rows = screen.getAllByRole("button", { name: /·/ })
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.textContent).toContain("Celeste Classic")
+  })
+})

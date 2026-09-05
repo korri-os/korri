@@ -1,4 +1,4 @@
-import type { PicoLibraryView } from "../pico-library-view"
+import type { PicoLibraryView, PicoOrder } from "../pico-library-view"
 import { PicoLibraryBrowser } from "../ui/organisms/PicoLibraryBrowser"
 import { PicoScreenShell } from "../ui/templates/PicoScreenShell"
 
@@ -11,6 +11,8 @@ const HINTS = [
 export function PicoLibrary({
   library,
   section,
+  order,
+  onOrder,
   onType,
   onBackspace,
   onClear,
@@ -20,6 +22,8 @@ export function PicoLibrary({
 }: {
   readonly library: PicoLibraryView
   readonly section: string
+  readonly order: PicoOrder
+  readonly onOrder: (order: PicoOrder) => void
   readonly onType: (character: string) => void
   readonly onBackspace: () => void
   readonly onClear: () => void
@@ -34,8 +38,10 @@ export function PicoLibrary({
         onBackspace={onBackspace}
         onClear={onClear}
         onOpen={onOpen}
+        onOrder={onOrder}
         onSection={onSection}
         onType={onType}
+        order={order}
         section={section}
       />
     </PicoScreenShell>

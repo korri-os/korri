@@ -1,4 +1,8 @@
-import type { PicoLibraryView } from "../../pico-library-view"
+import {
+  PICO_ORDER_LABELS,
+  type PicoLibraryView,
+  type PicoOrder,
+} from "../../pico-library-view"
 import { PicoChip } from "../atoms/PicoChip"
 import { PicoKeyboard } from "../molecules/PicoKeyboard"
 import { PicoQueryField } from "../molecules/PicoQueryField"
@@ -14,6 +18,8 @@ import { PicoResultRow } from "../molecules/PicoResultRow"
 export function PicoLibraryBrowser({
   library,
   section,
+  order,
+  onOrder,
   onType,
   onBackspace,
   onClear,
@@ -22,6 +28,8 @@ export function PicoLibraryBrowser({
 }: {
   readonly library: PicoLibraryView
   readonly section: string
+  readonly order: PicoOrder
+  readonly onOrder: (order: PicoOrder) => void
   readonly onType: (character: string) => void
   readonly onBackspace: () => void
   readonly onClear: () => void
@@ -39,6 +47,16 @@ export function PicoLibraryBrowser({
               label={candidate.toUpperCase()}
               onPress={() => onSection(candidate)}
               pressed={candidate === section}
+            />
+          ))}
+        </div>
+        <div className="pico-library-browser-orders">
+          {library.orders.map((candidate) => (
+            <PicoChip
+              key={candidate}
+              label={PICO_ORDER_LABELS[candidate]}
+              onPress={() => onOrder(candidate)}
+              pressed={candidate === order}
             />
           ))}
         </div>

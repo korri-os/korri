@@ -11,10 +11,12 @@ export default function PicoLibraryPagePart() {
       clockLabel={fixtureModel.clockLabel}
       library={picoLibraryViewFrom(fixtureModel.catalog, "", PICO_ALL_SECTIONS)}
       onBackspace={() => undefined}
+      onOrder={() => undefined}
       onClear={() => undefined}
       onOpen={() => undefined}
       onSection={() => undefined}
       onType={() => undefined}
+      order="korri"
       section={PICO_ALL_SECTIONS}
     />
   )

@@ -5,11 +5,30 @@ import { picoHomeViewFromCatalog } from "./pico-home-view"
 /** The collection filter: a section Korri grouped by, or the whole library. */
 export const PICO_ALL_SECTIONS = "ALL"
 
+/**
+ * How the results are ordered.
+ *
+ * Every order is derivable from a field Korri publishes, and `korri` — the
+ * order the catalog arrived in — is the default. Korri sorts the catalog
+ * deliberately, and a surface that silently re-sorted would be overruling that
+ * without being asked.
+ */
+export const PICO_ORDERS = ["korri", "title", "played", "recent"] as const
+export type PicoOrder = (typeof PICO_ORDERS)[number]
+
+export const PICO_ORDER_LABELS: Record<PicoOrder, string> = {
+  korri: "KORRI",
+  title: "A-Z",
+  played: "MOST PLAYED",
+  recent: "RECENT",
+}
+
 export interface PicoLibraryView {
   /** `ALL` first, then the sections Korri actually used, in catalog order. */
   readonly sections: readonly string[]
   readonly results: readonly PicoShelfGame[]
   readonly query: string
+  readonly orders: readonly PicoOrder[]
 }
 
 /**
@@ -24,23 +43,54 @@ export function picoLibraryViewFrom(
   catalog: SurfaceCatalog,
   query: string,
   section: string,
+  order: PicoOrder = "korri",
 ): PicoLibraryView {
   const home = picoHomeViewFromCatalog(catalog)
   const games = home._tag === "Shelf" ? home.games : []
   const needle = query.trim().toLowerCase()
 
+  const matching = games.filter((game) => {
+    const inSection =
+      section === PICO_ALL_SECTIONS || sectionOf(catalog, game.id) === section
+    if (!inSection) return false
+    if (needle === "") return true
+    const haystack = `${game.title} ${game.subtitle ?? ""}`.toLowerCase()
+    return haystack.includes(needle)
+  })
+
   return {
     sections: [PICO_ALL_SECTIONS, ...sectionsOf(catalog)],
+    orders: PICO_ORDERS,
     query,
-    results: games.filter((game) => {
-      const inSection =
-        section === PICO_ALL_SECTIONS || sectionOf(catalog, game.id) === section
-      if (!inSection) return false
-      if (needle === "") return true
-      const haystack = `${game.title} ${game.subtitle ?? ""}`.toLowerCase()
-      return haystack.includes(needle)
-    }),
+    results: ordered(matching, order),
   }
+}
+
+/**
+ * Sorting is stable and never invents a rank.
+ *
+ * A game Korri has never timed or counted sorts last rather than as a zero: an
+ * unplayed game is not "played least recently", it is unknown, and putting the
+ * unknowns at the top of RECENT would make the order look broken.
+ */
+function ordered(
+  games: readonly PicoShelfGame[],
+  order: PicoOrder,
+): readonly PicoShelfGame[] {
+  if (order === "korri") return games
+  const by = (game: PicoShelfGame): number | undefined =>
+    order === "played" ? game.totalPlaytimeSeconds ?? game.playCount : game.lastPlayedAt
+  if (order === "title") {
+    return [...games].sort((a, b) => a.title.localeCompare(b.title))
+  }
+  return [...games].sort((a, b) => {
+    const left = by(a)
+    const right = by(b)
+    if (left === undefined && right === undefined) return 0
+    if (left === undefined) return 1
+    if (right === undefined) return -1
+    return right - left
+  })
 }
 
 /**

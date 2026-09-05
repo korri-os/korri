@@ -22,6 +22,14 @@
 	gap: calc(var(--pico-space-1) / 2);
 }
 
+/* Orders sit under the collections and read as the same kind of control,
+ * because they are: both narrow what the list shows without asking Korri. */
+.pico-library-browser-orders {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--pico-space-1) / 2);
+}
+
 .pico-library-browser-results {
 	min-height: 0;
 	overflow-y: auto;
@@ -63,7 +71,15 @@
 		grid-template-rows: auto minmax(0, 1fr);
 	}
 
-	.pico-library-browser-results {
+	/* Orders sit under the collections and read as the same kind of control,
+ * because they are: both narrow what the list shows without asking Korri. */
+.pico-library-browser-orders {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--pico-space-1) / 2);
+}
+
+.pico-library-browser-results {
 		border-left: none;
 		border-top: var(--pico-edge) solid var(--pico-chrome-edge);
 		padding-left: 0;

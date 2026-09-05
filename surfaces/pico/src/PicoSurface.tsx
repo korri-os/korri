@@ -13,7 +13,11 @@ import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
-import { PICO_ALL_SECTIONS, picoLibraryViewFrom } from "./pico-library-view"
+import {
+  PICO_ALL_SECTIONS,
+  picoLibraryViewFrom,
+  type PicoOrder,
+} from "./pico-library-view"
 import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
@@ -159,6 +163,7 @@ function PicoCatalogSurface({
   }, [])
   const [query, setQuery] = useState("")
   const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
+  const [order, setOrder] = useState<PicoOrder>("korri")
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
   const [asking, setAsking] = useState<
     { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
@@ -301,12 +306,14 @@ function PicoCatalogSurface({
       ) : finding && quiet && viewing === undefined ? (
         <PicoLibrary
           clockLabel={model.clockLabel}
-          library={picoLibraryViewFrom(model.catalog, query, section)}
+          library={picoLibraryViewFrom(model.catalog, query, section, order)}
           onBackspace={() => setQuery((current) => current.slice(0, -1))}
           onClear={() => setQuery("")}
           onOpen={setViewingId}
+          onOrder={setOrder}
           onSection={setSection}
           onType={(character) => setQuery((current) => current + character)}
+          order={order}
           section={section}
         />
       ) : viewing !== undefined ? (

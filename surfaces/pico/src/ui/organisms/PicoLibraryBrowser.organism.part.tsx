@@ -10,10 +10,12 @@ export default function PicoLibraryBrowserPart() {
     <PicoLibraryBrowser
       library={picoLibraryViewFrom(fixtureModel.catalog, "SP", PICO_ALL_SECTIONS)}
       onBackspace={() => undefined}
+      onOrder={() => undefined}
       onClear={() => undefined}
       onOpen={() => undefined}
       onSection={() => undefined}
       onType={() => undefined}
+      order="korri"
       section={PICO_ALL_SECTIONS}
     />
   )
