@@ -64,8 +64,12 @@ export function PicoSurface({
     setPlacing(undefined)
   }
 
+  // `intrinsic` is not decoration: the recipe derives the whole scale at
+  // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
+  // when the same element carries both does the derivation read Pico's floor,
+  // anchor, ratio and whole-pixel snap instead of the package's defaults.
   return (
-    <div className="pico-theme pico-screen">
+    <div className="intrinsic pico-theme pico-screen">
       <PicoHome
         clockLabel={model.clockLabel}
         onChooseLocation={chooseLocation}

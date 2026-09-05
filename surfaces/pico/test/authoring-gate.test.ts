@@ -208,3 +208,35 @@ describe("the surface treaty is the whole contract", () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe("the scale is Pico's own", () => {
+  /**
+   * The recipe derives `--intrinsic-base` at `:where(:root, .intrinsic)`. Pico
+   * declares its knobs on `.pico-theme`. Unless the same element also carries
+   * `intrinsic`, the derivation happens at `:root` from the package's neutral
+   * defaults and every one of Pico's knobs is inert — including the 1px snap
+   * that keeps a bitmap font off fractional sizes. It looks fine, which is
+   * exactly why it went unnoticed for a whole slice.
+   */
+  test("the element carrying the knobs also re-derives the scale", () => {
+    const surface = readFileSync(join(SRC, "PicoSurface.tsx"), "utf8")
+    const themeClass = surface.match(/className="([^"]*\bpico-theme\b[^"]*)"/)
+    expect(themeClass).not.toBeNull()
+    expect(themeClass![1].split(/\s+/)).toContain("intrinsic")
+  })
+
+  test("the knobs are declared where the scale is derived", () => {
+    const tokens = readFileSync(join(SRC, TOKENS_CSS), "utf8")
+    const block = tokens.match(/\.pico-theme\s*\{[^}]*\}/s)
+    expect(block).not.toBeNull()
+    for (const knob of [
+      "--intrinsic-base-min",
+      "--intrinsic-base-cqi",
+      "--intrinsic-base-max",
+      "--intrinsic-ratio",
+      "--intrinsic-snap",
+    ]) {
+      expect(block![0]).toContain(knob)
+    }
+  })
+})
