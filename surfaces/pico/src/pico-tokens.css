@@ -19,6 +19,75 @@
  * no container to measure, the base simply rests on its floor.
  */
 
+/**
+ * Pico's tunable design inputs, declared as registered custom properties.
+ *
+ * These are standard CSS and mean something with no tool present: `initial-value`
+ * is Pico's own default, so the surface renders correctly if nothing ever writes
+ * to them. Registering one is the opt-in that makes it a design input a tool can
+ * offer as a live control — which is why only genuine *inputs* appear here.
+ *
+ * Deliberately absent: every derived token. `--pico-text-*`, `--pico-space-*`,
+ * and `--pico-scanline` are outputs of the scale, and exposing an output as a
+ * knob invites someone to set a value the scale will immediately contradict.
+ * The `--p8-*` sixteen are absent for a different reason: they are the brand
+ * constant, not a preference.
+ */
+
+/* The ground and the two colours that sit on it. The palette is fixed; which
+ * roles it fills is the decision worth turning. */
+@property --pico-bg {
+	syntax: "<color>";
+	inherits: true;
+	initial-value: #1d2b53;
+}
+
+@property --pico-chrome {
+	syntax: "<color>";
+	inherits: true;
+	initial-value: #0c1430;
+}
+
+@property --pico-accent {
+	syntax: "<color>";
+	inherits: true;
+	initial-value: #ffec27;
+}
+
+/* The scale's character: what the base is anchored to, how fast type climbs,
+ * and how much air a step of space buys. */
+@property --intrinsic-base-cqi {
+	syntax: "<number>";
+	inherits: true;
+	initial-value: 2.5;
+}
+
+@property --intrinsic-ratio {
+	syntax: "<number>";
+	inherits: true;
+	initial-value: 1.25;
+}
+
+@property --intrinsic-space-unit {
+	syntax: "<length>";
+	inherits: true;
+	initial-value: 0.5em;
+}
+
+/* The CRT grille: how many lines the screen pretends to have, and how hard they
+ * press. Both are taste, and both look wrong at values a reader would guess. */
+@property --pico-scanline-lines {
+	syntax: "<number>";
+	inherits: true;
+	initial-value: 240;
+}
+
+@property --pico-scanline-tint {
+	syntax: "<percentage>";
+	inherits: true;
+	initial-value: 12%;
+}
+
 .pico-theme {
 	/* PICO-8's fixed sixteen. */
 	--p8-black: #000000;
