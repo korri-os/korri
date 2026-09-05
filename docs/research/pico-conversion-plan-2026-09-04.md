@@ -1,10 +1,9 @@
 # Pico full-conversion execution plan, 2026-09-04
 
-> **Status, end of the first run:** Phases 0–4 are done and merged. Pico is 43
-> components across five layers, 202 tests, serving both of Korri's
-> presentations. Phase 5 stopped deliberately partway and Phase 6 was never a
-> build phase — see "What actually happened" at the end for why, and for the
-> four tier decisions that changed once the treaty was checked field by field.
+> **Status:** Phases 0–5 are done and merged. Pico is 49 components across five
+> layers, 244 tests, serving both of Korri's presentations. Phase 6 was never a
+> build phase. See "What actually happened" for the tier decisions the treaty
+> forced, and "Phase 5 as built" for how 27 legacy organisms became 13.
 
 Companion to `pico-full-conversion-inventory-2026-09-04.md`, which names all 94
 components. This is the order of work, the verification at each step, and the
@@ -233,3 +232,61 @@ Everything else in tier B is a second way to draw a shelf that already works.
 is still eight capability areas — friends, seats, achievements, store,
 streaming, saves, remapping, boot — each needing korrid to publish before a
 surface can honestly draw it.
+
+
+## Phase 5 as built
+
+The plan listed 27 organisms. Pico has 13. That is not a shortfall — it is what
+the reconciliation rule does to a kit that named the same role three times.
+
+### Legacy organisms, and where each one went
+
+| Legacy | Where it is |
+|---|---|
+| `Hero`, `SpotlightHero`, `LastPlayedHero` | **`PicoGameHero`** — one role, three names |
+| `ShelfGrid` | **`PicoCartGrid`**, home's grid mode |
+| `LibraryRail`, `CoverflowRail` | `PicoCartShelf` — already the scaled strip both described |
+| `ContinueList` | **`PicoResumeList`** |
+| `QuickLook` | **`PicoStatRun`**, shared with a game's own screen |
+| `DualPrimaryStage` | **`PicoGameActions`**, on real `gameActions` |
+| `AttractLoop`, `MiniHome`, `ReactiveStage` | **`PicoAttract`** — one idle screen, not three |
+| `FilterSortPanel`, `FiltersPanel`, `CollectionList`, `SearchResults`, `SearchQuery`, `OnScreenKeyboard` | `PicoLibraryBrowser` and its molecules |
+| `ControlCenter`, `SystemGrid` | `PicoSettingsPanel` |
+| `LaunchingStage`, `LaunchTube`, `RunningGame` | `PicoLaunchStage` — one component per status, not per animation |
+| `Modal` | `PicoModal` |
+| `HudOverlay` | `PicoPauseMenu` |
+| `FailureList` | `PicoNotice`, and the overlay's problem block |
+| `FeaturedToday` | **Not built** — see below |
+
+### Three treaty affordances Pico had been ignoring
+
+Phase 5 was worth doing mostly because of what it found:
+
+- **`gameActions` / `runGameAction`** were published and unread, so everything
+  Korri could do to a game — verify, move, remove — was unreachable.
+- **`menu`** was the third of three inputs Pico received and dropped. It now
+  cycles home's layout.
+- **`lastPlayedAt`, `playCount`, `totalPlaytimeSeconds`** reached only a game's
+  own screen. They now drive the hero's pick and two of the four orders.
+
+### What was deliberately not built
+
+- **`FeaturedToday`.** Legacy captioned it "GAME OF THE DAY". Korri publishes no
+  featured flag and no clock the surface may read, so a game of the day would be
+  Pico inventing both an endorsement and a date. The hero covers the real need
+  and states the rule it used.
+- **A second launch animation.** `LaunchTube` and `RunningGame` are motion
+  variants of states `PicoLaunchStage` already serves. One component per status
+  is the rule; one per animation is how a kit grows to 94.
+
+### Decisions this phase had to make rather than port
+
+- **The attract timeout is 45 seconds**, and the reasoning is in
+  `pico-attract.ts` rather than a commit message, because the next person to
+  change it needs it.
+- **Waking does nothing else.** The first press after attract is how the screen
+  comes back; anything more is acting on an intention nobody had.
+- **`KORRI` is the default order** and stays it. Korri sorts deliberately, and
+  silently re-sorting overrules that without being asked.
+- **Unknown sorts last, never as a zero.** An unplayed game is not "played least
+  recently".
