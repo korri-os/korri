@@ -990,6 +990,8 @@ run_modeled_restore() (
   # shellcheck disable=SC2329 # The extracted production function calls these test doubles indirectly.
   fail() { printf '%s\n' "$1" >&2; exit 1; }
   # shellcheck disable=SC2329
+  remote_quiesce_launch_authority() { printf 'quiesce\n' >>"$log"; }
+  # shellcheck disable=SC2329
   remote_refuse_active_game() { printf 'refuse\n' >>"$log"; }
   # shellcheck disable=SC2329
   remote_stop_candidate_services() { printf 'stop\n' >>"$log"; }
@@ -1018,8 +1020,8 @@ run_modeled_restore() (
     false korri false false false false false false 700 600
   cat "$log"
 )
-[[ "$(run_modeled_restore selector)" == $'refuse\nstop\nraw\nactivate-test\nbundle-switch\npairing\nold-units' ]]
-[[ "$(run_modeled_restore no-selector)" == $'refuse\nstop\nraw\nselector-stop\nselector-clear\nactivate-test\npairing\nold-units' ]]
+[[ "$(run_modeled_restore selector)" == $'quiesce\nrefuse\nstop\nraw\nactivate-test\nbundle-switch\npairing\nold-units' ]]
+[[ "$(run_modeled_restore no-selector)" == $'quiesce\nrefuse\nstop\nraw\nselector-stop\nselector-clear\nactivate-test\npairing\nold-units' ]]
 
 NVENC_LOG_GATE_SOURCE="$(awk '
   /^remote_nvenc_stream_log_gate\(\) \{/ { found=1 }
@@ -1128,11 +1130,39 @@ run_private_session_state_check "$private_session_root"
 chmod 0755 "$private_session_root"
 assert_fails run_private_session_state_check "$private_session_root"
 chmod 0700 "$private_session_root"
-: >"$private_session_root/launch-id"
-assert_fails run_private_session_state_check "$private_session_root"
-rm "$private_session_root/launch-id"
+for persisted_session_record in launch-id active.json; do
+  : >"$private_session_root/$persisted_session_record"
+  assert_fails run_private_session_state_check "$private_session_root"
+  rm "$private_session_root/$persisted_session_record"
+done
 ln -s "$private_session_root" "$TMP/linked-host-session"
 assert_fails run_private_session_state_check "$TMP/linked-host-session"
+
+OBSOLETE_SESSION_SOURCE="$(awk '
+  /^remote_remove_obsolete_launch_id_atom\(\) \{/ { found=1 }
+  found { print }
+  found && /^}$/ { exit }
+' "$GATE")"
+[[ "$OBSOLETE_SESSION_SOURCE" == remote_remove_obsolete_launch_id_atom* ]]
+run_obsolete_session_cut() (
+  local root="$1"
+  eval "$OBSOLETE_SESSION_SOURCE"
+  export KORRID_HOST_SESSION_ROOT="$root"
+  remote_remove_obsolete_launch_id_atom
+)
+obsolete_session_root="$TMP/obsolete-host-session"
+mkdir -m 0700 "$obsolete_session_root"
+printf '%s' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa >"$obsolete_session_root/launch-id"
+chmod 0600 "$obsolete_session_root/launch-id"
+run_obsolete_session_cut "$obsolete_session_root"
+run_private_session_state_check "$obsolete_session_root"
+printf '%s' malformed >"$obsolete_session_root/launch-id"
+chmod 0600 "$obsolete_session_root/launch-id"
+assert_fails run_obsolete_session_cut "$obsolete_session_root"
+rm "$obsolete_session_root/launch-id"
+: >"$obsolete_session_root/active.json"
+chmod 0600 "$obsolete_session_root/active.json"
+assert_fails run_obsolete_session_cut "$obsolete_session_root"
 
 RAW_TOPOLOGY_SOURCE="$(awk '
   /^remote_stable_raw_topology_record\(\) \{/ { found=1 }
@@ -1538,6 +1568,70 @@ REMOTE_RESTORE_SOURCE="$(awk '
 grep -F 'remote_restore_raw_joystick_udev' <<<"$REMOTE_RESTORE_SOURCE" >/dev/null
 [[ "$(grep -Fc 'remote_restore_raw_joystick_udev' "$GATE")" -eq 2 ]]
 
+CURRENT_AUTHORITY_SOURCE="$(awk '
+  /^remote_current_launch_authority\(\) \{/ { found=1 }
+  found { print }
+  found && /^}$/ { exit }
+' "$GATE")"
+QUIESCE_AUTHORITY_SOURCE="$(awk '
+  /^remote_quiesce_launch_authority\(\) \{/ { found=1 }
+  found { print }
+  found && /^}$/ { exit }
+' "$GATE")"
+[[ "$CURRENT_AUTHORITY_SOURCE" == remote_current_launch_authority* ]]
+[[ "$QUIESCE_AUTHORITY_SOURCE" == remote_quiesce_launch_authority* ]]
+run_modeled_authority_quiesce() (
+  local log="$TMP/authority-quiesce.log" system_service=active system_socket=active user_service=false
+  : >"$log"
+  # shellcheck disable=SC2329 # Invoked by the extracted production functions.
+  fail() { printf 'device gate: %s\n' "$*" >&2; exit 1; }
+  # shellcheck disable=SC2329 # Invoked by the extracted production functions.
+  systemctl() {
+    printf '%s\n' "$*" >>"$log"
+    case "$*" in
+      'is-active --quiet korrid.service') [[ "$system_service" == active ]] ;;
+      'is-active --quiet korrid-control.socket') [[ "$system_socket" == active ]] ;;
+      'stop korrid-control.socket') system_socket=inactive ;;
+      'stop korrid.service') system_service=inactive ;;
+      *) return 2 ;;
+    esac
+  }
+  # shellcheck disable=SC2329 # Invoked by the extracted production functions.
+  remote_user_unit_active() { printf '%s\n' "$user_service"; }
+  # shellcheck disable=SC2329 # Invoked by the extracted production functions.
+  remote_user_systemctl() {
+    printf 'user %s\n' "${*:2}" >>"$log"
+    [[ "${*:2}" != 'stop korrid.service' ]] || user_service=false
+  }
+  KORRID_CONTROL_SOCKET_UNIT=korrid-control.socket
+  eval "$CURRENT_AUTHORITY_SOURCE"
+  eval "$QUIESCE_AUTHORITY_SOURCE"
+  remote_quiesce_launch_authority gameplay >/dev/null
+  cat "$log"
+)
+authority_quiesce_log="$(run_modeled_authority_quiesce)"
+socket_stop_line="$(grep -n '^stop korrid-control.socket$' <<<"$authority_quiesce_log" | cut -d: -f1)"
+service_stop_line="$(grep -n '^stop korrid.service$' <<<"$authority_quiesce_log" | cut -d: -f1)"
+user_stop_line="$(grep -n '^user stop korrid.service$' <<<"$authority_quiesce_log" | cut -d: -f1)"
+[[ "$socket_stop_line" =~ ^[0-9]+$ && "$service_stop_line" =~ ^[0-9]+$ && "$user_stop_line" =~ ^[0-9]+$ ]]
+[[ "$socket_stop_line" -lt "$service_stop_line" && "$service_stop_line" -lt "$user_stop_line" ]]
+
+grep -F 'systemctl stop "$KORRID_CONTROL_SOCKET_UNIT"' "$GATE" >/dev/null
+grep -F 'systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT"' "$GATE" >/dev/null
+
+for authority_cut_function in remote_activate_test remote_restore remote_inject_health_failure remote_persistent_switch; do
+  authority_cut_source="$(awk -v function_name="$authority_cut_function" '
+    $0 == function_name "() {" { found=1 }
+    found { print }
+    found && /^}$/ { exit }
+  ' "$GATE")"
+  quiesce_line="$(grep -n 'remote_quiesce_launch_authority' <<<"$authority_cut_source" | head -n1 | cut -d: -f1)"
+  refuse_line="$(grep -n 'remote_refuse_active_game' <<<"$authority_cut_source" | head -n1 | cut -d: -f1)"
+  [[ "$quiesce_line" =~ ^[0-9]+$ && "$refuse_line" =~ ^[0-9]+$ && "$quiesce_line" -lt "$refuse_line" ]]
+done
+grep -F 'rollback-gates) remote_rollback_gates "${1:?}"' "$GATE" >/dev/null
+grep -F 'run_remote_attempt rollback-gates "$GAMEPLAY_USER"' "$GATE" >/dev/null
+
 ACTIVE_GAME_SOURCE="$(awk '
   /^remote_refuse_active_game\(\) \{/ { found=1 }
   found { print }
@@ -1545,6 +1639,10 @@ ACTIVE_GAME_SOURCE="$(awk '
 ' "$GATE")"
 [[ "$ACTIVE_GAME_SOURCE" == remote_refuse_active_game* ]]
 grep -F "sudo -n -u \"\$KORRID_CONTROL_PEER_USER\" curl" <<<"$ACTIVE_GAME_SOURCE" >/dev/null
+quiesced_proof_line="$(grep -n 'remote_launch_authority_quiesced' <<<"$ACTIVE_GAME_SOURCE" | cut -d: -f1)"
+live_unit_proof_line="$(grep -n 'systemctl list-units' <<<"$ACTIVE_GAME_SOURCE" | cut -d: -f1)"
+cut_atom_line="$(grep -n 'remote_remove_obsolete_launch_id_atom' <<<"$ACTIVE_GAME_SOURCE" | cut -d: -f1)"
+[[ "$quiesced_proof_line" -lt "$live_unit_proof_line" && "$live_unit_proof_line" -lt "$cut_atom_line" ]]
 run_production_active_game_check() (
   local model="$1" private_state="${2:-empty}" modeled_live_units="${3:-none}"
   export KORRID_CONTROL_PEER_USER=korri-inputd
@@ -1553,6 +1651,10 @@ run_production_active_game_check() (
   fail() {
     printf 'device gate: %s\n' "$*" >&2
     exit 1
+  }
+  # shellcheck disable=SC2329 # Invoked by the production function loaded below.
+  remote_launch_authority_quiesced() {
+    [[ "$model" != authority-live ]]
   }
   # shellcheck disable=SC2329 # Invoked by the production function loaded below.
   remote_control_socket_present() {
@@ -1585,23 +1687,37 @@ run_production_active_game_check() (
   remote_private_session_state_absent() {
     [[ "$private_state" == empty ]]
   }
+  remote_remove_obsolete_launch_id_atom() {
+    case "$private_state" in
+      empty) return 0 ;;
+      obsolete) private_state=empty; return 0 ;;
+      *) return 1 ;;
+    esac
+  }
   eval "$ACTIVE_GAME_SOURCE"
-  remote_refuse_active_game
+  remote_refuse_active_game gameplay
 )
 grep -Fx 'active-game-check=clear source=local-state' \
   < <(run_production_active_game_check rpc-unavailable) >/dev/null
 grep -Fx 'active-game-check=clear source=local-state' \
   < <(run_production_active_game_check no-socket) >/dev/null
-assert_fails_with 'private launch state is not empty and exact local game status is unavailable' \
+assert_fails_with 'obsolete private launch state cannot be removed safely' \
   run_production_active_game_check rpc-unavailable ambiguous
 assert_fails_with 'a Korri game unit is live' \
   run_production_active_game_check rpc-unavailable empty live
 assert_fails_with 'exact local game status is Running' \
   run_production_active_game_check rpc-running
-# Exact daemon proof remains authoritative after korrid has reconciled a
-# completed session and removed it from its in-memory active state.
+assert_fails_with 'korrid launch authority is not quiesced' \
+  run_production_active_game_check authority-live
+# Quiescence plus no live systemd unit permits the one-off removal of only
+# the obsolete launch-id atom, even after stopping the activation socket makes
+# the exact RPC unavailable. Active or ambiguous new state still blocks.
+grep -Fx 'active-game-check=clear source=local-state' \
+  < <(run_production_active_game_check no-socket obsolete) >/dev/null
 grep -Fx 'active-game-check=clear source=rpc' \
-  < <(run_production_active_game_check rpc-none ambiguous) >/dev/null
+  < <(run_production_active_game_check rpc-none obsolete) >/dev/null
+assert_fails_with 'obsolete private launch state cannot be removed safely' \
+  run_production_active_game_check rpc-none ambiguous
 
 # Observe both instantaneous failures and restart-counter growth. A service
 # that happens to be active during one sample still enters the baseline when

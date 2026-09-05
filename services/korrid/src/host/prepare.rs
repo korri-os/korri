@@ -67,21 +67,30 @@ impl HostLauncher {
         }
     }
 
-    pub fn prepare(&self, game_id: &str) -> Result<SessionPrepared, RpcFailure> {
+    pub fn prepare(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+    ) -> Result<SessionPrepared, RpcFailure> {
         let game = self.games.get(game_id).ok_or_else(|| RpcFailure {
             code: "HostGameNotFound".into(),
             message: format!("host game {game_id:?} is not configured"),
         })?;
-        self.prepare_command(game_id, &game.command)
+        self.prepare_command(game_id, person_public_key, &game.command)
     }
 
     pub fn prepare_command(
         &self,
         game_id: &str,
+        person_public_key: Option<&str>,
         configured_command: &[String],
     ) -> Result<SessionPrepared, RpcFailure> {
-        self.control
-            .prepare(game_id, configured_command, &self.environment)
+        self.control.prepare(
+            game_id,
+            person_public_key,
+            configured_command,
+            &self.environment,
+        )
     }
 
     pub fn control(&self) -> &HostSessionControl {
@@ -184,7 +193,7 @@ mod tests {
             command: vec!["neverball".into(), "--windowed".into()],
         });
 
-        let prepared = launcher.prepare("neverball").unwrap();
+        let prepared = launcher.prepare("neverball", None).unwrap();
 
         assert_eq!(prepared.game_id, "neverball");
         let launches = backend.launches.lock().unwrap();
@@ -202,7 +211,7 @@ mod tests {
         });
 
         assert_eq!(
-            launcher.prepare("missing").unwrap_err().code,
+            launcher.prepare("missing", None).unwrap_err().code,
             "HostGameNotFound"
         );
     }
@@ -216,8 +225,8 @@ mod tests {
             command: vec!["slow".into()],
         });
 
-        let first = launcher.prepare("slow").unwrap();
-        let repeated = launcher.prepare("slow").unwrap();
+        let first = launcher.prepare("slow", None).unwrap();
+        let repeated = launcher.prepare("slow", None).unwrap();
 
         assert_eq!(repeated.launch_id, first.launch_id);
         assert_eq!(backend.launches.lock().unwrap().len(), 1);
@@ -359,7 +368,7 @@ mod tests {
     #[test]
     fn input_seats_are_ready_before_game_launch_and_stop_first() {
         let (_root, events, launcher) = ordered_launcher(false, false);
-        let prepared = launcher.prepare("game").unwrap();
+        let prepared = launcher.prepare("game", None).unwrap();
         assert_eq!(*events.lock().unwrap(), ["seats-start", "game-launch"]);
         assert!(matches!(
             launcher.control().stop(&prepared.launch_id),
@@ -375,7 +384,7 @@ mod tests {
     fn seat_start_failure_prevents_game_launch() {
         let (_root, events, launcher) = ordered_launcher(true, false);
         assert_eq!(
-            launcher.prepare("game").unwrap_err().code,
+            launcher.prepare("game", None).unwrap_err().code,
             "InputSeatUnavailable"
         );
         assert_eq!(*events.lock().unwrap(), ["seats-start"]);
@@ -385,7 +394,7 @@ mod tests {
     fn game_launch_failure_stops_the_created_seats() {
         let (_root, events, launcher) = ordered_launcher(false, true);
         assert_eq!(
-            launcher.prepare("game").unwrap_err().code,
+            launcher.prepare("game", None).unwrap_err().code,
             "HostLaunchFailed"
         );
         assert_eq!(

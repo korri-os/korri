@@ -56,6 +56,9 @@ pub struct PersonPass {
     pub event_json: String,
     pub expires_at: u64,
     pub scopes: Vec<Scope>,
+    /// The person the pass names: the `d` tag address after
+    /// `org.korri.person-pass:`, verified as 32-byte lowercase hex.
+    pub person_public_key: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +66,9 @@ pub enum Principal {
     OwnerDevice {
         device_public_key: String,
         owner_statement: String,
+        /// The verified author of `owner_statement`. It equals the local
+        /// owner key by construction.
+        owner_public_key: String,
     },
     Household {
         device_public_key: String,
@@ -95,12 +101,41 @@ impl Principal {
         }
     }
 
+    /// The authenticated person behind this principal. An owner device acts
+    /// for the owner; a pass holder acts for the person the pass names. An
+    /// unknown peer has no person. This value never comes from an RPC
+    /// payload.
+    pub fn person_public_key(&self) -> Option<&str> {
+        match self {
+            Self::OwnerDevice {
+                owner_public_key, ..
+            } => Some(owner_public_key),
+            Self::Household { person_pass, .. } | Self::Guest { person_pass, .. } => {
+                Some(&person_pass.person_public_key)
+            }
+            Self::Unknown { .. } => None,
+        }
+    }
+
     fn has_scope(&self, expected: Scope) -> bool {
         match self {
             Self::Household { person_pass, .. } | Self::Guest { person_pass, .. } => {
                 person_pass.scopes.contains(&expected)
             }
             Self::OwnerDevice { .. } | Self::Unknown { .. } => false,
+        }
+    }
+}
+
+impl AuthorizationContext {
+    /// The authenticated person for a call. Local surfaces act for the
+    /// device owner, so they take the local owner key when the device is
+    /// owned. Trust reconciliation is not a person.
+    pub fn person_public_key<'a>(&'a self, local_owner: Option<&'a str>) -> Option<&'a str> {
+        match self {
+            Self::LocalBrowser | Self::LocalUnixControl => local_owner,
+            Self::Peer(principal) => principal.person_public_key(),
+            Self::TrustReconciliation => None,
         }
     }
 }
@@ -363,6 +398,7 @@ impl Authorization {
             Principal::OwnerDevice {
                 device_public_key,
                 owner_statement,
+                ..
             } => (
                 device_public_key,
                 CertificateAuthorization::OwnerDevice {
@@ -505,6 +541,7 @@ fn principal_for(
         return Principal::OwnerDevice {
             device_public_key: sender_device_public_key.into(),
             owner_statement: owner_statement_json.into(),
+            owner_public_key: owner_statement.owner_public_key,
         };
     }
     let Some(pass_json) = person_pass else {
@@ -599,6 +636,7 @@ fn parse_person_pass(
             event_json: event_json.into(),
             expires_at,
             scopes,
+            person_public_key: address.to_owned(),
         },
     ))
 }
@@ -1036,10 +1074,85 @@ mod tests {
     }
 
     #[test]
+    fn person_key_comes_only_from_verified_evidence() {
+        let local_owner = Keys::parse(OWNER).unwrap();
+        let local_owner_key = local_owner.public_key().to_hex();
+        let device_owner = Keys::parse(OTHER_OWNER).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let authorization = Authorization::load(root.path()).unwrap();
+
+        // Owner device: the person is the verified statement author.
+        let owned_by_local = owner_statement(&local_owner, DEVICE, "owned", NOW);
+        let attempt = authorization
+            .attempt(&local(), DEVICE, Some(&owned_by_local), None, &[], NOW)
+            .unwrap();
+        let AuthorizationContext::Peer(principal) = attempt.context() else {
+            unreachable!()
+        };
+        assert!(matches!(principal, Principal::OwnerDevice { .. }));
+        assert_eq!(
+            principal.person_public_key(),
+            Some(local_owner_key.as_str())
+        );
+
+        // Household and guest: the person is the pass address, and the
+        // device's own owner is never the person.
+        let other_statement = owner_statement(&device_owner, DEVICE, "owned", NOW);
+        for tier in ["household", "guest"] {
+            let pass = pass(&local_owner, tier, &[STREAM_LAUNCH_SCOPE], NOW + 60);
+            let attempt = authorization
+                .attempt(
+                    &local(),
+                    DEVICE,
+                    Some(&other_statement),
+                    Some(&pass),
+                    &[],
+                    NOW,
+                )
+                .unwrap();
+            let AuthorizationContext::Peer(principal) = attempt.context() else {
+                unreachable!()
+            };
+            assert_eq!(
+                principal.person_public_key(),
+                Some("11".repeat(32).as_str())
+            );
+            assert_ne!(
+                principal.person_public_key(),
+                Some(device_owner.public_key().to_hex().as_str())
+            );
+        }
+
+        // Unknown peers have no person.
+        let attempt = authorization
+            .attempt(&local(), DEVICE, Some(&other_statement), None, &[], NOW)
+            .unwrap();
+        assert_eq!(
+            attempt.context().person_public_key(Some(&local_owner_key)),
+            None
+        );
+
+        // Local surfaces act for the local owner; reconciliation is nobody.
+        assert_eq!(
+            AuthorizationContext::LocalBrowser.person_public_key(Some(&local_owner_key)),
+            Some(local_owner_key.as_str())
+        );
+        assert_eq!(
+            AuthorizationContext::LocalUnixControl.person_public_key(None),
+            None
+        );
+        assert_eq!(
+            AuthorizationContext::TrustReconciliation.person_public_key(Some(&local_owner_key)),
+            None
+        );
+    }
+
+    #[test]
     fn owner_receives_every_action_and_unknown_receives_none() {
         let owner = AuthorizationContext::Peer(Principal::OwnerDevice {
             device_public_key: DEVICE.into(),
             owner_statement: "event".into(),
+            owner_public_key: OWNER.into(),
         });
         let unknown = AuthorizationContext::Peer(Principal::Unknown {
             device_public_key: DEVICE.into(),

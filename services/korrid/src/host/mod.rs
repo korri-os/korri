@@ -3,6 +3,7 @@ pub(crate) mod control;
 mod identity;
 mod input_seat;
 pub(crate) mod moonlight_certificate;
+pub(crate) mod play_log;
 mod prepare;
 mod session_state;
 mod systemd_unit;
@@ -101,12 +102,27 @@ impl DynamicHostRuntime {
 
 const MAX_CONCURRENT_CERTIFICATE_CONTROLS: usize = 4;
 
+fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) {
+    let Some(identity) = DeviceIdentity::load_or_create(private_state_root).ok() else {
+        return (None, None);
+    };
+    let device_public_key = identity.device_public_key().map(str::to_owned);
+    let owner_public_key = match identity.state() {
+        crate::identity::IdentityState::Owned {
+            owner_public_key, ..
+        } => Some(owner_public_key.clone()),
+        _ => None,
+    };
+    (device_public_key, owner_public_key)
+}
+
 #[derive(Clone)]
 pub struct HostRuntime {
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<Result<DynamicHostRuntime, RpcFailure>>,
     device_public_key: Option<String>,
+    owner_public_key: Option<String>,
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
 }
@@ -131,14 +147,13 @@ impl HostRuntime {
             .ok()
             .map(|config| HostLauncher::new(config, &private_state_root));
         let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
-        let device_public_key = DeviceIdentity::load_or_create(&private_state_root)
-            .ok()
-            .and_then(|identity| identity.device_public_key().map(str::to_owned));
+        let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
         Self {
             config,
             launcher,
             dynamic,
             device_public_key,
+            owner_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -159,14 +174,13 @@ impl HostRuntime {
             .ok()
             .map(|config| HostLauncher::with_backend(config, &private_state_root, backend));
         let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
-        let device_public_key = DeviceIdentity::load_or_create(&private_state_root)
-            .ok()
-            .and_then(|identity| identity.device_public_key().map(str::to_owned));
+        let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
         Self {
             config,
             launcher,
             dynamic,
             device_public_key,
+            owner_public_key,
             moonlight_certificate: moonlight_certificate::production_adapter(),
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
@@ -189,6 +203,26 @@ impl HostRuntime {
     }
 
     pub fn catalog_snapshot(&self) -> Result<CatalogSnapshot, RpcFailure> {
+        self.catalog_snapshot_blocking(None)
+    }
+
+    pub async fn catalog_snapshot_for(
+        &self,
+        person_public_key: Option<&str>,
+    ) -> Result<CatalogSnapshot, RpcFailure> {
+        let runtime = self.clone();
+        let person_public_key = person_public_key.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            runtime.catalog_snapshot_blocking(person_public_key.as_deref())
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    fn catalog_snapshot_blocking(
+        &self,
+        person_public_key: Option<&str>,
+    ) -> Result<CatalogSnapshot, RpcFailure> {
         let config = self.config.as_ref().map_err(config_failure)?;
         let play_stats = self
             .launcher
@@ -200,10 +234,29 @@ impl HostRuntime {
             label: config.label.clone(),
             is_local: true,
         };
-        let mut games: Vec<Game> = config
-            .games
-            .iter()
-            .map(|game| Game {
+        let stats_for = |game_id: &str| -> Result<_, RpcFailure> {
+            let Some(person_public_key) = person_public_key else {
+                return Ok(None);
+            };
+            let launcher = self.launcher.as_ref().ok_or_else(|| {
+                config_failure(self.config.as_ref().expect_err("invalid host config"))
+            })?;
+            launcher
+                .control()
+                .play_log()
+                .stats(&play_log::PlayHistoryKey {
+                    user_id: person_public_key.to_owned(),
+                    game_id: game_id.to_owned(),
+                })
+                .map(Some)
+                .map_err(|error| RpcFailure {
+                    code: "PlayLogUnavailable".into(),
+                    message: error.to_string(),
+                })
+        };
+        let mut games = Vec::with_capacity(config.games.len());
+        for game in &config.games {
+            games.push(Game {
                 id: game.id.clone(),
                 title: game.title.clone(),
                 host: Some(config.label.clone()),
@@ -213,8 +266,9 @@ impl HostRuntime {
                     .cloned()
                     .filter(|s| s.play_count > 0 || s.last_played.is_some()),
                 source: source.clone(),
-            })
-            .collect();
+                play_stats: stats_for(&game.id)?,
+            });
+        }
         if let Some(dynamic) = &self.dynamic {
             let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
             for game in &dynamic.games {
@@ -234,6 +288,7 @@ impl HostRuntime {
                         .cloned()
                         .filter(|s| s.play_count > 0 || s.last_played.is_some()),
                     source: source.clone(),
+                    play_stats: stats_for(&game.id)?,
                 });
             }
         }
@@ -241,6 +296,10 @@ impl HostRuntime {
             games,
             failures: None,
         })
+    }
+
+    pub fn owner_public_key(&self) -> Option<&str> {
+        self.owner_public_key.as_deref()
     }
 
     /// Reports this host's current readiness as a federation source. The
@@ -300,25 +359,36 @@ impl HostRuntime {
         }
     }
 
-    pub async fn prepare(&self, game_id: &str) -> Result<SessionPrepared, RpcFailure> {
+    pub async fn prepare(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+    ) -> Result<SessionPrepared, RpcFailure> {
         let runtime = self.clone();
         let game_id = game_id.to_owned();
-        tokio::task::spawn_blocking(move || runtime.prepare_blocking(&game_id))
-            .await
-            .map_err(host_worker_failure)?
+        let person_public_key = person_public_key.map(str::to_owned);
+        tokio::task::spawn_blocking(move || {
+            runtime.prepare_blocking(&game_id, person_public_key.as_deref())
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
-    fn prepare_blocking(&self, game_id: &str) -> Result<SessionPrepared, RpcFailure> {
+    fn prepare_blocking(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+    ) -> Result<SessionPrepared, RpcFailure> {
         let launcher = self.launcher.as_ref().ok_or_else(|| {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         if let Some(dynamic) = &self.dynamic {
             let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
             if let Some(game) = dynamic.games.iter().find(|game| game.id == game_id) {
-                return launcher.prepare_command(game_id, &game.command);
+                return launcher.prepare_command(game_id, person_public_key, &game.command);
             }
         }
-        launcher.prepare(game_id)
+        launcher.prepare(game_id, person_public_key)
     }
 
     fn control(&self) -> Result<&HostSessionControl, RpcFailure> {
@@ -633,6 +703,66 @@ mod tests {
 
         assert!(public.catalog_snapshot().is_ok());
         assert!(private.catalog_snapshot().is_ok());
+    }
+
+    #[tokio::test]
+    async fn catalog_derives_stats_for_only_the_authenticated_person() {
+        const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"wario\"\ntitle = \"Wario Land 4\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let private = root.path().join("private");
+        let runtime = HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        );
+        let store = play_log::PlayLogStore::new(&private);
+        store
+            .record(
+                &play_log::PlayHistoryKey {
+                    user_id: PERSON.into(),
+                    game_id: "wario".into(),
+                },
+                play_log::PlayEntry {
+                    occurred_at: "2026-09-04T10:00:00.000Z".into(),
+                    duration_seconds: 75.0,
+                    release_id: None,
+                },
+            )
+            .unwrap();
+
+        let own = runtime.catalog_snapshot_for(Some(PERSON)).await.unwrap();
+        assert_eq!(
+            own.games[0].play_stats,
+            Some(crate::PlayStats {
+                last_played: Some("2026-09-04T10:00:00.000Z".into()),
+                play_count: 1,
+                total_playtime_seconds: 75.0,
+            })
+        );
+        assert_eq!(
+            runtime
+                .catalog_snapshot_for(Some(&"11".repeat(32)))
+                .await
+                .unwrap()
+                .games[0]
+                .play_stats,
+            Some(crate::PlayStats {
+                last_played: None,
+                play_count: 0,
+                total_playtime_seconds: 0.0,
+            })
+        );
+        assert_eq!(
+            runtime.catalog_snapshot().unwrap().games[0].play_stats,
+            None
+        );
     }
 
     #[test]

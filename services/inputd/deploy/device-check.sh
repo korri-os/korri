@@ -39,6 +39,7 @@ EXPECTED_SUNSHINE_PATCH_SET_SHA256='e330647511163d07c252901908e7c29c435b36459246
 KORRID_CONTROL_GROUP='korri-control'
 KORRID_CONTROL_PEER_USER='korri-inputd'
 KORRID_CONTROL_SOCKET='/run/korrid-control/control.sock'
+KORRID_CONTROL_SOCKET_UNIT='korrid-control.socket'
 # This path comes from HostSessionControl's existing private-state producer.
 KORRID_HOST_SESSION_ROOT='/var/lib/korrid/host-session'
 BUNDLE_SELECTOR_ROOT='/nix/var/nix/gcroots/korri-bundle'
@@ -150,8 +151,32 @@ remote_private_session_state_absent() {
   [[ -z "$entries" ]]
 }
 
+# One-off clean cut from the obsolete launch-id atom. Call this only after
+# every launch authority and its activation socket are stopped and systemd
+# proves that no game is active.
+remote_remove_obsolete_launch_id_atom() {
+  local mode entries atom
+  [[ ! -L "$KORRID_HOST_SESSION_ROOT" ]] || return 1
+  [[ -e "$KORRID_HOST_SESSION_ROOT" ]] || return 0
+  [[ -d "$KORRID_HOST_SESSION_ROOT" ]] || return 1
+  mode="$(stat -Lc '%a' -- "$KORRID_HOST_SESSION_ROOT" 2>/dev/null)" || return 1
+  [[ "$mode" == 700 ]] || return 1
+  entries="$(find "$KORRID_HOST_SESSION_ROOT" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null)" \
+    || return 1
+  [[ -n "$entries" ]] || return 0
+  [[ "$entries" == launch-id ]] || return 1
+  atom="$KORRID_HOST_SESSION_ROOT/launch-id"
+  [[ ! -L "$atom" && -f "$atom" ]] || return 1
+  [[ "$(stat -Lc '%a' -- "$atom" 2>/dev/null)" == 600 ]] || return 1
+  [[ "$(cat -- "$atom" 2>/dev/null)" =~ ^[0-9a-f]{32}$ ]] || return 1
+  rm -- "$atom" || return 1
+  sync -f "$KORRID_HOST_SESSION_ROOT" || return 1
+}
+
 remote_refuse_active_game() {
-  local response phase code live_units rpc_proven=false proof_source=local-state
+  local runtime_user="$1" response phase code live_units proof_source=local-state
+  remote_launch_authority_quiesced "$runtime_user" \
+    || fail 'korrid launch authority is not quiesced; refusing private-state cut'
   if remote_control_socket_present; then
     if response="$(sudo -n -u "$KORRID_CONTROL_PEER_USER" curl --fail --silent --connect-timeout 1 --max-time 2 \
       --unix-socket "$KORRID_CONTROL_SOCKET" http://localhost/rpc \
@@ -166,7 +191,6 @@ remote_refuse_active_game() {
             && "$code" != NoActiveSession && "$code" != SessionCompleted ]]; then
             fail 'exact local game status cannot prove that no game is active; refusing service mutation'
           fi
-          rpc_proven=true
           proof_source=rpc
           ;;
         *) fail 'exact local game status has an unknown phase; refusing service mutation' ;;
@@ -177,10 +201,10 @@ remote_refuse_active_game() {
     --no-legend --plain 'korri-game-*.service' 2>/dev/null)" \
     || fail 'Korri game unit state is unavailable; refusing service mutation'
   [[ -z "$live_units" ]] || fail 'a Korri game unit is live; refusing service mutation'
-  if [[ "$rpc_proven" != true ]]; then
-    remote_private_session_state_absent \
-      || fail 'private launch state is not empty and exact local game status is unavailable; refusing service mutation'
-  fi
+  remote_remove_obsolete_launch_id_atom \
+    || fail 'obsolete private launch state cannot be removed safely; refusing service mutation'
+  remote_private_session_state_absent \
+    || fail 'private launch state is not empty after inactivity proof; refusing service mutation'
   printf 'active-game-check=clear source=%s\n' "$proof_source"
 }
 
@@ -278,6 +302,66 @@ remote_switch_generation_bundle() {
   sudo -n "$selector" switch "$bundle" "$systemctl_bin"
   [[ "$(readlink -f -- "$BUNDLE_SELECTOR_ROOT/active" 2>/dev/null)" == "$bundle" ]] \
     || fail 'active Korri bundle does not match the requested generation'
+}
+
+remote_current_launch_authority() {
+  local runtime_user="$1" system_present=false user_active
+  if systemctl is-active --quiet korrid.service \
+    || systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT"; then
+    system_present=true
+  fi
+  user_active="$(remote_user_unit_active "$runtime_user" korrid.service)" \
+    || fail 'old user korrid active state is unavailable before quiesce'
+  if [[ "$system_present" == true && "$user_active" == true ]]; then
+    fail 'system and user korrid launch authorities are active together'
+  elif [[ "$system_present" == true ]]; then
+    printf 'system\n'
+  elif [[ "$user_active" == true ]]; then
+    printf 'user\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+remote_quiesce_launch_authority() {
+  local runtime_user="$1" authority state
+  authority="$(remote_current_launch_authority "$runtime_user")"
+  # Stop socket activation before the system service. Otherwise the status
+  # probe itself can restart korrid between the inactivity proof and the cut.
+  systemctl stop "$KORRID_CONTROL_SOCKET_UNIT" >/dev/null 2>&1 || true
+  ! systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT" \
+    || fail 'system korrid activation socket remained active'
+  systemctl stop korrid.service >/dev/null 2>&1 || true
+  ! systemctl is-active --quiet korrid.service \
+    || fail 'system korrid launch authority remained active'
+  remote_user_systemctl "$runtime_user" stop korrid.service >/dev/null 2>&1 || true
+  state="$(remote_user_unit_active "$runtime_user" korrid.service)" \
+    || fail 'old user korrid active state is unavailable after quiesce'
+  [[ "$state" == false ]] || fail 'old user korrid launch authority remained active'
+  printf 'launch-authority=%s quiesced\n' "$authority"
+}
+
+remote_launch_authority_quiesced() {
+  local runtime_user="$1" state
+  ! systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT" || return 1
+  ! systemctl is-active --quiet korrid.service || return 1
+  state="$(remote_user_unit_active "$runtime_user" korrid.service)" || return 1
+  [[ "$state" == false ]]
+}
+
+remote_restore_launch_authority() {
+  local runtime_user="$1" socket_was_active="$2" system_was_active="$3" user_was_active="$4"
+  if [[ "$socket_was_active" == true ]]; then
+    systemctl start "$KORRID_CONTROL_SOCKET_UNIT"
+  else
+    systemctl stop "$KORRID_CONTROL_SOCKET_UNIT" >/dev/null 2>&1 || true
+  fi
+  if [[ "$system_was_active" == true ]]; then
+    systemctl start korrid.service
+  else
+    systemctl stop korrid.service >/dev/null 2>&1 || true
+  fi
+  remote_restore_old_user_unit_activity "$runtime_user" korrid.service "$user_was_active"
 }
 
 remote_quiesce_old_user_units() {
@@ -1439,7 +1523,8 @@ remote_activate_generation() {
 
 remote_activate_test() {
   local candidate="$1" runtime_user="$2"
-  remote_refuse_active_game
+  remote_quiesce_launch_authority "$runtime_user"
+  remote_refuse_active_game "$runtime_user"
   remote_clear_orphan_bundle_selector
   remote_quiesce_old_user_units "$runtime_user"
   remote_set_pairing_state_modes "$runtime_user" 700 600 >/dev/null
@@ -1453,7 +1538,8 @@ remote_restore() {
   local rollback="$1" persistent="$2" runtime_user="$3" rollback_has_bundle_selector=false
   shift 3
   [[ "$#" -eq 8 ]] || fail 'rollback requires all old user-unit states and pairing modes'
-  remote_refuse_active_game
+  remote_quiesce_launch_authority "$runtime_user"
+  remote_refuse_active_game "$runtime_user"
   remote_stop_candidate_services
   remote_restore_raw_joystick_udev
   if remote_generation_has_bundle_selector "$rollback"; then
@@ -1560,16 +1646,27 @@ remote_automated_gates() {
 }
 
 remote_rollback_gates() {
-  remote_refuse_active_game
+  local runtime_user="$1" socket_was_active=false system_was_active=false user_was_active=false state
+  systemctl is-active --quiet "$KORRID_CONTROL_SOCKET_UNIT" && socket_was_active=true
+  systemctl is-active --quiet korrid.service && system_was_active=true
+  state="$(remote_user_unit_active "$runtime_user" korrid.service)" \
+    || fail 'old user korrid active state is unavailable before rollback gate'
+  [[ "$state" != true ]] || user_was_active=true
+  remote_quiesce_launch_authority "$runtime_user"
+  trap 'remote_restore_launch_authority "$runtime_user" "$socket_was_active" "$system_was_active" "$user_was_active"' EXIT
+  remote_refuse_active_game "$runtime_user"
   remote_temporary_artifacts_dirty && fail 'temporary U7 artifacts remain after rollback'
   remote_private_session_state_absent || fail 'private launch recovery state remains after rollback'
+  remote_restore_launch_authority "$runtime_user" "$socket_was_active" "$system_was_active" "$user_was_active"
+  trap - EXIT
   printf 'rollback-gates=pass\n'
 }
 
 remote_inject_health_failure() {
   local rollback="$1" persistent="$2" runtime_user="$3" status='' attempt
   shift 3
-  remote_refuse_active_game
+  remote_quiesce_launch_authority "$runtime_user"
+  remote_refuse_active_game "$runtime_user"
   sudo -n systemctl stop inputplumber.service
   for ((attempt = 1; attempt <= POLL_ATTEMPTS; attempt++)); do
     status="$(systemctl show korri-inputd.service -p StatusText --value 2>/dev/null || true)"
@@ -1582,7 +1679,8 @@ remote_inject_health_failure() {
 
 remote_persistent_switch() {
   local candidate="$1" runtime_user="$2"
-  remote_refuse_active_game
+  remote_quiesce_launch_authority "$runtime_user"
+  remote_refuse_active_game "$runtime_user"
   remote_clear_orphan_bundle_selector
   remote_quiesce_old_user_units "$runtime_user"
   remote_set_pairing_state_modes "$runtime_user" 700 600 >/dev/null
@@ -1732,7 +1830,7 @@ remote_attempt_execute_root() {
     automated-gates) remote_automated_gates "${1:?}" "${2:-}" "${3:-}" "${4:?}" ;;
     compositor-game-gate) remote_compositor_game_gate "${1:?}" ;;
     nvenc-stream-gate) remote_nvenc_stream_gate ;;
-    rollback-gates) remote_rollback_gates ;;
+    rollback-gates) remote_rollback_gates "${1:?}" ;;
     activate-test) remote_activate_test "${1:?}" "${2:?}" ;;
     inject-health-failure) remote_inject_health_failure "${1:?}" "${2:?}" "${3:?}" "${@:4}" ;;
     restore) remote_restore "${1:?}" "${2:?}" "${3:?}" "${@:4}" ;;
@@ -2325,7 +2423,7 @@ if [[ "$MODE" == reconcile ]]; then
       reconcile_active=false
       verification_active=true
       start_attempt rollback-reboot-verifying
-      run_remote_attempt rollback-gates | tee "$LEDGER/reconcile-rollback-reboot.txt"
+      run_remote_attempt rollback-gates "$GAMEPLAY_USER" | tee "$LEDGER/reconcile-rollback-reboot.txt"
       compare_baseline
       finish_attempt
       verification_active=false
@@ -2461,7 +2559,7 @@ case "$MODE" in
     verification_resume_state='rollback-await-reboot'
     verification_active=true
     start_attempt rollback-reboot-verifying
-    run_remote_attempt rollback-gates | tee "$LEDGER/rollback-reboot.txt"
+    run_remote_attempt rollback-gates "$GAMEPLAY_USER" | tee "$LEDGER/rollback-reboot.txt"
     compare_baseline
     finish_attempt
     verification_active=false

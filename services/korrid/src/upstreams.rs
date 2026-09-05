@@ -154,6 +154,12 @@ impl UpstreamHostConfig {
     }
 
     #[cfg(test)]
+    pub fn with_moonlight_address(mut self, moonlight_address: impl Into<String>) -> Self {
+        self.moonlight_address = Some(moonlight_address.into());
+        self
+    }
+
+    #[cfg(test)]
     pub fn native(label: impl Into<String>, base_url: String) -> Self {
         let label = label.into();
         let mut device_public_key = hex::encode(label.as_bytes());
@@ -231,6 +237,7 @@ impl RegisteredHost {
                                 label: self.label.clone(),
                                 is_local: false,
                             },
+                            play_stats: None,
                         }
                     })
                     .collect()
@@ -1420,7 +1427,11 @@ mod tests {
                             label: "attacker".into(),
                             is_local: true,
                         },
-                        play_stats: None,
+                        play_stats: Some(crate::PlayStats {
+                            last_played: Some("2026-09-04T10:00:00.000Z".into()),
+                            play_count: 2,
+                            total_playtime_seconds: 120.0,
+                        }),
                     }],
                     failures: None,
                 }),

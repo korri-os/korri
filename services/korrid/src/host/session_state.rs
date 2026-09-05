@@ -3,22 +3,42 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(test)]
-use super::identity::{IDENTITY_FILE, TEMP_IDENTITY_PREFIX};
+use super::identity::{ACTIVE_FILE, TEMP_ACTIVE_PREFIX};
 #[cfg(test)]
 use std::fs;
 
 use super::identity::{
-    clear_crash_temporary_identity, clear_identity, persist_identity, read_identity,
+    clear_active, clear_crash_temporary_active, consume_active, persist_active, read_active,
+    replace_active, ActiveSession,
 };
 #[cfg(test)]
 use super::input_seat::DisabledInputSeats;
 use super::input_seat::{InputSeatLease, InputSeatManager};
+use super::play_log::{PlayHistoryKey, PlayLogStore};
 use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState};
 #[cfg(test)]
 use super::systemd_unit::{LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUnitBackend};
+
+/// Wall-clock seam. Production reads the system clock; tests supply
+/// deterministic instants so recorded durations are exact.
+pub(crate) trait WallClock: Send + Sync {
+    fn now_epoch_seconds(&self) -> u64;
+}
+
+pub(crate) struct SystemWallClock;
+
+impl WallClock for SystemWallClock {
+    fn now_epoch_seconds(&self) -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HostSessionStatus {
@@ -89,20 +109,14 @@ enum ActiveState {
     Running {
         launch_id: String,
         game_id: Option<String>,
-        started_at: std::time::Instant,
-        started_epoch_seconds: u64,
     },
     Frozen {
         launch_id: String,
         game_id: Option<String>,
-        started_at: std::time::Instant,
-        started_epoch_seconds: u64,
     },
     Stopping {
         launch_id: String,
         game_id: Option<String>,
-        started_at: std::time::Instant,
-        started_epoch_seconds: u64,
     },
     Completed {
         launch_id: String,
@@ -117,6 +131,8 @@ pub struct HostSessionControl {
     backend: Arc<dyn LaunchUnitBackend>,
     input_seats: Arc<dyn InputSeatManager>,
     identity_root: PathBuf,
+    play_log: PlayLogStore,
+    clock: Arc<dyn WallClock>,
     state: Arc<Mutex<ActiveState>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
 }
@@ -132,14 +148,96 @@ impl HostSessionControl {
         backend: Arc<dyn LaunchUnitBackend>,
         input_seats: Arc<dyn InputSeatManager>,
     ) -> Self {
+        Self::with_clock(
+            private_state_root,
+            backend,
+            input_seats,
+            Arc::new(SystemWallClock),
+        )
+    }
+
+    pub(crate) fn with_clock(
+        private_state_root: &Path,
+        backend: Arc<dyn LaunchUnitBackend>,
+        input_seats: Arc<dyn InputSeatManager>,
+        clock: Arc<dyn WallClock>,
+    ) -> Self {
         let identity_root = private_state_root.join("host-session");
         Self {
             backend,
             input_seats,
             identity_root,
+            play_log: PlayLogStore::new(private_state_root),
+            clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
             seat_lease: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub(crate) fn play_log(&self) -> &PlayLogStore {
+        &self.play_log
+    }
+
+    /// Moves a proven completion through a durable two-phase journal.
+    /// `completionPending` is written before the log. Recording is
+    /// idempotent for its exact entry, so restart at every boundary is safe.
+    fn complete_active(&self) -> Result<(), String> {
+        let Some(record) = read_active(&self.identity_root)? else {
+            return Ok(());
+        };
+        let (key, entry) = match record {
+            ActiveSession::Running {
+                person_public_key: None,
+                ..
+            } => {
+                clear_active(&self.identity_root)?;
+                return Ok(());
+            }
+            ActiveSession::Running {
+                launch_id,
+                game_id,
+                person_public_key: Some(person),
+                started_at,
+            } => {
+                let key = PlayHistoryKey {
+                    user_id: person.clone(),
+                    game_id: game_id.clone(),
+                };
+                let now = self.clock.now_epoch_seconds();
+                let duration_seconds = now.saturating_sub(started_at) as f64;
+                let entry = self
+                    .play_log
+                    .unique_completion_entry(&key, now.saturating_mul(1_000), duration_seconds)
+                    .map_err(|error| error.to_string())?;
+                replace_active(
+                    &self.identity_root,
+                    &ActiveSession::CompletionPending {
+                        launch_id,
+                        game_id,
+                        person_public_key: person,
+                        started_at,
+                        entry: entry.clone(),
+                    },
+                )?;
+                (key, entry)
+            }
+            ActiveSession::CompletionPending {
+                game_id,
+                person_public_key,
+                entry,
+                ..
+            } => (
+                PlayHistoryKey {
+                    user_id: person_public_key,
+                    game_id,
+                },
+                entry,
+            ),
+        };
+        self.play_log
+            .record(&key, entry)
+            .map_err(|error| error.to_string())?;
+        clear_active(&self.identity_root)
     }
 
     fn ensure_seats(&self, launch_id: &str) -> Result<(), String> {
@@ -171,32 +269,6 @@ impl HostSessionControl {
         }
     }
 
-    pub fn play_logs(&self) -> crate::play_log::PlayLogRepository {
-        let private_root = self.identity_root.parent().unwrap_or(Path::new("."));
-        crate::play_log::PlayLogRepository::new(private_root)
-    }
-
-    pub fn load_all_play_stats(&self) -> BTreeMap<String, crate::play_log::PlayStats> {
-        self.play_logs().load_all_stats()
-    }
-
-    fn record_session_completion(
-        &self,
-        game_id: Option<&str>,
-        started_at: std::time::Instant,
-        started_epoch_seconds: u64,
-    ) {
-        if let Some(game_id) = game_id {
-            let duration_seconds = started_at.elapsed().as_secs();
-            let occurred_at = crate::play_log::format_iso8601_utc(
-                started_epoch_seconds.saturating_add(duration_seconds),
-            );
-            let _ = self
-                .play_logs()
-                .record_session(game_id, &occurred_at, duration_seconds, None);
-        }
-    }
-
     fn stop_game_after_seat_failure(&self, state: &mut ActiveState, launch_id: &str) {
         let _ = self.stop_seats(launch_id);
         if self.backend.stop(launch_id).is_err()
@@ -209,32 +281,7 @@ impl HostSessionControl {
             return;
         }
         match self.backend.state(launch_id) {
-            Ok(LaunchUnitState::Completed) if clear_identity(&self.identity_root).is_ok() => {
-                if let ActiveState::Running {
-                    game_id,
-                    started_at,
-                    started_epoch_seconds,
-                    ..
-                }
-                | ActiveState::Frozen {
-                    game_id,
-                    started_at,
-                    started_epoch_seconds,
-                    ..
-                }
-                | ActiveState::Stopping {
-                    game_id,
-                    started_at,
-                    started_epoch_seconds,
-                    ..
-                } = state
-                {
-                    self.record_session_completion(
-                        game_id.as_deref(),
-                        *started_at,
-                        *started_epoch_seconds,
-                    );
-                }
+            Ok(LaunchUnitState::Completed) if self.complete_active().is_ok() => {
                 *state = ActiveState::Completed {
                     launch_id: launch_id.to_owned(),
                 };
@@ -245,39 +292,10 @@ impl HostSessionControl {
                 | LaunchUnitState::FreezerTransition
                 | LaunchUnitState::Stopping,
             ) => {
-                let (game_id, started_at, started_epoch_seconds) = match state {
-                    ActiveState::Running {
-                        game_id,
-                        started_at,
-                        started_epoch_seconds,
-                        ..
-                    }
-                    | ActiveState::Frozen {
-                        game_id,
-                        started_at,
-                        started_epoch_seconds,
-                        ..
-                    }
-                    | ActiveState::Stopping {
-                        game_id,
-                        started_at,
-                        started_epoch_seconds,
-                        ..
-                    } => (game_id.clone(), *started_at, *started_epoch_seconds),
-                    _ => (
-                        None,
-                        std::time::Instant::now(),
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                    ),
-                };
+                let game_id = tracked_game_id(state);
                 *state = ActiveState::Stopping {
                     launch_id: launch_id.to_owned(),
                     game_id,
-                    started_at,
-                    started_epoch_seconds,
                 };
             }
             _ => *state = ActiveState::RecoveryBlocked,
@@ -289,7 +307,7 @@ impl HostSessionControl {
             state,
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked
         ) {
-            *state = recover(&self.identity_root, self.backend.as_ref());
+            *state = self.recover();
             if let ActiveState::Running { launch_id, .. } | ActiveState::Frozen { launch_id, .. } =
                 &*state
             {
@@ -304,6 +322,7 @@ impl HostSessionControl {
     pub fn prepare(
         &self,
         game_id: &str,
+        person_public_key: Option<&str>,
         configured_command: &[String],
         environment: &BTreeMap<String, String>,
     ) -> Result<SessionPrepared, RpcFailure> {
@@ -313,7 +332,6 @@ impl HostSessionControl {
             ActiveState::Running {
                 launch_id,
                 game_id: Some(active_game_id),
-                ..
             } if active_game_id == game_id => {
                 if self.ensure_seats(launch_id).is_err() {
                     let launch_id = launch_id.clone();
@@ -341,6 +359,19 @@ impl HostSessionControl {
             }
             ActiveState::Completed { .. } | ActiveState::NoActive => {}
         }
+        if let Some(person) = person_public_key {
+            self.play_log
+                .validate_key(&PlayHistoryKey {
+                    user_id: person.to_owned(),
+                    game_id: game_id.to_owned(),
+                })
+                .map_err(|_| {
+                    failure(
+                        "PlayLogPathUnavailable",
+                        "the person or game identity cannot fit the legacy play-log path",
+                    )
+                })?;
+        }
         if configured_command.is_empty() {
             return Err(failure(
                 "HostLaunchFailed",
@@ -349,14 +380,24 @@ impl HostSessionControl {
         }
 
         let launch_id = crate::generate_launch_id();
-        persist_identity(&self.identity_root, &launch_id).map_err(|message| {
+        persist_active(
+            &self.identity_root,
+            &ActiveSession::running(
+                launch_id.clone(),
+                game_id.into(),
+                person_public_key.map(str::to_owned),
+                self.clock.now_epoch_seconds(),
+            ),
+        )
+        .map_err(|message| {
             *state = ActiveState::RecoveryBlocked;
             failure("HostRecoveryBlocked", message)
         })?;
         let seat_lease = match self.input_seats.start(&launch_id) {
             Ok(lease) => lease,
             Err(message) => {
-                let _ = clear_identity(&self.identity_root);
+                // The game never ran; discard the record without logging.
+                let _ = self.discard_active();
                 *state = ActiveState::NoActive;
                 return Err(failure("InputSeatUnavailable", message));
             }
@@ -368,7 +409,7 @@ impl HostSessionControl {
             let _ = seat_lease.stop(&launch_id);
             match self.backend.live_launch_ids() {
                 Ok(live) if !live.iter().any(|id| id == &launch_id) => {
-                    if let Err(message) = clear_identity(&self.identity_root) {
+                    if let Err(message) = self.discard_active() {
                         *state = ActiveState::RecoveryBlocked;
                         return Err(failure("HostRecoveryBlocked", message));
                     }
@@ -388,30 +429,24 @@ impl HostSessionControl {
                 | LaunchUnitState::FreezerTransition),
             ) => {
                 // A unit that is already frozen right after launch was
-                // frozen outside korrid. The launch is real, so record it
-                // and preserve the play timing metadata in either state.
-                let now_instant = std::time::Instant::now();
-                let now_epoch = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                // frozen outside korrid (for example an operator froze the
+                // slice). The launch is real, so record it and report the
+                // observed freezer state; status, freeze, and thaw handle
+                // it from here. Recovery is never blocked on a transient
+                // freezer value.
                 *self.seat_lease.lock().expect("input-seat mutex poisoned") =
                     Some((launch_id.clone(), seat_lease));
-                *state = active_from_observed(
-                    observed,
-                    launch_id.clone(),
-                    Some(game_id.into()),
-                    now_instant,
-                    now_epoch,
-                );
+                *state = active_from_observed(observed, launch_id.clone(), Some(game_id.into()));
                 Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id,
                 })
             }
             Ok(LaunchUnitState::Stopping | LaunchUnitState::Completed) => {
+                // The unit died before prepare returned. No play is
+                // recorded for a launch the player never received.
                 let _ = seat_lease.stop(&launch_id);
-                if clear_identity(&self.identity_root).is_err() {
+                if self.discard_active().is_err() {
                     *state = ActiveState::RecoveryBlocked;
                     return Err(recovery_blocked_failure());
                 }
@@ -453,57 +488,20 @@ impl HostSessionControl {
                     } else if !matches!(&*state, ActiveState::Stopping { .. }) {
                         // An in-flight exact stop owns the Stopping state;
                         // only reconcile the freezer state of a live launch.
-                        let (game_id, started_at, started_epoch_seconds) =
-                            tracked_session_metadata(&state);
-                        *state = active_from_observed(
-                            observed,
-                            launch_id.clone(),
-                            game_id,
-                            started_at,
-                            started_epoch_seconds,
-                        );
+                        let game_id = tracked_game_id(&state);
+                        *state = active_from_observed(observed, launch_id.clone(), game_id);
                     }
                 }
                 Ok(LaunchUnitState::Stopping) => {
                     let _ = self.stop_seats(&launch_id);
-                    let (game_id, started_at, started_epoch_seconds) =
-                        tracked_session_metadata(&state);
+                    let game_id = tracked_game_id(&state);
                     *state = ActiveState::Stopping {
                         launch_id: launch_id.clone(),
                         game_id,
-                        started_at,
-                        started_epoch_seconds,
                     };
                 }
                 Ok(LaunchUnitState::Completed) => {
-                    if self.stop_seats(&launch_id).is_ok()
-                        && clear_identity(&self.identity_root).is_ok()
-                    {
-                        if let ActiveState::Running {
-                            game_id,
-                            started_at,
-                            started_epoch_seconds,
-                            ..
-                        }
-                        | ActiveState::Frozen {
-                            game_id,
-                            started_at,
-                            started_epoch_seconds,
-                            ..
-                        }
-                        | ActiveState::Stopping {
-                            game_id,
-                            started_at,
-                            started_epoch_seconds,
-                            ..
-                        } = &*state
-                        {
-                            self.record_session_completion(
-                                game_id.as_deref(),
-                                *started_at,
-                                *started_epoch_seconds,
-                            );
-                        }
+                    if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
                         *state = ActiveState::Completed {
                             launch_id: launch_id.clone(),
                         };
@@ -515,6 +513,12 @@ impl HostSessionControl {
             }
         }
         status_from_state(&state)
+    }
+
+    /// Removes the active record for a launch that never reached the
+    /// player. Nothing is logged.
+    fn discard_active(&self) -> Result<(), String> {
+        consume_active(&self.identity_root).map(|_| ())
     }
 
     pub fn freeze(&self, expected_launch_id: &str) -> HostSessionFreezeChange {
@@ -536,24 +540,13 @@ impl HostSessionControl {
     ) -> HostSessionFreezeChange {
         let mut state = self.state.lock().expect("host session mutex poisoned");
         self.refresh_recovery(&mut state);
-        let (launch_id, game_id, started_at, started_epoch_seconds) = match &*state {
-            ActiveState::Running {
-                launch_id,
-                game_id,
-                started_at,
-                started_epoch_seconds,
+        let (launch_id, game_id) = match &*state {
+            ActiveState::Running { launch_id, game_id }
+            | ActiveState::Frozen { launch_id, game_id }
+                if launch_id == expected_launch_id =>
+            {
+                (launch_id.clone(), game_id.clone())
             }
-            | ActiveState::Frozen {
-                launch_id,
-                game_id,
-                started_at,
-                started_epoch_seconds,
-            } if launch_id == expected_launch_id => (
-                launch_id.clone(),
-                game_id.clone(),
-                *started_at,
-                *started_epoch_seconds,
-            ),
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
             | ActiveState::Stopping { launch_id, .. }
@@ -594,20 +587,11 @@ impl HostSessionControl {
                 *state = ActiveState::Stopping {
                     launch_id: launch_id.clone(),
                     game_id,
-                    started_at,
-                    started_epoch_seconds,
                 };
                 return HostSessionFreezeChange::Stopping { launch_id };
             }
             LaunchUnitState::Completed => {
-                if self.stop_seats(&launch_id).is_ok()
-                    && clear_identity(&self.identity_root).is_ok()
-                {
-                    self.record_session_completion(
-                        game_id.as_deref(),
-                        started_at,
-                        started_epoch_seconds,
-                    );
+                if self.stop_seats(&launch_id).is_ok() && self.complete_active().is_ok() {
                     *state = ActiveState::Completed {
                         launch_id: launch_id.clone(),
                     };
@@ -638,13 +622,8 @@ impl HostSessionControl {
                 return match self.backend.state(&launch_id) {
                     Ok(LaunchUnitState::Completed)
                         if self.stop_seats(&launch_id).is_ok()
-                            && clear_identity(&self.identity_root).is_ok() =>
+                            && self.complete_active().is_ok() =>
                     {
-                        self.record_session_completion(
-                            game_id.as_deref(),
-                            started_at,
-                            started_epoch_seconds,
-                        );
                         *state = ActiveState::Completed {
                             launch_id: launch_id.clone(),
                         };
@@ -674,14 +653,10 @@ impl HostSessionControl {
             FreezerTarget::Frozen => ActiveState::Frozen {
                 launch_id: launch_id.clone(),
                 game_id,
-                started_at,
-                started_epoch_seconds,
             },
             FreezerTarget::Running => ActiveState::Running {
                 launch_id: launch_id.clone(),
                 game_id,
-                started_at,
-                started_epoch_seconds,
             },
         };
         if already {
@@ -696,27 +671,14 @@ impl HostSessionControl {
             let mut state = self.state.lock().expect("host session mutex poisoned");
             self.refresh_recovery(&mut state);
             match &*state {
-                ActiveState::Running {
-                    launch_id,
-                    game_id,
-                    started_at,
-                    started_epoch_seconds,
-                }
-                | ActiveState::Frozen {
-                    launch_id,
-                    game_id,
-                    started_at,
-                    started_epoch_seconds,
-                } if launch_id == expected_launch_id => {
+                ActiveState::Running { launch_id, game_id }
+                | ActiveState::Frozen { launch_id, game_id }
+                    if launch_id == expected_launch_id =>
+                {
                     let launch_id = launch_id.clone();
-                    let game_id = game_id.clone();
-                    let started_at = *started_at;
-                    let started_epoch_seconds = *started_epoch_seconds;
                     *state = ActiveState::Stopping {
                         launch_id: launch_id.clone(),
-                        game_id,
-                        started_at,
-                        started_epoch_seconds,
+                        game_id: game_id.clone(),
                     };
                     launch_id
                 }
@@ -788,43 +750,6 @@ impl HostSessionControl {
             }
         }
     }
-
-    fn complete_stop(&self, state: &mut ActiveState, launch_id: String) -> HostSessionStop {
-        if clear_identity(&self.identity_root).is_err() {
-            *state = ActiveState::RecoveryBlocked;
-            HostSessionStop::RecoveryBlocked
-        } else {
-            if let ActiveState::Running {
-                game_id,
-                started_at,
-                started_epoch_seconds,
-                ..
-            }
-            | ActiveState::Frozen {
-                game_id,
-                started_at,
-                started_epoch_seconds,
-                ..
-            }
-            | ActiveState::Stopping {
-                game_id,
-                started_at,
-                started_epoch_seconds,
-                ..
-            } = state
-            {
-                self.record_session_completion(
-                    game_id.as_deref(),
-                    *started_at,
-                    *started_epoch_seconds,
-                );
-            }
-            *state = ActiveState::Completed {
-                launch_id: launch_id.clone(),
-            };
-            HostSessionStop::Completed { launch_id }
-        }
-    }
 }
 
 /// Maps a live observed unit state to the tracked session state. A unit in
@@ -835,73 +760,35 @@ fn active_from_observed(
     observed: LaunchUnitState,
     launch_id: String,
     game_id: Option<String>,
-    started_at: std::time::Instant,
-    started_epoch_seconds: u64,
 ) -> ActiveState {
     match observed {
-        LaunchUnitState::Frozen | LaunchUnitState::FreezerTransition => ActiveState::Frozen {
-            launch_id,
-            game_id,
-            started_at,
-            started_epoch_seconds,
-        },
-        _ => ActiveState::Running {
-            launch_id,
-            game_id,
-            started_at,
-            started_epoch_seconds,
-        },
+        LaunchUnitState::Frozen | LaunchUnitState::FreezerTransition => {
+            ActiveState::Frozen { launch_id, game_id }
+        }
+        _ => ActiveState::Running { launch_id, game_id },
     }
 }
 
-fn tracked_session_metadata(state: &ActiveState) -> (Option<String>, std::time::Instant, u64) {
+fn tracked_game_id(state: &ActiveState) -> Option<String> {
     match state {
-        ActiveState::Running {
-            game_id,
-            started_at,
-            started_epoch_seconds,
-            ..
-        }
-        | ActiveState::Frozen {
-            game_id,
-            started_at,
-            started_epoch_seconds,
-            ..
-        }
-        | ActiveState::Stopping {
-            game_id,
-            started_at,
-            started_epoch_seconds,
-            ..
-        } => (game_id.clone(), *started_at, *started_epoch_seconds),
-        _ => (
-            None,
-            std::time::Instant::now(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or(0),
-        ),
+        ActiveState::Running { game_id, .. }
+        | ActiveState::Frozen { game_id, .. }
+        | ActiveState::Stopping { game_id, .. } => game_id.clone(),
+        _ => None,
     }
 }
 
 fn status_from_state(state: &ActiveState) -> HostSessionStatus {
     match state {
-        ActiveState::Running {
-            launch_id, game_id, ..
-        } => HostSessionStatus::Running {
+        ActiveState::Running { launch_id, game_id } => HostSessionStatus::Running {
             launch_id: launch_id.clone(),
             game_id: game_id.clone(),
         },
-        ActiveState::Frozen {
-            launch_id, game_id, ..
-        } => HostSessionStatus::Frozen {
+        ActiveState::Frozen { launch_id, game_id } => HostSessionStatus::Frozen {
             launch_id: launch_id.clone(),
             game_id: game_id.clone(),
         },
-        ActiveState::Stopping {
-            launch_id, game_id, ..
-        } => HostSessionStatus::Stopping {
+        ActiveState::Stopping { launch_id, game_id } => HostSessionStatus::Stopping {
             launch_id: launch_id.clone(),
             game_id: game_id.clone(),
         },
@@ -915,59 +802,88 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
     }
 }
 
-fn recover(identity_root: &Path, backend: &dyn LaunchUnitBackend) -> ActiveState {
-    let live = match backend.live_launch_ids() {
-        Ok(live) => live,
-        Err(_) => return ActiveState::RecoveryPending,
-    };
-    let mut persisted = read_identity(identity_root);
-    if persisted.is_err()
-        && live.is_empty()
-        && clear_crash_temporary_identity(identity_root).unwrap_or(false)
-    {
-        persisted = read_identity(identity_root);
-    }
-    match persisted {
-        Ok(None) if live.is_empty() => ActiveState::NoActive,
-        Ok(Some(persisted)) if live.len() == 1 && live.first() == Some(&persisted) => {
-            let now_instant = std::time::Instant::now();
-            let now_epoch = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            match backend.state(&persisted) {
-                Ok(
-                    observed @ (LaunchUnitState::Running
-                    | LaunchUnitState::Frozen
-                    | LaunchUnitState::FreezerTransition),
-                ) => active_from_observed(observed, persisted, None, now_instant, now_epoch),
-                Ok(LaunchUnitState::Stopping) => ActiveState::Stopping {
-                    launch_id: persisted,
-                    game_id: None,
-                    started_at: now_instant,
-                    started_epoch_seconds: now_epoch,
-                },
-                Ok(LaunchUnitState::Completed) if clear_identity(identity_root).is_ok() => {
-                    ActiveState::NoActive
-                }
-                Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
-                Err(_) => ActiveState::RecoveryPending,
-            }
+impl HostSessionControl {
+    fn complete_stop(&self, state: &mut ActiveState, launch_id: String) -> HostSessionStop {
+        if self.complete_active().is_err() {
+            *state = ActiveState::RecoveryBlocked;
+            HostSessionStop::RecoveryBlocked
+        } else {
+            *state = ActiveState::Completed {
+                launch_id: launch_id.clone(),
+            };
+            HostSessionStop::Completed { launch_id }
         }
-        Ok(Some(persisted)) if live.is_empty() => match backend.state(&persisted) {
-            Ok(LaunchUnitState::Completed) if clear_identity(identity_root).is_ok() => {
-                ActiveState::NoActive
+    }
+
+    /// Rebuilds the session state from the persisted record and systemd.
+    /// A record whose unit already completed is logged once here, with the
+    /// observation time as the play's end.
+    fn recover(&self) -> ActiveState {
+        let backend = self.backend.as_ref();
+        let identity_root = &self.identity_root;
+        let live = match backend.live_launch_ids() {
+            Ok(live) => live,
+            Err(_) => return ActiveState::RecoveryPending,
+        };
+        let mut persisted = read_active(identity_root);
+        if persisted.is_err()
+            && live.is_empty()
+            && clear_crash_temporary_active(identity_root).unwrap_or(false)
+        {
+            persisted = read_active(identity_root);
+        }
+        match persisted {
+            Ok(None) if live.is_empty() => ActiveState::NoActive,
+            Ok(Some(ActiveSession::CompletionPending { .. })) if live.is_empty() => {
+                if self.complete_active().is_ok() {
+                    ActiveState::NoActive
+                } else {
+                    ActiveState::RecoveryBlocked
+                }
             }
-            Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
-            Ok(
-                LaunchUnitState::Running
-                | LaunchUnitState::Frozen
-                | LaunchUnitState::FreezerTransition
-                | LaunchUnitState::Stopping,
-            ) => ActiveState::RecoveryBlocked,
-            Err(_) => ActiveState::RecoveryPending,
-        },
-        _ => ActiveState::RecoveryBlocked,
+            Ok(Some(ActiveSession::CompletionPending { .. })) => ActiveState::RecoveryBlocked,
+            Ok(Some(record @ ActiveSession::Running { .. }))
+                if live.len() == 1
+                    && live.first().map(String::as_str) == Some(record.launch_id()) =>
+            {
+                match backend.state(record.launch_id()) {
+                    Ok(
+                        observed @ (LaunchUnitState::Running
+                        | LaunchUnitState::Frozen
+                        | LaunchUnitState::FreezerTransition),
+                    ) => active_from_observed(
+                        observed,
+                        record.launch_id().to_owned(),
+                        Some(record.game_id().to_owned()),
+                    ),
+                    Ok(LaunchUnitState::Stopping) => ActiveState::Stopping {
+                        launch_id: record.launch_id().to_owned(),
+                        game_id: Some(record.game_id().to_owned()),
+                    },
+                    Ok(LaunchUnitState::Completed) if self.complete_active().is_ok() => {
+                        ActiveState::NoActive
+                    }
+                    Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
+                    Err(_) => ActiveState::RecoveryPending,
+                }
+            }
+            Ok(Some(record @ ActiveSession::Running { .. })) if live.is_empty() => {
+                match backend.state(record.launch_id()) {
+                    Ok(LaunchUnitState::Completed) if self.complete_active().is_ok() => {
+                        ActiveState::NoActive
+                    }
+                    Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
+                    Ok(
+                        LaunchUnitState::Running
+                        | LaunchUnitState::Frozen
+                        | LaunchUnitState::FreezerTransition
+                        | LaunchUnitState::Stopping,
+                    ) => ActiveState::RecoveryBlocked,
+                    Err(_) => ActiveState::RecoveryPending,
+                }
+            }
+            _ => ActiveState::RecoveryBlocked,
+        }
     }
 }
 
@@ -988,6 +904,7 @@ fn recovery_blocked_failure() -> RpcFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::play_log::PlayEntry;
     use std::{
         os::unix::fs::PermissionsExt,
         sync::{
@@ -1006,6 +923,7 @@ mod tests {
         thawed: Vec<String>,
         block_stop: bool,
         launch_error_after_start: bool,
+        launch_rejected: bool,
         enumeration_unavailable: bool,
         stop_fails_when_collected: bool,
         freezer_fails: bool,
@@ -1036,6 +954,12 @@ mod tests {
             _command: &[String],
             _environment: &BTreeMap<String, String>,
         ) -> Result<(), LaunchUnitError> {
+            if self.state.lock().unwrap().launch_rejected {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    "launch rejected",
+                ));
+            }
             self.insert(launch_id, LaunchUnitState::Running);
             if self.state.lock().unwrap().launch_error_after_start {
                 Err(LaunchUnitError::new(
@@ -1179,8 +1103,61 @@ mod tests {
         }
     }
 
+    const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+
+    /// Deterministic wall clock. Each call returns the current instant;
+    /// tests advance it explicitly.
+    struct TestClock(Mutex<u64>);
+
+    impl TestClock {
+        fn at(seconds: u64) -> Arc<Self> {
+            Arc::new(Self(Mutex::new(seconds)))
+        }
+
+        fn advance(&self, seconds: u64) {
+            *self.0.lock().unwrap() += seconds;
+        }
+    }
+
+    impl WallClock for TestClock {
+        fn now_epoch_seconds(&self) -> u64 {
+            *self.0.lock().unwrap()
+        }
+    }
+
     fn control(root: &Path, backend: Arc<DeterministicBackend>) -> HostSessionControl {
         HostSessionControl::new(root, backend)
+    }
+
+    fn control_with_clock(
+        root: &Path,
+        backend: Arc<DeterministicBackend>,
+        clock: Arc<TestClock>,
+    ) -> HostSessionControl {
+        HostSessionControl::with_clock(root, backend, Arc::new(DisabledInputSeats), clock)
+    }
+
+    fn persist_test_record(root: &Path, launch_id: &str) {
+        persist_active(
+            &root.join("host-session"),
+            &ActiveSession::running(
+                launch_id.into(),
+                "recovered".into(),
+                Some(PERSON.into()),
+                1_700_000_000,
+            ),
+        )
+        .unwrap();
+    }
+
+    fn stats(control: &HostSessionControl, game: &str) -> crate::PlayStats {
+        control
+            .play_log()
+            .stats(&PlayHistoryKey {
+                user_id: PERSON.into(),
+                game_id: game.into(),
+            })
+            .unwrap()
     }
 
     struct TestSeatManager {
@@ -1217,7 +1194,7 @@ mod tests {
 
     fn prepare(control: &HostSessionControl, game: &str) -> SessionPrepared {
         control
-            .prepare(game, &["game".into()], &BTreeMap::new())
+            .prepare(game, None, &["game".into()], &BTreeMap::new())
             .unwrap()
     }
 
@@ -1234,12 +1211,12 @@ mod tests {
             recovered.status(),
             HostSessionStatus::Running {
                 launch_id: prepared.launch_id,
-                game_id: None,
+                game_id: Some("one".into()),
             }
         );
         assert_eq!(
             recovered
-                .prepare("two", &["game".into()], &BTreeMap::new())
+                .prepare("two", None, &["game".into()], &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -1259,11 +1236,21 @@ mod tests {
                 fs::create_dir(&state).unwrap();
                 fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
                 fs::write(
-                    state.join(IDENTITY_FILE),
-                    if case == "tampered" { "bad" } else { a },
+                    state.join(ACTIVE_FILE),
+                    if case == "tampered" {
+                        "bad".to_owned()
+                    } else {
+                        serde_json::to_string(&ActiveSession::running(
+                            a.into(),
+                            "one".into(),
+                            None,
+                            1,
+                        ))
+                        .unwrap()
+                    },
                 )
                 .unwrap();
-                fs::set_permissions(state.join(IDENTITY_FILE), fs::Permissions::from_mode(0o600))
+                fs::set_permissions(state.join(ACTIVE_FILE), fs::Permissions::from_mode(0o600))
                     .unwrap();
                 if case == "multiple" {
                     fs::write(state.join("other"), a).unwrap();
@@ -1273,7 +1260,7 @@ mod tests {
             assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
             assert_eq!(
                 control
-                    .prepare("two", &["game".into()], &BTreeMap::new())
+                    .prepare("two", None, &["game".into()], &BTreeMap::new())
                     .unwrap_err()
                     .code,
                 "HostRecoveryBlocked"
@@ -1293,7 +1280,7 @@ mod tests {
 
         assert_eq!(
             control
-                .prepare("one", &["game".into()], &BTreeMap::new())
+                .prepare("one", None, &["game".into()], &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "HostRecoveryBlocked"
@@ -1361,7 +1348,7 @@ mod tests {
 
         assert_eq!(
             control
-                .prepare("two", &["game".into()], &BTreeMap::new())
+                .prepare("two", None, &["game".into()], &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -1392,13 +1379,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Completed);
 
         let recovered = control(root.path(), backend.clone());
 
         assert_eq!(recovered.status(), HostSessionStatus::NoActive);
-        assert!(!root.path().join("host-session/launch-id").exists());
+        assert!(!root.path().join("host-session").join(ACTIVE_FILE).exists());
         assert!(backend.state.lock().unwrap().stopped.is_empty());
     }
 
@@ -1430,7 +1417,7 @@ mod tests {
         backend.state.lock().unwrap().enumeration_unavailable = false;
         assert_eq!(runtime_control.status(), HostSessionStatus::NoActive);
         assert!(runtime_control
-            .prepare("one", &["game".into()], &BTreeMap::new())
+            .prepare("one", None, &["game".into()], &BTreeMap::new())
             .is_ok());
 
         let prepare_root = tempfile::tempdir().unwrap();
@@ -1448,7 +1435,7 @@ mod tests {
             .unwrap()
             .enumeration_unavailable = false;
         assert!(prepare_control
-            .prepare("one", &["game".into()], &BTreeMap::new())
+            .prepare("one", None, &["game".into()], &BTreeMap::new())
             .is_ok());
     }
 
@@ -1459,8 +1446,9 @@ mod tests {
         let state_root = root.path().join("host-session");
         fs::create_dir(&state_root).unwrap();
         fs::set_permissions(&state_root, fs::Permissions::from_mode(0o700)).unwrap();
-        let temporary = state_root.join(format!("{TEMP_IDENTITY_PREFIX}partial"));
+        let temporary = state_root.join(format!("{TEMP_ACTIVE_PREFIX}partial"));
         fs::write(&temporary, "partial").unwrap();
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600)).unwrap();
 
         let recovered = control(root.path(), backend.clone());
         assert_eq!(recovered.status(), HostSessionStatus::NoActive);
@@ -1470,8 +1458,9 @@ mod tests {
         let live_state = live_root.path().join("host-session");
         fs::create_dir(&live_state).unwrap();
         fs::set_permissions(&live_state, fs::Permissions::from_mode(0o700)).unwrap();
-        let live_temporary = live_state.join(format!("{TEMP_IDENTITY_PREFIX}partial"));
+        let live_temporary = live_state.join(format!("{TEMP_ACTIVE_PREFIX}partial"));
         fs::write(&live_temporary, "partial").unwrap();
+        fs::set_permissions(&live_temporary, fs::Permissions::from_mode(0o600)).unwrap();
         let id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         backend.insert(id, LaunchUnitState::Running);
 
@@ -1533,7 +1522,7 @@ mod tests {
             "--property=ProtectKernelTunables=yes".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
-            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into(),
+            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /home/gameplay/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into(),
             "--property=RestrictSUIDSGID=yes".into(),
         ] {
             assert!(
@@ -2183,7 +2172,7 @@ mod tests {
         // launch is real: it is recorded as frozen, seats are kept, and
         // recovery is not blocked.
         let prepared = session
-            .prepare("one", &["game".into()], &BTreeMap::new())
+            .prepare("one", None, &["game".into()], &BTreeMap::new())
             .unwrap();
         assert_eq!(
             session.status(),
@@ -2217,7 +2206,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Frozen);
         let manager = Arc::new(TestSeatManager {
             starts: AtomicUsize::new(0),
@@ -2230,13 +2219,13 @@ mod tests {
             control.status(),
             HostSessionStatus::Frozen {
                 launch_id: id.into(),
-                game_id: None,
+                game_id: Some("recovered".into()),
             }
         );
         assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
         assert_eq!(
             control
-                .prepare("two", &["game".into()], &BTreeMap::new())
+                .prepare("two", None, &["game".into()], &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -2264,7 +2253,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Frozen);
         let control = HostSessionControl::with_input_seats(
             root.path(),
@@ -2318,7 +2307,7 @@ mod tests {
             PathBuf::from("/srv/korri-test/private-recovery"),
             PathBuf::from("/run/korri-test/control/device.sock"),
             PathBuf::from("/run/korri-test/control"),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            PathBuf::from("/home/gameplay/.config/sunshine"),
             PathBuf::from("/run/korri-test/compositor-control"),
         )
         .unwrap();
@@ -2330,7 +2319,7 @@ mod tests {
             )
             .unwrap();
         assert!(launch.contains(
-            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korri-test/control/device.sock /run/korri-test/control /home/korri/.config/sunshine /run/korri-test/compositor-control /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into()
+            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korri-test/control/device.sock /run/korri-test/control /home/gameplay/.config/sunshine /run/korri-test/compositor-control /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into()
         ));
     }
 
@@ -2370,7 +2359,7 @@ mod tests {
             PathBuf::from("relative/recovery"),
             PathBuf::from("/run/control.sock"),
             PathBuf::from("/run"),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            PathBuf::from("/home/gameplay/.config/sunshine"),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -2382,7 +2371,7 @@ mod tests {
             PathBuf::from("/private/recovery"),
             PathBuf::from("/run/other/control.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            PathBuf::from("/home/gameplay/.config/sunshine"),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -2394,7 +2383,7 @@ mod tests {
             PathBuf::from("/private/../recovery"),
             PathBuf::from("/run/control/device.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            PathBuf::from("/home/gameplay/.config/sunshine"),
             PathBuf::from("/run/korri-compositor"),
         )
         .is_err());
@@ -2406,7 +2395,7 @@ mod tests {
             PathBuf::from("/private/recovery"),
             PathBuf::from("/run/control/device.sock"),
             PathBuf::from("/run/control"),
-            PathBuf::from("/home/korri/.config/sunshine"),
+            PathBuf::from("/home/gameplay/.config/sunshine"),
             PathBuf::from("relative/compositor-control"),
         )
         .is_err());
@@ -2494,7 +2483,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Running);
         let alive = Arc::new(AtomicBool::new(true));
         let manager = Arc::new(TestSeatManager {
@@ -2507,7 +2496,7 @@ mod tests {
             control.status(),
             HostSessionStatus::Running {
                 launch_id: id.into(),
-                game_id: None,
+                game_id: Some("recovered".into()),
             }
         );
         alive.store(false, Ordering::SeqCst);
@@ -2515,7 +2504,7 @@ mod tests {
             control.status(),
             HostSessionStatus::Running {
                 launch_id: id.into(),
-                game_id: None,
+                game_id: Some("recovered".into()),
             }
         );
         assert_eq!(manager.starts.load(Ordering::SeqCst), 2);
@@ -2526,7 +2515,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Running);
         let control = HostSessionControl::with_input_seats(
             root.path(),
@@ -2554,7 +2543,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        persist_identity(&root.path().join("host-session"), id).unwrap();
+        persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Stopping);
         let manager = Arc::new(TestSeatManager {
             starts: AtomicUsize::new(0),
@@ -2566,41 +2555,263 @@ mod tests {
             control.status(),
             HostSessionStatus::Stopping {
                 launch_id: id.into(),
-                game_id: None,
+                game_id: Some("recovered".into()),
             }
         );
         assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
     }
 
     #[test]
-    fn session_stop_records_play_log_for_host_game() {
+    fn ambiguous_recovery_does_not_create_input_seats() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
-        let control = control(root.path(), backend);
+        backend.insert("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", LaunchUnitState::Running);
+        backend.insert("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", LaunchUnitState::Running);
+        let manager = Arc::new(TestSeatManager {
+            starts: AtomicUsize::new(0),
+            alive: Arc::new(AtomicBool::new(true)),
+        });
+        let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone());
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
+        assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
+    }
 
-        assert_eq!(control.load_all_play_stats().len(), 0);
+    #[test]
+    fn natural_completion_records_one_play_on_first_proof_only() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let prepared = control
+            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .unwrap();
+        clock.advance(42);
+        backend.insert(&prepared.launch_id, LaunchUnitState::Completed);
 
-        let prepared = prepare(&control, "game-metroid");
-        assert_eq!(
+        assert!(matches!(
             control.status(),
-            HostSessionStatus::Running {
-                launch_id: prepared.launch_id.clone(),
-                game_id: Some("game-metroid".into()),
-            }
-        );
-
-        let stop_result = control.stop(&prepared.launch_id);
+            HostSessionStatus::Completed { .. }
+        ));
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Completed { .. }
+        ));
         assert_eq!(
-            stop_result,
-            HostSessionStop::Completed {
-                launch_id: prepared.launch_id
+            stats(&control, "wario"),
+            crate::PlayStats {
+                last_played: Some("2023-11-14T22:14:02.000Z".into()),
+                play_count: 1,
+                total_playtime_seconds: 42.0,
             }
         );
+    }
 
-        let all_stats = control.load_all_play_stats();
-        assert_eq!(all_stats.len(), 1);
-        let stats = all_stats.get("game-metroid").unwrap();
-        assert_eq!(stats.play_count, 1);
-        assert!(stats.last_played.is_some());
+    #[test]
+    fn exact_stop_records_once_and_frozen_time_counts() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend, clock.clone());
+        let prepared = control
+            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .unwrap();
+        clock.advance(5);
+        assert!(matches!(
+            control.freeze(&prepared.launch_id),
+            HostSessionFreezeChange::Changed { .. }
+        ));
+        clock.advance(55);
+        assert!(matches!(
+            control.stop(&prepared.launch_id),
+            HostSessionStop::Completed { .. }
+        ));
+        assert!(matches!(
+            control.stop(&prepared.launch_id),
+            HostSessionStop::Completed { .. }
+        ));
+        assert_eq!(
+            stats(&control, "wario"),
+            crate::PlayStats {
+                last_played: Some("2023-11-14T22:14:20.000Z".into()),
+                play_count: 1,
+                total_playtime_seconds: 60.0,
+            }
+        );
+    }
+
+    #[test]
+    fn restart_completion_uses_first_observation_time_once() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        backend.insert(id, LaunchUnitState::Completed);
+        let clock = TestClock::at(1_700_000_120);
+        let recovered = control_with_clock(root.path(), backend, clock.clone());
+
+        assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+        clock.advance(60);
+        assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+        assert_eq!(
+            stats(&recovered, "recovered"),
+            crate::PlayStats {
+                last_played: Some("2023-11-14T22:15:20.000Z".into()),
+                play_count: 1,
+                total_playtime_seconds: 120.0,
+            }
+        );
+    }
+
+    #[test]
+    fn play_log_failure_restores_active_metadata_for_one_retry() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend.clone(), clock.clone());
+        let prepared = control
+            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), root.path().join("play-log")).unwrap();
+        clock.advance(10);
+        backend.insert(&prepared.launch_id, LaunchUnitState::Completed);
+
+        assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
+        assert!(root.path().join("host-session").join(ACTIVE_FILE).exists());
+        fs::remove_file(root.path().join("play-log")).unwrap();
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert_eq!(stats(&control, "wario").play_count, 1);
+    }
+
+    #[test]
+    fn failed_launch_discards_active_metadata_without_a_play() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().launch_rejected = true;
+        let clock = TestClock::at(1_700_000_000);
+        let control = control_with_clock(root.path(), backend, clock);
+
+        assert_eq!(
+            control
+                .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+                .unwrap_err()
+                .code,
+            "HostLaunchFailed"
+        );
+        assert_eq!(
+            stats(&control, "wario"),
+            crate::PlayStats {
+                last_played: None,
+                play_count: 0,
+                total_playtime_seconds: 0.0,
+            }
+        );
+        assert!(!root.path().join("host-session").join(ACTIVE_FILE).exists());
+    }
+
+    #[test]
+    fn unsupported_existing_play_log_keeps_completion_pending() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("host-session");
+        let backend = Arc::new(DeterministicBackend::default());
+        let pending = ActiveSession::CompletionPending {
+            launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            game_id: "wario".into(),
+            person_public_key: PERSON.into(),
+            started_at: 1_700_000_000,
+            entry: PlayEntry {
+                occurred_at: "2023-11-14T22:14:02.000Z".into(),
+                duration_seconds: 42.0,
+                release_id: None,
+            },
+        };
+        persist_active(&state, &pending).unwrap();
+        let path = root.path().join("play-log").join(PERSON).join("wario.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for directory in [
+            root.path().join("play-log"),
+            path.parent().unwrap().to_path_buf(),
+        ] {
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        fs::write(
+            &path,
+            format!(
+                r#"{{"userId":"{PERSON}","gameId":"wario","entries":[{{"occurredAt":"2026-07-07","durationSeconds":5}}]}}"#
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let recovered = control_with_clock(root.path(), backend, TestClock::at(1_700_000_100));
+        assert_eq!(recovered.status(), HostSessionStatus::RecoveryBlocked);
+        assert_eq!(read_active(&state).unwrap(), Some(pending));
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn completion_journal_replays_each_crash_boundary_exactly_once() {
+        let pending_entry = PlayEntry {
+            occurred_at: "2023-11-14T22:14:02.000Z".into(),
+            duration_seconds: 42.0,
+            release_id: None,
+        };
+        for append_before_restart in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let state = root.path().join("host-session");
+            let backend = Arc::new(DeterministicBackend::default());
+            let launch_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            let key = PlayHistoryKey {
+                user_id: PERSON.into(),
+                game_id: "wario".into(),
+            };
+            persist_active(
+                &state,
+                &ActiveSession::CompletionPending {
+                    launch_id: launch_id.into(),
+                    game_id: "wario".into(),
+                    person_public_key: PERSON.into(),
+                    started_at: 1_700_000_000,
+                    entry: pending_entry.clone(),
+                },
+            )
+            .unwrap();
+            if append_before_restart {
+                PlayLogStore::new(root.path())
+                    .record(&key, pending_entry.clone())
+                    .unwrap();
+            }
+            let recovered = control_with_clock(root.path(), backend, TestClock::at(1_700_000_100));
+            assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+            assert_eq!(
+                recovered.play_log().load(&key).unwrap().entries,
+                std::slice::from_ref(&pending_entry)
+            );
+            assert_eq!(read_active(&state).unwrap(), None);
+            assert_eq!(recovered.status(), HostSessionStatus::NoActive);
+            assert_eq!(recovered.play_log().load(&key).unwrap().entries.len(), 1);
+        }
+    }
+
+    #[test]
+    fn play_log_path_overflow_fails_before_seats_or_unit_start() {
+        for game_id in ["a".repeat(251), "é".repeat(42)] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let control =
+                control_with_clock(root.path(), backend.clone(), TestClock::at(1_700_000_000));
+            let failure = control
+                .prepare(&game_id, Some(PERSON), &["game".into()], &BTreeMap::new())
+                .unwrap_err();
+            assert_eq!(failure.code, "PlayLogPathUnavailable");
+            assert!(backend.state.lock().unwrap().units.is_empty());
+            assert!(!root.path().join("host-session").exists());
+        }
     }
 }

@@ -63,8 +63,23 @@ pub struct GameSource {
     pub is_local: bool,
 }
 
+/// Derived, read-only view of one person's play history for one game.
+/// Mirrors the legacy `PlayStats` record: never authored, always computed
+/// from the play log. `lastPlayed` is absent when the game was never played.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayStats {
+    /// RFC 3339 UTC end time of the newest play, absent when never played.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_played: Option<String>,
+    pub play_count: u32,
+    pub total_playtime_seconds: f64,
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Game {
     pub id: String,
     pub title: String,
@@ -75,6 +90,11 @@ pub struct Game {
     #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
     pub play_stats: Option<PlayStats>,
     pub source: GameSource,
+    /// Play statistics for the authenticated person who asked. A host
+    /// derives them from its own play log; a brain forwards what the peer
+    /// returned for the brain's own identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub play_stats: Option<PlayStats>,
 }
 
 #[typeshare]
@@ -1243,6 +1263,9 @@ struct BrainRuntime {
     upstream: upstreams::UpstreamRegistry,
     local_storage_root: PathBuf,
     private_state_root: PathBuf,
+    /// The verified owner of this brain device at construction. `None`
+    /// while the device is unowned, revoked, or invalid.
+    local_owner_public_key: Option<String>,
     local_file_provision: launcher::FileProvisionMode,
     local_launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
@@ -1256,6 +1279,24 @@ struct BrainRuntime {
     /** Serialises revision-check + replace; external file-manager edits are
      * detected by the revision inside this same critical section. */
     settings_write_lock: Arc<Mutex<()>>,
+}
+
+impl BrainRuntime {
+    fn local_owner_public_key(&self) -> Option<&str> {
+        self.local_owner_public_key.as_deref()
+    }
+}
+
+/// The verified owner key of the local device, read once at construction.
+/// A device that cannot load its identity has no owner.
+fn brain_owner_public_key(private_state_root: &Path) -> Option<String> {
+    let identity = identity::DeviceIdentity::load_or_create(private_state_root).ok()?;
+    match identity.state() {
+        identity::IdentityState::Owned {
+            owner_public_key, ..
+        } => Some(owner_public_key.clone()),
+        _ => None,
+    }
 }
 
 #[derive(Clone)]
@@ -2144,6 +2185,36 @@ async fn invoke_current_session_control(
     }
 }
 
+/// Whether a brain caller acts for the brain's own owner. Local surfaces act
+/// for the device owner. A peer principal must present the same owner as
+/// the brain device; a household or guest pass holder is a different person
+/// even when the brain owner issued the pass.
+fn brain_caller_is_owner(
+    brain: &BrainRuntime,
+    authorization: &authorization::AuthorizationContext,
+) -> bool {
+    match authorization {
+        authorization::AuthorizationContext::LocalBrowser
+        | authorization::AuthorizationContext::LocalUnixControl => true,
+        authorization::AuthorizationContext::Peer(principal) => match principal {
+            authorization::Principal::OwnerDevice {
+                owner_public_key, ..
+            } => brain
+                .local_owner_public_key()
+                .is_some_and(|local| local == *owner_public_key),
+            _ => false,
+        },
+        authorization::AuthorizationContext::TrustReconciliation => false,
+    }
+}
+
+fn strip_play_stats(mut snapshot: CatalogSnapshot) -> CatalogSnapshot {
+    for game in &mut snapshot.games {
+        game.play_stats = None;
+    }
+    snapshot
+}
+
 async fn dispatch(
     state: &AppState,
     authorization: &authorization::AuthorizationContext,
@@ -2157,10 +2228,22 @@ async fn dispatch(
                     .upstream
                     .catalog_snapshot()
                     .await
+                    .map(|snapshot| {
+                        // The second federation hop authenticates as this
+                        // brain's own device, so the peer derives play
+                        // statistics for the brain owner. Only a caller
+                        // proven to be that owner may see them.
+                        if brain_caller_is_owner(brain, authorization) {
+                            snapshot
+                        } else {
+                            strip_play_stats(snapshot)
+                        }
+                    })
                     .map(CatalogSnapshotOutcome::Ok)
                     .unwrap_or_else(|error| CatalogSnapshotOutcome::Err(upstream_failure(error))),
                 ServerMode::Host(host) => host
-                    .catalog_snapshot()
+                    .catalog_snapshot_for(authorization.person_public_key(host.owner_public_key()))
+                    .await
                     .map(CatalogSnapshotOutcome::Ok)
                     .unwrap_or_else(CatalogSnapshotOutcome::Err),
             };
@@ -2374,7 +2457,10 @@ async fn dispatch(
                     .map(SessionPrepareOutcome::Ok)
                     .unwrap_or_else(|error| SessionPrepareOutcome::Err(upstream_failure(error))),
                 (ServerMode::Host(host), RpcSurface::Lan) => host
-                    .prepare(&request.game_id)
+                    .prepare(
+                        &request.game_id,
+                        authorization.person_public_key(host.owner_public_key()),
+                    )
                     .await
                     .map(SessionPrepareOutcome::Ok)
                     .unwrap_or_else(SessionPrepareOutcome::Err),
@@ -3207,6 +3293,42 @@ fn router_with_capability_local_root_provision_and_grants(
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
 ) -> Router {
+    let (state, native_platform) = brain_app_state(
+        rpc_capability,
+        local_storage_root,
+        private_state_root,
+        local_file_provision,
+        local_launch_signing_key,
+        local_launch_reservations,
+        moonlight_launch_authority,
+        active_android_launch,
+        retroarch_control_authority,
+        moonlight_executor_state,
+        native_platform,
+        config_snapshot,
+        folder_selection_grants,
+        configured_upstream,
+    );
+    brain_router_from_state(state, allowed_origin, native_platform)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn brain_app_state(
+    rpc_capability: &str,
+    local_storage_root: impl AsRef<Path>,
+    private_state_root: impl AsRef<Path>,
+    local_file_provision: launcher::FileProvisionMode,
+    local_launch_signing_key: Vec<u8>,
+    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
+    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
+    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    retroarch_control_authority: RetroarchControlSlot,
+    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
+    native_platform: NativePlatform,
+    config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
+    folder_selection_grants: discovery::FolderSelectionGrantStore,
+    configured_upstream: Option<upstreams::UpstreamRegistry>,
+) -> (AppState, NativePlatform) {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
     let settings_write_lock = Arc::new(Mutex::new(()));
@@ -3233,11 +3355,13 @@ fn router_with_capability_local_root_provision_and_grants(
             )
         }
     });
+    let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let state = AppState {
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
             local_storage_root,
             private_state_root,
+            local_owner_public_key,
             local_file_provision,
             local_launch_signing_key,
             local_launch_reservations,
@@ -3253,6 +3377,14 @@ fn router_with_capability_local_root_provision_and_grants(
         rpc_capability: Some(rpc_capability.into()),
         rpc_surface: RpcSurface::Lan,
     };
+    (state, native_platform)
+}
+
+fn brain_router_from_state(
+    state: AppState,
+    allowed_origin: &str,
+    native_platform: NativePlatform,
+) -> Router {
     let configured_origin: HeaderValue = allowed_origin
         .parse()
         .expect("allowed portal origin must be a valid header value");
@@ -8067,6 +8199,270 @@ command = ["game-two"]
             .finalize(owner)
             .unwrap()
             .as_json()
+    }
+
+    #[tokio::test]
+    async fn secure_peer_catalog_uses_the_requesting_principals_person_key() {
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const OWNER_CLIENT: &str =
+            "0000000000000000000000000000000000000000000000000000000000000006";
+        const GUEST_CLIENT: &str =
+            "0000000000000000000000000000000000000000000000000000000000000007";
+        const NOW: u64 = 1_700_000_000;
+        let owner = Keys::generate();
+        let guest_owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
+        let guest_owner_secret = guest_owner.secret_key().to_secret_hex();
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"wario\"\ntitle = \"Wario Land 4\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let owner_private = tempfile::tempdir().unwrap();
+        let guest_private = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        let store = host::play_log::PlayLogStore::new(host_private.path());
+        for (person, duration) in [(owner.public_key().to_hex(), 20.0), ("11".repeat(32), 45.0)] {
+            store
+                .record(
+                    &host::play_log::PlayHistoryKey {
+                        user_id: person,
+                        game_id: "wario".into(),
+                    },
+                    host::play_log::PlayEntry {
+                        occurred_at: "2026-09-04T10:00:00.000Z".into(),
+                        duration_seconds: duration,
+                        release_id: None,
+                    },
+                )
+                .unwrap();
+        }
+        let server = serve_router(secure_host_router_with_certificate_adapter_at(
+            &config,
+            host_private.path(),
+            RecordingMoonlightCertificates::matching("sunshine-host"),
+            NOW,
+        ))
+        .await;
+
+        let owner_credentials =
+            peer_rpc::test_owned_credentials(owner_private.path(), OWNER_CLIENT, &owner_secret);
+        let owner_catalog = upstream_native::NativeClient::new_secure_at(
+            server.clone(),
+            host_key.clone(),
+            owner_credentials,
+            NOW,
+            "11".repeat(32),
+            "22".repeat(32),
+        )
+        .catalog_snapshot()
+        .await
+        .unwrap();
+        assert_eq!(
+            owner_catalog.games[0]
+                .play_stats
+                .as_ref()
+                .unwrap()
+                .total_playtime_seconds,
+            20.0
+        );
+
+        let guest_credentials = peer_rpc::test_owned_credentials(
+            guest_private.path(),
+            GUEST_CLIENT,
+            &guest_owner_secret,
+        );
+        let guest_key = guest_credentials.public_key().unwrap();
+        let guest_credentials = guest_credentials.with_person_pass(Some(stream_pass(
+            &owner,
+            &guest_key,
+            NOW,
+            NOW + 60,
+        )));
+        let guest_catalog = upstream_native::NativeClient::new_secure_at(
+            server,
+            host_key,
+            guest_credentials,
+            NOW,
+            "33".repeat(32),
+            "44".repeat(32),
+        )
+        .catalog_snapshot()
+        .await
+        .unwrap();
+        assert_eq!(
+            guest_catalog.games[0]
+                .play_stats
+                .as_ref()
+                .unwrap()
+                .total_playtime_seconds,
+            45.0
+        );
+    }
+
+    /// A brain forwards catalog reads to its peers as its own device, so
+    /// every peer answers with the brain owner's play history. Only a caller
+    /// proven to be that owner may receive it. A guest that holds a pass from
+    /// the same owner is still a different person and must never see the
+    /// owner's statistics through the brain hop.
+    #[tokio::test]
+    async fn brain_forwards_owner_play_stats_only_to_the_owner() {
+        const HOST: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+        const BRAIN: &str = "0000000000000000000000000000000000000000000000000000000000000006";
+        const GUEST_CLIENT: &str =
+            "0000000000000000000000000000000000000000000000000000000000000007";
+        let now = peer_rpc::unix_time();
+        let owner = Keys::generate();
+        let owner_secret = owner.secret_key().to_secret_hex();
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"wario\"\ntitle = \"Wario Land 4\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let host_private = tempfile::tempdir().unwrap();
+        let brain_private = tempfile::tempdir().unwrap();
+        let brain_storage = tempfile::tempdir().unwrap();
+        let host_identity = peer_rpc::test_owned_identity(host_private.path(), HOST, &owner_secret);
+        let host_key = host_identity.device_public_key().unwrap().to_owned();
+        host::play_log::PlayLogStore::new(host_private.path())
+            .record(
+                &host::play_log::PlayHistoryKey {
+                    user_id: owner.public_key().to_hex(),
+                    game_id: "wario".into(),
+                },
+                host::play_log::PlayEntry {
+                    occurred_at: "2026-09-04T10:00:00.000Z".into(),
+                    duration_seconds: 20.0,
+                    release_id: None,
+                },
+            )
+            .unwrap();
+        let host_runtime = host::HostRuntime::from_paths_with_backends(
+            &config,
+            None,
+            host_private.path().to_owned(),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            RecordingMoonlightCertificates::matching("sunshine-host"),
+        );
+        let server = serve_router(secure_host_routers(host_runtime, host_private.path()).0).await;
+
+        let brain_credentials =
+            peer_rpc::test_owned_credentials(brain_private.path(), BRAIN, &owner_secret);
+        let brain_key = brain_credentials.public_key().unwrap();
+        let registry = upstreams::UpstreamRegistry::new_secure(
+            vec![
+                upstreams::UpstreamHostConfig::native_secure("zao", server, host_key.clone())
+                    .with_moonlight_address("zao:47989"),
+            ],
+            brain_credentials,
+        );
+        let signing_key = b"test signing key".to_vec();
+        let (state, _) = brain_app_state(
+            "right-token",
+            brain_storage.path(),
+            brain_private.path(),
+            launcher::FileProvisionMode::Direct,
+            signing_key.clone(),
+            Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new())),
+            Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
+                signing_key,
+            ))),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(None)),
+            NativePlatform::Standalone,
+            config::snapshot::ConfigSnapshotCoordinator::new(brain_storage.path()),
+            discovery::FolderSelectionGrantStore::default(),
+            Some(registry),
+        );
+        let owner_statement = host_identity.owner_statement_json().unwrap();
+        let request = || RpcRequest::CatalogSnapshot(CatalogSnapshotRequest {});
+        let games_of = |response: RpcResponse| match response {
+            RpcResponse::CatalogSnapshot(CatalogSnapshotOutcome::Ok(snapshot)) => snapshot.games,
+            other => panic!("unexpected catalog response: {other:?}"),
+        };
+
+        let local = dispatch(
+            &state,
+            &authorization::AuthorizationContext::LocalBrowser,
+            request(),
+        )
+        .await
+        .unwrap();
+        let local_games = games_of(local);
+        assert_eq!(
+            local_games[0].source.device_public_key.as_deref(),
+            Some(host_key.as_str())
+        );
+        assert_eq!(
+            local_games[0]
+                .play_stats
+                .as_ref()
+                .unwrap()
+                .total_playtime_seconds,
+            20.0
+        );
+
+        let owner_peer =
+            authorization::AuthorizationContext::Peer(authorization::Principal::OwnerDevice {
+                device_public_key: brain_key.clone(),
+                owner_statement: owner_statement.clone(),
+                owner_public_key: owner.public_key().to_hex(),
+            });
+        let owner_games = games_of(dispatch(&state, &owner_peer, request()).await.unwrap());
+        assert_eq!(
+            owner_games[0]
+                .play_stats
+                .as_ref()
+                .unwrap()
+                .total_playtime_seconds,
+            20.0
+        );
+
+        let guest_pass = authorization::PersonPass {
+            event_id: "guest-pass".into(),
+            event_json: stream_pass(&owner, GUEST_CLIENT, now, now + 60),
+            expires_at: now + 60,
+            scopes: vec![authorization::Scope::CatalogRead],
+            person_public_key: "11".repeat(32),
+        };
+        for principal in [
+            authorization::Principal::Guest {
+                device_public_key: GUEST_CLIENT.into(),
+                owner_statement: owner_statement.clone(),
+                person_pass: guest_pass.clone(),
+            },
+            authorization::Principal::Household {
+                device_public_key: GUEST_CLIENT.into(),
+                owner_statement: owner_statement.clone(),
+                person_pass: guest_pass,
+            },
+            authorization::Principal::OwnerDevice {
+                device_public_key: GUEST_CLIENT.into(),
+                owner_statement,
+                owner_public_key: "22".repeat(32),
+            },
+        ] {
+            let response = dispatch(
+                &state,
+                &authorization::AuthorizationContext::Peer(principal),
+                request(),
+            )
+            .await
+            .unwrap();
+            let games = games_of(response);
+            assert_eq!(games[0].id, "wario");
+            assert!(
+                games[0].play_stats.is_none(),
+                "owner stats leaked to a non-owner"
+            );
+        }
     }
 
     #[tokio::test]

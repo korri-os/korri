@@ -77,6 +77,18 @@ export interface GameSource {
 	isLocal: boolean;
 }
 
+/**
+ * Derived, read-only view of one person's play history for one game.
+ * Mirrors the legacy `PlayStats` record: never authored, always computed
+ * from the play log. `lastPlayed` is absent when the game was never played.
+ */
+export interface PlayStats {
+	/** RFC 3339 UTC end time of the newest play, absent when never played. */
+	lastPlayed?: string;
+	playCount: number;
+	totalPlaytimeSeconds: number;
+}
+
 export interface Game {
 	id: string;
 	title: string;
@@ -84,6 +96,12 @@ export interface Game {
 	identity?: GameIdentity;
 	playStats?: PlayStats;
 	source: GameSource;
+	/**
+	 * Play statistics for the authenticated person who asked. A host
+	 * derives them from its own play log; a brain forwards what the peer
+	 * returned for the brain's own identity.
+	 */
+	playStats?: PlayStats;
 }
 
 export interface CatalogSnapshot {

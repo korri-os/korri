@@ -1319,6 +1319,7 @@ name = "korrid"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "chrono",
  "crc32fast",
  "futures",
  "hex",

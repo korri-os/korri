@@ -1,6 +1,38 @@
 #!/run/current-system/sw/bin/bash
 set -euo pipefail
 
+# Stop the only process that can prepare a game before the one-off cut from
+# the obsolete launch-id atom. The game unit proof then closes the race: no
+# new prepare can start between the proof and the removal.
+quiesce_and_cut_obsolete_session() {
+  local session_root="$HOME/.local/state/korrid/private/host-session"
+  local active_units entries atom mode
+  systemctl --user stop korrid.service >/dev/null 2>&1 || true
+  ! systemctl --user is-active --quiet korrid.service \
+    || { echo "korrid launch authority remained active" >&2; return 1; }
+  active_units="$(systemctl --user list-units --type=service \
+    --state=activating,active,reloading,deactivating --no-legend --plain \
+    'korri-game-*.service' 2>/dev/null)" \
+    || { echo "Korri game unit state is unavailable" >&2; return 1; }
+  [[ -z "$active_units" ]] \
+    || { echo "a Korri game unit is live" >&2; return 1; }
+  [[ ! -L "$session_root" ]] || return 1
+  [[ -e "$session_root" ]] || return 0
+  [[ -d "$session_root" ]] || return 1
+  mode="$(stat -Lc '%a' -- "$session_root" 2>/dev/null)" || return 1
+  [[ "$mode" == 700 ]] || return 1
+  entries="$(find "$session_root" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null)" \
+    || return 1
+  [[ -n "$entries" ]] || return 0
+  [[ "$entries" == launch-id ]] || return 1
+  atom="$session_root/launch-id"
+  [[ ! -L "$atom" && -f "$atom" ]] || return 1
+  [[ "$(stat -Lc '%a' -- "$atom" 2>/dev/null)" == 600 ]] || return 1
+  [[ "$(cat -- "$atom" 2>/dev/null)" =~ ^[0-9a-f]{32}$ ]] || return 1
+  rm -- "$atom"
+  sync -f "$session_root"
+}
+
 action="${1:-}"
 case "$action" in
   install)
@@ -48,9 +80,11 @@ case "$action" in
     fi
 
     previous_current=""
+    previous_service_active=false
     if [[ -L "$HOME/.local/state/korrid/current" ]]; then
       previous_current="$(readlink "$HOME/.local/state/korrid/current")"
     fi
+    systemctl --user is-active --quiet korrid.service && previous_service_active=true
     previous_config="$handoff/host.toml.previous"
     had_previous_config=false
     if [[ -f "$HOME/.config/korrid/host.toml" ]]; then
@@ -117,7 +151,7 @@ case "$action" in
         rm -f "$HOME/.config/korrid/environment"
       fi
       systemctl --user daemon-reload
-      if [[ -n "$previous_current" ]]; then
+      if [[ "$previous_service_active" == true ]]; then
         systemctl --user restart korrid.service || true
       else
         systemctl --user stop korrid.service || true
@@ -125,6 +159,8 @@ case "$action" in
       echo "korrid deployment rolled back after failed health check" >&2
     }
     trap rollback_install ERR
+
+    quiesce_and_cut_obsolete_session
 
     ln -sfn "$profile" "$HOME/.local/state/korrid/current.next"
     mv -Tf \
