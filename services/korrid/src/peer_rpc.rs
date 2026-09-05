@@ -749,6 +749,26 @@ mod tests {
         );
         let catalog = catalog_client.catalog_snapshot().await.unwrap();
         assert_eq!(catalog.games[0].id, "neverball");
+        assert_eq!(
+            catalog.games[0].source.device_public_key.as_deref(),
+            Some(host_key.as_str())
+        );
+
+        let source_status_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(17),
+            token(18),
+        );
+        let status = source_status_client.source_status(&host_key).await.unwrap();
+        assert_eq!(status.catalog, crate::SourceCatalogState::Available);
+        // The secure test host has no certificate socket configured.
+        assert_eq!(
+            status.stream_control,
+            crate::SourceStreamControlState::Disabled
+        );
 
         let prepare_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),

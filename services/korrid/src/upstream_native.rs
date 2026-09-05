@@ -7,7 +7,7 @@ use crate::{
     RpcResponse, SessionFreezeOutcome, SessionFreezeRequest, SessionFreezeResult,
     SessionPrepareOutcome, SessionPrepareRequest, SessionPrepared, SessionStatusOutcome,
     SessionStatusRequest, SessionStopOutcome, SessionStopPhase, SessionStopRequest,
-    SessionThawRequest,
+    SessionThawRequest, SourceStatus, SourceStatusOutcome, SourceStatusRequest,
 };
 use std::time::Duration;
 
@@ -129,6 +129,7 @@ impl NativeClient {
             | UpstreamError::StaleLaunchIdentity
             | UpstreamError::NoActiveSession
             | UpstreamError::FreezerUnsupportedOnLegacyRoute
+            | UpstreamError::SourcePeerNotFound
             | UpstreamError::MoonlightHostCandidatesUnavailable => error,
         }
     }
@@ -339,6 +340,29 @@ impl NativeClient {
             }
             response => Err(UpstreamError::Wire(format!(
                 "native session thaw returned {response:?}"
+            ))),
+        }
+    }
+
+    /// Asks the peer host for its own readiness. The peer answers for
+    /// itself only; the `devicePublicKey` it receives must be its own key so
+    /// that a host cannot be asked to speak for another device.
+    pub async fn source_status(
+        &self,
+        device_public_key: &str,
+    ) -> Result<SourceStatus, UpstreamError> {
+        match self
+            .call(RpcRequest::SourceStatus(SourceStatusRequest {
+                device_public_key: device_public_key.into(),
+            }))
+            .await?
+        {
+            RpcResponse::SourceStatus(SourceStatusOutcome::Ok(status)) => Ok(status),
+            RpcResponse::SourceStatus(SourceStatusOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native source status returned {response:?}"
             ))),
         }
     }
@@ -616,6 +640,48 @@ command = ["neverball"]
         );
         assert!(matches!(
             wrong.session_thaw(&prepared.launch_id).await,
+            Err(UpstreamError::Wire(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn native_client_source_status_requires_exact_tag_and_forwards_the_key() {
+        let ok = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"app.source.status","outcome":{"_tag":"Ok","payload":{"catalog":"available","streamControl":"disabled"}}}"#,
+            )
+            .await,
+        );
+        let status = ok.source_status(&"ab".repeat(32)).await.unwrap();
+        assert_eq!(status.catalog, crate::SourceCatalogState::Available);
+        assert_eq!(
+            status.stream_control,
+            crate::SourceStreamControlState::Disabled
+        );
+
+        let tagged = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"app.source.status","outcome":{"_tag":"Err","payload":{"code":"SourceDeviceMismatch","message":"m"}}}"#,
+            )
+            .await,
+        );
+        assert!(matches!(
+            tagged.source_status(&"ab".repeat(32)).await,
+            Err(UpstreamError::Tagged { code, .. }) if code == "SourceDeviceMismatch"
+        ));
+
+        // A response carrying a different tag is a wire error, never a status.
+        let wrong = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"system.health","outcome":{"_tag":"Ok","payload":{"version":"test"}}}"#,
+            )
+            .await,
+        );
+        assert!(matches!(
+            wrong.source_status(&"ab".repeat(32)).await,
             Err(UpstreamError::Wire(_))
         ));
     }

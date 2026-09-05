@@ -22,6 +22,10 @@ const SOCKET_PEER_GID_ENV: &str = "KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_GID"
 const SOCKET_MODE: u32 = 0o660;
 
 pub trait MoonlightCertificateAdapter: Send + Sync {
+    /// Bounded readiness probe. Returns true only when the protected control
+    /// channel passes every path, credential, mode, connect, and peer check.
+    /// It never sends a certificate operation and never mutates state.
+    fn available(&self) -> bool;
     fn attest(&self, host_uuid: &str) -> Result<bool, RpcFailure>;
     fn provision(
         &self,
@@ -44,6 +48,10 @@ struct UnavailableCertificateAdapter {
 }
 
 impl MoonlightCertificateAdapter for UnavailableCertificateAdapter {
+    fn available(&self) -> bool {
+        false
+    }
+
     fn attest(&self, _host_uuid: &str) -> Result<bool, RpcFailure> {
         Err(self.failure.clone())
     }
@@ -224,6 +232,20 @@ fn required_id_env(name: &str, label: &str) -> Result<u32, RpcFailure> {
 }
 
 impl MoonlightCertificateAdapter for SocketCertificateAdapter {
+    fn available(&self) -> bool {
+        let Ok(socket_identity) = self.validate_path() else {
+            return false;
+        };
+        probe_seqpacket(
+            &self.path,
+            socket_identity,
+            self.expected_peer_uid,
+            self.expected_peer_gid,
+            self.timeout,
+        )
+        .is_ok()
+    }
+
     fn attest(&self, host_uuid: &str) -> Result<bool, RpcFailure> {
         validate_host_uuid(host_uuid)?;
         match self.request(SocketRequest {
@@ -410,14 +432,33 @@ fn map_sunshine_error(code: &str) -> RpcFailure {
     }
 }
 
-fn send_seqpacket(
+/// Connects to the protected control socket and performs every identity and
+/// peer-credential check, without sending a frame. The returned descriptor
+/// is dropped by the caller; the peer sees one connect and one close.
+fn probe_seqpacket(
     path: &Path,
     expected_identity: SocketIdentity,
     expected_peer_uid: u32,
     expected_peer_gid: u32,
-    request: &[u8],
     timeout: Duration,
-) -> io::Result<Vec<u8>> {
+) -> io::Result<()> {
+    connect_seqpacket(
+        path,
+        expected_identity,
+        expected_peer_uid,
+        expected_peer_gid,
+        timeout,
+    )
+    .map(drop)
+}
+
+fn connect_seqpacket(
+    path: &Path,
+    expected_identity: SocketIdentity,
+    expected_peer_uid: u32,
+    expected_peer_gid: u32,
+    timeout: Duration,
+) -> io::Result<OwnedFd> {
     let fd = unsafe {
         libc::socket(
             libc::AF_UNIX,
@@ -476,6 +517,24 @@ fn send_seqpacket(
         ));
     }
     validate_peer_credentials(fd.as_raw_fd(), expected_peer_uid, expected_peer_gid)?;
+    Ok(fd)
+}
+
+fn send_seqpacket(
+    path: &Path,
+    expected_identity: SocketIdentity,
+    expected_peer_uid: u32,
+    expected_peer_gid: u32,
+    request: &[u8],
+    timeout: Duration,
+) -> io::Result<Vec<u8>> {
+    let fd = connect_seqpacket(
+        path,
+        expected_identity,
+        expected_peer_uid,
+        expected_peer_gid,
+        timeout,
+    )?;
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     if flags < 0
         || unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) } != 0
@@ -778,6 +837,108 @@ mod tests {
             .unwrap();
         assert!(result.server_certificate.contains("server"));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn socket_adapter_availability_probe_connects_without_sending_a_frame() {
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.path().join("probe.sock");
+        let listener = bind_seqpacket(&path);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o660)).unwrap();
+        let server = std::thread::spawn(move || {
+            let accepted = unsafe {
+                OwnedFd::from_raw_fd(libc::accept4(
+                    listener.as_raw_fd(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    libc::SOCK_CLOEXEC,
+                ))
+            };
+            // The probe must close without writing. A zero-length read is
+            // the peer-closed signal on a SOCK_SEQPACKET socket.
+            let mut byte = [0_u8; 1];
+            let received =
+                unsafe { libc::recv(accepted.as_raw_fd(), byte.as_mut_ptr().cast(), 1, 0) };
+            assert_eq!(received, 0, "probe must not send any frame");
+        });
+        let adapter = SocketCertificateAdapter::for_test(
+            path,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        assert!(adapter.available());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn socket_adapter_availability_is_false_for_missing_invalid_and_wrong_peer() {
+        let root = tempfile::tempdir().unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+
+        let missing = SocketCertificateAdapter::for_test(
+            root.path().join("missing.sock"),
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        assert!(!missing.available());
+
+        let wrong_mode = root.path().join("wrong-mode.sock");
+        let _mode_listener = bind_seqpacket(&wrong_mode);
+        fs::set_permissions(&wrong_mode, fs::Permissions::from_mode(0o666)).unwrap();
+        let invalid = SocketCertificateAdapter::for_test(
+            wrong_mode,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        assert!(!invalid.available());
+
+        let wrong_peer = root.path().join("wrong-peer.sock");
+        let peer_listener = bind_seqpacket(&wrong_peer);
+        fs::set_permissions(&wrong_peer, fs::Permissions::from_mode(0o660)).unwrap();
+        let server = std::thread::spawn(move || {
+            let accepted = unsafe {
+                OwnedFd::from_raw_fd(libc::accept4(
+                    peer_listener.as_raw_fd(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    libc::SOCK_CLOEXEC,
+                ))
+            };
+            let mut byte = [0_u8; 1];
+            assert_eq!(
+                unsafe { libc::recv(accepted.as_raw_fd(), byte.as_mut_ptr().cast(), 1, 0) },
+                0
+            );
+        });
+        let mismatched = SocketCertificateAdapter::for_test(
+            wrong_peer,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+            unsafe { libc::geteuid() }.wrapping_add(1),
+            unsafe { libc::getegid() },
+            0o660,
+        );
+        assert!(!mismatched.available());
+        server.join().unwrap();
+
+        // A bound path with no listener accepting is still "connected" at
+        // the kernel level for AF_UNIX, so a never-accepting server cannot
+        // be distinguished from a slow one here. That case is bounded by
+        // the connect timeout and covered by the timeout test above.
+        let unavailable = UnavailableCertificateAdapter {
+            failure: failure("SunshineCertificateControlUnavailable", "not configured"),
+        };
+        assert!(!unavailable.available());
     }
 
     #[test]

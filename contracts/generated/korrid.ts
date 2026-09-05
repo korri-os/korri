@@ -487,6 +487,28 @@ export interface SettingsUpdateRequest {
 	value: string;
 }
 
+export enum SourceCatalogState {
+	Available = "available",
+	Unavailable = "unavailable",
+}
+
+export enum SourceStreamControlState {
+	Enabled = "enabled",
+	Disabled = "disabled",
+}
+
+export interface SourceStatus {
+	/** Whether the host can produce a catalog snapshot right now. */
+	catalog: SourceCatalogState;
+	/** Whether the protected Sunshine certificate control is reachable. */
+	streamControl: SourceStreamControlState;
+}
+
+export interface SourceStatusRequest {
+	/** Selects exactly one native peer by its expected device public key. */
+	devicePublicKey: string;
+}
+
 export interface SteamGridDbCredentialClearRequest {
 }
 
@@ -578,6 +600,7 @@ export type RpcRequest =
 	| { _tag: "app.session.stop", payload: SessionStopRequest }
 	| { _tag: "app.session.freeze", payload: SessionFreezeRequest }
 	| { _tag: "app.session.thaw", payload: SessionThawRequest }
+	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -605,6 +628,7 @@ export type RpcResponse =
 	| { _tag: "app.session.stop", outcome: SessionStopOutcome }
 	| { _tag: "app.session.freeze", outcome: SessionFreezeOutcome }
 	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }
+	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
@@ -657,4 +681,8 @@ export type SettingsSnapshotOutcome =
 
 export type SettingsUpdateOutcome =
 	| { _tag: "Ok", payload: SettingsSnapshot }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type SourceStatusOutcome =
+	| { _tag: "Ok", payload: SourceStatus }
 	| { _tag: "Err", payload: RpcFailure };

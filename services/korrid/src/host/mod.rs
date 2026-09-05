@@ -15,6 +15,7 @@ use crate::{
     identity::DeviceIdentity,
     launcher::linux_retroarch,
     plugin_policy, CatalogSnapshot, Game, GameIdentity, GameSource, RpcFailure, SessionPrepared,
+    SourceCatalogState, SourceStatus, SourceStreamControlState,
 };
 use config::{HostConfig, HostConfigError};
 use moonlight_certificate::MoonlightCertificateAdapter;
@@ -240,6 +241,63 @@ impl HostRuntime {
             games,
             failures: None,
         })
+    }
+
+    /// Reports this host's current readiness as a federation source. The
+    /// host answers only for its own device key; a request naming another
+    /// device fails so a brain can never attribute one host's readiness to
+    /// another. The catalog answer is derived from the same configuration
+    /// that `catalog_snapshot` uses. The stream-control answer is a bounded,
+    /// non-mutating probe of the protected Sunshine certificate control.
+    /// A busy certificate permit set reports disabled rather than waiting.
+    pub async fn source_status(
+        &self,
+        requested_device_public_key: &str,
+    ) -> Result<SourceStatus, RpcFailure> {
+        match &self.device_public_key {
+            Some(own) if own == requested_device_public_key => {}
+            Some(_) => {
+                return Err(RpcFailure {
+                    code: "SourceDeviceMismatch".into(),
+                    message: "this host answers source status only for its own device key".into(),
+                })
+            }
+            None => {
+                return Err(RpcFailure {
+                    code: "HostIdentityUnavailable".into(),
+                    message: "host device identity is unavailable".into(),
+                })
+            }
+        }
+        Ok(self.own_source_status().await)
+    }
+
+    async fn own_source_status(&self) -> SourceStatus {
+        let catalog = match self.catalog_snapshot() {
+            Ok(_) => SourceCatalogState::Available,
+            Err(_) => SourceCatalogState::Unavailable,
+        };
+        let stream_control = match self.certificate_control_permit() {
+            Ok(permit) => {
+                let adapter = Arc::clone(&self.moonlight_certificate);
+                let available = tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    adapter.available()
+                })
+                .await
+                .unwrap_or(false);
+                if available {
+                    SourceStreamControlState::Enabled
+                } else {
+                    SourceStreamControlState::Disabled
+                }
+            }
+            Err(_) => SourceStreamControlState::Disabled,
+        };
+        SourceStatus {
+            catalog,
+            stream_control,
+        }
     }
 
     pub async fn prepare(&self, game_id: &str) -> Result<SessionPrepared, RpcFailure> {
@@ -495,6 +553,10 @@ mod tests {
     }
 
     impl MoonlightCertificateAdapter for BlockingCertificateAdapter {
+        fn available(&self) -> bool {
+            unreachable!()
+        }
+
         fn attest(&self, _host_uuid: &str) -> Result<bool, RpcFailure> {
             self.entered.fetch_add(1, Ordering::SeqCst);
             let (lock, changed) = &self.released;

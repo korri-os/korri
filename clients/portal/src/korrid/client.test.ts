@@ -7,6 +7,8 @@ import {
   MoonlightImplementation,
   SessionControlFailureReason,
   SessionFreezerState,
+  SourceCatalogState,
+  SourceStreamControlState,
 } from "@contracts/generated/korrid"
 import {
   callKorrid,
@@ -255,6 +257,46 @@ describe("callKorrid", () => {
     expect((await client.sessionThaw("launch-1"))._tag).toBe("Err")
   })
 
+  it("asks for one peer's source status by device key", async () => {
+    const bodies: unknown[] = []
+    const key = "ab".repeat(32)
+    globalThis.fetch = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return new Response(
+        JSON.stringify({
+          _tag: "app.source.status",
+          outcome: {
+            _tag: "Ok",
+            payload: { catalog: "available", streamControl: "disabled" },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+    const status = await client.sourceStatus(key)
+
+    expect(bodies).toEqual([
+      { _tag: "app.source.status", payload: { devicePublicKey: key } },
+    ])
+    expect(status).toEqual({
+      _tag: "Ok",
+      payload: {
+        catalog: SourceCatalogState.Available,
+        streamControl: SourceStreamControlState.Disabled,
+      },
+    })
+  })
+
+  it("reports an unreachable brain for source status", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused")
+    }) as unknown as typeof fetch
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+    expect((await client.sourceStatus("ab".repeat(32)))._tag).toBe("Err")
+  })
+
   it("lists and invokes controls only for the supplied launch identity", async () => {
     const bodies: unknown[] = []
     globalThis.fetch = (async (_input, init) => {
@@ -489,6 +531,54 @@ describe("local games", () => {
           },
         ],
       },
+    })
+  })
+})
+
+describe("in-memory source status", () => {
+  const peerKey = "7b".repeat(32)
+  const remoteGame = {
+    id: "neverball",
+    title: "Neverball",
+    source: { devicePublicKey: peerKey, label: "zao", isLocal: false },
+  }
+
+  it("answers only for peers that contributed a remote game", async () => {
+    const client = createInMemoryKorridClient({ games: [remoteGame] })
+    expect(await client.sourceStatus(peerKey)).toEqual({
+      _tag: "Ok",
+      payload: {
+        catalog: SourceCatalogState.Available,
+        streamControl: SourceStreamControlState.Enabled,
+      },
+    })
+    expect(await client.sourceStatus("ff".repeat(32))).toMatchObject({
+      _tag: "Err",
+      payload: { code: "SourcePeerNotFound" },
+    })
+  })
+
+  it("never treats the local device as a remote source", async () => {
+    const client = createInMemoryKorridClient({
+      games: [
+        {
+          id: "skate3",
+          title: "Skate 3",
+          source: { devicePublicKey: peerKey, label: "browser", isLocal: true },
+        },
+      ],
+    })
+    expect((await client.sourceStatus(peerKey))._tag).toBe("Err")
+  })
+
+  it("mirrors a failing catalog as an unavailable source catalog", async () => {
+    const client = createInMemoryKorridClient({
+      behavior: "catalog-fail",
+      games: [remoteGame],
+    })
+    expect(await client.sourceStatus(peerKey)).toMatchObject({
+      _tag: "Ok",
+      payload: { catalog: SourceCatalogState.Unavailable },
     })
   })
 })

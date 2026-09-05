@@ -27,11 +27,14 @@ import type {
   SessionStopOutcome,
   SettingsSnapshotOutcome,
   SettingsUpdateOutcome,
+  SourceStatusOutcome,
 } from "@contracts/generated/korrid"
 import {
   SecretSettingStatus,
   SessionFreezerState,
   SessionStopPhase,
+  SourceCatalogState,
+  SourceStreamControlState,
 } from "@contracts/generated/korrid"
 import { createInputBus, type InputBus } from "../input/bus"
 import { createSpatialFocusController } from "../input/spatial-focus"
@@ -257,6 +260,15 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
           launchId: expectedLaunchId,
           state: SessionFreezerState.Running,
           changed: true,
+        },
+      }
+    },
+    async sourceStatus(): Promise<SourceStatusOutcome> {
+      return {
+        _tag: "Ok",
+        payload: {
+          catalog: SourceCatalogState.Available,
+          streamControl: SourceStreamControlState.Enabled,
         },
       }
     },

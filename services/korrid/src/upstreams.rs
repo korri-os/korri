@@ -5,7 +5,7 @@ use crate::{
     upstream::{UpstreamClient, UpstreamConfig, UpstreamSessionStatus, UpstreamSessionStop},
     upstream_native::{NativeClient, NATIVE_RPC_TIMEOUT},
     CatalogHostFailure, CatalogSnapshot, Game, GameSource, MoonlightCertificateProvisioned,
-    MoonlightCertificateRevoked, SessionFreezeResult, SessionPrepared,
+    MoonlightCertificateRevoked, SessionFreezeResult, SessionPrepared, SourceStatus,
 };
 use futures::future::join_all;
 use serde::Deserialize;
@@ -68,6 +68,8 @@ pub enum UpstreamError {
     NoActiveSession,
     #[error("the selected legacy session route does not support freezer control")]
     FreezerUnsupportedOnLegacyRoute,
+    #[error("no configured native peer has the requested device public key")]
+    SourcePeerNotFound,
     #[error("no valid explicit Moonlight host address is configured")]
     MoonlightHostCandidatesUnavailable,
 }
@@ -95,6 +97,7 @@ impl UpstreamError {
             Self::StaleLaunchIdentity => "StaleLaunchIdentity",
             Self::NoActiveSession => "NoActiveSession",
             Self::FreezerUnsupportedOnLegacyRoute => "FreezerUnsupportedOnLegacyRoute",
+            Self::SourcePeerNotFound => "SourcePeerNotFound",
             Self::MoonlightHostCandidatesUnavailable => "MoonlightHostCandidatesUnavailable",
         }
     }
@@ -884,6 +887,42 @@ impl UpstreamRegistry {
         self.legacy_stop_or_nothing(force).await
     }
 
+    /// Reports one native peer's readiness. The peer is selected by its
+    /// configured expected device public key. A key that names no native
+    /// peer, or that names a legacy peer, fails closed without any network
+    /// call. A transport failure is returned as an error and is never
+    /// converted into a false readiness answer.
+    pub async fn source_status(
+        &self,
+        device_public_key: &str,
+    ) -> Result<SourceStatus, UpstreamError> {
+        let registry = self.resolved();
+        registry.source_status_resolved(device_public_key).await
+    }
+
+    async fn source_status_resolved(
+        &self,
+        device_public_key: &str,
+    ) -> Result<SourceStatus, UpstreamError> {
+        if let Some(error) = &self.configuration_error {
+            return Err(UpstreamError::Wire(error.clone()));
+        }
+        let host = self
+            .native_host_by_route_key(device_public_key)
+            .ok_or(UpstreamError::SourcePeerNotFound)?;
+        let RegisteredClient::Native(client) = &host.client else {
+            unreachable!("native_host_by_route_key returned a legacy client")
+        };
+        timeout(
+            CATALOG_HOST_TIMEOUT,
+            client.source_status(device_public_key),
+        )
+        .await
+        .map_err(|_| {
+            UpstreamError::Unreachable(format!("host {:?} source status timed out", host.label))
+        })?
+    }
+
     pub async fn session_freeze(
         &self,
         expected_launch_id: Option<&str>,
@@ -1325,6 +1364,35 @@ mod tests {
 
     async fn native_server(label: &str, game_id: &str) -> String {
         serve(native_test_router(label, game_id)).await
+    }
+
+    /// Serves a plain native host whose private state root is known so
+    /// that the test can learn its device public key and configure a
+    /// registry entry that names that exact key.
+    async fn identified_native_server(label: &str, game_id: &str) -> (String, String) {
+        let root = tempfile::tempdir().unwrap().keep();
+        let config = root.join("host.toml");
+        std::fs::write(
+            &config,
+            format!(
+                "label = {label:?}\n[[games]]\nid = {game_id:?}\ntitle = {game_id:?}\ncommand = [\"game\"]\n"
+            ),
+        )
+        .unwrap();
+        let private = root.join("private");
+        let runtime = crate::host::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        );
+        let device_key = crate::identity::DeviceIdentity::load_or_create(&private)
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned();
+        let (lan, _) = crate::plain_host_routers_for_tests(runtime);
+        (serve(lan).await, device_key)
     }
 
     async fn abortable_native_server(
@@ -2184,6 +2252,94 @@ command = ["native-game"]
                 .session_thaw(Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
                 .await,
             Err(UpstreamError::NoActiveSession)
+        ));
+    }
+
+    #[tokio::test]
+    async fn source_status_selects_exactly_one_native_peer_by_device_key() {
+        let (zao_url, zao_key) = identified_native_server("zao", "neverball").await;
+        let (aka_url, aka_key) = identified_native_server("aka", "other").await;
+        assert_ne!(zao_key, aka_key);
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::native_secure("zao", zao_url, zao_key.clone()),
+            UpstreamHostConfig::native_secure("aka", aka_url, aka_key.clone()),
+        ]);
+
+        let zao = registry.source_status(&zao_key).await.unwrap();
+        assert_eq!(zao.catalog, crate::SourceCatalogState::Available);
+        // In-memory test hosts run with the production adapter, which has no
+        // socket configured, so stream control is honestly disabled.
+        assert_eq!(
+            zao.stream_control,
+            crate::SourceStreamControlState::Disabled
+        );
+        let aka = registry.source_status(&aka_key).await.unwrap();
+        assert_eq!(aka.catalog, crate::SourceCatalogState::Available);
+    }
+
+    #[tokio::test]
+    async fn source_status_fails_closed_for_unknown_and_legacy_keys() {
+        let state = LegacyServerState {
+            prepared: Default::default(),
+        };
+        let (zao_url, zao_key) = identified_native_server("zao", "neverball").await;
+        let registry = UpstreamRegistry::new(vec![
+            UpstreamHostConfig::legacy("aka", legacy_server(state.clone()).await),
+            UpstreamHostConfig::native_secure("zao", zao_url, zao_key.clone()),
+        ]);
+
+        let unknown = "ee".repeat(32);
+        assert!(matches!(
+            registry.source_status(&unknown).await,
+            Err(UpstreamError::SourcePeerNotFound)
+        ));
+        // A legacy host has no device key, so no key can select it.
+        assert!(matches!(
+            registry.source_status("").await,
+            Err(UpstreamError::SourcePeerNotFound)
+        ));
+        assert!(matches!(
+            registry.source_status("aka").await,
+            Err(UpstreamError::SourcePeerNotFound)
+        ));
+        // No legacy call was made by any failed selection.
+        assert!(state.prepared.lock().unwrap().is_empty());
+        // The native peer still answers for its own key.
+        assert!(registry.source_status(&zao_key).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn source_status_transport_failure_is_an_error_not_a_false_status() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let key = "dd".repeat(32);
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native_secure(
+            "gone",
+            dead_url,
+            key.clone(),
+        )]);
+        assert!(matches!(
+            registry.source_status(&key).await,
+            Err(UpstreamError::Unreachable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn source_status_rejects_a_registry_key_that_the_peer_does_not_own() {
+        // The registry names a key the peer host does not hold. The host
+        // refuses to answer for a foreign key, and the brain surfaces the
+        // peer's tagged failure rather than a fabricated status.
+        let native_url = native_server("zao", "neverball").await;
+        let mismatched = "cc".repeat(32);
+        let registry = UpstreamRegistry::new(vec![UpstreamHostConfig::native_secure(
+            "zao",
+            native_url,
+            mismatched.clone(),
+        )]);
+        assert!(matches!(
+            registry.source_status(&mismatched).await,
+            Err(UpstreamError::Tagged { code, .. }) if code == "SourceDeviceMismatch"
         ));
     }
 

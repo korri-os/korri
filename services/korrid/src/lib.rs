@@ -822,6 +822,40 @@ pub struct SessionFreezeResult {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceStatusRequest {
+    /** Selects exactly one native peer by its expected device public key. */
+    pub device_public_key: String,
+}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceCatalogState {
+    Available,
+    Unavailable,
+}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceStreamControlState {
+    Enabled,
+    Disabled,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceStatus {
+    /** Whether the host can produce a catalog snapshot right now. */
+    pub catalog: SourceCatalogState,
+    /** Whether the protected Sunshine certificate control is reachable. */
+    pub stream_control: SourceStreamControlState,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LocalGamesListRequest {}
 
 #[typeshare]
@@ -1059,6 +1093,14 @@ pub enum SessionFreezeOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+pub enum SourceStatusOutcome {
+    Ok(SourceStatus),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
 pub enum HealthOutcome {
     Ok(Health),
     Err(RpcFailure),
@@ -1092,6 +1134,8 @@ pub enum RpcRequest {
     SessionFreeze(SessionFreezeRequest),
     #[serde(rename = "app.session.thaw")]
     SessionThaw(SessionThawRequest),
+    #[serde(rename = "app.source.status")]
+    SourceStatus(SourceStatusRequest),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsRequest),
     #[serde(rename = "app.session.control.invoke")]
@@ -1148,6 +1192,8 @@ pub enum RpcResponse {
     SessionFreeze(SessionFreezeOutcome),
     #[serde(rename = "app.session.thaw")]
     SessionThaw(SessionFreezeOutcome),
+    #[serde(rename = "app.source.status")]
+    SourceStatus(SourceStatusOutcome),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsOutcome),
     #[serde(rename = "app.session.control.invoke")]
@@ -1505,6 +1551,15 @@ fn host_session_freeze_outcome(
             message: "host recovery identity requires administrator resolution".into(),
         }),
         Err(failure) => SessionFreezeOutcome::Err(failure),
+    }
+}
+
+fn source_status_outcome(
+    result: Result<SourceStatus, upstreams::UpstreamError>,
+) -> SourceStatusOutcome {
+    match result {
+        Ok(status) => SourceStatusOutcome::Ok(status),
+        Err(error) => SourceStatusOutcome::Err(upstream_failure(error)),
     }
 }
 
@@ -2437,6 +2492,29 @@ async fn dispatch(
             };
             RpcResponse::SessionThaw(outcome)
         }
+        RpcRequest::SourceStatus(request) => {
+            let outcome = match (&state.mode, state.rpc_surface) {
+                (ServerMode::Brain(brain), RpcSurface::Lan) => source_status_outcome(
+                    brain
+                        .upstream
+                        .source_status(&request.device_public_key)
+                        .await,
+                ),
+                (ServerMode::Host(host), RpcSurface::Lan)
+                | (ServerMode::Host(host), RpcSurface::LocalControl) => host
+                    .source_status(&request.device_public_key)
+                    .await
+                    .map(SourceStatusOutcome::Ok)
+                    .unwrap_or_else(SourceStatusOutcome::Err),
+                (ServerMode::Brain(_), RpcSurface::LocalControl) => {
+                    SourceStatusOutcome::Err(RpcFailure {
+                        code: "SourceStatusUnsupported".into(),
+                        message: "source status is unavailable on this listener".into(),
+                    })
+                }
+            };
+            RpcResponse::SourceStatus(outcome)
+        }
         RpcRequest::SessionControls(request) => {
             let outcome = match &state.mode {
                 ServerMode::Brain(brain) => materialize_session_controls(
@@ -3308,6 +3386,11 @@ fn plain_host_routers(runtime: host::HostRuntime) -> (Router, Router) {
         Router::new().route("/rpc", post(rpc)).with_state(lan),
         Router::new().route("/rpc", post(rpc)).with_state(local),
     )
+}
+
+#[cfg(test)]
+pub(crate) fn plain_host_routers_for_tests(runtime: host::HostRuntime) -> (Router, Router) {
+    plain_host_routers(runtime)
 }
 
 fn secure_host_routers(runtime: host::HostRuntime, private_state_root: &Path) -> (Router, Router) {
@@ -5587,6 +5670,129 @@ command = ["sh", "-c", "sleep 1"]
         }
     }
 
+    fn host_device_key(private_state_root: &Path) -> String {
+        identity::DeviceIdentity::load_or_create(private_state_root)
+            .unwrap()
+            .device_public_key()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn host_source_status_answers_only_for_its_own_device_key() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"zao\"\n").unwrap();
+        let private = root.path().join("private");
+        let enabled = RecordingMoonlightCertificates::matching("sunshine-host");
+        let runtime = host::HostRuntime::from_paths_with_backends(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            enabled.clone(),
+        );
+        let own_key = host_device_key(&private);
+        let (lan, local) = plain_host_routers(runtime);
+
+        for app in [lan.clone(), local] {
+            let body = rpc_body(
+                app,
+                &serde_json::json!({
+                    "_tag": "app.source.status",
+                    "payload": { "devicePublicKey": own_key }
+                })
+                .to_string(),
+            )
+            .await;
+            assert_eq!(body["_tag"], "app.source.status");
+            assert_eq!(body["outcome"]["_tag"], "Ok");
+            assert_eq!(body["outcome"]["payload"]["catalog"], "available");
+            assert_eq!(body["outcome"]["payload"]["streamControl"], "enabled");
+        }
+        // The probe is the only certificate call, and it mutates nothing.
+        assert_eq!(enabled.calls(), vec!["available", "available"]);
+        assert!(enabled.exact_revocations().is_empty());
+
+        let foreign = rpc_body(
+            lan,
+            &serde_json::json!({
+                "_tag": "app.source.status",
+                "payload": { "devicePublicKey": "ab".repeat(32) }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(foreign["outcome"]["_tag"], "Err");
+        assert_eq!(
+            foreign["outcome"]["payload"]["code"],
+            "SourceDeviceMismatch"
+        );
+        // A foreign key is refused before any probe.
+        assert_eq!(enabled.calls().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn host_source_status_reports_unavailable_catalog_and_disabled_stream_control() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"zao\"\nthis is not toml\n").unwrap();
+        let private = root.path().join("private");
+        let disabled = Arc::new(ChangingMoonlightCertificates::default());
+        let runtime = host::HostRuntime::from_paths_with_backends(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+            disabled.clone(),
+        );
+        let own_key = host_device_key(&private);
+        let (lan, _) = plain_host_routers(runtime);
+
+        let body = rpc_body(
+            lan,
+            &serde_json::json!({
+                "_tag": "app.source.status",
+                "payload": { "devicePublicKey": own_key }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(body["outcome"]["_tag"], "Ok");
+        assert_eq!(body["outcome"]["payload"]["catalog"], "unavailable");
+        assert_eq!(body["outcome"]["payload"]["streamControl"], "disabled");
+        assert_eq!(
+            disabled.calls.lock().unwrap().as_slice(),
+            &["available".to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn brain_source_status_fails_closed_for_an_unconfigured_device_key() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        let brain = router_with_capability_and_local_root(
+            "right-token",
+            "https://portal.example",
+            root.path(),
+        );
+        let body = rpc_body_authorized(
+            brain,
+            &serde_json::json!({
+                "_tag": "app.source.status",
+                "payload": { "devicePublicKey": "ab".repeat(32) }
+            })
+            .to_string(),
+            Some("right-token"),
+        )
+        .await;
+        // The brain routes to the registry; with no configured peer of that
+        // key it fails closed with the registry's typed code and no call.
+        assert_eq!(body["outcome"]["_tag"], "Err");
+        assert_eq!(body["outcome"]["payload"]["code"], "SourcePeerNotFound");
+    }
+
     #[tokio::test]
     async fn host_freeze_and_thaw_require_exact_identity_and_report_state() {
         let root = tempfile::tempdir().unwrap();
@@ -7681,6 +7887,11 @@ command = ["game-two"]
     }
 
     impl host::moonlight_certificate::MoonlightCertificateAdapter for RecordingMoonlightCertificates {
+        fn available(&self) -> bool {
+            self.calls.lock().unwrap().push("available".into());
+            true
+        }
+
         fn attest(&self, host_uuid: &str) -> Result<bool, RpcFailure> {
             self.calls
                 .lock()
@@ -7729,6 +7940,11 @@ command = ["game-two"]
     }
 
     impl host::moonlight_certificate::MoonlightCertificateAdapter for ChangingMoonlightCertificates {
+        fn available(&self) -> bool {
+            self.calls.lock().unwrap().push("available".into());
+            false
+        }
+
         fn attest(&self, host_uuid: &str) -> Result<bool, RpcFailure> {
             self.calls
                 .lock()

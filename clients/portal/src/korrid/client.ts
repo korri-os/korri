@@ -36,6 +36,7 @@ import type {
   SettingsSnapshot,
   SettingsSnapshotOutcome,
   SettingsUpdateOutcome,
+  SourceStatusOutcome,
 } from "@contracts/generated/korrid"
 import {
   AndroidMoonlightEffect,
@@ -45,6 +46,8 @@ import {
   SessionControlFailureReason,
   SessionFreezerState,
   SessionStopPhase,
+  SourceCatalogState,
+  SourceStreamControlState,
 } from "@contracts/generated/korrid"
 
 export type RpcResponseFor<Request extends RpcRequest> = Extract<
@@ -84,6 +87,8 @@ export interface KorridClient {
   sessionFreeze(expectedLaunchId: string): Promise<SessionFreezeOutcome>
   /** Thaws the exact launch on its host. Repeated calls are no-ops. */
   sessionThaw(expectedLaunchId: string): Promise<SessionFreezeOutcome>
+  /** Readiness of exactly one native peer, selected by its device key. */
+  sourceStatus(devicePublicKey: string): Promise<SourceStatusOutcome>
   sessionControls(launchId: string): Promise<SessionControlsOutcome>
   invokeSessionControl(
     launchId: string,
@@ -480,6 +485,17 @@ export function createHttpKorridClient(
         const response = await callKorrid(baseUrl, capability, {
           _tag: "app.session.thaw",
           payload: { expectedLaunchId },
+        })
+        return response.outcome
+      } catch (error) {
+        return unreachable(error)
+      }
+    },
+    async sourceStatus(devicePublicKey) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.source.status",
+          payload: { devicePublicKey },
         })
         return response.outcome
       } catch (error) {
@@ -945,6 +961,33 @@ export function createInMemoryKorridClient(
     },
     async sessionThaw(expectedLaunchId) {
       return setFreezer(expectedLaunchId, SessionFreezerState.Running)
+    },
+    async sourceStatus(devicePublicKey) {
+      // The fixture knows a peer only through the games it contributed.
+      const known = games.some(
+        (game) =>
+          !game.source.isLocal &&
+          game.source.devicePublicKey === devicePublicKey,
+      )
+      if (!known) {
+        return {
+          _tag: "Err",
+          payload: {
+            code: "SourcePeerNotFound",
+            message: "no configured native peer has the requested device public key",
+          },
+        }
+      }
+      return {
+        _tag: "Ok",
+        payload: {
+          catalog:
+            behavior === "catalog-fail"
+              ? SourceCatalogState.Unavailable
+              : SourceCatalogState.Available,
+          streamControl: SourceStreamControlState.Enabled,
+        },
+      }
     },
     async sessionControls(launchId) {
       if (

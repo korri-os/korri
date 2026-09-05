@@ -153,6 +153,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionStop(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionFreeze(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionThaw(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SourceStatus(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
@@ -955,6 +956,12 @@ mod tests {
             ),
             (
                 request(
+                    serde_json::json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
+                ),
+                Both,
+            ),
+            (
+                request(
                     serde_json::json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
                 ),
                 stream,
@@ -1022,7 +1029,7 @@ mod tests {
                 Owner,
             ),
         ];
-        assert_eq!(cases.len(), 25);
+        assert_eq!(cases.len(), 26);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }
@@ -1070,6 +1077,9 @@ mod tests {
                 .unwrap();
             let allowed = [
                 request(serde_json::json!({"_tag":"app.catalog.snapshot","payload":{}})),
+                request(
+                    serde_json::json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
+                ),
                 request(serde_json::json!({"_tag":"app.moonlight.resolve","payload":{}})),
                 request(
                     serde_json::json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
@@ -1103,6 +1113,35 @@ mod tests {
             ] {
                 assert!(authorize(attempt.context(), &request).is_err());
             }
+        }
+    }
+
+    #[test]
+    fn catalog_read_scope_covers_catalog_and_source_status_only() {
+        let local_owner = Keys::parse(OWNER).unwrap();
+        let device_owner = Keys::parse(OTHER_OWNER).unwrap();
+        let statement = owner_statement(&device_owner, DEVICE, "owned", NOW);
+        let root = tempfile::tempdir().unwrap();
+        let authorization = Authorization::load(root.path()).unwrap();
+        let pass = pass(&local_owner, "guest", &[CATALOG_READ_SCOPE], NOW + 60);
+        let attempt = authorization
+            .attempt(&local(), DEVICE, Some(&statement), Some(&pass), &[], NOW)
+            .unwrap();
+        for allowed in [
+            request(serde_json::json!({"_tag":"app.catalog.snapshot","payload":{}})),
+            request(
+                serde_json::json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
+            ),
+        ] {
+            assert!(authorize(attempt.context(), &allowed).is_ok());
+        }
+        for denied in [
+            request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
+            request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
+            request(serde_json::json!({"_tag":"app.session.freeze","payload":{}})),
+            request(serde_json::json!({"_tag":"system.health","payload":{}})),
+        ] {
+            assert!(authorize(attempt.context(), &denied).is_err());
         }
     }
 
