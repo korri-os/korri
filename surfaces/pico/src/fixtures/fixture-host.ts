@@ -121,7 +121,65 @@ export const fixtureModel: SurfaceModel = {
   status: { _tag: "Browsing" },
   clockLabel: "10:24",
   actions: [],
-  settings: [],
+  /* Real shapes from korrid: a fact, an editable name, a two-value choice,
+   * a described fact, and an action a permission is granted through. */
+  settings: [
+    {
+      title: "Device",
+      items: [
+        {
+          id: "device-name",
+          label: "Name",
+          value: "usu",
+          interaction: { kind: "text", maxLength: 64 },
+        },
+        { id: "software", label: "Software", value: "korrid 0.4.1" },
+      ],
+    },
+    {
+      title: "Plugins",
+      items: [
+        {
+          id: "@korri:mgba",
+          label: "mGBA",
+          value: "On",
+          interaction: {
+            kind: "choice",
+            choices: [
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      title: "Permissions",
+      items: [
+        {
+          id: "file-access",
+          label: "File access",
+          value: "Granted",
+          description: "Managed by Android",
+          interaction: { kind: "action", actionId: "storage-access" },
+        },
+        {
+          id: "reset",
+          label: "Forget this device",
+          interaction: {
+            kind: "action",
+            actionId: "factory-reset",
+            destructive: true,
+            confirmation: {
+              title: "FORGET EVERYTHING?",
+              message: "Every game, save and setting on this device is removed.",
+              confirmLabel: "FORGET",
+            },
+          },
+        },
+      ],
+    },
+  ],
   settingsStatus: { _tag: "Idle" },
   buildLabel: "pico-dev",
 }

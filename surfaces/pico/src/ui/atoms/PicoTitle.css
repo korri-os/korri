@@ -25,3 +25,11 @@
 .pico-title[data-size="xl"] {
 	font-size: var(--pico-text-xl);
 }
+
+.pico-title[data-tone="accent"] {
+	color: var(--pico-accent);
+}
+
+.pico-title[data-tone="warn"] {
+	color: var(--pico-warn);
+}

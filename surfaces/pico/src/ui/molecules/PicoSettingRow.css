@@ -1,0 +1,80 @@
+.pico-setting-row-item {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--pico-space-1) / 2);
+	list-style: none;
+}
+
+.pico-setting-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pico-space-2);
+	width: 100%;
+	margin: 0;
+	padding: var(--pico-space-1);
+	font: inherit;
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text);
+	color: var(--pico-ink-dim);
+	text-align: left;
+	background: transparent;
+	border: none;
+}
+
+button.pico-setting-row {
+	cursor: pointer;
+	color: var(--pico-ink);
+}
+
+/* Legacy's focus is the whole row lit, black on the focus colour. */
+button.pico-setting-row:focus-visible {
+	outline: none;
+	background: var(--pico-focus);
+	color: var(--pico-cast-shadow);
+}
+
+button.pico-setting-row:focus-visible .pico-setting-row-value,
+button.pico-setting-row:focus-visible .pico-setting-row-go {
+	color: var(--pico-cast-shadow);
+}
+
+.pico-setting-row[data-destructive] {
+	color: var(--pico-warn);
+}
+
+.pico-setting-row-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pico-setting-row-state {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--pico-space-1);
+	flex: 0 0 auto;
+}
+
+.pico-setting-row-value {
+	color: var(--pico-ink);
+}
+
+.pico-setting-row-go {
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-accent);
+}
+
+.pico-setting-row-description,
+.pico-setting-row-problem {
+	margin: 0;
+	padding: 0 var(--pico-space-1);
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+}
+
+.pico-setting-row-problem {
+	color: var(--pico-warn);
+}

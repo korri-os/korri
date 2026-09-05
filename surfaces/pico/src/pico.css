@@ -43,6 +43,14 @@
 @import "./ui/organisms/PicoLaunchStage.css";
 @import "./ui/organisms/PicoLocationPicker.css";
 @import "./ui/templates/PicoScreenShell.css";
+@import "./pages/PicoSettings.css";
+@import "./ui/atoms/PicoBadge.css";
+@import "./ui/atoms/PicoSegments.css";
+@import "./ui/molecules/PicoSettingRow.css";
+@import "./ui/molecules/PicoTabs.css";
+@import "./ui/organisms/PicoModal.css";
+@import "./ui/organisms/PicoSettingsPanel.css";
+@import "./ui/templates/PicoPanelScreen.css";
 
 @font-face {
 	font-family: "Press Start 2P";

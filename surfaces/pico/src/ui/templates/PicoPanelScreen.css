@@ -1,0 +1,36 @@
+.pico-panel-screen {
+	position: relative;
+	z-index: 1;
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+	height: 100%;
+	min-height: 0;
+}
+
+.pico-panel-screen-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--pico-space-1);
+	padding: var(--pico-space-2) var(--pico-space-3);
+	min-height: 0;
+	overflow: hidden;
+}
+
+.pico-panel-screen-title {
+	padding-bottom: var(--pico-space-1);
+	border-bottom: var(--pico-edge) solid var(--pico-chrome-edge);
+}
+
+.pico-panel-screen-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.pico-panel-screen-footer {
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-ink-dim);
+	letter-spacing: 0.125em;
+	text-align: right;
+}

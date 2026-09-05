@@ -2,8 +2,10 @@ import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface
 import { useEffect, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoHome } from "./pages/PicoHome"
+import { PicoSettings } from "./pages/PicoSettings"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
+import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
 
 /**
@@ -34,24 +36,44 @@ export function PicoSurface({
    * game, so a catalog Korri republishes while the screen is open is what the
    * screen shows — a copy taken on open would show the game as it was. */
   const [viewingId, setViewingId] = useState<string | undefined>(undefined)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
+  const [asking, setAsking] = useState<
+    { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
+  >(undefined)
   const view = picoScreenViewFromModel(model)
 
   useEffect(() => {
-    return host.input.on("back", () => {
-      /* Back withdraws the most local thing first: a pending question, then a
-       * game's own screen, then a failure notice. Leaving the surface is the
-       * host's to decide, so past that Pico does nothing and the press falls
-       * through. */
-      setPlacing((current) => {
-        if (current !== undefined) return undefined
-        setViewingId((open) => {
-          if (open !== undefined) return undefined
-          if (model.status._tag === "Problem") host.dismiss()
-          return open
+    const offBack = host.input.on("back", () => {
+      /* Back withdraws the most local thing first: a confirmation, then a
+       * launch-location question, then settings, then a game's own screen, then
+       * a failure notice. Leaving the surface is the host's to decide, so past
+       * that Pico does nothing and the press falls through. */
+      setAsking((question) => {
+        if (question !== undefined) return undefined
+        setPlacing((current) => {
+          if (current !== undefined) return undefined
+          setSettingsOpen((open) => {
+            if (open) return false
+            setViewingId((viewing) => {
+              if (viewing !== undefined) return undefined
+              if (model.status._tag === "Problem") host.dismiss()
+              return viewing
+            })
+            return open
+          })
+          return current
         })
-        return current
+        return question
       })
     })
+    const offSystem = host.input.on("system", () => {
+      setSettingsOpen((open) => !open)
+    })
+    return () => {
+      offBack()
+      offSystem()
+    }
   }, [host, model.status._tag])
 
   if (model.presentation.kind !== "catalog") return null
@@ -86,9 +108,26 @@ export function PicoSurface({
   // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
   // when the same element carries both does the derivation read Pico's floor,
   // anchor, ratio and whole-pixel snap instead of the package's defaults.
+  const settings = settingsOpen && view._tag !== "Busy" && view._tag !== "Running"
+
   return (
     <div className="intrinsic pico-theme pico-screen">
-      {viewing !== undefined ? (
+      {settings ? (
+        <PicoSettings
+          asking={asking}
+          clockLabel={model.clockLabel}
+          onAsk={(actionId, confirmation) => setAsking({ actionId, confirmation })}
+          onCancel={() => setAsking(undefined)}
+          onChange={(settingId, value) => host.changeSetting(settingId, value)}
+          onConfirm={() => {
+            if (asking !== undefined) host.runAction(asking.actionId)
+            setAsking(undefined)
+          }}
+          onDismissProblem={() => host.dismissSettingsProblem()}
+          onRun={(actionId) => host.runAction(actionId)}
+          settings={picoSettingsViewFromModel(model)}
+        />
+      ) : viewing !== undefined ? (
         <PicoGameDetail
           clockLabel={model.clockLabel}
           game={picoDetailViewFromGame(viewing)}

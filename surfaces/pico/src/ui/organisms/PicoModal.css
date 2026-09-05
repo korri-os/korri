@@ -1,0 +1,35 @@
+.pico-modal-scrim {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	padding: var(--pico-space-3);
+	background: color-mix(in srgb, var(--pico-cast-shadow) 70%, transparent);
+}
+
+.pico-modal {
+	display: flex;
+	flex-direction: column;
+	gap: var(--pico-space-2);
+	max-width: 80cqw;
+	padding: var(--pico-space-3);
+	background: var(--pico-chrome);
+	border: calc(var(--pico-edge) * 2) solid var(--pico-warn);
+	box-shadow: calc(var(--pico-edge) * 3) calc(var(--pico-edge) * 3) 0 var(--pico-cast-shadow);
+	animation: pico-rise 240ms steps(3, end) both;
+}
+
+.pico-modal-message {
+	margin: 0;
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text);
+	line-height: 1.4;
+	color: var(--pico-ink);
+}
+
+.pico-modal-actions {
+	display: flex;
+	gap: var(--pico-space-2);
+	justify-content: flex-end;
+}

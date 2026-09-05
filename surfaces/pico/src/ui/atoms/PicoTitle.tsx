@@ -11,14 +11,17 @@ export function PicoTitle({
   text,
   size = "lg",
   level = 1,
+  tone = "ink",
 }: {
   readonly text: string
   readonly size?: "sm" | "md" | "lg" | "xl"
   readonly level?: 1 | 2 | 3
+  /** A role the screen already has, so a heading never invents a colour. */
+  readonly tone?: "ink" | "accent" | "warn"
 }) {
   const Tag = `h${level}` as const
   return (
-    <Tag className="pico-title" data-size={size}>
+    <Tag className="pico-title" data-size={size} data-tone={tone}>
       {text}
     </Tag>
   )
