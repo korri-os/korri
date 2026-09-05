@@ -143,9 +143,9 @@ in
     };
     uid = lib.mkOption { type = lib.types.ints.positive; };
     gid = lib.mkOption { type = lib.types.ints.positive; };
-    gameplayUser = lib.mkOption { type = lib.types.str; };
-    gameplayUid = lib.mkOption { type = lib.types.ints.positive; };
-    gameplayGid = lib.mkOption { type = lib.types.ints.positive; };
+    runtimeUser = lib.mkOption { type = lib.types.str; };
+    runtimeUid = lib.mkOption { type = lib.types.ints.positive; };
+    runtimeGid = lib.mkOption { type = lib.types.ints.positive; };
     inputdUid = lib.mkOption { type = lib.types.ints.positive; };
     controlGid = lib.mkOption { type = lib.types.ints.positive; };
     address = lib.mkOption {
@@ -210,21 +210,21 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.uid != cfg.gameplayUid;
-        message = "korrid's service UID must differ from the untrusted gameplay UID.";
+        assertion = cfg.uid != cfg.runtimeUid;
+        message = "korrid's service UID must differ from the untrusted runtime UID.";
       }
       {
         assertion =
           let
-            user = config.users.users.${cfg.gameplayUser} or { };
+            user = config.users.users.${cfg.runtimeUser} or { };
             group = config.users.groups.${user.group or ""} or { };
           in
-          (user.uid or null) == cfg.gameplayUid && (group.gid or null) == cfg.gameplayGid;
-        message = "configured gameplay UID/GID must exactly match the gameplay user's primary identity.";
+          (user.uid or null) == cfg.runtimeUid && (group.gid or null) == cfg.runtimeGid;
+        message = "the configured runtime UID and GID must match the runtime user's primary identity exactly.";
       }
       {
-        assertion = cfg.gid != cfg.gameplayGid && cfg.controlGid != cfg.gameplayGid;
-        message = "korrid and local-control GIDs must differ from the gameplay GID.";
+        assertion = cfg.gid != cfg.runtimeGid && cfg.controlGid != cfg.runtimeGid;
+        message = "korrid and local-control GIDs must differ from the runtime GID.";
       }
       {
         assertion =
@@ -291,13 +291,13 @@ in
       {
         assertion =
           let
-            user = config.users.users.${cfg.gameplayUser} or { };
+            user = config.users.users.${cfg.runtimeUser} or { };
           in
           !(builtins.elem "input" (user.extraGroups or [ ]))
           && !(builtins.elem "uinput" (user.extraGroups or [ ]))
           && !(builtins.elem controlGroup (user.extraGroups or [ ]))
           && !(builtins.elem serviceGroup (user.extraGroups or [ ]));
-        message = "the gameplay user must not hold raw input, uinput, local-control, or korrid service groups.";
+        message = "the runtime user must not hold raw input, uinput, local-control, or korrid service groups.";
       }
     ];
 
@@ -424,8 +424,8 @@ in
         KORRID_CERTIFICATE_CONTROL_DIRECTORY = cfg.certificateControlDirectory;
         KORRID_CONTROL_PEER_UID = toString cfg.inputdUid;
         KORRID_CONTROL_PEER_GID = toString cfg.controlGid;
-        KORRID_GAMEPLAY_UID = toString cfg.gameplayUid;
-        KORRID_GAMEPLAY_GID = toString cfg.gameplayGid;
+        KORRID_RUNTIME_UID = toString cfg.runtimeUid;
+        KORRID_RUNTIME_GID = toString cfg.runtimeGid;
         KORRID_RELAYS = relayJson;
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";

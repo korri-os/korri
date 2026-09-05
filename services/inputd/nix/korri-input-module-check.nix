@@ -19,18 +19,18 @@ let
       };
     };
   identities = {
-    users.groups.games.gid = 1001;
-    users.users.gameplay = {
+    users.groups.korri.gid = 1000;
+    users.users.korri = {
       isNormalUser = true;
-      uid = 1001;
-      group = "games";
+      uid = 1000;
+      group = "korri";
     };
     services.korriLinuxInput.inputd = {
       uid = 977;
       controlGid = 977;
-      actionUser = "gameplay";
-      actionUid = 1001;
-      actionGid = 1001;
+      actionUser = "korri";
+      actionUid = 1000;
+      actionGid = 1000;
       package = inputdPackage;
     };
   };
@@ -271,7 +271,7 @@ assert
     "korri-sunshine-uinput"
   ];
 assert
-  !(builtins.elem "korri-sunshine-uinput" sunshineProvider.config.users.users.gameplay.extraGroups);
+  !(builtins.elem "korri-sunshine-uinput" sunshineProvider.config.users.users.korri.extraGroups);
 assert allAssertionsPass inputdOnly;
 assert inputdOnly.config.systemd.services ? korri-inputd;
 assert !inputdOnly.config.services.inputplumber.enable;
@@ -296,9 +296,9 @@ assert builtins.elem "korri-input-source-guard.service" inputdService.requires;
 assert builtins.elem "korri-input-source-guard.service" inputdService.after;
 assert lib.hasInfix "Microsoft X-Box 360 pad" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdOnlyRules;
-assert lib.hasInfix " grant 977 1001 $env{DEVNAME}" inputdOnlyRules;
+assert lib.hasInfix " grant 977 1000 $env{DEVNAME}" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdService.serviceConfig.ExecStartPre;
-assert lib.hasSuffix " reapply 977 1001" inputdService.serviceConfig.ExecStartPre;
+assert lib.hasSuffix " reapply 977 1000" inputdService.serviceConfig.ExecStartPre;
 assert lib.hasSuffix " revoke" inputdService.serviceConfig.ExecStopPost;
 assert !(inputdService.environment ? KORRI_INPUTD_KILL_CURRENT_GAME);
 assert allAssertionsPass combined;
@@ -307,8 +307,8 @@ assert builtins.elem "inputplumber.service" combinedService.wants;
 assert combined.config.users.users.korri-inputd.uid == 977;
 assert combined.config.users.users.korri-inputd.group == "korri-control";
 assert combinedEnvironment.KORRI_INPUTD_CONTROL_GID == "977";
-assert combinedEnvironment.KORRI_INPUTD_ACTION_UID == "1001";
-assert combinedEnvironment.KORRI_INPUTD_ACTION_GID == "1001";
+assert combinedEnvironment.KORRI_INPUTD_ACTION_UID == "1000";
+assert combinedEnvironment.KORRI_INPUTD_ACTION_GID == "1000";
 assert
   combinedEnvironment.KORRI_INPUTD_PROFILE_PATH
   == "${inputplumberKorri}/share/inputplumber/profiles/korri-60-xbox_one_gamepad.yaml";

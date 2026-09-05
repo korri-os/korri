@@ -12,8 +12,8 @@ let
   sunshineApprovedBaseDerivations =
     sunshineApproved.approvedBaseDerivationsByProfile.${cfg.sunshine.package.korriBuildProfile or ""}
       or [ ];
-  gameplayHome = config.users.users.${cfg.gameplayUser}.home or "/home/${cfg.gameplayUser}";
-  gameplayRuntimeDir = "/run/user/${toString cfg.gameplayUid}";
+  runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
+  runtimeDir = "/run/user/${toString cfg.runtimeUid}";
   compositorControlDirectory = "/run/korri-compositor";
   compositorControlSocket = "${compositorControlDirectory}/sway-ipc.sock";
   compositorWorkspace = "korri:game:active";
@@ -35,7 +35,7 @@ let
     pkgs.stdenv.hostPlatform.isx86_64 && lib.toInt compositorRefreshRate >= 120;
   sunshineConfig =
     if cfg.sunshine.configDirectory == null then
-      "${gameplayHome}/.config/sunshine"
+      "${runtimeHome}/.config/sunshine"
     else
       cfg.sunshine.configDirectory;
   sunshineExecutable =
@@ -208,13 +208,13 @@ let
   '';
   cleanupCompositorSockets = pkgs.writeShellScript "korri-clean-compositor-sockets" ''
     set -eu
-    stable_wayland=${lib.escapeShellArg "${gameplayRuntimeDir}/${waylandDisplay}"}
+    stable_wayland=${lib.escapeShellArg "${runtimeDir}/${waylandDisplay}"}
     if [ -e "$stable_wayland" ] && [ ! -L "$stable_wayland" ]; then
       echo "stable Wayland path is not a symbolic link" >&2
       exit 1
     fi
     ${pkgs.coreutils}/bin/rm -f -- "$stable_wayland" "$stable_wayland".next.*
-    for socket in ${lib.escapeShellArg gameplayRuntimeDir}/wayland-[0-9]*; do
+    for socket in ${lib.escapeShellArg runtimeDir}/wayland-[0-9]*; do
       [ -e "$socket" ] || continue
       case "$socket" in
         *.lock) continue ;;
@@ -259,7 +259,7 @@ let
     set -eu
     attempt=0
     while [ "$attempt" -lt 60 ]; do
-      if [ -S ${lib.escapeShellArg "${gameplayRuntimeDir}/${waylandDisplay}"} ] \
+      if [ -S ${lib.escapeShellArg "${runtimeDir}/${waylandDisplay}"} ] \
         && [ -S ${lib.escapeShellArg xwaylandSocket} ]; then
         outputs="$(${pkgs.sway}/bin/swaymsg -s ${lib.escapeShellArg compositorControlSocket} -t get_outputs -r 2>/dev/null || true)"
         if printf '%s\n' "$outputs" | ${pkgs.jq}/bin/jq -e \
@@ -317,22 +317,21 @@ in
       description = "Non-secret host label published by the local korrid service.";
     };
 
-    gameplayUser = lib.mkOption {
+    runtimeUser = lib.mkOption {
       type = lib.types.str;
-      description = "Existing untrusted gameplay user.";
+      description = "Existing untrusted runtime user.";
     };
-    gameplayUid = lib.mkOption {
+    runtimeUid = lib.mkOption {
       type = lib.types.ints.positive;
-      description = "Exact UID of the gameplay user.";
+      description = "Exact UID of the runtime user.";
     };
-    gameplayGroup = lib.mkOption {
+    runtimeGroup = lib.mkOption {
       type = lib.types.str;
-      default = "users";
-      description = "Existing primary group of the gameplay user.";
+      description = "Existing primary group of the runtime user.";
     };
-    gameplayGid = lib.mkOption {
+    runtimeGid = lib.mkOption {
       type = lib.types.ints.positive;
-      description = "Exact primary GID of the gameplay user.";
+      description = "Exact primary GID of the runtime user.";
     };
 
     apiPort = lib.mkOption {
@@ -506,17 +505,17 @@ in
       {
         assertion =
           let
-            user = config.users.users.${cfg.gameplayUser} or { };
-            group = config.users.groups.${cfg.gameplayGroup} or { };
+            user = config.users.users.${cfg.runtimeUser} or { };
+            group = config.users.groups.${cfg.runtimeGroup} or { };
           in
           (user.isNormalUser or false)
-          && (user.uid or null) == cfg.gameplayUid
-          && (user.group or null) == cfg.gameplayGroup
-          && (group.gid or null) == cfg.gameplayGid;
-        message = "services.korriLinuxHost gameplay identity must match an existing user and primary group exactly.";
+          && (user.uid or null) == cfg.runtimeUid
+          && (user.group or null) == cfg.runtimeGroup
+          && (group.gid or null) == cfg.runtimeGid;
+        message = "services.korriLinuxHost runtime identity must match an existing user and primary group exactly.";
       }
       {
-        assertion = lib.all (value: value != cfg.gameplayUid && value != cfg.gameplayGid) [
+        assertion = lib.all (value: value != cfg.runtimeUid && value != cfg.runtimeGid) [
           cfg.serviceIdentities.inputdUid
           cfg.serviceIdentities.controlGid
           cfg.serviceIdentities.korridUid
@@ -524,7 +523,7 @@ in
           cfg.serviceIdentities.sunshineGid
           cfg.serviceIdentities.inputSeatGid
         ];
-        message = "Korri service identities must differ from the gameplay identity.";
+        message = "Korri service identities must differ from the runtime identity.";
       }
       {
         assertion =
@@ -588,7 +587,7 @@ in
       }
       {
         assertion = lib.all validAbsolutePath [
-          gameplayHome
+          runtimeHome
           sunshineConfig
           cfg.storageRoot
           cfg.privateStateRoot
@@ -639,7 +638,7 @@ in
         enable = true;
         # Keep source nodes in /dev/input so InputPlumber's upstream watcher can
         # preserve one persistent target across hotplug. InputPlumber removes
-        # uaccess and sets mode 000; the device gate proves gameplay denial.
+        # uaccess and sets mode 000. The device gate proves runtime-user denial.
         sunshine = {
           enableUinputAccess = true;
           serviceName = "sunshine";
@@ -651,9 +650,9 @@ in
         requireProvider = true;
         uid = cfg.serviceIdentities.inputdUid;
         controlGid = cfg.serviceIdentities.controlGid;
-        actionUser = cfg.gameplayUser;
-        actionUid = cfg.gameplayUid;
-        actionGid = cfg.gameplayGid;
+        actionUser = cfg.runtimeUser;
+        actionUid = cfg.runtimeUid;
+        actionGid = cfg.runtimeGid;
         actions = validationActions;
       };
     };
@@ -662,9 +661,9 @@ in
       enable = true;
       uid = cfg.serviceIdentities.korridUid;
       gid = cfg.serviceIdentities.korridGid;
-      gameplayUser = cfg.gameplayUser;
-      gameplayUid = cfg.gameplayUid;
-      gameplayGid = cfg.gameplayGid;
+      runtimeUser = cfg.runtimeUser;
+      runtimeUid = cfg.runtimeUid;
+      runtimeGid = cfg.runtimeGid;
       inputdUid = cfg.serviceIdentities.inputdUid;
       controlGid = cfg.serviceIdentities.controlGid;
       inherit deviceConfig;
@@ -700,9 +699,9 @@ in
 
     services.seatd.enable = cfg.compositor.backend == "drm";
 
-    users.users.${cfg.gameplayUser} = {
-      uid = lib.mkDefault cfg.gameplayUid;
-      group = lib.mkDefault cfg.gameplayGroup;
+    users.users.${cfg.runtimeUser} = {
+      uid = lib.mkDefault cfg.runtimeUid;
+      group = lib.mkDefault cfg.runtimeGroup;
       # Only the compositor unit joins `seat` through SupplementaryGroups.
       # Game processes run as this user and must not reach /run/seatd.sock.
       extraGroups = lib.mkAfter [
@@ -714,8 +713,8 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.storageRoot} 0700 korrid korrid -"
       "d ${certificateControlDirectory} 0751 root korrid -"
-      "d ${gameplayHome}/.config 0700 ${cfg.gameplayUser} ${cfg.gameplayGroup} -"
-      "d ${sunshineConfig} 0700 ${cfg.gameplayUser} ${cfg.gameplayGroup} -"
+      "d ${runtimeHome}/.config 0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
+      "d ${sunshineConfig} 0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
     ];
 
     systemd.sockets.korri-certificate-control = {
@@ -769,7 +768,7 @@ in
         SupplementaryGroups = [ ];
         RuntimeDirectory = "korri-input-seat";
         RuntimeDirectoryMode = "0711";
-        ExecStart = "${config.services.korriBundle.launcherPackage}/bin/korri-bundle-launch input-seat-receiver --runtime-dir ${inputSeatRuntimeDirectory} --control-uid ${toString cfg.serviceIdentities.korridUid} --control-gid ${toString cfg.serviceIdentities.korridGid} --sunshine-uid ${toString cfg.gameplayUid} --sunshine-gid ${toString cfg.serviceIdentities.inputSeatGid} --event-gid ${toString cfg.gameplayGid}";
+        ExecStart = "${config.services.korriBundle.launcherPackage}/bin/korri-bundle-launch input-seat-receiver --runtime-dir ${inputSeatRuntimeDirectory} --control-uid ${toString cfg.serviceIdentities.korridUid} --control-gid ${toString cfg.serviceIdentities.korridGid} --sunshine-uid ${toString cfg.runtimeUid} --sunshine-gid ${toString cfg.serviceIdentities.inputSeatGid} --event-gid ${toString cfg.runtimeGid}";
         Restart = "on-failure";
         RestartSec = 1;
         UMask = "0077";
@@ -820,15 +819,15 @@ in
         "sunshine.service"
       ];
       requires = [
-        "user-runtime-dir@${toString cfg.gameplayUid}.service"
-        "user@${toString cfg.gameplayUid}.service"
+        "user-runtime-dir@${toString cfg.runtimeUid}.service"
+        "user@${toString cfg.runtimeUid}.service"
       ]
       ++ lib.optional (cfg.compositor.backend == "drm") "seatd.service"
       ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
       after = [
         "systemd-tmpfiles-setup.service"
-        "user-runtime-dir@${toString cfg.gameplayUid}.service"
-        "user@${toString cfg.gameplayUid}.service"
+        "user-runtime-dir@${toString cfg.runtimeUid}.service"
+        "user@${toString cfg.runtimeUid}.service"
       ]
       ++ lib.optional (cfg.compositor.backend == "drm") "seatd.service"
       ++ lib.optional highRefreshPerformance "korri-streaming-performance-profile.service";
@@ -842,12 +841,12 @@ in
         pkgs.xwayland
       ];
       environment = {
-        HOME = gameplayHome;
-        XDG_RUNTIME_DIR = gameplayRuntimeDir;
+        HOME = runtimeHome;
+        XDG_RUNTIME_DIR = runtimeDir;
         XDG_CONFIG_HOME = "${compositorControlDirectory}/config";
         XDG_STATE_HOME = "${compositorControlDirectory}/state";
         XDG_DATA_HOME = "${compositorControlDirectory}/data";
-        DBUS_SESSION_BUS_ADDRESS = "unix:path=${gameplayRuntimeDir}/bus";
+        DBUS_SESSION_BUS_ADDRESS = "unix:path=${runtimeDir}/bus";
         XDG_CURRENT_DESKTOP = "sway";
         SWAYSOCK = compositorControlSocket;
         WLR_RENDERER = cfg.compositor.renderer;
@@ -870,8 +869,8 @@ in
       };
       serviceConfig = {
         Type = "simple";
-        User = cfg.gameplayUser;
-        Group = cfg.gameplayGroup;
+        User = cfg.runtimeUser;
+        Group = cfg.runtimeGroup;
         SupplementaryGroups = [
           "video"
           "render"
@@ -906,7 +905,7 @@ in
         SystemCallArchitectures = "native";
         ReadWritePaths = [
           compositorControlDirectory
-          gameplayRuntimeDir
+          runtimeDir
           "/tmp"
         ];
       };
@@ -962,10 +961,10 @@ in
         KORRI_CERTIFICATE_CONTROL_PATH = certificateControlSocket;
         DISPLAY = xwaylandDisplay;
         WAYLAND_DISPLAY = waylandDisplay;
-        XDG_RUNTIME_DIR = gameplayRuntimeDir;
+        XDG_RUNTIME_DIR = runtimeDir;
         XDG_SESSION_TYPE = "wayland";
-        HOME = gameplayHome;
-        XDG_CONFIG_HOME = "${gameplayHome}/.config";
+        HOME = runtimeHome;
+        XDG_CONFIG_HOME = "${runtimeHome}/.config";
       }
       // lib.optionalAttrs cfg.sunshine.inputSeats.enable {
         KORRI_INPUT_SEAT_MIRROR_SOCKET = inputSeatMirrorSocket;
@@ -980,13 +979,13 @@ in
       };
       serviceConfig = {
         Type = "simple";
-        User = cfg.gameplayUser;
-        Group = if cfg.sunshine.inputSeats.enable then "korri-sunshine-input-seat" else cfg.gameplayGroup;
+        User = cfg.runtimeUser;
+        Group = if cfg.sunshine.inputSeats.enable then "korri-sunshine-input-seat" else cfg.runtimeGroup;
         SupplementaryGroups = [
           "video"
           "render"
         ];
-        WorkingDirectory = gameplayHome;
+        WorkingDirectory = runtimeHome;
         ExecCondition = lib.optional (cfg.sunshine.encoder == "nvenc") requireNvencRuntime;
         # The readiness probe talks to the Sway IPC socket, which this unit
         # deliberately hides from Sunshine through InaccessiblePaths. Run the
@@ -1040,7 +1039,7 @@ in
         KERNEL=="uinput", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uinput"
       ''
       + lib.optionalString cfg.sunshine.inputSeats.enable ''
-        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="${cfg.gameplayGroup}", MODE="0660"
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="${cfg.runtimeGroup}", MODE="0660"
       ''
     );
   };

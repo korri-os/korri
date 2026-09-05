@@ -25,11 +25,11 @@ let
           device = "none";
           fsType = "tmpfs";
         };
-        users.groups.games.gid = 1001;
-        users.users.gameplay = {
+        users.groups.korri.gid = 1000;
+        users.users.korri = {
           isNormalUser = true;
-          uid = 1001;
-          group = "games";
+          uid = 1000;
+          group = "korri";
         };
         services.korriBundle = {
           enable = true;
@@ -46,9 +46,9 @@ let
             package = inputdPackage;
             uid = 977;
             controlGid = 977;
-            actionUser = "gameplay";
-            actionUid = 1001;
-            actionGid = 1001;
+            actionUser = "korri";
+            actionUid = 1000;
+            actionGid = 1000;
           };
         };
         services.korridLinuxDevice = {
@@ -56,13 +56,13 @@ let
           package = korridPackage;
           uid = 976;
           gid = 976;
-          gameplayUser = "gameplay";
-          gameplayUid = 1001;
-          gameplayGid = 1001;
+          runtimeUser = "korri";
+          runtimeUid = 1000;
+          runtimeGid = 1000;
           inputdUid = 977;
           controlGid = 977;
           inherit deviceConfig;
-          sunshinePrivateStateRoot = "/home/gameplay/.config/sunshine";
+          sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
         };
       }
     ];

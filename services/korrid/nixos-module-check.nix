@@ -18,23 +18,23 @@ let
   peerPublicKey = builtins.concatStringsSep "" (lib.replicate 64 "2");
   androidUpstreamsTemplate = ./deploy/upstreams.android.json;
   base = {
-    users.groups.games.gid = 1001;
-    users.users.gameplay = {
+    users.groups.korri.gid = 1000;
+    users.users.korri = {
       isNormalUser = true;
-      uid = 1001;
-      group = "games";
+      uid = 1000;
+      group = "korri";
     };
     services.korridLinuxDevice = {
       package = korridPackage;
       uid = 976;
       gid = 976;
-      gameplayUser = "gameplay";
-      gameplayUid = 1001;
-      gameplayGid = 1001;
+      runtimeUser = "korri";
+      runtimeUid = 1000;
+      runtimeGid = 1000;
       inputdUid = 977;
       controlGid = 977;
       inherit deviceConfig;
-      sunshinePrivateStateRoot = "/home/gameplay/.config/sunshine";
+      sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
       relays = [ "wss://relay.example.com/" ];
       nativePeers = [
         {
@@ -87,16 +87,16 @@ let
   sameUid = evaluate {
     services.korridLinuxDevice = {
       enable = true;
-      gameplayUid = lib.mkForce 976;
+      runtimeUid = lib.mkForce 976;
     };
   };
-  broadGame = evaluate {
+  broadRuntime = evaluate {
     services.korridLinuxDevice.enable = true;
-    users.users.gameplay.extraGroups = [ "input" ];
+    users.users.korri.extraGroups = [ "input" ];
   };
-  certificateControlGame = evaluate {
+  certificateControlRuntime = evaluate {
     services.korridLinuxDevice.enable = true;
-    users.users.gameplay.extraGroups = [ "korrid" ];
+    users.users.korri.extraGroups = [ "korrid" ];
   };
   invalidPrivatePath = evaluate {
     services.korridLinuxDevice = {
@@ -211,7 +211,7 @@ let
 in
 assert allAssertionsPass enabled;
 assert service.serviceConfig.User == "korrid";
-assert service.serviceConfig.User != "gameplay";
+assert service.serviceConfig.User != "korri";
 assert
   builtins.removeAttrs service.environment [ "PATH" ] == {
     KORRID_ADDRESS = "127.0.0.1:43117";
@@ -221,27 +221,27 @@ assert
     KORRID_CONTROL_PEER_GID = "977";
     KORRID_CONTROL_PEER_UID = "977";
     KORRID_CONTROL_SOCKET = "/run/korrid-control/control.sock";
-    KORRID_GAMEPLAY_GID = "1001";
-    KORRID_GAMEPLAY_UID = "1001";
+    KORRID_RUNTIME_GID = "1000";
+    KORRID_RUNTIME_UID = "1000";
     KORRID_HOST_CONFIG = toString deviceConfig;
     KORRID_MODE = "host";
     KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
     KORRID_RELAYS = ''["wss://relay.example.com"]'';
     KORRID_STORAGE_ROOT = "/var/lib/korri";
-    KORRID_SUNSHINE_PRIVATE_STATE_ROOT = "/home/gameplay/.config/sunshine";
+    KORRID_SUNSHINE_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
     KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
     KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
     KORRID_UPSTREAMS = ''[{"baseUrl":"http://zao:43117","devicePublicKey":"${peerPublicKey}","kind":"native","label":"zao","moonlightAddress":"zao:47989"}]'';
   };
-assert service.environment.KORRID_GAMEPLAY_UID == "1001";
-assert service.environment.KORRID_GAMEPLAY_GID == "1001";
+assert service.environment.KORRID_RUNTIME_UID == "1000";
+assert service.environment.KORRID_RUNTIME_GID == "1000";
 assert service.environment.KORRID_CONTROL_PEER_UID == "977";
 assert service.environment.KORRID_CONTROL_PEER_GID == "977";
 assert service.environment.KORRID_SYSTEMD_RUN == "${pkgs.systemd}/bin/systemd-run";
 assert service.environment.KORRID_SYSTEMCTL == "${pkgs.systemd}/bin/systemctl";
 assert service.environment.KORRID_ADDRESS == "127.0.0.1:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
-assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/gameplay/.config/sunshine";
+assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
 assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
@@ -269,7 +269,7 @@ assert identityService.serviceConfig.UMask == "0077";
 assert identityService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
 assert identityService.serviceConfig.ReadWritePaths == [ "/var/lib/korrid" ];
 assert builtins.elem "/var/lib/korri" identityService.serviceConfig.InaccessiblePaths;
-assert builtins.elem "-/home/gameplay/.config/sunshine"
+assert builtins.elem "-/home/korri/.config/sunshine"
   identityService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "-/run/korri-compositor" identityService.serviceConfig.InaccessiblePaths;
 assert builtins.elem "-/run/korri-certificate-control"
@@ -295,10 +295,10 @@ assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
 assert builtins.elem "systemd-tmpfiles-resetup.service" service.after;
 assert builtins.elem "korri-input-source-guard.service" service.after;
 assert builtins.elem "-/dev/inputplumber/sources" service.serviceConfig.InaccessiblePaths;
-assert builtins.elem "/home/gameplay/.config/sunshine" service.serviceConfig.InaccessiblePaths;
+assert builtins.elem "/home/korri/.config/sunshine" service.serviceConfig.InaccessiblePaths;
 assert enabled.config.users.groups.korri-control.gid == 977;
-assert !(builtins.elem "korri-control" enabled.config.users.users.gameplay.extraGroups);
-assert !(builtins.elem "korrid" enabled.config.users.users.gameplay.extraGroups);
+assert !(builtins.elem "korri-control" enabled.config.users.users.korri.extraGroups);
+assert !(builtins.elem "korrid" enabled.config.users.users.korri.extraGroups);
 assert builtins.elem "AF_UNIX" service.serviceConfig.RestrictAddressFamilies;
 assert builtins.elem "AF_INET" service.serviceConfig.RestrictAddressFamilies;
 assert service.serviceConfig.ProtectProc == "invisible";
@@ -336,8 +336,8 @@ assert
   == "/run/korri-test/certificate-control";
 assert builtins.elem "d /run/korri-test/control 0750 root korri-control -" customTmpfiles;
 assert hasFailedAssertion "service UID must differ" sameUid;
-assert hasFailedAssertion "gameplay user must not hold raw input" broadGame;
-assert hasFailedAssertion "korrid service groups" certificateControlGame;
+assert hasFailedAssertion "runtime user must not hold raw input" broadRuntime;
+assert hasFailedAssertion "korrid service groups" certificateControlRuntime;
 assert hasFailedAssertion
   "privateStateRoot and sunshinePrivateStateRoot must be normalized absolute paths"
   invalidPrivatePath;
@@ -357,8 +357,8 @@ assert hasFailedAssertion "exact Korri korrid package" wrongPackage;
 assert hasFailedAssertion "no Nostr secret-key form" secretOwnerBinding;
 assert hasFailedAssertion "no Nostr secret-key form" secretFieldOwnerBinding;
 assert evaluationRejected sameUid;
-assert evaluationRejected broadGame;
-assert evaluationRejected certificateControlGame;
+assert evaluationRejected broadRuntime;
+assert evaluationRejected certificateControlRuntime;
 assert evaluationRejected invalidPrivatePath;
 assert evaluationRejected invalidControlPath;
 assert evaluationRejected invalidCompositorControlPath;

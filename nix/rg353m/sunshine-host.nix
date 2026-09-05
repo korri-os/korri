@@ -12,6 +12,8 @@ in
 {
   # Keep this device profile thin. Korri's shared host module owns Sunshine,
   # compositor, input, identity, certificate, state, and service policy.
+  # Keep the deployed identity until the separate device-backed ownership
+  # cutover can preserve Sunshine state and the rollback generation.
   users.groups.games.gid = 1001;
   users.users.gameplay = {
     isNormalUser = true;
@@ -34,10 +36,10 @@ in
   services.korriLinuxHost = {
     enable = true;
     label = "rg353m";
-    gameplayUser = "gameplay";
-    gameplayUid = 1001;
-    gameplayGroup = "games";
-    gameplayGid = 1001;
+    runtimeUser = "gameplay";
+    runtimeUid = 1001;
+    runtimeGroup = "games";
+    runtimeGid = 1001;
     # This first host slice has no production federation relay. Keep the
     # existing module's explicit loopback-test contract until one is assigned.
     relays = [ "ws://127.0.0.1:9" ];

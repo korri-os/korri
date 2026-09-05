@@ -80,8 +80,8 @@ struct ProtectedPaths {
 pub struct SystemdLaunchUnitBackend {
     pub(super) systemd_run: PathBuf,
     pub(super) systemctl: PathBuf,
-    gameplay_uid: u32,
-    gameplay_gid: u32,
+    runtime_uid: u32,
+    runtime_gid: u32,
     private_state_root: PathBuf,
     control_socket: PathBuf,
     control_directory: PathBuf,
@@ -153,18 +153,18 @@ impl SystemdLaunchUnitBackend {
     pub fn new(
         systemd_run: PathBuf,
         systemctl: PathBuf,
-        gameplay_uid: u32,
-        gameplay_gid: u32,
+        runtime_uid: u32,
+        runtime_gid: u32,
     ) -> Result<Self, LaunchUnitError> {
         Self::with_protected_paths(
             systemd_run,
             systemctl,
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             PathBuf::from(DEFAULT_PRIVATE_STATE_ROOT),
             PathBuf::from(DEFAULT_CONTROL_SOCKET),
             PathBuf::from(DEFAULT_CONTROL_DIRECTORY),
-            PathBuf::from("/home/gameplay/.config/sunshine"),
+            PathBuf::from("/home/korri/.config/sunshine"),
             PathBuf::from(DEFAULT_COMPOSITOR_CONTROL_DIRECTORY),
         )
     }
@@ -173,8 +173,8 @@ impl SystemdLaunchUnitBackend {
     pub fn with_protected_paths(
         systemd_run: PathBuf,
         systemctl: PathBuf,
-        gameplay_uid: u32,
-        gameplay_gid: u32,
+        runtime_uid: u32,
+        runtime_gid: u32,
         private_state_root: PathBuf,
         control_socket: PathBuf,
         control_directory: PathBuf,
@@ -184,8 +184,8 @@ impl SystemdLaunchUnitBackend {
         Self::with_timeout_and_paths(
             systemd_run,
             systemctl,
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             ProtectedPaths {
                 private_state_root,
                 control_socket,
@@ -202,20 +202,20 @@ impl SystemdLaunchUnitBackend {
     pub(super) fn with_timeout(
         systemd_run: PathBuf,
         systemctl: PathBuf,
-        gameplay_uid: u32,
-        gameplay_gid: u32,
+        runtime_uid: u32,
+        runtime_gid: u32,
         helper_timeout: Duration,
     ) -> Result<Self, LaunchUnitError> {
         Self::with_timeout_and_paths(
             systemd_run,
             systemctl,
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             ProtectedPaths {
                 private_state_root: PathBuf::from(DEFAULT_PRIVATE_STATE_ROOT),
                 control_socket: PathBuf::from(DEFAULT_CONTROL_SOCKET),
                 control_directory: PathBuf::from(DEFAULT_CONTROL_DIRECTORY),
-                sunshine_private_state_root: PathBuf::from("/home/gameplay/.config/sunshine"),
+                sunshine_private_state_root: PathBuf::from("/home/korri/.config/sunshine"),
                 compositor_control_directory: PathBuf::from(DEFAULT_COMPOSITOR_CONTROL_DIRECTORY),
                 certificate_control_directory: PathBuf::from(DEFAULT_CERTIFICATE_CONTROL_DIRECTORY),
             },
@@ -226,8 +226,8 @@ impl SystemdLaunchUnitBackend {
     fn with_timeout_and_paths(
         systemd_run: PathBuf,
         systemctl: PathBuf,
-        gameplay_uid: u32,
-        gameplay_gid: u32,
+        runtime_uid: u32,
+        runtime_gid: u32,
         paths: ProtectedPaths,
         helper_timeout: Duration,
     ) -> Result<Self, LaunchUnitError> {
@@ -245,10 +245,10 @@ impl SystemdLaunchUnitBackend {
                 "systemd helper paths must be absolute",
             ));
         }
-        if gameplay_uid == 0 || gameplay_gid == 0 {
+        if runtime_uid == 0 || runtime_gid == 0 {
             return Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::InvalidConfiguration,
-                "gameplay UID and GID must both be unprivileged",
+                "runtime UID and GID must both be unprivileged",
             ));
         }
         if helper_timeout.is_zero() {
@@ -287,8 +287,8 @@ impl SystemdLaunchUnitBackend {
         Ok(Self {
             systemd_run,
             systemctl,
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             private_state_root,
             control_socket,
             control_directory,
@@ -306,9 +306,9 @@ impl SystemdLaunchUnitBackend {
         let systemctl = std::env::var_os("KORRID_SYSTEMCTL")
             .map(PathBuf::from)
             .unwrap_or_default();
-        let gameplay_uid = configured_gameplay_id("KORRID_GAMEPLAY_UID")
+        let runtime_uid = configured_runtime_id("KORRID_RUNTIME_UID")
             .unwrap_or_else(|| unsafe { libc::geteuid() });
-        let gameplay_gid = configured_gameplay_id("KORRID_GAMEPLAY_GID")
+        let runtime_gid = configured_runtime_id("KORRID_RUNTIME_GID")
             .unwrap_or_else(|| unsafe { libc::getegid() });
         let private_state_root =
             configured_path("KORRID_PRIVATE_STATE_ROOT", DEFAULT_PRIVATE_STATE_ROOT);
@@ -329,8 +329,8 @@ impl SystemdLaunchUnitBackend {
         Self::with_timeout_and_paths(
             systemd_run.clone(),
             systemctl.clone(),
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             ProtectedPaths {
                 private_state_root: private_state_root.clone(),
                 control_socket: control_socket.clone(),
@@ -344,8 +344,8 @@ impl SystemdLaunchUnitBackend {
         .unwrap_or(Self {
             systemd_run,
             systemctl,
-            gameplay_uid,
-            gameplay_gid,
+            runtime_uid,
+            runtime_gid,
             private_state_root,
             control_socket,
             control_directory,
@@ -360,8 +360,8 @@ impl SystemdLaunchUnitBackend {
         Self::with_timeout_and_paths(
             self.systemd_run.clone(),
             self.systemctl.clone(),
-            self.gameplay_uid,
-            self.gameplay_gid,
+            self.runtime_uid,
+            self.runtime_gid,
             ProtectedPaths {
                 private_state_root: self.private_state_root.clone(),
                 control_socket: self.control_socket.clone(),
@@ -597,8 +597,8 @@ impl SystemdLaunchUnitBackend {
             "--collect".into(),
             "--service-type=exec".into(),
             format!("--unit={unit}"),
-            format!("--uid={}", self.gameplay_uid),
-            format!("--gid={}", self.gameplay_gid),
+            format!("--uid={}", self.runtime_uid),
+            format!("--gid={}", self.runtime_gid),
             "--property=KillMode=control-group".into(),
             "--property=NoNewPrivileges=yes".into(),
             "--property=CapabilityBoundingSet=".into(),
@@ -619,7 +619,7 @@ impl SystemdLaunchUnitBackend {
                 self.sunshine_private_state_root.display(),
                 self.compositor_control_directory.display(),
                 self.certificate_control_directory.display(),
-                self.gameplay_uid
+                self.runtime_uid
             ),
             "--property=RestrictSUIDSGID=yes".into(),
         ];
@@ -768,7 +768,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     }
 }
 
-fn configured_gameplay_id(name: &str) -> Option<u32> {
+fn configured_runtime_id(name: &str) -> Option<u32> {
     std::env::var(name)
         .ok()
         .and_then(|value| value.parse::<u32>().ok())

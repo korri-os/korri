@@ -329,7 +329,7 @@ in
             in
             !(builtins.elem "input" (user.extraGroups or [ ]))
             && !(builtins.elem "uinput" (user.extraGroups or [ ]));
-          message = "the gameplay action user must not belong to input or uinput groups.";
+          message = "the action user must not belong to input or uinput groups.";
         }
       ];
       users.groups.${controlGroup}.gid = cfg.inputd.controlGid;

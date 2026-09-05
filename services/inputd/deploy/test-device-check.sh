@@ -5,8 +5,8 @@ set -Eeuo pipefail
 case "$(basename "$0")" in
   id)
     if [[ "${1:-}" == -u && -n "${2:-}" ]]; then
-      [[ "$2" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]] || exit 1
-      printf '%s\n' "${HARNESS_GAMEPLAY_UID:-1000}"
+      [[ "$2" == "${HARNESS_RUNTIME_USER:-korri}" ]] || exit 1
+      printf '%s\n' "${HARNESS_RUNTIME_UID:-1000}"
       exit 0
     fi
     [[ "${1:-}" == -u ]] && printf '%s\n' "${HARNESS_CALLER_UID:-0}" && exit 0
@@ -15,19 +15,19 @@ case "$(basename "$0")" in
   sudo)
     [[ "${1:-}" == -n ]] || exit 1
     shift
-    [[ "${1:-}" == -u && "${2:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]] || exit 1
+    [[ "${1:-}" == -u && "${2:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]] || exit 1
     [[ "${HARNESS_SUDO_DENY:-no}" != yes ]] || exit 1
     printf 'sudo-user=%s caller=%s argv=' "$2" "${HARNESS_CALLER_UID:-0}" >>"${HARNESS_USER_SCOPE_LOG:?}"
     printf '%q ' "$@" >>"$HARNESS_USER_SCOPE_LOG"
     printf '\n' >>"$HARNESS_USER_SCOPE_LOG"
     shift 2
-    export HARNESS_MODELED_USER=gameplay
+    export HARNESS_MODELED_USER=korri
     exec "$@"
     ;;
   getent|user-scope-getent)
     case "${1:-}" in
-      passwd) printf 'gameplay:x:1000:1000::%s:/bin/sh\n' "${HARNESS_GAMEPLAY_HOME:?}" ;;
-      group) printf '%s:x:%s:\n' "${2:-gameplay}" "${2:-1000}" ;;
+      passwd) printf 'korri:x:1000:1000::%s:/bin/sh\n' "${HARNESS_RUNTIME_HOME:?}" ;;
+      group) printf '%s:x:%s:\n' "${2:-korri}" "${2:-1000}" ;;
       *) exit 1 ;;
     esac
     exit 0
@@ -50,9 +50,9 @@ case "$(basename "$0")" in
     done
     property="$(IFS=,; printf '%s' "${properties[*]}")"
     if [[ "$scope" == user ]]; then
-      [[ "${HARNESS_MODELED_USER:-root}" == gameplay ]] || exit 1
-      [[ "${XDG_RUNTIME_DIR:-}" == "/run/user/${HARNESS_GAMEPLAY_UID:-1000}" ]] || exit 1
-      [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == "unix:path=/run/user/${HARNESS_GAMEPLAY_UID:-1000}/bus" ]] || exit 1
+      [[ "${HARNESS_MODELED_USER:-root}" == korri ]] || exit 1
+      [[ "${XDG_RUNTIME_DIR:-}" == "/run/user/${HARNESS_RUNTIME_UID:-1000}" ]] || exit 1
+      [[ "${DBUS_SESSION_BUS_ADDRESS:-}" == "unix:path=/run/user/${HARNESS_RUNTIME_UID:-1000}/bus" ]] || exit 1
       printf 'systemctl-user=%s property=%s runtime=%s bus=%s\n' \
         "$unit" "$property" "$XDG_RUNTIME_DIR" "$DBUS_SESSION_BUS_ADDRESS" >>"${HARNESS_USER_SCOPE_LOG:?}"
       [[ "${HARNESS_USER_QUERY_ERROR:-}" != all ]] || exit 69
@@ -258,7 +258,7 @@ case "$(basename "$0")" in
       fi
       case "$action" in
         inspect)
-          [[ "${1:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]] || exit 87
+          [[ "${1:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]] || exit 87
           printf 'identity machine-id=%s hostname=%s\n' \
             "${HARNESS_MACHINE_ID:-0123456789abcdef0123456789abcdef}" \
             "${HARNESS_HOSTNAME:-u7-test-host}"
@@ -293,8 +293,8 @@ case "$(basename "$0")" in
             "${HARNESS_CONTROLLER_ID:-0003:045e:02ea:050b}"
           ;;
         predicates)
-          if [[ "${1:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]]; then
-            printf 'predicates-user=gameplay wrapper=%s\n' "$wrapper" >>"$HARNESS_LOG"
+          if [[ "${1:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]]; then
+            printf 'predicates-user=korri wrapper=%s\n' "$wrapper" >>"$HARNESS_LOG"
           else
             printf 'predicates-user=root wrapper=%s\n' "$wrapper" >>"$HARNESS_LOG"
           fi
@@ -374,7 +374,7 @@ case "$(basename "$0")" in
             exit 130
           fi
           [[ "${HARNESS_STALE_MANAGER_CREDENTIALS:-no}" != yes ]] || {
-            printf 'device gate: fresh gameplay user manager retains forbidden group: input\n' >&2
+            printf 'device gate: fresh runtime user manager retains forbidden group: input\n' >&2
             exit 80
           }
           [[ -z "${HARNESS_CREDENTIAL_FAILURE:-}" ]] || {
@@ -438,7 +438,7 @@ case "$(basename "$0")" in
             exit 62
           }
           [[ "${HARNESS_ACL_MODEL:-normalized-only}" == normalized-only ]] || {
-            printf 'modeled gameplay ACL exposes raw input\n' >&2
+            printf 'modeled runtime-user ACL exposes raw input\n' >&2
             exit 63
           }
           if [[ -n "${HARNESS_TOPOLOGY_FIXTURE:-}" ]]; then
@@ -458,7 +458,7 @@ case "$(basename "$0")" in
             done <"$HARNESS_TOPOLOGY_FIXTURE"
             [[ "$normalized_node" == /dev/input/event9 ]] || exit 62
             [[ "$readable_raw" -eq 0 ]] || {
-              printf 'device gate: gameplay user can read %s raw controller node(s)\n' "$readable_raw" >&2
+              printf 'device gate: runtime user can read %s raw controller node(s)\n' "$readable_raw" >&2
               exit 63
             }
           fi
@@ -493,7 +493,7 @@ case "$(basename "$0")" in
           printf '\n'
           ;;
         acceptance-fingerprint)
-          [[ "${1:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]] || exit 87
+          [[ "${1:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]] || exit 87
           expected_identity="${2:-}"
           profile="${3:-}"
           require_physical="${4:-false}"
@@ -548,7 +548,7 @@ case "$(basename "$0")" in
               ;;
           esac
           if [[ "$action" == activate-test || "$action" == persistent-switch ]]; then
-            [[ "${2:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]]
+            [[ "${2:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]]
             [[ "${HARNESS_POST_STOP_QUERY_ERROR:-no}" != yes ]] || {
               printf 'device gate: old user unit active state query failed after stop: korrid.service\n' >&2
               exit 86
@@ -562,7 +562,7 @@ case "$(basename "$0")" in
           fi
           if [[ "$action" == restore ]]; then
             [[ "${2:-}" == false || "${2:-}" == true ]]
-            [[ "${3:-}" == "${HARNESS_GAMEPLAY_USER:-gameplay}" ]]
+            [[ "${3:-}" == "${HARNESS_RUNTIME_USER:-korri}" ]]
             [[ "${4:-}" == "${HARNESS_OLD_KORRID_ACTIVE:-${HARNESS_OLD_ACTIVE:-false}}" ]]
             [[ "${5:-}" == "${HARNESS_OLD_KORRID_ENABLED:-${HARNESS_OLD_ENABLED:-false}}" ]]
             [[ "${6:-}" == "${HARNESS_OLD_SUNSHINE_ACTIVE:-true}" ]]
@@ -773,30 +773,30 @@ ln -s user-scope-systemctl "$TMP/user-scope-bin/systemctl"
 ln -s user-scope-getent "$TMP/user-scope-bin/getent"
 export KORRI_DEVICE_GATE_SSH="$TMP/ssh-command-harness"
 export HARNESS_LOG="$TMP/commands.log" HARNESS_GATE_SOURCE="$GATE"
-HARNESS_GAMEPLAY_UID="$(id -u)"
-export HARNESS_GAMEPLAY_UID HARNESS_USER_SCOPE_LOG="$TMP/user-scope.log"
+HARNESS_RUNTIME_UID="$(id -u)"
+export HARNESS_RUNTIME_UID HARNESS_USER_SCOPE_LOG="$TMP/user-scope.log"
 export HARNESS_ATTEMPT_MARKER="$TMP/remote-attempt" HARNESS_ATTEMPT_LEASE="$TMP/remote-attempt.lease"
-export HARNESS_GAMEPLAY_USER=gameplay HARNESS_GAMEPLAY_HOME="$TMP/gameplay-home"
-mkdir -p "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
-printf '%s\n' 'sunshine-config' >"$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine.conf"
-: >"$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
-chmod 0700 "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
-chmod 0600 "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine.conf"
-chmod 0600 "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
+export HARNESS_RUNTIME_USER=korri HARNESS_RUNTIME_HOME="$TMP/korri-home"
+mkdir -p "$HARNESS_RUNTIME_HOME/.config/sunshine"
+printf '%s\n' 'sunshine-config' >"$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine.conf"
+: >"$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
+chmod 0700 "$HARNESS_RUNTIME_HOME/.config/sunshine"
+chmod 0600 "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine.conf"
+chmod 0600 "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
 export HARNESS_OLD_SUNSHINE_ACTIVE=true HARNESS_OLD_SUNSHINE_ENABLED=true
 export HARNESS_OLD_X11_ACTIVE=true HARNESS_OLD_X11_ENABLED=true
 MACHINE_ID=0123456789abcdef0123456789abcdef
 HOSTNAME=u7-test-host
 CANDIDATE=/nix/store/00000000000000000000000000000000-nixos-system-u7-test-host-1
 ROLLBACK=/nix/store/11111111111111111111111111111111-nixos-system-u7-test-host-0
-GAMEPLAY_USER=gameplay
+RUNTIME_USER=korri
 CONTROLLER_ID=0003:045e:02ea:050b
 PRODUCTION_PROFILE=korri-60-xbox_one_gamepad.yaml
 export CANDIDATE ROLLBACK
 
 run_gate() {
   "$GATE" --host "$HOSTNAME" --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME" \
-    --candidate "$CANDIDATE" --gameplay-user "$GAMEPLAY_USER" "$@"
+    --candidate "$CANDIDATE" --runtime-user "$RUNTIME_USER" "$@"
 }
 
 assert_fails_with() {
@@ -848,7 +848,7 @@ assert_fails_with 'immutable device gate refuses a ledger proof helper override'
 common_for() {
   local ledger="$1"
   printf '%s\0' --candidate "$CANDIDATE" --rollback-generation "$ROLLBACK" \
-    --gameplay-user "$GAMEPLAY_USER" --ledger "$ledger" \
+    --runtime-user "$RUNTIME_USER" --ledger "$ledger" \
     --expected-controller-id "$CONTROLLER_ID" --production-profile "$PRODUCTION_PROFILE"
 }
 confirm="CONFIRM-$(printf '%s' "$MACHINE_ID|$HOSTNAME|$CANDIDATE" | sha256sum | cut -c1-16)"
@@ -884,7 +884,7 @@ grep -F "! grep -F \"Couldn't scale frame:\"" "$GATE" >/dev/null
 grep -F 'PREDICATE_SYSTEM_UNITS=(korrid.service sunshine.service x11-headless.service korri-compositor.service)' "$GATE" >/dev/null
 grep -F 'remote_wait_unit korri-compositor.service' "$GATE" >/dev/null
 # shellcheck disable=SC2016 # Literal production source invariant.
-grep -F 'remote_compositor_gate "$gameplay_user"' "$GATE" >/dev/null
+grep -F 'remote_compositor_gate "$runtime_user"' "$GATE" >/dev/null
 COMPOSITOR_MODE_SOURCE="$(awk '
   /^remote_parse_compositor_mode\(\) \{/ { found=1 }
   found { print }
@@ -933,7 +933,7 @@ printf '40\n' >"$performance_root/sys/devices/system/cpu/intel_pstate/min_perf_p
 printf '61\n' >"$performance_root/sys/devices/system/cpu/intel_pstate/max_perf_pct"
 assert_fails_with 'maximum Intel pstate bound is not 60' run_high_refresh_performance_gate active 120000 "$performance_root"
 # shellcheck disable=SC2016 # Literal production source invariant.
-grep -F 'run_remote_attempt compositor-game-gate "$GAMEPLAY_USER"' "$GATE" >/dev/null
+grep -F 'run_remote_attempt compositor-game-gate "$RUNTIME_USER"' "$GATE" >/dev/null
 grep -F -- '--property=PrivatePIDs=yes' "$HERE/../../korrid/src/host/systemd_unit.rs" >/dev/null
 grep -F -- '--property=BindReadOnlyPaths=/tmp/.X11-unix/X0' "$HERE/../../korrid/src/host/systemd_unit.rs" >/dev/null
 # shellcheck disable=SC2016 # Literal production source invariant.
@@ -1015,7 +1015,7 @@ run_modeled_restore() (
   BUNDLE_SELECTOR_ROOT=/nix/var/nix/gcroots/korri-bundle
   eval "$RESTORE_SOURCE"
   remote_restore /nix/store/11111111111111111111111111111111-nixos-system-rollback-1 \
-    false gameplay false false false false false false 700 600
+    false korri false false false false false false 700 600
   cat "$log"
 )
 [[ "$(run_modeled_restore selector)" == $'refuse\nstop\nraw\nactivate-test\nbundle-switch\npairing\nold-units' ]]
@@ -1055,7 +1055,7 @@ run_nvenc_log_gate "$wayland_capture"$'New streaming session started [active ses
 # stat(1) canonicalizes 0700/0600 to 700/600; candidate calls must use the
 # canonical forms so post-chmod verification compares equal.
 # shellcheck disable=SC2016
-[[ "$(grep -Fc 'remote_set_pairing_state_modes "$gameplay_user" 700 600' "$GATE")" -eq 2 ]]
+[[ "$(grep -Fc 'remote_set_pairing_state_modes "$runtime_user" 700 600' "$GATE")" -eq 2 ]]
 
 # Exercise the production primary-group policy directly. The remote endpoint
 # model cannot reproduce a forged primary GID without replacing /proc.
@@ -1085,7 +1085,7 @@ run_production_group_policy() (
     "$input_gid" "$uinput_gid" "$control_gid" "$sunshine_gid"
 )
 for credential_unit in korrid.service korri-compositor.service sunshine.service \
-  korri-inputd.service korri-game-harness.service 'gameplay user manager'; do
+  korri-inputd.service korri-game-harness.service 'runtime user manager'; do
   assert_fails_with "forbidden input primary group leaked to $credential_unit" \
     run_production_group_policy "$credential_unit" 10
   assert_fails_with "forbidden uinput primary group leaked to $credential_unit" \
@@ -1274,7 +1274,7 @@ run_user_unit_enabled_check() (
     printf 'LoadState=%s\nUnitFileState=%s\n' "$modeled_load" "$modeled_state"
   }
   eval "$USER_UNIT_ENABLED_SOURCE"
-  remote_user_unit_enabled gameplay legacy.service
+  remote_user_unit_enabled korri legacy.service
 )
 [[ "$(run_user_unit_enabled_check loaded enabled)" == true ]]
 for disabled_state in disabled static masked masked-runtime; do
@@ -1294,12 +1294,12 @@ assert_fails_with 'incomplete user unit enablement state for legacy.service' \
   run_user_unit_enabled_check incomplete
 assert_fails run_user_unit_enabled_check query-failure
 
-# Candidate deployment must not restart the gameplay user manager or mutate
+# Candidate deployment must not restart the runtime user manager or mutate
 # declarative system-unit enablement. Only targeted user daemon reloads and
 # targeted Korri service start/stop operations are allowed.
 if grep -F 'remote_restart_user_manager' "$GATE" >/dev/null \
   || grep -E 'systemctl (start|stop) "user@' "$GATE" >/dev/null; then
-  printf 'device gate can stop or restart the complete gameplay user manager\n' >&2
+  printf 'device gate can stop or restart the complete runtime user manager\n' >&2
   exit 1
 fi
 START_CANDIDATE_SOURCE="$(awk '
@@ -1326,7 +1326,7 @@ if grep -E 'systemctl (enable|disable)' <<<"$START_CANDIDATE_SOURCE$STOP_CANDIDA
   printf 'device gate mutates declarative system-unit enablement\n' >&2
   exit 1
 fi
-grep -F "remote_user_systemctl \"\$gameplay_user\" daemon-reload" <<<"$RESTORE_OLD_USER_SOURCE" >/dev/null
+grep -F "remote_user_systemctl \"\$runtime_user\" daemon-reload" <<<"$RESTORE_OLD_USER_SOURCE" >/dev/null
 
 RESOLVE_CONTROLLER_NODE_SOURCE="$(awk '
   /^remote_resolve_physical_controller_node\(\) \{/ { found=1 }
@@ -1714,7 +1714,7 @@ assert_fails_with 'switch-to-configuration failed with status 1' \
 run_production_predicates() {
   env -u SUDO_UID PATH="$TMP/user-scope-bin:$PATH" HARNESS_MODELED_USER=root \
     KORRI_DEVICE_GATE_TEST_PRIVATE_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-    "$@" "$GATE" --remote predicates "$GAMEPLAY_USER"
+    "$@" "$GATE" --remote predicates "$RUNTIME_USER"
 }
 : >"$HARNESS_USER_SCOPE_LOG"
 user_scope_predicates="$(run_production_predicates HARNESS_CALLER_UID=0)"
@@ -1723,17 +1723,17 @@ grep -Fx 'old-user.sunshine.enabled=true' <<<"$user_scope_predicates" >/dev/null
 grep -Fx 'old-user.x11-headless.active=true' <<<"$user_scope_predicates" >/dev/null
 grep -Fx 'sunshine.pairing-state-present=true' <<<"$user_scope_predicates" >/dev/null
 [[ "$(grep -c '^systemctl-user=' "$HARNESS_USER_SCOPE_LOG")" -eq 6 ]]
-if grep '^sudo-user=' "$HARNESS_USER_SCOPE_LOG" | grep -Fv 'sudo-user=gameplay caller=0 ' >/dev/null; then
-  printf 'a root user-scope operation targeted a user other than gameplay\n' >&2
+if grep '^sudo-user=' "$HARNESS_USER_SCOPE_LOG" | grep -Fv 'sudo-user=korri caller=0 ' >/dev/null; then
+  printf 'a root user-scope operation targeted a user other than korri\n' >&2
   exit 1
 fi
-grep -F "runtime=/run/user/$HARNESS_GAMEPLAY_UID bus=unix:path=/run/user/$HARNESS_GAMEPLAY_UID/bus" \
+grep -F "runtime=/run/user/$HARNESS_RUNTIME_UID bus=unix:path=/run/user/$HARNESS_RUNTIME_UID/bus" \
   "$HARNESS_USER_SCOPE_LOG" >/dev/null
 : >"$HARNESS_USER_SCOPE_LOG"
 run_production_predicates HARNESS_CALLER_UID=2000 >/dev/null
 [[ "$(grep -c '^systemctl-user=' "$HARNESS_USER_SCOPE_LOG")" -eq 6 ]]
-if grep '^sudo-user=' "$HARNESS_USER_SCOPE_LOG" | grep -Fv 'sudo-user=gameplay caller=2000 ' >/dev/null; then
-  printf 'an SSH user-scope operation targeted a user other than gameplay\n' >&2
+if grep '^sudo-user=' "$HARNESS_USER_SCOPE_LOG" | grep -Fv 'sudo-user=korri caller=2000 ' >/dev/null; then
+  printf 'an SSH user-scope operation targeted a user other than korri\n' >&2
   exit 1
 fi
 assert_fails_with 'old user unit active state query failed' \
@@ -1772,7 +1772,7 @@ assert_fails_with 'old user unit enablement query failed' \
 # Sunshine private-state proof rejects permissions and links. It records only
 # a combined digest and never exposes pairing or configuration contents.
 pairing_secret='PAIRING-CONTENTS-MUST-STAY-PRIVATE'
-printf '%s\n' "$pairing_secret" >"$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
+printf '%s\n' "$pairing_secret" >"$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-modes=700:600' <<<"$predicates" >/dev/null
 grep -E '^sunshine.private-state-digest=[0-9a-f]{64}$' <<<"$predicates" >/dev/null
@@ -1792,34 +1792,34 @@ if grep -F "$pairing_secret" <<<"$predicates" >/dev/null; then
   printf 'pairing-state contents leaked into predicates\n' >&2
   exit 1
 fi
-chmod 0640 "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
+chmod 0640 "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
-chmod 0600 "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
-chmod 0750 "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
+chmod 0600 "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
+chmod 0750 "$HARNESS_RUNTIME_HOME/.config/sunshine"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
-chmod 0700 "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
-predicates="$(run_production_predicates HARNESS_GAMEPLAY_UID=1001)"
+chmod 0700 "$HARNESS_RUNTIME_HOME/.config/sunshine"
+predicates="$(run_production_predicates HARNESS_RUNTIME_UID=1001)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
-mv "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json" "$TMP/pairing-state"
-ln -s "$TMP/pairing-state" "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
+mv "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json" "$TMP/pairing-state"
+ln -s "$TMP/pairing-state" "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
-rm "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
-mv "$TMP/pairing-state" "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
-chmod 0600 "$HARNESS_GAMEPLAY_HOME/.config/sunshine/sunshine_state.json"
-mv "$HARNESS_GAMEPLAY_HOME/.config/sunshine" "$TMP/sunshine-outside"
-ln -s "$TMP/sunshine-outside" "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
+rm "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
+mv "$TMP/pairing-state" "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
+chmod 0600 "$HARNESS_RUNTIME_HOME/.config/sunshine/sunshine_state.json"
+mv "$HARNESS_RUNTIME_HOME/.config/sunshine" "$TMP/sunshine-outside"
+ln -s "$TMP/sunshine-outside" "$HARNESS_RUNTIME_HOME/.config/sunshine"
 predicates="$(run_production_predicates)"
 grep -Fx 'sunshine.pairing-state-present=false' <<<"$predicates" >/dev/null
-rm "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
-mv "$TMP/sunshine-outside" "$HARNESS_GAMEPLAY_HOME/.config/sunshine"
+rm "$HARNESS_RUNTIME_HOME/.config/sunshine"
+mv "$TMP/sunshine-outside" "$HARNESS_RUNTIME_HOME/.config/sunshine"
 
 : >"$HARNESS_LOG"
 assert_fails_with 'an explicit --host is required' "$GATE" --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME"
 [[ ! -s "$HARNESS_LOG" ]]
-assert_fails_with 'every mode requires an explicit gameplay user' "$GATE" --host "$HOSTNAME" \
+assert_fails_with 'every mode requires an explicit runtime user' "$GATE" --host "$HOSTNAME" \
   --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME" --candidate "$CANDIDATE"
 [[ ! -s "$HARNESS_LOG" ]]
 
@@ -1831,11 +1831,11 @@ for which in candidate rollback; do
   if [[ "$which" == candidate ]]; then
     bad_candidate="${CANDIDATE};touch${IFS}$sentinel"
     assert_fails_with 'strictly valid Nix store generation path' run_gate --mode candidate-test \
-      --candidate "$bad_candidate" --rollback-generation "$ROLLBACK" --gameplay-user "$GAMEPLAY_USER" --ledger "$TMP/path-ledger"
+      --candidate "$bad_candidate" --rollback-generation "$ROLLBACK" --runtime-user "$RUNTIME_USER" --ledger "$TMP/path-ledger"
   else
     bad_rollback="${ROLLBACK}\$(touch $sentinel)"
     assert_fails_with 'strictly valid Nix store generation path' run_gate --mode candidate-test \
-      --candidate "$CANDIDATE" --rollback-generation "$bad_rollback" --gameplay-user "$GAMEPLAY_USER" --ledger "$TMP/path-ledger"
+      --candidate "$CANDIDATE" --rollback-generation "$bad_rollback" --runtime-user "$RUNTIME_USER" --ledger "$TMP/path-ledger"
   fi
   [[ ! -e "$sentinel" && ! -s "$HARNESS_LOG" ]]
 done
@@ -1847,7 +1847,7 @@ assert_fails_with 'invalid host target' "$GATE" --host "host;touch-$TMP/host-exe
 : >"$HARNESS_LOG"
 assert_fails_with 'remote machine-id mismatch' "$GATE" --host "$HOSTNAME" \
   --expected-machine-id ffffffffffffffffffffffffffffffff --expected-hostname "$HOSTNAME" \
-  --candidate "$CANDIDATE" --gameplay-user "$GAMEPLAY_USER"
+  --candidate "$CANDIDATE" --runtime-user "$RUNTIME_USER"
 assert_no_mutation
 
 # The candidate helper must be immutable store content and byte-identical to
@@ -1871,7 +1871,7 @@ quoted_ledger="$TMP/ledger with quote'and space"
 export HARNESS_LEDGER="$quoted_ledger"
 : >"$HARNESS_LOG"
 assert_fails_with 'confirmation token is missing' run_gate --mode candidate-test \
-  --candidate "$quoted_candidate" --rollback-generation "$ROLLBACK" --gameplay-user "$GAMEPLAY_USER" --ledger "$quoted_ledger" \
+  --candidate "$quoted_candidate" --rollback-generation "$ROLLBACK" --runtime-user "$RUNTIME_USER" --ledger "$quoted_ledger" \
   --expected-controller-id "$CONTROLLER_ID" --production-profile "$PRODUCTION_PROFILE"
 grep -F "$(printf '%q' "$quoted_candidate")" "$HARNESS_LOG" >/dev/null
 assert_no_mutation
@@ -1910,12 +1910,12 @@ run_failure_model() {
 }
 run_failure_model topology HARNESS_TOPOLOGY_MODEL two 'modeled topology has two normalized targets'
 run_failure_model provenance HARNESS_PROVENANCE_MODEL invalid 'modeled target provenance/capability fingerprint is invalid'
-run_failure_model acl HARNESS_ACL_MODEL raw-readable 'modeled gameplay ACL exposes raw input'
+run_failure_model acl HARNESS_ACL_MODEL raw-readable 'modeled runtime-user ACL exposes raw input'
 run_failure_model same-name-raw HARNESS_TOPOLOGY_FIXTURE \
-  "$HERE/fixtures/topology-same-name-raw.txt" 'gameplay user can read 1 raw controller node'
+  "$HERE/fixtures/topology-same-name-raw.txt" 'runtime user can read 1 raw controller node'
 run_failure_model delegate HARNESS_DELEGATE no 'inputd Delegate is not enabled'
 run_failure_model delegate-controllers HARNESS_DELEGATE_CONTROLLERS cpu 'DelegateControllers does not contain pids'
-run_failure_model stale-manager HARNESS_STALE_MANAGER_CREDENTIALS yes 'fresh gameplay user manager retains forbidden group: input'
+run_failure_model stale-manager HARNESS_STALE_MANAGER_CREDENTIALS yes 'fresh runtime user manager retains forbidden group: input'
 for credential_failure in korrid-input korri-compositor-uinput sunshine-control inputd-input game-control korrid-sunshine-uinput inputd-control-primary; do
   run_failure_model "credentials-$credential_failure" HARNESS_CREDENTIAL_FAILURE "$credential_failure" \
     'modeled /proc Groups credential rejection'
@@ -2012,10 +2012,10 @@ missing_controller_ledger="$TMP/missing-controller-ledger"
 : >"$HARNESS_LOG"
 assert_fails_with 'require an explicit expected controller identity and production profile' run_gate \
   --mode persistent-switch --candidate "$CANDIDATE" --rollback-generation "$ROLLBACK" \
-  --gameplay-user "$GAMEPLAY_USER" --ledger "$missing_controller_ledger" --confirm "$confirm"
+  --runtime-user "$RUNTIME_USER" --ledger "$missing_controller_ledger" --confirm "$confirm"
 assert_no_mutation
 assert_fails_with 'unsupported production profile' run_gate --mode persistent-switch \
-  --candidate "$CANDIDATE" --rollback-generation "$ROLLBACK" --gameplay-user "$GAMEPLAY_USER" \
+  --candidate "$CANDIDATE" --rollback-generation "$ROLLBACK" --runtime-user "$RUNTIME_USER" \
   --ledger "$TMP/unsupported-profile-ledger" --expected-controller-id "$CONTROLLER_ID" \
   --production-profile default.yaml --confirm "$confirm"
 for controller_model in synthetic virtual unsupported stale generic-joystick two-matching; do
@@ -2336,9 +2336,9 @@ grep -Fx 'system.x11-headless.active=inactive' "$flow_ledger/baseline.predicates
 grep -Fx 'sunshine.pairing-state-modes=700:600' "$flow_ledger/baseline.predicates" >/dev/null
 grep -F 'pairing-modes=700:600' "$HARNESS_LOG" >/dev/null
 grep -Fx 'sunshine.pairing-state-present=true' "$flow_ledger/baseline.predicates" >/dev/null
-grep -F 'predicates-user=gameplay wrapper=attempt-command' "$HARNESS_LOG" >/dev/null
+grep -F 'predicates-user=korri wrapper=attempt-command' "$HARNESS_LOG" >/dev/null
 if grep -F 'predicates-user=root' "$HARNESS_LOG" >/dev/null; then
-  printf 'rollback comparison read root user-unit state instead of gameplay-user state\n' >&2
+  printf 'rollback comparison read root user-unit state instead of runtime-user state\n' >&2
   exit 1
 fi
 [[ "$(stat -c %a "$flow_ledger")" == 700 ]]

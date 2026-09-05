@@ -25,11 +25,11 @@ let
             fsType = "tmpfs";
           };
           networking.hostName = "consumer";
-          users.groups.games.gid = 1001;
-          users.users.gameplay = {
+          users.groups.korri.gid = 1000;
+          users.users.korri = {
             isNormalUser = true;
-            group = "games";
-            home = "/home/gameplay";
+            group = "korri";
+            home = "/home/korri";
           };
           services.korriBundle = {
             initialPackage = korriBundle;
@@ -42,10 +42,10 @@ let
           services.korridLinuxDevice.package = korridPackage;
           services.korriLinuxHost = {
             enable = true;
-            gameplayUser = "gameplay";
-            gameplayUid = 1001;
-            gameplayGroup = "games";
-            gameplayGid = 1001;
+            runtimeUser = "korri";
+            runtimeUid = 1000;
+            runtimeGroup = "korri";
+            runtimeGid = 1000;
             firewallInterfaces = [ "tailscale0" ];
             relays = [ "wss://relay.example.com" ];
             nativePeers = [
@@ -117,8 +117,8 @@ let
   kmsWithoutDrm = evaluate {
     services.korriLinuxHost.sunshine.capture = "kms";
   };
-  wrongGameplayUid = evaluate {
-    users.users.gameplay.uid = lib.mkForce 1002;
+  wrongRuntimeUid = evaluate {
+    users.users.korri.uid = lib.mkForce 1002;
   };
   stockSunshine = evaluate {
     services.korriLinuxHost.sunshine.package = lib.mkForce pkgs.sunshine;
@@ -138,13 +138,13 @@ let
     );
   };
   collidingIdentity = evaluate {
-    services.korriLinuxHost.serviceIdentities.inputdUid = lib.mkForce 1001;
+    services.korriLinuxHost.serviceIdentities.inputdUid = lib.mkForce 1000;
   };
   invalidLabel = evaluate {
     services.korriLinuxHost.label = "bad label";
   };
   wrongCertificateSocketGroup = evaluate {
-    systemd.sockets.korri-certificate-control.socketConfig.SocketGroup = lib.mkForce "games";
+    systemd.sockets.korri-certificate-control.socketConfig.SocketGroup = lib.mkForce "korri";
   };
   cfg = valid.config;
   inputd = cfg.systemd.services.korri-inputd;
@@ -218,7 +218,7 @@ assert lib.hasInfix "/bin/korri-bundle-launch input-seat-receiver"
   inputSeatReceiver.serviceConfig.ExecStart;
 assert lib.hasInfix "--control-uid 976" inputSeatReceiver.serviceConfig.ExecStart;
 assert lib.hasInfix "--control-gid 976" inputSeatReceiver.serviceConfig.ExecStart;
-assert lib.hasInfix "--sunshine-uid 1001" inputSeatReceiver.serviceConfig.ExecStart;
+assert lib.hasInfix "--sunshine-uid 1000" inputSeatReceiver.serviceConfig.ExecStart;
 assert lib.hasInfix "--sunshine-gid 980" inputSeatReceiver.serviceConfig.ExecStart;
 assert inputSeats.config.users.groups.korri-sunshine-input-seat.gid == 980;
 assert
@@ -281,11 +281,11 @@ assert
   && lib.hasInfix "/run/opengl-driver/lib/libnvidia-encode.so.1" script;
 assert
   nvenc.config.systemd.services.sunshine.serviceConfig.ExecStart
-  == "${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null encoder=nvenc";
+  == "${sunshinePackage}/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null encoder=nvenc";
 assert noRuntimeSettings.config.services.sunshine.package == sunshinePackage;
 assert
   noRuntimeSettings.config.systemd.services.sunshine.serviceConfig.ExecStart
-  == "${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null";
+  == "${sunshinePackage}/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null";
 assert
   !(builtins.hasAttr "SUNSHINE_LIVE_SETTINGS_MVP" noRuntimeSettings.config.systemd.services.sunshine.environment);
 assert cfg.hardware.graphics.enable;
@@ -294,7 +294,7 @@ assert
   || builtins.elem pkgs.intel-media-driver cfg.hardware.graphics.extraPackages;
 assert physicalSoftware.config.hardware.graphics.extraPackages == [ ];
 assert physicalSoftware.config.services.seatd.enable;
-assert !(builtins.elem "seat" physicalSoftware.config.users.users.gameplay.extraGroups);
+assert !(builtins.elem "seat" physicalSoftware.config.users.users.korri.extraGroups);
 assert builtins.elem "seat" physicalSoftwareCompositor.serviceConfig.SupplementaryGroups;
 assert !(builtins.elem "seat" physicalSoftwareSunshine.serviceConfig.SupplementaryGroups);
 assert !(builtins.elem "seat" compositor.serviceConfig.SupplementaryGroups);
@@ -317,7 +317,7 @@ assert !(builtins.hasAttr "LD_LIBRARY_PATH" physicalSoftwareSunshine.environment
 assert !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" physicalSoftwareSunshine.environment);
 assert
   physicalSoftwareSunshine.serviceConfig.ExecStart
-  == "/run/wrappers/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null capture=kms encoder=software";
+  == "/run/wrappers/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null capture=kms encoder=software";
 assert lib.hasInfix "DSI-1" physicalSoftwareReadiness;
 assert lib.hasInfix ".active == true" physicalSoftwareReadiness;
 assert lib.hasInfix ".rect.width == $width" physicalSoftwareReadiness;
@@ -328,13 +328,13 @@ assert cfg.users.groups.korri-control.gid == 977;
 assert cfg.users.users.korrid.uid == 976;
 assert cfg.users.groups.korrid.gid == 976;
 assert cfg.users.groups.korri-sunshine-uinput.gid == 979;
-assert builtins.elem "render" cfg.users.users.gameplay.extraGroups;
-assert builtins.elem "video" cfg.users.users.gameplay.extraGroups;
-assert !(builtins.elem "input" cfg.users.users.gameplay.extraGroups);
-assert !(builtins.elem "uinput" cfg.users.users.gameplay.extraGroups);
+assert builtins.elem "render" cfg.users.users.korri.extraGroups;
+assert builtins.elem "video" cfg.users.users.korri.extraGroups;
+assert !(builtins.elem "input" cfg.users.users.korri.extraGroups);
+assert !(builtins.elem "uinput" cfg.users.users.korri.extraGroups);
 assert inputd.serviceConfig.User == "korri-inputd";
 assert korrid.serviceConfig.User == "korrid";
-assert korrid.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/gameplay/.config/sunshine";
+assert korrid.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert korrid.environment.KORRID_RELAYS == ''["wss://relay.example.com"]'';
 assert
   korrid.environment.KORRID_UPSTREAMS
@@ -345,20 +345,20 @@ assert
 assert korrid.environment.KORRID_SUNSHINE_CERTIFICATE_CONTROL_GID == "976";
 assert korrid.environment.KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_UID == "0";
 assert korrid.environment.KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_GID == "0";
-assert cfg.services.korridLinuxDevice.sunshinePrivateStateRoot == "/home/gameplay/.config/sunshine";
+assert cfg.services.korridLinuxDevice.sunshinePrivateStateRoot == "/home/korri/.config/sunshine";
 assert cfg.services.korridLinuxDevice.relays == [ "wss://relay.example.com" ];
 assert cfg.services.korridLinuxDevice.nativePeers == cfg.services.korriLinuxHost.nativePeers;
 assert
   cfg.systemd.services.korrid-identity.serviceConfig.ExecStart
   == "${inputdPackage}/bin/korri-bundle-launch korrid identity status";
 assert builtins.elem "/var/lib/korrid" korrid.serviceConfig.ReadWritePaths;
-assert sunshine.serviceConfig.User == "gameplay";
-assert sunshine.serviceConfig.WorkingDirectory == "/home/gameplay";
+assert sunshine.serviceConfig.User == "korri";
+assert sunshine.serviceConfig.WorkingDirectory == "/home/korri";
 assert sunshine.environment.DISPLAY == ":0";
 assert sunshine.environment.WAYLAND_DISPLAY == "korri-wayland";
-assert sunshine.environment.XDG_RUNTIME_DIR == "/run/user/1001";
-assert sunshine.environment.HOME == "/home/gameplay";
-assert sunshine.environment.XDG_CONFIG_HOME == "/home/gameplay/.config";
+assert sunshine.environment.XDG_RUNTIME_DIR == "/run/user/1000";
+assert sunshine.environment.HOME == "/home/korri";
+assert sunshine.environment.XDG_CONFIG_HOME == "/home/korri/.config";
 assert sunshine.environment.KORRI_CERTIFICATE_CONTROL_UID == "976";
 assert sunshine.environment.KORRI_CERTIFICATE_CONTROL_GID == "976";
 assert sunshine.environment.KORRI_CERTIFICATE_CONTROL_OWNER_GID == "976";
@@ -386,18 +386,17 @@ assert builtins.elem "korri-certificate-control.socket" sunshine.after;
 assert sunshine.serviceConfig.Sockets == [ "korri-certificate-control.socket" ];
 assert builtins.elem "d /run/korri-certificate-control 0751 root korrid -"
   cfg.systemd.tmpfiles.rules;
-assert builtins.elem "d /home/gameplay/.config 0700 gameplay games -" cfg.systemd.tmpfiles.rules;
-assert builtins.elem "d /home/gameplay/.config/sunshine 0700 gameplay games -"
-  cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /home/korri/.config 0700 korri korri -" cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /home/korri/.config/sunshine 0700 korri korri -" cfg.systemd.tmpfiles.rules;
 assert
   sunshine.serviceConfig.ExecStart
-  == "${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null";
+  == "${sunshinePackage}/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null";
 assert sunshine.serviceConfig.PrivatePIDs;
 assert sunshine.serviceConfig.ProtectSystem == "strict";
 assert sunshine.serviceConfig.ProtectHome == "read-only";
-assert builtins.elem "/home/gameplay/.config/sunshine" sunshine.serviceConfig.ReadWritePaths;
+assert builtins.elem "/home/korri/.config/sunshine" sunshine.serviceConfig.ReadWritePaths;
 assert !(cfg.systemd.services ? x11-headless);
-assert compositor.serviceConfig.User == "gameplay";
+assert compositor.serviceConfig.User == "korri";
 assert compositor.environment.WLR_BACKENDS == "headless";
 assert compositor.environment.WLR_RENDERER == "gles2";
 assert pixman.config.systemd.services.korri-compositor.environment.WLR_RENDERER == "pixman";
@@ -416,8 +415,8 @@ assert !(builtins.hasAttr "LD_LIBRARY_PATH" vaapiCompositor.environment);
 assert compositor.serviceConfig.PrivateDevices == false;
 assert compositor.serviceConfig.ProtectHome == "read-only";
 assert compositor.serviceConfig.RuntimeDirectory == "korri-compositor";
-assert builtins.elem "user-runtime-dir@1001.service" compositor.requires;
-assert builtins.elem "user@1001.service" compositor.requires;
+assert builtins.elem "user-runtime-dir@1000.service" compositor.requires;
+assert builtins.elem "user@1000.service" compositor.requires;
 assert builtins.elem "korrid.service" compositor.wants;
 assert builtins.elem "sunshine.service" compositor.wants;
 assert builtins.elem "korri-compositor.service" korrid.bindsTo;
@@ -451,15 +450,15 @@ assert
 assert cfg.services.korridLinuxDevice.compositorControlDirectory == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
 assert noValidation.config.services.korriLinuxInput.inputd.actions == { };
-assert hasFailedAssertion "gameplay identity" wrongGameplayUid;
-assert evaluationRejected wrongGameplayUid;
+assert hasFailedAssertion "runtime identity" wrongRuntimeUid;
+assert evaluationRejected wrongRuntimeUid;
 assert hasFailedAssertion "exact approved sunshine-korri" stockSunshine;
 assert evaluationRejected stockSunshine;
 assert hasFailedAssertion "exact approved sunshine-korri" lookalikeSunshine;
 assert evaluationRejected lookalikeSunshine;
 assert hasFailedAssertion "exact approved sunshine-korri" strippedApprovedSunshine;
 assert evaluationRejected strippedApprovedSunshine;
-assert hasFailedAssertion "differ from the gameplay identity" collidingIdentity;
+assert hasFailedAssertion "differ from the runtime identity" collidingIdentity;
 assert evaluationRejected invalidLabel;
 assert hasFailedAssertion "certificate-control socket inode ownership" wrongCertificateSocketGroup;
 assert evaluationRejected wrongCertificateSocketGroup;
@@ -545,10 +544,10 @@ pkgs.runCommand "korri-linux-host-module-check" { } ''
       test "$(cat "$profile_test/min")" = 16
       test "$(cat "$profile_test/max")" = 100
     ''}
-    grep -Fx '${sunshinePackage}/bin/sunshine /home/gameplay/.config/sunshine/sunshine.conf log_path=/dev/null' ${sunshineExec} >/dev/null
+    grep -Fx '${sunshinePackage}/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null' ${sunshineExec} >/dev/null
     grep -F 'TAG-="uaccess"' ${udevRules} >/dev/null
     grep -F 'ATTRS{name}=="Korri Seat P[1-4]"' ${inputSeatUdevRules} >/dev/null
-    grep -F 'GROUP="games"' ${inputSeatUdevRules} >/dev/null
+    grep -F 'GROUP="korri"' ${inputSeatUdevRules} >/dev/null
     grep -F 'MODE="0660"' ${inputSeatUdevRules} >/dev/null
 
     compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${compositorExec} | head -n1)"
