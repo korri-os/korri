@@ -51,6 +51,9 @@
 @import "./ui/organisms/PicoModal.css";
 @import "./ui/organisms/PicoSettingsPanel.css";
 @import "./ui/templates/PicoPanelScreen.css";
+@import "./ui/molecules/PicoControlRow.css";
+@import "./ui/organisms/PicoPauseMenu.css";
+@import "./ui/templates/PicoGameOverlay.css";
 
 @font-face {
 	font-family: "Press Start 2P";

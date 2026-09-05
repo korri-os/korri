@@ -1,0 +1,30 @@
+.pico-game-overlay {
+	position: relative;
+	display: grid;
+	grid-template-rows: minmax(0, 1fr) auto;
+	height: 100%;
+}
+
+.pico-game-overlay-pause {
+	min-height: 0;
+	display: grid;
+	place-items: center;
+	padding: var(--pico-space-2);
+	/* Legacy's 62% black over the game: dark enough that the menu is what the
+	 * eye lands on, light enough that the game is visibly still there. */
+	background: color-mix(in srgb, var(--pico-cast-shadow) 62%, transparent);
+}
+
+.pico-game-overlay-panel {
+	display: flex;
+	flex-direction: column;
+	gap: var(--pico-space-2);
+	width: min(82cqw, 100%);
+	max-height: 100%;
+	padding: var(--pico-space-3);
+	overflow-y: auto;
+	background: var(--pico-chrome);
+	border: calc(var(--pico-edge) * 1.5) solid var(--pico-chrome-edge);
+	box-shadow: calc(var(--pico-edge) * 3) calc(var(--pico-edge) * 3) 0 var(--pico-cast-shadow);
+	animation: pico-rise 240ms steps(3, end) both;
+}

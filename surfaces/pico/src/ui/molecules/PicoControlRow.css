@@ -1,0 +1,63 @@
+.pico-control-row-item {
+	display: flex;
+	flex-direction: column;
+	list-style: none;
+}
+
+.pico-control-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pico-space-2);
+	width: 100%;
+	padding: var(--pico-space-1);
+	font: inherit;
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text);
+	color: var(--pico-ink);
+	text-align: left;
+	background: transparent;
+	border: none;
+	cursor: pointer;
+}
+
+.pico-control-row:disabled {
+	color: var(--pico-ink-dim);
+	cursor: default;
+}
+
+.pico-control-row[data-destructive] {
+	color: var(--pico-warn);
+}
+
+/* Legacy's in-game menu: the selected item is black on accent. */
+.pico-control-row:focus-visible {
+	outline: none;
+	background: var(--pico-accent);
+	color: var(--pico-cast-shadow);
+}
+
+.pico-control-row:focus-visible .pico-control-row-state {
+	color: var(--pico-cast-shadow);
+}
+
+.pico-control-row-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pico-control-row-state {
+	flex: 0 0 auto;
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-xs);
+	color: var(--pico-accent);
+}
+
+.pico-control-row-reason {
+	margin: 0;
+	padding: 0 var(--pico-space-1) calc(var(--pico-space-1) / 2);
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+}

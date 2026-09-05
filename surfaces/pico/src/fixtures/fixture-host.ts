@@ -7,6 +7,7 @@
  * the fixture — has to change.
  */
 import type {
+  SurfaceGameplayOverlayPresentation,
   SurfaceAction,
   SurfaceHost,
   SurfaceInputAction,
@@ -59,8 +60,12 @@ export function createFixtureHost(): FixtureHost {
     runGameAction(gameId, actionId) {
       calls.push(`gameAction:${gameId}:${actionId}`)
     },
-    invokeGameplayControl(controlId) {
-      calls.push(`gameplayControl:${controlId}`)
+    invokeGameplayControl(controlId, value) {
+      calls.push(
+        value === undefined
+          ? `gameplayControl:${controlId}`
+          : `gameplayControl:${controlId}:${value.kind}:${String(value.value)}`,
+      )
     },
     dismissGameplayOverlay() {
       calls.push("dismissGameplayOverlay")
@@ -83,6 +88,92 @@ export function createFixtureHost(): FixtureHost {
  * screen has to hold at once, so a preview shows the awkward cases rather than
  * a tidy row that proves nothing.
  */
+/**
+ * A gameplay overlay as korrid publishes one: Korri's own Resume first, then a
+ * plugin's group carrying every interaction kind the treaty allows, one of them
+ * disabled with a reason, one destructive. Everything the overlay must draw.
+ */
+export const fixtureOverlay: SurfaceGameplayOverlayPresentation = {
+  kind: "gameplay-overlay",
+  title: "Hollow Knight",
+  controls: [
+    {
+      id: "resume",
+      label: "Continue playing",
+      enabled: true,
+      destructive: false,
+      dismissOnSuccess: true,
+      interaction: { kind: "command" },
+    },
+    {
+      id: "quit",
+      label: "Quit game",
+      description: "Unsaved progress is lost.",
+      enabled: true,
+      destructive: true,
+      dismissOnSuccess: true,
+      interaction: { kind: "command" },
+    },
+  ],
+  groups: [
+    {
+      id: "mgba",
+      label: "mGBA",
+      controls: [
+        {
+          id: "save",
+          label: "Save state",
+          enabled: true,
+          destructive: false,
+          dismissOnSuccess: false,
+          interaction: { kind: "command" },
+        },
+        {
+          id: "load",
+          label: "Load state",
+          enabled: false,
+          disabledReason: "No save yet",
+          destructive: false,
+          dismissOnSuccess: true,
+          interaction: { kind: "command" },
+        },
+        {
+          id: "ff",
+          label: "Fast forward",
+          enabled: true,
+          destructive: false,
+          dismissOnSuccess: false,
+          interaction: { kind: "toggle", value: false, trueLabel: "On", falseLabel: "Off" },
+        },
+        {
+          id: "shader",
+          label: "Shader",
+          enabled: true,
+          destructive: false,
+          dismissOnSuccess: false,
+          interaction: {
+            kind: "choice",
+            value: "none",
+            options: [
+              { value: "none", label: "None" },
+              { value: "crt", label: "CRT" },
+              { value: "lcd", label: "LCD" },
+            ],
+          },
+        },
+        {
+          id: "vol",
+          label: "Volume",
+          enabled: true,
+          destructive: false,
+          dismissOnSuccess: false,
+          interaction: { kind: "range", value: 80, min: 0, max: 100, step: 10 },
+        },
+      ],
+    },
+  ],
+}
+
 export const fixtureModel: SurfaceModel = {
   presentation: { kind: "catalog" },
   catalog: {

@@ -32,13 +32,26 @@ describe("the surface registry", () => {
     expect(portalSurfaceFor("catalog", "shift").id).toBe("shift")
   })
 
-  test("falls back rather than rendering a surface that has no overlay", () => {
-    // Pico presents the catalog only. Drawing nothing over a live game would
-    // take the device away from the user with no way back.
-    expect(portalSurfaceById("pico")?.presentations).not.toContain(
+  test("keeps a themed surface for its own overlay", () => {
+    // Pico serves both presentations now, so a paused game stays in the theme
+    // the user chose instead of handing the screen to another surface.
+    expect(portalSurfaceById("pico")?.presentations).toContain(
       "gameplay-overlay",
     )
-    expect(portalSurfaceFor("gameplay-overlay", "pico").id).toBe(
+    expect(portalSurfaceFor("gameplay-overlay", "pico").id).toBe("pico")
+  })
+
+  test("still falls back for a surface that does not serve a presentation", () => {
+    // The rule itself, proven without depending on which surfaces exist:
+    // drawing nothing over a live game would take the device away with no way
+    // back, so an unserved presentation always goes to the default.
+    const partial = {
+      id: "catalog-only",
+      title: "Catalog only",
+      presentations: ["catalog"] as const,
+    }
+    expect(partial.presentations).not.toContain("gameplay-overlay")
+    expect(portalSurfaceFor("gameplay-overlay", partial.id).id).toBe(
       DEFAULT_SURFACE_ID,
     )
   })

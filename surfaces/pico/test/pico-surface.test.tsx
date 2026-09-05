@@ -316,20 +316,22 @@ describe("the Back button", () => {
 })
 
 describe("presentations Pico does not implement", () => {
-  test("draws nothing over a running game rather than the library", () => {
-    const { container } = render(
+  test("serves the gameplay overlay rather than falling back to another surface", () => {
+    render(
       <PicoSurface
         host={createFixtureHost()}
         model={model({
           presentation: {
             kind: "gameplay-overlay",
-            controls: [],
+            title: "Hollow Knight",
+            controls: [{ id: "resume", label: "Continue playing", enabled: true, destructive: false, dismissOnSuccess: true, interaction: { kind: "command" } }],
             groups: [],
           },
         })}
       />,
     )
 
-    expect(container.innerHTML).toBe("")
+    expect(screen.getByRole("dialog", { name: /Hollow Knight/ })).toBeTruthy()
+    expect(screen.queryByText("PICO ▸ LIBRARY")).toBeNull()
   })
 })

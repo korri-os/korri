@@ -41,7 +41,7 @@ export const PORTAL_SURFACES: readonly PortalSurface[] = [
   {
     id: "pico",
     title: "Pico",
-    presentations: ["catalog"],
+    presentations: ["catalog", "gameplay-overlay"],
     render: ({ model, host }) => <PicoSurface host={host} model={model} />,
   },
 ]

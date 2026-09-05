@@ -1,9 +1,15 @@
-import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
+import type {
+  SurfaceGameplayOverlayPresentation,
+  SurfaceHost,
+  SurfaceModel,
+} from "@contracts/surface/korri-surface"
 import { useEffect, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoHome } from "./pages/PicoHome"
+import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
 import { picoDetailViewFromGame } from "./pico-detail-view"
+import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
@@ -20,11 +26,86 @@ import type { PicoShelfGame } from "./pico-shelf-game"
  * because Back has to be able to withdraw the question, and Back arrives
  * through the host.
  *
- * The gameplay overlay is not implemented yet, and this renders nothing for it
- * on purpose: drawing the library on top of a running game would be worse than
- * drawing nothing, and inventing a menu Pico cannot drive would be worse still.
+ * The two presentations are two components with nothing in common but the
+ * theme: a pause menu over a running game shares no state with a library, and
+ * one component holding both would have to guard every hook against the other.
  */
 export function PicoSurface({
+  model,
+  host,
+}: {
+  readonly model: SurfaceModel
+  readonly host: SurfaceHost
+}) {
+  // `intrinsic` is not decoration: the recipe derives the whole scale at
+  // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
+  // when the same element carries both does the derivation read Pico's floor,
+  // anchor, ratio and whole-pixel snap instead of the package's defaults.
+  return (
+    <div className="intrinsic pico-theme pico-screen">
+      {model.presentation.kind === "gameplay-overlay" ? (
+        <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
+      ) : (
+        <PicoCatalogSurface host={host} model={model} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Over a running game. Back, Menu and System all dismiss — legacy bound RESUME
+ * to B, and the host's menu and system buttons are how the overlay was opened,
+ * so pressing either again closes it. A destructive control asks first, and
+ * Back withdraws that question before it dismisses anything.
+ */
+function PicoOverlaySurface({
+  model,
+  host,
+  presentation,
+}: {
+  readonly model: SurfaceModel
+  readonly host: SurfaceHost
+  readonly presentation: SurfaceGameplayOverlayPresentation
+}) {
+  const [asking, setAsking] = useState<PicoOverlayControlView | undefined>(undefined)
+
+  useEffect(() => {
+    const dismiss = () => host.dismissGameplayOverlay()
+    const offBack = host.input.on("back", () => {
+      setAsking((question) => {
+        if (question === undefined) dismiss()
+        return undefined
+      })
+    })
+    const offMenu = host.input.on("menu", dismiss)
+    const offSystem = host.input.on("system", dismiss)
+    return () => {
+      offBack()
+      offMenu()
+      offSystem()
+    }
+  }, [host])
+
+  const invoke = (control: PicoOverlayControlView) =>
+    host.invokeGameplayControl(control.id, control.sends)
+
+  return (
+    <PicoOverlay
+      asking={asking}
+      onAsk={setAsking}
+      onCancel={() => setAsking(undefined)}
+      onConfirm={() => {
+        if (asking !== undefined) invoke(asking)
+        setAsking(undefined)
+      }}
+      onInvoke={invoke}
+      onRetry={() => host.retry()}
+      overlay={picoOverlayViewFrom(presentation, model.status)}
+    />
+  )
+}
+
+function PicoCatalogSurface({
   model,
   host,
 }: {
@@ -76,8 +157,6 @@ export function PicoSurface({
     }
   }, [host, model.status._tag])
 
-  if (model.presentation.kind !== "catalog") return null
-
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
       ? view.games.find((candidate) => candidate.id === gameId)
@@ -104,14 +183,10 @@ export function PicoSurface({
     setPlacing(undefined)
   }
 
-  // `intrinsic` is not decoration: the recipe derives the whole scale at
-  // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
-  // when the same element carries both does the derivation read Pico's floor,
-  // anchor, ratio and whole-pixel snap instead of the package's defaults.
   const settings = settingsOpen && view._tag !== "Busy" && view._tag !== "Running"
 
   return (
-    <div className="intrinsic pico-theme pico-screen">
+    <>
       {settings ? (
         <PicoSettings
           asking={asking}
@@ -146,6 +221,6 @@ export function PicoSurface({
           view={view}
         />
       )}
-    </div>
+    </>
   )
 }
