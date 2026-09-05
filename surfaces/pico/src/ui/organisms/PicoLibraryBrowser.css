@@ -1,0 +1,72 @@
+.pico-library-browser {
+	position: relative;
+	z-index: 1;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: var(--pico-space-2);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-space-2);
+}
+
+.pico-library-browser-find {
+	display: flex;
+	flex-direction: column;
+	gap: var(--pico-space-1);
+	min-width: 0;
+}
+
+.pico-library-browser-collections {
+	display: flex;
+	flex-wrap: wrap;
+	gap: calc(var(--pico-space-1) / 2);
+}
+
+.pico-library-browser-results {
+	min-height: 0;
+	overflow-y: auto;
+	border-left: var(--pico-edge) solid var(--pico-chrome-edge);
+	padding-left: var(--pico-space-1);
+}
+
+.pico-library-browser-list {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pico-library-browser-empty {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--pico-space-1) / 2);
+	margin: 0;
+	padding: var(--pico-space-1);
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+}
+
+.pico-library-browser-empty-kicker {
+	font-family: var(--pico-font-display);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-accent);
+	letter-spacing: 0.125em;
+}
+
+/* A tall, narrow screen has no room for two columns of this density: the
+ * keyboard needs the width more than the results need to be beside it. */
+@container (max-aspect-ratio: 1 / 1) {
+	.pico-library-browser {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+
+	.pico-library-browser-results {
+		border-left: none;
+		border-top: var(--pico-edge) solid var(--pico-chrome-edge);
+		padding-left: 0;
+		padding-top: var(--pico-space-1);
+	}
+}

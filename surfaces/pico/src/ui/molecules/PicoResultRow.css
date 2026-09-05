@@ -1,0 +1,48 @@
+.pico-result-row-item {
+	list-style: none;
+}
+
+.pico-result-row {
+	display: flex;
+	align-items: baseline;
+	gap: var(--pico-space-1);
+	width: 100%;
+	padding: calc(var(--pico-space-1) / 2) var(--pico-space-1);
+	font: inherit;
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text);
+	color: var(--pico-ink);
+	text-align: left;
+	background: transparent;
+	border: none;
+	cursor: pointer;
+}
+
+.pico-result-row:focus-visible {
+	outline: none;
+	background: var(--pico-accent);
+	color: var(--pico-cast-shadow);
+}
+
+.pico-result-row:focus-visible .pico-result-row-meta,
+.pico-result-row:focus-visible .pico-result-row-mark {
+	color: var(--pico-cast-shadow);
+}
+
+.pico-result-row-mark {
+	flex: 0 0 auto;
+	color: var(--pico-accent);
+}
+
+.pico-result-row-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pico-result-row-meta {
+	margin-left: auto;
+	flex: 0 0 auto;
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+}

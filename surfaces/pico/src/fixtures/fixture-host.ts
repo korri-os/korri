@@ -181,11 +181,13 @@ export const fixtureModel: SurfaceModel = {
     games: [
       {
         id: "celeste",
+        section: "Continue",
         title: "Celeste Classic",
         subtitle: "PICO-8 · This device",
       },
       {
         id: "hollow",
+        section: "Continue",
         title: "Hollow Knight",
         subtitle: "Switch · This device",
         resumable: true,
@@ -195,6 +197,7 @@ export const fixtureModel: SurfaceModel = {
       },
       {
         id: "tetris",
+        section: "zao",
         title: "Tetris",
         subtitle: "GB · zao",
         launchLocations: [
@@ -204,6 +207,7 @@ export const fixtureModel: SurfaceModel = {
       },
       {
         id: "spelunky",
+        section: "This device",
         title: "Spelunky",
         subtitle: "PC · This device",
       },

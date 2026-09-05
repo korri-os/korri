@@ -1,0 +1,11 @@
+.pico-keyboard {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--pico-space-1) / 2);
+}
+
+.pico-keyboard-row {
+	display: flex;
+	justify-content: center;
+	gap: calc(var(--pico-space-1) / 2);
+}

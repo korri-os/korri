@@ -1,0 +1,23 @@
+.pico-chip {
+	display: inline-flex;
+	align-items: center;
+	padding: calc(var(--pico-space-1) / 2) var(--pico-space-1);
+	font-family: var(--pico-font-term);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+	background: transparent;
+	border: var(--pico-edge) solid var(--pico-chrome-edge);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.pico-chip[aria-pressed="true"] {
+	color: var(--pico-cast-shadow);
+	background: var(--pico-accent);
+	border-color: var(--pico-accent);
+}
+
+.pico-chip:focus-visible {
+	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
+	outline-offset: var(--pico-edge);
+}

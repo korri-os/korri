@@ -6,9 +6,11 @@ import type {
 import { useEffect, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoHome } from "./pages/PicoHome"
+import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
 import { picoDetailViewFromGame } from "./pico-detail-view"
+import { PICO_ALL_SECTIONS, picoLibraryViewFrom } from "./pico-library-view"
 import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
@@ -118,6 +120,12 @@ function PicoCatalogSurface({
    * screen shows — a copy taken on open would show the game as it was. */
   const [viewingId, setViewingId] = useState<string | undefined>(undefined)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /* Finding a game: what has been typed and which collection is chosen. Both
+   * live here so Back can close the whole screen in one press rather than
+   * unwinding a query letter by letter. */
+  const [finding, setFinding] = useState(false)
+  const [query, setQuery] = useState("")
+  const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
   const [asking, setAsking] = useState<
     { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
@@ -136,10 +144,14 @@ function PicoCatalogSurface({
           if (current !== undefined) return undefined
           setSettingsOpen((open) => {
             if (open) return false
-            setViewingId((viewing) => {
-              if (viewing !== undefined) return undefined
-              if (model.status._tag === "Problem") host.dismiss()
-              return viewing
+            setFinding((searching) => {
+              if (searching) return false
+              setViewingId((viewing) => {
+                if (viewing !== undefined) return undefined
+                if (model.status._tag === "Problem") host.dismiss()
+                return viewing
+              })
+              return searching
             })
             return open
           })
@@ -151,9 +163,13 @@ function PicoCatalogSurface({
     const offSystem = host.input.on("system", () => {
       setSettingsOpen((open) => !open)
     })
+    const offOptions = host.input.on("options", () => {
+      setFinding((open) => !open)
+    })
     return () => {
       offBack()
       offSystem()
+      offOptions()
     }
   }, [host, model.status._tag])
 
@@ -183,7 +199,10 @@ function PicoCatalogSurface({
     setPlacing(undefined)
   }
 
-  const settings = settingsOpen && view._tag !== "Busy" && view._tag !== "Running"
+  /* Status still outranks every screen the surface owns: while Korri is
+   * starting or running a game, that is the truth about this device. */
+  const quiet = view._tag !== "Busy" && view._tag !== "Running"
+  const settings = settingsOpen && quiet
 
   return (
     <>
@@ -201,6 +220,17 @@ function PicoCatalogSurface({
           onDismissProblem={() => host.dismissSettingsProblem()}
           onRun={(actionId) => host.runAction(actionId)}
           settings={picoSettingsViewFromModel(model)}
+        />
+      ) : finding && quiet && viewing === undefined ? (
+        <PicoLibrary
+          clockLabel={model.clockLabel}
+          library={picoLibraryViewFrom(model.catalog, query, section)}
+          onBackspace={() => setQuery((current) => current.slice(0, -1))}
+          onClear={() => setQuery("")}
+          onOpen={setViewingId}
+          onSection={setSection}
+          onType={(character) => setQuery((current) => current + character)}
+          section={section}
         />
       ) : viewing !== undefined ? (
         <PicoGameDetail
