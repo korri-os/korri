@@ -24,8 +24,11 @@ mod game_assets;
 pub mod identity;
 pub mod identity_cli;
 mod peer_rpc;
+pub mod play_log;
 pub mod relay;
 pub mod remote_signer;
+
+pub use play_log::{PlayEntry, PlayLog, PlayStats};
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
@@ -59,6 +62,8 @@ pub struct Game {
     pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<GameIdentity>,
+    #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
+    pub play_stats: Option<PlayStats>,
 }
 
 #[typeshare]
@@ -1116,6 +1121,13 @@ enum NativePlatform {
 type RetroarchControlAuthority = Arc<launcher::retroarch_control::RetroarchControlAuthority>;
 type RetroarchControlSlot = Arc<Mutex<Option<RetroarchControlAuthority>>>;
 
+#[derive(Clone, Debug)]
+struct TrackedActiveLaunch {
+    launch: launcher::AndroidActiveLaunch,
+    started_at: std::time::Instant,
+    started_epoch_seconds: u64,
+}
+
 #[derive(Clone)]
 struct BrainRuntime {
     upstream: upstreams::UpstreamRegistry,
@@ -1125,7 +1137,7 @@ struct BrainRuntime {
     local_launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: RetroarchControlSlot,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     native_platform: NativePlatform,
@@ -1163,8 +1175,9 @@ fn active_session_conflict() -> RpcFailure {
     }
 }
 
-fn uses_retroarch_control(active: &launcher::AndroidActiveLaunch) -> bool {
-    active
+fn uses_retroarch_control(tracked: &TrackedActiveLaunch) -> bool {
+    tracked
+        .launch
         .executor
         .as_ref()
         .is_some_and(|executor| executor.id == "retroarch-control")
@@ -1477,7 +1490,7 @@ enum MaterializedSessionExecutor {
 }
 
 fn materialize_session_controls_snapshot(
-    active_android_launch: &Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: &Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: &RetroarchControlSlot,
     moonlight_executor_state: &Arc<Mutex<Option<MoonlightExecutorState>>>,
     config_snapshot: &config::snapshot::ConfigSnapshotCoordinator,
@@ -1491,11 +1504,12 @@ fn materialize_session_controls_snapshot(
     ),
     SessionControlFailure,
 > {
-    let active = active_android_launch
+    let tracked = active_android_launch
         .lock()
         .expect("active Android launch mutex poisoned")
         .clone()
         .ok_or_else(stale_session_control)?;
+    let active = tracked.launch;
     if active.launch_id != launch_id {
         return Err(stale_session_control());
     }
@@ -1697,7 +1711,7 @@ fn materialize_session_controls_snapshot(
 }
 
 async fn materialize_session_controls(
-    active_android_launch: &Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: &Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: &RetroarchControlSlot,
     moonlight_executor_state: &Arc<Mutex<Option<MoonlightExecutorState>>>,
     config_snapshot: &config::snapshot::ConfigSnapshotCoordinator,
@@ -1737,7 +1751,7 @@ async fn materialize_session_controls(
         .lock()
         .expect("RetroArch control authority mutex poisoned")
         .clone();
-    if current.as_ref() != Some(&candidate.0)
+    if current.as_ref().map(|t| &t.launch) != Some(&candidate.0)
         || current_authority
             .as_ref()
             .is_none_or(|current| !Arc::ptr_eq(current, &authority))
@@ -1761,7 +1775,8 @@ async fn materialize_session_controls(
 }
 
 fn retire_exact_retroarch_launch(
-    active_android_launch: &Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    private_state_root: &Path,
+    active_android_launch: &Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: &RetroarchControlSlot,
     expected_launch: &launcher::AndroidActiveLaunch,
     expected_authority: &RetroarchControlAuthority,
@@ -1774,15 +1789,28 @@ fn retire_exact_retroarch_launch(
     let mut authority = retroarch_control_authority
         .lock()
         .expect("RetroArch control authority mutex poisoned");
-    if active.as_ref() != Some(expected_launch)
+    if active.as_ref().map(|t| &t.launch) != Some(expected_launch)
         || authority
             .as_ref()
             .is_none_or(|current| !Arc::ptr_eq(current, expected_authority))
     {
         return false;
     }
-    *active = None;
+    let tracked = active.take();
     *authority = None;
+    drop(active);
+    if let Some(tracked) = tracked {
+        if let Some(game_id) = &tracked.launch.game_id {
+            let duration_seconds = tracked.started_at.elapsed().as_secs();
+            let occurred_at = play_log::format_iso8601_utc(
+                tracked
+                    .started_epoch_seconds
+                    .saturating_add(duration_seconds),
+            );
+            let repo = play_log::PlayLogRepository::new(private_state_root);
+            let _ = repo.record_session(game_id, &occurred_at, duration_seconds, None);
+        }
+    }
     true
 }
 
@@ -1880,6 +1908,7 @@ async fn invoke_current_session_control(
             }
             if command == launcher::retroarch_control::RetroarchControlCommand::Quit {
                 if !retire_exact_retroarch_launch(
+                    &brain.private_state_root,
                     &brain.active_android_launch,
                     &brain.retroarch_control_authority,
                     &current,
@@ -1899,7 +1928,7 @@ async fn invoke_current_session_control(
                     .expect("RetroArch control authority mutex poisoned")
                     .clone()
                     .is_some_and(|current_authority| Arc::ptr_eq(&current_authority, &authority));
-                if active.as_ref() != Some(&current) || !exact_authority {
+                if active.as_ref().map(|t| &t.launch) != Some(&current) || !exact_authority {
                     return SessionControlInvokeOutcome::Err(session_route_context_unavailable());
                 }
             }
@@ -2304,7 +2333,8 @@ async fn dispatch(
                 let active_retroarch = active
                     .as_ref()
                     .filter(|active| uses_retroarch_control(active));
-                let decision = if let Some(expected_active) = active_retroarch {
+                let decision = if let Some(expected_tracked) = active_retroarch {
+                    let expected_active = &expected_tracked.launch;
                     let authority = brain
                         .retroarch_control_authority
                         .lock()
@@ -2348,7 +2378,8 @@ async fn dispatch(
                                     .lock()
                                     .expect("RetroArch control authority mutex poisoned")
                                     .clone();
-                                let still_exact = current_active.as_ref() == Some(expected_active)
+                                let still_exact = current_active.as_ref().map(|t| &t.launch)
+                                    == Some(expected_active)
                                     && current_authority.as_ref().is_some_and(|current| {
                                         Arc::ptr_eq(current, expected_authority)
                                     });
@@ -2852,7 +2883,7 @@ fn router_with_capability_local_root_and_provision(
     local_launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: RetroarchControlSlot,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     native_platform: NativePlatform,
@@ -2886,7 +2917,7 @@ fn router_with_capability_local_root_provision_and_grants(
     local_launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: RetroarchControlSlot,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     native_platform: NativePlatform,
@@ -3118,7 +3149,7 @@ struct ServerHandle {
     private_state_root: PathBuf,
     launch_signing_key: Vec<u8>,
     local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    active_android_launch: Arc<Mutex<Option<launcher::AndroidActiveLaunch>>>,
+    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     retroarch_control_authority: RetroarchControlSlot,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     platform_instruction_verifier: Option<launcher::PlatformInstructionVerifier>,
@@ -3457,16 +3488,25 @@ fn publish_verified_android_launch(
         .lock()
         .expect("active Android launch mutex poisoned")
         .as_ref()
-        .is_some_and(|active| active.launch_id == launch.launch_id);
+        .is_some_and(|active| active.launch.launch_id == launch.launch_id);
     if !same_launch {
         server.platform_instruction_verifier = Some(launcher::PlatformInstructionVerifier::new(
             launch.launch_id.clone(),
         ));
     }
+    let now_instant = std::time::Instant::now();
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     *server
         .active_android_launch
         .lock()
-        .expect("active Android launch mutex poisoned") = Some(launch.clone());
+        .expect("active Android launch mutex poisoned") = Some(TrackedActiveLaunch {
+        launch: launch.clone(),
+        started_at: now_instant,
+        started_epoch_seconds: now_epoch,
+    });
     launch
 }
 
@@ -3568,7 +3608,8 @@ pub fn active_android_launch() -> Option<launcher::AndroidActiveLaunch> {
                 .active_android_launch
                 .lock()
                 .expect("active Android launch mutex poisoned")
-                .clone()
+                .as_ref()
+                .map(|tracked| tracked.launch.clone())
         })
 }
 
@@ -3584,12 +3625,24 @@ pub fn clear_active_android_launch(launch_id: &str) -> bool {
         .expect("active Android launch mutex poisoned");
     if active
         .as_ref()
-        .is_none_or(|current| current.launch_id != launch_id)
+        .is_none_or(|current| current.launch.launch_id != launch_id)
     {
         return false;
     }
-    *active = None;
+    let tracked = active.take();
     drop(active);
+    if let Some(tracked) = tracked {
+        if let Some(game_id) = &tracked.launch.game_id {
+            let duration_seconds = tracked.started_at.elapsed().as_secs();
+            let occurred_at = play_log::format_iso8601_utc(
+                tracked
+                    .started_epoch_seconds
+                    .saturating_add(duration_seconds),
+            );
+            let repo = play_log::PlayLogRepository::new(&server.private_state_root);
+            let _ = repo.record_session(game_id, &occurred_at, duration_seconds, None);
+        }
+    }
     *server
         .retroarch_control_authority
         .lock()
@@ -3624,9 +3677,10 @@ pub fn publish_moonlight_executor_state(state_json: &str) -> bool {
         .active_android_launch
         .lock()
         .expect("active Android launch mutex poisoned");
-    let current = active.as_ref().is_some_and(|launch| {
-        launch.launch_id == state.launch_id
-            && launch
+    let current = active.as_ref().is_some_and(|tracked| {
+        tracked.launch.launch_id == state.launch_id
+            && tracked
+                .launch
                 .executor
                 .as_ref()
                 .is_some_and(|executor| executor.id == "android-moonlight")
@@ -3878,7 +3932,9 @@ pub(crate) fn authorize_local_launch_spec(spec_json: &str) -> Option<AuthorizedL
                 .lock()
                 .expect("RetroArch control authority mutex poisoned")
                 .clone()?;
-            if active.launch_id != spec.launch_id || !authority.matches_launch(&active, &spec) {
+            if active.launch.launch_id != spec.launch_id
+                || !authority.matches_launch(&active.launch, &spec)
+            {
                 return None;
             }
             Some(AuthorizedLocalLaunch {
@@ -4007,7 +4063,11 @@ mod tests {
                 class_name: None,
             },
         };
-        let active_slot = Arc::new(Mutex::new(Some(active)));
+        let active_slot = Arc::new(Mutex::new(Some(TrackedActiveLaunch {
+            launch: active,
+            started_at: std::time::Instant::now(),
+            started_epoch_seconds: 0,
+        })));
         let authority_slot: RetroarchControlSlot = Arc::new(Mutex::new(None));
         let moonlight_slot = Arc::new(Mutex::new(None));
         let config = config::snapshot::ConfigSnapshotCoordinator::new(root.path());
@@ -4277,7 +4337,11 @@ mod tests {
                 class_name: None,
             },
         };
-        let active_slot = Arc::new(Mutex::new(Some(active)));
+        let active_slot = Arc::new(Mutex::new(Some(TrackedActiveLaunch {
+            launch: active,
+            started_at: std::time::Instant::now(),
+            started_epoch_seconds: 0,
+        })));
         let authority_slot: RetroarchControlSlot = Arc::new(Mutex::new(None));
 
         let mut states = Vec::new();
@@ -6154,15 +6218,17 @@ command = ["game-two"]
         };
         // The exact retirement step of a late old QUIT ACK must not clear the
         // fresh replacement or its distinct authority.
-        let (active_slot, authority_slot) = {
+        let (private_root, active_slot, authority_slot) = {
             let slot = server_slot().lock().unwrap();
             let server = slot.as_ref().unwrap();
             (
+                server.private_state_root.clone(),
                 Arc::clone(&server.active_android_launch),
                 Arc::clone(&server.retroarch_control_authority),
             )
         };
         assert!(!retire_exact_retroarch_launch(
+            &private_root,
             &active_slot,
             &authority_slot,
             &local,
@@ -6182,6 +6248,32 @@ command = ["game-two"]
             assert!(Arc::ptr_eq(&authority, &replacement_authority));
         }
         assert!(clear_active_android_launch(&replacement.launch_id));
+
+        // Both endings recorded a play-log entry: the first launch retired by
+        // the RetroArch QUIT ACK above, and the replacement cleared here. The
+        // local catalog derives play stats from that log on the next read.
+        let listed = client
+            .post(&url)
+            .bearer_auth(&capability)
+            .json(&serde_json::json!({
+                "_tag": "app.local-games.list",
+                "payload": {}
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap();
+        let wl4 = listed["outcome"]["payload"]["games"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|game| game["id"] == "wl4")
+            .expect("wl4 is listed");
+        assert_eq!(wl4["playStats"]["playCount"], 2);
+        assert!(wl4["playStats"]["lastPlayed"].is_string());
+        assert!(wl4["playStats"]["totalPlaytimeSeconds"].is_u64());
 
         spec["files"][0]["content"] = serde_json::Value::String("tampered".into());
         assert!(!verify_local_launch_spec(

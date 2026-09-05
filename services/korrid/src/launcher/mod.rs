@@ -77,6 +77,9 @@ pub fn local_games_with_cover_assets(
         (Some(readable_root), Some(private_root)) => cover_asset_ids(readable_root, private_root),
         _ => BTreeMap::new(),
     };
+    let play_stats = private_root
+        .map(|root| crate::play_log::PlayLogRepository::new(root).load_all_stats())
+        .unwrap_or_default();
 
     if config_state.authorization == SnapshotAuthorization::Authorized {
         let catalog = resolver::resolve_launchable_routes(
@@ -96,7 +99,7 @@ pub fn local_games_with_cover_assets(
                 other => Err(format!("unsupported launcher kind {other}")),
             };
             match validation {
-                Ok(()) => games.push(local_game_from_route(route, &cover_asset_ids)),
+                Ok(()) => games.push(local_game_from_route(route, &cover_asset_ids, &play_stats)),
                 Err(message) => diagnostics.push(RouteDiagnostic {
                     code: resolver::RouteDiagnosticCode::LocalRouteUnavailable,
                     message,
@@ -208,14 +211,20 @@ fn local_launch_context(route: &ResolvedRoute) -> LaunchContext {
 fn local_game_from_route(
     route: ResolvedRoute,
     cover_asset_ids: &BTreeMap<String, String>,
+    play_stats: &BTreeMap<String, crate::play_log::PlayStats>,
 ) -> LocalGame {
     let cover_asset_id = cover_asset_ids.get(&route.playable_id).cloned();
+    let stats = play_stats
+        .get(&route.playable_id)
+        .cloned()
+        .filter(|stats| stats.play_count > 0 || stats.last_played.is_some());
     LocalGame {
         id: route.playable_id,
         title: route.title.unwrap_or(route.release_id),
         system: route.system_title.unwrap_or(route.system_id),
         identity: route.identity,
         cover_asset_id,
+        play_stats: stats,
     }
 }
 

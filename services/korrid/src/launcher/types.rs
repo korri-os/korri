@@ -43,6 +43,8 @@ pub struct LocalGame {
         skip_serializing_if = "Option::is_none"
     )]
     pub cover_asset_id: Option<String>,
+    #[serde(default, rename = "playStats", skip_serializing_if = "Option::is_none")]
+    pub play_stats: Option<crate::play_log::PlayStats>,
 }
 
 #[typeshare]

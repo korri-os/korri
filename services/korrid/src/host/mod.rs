@@ -177,6 +177,11 @@ impl HostRuntime {
 
     pub fn catalog_snapshot(&self) -> Result<CatalogSnapshot, RpcFailure> {
         let config = self.config.as_ref().map_err(config_failure)?;
+        let play_stats = self
+            .launcher
+            .as_ref()
+            .map(|launcher| launcher.control().load_all_play_stats())
+            .unwrap_or_default();
         let mut games: Vec<Game> = config
             .games
             .iter()
@@ -185,6 +190,10 @@ impl HostRuntime {
                 title: game.title.clone(),
                 host: Some(config.label.clone()),
                 identity: game.identity.clone(),
+                play_stats: play_stats
+                    .get(&game.id)
+                    .cloned()
+                    .filter(|s| s.play_count > 0 || s.last_played.is_some()),
             })
             .collect();
         if let Some(dynamic) = &self.dynamic {
@@ -201,6 +210,10 @@ impl HostRuntime {
                     title: game.title.clone(),
                     host: Some(config.label.clone()),
                     identity: game.identity.clone(),
+                    play_stats: play_stats
+                        .get(&game.id)
+                        .cloned()
+                        .filter(|s| s.play_count > 0 || s.last_played.is_some()),
                 });
             }
         }

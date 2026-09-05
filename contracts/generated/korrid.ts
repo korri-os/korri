@@ -64,11 +64,19 @@ export type GameIdentity =
 	| { kind: "hash", value: string }
 	| { kind: "provider", value: GameProviderIdentity };
 
+export interface PlayStats {
+	/** UTC timestamp of newest session, if any. */
+	lastPlayed?: string;
+	playCount: number;
+	totalPlaytimeSeconds: number;
+}
+
 export interface Game {
 	id: string;
 	title: string;
 	host?: string;
 	identity?: GameIdentity;
+	playStats?: PlayStats;
 }
 
 export interface CatalogSnapshot {
@@ -174,6 +182,7 @@ export interface LocalGame {
 	system: string;
 	identity?: GameIdentity;
 	coverAssetId?: string;
+	playStats?: PlayStats;
 }
 
 export interface LocalGameLaunchRequest {
@@ -276,6 +285,23 @@ export interface PlatformInstruction {
 	effect: PlatformEffect;
 	/** Per-server HMAC verified at the native platform edge. */
 	integrity: string;
+}
+
+export interface PlayEntry {
+	/** When the session occurred (its end time, in UTC ISO 8601). */
+	occurredAt: string;
+	/**
+	 * How long the session lasted, in seconds. u32 because Typeshare has no
+	 * u64; 136 years per session is enough.
+	 */
+	durationSeconds: number;
+	/** Release the session was launched from, when known. */
+	releaseId?: string;
+}
+
+export interface PlayLog {
+	gameId: string;
+	entries: PlayEntry[];
 }
 
 export interface PluginSetting {

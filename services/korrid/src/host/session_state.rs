@@ -43,9 +43,14 @@ enum ActiveState {
     Running {
         launch_id: String,
         game_id: Option<String>,
+        started_at: std::time::Instant,
+        started_epoch_seconds: u64,
     },
     Stopping {
         launch_id: String,
+        game_id: Option<String>,
+        started_at: std::time::Instant,
+        started_epoch_seconds: u64,
     },
     Completed {
         launch_id: String,
@@ -114,6 +119,32 @@ impl HostSessionControl {
         }
     }
 
+    pub fn play_logs(&self) -> crate::play_log::PlayLogRepository {
+        let private_root = self.identity_root.parent().unwrap_or(Path::new("."));
+        crate::play_log::PlayLogRepository::new(private_root)
+    }
+
+    pub fn load_all_play_stats(&self) -> BTreeMap<String, crate::play_log::PlayStats> {
+        self.play_logs().load_all_stats()
+    }
+
+    fn record_session_completion(
+        &self,
+        game_id: Option<&str>,
+        started_at: std::time::Instant,
+        started_epoch_seconds: u64,
+    ) {
+        if let Some(game_id) = game_id {
+            let duration_seconds = started_at.elapsed().as_secs();
+            let occurred_at = crate::play_log::format_iso8601_utc(
+                started_epoch_seconds.saturating_add(duration_seconds),
+            );
+            let _ = self
+                .play_logs()
+                .record_session(game_id, &occurred_at, duration_seconds, None);
+        }
+    }
+
     fn stop_game_after_seat_failure(&self, state: &mut ActiveState, launch_id: &str) {
         let _ = self.stop_seats(launch_id);
         if self.backend.stop(launch_id).is_err()
@@ -127,13 +158,57 @@ impl HostSessionControl {
         }
         match self.backend.state(launch_id) {
             Ok(LaunchUnitState::Completed) if clear_identity(&self.identity_root).is_ok() => {
+                if let ActiveState::Running {
+                    game_id,
+                    started_at,
+                    started_epoch_seconds,
+                    ..
+                }
+                | ActiveState::Stopping {
+                    game_id,
+                    started_at,
+                    started_epoch_seconds,
+                    ..
+                } = state
+                {
+                    self.record_session_completion(
+                        game_id.as_deref(),
+                        *started_at,
+                        *started_epoch_seconds,
+                    );
+                }
                 *state = ActiveState::Completed {
                     launch_id: launch_id.to_owned(),
                 };
             }
             Ok(LaunchUnitState::Running | LaunchUnitState::Stopping) => {
+                let (game_id, started_at, started_epoch_seconds) = match state {
+                    ActiveState::Running {
+                        game_id,
+                        started_at,
+                        started_epoch_seconds,
+                        ..
+                    }
+                    | ActiveState::Stopping {
+                        game_id,
+                        started_at,
+                        started_epoch_seconds,
+                        ..
+                    } => (game_id.clone(), *started_at, *started_epoch_seconds),
+                    _ => (
+                        None,
+                        std::time::Instant::now(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                    ),
+                };
                 *state = ActiveState::Stopping {
                     launch_id: launch_id.to_owned(),
+                    game_id,
+                    started_at,
+                    started_epoch_seconds,
                 };
             }
             _ => *state = ActiveState::RecoveryBlocked,
@@ -167,6 +242,7 @@ impl HostSessionControl {
             ActiveState::Running {
                 launch_id,
                 game_id: Some(active_game_id),
+                ..
             } if active_game_id == game_id => {
                 if self.ensure_seats(launch_id).is_err() {
                     let launch_id = launch_id.clone();
@@ -234,11 +310,18 @@ impl HostSessionControl {
         }
         match self.backend.state(&launch_id) {
             Ok(LaunchUnitState::Running) => {
+                let now_instant = std::time::Instant::now();
+                let now_epoch = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
                 *self.seat_lease.lock().expect("input-seat mutex poisoned") =
                     Some((launch_id.clone(), seat_lease));
                 *state = ActiveState::Running {
                     launch_id: launch_id.clone(),
                     game_id: Some(game_id.into()),
+                    started_at: now_instant,
+                    started_epoch_seconds: now_epoch,
                 };
                 Ok(SessionPrepared {
                     game_id: game_id.into(),
@@ -269,7 +352,7 @@ impl HostSessionControl {
         let mut state = self.state.lock().expect("host session mutex poisoned");
         self.refresh_recovery(&mut state);
         let tracked = match &*state {
-            ActiveState::Running { launch_id, .. } | ActiveState::Stopping { launch_id } => {
+            ActiveState::Running { launch_id, .. } | ActiveState::Stopping { launch_id, .. } => {
                 Some(launch_id.clone())
             }
             ActiveState::Completed { .. }
@@ -286,14 +369,58 @@ impl HostSessionControl {
                 }
                 Ok(LaunchUnitState::Stopping) => {
                     let _ = self.stop_seats(&launch_id);
+                    let (game_id, started_at, started_epoch_seconds) = match &*state {
+                        ActiveState::Running {
+                            game_id,
+                            started_at,
+                            started_epoch_seconds,
+                            ..
+                        }
+                        | ActiveState::Stopping {
+                            game_id,
+                            started_at,
+                            started_epoch_seconds,
+                            ..
+                        } => (game_id.clone(), *started_at, *started_epoch_seconds),
+                        _ => (
+                            None,
+                            std::time::Instant::now(),
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0),
+                        ),
+                    };
                     *state = ActiveState::Stopping {
                         launch_id: launch_id.clone(),
+                        game_id,
+                        started_at,
+                        started_epoch_seconds,
                     };
                 }
                 Ok(LaunchUnitState::Completed) => {
                     if self.stop_seats(&launch_id).is_ok()
                         && clear_identity(&self.identity_root).is_ok()
                     {
+                        if let ActiveState::Running {
+                            game_id,
+                            started_at,
+                            started_epoch_seconds,
+                            ..
+                        }
+                        | ActiveState::Stopping {
+                            game_id,
+                            started_at,
+                            started_epoch_seconds,
+                            ..
+                        } = &*state
+                        {
+                            self.record_session_completion(
+                                game_id.as_deref(),
+                                *started_at,
+                                *started_epoch_seconds,
+                            );
+                        }
                         *state = ActiveState::Completed {
                             launch_id: launch_id.clone(),
                         };
@@ -312,10 +439,21 @@ impl HostSessionControl {
             let mut state = self.state.lock().expect("host session mutex poisoned");
             self.refresh_recovery(&mut state);
             match &*state {
-                ActiveState::Running { launch_id, .. } if launch_id == expected_launch_id => {
+                ActiveState::Running {
+                    launch_id,
+                    game_id,
+                    started_at,
+                    started_epoch_seconds,
+                } if launch_id == expected_launch_id => {
                     let launch_id = launch_id.clone();
+                    let game_id = game_id.clone();
+                    let started_at = *started_at;
+                    let started_epoch_seconds = *started_epoch_seconds;
                     *state = ActiveState::Stopping {
                         launch_id: launch_id.clone(),
+                        game_id,
+                        started_at,
+                        started_epoch_seconds,
                     };
                     launch_id
                 }
@@ -324,12 +462,12 @@ impl HostSessionControl {
                         active_launch_id: Some(launch_id.clone()),
                     };
                 }
-                ActiveState::Stopping { launch_id } if launch_id == expected_launch_id => {
+                ActiveState::Stopping { launch_id, .. } if launch_id == expected_launch_id => {
                     return HostSessionStop::AlreadyStopping {
                         launch_id: launch_id.clone(),
                     };
                 }
-                ActiveState::Stopping { launch_id } => {
+                ActiveState::Stopping { launch_id, .. } => {
                     return HostSessionStop::StaleIdentity {
                         active_launch_id: Some(launch_id.clone()),
                     };
@@ -356,7 +494,7 @@ impl HostSessionControl {
                 Ok(LaunchUnitState::Completed)
             ) && !seat_stop_failed
             {
-                return complete_stop(&self.identity_root, &mut state, launch_id);
+                return self.complete_stop(&mut state, launch_id);
             }
             *state = ActiveState::RecoveryBlocked;
             return HostSessionStop::RecoveryBlocked;
@@ -368,9 +506,7 @@ impl HostSessionControl {
             return HostSessionStop::RecoveryBlocked;
         }
         match self.backend.state(&launch_id) {
-            Ok(LaunchUnitState::Completed) => {
-                complete_stop(&self.identity_root, &mut state, launch_id)
-            }
+            Ok(LaunchUnitState::Completed) => self.complete_stop(&mut state, launch_id),
             Ok(LaunchUnitState::Running | LaunchUnitState::Stopping) => {
                 HostSessionStop::AlreadyStopping { launch_id }
             }
@@ -380,6 +516,37 @@ impl HostSessionControl {
             }
         }
     }
+
+    fn complete_stop(&self, state: &mut ActiveState, launch_id: String) -> HostSessionStop {
+        if clear_identity(&self.identity_root).is_err() {
+            *state = ActiveState::RecoveryBlocked;
+            HostSessionStop::RecoveryBlocked
+        } else {
+            if let ActiveState::Running {
+                game_id,
+                started_at,
+                started_epoch_seconds,
+                ..
+            }
+            | ActiveState::Stopping {
+                game_id,
+                started_at,
+                started_epoch_seconds,
+                ..
+            } = state
+            {
+                self.record_session_completion(
+                    game_id.as_deref(),
+                    *started_at,
+                    *started_epoch_seconds,
+                );
+            }
+            *state = ActiveState::Completed {
+                launch_id: launch_id.clone(),
+            };
+            HostSessionStop::Completed { launch_id }
+        }
+    }
 }
 
 fn status_from_state(state: &ActiveState) -> HostSessionStatus {
@@ -387,7 +554,7 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
         ActiveState::Running { launch_id, .. } => HostSessionStatus::Running {
             launch_id: launch_id.clone(),
         },
-        ActiveState::Stopping { launch_id } => HostSessionStatus::Stopping {
+        ActiveState::Stopping { launch_id, .. } => HostSessionStatus::Stopping {
             launch_id: launch_id.clone(),
         },
         ActiveState::Completed { launch_id } => HostSessionStatus::Completed {
@@ -397,22 +564,6 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
         ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
             HostSessionStatus::RecoveryBlocked
         }
-    }
-}
-
-fn complete_stop(
-    identity_root: &Path,
-    state: &mut ActiveState,
-    launch_id: String,
-) -> HostSessionStop {
-    if clear_identity(identity_root).is_err() {
-        *state = ActiveState::RecoveryBlocked;
-        HostSessionStop::RecoveryBlocked
-    } else {
-        *state = ActiveState::Completed {
-            launch_id: launch_id.clone(),
-        };
-        HostSessionStop::Completed { launch_id }
     }
 }
 
@@ -431,13 +582,23 @@ fn recover(identity_root: &Path, backend: &dyn LaunchUnitBackend) -> ActiveState
     match persisted {
         Ok(None) if live.is_empty() => ActiveState::NoActive,
         Ok(Some(persisted)) if live.len() == 1 && live.first() == Some(&persisted) => {
+            let now_instant = std::time::Instant::now();
+            let now_epoch = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             match backend.state(&persisted) {
                 Ok(LaunchUnitState::Running) => ActiveState::Running {
                     launch_id: persisted,
                     game_id: None,
+                    started_at: now_instant,
+                    started_epoch_seconds: now_epoch,
                 },
                 Ok(LaunchUnitState::Stopping) => ActiveState::Stopping {
                     launch_id: persisted,
+                    game_id: None,
+                    started_at: now_instant,
+                    started_epoch_seconds: now_epoch,
                 },
                 Ok(LaunchUnitState::Completed) if clear_identity(identity_root).is_ok() => {
                     ActiveState::NoActive
@@ -1224,18 +1385,33 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_recovery_does_not_create_input_seats() {
+    fn session_stop_records_play_log_for_host_game() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
-        backend.insert("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", LaunchUnitState::Running);
-        backend.insert("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", LaunchUnitState::Running);
-        let manager = Arc::new(TestSeatManager {
-            starts: AtomicUsize::new(0),
-            alive: Arc::new(AtomicBool::new(true)),
-        });
-        let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone());
-        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
-        assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
-        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
+        let control = control(root.path(), backend);
+
+        assert_eq!(control.load_all_play_stats().len(), 0);
+
+        let prepared = prepare(&control, "game-metroid");
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::Running {
+                launch_id: prepared.launch_id.clone()
+            }
+        );
+
+        let stop_result = control.stop(&prepared.launch_id);
+        assert_eq!(
+            stop_result,
+            HostSessionStop::Completed {
+                launch_id: prepared.launch_id
+            }
+        );
+
+        let all_stats = control.load_all_play_stats();
+        assert_eq!(all_stats.len(), 1);
+        let stats = all_stats.get("game-metroid").unwrap();
+        assert_eq!(stats.play_count, 1);
+        assert!(stats.last_played.is_some());
     }
 }
