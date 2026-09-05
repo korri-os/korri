@@ -996,6 +996,7 @@ in
         "korri-input-source-guard.service"
         "korri-compositor.service"
       ]
+      ++ lib.optional (cfg.sunshine.capture == "kms") "suid-sgid-wrappers.service"
       ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
       after = [
         "korri-certificate-control.socket"
@@ -1003,6 +1004,7 @@ in
         "korri-compositor.service"
         "network-online.target"
       ]
+      ++ lib.optional (cfg.sunshine.capture == "kms") "suid-sgid-wrappers.service"
       ++ lib.optional cfg.sunshine.inputSeats.enable "korri-input-seat-receiver.service";
       wants = [ "network-online.target" ];
       environment = {

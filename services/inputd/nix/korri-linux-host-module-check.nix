@@ -411,6 +411,8 @@ assert builtins.elem "systemd-tmpfiles-setup.service" certificateSocket.requires
 assert builtins.elem "systemd-tmpfiles-setup.service" certificateSocket.after;
 assert builtins.elem "korri-certificate-control.socket" sunshine.requires;
 assert builtins.elem "korri-certificate-control.socket" sunshine.after;
+assert builtins.elem "suid-sgid-wrappers.service" physicalSoftwareSunshine.after;
+assert builtins.elem "suid-sgid-wrappers.service" physicalSoftwareSunshine.requires;
 assert sunshine.serviceConfig.Sockets == [ "korri-certificate-control.socket" ];
 assert builtins.elem "d /run/korri-certificate-control 0751 root korrid -"
   cfg.systemd.tmpfiles.rules;

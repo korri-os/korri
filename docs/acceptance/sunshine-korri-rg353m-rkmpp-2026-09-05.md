@@ -1,4 +1,4 @@
-# Sunshine Korri RG353M RKMPP hardware encoding — 2026-09-05
+# Sunshine Korri RG353M RKMPP hardware encoding and zero-copy capture — 2026-09-05
 
 ## Scope and identities
 
@@ -9,14 +9,16 @@ This record covers Sunshine hardware H.264 encoding on the Anbernic RG353M throu
 - Reviewed FFmpeg commit: `61c50407fd429a5e2ec616e2e846c3fe3743879a`
 - Build profile: `aarch64-linux-rkmpp`
 - Patch `0021` SHA-256: `5fc9f90b6753791cc66107b0d8c58b78568126f71dda2fb8e739b63aae9981d6`
-- Ordered sixteen-patch digest: `bfbb903bcdbab42627c9adabbd21426b0a7ddd86896fe592a49a6a2b2324d1ce`
+- Patch `0022` SHA-256: `601a6ce16580902dae652920f4af819fa19afb7aa430b1c65860b3c8f99b9086`
+- Ordered seventeen-patch digest: `c447c31c96e894017b043c45dabf50ba12e44d6e1ef859f1685979c14511c28f`
 - FFmpeg patch `0001` SHA-256: `772d3a55ea116417ee6768ce1ece4f9d9c9e6c12a8dbd541e3e1ab7c348d9ac4`
 - FFmpeg patch `0002` SHA-256: `b2bcaed419e11dbb6b435f865b4fb78eca195708c14da1cbd97c29dfae50f09f`
-- Tested Sunshine output: `/nix/store/lhhdw9l9dvy44l7v4ah40bmz4vrqdx2q-sunshine-korri-2025.924.154138-korri`
+- Tested zero-copy Sunshine output: `/nix/store/kgwvxcjj534sz6nw73p5m3ha2am6i0fs-sunshine-korri-2025.924.154138-korri`
+- Final tested zero-copy NixOS closure: `/nix/store/p4p56y6gfjcdq15qifkbv45a19b4s83z-nixos-system-rg353m-sd-card-26.05.20251221.a653104`
 - Kernel: mainline Linux `6.18.2` with out-of-tree `rk_vcodec` and `rk_mpp_overlay`
 - Client: `moonlight-embedded 2.7.0`, `-platform fake -viewonly`, over Ethernet
 
-The tested Sunshine build was imported into the device store and run as a transient unit against the live Sway compositor. The persistent boot profile was not changed.
+The tested zero-copy closure was imported into the device store and activated with `switch-to-configuration test`. The persistent boot profile was not changed.
 
 ## Build path
 
@@ -27,7 +29,7 @@ Sunshine links against a static FFmpeg built by Sunshine's own `build-deps` reci
 
 Sunshine's CBS patches are applied with `patch` because `build-deps` uses `git apply`, which no-ops outside a git checkout.
 
-Sunshine patch `0021` adds the `rkmpp` encoder definition (H.264 only, CBR, single slice, no intra refresh) and paces its encode loop to the negotiated frame rate.
+Sunshine patch `0021` adds the `rkmpp` encoder definition (H.264 only, CBR, single slice, no intra refresh) and paces its encode loop to the negotiated frame rate. Patch `0022` makes RKMPP a DRM_PRIME hardware-frame encoder. For a native-size KMS stream, Sunshine wraps the active framebuffer's dma-buf in a ref-counted `AVDRMFrameDescriptor` and passes it directly to `h264_rkmpp`. The RK3566 RKVENC preprocessor accepts the XRGB8888 input and performs RGB-to-YUV conversion in hardware. If the requested stream size or framebuffer layout is incompatible, Sunshine keeps the existing RAM readback and RKMPP upload path.
 
 ## Encoder probe
 
@@ -47,7 +49,7 @@ The first build did not pace the RKMPP encode loop. During a 30 fps stream the R
 
 The complete RG353M closure `/nix/store/hqb1v91jsa4bm71gddhk97g8i8ba6iby-nixos-system-rg353m-sd-card-26.05.20251221.a653104` was activated non-persistently with `switch-to-configuration test`. The hardened `sunshine.service` started with `encoder=rkmpp` on its argv and the RKMPP-profile package as its executable.
 
-On that first activation Sunshine logged `Couldn't find any working encoder matching [rkmpp]` without a `Trying encoder [rkmpp]` probe and silently fell back to `libx264`. The `/run/wrappers/bin/sunshine` wrapper was regenerated in the same second the unit started, during the activation's `suid-sgid-wrappers` refresh. Three manual restarts of the identical unit each selected `h264_rkmpp`. The failure did not reproduce.
+On that first activation Sunshine logged `Couldn't find any working encoder matching [rkmpp]` without a `Trying encoder [rkmpp]` probe and silently fell back to `libx264`. The `/run/wrappers/bin/sunshine` wrapper was regenerated in the same second the unit started, during the activation's `suid-sgid-wrappers` refresh. Three manual restarts of the identical unit each selected `h264_rkmpp`. The same stale-wrapper race reproduced during zero-copy test activation: the first process still executed the old `qh63qbj…` package and consumed about 127% CPU; restarting after wrapper generation executed `kgwvxcjj…` and used zero-copy. An `After=suid-sgid-wrappers.service` edge alone did not serialize NixOS activation because the refresh entered a separate transaction. The KMS Sunshine unit now both requires and orders itself after the wrapper oneshot, forcing wrapper generation into its start transaction and failing closed if generation fails. Final activation verified `Finished Create SUID/SGID Wrappers` at 14:37:07 before `Starting Sunshine stream host for Korri` at 14:39:06; the first process executed `kgwvxcjj…` without a manual restart.
 
 A silent software fallback on this device would cost about 170% CPU and hide an RKVENC regression behind a working stream. The host module now sets `SUNSHINE_STRICT_ENCODER=1` for `encoder = "rkmpp"`, matching the existing NVENC policy, so an RKMPP probe failure fails the unit instead of streaming with x264.
 
@@ -74,7 +76,22 @@ Per-thread CPU over an 8-second window mid-stream, same build, same client:
 
 The RKVENC encoder itself costs about 1% CPU. The remaining load is Sunshine's `GetTextureSubImage` GPU-to-RAM readback and `sws_scale` BGRA-to-NV12 conversion on the capture thread. `swscale` alone measured 5.4–6.3 ms per frame single-threaded on this CPU.
 
-For comparison, `ffmpeg -f kmsgrab ... -c:v h264_rkmpp` with DRM_PRIME frames encoded 300 frames at 32 fps using 0.43 s user time (about 7% CPU). A zero-copy DRM_PRIME capture path in Sunshine is the next step and is tracked in the backlog.
+For comparison, `ffmpeg -f kmsgrab ... -c:v h264_rkmpp` with DRM_PRIME frames encoded 300 frames at 32 fps using 0.43 s user time (about 7% CPU). The live framebuffer was 640x480, DRM format `XR24` (`AV_PIX_FMT_BGR0`), linear modifier, single plane.
+
+## Zero-copy DRM_PRIME result
+
+The hardened `sunshine.service` ran the `kgwvxcjj…` package with `SUNSHINE_STRICT_ENCODER=1`. Its startup probe used the RAM/upload fallback at 1920x1080 and selected `h264_rkmpp`; the real 640x480 session then logged `Using zero-copy KMS DRM_PRIME capture for RKMPP`.
+
+A 60-second Moonlight session at 640x480, 30 fps, 4000 kbps, H.264 produced:
+
+- 1,775 RKVENC interrupts in 60.1 seconds (29.51 fps including setup)
+- about 9–10% total Sunshine CPU (`ps -L` sum; isolated `top` samples peaked at 20%)
+- 44.4–46.1 °C during the measured window
+- first video packet after 0 ms
+- stable process fd count: 39 before and after the stream
+- no MPP, RKVENC, IOMMU, dma-buf import, or encoder errors
+
+This removes the previous approximately 106% hot capture thread. A 1280x720 request exercised the fallback path successfully, but reached only about 14 fps; native 640x480 remains the production target on this panel.
 
 ## Approval gates
 

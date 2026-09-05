@@ -1,0 +1,302 @@
+diff --git a/src/platform/common.h b/src/platform/common.h
+index 28704bb..a192560 100644
+--- a/src/platform/common.h
++++ b/src/platform/common.h
+@@ -231,6 +231,7 @@ namespace platf {
+     vaapi,  ///< VAAPI
+     dxgi,  ///< DXGI
+     cuda,  ///< CUDA
++    rkmpp,  ///< Rockchip MPP with DRM_PRIME input
+     videotoolbox,  ///< VideoToolbox
+     unknown  ///< Unknown
+   };
+@@ -239,6 +240,7 @@ namespace platf {
+     yuv420p,  ///< YUV 4:2:0
+     yuv420p10,  ///< YUV 4:2:0 10-bit
+     nv12,  ///< NV12
++    bgr0,  ///< Packed BGRX8888
+     p010,  ///< P010
+     ayuv,  ///< AYUV
+     yuv444p16,  ///< Planar 10-bit (shifted to 16-bit) YUV 4:4:4
+@@ -255,6 +257,7 @@ namespace platf {
+       _CONVERT(yuv420p);
+       _CONVERT(yuv420p10);
+       _CONVERT(nv12);
++      _CONVERT(bgr0);
+       _CONVERT(p010);
+       _CONVERT(ayuv);
+       _CONVERT(yuv444p16);
+diff --git a/src/platform/linux/kmsgrab.cpp b/src/platform/linux/kmsgrab.cpp
+index 3db7489..650838f 100644
+--- a/src/platform/linux/kmsgrab.cpp
++++ b/src/platform/linux/kmsgrab.cpp
+@@ -17,6 +17,12 @@
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+ 
++extern "C" {
++#include <libavutil/buffer.h>
++#include <libavutil/hwcontext_drm.h>
++#include <libavutil/mem.h>
++}
++
+ // local includes
+ #include "cuda.h"
+ #include "graphics.h"
+@@ -1328,6 +1334,115 @@ namespace platf {
+       egl::ctx_t ctx;
+     };
+ 
++    class rkmpp_vram_t: public avcodec_encode_device_t {
++    public:
++      rkmpp_vram_t() {
++        // A non-null data field tells the generic AVCodec path that this
++        // device supplies its own frame conversion and ownership handling.
++        data = this;
++      }
++
++      int init(int width, int height) {
++        this->width = width;
++        this->height = height;
++        return 0;
++      }
++
++      int set_frame(AVFrame *frame, AVBufferRef *hw_frames_ctx) override {
++        if (!hw_frames_ctx) {
++          BOOST_LOG(error) << "RKMPP zero-copy input requires a hardware frames context"sv;
++          return -1;
++        }
++
++        frame_owner.reset(frame);
++        this->frame = frame_owner.get();
++        this->frame->hw_frames_ctx = av_buffer_ref(hw_frames_ctx);
++        return this->frame->hw_frames_ctx ? 0 : -1;
++      }
++
++      int convert(img_t &img) override {
++        auto &descriptor = (egl::img_descriptor_t &) img;
++        auto &sd = descriptor.sd;
++
++        if (descriptor.sequence == 0 || sd.fds[0] < 0) {
++          BOOST_LOG(error) << "RKMPP zero-copy input has no KMS framebuffer"sv;
++          return -1;
++        }
++        if (sd.width != width || sd.height != height) {
++          BOOST_LOG(error) << "RKMPP zero-copy input size changed from "sv << width << 'x' << height << " to "sv << sd.width << 'x' << sd.height;
++          return -1;
++        }
++        if (sd.fourcc != DRM_FORMAT_XRGB8888 || sd.fds[1] >= 0) {
++          BOOST_LOG(error) << "RKMPP zero-copy only supports a single-plane XRGB8888 framebuffer"sv;
++          return -1;
++        }
++        if (sd.modifier != DRM_FORMAT_MOD_LINEAR && sd.modifier != DRM_FORMAT_MOD_INVALID) {
++          BOOST_LOG(error) << "RKMPP zero-copy only supports a linear framebuffer modifier"sv;
++          return -1;
++        }
++
++        auto drm_desc = (AVDRMFrameDescriptor *) av_mallocz(sizeof(AVDRMFrameDescriptor));
++        if (!drm_desc) {
++          return -1;
++        }
++
++        drm_desc->objects[0].fd = dup(sd.fds[0]);
++        if (drm_desc->objects[0].fd < 0) {
++          av_free(drm_desc);
++          return -1;
++        }
++
++        auto object_size = lseek(drm_desc->objects[0].fd, 0, SEEK_END);
++        if (object_size <= 0) {
++          close(drm_desc->objects[0].fd);
++          av_free(drm_desc);
++          BOOST_LOG(error) << "Couldn't determine RKMPP dma-buf size: "sv << strerror(errno);
++          return -1;
++        }
++
++        drm_desc->nb_objects = 1;
++        drm_desc->objects[0].size = object_size;
++        drm_desc->objects[0].format_modifier =
++          sd.modifier == DRM_FORMAT_MOD_INVALID ? DRM_FORMAT_MOD_LINEAR : sd.modifier;
++        drm_desc->nb_layers = 1;
++        drm_desc->layers[0].format = sd.fourcc;
++        drm_desc->layers[0].nb_planes = 1;
++        drm_desc->layers[0].planes[0].object_index = 0;
++        drm_desc->layers[0].planes[0].offset = sd.offsets[0];
++        drm_desc->layers[0].planes[0].pitch = sd.pitches[0];
++
++        auto buffer = av_buffer_create(
++          (std::uint8_t *) drm_desc,
++          sizeof(*drm_desc),
++          [](void *, std::uint8_t *data) {
++            auto desc = (AVDRMFrameDescriptor *) data;
++            for (int i = 0; i < desc->nb_objects; ++i) {
++              if (desc->objects[i].fd >= 0) {
++                close(desc->objects[i].fd);
++              }
++            }
++            av_free(desc);
++          },
++          nullptr,
++          0
++        );
++        if (!buffer) {
++          close(drm_desc->objects[0].fd);
++          av_free(drm_desc);
++          return -1;
++        }
++
++        av_buffer_unref(&frame->buf[0]);
++        frame->buf[0] = buffer;
++        frame->data[0] = buffer->data;
++        return 0;
++      }
++
++      frame_t frame_owner;
++      int width {};
++      int height {};
++    };
++
+     class display_vram_t: public display_t {
+     public:
+       display_vram_t(mem_type_e mem_type):
+@@ -1347,6 +1462,14 @@ namespace platf {
+         }
+ #endif
+ 
++        if (mem_type == mem_type_e::rkmpp) {
++          auto device = std::make_unique<rkmpp_vram_t>();
++          if (device->init(width, height)) {
++            return nullptr;
++          }
++          return device;
++        }
++
+         BOOST_LOG(error) << "Unsupported pixel format for egl::display_vram_t: "sv << platf::from_pix_fmt(pix_fmt);
+         return nullptr;
+       }
+@@ -1367,6 +1490,24 @@ namespace platf {
+       }
+ 
+       int dummy_img(platf::img_t *img) override {
++        if (mem_type == mem_type_e::rkmpp) {
++          file_t fb_fd[4];
++          auto descriptor = (egl::img_descriptor_t *) img;
++          descriptor->reset();
++
++          auto status = refresh(fb_fd, &descriptor->sd, descriptor->frame_timestamp);
++          if (status != capture_e::ok) {
++            return -1;
++          }
++          descriptor->sequence = ++sequence;
++          descriptor->data = nullptr;
++
++          for (auto &fd : fb_fd) {
++            fd.release();
++          }
++          return 0;
++        }
++
+         // Empty images are recognized as dummies by the zero sequence number
+         return 0;
+       }
+@@ -1477,6 +1618,22 @@ namespace platf {
+         }
+ #endif
+ 
++        if (mem_type == mem_type_e::rkmpp) {
++          if (config.width != width || config.height != height || img_width != width || img_height != height || img_offset_x != 0 || img_offset_y != 0) {
++            BOOST_LOG(info) << "RKMPP zero-copy requires the stream and KMS framebuffer to match exactly. Reverting to GPU -> RAM -> RKMPP"sv;
++            return -1;
++          }
++
++          plane_t plane = drmModeGetPlane(card.fd.el, plane_id);
++          auto fb = plane ? card.fb(plane.get()) : nullptr;
++          if (!fb || fb->pixel_format != DRM_FORMAT_XRGB8888 || fb->handles[1] || (fb->modifier != DRM_FORMAT_MOD_LINEAR && fb->modifier != DRM_FORMAT_MOD_INVALID)) {
++            BOOST_LOG(info) << "RKMPP zero-copy requires a single-plane linear XRGB8888 framebuffer. Reverting to GPU -> RAM -> RKMPP"sv;
++            return -1;
++          }
++
++          BOOST_LOG(info) << "Using zero-copy KMS DRM_PRIME capture for RKMPP"sv;
++        }
++
+         return 0;
+       }
+ 
+@@ -1486,7 +1643,7 @@ namespace platf {
+   }  // namespace kms
+ 
+   std::shared_ptr<display_t> kms_display(mem_type_e hwdevice_type, const std::string &display_name, const ::video::config_t &config) {
+-    if (hwdevice_type == mem_type_e::vaapi || hwdevice_type == mem_type_e::cuda) {
++    if (hwdevice_type == mem_type_e::vaapi || hwdevice_type == mem_type_e::cuda || hwdevice_type == mem_type_e::rkmpp) {
+       auto disp = std::make_shared<kms::display_vram_t>(hwdevice_type);
+ 
+       if (!disp->init(display_name, config)) {
+diff --git a/src/video.cpp b/src/video.cpp
+index eb9a6dc..bd2ea78 100644
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -126,6 +126,7 @@ namespace video {
+ 
+   util::Either<avcodec_buffer_t, int> dxgi_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *);
+   util::Either<avcodec_buffer_t, int> vaapi_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *);
++  util::Either<avcodec_buffer_t, int> rkmpp_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *);
+   util::Either<avcodec_buffer_t, int> cuda_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *);
+   util::Either<avcodec_buffer_t, int> vt_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *);
+ 
+@@ -1304,14 +1305,14 @@ namespace video {
+   encoder_t rkmpp {
+     "rkmpp"sv,
+     std::make_unique<encoder_platform_formats_avcodec>(
++      AV_HWDEVICE_TYPE_RKMPP,
+       AV_HWDEVICE_TYPE_NONE,
+-      AV_HWDEVICE_TYPE_NONE,
+-      AV_PIX_FMT_NONE,
+-      AV_PIX_FMT_NV12,
++      AV_PIX_FMT_DRM_PRIME,
++      AV_PIX_FMT_BGR0,
+       AV_PIX_FMT_NONE,
+       AV_PIX_FMT_NONE,
+       AV_PIX_FMT_NONE,
+-      nullptr
++      rkmpp_init_avcodec_hardware_input_buffer
+     ),
+     {},  // AV1: RKVENC-v1 (RK3566/RK3568) has no AV1 encoder
+     {},  // HEVC: RKVENC-v1 has no HEVC encoder
+@@ -3681,6 +3682,19 @@ namespace video {
+     return hw_device_buf;
+   }
+ 
++  util::Either<avcodec_buffer_t, int> rkmpp_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *encode_device) {
++    avcodec_buffer_t hw_device_buf;
++
++    auto status = av_hwdevice_ctx_create(&hw_device_buf, AV_HWDEVICE_TYPE_RKMPP, nullptr, nullptr, 0);
++    if (status < 0) {
++      char string[AV_ERROR_MAX_STRING_SIZE];
++      BOOST_LOG(error) << "Failed to create a RKMPP device: "sv << av_make_error_string(string, AV_ERROR_MAX_STRING_SIZE, status);
++      return -1;
++    }
++
++    return hw_device_buf;
++  }
++
+   util::Either<avcodec_buffer_t, int> cuda_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *encode_device) {
+     avcodec_buffer_t hw_device_buf;
+ 
+@@ -3782,6 +3796,8 @@ namespace video {
+         return platf::mem_type_e::vaapi;
+       case AV_HWDEVICE_TYPE_CUDA:
+         return platf::mem_type_e::cuda;
++      case AV_HWDEVICE_TYPE_RKMPP:
++        return platf::mem_type_e::rkmpp;
+       case AV_HWDEVICE_TYPE_NONE:
+         return platf::mem_type_e::system;
+       case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:
+@@ -3805,6 +3821,8 @@ namespace video {
+         return platf::pix_fmt_e::yuv420p;
+       case AV_PIX_FMT_NV12:
+         return platf::pix_fmt_e::nv12;
++      case AV_PIX_FMT_BGR0:
++        return platf::pix_fmt_e::bgr0;
+       case AV_PIX_FMT_P010:
+         return platf::pix_fmt_e::p010;
+       default:

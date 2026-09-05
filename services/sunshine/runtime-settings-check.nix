@@ -38,7 +38,7 @@ let
     sha256 = builtins.hashFile "sha256" path;
   }) patchPaths;
   approvedPatchDefinitions =
-    approved.patches ++ (if sunshinePackage.korriRkmppEnabled then [ approved.rkmppPatch ] else [ ]);
+    approved.patches ++ (if sunshinePackage.korriRkmppEnabled then approved.rkmppPatches else [ ]);
   approvedPatchRecords = map (record: {
     inherit (record) name sha256;
   }) approvedPatchDefinitions;

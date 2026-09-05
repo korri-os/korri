@@ -24,7 +24,7 @@ let
   sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
   sunshinePatchDefinitions =
     sunshineApprovedPatches.patches
-    ++ (if sunshinePackage.korriRkmppEnabled then [ sunshineApprovedPatches.rkmppPatch ] else [ ]);
+    ++ (if sunshinePackage.korriRkmppEnabled then sunshineApprovedPatches.rkmppPatches else [ ]);
   sunshinePatchPaths = map (record: record.path) sunshinePatchDefinitions;
   sunshinePatchManifest =
     builtins.concatStringsSep "\n" (

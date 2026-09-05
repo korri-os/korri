@@ -143,11 +143,21 @@ rec {
     sha256 = "36d8f96b01b68e9b4cbad4edc7f03d46b64eb5e291d116fe57470398d846b054";
   };
 
+  # Applied after the RKMPP encoder patch, only for the
+  # aarch64-linux-rkmpp profile. It hands compatible KMS scanout dma-bufs
+  # directly to h264_rkmpp as DRM_PRIME frames.
+  rkmppZeroCopyPatch = {
+    name = "0023-add-rkmpp-drm-prime-zero-copy.patch";
+    path = ./patches/0023-add-rkmpp-drm-prime-zero-copy.patch;
+    sha256 = "601a6ce16580902dae652920f4af819fa19afb7aa430b1c65860b3c8f99b9086";
+  };
+
   rkmppPatches = [
     rkmppPatch
+    rkmppZeroCopyPatch
   ];
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "60fb9d9e130df9acaa21912b57ce9dcc8fabfa75ad2a89bcc3cfe6584cd99cb5";
+  rkmppPatchSetSha256 = "4e303ce01f551b3edebb96a987d91df9facd135f47d42dd63da494a265597ce9";
 }
