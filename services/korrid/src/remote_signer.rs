@@ -616,7 +616,7 @@ mod tests {
                 loop {
                     let filter = crate::relay::RelayFilter {
                         kinds: vec![NIP46_EVENT_KIND],
-                        recipient_public_key: remote.public_key().to_hex(),
+                        recipient_public_key: Some(remote.public_key().to_hex()),
                         author_public_key: None,
                         since: None,
                         limit: 10,

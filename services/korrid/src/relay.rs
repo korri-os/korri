@@ -1,10 +1,13 @@
 //! Bounded relay coordination.
 //!
-//! This module converts Nostr relay events into endpoint candidates or queued
-//! coordination commands. It never dispatches product RPC and never transports
+//! This module converts Nostr relay events into owner roster evidence, endpoint
+//! candidates, or queued commands. It never dispatches product RPC and never transports
 //! catalog, artwork, saves, controller input, interactive calls, or stream data.
 
-use crate::identity::{DeviceIdentity, IdentityState};
+use crate::identity::{
+    event_is_newer, DeviceIdentity, IdentityState, OwnerStatementStatus, VerifiedOwnerStatement,
+    OWNER_EVENT_KIND,
+};
 use futures::{future::BoxFuture, SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -234,6 +237,25 @@ pub struct CoordinationSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnerStatementEvidence {
+    pub statement: VerifiedOwnerStatement,
+    pub event_json: String,
+}
+
+/// Newest evidence and a signed terminal revocation, if observed, for one device.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnerRosterEntry {
+    pub latest: OwnerStatementEvidence,
+    pub revocation: Option<OwnerStatementEvidence>,
+}
+
+impl OwnerRosterEntry {
+    pub fn is_owned(&self) -> bool {
+        self.latest.statement.status == OwnerStatementStatus::Owned && self.revocation.is_none()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayFailure {
     pub relay: String,
     pub message: String,
@@ -262,7 +284,7 @@ impl PublishState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayFilter {
     pub kinds: Vec<u16>,
-    pub recipient_public_key: String,
+    pub recipient_public_key: Option<String>,
     pub author_public_key: Option<String>,
     pub since: Option<u64>,
     pub limit: usize,
@@ -300,6 +322,11 @@ pub trait RelayTransport: Send + Sync {
 }
 
 pub trait RelayCoordinator: Send + Sync {
+    fn publish_owner_statement(&self) -> BoxFuture<'_, Result<PublishState, RelayError>>;
+
+    /// A bounded observation, never an authoritative list of absent/revoked devices.
+    fn read_owner_roster(&self) -> BoxFuture<'_, Result<Vec<OwnerRosterEntry>, RelayError>>;
+
     fn publish_endpoint<'a>(
         &'a self,
         recipient_device_public_key: &'a str,
@@ -414,7 +441,7 @@ where
         validate_public_key(recipient_public_key)?;
         let filter = RelayFilter {
             kinds: vec![24_133],
-            recipient_public_key: recipient_public_key.into(),
+            recipient_public_key: Some(recipient_public_key.into()),
             author_public_key: Some(author_public_key.into()),
             since: Some(since),
             limit: MAX_READ_EVENTS,
@@ -465,6 +492,84 @@ impl<T> RelayCoordinator for CoordinatedRelays<T>
 where
     T: RelayTransport + 'static,
 {
+    fn publish_owner_statement(&self) -> BoxFuture<'_, Result<PublishState, RelayError>> {
+        Box::pin(async move {
+            let event_json = self
+                .identity
+                .owner_statement_json()
+                .ok_or(RelayError::Identity)?;
+            // EVENT remains person-authored; publish_json supplies device NIP-42 auth.
+            Ok(self.publish_json(&event_json).await)
+        })
+    }
+
+    fn read_owner_roster(&self) -> BoxFuture<'_, Result<Vec<OwnerRosterEntry>, RelayError>> {
+        Box::pin(async move {
+            let owner = self.owner_public_key()?;
+            let own_key = self
+                .identity
+                .device_public_key()
+                .ok_or(RelayError::Identity)?;
+            let filter = RelayFilter {
+                kinds: vec![OWNER_EVENT_KIND],
+                recipient_public_key: None,
+                author_public_key: Some(owner.into()),
+                since: None,
+                limit: MAX_READ_EVENTS,
+            };
+            let (events, failures) = self.read_all(&filter).await;
+            if failures == self.relays.as_slice().len() {
+                return Err(RelayError::Unavailable(
+                    "all owner roster reads failed".into(),
+                ));
+            }
+            let mut seen = BTreeSet::new();
+            let mut devices: BTreeMap<String, OwnerRosterEntry> = BTreeMap::new();
+            for delivered in events {
+                let statement = match DeviceIdentity::derive_owner_statement(&delivered.event_json)
+                {
+                    Ok(statement)
+                        if statement.owner_public_key == owner
+                            && statement.device_public_key != own_key =>
+                    {
+                        statement
+                    }
+                    _ => continue,
+                };
+                if !seen.insert(statement.event_id.clone()) {
+                    continue;
+                }
+                let evidence = OwnerStatementEvidence {
+                    statement,
+                    event_json: delivered.event_json,
+                };
+                let entry = devices
+                    .entry(evidence.statement.device_public_key.clone())
+                    .or_insert_with(|| OwnerRosterEntry {
+                        latest: evidence.clone(),
+                        revocation: None,
+                    });
+                if evidence.statement.is_newer_than(&entry.latest.statement) {
+                    entry.latest = evidence.clone();
+                }
+                // Authorization treats any signed same-owner revocation as terminal.
+                // Retain its full signature even if newer owned evidence exists elsewhere.
+                if evidence.statement.status == OwnerStatementStatus::Revoked
+                    && entry
+                        .revocation
+                        .as_ref()
+                        .map(|current| evidence.statement.is_newer_than(&current.statement))
+                        .unwrap_or(true)
+                {
+                    entry.revocation = Some(evidence);
+                }
+            }
+            // Aggregate all bounded relay reads before capping devices: duplicate events
+            // or newer owned events must not hide a selected device's revocation.
+            Ok(devices.into_values().take(MAX_READ_EVENTS).collect())
+        })
+    }
+
     fn publish_endpoint<'a>(
         &'a self,
         recipient_device_public_key: &'a str,
@@ -612,7 +717,7 @@ where
                 .to_owned();
             let filter = RelayFilter {
                 kinds: vec![ENDPOINT_EVENT_KIND, GIFT_WRAP_EVENT_KIND],
-                recipient_public_key: own_key.clone(),
+                recipient_public_key: Some(own_key.clone()),
                 author_public_key: None,
                 since: None,
                 limit: MAX_READ_EVENTS,
@@ -1026,8 +1131,12 @@ impl InProcessRelayNetwork {
                 addressable_key(event.kind, &event.author, &event.tags).as_ref() == Some(&address)
             }) {
                 let existing = &node.events[current];
-                let newer = verified.created_at > existing.created_at
-                    || (verified.created_at == existing.created_at && verified.id < existing.id);
+                let newer = event_is_newer(
+                    verified.created_at,
+                    &verified.id,
+                    existing.created_at,
+                    &existing.id,
+                );
                 if !newer {
                     return Ok(());
                 }
@@ -1099,7 +1208,11 @@ impl RelayTransport for InProcessRelayNetwork {
                             .since
                             .map(|since| event.created_at >= since)
                             .unwrap_or(true)
-                        && has_tag(&event.tags, "p", &filter.recipient_public_key)
+                        && filter
+                            .recipient_public_key
+                            .as_ref()
+                            .map(|recipient| has_tag(&event.tags, "p", recipient))
+                            .unwrap_or(true)
                 })
                 .collect();
             matched.sort_by(|left, right| {
@@ -1204,6 +1317,18 @@ impl RelayTransport for WebSocketRelayTransport {
                 .await
                 .map_err(|error| RelayError::Unavailable(error.to_string()))?;
             timeout(OPERATION_TIMEOUT, async {
+                enum Authentication {
+                    Unchallenged,
+                    Pending(String),
+                    Accepted,
+                }
+                enum Publication {
+                    Pending,
+                    AuthRequired,
+                    Retried,
+                }
+                let mut authentication = Authentication::Unchallenged;
+                let mut publication = Publication::Pending;
                 let mut bytes = 0usize;
                 while let Some(message) = socket.next().await {
                     let message =
@@ -1214,6 +1339,13 @@ impl RelayTransport for WebSocketRelayTransport {
                     let value: serde_json::Value = serde_json::from_str(&text)
                         .map_err(|_| RelayError::Protocol("relay response is malformed".into()))?;
                     if value.get(0).and_then(serde_json::Value::as_str) == Some("AUTH") {
+                        // One challenge and one EVENT retry per connection, within the
+                        // original operation deadline and aggregate response-byte bound.
+                        if !matches!(authentication, Authentication::Unchallenged) {
+                            return Err(RelayError::Protocol(
+                                "AUTH challenge limit exceeded".into(),
+                            ));
+                        }
                         let challenge = value
                             .get(1)
                             .and_then(serde_json::Value::as_str)
@@ -1225,34 +1357,60 @@ impl RelayTransport for WebSocketRelayTransport {
                                 .map_err(|_| {
                                     RelayError::Protocol("AUTH event is malformed".into())
                                 })?;
+                        let auth_id = auth_event
+                            .get("id")
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| RelayError::Protocol("AUTH event id is missing".into()))?
+                            .to_owned();
                         socket
                             .send(Message::Text(
                                 serde_json::json!(["AUTH", auth_event]).to_string().into(),
                             ))
                             .await
                             .map_err(|error| RelayError::Unavailable(error.to_string()))?;
-                        socket
-                            .send(Message::Text(
-                                serde_json::json!(["EVENT", event]).to_string().into(),
-                            ))
-                            .await
-                            .map_err(|error| RelayError::Unavailable(error.to_string()))?;
+                        authentication = Authentication::Pending(auth_id);
                         continue;
                     }
-                    if value.get(0).and_then(serde_json::Value::as_str) == Some("OK")
-                        && value.get(1).and_then(serde_json::Value::as_str) == Some(id.as_str())
-                    {
-                        return if value.get(2).and_then(serde_json::Value::as_bool) == Some(true) {
-                            Ok(())
-                        } else {
-                            Err(RelayError::Protocol(
-                                value
-                                    .get(3)
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("relay rejected event")
-                                    .into(),
-                            ))
-                        };
+                    if value.get(0).and_then(serde_json::Value::as_str) == Some("OK") {
+                        let acknowledged = value.get(1).and_then(serde_json::Value::as_str);
+                        let accepted = value.get(2).and_then(serde_json::Value::as_bool);
+                        let reason = value
+                            .get(3)
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("relay rejected event");
+                        if matches!(&authentication, Authentication::Pending(auth_id)
+                            if acknowledged == Some(auth_id.as_str()))
+                        {
+                            if accepted != Some(true) {
+                                return Err(RelayError::Protocol(reason.into()));
+                            }
+                            authentication = Authentication::Accepted;
+                        } else if acknowledged == Some(id.as_str()) {
+                            if accepted == Some(true) {
+                                return Ok(());
+                            }
+                            if accepted == Some(false)
+                                && reason.starts_with("auth-required:")
+                                && matches!(publication, Publication::Pending)
+                            {
+                                publication = Publication::AuthRequired;
+                            } else {
+                                return Err(RelayError::Protocol(reason.into()));
+                            }
+                        }
+                        // The original EVENT rejection and AUTH OK may arrive in either
+                        // order. Neither alone permits retrying or proves publication.
+                        if matches!(authentication, Authentication::Accepted)
+                            && matches!(publication, Publication::AuthRequired)
+                        {
+                            socket
+                                .send(Message::Text(
+                                    serde_json::json!(["EVENT", event]).to_string().into(),
+                                ))
+                                .await
+                                .map_err(|error| RelayError::Unavailable(error.to_string()))?;
+                            publication = Publication::Retried;
+                        }
                     }
                 }
                 Err(RelayError::Unavailable(
@@ -1383,10 +1541,9 @@ impl RelayTransport for WebSocketRelayTransport {
 fn relay_request(subscription: &str, filter: &RelayFilter) -> String {
     let mut wire = serde_json::Map::new();
     wire.insert("kinds".into(), serde_json::json!(filter.kinds));
-    wire.insert(
-        "#p".into(),
-        serde_json::json!([filter.recipient_public_key]),
-    );
+    if let Some(recipient) = &filter.recipient_public_key {
+        wire.insert("#p".into(), serde_json::json!([recipient]));
+    }
     wire.insert("limit".into(), serde_json::json!(filter.limit));
     if let Some(author) = &filter.author_public_key {
         wire.insert("authors".into(), serde_json::json!([author]));
@@ -1524,6 +1681,718 @@ mod tests {
         }
     }
 
+    fn roster_statement(owner: &Keys, device: &str, status: &str, at: u64) -> String {
+        EventBuilder::new(Kind::Custom(30_078), "")
+            .tags([
+                Tag::parse(["d", &format!("org.korri.device-owner:{device}")]).unwrap(),
+                Tag::parse(["device", device]).unwrap(),
+                Tag::parse(["status", status]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(at))
+            .finalize(owner)
+            .unwrap()
+            .as_json()
+    }
+
+    #[tokio::test]
+    async fn roster_keeps_latest_evidence_and_terminal_revocation_across_relays() {
+        let (relays, network, first, second, owner) = setup();
+        let device = second.device_public_key().unwrap();
+        let reader =
+            CoordinatedRelays::new(relays.clone(), first.clone(), network.clone()).unwrap();
+        let owned = second.owner_statement_json().unwrap();
+        network.inject(&relays.as_slice()[0], &owned).unwrap();
+        network.inject(&relays.as_slice()[1], &owned).unwrap();
+        network
+            .inject(
+                &relays.as_slice()[0],
+                &first.owner_statement_json().unwrap(),
+            )
+            .unwrap();
+        let foreign = roster_statement(&Keys::generate(), device, "revoked", 500);
+        network.inject(&relays.as_slice()[0], &foreign).unwrap();
+        let initial = reader.read_owner_roster().await.unwrap();
+        assert_eq!(initial.len(), 1);
+        assert!(initial[0].is_owned());
+        assert_eq!(initial[0].latest.event_json, owned);
+        let revoked = roster_statement(&owner, device, "revoked", 20);
+        network.inject(&relays.as_slice()[1], &revoked).unwrap();
+        // A stale replica still has the old owned statement.
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(roster.len(), 1);
+        assert!(!roster[0].is_owned());
+        assert_eq!(roster[0].latest.event_json, revoked);
+        assert_eq!(roster[0].revocation.as_ref().unwrap().event_json, revoked);
+        // Newer owned evidence cannot erase an observed terminal revocation.
+        let newer_owned = roster_statement(&owner, device, "owned", 30);
+        network.inject(&relays.as_slice()[0], &newer_owned).unwrap();
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(roster[0].latest.event_json, newer_owned);
+        assert!(!roster[0].is_owned());
+        assert_eq!(roster[0].revocation.as_ref().unwrap().event_json, revoked);
+    }
+
+    #[tokio::test]
+    async fn roster_uses_lower_event_id_for_equal_timestamp_and_preserves_revocation() {
+        let (relays, network, first, second, owner) = setup();
+        let owned = roster_statement(&owner, second.device_public_key().unwrap(), "owned", 20);
+        let revoked = roster_statement(&owner, second.device_public_key().unwrap(), "revoked", 20);
+        let owned_id = DeviceIdentity::verify_event(&owned).unwrap().id;
+        let revoked_id = DeviceIdentity::verify_event(&revoked).unwrap().id;
+        let expected = if owned_id < revoked_id {
+            &owned
+        } else {
+            &revoked
+        };
+        network.inject(&relays.as_slice()[0], &owned).unwrap();
+        network.inject(&relays.as_slice()[1], &revoked).unwrap();
+        let reader = CoordinatedRelays::new(relays.clone(), first, network.clone()).unwrap();
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(&roster[0].latest.event_json, expected);
+        assert!(!roster[0].is_owned());
+        assert_eq!(roster[0].revocation.as_ref().unwrap().event_json, revoked);
+        // The in-process relay follows the same replacement rule in either order.
+        for relay in relays.as_slice() {
+            network.inject(relay, &owned).unwrap();
+            network.inject(relay, &revoked).unwrap();
+        }
+        assert_eq!(
+            &reader.read_owner_roster().await.unwrap()[0]
+                .latest
+                .event_json,
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn roster_deduplicates_before_cap_and_retains_late_revocation_evidence() {
+        let (relays, network, first, _, owner) = setup();
+        let mut devices: Vec<_> = (0..MAX_READ_EVENTS)
+            .map(|_| Keys::generate().public_key().to_hex())
+            .collect();
+        devices.sort();
+        for device in &devices {
+            let owned = roster_statement(&owner, device, "owned", 100);
+            for relay in relays.as_slice() {
+                network.inject(relay, &owned).unwrap();
+            }
+        }
+        let revoked = roster_statement(&owner, &devices[0], "revoked", 200);
+        network.inject(&relays.as_slice()[1], &revoked).unwrap();
+        let reader = CoordinatedRelays::new(relays.clone(), first, network.clone()).unwrap();
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(roster.len(), MAX_READ_EVENTS);
+        assert_eq!(roster[0].latest.statement.device_public_key, devices[0]);
+        assert_eq!(roster[0].revocation.as_ref().unwrap().event_json, revoked);
+        assert_eq!(
+            roster.iter().filter(|entry| entry.is_owned()).count(),
+            MAX_READ_EVENTS - 1
+        );
+        // More distinct devices across bounded relays cannot grow the global roster.
+        for _ in 0..20 {
+            let device = Keys::generate().public_key().to_hex();
+            network
+                .inject(
+                    &relays.as_slice()[1],
+                    &roster_statement(&owner, &device, "owned", 300),
+                )
+                .unwrap();
+        }
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(roster.len(), MAX_READ_EVENTS);
+        assert!(roster
+            .windows(2)
+            .all(|pair| pair[0].latest.statement.device_public_key
+                < pair[1].latest.statement.device_public_key));
+    }
+
+    #[tokio::test]
+    async fn roster_empty_success_partial_outage_and_total_outage_are_distinct() {
+        let (relays, network, first, second, _) = setup();
+        let reader = CoordinatedRelays::new(relays.clone(), first, network.clone()).unwrap();
+        let publisher =
+            CoordinatedRelays::new(relays.clone(), second.clone(), network.clone()).unwrap();
+        assert!(reader.read_owner_roster().await.unwrap().is_empty());
+        network.set_available(&relays.as_slice()[1], false);
+        assert!(reader.read_owner_roster().await.unwrap().is_empty());
+        assert!(matches!(
+            publisher.publish_owner_statement().await.unwrap(),
+            PublishState::Partial { .. }
+        ));
+        assert_eq!(
+            reader.read_owner_roster().await.unwrap()[0]
+                .latest
+                .event_json,
+            second.owner_statement_json().unwrap()
+        );
+        network.set_available(&relays.as_slice()[0], false);
+        assert!(matches!(
+            reader.read_owner_roster().await,
+            Err(RelayError::Unavailable(_))
+        ));
+        assert!(matches!(
+            publisher.publish_owner_statement().await.unwrap(),
+            PublishState::Failed { .. }
+        ));
+        // Roster-specific outage reporting must not change signer or endpoint reads.
+        assert!(reader
+            .read_signer_packets(
+                second.device_public_key().unwrap(),
+                second.device_public_key().unwrap(),
+                0
+            )
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(reader.receive(100).await.unwrap().endpoints.is_empty());
+        network.set_available(&relays.as_slice()[0], true);
+        assert!(reader.read_owner_roster().await.unwrap()[0].is_owned());
+    }
+
+    #[tokio::test]
+    async fn public_roster_filters_omit_recipient_but_private_filters_retain_it() {
+        let (relays, network, first, second, owner) = setup();
+        let mut filter = RelayFilter {
+            kinds: vec![30_078],
+            recipient_public_key: None,
+            author_public_key: Some(owner.public_key().to_hex()),
+            since: None,
+            limit: MAX_READ_EVENTS,
+        };
+        let public: serde_json::Value =
+            serde_json::from_str(&relay_request("roster", &filter)).unwrap();
+        assert!(public[2].get("#p").is_none());
+        assert_eq!(
+            public[2]["authors"],
+            serde_json::json!([owner.public_key().to_hex()])
+        );
+        network
+            .inject(
+                &relays.as_slice()[0],
+                &second.owner_statement_json().unwrap(),
+            )
+            .unwrap();
+        network
+            .inject(
+                &relays.as_slice()[0],
+                &roster_statement(
+                    &Keys::generate(),
+                    second.device_public_key().unwrap(),
+                    "owned",
+                    30,
+                ),
+            )
+            .unwrap();
+        let auth: Arc<dyn RelayAuthSigner> = Arc::new(DeviceAuthSigner(Arc::new(first)));
+        assert_eq!(
+            network
+                .read(&relays.as_slice()[0], &filter, auth.clone())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        filter.recipient_public_key = Some(second.device_public_key().unwrap().into());
+        let private: serde_json::Value =
+            serde_json::from_str(&relay_request("private", &filter)).unwrap();
+        assert_eq!(
+            private[2]["#p"],
+            serde_json::json!([second.device_public_key().unwrap()])
+        );
+        assert!(network
+            .read(&relays.as_slice()[0], &filter, auth)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn websocket_owner_publication_retries_auth_required_after_device_auth_ack() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_url = format!("ws://{}", listener.local_addr().unwrap());
+        let owner = Keys::generate();
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &owner, 10);
+        let expected: serde_json::Value =
+            serde_json::from_str(&identity.owner_statement_json().unwrap()).unwrap();
+        let device = identity.device_public_key().unwrap().to_owned();
+        let auth_relay = relay_url.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let first = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            let first: serde_json::Value = serde_json::from_str(&first).unwrap();
+            assert_eq!(first, serde_json::json!(["EVENT", expected]));
+            let event = DeviceIdentity::verify_event(&first[1].to_string()).unwrap();
+            assert_eq!(event.author, owner.public_key().to_hex());
+            assert_ne!(event.author, device);
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["AUTH", "delegated-challenge"])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["OK", event.id, false, "auth-required: authenticate first"])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            let auth = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            let auth: serde_json::Value = serde_json::from_str(&auth).unwrap();
+            assert_eq!(auth[0], "AUTH");
+            let verified = DeviceIdentity::verify_event(&auth[1].to_string()).unwrap();
+            assert_eq!(verified.author, device);
+            assert_eq!(verified.kind, 22_242);
+            assert_eq!(
+                verified.tags,
+                vec![
+                    vec!["relay".to_owned(), auth_relay],
+                    vec!["challenge".to_owned(), "delegated-challenge".to_owned()]
+                ]
+            );
+            assert!(timeout(Duration::from_millis(25), socket.next())
+                .await
+                .is_err());
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["OK", verified.id, true, ""])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            let repeated = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&repeated).unwrap(),
+                first
+            );
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["OK", event.id, true, ""])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
+        });
+        let publisher = CoordinatedRelays::new(
+            RelayList::configured(vec![relay_url]).unwrap(),
+            identity,
+            Arc::new(WebSocketRelayTransport::new()),
+        )
+        .unwrap();
+        assert!(matches!(
+            publisher.publish_owner_statement().await.unwrap(),
+            PublishState::Published { .. }
+        ));
+        server.await.unwrap();
+    }
+
+    type RelaySocket = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
+
+    async fn send_relay(socket: &mut RelaySocket, value: serde_json::Value) {
+        socket
+            .send(Message::Text(value.to_string().into()))
+            .await
+            .unwrap();
+    }
+
+    async fn receive_relay(socket: &mut RelaySocket) -> serde_json::Value {
+        let text = socket.next().await.unwrap().unwrap().into_text().unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    async fn challenge_publication(socket: &mut RelaySocket) -> String {
+        send_relay(socket, serde_json::json!(["AUTH", "publish-challenge"])).await;
+        let auth = receive_relay(socket).await;
+        assert_eq!(auth[0], "AUTH");
+        let verified = DeviceIdentity::verify_event(&auth[1].to_string()).unwrap();
+        assert_eq!(verified.kind, 22_242);
+        assert!(has_tag(&verified.tags, "challenge", "publish-challenge"));
+        verified.id
+    }
+
+    async fn publication_connection_closed(socket: &mut RelaySocket) {
+        let next = timeout(OPERATION_TIMEOUT + Duration::from_secs(1), socket.next())
+            .await
+            .expect("publisher must close within its operation deadline");
+        assert!(!matches!(next, Some(Ok(Message::Text(_)))));
+    }
+
+    async fn websocket_publication_exchange<F, Fut>(exchange: F) -> Result<(), RelayError>
+    where
+        F: FnOnce(RelaySocket, serde_json::Value) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_url = format!("ws://{}", listener.local_addr().unwrap());
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &Keys::generate(), 10);
+        let event = identity.owner_statement_json().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let first = receive_relay(&mut socket).await;
+            assert_eq!(first[0], "EVENT");
+            DeviceIdentity::verify_event(&first[1].to_string()).unwrap();
+            exchange(socket, first).await;
+        });
+        let result = timeout(
+            OPERATION_TIMEOUT + Duration::from_secs(2),
+            WebSocketRelayTransport::new().publish(
+                &relay_url,
+                &event,
+                Arc::new(DeviceAuthSigner(Arc::new(identity))),
+            ),
+        )
+        .await
+        .expect("authentication must not reset the publication deadline");
+        server.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_accepts_initial_event_without_auth_or_retry() {
+        let result = websocket_publication_exchange(|mut socket, first| async move {
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", first[1]["id"], true, ""]),
+            )
+            .await;
+            publication_connection_closed(&mut socket).await;
+        })
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_ignores_unrelated_ok_while_waiting_for_auth() {
+        let result = websocket_publication_exchange(|mut socket, first| async move {
+            let auth_id = challenge_publication(&mut socket).await;
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", first[1]["id"], false, "auth-required: login"]),
+            )
+            .await;
+            for accepted in [false, true] {
+                send_relay(
+                    &mut socket,
+                    serde_json::json!(["OK", "00".repeat(32), accepted, "unrelated event"]),
+                )
+                .await;
+                assert!(timeout(Duration::from_millis(25), socket.next())
+                    .await
+                    .is_err());
+            }
+            send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+            assert_eq!(receive_relay(&mut socket).await, first);
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", first[1]["id"], true, ""]),
+            )
+            .await;
+        })
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_rejects_auth_denial_without_retry() {
+        let result = websocket_publication_exchange(|mut socket, first| async move {
+            let auth_id = challenge_publication(&mut socket).await;
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", first[1]["id"], false, "auth-required: login"]),
+            )
+            .await;
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", auth_id, false, "restricted: device denied"]),
+            )
+            .await;
+            publication_connection_closed(&mut socket).await;
+        })
+        .await;
+        assert!(
+            matches!(result, Err(RelayError::Protocol(reason)) if reason == "restricted: device denied")
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_bounds_repeated_challenges_before_and_after_auth() {
+        for after_ack in [false, true] {
+            for challenge in ["publish-challenge", "different-challenge"] {
+                let result = websocket_publication_exchange(move |mut socket, first| async move {
+                    let auth_id = challenge_publication(&mut socket).await;
+                    if after_ack {
+                        send_relay(
+                            &mut socket,
+                            serde_json::json!([
+                                "OK",
+                                first[1]["id"],
+                                false,
+                                "auth-required: login"
+                            ]),
+                        )
+                        .await;
+                        send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+                        assert_eq!(receive_relay(&mut socket).await, first);
+                    }
+                    send_relay(&mut socket, serde_json::json!(["AUTH", challenge])).await;
+                    publication_connection_closed(&mut socket).await;
+                })
+                .await;
+                assert!(
+                    matches!(result, Err(RelayError::Protocol(reason)) if reason == "AUTH challenge limit exceeded")
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_rejects_event_policy_and_retry_failures() {
+        for after_retry in [false, true] {
+            for reason in [
+                "blocked: owner publication denied",
+                "restricted: author is not authenticated device",
+                "invalid: event rejected",
+                "rate-limited: slow down",
+                "auth-required: login",
+            ] {
+                // Only the first auth-required rejection is recoverable.
+                if !after_retry && reason.starts_with("auth-required:") {
+                    continue;
+                }
+                let result = websocket_publication_exchange(move |mut socket, first| async move {
+                    let auth_id = challenge_publication(&mut socket).await;
+                    if after_retry {
+                        send_relay(
+                            &mut socket,
+                            serde_json::json!([
+                                "OK",
+                                first[1]["id"],
+                                false,
+                                "auth-required: login"
+                            ]),
+                        )
+                        .await;
+                        send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+                        assert_eq!(receive_relay(&mut socket).await, first);
+                    }
+                    send_relay(
+                        &mut socket,
+                        serde_json::json!(["OK", first[1]["id"], false, reason]),
+                    )
+                    .await;
+                    publication_connection_closed(&mut socket).await;
+                })
+                .await;
+                assert!(matches!(result, Err(RelayError::Protocol(message)) if message == reason));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_auth_ack_alone_does_not_retry_or_report_success() {
+        let result = websocket_publication_exchange(|mut socket, _| async move {
+            let auth_id = challenge_publication(&mut socket).await;
+            send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+            assert!(timeout(Duration::from_millis(25), socket.next())
+                .await
+                .is_err());
+            socket.close(None).await.unwrap();
+        })
+        .await;
+        assert!(matches!(result, Err(RelayError::Unavailable(_))));
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_auth_retry_keeps_total_deadline() {
+        let result = websocket_publication_exchange(|mut socket, first| async move {
+            sleep(OPERATION_TIMEOUT / 2).await;
+            let auth_id = challenge_publication(&mut socket).await;
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", first[1]["id"], false, "auth-required: login"]),
+            )
+            .await;
+            send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+            assert_eq!(receive_relay(&mut socket).await, first);
+            publication_connection_closed(&mut socket).await;
+        })
+        .await;
+        assert!(matches!(result, Err(RelayError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn websocket_publication_auth_keeps_message_and_aggregate_response_bounds() {
+        for aggregate in [false, true] {
+            let result = websocket_publication_exchange(move |mut socket, _| async move {
+                let auth_id = challenge_publication(&mut socket).await;
+                // Keep the EVENT pending while exercising bounds after AUTH succeeds.
+                send_relay(&mut socket, serde_json::json!(["OK", auth_id, true, ""])).await;
+                let size = if aggregate {
+                    MAX_EVENT_BYTES / 2
+                } else {
+                    MAX_EVENT_BYTES
+                };
+                let count = if aggregate {
+                    MAX_RESPONSE_BYTES / size
+                } else {
+                    1
+                };
+                for _ in 0..count {
+                    send_relay(&mut socket, serde_json::json!(["NOTICE", "x".repeat(size)])).await;
+                }
+                publication_connection_closed(&mut socket).await;
+            })
+            .await;
+            assert!(
+                matches!(result, Err(RelayError::Protocol(reason)) if reason == "relay response exceeds bounds")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn websocket_signer_publication_waits_for_matching_auth_ack_and_initial_rejection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_url = format!("ws://{}", listener.local_addr().unwrap());
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &Keys::generate(), 10);
+        let signer = Nip46ConnectionIdentity::load_or_create(root.path()).unwrap();
+        let device = identity.device_public_key().unwrap().to_owned();
+        let packet = signer
+            .sign_encrypted_event(
+                &Keys::generate().public_key().to_hex(),
+                24_133,
+                "signer request",
+                unix_now(),
+            )
+            .unwrap();
+        let expected: serde_json::Value = serde_json::from_str(&packet.json).unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let first = receive_relay(&mut socket).await;
+            assert_eq!(first, serde_json::json!(["EVENT", expected]));
+            let event = DeviceIdentity::verify_event(&first[1].to_string()).unwrap();
+            assert_eq!(event.kind, 24_133);
+            assert_eq!(event.author, signer.public_key());
+            assert_ne!(event.author, device);
+            send_relay(&mut socket, serde_json::json!(["AUTH", "signer-challenge"])).await;
+            let auth = receive_relay(&mut socket).await;
+            assert_eq!(auth[0], "AUTH");
+            let auth = DeviceIdentity::verify_event(&auth[1].to_string()).unwrap();
+            assert_eq!(auth.author, device);
+            assert_eq!(auth.kind, 22_242);
+            assert!(has_tag(&auth.tags, "challenge", "signer-challenge"));
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", "00".repeat(32), true, ""]),
+            )
+            .await;
+            assert!(timeout(Duration::from_millis(25), socket.next())
+                .await
+                .is_err());
+            // AUTH acknowledgement may precede the initial EVENT rejection.
+            send_relay(&mut socket, serde_json::json!(["OK", auth.id, true, ""])).await;
+            assert!(timeout(Duration::from_millis(25), socket.next())
+                .await
+                .is_err());
+            send_relay(
+                &mut socket,
+                serde_json::json!(["OK", event.id, false, "auth-required: login"]),
+            )
+            .await;
+            assert_eq!(receive_relay(&mut socket).await, first);
+            send_relay(&mut socket, serde_json::json!(["OK", event.id, true, ""])).await;
+        });
+        let publisher = CoordinatedRelays::new(
+            RelayList::configured(vec![relay_url]).unwrap(),
+            identity,
+            Arc::new(WebSocketRelayTransport::new()),
+        )
+        .unwrap();
+        assert!(matches!(
+            publisher.publish_signer_packet(&packet.json).await,
+            PublishState::Published { .. }
+        ));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_roster_rechecks_owner_and_shape_even_when_relay_ignores_filter() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let relay_url = format!("ws://{}", listener.local_addr().unwrap());
+        let owner = Keys::generate();
+        let root = tempfile::tempdir().unwrap();
+        let identity = owned_identity(root.path(), &owner, 10);
+        let device = Keys::generate().public_key().to_hex();
+        let valid = roster_statement(&owner, &device, "owned", 100);
+        let wrong_owner = roster_statement(&Keys::generate(), &device, "revoked", 200);
+        let malformed = roster_statement(&owner, "not-a-key", "owned", 300);
+        let mut tampered: serde_json::Value = serde_json::from_str(&valid).unwrap();
+        tampered["sig"] = serde_json::json!("00".repeat(64));
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            let request = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+            assert_eq!(request[0], "REQ");
+            assert!(request[2].get("#p").is_none());
+            assert_eq!(
+                request[2]["authors"],
+                serde_json::json!([owner.public_key().to_hex()])
+            );
+            assert_eq!(request[2]["kinds"], serde_json::json!([30_078]));
+            assert_eq!(request[2]["limit"], MAX_READ_EVENTS);
+            for json in [
+                wrong_owner,
+                malformed,
+                tampered.to_string(),
+                valid.clone(),
+                valid,
+            ] {
+                let event: serde_json::Value = serde_json::from_str(&json).unwrap();
+                socket
+                    .send(Message::Text(
+                        serde_json::json!(["EVENT", request[1], event])
+                            .to_string()
+                            .into(),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["EOSE", request[1]]).to_string().into(),
+                ))
+                .await
+                .unwrap();
+            let close = socket.next().await.unwrap().unwrap().into_text().unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&close).unwrap()[0],
+                "CLOSE"
+            );
+        });
+        let reader = CoordinatedRelays::new(
+            RelayList::configured(vec![relay_url]).unwrap(),
+            identity,
+            Arc::new(WebSocketRelayTransport::new()),
+        )
+        .unwrap();
+        let roster = reader.read_owner_roster().await.unwrap();
+        assert_eq!(roster.len(), 1);
+        assert_eq!(roster[0].latest.statement.device_public_key, device);
+        assert!(roster[0].is_owned());
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn publishes_to_two_relays_and_deduplicates_delivery_by_event_id() {
         let (relays, network, first, second, owner) = setup();
@@ -1556,6 +2425,17 @@ mod tests {
             let first = socket.next().await.unwrap().unwrap().into_text().unwrap();
             let first: serde_json::Value = serde_json::from_str(&first).unwrap();
             let event_id = first[1]["id"].as_str().unwrap().to_owned();
+            let endpoint_event = DeviceIdentity::verify_event(&first[1].to_string()).unwrap();
+            assert_eq!(endpoint_event.kind, ENDPOINT_EVENT_KIND);
+            // This ordering also covers rejection before the challenge arrives.
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["OK", event_id, false, "auth-required: authenticate first"])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
             socket
                 .send(Message::Text(
                     serde_json::json!(["AUTH", "relay-challenge"])
@@ -1569,9 +2449,18 @@ mod tests {
             let verified = DeviceIdentity::verify_event(&auth[1].to_string()).unwrap();
             assert_eq!(verified.kind, 22_242);
             assert!(has_tag(&verified.tags, "challenge", "relay-challenge"));
+            assert_eq!(verified.author, endpoint_event.author);
+            socket
+                .send(Message::Text(
+                    serde_json::json!(["OK", verified.id, true, ""])
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .unwrap();
             let repeated = socket.next().await.unwrap().unwrap().into_text().unwrap();
             let repeated: serde_json::Value = serde_json::from_str(&repeated).unwrap();
-            assert_eq!(repeated[1]["id"], event_id);
+            assert_eq!(repeated, first);
             socket
                 .send(Message::Text(
                     serde_json::json!(["OK", event_id, true, ""])

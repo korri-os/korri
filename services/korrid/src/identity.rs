@@ -28,7 +28,7 @@ const DEVICE_KEY_FILE: &str = "device.key";
 const OWNER_EVENT_FILE: &str = "owner.event.json";
 const NIP46_CLIENT_KEY_FILE: &str = "nip46-client.key";
 const NIP46_CONNECTION_FILE: &str = "nip46.connection.json";
-const OWNER_EVENT_KIND: u16 = 30_078;
+pub(crate) const OWNER_EVENT_KIND: u16 = 30_078;
 const OWNER_EVENT_PREFIX: &str = "org.korri.device-owner:";
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_ENCRYPTED_PLAINTEXT_BYTES: usize = 4 * 1024 * 1024;
@@ -129,6 +129,20 @@ pub struct VerifiedOwnerStatement {
     pub device_public_key: String,
     pub status: OwnerStatementStatus,
     pub created_at: u64,
+}
+
+impl VerifiedOwnerStatement {
+    /// Compare evidence for the same owner/device address using NIP-01 ordering.
+    pub fn is_newer_than(&self, current: &Self) -> bool {
+        self.owner_public_key == current.owner_public_key
+            && self.device_public_key == current.device_public_key
+            && event_is_newer(
+                self.created_at,
+                &self.event_id,
+                current.created_at,
+                &current.event_id,
+            )
+    }
 }
 
 impl OwnerStatementStatus {
@@ -387,7 +401,12 @@ impl DeviceIdentity {
                 let current = self.owner_event.as_ref().ok_or_else(|| {
                     IdentityError::Invalid("owned identity has no owner event".into())
                 })?;
-                if !event_is_newer(&statement.event, current) {
+                if !event_is_newer(
+                    statement.event.created_at.as_secs(),
+                    &statement.event.id.to_hex(),
+                    current.created_at.as_secs(),
+                    &current.id.to_hex(),
+                ) {
                     return Err(IdentityError::InvalidEvent(
                         "owner statement is not newer".into(),
                     ));
@@ -442,6 +461,35 @@ impl DeviceIdentity {
             status: statement.status,
             created_at: statement.event.created_at.as_secs(),
         })
+    }
+
+    /// Derive the canonical device key, then apply the existing strict owner verifier.
+    pub fn derive_owner_statement(
+        event_json: &str,
+    ) -> Result<VerifiedOwnerStatement, IdentityError> {
+        if event_json.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::InvalidEvent(
+                "owner statement is too large".into(),
+            ));
+        }
+        let event = Event::from_json(event_json)
+            .map_err(|_| IdentityError::InvalidEvent("owner statement JSON is malformed".into()))?;
+        let device_tag = event.tags.get(1).ok_or_else(|| {
+            IdentityError::InvalidEvent("owner statement has no device tag".into())
+        })?;
+        let device = match device_tag.as_slice() {
+            [name, device] if name == "device" => device,
+            _ => {
+                return Err(IdentityError::InvalidEvent(
+                    "owner device tag is malformed".into(),
+                ))
+            }
+        };
+        // PublicKey::from_hex validates the bytes, not whether they are a curve point.
+        parse_public_key(device)?
+            .xonly()
+            .map_err(|_| IdentityError::InvalidEvent("public key is invalid".into()))?;
+        Self::verify_owner_statement(event_json, device)
     }
 
     /// Verify an owned statement for one exact device and return its owner key.
@@ -809,9 +857,14 @@ fn state_from_owner_event(event: &Event, device_public_key: &str) -> IdentitySta
     }
 }
 
-fn event_is_newer(candidate: &Event, current: &Event) -> bool {
-    candidate.created_at > current.created_at
-        || (candidate.created_at == current.created_at && candidate.id < current.id)
+pub(crate) fn event_is_newer(
+    candidate_created_at: u64,
+    candidate_id: &str,
+    current_created_at: u64,
+    current_id: &str,
+) -> bool {
+    candidate_created_at > current_created_at
+        || (candidate_created_at == current_created_at && candidate_id < current_id)
 }
 
 fn signed_event(event: Event) -> SignedEvent {
@@ -1077,6 +1130,74 @@ mod tests {
             .finalize(owner)
             .unwrap()
             .as_json()
+    }
+
+    #[test]
+    fn roster_verifier_derives_only_a_canonical_device_from_strict_signed_tags() {
+        let owner = keys("0000000000000000000000000000000000000000000000000000000000000003");
+        let device = keys("0000000000000000000000000000000000000000000000000000000000000004")
+            .public_key()
+            .to_hex();
+        for status in [OwnerStatementStatus::Owned, OwnerStatementStatus::Revoked] {
+            let json = owner_statement(&owner, &device, status, 100);
+            assert_eq!(
+                DeviceIdentity::derive_owner_statement(&json).unwrap(),
+                DeviceIdentity::verify_owner_statement(&json, &device).unwrap()
+            );
+        }
+        let valid = owner_tags(&device, OwnerStatementStatus::Owned);
+        let mut swapped = valid.clone();
+        swapped.swap(0, 1);
+        let mut duplicate = valid.clone();
+        duplicate.push(valid[1].clone());
+        let mut wrong_address = valid.clone();
+        wrong_address[0][1].push('0');
+        let mut extra_value = valid.clone();
+        extra_value[1].push("extra".into());
+        let mut unknown_status = valid.clone();
+        unknown_status[2][1] = "unknown".into();
+        let mut cases = vec![
+            swapped,
+            duplicate,
+            wrong_address,
+            extra_value,
+            unknown_status,
+            vec![],
+        ];
+        for invalid_key in ["not-a-key".into(), "00".repeat(32), device.to_uppercase()] {
+            cases.push(owner_tags(&invalid_key, OwnerStatementStatus::Owned));
+        }
+        for tags in cases {
+            let json = EventBuilder::new(Kind::Custom(OWNER_EVENT_KIND), "")
+                .tags(parse_tags(tags).unwrap())
+                .custom_created_at(Timestamp::from(100))
+                .finalize(&owner)
+                .unwrap()
+                .as_json();
+            assert!(
+                DeviceIdentity::derive_owner_statement(&json).is_err(),
+                "{json}"
+            );
+        }
+        for (kind, content) in [(1, ""), (OWNER_EVENT_KIND, "not empty")] {
+            let json = EventBuilder::new(Kind::Custom(kind), content)
+                .tags(parse_tags(valid.clone()).unwrap())
+                .finalize(&owner)
+                .unwrap()
+                .as_json();
+            assert!(DeviceIdentity::derive_owner_statement(&json).is_err());
+        }
+        let mut tampered: serde_json::Value = serde_json::from_str(&owner_statement(
+            &owner,
+            &device,
+            OwnerStatementStatus::Owned,
+            100,
+        ))
+        .unwrap();
+        tampered["sig"] = serde_json::json!("00".repeat(64));
+        assert!(DeviceIdentity::derive_owner_statement(&tampered.to_string()).is_err());
+        assert!(DeviceIdentity::derive_owner_statement("{bad").is_err());
+        assert!(DeviceIdentity::derive_owner_statement(&" ".repeat(MAX_EVENT_BYTES + 1)).is_err());
     }
 
     #[test]

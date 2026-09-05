@@ -163,13 +163,31 @@ The repository includes the separate `org.korri.signer.test` Android application
 
 ## Relay coordination
 
-`RelayCoordinator` is the only relay-facing product contract. It publishes endpoint announcements and queued coordination commands. It converts relay events into `EndpointRecord` and `CoordinationCommand` values. It does not import or dispatch product RPC types.
+`RelayCoordinator` is the only relay-facing product contract. It publishes owner statements, endpoint announcements, and queued coordination commands. It reads same-owner roster evidence and converts private relay events into `EndpointRecord` and `CoordinationCommand` values. It does not import or dispatch product RPC types.
 
 Korri reads every configured relay. It deduplicates by NIP-01 event ID. It publishes to every configured relay. One accepted publish is success. A mixed result is `PublishState::Partial`. Korri has no built-in public relay.
 
 Android and other device settings use the ordered `host.relays` list in `config.yaml`. Linux can supply the same ordered list as a JSON array in `KORRID_RELAYS`. Production URLs must use `wss://`. `ws://` is accepted only for loopback test relays.
 
 The production adapter uses bounded WebSocket connections and supports NIP-42 challenges. The deterministic in-process relay follows NIP-01 replacement and subscription ordering. Both adapters bound event size, read results, stored events, response bytes, subscriptions, and reconnect delay. NIP-11 documents are accepted with unknown fields ignored and are rejected above the local response bound. NIP-65 relay-list events do not override Korri's configured list.
+
+### Same-owner device roster
+
+The roster reuses the signed owner statement above. It adds no event kind, tags, configuration, or persisted format. `DeviceIdentity::derive_owner_statement` extracts a canonical lowercase device key from the strict device tag, checks that it is a secp256k1 public key, then uses the existing owner-statement verifier. A valid signature alone is not enough: kind, empty content, tag order, tag count, address, and status must all match.
+
+`RelayCoordinator::publish_owner_statement` publishes the stored signed owner event unchanged to every configured relay. The EVENT author remains the person key. NIP-42 AUTH uses the device key and the relay's challenge. No person signer call is needed. Publication uses the existing `Published`, `Partial`, and `Failed` results. A device without a stored owner statement cannot publish one. A stored revocation can be published too.
+
+`RelayCoordinator::read_owner_roster` requires a locally owned identity. It queries kind `30078` with exactly one `authors` key: the local owner. This public query omits `#p`. Endpoint, queued-command, and NIP-46 subscriptions retain their recipient `#p` filter. The reader verifies each statement and checks its owner again even when the relay claims to apply the filter. It excludes the local device.
+
+The result is a device-key-sorted `Vec<OwnerRosterEntry>`. Each entry contains `latest` signed evidence and optional `revocation` signed evidence. Each evidence value contains the existing `VerifiedOwnerStatement` and the complete signed event JSON. `latest` follows NIP-01 ordering: newer timestamp, then lower event ID. `VerifiedOwnerStatement::is_newer_than` compares only the same owner/device address.
+
+A signed same-owner device revocation is terminal for peer authorization. Therefore the entry retains the newest observed revocation even if its latest event says `owned`. `OwnerRosterEntry::is_owned` is true only for latest `owned` evidence with no observed revocation. Consumers must retain revocation evidence across reads; a later snapshot without that evidence does not restore membership. A reset creates a new device key.
+
+Each relay read is bounded to 128 events; there are at most eight relays. The reader deduplicates verified event IDs and reconciles all returned evidence before the global cap of 128 devices. Each returned device carries at most two signed events. This order prevents duplicates or newer owned events from hiding a returned device's revocation. The result is a bounded observation, not a complete owner inventory. Absence never proves revocation.
+
+One successful empty relay read is an empty successful roster result, even if other relays fail. If every relay read fails, only the roster boundary returns `RelayError::Unavailable`. Existing endpoint and signer read failure behavior is unchanged. A remembered peer can remain usable while relays are unavailable, but discovery of its revocation is delayed. Bounded reads and relay replacement can also hide evidence; this API does not provide a complete revocation history.
+
+Tests use the in-process relay for replacement, duplicate delivery, caps, and outages. Real loopback WebSocket tests check the public query and rejection of unsolicited wrong-owner evidence. Another checks unchanged person-authored publication with device-authored NIP-42 authentication. Public relays may reject this delegated publication; no public-relay acceptance is claimed.
 
 ### Endpoint announcements
 
