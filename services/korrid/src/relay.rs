@@ -129,12 +129,23 @@ pub struct EndpointRecord {
     pub candidates: Vec<String>,
     pub issued_at: u64,
     pub expires_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moonlight_address: Option<String>,
 }
 
 impl EndpointRecord {
     pub fn validate(&self, now: u64) -> Result<(), RelayError> {
         validate_public_key(&self.device_public_key)?;
         validate_public_key(&self.owner_public_key)?;
+        for value in [&self.label, &self.moonlight_address].into_iter().flatten() {
+            if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+                return Err(RelayError::InvalidEvent(
+                    "endpoint metadata is invalid".into(),
+                ));
+            }
+        }
         if self.generation == 0 {
             return Err(RelayError::InvalidEvent(
                 "endpoint generation must be positive".into(),
@@ -780,7 +791,7 @@ where
     }
 }
 
-fn decode_endpoint(
+pub(crate) fn decode_endpoint(
     identity: &DeviceIdentity,
     event_json: &str,
     author: &str,
@@ -1678,6 +1689,8 @@ mod tests {
             ],
             issued_at: now,
             expires_at: now + 600,
+            label: None,
+            moonlight_address: None,
         }
     }
 

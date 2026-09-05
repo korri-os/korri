@@ -256,6 +256,9 @@ pub struct Authorization {
 
 struct AuthorizationState {
     revocations: Vec<Revocation>,
+    // Negative evidence takes effect before I/O. Only synced events leave this
+    // in-memory set; duplicate inputs must still retry failed persistence.
+    pending_revocations: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -319,7 +322,10 @@ impl Authorization {
         prepare_private_directory(&certificate_directory)?;
         let revocations = load_revocations(&revocation_directory)?;
         Ok(Self {
-            state: Arc::new(Mutex::new(AuthorizationState { revocations })),
+            state: Arc::new(Mutex::new(AuthorizationState {
+                revocations,
+                pending_revocations: HashSet::new(),
+            })),
             revocation_directory,
             certificate_directory,
         })
@@ -359,15 +365,14 @@ impl Authorization {
         })
     }
 
-    /// Persist already-verified revocations only after the carrying request is
-    /// authorized and its replay nonce is accepted.
+    /// Accept already-verified revocations only after the carrying request is
+    /// authorized and its replay nonce is accepted. Shared denial takes effect
+    /// even if persistence fails; every commit retries pending writes. Restart
+    /// durability requires successful file and directory sync.
     pub fn commit_revocations(
         &self,
         attempt: &AuthorizationAttempt,
     ) -> Result<(), AuthorizationError> {
-        if attempt.revocations.is_empty() {
-            return Ok(());
-        }
         let mut state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
         for revocation in &attempt.revocations {
             if state
@@ -377,13 +382,28 @@ impl Authorization {
             {
                 continue;
             }
+            state
+                .pending_revocations
+                .insert(revocation.event_id.clone());
+            state.revocations.push(revocation.clone());
+        }
+        // Install the whole verified batch before attempting the first write.
+        // A storage error must not leave the remaining targets authorized.
+        let AuthorizationState {
+            revocations,
+            pending_revocations,
+        } = &mut *state;
+        for revocation in revocations {
+            if !pending_revocations.contains(&revocation.event_id) {
+                continue;
+            }
             write_private_atomically(
                 &self
                     .revocation_directory
                     .join(format!("{}.json", revocation.event_id)),
                 revocation.event_json.as_bytes(),
             )?;
-            state.revocations.push(revocation.clone());
+            pending_revocations.remove(&revocation.event_id);
         }
         Ok(())
     }
@@ -1332,6 +1352,93 @@ mod tests {
             .unwrap();
         assert!(matches!(
             revoked_pass.context(),
+            AuthorizationContext::Peer(Principal::Unknown { .. })
+        ));
+    }
+
+    #[test]
+    fn pending_pass_revocation_denies_and_empty_commit_retries_persistence() {
+        let owner = Keys::parse(OWNER).unwrap();
+        let device_owner = Keys::parse(OTHER_OWNER).unwrap();
+        let statement = owner_statement(&device_owner, DEVICE, "owned", NOW);
+        let pass = pass(&owner, "guest", &[STREAM_LAUNCH_SCOPE], NOW + 60);
+        let pass_id = DeviceIdentity::verify_event(&pass).unwrap().id;
+        let revoked = pass_revocation(&owner, &pass_id);
+        let root = tempfile::tempdir().unwrap();
+        let authorization = Authorization::load(root.path()).unwrap();
+        let existing = authorization.clone();
+        let guest_attempt = || {
+            existing
+                .attempt(&local(), DEVICE, Some(&statement), Some(&pass), &[], NOW)
+                .unwrap()
+        };
+        let AuthorizationContext::Peer(principal) = guest_attempt().context().clone() else {
+            panic!("peer principal")
+        };
+        assert!(matches!(principal, Principal::Guest { .. }));
+        authorization
+            .record_certificate(&principal, "sunshine-host", "exact-certificate")
+            .unwrap();
+        let carrier = "22".repeat(32);
+        let carrier_owned = owner_statement(&owner, &carrier, "owned", NOW);
+        let attempt = authorization
+            .attempt(
+                &local(),
+                &carrier,
+                Some(&carrier_owned),
+                None,
+                std::slice::from_ref(&revoked),
+                NOW,
+            )
+            .unwrap();
+        authorize(
+            attempt.context(),
+            &request(serde_json::json!({"_tag":"system.health","payload":{}})),
+        )
+        .unwrap();
+        // Preparing evidence is not acceptance: RPC still owns authorization
+        // and replay checks before this shared commit boundary.
+        assert!(matches!(
+            guest_attempt().context(),
+            AuthorizationContext::Peer(Principal::Guest { .. })
+        ));
+        let file = root.path().join(REVOCATION_DIRECTORY).join(format!(
+            "{}.json",
+            DeviceIdentity::verify_event(&revoked).unwrap().id
+        ));
+        fs::create_dir(&file).unwrap();
+        assert!(matches!(
+            authorization.commit_revocations(&attempt),
+            Err(AuthorizationError::Storage)
+        ));
+        assert!(matches!(
+            guest_attempt().context(),
+            AuthorizationContext::Peer(Principal::Unknown { .. })
+        ));
+        assert_eq!(
+            existing.certificate_revocations(&local(), NOW).unwrap(),
+            vec![CertificateRevocation {
+                device_public_key: DEVICE.into(),
+                host_uuid: "sunshine-host".into(),
+                client_certificate: "exact-certificate".into(),
+            }]
+        );
+        let retry = existing
+            .attempt(&local(), &carrier, Some(&carrier_owned), None, &[], NOW)
+            .unwrap();
+        assert!(matches!(
+            existing.commit_revocations(&retry),
+            Err(AuthorizationError::Storage)
+        ));
+        fs::remove_dir(&file).unwrap();
+        existing.commit_revocations(&retry).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), revoked);
+        let reloaded = Authorization::load(root.path()).unwrap();
+        let denied = reloaded
+            .attempt(&local(), DEVICE, Some(&statement), Some(&pass), &[], NOW)
+            .unwrap();
+        assert!(matches!(
+            denied.context(),
             AuthorizationContext::Peer(Principal::Unknown { .. })
         ));
     }

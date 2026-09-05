@@ -21,6 +21,7 @@ pub mod catalog_cli;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
+pub mod federation;
 mod game_assets;
 pub mod identity;
 pub mod identity_cli;

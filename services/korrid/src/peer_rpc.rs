@@ -130,6 +130,49 @@ impl PeerCredentials {
         }
     }
 
+    /// Replace the shared identity, not the credentials object held by one caller.
+    pub fn reload_identity(&self, private_state_root: &Path) -> Result<(), PeerRpcError> {
+        let mut current = self.identity.lock().map_err(|_| PeerRpcError::Identity)?;
+        let next = DeviceIdentity::load_or_create(private_state_root)
+            .map_err(|_| PeerRpcError::Identity)?;
+        if next.device_public_key() != current.device_public_key()
+            || matches!(next.state(), IdentityState::Invalid { .. })
+        {
+            return Err(PeerRpcError::Identity);
+        }
+        if let Some(previous) = current.owner_statement_json() {
+            let previous = DeviceIdentity::derive_owner_statement(&previous)
+                .map_err(|_| PeerRpcError::Identity)?;
+            let statement = next.owner_statement_json().ok_or(PeerRpcError::Identity)?;
+            let statement = DeviceIdentity::derive_owner_statement(&statement)
+                .map_err(|_| PeerRpcError::Identity)?;
+            if statement != previous
+                && (previous.status == crate::identity::OwnerStatementStatus::Revoked
+                    || !statement.is_newer_than(&previous))
+            {
+                return Err(PeerRpcError::Identity);
+            }
+        }
+        *current = next;
+        Ok(())
+    }
+
+    pub(crate) fn with_identity<R>(
+        &self,
+        use_identity: impl FnOnce(&DeviceIdentity) -> R,
+    ) -> Result<R, PeerRpcError> {
+        let identity = self.identity.lock().map_err(|_| PeerRpcError::Identity)?;
+        Ok(use_identity(&identity))
+    }
+
+    /// Take a short-lived signing snapshot before asynchronous relay work.
+    pub fn identity_snapshot(&self) -> Result<DeviceIdentity, PeerRpcError> {
+        self.identity
+            .lock()
+            .map(|identity| identity.clone())
+            .map_err(|_| PeerRpcError::Identity)
+    }
+
     pub fn public_key(&self) -> Result<String, PeerRpcError> {
         self.identity
             .lock()
@@ -636,6 +679,73 @@ mod tests {
     };
 
     const NOW: u64 = 1_700_000_000;
+
+    #[test]
+    fn credential_reload_updates_existing_clones_and_rejects_identity_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let credentials = PeerCredentials::load(root.path()).unwrap();
+        let clone = credentials.with_person_pass(None).with_revocations(vec![]);
+        let mut identity = DeviceIdentity::load_or_create(root.path()).unwrap();
+        let owner = Keys::generate();
+        let event = EventBuilder::new(Kind::Custom(30_078), "")
+            .tags([
+                Tag::parse([
+                    "d",
+                    &format!(
+                        "org.korri.device-owner:{}",
+                        credentials.public_key().unwrap()
+                    ),
+                ])
+                .unwrap(),
+                Tag::parse(["device", &credentials.public_key().unwrap()]).unwrap(),
+                Tag::parse(["status", "owned"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(NOW))
+            .finalize(&owner)
+            .unwrap()
+            .as_json();
+        identity.apply_owner_statement(&event).unwrap();
+        credentials.reload_identity(root.path()).unwrap();
+        assert!(matches!(
+            clone.identity_snapshot().unwrap().state(),
+            IdentityState::Owned { .. }
+        ));
+        let other = tempfile::tempdir().unwrap();
+        assert!(credentials.reload_identity(other.path()).is_err());
+        assert!(matches!(
+            clone.identity_snapshot().unwrap().state(),
+            IdentityState::Owned { .. }
+        ));
+        let revoked = EventBuilder::new(Kind::Custom(30_078), "")
+            .tags([
+                Tag::parse([
+                    "d",
+                    &format!(
+                        "org.korri.device-owner:{}",
+                        credentials.public_key().unwrap()
+                    ),
+                ])
+                .unwrap(),
+                Tag::parse(["device", &credentials.public_key().unwrap()]).unwrap(),
+                Tag::parse(["status", "revoked"]).unwrap(),
+            ])
+            .custom_created_at(Timestamp::from(NOW + 1))
+            .finalize(&owner)
+            .unwrap()
+            .as_json();
+        identity.apply_owner_statement(&revoked).unwrap();
+        credentials.reload_identity(root.path()).unwrap();
+        assert!(matches!(
+            clone.identity_snapshot().unwrap().state(),
+            IdentityState::Revoked { .. }
+        ));
+        std::fs::write(root.path().join("identity/owner.event.json"), event).unwrap();
+        assert!(credentials.reload_identity(root.path()).is_err());
+        assert!(matches!(
+            clone.identity_snapshot().unwrap().state(),
+            IdentityState::Revoked { .. }
+        ));
+    }
 
     fn token(byte: u8) -> String {
         hex::encode([byte; TOKEN_BYTES])
