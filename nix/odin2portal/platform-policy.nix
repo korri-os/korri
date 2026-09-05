@@ -64,9 +64,11 @@ in
   # cpu-sleep-0-0) it misses the GMU HFI response interrupt, the vote times
   # out (`a6xx_gmu_set_oob GPU_SET timeout`), and the GPU wedges -- a hard
   # display freeze, reproduced by legacy on game launch. Holding cpu0 state1
-  # disabled keeps it responsive. This mirrors ROCKNIX PR #2876; the kernel
-  # fix (PR #3044, gpucc power domains + rpmhpd rail declamp) postdates our
-  # pin and retires this line when the kernel is bumped past it.
+  # disabled keeps it responsive. This mirrors ROCKNIX PR #2876. Linux 7.2
+  # includes the GPU power-rail fix from ROCKNIX PR #3044. A GPU load test
+  # with deep idle enabled produced no GMU timeout, but glmark2 stopped in
+  # its buffer scene after 180 seconds. Keep this guard until a real game
+  # launch and longer GPU test complete without a timeout.
   services.korri.clockGovernor = {
     enable = true;
     gpuDevfreqNodes = [ "3d00000.gpu" ];

@@ -30,6 +30,7 @@
   modulesPath,
   pkgs,
   odinKernel,
+  odinRescueKernel,
   odinFirmware,
   ...
 }:
@@ -48,7 +49,7 @@
   boot = {
     consoleLogLevel = 7;
 
-    # Linux 7.0.2 with the ROCKNIX SM8550 patch queue. Built for aarch64 but
+    # Linux 7.2 with the ROCKNIX SM8550 patch queue. Built for aarch64 but
     # compiled on an x86_64 host, because the aarch64 builder cannot spare the
     # ~30 GB a kernel compile needs.
     kernelPackages = pkgs.linuxPackagesFor odinKernel;
@@ -110,6 +111,18 @@
         # Once bootctl has written its own loader.conf the check passes and
         # every later switch is unattended.
       };
+    };
+  };
+
+  # Every new generation carries a Linux 7.0.2 rescue specialisation. This
+  # keeps the known-good kernel, initrd, modules, and DTB available after the
+  # normal generation limit removes generation 3.
+  specialisation.linux-7_0_2-rescue.configuration = {
+    system.nixos.tags = [ "linux-7.0.2-rescue" ];
+    boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor odinRescueKernel);
+    hardware.deviceTree = {
+      package = lib.mkForce odinRescueKernel;
+      name = lib.mkForce "qcom/${odinRescueKernel.dtbName}.dtb";
     };
   };
 

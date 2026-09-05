@@ -115,12 +115,13 @@ is no such concern, propose no schema change.
 - Never put the AYN Odin 2 Portal in a state that needs the case opened to
   recover. The only recovery that needs the case opened is EDL through test
   points, and the only way to reach it is to break the early boot chain. So
-  no tool, script, or procedure may write `abl_a`, `abl_b`, `xbl_*`,
-  `xbl_config_*`, `tz_*`, `hyp_*`, `aop_*`, `devcfg_*`, `uefi*`, or any
-  other firmware partition. The device runs ROCKNIX-ABL already; NixOS work
-  produces only files that ABL loads from a FAT partition (`/KERNEL`) plus an
-  ext4 root. Prefer tethered `fastboot boot <image>` or an SD-card root for
-  first boots so internal UFS is untouched. A write to `sda18`/`sda19`
+  no tool, script, or procedure may write `abl_a`, `abl_b`, `loader_a`,
+  `loader_b`, `xbl_*`, `xbl_config_*`, `tz_*`, `hyp_*`, `aop_*`, `devcfg_*`,
+  `uefi*`, or any other firmware partition. AYN U-Boot in `loader_a` starts
+  systemd-boot from the SD-card ESP. NixOS work produces only SD-card files:
+  the ESP, EFI-stub kernel, initrd, DTB, and ext4 root. Prefer tethered
+  `fastboot boot <image>` or an SD-card root for first boots so internal UFS
+  is untouched. A write to `sda18`/`sda19`
   (ROCKNIX/STORAGE) is allowed only with explicit user approval per run and
   never by an automated path.
 - Services are Rust. Wire types live in Rust and are exported through

@@ -25,6 +25,8 @@ let
 
   kernel = pkgs.callPackage ./kernel { };
   kernelCross = crossPkgs.callPackage ./kernel { };
+  rescueKernel = pkgs.callPackage ./kernel-rescue-7.0.2 { };
+  rescueKernelCross = crossPkgs.callPackage ./kernel-rescue-7.0.2 { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
 
@@ -32,6 +34,7 @@ let
     system = "aarch64-linux";
     specialArgs = {
       odinKernel = kernelCross;
+      odinRescueKernel = rescueKernelCross;
       odinFirmware = firmwareCross;
     };
     modules = [ ./sd-image.nix ];
@@ -41,6 +44,8 @@ in
   inherit
     kernel
     kernelCross
+    rescueKernel
+    rescueKernelCross
     firmware
     firmwareCross
     configuration

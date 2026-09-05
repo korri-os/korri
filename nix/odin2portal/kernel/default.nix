@@ -4,27 +4,33 @@
 # board: the AYN device trees, the ICNA3512 panel, the rsinput gamepad, the
 # HTR3212 LED and aw88166 codec changes, and the haptics driver all live in
 # the ROCKNIX SM8550 patch queue. This package rebuilds that kernel under
-# Nix with the same 7.0.2 source, the same patch order, the same device
-# trees, and the same .config. Nothing here is a local improvement; when the
-# AYN series lands upstream this package shrinks.
+# Nix with the same 7.2 source, patch order, device trees, and .config. It
+# excludes one hardware-tested DPU patch as documented below. When the AYN
+# series enters the upstream kernel, this package becomes smaller.
 #
-# Provenance: ROCKNIX distribution rev f080b462f54b5807bdd16ac7cc2ab64528b038b1
-# (branch next, 2026-05-13), the revision pinned by nix-on-rocks
-# upstream.lock and running on sobo today.
+# Provenance: ROCKNIX distribution rev 1178bc2238de782bf081c558c177d35bb3690021
+# (branch next, 2026-09-04).
 #
 #   patches/0000-mainline-*   projects/ROCKNIX/packages/linux/patches/mainline/
+#   patches/0000-version-*    projects/ROCKNIX/packages/linux/patches/7.2/
 #   patches/<rest>            projects/ROCKNIX/devices/SM8550/patches/linux/
 #   dts/                      projects/ROCKNIX/devices/SM8550/linux/dts/qcom/
 #   config                    projects/ROCKNIX/devices/SM8550/linux/linux.aarch64.conf
 #
-# ROCKNIX applies patches in the order mainline, then device, sorted by
-# filename within each directory. The 0000-mainline- prefix keeps that order
-# under a single sorted glob.
+# The file 0000-version-0010-msm-resource-cleanup.patch.disabled is the one
+# exception. With this patch, the Portal stops during early DPU startup. The
+# panel stays black, the root journal does not start, and SSH does not start.
+# Linux 7.2 starts with the old or new DTB after this patch is disabled. Keep
+# the source here until ROCKNIX replaces or removes the patch.
+#
+# ROCKNIX applies patches in this order: mainline, Linux 7.2, and device.
+# It sorts each directory by file name. The two 0000 prefixes keep that order
+# under one sorted glob.
 #
 # The config differs from ROCKNIX in two placeholders only:
 # CONFIG_DEFAULT_HOSTNAME (was @DEVICENAME@) and CONFIG_INITRAMFS_SOURCE
-# (was @INITRAMFS_SOURCE@; ROCKNIX embeds its initramfs in the kernel, NixOS
-# supplies its own through the Android boot image).
+# (was @INITRAMFS_SOURCE@). ROCKNIX puts its initramfs in the kernel. The
+# systemd-boot entry supplies the NixOS initrd.
 {
   lib,
   fetchurl,
@@ -37,19 +43,22 @@
 }:
 
 let
-  version = "7.0.2";
+  version = "7.2";
   patchDir = ./patches;
-  patchNames = lib.sort lib.lessThan (
-    builtins.filter (name: lib.hasSuffix ".patch" name) (builtins.attrNames (builtins.readDir patchDir))
-  );
+  brokenDpuPatchName = "0000-version-0010-msm-resource-cleanup.patch";
+  patchNames =
+    assert !builtins.pathExists (patchDir + "/${brokenDpuPatchName}");
+    lib.sort lib.lessThan (
+      builtins.filter (name: lib.hasSuffix ".patch" name) (builtins.attrNames (builtins.readDir patchDir))
+    );
   dtbName = "qcs8550-ayn-odin2portal";
   kernel = linuxManualConfig {
     inherit version stdenv;
-    modDirVersion = version;
+    modDirVersion = "7.2.0";
 
     src = fetchurl {
       url = "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${version}.tar.xz";
-      hash = "sha256-U1kaAylFJ6SMywueVZ6SLfijhVR0WhIGgnynUdLKdmI=";
+      hash = "sha256-+f7z0UwN9TgZAm9L50RZg1wqCw3L9bW72eoZ8IKUArM=";
     };
 
     kernelPatches = map (name: {

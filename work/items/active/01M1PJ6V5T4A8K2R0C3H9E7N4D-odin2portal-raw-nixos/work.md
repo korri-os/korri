@@ -9,11 +9,10 @@ source: direct
 # Raw NixOS on the AYN Odin 2 Portal
 
 Run NixOS directly on the Portal with no ROCKNIX host and no nspawn guest,
-the same shape as the RG353M in `nix/rg353m/`. The device already runs
-ROCKNIX-ABL (a closed binary in `abl_a`/`abl_b` that loads an Android boot
-image named `/KERNEL` from a FAT partition on UFS, SD, or USB), so the
-bootloader is done and must never be touched again. Everything Korri
-produces is a file ABL loads plus an ext4 root.
+the same shape as the RG353M in `nix/rg353m/`. AYN U-Boot 2025.01 in
+`loader_a` starts the UEFI removable-media fallback from the SD-card ESP.
+The card carries systemd-boot, an EFI-stub kernel, the initrd, the Portal
+DTB, and an ext4 root. Nothing Korri produces changes internal storage.
 
 ## Hard rule
 
@@ -24,9 +23,12 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 
 ## Slices
 
-1. **Kernel** — done (`ee4af7f3`). Linux 7.0.2, 5 mainline + 48 SM8550
-   patches, AYN DTS, ROCKNIX defconfig. Cross-built from x86_64 because
-   fuji cannot spare the ~30 GB a kernel compile needs.
+1. **Kernel** — done (`ee4af7f3`, Linux 7.2 update pending commit). Linux
+   7.2 with 4 mainline + 2 version + 52 SM8550 patches, AYN DTS, and the
+   ROCKNIX kernel configuration. The version-specific DPU cleanup patch is
+   disabled because it stops the Portal during early boot. Every generation
+   includes a Linux 7.0.2 rescue specialisation. Cross-built from x86_64
+   because fuji cannot spare the ~30 GB a kernel compile needs.
 2. **Firmware** — done (`897af5a1`, extended in `6b96bafd`). 15 AYN blobs
    plus the three Adreno 740 files, all pinned by hash, none in git. Two are
    corrections rather than additions: ath12k `board-2.bin` and
@@ -48,10 +50,13 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 
 | | |
 |---|---|
-| Boot | 35 s, U-Boot -> systemd-boot -> NixOS |
-| GPU | Turnip Adreno 740, GL 4.6, glmark2 1624 |
+| Boot | Linux 7.2.0, AYN U-Boot -> systemd-boot -> NixOS; Linux 7.0.2 rescue specialisation retained |
+| Kernel patches | 58 ROCKNIX patches plus the nixpkgs RANDSTRUCT seed; `0010-msm-resource-cleanup.patch` disabled after a controlled hardware test |
+| GPU | Turnip Adreno 740, GL 4.6; Linux 7.2 GPU load produced no GMU timeout |
 | WiFi | `vrackie` autoconnect, 1080 Mbit/s TX |
 | Audio | `korri` PipeWire graph; UCM HiFi Speaker/Headphones sinks; 440 Hz tone audible |
+| Input | AYN gamepad, touch screen, and two force-feedback devices present; both haptic writes felt |
+| SD bus | 37.5 MHz, 4-bit SD high-speed at 3.3 V; UHS is not active |
 | Thermals | fan 0 RPM at 32 C under the whisper curve |
 | GMU guard | `cpu0/cpuidle/state1` held disabled |
 | Android | untouched; BOOT MODE = Android returns to it |
@@ -62,10 +67,10 @@ go through tethered `fastboot boot` or an SD-card root. Internal
   are disabled and logind ignores the power key so a failed resume cannot
   masquerade as a hang. The real behaviour is a product concern owned by
   the session and input layers.
-- **SD bus mode.** The card negotiates plain high speed (~25 MB/s), not
-  SDR104. armbian carries
+- **SD bus mode.** The card negotiates 37.5 MHz, 4-bit SD high-speed at
+  3.3 V. UHS is not active. armbian carries
   `0217-arm64-dts-Switch-to-downstream-sdhc-driver-for-Odin2.patch` for
-  exactly this. Measure before applying.
+  this case. Port the pinctrl and clock wiring in a separate slice.
 - **`firewall.service` fails.** The ROCKNIX config likely lacks the
   netfilter modules NixOS wants; legacy hit the same thing and ran
   Tailscale with `--netfilter-mode=off`. Owner deferred it.
@@ -78,7 +83,9 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 
 ## Evidence
 
-- ROCKNIX rev `f080b462f54b5807bdd16ac7cc2ab64528b038b1` (next, 2026-05-13),
-  from `~/code/sandbox/nix-on-rocks/upstream.lock`.
+- ROCKNIX rev `1178bc2238de782bf081c558c177d35bb3690021` (next, 2026-09-04).
+- Controlled early-boot isolation: Linux 7.2 failed with both the new and
+  Linux 7.0.2 DTBs when `0010-msm-resource-cleanup.patch` was active. The
+  same kernel started with either DTB after that patch was disabled.
 - Safety audit: `nix-on-rocks/docs/ops/sm8550-full-install-safety-audit-2026-05-20.md`
   (UFS is 4096-byte sectors; `sda18` = ROCKNIX FAT, `sda19` = STORAGE ext4).
