@@ -1,6 +1,6 @@
 # Federation restoration brief
 
-Status: aligned with the owner on 2026-09-04. Ready for implementation.
+Status: Bundle A implemented and verified on 2026-09-05. Bundle B awaits the owner's peer-memory schema decision. Zao deployment remains pending.
 
 Audience: an implementation agent that starts with no prior context.
 
@@ -247,6 +247,12 @@ when it refuses before activation. The standalone cut checks both systemd
 managers before removing obsolete recovery state. Targeted deployment shell
 suites, ShellCheck, and shell syntax checks passed after the final guard changes.
 These were local file-backed tests. No live Zao activation was performed.
+
+After rebasing onto `main` at `894cd90d`, the full korrid gate passed again
+(`proc_2da9`, exit 0, 731 seconds). Both emulator gates then passed serially
+(`proc_319c`, exit 0, 250 seconds): one federation test and all six bridge tests.
+No assertions were relaxed and no automatic retry was added. The earlier SIGKILL
+failures remain unresolved; follow-up `01M1SBJQJN6EBGMS9TRGSM1DV3` tracks them.
 
 ## Bundle B: Relay discovery and peer memory
 
