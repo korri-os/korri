@@ -785,6 +785,43 @@ pub struct SessionStopResult {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFreezeRequest {
+    /** Required by every host surface for an exact freeze. */
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_launch_id: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionThawRequest {
+    /** Required by every host surface for an exact thaw. */
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_launch_id: Option<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionFreezerState {
+    Frozen,
+    Running,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFreezeResult {
+    pub launch_id: String,
+    /** Freezer state of the exact launch after the request. */
+    pub state: SessionFreezerState,
+    /** False when the launch was already in the requested state. */
+    pub changed: bool,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LocalGamesListRequest {}
 
 #[typeshare]
@@ -1014,6 +1051,14 @@ pub enum SessionStopOutcome {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
+pub enum SessionFreezeOutcome {
+    Ok(SessionFreezeResult),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
 pub enum HealthOutcome {
     Ok(Health),
     Err(RpcFailure),
@@ -1043,6 +1088,10 @@ pub enum RpcRequest {
     SessionStatus(SessionStatusRequest),
     #[serde(rename = "app.session.stop")]
     SessionStop(SessionStopRequest),
+    #[serde(rename = "app.session.freeze")]
+    SessionFreeze(SessionFreezeRequest),
+    #[serde(rename = "app.session.thaw")]
+    SessionThaw(SessionThawRequest),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsRequest),
     #[serde(rename = "app.session.control.invoke")]
@@ -1095,6 +1144,10 @@ pub enum RpcResponse {
     SessionStatus(SessionStatusOutcome),
     #[serde(rename = "app.session.stop")]
     SessionStop(SessionStopOutcome),
+    #[serde(rename = "app.session.freeze")]
+    SessionFreeze(SessionFreezeOutcome),
+    #[serde(rename = "app.session.thaw")]
+    SessionThaw(SessionFreezeOutcome),
     #[serde(rename = "app.session.controls")]
     SessionControls(SessionControlsOutcome),
     #[serde(rename = "app.session.control.invoke")]
@@ -1342,6 +1395,17 @@ fn host_session_status_outcome(
                 }),
             })
         }
+        Ok(HostSessionStatus::Frozen { launch_id, game_id }) => {
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id,
+                    host: None,
+                    game_id,
+                    title: None,
+                    phase: Some("frozen".into()),
+                }),
+            })
+        }
         Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
             SessionStatusOutcome::Ok(SessionStatus {
                 active: Some(ActiveSession {
@@ -1394,6 +1458,75 @@ fn host_session_stop_outcome(
         }),
         Err(failure) => SessionStopOutcome::Err(failure),
     }
+}
+
+fn host_session_freeze_outcome(
+    result: Result<host::control::HostSessionFreezeChange, RpcFailure>,
+    state: SessionFreezerState,
+) -> SessionFreezeOutcome {
+    use host::control::HostSessionFreezeChange;
+    match result {
+        Ok(HostSessionFreezeChange::Changed { launch_id }) => {
+            SessionFreezeOutcome::Ok(SessionFreezeResult {
+                launch_id,
+                state,
+                changed: true,
+            })
+        }
+        Ok(HostSessionFreezeChange::Unchanged { launch_id }) => {
+            SessionFreezeOutcome::Ok(SessionFreezeResult {
+                launch_id,
+                state,
+                changed: false,
+            })
+        }
+        Ok(HostSessionFreezeChange::NoActive) => SessionFreezeOutcome::Err(RpcFailure {
+            code: "NoActiveSession".into(),
+            message: "no host launch is active".into(),
+        }),
+        Ok(HostSessionFreezeChange::StaleIdentity { .. }) => {
+            SessionFreezeOutcome::Err(RpcFailure {
+                code: "StaleLaunchIdentity".into(),
+                message: "expectedLaunchId does not identify the active host launch".into(),
+            })
+        }
+        Ok(HostSessionFreezeChange::Stopping { .. }) => SessionFreezeOutcome::Err(RpcFailure {
+            code: "SessionStopping".into(),
+            message: "the host launch is stopping".into(),
+        }),
+        Ok(HostSessionFreezeChange::HelperFailed { message, .. }) => {
+            SessionFreezeOutcome::Err(RpcFailure {
+                code: "HostFreezerFailed".into(),
+                message,
+            })
+        }
+        Ok(HostSessionFreezeChange::RecoveryBlocked) => SessionFreezeOutcome::Err(RpcFailure {
+            code: "HostRecoveryBlocked".into(),
+            message: "host recovery identity requires administrator resolution".into(),
+        }),
+        Err(failure) => SessionFreezeOutcome::Err(failure),
+    }
+}
+
+fn session_freeze_outcome(
+    result: Result<SessionFreezeResult, upstreams::UpstreamError>,
+) -> SessionFreezeOutcome {
+    match result {
+        Ok(result) => SessionFreezeOutcome::Ok(result),
+        Err(error) => SessionFreezeOutcome::Err(upstream_failure(error)),
+    }
+}
+
+fn exact_host_launch_id(
+    expected_launch_id: Option<&str>,
+    verb: &str,
+) -> Result<String, RpcFailure> {
+    expected_launch_id
+        .map(str::to_owned)
+        .ok_or_else(|| RpcFailure {
+            code: "ExpectedLaunchIdRequired".into(),
+            message: format!("expectedLaunchId is required for exact host {verb}"),
+        })
 }
 
 fn resolve_moonlight_outcome(
@@ -2251,6 +2384,59 @@ async fn dispatch(
                 }))
             }
         },
+        RpcRequest::SessionFreeze(request) => {
+            let outcome = match (&state.mode, state.rpc_surface) {
+                (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
+                    brain
+                        .upstream
+                        .session_freeze(request.expected_launch_id.as_deref())
+                        .await,
+                ),
+                (ServerMode::Host(host), RpcSurface::Lan)
+                | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    let outcome =
+                        match exact_host_launch_id(request.expected_launch_id.as_deref(), "freeze")
+                        {
+                            Ok(expected) => host.session_freeze(&expected).await,
+                            Err(failure) => Err(failure),
+                        };
+                    host_session_freeze_outcome(outcome, SessionFreezerState::Frozen)
+                }
+                (ServerMode::Brain(_), RpcSurface::LocalControl) => {
+                    SessionFreezeOutcome::Err(RpcFailure {
+                        code: "SessionFreezeUnsupported".into(),
+                        message: "session freeze is unavailable on this listener".into(),
+                    })
+                }
+            };
+            RpcResponse::SessionFreeze(outcome)
+        }
+        RpcRequest::SessionThaw(request) => {
+            let outcome = match (&state.mode, state.rpc_surface) {
+                (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
+                    brain
+                        .upstream
+                        .session_thaw(request.expected_launch_id.as_deref())
+                        .await,
+                ),
+                (ServerMode::Host(host), RpcSurface::Lan)
+                | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    let outcome =
+                        match exact_host_launch_id(request.expected_launch_id.as_deref(), "thaw") {
+                            Ok(expected) => host.session_thaw(&expected).await,
+                            Err(failure) => Err(failure),
+                        };
+                    host_session_freeze_outcome(outcome, SessionFreezerState::Running)
+                }
+                (ServerMode::Brain(_), RpcSurface::LocalControl) => {
+                    SessionFreezeOutcome::Err(RpcFailure {
+                        code: "SessionThawUnsupported".into(),
+                        message: "session thaw is unavailable on this listener".into(),
+                    })
+                }
+            };
+            RpcResponse::SessionThaw(outcome)
+        }
         RpcRequest::SessionControls(request) => {
             let outcome = match &state.mode {
                 ServerMode::Brain(brain) => materialize_session_controls(
@@ -5378,11 +5564,155 @@ command = ["sh", "-c", "sleep 1"]
                 r#"{"_tag":"app.session.stop","payload":{}}"#,
                 "ExpectedLaunchIdRequired",
             ),
+            (
+                r#"{"_tag":"app.session.freeze","payload":{}}"#,
+                "ExpectedLaunchIdRequired",
+            ),
+            (
+                r#"{"_tag":"app.session.thaw","payload":{}}"#,
+                "ExpectedLaunchIdRequired",
+            ),
+            (
+                r#"{"_tag":"app.session.freeze","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+                "NoActiveSession",
+            ),
+            (
+                r#"{"_tag":"app.session.thaw","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+                "NoActiveSession",
+            ),
         ] {
             let body = rpc_body(app.clone(), request).await;
             assert_eq!(body["outcome"]["_tag"], "Err");
             assert_eq!(body["outcome"]["payload"]["code"], code);
         }
+    }
+
+    #[tokio::test]
+    async fn host_freeze_and_thaw_require_exact_identity_and_report_state() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            r#"
+label = "zao"
+[[games]]
+id = "one"
+title = "One"
+command = ["game-one"]
+"#,
+        )
+        .unwrap();
+        let (lan, local) = host_routers_with_in_memory_units(&config);
+        let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let tcp_address = tcp_listener.local_addr().unwrap();
+        let socket_path = root.path().join("control.sock");
+        let unix_listener = tokio::net::UnixListener::bind(&socket_path).unwrap();
+        let lan_server = tokio::spawn(async move { axum::serve(tcp_listener, lan).await.unwrap() });
+        let local_server =
+            tokio::spawn(async move { axum::serve(unix_listener, local).await.unwrap() });
+
+        let prepared = tcp_rpc_body(
+            tcp_address,
+            r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#,
+        )
+        .await;
+        let launch_id = prepared["outcome"]["payload"]["launchId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let stale = tcp_rpc_body(
+            tcp_address,
+            r#"{"_tag":"app.session.freeze","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
+        )
+        .await;
+        assert_eq!(stale["outcome"]["payload"]["code"], "StaleLaunchIdentity");
+        assert!(stale.to_string().find(&launch_id).is_none());
+
+        let frozen = tcp_rpc_body(
+            tcp_address,
+            &serde_json::json!({
+                "_tag": "app.session.freeze",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(frozen["_tag"], "app.session.freeze");
+        assert_eq!(frozen["outcome"]["_tag"], "Ok");
+        assert_eq!(frozen["outcome"]["payload"]["launchId"], launch_id);
+        assert_eq!(frozen["outcome"]["payload"]["state"], "frozen");
+        assert_eq!(frozen["outcome"]["payload"]["changed"], true);
+
+        let status =
+            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.status","payload":{}}"#).await;
+        assert_eq!(status["outcome"]["payload"]["active"]["phase"], "frozen");
+        assert_eq!(
+            status["outcome"]["payload"]["active"]["launchId"],
+            launch_id
+        );
+
+        let again = unix_rpc_body(
+            socket_path.clone(),
+            &serde_json::json!({
+                "_tag": "app.session.freeze",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(again["outcome"]["payload"]["changed"], false);
+        assert_eq!(again["outcome"]["payload"]["state"], "frozen");
+
+        let thawed = unix_rpc_body(
+            socket_path.clone(),
+            &serde_json::json!({
+                "_tag": "app.session.thaw",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(thawed["_tag"], "app.session.thaw");
+        assert_eq!(thawed["outcome"]["payload"]["state"], "running");
+        assert_eq!(thawed["outcome"]["payload"]["changed"], true);
+        let running =
+            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.status","payload":{}}"#).await;
+        assert_eq!(running["outcome"]["payload"]["active"]["phase"], "running");
+
+        // Stop works from the frozen state and does not need a thaw first.
+        let refrozen = tcp_rpc_body(
+            tcp_address,
+            &serde_json::json!({
+                "_tag": "app.session.freeze",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(refrozen["outcome"]["payload"]["state"], "frozen");
+        let stopped = unix_rpc_body(
+            socket_path,
+            &serde_json::json!({
+                "_tag": "app.session.stop",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(stopped["outcome"]["payload"]["phase"], "stopped");
+        let gone = tcp_rpc_body(
+            tcp_address,
+            &serde_json::json!({
+                "_tag": "app.session.thaw",
+                "payload": { "expectedLaunchId": launch_id }
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(gone["outcome"]["payload"]["code"], "NoActiveSession");
+        lan_server.abort();
+        local_server.abort();
     }
 
     #[tokio::test]

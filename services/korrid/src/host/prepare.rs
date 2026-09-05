@@ -140,6 +140,14 @@ mod tests {
             Ok(())
         }
 
+        fn freeze(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
+        }
+
+        fn thaw(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
+        }
+
         fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
             Ok(self
                 .units
@@ -292,6 +300,12 @@ mod tests {
                 .unwrap()
                 .insert(launch_id.into(), LaunchUnitState::Completed);
             Ok(())
+        }
+        fn freeze(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
+        }
+        fn thaw(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
         }
         fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
             Ok(self

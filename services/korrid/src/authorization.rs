@@ -151,6 +151,8 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
             PeerPolicy::OwnerDeviceOnly
         }
         RpcRequest::SessionStop(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionFreeze(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionThaw(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
@@ -196,6 +198,8 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
     matches!(
         request,
         RpcRequest::SessionStop(_)
+            | RpcRequest::SessionFreeze(_)
+            | RpcRequest::SessionThaw(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
             | RpcRequest::DiscoveryRegisterReceipt(_)
@@ -942,6 +946,14 @@ mod tests {
                 stream,
             ),
             (
+                request(serde_json::json!({"_tag":"app.session.freeze","payload":{}})),
+                stream,
+            ),
+            (
+                request(serde_json::json!({"_tag":"app.session.thaw","payload":{}})),
+                stream,
+            ),
+            (
                 request(
                     serde_json::json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
                 ),
@@ -1010,7 +1022,7 @@ mod tests {
                 Owner,
             ),
         ];
-        assert_eq!(cases.len(), 23);
+        assert_eq!(cases.len(), 25);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }

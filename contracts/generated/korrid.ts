@@ -413,6 +413,24 @@ export interface SessionControlsRequest {
 	launchId: string;
 }
 
+export interface SessionFreezeRequest {
+	/** Required by every host surface for an exact freeze. */
+	expectedLaunchId?: string;
+}
+
+export enum SessionFreezerState {
+	Frozen = "frozen",
+	Running = "running",
+}
+
+export interface SessionFreezeResult {
+	launchId: string;
+	/** Freezer state of the exact launch after the request. */
+	state: SessionFreezerState;
+	/** False when the launch was already in the requested state. */
+	changed: boolean;
+}
+
 export interface SessionPrepareRequest {
 	gameId: string;
 	host?: string;
@@ -444,6 +462,11 @@ export enum SessionStopPhase {
 
 export interface SessionStopResult {
 	phase: SessionStopPhase;
+}
+
+export interface SessionThawRequest {
+	/** Required by every host surface for an exact thaw. */
+	expectedLaunchId?: string;
 }
 
 export interface SettingsSnapshot {
@@ -553,6 +576,8 @@ export type RpcRequest =
 	| { _tag: "app.session.prepare", payload: SessionPrepareRequest }
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
 	| { _tag: "app.session.stop", payload: SessionStopRequest }
+	| { _tag: "app.session.freeze", payload: SessionFreezeRequest }
+	| { _tag: "app.session.thaw", payload: SessionThawRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
@@ -578,6 +603,8 @@ export type RpcResponse =
 	| { _tag: "app.session.prepare", outcome: SessionPrepareOutcome }
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
 	| { _tag: "app.session.stop", outcome: SessionStopOutcome }
+	| { _tag: "app.session.freeze", outcome: SessionFreezeOutcome }
+	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
@@ -607,6 +634,10 @@ export type SessionControlInvokeResult =
 export type SessionControlsOutcome =
 	| { _tag: "Ok", payload: SessionControls }
 	| { _tag: "Err", payload: SessionControlFailure };
+
+export type SessionFreezeOutcome =
+	| { _tag: "Ok", payload: SessionFreezeResult }
+	| { _tag: "Err", payload: RpcFailure };
 
 export type SessionPrepareOutcome =
 	| { _tag: "Ok", payload: SessionPrepared }

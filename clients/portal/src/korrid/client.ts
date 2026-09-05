@@ -28,6 +28,7 @@ import type {
   SessionControlValue,
   SessionControls,
   SessionControlsOutcome,
+  SessionFreezeOutcome,
   SessionPrepareOutcome,
   SessionStatusOutcome,
   SessionStopOutcome,
@@ -42,6 +43,7 @@ import {
   LaunchForegroundKind,
   SecretSettingStatus,
   SessionControlFailureReason,
+  SessionFreezerState,
   SessionStopPhase,
 } from "@contracts/generated/korrid"
 
@@ -78,6 +80,10 @@ export interface KorridClient {
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
   sessionStop(expectedLaunchId: string): Promise<SessionStopOutcome>
+  /** Freezes the exact launch on its host. Repeated calls are no-ops. */
+  sessionFreeze(expectedLaunchId: string): Promise<SessionFreezeOutcome>
+  /** Thaws the exact launch on its host. Repeated calls are no-ops. */
+  sessionThaw(expectedLaunchId: string): Promise<SessionFreezeOutcome>
   sessionControls(launchId: string): Promise<SessionControlsOutcome>
   invokeSessionControl(
     launchId: string,
@@ -458,6 +464,28 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
+    async sessionFreeze(expectedLaunchId) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.session.freeze",
+          payload: { expectedLaunchId },
+        })
+        return response.outcome
+      } catch (error) {
+        return unreachable(error)
+      }
+    },
+    async sessionThaw(expectedLaunchId) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.session.thaw",
+          payload: { expectedLaunchId },
+        })
+        return response.outcome
+      } catch (error) {
+        return unreachable(error)
+      }
+    },
     async sessionControls(launchId) {
       try {
         const response: unknown = await callKorrid(baseUrl, capability, {
@@ -597,6 +625,33 @@ export function createInMemoryKorridClient(
   let activeSession = config.activeSession
   let overlayControls = config.sessionControls
   const sessionControlBehavior = config.sessionControlBehavior ?? "ok"
+  const setFreezer = (
+    expectedLaunchId: string,
+    state: SessionFreezerState,
+  ): SessionFreezeOutcome => {
+    if (activeSession === undefined) {
+      return {
+        _tag: "Err",
+        payload: { code: "NoActiveSession", message: "no host launch is active" },
+      }
+    }
+    if (activeSession.launchId !== expectedLaunchId) {
+      return {
+        _tag: "Err",
+        payload: {
+          code: "StaleLaunchIdentity",
+          message: "The gameplay session changed.",
+        },
+      }
+    }
+    const phase = state === SessionFreezerState.Frozen ? "frozen" : "running"
+    const changed = activeSession.phase !== phase
+    activeSession = { ...activeSession, phase }
+    return {
+      _tag: "Ok",
+      payload: { launchId: expectedLaunchId, state, changed },
+    }
+  }
   let settings: SettingsSnapshot = {
     revision: "in-memory-0",
     deviceName: "Browser",
@@ -884,6 +939,12 @@ export function createInMemoryKorridClient(
       }
       activeSession = undefined
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+    },
+    async sessionFreeze(expectedLaunchId) {
+      return setFreezer(expectedLaunchId, SessionFreezerState.Frozen)
+    },
+    async sessionThaw(expectedLaunchId) {
+      return setFreezer(expectedLaunchId, SessionFreezerState.Running)
     },
     async sessionControls(launchId) {
       if (

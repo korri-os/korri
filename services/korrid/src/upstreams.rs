@@ -5,7 +5,7 @@ use crate::{
     upstream::{UpstreamClient, UpstreamConfig, UpstreamSessionStatus, UpstreamSessionStop},
     upstream_native::{NativeClient, NATIVE_RPC_TIMEOUT},
     CatalogHostFailure, CatalogSnapshot, Game, GameSource, MoonlightCertificateProvisioned,
-    MoonlightCertificateRevoked, SessionPrepared,
+    MoonlightCertificateRevoked, SessionFreezeResult, SessionPrepared,
 };
 use futures::future::join_all;
 use serde::Deserialize;
@@ -64,6 +64,10 @@ pub enum UpstreamError {
     ExpectedLaunchIdRequired,
     #[error("expectedLaunchId does not identify the selected remote peer launch")]
     StaleLaunchIdentity,
+    #[error("no remote peer session is active")]
+    NoActiveSession,
+    #[error("the selected legacy session route does not support freezer control")]
+    FreezerUnsupportedOnLegacyRoute,
     #[error("no valid explicit Moonlight host address is configured")]
     MoonlightHostCandidatesUnavailable,
 }
@@ -89,6 +93,8 @@ impl UpstreamError {
             Self::ActiveRemoteSessionConflict => "ActiveRemoteSessionConflict",
             Self::ExpectedLaunchIdRequired => "ExpectedLaunchIdRequired",
             Self::StaleLaunchIdentity => "StaleLaunchIdentity",
+            Self::NoActiveSession => "NoActiveSession",
+            Self::FreezerUnsupportedOnLegacyRoute => "FreezerUnsupportedOnLegacyRoute",
             Self::MoonlightHostCandidatesUnavailable => "MoonlightHostCandidatesUnavailable",
         }
     }
@@ -262,6 +268,21 @@ enum SelectedRemoteRoute {
 struct SelectedRemoteSession {
     route: SelectedRemoteRoute,
     launch_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FreezerVerb {
+    Freeze,
+    Thaw,
+}
+
+impl FreezerVerb {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Freeze => "freeze",
+            Self::Thaw => "thaw",
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -863,6 +884,91 @@ impl UpstreamRegistry {
         self.legacy_stop_or_nothing(force).await
     }
 
+    pub async fn session_freeze(
+        &self,
+        expected_launch_id: Option<&str>,
+    ) -> Result<SessionFreezeResult, UpstreamError> {
+        let registry = self.resolved();
+        registry
+            .session_freezer_resolved(expected_launch_id, FreezerVerb::Freeze)
+            .await
+    }
+
+    pub async fn session_thaw(
+        &self,
+        expected_launch_id: Option<&str>,
+    ) -> Result<SessionFreezeResult, UpstreamError> {
+        let registry = self.resolved();
+        registry
+            .session_freezer_resolved(expected_launch_id, FreezerVerb::Thaw)
+            .await
+    }
+
+    /// Routes an exact freeze or thaw through the selected remote session.
+    /// The route is selected or recovered the same way as stop. Only native
+    /// peers support freezer control; a legacy route fails with a typed
+    /// error and no legacy call is made.
+    async fn session_freezer_resolved(
+        &self,
+        expected_launch_id: Option<&str>,
+        verb: FreezerVerb,
+    ) -> Result<SessionFreezeResult, UpstreamError> {
+        let _mutation = self.remote_prepare_mutation.lock().await;
+        let selected = match self.selected() {
+            Some(selected) => selected,
+            None => {
+                if self.hosts.is_empty() {
+                    return Err(UpstreamError::NoActiveSession);
+                }
+                if !self.has_native_hosts() {
+                    return Err(UpstreamError::FreezerUnsupportedOnLegacyRoute);
+                }
+                match self.recover_native_session().await? {
+                    Some((recovered, _status)) => recovered,
+                    None => return Err(UpstreamError::NoActiveSession),
+                }
+            }
+        };
+        if let Some(expected) = expected_launch_id {
+            if expected != selected.launch_id {
+                return Err(UpstreamError::StaleLaunchIdentity);
+            }
+        }
+        let SelectedRemoteRoute::Native { device_public_key } = &selected.route else {
+            return Err(UpstreamError::FreezerUnsupportedOnLegacyRoute);
+        };
+        let host = self
+            .native_host_by_route_key(device_public_key)
+            .ok_or_else(|| UpstreamError::Wire("selected native peer disappeared".into()))?;
+        let RegisteredClient::Native(client) = &host.client else {
+            unreachable!("native_host_by_route_key returned a legacy client")
+        };
+        let call = async {
+            match verb {
+                FreezerVerb::Freeze => client.session_freeze(&selected.launch_id).await,
+                FreezerVerb::Thaw => client.session_thaw(&selected.launch_id).await,
+            }
+        };
+        let result = timeout(CATALOG_HOST_TIMEOUT, call).await.map_err(|_| {
+            UpstreamError::Unreachable(format!(
+                "host {:?} session {} timed out",
+                host.label,
+                verb.name()
+            ))
+        })?;
+        match result {
+            Ok(result) => Ok(result),
+            Err(UpstreamError::Tagged { code, .. }) if code == "NoActiveSession" => {
+                self.clear_selected_if(&selected);
+                Err(UpstreamError::NoActiveSession)
+            }
+            Err(UpstreamError::Tagged { code, .. }) if code == "StaleLaunchIdentity" => {
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     async fn selected_status(
         &self,
         selected: &SelectedRemoteSession,
@@ -1246,6 +1352,7 @@ mod tests {
                             label: "attacker".into(),
                             is_local: true,
                         },
+                        play_stats: None,
                     }],
                     failures: None,
                 }),
@@ -1962,6 +2069,144 @@ command = ["native-game"]
             registry.session_status().await.unwrap(),
             UpstreamSessionStatus::SessionStatus { active: None }
         ));
+    }
+
+    #[tokio::test]
+    async fn freeze_and_thaw_follow_the_selected_native_route() {
+        let native_url = native_server("zao", "neverball").await;
+        let registry =
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url.clone())]);
+
+        assert!(matches!(
+            registry.session_freeze(None).await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        let prepared = registry.prepare_stream("neverball", None).await.unwrap();
+        assert!(matches!(
+            registry
+                .session_freeze(Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .await,
+            Err(UpstreamError::StaleLaunchIdentity)
+        ));
+        let frozen = registry.session_freeze(None).await.unwrap();
+        assert_eq!(frozen.launch_id, prepared.launch_id);
+        assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
+        assert!(frozen.changed);
+        let UpstreamSessionStatus::SessionStatus {
+            active: Some(active),
+        } = registry.session_status().await.unwrap()
+        else {
+            panic!("frozen session stays active")
+        };
+        assert_eq!(active.phase.as_deref(), Some("frozen"));
+        assert_eq!(registry.selected().unwrap().launch_id, prepared.launch_id);
+
+        // A fresh registry with no cached route recovers the frozen session.
+        let recovered = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
+        let thawed = recovered
+            .session_thaw(Some(&prepared.launch_id))
+            .await
+            .unwrap();
+        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
+        assert!(thawed.changed);
+        assert_eq!(recovered.selected().unwrap().launch_id, prepared.launch_id);
+        let again = recovered.session_thaw(None).await.unwrap();
+        assert!(!again.changed);
+
+        assert!(matches!(
+            registry
+                .session_stop(Some(&prepared.launch_id), false)
+                .await
+                .unwrap(),
+            UpstreamSessionStop::Stopped { .. }
+        ));
+        // The other registry still holds the route; the host reports no
+        // active launch, which clears it.
+        assert!(matches!(
+            recovered.session_freeze(None).await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        assert!(recovered.selected().is_none());
+    }
+
+    #[tokio::test]
+    async fn peer_reported_stale_identity_surfaces_as_a_replaced_route() {
+        let native_url = native_server("zao", "neverball").await;
+        let first =
+            UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url.clone())]);
+        let prepared = first.prepare_stream("neverball", None).await.unwrap();
+
+        // A second brain stops the launch and starts a replacement. The
+        // first brain still holds the old route.
+        let second = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
+        assert!(matches!(
+            second
+                .session_stop(Some(&prepared.launch_id), false)
+                .await
+                .unwrap(),
+            UpstreamSessionStop::Stopped { .. }
+        ));
+        let replacement = second.prepare_stream("neverball", None).await.unwrap();
+        assert_ne!(replacement.launch_id, prepared.launch_id);
+
+        // The peer reports StaleLaunchIdentity for the old launch. The
+        // first brain maps that to SelectedRemoteSessionReplaced and keeps
+        // the stale route so the caller can re-read status and re-select.
+        assert!(matches!(
+            first.session_freeze(None).await,
+            Err(UpstreamError::SelectedRemoteSessionReplaced)
+        ));
+        assert!(matches!(
+            first.session_thaw(Some(&prepared.launch_id)).await,
+            Err(UpstreamError::SelectedRemoteSessionReplaced)
+        ));
+        assert_eq!(first.selected().unwrap().launch_id, prepared.launch_id);
+        // The replacement launch was not frozen by the stale request.
+        let UpstreamSessionStatus::SessionStatus {
+            active: Some(active),
+        } = second.session_status().await.unwrap()
+        else {
+            panic!("replacement launch must be active")
+        };
+        assert_eq!(active.launch_id, replacement.launch_id);
+        assert_eq!(active.phase.as_deref(), Some("running"));
+    }
+
+    #[tokio::test]
+    async fn freeze_and_thaw_on_an_empty_registry_report_no_active_session() {
+        let empty = UpstreamRegistry::new(vec![]);
+        assert!(matches!(
+            empty.session_freeze(None).await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+        assert!(matches!(
+            empty
+                .session_thaw(Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .await,
+            Err(UpstreamError::NoActiveSession)
+        ));
+    }
+
+    #[tokio::test]
+    async fn freeze_and_thaw_refuse_legacy_routes_without_calling_them() {
+        let state = LegacyServerState {
+            prepared: Default::default(),
+        };
+        let legacy_only = UpstreamRegistry::new(vec![UpstreamHostConfig::legacy(
+            "aka",
+            legacy_server(state.clone()).await,
+        )]);
+        legacy_only.prepare_stream("any", None).await.unwrap();
+        assert!(matches!(
+            legacy_only.session_freeze(None).await,
+            Err(UpstreamError::FreezerUnsupportedOnLegacyRoute)
+        ));
+        assert!(matches!(
+            legacy_only.session_thaw(None).await,
+            Err(UpstreamError::FreezerUnsupportedOnLegacyRoute)
+        ));
+        assert_eq!(&*state.prepared.lock().unwrap(), &["any"]);
+        assert!(legacy_only.selected().is_some());
     }
 
     #[tokio::test]

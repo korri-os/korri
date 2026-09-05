@@ -25,8 +25,23 @@ const DEFAULT_CERTIFICATE_CONTROL_DIRECTORY: &str = "/run/korri-certificate-cont
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchUnitState {
     Running,
+    /// The unit is active and its control group is settled frozen.
+    Frozen,
+    /// The unit is active and its control group is between running and
+    /// frozen (`freezing` or `thawing`). The settled state is unknown, so a
+    /// freezer request must issue its verb instead of short-circuiting.
+    FreezerTransition,
     Stopping,
     Completed,
+}
+
+impl LaunchUnitState {
+    /// The unit is active but its processes are not (or may not be)
+    /// scheduled. A stop must thaw such a unit first; systemd refuses
+    /// `stop` on a frozen unit.
+    pub(super) fn needs_thaw_before_stop(self) -> bool {
+        matches!(self, Self::Frozen | Self::FreezerTransition)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,7 +77,12 @@ pub trait LaunchUnitBackend: Send + Sync {
         environment: &BTreeMap<String, String>,
     ) -> Result<(), LaunchUnitError>;
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError>;
+    /// Stops the unit from any live state. A backend must thaw a frozen
+    /// unit itself before stopping it; callers never issue a thaw before
+    /// a stop.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
+    fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
+    fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError>;
 }
 
@@ -128,12 +148,54 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
             .unwrap_or(LaunchUnitState::Completed))
     }
 
+    /// Mirrors systemd: a frozen unit refuses `stop`, so the backend thaws
+    /// first and then stops.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
-        self.units
-            .lock()
-            .unwrap()
-            .insert(launch_id.into(), LaunchUnitState::Completed);
+        let mut units = self.units.lock().unwrap();
+        if units
+            .get(launch_id)
+            .is_some_and(|state| state.needs_thaw_before_stop())
+        {
+            units.insert(launch_id.into(), LaunchUnitState::Running);
+        }
+        units.insert(launch_id.into(), LaunchUnitState::Completed);
         Ok(())
+    }
+
+    fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        let mut units = self.units.lock().unwrap();
+        match units.get(launch_id).copied() {
+            Some(
+                LaunchUnitState::Running
+                | LaunchUnitState::Frozen
+                | LaunchUnitState::FreezerTransition,
+            ) => {
+                units.insert(launch_id.into(), LaunchUnitState::Frozen);
+                Ok(())
+            }
+            _ => Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "unit is not active",
+            )),
+        }
+    }
+
+    fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        let mut units = self.units.lock().unwrap();
+        match units.get(launch_id).copied() {
+            Some(
+                LaunchUnitState::Running
+                | LaunchUnitState::Frozen
+                | LaunchUnitState::FreezerTransition,
+            ) => {
+                units.insert(launch_id.into(), LaunchUnitState::Running);
+                Ok(())
+            }
+            _ => Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "unit is not active",
+            )),
+        }
     }
 
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
@@ -640,12 +702,69 @@ impl SystemdLaunchUnitBackend {
     }
 
     pub(super) fn stop_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Self::unit_verb_arguments("stop", launch_id)
+    }
+
+    pub(super) fn freeze_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Self::unit_verb_arguments("freeze", launch_id)
+    }
+
+    pub(super) fn thaw_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Self::unit_verb_arguments("thaw", launch_id)
+    }
+
+    fn unit_verb_arguments(verb: &str, launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
         Ok(vec![
             "--system".into(),
             "--no-ask-password".into(),
-            "stop".into(),
+            verb.into(),
             Self::unit_name(launch_id)?,
         ])
+    }
+
+    pub(super) fn state_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Ok(vec![
+            "--system".into(),
+            "--no-ask-password".into(),
+            "show".into(),
+            Self::unit_name(launch_id)?,
+            "--property=LoadState".into(),
+            "--property=ActiveState".into(),
+            "--property=FreezerState".into(),
+        ])
+    }
+
+    /// Parses `systemctl show` output. `FreezerState` is consulted only for
+    /// active units. Zao's systemd 259 reports `running`, `freezing`,
+    /// `frozen`, and `thawing`. Only the two settled values map to
+    /// `Running` and `Frozen`; the transitional values are reported
+    /// separately so a freezer request never assumes a settled state.
+    pub(super) fn parse_unit_state(
+        values: &BTreeMap<&str, &str>,
+    ) -> Result<LaunchUnitState, LaunchUnitError> {
+        match values.get("ActiveState").copied() {
+            Some("activating" | "active" | "reloading") => {
+                match values.get("FreezerState").copied() {
+                    None | Some("") | Some("running") => Ok(LaunchUnitState::Running),
+                    Some("frozen") => Ok(LaunchUnitState::Frozen),
+                    Some("freezing" | "thawing") => Ok(LaunchUnitState::FreezerTransition),
+                    Some(other) => Err(LaunchUnitError::new(
+                        LaunchUnitErrorKind::Protocol,
+                        format!("unit has unknown FreezerState {other:?}"),
+                    )),
+                }
+            }
+            Some("deactivating") => Ok(LaunchUnitState::Stopping),
+            Some("inactive" | "failed" | "dead") => Ok(LaunchUnitState::Completed),
+            Some(other) => Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                format!("unit has unknown ActiveState {other:?}"),
+            )),
+            None => Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "systemctl returned no ActiveState",
+            )),
+        }
     }
 
     fn require_success(
@@ -683,18 +802,8 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
-        let unit = Self::unit_name(launch_id)?;
-        let output = self.run(
-            &self.systemctl,
-            &[
-                "--system".into(),
-                "--no-ask-password".into(),
-                "show".into(),
-                unit,
-                "--property=LoadState".into(),
-                "--property=ActiveState".into(),
-            ],
-        )?;
+        let arguments = Self::state_arguments(launch_id)?;
+        let output = self.run(&self.systemctl, &arguments)?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let values: BTreeMap<_, _> = stdout
             .lines()
@@ -713,23 +822,37 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
                 ),
             ));
         }
-        match values.get("ActiveState").copied() {
-            Some("activating" | "active" | "reloading") => Ok(LaunchUnitState::Running),
-            Some("deactivating") => Ok(LaunchUnitState::Stopping),
-            Some("inactive" | "failed" | "dead") => Ok(LaunchUnitState::Completed),
-            Some(other) => Err(LaunchUnitError::new(
-                LaunchUnitErrorKind::Protocol,
-                format!("unit has unknown ActiveState {other:?}"),
-            )),
-            None => Err(LaunchUnitError::new(
-                LaunchUnitErrorKind::Protocol,
-                "systemctl returned no ActiveState",
-            )),
-        }
+        Self::parse_unit_state(&values)
     }
 
+    /// Stops the unit. systemd 259 refuses `stop` on a frozen unit
+    /// ("Cannot perform operation on frozen unit"), so a unit observed
+    /// frozen or in a freezer transition is thawed first. A thaw failure is
+    /// a stop failure; the unit is left untouched. Callers that already
+    /// know the unit completed tolerate the `Failed` result by re-reading
+    /// state, as before.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        if self.state(launch_id)?.needs_thaw_before_stop() {
+            self.thaw(launch_id).map_err(|error| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    format!("thaw before stop failed: {}", error.message),
+                )
+            })?;
+        }
         let arguments = Self::stop_arguments(launch_id)?;
+        self.require_success(&self.systemctl, &arguments)
+            .map(|_| ())
+    }
+
+    fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        let arguments = Self::freeze_arguments(launch_id)?;
+        self.require_success(&self.systemctl, &arguments)
+            .map(|_| ())
+    }
+
+    fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        let arguments = Self::thaw_arguments(launch_id)?;
         self.require_success(&self.systemctl, &arguments)
             .map(|_| ())
     }

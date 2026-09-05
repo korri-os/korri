@@ -6,6 +6,7 @@ import {
   LaunchForegroundKind,
   MoonlightImplementation,
   SessionControlFailureReason,
+  SessionFreezerState,
 } from "@contracts/generated/korrid"
 import {
   callKorrid,
@@ -199,6 +200,59 @@ describe("callKorrid", () => {
       _tag: "app.session.stop",
       payload: { expectedLaunchId: "launch-1" },
     })
+  })
+
+  it("freezes and thaws only the supplied launch identity", async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body))
+      bodies.push(body)
+      const state = body._tag === "app.session.freeze" ? "frozen" : "running"
+      return new Response(
+        JSON.stringify({
+          _tag: body._tag,
+          outcome: {
+            _tag: "Ok",
+            payload: { launchId: "launch-1", state, changed: true },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+    const frozen = await client.sessionFreeze("launch-1")
+    const thawed = await client.sessionThaw("launch-1")
+
+    expect(bodies).toEqual([
+      { _tag: "app.session.freeze", payload: { expectedLaunchId: "launch-1" } },
+      { _tag: "app.session.thaw", payload: { expectedLaunchId: "launch-1" } },
+    ])
+    expect(frozen).toEqual({
+      _tag: "Ok",
+      payload: {
+        launchId: "launch-1",
+        state: SessionFreezerState.Frozen,
+        changed: true,
+      },
+    })
+    expect(thawed).toEqual({
+      _tag: "Ok",
+      payload: {
+        launchId: "launch-1",
+        state: SessionFreezerState.Running,
+        changed: true,
+      },
+    })
+  })
+
+  it("reports an unreachable brain for freeze and thaw", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused")
+    }) as unknown as typeof fetch
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+    expect((await client.sessionFreeze("launch-1"))._tag).toBe("Err")
+    expect((await client.sessionThaw("launch-1"))._tag).toBe("Err")
   })
 
   it("lists and invokes controls only for the supplied launch identity", async () => {

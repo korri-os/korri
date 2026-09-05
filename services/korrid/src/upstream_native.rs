@@ -4,9 +4,10 @@ use crate::{
     MoonlightCertificateProvisionOutcome, MoonlightCertificateProvisionRequest,
     MoonlightCertificateProvisioned, MoonlightCertificateRevokeOutcome,
     MoonlightCertificateRevokeRequest, MoonlightCertificateRevoked, RpcFailure, RpcRequest,
-    RpcResponse, SessionPrepareOutcome, SessionPrepareRequest, SessionPrepared,
-    SessionStatusOutcome, SessionStatusRequest, SessionStopOutcome, SessionStopPhase,
-    SessionStopRequest,
+    RpcResponse, SessionFreezeOutcome, SessionFreezeRequest, SessionFreezeResult,
+    SessionPrepareOutcome, SessionPrepareRequest, SessionPrepared, SessionStatusOutcome,
+    SessionStatusRequest, SessionStopOutcome, SessionStopPhase, SessionStopRequest,
+    SessionThawRequest,
 };
 use std::time::Duration;
 
@@ -126,6 +127,8 @@ impl NativeClient {
             | UpstreamError::ActiveRemoteSessionConflict
             | UpstreamError::ExpectedLaunchIdRequired
             | UpstreamError::StaleLaunchIdentity
+            | UpstreamError::NoActiveSession
+            | UpstreamError::FreezerUnsupportedOnLegacyRoute
             | UpstreamError::MoonlightHostCandidatesUnavailable => error,
         }
     }
@@ -296,6 +299,46 @@ impl NativeClient {
             }
             response => Err(UpstreamError::Wire(format!(
                 "native session stop returned {response:?}"
+            ))),
+        }
+    }
+
+    pub async fn session_freeze(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<SessionFreezeResult, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionFreeze(SessionFreezeRequest {
+                expected_launch_id: Some(expected_launch_id.into()),
+            }))
+            .await?
+        {
+            RpcResponse::SessionFreeze(SessionFreezeOutcome::Ok(result)) => Ok(result),
+            RpcResponse::SessionFreeze(SessionFreezeOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native session freeze returned {response:?}"
+            ))),
+        }
+    }
+
+    pub async fn session_thaw(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<SessionFreezeResult, UpstreamError> {
+        match self
+            .call(RpcRequest::SessionThaw(SessionThawRequest {
+                expected_launch_id: Some(expected_launch_id.into()),
+            }))
+            .await?
+        {
+            RpcResponse::SessionThaw(SessionFreezeOutcome::Ok(result)) => Ok(result),
+            RpcResponse::SessionThaw(SessionFreezeOutcome::Err(failure)) => {
+                Err(Self::tagged_failure(failure))
+            }
+            response => Err(UpstreamError::Wire(format!(
+                "native session thaw returned {response:?}"
             ))),
         }
     }
@@ -523,6 +566,57 @@ command = ["neverball"]
                 .await
                 .unwrap(),
             UpstreamSessionStop::Stopped { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn native_client_freeze_and_thaw_require_exact_tags() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"neverball\"\ntitle = \"Neverball\"\ncommand = [\"neverball\"]\n",
+        )
+        .unwrap();
+        let base_url = serve(crate::host_router_with_in_memory_units(&config)).await;
+        let client = NativeClient::new(base_url);
+        let prepared = client.prepare_stream("neverball").await.unwrap();
+
+        let frozen = client.session_freeze(&prepared.launch_id).await.unwrap();
+        assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
+        assert!(frozen.changed);
+        let again = client.session_freeze(&prepared.launch_id).await.unwrap();
+        assert!(!again.changed);
+        let thawed = client.session_thaw(&prepared.launch_id).await.unwrap();
+        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
+        assert!(thawed.changed);
+        assert!(matches!(
+            client.session_freeze("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").await,
+            Err(UpstreamError::Tagged { code, .. }) if code == "StaleLaunchIdentity"
+        ));
+
+        // A response carrying a different tag is a wire error, never a success.
+        let wrong = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"running","changed":true}}}"#,
+            )
+            .await,
+        );
+        assert!(matches!(
+            wrong.session_freeze(&prepared.launch_id).await,
+            Err(UpstreamError::Wire(_))
+        ));
+        let wrong = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"app.session.freeze","outcome":{"_tag":"Ok","payload":{"launchId":"x","state":"frozen","changed":true}}}"#,
+            )
+            .await,
+        );
+        assert!(matches!(
+            wrong.session_thaw(&prepared.launch_id).await,
+            Err(UpstreamError::Wire(_))
         ));
     }
 

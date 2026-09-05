@@ -21,13 +21,18 @@ import type {
   LocalGame,
   LocalGameLaunchOutcome,
   LocalGamesListOutcome,
+  SessionFreezeOutcome,
   SessionPrepareOutcome,
   SessionStatusOutcome,
   SessionStopOutcome,
   SettingsSnapshotOutcome,
   SettingsUpdateOutcome,
 } from "@contracts/generated/korrid"
-import { SecretSettingStatus, SessionStopPhase } from "@contracts/generated/korrid"
+import {
+  SecretSettingStatus,
+  SessionFreezerState,
+  SessionStopPhase,
+} from "@contracts/generated/korrid"
 import { createInputBus, type InputBus } from "../input/bus"
 import { createSpatialFocusController } from "../input/spatial-focus"
 import type { LauncherBridge } from "../bridge/launcher-bridge"
@@ -234,6 +239,26 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
     },
     async sessionStop(): Promise<SessionStopOutcome> {
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+    },
+    async sessionFreeze(expectedLaunchId): Promise<SessionFreezeOutcome> {
+      return {
+        _tag: "Ok",
+        payload: {
+          launchId: expectedLaunchId,
+          state: SessionFreezerState.Frozen,
+          changed: true,
+        },
+      }
+    },
+    async sessionThaw(expectedLaunchId): Promise<SessionFreezeOutcome> {
+      return {
+        _tag: "Ok",
+        payload: {
+          launchId: expectedLaunchId,
+          state: SessionFreezerState.Running,
+          changed: true,
+        },
+      }
     },
     // Sealed stream startup resolves the transport and signs each launch.
     async moonlightResolve() {

@@ -775,6 +775,47 @@ mod tests {
         };
         assert_eq!(active.launch_id, prepared.launch_id);
         assert_eq!(active.game_id.as_deref(), Some("neverball"));
+        let freeze_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(11),
+            token(12),
+        );
+        let frozen = freeze_client
+            .session_freeze(&prepared.launch_id)
+            .await
+            .unwrap();
+        assert_eq!(frozen.launch_id, prepared.launch_id);
+        assert_eq!(frozen.state, crate::SessionFreezerState::Frozen);
+        assert!(frozen.changed);
+        let stale_thaw_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(13),
+            token(14),
+        );
+        assert!(matches!(
+            stale_thaw_client
+                .session_thaw("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .await,
+            Err(crate::upstreams::UpstreamError::Tagged { code, .. })
+                if code == "StaleLaunchIdentity"
+        ));
+        let thaw_client = crate::upstream_native::NativeClient::new_secure_at(
+            base.clone(),
+            host_key.clone(),
+            credentials.clone(),
+            NOW,
+            token(15),
+            token(16),
+        );
+        let thawed = thaw_client.session_thaw(&prepared.launch_id).await.unwrap();
+        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
+        assert!(thawed.changed);
         let stale_stop_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),
             host_key.clone(),

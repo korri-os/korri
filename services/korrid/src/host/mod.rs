@@ -19,7 +19,9 @@ use crate::{
 use config::{HostConfig, HostConfigError};
 use moonlight_certificate::MoonlightCertificateAdapter;
 use prepare::HostLauncher;
-use session_state::{HostSessionControl, HostSessionStatus, HostSessionStop};
+use session_state::{
+    HostSessionControl, HostSessionFreezeChange, HostSessionStatus, HostSessionStop,
+};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -286,6 +288,28 @@ impl HostRuntime {
             .map_err(host_worker_failure)?
     }
 
+    pub async fn session_freeze(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<HostSessionFreezeChange, RpcFailure> {
+        let runtime = self.clone();
+        let expected_launch_id = expected_launch_id.to_owned();
+        tokio::task::spawn_blocking(move || Ok(runtime.control()?.freeze(&expected_launch_id)))
+            .await
+            .map_err(host_worker_failure)?
+    }
+
+    pub async fn session_thaw(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<HostSessionFreezeChange, RpcFailure> {
+        let runtime = self.clone();
+        let expected_launch_id = expected_launch_id.to_owned();
+        tokio::task::spawn_blocking(move || Ok(runtime.control()?.thaw(&expected_launch_id)))
+            .await
+            .map_err(host_worker_failure)?
+    }
+
     fn certificate_control_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, RpcFailure> {
         Arc::clone(&self.moonlight_certificate_permits)
             .try_acquire_owned()
@@ -405,6 +429,14 @@ mod tests {
         }
 
         fn stop(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
+        }
+
+        fn freeze(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
+            unreachable!()
+        }
+
+        fn thaw(&self, _launch_id: &str) -> Result<(), LaunchUnitError> {
             unreachable!()
         }
 
