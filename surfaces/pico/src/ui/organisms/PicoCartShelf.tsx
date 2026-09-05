@@ -58,7 +58,7 @@ export function PicoCartShelf({
       {focused?.section === undefined ? null : (
         <p className="pico-cart-shelf-section">{focused.section.toUpperCase()}</p>
       )}
-      <ul className="pico-cart-shelf-strip" ref={stripRef}>
+      <ul aria-label="Shelf" className="pico-cart-shelf-strip" ref={stripRef}>
         {games.map((game, index) => (
           <li className="pico-cart-shelf-slot" key={game.id}>
             <PicoCart

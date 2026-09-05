@@ -10,6 +10,7 @@ export default function PicoHomePart() {
       clockLabel="10:24"
       onChooseLocation={() => undefined}
       onDismiss={() => undefined}
+      mode="shelf"
       onOpenGame={() => undefined}
       onRetry={() => undefined}
       view={{

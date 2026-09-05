@@ -62,3 +62,29 @@ function sectionOf(catalog: SurfaceCatalog, gameId: string): string | undefined 
   if (catalog._tag !== "Ready") return undefined
   return catalog.games.find((game) => game.id === gameId)?.section
 }
+
+/** A run of games under one of Korri's section captions. */
+export interface PicoCollection {
+  readonly title: string
+  readonly games: readonly PicoShelfGame[]
+}
+
+/**
+ * The library grouped the way Korri grouped it.
+ *
+ * Games Korri left ungrouped collect under "GAMES" rather than "Other" or
+ * "Uncategorised": Korri said nothing about them, so neither does Pico, and a
+ * heading that editorialises is a fact the surface invented.
+ */
+export function picoCollectionsFrom(
+  games: readonly PicoShelfGame[],
+): readonly PicoCollection[] {
+  const collections: { title: string; games: PicoShelfGame[] }[] = []
+  for (const game of games) {
+    const title = (game.section ?? "GAMES").toUpperCase()
+    const existing = collections.find((candidate) => candidate.title === title)
+    if (existing === undefined) collections.push({ title, games: [game] })
+    else existing.games.push(game)
+  }
+  return collections
+}

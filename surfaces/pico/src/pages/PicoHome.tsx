@@ -1,6 +1,8 @@
+import { picoCollectionsFrom } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
 import { PicoNotice } from "../ui/molecules/PicoNotice"
+import { PicoCartGrid } from "../ui/organisms/PicoCartGrid"
 import { PicoCartShelf } from "../ui/organisms/PicoCartShelf"
 import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage"
 import { PicoLocationPicker } from "../ui/organisms/PicoLocationPicker"
@@ -28,8 +30,11 @@ const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
  * tell a missing file from an unreachable host, and guessing would put a wrong
  * explanation in front of the user.
  */
+export type PicoHomeMode = "shelf" | "grid"
+
 export function PicoHome({
   view,
+  mode,
   placing,
   onOpenGame,
   onChooseLocation,
@@ -38,6 +43,8 @@ export function PicoHome({
   clockLabel,
 }: {
   readonly view: PicoScreenView
+  /** How the library is laid out. Cycled by the treaty's `menu` button. */
+  readonly mode: PicoHomeMode
   /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
   /** Selecting a cart opens the game's own screen; launching happens there. */
@@ -59,7 +66,7 @@ export function PicoHome({
       backdrop={backdrop}
       clockLabel={clockLabel}
       hints={view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS}
-      label="PICO ▸ LIBRARY"
+      label={mode === "grid" ? "PICO ▸ LIBRARY · GRID" : "PICO ▸ LIBRARY"}
     >
       {asking && placing !== undefined ? (
         <PicoLocationPicker
@@ -69,8 +76,15 @@ export function PicoHome({
         />
       ) : null}
 
-      {view._tag === "Shelf" && !asking ? (
+      {view._tag === "Shelf" && !asking && mode === "shelf" ? (
         <PicoCartShelf games={view.games} onOpen={onOpenGame} />
+      ) : null}
+
+      {view._tag === "Shelf" && !asking && mode === "grid" ? (
+        <PicoCartGrid
+          collections={picoCollectionsFrom(view.games)}
+          onOpen={onOpenGame}
+        />
       ) : null}
 
       {view._tag === "Loading" ? (

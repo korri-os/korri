@@ -60,6 +60,7 @@
 @import "./ui/molecules/PicoQueryField.css";
 @import "./ui/molecules/PicoResultRow.css";
 @import "./ui/organisms/PicoLibraryBrowser.css";
+@import "./ui/organisms/PicoCartGrid.css";
 
 @font-face {
 	font-family: "Press Start 2P";

@@ -5,7 +5,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useEffect, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
-import { PicoHome } from "./pages/PicoHome"
+import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
@@ -124,6 +124,9 @@ function PicoCatalogSurface({
    * live here so Back can close the whole screen in one press rather than
    * unwinding a query letter by letter. */
   const [finding, setFinding] = useState(false)
+  /* How home lays the library out. View state, not device state: it is about
+   * this person in this chair, and Korri has no opinion on it. */
+  const [mode, setMode] = useState<PicoHomeMode>("shelf")
   const [query, setQuery] = useState("")
   const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
@@ -166,10 +169,14 @@ function PicoCatalogSurface({
     const offOptions = host.input.on("options", () => {
       setFinding((open) => !open)
     })
+    const offMenu = host.input.on("menu", () => {
+      setMode((current) => (current === "shelf" ? "grid" : "shelf"))
+    })
     return () => {
       offBack()
       offSystem()
       offOptions()
+      offMenu()
     }
   }, [host, model.status._tag])
 
@@ -245,6 +252,7 @@ function PicoCatalogSurface({
           clockLabel={model.clockLabel}
           onChooseLocation={chooseLocation}
           onDismiss={() => host.dismiss()}
+          mode={mode}
           onOpenGame={setViewingId}
           onRetry={() => (view._tag === "Problem" ? host.retry() : host.reload())}
           placing={placing}
