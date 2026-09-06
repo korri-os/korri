@@ -1,12 +1,14 @@
 import type { SurfaceGameplayControl, SurfaceModel } from "../../../contracts/surface/korri-surface"
-import { createFixtureHost, fixtureModel, fixtureOverlay } from "../src/fixtures/fixture-host"
+import { createFixtureHost } from "../src/fixtures/fixture-host"
+
+import { modelForScenario } from "./scenarios"
 
 /** Preview consequences only. No RPC, native bridge or filesystem mutations. */
-export function createPreviewSession(publish: (model: SurfaceModel) => void) {
-  let model: SurfaceModel = { ...fixtureModel, buildLabel: "CALIPER FIXTURE" }
+export function createPreviewSession(publish: (model: SurfaceModel) => void, source: unknown = "ready", startsInOverlay = false) {
+  let model = modelForScenario(source, startsInOverlay)
   const recorded = createFixtureHost()
   const update = (next: SurfaceModel) => { model = next; publish(model) }
-  const reset = () => update({ ...fixtureModel, buildLabel: "CALIPER FIXTURE" })
+  const reset = () => update(modelForScenario("ready"))
   const busy = (label: string, gameId?: string) => update({ ...model,
     status: { _tag: "Busy", kicker: `PREVIEW: ${label}`, gameId,
       detail: "Simulated request — no device action was performed." } })
@@ -66,14 +68,7 @@ export function createPreviewSession(publish: (model: SurfaceModel) => void) {
   return {
     host, get model() { return model },
     select(value: string) {
-      reset()
-      switch (value) {
-        case "loading": update({ ...model, catalog: { _tag: "Loading" } }); break
-        case "empty": update({ ...model, catalog: { _tag: "Empty" } }); break
-        case "busy": busy("Starting game", "hollow"); break
-        case "problem": update({ ...model, status: { _tag: "Problem", kicker: "PREVIEW: Launch failed", reason: "Simulated failure", canRetry: true, gameId: "hollow" } }); break
-        case "overlay": update({ ...model, presentation: fixtureOverlay, status: { _tag: "Running", kicker: "PREVIEW: Playing", gameId: "hollow" } }); break
-      }
+      update(modelForScenario(value, startsInOverlay))
     },
   }
 }

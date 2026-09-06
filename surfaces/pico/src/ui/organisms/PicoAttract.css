@@ -28,11 +28,19 @@
 .pico-attract-rail {
 	display: flex;
 	width: max-content;
+	justify-self: start;
+	/* Exactly two equal sets: half the rail is one complete visual period. */
+	animation: pico-attract-drift 9s steps(30) infinite;
+}
+
+.pico-attract-set {
+	display: flex;
+	flex: 0 0 auto;
 	align-items: center;
+	justify-content: space-around;
 	gap: var(--pico-space-2);
-	width: 100%;
-	/* Travels one full set and meets its own copy, so the loop has no seam. */
-	animation: pico-attract-drift 24s linear infinite;
+	min-width: 100cqw;
+	padding-inline: calc(var(--pico-space-2) / 2);
 }
 
 .pico-attract-cart {

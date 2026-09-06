@@ -14,16 +14,19 @@ import { PicoCart } from "../molecules/PicoCart"
  * noise. The screen underneath is what they are actually navigating.
  */
 export function PicoAttract({ games }: { readonly games: readonly PicoShelfGame[] }) {
-  // Doubled so the rail can travel a full width and meet itself.
-  const rail = [...games.slice(0, 6), ...games.slice(0, 6)]
+  const carts = games.slice(0, 6)
   return (
     <div aria-label="Attract" className="pico-attract" role="img">
       <span className="pico-attract-wordmark">PICO</span>
       <div className="pico-attract-rail">
-        {rail.map((game, index) => (
-          <span className="pico-attract-cart" key={`${game.id}-${index}`}>
-            <PicoCart artUrl={game.artUrl} id={game.id} placement="still" title={game.title} />
-          </span>
+        {[0, 1].map((copy) => (
+          <div className="pico-attract-set" key={copy}>
+            {carts.map((game) => (
+              <span className="pico-attract-cart" key={game.id}>
+                <PicoCart artUrl={game.artUrl} id={game.id} placement="still" title={game.title} />
+              </span>
+            ))}
+          </div>
         ))}
       </div>
       <span className="pico-attract-hint">PRESS ANY BUTTON</span>

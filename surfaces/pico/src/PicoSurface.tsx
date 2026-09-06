@@ -21,6 +21,7 @@ import {
 import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
+import type { PicoInitialView } from "./pico-initial-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
 
 /**
@@ -42,9 +43,11 @@ import type { PicoShelfGame } from "./pico-shelf-game"
 export function PicoSurface({
   model,
   host,
+  initialView,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
+  readonly initialView?: PicoInitialView
 }) {
   // `intrinsic` is not decoration: the recipe derives the whole scale at
   // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
@@ -55,7 +58,7 @@ export function PicoSurface({
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : (
-        <PicoCatalogSurface host={host} model={model} />
+        <PicoCatalogSurface host={host} initialView={initialView} model={model} />
       )}
     </div>
   )
@@ -117,23 +120,25 @@ function PicoOverlaySurface({
 function PicoCatalogSurface({
   model,
   host,
+  initialView,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
+  readonly initialView?: PicoInitialView
 }) {
   const [placing, setPlacing] = useState<PicoShelfGame | undefined>(undefined)
   /* The id of the game whose own screen is up, or nothing. An id rather than a
    * game, so a catalog Korri republishes while the screen is open is what the
    * screen shows — a copy taken on open would show the game as it was. */
-  const [viewingId, setViewingId] = useState<string | undefined>(undefined)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [viewingId, setViewingId] = useState<string | undefined>(initialView?._tag === "Detail" ? initialView.gameId : undefined)
+  const [settingsOpen, setSettingsOpen] = useState(initialView?._tag === "Settings")
   /* Finding a game: what has been typed and which collection is chosen. Both
    * live here so Back can close the whole screen in one press rather than
    * unwinding a query letter by letter. */
-  const [finding, setFinding] = useState(false)
+  const [finding, setFinding] = useState(initialView?._tag === "Find")
   /* How home lays the library out. View state, not device state: it is about
    * this person in this chair, and Korri has no opinion on it. */
-  const [mode, setMode] = useState<PicoHomeMode>("shelf")
+  const [mode, setMode] = useState<PicoHomeMode>(initialView?._tag === "Home" ? initialView.mode ?? "shelf" : "shelf")
   /* A destructive game action awaiting a yes. Korri's game actions carry no
    * confirmation copy of their own, so the question is built from the label. */
   const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
@@ -143,6 +148,7 @@ function PicoCatalogSurface({
   /* A ref as well as state, because the input handlers are registered once and
    * would otherwise close over whether attract was showing when they were made
    * rather than whether it is showing when the button is actually pressed. */
+  const suppressWakeClick = useRef(false)
   const attractingRef = useRef(false)
   attractingRef.current = attracting
 
@@ -162,8 +168,8 @@ function PicoCatalogSurface({
     return true
   }, [])
   const [query, setQuery] = useState("")
-  const [section, setSection] = useState<string>(PICO_ALL_SECTIONS)
-  const [order, setOrder] = useState<PicoOrder>("korri")
+  const [section, setSection] = useState<string>(initialView?._tag === "Find" ? initialView.section ?? PICO_ALL_SECTIONS : PICO_ALL_SECTIONS)
+  const [order, setOrder] = useState<PicoOrder>(initialView?._tag === "Find" ? initialView.order ?? "korri" : "korri")
   /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
   const [asking, setAsking] = useState<
     { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
@@ -174,7 +180,9 @@ function PicoCatalogSurface({
    * game, a launch, a failure, or a library Korri is still reading — those are
    * all screens the user is waiting on, and hiding one behind decoration would
    * lose the thing they are waiting for. */
-  const canAttract = view._tag === "Shelf"
+  const canAttract = view._tag === "Shelf" && !settingsOpen && !finding
+    && viewingId === undefined && placing === undefined
+    && asking === undefined && askingAction === undefined
 
   useEffect(() => {
     if (!canAttract) {
@@ -187,36 +195,19 @@ function PicoCatalogSurface({
 
   useEffect(() => {
     const offBack = host.input.on("back", () => {
-      /* Back withdraws the most local thing first: a confirmation, then a
-       * launch-location question, then settings, then a game's own screen, then
-       * a failure notice. Leaving the surface is the host's to decide, so past
-       * that Pico does nothing and the press falls through. */
+      /* The visible status wins. Within browsing, Back withdraws the most
+       * local question/page first. Leaving the surface is the host's decision. */
       if (wake()) return
-      setAskingAction((pending) => {
-        if (pending !== undefined) return undefined
-        setAsking((question) => {
-          if (question !== undefined) return undefined
-          setPlacing((current) => {
-          if (current !== undefined) return undefined
-          setSettingsOpen((open) => {
-            if (open) return false
-            setFinding((searching) => {
-              if (searching) return false
-              setViewingId((viewing) => {
-                if (viewing !== undefined) return undefined
-                if (model.status._tag === "Problem") host.dismiss()
-                return viewing
-              })
-                return searching
-              })
-              return open
-            })
-            return current
-          })
-          return question
-        })
-        return pending
-      })
+      // Input follows the visible status, not the navigation hidden below it.
+      if (model.status._tag === "Problem") { host.dismiss(); return }
+      if (model.status._tag !== "Browsing") return
+      if (askingAction !== undefined) { setAskingAction(undefined); return }
+      if (asking !== undefined) { setAsking(undefined); return }
+      if (placing !== undefined) { setPlacing(undefined); return }
+      if (settingsOpen) { setSettingsOpen(false); return }
+      // The detail page sits above Find. Clear it first so the query survives.
+      if (viewingId !== undefined) { setViewingId(undefined); return }
+      if (finding) { setFinding(false); return }
     })
     const offSystem = host.input.on("system", () => {
       if (wake()) return
@@ -238,7 +229,7 @@ function PicoCatalogSurface({
       offOptions()
       offMenu()
     }
-  }, [host, model.status._tag])
+  }, [host, model.status._tag, askingAction, asking, placing, settingsOpen, viewingId, finding, wake])
 
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
@@ -268,7 +259,7 @@ function PicoCatalogSurface({
 
   /* Status still outranks every screen the surface owns: while Korri is
    * starting or running a game, that is the truth about this device. */
-  const quiet = view._tag !== "Busy" && view._tag !== "Running"
+  const quiet = model.status._tag === "Browsing"
   const settings = settingsOpen && quiet
 
   return (
@@ -276,13 +267,27 @@ function PicoCatalogSurface({
       <div
         className="pico-catalog-surface"
         onKeyDownCapture={(event) => {
+          suppressWakeClick.current = false
           if (wake()) {
             event.preventDefault()
             event.stopPropagation()
           }
         }}
         onPointerDownCapture={(event) => {
+          suppressWakeClick.current = false
           if (wake()) {
+            suppressWakeClick.current = true
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
+        onPointerCancelCapture={() => { suppressWakeClick.current = false }}
+        onClickCapture={(event) => {
+          if (suppressWakeClick.current) {
+            suppressWakeClick.current = false
+            event.preventDefault()
+            event.stopPropagation()
+          } else if (wake()) {
             event.preventDefault()
             event.stopPropagation()
           }

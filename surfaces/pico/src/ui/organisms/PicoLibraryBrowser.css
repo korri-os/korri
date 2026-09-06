@@ -2,7 +2,9 @@
 	position: relative;
 	z-index: 1;
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	/* Preserve the keyboard's intrinsic row width before sharing remaining
+	 * space. Equal columns clipped the first key at RG353M's panel size. */
+	grid-template-columns: minmax(min-content, 1fr) minmax(0, 1fr);
 	gap: var(--pico-space-2);
 	height: 100%;
 	min-height: 0;

@@ -5,6 +5,7 @@
   height: 30rem;
 }
 
+.pico-caliper-host,
 .pico-caliper-mount {
   width: 100%;
   height: 100%;
@@ -29,4 +30,13 @@
 .lab-part-mount > .pico-caliper-preview {
   width: 100%;
   height: 100%;
+}
+
+/* Caliper currently has one source list per adapter, not a per-part source
+ * hook. Only pages consume those models. Suppress the inert control for smaller
+ * parts using discovered layer metadata, never a second part-name inventory.
+ * Generated prop controls and device/page source controls remain available. */
+.pt-inspector:has(.pt-inspector-scope > .pt-layer-tag:not(.layer-page))
+  .pt-bind-row:has(> select[aria-label^="Data source for "]) {
+  display: none;
 }

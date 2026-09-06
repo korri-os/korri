@@ -1,6 +1,6 @@
 import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react"
 
-interface AuthoredStory {
+export interface AuthoredStory {
   readonly render: () => ReactNode
   readonly generatedContract?: { readonly inputs: readonly { readonly id: string }[] }
 }
@@ -14,16 +14,21 @@ interface AuthoredStory {
 export function renderPicoPart(story: AuthoredStory, binding: {
   readonly inputValues: Readonly<Record<string, unknown>>
 }): ReactNode {
+  if (!story.generatedContract) return story.render()
+  const root = authoredPicoRoot(story)
+  const overrides = Object.fromEntries(story.generatedContract.inputs
+    .filter(input => Object.hasOwn(binding.inputValues, input.id))
+    .map(input => [input.id, binding.inputValues[input.id]]))
+  return cloneElement(root as ReactElement<Record<string, unknown>>, overrides)
+}
+
+export function authoredPicoRoot(story: AuthoredStory): ReactElement<Record<string, unknown>> {
   const wrapper = story.render()
-  if (!story.generatedContract) return wrapper
   if (!isValidElement(wrapper) || typeof wrapper.type !== "function") {
     throw new Error("Pico parts must export a pure element factory")
   }
   const factory = wrapper.type as (props: unknown) => ReactNode
   const root = factory(wrapper.props)
   if (!isValidElement(root)) throw new Error("Pico parts must return one component root")
-  const overrides = Object.fromEntries(story.generatedContract.inputs
-    .filter(input => Object.hasOwn(binding.inputValues, input.id))
-    .map(input => [input.id, binding.inputValues[input.id]]))
-  return cloneElement(root as ReactElement<Record<string, unknown>>, overrides)
+  return root as ReactElement<Record<string, unknown>>
 }

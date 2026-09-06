@@ -89,7 +89,7 @@ configuration reload.
   runtime stylesheet. Caliper currently exposes numeric/percentage controls;
   its color and length control support is not supplied by this adapter.
 
-### Using a live device preview
+### Using live fixture devices and placed pages
 
 Focus/click inside a device, then use **F** for Find, **M** to cycle shelf/grid/
 hero, **S** for settings, and **Escape** for Back. Tab and Enter keep native
@@ -97,17 +97,26 @@ browser focus/activation; this adapter does not implement gamepad or spatial
 arrow navigation. Shortcuts ignore editable fields, repeats and modifiers.
 
 The device Inspector also exposes **Pico input** events and a **Fixture
-scenario** event, scoped to the selected device. Fixture sources cover ready,
-loading, empty, busy, problem and gameplay overlay. Scenario changes reset the
-model, not Pico's local navigation state. Detail, launch-location selection,
-confirmations and settings are reached through their actual controls.
+scenario** event, scoped to the selected device or placed page. Eleven sources
+cover ready, loading, empty, catalog error, busy, running, launch problem,
+settings saving/failure, and gameplay overlay/overlay failure. The source picker
+is derived from the review models; it is not another component/state manifest.
+
+All five placed pages use the same production controller as devices: Home,
+Find, Settings, Game Detail and Gameplay Overlay. Source changes reseed the
+model without replacing local navigation. Explicit Inspector edits to the
+entry view (such as Home layout) restart navigation. Detail, launch-location
+selection and confirmations are reached through real controls. Back from a
+Find result restores the query; the visible launch failure takes Back before
+any page hidden underneath.
 
 Launch/game actions remain in an explicitly labelled PREVIEW busy state rather
 than claiming a real game started. Setting choices and overlay toggle/choice/
 range controls republish values; overlay commands acknowledge simulated
 requests. Retry, dismiss and reload have fixture consequences. No disk/network
-operations occur. Individual placed parts retain their authored fixture data
-and callbacks; selecting a device source is not a universal part-model editor.
+operations occur. Smaller parts retain their authored fixture data/callbacks
+and expose only generated Inspector inputs, not inert scenario/input events.
+A source selector is not a universal smaller-part model editor.
 
 ### Verification
 
@@ -115,7 +124,8 @@ and callbacks; selecting a device source is not a universal part-model editor.
 nix run .#pico-check
 cd surfaces/pico
 CALIPER_ROOT=/path/to/caliper bun run caliper:typecheck
-CHROMIUM=/path/to/system/chromium VERIFY_HMR=1 bun run caliper:verify
+CHROMIUM=/path/to/system/chromium VERIFY_HMR=1 \
+  PHYSICAL_REVIEW_DIR=/tmp/pico-review bun run caliper:verify
 ```
 
 `caliper:typecheck` first rejects an incomplete-adapter tripwire, then checks
@@ -123,12 +133,20 @@ Pico against that launcher's actual TypeScript contract. No Caliper import enter
 runtime code. The browser check requires a running launcher (default
 `http://127.0.0.1:3131`, override with `CALIPER_URL`) and the project registered in
 its picker. It exercises all discovered part placements, preview bounds, scoped
-navigation, RG353M placed-part resizing, an Inspector prop edit and a live
-design knob. `VERIFY_HMR=1` adds,
-edits and removes a temporary part, asserting that the session does not reload.
+navigation, live page sources/interactions, RG353M title visibility, confirmation
+focus/Tab/Escape/restore, placed-part resizing, an Inspector prop edit and a
+live design knob. It also checks attract's repeat geometry, stepped/reduced
+motion, and real pointer wake without accidentally opening a game.
+`VERIFY_HMR=1` adds/edits/removes temporary parts and a live page without reloading.
+`PHYSICAL_REVIEW_DIR` optionally captures every discovered part at all three
+panel sizes and checks names/bounds of enabled controls after focusing each.
+It writes images and `report.json`; inspect the images, not just the totals.
 
 Use a development workspace: the browser check changes the Caliper selection/
 workspace and Caliper may persist those changes to `.lab/pico/state.json`.
-This is integration coverage, not a completed per-part visual/accessibility
-review at every physical size. Hardware and persistent kiosk deployment are
-outside this check.
+The 2026-09-06 review inspected all 147 captures and fixed keyboard/title clipping,
+attract looping, navigation precedence and confirmation focus; see
+[`docs/acceptance/pico-caliper-2026-09-06.md`](../../docs/acceptance/pico-caliper-2026-09-06.md).
+This is a browser simulation at configured physical sizes, not calibrated
+on-device readability or assistive-technology certification. Gamepad/spatial
+navigation, hardware and persistent kiosk deployment remain outside this check.

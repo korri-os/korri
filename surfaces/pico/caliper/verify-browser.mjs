@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /** Run against an already-started Caliper; never starts a kiosk or backend. */
 import assert from "node:assert/strict"
-import { readdirSync, writeFileSync, unlinkSync } from "node:fs"
+import { readdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
+import { verifyMotion } from "./verify-motion.mjs"
+import { verifyPhysical } from "./verify-physical.mjs"
+import { verifyLivePages } from "./verify-pages.mjs"
 
 const project = "korri-pico-a7960dd2"
 const url = process.env.CALIPER_URL ?? "http://127.0.0.1:3131"
@@ -18,7 +21,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 }, reducedMotion: "reduce" })
   const errors = []
   page.on("pageerror", error => errors.push(error.message))
-  page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); if (process.env.DEBUG_PICO) console.error(message.text().slice(0,350)) })
   await page.goto(url, { waitUntil: "domcontentloaded" })
   await page.locator("select").selectOption(project)
   const frame = page.frameLocator(`iframe[src*="${project}"]`)
@@ -30,6 +33,7 @@ try {
     const doc = document.querySelector(`iframe[src*="${project}"]`)?.contentDocument
     return doc?.querySelectorAll(".lab-scale-content").length === count
   }, { project, count: expectedParts })
+  while (await frame.locator(".pt-card.is-sel").count()) await frame.locator(".pt-card.is-sel").first().dispatchEvent("click")
   assert.equal(await scope.count(), 3, "three physical devices")
   const first = scope.first()
   await first.focus()
@@ -50,7 +54,7 @@ try {
   // synthesizes a prop contract for the real component root.
   const cards = frame.locator(".pt-card")
   assert.equal(await cards.count(), expectedParts)
-  for (const selected of await frame.locator(".pt-card.is-sel").all()) await selected.dispatchEvent("click")
+  while (await frame.locator(".pt-card.is-sel").count()) await frame.locator(".pt-card.is-sel").first().dispatchEvent("click")
   for (let index = 0; index < expectedParts; index++) {
     const card = cards.nth(index)
     await card.dispatchEvent("click")
@@ -59,6 +63,7 @@ try {
     failures.push(...placementErrors)
     await card.dispatchEvent("click")
   }
+  await verifyLivePages(page, frame)
   const locationCard = frame.getByRole("button", { name: "Open Location Picker", exact: true })
   await locationCard.dispatchEvent("click")
   const locationObject = frame.locator(".pt-object").filter({ has: frame.locator(".pico-location-picker") })
@@ -80,6 +85,8 @@ try {
   await badgeCard.dispatchEvent("click")
   const badgeObject = frame.locator(".pt-object").filter({ has: frame.locator(".pico-badge") })
   await badgeObject.dispatchEvent("pointerdown")
+  assert.equal(await frame.getByRole("combobox", { name: "Data source for Badge", exact: true }).count(), 0,
+    "static smaller parts must not advertise an inert source picker")
   await frame.getByRole("combobox", { name: "Tone for Badge", exact: true }).selectOption("string:warn")
   assert.equal(await badgeObject.locator(".pico-badge").getAttribute("data-tone"), "warn")
   assert.equal(await badgeObject.locator(".pico-badge").innerText(), "SAVING", "Inspector edit must retain the authored required text")
@@ -115,8 +122,31 @@ try {
       { project, count: expectedParts })
     assert.equal(await cards.count(), expectedParts)
     assert.equal(await first.evaluate(() => performance.timeOrigin), origin, "part add/edit/remove must not reload the session")
+    const pagePath = `${sourceRoot}/pages/CaliperHmrPage${process.pid}.page.part.tsx`
+    const original = readFileSync(`${sourceRoot}/pages/PicoSettings.page.part.tsx`, "utf8")
+    writeFileSync(pagePath, original.replace('name = "Settings"', 'name = "HMR Settings initial"'), { flag: "wx" })
+    try {
+      const pageCard = frame.getByRole("button", { name: "Open HMR Settings initial", exact: true })
+      await pageCard.waitFor({ state: "attached" })
+      await pageCard.dispatchEvent("click")
+      await page.waitForTimeout(100)
+      assert.deepEqual(await frame.locator(".lab-preview-error").allTextContents(), [])
+      const placed = frame.locator(".lab-part-mount .pico-panel-screen")
+      await placed.waitFor()
+      writeFileSync(pagePath, original.replace('name = "Settings"', 'name = "HMR Settings updated"'))
+      const updated = frame.getByRole("button", { name: "Open HMR Settings updated", exact: true })
+      await updated.waitFor({ state: "attached" })
+      await placed.waitFor()
+      await updated.dispatchEvent("click")
+    } finally {
+      for (const card of await frame.locator('.pt-card.is-sel[aria-label^="Open HMR Settings"]').all()) await card.dispatchEvent("click")
+      unlinkSync(pagePath)
+    }
+    assert.equal(await first.evaluate(() => performance.timeOrigin), origin, "page HMR must not reload the session")
     console.log("PASS: source-part add/edit/remove HMR without reloading the session")
   }
+  await verifyMotion(page, frame)
+  if (process.env.PHYSICAL_REVIEW_DIR) await verifyPhysical(page, frame, process.env.PHYSICAL_REVIEW_DIR)
   failures.push(...errors)
   assert.deepEqual(failures, [])
   if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT })

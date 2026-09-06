@@ -4,6 +4,7 @@
 
 .pico-result-row {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	gap: var(--pico-space-1);
 	width: 100%;
@@ -35,14 +36,16 @@
 }
 
 .pico-result-row-title {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	min-width: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 .pico-result-row-meta {
 	margin-left: auto;
 	flex: 0 0 auto;
+	max-width: 100%;
+	overflow-wrap: anywhere;
 	font-size: var(--pico-text-sm);
 	color: var(--pico-ink-dim);
 }
