@@ -54,7 +54,7 @@ The event has exactly these ordered tags:
 
 The `d` tag makes the state addressable for one device. The `device` tag makes the target explicit. The `status` tag selects the state.
 
-A new device accepts `owned` as its first owner statement. An owned device accepts a newer statement only from the same owner. A revoked device accepts no owner changes. A reset is necessary before another person can own it.
+A new device accepts `owned` as its first owner statement. An owned device accepts a newer statement only from the same owner. A revoked device accepts no owner changes. Normal ownership changes require reset, which creates a new device key. The approved offline test-owner retirement below is a separate administrative exception, not an import or RPC rule.
 
 NIP-01 defines the order for addressable events. A later timestamp wins. At the same timestamp, the event with the lower event ID wins.
 
@@ -80,6 +80,78 @@ owner.event.json
 The file names follow the fixed-file pattern that the current private state root already uses. The signed NIP event is the producer and the source of truth for owner state.
 
 Android Keystore support and a Linux TPM are outside this slice. The storage adapter can change later without a change to the public identity state.
+
+## Offline test-owner retirement
+
+The user approved the guarded test-to-private-owner cutover and retirement of
+**all** old client pairings on 2026-09-06, in decision
+`c74a26f8-7924-4af5-838c-f6aa4d2fc8d0` (`approve-cutover-repair`).
+The device key, Sunshine host identity, games, and history must remain unchanged.
+This costs a maintenance interruption and client re-pairing.
+
+The local administrative entry is:
+
+```text
+korrid identity replace-test-owner-offline --expected-device KEY --expected-owner KEY --expected-event ID --new-owner KEY --template PATH --file PATH
+```
+
+Supply the arguments in this order. Set the existing `KORRID_PRIVATE_STATE_ROOT`
+explicitly to the approved absolute private-state root. Both input paths must
+also be absolute. `--template` is the exact unsigned template produced by
+`DeviceIdentity::owner_statement_template`; `--file` is its complete signed
+owner event. Select `--new-owner` independently through the user's signer,
+not by copying the author from an untrusted returned event.
+
+This command only replaces an existing, verified `owned` binding from the known
+repository test signer, public key
+`f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9`.
+The selected new owner must differ. The existing device key, current owner, and
+current event ID must equal all three expected-current arguments. Producer
+verification checks the signature, event ID, device, selected owner, and exact
+unsigned template. Missing or invalid state fails without generating a key.
+Normal `import`, owner apply, and peer RPC still deny cross-owner changes.
+A stale test-owner import fails after this operation commits.
+
+The command uses the existing `identity/device.key` and
+`identity/owner.event.json` format. It changes only the owner event. It does not
+create a transfer record, change the device key, or migrate any other state.
+It opens every path component without following symlinks. The state root,
+identity directory, and each source's direct parent must be `0700`. Files must
+be regular, single-link `0600` files with their parent's UID/GID. The identity
+directory must have the state root's UID/GID. Inputs are bounded to 65536 bytes;
+the key is bounded to the producer's existing 128-byte limit. Ancestors must
+belong to root or the private directory owner and must not be group/other
+writable, except root-owned sticky directories such as `/tmp`.
+Stage immutable public artifacts into approved private files first; do not pass
+Nix-store files directly or loosen existing private-state permissions.
+
+Run under root-controlled maintenance, as root or the existing private-state
+UID. The replacement retains the current event's UID/GID and `0600` mode.
+The device key's bytes, inode, UID/GID, and mode remain unchanged. Same-directory
+exclusive temporary creation, file sync, expected-current recheck, atomic rename,
+and directory sync follow the existing identity writer pattern. The stored new
+event is the exact verified input. A final reopen verifies the new event and
+unchanged key. A successful result prints only the existing public identity
+state, never the signed event or key bytes.
+
+**Offline exclusive authority is a precondition, not something this command
+proves.** Its nonblocking advisory lock on the identity directory excludes only
+other invocations of this command. The platform procedure must stop and block
+all daemons, importers, JNI processes, launch/pairing paths, and other writers
+before invoking it. That procedure must also prove absent federation memory,
+retire old Sunshine client trust through Sunshine's producer, preserve replay
+and signed revocation evidence, and verify the compatible new-owner generation
+before allowing network access. This command does none of those operations.
+
+Any error or interruption keeps authority stopped. Inspect the exact current
+binding before recovery. A failed write leaves the complete old or complete new
+event; a post-rename sync error is an ambiguous outcome, not permission to retry
+or restart the old generation. Interrupted staging can leave an unused private
+temporary file. Never restore the old owner event or old client trust after the
+cut commits. Software recovery must retain the new owner and revoked old trust.
+The preserved key retains its historical public linkage; this operation does
+not erase relay history, establish that the key was never copied, or add forward
+secrecy.
 
 ## Event boundary
 
@@ -230,4 +302,6 @@ The next slices must add:
 
 - delivery and device-side installation of externally signed person passes and revocations.
 
-The current environment-driven Linux binary does not have a command framework. The owner-binding import/status CLI stays with the later Nix host-binding slice rather than broadening that binary in this Android slice.
+The Linux binary provides `identity status`, `owner-binding-request`, `import`,
+and `reset`, plus the narrow offline test-owner retirement above. Linux NIP-46
+signer orchestration and general owner transfer remain unimplemented.

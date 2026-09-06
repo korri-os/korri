@@ -23,6 +23,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+pub(crate) mod offline;
+
 const IDENTITY_DIRECTORY: &str = "identity";
 const DEVICE_KEY_FILE: &str = "device.key";
 const OWNER_EVENT_FILE: &str = "owner.event.json";
@@ -323,16 +325,36 @@ impl DeviceIdentity {
         expected_owner_public_key: &str,
         signed_event_json: &str,
     ) -> Result<(), IdentityError> {
+        Self::verify_signed_owner_binding(
+            &self.public_key()?.to_hex(),
+            unsigned_template_json,
+            expected_owner_public_key,
+            signed_event_json,
+        )?;
+        self.apply_owner_statement(signed_event_json)
+    }
+
+    // Shared producer verification; this does not authorize a storage change.
+    fn verify_signed_owner_binding(
+        device_public_key: &str,
+        unsigned_template_json: &str,
+        expected_owner_public_key: &str,
+        signed_event_json: &str,
+    ) -> Result<(), IdentityError> {
+        if unsigned_template_json.len() > MAX_EVENT_BYTES {
+            return Err(IdentityError::InvalidEvent(
+                "owner template is too large".into(),
+            ));
+        }
         let expected_owner = parse_public_key(expected_owner_public_key)?;
         let supplied_template: OwnerStatementTemplate =
             serde_json::from_str(unsigned_template_json).map_err(|_| {
                 IdentityError::InvalidEvent("owner template JSON is malformed".into())
             })?;
-        let device_public_key = self.public_key()?.to_hex();
         let expected_template = OwnerStatementTemplate {
             kind: OWNER_EVENT_KIND,
             created_at: supplied_template.created_at,
-            tags: owner_tags(&device_public_key, OwnerStatementStatus::Owned),
+            tags: owner_tags(device_public_key, OwnerStatementStatus::Owned),
             content: String::new(),
         };
         if supplied_template != expected_template {
@@ -365,7 +387,7 @@ impl DeviceIdentity {
                 "signer returned a different event".into(),
             ));
         }
-        self.apply_owner_statement(signed_event_json)
+        Ok(())
     }
 
     /// Store a newer valid owner statement for this exact device.

@@ -31,13 +31,39 @@ pub fn run(
             let event = read_bounded(&mut file)?;
             import(private_state_root, &event)
         }
+        [command, device_flag, device, owner_flag, owner, event_flag, event, new_owner_flag, new_owner, template_flag, template, file_flag, file]
+            if command == "replace-test-owner-offline"
+                && device_flag == "--expected-device"
+                && owner_flag == "--expected-owner"
+                && event_flag == "--expected-event"
+                && new_owner_flag == "--new-owner"
+                && template_flag == "--template"
+                && file_flag == "--file" =>
+        {
+            let text = |value: &OsString| {
+                value.to_str().ok_or_else(|| "offline owner arguments must be UTF-8".to_owned())
+                    .map(str::to_owned)
+            };
+            let state = crate::identity::offline::replace_test_owner(
+                private_state_root,
+                crate::identity::offline::Replacement {
+                    expected_device: &text(device)?,
+                    expected_owner: &text(owner)?,
+                    expected_event: &text(event)?,
+                    new_owner: &text(new_owner)?,
+                    template: Path::new(template),
+                    signed_event: Path::new(file),
+                },
+            )?;
+            serialize_state(&state).map_err(|error| error.to_string())
+        }
         [command] if command == "reset" => {
             let identity = DeviceIdentity::reset(private_state_root)
                 .map_err(|error| error.to_string())?;
             serialize_state(identity.state()).map_err(|error| error.to_string())
         }
         _ => Err(
-            "usage: korrid identity {status|owner-binding-request|import --file PATH|import --stdin|reset}"
+            "usage: korrid identity {status|owner-binding-request|import --file PATH|import --stdin|reset|replace-test-owner-offline --expected-device KEY --expected-owner KEY --expected-event ID --new-owner KEY --template PATH --file PATH}; offline replacement requires exclusive authority with all identity users stopped"
                 .into(),
         ),
     }
@@ -104,6 +130,10 @@ fn read_bounded(reader: &mut dyn Read) -> Result<String, String> {
 fn serialize_state(state: &IdentityState) -> Result<String, serde_json::Error> {
     serde_json::to_string(state)
 }
+
+#[cfg(test)]
+#[path = "identity_cli/offline_tests.rs"]
+mod offline_tests;
 
 #[cfg(test)]
 mod tests {
