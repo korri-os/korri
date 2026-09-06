@@ -62,6 +62,7 @@ in
 
     compositor = {
       backend = "drm";
+      remoteInput.enable = true;
       # /dev/dri/cardN is assigned in probe order, not by role. This device has
       # two DRM cards: the display controller (rockchipdrm, display-subsystem)
       # drives the panel, and the GPU (panfrost, fde60000.gpu) is render-only.

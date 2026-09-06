@@ -193,12 +193,25 @@ let
     ''}
   '';
   deviceConfig = if cfg.deviceConfig == null then generatedDeviceConfig else cfg.deviceConfig;
+  remoteInputIdentifiers = [
+    "48879:57005:Mouse_passthrough"
+    "48879:57005:Mouse_passthrough_(absolute)"
+    "48879:57005:Keyboard_passthrough"
+    "48879:57005:Touch_passthrough"
+    "48879:57005:Pen_passthrough"
+  ];
   swayConfig = pkgs.writeText "korri-sway.conf" ''
     default_border none
     default_floating_border none
     hide_edge_borders both
     xwayland force
     seat * hide_cursor 1500
+    ${lib.optionalString cfg.compositor.remoteInput.enable ''
+      # Accept only Sunshine's named BEEF:DEAD virtual devices. Keep physical
+      # input and InputPlumber source controls disabled in this compositor.
+      input "*" events disabled
+      ${lib.concatMapStringsSep "\n" (id: ''input "${id}" events enabled'') remoteInputIdentifiers}
+    ''}
     output ${cfg.compositor.outputName} mode ${cfg.compositor.mode}
     output ${cfg.compositor.outputName} bg #000000 solid_color
     workspace "${compositorWorkspace}" output ${cfg.compositor.outputName}
@@ -425,6 +438,7 @@ in
     };
 
     compositor = {
+      remoteInput.enable = lib.mkEnableOption "Sunshine virtual pointer, keyboard and touch input on DRM";
       backend = lib.mkOption {
         type = lib.types.enum [
           "headless"
@@ -691,6 +705,10 @@ in
         message = "services.korriLinuxHost DRM compositor requires an exact /dev/dri/cardN device or a /dev/dri/by-path/*-card link.";
       }
       {
+        assertion = !cfg.compositor.remoteInput.enable || cfg.compositor.backend == "drm";
+        message = "services.korriLinuxHost compositor remote input requires the DRM backend.";
+      }
+      {
         assertion = cfg.sunshine.capture != "kms" || cfg.compositor.backend == "drm";
         message = "services.korriLinuxHost KMS capture requires the physical DRM compositor backend.";
       }
@@ -947,7 +965,7 @@ in
       }
       // lib.optionalAttrs (cfg.compositor.backend == "drm") {
         LIBSEAT_BACKEND = "seatd";
-        WLR_BACKENDS = "drm";
+        WLR_BACKENDS = if cfg.compositor.remoteInput.enable then "drm,libinput" else "drm";
         WLR_DRM_DEVICES = cfg.compositor.drmDevice;
       }
       // lib.optionalAttrs (cfg.sunshine.encoder == "nvenc") {

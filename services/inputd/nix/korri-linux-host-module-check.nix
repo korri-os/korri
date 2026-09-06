@@ -121,6 +121,12 @@ let
       };
     };
   };
+  remoteInputPhysical = physicalSoftware.extendModules {
+    modules = [ { services.korriLinuxHost.compositor.remoteInput.enable = true; } ];
+  };
+  remoteInputHeadless = evaluate {
+    services.korriLinuxHost.compositor.remoteInput.enable = true;
+  };
   missingDrmDevice = evaluate {
     services.korriLinuxHost.compositor.backend = "drm";
   };
@@ -178,6 +184,7 @@ let
   pixmanDeviceConfig = pixman.config.services.korridLinuxDevice.deviceConfig;
   sunshineExec = pkgs.writeText "korri-linux-host-sunshine-exec" sunshine.serviceConfig.ExecStart;
   compositorExec = pkgs.writeText "korri-linux-host-compositor-exec" compositor.serviceConfig.ExecStart;
+  remoteInputCompositorExec = pkgs.writeText "korri-linux-host-remote-input-exec" remoteInputPhysical.config.systemd.services.korri-compositor.serviceConfig.ExecStart;
   highRefreshCompositorExec = pkgs.writeText "korri-linux-host-high-refresh-compositor-exec" highRefresh.config.systemd.services.korri-compositor.serviceConfig.ExecStart;
   highRefreshPerformance =
     if isX86_64 then highRefresh.config.systemd.services.korri-streaming-performance-profile else null;
@@ -350,6 +357,12 @@ assert builtins.elem "seat" physicalSoftwareCompositor.serviceConfig.Supplementa
 assert !(builtins.elem "seat" physicalSoftwareSunshine.serviceConfig.SupplementaryGroups);
 assert !(builtins.elem "seat" compositor.serviceConfig.SupplementaryGroups);
 assert physicalSoftwareCompositor.environment.WLR_BACKENDS == "drm";
+assert allAssertionsPass remoteInputPhysical;
+assert hasFailedAssertion "remote input requires the DRM backend" remoteInputHeadless;
+assert
+  remoteInputPhysical.config.systemd.services.korri-compositor.environment.WLR_BACKENDS
+  == "drm,libinput";
+assert !(builtins.elem "input" remoteInputPhysical.config.users.users.korri.extraGroups);
 assert physicalSoftwareCompositor.environment.WLR_DRM_DEVICES == "/dev/dri/card0";
 assert physicalSoftwareCompositor.environment.WLR_RENDER_DRM_DEVICE == "/dev/dri/renderD128";
 assert !(builtins.hasAttr "WLR_LIBINPUT_NO_DEVICES" physicalSoftwareCompositor.environment);
@@ -542,6 +555,11 @@ pkgs.runCommand "korri-linux-host-module-check" { } ''
     ! grep -F 'XDG_RUNTIME_DIR' ${deviceConfig} >/dev/null
     ! grep -F 'SWAYSOCK' ${deviceConfig} >/dev/null
     grep -F -- '--config /nix/store/' ${compositorExec} >/dev/null
+    remote_input_config="$(grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${remoteInputCompositorExec} | head -n1)"
+    grep -F 'input "*" events disabled' "$remote_input_config" >/dev/null
+    for identifier in Mouse_passthrough 'Mouse_passthrough_(absolute)' Keyboard_passthrough Touch_passthrough Pen_passthrough; do
+      grep -F "input \"48879:57005:$identifier\" events enabled" "$remote_input_config" >/dev/null
+    done
     high_refresh_compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${highRefreshCompositorExec} | head -n1)"
     grep -F 'output HEADLESS-1 mode 1920x1080@120Hz' "$high_refresh_compositor_config" >/dev/null
     ${lib.optionalString isX86_64 ''
