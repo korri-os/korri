@@ -244,6 +244,51 @@ let
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
   udevRules = pkgs.writeText "korri-linux-host-udev-rules" cfg.services.udev.extraRules;
   inputSeatUdevRules = pkgs.writeText "korri-linux-host-input-seat-udev-rules" inputSeats.config.services.udev.extraRules;
+  runtimeConfigRules = pkgs.writeText "korri-linux-host-runtime-config-tmpfiles.conf" (
+    lib.concatStringsSep "\n" (
+      lib.filter (
+        rule: lib.hasPrefix "d /home/korri/.config " rule || lib.hasPrefix "d /home/korri/.config/" rule
+      ) cfg.systemd.tmpfiles.rules
+    )
+    + "\n"
+  );
+  tmpfilesCheck = pkgs.runCommand "korri-linux-host-tmpfiles-check" { } ''
+    uid="$(id -u)"
+    gid="$(id -g)"
+    ${cfg.systemd.package}/bin/systemd-tmpfiles --version
+    for initial in 0755 0700 absent; do
+      root="$TMPDIR/tmpfiles-$initial"
+      mkdir -p "$root/etc" "$root/home/korri"
+      # Resolve the real module's user/group within --root without root privileges.
+      printf 'korri:x:%s:%s::/home/korri:/bin/sh\n' "$uid" "$gid" >"$root/etc/passwd"
+      printf 'korri:x:%s:\n' "$gid" >"$root/etc/group"
+      parent="$root/home/korri/.config"
+      leaf="$parent/sunshine"
+      expected=700
+      if [ "$initial" != absent ]; then
+        mkdir -m "$initial" "$parent"
+        mkdir -m 0755 "$leaf"
+        expected="''${initial#0}"
+      fi
+      for pass in 1 2; do
+        ${cfg.systemd.package}/bin/systemd-tmpfiles --create --root="$root" ${runtimeConfigRules}
+        actual="$(stat -c %a "$parent")"
+        if [ "$actual" != "$expected" ]; then
+          echo "parent mode changed: initial=$initial pass=$pass expected=$expected actual=$actual" >&2
+          exit 1
+        fi
+        test "$(stat -c %a "$leaf")" = 700
+        test "$(stat -c %u:%g "$parent")" = "$uid:$gid"
+        test "$(stat -c %u:%g "$leaf")" = "$uid:$gid"
+        echo "PASS initial=$initial pass=$pass parent=$actual sunshine=700"
+        # Re-setup must tighten Sunshine again without tightening the parent.
+        if [ "$pass" = 1 ]; then
+          chmod 0755 "$leaf"
+        fi
+      done
+    done
+    touch "$out"
+  '';
 in
 assert allAssertionsPass valid;
 assert cfg.services.korriBundle.enable;
@@ -521,7 +566,7 @@ assert builtins.elem "suid-sgid-wrappers.service" physicalSoftwareSunshine.requi
 assert sunshine.serviceConfig.Sockets == [ "korri-certificate-control.socket" ];
 assert builtins.elem "d /run/korri-certificate-control 0751 root korrid -"
   cfg.systemd.tmpfiles.rules;
-assert builtins.elem "d /home/korri/.config 0700 korri korri -" cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /home/korri/.config :0700 korri korri -" cfg.systemd.tmpfiles.rules;
 assert builtins.elem "d /home/korri/.config/sunshine 0700 korri korri -" cfg.systemd.tmpfiles.rules;
 assert
   sunshine.serviceConfig.ExecStart
@@ -597,7 +642,8 @@ assert hasFailedAssertion "differ from the runtime identity" collidingIdentity;
 assert evaluationRejected invalidLabel;
 assert hasFailedAssertion "certificate-control socket inode ownership" wrongCertificateSocketGroup;
 assert evaluationRejected wrongCertificateSocketGroup;
-pkgs.runCommand "korri-linux-host-module-check" { } ''
+pkgs.runCommand "korri-linux-host-module-check" { passthru = { inherit tmpfilesCheck; }; } ''
+    test -e ${tmpfilesCheck}
     grep -F 'id = "inputd-gate"' ${deviceConfig} >/dev/null
     grep -F 'title = "Streaming gate"' ${deviceConfig} >/dev/null
     grep -F '/bin/tini' ${deviceConfig} >/dev/null

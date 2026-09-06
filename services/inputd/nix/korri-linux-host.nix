@@ -849,7 +849,9 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.storageRoot} 0700 korrid korrid -"
       "d ${certificateControlDirectory} 0751 root korrid -"
-      "d ${runtimeHome}/.config 0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
+      # tmpfiles.d(5): ':' sets the mode only on creation. Keep an existing
+      # shared .config mode; Sunshine's own directory stays private below.
+      "d ${runtimeHome}/.config :0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
       "d ${sunshineConfig} 0700 ${cfg.runtimeUser} ${cfg.runtimeGroup} -"
     ];
 
