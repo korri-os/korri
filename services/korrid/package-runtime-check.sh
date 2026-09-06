@@ -4,22 +4,33 @@ set -Eeuo pipefail
 binary="${1:?korrid binary is required}"
 bash_bin="${2:?bash path is required}"
 curl_bin="${3:?curl path is required}"
-jq_bin="${4:?jq path is required}"
-coreutils_bin="${5:?coreutils bin directory is required}"
+coreutils_bin="${4:?coreutils bin directory is required}"
 export PATH="$coreutils_bin"
 
 root="$(mktemp -d)"
 pid=''
 cleanup() {
+  result=$?
   if [[ -n "$pid" ]]; then
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
+  if [[ "$result" != 0 ]]; then
+    printf 'packaged korrid check failed (exit %s); private root mode: ' "$result" >&2
+    stat -c '%a' "$root/private" >&2 || true
+    if [[ -f "$root/stderr" ]]; then
+      printf 'packaged korrid stderr (last 4096 bytes):\n' >&2
+      tail -c 4096 "$root/stderr" >&2 || true
+    fi
+  fi
   rm -rf "$root"
+  return "$result"
 }
 trap cleanup EXIT
 
-mkdir -p "$root/home" "$root/private" "$root/storage" "$root/sunshine"
+mkdir -p "$root/home" "$root/storage" "$root/sunshine"
+# Federation storage requires exactly 0700, regardless of the builder's umask.
+mkdir -m 0700 "$root/private"
 printf '%s\n' \
   'label = "package-check"' \
   '[[games]]' \
@@ -56,6 +67,7 @@ for _ in $(seq 1 100); do
     healthy=true
     break
   fi
+  kill -0 "$pid" 2>/dev/null || break
   sleep 0.05
 done
 [[ "$healthy" == true ]] || { printf 'packaged korrid did not start\n' >&2; exit 1; }
@@ -66,9 +78,10 @@ plaintext_status="$("$curl_bin" --silent --output /dev/null --write-out '%{http_
   -H 'content-type: application/json' \
   -d '{"_tag":"app.catalog.snapshot","payload":{}}')"
 [[ "$plaintext_status" == 426 ]]
+[[ "$(stat -c '%a' "$root/private")" == 700 ]]
 [[ -d "$root/private/identity" ]]
 [[ "$(stat -c '%a' "$root/private/identity")" == 700 ]]
 [[ "$(stat -c '%a' "$root/private/identity/device.key")" == 600 ]]
 [[ ! -e "$root/home/.local/state/korri/identity" ]]
 
-printf 'korrid package runtime check passed\n'
+printf 'korrid package runtime check passed (peer-rpc: HTTP 400; rpc: HTTP 426)\n'

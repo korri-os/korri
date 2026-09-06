@@ -125,7 +125,6 @@ craneLib.buildPackage (
         "$out/bin/korrid" \
         ${pkgs.bash}/bin/bash \
         ${pkgs.curl}/bin/curl \
-        ${pkgs.jq}/bin/jq \
         ${pkgs.coreutils}/bin
     '';
   }
