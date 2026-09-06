@@ -142,6 +142,14 @@ The mirror remains inert when the protected receiver or either stable environmen
 
 ## Korrid certificate control
 
+The separate [offline all-client retirement executable](OFFLINE-RETIREMENT.md)
+reuses this producer's state reader, serializer, file-persistence machinery and
+trust verifier. Its separate offline entry never restores old trust after the
+actual rename, including on sync, close, verification or output failure. Online
+transaction rollback is unchanged. It needs exclusive external quiescence and
+the existing state UID/GID, not admin credentials. It adds no runtime endpoint.
+All clients must pair again.
+
 Patch `0020` adds an opt-in private adapter for Korrid-managed Moonlight trust. Sunshine consumes exactly one root-created systemd `SOCK_SEQPACKET` socket named `korri-certificate-control`. Sunshine verifies the configured absolute pathname, root ownership, and exact narrow mode before it serves requests. It does not create a TCP, HTTP, or web user interface. The adapter remains inactive when any socket-activation value or the exact expected Korrid UID and GID are absent.
 
 Each accepted connection carries one JSON frame of at most 16384 bytes. The non-mutating `attest` operation compares an expected Sunshine UUID and returns only whether it matches. Provision and revoke also check `SO_PEERCRED`, the exact Sunshine host UUID, and one valid public X.509 PEM certificate. Provision is idempotent by the certificate's SHA-256 fingerprint. Revoke removes only entries with that fingerprint. Sunshine preserves its existing `root.named_devices` schema, replaces its state file atomically, and proves that the replacement live TLS verifier accepts every current client certificate before it reports success. If a failed mutation cannot restore the prior durable state, Sunshine terminates instead of serving HTTPS or certificate-control requests with uncertain authorization. Mutation replies contain only status, whether state changed, and Sunshine's public server certificate. Certificate bodies and state contents do not enter logs.

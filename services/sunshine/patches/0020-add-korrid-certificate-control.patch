@@ -40,7 +40,7 @@ new file mode 100644
 index 0000000..eb7b1eb
 --- /dev/null
 +++ b/src/korri_certificate_control.cpp
-@@ -0,0 +1,519 @@
+@@ -0,0 +1,542 @@
 +#include "korri_certificate_control.h"
 +
 +#include <openssl/pem.h>
@@ -449,6 +449,29 @@ index 0000000..eb7b1eb
 +    return document.dump(4) + "\n";
 +  }
 +
++#ifndef _WIN32
++  bool persist_offline_retirement(
++      const std::string &path,
++      const std::string &candidate_document,
++      fault_plan *faults) {
++    // Administrative only: exclusion belongs to the caller. Once renamed,
++    // retired trust must never return, even when durability is uncertain.
++    const std::filesystem::path target(path);
++    temporary_file temporary(target);
++    if (temporary.fd() < 0 || !write_all(temporary.fd(), candidate_document, faults) ||
++        should_fail(faults, fault_stage::file_sync) || ::fsync(temporary.fd()) != 0 ||
++        !temporary.close()) {
++      return false;
++    }
++    if (should_fail(faults, fault_stage::rename) ||
++        ::rename(temporary.path().c_str(), target.c_str()) != 0) {
++      return false;
++    }
++    temporary.release_path();
++    return sync_parent(target, faults);
++  }
++#endif
++
 +  transaction_result replace_state_and_activate(
 +      const std::string &path,
 +      const std::string &candidate_document,
@@ -565,12 +588,13 @@ new file mode 100644
 index 0000000..fbb4481
 --- /dev/null
 +++ b/src/korri_certificate_control.h
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,330 @@
 +#pragma once
 +
 +#include <openssl/x509.h>
 +
 +#include <nlohmann/json.hpp>
++#include <boost/property_tree/ptree.hpp>
 +
 +#include <array>
 +#include <atomic>
@@ -629,6 +653,35 @@ index 0000000..fbb4481
 +    std::string certificate;
 +    std::string fingerprint;
 +  };
++
++  // Shared by load_state and the offline administrator. Keep the producer's
++  // legacy devices/certs import and named_devices field interpretation here.
++  template<typename UuidFactory>
++  std::vector<named_certificate> parse_client_state(
++      const boost::property_tree::ptree &root,
++      UuidFactory &&uuid_factory) {
++    std::vector<named_certificate> clients;
++    if (root.get_child_optional("devices")) {
++      for (const auto &[_, device] : root.get_child("devices")) {
++        if (device.count("certs")) {
++          for (const auto &[__, certificate] : device.get_child("certs")) {
++            clients.push_back({"", std::invoke(uuid_factory), certificate.get_value<std::string>(), {}});
++          }
++        }
++      }
++    }
++    if (root.count("named_devices")) {
++      for (const auto &[_, entry] : root.get_child("named_devices")) {
++        clients.push_back({
++            entry.get_child("name").get_value<std::string>(),
++            entry.get_child("uuid").get_value<std::string>(),
++            entry.get_child("cert").get_value<std::string>(),
++            {},
++        });
++      }
++    }
++    return clients;
++  }
 +
 +  struct mutation_result {
 +    bool changed;
@@ -699,6 +752,15 @@ index 0000000..fbb4481
 +      std::string_view existing_document,
 +      std::string_view unique_id,
 +      const std::vector<named_certificate> &clients);
++
++#ifndef _WIN32
++  // Offline administrator only; false includes an unsynced replacement. Never
++  // activates authority or restores the previous document. Caller must inspect.
++  bool persist_offline_retirement(
++      const std::string &path,
++      const std::string &candidate_document,
++      fault_plan *faults = nullptr);
++#endif
 +
 +  transaction_result replace_state_and_activate(
 +      const std::string &path,
@@ -1029,7 +1091,7 @@ index c1d9401..0ae83ac 100644
      if (!fs::exists(config::nvhttp.file_state)) {
        BOOST_LOG(info) << "File "sv << config::nvhttp.file_state << " doesn't exist"sv;
        http::unique_id = uuid_util::uuid_t::generate().string();
-@@ -212,71 +284,186 @@ namespace nvhttp {
+@@ -212,71 +284,172 @@ namespace nvhttp {
        pt::read_json(config::nvhttp.file_state, tree);
      } catch (std::exception &e) {
        BOOST_LOG(error) << "Couldn't read "sv << config::nvhttp.file_state << ": "sv << e.what();
@@ -1050,40 +1112,36 @@ index c1d9401..0ae83ac 100644
 -
 -    // Import from old format
 +    client_t candidate;
-     if (root.get_child_optional("devices")) {
+-    if (root.get_child_optional("devices")) {
 -      auto device_nodes = root.get_child("devices");
 -      for (auto &[_, device_node] : device_nodes) {
 -        auto uniqID = device_node.get<std::string>("uniqueid");
 -
-+      for (auto &[_, device_node] : root.get_child("devices")) {
-         if (device_node.count("certs")) {
+-        if (device_node.count("certs")) {
 -          for (auto &[_, el] : device_node.get_child("certs")) {
 -            named_cert_t named_cert;
 -            named_cert.name = ""s;
 -            named_cert.cert = el.get_value<std::string>();
 -            named_cert.uuid = uuid_util::uuid_t::generate().string();
 -            client.named_devices.emplace_back(named_cert);
-+          for (auto &[__, el] : device_node.get_child("certs")) {
-+            candidate.named_devices.push_back({""s, uuid_util::uuid_t::generate().string(), el.get_value<std::string>()});
-           }
-         }
-       }
-     }
+-          }
+-        }
+-      }
+-    }
 -
-     if (root.count("named_devices")) {
-       for (auto &[_, el] : root.get_child("named_devices")) {
+-    if (root.count("named_devices")) {
+-      for (auto &[_, el] : root.get_child("named_devices")) {
 -        named_cert_t named_cert;
 -        named_cert.name = el.get_child("name").get_value<std::string>();
 -        named_cert.cert = el.get_child("cert").get_value<std::string>();
 -        named_cert.uuid = el.get_child("uuid").get_value<std::string>();
 -        client.named_devices.emplace_back(named_cert);
-+        candidate.named_devices.push_back({
-+            el.get_child("name").get_value<std::string>(),
-+            el.get_child("uuid").get_value<std::string>(),
-+            el.get_child("cert").get_value<std::string>(),
-+        });
-       }
-     }
+-      }
+-    }
++    for (const auto &entry : korri_certificate_control::parse_client_state(
++             root, []() { return uuid_util::uuid_t::generate().string(); })) {
++      candidate.named_devices.push_back({entry.name, entry.uuid, entry.certificate});
++    }
  
 -    // Empty certificate chain and import certs from file
 -    cert_chain.clear();
@@ -1251,7 +1309,7 @@ index c1d9401..0ae83ac 100644
    std::shared_ptr<rtsp_stream::launch_session_t> make_launch_session(bool host_audio, const args_t &args) {
      auto launch_session = std::make_shared<rtsp_stream::launch_session_t>();
  
-@@ -442,6 +629,7 @@ namespace nvhttp {
+@@ -442,6 +615,7 @@ namespace nvhttp {
    }
  
    void clientpairingsecret(pair_session_t &sess, std::shared_ptr<safe::queue_t<crypto::x509_t>> &add_cert, pt::ptree &tree, const std::string &client_pairing_secret) {
@@ -1259,7 +1317,7 @@ index c1d9401..0ae83ac 100644
      if (sess.last_phase != PAIR_PHASE::SERVERCHALLENGERESP) {
        fail_pair(sess, tree, "Out of order call to clientpairingsecret");
        return;
-@@ -477,12 +665,8 @@ namespace nvhttp {
+@@ -477,12 +651,8 @@ namespace nvhttp {
      // if hash not correct, probably MITM
      bool same_hash = hash.size() == sess.clienthash.size() && std::equal(hash.begin(), hash.end(), sess.clienthash.begin());
      auto verify = crypto::verify256(crypto::x509(client.cert), secret, sign);
@@ -1273,7 +1331,7 @@ index c1d9401..0ae83ac 100644
      } else {
        tree.put("root.paired", 0);
      }
-@@ -767,9 +951,10 @@ namespace nvhttp {
+@@ -767,9 +937,10 @@ namespace nvhttp {
    }
  
    nlohmann::json get_all_clients() {
@@ -1286,7 +1344,7 @@ index c1d9401..0ae83ac 100644
        nlohmann::json named_cert_node;
        named_cert_node["name"] = named_cert.name;
        named_cert_node["uuid"] = named_cert.uuid;
-@@ -1061,6 +1246,16 @@ namespace nvhttp {
+@@ -1061,6 +1232,16 @@ namespace nvhttp {
      auto cert = file_handler::read_file(config::nvhttp.cert.c_str());
      setup(pkey, cert);
  
@@ -1303,7 +1361,7 @@ index c1d9401..0ae83ac 100644
      auto add_cert = std::make_shared<safe::queue_t<crypto::x509_t>>(30);
  
      // resume doesn't always get the parameter "localAudioPlayMode"
-@@ -1094,13 +1289,9 @@ namespace nvhttp {
+@@ -1094,13 +1275,9 @@ namespace nvhttp {
          BOOST_LOG(debug) << subject_name << " -- "sv << (verified ? "verified"sv : "denied"sv);
        });
  
@@ -1318,7 +1376,7 @@ index c1d9401..0ae83ac 100644
          cert_chain.add(std::move(cert));
        }
  
-@@ -1185,29 +1376,29 @@ namespace nvhttp {
+@@ -1185,29 +1362,29 @@ namespace nvhttp {
  
      ssl.join();
      tcp.join();

@@ -46,6 +46,7 @@ let
   sunshineApprovedDeviceBaseDerivation =
     sunshineApprovedPatches.approvedDeviceBaseDerivations.${sunshinePackage.korriBuildProfile} or null;
   androidMoonlightRoot = ../../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src;
+  sunshineOfflineRetirement = import ../../sunshine/offline-retirement.nix { inherit pkgs; };
   inputdPackage = import ../package.nix { inherit pkgs crane; };
   devApp = import ./dev-app.nix {
     inherit pkgs inputdPackage korridPackage;
@@ -65,6 +66,10 @@ let
 in
 {
   apps = {
+    sunshine-retire-all-clients = {
+      type = "app";
+      program = "${sunshineOfflineRetirement}/bin/sunshine-retire-all-clients";
+    };
     korri-dev = toApp devApp;
     korri-bundle-select = {
       type = "app";
@@ -77,6 +82,7 @@ in
     korri-inputd = inputdPackage;
     korri-bundle = korriBundle;
     sunshine-korri = sunshinePackage;
+    sunshine-retire-all-clients = sunshineOfflineRetirement;
   }
   // pkgs.lib.optionalAttrs (sunshineRkmppPackage != null) {
     sunshine-korri-rkmpp = sunshineRkmppPackage;
@@ -89,6 +95,7 @@ in
     };
   };
   checks = {
+    sunshine-offline-retirement = sunshineOfflineRetirement;
     sunshine-korri-package = pkgs.runCommand "sunshine-korri-package-check" { } ''
       test -f ${sunshinePackage}/bin/sunshine
       test -x ${sunshinePackage}/bin/sunshine

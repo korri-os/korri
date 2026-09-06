@@ -50,7 +50,7 @@ rec {
   v4l2m2mPatchSetSha256 = "e918232613be4264d0c7c55900ff030674cc66e3f8f37f4daa0c59f1051960a6";
   reviewedNvencApiMajor = 12;
   reviewedNvencApiMinor = 0;
-  patchSetSha256 = "f1db3d0ec2038672d7fe1feb1df5ab94205921805ec1975a6ba87e7674e91911";
+  patchSetSha256 = "b009201c4e2b09dd22d24e895a831142e9b6070446cfe3a89ee0a0a22bc9a75c";
   patches = [
     {
       name = "0001-add-runtime-settings-protocol-surface.patch";
@@ -125,7 +125,7 @@ rec {
     {
       name = "0020-add-korrid-certificate-control.patch";
       path = ./patches/0020-add-korrid-certificate-control.patch;
-      sha256 = "5ab5b2b5a464c4839f18aa1fc0f304b42b5b8c941fbc4ad5605b34eeaff525e0";
+      sha256 = "8e97eb5c8cf30a5b80b6a13aa88102de4ff443103875873ae4eb8f483ccfe059";
     }
     {
       name = "0021-add-v4l2m2m-encoder.patch";

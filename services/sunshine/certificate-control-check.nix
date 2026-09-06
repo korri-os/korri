@@ -105,6 +105,7 @@ else
         pkgs.python3
       ];
       buildInputs = [
+        pkgs.boost
         pkgs.openssl
         pkgs.nlohmann_json
       ];
