@@ -61,14 +61,74 @@ beside it. A class name is prefixed with the component that owns it, which is
 what makes a duplicated visual decision a build failure rather than a slow
 drift.
 
-## What this slice does not do yet
+## Supported UI
 
-Stated plainly so nobody mistakes absence for completeness:
+Pico renders the catalog (shelf/grid/hero), game detail and launch locations,
+Find, grouped settings, gameplay overlay and attract mode. The portal selects
+it with `?surface=pico`. Settings text editing remains unavailable.
 
-- **No gameplay overlay.** `PicoSurface` renders nothing for that presentation
-  rather than drawing the library over a running game.
-- **No game detail, settings, or search.** Home only.
-- **No portal wiring.** `clients/portal` still mounts Shift directly; switching
-  surfaces is a portal change, not a surface one.
-- **Only `back` is wired.** `options`, `menu`, and `system` have no meaning on
-  this screen yet, so nothing subscribes to them.
+## Caliper integration
+
+Choose `surfaces/pico` in Caliper. Restart the launcher after changing
+`caliper.project.mjs`: reactivating an existing session is not a reliable
+configuration reload.
+
+- `project-entry.ts` exports the adapter, CSS and discovered parts.
+- `../pico-caliper-parts.ts` discovers only Pico's `.part.tsx` files. It lives
+  above `pico/` because Caliper derives surface identity and hot-update paths
+  relative to that bridge. There is no duplicate component manifest.
+- `caliper/adapter.ts` mounts independent fixture sessions at the RG353M, THOR
+  and Odin 2 Portal panel sizes. It never contacts korrid or the native bridge.
+- `caliper/render-part.ts` preserves the authored root's props, then overlays
+  only Inspector-editable inputs. This avoids Caliper dropping required arrays,
+  models, children and callbacks when constructing a placed part. Part wrappers
+  must remain **pure element factories**; hooks belong in their returned product
+  component. Every part is tested outside a React render to enforce this.
+- `caliper/preview.css` supplies definite gallery frames and lets inherited
+  design controls reach Pico's registered properties without changing its
+  runtime stylesheet. Caliper currently exposes numeric/percentage controls;
+  its color and length control support is not supplied by this adapter.
+
+### Using a live device preview
+
+Focus/click inside a device, then use **F** for Find, **M** to cycle shelf/grid/
+hero, **S** for settings, and **Escape** for Back. Tab and Enter keep native
+browser focus/activation; this adapter does not implement gamepad or spatial
+arrow navigation. Shortcuts ignore editable fields, repeats and modifiers.
+
+The device Inspector also exposes **Pico input** events and a **Fixture
+scenario** event, scoped to the selected device. Fixture sources cover ready,
+loading, empty, busy, problem and gameplay overlay. Scenario changes reset the
+model, not Pico's local navigation state. Detail, launch-location selection,
+confirmations and settings are reached through their actual controls.
+
+Launch/game actions remain in an explicitly labelled PREVIEW busy state rather
+than claiming a real game started. Setting choices and overlay toggle/choice/
+range controls republish values; overlay commands acknowledge simulated
+requests. Retry, dismiss and reload have fixture consequences. No disk/network
+operations occur. Individual placed parts retain their authored fixture data
+and callbacks; selecting a device source is not a universal part-model editor.
+
+### Verification
+
+```sh
+nix run .#pico-check
+cd surfaces/pico
+CALIPER_ROOT=/path/to/caliper bun run caliper:typecheck
+CHROMIUM=/path/to/system/chromium VERIFY_HMR=1 bun run caliper:verify
+```
+
+`caliper:typecheck` first rejects an incomplete-adapter tripwire, then checks
+Pico against that launcher's actual TypeScript contract. No Caliper import enters
+runtime code. The browser check requires a running launcher (default
+`http://127.0.0.1:3131`, override with `CALIPER_URL`) and the project registered in
+its picker. It exercises all discovered part placements, preview bounds, scoped
+navigation, RG353M placed-part resizing, an Inspector prop edit and a live
+design knob. `VERIFY_HMR=1` adds,
+edits and removes a temporary part, asserting that the session does not reload.
+
+Use a development workspace: the browser check changes the Caliper selection/
+workspace and Caliper may persist those changes to `.lab/pico/state.json`.
+This is integration coverage, not a completed per-part visual/accessibility
+review at every physical size. Hardware and persistent kiosk deployment are
+outside this check.

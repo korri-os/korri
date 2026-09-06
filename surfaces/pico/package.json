@@ -11,7 +11,9 @@
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "caliper:typecheck": "node caliper/verify-contract.mjs",
+    "caliper:verify": "node caliper/verify-browser.mjs"
   },
   "dependencies": {
     "@korri/intrinsic-design": "file:../../packages/intrinsic-design"
@@ -28,6 +30,8 @@
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "playwright": "1.59.1",
+    "vite": "6.4.2"
   }
 }

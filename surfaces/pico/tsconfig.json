@@ -16,5 +16,5 @@
       "@contracts/*": ["../../contracts/*"]
     }
   },
-  "include": ["src", "test", "../../contracts/surface"]
+  "include": ["src", "test", "caliper", "project-entry.ts", "../pico-caliper-parts.ts", "../../contracts/surface"]
 }

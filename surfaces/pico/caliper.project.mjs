@@ -18,7 +18,8 @@ export default {
     "@korri/pico": "./src/index.ts",
     "@contracts": "../../contracts",
   },
-  filesystemRoots: ["./src", "../../contracts", "../../packages/intrinsic-design"],
+  sourcePartBridges: ["../pico-caliper-parts.ts"],
+  filesystemRoots: ["..", "./src", "../../contracts", "../../packages/intrinsic-design"],
   capabilities: {
     backendlessFixtures: true,
   },
