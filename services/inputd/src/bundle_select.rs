@@ -10,6 +10,9 @@ use std::{
 use korri_inputd::bundle::{is_inside_store_item, resolve_bundle};
 use tokio::{process::Command, time::Instant};
 
+#[path = "bundle_select/offline.rs"]
+mod offline;
+
 const STATE_ROOT: &str = "/nix/var/nix/gcroots/korri-bundle";
 const STORE_ROOT: &str = "/nix/store";
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -45,6 +48,15 @@ async fn run(arguments: Vec<OsString>) -> Result<String, String> {
         .get(1)
         .and_then(|value| value.to_str())
         .ok_or_else(usage)?;
+    // Offline selection must not create or chmod the root, and must never enter
+    // the normal service restart / automatic fallback path below.
+    if command == "offline-select" {
+        if arguments.len() != 5 || arguments[4] != "--acknowledge-exclusive-quiescence" {
+            return Err(usage());
+        }
+        return offline::select(&path_argument(&arguments, 2)?, &path_argument(&arguments, 3)?)
+            .map_err(|error| format!("{error}; keep consumers stopped; no rollback attempted"));
+    }
     let state_root = Path::new(STATE_ROOT);
     let store_root = Path::new(STORE_ROOT);
     prepare_state_root(state_root, true)?;
@@ -93,7 +105,7 @@ async fn run(arguments: Vec<OsString>) -> Result<String, String> {
 }
 
 fn usage() -> String {
-    "usage: korri-bundle-select initialize <bundle> | switch <bundle> <systemctl> | rollback <systemctl> | status".into()
+    "usage: korri-bundle-select initialize <bundle> | switch <bundle> <systemctl> | rollback <systemctl> | status | offline-select <expected-current> <new-bundle> --acknowledge-exclusive-quiescence".into()
 }
 
 fn path_argument(arguments: &[OsString], index: usize) -> Result<PathBuf, String> {

@@ -270,6 +270,75 @@ mod tests {
     }
 
     #[test]
+    fn rejects_each_missing_executable_in_the_public_bundle_contract() {
+        for component in [
+            Component::InputPlumber,
+            Component::Inputd,
+            Component::InputSeatReceiver,
+            Component::Korrid,
+        ] {
+            let (_root, store, selector) = fixture();
+            let bundle = std::fs::canonicalize(&selector).unwrap();
+            std::fs::remove_file(bundle.join(component.executable())).unwrap();
+
+            assert!(resolve_bundle(&selector, &store).is_err(), "{component:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_a_nonexecutable_component_target() {
+        let (_root, store, selector) = fixture();
+        let target = resolve_component(&selector, Component::Korrid, &store).unwrap();
+        std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+        assert_eq!(
+            resolve_bundle(&selector, &store).unwrap_err(),
+            "selected component target must be a regular executable"
+        );
+    }
+
+    #[test]
+    fn rejects_data_outside_the_store() {
+        let (root, store, selector) = fixture();
+        let bundle = std::fs::canonicalize(&selector).unwrap();
+        std::fs::remove_file(bundle.join("share/inputplumber")).unwrap();
+        symlink(root.path(), bundle.join("share/inputplumber")).unwrap();
+
+        assert_eq!(
+            resolve_bundle(&selector, &store).unwrap_err(),
+            "InputPlumber bundle data must resolve inside the immutable store"
+        );
+    }
+
+    #[test]
+    fn rejects_a_missing_profile_and_a_profile_with_the_wrong_name() {
+        let (_root, store, selector) = fixture();
+        let bundle = std::fs::canonicalize(&selector).unwrap();
+        let selected = bundle.join(INPUT_PROFILE_BUNDLE_PATH);
+        std::fs::remove_file(&selected).unwrap();
+        assert!(resolve_bundle(&selector, &store).is_err());
+        let profile = store.join("packages/share/inputplumber/profiles/wrong.yaml");
+        std::fs::write(&profile, b"profile").unwrap();
+        symlink(profile, selected).unwrap();
+
+        assert_eq!(
+            resolve_bundle(&selector, &store).unwrap_err(),
+            "selected input profile must resolve inside the InputPlumber store item"
+        );
+    }
+
+    #[test]
+    fn rejects_a_store_subdirectory_as_the_bundle_root() {
+        let (_root, store, selector) = fixture();
+        let bundle = std::fs::canonicalize(&selector).unwrap();
+
+        assert_eq!(
+            resolve_bundle(&bundle.join("bin"), &store).unwrap_err(),
+            "active bundle must resolve to one immutable store directory"
+        );
+    }
+
+    #[test]
     fn rejects_a_selector_outside_the_store() {
         let root = tempfile::tempdir().unwrap();
         let selector = root.path().join("active");
