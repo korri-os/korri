@@ -8,6 +8,8 @@ use std::{
 
 const MAX_OWNER_BINDING_BYTES: usize = 64 * 1024;
 
+pub(crate) mod grant_retirement;
+
 pub fn run(
     arguments: &[OsString],
     private_state_root: &Path,
@@ -57,13 +59,28 @@ pub fn run(
             )?;
             serialize_state(&state).map_err(|error| error.to_string())
         }
+        [command, device_flag, device, owner_flag, owner, event_flag, event]
+            if command == "reconcile-stale-grants-offline"
+                && device_flag == "--expected-device"
+                && owner_flag == "--expected-owner"
+                && event_flag == "--expected-event" =>
+        {
+            let text = |value: &OsString| {
+                value.to_str().ok_or_else(|| "offline grant arguments must be UTF-8".to_owned())
+                    .map(str::to_owned)
+            };
+            grant_retirement::reconcile(
+                private_state_root, &text(device)?, &text(owner)?, &text(event)?, now,
+                crate::host::moonlight_certificate::production_adapter().as_ref(),
+            )
+        }
         [command] if command == "reset" => {
             let identity = DeviceIdentity::reset(private_state_root)
                 .map_err(|error| error.to_string())?;
             serialize_state(identity.state()).map_err(|error| error.to_string())
         }
         _ => Err(
-            "usage: korrid identity {status|owner-binding-request|import --file PATH|import --stdin|reset|replace-test-owner-offline --expected-device KEY --expected-owner KEY --expected-event ID --new-owner KEY --template PATH --file PATH}; offline replacement requires exclusive authority with all identity users stopped"
+            "usage: korrid identity {status|owner-binding-request|import --file PATH|import --stdin|reset|replace-test-owner-offline --expected-device KEY --expected-owner KEY --expected-event ID --new-owner KEY --template PATH --file PATH|reconcile-stale-grants-offline --expected-device KEY --expected-owner KEY --expected-event ID}; offline commands require exclusive authority with all identity users stopped"
                 .into(),
         ),
     }

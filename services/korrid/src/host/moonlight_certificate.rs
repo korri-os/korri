@@ -138,26 +138,14 @@ impl SocketCertificateAdapter {
         }
     }
 
-    fn request(&self, request: SocketRequest<'_>) -> Result<SocketSuccess, RpcFailure> {
+    fn request(&self, request: EncodedSocketRequest) -> Result<SocketSuccess, RpcFailure> {
         let socket_identity = self.validate_path()?;
-        let encoded = serde_json::to_vec(&request).map_err(|_| {
-            failure(
-                "SunshineCertificateControlInvalid",
-                "Sunshine certificate control request could not be encoded",
-            )
-        })?;
-        if encoded.len() > MAX_FRAME_BYTES {
-            return Err(failure(
-                "SunshineCertificateControlInvalid",
-                "Sunshine certificate control request is too large",
-            ));
-        }
         let response = send_seqpacket(
             &self.path,
             socket_identity,
             self.expected_peer_uid,
             self.expected_peer_gid,
-            &encoded,
+            &request.bytes,
             self.timeout,
         )
         .map_err(socket_failure)?;
@@ -248,11 +236,14 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
 
     fn attest(&self, host_uuid: &str) -> Result<bool, RpcFailure> {
         validate_host_uuid(host_uuid)?;
-        match self.request(SocketRequest {
-            operation: SocketOperation::Attest,
-            host_uuid,
-            certificate: None,
-        })? {
+        match self.request(
+            SocketRequest {
+                operation: SocketOperation::Attest,
+                host_uuid,
+                certificate: None,
+            }
+            .encode()?,
+        )? {
             SocketSuccess::Attested(matched) => Ok(matched),
             _ => Err(protocol_failure()),
         }
@@ -265,11 +256,14 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
     ) -> Result<MoonlightCertificateProvisioned, RpcFailure> {
         validate_host_uuid(host_uuid)?;
         validate_single_pem(client_certificate)?;
-        match self.request(SocketRequest {
-            operation: SocketOperation::Provision,
-            host_uuid,
-            certificate: Some(client_certificate),
-        })? {
+        match self.request(
+            SocketRequest {
+                operation: SocketOperation::Provision,
+                host_uuid,
+                certificate: Some(client_certificate),
+            }
+            .encode()?,
+        )? {
             SocketSuccess::Changed {
                 changed: _,
                 server_certificate,
@@ -282,13 +276,7 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
     }
 
     fn revoke(&self, host_uuid: &str, client_certificate: &str) -> Result<bool, RpcFailure> {
-        validate_host_uuid(host_uuid)?;
-        validate_single_pem(client_certificate)?;
-        match self.request(SocketRequest {
-            operation: SocketOperation::Revoke,
-            host_uuid,
-            certificate: Some(client_certificate),
-        })? {
+        match self.request(encode_revoke_request(host_uuid, client_certificate)?)? {
             SocketSuccess::Changed {
                 changed,
                 server_certificate,
@@ -299,6 +287,22 @@ impl MoonlightCertificateAdapter for SocketCertificateAdapter {
             _ => Err(protocol_failure()),
         }
     }
+}
+
+/// Pure preparation shared with offline whole-inventory preflight. JSON
+/// escaping can exceed the frame limit even when the PEM envelope is bounded.
+pub(crate) fn encode_revoke_request(
+    host_uuid: &str,
+    client_certificate: &str,
+) -> Result<EncodedSocketRequest, RpcFailure> {
+    validate_host_uuid(host_uuid)?;
+    validate_single_pem(client_certificate)?;
+    SocketRequest {
+        operation: SocketOperation::Revoke,
+        host_uuid,
+        certificate: Some(client_certificate),
+    }
+    .encode()
 }
 
 pub fn validate_single_pem(value: &str) -> Result<(), RpcFailure> {
@@ -352,6 +356,33 @@ struct SocketRequest<'a> {
     host_uuid: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     certificate: Option<&'a str>,
+}
+
+// Keep response validation tied to the operation whose bounded bytes were encoded.
+pub(crate) struct EncodedSocketRequest {
+    operation: SocketOperation,
+    bytes: Vec<u8>,
+}
+
+impl SocketRequest<'_> {
+    fn encode(&self) -> Result<EncodedSocketRequest, RpcFailure> {
+        let bytes = serde_json::to_vec(self).map_err(|_| {
+            failure(
+                "SunshineCertificateControlInvalid",
+                "Sunshine certificate control request could not be encoded",
+            )
+        })?;
+        if bytes.len() > MAX_FRAME_BYTES {
+            return Err(failure(
+                "SunshineCertificateControlInvalid",
+                "Sunshine certificate control request is too large",
+            ));
+        }
+        Ok(EncodedSocketRequest {
+            operation: self.operation,
+            bytes,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -719,6 +750,10 @@ fn failure(code: &str, message: &str) -> RpcFailure {
 }
 
 #[cfg(test)]
+#[path = "../identity_cli/grant_retirement_tests.rs"]
+mod grant_retirement_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -741,7 +776,40 @@ mod tests {
         }
     }
 
-    fn bind_seqpacket(path: &Path) -> OwnedFd {
+    #[test]
+    fn revoke_encoding_preserves_certificate_and_accepts_only_bounded_frames() {
+        let host = "sunshine-host";
+        let pem = "-----BEGIN CERTIFICATE-----\nbody\n-----END CERTIFICATE-----\n";
+        let base = encode_revoke_request(host, pem).unwrap();
+        let remaining = MAX_FRAME_BYTES - base.bytes.len();
+        let certificate = format!(
+            "{pem}{}{}",
+            "\n".repeat(remaining / 2),
+            " ".repeat(remaining % 2)
+        );
+        validate_single_pem(&certificate).unwrap();
+        let encoded = encode_revoke_request(host, &certificate).unwrap();
+        assert_eq!(encoded.bytes.len(), MAX_FRAME_BYTES);
+        let wire: serde_json::Value = serde_json::from_slice(&encoded.bytes).unwrap();
+        assert_eq!(wire["operation"], "revoke");
+        assert_eq!(wire["hostUuid"], host);
+        assert_eq!(wire["certificate"], certificate);
+
+        let oversized = format!("{certificate} ");
+        validate_single_pem(&oversized).unwrap();
+        let error = encode_revoke_request(host, &oversized)
+            .err()
+            .expect("one extra encoded byte must fail");
+        assert_eq!(error.code, "SunshineCertificateControlInvalid");
+        assert_eq!(
+            error.message,
+            "Sunshine certificate control request is too large"
+        );
+        assert!(!error.message.contains(host));
+        assert!(!error.message.contains(pem));
+    }
+
+    pub(super) fn bind_seqpacket(path: &Path) -> OwnedFd {
         let fd =
             unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC, 0) };
         assert!(fd >= 0, "{}", io::Error::last_os_error());

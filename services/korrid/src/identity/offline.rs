@@ -160,6 +160,64 @@ fn replace(root: &Path, replacement: Replacement<'_>) -> Result<IdentityState, I
     Ok(state_from_owner_event(&new.event, &device))
 }
 
+/// Holds the same offline-writer lock as owner replacement. It never creates
+/// state, and verifies operator-supplied public evidence before exposing state.
+pub(crate) struct VerifiedPrivateOwner<'a> {
+    root: &'a Path,
+    root_directory: Directory,
+    directory: Directory,
+    key: PrivateFile,
+    owner: PrivateFile,
+    pub state: IdentityState,
+}
+
+impl<'a> VerifiedPrivateOwner<'a> {
+    pub(crate) fn open(
+        root: &'a Path,
+        expected_device: &str,
+        expected_owner: &str,
+        expected_event: &str,
+    ) -> Result<Self, IdentityError> {
+        if unsafe { libc::geteuid() } == 0 || expected_owner == TEST_OWNER {
+            return Err(IdentityError::InvalidEvent(
+                "grant reconciliation requires the private-state UID and a private owner".into(),
+            ));
+        }
+        let root_directory = Directory::open(root)?;
+        let directory = root_directory.child(OsStr::new(IDENTITY_DIRECTORY))?;
+        syscall(unsafe { libc::flock(directory.file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) })?;
+        let key = directory.read(DEVICE_KEY_FILE, 128)?;
+        let keys = parse_named_keys(key.bytes.to_vec(), "device")?;
+        let device = keys.public_key().to_hex();
+        let owner = directory.read(OWNER_EVENT_FILE, MAX_EVENT_BYTES)?;
+        let statement = parse_owner_statement(&owner.bytes, &device)?;
+        let state = state_from_owner_event(&statement.event, &device);
+        if !matches!(&state, IdentityState::Owned { device_public_key, owner_public_key, event_id, .. }
+            if device_public_key == expected_device && owner_public_key == expected_owner && event_id == expected_event)
+        {
+            return Err(IdentityError::InvalidEvent(
+                "expected new owned binding does not match the existing identity".into(),
+            ));
+        }
+        Ok(Self {
+            root,
+            root_directory,
+            directory,
+            key,
+            owner,
+            state,
+        })
+    }
+
+    pub(crate) fn recheck(&self) -> Result<(), IdentityError> {
+        recheck_directory(self.root, &self.root_directory, &self.directory)?;
+        self.key
+            .require_unchanged(&self.directory.read(DEVICE_KEY_FILE, 128)?)?;
+        self.owner
+            .require_unchanged(&self.directory.read(OWNER_EVENT_FILE, MAX_EVENT_BYTES)?)
+    }
+}
+
 fn read_source(path: &Path) -> Result<PrivateFile, IdentityError> {
     let parent = Directory::open(path.parent().ok_or(IdentityError::Storage)?)?;
     parent.read_name(
@@ -173,13 +231,13 @@ fn text(file: &PrivateFile) -> Result<&str, IdentityError> {
         .map_err(|_| IdentityError::InvalidEvent("owner input is not UTF-8".into()))
 }
 
-struct Directory {
+pub(crate) struct Directory {
     file: File,
     metadata: Metadata,
 }
 
 impl Directory {
-    fn open(path: &Path) -> Result<Self, IdentityError> {
+    pub(crate) fn open(path: &Path) -> Result<Self, IdentityError> {
         if !path.is_absolute() {
             return Err(IdentityError::Storage);
         }
@@ -217,7 +275,7 @@ impl Directory {
         Ok(Self { file, metadata })
     }
 
-    fn child(&self, child: &OsStr) -> Result<Self, IdentityError> {
+    pub(crate) fn child(&self, child: &OsStr) -> Result<Self, IdentityError> {
         let file = open_at(
             &self.file,
             &name(child)?,
@@ -233,7 +291,7 @@ impl Directory {
         Ok(Self { file, metadata })
     }
 
-    fn read(&self, file_name: &str, limit: usize) -> Result<PrivateFile, IdentityError> {
+    pub(crate) fn read(&self, file_name: &str, limit: usize) -> Result<PrivateFile, IdentityError> {
         self.read_name(&name(OsStr::new(file_name))?, limit)
     }
 
@@ -267,7 +325,7 @@ impl Directory {
     }
 }
 
-struct PrivateFile {
+pub(crate) struct PrivateFile {
     bytes: Zeroizing<Vec<u8>>,
     metadata: Metadata,
 }

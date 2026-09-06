@@ -136,7 +136,7 @@ state, never the signed event or key bytes.
 
 **Offline exclusive authority is a precondition, not something this command
 proves.** Its nonblocking advisory lock on the identity directory excludes only
-other invocations of this command. The platform procedure must stop and block
+other offline owner replacement and grant reconciliation invocations. The platform procedure must stop and block
 all daemons, importers, JNI processes, launch/pairing paths, and other writers
 before invoking it. That procedure must also prove absent federation memory,
 retire old Sunshine client trust through Sunshine's producer, preserve replay
@@ -152,6 +152,49 @@ cut commits. Software recovery must retain the new owner and revoked old trust.
 The preserved key retains its historical public linkage; this operation does
 not erase relay history, establish that the key was never copied, or add forward
 secrecy.
+
+### Offline stale client-grant reconciliation
+
+After the new binding is installed, the approved cut uses:
+
+```text
+korrid identity reconcile-stale-grants-offline --expected-device KEY --expected-owner KEY --expected-event ID
+```
+
+Supply arguments in this order. All three values must come from independently
+verified **new** ownership evidence. Set `KORRID_PRIVATE_STATE_ROOT` explicitly.
+The command reuses the offline no-create reader and directory lock. It requires
+an existing private owner, rejects the known test owner, and runs only as the
+existing unprivileged private-state UID, never root. Missing identity or
+authorization directories fail without creation. File ownership, permissions,
+links, and bounds use the same strict offline checks as owner replacement.
+
+`authorization.rs` supplies the existing grant format, signed-evidence parsers,
+and reconciliation planner. The command validates the whole grant and signed
+revocation inventory before any revoke. It refuses malformed state or any grant
+that the existing planner still authorizes. Every retained grant must be in the
+plan. It validates all outgoing host IDs and bounded PEM envelopes before the
+first socket request. It does not add a grant format, force policy, or RPC.
+
+The root supervisor must hold its external operator lock, keep korrid and all
+other identity/launch writers stopped, and isolate Sunshine's maintenance
+service/socket. Run the child with the exact installed certificate-control
+environment, service UID/GID, and cleared supplementary groups. The command
+uses the production Unix seqpacket adapter and its existing path, mode, peer
+credential, frame, and timeout checks. Root must not make these checks permissive.
+The command does not prove service or network isolation.
+
+Each exact revoke must succeed before the command deletes its grant and syncs
+the grant directory. `changed=false` is success after bulk erase or interrupted
+cleanup. The command stops at the first error. Failed and unattempted grants
+remain; a verified retry handles durable absence. Success prints only the
+reconciled count and `remaining grants: 0`; an empty retry syncs the grant
+directory without a socket request. Key, owner event, signed revocations, replay markers, and other
+identity files remain unchanged. This reconciles **tracked stale grants only**:
+Sunshine's separate producer operation must retire all client pairings, including
+untracked clients. Errors or ambiguous outcomes keep all authority isolated;
+never restore retired trust. Power-loss durability and live service isolation
+still need platform acceptance.
 
 ## Event boundary
 

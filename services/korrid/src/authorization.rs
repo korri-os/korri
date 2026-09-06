@@ -471,6 +471,15 @@ impl Authorization {
             .map_err(|_| AuthorizationError::Storage)?
             .revocations
             .clone();
+        Ok(plan_certificate_revocations(
+            local,
+            now,
+            &revocations,
+            self.certificate_grants()?,
+        ))
+    }
+
+    fn certificate_grants(&self) -> Result<Vec<(String, CertificateGrant)>, AuthorizationError> {
         let mut grants = Vec::new();
         for entry in
             fs::read_dir(&self.certificate_directory).map_err(|_| AuthorizationError::Storage)?
@@ -499,12 +508,99 @@ impl Authorization {
             grants.push((file_name, grant));
         }
         grants.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(plan_certificate_revocations(
-            local,
-            now,
-            &revocations,
-            grants,
-        ))
+        Ok(grants)
+    }
+
+    /// Offline only: the caller holds the identity directory lock and external
+    /// exclusive authority. Unlike startup, missing directories are an error.
+    /// Strict file checks precede the existing bounded parsers. The second read
+    /// is safe only under that external exclusion of all administrative writers.
+    pub(crate) fn open_offline(private_state_root: &Path) -> Result<Self, AuthorizationError> {
+        use crate::identity::offline::Directory;
+        let identity = Directory::open(private_state_root)
+            .and_then(|directory| directory.child(std::ffi::OsStr::new("identity")))
+            .map_err(|_| AuthorizationError::Storage)?;
+        for (relative, limit) in [
+            (REVOCATION_DIRECTORY, MAX_EVENT_BYTES),
+            (CERTIFICATE_DIRECTORY, MAX_GRANT_BYTES),
+        ] {
+            let path = private_state_root.join(relative);
+            let directory = identity
+                .child(path.file_name().ok_or(AuthorizationError::Storage)?)
+                .map_err(|_| AuthorizationError::Storage)?;
+            for entry in fs::read_dir(&path).map_err(|_| AuthorizationError::Storage)? {
+                let entry = entry.map_err(|_| AuthorizationError::Storage)?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| AuthorizationError::Storage)?;
+                directory
+                    .read(&name, limit)
+                    .map_err(|_| AuthorizationError::Storage)?;
+            }
+        }
+        let revocation_directory = private_state_root.join(REVOCATION_DIRECTORY);
+        let certificate_directory = private_state_root.join(CERTIFICATE_DIRECTORY);
+        let revocations = load_revocations(&revocation_directory)?;
+        Ok(Self {
+            state: Arc::new(Mutex::new(AuthorizationState {
+                revocations,
+                pending_revocations: HashSet::new(),
+            })),
+            revocation_directory,
+            certificate_directory,
+        })
+    }
+
+    /// The ordinary planner also revokes invalid evidence. The offline cut must
+    /// instead stop on malformed state, and must cover every retained grant.
+    pub(crate) fn all_stale_certificate_revocations(
+        &self,
+        local: &IdentityState,
+        now: u64,
+    ) -> Result<Vec<CertificateRevocation>, AuthorizationError> {
+        let grants = self.certificate_grants()?;
+        for (device, grant) in &grants {
+            let (owner_statement, pass) = match &grant.authorization {
+                CertificateAuthorization::OwnerDevice { owner_statement } => {
+                    (owner_statement, None)
+                }
+                CertificateAuthorization::PersonPass {
+                    owner_statement,
+                    person_pass,
+                } => (owner_statement, Some(person_pass)),
+            };
+            let owner = DeviceIdentity::verify_owner_statement(owner_statement, device)
+                .map_err(|_| AuthorizationError::InvalidEvidence)?;
+            if owner.status != OwnerStatementStatus::Owned {
+                return Err(AuthorizationError::InvalidEvidence);
+            }
+            if let Some(pass) = pass {
+                let event = DeviceIdentity::verify_event(pass)
+                    .map_err(|_| AuthorizationError::InvalidEvidence)?;
+                // Validate the original signed pass shape at issuance, not its
+                // current validity. Expiry and revocation still belong to the
+                // unchanged planner below, including old-owner pass retirement.
+                parse_person_pass(pass, &event.author, device, event.created_at, &[])
+                    .ok_or(AuthorizationError::InvalidEvidence)?;
+            }
+        }
+        let count = grants.len();
+        let revocations = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
+        let plan = plan_certificate_revocations(local, now, &revocations.revocations, grants);
+        if plan.len() != count {
+            return Err(AuthorizationError::InvalidEvidence);
+        }
+        Ok(plan)
+    }
+
+    pub(crate) fn confirm_offline_reconciliation(&self) -> Result<(), AuthorizationError> {
+        if !self.certificate_grants()?.is_empty() {
+            return Err(AuthorizationError::Storage);
+        }
+        // An interrupted unlink can leave an empty directory before its sync.
+        // Even an empty retry must establish durable absence before success.
+        sync_directory(&self.certificate_directory)
     }
 
     pub fn complete_certificate_revocation(
