@@ -282,6 +282,21 @@ let
       ${pkgs.coreutils}/bin/rm -f -- ${lib.escapeShellArg xwaylandLock}
     fi
   '';
+  waitForAudio = pkgs.writeShellScript "korri-wait-for-audio" ''
+    set -eu
+    # Pulse accepts connections before WirePlumber publishes the metadata
+    # needed by set-default-sink. Gate on both, without reading a microphone.
+    for attempt in $(${pkgs.coreutils}/bin/seq 1 20); do
+      if [ -S "${runtimeDir}/pulse/native" ] &&
+        ${pkgs.coreutils}/bin/timeout 1 ${config.services.pipewire.package}/bin/pw-metadata -n default \
+          | ${pkgs.gnugrep}/bin/grep -q 'Found "default" metadata'; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.25
+    done
+    echo "Gameplay audio server or WirePlumber default metadata is not ready" >&2
+    exit 1
+  '';
   waitForCompositor = pkgs.writeShellScript "korri-wait-for-compositor" ''
     set -eu
     attempt=0
@@ -530,6 +545,8 @@ in
       };
     };
 
+    audio.enable = lib.mkEnableOption "gameplay-user PipeWire audio for streaming";
+
     validation.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -736,6 +753,20 @@ in
     };
     systemd.user.services.sunshine.enable = lib.mkForce false;
 
+    # Use NixOS's user-session audio lifecycle, not a second system-wide
+    # PulseAudio daemon. The compositor already orders after this user manager.
+    services.pipewire = lib.mkIf cfg.audio.enable {
+      enable = true;
+      alsa.enable = true;
+      pulse.enable = true;
+      wireplumber.enable = true;
+    };
+    # Start before the first stream, rather than racing session-manager
+    # initialization on the first Pulse connection after boot.
+    systemd.user.services.pipewire.wantedBy = lib.mkIf cfg.audio.enable [ "default.target" ];
+    systemd.user.services.pipewire-pulse.wantedBy = lib.mkIf cfg.audio.enable [ "default.target" ];
+    security.rtkit.enable = lib.mkIf cfg.audio.enable true;
+
     hardware.graphics = {
       enable = true;
       extraPackages = lib.mkAfter (
@@ -756,10 +787,15 @@ in
       group = lib.mkDefault cfg.runtimeGroup;
       # Only the compositor unit joins `seat` through SupplementaryGroups.
       # Game processes run as this user and must not reach /run/seatd.sock.
-      extraGroups = lib.mkAfter [
-        "render"
-        "video"
-      ];
+      linger = lib.mkIf cfg.audio.enable true;
+      # Headless gameplay has no active logind seat to grant ALSA ACLs.
+      extraGroups = lib.mkAfter (
+        [
+          "render"
+          "video"
+        ]
+        ++ lib.optional cfg.audio.enable "audio"
+      );
     };
 
     systemd.tmpfiles.rules = [
@@ -1020,6 +1056,12 @@ in
         HOME = runtimeHome;
         XDG_CONFIG_HOME = "${runtimeHome}/.config";
       }
+      // lib.optionalAttrs cfg.audio.enable {
+        # Explicit local socket also avoids libpulse autospawn from the
+        # capability-wrapped KMS executable. Keep peer-UID authentication.
+        PULSE_SERVER = "unix:${runtimeDir}/pulse/native";
+        DBUS_SESSION_BUS_ADDRESS = "unix:path=${runtimeDir}/bus";
+      }
       // lib.optionalAttrs cfg.sunshine.inputSeats.enable {
         KORRI_INPUT_SEAT_MIRROR_SOCKET = inputSeatMirrorSocket;
         KORRI_INPUT_SEAT_RUNTIME_DIR = inputSeatRuntimeDirectory;
@@ -1055,7 +1097,14 @@ in
         # The readiness probe talks to the Sway IPC socket, which this unit
         # deliberately hides from Sunshine through InaccessiblePaths. Run the
         # probe outside the sandbox so the sandbox stays intact.
-        ExecStartPre = "+${waitForCompositor}";
+        ExecStartPre =
+          if cfg.audio.enable then
+            [
+              "+${waitForCompositor}"
+              waitForAudio
+            ]
+          else
+            "+${waitForCompositor}";
         Sockets = [ "korri-certificate-control.socket" ];
         ExecStart = "${sunshineExecutable} ${sunshineConfig}/sunshine.conf log_path=/dev/null${
           lib.optionalString (cfg.sunshine.capture != "auto") " capture=${cfg.sunshine.capture}"

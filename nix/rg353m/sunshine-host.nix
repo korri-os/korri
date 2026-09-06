@@ -58,6 +58,7 @@ in
     # The current deployment gate is intentionally NVIDIA-specific. Keep its
     # validation game disabled until that existing gate gains an ARM profile.
     validation.enable = false;
+    audio.enable = true;
 
     compositor = {
       backend = "drm";
@@ -89,6 +90,8 @@ in
   # schedutil completed the sustained CPU tests; ondemand reached 93.75 C and
   # rebooted the device.
   powerManagement.cpuFreqGovernor = "schedutil";
+  # Also cover newly created Wi-Fi profiles, not only the workshop profile.
+  networking.networkmanager.wifi.powersave = false;
   boot.kernelParams = [ "video=DSI-1:640x480@60" ];
 
   # Keep Sunshine's administrative UI (TCP 47990) off the LAN. Pairing and

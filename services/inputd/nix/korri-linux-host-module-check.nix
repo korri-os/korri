@@ -75,6 +75,9 @@ let
   evaluationRejected =
     system: !(builtins.tryEval system.config.system.build.toplevel.drvPath).success;
   valid = evaluate { };
+  withAudio = evaluate {
+    services.korriLinuxHost.audio.enable = true;
+  };
   noValidation = evaluate {
     services.korriLinuxHost.validation.enable = false;
   };
@@ -316,6 +319,26 @@ assert
   == "${sunshinePackage}/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null";
 assert
   !(builtins.hasAttr "SUNSHINE_LIVE_SETTINGS_MVP" noRuntimeSettings.config.systemd.services.sunshine.environment);
+assert !cfg.services.pipewire.enable;
+assert !(builtins.hasAttr "PULSE_SERVER" sunshine.environment);
+assert allAssertionsPass withAudio;
+assert withAudio.config.services.pipewire.enable;
+assert withAudio.config.services.pipewire.pulse.enable;
+assert withAudio.config.services.pipewire.alsa.enable;
+assert withAudio.config.services.pipewire.wireplumber.enable;
+assert !withAudio.config.services.pipewire.systemWide;
+assert builtins.elem "default.target" withAudio.config.systemd.user.services.pipewire.wantedBy;
+assert builtins.elem "default.target"
+  withAudio.config.systemd.user.services.pipewire-pulse.wantedBy;
+assert builtins.length withAudio.config.systemd.services.sunshine.serviceConfig.ExecStartPre == 2;
+assert lib.hasSuffix "-korri-wait-for-audio" (
+  builtins.elemAt withAudio.config.systemd.services.sunshine.serviceConfig.ExecStartPre 1
+);
+assert withAudio.config.users.users.korri.linger;
+assert builtins.elem "audio" withAudio.config.users.users.korri.extraGroups;
+assert
+  withAudio.config.systemd.services.sunshine.environment.PULSE_SERVER
+  == "unix:/run/user/1000/pulse/native";
 assert cfg.hardware.graphics.enable;
 assert
   !pkgs.stdenv.hostPlatform.isx86_64
