@@ -61,7 +61,13 @@ in
 
     compositor = {
       backend = "drm";
-      drmDevice = "/dev/dri/card0";
+      # /dev/dri/cardN is assigned in probe order, not by role. This device has
+      # two DRM cards: the display controller (rockchipdrm, display-subsystem)
+      # drives the panel, and the GPU (panfrost, fde60000.gpu) is render-only.
+      # When panfrost probed first, card0 became the GPU, sway found no KMS
+      # device, and the compositor restart-looped with the screen blank. Address
+      # the display controller by its hardware path, which does not move.
+      drmDevice = "/dev/dri/by-path/platform-display-subsystem-card";
       renderDevice = "/dev/dri/renderD128";
       outputName = "DSI-1";
       mode = "640x480@60Hz";
@@ -111,6 +117,12 @@ in
     {
       assertion = config.services.sunshine.package == korri.packages.${system}.sunshine-korri;
       message = "The RG353M host must use the approved sunshine-korri package.";
+    }
+    {
+      # Guard the fix above: a bare cardN name reintroduces the probe-order race.
+      assertion =
+        builtins.match "/dev/dri/card[0-9]+" config.services.korriLinuxHost.compositor.drmDevice == null;
+      message = "The RG353M compositor must address its KMS card by hardware path, not /dev/dri/cardN, because cardN follows probe order.";
     }
   ];
 }

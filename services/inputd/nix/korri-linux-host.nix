@@ -641,13 +641,18 @@ in
         message = "services.korriLinuxHost compositor renderDevice must be under /dev/dri/.";
       }
       {
+        # An exact card node, named either directly or through its stable
+        # hardware path. /dev/dri/cardN follows probe order, so a device with
+        # both a display controller and a render-only GPU can only name its KMS
+        # card safely through /dev/dri/by-path/.
         assertion =
           cfg.compositor.backend != "drm"
           || (
             cfg.compositor.drmDevice != null
-            && builtins.match "^/dev/dri/card[0-9]+$" cfg.compositor.drmDevice != null
+            && builtins.match "^/dev/dri/(card[0-9]+|by-path/[A-Za-z0-9._:+-]+-card)$"
+              cfg.compositor.drmDevice != null
           );
-        message = "services.korriLinuxHost DRM compositor requires an exact /dev/dri/cardN device.";
+        message = "services.korriLinuxHost DRM compositor requires an exact /dev/dri/cardN device or a /dev/dri/by-path/*-card link.";
       }
       {
         assertion = cfg.sunshine.capture != "kms" || cfg.compositor.backend == "drm";
