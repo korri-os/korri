@@ -1,3 +1,5 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use std::time::Duration;
 
 use korrid::{
@@ -6,10 +8,8 @@ use korrid::{
 use reqwest::Client;
 use serde_json::json;
 
-const CHECKPOINT_CONFIG: &str =
-    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
 const CHECKPOINT_LIBRARY: &str =
-    include_str!("../../../docs/research/retroarch-plugin-route/library.yaml");
+    include_str!("../../../docs/research/retroarch-plugin-route/catalog/games.yaml");
 
 struct StopServer;
 
@@ -43,8 +43,9 @@ async fn rpc(
 #[tokio::test]
 async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_retained_config() {
     let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("config.yaml"), CHECKPOINT_CONFIG).unwrap();
-    std::fs::write(root.path().join("library.yaml"), CHECKPOINT_LIBRARY).unwrap();
+    readable::combined(root.path());
+    std::fs::create_dir(root.path().join("roms")).unwrap();
+    std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
 
     let private = tempfile::tempdir().unwrap();
     let port = start_local_server(
@@ -68,17 +69,20 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
     assert_eq!(listed["outcome"]["_tag"], "Ok");
     assert_eq!(
         listed["outcome"]["payload"]["games"][0]["id"],
-        "tmnt-shredders-revenge"
+        "01K4J6K8Y00000000000000001"
     );
     assert_eq!(
         listed["outcome"]["payload"]["games"][0]["system"],
         "Android"
     );
-    assert_eq!(listed["outcome"]["payload"]["games"][1]["id"], "wl4");
+    assert_eq!(
+        listed["outcome"]["payload"]["games"][1]["id"],
+        readable::GBA_ID
+    );
     assert!(listed["outcome"]["payload"].get("failures").is_none());
 
-    std::fs::write(
-        root.path().join("library.yaml"),
+    readable::write(
+        root.path().join("catalog/games.yaml"),
         "library:\n  bad id:\n    releases: []\n",
     )
     .unwrap();
@@ -92,7 +96,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
     assert_eq!(stale_list["outcome"]["_tag"], "Ok");
     assert_eq!(
         stale_list["outcome"]["payload"]["games"][0]["id"],
-        "tmnt-shredders-revenge"
+        "01K4J6K8Y00000000000000001"
     );
     assert_eq!(
         stale_list["outcome"]["payload"]["failures"][0]["code"],
@@ -101,7 +105,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
     assert!(stale_list["outcome"]["payload"]["failures"][0]["message"]
         .as_str()
         .unwrap()
-        .contains("library.yaml"));
+        .contains("catalog/games.yaml"));
     assert!(!stale_list["outcome"]["payload"]["failures"][0]["message"]
         .as_str()
         .unwrap()
@@ -113,7 +117,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
         &capability,
         json!({
             "_tag": "app.local-games.launch",
-            "payload": { "gameId": "tmnt-shredders-revenge" }
+            "payload": { "gameId": "01K4J6K8Y00000000000000001" }
         }),
     )
     .await;
@@ -129,7 +133,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
         &serde_json::to_string(spec).unwrap()
     ));
 
-    std::fs::write(root.path().join("library.yaml"), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join("catalog/games.yaml"), CHECKPOINT_LIBRARY).unwrap();
     let recovered = rpc(
         &client,
         &url,
@@ -157,7 +161,7 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
             &capability,
             json!({
                 "_tag": "app.local-games.launch",
-                "payload": { "gameId": "tmnt-shredders-revenge" }
+                "payload": { "gameId": "01K4J6K8Y00000000000000001" }
             }),
         )
         .await;

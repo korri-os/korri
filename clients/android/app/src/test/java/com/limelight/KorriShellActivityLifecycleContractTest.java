@@ -38,7 +38,8 @@ public class KorriShellActivityLifecycleContractTest {
                 "final WebView ownedWebView = webView;",
                 "webView = null;",
                 "((ViewGroup) parent).removeView(ownedWebView);",
-                "ownedWebView.removeJavascriptInterface(\"KorriNative\");",
+                "new KorriNativeBridgeLifecycle().removeJavascriptInterfaces(",
+                "new KorriNativeBridgeOperations(ownedWebView));",
                 "ownedWebView.stopLoading();",
                 "ownedWebView.destroy();",
                 "super.onDestroy();");

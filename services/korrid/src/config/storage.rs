@@ -64,17 +64,6 @@ pub fn validate_file_target_shape(
     validate_relative_target(&target.storage_id, &target.path)
 }
 
-pub fn validate_resolved_file_target(
-    snapshot: &ConfigSnapshot,
-    target: &ResolvedFileTarget,
-) -> Result<(), StorageResolutionError> {
-    if target.storage_id == IMPLICIT_ROMS_STORAGE_ID {
-        validate_file_target_shape(target)?;
-        return Ok(());
-    }
-    resolve_configured_file_target(snapshot, target).map(|_| ())
-}
-
 pub fn resolve_file_target(
     korri_root: &Path,
     snapshot: &ConfigSnapshot,

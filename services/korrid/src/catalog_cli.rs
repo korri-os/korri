@@ -41,12 +41,11 @@ pub fn run(
         })?;
 
     let mut output = format!(
-        "Catalog import complete (rescan of all configured locations).\nCandidates: {}\nHashed bytes: {}\nAdded library records: {}\nRemoved library records: {}\nRemoved releases: {}\nRepaired: {}\nDiagnostics: {}",
+        "Catalog import complete (rescan of all configured locations).\nCandidates: {}\nHashed bytes: {}\nAdded games: {}\nRemoved locations: {}\nRepaired: {}\nDiagnostics: {}",
         report.scan.candidates.len(),
         report.scan.hashed_bytes,
-        report.added_library_records,
-        report.removed_library_records,
-        report.removed_releases,
+        report.added_games,
+        report.removed_locations,
         report.repaired,
         report.scan.diagnostics.len(),
     );

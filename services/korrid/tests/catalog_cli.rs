@@ -4,7 +4,7 @@ use korrid::{
     catalog_cli,
     config::{
         resolver::{resolve_launchable_routes_for_platform, RoutePlatform},
-        snapshot::{ConfigSnapshotCoordinator, CONFIG_FILE_NAME},
+        snapshot::{ConfigSnapshotCoordinator, DEVICE_FILE_NAME},
         storage::resolve_file_target,
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
@@ -32,14 +32,17 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
 
     let first = import(storage.path(), private.path(), selected.path()).unwrap();
     assert!(first.contains("Candidates: 1"), "{first}");
-    assert!(first.contains("Added library records: 1"), "{first}");
+    assert!(first.contains("Added games: 1"), "{first}");
     assert!(first.contains(&format!("Hashed bytes: {}", bytes.len())));
     let snapshot = ConfigSnapshotCoordinator::new(storage.path()).reload();
     assert!(snapshot.diagnostic.is_none(), "{:?}", snapshot.diagnostic);
     assert_eq!(snapshot.snapshot.storage.len(), 1);
-    assert_eq!(snapshot.snapshot.library.len(), 1);
+    assert_eq!(snapshot.snapshot.games.len(), 1);
+    assert_eq!(snapshot.snapshot.releases.len(), 1);
+    assert_eq!(snapshot.snapshot.locations.len(), 1);
     let registry = registry_for_snapshot(&snapshot.snapshot).unwrap();
     let routes = resolve_launchable_routes_for_platform(
+        storage.path(),
         &snapshot.snapshot,
         &registry,
         [],
@@ -66,18 +69,19 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
     assert_eq!(fs::read(&resolved.path).unwrap(), bytes);
 
     let second = import(storage.path(), private.path(), selected.path()).unwrap();
-    assert!(second.contains("Added library records: 0"), "{second}");
+    assert!(second.contains("Added games: 0"), "{second}");
     assert!(second.contains("Hashed bytes: 0"), "{second}");
     let rescan = DiscoveryCoordinator::new(storage.path(), private.path())
         .rescan(&DiscoveryOptions::default())
         .unwrap();
-    assert_eq!(rescan.added_library_records, 0);
-    assert_eq!(rescan.removed_library_records, 0);
-    assert_eq!(rescan.removed_releases, 0);
+    assert_eq!(rescan.added_games, 0);
+    assert_eq!(rescan.removed_locations, 0);
     assert_eq!(rescan.scan.hashed_bytes, 0);
     let after = ConfigSnapshotCoordinator::new(storage.path()).reload();
     assert!(after.diagnostic.is_none());
-    assert_eq!(after.snapshot.library, snapshot.snapshot.library);
+    assert_eq!(after.snapshot.games, snapshot.snapshot.games);
+    assert_eq!(after.snapshot.releases, snapshot.snapshot.releases);
+    assert_eq!(after.snapshot.locations, snapshot.snapshot.locations);
     assert_eq!(after.snapshot.storage, snapshot.snapshot.storage);
     assert_eq!(fs::read(&file).unwrap(), bytes);
 }
@@ -150,7 +154,9 @@ fn coordinator_rejects_missing_directory_and_regular_file() {
     let snapshot = ConfigSnapshotCoordinator::new(storage.path()).reload();
     assert!(snapshot.diagnostic.is_none());
     assert!(snapshot.snapshot.storage.is_empty());
-    assert!(snapshot.snapshot.library.is_empty());
+    assert!(snapshot.snapshot.games.is_empty());
+    assert!(snapshot.snapshot.releases.is_empty());
+    assert!(snapshot.snapshot.locations.is_empty());
     assert_eq!(fs::read(&file).unwrap(), b"keep");
 }
 
@@ -176,12 +182,12 @@ fn malformed_config_fails_without_echoing_its_contents() {
     let selected = tempfile::tempdir().unwrap();
     // This is deliberately invalid syntax, not a hand-authored catalog schema.
     let invalid = b"[secret-credential: [";
-    fs::write(storage.path().join(CONFIG_FILE_NAME), invalid).unwrap();
+    fs::write(storage.path().join(DEVICE_FILE_NAME), invalid).unwrap();
     let error = import(storage.path(), private.path(), selected.path()).unwrap_err();
     assert!(error.contains("discovery candidate"), "{error}");
     assert!(!error.contains("secret-credential"));
     assert_eq!(
-        fs::read(storage.path().join(CONFIG_FILE_NAME)).unwrap(),
+        fs::read(storage.path().join(DEVICE_FILE_NAME)).unwrap(),
         invalid
     );
 }
@@ -211,13 +217,13 @@ fn binary_imports_offline_then_exits_before_server_configuration() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{:?}", output);
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Added library records: 1"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Added games: 1"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("daemon must be stopped"));
     assert_eq!(
         ConfigSnapshotCoordinator::new(storage.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );

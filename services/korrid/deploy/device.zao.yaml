@@ -1,0 +1,8 @@
+# Device facts extracted from Zao's previous device/library fixture.
+# Launchers and runtimes come from the bundled RetroArch and mGBA plugins.
+host:
+  title: zao
+locations:
+  sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414:
+    - storage: roms
+      path: wl4.gba

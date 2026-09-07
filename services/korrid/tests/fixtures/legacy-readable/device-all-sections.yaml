@@ -15,15 +15,6 @@ providers:
   "@korri:roms":
     title: roms
 
-provider-links:
-  steam-thirty-xx:
-    provider: "@korri:steam"
-    playable: thirty-xx
-    release: steam
-    refs:
-      - kind: provider-item-id
-        value: "1029210"
-
 systems:
   steam:
     name: Steam

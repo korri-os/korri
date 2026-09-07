@@ -1,4 +1,0 @@
-# Trusted device configuration. Launcher and runtime capability come from the
-# enabled first-party plugins; neither is duplicated here.
-host:
-  title: usu

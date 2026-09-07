@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#! nix-shell -i bash -p bash coreutils curl diffutils gnugrep gnused imagemagick jq tesseract android-tools websocat
+#! nix-shell -i bash -p python3 python3Packages.pyyaml bash coreutils curl diffutils gnugrep gnused imagemagick jq tesseract android-tools websocat
 # shellcheck shell=bash
 set -Eeuo pipefail
 
@@ -42,11 +42,14 @@ DEBUG_CAPABILITY_SH="${KORRI_ANDROID_DEBUG_CAPABILITY_SH:-$ROOT/services/korrid/
 DEBUG_PORTAL_RELOAD_SH="${KORRI_ANDROID_DEBUG_PORTAL_RELOAD_SH:-$ROOT/services/korrid/android-debug-reload-portal.sh}"
 DEBUG_PORTAL_FOCUS_GAME_SH="${KORRI_ANDROID_DEBUG_PORTAL_FOCUS_GAME_SH:-$ROOT/services/korrid/android-debug-focus-portal-game.sh}"
 ANDROID_STORAGE_ROOT="/sdcard/korri"
-CONFIG_REMOTE="$ANDROID_STORAGE_ROOT/config.yaml"
-LIBRARY_REMOTE="$ANDROID_STORAGE_ROOT/library.yaml"
+DEVICE_REMOTE="$ANDROID_STORAGE_ROOT/device.yaml"
+GAMES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/games.yaml"
+RELEASES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/releases.yaml"
+CATALOG_DIR_WAS_PRESENT=false
 RETROARCH_CONFIG_REMOTE="$ANDROID_STORAGE_ROOT/retroarch.cfg"
-CHECKPOINT_CONFIG="$ROOT/docs/research/retroarch-plugin-route/config.yaml"
-CHECKPOINT_LIBRARY="$ROOT/docs/research/retroarch-plugin-route/library-wl4.yaml"
+CHECKPOINT_DEVICE="$ROOT/docs/research/retroarch-plugin-route/device.yaml"
+CHECKPOINT_GAMES="$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml"
+CHECKPOINT_RELEASES="$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml"
 RUN_NONCE="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 [[ "$RUN_NONCE" =~ ^[0-9a-f]{32}$ ]] || {
   echo 'could not create a random RetroArch acceptance run nonce' >&2
@@ -57,8 +60,9 @@ BACKUP_OWNER_REMOTE="$CHECKPOINT_BACKUP_DIR/.korri-acceptance-owner"
 UDP_COMPLETION_MARKER="korri-udp-probe-complete-$RUN_NONCE"
 LOCK_REMOTE="$ANDROID_STORAGE_ROOT/.android-app-route-check.lock"
 LOCK_OWNER_REMOTE="$LOCK_REMOTE/owner"
-CONFIG_WAS_PRESENT=false
-LIBRARY_WAS_PRESENT=false
+DEVICE_WAS_PRESENT=false
+GAMES_WAS_PRESENT=false
+RELEASES_WAS_PRESENT=false
 RETROARCH_CONFIG_WAS_PRESENT=false
 STATE_WAS_PRESENT=false
 SAVE_WAS_PRESENT=false
@@ -367,7 +371,7 @@ backup_path_if_present() {
   local state
   state="$(remote_state "$path")" || return 1
   if [[ "$state" == present ]]; then
-    "${ADB[@]}" shell "cp '$path' '$CHECKPOINT_BACKUP_DIR/$backup_name' && cmp -s '$path' '$CHECKPOINT_BACKUP_DIR/$backup_name'"
+    "${ADB[@]}" shell "cp '$path' '$CHECKPOINT_BACKUP_DIR/$backup_name' && cmp -s '$path' '$CHECKPOINT_BACKUP_DIR/$backup_name'" || return 1
     printf -v "$flag_name" true
   fi
 }
@@ -439,15 +443,23 @@ restore_checkpoint_files() {
     return 0
   fi
 
-  if [[ "$CONFIG_WAS_PRESENT" == true ]]; then
-    "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/config.yaml' '$CONFIG_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  if [[ "$DEVICE_WAS_PRESENT" == true ]]; then
+    "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/device.yaml' '$DEVICE_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/device.yaml' '$DEVICE_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   else
-    "${ADB[@]}" shell "rm -f '$CONFIG_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+    "${ADB[@]}" shell "rm -f '$DEVICE_REMOTE' && test ! -e '$DEVICE_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   fi
-  if [[ "$LIBRARY_WAS_PRESENT" == true ]]; then
-    "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/library.yaml' '$LIBRARY_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  if [[ "$GAMES_WAS_PRESENT" == true ]]; then
+    "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/games.yaml' '$GAMES_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/games.yaml' '$GAMES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   else
-    "${ADB[@]}" shell "rm -f '$LIBRARY_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+    "${ADB[@]}" shell "rm -f '$GAMES_REMOTE' && test ! -e '$GAMES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$RELEASES_WAS_PRESENT" == true ]]; then
+    "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/releases.yaml' '$RELEASES_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/releases.yaml' '$RELEASES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  else
+    "${ADB[@]}" shell "rm -f '$RELEASES_REMOTE' && test ! -e '$RELEASES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$CATALOG_DIR_WAS_PRESENT" != true ]]; then
+    "${ADB[@]}" shell "rmdir '$ANDROID_STORAGE_ROOT/catalog' 2>/dev/null || test ! -e '$ANDROID_STORAGE_ROOT/catalog'" >/dev/null 2>&1 || restore_failed=true
   fi
   if [[ "$RETROARCH_CONFIG_WAS_PRESENT" == true ]]; then
     "${ADB[@]}" shell "cp '$CHECKPOINT_BACKUP_DIR/retroarch.cfg' '$RETROARCH_CONFIG_REMOTE'" >/dev/null 2>&1 || restore_failed=true
@@ -670,8 +682,10 @@ trap cleanup EXIT
 provision_checkpoint_files() {
   acquire_device_lock
   create_owned_backup
-  backup_path_if_present "$CONFIG_REMOTE" config.yaml CONFIG_WAS_PRESENT
-  backup_path_if_present "$LIBRARY_REMOTE" library.yaml LIBRARY_WAS_PRESENT
+  backup_path_if_present "$DEVICE_REMOTE" device.yaml DEVICE_WAS_PRESENT
+  backup_path_if_present "$GAMES_REMOTE" games.yaml GAMES_WAS_PRESENT
+  backup_path_if_present "$RELEASES_REMOTE" releases.yaml RELEASES_WAS_PRESENT
+  record_directory_state "$ANDROID_STORAGE_ROOT/catalog" CATALOG_DIR_WAS_PRESENT
   backup_path_if_present "$RETROARCH_CONFIG_REMOTE" retroarch.cfg RETROARCH_CONFIG_WAS_PRESENT
   backup_path_if_present "$STATE_FILE" wl4.state.auto STATE_WAS_PRESENT
   backup_path_if_present "$SAVE_FILE" wl4.srm SAVE_WAS_PRESENT
@@ -683,14 +697,20 @@ provision_checkpoint_files() {
   # Every original path is now classified and every present file is verified in
   # the backup. Only now may cleanup interpret false flags as original absence.
   CHECKPOINT_RESTORE_NEEDED=true
-  "${ADB[@]}" push "$CHECKPOINT_CONFIG" "$CONFIG_REMOTE" >/dev/null
-  "${ADB[@]}" push "$CHECKPOINT_LIBRARY" "$LIBRARY_REMOTE" >/dev/null
-  "${ADB[@]}" exec-out cat "$CONFIG_REMOTE" | cmp -s "$CHECKPOINT_CONFIG" - || {
-    echo 'RetroArch acceptance config.yaml checkpoint mismatch' >&2
+  "${ADB[@]}" shell "mkdir -p '$ANDROID_STORAGE_ROOT/catalog'"
+  "${ADB[@]}" push "$CHECKPOINT_DEVICE" "$DEVICE_REMOTE" >/dev/null
+  "${ADB[@]}" push "$CHECKPOINT_GAMES" "$GAMES_REMOTE" >/dev/null
+  "${ADB[@]}" push "$CHECKPOINT_RELEASES" "$RELEASES_REMOTE" >/dev/null
+  "${ADB[@]}" exec-out cat "$DEVICE_REMOTE" | cmp -s "$CHECKPOINT_DEVICE" - || {
+    echo 'RetroArch acceptance device.yaml checkpoint mismatch' >&2
     exit 1
   }
-  "${ADB[@]}" exec-out cat "$LIBRARY_REMOTE" | cmp -s "$CHECKPOINT_LIBRARY" - || {
-    echo 'RetroArch acceptance library.yaml checkpoint mismatch' >&2
+  "${ADB[@]}" exec-out cat "$GAMES_REMOTE" | cmp -s "$CHECKPOINT_GAMES" - || {
+    echo 'RetroArch acceptance catalog/games.yaml checkpoint mismatch' >&2
+    exit 1
+  }
+  "${ADB[@]}" exec-out cat "$RELEASES_REMOTE" | cmp -s "$CHECKPOINT_RELEASES" - || {
+    echo 'RetroArch acceptance catalog/releases.yaml checkpoint mismatch' >&2
     exit 1
   }
 }
@@ -838,9 +858,14 @@ discover_live_korri_authority || {
 }
 assert_pristine_gate_state
 assert_session_idle
+python3 "$ROOT/services/korrid/prepare-wario-checkpoint.py" \
+  "$ROOT/docs/research/retroarch-plugin-route" "$PORTAL_EVIDENCE_DIR/checkpoint"
+CHECKPOINT_DEVICE="$PORTAL_EVIDENCE_DIR/checkpoint/device.yaml"
+CHECKPOINT_GAMES="$PORTAL_EVIDENCE_DIR/checkpoint/catalog/games.yaml"
+CHECKPOINT_RELEASES="$PORTAL_EVIDENCE_DIR/checkpoint/catalog/releases.yaml"
 provision_checkpoint_files
 "$DEBUG_PORTAL_RELOAD_SH" "$SERIAL" "$KORRI_PACKAGE" \
-  --expect-game wl4 'Wario Land 4' >/dev/null
+  --expect-game 01K4J6K8Y00000000000000002 'Wario Land 4' >/dev/null
 revalidate_gate_state_after_mutation
 
 local_games="$(rpc '{"_tag":"app.local-games.list","payload":{}}')"
@@ -848,7 +873,7 @@ if ! jq -e '
   .outcome._tag == "Ok"
   and (.outcome.payload.failures | not)
   and (.outcome.payload.games | length == 1)
-  and .outcome.payload.games[0].id == "wl4"
+  and .outcome.payload.games[0].id == "01K4J6K8Y00000000000000002"
   and .outcome.payload.games[0].title == "Wario Land 4"
 ' <<<"$local_games" >/dev/null; then
   echo "RetroArch acceptance did not load the one-item Wario fixture: $local_games" >&2
@@ -1214,12 +1239,12 @@ focus_wario_in_installed_library() {
     return 1
   fi
   traverse_library_to_final_viewport
-  # Korrid's local RPC id is `wl4`; the folded surface identity is namespaced
+  # Korrid's local RPC id is `01K4J6K8Y00000000000000002`; the folded surface identity is namespaced
   # so it cannot collide with peer or provider entries.
   focus_observation="$("$DEBUG_PORTAL_FOCUS_GAME_SH" \
-    "$SERIAL" "$KORRI_PACKAGE" --game 'local-game:wl4' 'Wario Land 4')"
+    "$SERIAL" "$KORRI_PACKAGE" --game 'local-game:01K4J6K8Y00000000000000002' 'Wario Land 4')"
   jq -e '
-    .view == "library" and .gameId == "local-game:wl4"
+    .view == "library" and .gameId == "local-game:01K4J6K8Y00000000000000002"
     and .title == "Wario Land 4" and .focused == true
     and .rectFinitePositive == true and .fullyOnScreen == true
     and (.bounds.width > 0) and (.bounds.height > 0)
@@ -1242,7 +1267,7 @@ render_focused_wario_crop_evidence() {
   local outline_ratio
 
   jq -e '
-    .gameId == "local-game:wl4" and .title == "Wario Land 4"
+    .gameId == "local-game:01K4J6K8Y00000000000000002" and .title == "Wario Land 4"
     and .focused == true and .rectFinitePositive == true and .fullyOnScreen == true
     and (.bounds.left | type == "number") and (.bounds.top | type == "number")
     and (.bounds.width | type == "number") and .bounds.width > 0
@@ -1390,7 +1415,7 @@ parse_local_publication() {
   publication_count="$(grep -c . <<<"$publication_lines" || true)"
   [[ "$publication_count" -eq 1 ]] || return 1
   launch_id="$(sed -nE \
-    's/^launchId=([0-9a-f]{32}) event=published gameId=wl4 package=com\.korri\.retroarch launcher=retroarch$/\1/p' \
+    's/^launchId=([0-9a-f]{32}) event=published gameId=01K4J6K8Y00000000000000002 package=com\.korri\.retroarch launcher=retroarch$/\1/p' \
     <<<"$publication_lines")"
   [[ "$launch_id" =~ ^[0-9a-f]{32}$ ]] || return 1
   printf '%s' "$launch_id"
@@ -1405,7 +1430,7 @@ assert_exact_wario_resume() {
     and .outcome.payload.launchId == $launchId
     and (.outcome.payload.launchId | test("^[0-9a-f]{32}$"))
     and .outcome.payload.launcherId == "retroarch"
-    and .outcome.payload.context.gameId == "wl4"
+    and .outcome.payload.context.gameId == "01K4J6K8Y00000000000000002"
     and .outcome.payload.context.title == "Wario Land 4"
     and .outcome.payload.context.contentCrc32 == "d6141609"
     and .outcome.payload.context.contributors == [
@@ -1450,7 +1475,7 @@ launch_wario_entry() {
   local location_failure_diagnostic="$PORTAL_EVIDENCE_DIR/$label.local-location.launch-failed.txt"
   local publication_diagnostic="$PORTAL_EVIDENCE_DIR/$label.local-publication.log"
   local controls_diagnostic="$PORTAL_EVIDENCE_DIR/$label.local-controls.json"
-  local local_location_id='["local",null,"wl4"]'
+  local local_location_id='["local",null,"01K4J6K8Y00000000000000002"]'
   local detail_observation
   local location_observation
   local location_failure_observation
@@ -1643,7 +1668,7 @@ launch_wario_entry() {
 
   # Only after authenticated controls are ready may the conservative repeated
   # launch prove exact same-session resume without rotating authority.
-  observed_resume="$(rpc '{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}')"
+  observed_resume="$(rpc '{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}')"
   if ! assert_exact_wario_resume "$observed_resume" "$GATE_CURRENT_LAUNCH"; then
     echo 'running Wario route did not return the exact conservative local resume specification' >&2
     return 1
@@ -1765,7 +1790,7 @@ AUTO_LOAD_LOG_MARKER="$(new_logcat_marker auto-load)"
 bring_existing_shell_task_forward
 SHELL_BROUGHT_FORWARD=true
 "$DEBUG_PORTAL_RELOAD_SH" "$SERIAL" "$KORRI_PACKAGE" \
-  --expect-game wl4 'Wario Land 4' >/dev/null
+  --expect-game 01K4J6K8Y00000000000000002 'Wario Land 4' >/dev/null
 launch_wario_entry second
 STAGE="relaunch"
 status_second="$(wait_playing)"

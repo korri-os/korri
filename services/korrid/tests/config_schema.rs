@@ -1,204 +1,237 @@
-use korrid::config::{classify_snapshot_support, decode_config_pair};
-
-const CHECKPOINT_CONFIG: &str =
-    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
-const CHECKPOINT_LIBRARY: &str =
-    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/library.yaml");
-const ALL_CONFIG: &str = include_str!("fixtures/legacy-readable/config-all-sections.yaml");
-const ALL_LIBRARY: &str = include_str!("fixtures/legacy-readable/library-all-sections.yaml");
+#[path = "fixtures/readable.rs"]
+mod readable;
+use korrid::config::{classify_snapshot_support, decode_config_documents};
+use readable::*;
 
 #[test]
-fn exact_checkpoint_pair_decodes_as_supported_legacy_readable_contract() {
-    let snapshot = decode_config_pair(CHECKPOINT_CONFIG, CHECKPOINT_LIBRARY)
-        .expect("checkpoint files should strictly decode");
-
-    assert_eq!(
-        snapshot
-            .host
-            .as_ref()
-            .and_then(|host| host.title.as_deref()),
-        Some("usu")
-    );
-    assert!(snapshot.storage.is_empty());
-    assert_eq!(
-        snapshot
-            .library
-            .get("tmnt-shredders-revenge")
-            .and_then(|item| item.title.as_deref()),
-        Some("TMNT: Shredder's Revenge")
-    );
-    classify_snapshot_support(&snapshot)
-        .expect("checkpoint fields are executable or retained metadata");
+fn checkpoint_documents_decode_as_supported_readable_contract() {
+    let snapshot =
+        decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap();
+    assert_eq!(snapshot.host.unwrap().title.as_deref(), Some("usu"));
+    assert_eq!(snapshot.games[ANDROID_ID].title, "TMNT: Shredder's Revenge");
+    assert_eq!(snapshot.releases[ANDROID_RELEASE].game.0, ANDROID_ID);
+    classify_snapshot_support(
+        &decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
-fn empty_readable_documents_decode_as_the_initial_snapshot() {
-    let snapshot = decode_config_pair("{}\n", "{}\n").expect("empty documents should decode");
-
-    assert!(snapshot.host.is_none());
-    assert!(snapshot.storage.is_empty());
-    assert!(snapshot.providers.is_empty());
-    assert!(snapshot.provider_links.is_empty());
-    assert!(snapshot.systems.is_empty());
-    assert!(snapshot.launchers.is_empty());
-    assert!(snapshot.runtimes.is_empty());
-    assert!(snapshot.profiles.is_empty());
-    assert!(snapshot.hooks.is_empty());
-    assert!(snapshot.collections.is_empty());
-    assert!(snapshot.users.is_empty());
-    assert!(snapshot.library.is_empty());
+fn empty_documents_decode_as_the_initial_snapshot() {
+    let snapshot = decode_config_documents("{}", "{}", "{}").unwrap();
+    assert_eq!(snapshot, korrid::config::ConfigSnapshot::default());
 }
 
 #[test]
-fn representative_legacy_records_decode_for_all_twelve_sections() {
-    let snapshot = decode_config_pair(ALL_CONFIG, ALL_LIBRARY)
-        .expect("grounded legacy section fixtures should strictly decode");
-
+fn legacy_device_sections_remain_decodable_without_introducing_users_or_provider_links() {
+    let snapshot = decode_config_documents(
+        include_str!("fixtures/legacy-readable/device-all-sections.yaml"),
+        "{}",
+        "{}",
+    )
+    .unwrap();
     assert_eq!(snapshot.storage.len(), 2);
     assert_eq!(snapshot.providers.len(), 2);
-    assert_eq!(snapshot.provider_links.len(), 1);
     assert_eq!(snapshot.systems.len(), 2);
     assert_eq!(snapshot.launchers.len(), 2);
     assert_eq!(snapshot.runtimes.len(), 2);
     assert_eq!(snapshot.profiles.len(), 1);
     assert_eq!(snapshot.hooks.len(), 1);
-    assert_eq!(snapshot.collections.len(), 1);
-    assert_eq!(snapshot.users.len(), 1);
-    assert_eq!(snapshot.library.len(), 3);
+    assert!(classify_snapshot_support(&snapshot).is_err());
 }
 
 #[test]
-fn strict_schema_rejects_unknown_top_level_and_nested_fields() {
-    let top_level = decode_config_pair("unexpected: {}\n", "{}\n")
-        .expect_err("unknown top-level sections must fail");
-    assert!(top_level.to_string().contains("unexpected"));
-
-    let nested = decode_config_pair(
-        "host:\n  hooks:\n    before:\n      - run: \"true\"\n        comand: typo\n",
-        "{}\n",
-    )
-    .expect_err("unknown nested hook fields must fail");
-    assert!(
-        nested.to_string().contains("comand"),
-        "unexpected error: {nested}"
-    );
+fn unknown_top_level_and_nested_fields_fail() {
+    for device in [
+        "unexpected: {}",
+        "host:\n  hooks:\n    before:\n      - run: 'true'\n        comand: typo",
+    ] {
+        assert!(decode_config_documents(device, "{}", "{}").is_err());
+    }
+    for section in ["library", "users", "provider-links", "retired", "aliases"] {
+        assert!(decode_config_documents(&format!("{section}: {{}}"), "{}", "{}").is_err());
+    }
+    for field in [
+        "target: {}",
+        "launch: {use: '@korri:retroarch/retroarch'}",
+        "launch: {}",
+        "id: gba",
+        "app: retroarch",
+        "runtime: mgba",
+    ] {
+        let releases = format!("{}    {field}\n", gba_releases());
+        assert!(
+            decode_config_documents("{}", &gba_games(), &releases).is_err(),
+            "{field}"
+        );
+    }
 }
 
 #[test]
-fn explicit_nulls_do_not_pass_as_absent_legacy_fields() {
-    let error = decode_config_pair("host:\n  title: null\n", "{}\n")
-        .expect_err("explicit null must fail where absence is required");
-
-    assert!(
-        error.to_string().contains("explicit null"),
-        "unexpected error: {error}"
-    );
+fn catalog_releases_cannot_carry_hook_commands() {
+    for hook in [
+        "hooks:\n      before:\n        - run: 'true'",
+        "hooks:\n      after:\n        - run: 'true'",
+    ] {
+        let releases = format!("{}    {hook}\n", gba_releases());
+        let error = decode_config_documents("{}", &gba_games(), &releases).unwrap_err();
+        assert!(error.to_string().contains("commands"), "{error}");
+    }
+    decode_config_documents(
+        "hooks:\n  device-check:\n    before:\n      - run: 'true'",
+        "{}",
+        "{}",
+    )
+    .unwrap();
 }
 
 #[test]
-fn identity_syntax_and_key_derived_identity_mismatches_fail() {
-    let malformed_provider =
-        decode_config_pair("providers:\n  android-app:\n    title: Android\n", "{}\n")
-            .expect_err("provider map keys must keep legacy provider-id syntax");
-    assert!(malformed_provider.to_string().contains("provider"));
-
-    let malformed_playable = decode_config_pair(
-        "{}\n",
-        "library:\n  Bad Id:\n    releases:\n      - id: android\n        system: android\n",
-    )
-    .expect_err("library keys must be local playable ids");
-    assert!(malformed_playable.to_string().contains("playable"));
-
-    let body_id = decode_config_pair(
-        "providers:\n  \"@korri:android-app\":\n    id: \"@korri:other\"\n    title: Android\n",
-        "{}\n",
-    )
-    .expect_err("payload bodies must not carry mismatched derived ids");
-    assert!(body_id.to_string().contains("id"));
+fn explicit_null_is_not_absence() {
+    assert!(decode_config_documents("host:\n  title: null", "{}", "{}")
+        .unwrap_err()
+        .to_string()
+        .contains("explicit null"));
+    for releases in [
+        gba_releases().replace("identity: file", "identity: null"),
+        gba_releases().replace("system: gba", "system: null"),
+    ] {
+        assert!(
+            decode_config_documents("{}", &gba_games(), &releases).is_err(),
+            "{releases}"
+        );
+    }
 }
 
 #[test]
-fn fixed_file_ownership_is_enforced_before_merge_order_can_win() {
-    let library_in_config = decode_config_pair(
-        "library:\n  tmnt-shredders-revenge:\n    releases:\n      - id: android\n        system: android\n",
-        "{}\n",
+fn identity_syntax_and_payload_identity_mismatches_fail() {
+    assert!(decode_config_documents("providers:\n  android-app: {}", "{}", "{}").is_err());
+    assert!(decode_config_documents(
+        "providers:\n  '@korri:android-app':\n    id: '@korri:other'",
+        "{}",
+        "{}"
     )
-    .expect_err("library section is not owned by config.yaml");
-    assert!(library_in_config.to_string().contains("config.yaml"));
-
-    let provider_in_library = decode_config_pair(
-        "{}\n",
-        "providers:\n  \"@korri:android-app\":\n    title: Android\n",
-    )
-    .expect_err("provider section is not owned by library.yaml");
-    assert!(provider_in_library.to_string().contains("library.yaml"));
+    .is_err());
+    for id in [
+        "Bad Id",
+        "wl4",
+        "81K4J6K8Y00000000000000002",
+        "01k4j6k8y00000000000000002",
+    ] {
+        assert!(decode_config_documents(
+            "{}",
+            &gba_games().replace(GBA_ID, id),
+            &gba_releases().replace(GBA_ID, id)
+        )
+        .is_err());
+    }
 }
 
 #[test]
-fn empty_sections_still_belong_to_their_fixed_file() {
-    let library_in_config = decode_config_pair("library: {}\n", "{}\n")
-        .expect_err("empty library section is still not owned by config.yaml");
-    assert!(library_in_config.to_string().contains("config.yaml"));
-
-    let provider_in_library = decode_config_pair("{}\n", "providers: {}\n")
-        .expect_err("empty providers section is still not owned by library.yaml");
-    assert!(provider_in_library.to_string().contains("library.yaml"));
-}
-
-#[test]
-fn duplicate_top_level_section_record_keys_are_rejected() {
-    let error = decode_config_pair(
-        "providers:\n  \"@korri:android-app\":\n    title: Android\n  \"@korri:android-app\":\n    title: Duplicate Android\n",
-        "{}\n",
-    )
-    .expect_err("section record keys must not silently collapse on decode");
-
-    assert!(
-        error
+fn fixed_file_ownership_is_enforced_even_for_empty_sections() {
+    for (device, games, releases) in [
+        ("games: {}", "{}", "{}"),
+        ("releases: {}", "{}", "{}"),
+        ("{}", "host: {}", "{}"),
+        ("{}", "locations: {}", "{}"),
+        ("{}", "{}", "games: {}"),
+        ("{}", "releases: {}", "{}"),
+    ] {
+        assert!(decode_config_documents(device, games, releases)
+            .unwrap_err()
             .to_string()
-            .contains("duplicate record key '@korri:android-app'"),
-        "unexpected error: {error}"
-    );
+            .contains("not allowed"));
+    }
 }
 
 #[test]
-fn artifact_identity_hashes_must_be_lowercase_sha256_hex() {
-    let lower = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    decode_config_pair(
-        "{}\n",
-        &format!(
-            "library:\n  gba-game:\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: roms\n          path: game.gba\n        identity:\n          kind: hash\n          value: sha256:{lower}\n"
-        ),
+fn duplicate_record_keys_and_release_lists_fail() {
+    assert!(decode_config_documents(
+        "providers:\n  '@korri:android-app': {}\n  '@korri:android-app': {}",
+        "{}",
+        "{}"
     )
-    .expect("lowercase sha256 artifact identity should decode");
-
-    let uppercase = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
-    let error = decode_config_pair(
-        "{}\n",
-        &format!(
-            "library:\n  gba-game:\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: roms\n          path: game.gba\n        identity:\n          kind: hash\n          value: sha256:{uppercase}\n"
-        ),
-    )
-    .expect_err("uppercase sha256 artifact identity must fail");
-
-    assert!(
-        error.to_string().contains("lowercase"),
-        "unexpected error: {error}"
+    .unwrap_err()
+    .to_string()
+    .contains("duplicate record key"));
+    let games = gba_games().replace(
+        &format!("['{GBA_RELEASE}']"),
+        &format!("['{GBA_RELEASE}', '{GBA_RELEASE}']"),
     );
+    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
+    let games = gba_games().replace(&format!("['{GBA_RELEASE}']"), "[]");
+    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
 }
 
 #[test]
-fn populated_unsupported_behavior_is_reported_explicitly() {
-    let snapshot = decode_config_pair(
-        "host:\n  title: usu\n  moonlight:\n    platform:\n      name: v4l2m2m\n",
-        "{}\n",
-    )
-    .expect("schema-valid unsupported host behavior should decode");
+fn artifact_keys_require_lowercase_sha256_or_provider_ref() {
+    decode_config_documents("{}", &gba_games(), &gba_releases()).unwrap();
+    decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap();
+    for key in [
+        GBA_RELEASE.to_uppercase(),
+        GBA_RELEASE.replace("sha256:", "crc32:"),
+        "sha1:deadbeef".into(),
+        "@korri:android-app/".into(),
+        "android-app/com.playdigious.tmnt".into(),
+    ] {
+        assert!(
+            decode_config_documents(
+                "{}",
+                &gba_games().replace(GBA_RELEASE, &key),
+                &gba_releases().replace(GBA_RELEASE, &key)
+            )
+            .is_err(),
+            "{key}"
+        );
+    }
+}
 
-    let error = classify_snapshot_support(&snapshot)
-        .expect_err("unsupported populated behavior must be classified");
-    assert!(
-        error.to_string().contains("host.moonlight"),
-        "unexpected error: {error}"
-    );
+#[test]
+fn catalog_links_must_agree_in_both_directions() {
+    assert!(decode_config_documents("{}", &gba_games(), "{}").is_err());
+    assert!(decode_config_documents("{}", "{}", &gba_releases()).is_err());
+    assert!(decode_config_documents(
+        "{}",
+        &gba_games(),
+        &gba_releases().replace(GBA_ID, OTHER_ID)
+    )
+    .is_err());
+}
+
+#[test]
+fn locations_keep_legacy_fields_but_reject_kind_and_unknown_fields() {
+    let good = gba_locations("roms", "wl4.gba", true);
+    decode_config_documents(&good, &gba_games(), &gba_releases()).unwrap();
+    for device in [
+        good.replace("storage: roms", "storage: null"),
+        good.replace("path: wl4.gba", "path: null"),
+    ] {
+        assert!(decode_config_documents(&device, &gba_games(), &gba_releases()).is_err());
+    }
+    for field in ["kind: file", "typo: true", "discovery: null"] {
+        let device = format!("{}      {field}\n", gba_locations("roms", "wl4.gba", false));
+        assert!(
+            decode_config_documents(&device, &gba_games(), &gba_releases()).is_err(),
+            "{field}"
+        );
+    }
+    assert!(decode_config_documents(
+        &ANDROID_DEVICE.replace("ref: com.playdigious.tmnt", "ref: wrong.package"),
+        ANDROID_GAMES,
+        ANDROID_RELEASES
+    )
+    .is_err());
+}
+
+#[test]
+fn unsupported_populated_behavior_is_reported_explicitly() {
+    let snapshot = decode_config_documents(
+        "host:\n  moonlight:\n    platform:\n      name: v4l2m2m",
+        "{}",
+        "{}",
+    )
+    .unwrap();
+    assert!(classify_snapshot_support(&snapshot)
+        .unwrap_err()
+        .to_string()
+        .contains("host.moonlight"));
 }

@@ -1,14 +1,16 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl diffutils findutils gawk git gnugrep gnused imagemagick tesseract jq python3 python3Packages.pyyaml
+# shellcheck shell=bash
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACCEPTANCE="$HERE/device-acceptance.sh"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-WL4_LIBRARY="$ROOT/docs/research/retroarch-plugin-route/library-wl4.yaml"
+WL4_GAMES="$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml"
 
-[[ -f "$WL4_LIBRARY" ]]
+[[ -f "$WL4_GAMES" ]]
 # shellcheck disable=SC2016 # Literal source-contract needles.
-grep -F 'CHECKPOINT_LIBRARY="$ROOT/docs/research/retroarch-plugin-route/library-wl4.yaml"' "$ACCEPTANCE" >/dev/null
+grep -F 'CHECKPOINT_GAMES="$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml"' "$ACCEPTANCE" >/dev/null
 # shellcheck disable=SC2016 # Literal source-contract needles.
 grep -F 'LOCK_REMOTE="$ANDROID_STORAGE_ROOT/.android-app-route-check.lock"' "$ACCEPTANCE" >/dev/null
 grep -F 'if restore_checkpoint_files; then' "$ACCEPTANCE" >/dev/null
@@ -159,7 +161,7 @@ grep -F 'detail-play.png' "$ACCEPTANCE" >/dev/null
 grep -F -- '--launch-location' "$ACCEPTANCE" >/dev/null
 grep -F 'local-location.focus.json' "$ACCEPTANCE" >/dev/null
 grep -F 'local-location.png' "$ACCEPTANCE" >/dev/null
-grep -F "local local_location_id='[\"local\",null,\"wl4\"]'" "$ACCEPTANCE" >/dev/null
+grep -F "local local_location_id='[\"local\",null,\"01K4J6K8Y00000000000000002\"]'" "$ACCEPTANCE" >/dev/null
 grep -F 'Physical controller confirm remains mandatory' "$ACCEPTANCE" >/dev/null
 launch_flow_source="$(sed -n '/^launch_wario_entry() {/,/^}/p' "$ACCEPTANCE")"
 # shellcheck disable=SC2016 # Literal source-contract needles.
@@ -241,7 +243,7 @@ for publication_contract in \
   }
 done
 publication_parser_source="$(sed -n '/^parse_local_publication() {/,/^}/p' "$ACCEPTANCE")"
-grep -F 'launchId=([0-9a-f]{32}) event=published gameId=wl4 package=com\.korri\.retroarch launcher=retroarch' \
+grep -F 'launchId=([0-9a-f]{32}) event=published gameId=01K4J6K8Y00000000000000002 package=com\.korri\.retroarch launcher=retroarch' \
   <<<"$publication_parser_source" >/dev/null
 for controls_contract in \
   'local-controls.json' \
@@ -256,7 +258,7 @@ for controls_contract in \
   }
 done
 # shellcheck disable=SC2016 # Literal source-contract needle.
-grep -F 'observed_resume="$(rpc '\''{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}'\'')"' \
+grep -F 'observed_resume="$(rpc '\''{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}'\'')"' \
   <<<"$launch_flow_source" >/dev/null
 grep -F 'assert_exact_wario_resume "$observed_resume" "$GATE_CURRENT_LAUNCH"' \
   <<<"$launch_flow_source" >/dev/null
@@ -269,7 +271,7 @@ for resume_contract in \
   '.outcome.payload.disposition == "resume"' \
   '.outcome.payload.launchId == $launchId' \
   'test("^[0-9a-f]{32}$")' \
-  '.outcome.payload.context.gameId == "wl4"' \
+  '.outcome.payload.context.gameId == "01K4J6K8Y00000000000000002"' \
   '.outcome.payload.context.contentCrc32 == "d6141609"' \
   '"packageName":"com.korri.retroarch"' \
   '"id":"@korri:mgba/mgba"' \
@@ -293,7 +295,7 @@ fi
 grep -F -- '"$SERIAL" "$KORRI_PACKAGE" --library' "$ACCEPTANCE" >/dev/null
 # shellcheck disable=SC2016 # Literal source-contract needle.
 grep -F -- '"$SERIAL" "$KORRI_PACKAGE" --verify-library' "$ACCEPTANCE" >/dev/null
-grep -F -- "--game 'local-game:wl4' 'Wario Land 4'" "$ACCEPTANCE" >/dev/null
+grep -F -- "--game 'local-game:01K4J6K8Y00000000000000002' 'Wario Land 4'" "$ACCEPTANCE" >/dev/null
 # A DevTools-focused element must be activated only through its validated
 # installed-pointer bounds. Physical A remains in the human overlay gate.
 if grep -F 'KEYCODE_BUTTON_A' "$ACCEPTANCE" >/dev/null; then
@@ -357,7 +359,7 @@ grep -F 'Korri gameplay overlay' "$ACCEPTANCE" >/dev/null
 grep -F 'authenticated_retroarch_status' "$ACCEPTANCE" >/dev/null
 grep -F 'discover_live_korri_authority' "$ACCEPTANCE" >/dev/null
 grep -F 'DEBUG_PORTAL_RELOAD_SH=' "$ACCEPTANCE" >/dev/null
-grep -F -- "--expect-game wl4 'Wario Land 4'" "$ACCEPTANCE" >/dev/null
+grep -F -- "--expect-game 01K4J6K8Y00000000000000002 'Wario Land 4'" "$ACCEPTANCE" >/dev/null
 grep -F -- '--expect-portal' "$ACCEPTANCE" >/dev/null
 grep -F 'assert_pristine_gate_state' "$ACCEPTANCE" >/dev/null
 grep -F 'assert_session_idle' "$ACCEPTANCE" >/dev/null
@@ -642,8 +644,11 @@ udp_log_line="$(grep -nF 'assert_udp_rejection_log "$UDP_REJECTION_LOG_MARKER"' 
   exit 1
 }
 grep -F 'enabled_accessibility_services' "$ACCEPTANCE" >/dev/null
-grep -F 'use: "@korri:retroarch/retroarch"' "$WL4_LIBRARY" >/dev/null
-grep -F 'runtime: "@korri:mgba/mgba"' "$WL4_LIBRARY" >/dev/null
+# Runtime choice is now derived from plugin system declarations, not launch opinions.
+grep -F 'systems: ["gba"]' "$ROOT/plugins/mgba/plugin.ts" >/dev/null
+grep -F 'app: "@korri:retroarch/retroarch"' "$ROOT/plugins/mgba/plugin.ts" >/dev/null
+grep -F 'id: "@korri:retroarch/retroarch"' "$ROOT/plugins/retroarch/plugin.ts" >/dev/null
+python3 "$ROOT/services/korrid/test-minimum-config-fixtures.py"
 library_focus_source="$(sed -n '/^focus_wario_in_installed_library() {/,/^}/p' "$ACCEPTANCE")"
 # shellcheck disable=SC2016 # Literal source-contract needles.
 nav_focus_line="$(grep -nF -- '"$SERIAL" "$KORRI_PACKAGE" --library' <<<"$library_focus_source" | head -1 | cut -d: -f1)"
@@ -652,7 +657,7 @@ open_library_line="$(grep -nF 'shell input tap "$tap_x" "$tap_y"' <<<"$library_f
 # shellcheck disable=SC2016 # Literal source-contract needle.
 verify_library_line="$(grep -nF -- '"$SERIAL" "$KORRI_PACKAGE" --verify-library' <<<"$library_focus_source" | head -1 | cut -d: -f1)"
 traversal_line="$(grep -nF 'traverse_library_to_final_viewport' <<<"$library_focus_source" | head -1 | cut -d: -f1)"
-strict_focus_line="$(grep -nF -- "--game 'local-game:wl4'" <<<"$library_focus_source" | head -1 | cut -d: -f1)"
+strict_focus_line="$(grep -nF -- "--game 'local-game:01K4J6K8Y00000000000000002'" <<<"$library_focus_source" | head -1 | cut -d: -f1)"
 [[ -n "$nav_focus_line" && -n "$open_library_line" && -n "$verify_library_line" \
   && -n "$traversal_line" && -n "$strict_focus_line" \
   && "$nav_focus_line" -lt "$open_library_line" \
@@ -801,15 +806,15 @@ PUBLICATION_PARSER="$TMP/parse-local-publication.sh"
 printf '%s\n' "$publication_parser_source" >"$PUBLICATION_PARSER"
 # shellcheck source=/dev/null
 source "$PUBLICATION_PARSER"
-valid_publication='launchId=0123456789abcdef0123456789abcdef event=published gameId=wl4 package=com.korri.retroarch launcher=retroarch'
+valid_publication='launchId=0123456789abcdef0123456789abcdef event=published gameId=01K4J6K8Y00000000000000002 package=com.korri.retroarch launcher=retroarch'
 [[ "$(parse_local_publication "$valid_publication")" == \
   '0123456789abcdef0123456789abcdef' ]]
 for invalid_publication in \
   '' \
   "$valid_publication"$'\n'"$valid_publication" \
-  'launchId=ABCDEF6789abcdef0123456789abcdef event=published gameId=wl4 package=com.korri.retroarch launcher=retroarch' \
+  'launchId=ABCDEF6789abcdef0123456789abcdef event=published gameId=01K4J6K8Y00000000000000002 package=com.korri.retroarch launcher=retroarch' \
   'launchId=0123456789abcdef0123456789abcdef event=published gameId=other package=com.korri.retroarch launcher=retroarch' \
-  'launchId=0123456789abcdef0123456789abcdef event=published gameId=wl4 package=com.other.retroarch launcher=retroarch'; do
+  'launchId=0123456789abcdef0123456789abcdef event=published gameId=01K4J6K8Y00000000000000002 package=com.other.retroarch launcher=retroarch'; do
   if parse_local_publication "$invalid_publication" >/dev/null; then
     echo "local publication parser accepted zero, duplicate, or malformed evidence" >&2
     exit 1
@@ -820,7 +825,7 @@ RESUME_ASSERTION="$TMP/assert-exact-wario-resume.sh"
 printf '%s\n' "$resume_assertion_source" >"$RESUME_ASSERTION"
 # shellcheck source=/dev/null
 source "$RESUME_ASSERTION"
-valid_resume='{"outcome":{"_tag":"Ok","payload":{"disposition":"resume","launchId":"0123456789abcdef0123456789abcdef","launcherId":"retroarch","context":{"gameId":"wl4","title":"Wario Land 4","contentCrc32":"d6141609","contributors":[{"kind":"launcher","id":"@korri:retroarch/retroarch"},{"kind":"runtime","id":"@korri:mgba/mgba"}],"executor":{"id":"retroarch-control","available":true},"foreground":{"kind":"component","packageName":"com.korri.retroarch","className":"com.retroarch.browser.retroactivity.RetroActivityFuture"}},"component":{"packageName":"com.korri.retroarch","className":"com.retroarch.browser.retroactivity.RetroActivityFuture"},"extras":{"ROM":"/storage/emulated/0/korri/roms/wl4.gba","LIBRETRO":"/data/data/com.korri.retroarch/cores/mgba_libretro_android.so","CONFIGFILE":"/storage/emulated/0/korri/retroarch.cfg"},"integrity":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}'
+valid_resume='{"outcome":{"_tag":"Ok","payload":{"disposition":"resume","launchId":"0123456789abcdef0123456789abcdef","launcherId":"retroarch","context":{"gameId":"01K4J6K8Y00000000000000002","title":"Wario Land 4","contentCrc32":"d6141609","contributors":[{"kind":"launcher","id":"@korri:retroarch/retroarch"},{"kind":"runtime","id":"@korri:mgba/mgba"}],"executor":{"id":"retroarch-control","available":true},"foreground":{"kind":"component","packageName":"com.korri.retroarch","className":"com.retroarch.browser.retroactivity.RetroActivityFuture"}},"component":{"packageName":"com.korri.retroarch","className":"com.retroarch.browser.retroactivity.RetroActivityFuture"},"extras":{"ROM":"/storage/emulated/0/korri/roms/wl4.gba","LIBRETRO":"/data/data/com.korri.retroarch/cores/mgba_libretro_android.so","CONFIGFILE":"/storage/emulated/0/korri/retroarch.cfg"},"integrity":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}'
 expected_resume_launch_id='0123456789abcdef0123456789abcdef'
 assert_exact_wario_resume "$valid_resume" "$expected_resume_launch_id"
 for mutation in \
@@ -970,8 +975,12 @@ printf '%s\n' "$index" >"$MOCK_LIBRARY_STATE"
 cat "$MOCK_LIBRARY_FIXTURES/$index.json"
 SH
 chmod +x "$MOCK_LIBRARY_HELPER"
+# These inputs are read by the shipping functions sourced from LIBRARY_STABILITY.
+# shellcheck disable=SC2034
 DEBUG_PORTAL_FOCUS_GAME_SH="$MOCK_LIBRARY_HELPER"
+# shellcheck disable=SC2034
 SERIAL=fixture-serial
+# shellcheck disable=SC2034
 KORRI_PACKAGE=fixture-package
 library_fixture() {
   local path="$1"
@@ -1056,11 +1065,11 @@ cat >"$TMP/focused-wario.svg" <<'SVG'
 SVG
 magick "$TMP/focused-wario.svg" "$TMP/focused-wario-full.png"
 cat >"$TMP/focused-wario.json" <<'JSON'
-{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}
+{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}
 JSON
 [[ "$(verified_element_center "$TMP/focused-wario.json")" == '589 290' ]]
 cat >"$TMP/focused-play.json" <<'JSON'
-{"gameId":"local-game:wl4","title":"Wario Land 4","label":"Play","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":342.5,"top":287.25,"width":130,"height":52},"viewport":{"width":640,"height":480}}
+{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","label":"Play","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":342.5,"top":287.25,"width":130,"height":52},"viewport":{"width":640,"height":480}}
 JSON
 [[ "$(verified_element_center "$TMP/focused-play.json")" == '407 313' ]]
 cat >"$TMP/focused-library.json" <<'JSON'
@@ -1095,11 +1104,11 @@ for invalid_library in \
   fi
 done
 for invalid in \
-  '{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":-1,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
-  '{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":600,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
-  '{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":470,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
-  '{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":230,"width":0,"height":120},"viewport":{"width":640,"height":480}}' \
-  '{"gameId":"local-game:wl4","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":1e999,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}'; do
+  '{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":-1,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
+  '{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":600,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
+  '{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":470,"width":82,"height":120},"viewport":{"width":640,"height":480}}' \
+  '{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":548,"top":230,"width":0,"height":120},"viewport":{"width":640,"height":480}}' \
+  '{"gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","focused":true,"rectFinitePositive":true,"fullyOnScreen":true,"bounds":{"left":1e999,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480}}'; do
   printf '%s\n' "$invalid" >"$TMP/invalid-center.json"
   if verified_element_center "$TMP/invalid-center.json" >/dev/null 2>&1; then
     echo "unsafe focused-element bounds produced a tap center: $invalid" >&2

@@ -14,7 +14,7 @@ korri_parse_wario_retroarch_publication() {
   publication_count="$(grep -c . <<<"$publication_lines" || true)"
   [[ "$publication_count" -eq 1 ]] || return 1
   launch_id="$(sed -nE \
-    's/^launchId=([0-9a-f]{32}) event=published gameId=wl4 package=com\.korri\.retroarch launcher=retroarch$/\1/p' \
+    's/^launchId=([0-9a-f]{32}) event=published gameId=01K4J6K8Y00000000000000002 package=com\.korri\.retroarch launcher=retroarch$/\1/p' \
     <<<"$publication_lines")"
   [[ "$launch_id" =~ ^[0-9a-f]{32}$ ]] || return 1
   printf '%s' "$launch_id"

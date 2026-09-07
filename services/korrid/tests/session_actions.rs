@@ -1,3 +1,5 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
@@ -414,8 +416,8 @@ async fn moonlight_outcome(app: axum::Router) -> serde_json::Value {
 #[tokio::test]
 async fn standalone_brain_reports_typed_moonlight_unavailable() {
     let root = tempfile::tempdir().expect("Moonlight config root");
-    std::fs::write(root.path().join("config.yaml"), "{}\n").expect("default config");
-    std::fs::write(root.path().join("library.yaml"), "{}\n").expect("empty library");
+    std::fs::write(root.path().join("device.yaml"), "{}\n").expect("default config");
+    readable::write(root.path().join("catalog/games.yaml"), "{}\n").expect("empty library");
     let app = korrid::router_with_capability_and_local_root(
         "moonlight-test-capability",
         "https://appassets.androidplatform.net",
@@ -430,8 +432,8 @@ async fn standalone_brain_reports_typed_moonlight_unavailable() {
 #[tokio::test]
 async fn standalone_brain_refuses_to_prepare_moonlight_launches() {
     let root = tempfile::tempdir().expect("Moonlight config root");
-    std::fs::write(root.path().join("config.yaml"), "{}\n").expect("default config");
-    std::fs::write(root.path().join("library.yaml"), "{}\n").expect("empty library");
+    std::fs::write(root.path().join("device.yaml"), "{}\n").expect("default config");
+    readable::write(root.path().join("catalog/games.yaml"), "{}\n").expect("empty library");
     let request = || {
         Request::builder()
             .method("POST")

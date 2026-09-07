@@ -63,6 +63,13 @@ pub(crate) fn launch_route_with_env(
             route.playable_id
         ))
     })?;
+    let executable = environment_path(&lookup, &launcher.executable_env)?;
+    let core = environment_path(&lookup, core_env)?;
+    require_file(&executable, "RetroArch executable")?;
+    require_file(&core, "mGBA core")?;
+    let autoconfig = environment_path(&lookup, RETROARCH_AUTOCONFIG_ENV)?;
+    require_directory(&autoconfig, "RetroArch joypad autoconfig")?;
+
     let rom = storage::resolve_file_target(root, snapshot, target)
         .map_err(|error| {
             if error.is_missing_target() {
@@ -74,13 +81,6 @@ pub(crate) fn launch_route_with_env(
             }
         })?
         .path;
-
-    let executable = environment_path(&lookup, &launcher.executable_env)?;
-    let core = environment_path(&lookup, core_env)?;
-    require_file(&executable, "RetroArch executable")?;
-    require_file(&core, "mGBA core")?;
-    let autoconfig = environment_path(&lookup, RETROARCH_AUTOCONFIG_ENV)?;
-    require_directory(&autoconfig, "RetroArch joypad autoconfig")?;
 
     let account_root = root.join("users").join(DEFAULT_ACCOUNT);
     for directory in ["system", "saves", "states", "screenshots"] {
@@ -285,7 +285,7 @@ mod tests {
 
         let launch =
             launch_route_with_env(root.path(), &ConfigSnapshot::default(), &route(), |key| {
-                environment.get(key).map(|value| OsString::from(value))
+                environment.get(key).map(OsString::from)
             })
             .unwrap();
 

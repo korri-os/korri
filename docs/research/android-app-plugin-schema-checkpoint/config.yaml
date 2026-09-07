@@ -1,4 +1,0 @@
-# Trusted device configuration. Launcher capability comes from the enabled
-# Android application plugin; it is deliberately not duplicated here.
-host:
-  title: usu

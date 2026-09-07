@@ -437,7 +437,10 @@ fn inherited_control_listener() -> Result<Option<std::os::unix::net::UnixListene
 #[tokio::main]
 async fn main() {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
-    if arguments.first().is_some_and(|argument| argument == "catalog") {
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "catalog")
+    {
         match korrid::catalog_cli::run_from_environment(&arguments[1..]) {
             Ok(output) => println!("{output}"),
             Err(error) => {

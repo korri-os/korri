@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +14,7 @@ use crate::{
     GameIdentity,
 };
 
-use super::{storage, AppPayload, ConfigSnapshot, LibraryItemPayload, Target};
+use super::{storage, AppPayload, ConfigSnapshot, GamePayload, Location};
 
 const PROCESS_LAUNCHER_KIND: &str = "@korri:process";
 const ANDROID_APP_COMMAND: &str = "android-app";
@@ -173,6 +176,7 @@ pub struct ResolvedRoute {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RouteDiagnosticCode {
+    LocalRomMissing,
     LocalRouteUnavailable,
     LocalRouteCollision,
 }
@@ -209,11 +213,13 @@ struct Contributions {
 }
 
 pub fn resolve_launchable_routes<'a>(
+    root: &Path,
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     static_playable_ids: impl IntoIterator<Item = &'a str>,
 ) -> RouteCatalog {
     resolve_launchable_routes_for_platform(
+        root,
         snapshot,
         registry,
         static_playable_ids,
@@ -222,6 +228,7 @@ pub fn resolve_launchable_routes<'a>(
 }
 
 pub fn resolve_launchable_routes_for_platform<'a>(
+    root: &Path,
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     static_playable_ids: impl IntoIterator<Item = &'a str>,
@@ -233,13 +240,19 @@ pub fn resolve_launchable_routes_for_platform<'a>(
     let mut routes = Vec::new();
     let mut diagnostics = Vec::new();
 
-    for playable_id in snapshot.library.keys() {
+    for playable_id in snapshot.games.keys() {
         if static_playable_ids.contains(playable_id) {
             diagnostics.push(static_playable_collision(playable_id));
             continue;
         }
 
-        match resolve_route_with_contributions(snapshot, &contributions, playable_id, platform) {
+        match resolve_route_with_contributions(
+            root,
+            snapshot,
+            &contributions,
+            playable_id,
+            platform,
+        ) {
             Ok(route) => routes.push(route),
             Err(diagnostic) => diagnostics.push(diagnostic),
         }
@@ -252,12 +265,14 @@ pub fn resolve_launchable_routes_for_platform<'a>(
 }
 
 pub fn resolve_route<'a>(
+    root: &Path,
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     static_playable_ids: impl IntoIterator<Item = &'a str>,
     playable_id: &str,
 ) -> Result<ResolvedRoute, RouteUnavailable> {
     resolve_route_for_platform(
+        root,
         snapshot,
         registry,
         static_playable_ids,
@@ -267,6 +282,7 @@ pub fn resolve_route<'a>(
 }
 
 pub fn resolve_route_for_platform<'a>(
+    root: &Path,
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     static_playable_ids: impl IntoIterator<Item = &'a str>,
@@ -281,57 +297,135 @@ pub fn resolve_route_for_platform<'a>(
     }
 
     let contributions = compose_contributions(snapshot, registry);
-    resolve_route_with_contributions(snapshot, &contributions, playable_id, platform)
+    resolve_route_with_contributions(root, snapshot, &contributions, playable_id, platform)
 }
 
 fn resolve_route_with_contributions(
+    root: &Path,
     snapshot: &ConfigSnapshot,
     contributions: &Contributions,
     playable_id: &str,
     platform: RoutePlatform,
 ) -> Result<ResolvedRoute, RouteUnavailable> {
-    let item = snapshot.library.get(playable_id).ok_or_else(|| {
+    let item = snapshot.games.get(playable_id).ok_or_else(|| {
         unavailable(
             Some(playable_id),
-            format!("local playable {playable_id} is not present in library.yaml"),
+            format!("local playable {playable_id} is not present in catalog/games.yaml"),
         )
     })?;
-
-    let release = select_launchable_release(playable_id, &item.releases.0)?;
-    let launch = release
-        .launch
-        .as_ref()
-        .expect("selected release has launch");
-    let target = release
-        .target
-        .as_ref()
-        .expect("selected release has target");
-    let launcher_id = launch.use_launcher.as_ref().ok_or_else(|| {
-        unavailable(
-            Some(playable_id),
-            format!(
-                "release {} has no launch.use launcher selection",
-                release.id.0
-            ),
-        )
-    })?;
-
-    if contributions.launcher_collisions.contains(&launcher_id.0) {
-        return Err(collision(
-            Some(playable_id),
-            format!(
-                "launcher {} is declared by both user configuration and an enabled plugin",
-                launcher_id.0
-            ),
-        ));
+    let mut selected = None;
+    let mut last_error = unavailable(
+        Some(playable_id),
+        format!("local playable {playable_id} has no complete location"),
+    );
+    for key in &item.releases {
+        let Some(release) = snapshot.releases.get(&key.0) else {
+            continue;
+        };
+        for location in snapshot.locations.get(&key.0).into_iter().flatten() {
+            match resolve_located_release(
+                root,
+                snapshot,
+                contributions,
+                playable_id,
+                (&key.0, release),
+                location,
+                platform,
+            ) {
+                Ok(route) => {
+                    // Catalog list order supplies a stable choice without a
+                    // personal preference fold. Still inspect later releases
+                    // so declaration collisions remain fail-closed.
+                    selected.get_or_insert(route);
+                    break;
+                }
+                Err(error) if error.code == RouteDiagnosticCode::LocalRouteCollision => {
+                    return Err(error)
+                }
+                Err(error) => last_error = error,
+            }
+        }
     }
-    let launcher = contributions.launchers.get(&launcher_id.0).ok_or_else(|| {
-        unavailable(
-            Some(playable_id),
-            format!("launcher {} is unavailable", launcher_id.0),
-        )
-    })?;
+    selected.ok_or(last_error)
+}
 
+fn resolve_located_release(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    contributions: &Contributions,
+    playable_id: &str,
+    (release_id, release): (&str, &super::ReleasePayload),
+    target: &Location,
+    platform: RoutePlatform,
+) -> Result<ResolvedRoute, RouteUnavailable> {
+    for id in &contributions.launcher_collisions {
+        let supports = snapshot
+            .launchers
+            .get(id)
+            .and_then(|launcher| launcher.systems.as_ref())
+            .is_some_and(|systems| systems.contains(&release.system.0))
+            || contributions.runtimes.values().any(|runtime| {
+                runtime.app == *id
+                    && runtime
+                        .supports
+                        .as_ref()
+                        .and_then(|supports| supports.systems.as_ref())
+                        .is_some_and(|systems| systems.contains(&release.system.0))
+            });
+        if supports {
+            return Err(collision(
+                Some(playable_id),
+                format!(
+                    "launcher {id} is declared by both device configuration and an enabled plugin"
+                ),
+            ));
+        }
+    }
+    let candidates: Vec<_> = contributions
+        .launchers
+        .values()
+        .filter(|launcher| match platform {
+            RoutePlatform::Android => {
+                launcher.command.as_deref() != Some(RETROARCH_COMMAND) || launcher.android.is_some()
+            }
+            RoutePlatform::Linux => {
+                launcher.command.as_deref() == Some(RETROARCH_COMMAND) && launcher.linux.is_some()
+            }
+        })
+        .filter(|launcher| {
+            // RetroArch is system-agnostic. Its enabled cores declare both app
+            // and supports.systems; that pair contributes the supported system.
+            launcher
+                .systems
+                .as_ref()
+                .is_some_and(|systems| systems.contains(&release.system.0))
+                || (launcher.systems.as_ref().is_none_or(Vec::is_empty)
+                    && contributions.runtimes.values().any(|runtime| {
+                        runtime.app == launcher.id
+                            && (platform == RoutePlatform::Android || runtime.linux.is_some())
+                            && runtime
+                                .supports
+                                .as_ref()
+                                .and_then(|supports| supports.systems.as_ref())
+                                .is_some_and(|systems| systems.contains(&release.system.0))
+                    }))
+        })
+        .collect();
+    let launcher = match candidates.as_slice() {
+        [launcher] => *launcher,
+        [] => {
+            return Err(unavailable(
+                Some(playable_id),
+                format!("no launcher supports system {}", release.system.0),
+            ))
+        }
+        _ => {
+            return Err(unavailable(
+                Some(playable_id),
+                format!("ambiguous launchers for system {}", release.system.0),
+            ))
+        }
+    };
     let system_id = release.system.0.as_str();
     if contributions.system_collisions.contains(system_id) {
         return Err(collision(
@@ -359,18 +453,6 @@ fn resolve_route_with_contributions(
         ));
     }
 
-    if let Some(systems) = &launcher.systems {
-        if !systems.is_empty() && !systems.iter().any(|candidate| candidate == system_id) {
-            return Err(unavailable(
-                Some(playable_id),
-                format!(
-                    "launcher {} does not support system {system_id}",
-                    launcher.id
-                ),
-            ));
-        }
-    }
-
     let command = launcher.command.as_deref().ok_or_else(|| {
         unavailable(
             Some(playable_id),
@@ -386,17 +468,10 @@ fn resolve_route_with_contributions(
             ),
         ));
     }
-    if platform == RoutePlatform::Linux && command == ANDROID_APP_COMMAND {
-        return Err(unavailable(
-            Some(playable_id),
-            format!("launcher {} has no Linux implementation", launcher.id),
-        ));
-    }
-
     let (provider_id, flattened_target, file_target) = match (command, target) {
         (
             ANDROID_APP_COMMAND,
-            Target::ProviderRef {
+            Location::ProviderRef {
                 provider,
                 provider_ref,
             },
@@ -407,7 +482,7 @@ fn resolve_route_with_contributions(
         ),
         (
             RETROARCH_COMMAND,
-            Target::File {
+            Location::File {
                 storage: target_storage,
                 path,
                 ..
@@ -417,12 +492,6 @@ fn resolve_route_with_contributions(
                 storage_id: target_storage.0.clone(),
                 path: path.0.clone(),
             };
-            storage::validate_resolved_file_target(snapshot, &file_target).map_err(|error| {
-                unavailable(
-                    Some(playable_id),
-                    format!("release {} {error}", release.id.0),
-                )
-            })?;
             (
                 launcher_kind.to_owned(),
                 format!("{}:{}", target_storage.0, path.0),
@@ -434,7 +503,7 @@ fn resolve_route_with_contributions(
                 Some(playable_id),
                 format!(
                     "release {} target kind {} is not supported for plugin routes",
-                    release.id.0,
+                    release_id,
                     target_kind(other)
                 ),
             ));
@@ -464,28 +533,42 @@ fn resolve_route_with_contributions(
     }
 
     let runtime = match command {
-        ANDROID_APP_COMMAND => {
-            if launch.runtime.is_some() {
-                return Err(unavailable(
-                    Some(playable_id),
-                    format!("launcher {} does not accept a runtime", launcher.id),
-                ));
-            }
-            None
-        }
+        ANDROID_APP_COMMAND => None,
         RETROARCH_COMMAND => {
-            let runtime_id = launch.runtime.as_ref().ok_or_else(|| {
-                unavailable(
-                    Some(playable_id),
-                    format!("launcher {} requires launch.runtime", launcher.id),
-                )
-            })?;
-            let runtime = contributions.runtimes.get(&runtime_id.0).ok_or_else(|| {
-                unavailable(
-                    Some(playable_id),
-                    format!("runtime {} is unavailable", runtime_id.0),
-                )
-            })?;
+            let runtimes: Vec<_> = contributions
+                .runtimes
+                .values()
+                .filter(|runtime| {
+                    runtime.app == launcher.id
+                        && (platform == RoutePlatform::Android || runtime.linux.is_some())
+                        && runtime
+                            .supports
+                            .as_ref()
+                            .and_then(|supports| supports.systems.as_ref())
+                            .is_some_and(|systems| systems.contains(&release.system.0))
+                })
+                .collect();
+            let runtime = match runtimes.as_slice() {
+                [runtime] => *runtime,
+                [] => {
+                    return Err(unavailable(
+                        Some(playable_id),
+                        format!(
+                            "no runtime supports system {system_id} for launcher {}",
+                            launcher.id
+                        ),
+                    ))
+                }
+                _ => {
+                    return Err(unavailable(
+                        Some(playable_id),
+                        format!(
+                            "ambiguous runtimes for system {system_id} and launcher {}",
+                            launcher.id
+                        ),
+                    ))
+                }
+            };
             if runtime.kind != LIBRETRO_CORE_KIND {
                 return Err(unavailable(
                     Some(playable_id),
@@ -493,35 +576,6 @@ fn resolve_route_with_contributions(
                         "runtime {} has kind {}, expected {LIBRETRO_CORE_KIND}",
                         runtime.id, runtime.kind
                     ),
-                ));
-            }
-            if runtime.app != launcher.id {
-                return Err(unavailable(
-                    Some(playable_id),
-                    format!(
-                        "runtime {} belongs to {}, not launcher {}",
-                        runtime.id, runtime.app, launcher.id
-                    ),
-                ));
-            }
-            let supported_systems = runtime
-                .supports
-                .as_ref()
-                .and_then(|supports| supports.systems.as_ref())
-                .filter(|systems| !systems.is_empty())
-                .ok_or_else(|| {
-                    unavailable(
-                        Some(playable_id),
-                        format!("runtime {} declares no supported systems", runtime.id),
-                    )
-                })?;
-            if !supported_systems
-                .iter()
-                .any(|candidate| candidate == system_id)
-            {
-                return Err(unavailable(
-                    Some(playable_id),
-                    format!("runtime {} does not support system {system_id}", runtime.id),
                 ));
             }
             Some(ResolvedRuntime {
@@ -545,32 +599,26 @@ fn resolve_route_with_contributions(
     let linux_launcher = launcher.linux.as_ref().map(|linux| ResolvedLinuxLauncher {
         executable_env: linux.executable_env.clone(),
     });
-    if command == RETROARCH_COMMAND {
-        let missing_platform = match platform {
-            RoutePlatform::Android => android_component.is_none(),
-            RoutePlatform::Linux => {
-                linux_launcher.is_none()
-                    || runtime
-                        .as_ref()
-                        .and_then(|runtime| runtime.linux_path_env.as_ref())
-                        .is_none()
+    // Observe bytes only after contribution validation. Missing media must not
+    // conceal a declaration collision, but it must permit another healthy copy.
+    if let Some(file_target) = &file_target {
+        storage::resolve_file_target(root, snapshot, file_target).map_err(|error| {
+            RouteDiagnostic {
+                code: if error.is_missing_target() {
+                    RouteDiagnosticCode::LocalRomMissing
+                } else {
+                    RouteDiagnosticCode::LocalRouteUnavailable
+                },
+                message: format!("release {release_id} {error}"),
+                playable_id: Some(playable_id.to_owned()),
             }
-        };
-        if missing_platform {
-            return Err(unavailable(
-                Some(playable_id),
-                format!(
-                    "launcher {} has no {platform:?} implementation",
-                    launcher.id
-                ),
-            ));
-        }
+        })?;
     }
-
+    let item = &snapshot.games[playable_id];
     Ok(ResolvedRoute {
         playable_id: playable_id.to_owned(),
-        title: item.title.clone(),
-        release_id: release.id.0.clone(),
+        title: Some(item.title.clone()),
+        release_id: release_id.to_owned(),
         identity: single_release_identity(item),
         provider_id,
         system_id: system_id.to_owned(),
@@ -586,17 +634,13 @@ fn resolve_route_with_contributions(
     })
 }
 
-fn single_release_identity(item: &LibraryItemPayload) -> Option<GameIdentity> {
-    let mut identities = item
-        .releases
-        .0
-        .iter()
-        .filter_map(|release| release.identity.as_ref())
-        .map(|identity| identity.value.0.as_str());
-    let first = identities.next()?;
-    identities
-        .all(|identity| identity == first)
-        .then(|| GameIdentity::Hash(first.to_owned()))
+fn single_release_identity(item: &GamePayload) -> Option<GameIdentity> {
+    let [key] = item.releases.as_slice() else {
+        return None;
+    };
+    key.0
+        .starts_with("sha256:")
+        .then(|| GameIdentity::Hash(key.0.clone()))
 }
 
 fn compose_contributions(snapshot: &ConfigSnapshot, registry: &PluginRegistry) -> Contributions {
@@ -694,40 +738,13 @@ fn launcher_from_snapshot(id: &str, payload: &AppPayload) -> RouteLauncher {
     }
 }
 
-fn select_launchable_release<'a>(
-    playable_id: &str,
-    releases: &'a [super::LibraryReleasePayload],
-) -> Result<&'a super::LibraryReleasePayload, RouteUnavailable> {
-    let launchable: Vec<&super::LibraryReleasePayload> = releases
-        .iter()
-        .filter(|release| release.target.is_some() && release.launch.is_some())
-        .collect();
-    match launchable.as_slice() {
-        [] => Err(unavailable(
-            Some(playable_id),
-            format!("local playable {playable_id} has no launchable releases"),
-        )),
-        [release] => Ok(*release),
-        many => Err(unavailable(
-            Some(playable_id),
-            format!(
-                "local playable {playable_id} has ambiguous launchable releases: {}",
-                many.iter()
-                    .map(|release| release.id.0.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        )),
-    }
-}
-
-fn target_kind(target: &Target) -> &'static str {
+fn target_kind(target: &Location) -> &'static str {
     match target {
-        Target::File { .. } => "file",
-        Target::FileSet { .. } => "file-set",
-        Target::Executable { .. } => "executable",
-        Target::Url { .. } => "url",
-        Target::ProviderRef { .. } => "provider-ref",
+        Location::File { .. } => "file",
+        Location::FileSet { .. } => "file-set",
+        Location::Executable { .. } => "executable",
+        Location::Url { .. } => "url",
+        Location::ProviderRef { .. } => "provider-ref",
     }
 }
 

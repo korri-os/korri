@@ -1,5 +1,7 @@
-#!/run/current-system/sw/bin/bash
-set -euo pipefail
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl findutils nix systemd
+# shellcheck shell=bash
+set -Eeuo pipefail
 
 # This installer owns only the user service. Refuse a system launch authority
 # instead of stopping it. Prove both managers idle before the one-off cut; a
@@ -70,6 +72,14 @@ case "$action" in
       echo "Wario Land 4 is not provisioned outside the Nix store" >&2
       exit 1
     fi
+    storage_root="$HOME/.local/share/korri"
+    # Validate the parent too: leaf checks cannot detect a blocking file or
+    # prevent installation through a catalog symlink.
+    if [[ -L "$storage_root/catalog" ]] ||
+      [[ -e "$storage_root/catalog" && ! -d "$storage_root/catalog" ]]; then
+      echo "unsafe external Korri catalog directory" >&2
+      exit 1
+    fi
     mkdir -p \
       "$HOME/.config/korrid" \
       "$HOME/.config/systemd/user" \
@@ -78,15 +88,33 @@ case "$action" in
       "$HOME/.local/state/korrid/profiles"
     install -d -m 0700 "$HOME/.local/state/korrid/private"
     deployed_documents="$HOME/.local/state/korrid/deployed-documents.sha256"
-    candidate_documents="$(cat "$handoff/config.yaml" "$handoff/library.yaml" | sha256sum | cut -d' ' -f1)"
-    current_config="$HOME/.local/share/korri/config.yaml"
-    current_library="$HOME/.local/share/korri/library.yaml"
-    if [[ -f "$current_config" || -f "$current_library" ]]; then
-      if [[ ! -f "$current_config" || ! -f "$current_library" ]]; then
+    document_names=(device.yaml catalog/games.yaml catalog/releases.yaml)
+    # Hash each document separately before combining; boundaries affect the digest.
+    document_digest() (
+      cd "$1"
+      sha256sum "${document_names[@]}" | sha256sum | cut -d' ' -f1
+    )
+    for name in "${document_names[@]}"; do
+      [[ -f "$handoff/$name" && ! -L "$handoff/$name" ]] || {
+        echo "missing or unsafe candidate document: $name" >&2; exit 1;
+      }
+    done
+    candidate_documents="$(document_digest "$handoff")"
+    present_documents=0
+    for name in "${document_names[@]}"; do
+      if [[ -e "$storage_root/$name" || -L "$storage_root/$name" ]]; then
+        [[ -f "$storage_root/$name" && ! -L "$storage_root/$name" ]] || {
+          echo "unsafe external Korri document: $name" >&2; exit 1;
+        }
+        present_documents=$((present_documents + 1))
+      fi
+    done
+    if [[ "$present_documents" -gt 0 ]]; then
+      if [[ "$present_documents" -ne 3 ]]; then
         echo "refusing to overwrite a partial external Korri configuration" >&2
         exit 1
       fi
-      current_documents="$(cat "$current_config" "$current_library" | sha256sum | cut -d' ' -f1)"
+      current_documents="$(document_digest "$storage_root")"
       if [[ -f "$deployed_documents" ]]; then
         if [[ "$current_documents" != "$(< "$deployed_documents")" ]]; then
           echo "refusing to overwrite externally edited Korri configuration" >&2
@@ -114,17 +142,20 @@ case "$action" in
       cp "$HOME/.config/korrid/host.toml" "$previous_config"
       had_previous_config=true
     fi
-    previous_device_config="$handoff/config.yaml.previous"
-    previous_library="$handoff/library.yaml.previous"
-    had_previous_device_config=false
-    had_previous_library=false
-    if [[ -f "$HOME/.local/share/korri/config.yaml" ]]; then
-      cp "$HOME/.local/share/korri/config.yaml" "$previous_device_config"
-      had_previous_device_config=true
-    fi
-    if [[ -f "$HOME/.local/share/korri/library.yaml" ]]; then
-      cp "$HOME/.local/share/korri/library.yaml" "$previous_library"
-      had_previous_library=true
+    previous_documents="$handoff/documents.previous"
+    mkdir -p "$previous_documents/catalog"
+    for name in "${document_names[@]}"; do
+      if [[ -f "$storage_root/$name" ]]; then
+        cp "$storage_root/$name" "$previous_documents/$name"
+        cmp -s "$storage_root/$name" "$previous_documents/$name"
+      fi
+    done
+    catalog_was_present=false
+    [[ ! -d "$storage_root/catalog" ]] || catalog_was_present=true
+    had_previous_digest=false
+    if [[ -f "$deployed_documents" ]]; then
+      cp "$deployed_documents" "$handoff/documents.sha256.previous"
+      had_previous_digest=true
     fi
     previous_unit="$handoff/korrid.service.previous"
     had_previous_unit=false
@@ -153,16 +184,23 @@ case "$action" in
       else
         rm -f "$HOME/.config/korrid/host.toml"
       fi
-      if [[ "$had_previous_device_config" == true ]]; then
-        install -m 0644 "$previous_device_config" "$HOME/.local/share/korri/config.yaml"
-      else
-        rm -f "$HOME/.local/share/korri/config.yaml"
+      for name in "${document_names[@]}"; do
+        if [[ -f "$previous_documents/$name" ]]; then
+          install -D -m 0644 "$previous_documents/$name" "$storage_root/$name"
+          cmp -s "$previous_documents/$name" "$storage_root/$name"
+        else
+          rm -f "$storage_root/$name"
+        fi
+      done
+      if [[ "$catalog_was_present" != true ]]; then
+        rmdir "$storage_root/catalog" 2>/dev/null || test ! -e "$storage_root/catalog"
       fi
-      if [[ "$had_previous_library" == true ]]; then
-        install -m 0644 "$previous_library" "$HOME/.local/share/korri/library.yaml"
+      if [[ "$had_previous_digest" == true ]]; then
+        cp "$handoff/documents.sha256.previous" "$deployed_documents"
       else
-        rm -f "$HOME/.local/share/korri/library.yaml"
+        rm -f "$deployed_documents"
       fi
+      rm -f "$deployed_documents.next"
       if [[ "$had_previous_unit" == true ]]; then
         install -m 0644 "$previous_unit" "$HOME/.config/systemd/user/korrid.service"
       else
@@ -200,10 +238,11 @@ case "$action" in
       "$HOME/.config/korrid/host.toml"
     install -m 0600 "$handoff/environment" \
       "$HOME/.config/korrid/environment"
-    install -m 0644 "$handoff/config.yaml" \
-      "$HOME/.local/share/korri/config.yaml"
-    install -m 0644 "$handoff/library.yaml" \
-      "$HOME/.local/share/korri/library.yaml"
+    mkdir -p "$storage_root/catalog"
+    for name in "${document_names[@]}"; do
+      install -m 0644 "$handoff/$name" "$storage_root/$name"
+    done
+    [[ "$(document_digest "$storage_root")" == "$candidate_documents" ]]
     install -m 0755 "$handoff/zao-remote.sh" \
       "$HOME/.local/libexec/korrid-deploy"
     systemctl --user daemon-reload
@@ -217,7 +256,7 @@ case "$action" in
         -H 'content-type: application/json' \
         -d '{"_tag":"app.catalog.snapshot","payload":{}}')" && \
         [[ "$response" == *'"id":"neverball"'* ]] && \
-        [[ "$response" == *'"id":"wl4"'* ]] && \
+        [[ "$response" == *'"id":"01K4J6K8Y00000000000000002"'* ]] && \
         [[ "$response" == *'"title":"Wario Land 4"'* ]] && \
         [[ "$response" == *'"host":"zao"'* ]] && \
         [[ "$response" == *'"kind":"hash","value":"sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414"'* ]]; then

@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash android-tools coreutils curl gnugrep gnused jq websocat
+# shellcheck shell=bash
 # Debug-device helper for focusing exact elements in the bundled Shift portal.
 # Same-URL overlay pages receive only inert Shell-interface classification;
 # focus/probe expressions run only in the uniquely classified main Shell. It
@@ -40,7 +42,7 @@ case "$mode" in
     ;;
   --detail-play)
     [[ $# -le 1 ]] || usage
-    game_id='local-game:wl4'
+    game_id='local-game:01K4J6K8Y00000000000000002'
     title='Wario Land 4'
     ;;
   --launch-location)
@@ -61,7 +63,10 @@ readonly TRUSTED_PORTAL_URL='https://appassets.androidplatform.net/assets/portal
 ADB_BIN="${KORRI_ADB_BIN:-$(command -v adb)}"
 CURL_BIN="${KORRI_CURL_BIN:-$(command -v curl)}"
 JQ_BIN="${KORRI_JQ_BIN:-$(command -v jq)}"
+# The sourced portal-target transport reads these configured executables.
+# shellcheck disable=SC2034
 WEBSOCAT_BIN="${KORRI_WEBSOCAT_BIN:-$(command -v websocat)}"
+# shellcheck disable=SC2034
 TIMEOUT_BIN="${KORRI_TIMEOUT_BIN:-$(command -v timeout)}"
 ADB=("$ADB_BIN" -s "$serial")
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

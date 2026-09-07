@@ -34,12 +34,13 @@ impl DiscoveredGame {
                 },
             )
             .unwrap();
-        assert_eq!(report.added_library_records, 1);
+        assert_eq!(report.added_games, 1);
         let state = ConfigSnapshotCoordinator::new(root.path()).reload();
         assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
         let snapshot = (*state.snapshot).clone();
         let registry = plugin_policy::registry_for_snapshot(&snapshot).unwrap();
         let mut catalog = resolve_launchable_routes_for_platform(
+            root.path(),
             &snapshot,
             &registry,
             std::iter::empty(),

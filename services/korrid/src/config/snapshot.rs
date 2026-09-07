@@ -29,39 +29,30 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::{
-    classify_snapshot_support, decode_config_pair, ConfigSchemaError, ConfigSnapshot, HostPayload,
+    classify_snapshot_support, decode_config_documents, ConfigSchemaError, ConfigSnapshot,
+    HostPayload,
 };
 
-pub const CONFIG_FILE_NAME: &str = "config.yaml";
-pub const LIBRARY_FILE_NAME: &str = "library.yaml";
+pub const DEVICE_FILE_NAME: &str = "device.yaml";
+pub const GAMES_FILE_NAME: &str = "catalog/games.yaml";
+pub const RELEASES_FILE_NAME: &str = "catalog/releases.yaml";
+pub const FILE_NAMES: [&str; 3] = [DEVICE_FILE_NAME, GAMES_FILE_NAME, RELEASES_FILE_NAME];
 pub const EMPTY_DOCUMENT_BYTES: &[u8] = b"{}\n";
 
 const TRANSFORM_CALLBACK_ID: &str = "korri.strict-readable";
-const CONFIG_SECTIONS: &[&str] = &[
-    "host",
-    "storage",
-    "providers",
-    "provider-links",
-    "systems",
-    "launchers",
-    "runtimes",
-    "profiles",
-    "hooks",
-];
-const LIBRARY_SECTIONS: &[&str] = &["collections", "users", "library"];
+use super::{DEVICE_SECTIONS, GAMES_SECTIONS, RELEASES_SECTIONS};
 const ALL_SECTIONS: &[&str] = &[
     "host",
     "storage",
     "providers",
-    "provider-links",
     "systems",
     "launchers",
     "runtimes",
     "profiles",
     "hooks",
-    "collections",
-    "users",
-    "library",
+    "locations",
+    "games",
+    "releases",
 ];
 
 #[derive(Clone, Debug)]
@@ -204,31 +195,32 @@ impl ConfigSnapshotCoordinator {
         self.storage
             .ensure_dir(&root_dir)
             .map_err(|error| storage_error(&root, error))?;
-        ensure_fixed_file(self.storage.as_ref(), &root, CONFIG_FILE_NAME)?;
-        ensure_fixed_file(self.storage.as_ref(), &root, LIBRARY_FILE_NAME)?;
-
-        let config_path = fixed_path(&root, CONFIG_FILE_NAME);
-        let library_path = fixed_path(&root, LIBRARY_FILE_NAME);
-        let config_yaml = self
-            .storage
-            .read(&config_path)
-            .map_err(|error| storage_error(&config_path, error))?;
-        let library_yaml = self
-            .storage
-            .read(&library_path)
-            .map_err(|error| storage_error(&library_path, error))?;
-
-        decode_config_pair(&config_yaml, &library_yaml)
-            .map(|_| ())
+        self.storage
+            .ensure_dir(&fixed_path(&root, "catalog/"))
+            .map_err(|error| storage_error(&root, error))?;
+        let graph_storage = MemoryStorageHost::default();
+        graph_storage
+            .ensure_dir(&root_dir)
+            .map_err(|error| storage_error(&root, error))?;
+        graph_storage
+            .ensure_dir(&fixed_path(&root, "catalog/"))
+            .map_err(|error| storage_error(&root, error))?;
+        let mut documents = Vec::new();
+        for name in FILE_NAMES {
+            ensure_fixed_file(self.storage.as_ref(), &root, name)?;
+            let path = fixed_path(&root, name);
+            let yaml = self
+                .storage
+                .read(&path)
+                .map_err(|error| storage_error(&path, error))?;
+            graph_storage
+                .write(&path, &yaml)
+                .map_err(|error| storage_error(&path, error))?;
+            documents.push(yaml);
+        }
+        decode_config_documents(&documents[0], &documents[1], &documents[2])
             .map_err(|error| content_error(&root, error))?;
 
-        let graph_storage = captured_graph_storage(
-            &root_dir,
-            &config_path,
-            &config_yaml,
-            &library_path,
-            &library_yaml,
-        )?;
         let formats = FormatRegistry::with_builtins();
         let source_config =
             graph_source_config(&root).map_err(|error| CandidateLoadError::Content {
@@ -259,15 +251,14 @@ fn snapshot_from_graph(graph: &LoadedDocumentGraph) -> Result<ConfigSnapshot, Co
         host: decode_graph_host(graph)?,
         storage: decode_graph_collection(graph, "storage")?,
         providers: decode_graph_collection(graph, "providers")?,
-        provider_links: decode_graph_collection(graph, "provider-links")?,
         systems: decode_graph_collection(graph, "systems")?,
         launchers: decode_graph_collection(graph, "launchers")?,
         runtimes: decode_graph_collection(graph, "runtimes")?,
         profiles: decode_graph_collection(graph, "profiles")?,
         hooks: decode_graph_collection(graph, "hooks")?,
-        collections: decode_graph_collection(graph, "collections")?,
-        users: decode_graph_collection(graph, "users")?,
-        library: decode_graph_collection(graph, "library")?,
+        games: decode_graph_collection(graph, "games")?,
+        releases: decode_graph_collection(graph, "releases")?,
+        locations: decode_graph_collection(graph, "locations")?,
     })
 }
 
@@ -333,26 +324,6 @@ fn ensure_fixed_file(
         .map_err(|error| storage_error(&path, error))
 }
 
-fn captured_graph_storage(
-    root_dir: &str,
-    config_path: &str,
-    config_yaml: &str,
-    library_path: &str,
-    library_yaml: &str,
-) -> Result<MemoryStorageHost, CandidateLoadError> {
-    let storage = MemoryStorageHost::default();
-    storage
-        .ensure_dir(root_dir)
-        .map_err(|error| storage_error(root_dir, error))?;
-    storage
-        .write(config_path, config_yaml)
-        .map_err(|error| storage_error(config_path, error))?;
-    storage
-        .write(library_path, library_yaml)
-        .map_err(|error| storage_error(library_path, error))?;
-    Ok(storage)
-}
-
 fn graph_source_config(
     root: &str,
 ) -> Result<proseql_storage::source_config::NormalizedSourceConfig, EngineError> {
@@ -379,8 +350,9 @@ fn graph_source_config(
                     root: root.to_owned(),
                     optional: false,
                     include: Some(vec![
-                        CONFIG_FILE_NAME.to_owned(),
-                        LIBRARY_FILE_NAME.to_owned(),
+                        DEVICE_FILE_NAME.to_owned(),
+                        GAMES_FILE_NAME.to_owned(),
+                        RELEASES_FILE_NAME.to_owned(),
                     ]),
                     exclude: Vec::new(),
                     collections: Some(SourceCollectionSelection::Named(
@@ -431,8 +403,9 @@ fn readable_document_to_graph(file_name: &str, document: &Value) -> Result<Value
         return Err(format!("{file_name}: readable document must be an object"));
     };
     let allowed = match file_name {
-        CONFIG_FILE_NAME => CONFIG_SECTIONS,
-        LIBRARY_FILE_NAME => LIBRARY_SECTIONS,
+        DEVICE_FILE_NAME => DEVICE_SECTIONS,
+        "games.yaml" => GAMES_SECTIONS,
+        "releases.yaml" => RELEASES_SECTIONS,
         other => return Err(format!("unexpected readable document {other}")),
     };
 
@@ -483,8 +456,9 @@ fn sanitize_message(root: &str, message: &str) -> String {
 fn fixed_file_label(path: &str) -> &str {
     let name = Path::new(path).file_name().and_then(|value| value.to_str());
     match name {
-        Some(CONFIG_FILE_NAME) => CONFIG_FILE_NAME,
-        Some(LIBRARY_FILE_NAME) => LIBRARY_FILE_NAME,
+        Some(DEVICE_FILE_NAME) => DEVICE_FILE_NAME,
+        Some("games.yaml") => GAMES_FILE_NAME,
+        Some("releases.yaml") => RELEASES_FILE_NAME,
         _ => "fixed local configuration",
     }
 }

@@ -4,6 +4,10 @@
 # THROWAWAY PROTOTYPE implementation; invoked by run-spike.sh in its devshell.
 set -euo pipefail
 
+# Child Nix-shebang helpers return JSON. Do not replay this development
+# shell's startup banner inside their captured stdout.
+unset shellHook
+
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
 CRATE="$ROOT/services/korrid"
 GENERATED_TS="$ROOT/contracts/generated/korrid.ts"
@@ -19,10 +23,12 @@ KORRI_PLUGIN_ROUTE_REVIEW_IN_SHELL=1 "$CRATE/plugin-route-review.sh"
 (
   hostile_android_review_tmp="$(mktemp -d)"
   trap 'rm -rf "$hostile_android_review_tmp"' EXIT
-  hostile_checkpoint_library="$hostile_android_review_tmp/ambient-library.yaml"
+  hostile_checkpoint_library="$hostile_android_review_tmp/ambient-games.yaml"
   printf 'hostile ambient checkpoint library\n' >"$hostile_checkpoint_library"
   KORRI_ANDROID_APP_PACKAGE=ambient.hostile.package \
-  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY="$hostile_checkpoint_library" \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE="$hostile_checkpoint_library" \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES="$hostile_checkpoint_library" \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES="$hostile_checkpoint_library" \
   KORRI_DEVICE_SCRIPT_REVIEW_JOURNEY_START_MODE=always-fail \
   KORRI_JOURNEY_EXPECTED_TITLE='Ambient Hostile Title' \
     "$CRATE/android-device-script-review.sh"
@@ -35,15 +41,17 @@ sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
 
 cd "$ROOT/clients/portal"
 bun install --frozen-lockfile --ignore-scripts
-cd "$ROOT/surfaces/shift"
-bun install --frozen-lockfile --ignore-scripts
-
-# The portal compiles Shift from source. Both packages must resolve React to
-# the portal-owned instance or ReactDOM rejects every Shift hook at runtime.
-for package in react react-dom; do
-  rm -rf "$ROOT/surfaces/shift/node_modules/$package"
-  ln -s "$ROOT/clients/portal/node_modules/$package" \
-    "$ROOT/surfaces/shift/node_modules/$package"
+# Both registered surfaces compile from source and must share the portal's
+# React instance. A missing local dependency must not fall through to a parent
+# checkout when this check runs in a worktree.
+for surface in shift pico; do
+  cd "$ROOT/surfaces/$surface"
+  bun install --frozen-lockfile --ignore-scripts
+  for package in react react-dom; do
+    rm -rf "$ROOT/surfaces/$surface/node_modules/$package"
+    ln -s "$ROOT/clients/portal/node_modules/$package" \
+      "$ROOT/surfaces/$surface/node_modules/$package"
+  done
 done
 
 cd "$ROOT/clients/portal"
@@ -63,9 +71,14 @@ export KORRID_RPC_CAPABILITY="check-capability"
 export KORRID_ADDRESS="127.0.0.1:49117"
 export KORRID_SPIKE_URL="http://$KORRID_ADDRESS"
 local_storage_root="$(mktemp -d)"
-cp "$ROOT/docs/research/retroarch-plugin-route/config.yaml" "$local_storage_root/config.yaml"
-cp "$ROOT/docs/research/retroarch-plugin-route/library.yaml" "$local_storage_root/library.yaml"
+mkdir -p "$local_storage_root/catalog"
+# A provider app exercises brain-only catalog RPC without a private ROM dump.
+# The discovery and launch tests above supply real files for storage routes.
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/device.yaml" "$local_storage_root/device.yaml"
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml" "$local_storage_root/catalog/games.yaml"
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml" "$local_storage_root/catalog/releases.yaml"
 export KORRI_LOCAL_STORAGE_ROOT="$local_storage_root"
+export KORRID_PRIVATE_STATE_ROOT="$local_storage_root/private"
 if (exec 9<>/dev/tcp/127.0.0.1/49117) 2>/dev/null; then
   echo 'korrid check port 49117 is already occupied' >&2
   exit 1
@@ -107,7 +120,7 @@ local_games="$(curl --fail --silent "$KORRID_SPIKE_URL/rpc" \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $KORRID_RPC_CAPABILITY" \
   -d '{"_tag":"app.local-games.list","payload":{}}')"
-if [[ "$local_games" != *'"id":"wl4"'* ]]; then
+if [[ "$local_games" != *'"id":"01K4J6K8Y00000000000000001"'* ]]; then
   echo "korrid smoke did not exercise brain-only local games" >&2
   exit 1
 fi

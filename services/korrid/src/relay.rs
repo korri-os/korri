@@ -1695,8 +1695,9 @@ mod tests {
                 .len(),
             1
         );
-        let snapshot = crate::config::decode_config_pair(
+        let snapshot = crate::config::decode_config_documents(
             "host:\n  relays:\n    - wss://relay.example.com\n",
+            "{}\n",
             "{}\n",
         )
         .unwrap();
