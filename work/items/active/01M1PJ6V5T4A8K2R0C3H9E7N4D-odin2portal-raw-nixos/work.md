@@ -53,7 +53,7 @@ go through tethered `fastboot boot` or an SD-card root. Internal
 | Boot | Linux 7.2.0, AYN U-Boot -> systemd-boot -> NixOS; Linux 7.0.2 rescue specialisation retained |
 | Kernel patches | 58 ROCKNIX patches plus the nixpkgs RANDSTRUCT seed; `0010-msm-resource-cleanup.patch` disabled after a controlled hardware test |
 | GPU | Turnip Adreno 740, GL 4.6; Linux 7.2 GPU load produced no GMU timeout |
-| WiFi | `vrackie` autoconnect, 1080 Mbit/s TX |
+| WiFi | workshop profile autoconnect, 1080 Mbit/s TX |
 | Audio | `korri` PipeWire graph; UCM HiFi Speaker/Headphones sinks; 440 Hz tone audible |
 | Input | AYN gamepad, touch screen, and two force-feedback devices present; both haptic writes felt |
 | SD bus | 37.5 MHz, 4-bit SD high-speed at 3.3 V; UHS is not active |

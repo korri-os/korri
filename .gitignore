@@ -18,3 +18,7 @@ local.env
 .android-sdk/
 dist/
 clients/android/app/src/main/assets/portal/
+
+# Device secrets are supplied out of band (see nix/wifi.nix).
+*.wifi.env
+wifi.env

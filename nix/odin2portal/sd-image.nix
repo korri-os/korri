@@ -220,22 +220,6 @@
         cp ${loaderConf} ./firmware/loader/loader.conf
         cp ${entry} ./firmware/loader/entries/nixos-generation-1.conf
       '';
-    # The WiFi key is supplied out of band and never enters the flake. A
-    # flake build sees only git-tracked files, so a gitignored path inside
-    # the repo is invisible to it by design. Instead the build reads
-    # $ODIN2PORTAL_WIFI_ENV from the build host's environment (requires
-    # --impure), a file of the form `WIFI_PSK=...` that wifi.nix consumes.
-    # When unset the image still builds and boots; the WiFi profile stays
-    # inactive until /etc/korri/wifi.env is placed on the device.
-    populateRootCommands =
-      let
-        wifiEnvPath = builtins.getEnv "ODIN2PORTAL_WIFI_ENV";
-      in
-      lib.optionalString (wifiEnvPath != "") ''
-        mkdir -p ./files/etc/korri
-        install -m 0600 ${/. + wifiEnvPath} ./files/etc/korri/wifi.env
-      '';
-
     # The shared builder writes an MBR table with the boot partition typed
     # 0x0b (W95 FAT32). Two things want GPT instead. The UEFI spec defines
     # an EFI System Partition as a GPT partition with a specific type GUID;
