@@ -1,0 +1,32 @@
+# Extracted from nix-on-rocks packages/inputplumber-rk3566-maps/maps/devices/01-rg353m.yaml,
+# imported by legacy:product/systems/nixos/images/platforms/rocknix-rk3566.nix.
+# Native Linux exposes gpio-keys-control instead of ROCKNIX's retrogame_joypad.
+version: 1
+kind: CompositeDevice
+name: Anbernic RG353M Layout
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        # The working native SD image uses the RG353P DT with panel fixes.
+        # These are its observed model and compatible strings, not ROCKNIX's.
+        - name: model
+          value: Anbernic
+        - name: compatible
+          value: "anbernic,rg353p*"
+# Keep inputd's one-source ownership invariant. Sticks are a separate device
+# on this kernel and are deliberately not claimed by this button-only slice.
+maximum_sources: 1
+source_devices:
+  - group: gamepad
+    evdev:
+      name: gpio-keys-control
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: rocknix_rg353m_map
+options:
+  auto_manage: true
+# Same xb360 target selected by the legacy RK3566 composition. No keyboard
+# translation or mouse emulation is needed for the browser Gamepad API.
+target_devices:
+  - xb360

@@ -15,6 +15,7 @@ in
   inherit configuration;
   sdImage = configuration.config.system.build.sdImage;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
+  inputplumberData = pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
   usbGadgetCheck =
     pkgs:
     pkgs.callPackage ./usb-gadget-check.nix {

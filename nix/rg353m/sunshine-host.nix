@@ -8,6 +8,11 @@
 
 let
   system = pkgs.stdenv.hostPlatform.system;
+  inputplumberData = import ../../services/inputd/nix/inputplumber-data.nix { inherit pkgs; };
+  inputplumber = inputplumberData.composeResolved {
+    inputplumberKorri = korri.packages.${system}.inputplumber-korri;
+    additionalDataPackages = [ korri.packages.${system}.rg353m-inputplumber-data ];
+  };
 in
 {
   # Keep this device profile thin. Korri's shared host module owns Sunshine,
@@ -24,11 +29,18 @@ in
   };
 
   services.korriBundle = {
-    initialPackage = korri.packages.${system}.korri-bundle;
+    # Bundle launch owns both the executable and XDG_DATA_DIRS. Package the
+    # RG353M map into that same root so updates and reboots cannot drop it.
+    initialPackage = import ../../services/inputd/nix/korri-bundle.nix {
+      inherit pkgs;
+      inputdPackage = korri.packages.${system}.korri-inputd;
+      inputplumberKorri = inputplumber;
+      korridPackage = korri.packages.${system}.korrid;
+    };
     launcherPackage = korri.packages.${system}.korri-inputd;
   };
   services.korriLinuxInput = {
-    provider.package = korri.packages.${system}.inputplumber-korri;
+    provider.package = inputplumber;
     inputd.package = korri.packages.${system}.korri-inputd;
   };
   services.korridLinuxDevice.package = korri.packages.${system}.korrid;

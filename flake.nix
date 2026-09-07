@@ -114,7 +114,11 @@
           korrid = korridPackage;
           default = self.packages.${system}.korrid;
         }
-        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux inputplumber.packages
+        // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
+          inputplumber.packages // {
+            rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+          }
+        )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
           rg353m-sd-image = rg353m.sdImage;
           rg353m-uboot = rg353m.uboot;
@@ -136,6 +140,7 @@
           inputplumber.checks
           // {
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
+            rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
           }
         );
       }
