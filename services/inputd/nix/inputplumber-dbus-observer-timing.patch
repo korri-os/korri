@@ -1,0 +1,132 @@
+Keep one native event plus DBus notifications out of the timed chord path.
+
+--- a/src/input/composite_device/mod.rs
++++ b/src/input/composite_device/mod.rs
+@@ -0,0 +1 @@
++mod chord_timing;
+@@ -46 +47,3 @@
+-use self::{client::CompositeDeviceClient, command::CompositeCommand};
++use self::{
++    chord_timing::requires_chord_timing, client::CompositeDeviceClient, command::CompositeCommand,
++};
+@@ -925 +928 @@
+-        if events.len() > 1 {
++        if requires_chord_timing(&events) {
+--- a/src/input/composite_device/chord_timing.rs
++++ b/src/input/composite_device/chord_timing.rs
+@@ -0,0 +1,115 @@
++use crate::input::{capability::Capability, event::native::NativeEvent};
++
++/// Decide whether a profile's outputs need the existing chord scheduler.
++pub(super) fn requires_chord_timing(events: &[NativeEvent]) -> bool {
++    if events.len() <= 1 {
++        return false;
++    }
++
++    // A DBus notification observes one native output; it is not another
++    // emulated button. Timing it as a chord stretches that output's release.
++    // Preserve the existing scheduler for genuine multi-output chords and
++    // for DBus-only sequences.
++    let native_outputs = events
++        .iter()
++        .filter(|event| !matches!(event.as_capability(), Capability::DBus(_)))
++        .count();
++    native_outputs != 1
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::input::{
++        capability::{Gamepad, GamepadButton, Keyboard},
++        event::{dbus::Action, value::InputValue},
++    };
++
++    fn event(capability: Capability, pressed: bool) -> NativeEvent {
++        NativeEvent::new(capability, InputValue::Bool(pressed))
++    }
++
++    fn dpad(pressed: bool) -> NativeEvent {
++        event(
++            Capability::Gamepad(Gamepad::Button(GamepadButton::DPadRight)),
++            pressed,
++        )
++    }
++
++    fn notification(pressed: bool) -> NativeEvent {
++        event(Capability::DBus(Action::Right), pressed)
++    }
++
++    #[test]
++    fn mirrored_gamepad_press_and_release_are_not_chords() {
++        for pressed in [true, false] {
++            assert!(!requires_chord_timing(&[
++                dpad(pressed),
++                notification(pressed)
++            ]));
++            assert!(!requires_chord_timing(&[
++                notification(pressed),
++                dpad(pressed)
++            ]));
++        }
++    }
++
++    #[test]
++    fn several_notifications_do_not_delay_one_native_output() {
++        for pressed in [true, false] {
++            assert!(!requires_chord_timing(&[
++                dpad(pressed),
++                notification(pressed),
++                event(Capability::DBus(Action::Custom("observer".into())), pressed),
++            ]));
++        }
++    }
++
++    #[test]
++    fn keyboard_observation_is_not_a_button_combination() {
++        for pressed in [true, false] {
++            assert!(!requires_chord_timing(&[
++                event(Capability::Keyboard(Keyboard::KeyA), pressed),
++                notification(pressed),
++            ]));
++        }
++    }
++
++    #[test]
++    fn genuine_chords_keep_timing_with_or_without_notifications() {
++        for pressed in [true, false] {
++            let mut events = vec![
++                event(
++                    Capability::Gamepad(Gamepad::Button(GamepadButton::Guide)),
++                    pressed,
++                ),
++                event(
++                    Capability::Gamepad(Gamepad::Button(GamepadButton::South)),
++                    pressed,
++                ),
++            ];
++            assert!(requires_chord_timing(&events));
++            events.push(notification(pressed));
++            assert!(requires_chord_timing(&events));
++            assert!(requires_chord_timing(&[
++                event(Capability::Keyboard(Keyboard::KeyLeftCtrl), pressed),
++                event(Capability::Keyboard(Keyboard::KeyA), pressed),
++            ]));
++        }
++    }
++
++    #[test]
++    fn pure_dbus_sequences_keep_existing_timing() {
++        assert!(requires_chord_timing(&[
++            notification(true),
++            event(Capability::DBus(Action::Accept), true),
++        ]));
++    }
++
++    #[test]
++    fn empty_and_single_outputs_remain_immediate() {
++        assert!(!requires_chord_timing(&[]));
++        assert!(!requires_chord_timing(&[dpad(true)]));
++        assert!(!requires_chord_timing(&[notification(false)]));
++    }
++}

@@ -26,7 +26,9 @@ assert
   inputplumberRuntime.upstream.sourceHash == "sha256-KiSroDcaWvzr5sP0jzr1GFyk0lHbtCFJrP3g5/b3hLQ=";
 assert
   inputplumberRuntime.upstream.cargoHash == "sha256-VwQ38Jv5OvyBqo9BBTnpUjgNwAbWyIdUKFKXsGC6+Mo=";
-assert inputplumberRuntime.upstream.patches == [ ];
+assert inputplumberRuntime.upstream.patches == [ ./inputplumber-dbus-observer-timing.patch ];
+assert inputplumberRuntime.patches == inputplumberRuntime.upstream.patches;
+assert inputplumberRuntime.doCheck;
 assert inputplumberKorri.version == inputplumberRuntime.version;
 assert inputplumberKorri.upstream == inputplumberRuntime.upstream;
 pkgs.runCommand "inputplumber-korri-package-check"
