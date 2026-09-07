@@ -13,6 +13,9 @@ let
 in
 {
   inherit configuration;
+  portalPreviewConfiguration = configuration.extendModules {
+    modules = [ (import ./portal-preview.nix { inherit korri; }) ];
+  };
   sdImage = configuration.config.system.build.sdImage;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   inputplumberData = pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };

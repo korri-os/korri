@@ -219,7 +219,12 @@ export const LaunchablesState = {
       for (const failure of localGames.payload.failures ?? []) {
         failures.push(`local games: ${failure.code}`)
       }
-    } else if (localGames?._tag === "Err") {
+    } else if (
+      localGames?._tag === "Err" &&
+      localGames.payload.code !== "OperationUnsupported"
+    ) {
+      // An absent inventory capability is not a failed read. The catalog
+      // remains authoritative; no local inventory count is invented.
       failures.push(`local games: ${localGames.payload.code}`)
     }
 

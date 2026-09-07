@@ -6,20 +6,15 @@ import {
   type KorriNativeBridgeSurface,
   type KorriSessionBridgeSurface,
 } from "@contracts/bridge/korri-native-bridge"
+import type { KorriRpcBridgeSurface } from "@contracts/bridge/korri-rpc-bridge"
 import ReactDOM from "react-dom/client"
-import {
-  createInMemoryLauncherBridge,
-  createKorriNativeLauncherBridge,
-} from "./bridge/launcher-bridge"
 import { createInputBus } from "./input/bus"
 import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
 import { createKorriNativeAdapter } from "./input/korri-native-adapter"
 import { createSpatialFocusController } from "./input/spatial-focus"
-import {
-  createHttpKorridClient,
-  createInMemoryKorridClient,
-} from "./korrid/client"
+import { createHttpKorridClient } from "./korrid/client"
+import { createPortalConnection } from "./korrid/portal-connection"
 import { createInMemoryOverlayController } from "./overlay/in-memory-overlay-controller"
 import { createOverlayController } from "./overlay/overlay-controller"
 import { createNativeOverlayHost } from "./overlay/overlay-host"
@@ -38,6 +33,7 @@ import "./index.css"
 declare global {
   interface Window {
     KorriNative?: KorriNativeBridgeSurface
+    KorriRpc?: KorriRpcBridgeSurface
     KorriSession?: KorriSessionBridgeSurface
   }
 }
@@ -120,8 +116,7 @@ if (isSessionScreen) {
     )
   }
 } else {
-  // Composition root: this is the one place that knows whether we're inside
-  // the Android shell or a desktop browser dev session.
+  // The shell supplies RPC credentials independently of native hardware.
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
   // Android already translates hardware in Kotlin. Browser polling there
@@ -129,20 +124,7 @@ if (isSessionScreen) {
   bus.use(window.KorriNative ? createKorriNativeAdapter() : createGamepadAdapter())
   createSpatialFocusController(bus)
 
-  const bridge = window.KorriNative
-    ? createKorriNativeLauncherBridge(window.KorriNative)
-    : createInMemoryLauncherBridge()
-
-  // The brain: embedded korrid inside the shell, in-memory in browser dev.
-  const korridPort = window.KorriNative?.korridPort() ?? -1
-  const korridCapability = window.KorriNative?.korridCapability() ?? ""
-  const korrid =
-    korridPort > 0 && korridCapability !== ""
-      ? createHttpKorridClient(
-          `http://127.0.0.1:${korridPort}`,
-          korridCapability,
-        )
-      : createInMemoryKorridClient()
+  const { bridge, korrid } = createPortalConnection(window.KorriRpc, window.KorriNative)
 
   root.render(
     <SurfaceRoot

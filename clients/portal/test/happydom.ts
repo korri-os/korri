@@ -1,32 +1,30 @@
-import { plugin } from "bun"
+import { mock } from "bun:test"
 import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 
 GlobalRegistrator.register()
 
 /**
- * Shift is compiled from source by its host but installs its own toolchain, so
- * files under `surfaces/shift/src` would otherwise resolve React from Shift's
- * own `node_modules`. Two React copies in one tree make every hook the surface
- * renders throw, so the host pins React to the single copy it owns.
+ * Surfaces install their own toolchains, but React belongs to their host.
+ * The onResolve-only plugin did not unify React under Bun 1.3.5. Register
+ * each surface's peer module path before loading either surface, so ESM and
+ * CommonJS consumers get the real host exports. No React behavior is replaced.
+ * Vite's React plugin provides the equivalent react/react-dom deduplication.
  */
 const requireFromPortal = createRequire(import.meta.url)
-const pinned = new Map(
-  [
-    "react",
-    "react/jsx-runtime",
-    "react/jsx-dev-runtime",
-    "react-dom",
-    "react-dom/client",
-  ].map(specifier => [specifier, requireFromPortal.resolve(specifier)]),
-)
-
-plugin({
-  name: "pin-host-react",
-  setup(build) {
-    build.onResolve({ filter: /^react(-dom)?(\/.+)?$/ }, ({ path }) => {
-      const resolved = pinned.get(path)
-      return resolved === undefined ? undefined : { path: resolved }
-    })
-  },
-})
+for (const specifier of [
+  "react",
+  "react/jsx-runtime",
+  "react/jsx-dev-runtime",
+  "react-dom",
+  "react-dom/client",
+]) {
+  const hostExports = requireFromPortal(specifier)
+  for (const surface of ["@korri/shift", "@korri/pico"]) {
+    const peerPath = fileURLToPath(
+      new URL(`../node_modules/${specifier}`, import.meta.resolve(surface)),
+    )
+    mock.module(peerPath, () => hostExports)
+  }
+}

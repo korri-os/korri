@@ -282,12 +282,15 @@ impl PeerRpcServer {
         Self::new_with_clock(app, private_state_root, Arc::new(move || now))
     }
 
-    pub fn router(self) -> Router {
-        Router::new()
+    pub fn router(self, portal: Option<Router>) -> Router {
+        let peer = Router::new()
             .route("/peer-rpc", post(peer_rpc))
-            .route("/rpc", post(reject_plaintext))
             .layer(DefaultBodyLimit::max(MAX_PEER_EVENT_BYTES))
-            .with_state(self)
+            .with_state(self);
+        match portal {
+            Some(portal) => peer.merge(portal),
+            None => peer.route("/rpc", post(reject_plaintext)),
+        }
     }
 
     async fn handle(&self, event_json: &str, now: u64) -> Result<String, PeerRpcError> {

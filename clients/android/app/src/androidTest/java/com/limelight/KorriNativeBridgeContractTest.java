@@ -44,8 +44,6 @@ public class KorriNativeBridgeContractTest {
             "queryStreamHosts",
             "queryStreamApps",
             "startStream",
-            "korridPort",
-            "korridCapability",
             "storageAccess",
             "openStorageAccessSettings",
             "backgroundNotice",
@@ -83,11 +81,11 @@ public class KorriNativeBridgeContractTest {
     public void safeReadOnlyBridgeMethodsReturnTreatyShapes() throws Exception {
         withReadyBridge((scenario, webView) -> {
             int port = Integer.parseInt(evaluateJavascript(webView,
-                    "window.KorriNative.korridPort()"));
+                    "window.KorriRpc.korridPort()"));
             assertTrue("korridPort should expose a running embedded korrid port", port > 0);
 
             String capability = parseJavaScriptString(evaluateJavascript(webView,
-                    "window.KorriNative.korridCapability()"));
+                    "window.KorriRpc.korridCapability()"));
             assertFalse("korridCapability should be non-empty", capability.isEmpty());
 
             JSONObject storage = bridgeJson(webView, "storageAccess");
@@ -233,7 +231,10 @@ public class KorriNativeBridgeContractTest {
         while (SystemClock.elapsedRealtime() < deadline) {
             lastResult = tryEvaluateJavascript(webView,
                     "typeof window.KorriNative === 'object' "
-                            + "&& typeof window.KorriNative.bridgeVersion === 'function'");
+                            + "&& typeof window.KorriNative.bridgeVersion === 'function' "
+                            + "&& typeof window.KorriRpc === 'object' "
+                            + "&& typeof window.KorriRpc.korridPort === 'function' "
+                            + "&& typeof window.KorriRpc.korridCapability === 'function'");
             if ("true".equals(lastResult)) {
                 return;
             }

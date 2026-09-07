@@ -203,8 +203,8 @@ public class KorriFederationAcceptanceTest {
     }
 
     private void readAuthority(WebView web) throws Exception {
-        port = Integer.parseInt(js(web, "window.KorriNative.korridPort()"));
-        capability = new JSONArray("[" + js(web, "window.KorriNative.korridCapability()") + "]").getString(0);
+        port = Integer.parseInt(js(web, "window.KorriRpc.korridPort()"));
+        capability = new JSONArray("[" + js(web, "window.KorriRpc.korridCapability()") + "]").getString(0);
         assertTrue(port > 0);
         assertFalse(capability.isEmpty());
     }

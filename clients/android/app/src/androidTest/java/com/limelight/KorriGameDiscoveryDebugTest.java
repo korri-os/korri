@@ -70,9 +70,9 @@ public class KorriGameDiscoveryDebugTest {
         assertNotNull("receipt should be issued for an Android-approved folder", receipt);
         assertTrue("receipt should not be empty", receipt.length() > 0);
 
-        int port = Integer.parseInt(evaluateJavascript(webView, "window.KorriNative.korridPort()"));
+        int port = Integer.parseInt(evaluateJavascript(webView, "window.KorriRpc.korridPort()"));
         String capability = new JSONObject("{\"value\":"
-                + evaluateJavascript(webView, "window.KorriNative.korridCapability()")
+                + evaluateJavascript(webView, "window.KorriRpc.korridCapability()")
                 + "}").getString("value");
         JSONObject request = new JSONObject();
         request.put("_tag", "app.discovery.registerReceipt");
@@ -229,8 +229,9 @@ public class KorriGameDiscoveryDebugTest {
         while (SystemClock.elapsedRealtime() < deadline) {
             lastResult = evaluateJavascript(webView,
                     "typeof window.KorriNative === 'object' "
-                            + "&& typeof window.KorriNative.korridPort === 'function' "
-                            + "&& typeof window.KorriNative.korridCapability === 'function' "
+                            + "&& typeof window.KorriRpc === 'object' "
+                            + "&& typeof window.KorriRpc.korridPort === 'function' "
+                            + "&& typeof window.KorriRpc.korridCapability === 'function' "
                             + "&& typeof window.KorriNative.launchLocal === 'function'");
             if ("true".equals(lastResult)) {
                 return;

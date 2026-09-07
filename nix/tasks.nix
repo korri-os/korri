@@ -224,7 +224,11 @@ let
 
     odin2portal-launcher-device-acceptance = {
       description = "Verify the installed Odin launcher image and signer without device writes.";
-      runtimeInputs = androidInputs ++ [ pkgs.android-tools pkgs.gnugrep pkgs.gnused ];
+      runtimeInputs = androidInputs ++ [
+        pkgs.android-tools
+        pkgs.gnugrep
+        pkgs.gnused
+      ];
       env = androidEnv;
       usageSuffix = " -- <adb-serial> <evidence-directory>";
       script = ''
@@ -235,7 +239,11 @@ let
 
     odin2portal-launcher-device-acceptance-check = {
       description = "Test launcher device acceptance safety and optional pre-install rejection.";
-      runtimeInputs = androidInputs ++ [ pkgs.android-tools pkgs.gnugrep pkgs.gnused ];
+      runtimeInputs = androidInputs ++ [
+        pkgs.android-tools
+        pkgs.gnugrep
+        pkgs.gnused
+      ];
       env = androidEnv;
       script = ''
         ${androidSetup}
@@ -643,6 +651,36 @@ let
       '';
     };
 
+    portal-deploy = {
+      description = "Build and update the device portal without a NixOS switch; supports --rollback and --status.";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.openssh
+      ];
+      usageSuffix = " -- user@device [--ssh-config FILE] [--rollback | --status]";
+      script = ''
+        exec python3 "$KORRI_ROOT/clients/portal/nix/deploy.py" "$@"
+      '';
+    };
+
+    portal-runtime-check = {
+      description = "Test web-bundle selection and rollback with real Nix profiles and HTTP.";
+      runtimeInputs = [
+        pkgs.bash
+        pkgs.nix
+        pkgs.coreutils
+        pkgs.findutils
+        pkgs.diffutils
+        pkgs.curl
+        pkgs.python3
+        pkgs.util-linux
+      ];
+      script = ''
+        exec bash "$KORRI_ROOT/clients/portal/nix/select.test.sh"
+      '';
+    };
+
     portal-bundle = {
       description = "Build the portal into the Android app assets.";
       runtimeInputs = [
@@ -665,6 +703,8 @@ let
       runtimeInputs = [ pkgs.bun ];
       script = ''
         cd "$KORRI_ROOT/surfaces/shift"
+        bun install --frozen-lockfile --ignore-scripts
+        cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/clients/portal"
         bun install --frozen-lockfile --ignore-scripts

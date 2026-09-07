@@ -354,6 +354,7 @@ async fn rpc_list_and_invoke_stay_unavailable_without_current_route_context() {
         &config,
         None::<std::path::PathBuf>,
         root.path().join("private"),
+        None,
     )
     .1;
 

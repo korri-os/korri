@@ -40,12 +40,14 @@
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };
         korrid-linux-device = import ./services/korrid/nixos-module.nix { korri = self; };
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
+        korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
       };
     in
     {
       inherit nixosModules;
       nixosConfigurations = {
         rg353m = rg353m.configuration;
+        rg353m-portal-preview = rg353m.portalPreviewConfiguration;
         odin2portal = odin2portal.configuration;
       };
     }
@@ -112,11 +114,13 @@
         devShells.retroarch = import ./plugins/retroarch/android/devshell.nix { inherit pkgs; };
         packages = {
           korrid = korridPackage;
+          korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };
           default = self.packages.${system}.korrid;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.packages // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -141,6 +145,10 @@
           // {
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
+            korri-portal-module = import ./clients/portal/nix/module-check.nix {
+              inherit pkgs nixpkgs;
+              korri = self;
+            };
           }
         );
       }

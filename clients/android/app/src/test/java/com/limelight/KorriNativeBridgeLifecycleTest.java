@@ -27,7 +27,7 @@ public class KorriNativeBridgeLifecycleTest {
         lifecycle.onMainFramePageStarted(trustedPortal, policy, operations);
         lifecycle.onMainFramePageFinished();
 
-        assertEquals(Arrays.asList("add"), operations.calls);
+        assertEquals(Arrays.asList("add:KorriNative", "add:KorriRpc"), operations.calls);
     }
 
     @Test
@@ -49,7 +49,22 @@ public class KorriNativeBridgeLifecycleTest {
         lifecycle.onMainFramePageStarted(Uri.parse("https://example.com/page"), policy, operations);
         lifecycle.onMainFramePageFinished();
 
-        assertEquals(Arrays.asList("add", "remove"), operations.calls);
+        assertEquals(Arrays.asList("add:KorriNative", "add:KorriRpc",
+                "remove:KorriNative", "remove:KorriRpc"), operations.calls);
+    }
+
+    @Test
+    public void untrustedInitialDocumentReceivesNeitherBinding() {
+        RecordingBridgeOperations operations = new RecordingBridgeOperations();
+        lifecycle.installBeforeInitialLoad(Uri.parse("https://example.com/"), policy, operations);
+        assertTrue(operations.calls.isEmpty());
+    }
+
+    @Test
+    public void teardownRemovesBothBindings() {
+        RecordingBridgeOperations operations = new RecordingBridgeOperations();
+        lifecycle.removeJavascriptInterfaces(operations);
+        assertEquals(Arrays.asList("remove:KorriNative", "remove:KorriRpc"), operations.calls);
     }
 
     @Test
@@ -65,7 +80,8 @@ public class KorriNativeBridgeLifecycleTest {
                 debugPolicy, operations);
         lifecycle.onMainFramePageFinished();
 
-        assertEquals(Arrays.asList("add", "remove"), operations.calls);
+        assertEquals(Arrays.asList("add:KorriNative", "add:KorriRpc",
+                "remove:KorriNative", "remove:KorriRpc"), operations.calls);
     }
 
     private static final class RecordingBridgeOperations
@@ -73,13 +89,13 @@ public class KorriNativeBridgeLifecycleTest {
         private final List<String> calls = new ArrayList<>();
 
         @Override
-        public void addJavascriptInterface() {
-            calls.add("add");
+        public void addJavascriptInterface(String name) {
+            calls.add("add:" + name);
         }
 
         @Override
-        public void removeJavascriptInterface() {
-            calls.add("remove");
+        public void removeJavascriptInterface(String name) {
+            calls.add("remove:" + name);
         }
     }
 }

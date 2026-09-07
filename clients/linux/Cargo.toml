@@ -1,0 +1,13 @@
+[package]
+name = "korri-portal-shell"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "korri-portal-shell"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"

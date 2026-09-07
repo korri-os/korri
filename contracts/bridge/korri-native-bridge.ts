@@ -6,8 +6,8 @@ import type {
 
 /**
  * Treaty between the portal (TS, in the WebView) and the Android shell
- * (Kotlin, KorriShellActivity). This file is the source of truth for every
- * value that crosses the JS <-> Kotlin bridge.
+ * (Kotlin, KorriShellActivity). This file owns native operations and input.
+ * Shared korrid credentials are defined in korri-rpc-bridge.ts.
  *
  * Rules:
  * - This directory imports nothing outside `contracts/`.
@@ -35,8 +35,9 @@ import type {
 // asset URL resolution. 16 adds picker single-flight Busy results. 17 removes
 // the obsolete Moonlight trust ceremony. 18 removes public pairing state after
 // korrid-owned provisioning becomes the only trust path. 19 adds the Android
-// person-signer and verified owner-binding lifecycle.
-export const BRIDGE_VERSION = 19
+// person-signer and verified owner-binding lifecycle. 20 moves korrid credentials
+// to the shared KorriRpc binding defined in korri-rpc-bridge.ts.
+export const BRIDGE_VERSION = 20
 
 // ── Local launches (JS -> Kotlin) ───────────────────────────────────────
 
@@ -212,11 +213,7 @@ export interface KorriOverlayMessageSurface {
 
 // ── Shell surface (JS -> Kotlin) ────────────────────────────────────────
 
-/**
- * The full `window.KorriNative` surface the shell injects. Spike-era
- * methods (streaming, settings, korrid RPC) are intentionally not part of
- * the treaty yet; they join it when a slice formalizes them.
- */
+/** Native owner identity and signer facts. RPC authority is a separate binding. */
 export type PersonSignerState =
   | { readonly _tag: "Unavailable"; readonly message: string }
   | { readonly _tag: "Pending"; readonly message: string }
@@ -266,17 +263,6 @@ export interface KorriNativeBridgeSurface {
    * starting the stream Activity. The portal cannot submit raw host/app data.
    */
   startStream(specJson: string): string
-  /**
-   * Port of the embedded korrid server on 127.0.0.1, or -1 when it is not
-   * running. The portal builds its brain base URL from this; hardware and
-   * process lifecycle stay on the Kotlin side of the treaty.
-   */
-  korridPort(): number
-  /**
-   * Unguessable capability for this embedded korrid server lifetime. The
-   * portal sends it as a bearer token; it must never be persisted.
-   */
-  korridCapability(): string
   /**
    * Whether Korri may read and write the user-visible storage its settings,
    * plugins, and local-game files live in. Returns a JSON-encoded

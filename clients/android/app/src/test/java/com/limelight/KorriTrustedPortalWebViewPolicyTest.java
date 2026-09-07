@@ -23,8 +23,6 @@ public class KorriTrustedPortalWebViewPolicyTest {
             "backgroundNotice",
             "bridgeVersion",
             "gameFolderPickerSnapshot",
-            "korridCapability",
-            "korridPort",
             "launchLocal",
             "localGameAssetUrl",
             "openGameFolderPicker",
@@ -58,6 +56,18 @@ public class KorriTrustedPortalWebViewPolicyTest {
         assertFalse(exposed.contains("launchGame"));
         assertFalse(exposed.contains("getSettingsSchema"));
         assertFalse(exposed.contains("setSetting"));
+    }
+
+    @Test
+    public void rpcBindingExposesOnlyTheSharedCredentialMethods() throws Exception {
+        Class<?> bridge = Class.forName("com.limelight.KorriShellActivity$KorriRpcBridge");
+        Set<String> exposed = new TreeSet<>();
+        for (Method method : bridge.getDeclaredMethods()) {
+            if (method.getAnnotation(JavascriptInterface.class) != null) {
+                exposed.add(method.getName());
+            }
+        }
+        assertEquals(new TreeSet<>(Arrays.asList("korridPort", "korridCapability")), exposed);
     }
 
     @Test

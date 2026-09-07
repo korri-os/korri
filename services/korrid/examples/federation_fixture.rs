@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = root.join("host.toml");
     fs::write(&config, "label = \"federation-acceptance\"\n[[games]]\nid = \"acceptance-game\"\ntitle = \"Acceptance Game\"\ncommand = [\"/bin/true\"]\n")?;
     let (router, _) =
-        korrid::host_routers_with_storage_and_private(&config, None::<PathBuf>, &private);
+        korrid::host_routers_with_storage_and_private(&config, None::<PathBuf>, &private, None);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
     fs::write(

@@ -91,7 +91,9 @@ craneLib.buildPackage (
     # package. The flake package ships the runtime binary plus embedded library;
     # the full repository gate remains `nix run .#korrid-check`.
     cargoBuildExtraArgs = "--bin korrid --lib";
-    cargoTestExtraArgs = "--bin korrid";
+    # The Nix builder rejects ACL mutation. The exact ACL policy test still
+    # runs here; korrid-check runs all real-filesystem cases outside the sandbox.
+    cargoTestExtraArgs = "--bin korrid -- --skip credential_accepts_systemd_acl --skip credential_rejects_other_users_groups_and_world_access --skip host_portal_reads_acl_credentials_and_rejects_symlinks_and_fifos";
     postInstall = ''
       if ${pkgs.gnugrep}/bin/grep -R -F 'KORRI_PRIVATE_STATE_ROOT' src; then
         echo 'korrid source contains the retired private-state environment name' >&2

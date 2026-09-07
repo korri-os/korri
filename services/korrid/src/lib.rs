@@ -2,7 +2,7 @@
 
 use axum::{
     extract::State,
-    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, Method, StatusCode},
     routing::post,
     Json, Router,
 };
@@ -25,10 +25,12 @@ pub mod identity;
 pub mod identity_cli;
 mod peer_rpc;
 pub mod play_log;
+pub mod portal_access;
 pub mod relay;
 pub mod remote_signer;
 
 pub use play_log::{PlayEntry, PlayLog};
+use portal_access::{PortalAccess, PortalPermission};
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
@@ -1312,7 +1314,7 @@ enum RpcSurface {
 #[derive(Clone)]
 struct AppState {
     mode: ServerMode,
-    rpc_capability: Option<String>,
+    portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
 }
 
@@ -3093,15 +3095,8 @@ async fn rpc(
     headers: HeaderMap,
     Json(request): Json<RpcRequest>,
 ) -> Result<Json<RpcResponse>, StatusCode> {
-    if let Some(capability) = &state.rpc_capability {
-        let expected = format!("Bearer {capability}");
-        if headers
-            .get(header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            != Some(expected.as_str())
-        {
-            return Err(StatusCode::UNAUTHORIZED);
-        }
+    if let Some(access) = &state.portal_access {
+        access.authorize(&headers, &request)?;
     }
     let authorization = match state.rpc_surface {
         RpcSurface::Lan => authorization::AuthorizationContext::LocalBrowser,
@@ -3291,8 +3286,9 @@ fn router_with_capability_local_root_provision_and_grants(
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
 ) -> Router {
-    let (state, native_platform) = brain_app_state(
+    let (state, _) = brain_app_state(
         rpc_capability,
+        allowed_origin,
         local_storage_root,
         private_state_root,
         local_file_provision,
@@ -3307,12 +3303,13 @@ fn router_with_capability_local_root_provision_and_grants(
         folder_selection_grants,
         configured_upstream,
     );
-    brain_router_from_state(state, allowed_origin, native_platform)
+    portal_router_from_state(state)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn brain_app_state(
     rpc_capability: &str,
+    allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
     private_state_root: impl AsRef<Path>,
     local_file_provision: launcher::FileProvisionMode,
@@ -3354,6 +3351,11 @@ fn brain_app_state(
         }
     });
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
+    let mut portal_access =
+        PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
+    if native_platform == NativePlatform::EmbeddedAndroid {
+        portal_access.allow_bundled_android_origin();
+    }
     let state = AppState {
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
@@ -3372,30 +3374,18 @@ fn brain_app_state(
             discovery,
             settings_write_lock,
         }),
-        rpc_capability: Some(rpc_capability.into()),
+        portal_access: Some(portal_access),
         rpc_surface: RpcSurface::Lan,
     };
     (state, native_platform)
 }
 
-fn brain_router_from_state(
-    state: AppState,
-    allowed_origin: &str,
-    native_platform: NativePlatform,
-) -> Router {
-    let configured_origin: HeaderValue = allowed_origin
-        .parse()
-        .expect("allowed portal origin must be a valid header value");
-    let allowed_origins = if native_platform == NativePlatform::EmbeddedAndroid {
-        let bundled_origin = HeaderValue::from_static(ANDROID_BUNDLED_PORTAL_ORIGIN);
-        let mut origins = vec![configured_origin];
-        if origins[0] != bundled_origin {
-            origins.push(bundled_origin);
-        }
-        tower_http::cors::AllowOrigin::list(origins)
-    } else {
-        tower_http::cors::AllowOrigin::exact(configured_origin)
-    };
+fn portal_router_from_state(state: AppState) -> Router {
+    let access = state
+        .portal_access
+        .as_ref()
+        .expect("portal router requires token authority");
+    let allowed_origins = tower_http::cors::AllowOrigin::list(access.allowed_origins().to_vec());
     let cors = tower_http::cors::CorsLayer::new()
         .allow_origin(allowed_origins)
         .allow_methods([Method::POST])
@@ -3440,16 +3430,21 @@ pub fn host_router_with_storage(
             config_path,
             storage_root,
             PathBuf::from("korri-state"),
+            None,
         )
         .0
     }
 }
 
-/// Build LAN and private-control routers over one singular host runtime.
+/// Build network and private-control routers over one shared device runtime.
+/// Optional portal authority enables the same browser `/rpc` handler used by
+/// the embedded brain, alongside encrypted `/peer-rpc` on the existing router.
+/// It does not grant the browser the private-control socket's authority.
 pub fn host_routers_with_storage_and_private(
     config_path: impl AsRef<Path>,
     storage_root: Option<impl Into<PathBuf>>,
     private_state_root: impl Into<PathBuf>,
+    portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
     let private_state_root = private_state_root.into();
     let runtime = host::HostRuntime::from_paths_with_private_state(
@@ -3457,7 +3452,7 @@ pub fn host_routers_with_storage_and_private(
         storage_root.map(Into::into),
         private_state_root.clone(),
     );
-    secure_host_routers(runtime, &private_state_root)
+    secure_host_routers(runtime, &private_state_root, portal_access)
 }
 
 #[cfg(test)]
@@ -3492,18 +3487,18 @@ fn secure_host_router_with_in_memory_units_at(
     let (lan, _) = app_states(runtime);
     peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
         .expect("load or create peer RPC identity")
-        .router()
+        .router(None)
 }
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let lan = AppState {
         mode: ServerMode::Host(runtime.clone()),
-        rpc_capability: None,
+        portal_access: None,
         rpc_surface: RpcSurface::Lan,
     };
     let local = AppState {
         mode: ServerMode::Host(runtime),
-        rpc_capability: None,
+        portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
     };
     (lan, local)
@@ -3523,12 +3518,21 @@ pub(crate) fn plain_host_routers_for_tests(runtime: host::HostRuntime) -> (Route
     plain_host_routers(runtime)
 }
 
-fn secure_host_routers(runtime: host::HostRuntime, private_state_root: &Path) -> (Router, Router) {
+fn secure_host_routers(
+    runtime: host::HostRuntime,
+    private_state_root: &Path,
+    portal_access: Option<PortalAccess>,
+) -> (Router, Router) {
     let (lan, local) = app_states(runtime);
+    let portal = portal_access.map(|access| {
+        let mut browser = lan.clone();
+        browser.portal_access = Some(access);
+        portal_router_from_state(browser)
+    });
     let peer = peer_rpc::PeerRpcServer::new(lan, private_state_root)
         .expect("load or create peer RPC identity");
     (
-        peer.router(),
+        peer.router(portal),
         Router::new().route("/rpc", post(rpc)).with_state(local),
     )
 }
@@ -7869,8 +7873,8 @@ command = ["game-two"]
             foreign
                 .headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap(),
-            "https://evil.example"
+                .and_then(|value| value.to_str().ok()),
+            Some("https://evil.example")
         );
     }
 
@@ -8141,7 +8145,7 @@ command = ["game-two"]
         let (lan, _) = app_states(runtime);
         peer_rpc::PeerRpcServer::new_at(lan, private_state_root, now)
             .expect("load or create peer RPC identity")
-            .router()
+            .router(None)
     }
 
     async fn serve_router(app: Router) -> String {
@@ -8348,7 +8352,8 @@ command = ["game-two"]
             Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
             RecordingMoonlightCertificates::matching("sunshine-host"),
         );
-        let server = serve_router(secure_host_routers(host_runtime, host_private.path()).0).await;
+        let server =
+            serve_router(secure_host_routers(host_runtime, host_private.path(), None).0).await;
 
         let brain_credentials =
             peer_rpc::test_owned_credentials(brain_private.path(), BRAIN, &owner_secret);
@@ -8363,6 +8368,7 @@ command = ["game-two"]
         let signing_key = b"test signing key".to_vec();
         let (state, _) = brain_app_state(
             "right-token",
+            ANDROID_BUNDLED_PORTAL_ORIGIN,
             brain_storage.path(),
             brain_private.path(),
             launcher::FileProvisionMode::Direct,

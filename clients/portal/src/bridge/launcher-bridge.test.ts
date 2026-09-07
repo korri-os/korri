@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
-import type { KorriNativeBridgeSurface } from "@contracts/bridge/korri-native-bridge"
+import { BRIDGE_VERSION, type KorriNativeBridgeSurface } from "@contracts/bridge/korri-native-bridge"
+import { createPortalConnection } from "../korrid/portal-connection"
+import { createUnavailableLauncherBridge } from "./unavailable-launcher-bridge"
 import {
   LaunchContributorKind,
   LaunchDisposition,
@@ -319,8 +321,6 @@ describe("createKorriNativeLauncherBridge", () => {
         items: [{ id: 7, name: "Desktop" }],
       }),
     startStream: () => JSON.stringify({ _tag: "StreamStarted" }),
-    korridPort: () => 43117,
-    korridCapability: () => "test-capability",
     storageAccess: () => JSON.stringify({ _tag: "Granted" }),
     openStorageAccessSettings: () => JSON.stringify({ _tag: "Opened" }),
     overlayPermission: () => JSON.stringify({ _tag: "Enabled" }),
@@ -359,8 +359,38 @@ describe("createKorriNativeLauncherBridge", () => {
       }),
     acknowledgeGameFolderPicker: () =>
       JSON.stringify({ _tag: "Acknowledged", generation: "picker-2" }),
-    bridgeVersion: () => 19,
+    bridgeVersion: () => BRIDGE_VERSION,
     ...overrides,
+  })
+
+  it("rejects an Android shell without its shared credential binding", () => {
+    expect(() => createPortalConnection(undefined, surface({}))).toThrow(
+      "The shell did not provide a valid korrid connection.",
+    )
+  })
+
+  it("keeps Android hardware access separate from the shared RPC binding", async () => {
+    const connection = createPortalConnection({
+      korridPort: () => 43117,
+      korridCapability: () => "private-test-capability",
+    }, surface({ storageAccess: () => JSON.stringify({ _tag: "Denied" }) }))
+    expect(await connection.bridge.storageAccess()).toEqual({ _tag: "Denied" })
+  })
+
+  it("rejects native launch effects when only shared RPC is available", async () => {
+    const bridge = createUnavailableLauncherBridge()
+    expect((await bridge.startStream(nativeLaunchSpec))._tag).toBe("StreamFailed")
+    expect(await bridge.launchLocal({
+      launchId: "launch-1",
+      launcherId: "retroarch",
+      disposition: LaunchDisposition.Fresh,
+      context: localContext,
+      component: { packageName: "pkg", className: "Activity" },
+      extras: {}, directories: [], files: [], integrity: "opaque-signature",
+    })).toEqual({
+      _tag: "LaunchFailed", reason: "UnsupportedLauncher",
+      message: "Native device operations are unavailable in this shell.",
+    })
   })
 
   it("serializes a launcher-neutral local spec to the native surface", async () => {

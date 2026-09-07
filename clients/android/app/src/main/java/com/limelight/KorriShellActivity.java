@@ -320,15 +320,19 @@ public class KorriShellActivity extends AppCompatActivity {
         }
 
         @Override
-        public void addJavascriptInterface() {
-            view.addJavascriptInterface(
-                    new KorriNativeBridge(),
-                    KorriNativeBridgeLifecycle.BRIDGE_NAME);
+        public void addJavascriptInterface(String name) {
+            if (KorriNativeBridgeLifecycle.BRIDGE_NAME.equals(name)) {
+                view.addJavascriptInterface(new KorriNativeBridge(), name);
+            } else if (KorriNativeBridgeLifecycle.RPC_BRIDGE_NAME.equals(name)) {
+                view.addJavascriptInterface(new KorriRpcBridge(), name);
+            } else {
+                throw new IllegalArgumentException("Unknown portal bridge");
+            }
         }
 
         @Override
-        public void removeJavascriptInterface() {
-            view.removeJavascriptInterface(KorriNativeBridgeLifecycle.BRIDGE_NAME);
+        public void removeJavascriptInterface(String name) {
+            view.removeJavascriptInterface(name);
         }
     }
 
@@ -410,7 +414,8 @@ public class KorriShellActivity extends AppCompatActivity {
             if (parent instanceof ViewGroup) {
                 ((ViewGroup) parent).removeView(ownedWebView);
             }
-            ownedWebView.removeJavascriptInterface("KorriNative");
+            new KorriNativeBridgeLifecycle().removeJavascriptInterfaces(
+                    new KorriNativeBridgeOperations(ownedWebView));
             ownedWebView.stopLoading();
             ownedWebView.destroy();
         }
@@ -572,6 +577,19 @@ public class KorriShellActivity extends AppCompatActivity {
      * runtime. Deals in Korri-shaped concepts (hosts, apps, launch requests),
      * never in raw intent extras or certificate material.
      */
+    /** Mirrors the shared contracts/bridge/korri-rpc-bridge.ts binding. */
+    private class KorriRpcBridge {
+        @JavascriptInterface
+        public int korridPort() {
+            return korridPort;
+        }
+
+        @JavascriptInterface
+        public String korridCapability() {
+            return korridCapability;
+        }
+    }
+
     private class KorriNativeBridge {
 
         // --- Treaty surface: contracts/bridge/korri-native-bridge.ts ---
@@ -581,7 +599,7 @@ public class KorriShellActivity extends AppCompatActivity {
         @JavascriptInterface
         public int bridgeVersion() {
             // Mirrors BRIDGE_VERSION in contracts/bridge/korri-native-bridge.ts.
-            return 19;
+            return 20;
         }
 
         @JavascriptInterface
@@ -810,18 +828,6 @@ public class KorriShellActivity extends AppCompatActivity {
             } catch (Exception error) {
                 return "{\"_tag\":\"Absent\"}";
             }
-        }
-
-        /** Port of the embedded korrid server, or -1 when it is not running. */
-        @JavascriptInterface
-        public int korridPort() {
-            return korridPort;
-        }
-
-        /** Per-server bearer capability for the localhost korrid RPC. */
-        @JavascriptInterface
-        public String korridCapability() {
-            return korridCapability;
         }
 
         /** JSON-encoded LaunchLocalResult. */

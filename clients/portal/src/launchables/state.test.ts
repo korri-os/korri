@@ -154,6 +154,24 @@ describe("LaunchablesState.fromSources", () => {
     expect(ready.notice).toBeNull()
   })
 
+  it("keeps an empty live catalog ready when local inventory is unsupported", () => {
+    const state = LaunchablesState.fromSources(
+      [],
+      { _tag: "Ok", payload: { games: [] } },
+      undefined,
+      undefined,
+      {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "local inventory unavailable" },
+      },
+    )
+    expect(state).toEqual({
+      _tag: "Ready",
+      entries: [{ kind: "background-notice", visible: false }],
+      notice: null,
+    })
+  })
+
   it("degrades a failed local-game source to a notice while entries remain", () => {
     const state = LaunchablesState.fromSources(
       [officeApps],

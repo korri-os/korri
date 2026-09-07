@@ -299,6 +299,101 @@ fn brain_router() -> Router {
     )
 }
 
+fn credential_is_private(file: &std::fs::File) -> io::Result<bool> {
+    use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
+    let metadata = file.metadata()?;
+    let uid = unsafe { libc::geteuid() };
+    if !metadata.is_file() || (metadata.uid() != 0 && metadata.uid() != uid) {
+        return Ok(false);
+    }
+    // Linux POSIX ACL xattrs use a version header and eight-byte entries.
+    // Bound the read to systemd's observed five-entry credential ACL. Extra
+    // entries, unsupported shapes and xattr errors fail closed.
+    let mut acl = [0_u8; 44];
+    let size = unsafe {
+        libc::fgetxattr(
+            file.as_raw_fd(),
+            c"system.posix_acl_access".as_ptr(),
+            acl.as_mut_ptr().cast(),
+            acl.len(),
+        )
+    };
+    if size < 0 {
+        let error = io::Error::last_os_error();
+        return match error.raw_os_error() {
+            Some(libc::ENODATA | libc::EOPNOTSUPP) => {
+                Ok(metadata.uid() == uid && metadata.mode() & 0o077 == 0)
+            }
+            Some(libc::ERANGE) => Ok(false),
+            _ => Err(error),
+        };
+    }
+    Ok(metadata.mode() & 0o777 == 0o440 && credential_acl_is_private(&acl[..size as usize], uid))
+}
+
+fn credential_acl_is_private(acl: &[u8], uid: u32) -> bool {
+    // systemd 258 keeps ownership with root and grants the consumer read access
+    // with a named-user ACL. Mode 0440's group bits are its mask, not a grant.
+    if acl.len() != 44 || acl[..4] != 2_u32.to_le_bytes() {
+        return false;
+    }
+    let expected = [
+        (1_u16, 4_u16, u32::MAX), // owner
+        (2, 4, uid),              // consuming user
+        (4, 0, u32::MAX),         // owning group: no access
+        (16, 4, u32::MAX),        // mask: read only
+        (32, 0, u32::MAX),        // other: no access
+    ];
+    acl[4..]
+        .chunks_exact(8)
+        .zip(expected)
+        .all(|(entry, (tag, permission, id))| {
+            entry[..2] == tag.to_le_bytes()
+                && entry[2..4] == permission.to_le_bytes()
+                && entry[4..] == id.to_le_bytes()
+        })
+}
+
+// Linux startup reads the same capability credential that its browser shell
+// receives. Authentication and permissions remain in the shared RPC handler.
+fn host_portal_access(
+    origin: Option<&str>,
+    credentials: Option<&std::path::Path>,
+) -> Result<Option<korrid::portal_access::PortalAccess>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let Some(origin) = origin else {
+        return Ok(None);
+    };
+    let directory = credentials.ok_or("portal access requires systemd credentials")?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(directory.join("KORRID_RPC_CAPABILITY"))
+        .map_err(|_| "cannot open the portal credential")?;
+    if !credential_is_private(&file).map_err(|_| "cannot inspect the portal credential")? {
+        return Err("the portal credential must be private to root and this service".into());
+    }
+    let mut capability = String::new();
+    file.take(4097)
+        .read_to_string(&mut capability)
+        .map_err(|_| "cannot read the portal credential")?;
+    if capability.ends_with('\n') {
+        capability.pop();
+    }
+    if capability.is_empty()
+        || capability.len() > 4096
+        || !capability.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err("invalid portal credential".into());
+    }
+    Ok(Some(korrid::portal_access::PortalAccess::new(
+        &capability,
+        origin,
+        korrid::portal_access::PortalPermission::ReadOnly,
+    )))
+}
+
 fn validate_socket_activation(
     listen_pid: Option<&str>,
     listen_fds: Option<&str>,
@@ -364,10 +459,15 @@ async fn main() {
     let (lan_router, local_control_router) = match mode {
         Mode::Brain => (brain_router(), None),
         Mode::Host => {
+            let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
+            let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
+            let portal = host_portal_access(origin.as_deref(), credentials.as_deref())
+                .unwrap_or_else(|error| panic!("invalid portal access: {error}"));
             let (lan, local) = korrid::host_routers_with_storage_and_private(
                 host_config_path(),
                 Some(host_storage_root()),
                 private_state_root(),
+                portal,
             );
             (lan, Some(local))
         }
@@ -408,6 +508,144 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        os::{
+            fd::AsRawFd,
+            unix::fs::{MetadataExt, OpenOptionsExt},
+        },
+    };
+
+    fn credential_test_file() -> fs::File {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "korri-credential-test-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        fs::remove_file(path).unwrap();
+        file
+    }
+
+    fn credential_acl(uid: u32) -> Vec<u8> {
+        let mut bytes = 2_u32.to_le_bytes().to_vec();
+        for (tag, permission, id) in [
+            (1_u16, 4_u16, u32::MAX),
+            (2, 4, uid),
+            (4, 0, u32::MAX),
+            (16, 4, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            bytes.extend(tag.to_le_bytes());
+            bytes.extend(permission.to_le_bytes());
+            bytes.extend(id.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn set_credential_acl(file: &fs::File, acl: &[u8]) {
+        let result = unsafe {
+            libc::fsetxattr(
+                file.as_raw_fd(),
+                c"system.posix_acl_access".as_ptr(),
+                acl.as_ptr().cast(),
+                acl.len(),
+                0,
+            )
+        };
+        assert_eq!(result, 0, "{}", io::Error::last_os_error());
+    }
+
+    #[test]
+    fn credential_acl_policy_accepts_only_the_observed_private_shape() {
+        let acl = credential_acl(1001);
+        assert!(credential_acl_is_private(&acl, 1001));
+        assert!(!credential_acl_is_private(&acl, 1002));
+        for index in 0..acl.len() {
+            let mut changed = acl.clone();
+            changed[index] ^= 1;
+            assert!(!credential_acl_is_private(&changed, 1001), "byte {index}");
+        }
+        let mut extra = acl.clone();
+        extra.extend_from_slice(&acl[12..20]);
+        assert!(!credential_acl_is_private(&extra, 1001));
+        assert!(!credential_acl_is_private(&acl[..43], 1001));
+    }
+
+    #[test]
+    fn credential_accepts_systemd_acl() {
+        let file = credential_test_file();
+        assert!(credential_is_private(&file).unwrap());
+        set_credential_acl(&file, &credential_acl(unsafe { libc::geteuid() }));
+        assert_eq!(file.metadata().unwrap().mode() & 0o777, 0o440);
+        assert!(credential_is_private(&file).unwrap());
+    }
+
+    #[test]
+    fn credential_rejects_other_users_groups_and_world_access() {
+        let uid = unsafe { libc::geteuid() };
+        let file = credential_test_file();
+        let allowed = credential_acl(uid);
+        let mut other_user = allowed.clone();
+        other_user[16..20].copy_from_slice(&uid.wrapping_add(1).to_le_bytes());
+        let mut owning_group = allowed.clone();
+        owning_group[22..24].copy_from_slice(&4_u16.to_le_bytes());
+        let mut named_group = allowed.clone();
+        named_group[12..20].copy_from_slice(&allowed[20..28]);
+        named_group[20..28].copy_from_slice(&allowed[12..20]);
+        named_group[20..22].copy_from_slice(&8_u16.to_le_bytes());
+        let mut extra_user = allowed.clone();
+        extra_user.splice(20..20, other_user[12..20].iter().copied());
+        let mut world = allowed;
+        world[38..40].copy_from_slice(&4_u16.to_le_bytes());
+        for acl in [other_user, owning_group, named_group, world, extra_user] {
+            set_credential_acl(&file, &acl);
+            assert!(!credential_is_private(&file).unwrap());
+        }
+    }
+
+    #[test]
+    fn credential_rejects_malformed_or_extra_acl_entries() {
+        let acl = credential_acl(1001);
+        assert!(credential_acl_is_private(&acl, 1001));
+        assert!(credential_acl_is_private(&credential_acl(0), 0));
+        for size in 0..acl.len() {
+            assert!(!credential_acl_is_private(&acl[..size], 1001));
+        }
+        for index in [0, 4, 6, 8, 12, 14, 20, 22, 28, 30, 36, 38] {
+            let mut malformed = acl.clone();
+            malformed[index] ^= 1;
+            assert!(!credential_acl_is_private(&malformed, 1001));
+        }
+        let mut extra = acl;
+        extra.extend([0_u8; 8]);
+        assert!(!credential_acl_is_private(&extra, 1001));
+    }
+
+    #[test]
+    fn credential_preserves_private_modes_and_rejects_nonregular_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let file = credential_test_file();
+        for mode in [0o400, 0o600] {
+            file.set_permissions(fs::Permissions::from_mode(mode))
+                .unwrap();
+            assert!(credential_is_private(&file).unwrap());
+        }
+        for mode in [0o440, 0o640, 0o644] {
+            file.set_permissions(fs::Permissions::from_mode(mode))
+                .unwrap();
+            assert!(!credential_is_private(&file).unwrap());
+        }
+        assert!(!credential_is_private(&fs::File::open(std::env::temp_dir()).unwrap()).unwrap());
+    }
 
     #[test]
     fn mode_defaults_to_brain_and_rejects_unknown_values() {
@@ -470,6 +708,57 @@ mod tests {
         assert!(validate_socket_activation(Some("41"), Some("1"), 42).is_err());
         assert!(validate_socket_activation(Some("42"), Some("2"), 42).is_err());
         assert!(validate_socket_activation(None, Some("1"), 42).is_err());
+    }
+
+    #[test]
+    fn host_portal_requires_private_credentials_when_an_origin_is_configured() {
+        assert!(host_portal_access(None, None).unwrap().is_none());
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), None).is_err());
+        let directory = tempfile::tempdir().unwrap();
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        let path = directory.path().join("KORRID_RPC_CAPABILITY");
+        std::fs::write(&path, "private-token\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(
+            host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
+                .unwrap()
+                .is_some()
+        );
+        std::fs::write(&path, "\n").unwrap();
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+    }
+
+    #[test]
+    fn host_portal_reads_acl_credentials_and_rejects_symlinks_and_fifos() {
+        use std::os::unix::{ffi::OsStrExt, fs::symlink};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("KORRID_RPC_CAPABILITY");
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        use std::io::Write;
+        (&file).write_all(b"private-token").unwrap();
+        set_credential_acl(&file, &credential_acl(unsafe { libc::geteuid() }));
+        assert!(
+            host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path()))
+                .unwrap()
+                .is_some()
+        );
+        let target = directory.path().join("target");
+        fs::rename(&path, &target).unwrap();
+        symlink(&target, &path).unwrap();
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+        fs::remove_file(&path).unwrap();
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
     }
 
     #[test]
