@@ -8,9 +8,20 @@ This record covers Sunshine hardware H.264 encoding on the Anbernic RG353M throu
 - Base Sunshine: `2025.924.154138`, reviewed upstream derivation `/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv`
 - Reviewed FFmpeg commit: `61c50407fd429a5e2ec616e2e846c3fe3743879a`
 - Build profile: `aarch64-linux-rkmpp`
-- Patch `0021` SHA-256: `5fc9f90b6753791cc66107b0d8c58b78568126f71dda2fb8e739b63aae9981d6`
-- Patch `0022` SHA-256: `601a6ce16580902dae652920f4af819fa19afb7aa430b1c65860b3c8f99b9086`
-- Ordered seventeen-patch digest: `c447c31c96e894017b043c45dabf50ba12e44d6e1ef859f1685979c14511c28f`
+- Patch `0022` SHA-256: `36d8f96b01b68e9b4cbad4edc7f03d46b64eb5e291d116fe57470398d846b054`
+- Patch `0023` SHA-256: `601a6ce16580902dae652920f4af819fa19afb7aa430b1c65860b3c8f99b9086`
+- Patch `0024` SHA-256: `eeab5c78eea1c2c1f72277fb370681b5352b28da75a58668bfda043836b28020`
+- Ordered nineteen-patch digest: `d411a243ed42568e270b6ea77a2938a108334f26db95605721d141e95eafbad7`
+
+The physical tests below were run when the RKMPP encoder patch was numbered
+`0021` and the ordered digest was `c447c31c…`. Landing this work on `main`
+renumbered the RKMPP tail to `0022`–`0024`, because `main` had meanwhile taken
+`0021` for the Odin 2 Portal V4L2 M2M encoder, and both patches insert at the
+same anchor in `src/video.cpp`. The encoder patch was regenerated against the
+V4L2 M2M-patched source; its content is unchanged apart from that context, and
+the other two patches applied unmodified. The measurements are therefore still
+attributable to this code, but the exact store paths quoted below predate the
+renumbering.
 - FFmpeg patch `0001` SHA-256: `772d3a55ea116417ee6768ce1ece4f9d9c9e6c12a8dbd541e3e1ab7c348d9ac4`
 - FFmpeg patch `0002` SHA-256: `b2bcaed419e11dbb6b435f865b4fb78eca195708c14da1cbd97c29dfae50f09f`
 - Tested zero-copy Sunshine output: `/nix/store/kgwvxcjj534sz6nw73p5m3ha2am6i0fs-sunshine-korri-2025.924.154138-korri`
@@ -29,7 +40,7 @@ Sunshine links against a static FFmpeg built by Sunshine's own `build-deps` reci
 
 Sunshine's CBS patches are applied with `patch` because `build-deps` uses `git apply`, which no-ops outside a git checkout.
 
-Sunshine patch `0021` adds the `rkmpp` encoder definition (H.264 only, CBR, single slice, no intra refresh) and paces its encode loop to the negotiated frame rate. Patch `0022` makes RKMPP a DRM_PRIME hardware-frame encoder. For a native-size KMS stream, Sunshine wraps the active framebuffer's dma-buf in a ref-counted `AVDRMFrameDescriptor` and passes it directly to `h264_rkmpp`. The RK3566 RKVENC preprocessor accepts the XRGB8888 input and performs RGB-to-YUV conversion in hardware. If the requested stream size or framebuffer layout is incompatible, Sunshine keeps the existing RAM readback and RKMPP upload path.
+Sunshine patch `0022` adds the `rkmpp` encoder definition (H.264 only, CBR, single slice, no intra refresh) and paces its encode loop to the negotiated frame rate. Patch `0023` makes RKMPP a DRM_PRIME hardware-frame encoder. For a native-size KMS stream, Sunshine wraps the active framebuffer's dma-buf in a ref-counted `AVDRMFrameDescriptor` and passes it directly to `h264_rkmpp`. The RK3566 RKVENC preprocessor accepts the XRGB8888 input and performs RGB-to-YUV conversion in hardware. If the requested stream size or framebuffer layout is incompatible, Sunshine keeps the existing RAM readback and RKMPP upload path.
 
 ## Encoder probe
 
