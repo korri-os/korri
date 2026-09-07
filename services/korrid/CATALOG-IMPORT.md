@@ -26,11 +26,23 @@ Repeated import uses the coordinator's existing identity and hash-cache rules.
 It can reconcile discovery-owned records for other locations. Back up the
 catalog and private state before an operator import.
 
-The report gives candidate, hashed-byte, added-record, removed-record,
-removed-release, repair, and diagnostic counts from the coordinator. Diagnostics
+The report gives candidate, hashed-byte, added-game, removed-location, repair,
+and diagnostic counts from the coordinator. Diagnostics
 can mean that files were skipped; a successful exit does not mean every file was
 imported or that a launch route is available. Only enabled plugin claims are
 used. The command is not limited to GBA files.
+
+## Migrating a device from the superseded documents
+
+A device that still holds `config.yaml` and `library.yaml` needs a one-off
+cut. Stop the daemon, back up the public and private roots, rename
+`config.yaml` to `device.yaml` so its storage records and host settings
+survive, and remove the backed-up `library.yaml`. Keep the private discovery
+state so storage ownership and the hash cache still match. Then run the import
+below; discovery writes `catalog/games.yaml` and `catalog/releases.yaml`.
+
+Game ids are minted again, so play counts and cover assignments recorded
+against the superseded ids no longer resolve. ROM files are untouched.
 
 ## Linux gameplay access
 
@@ -40,8 +52,8 @@ separately. Keep configuration and private state inaccessible to games.
 
 The RG353M composition explicitly imports `nix/rg353m/gba-gameplay.nix`. Its
 access module grants named traversal/read ACLs and account save access, denies
-gameplay reads of existing root YAML documents, and adds a default deny for
-new private descendants. Default ACLs do not retroactively protect existing
+gameplay reads of the existing root YAML documents and the `catalog/`
+directory by name, and adds a default deny for new private descendants. Default ACLs do not retroactively protect existing
 trees; inspect those before deployment. Existing copied ROM files require
 explicit read ACLs; the default applies only to subsequent files.
 

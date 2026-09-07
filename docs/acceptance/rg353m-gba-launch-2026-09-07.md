@@ -162,6 +162,47 @@ device was rebooted normally. Post-boot observations:
 
 Temperatures during these runs stayed between roughly 45 and 57°C.
 
+## Merge with the new catalog documents
+
+After the first deployment, main's config slice landed and replaced
+`config.yaml`/`library.yaml` with `device.yaml` and `catalog/`. That slice was
+merged in; main owns the schema and no compatibility shim was added. Portal
+(333), Pico (338) and korrid (544) tests pass on the merge.
+
+The device was migrated with an explicit one-off cut, as that slice's own
+notes prescribe: back up both roots, rename `config.yaml` to `device.yaml` so
+its storage records survive, retire the backed-up `library.yaml`, keep the
+private discovery state so storage ownership and hashes still match, then
+re-import. Backups are in `/root/korri-gba-schema-migration-20260907`.
+
+Discovery rewrote the catalog into `device.yaml`, `catalog/games.yaml` and
+`catalog/releases.yaml`, and the same six games returned with newly minted
+ULID ids. Game ids therefore changed: play counts and cover assignments
+recorded against the superseded ids no longer resolve. ROM bytes and the
+device identity key were untouched.
+
+Review of the merge flagged that the catalog moved into a subdirectory, where
+inherited ACLs alone would depend on creation order. The access module now
+denies `catalog/` and its documents by name; the deployed device confirms the
+gameplay identity cannot read or traverse them while ROM reads still work.
+
+On the merged build, the controller-only loop, native exit, library return
+and the zero-copy stream were re-verified, and the closure was installed as
+the boot configuration.
+
+## Sunshine boot dependency
+
+A reboot then exposed a pre-existing race rather than a new defect:
+`systemd-networkd-wait-online` times out after two minutes because
+NetworkManager, not networkd, owns this device's ethernet and Wi-Fi. Its
+failure fails `network-online.target`, and on that boot Sunshine was refused
+with a dependency failure while the kiosk, catalog and input path came up
+normally. Starting Sunshine by hand worked, and the stream was unchanged.
+
+The unused wait-online unit is now disabled for this device, leaving
+NetworkManager's own wait-online unit as the gate. This also removes the
+two-minute boot delay recorded in earlier work.
+
 ## Repository wiring note
 
 The device ran a composed stage that overlays this branch onto the preserved

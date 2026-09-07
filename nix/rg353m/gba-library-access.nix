@@ -11,9 +11,11 @@ in
 {
   systemd.tmpfiles.rules = [
     "a+ ${root} - - - - u:${user}:--x,d:u:${user}:---"
-    # Existing documents predate the default deny ACL; atomic replacements
-    # inherit it. Do not grant game processes configuration-file reads.
+    # Documents that predate the default deny ACL, and the catalog directory,
+    # are denied by name. Inheritance alone would depend on creation order.
     "a+ ${root}/*.yaml - - - - u:${user}:---"
+    "a+ ${root}/catalog - - - - u:${user}:---,d:u:${user}:---"
+    "a+ ${root}/catalog/*.yaml - - - - u:${user}:---"
     # The host's d/0700 rule otherwise masks named ACLs on every activation.
     # z runs after directory creation; group:: stays empty, other:: stays empty.
     "z ${root} 0710 korrid korrid -"
