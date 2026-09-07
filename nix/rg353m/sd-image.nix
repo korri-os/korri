@@ -34,6 +34,14 @@ in
     # before Linux starts. This RG353M reports ID 0x3821, which U-Boot maps to
     # "anbernic,rg353v-panel-v2", a Sitronix ST7703 panel. Load both panel
     # drivers so either revision binds.
+    #
+    # Load panfrost here too. Left to udev coldplug it binds the Mali G52 at
+    # about 19.5 s, but the compositor starts at about 16.9 s and exits when
+    # /dev/dri/renderD128 is missing. systemd then waits out the compositor
+    # start timeout and restarts the unit, which costs 18.5 s on every boot.
+    # Binding the GPU in the initrd puts the render node in place long before
+    # anything asks for it. Measured: with the node already present the
+    # compositor starts in 2.65 s and never fails.
     initrd.kernelModules = [
       "mmc_block"
       "phy-rockchip-inno-dsidphy"
@@ -42,6 +50,7 @@ in
       "panel-sitronix-st7703"
       "panel-newvision-nv3051d"
       "pwm_bl"
+      "panfrost"
     ];
     # Start with the stock mainline kernel. It contains the RG353P device tree
     # and the RK3566 storage, display, RK817 audio, and RTL8821CS WiFi drivers.

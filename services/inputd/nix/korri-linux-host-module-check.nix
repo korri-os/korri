@@ -124,6 +124,20 @@ let
   remoteInputPhysical = physicalSoftware.extendModules {
     modules = [ { services.korriLinuxHost.compositor.remoteInput.enable = true; } ];
   };
+  # Card numbers follow driver probe order, so a by-path link is the stable way
+  # to name the KMS device. It must be accepted; a render node must not be.
+  physicalByPathCard = physicalSoftware.extendModules {
+    modules = [
+      {
+        services.korriLinuxHost.compositor.drmDevice = lib.mkForce "/dev/dri/by-path/platform-display-subsystem-card";
+      }
+    ];
+  };
+  physicalRenderNodeAsCard = physicalSoftware.extendModules {
+    modules = [
+      { services.korriLinuxHost.compositor.drmDevice = lib.mkForce "/dev/dri/renderD128"; }
+    ];
+  };
   remoteInputHeadless = evaluate {
     services.korriLinuxHost.compositor.remoteInput.enable = true;
   };
@@ -364,6 +378,11 @@ assert
   == "drm,libinput";
 assert !(builtins.elem "input" remoteInputPhysical.config.users.users.korri.extraGroups);
 assert physicalSoftwareCompositor.environment.WLR_DRM_DEVICES == "/dev/dri/card0";
+assert allAssertionsPass physicalByPathCard;
+assert
+  physicalByPathCard.config.systemd.services.korri-compositor.environment.WLR_DRM_DEVICES
+  == "/dev/dri/by-path/platform-display-subsystem-card";
+assert hasFailedAssertion "requires an exact /dev/dri/cardN device" physicalRenderNodeAsCard;
 assert physicalSoftwareCompositor.environment.WLR_RENDER_DRM_DEVICE == "/dev/dri/renderD128";
 assert !(builtins.hasAttr "WLR_LIBINPUT_NO_DEVICES" physicalSoftwareCompositor.environment);
 assert builtins.elem "seatd.service" physicalSoftwareCompositor.requires;
