@@ -41,6 +41,21 @@ const nowPlaying: PortalEntry = {
 }
 
 describe("surfaceModelFrom", () => {
+  test("labels a source-local catalog route as This device without converting its identity", () => {
+    const localCatalog: PortalEntry = {
+      kind: "game",
+      game: { ...hostGame.game, source: { label: "device-label", isLocal: true } },
+      alternatives: [{ kind: "remote", game: { ...hostGame.game, host: "aka", source: source("aka") } }],
+    }
+    const model = surfaceModelFrom(ready([localCatalog]))
+    if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
+    const rendered = model.catalog.games[0]!
+    expect(rendered.section).toBe("This device")
+    expect(rendered.subtitle).toBe("This device · Also on aka")
+    expect(rendered.launchLocations?.map(location => location.label)).toEqual(["This device", "aka"])
+    expect(entryForLaunchLocation(localCatalog, rendered.launchLocations![0]!.id)).toEqual({ kind: "game", game: localCatalog.game })
+  })
+
   test("publishes only playable things as games", () => {
     const model = surfaceModelFrom(ready([localGame, hostGame]))
 

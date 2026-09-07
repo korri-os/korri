@@ -1,0 +1,70 @@
+RetroArch 1.22.2: accept read-only evdev gameplay ACLs without granting event
+injection access. Retry only permission failures; never probe or write force
+feedback on the read-only descriptor. Other open and validation failures keep
+the upstream behavior. Descriptor access mode is recorded once when added.
+
+--- a/input/drivers_joypad/udev_joypad.c
++++ b/input/drivers_joypad/udev_joypad.c
+@@ -19,6 +19,7 @@
+ #include <string.h>
+ #include <limits.h>
+ #include <fcntl.h>
++#include <errno.h>
+ 
+ #include <sys/types.h>
+ #include <sys/stat.h>
+@@ -88,6 +89,7 @@
+    char ident[NAME_MAX_LENGTH];
+    char phys[NAME_MAX_LENGTH];
+    bool has_set_ff[2];
++   bool writable;
+    /* Deal with analog triggers that report -32767 to 32767 */
+    bool neg_trigger[NUM_AXES];
+ };
+@@ -131,6 +133,10 @@
+    unsigned long absbit[NBITS(ABS_MAX)] = {0};
+    int fd = open(path, O_RDWR | O_NONBLOCK);
+ 
++   /* Read-only gameplay access must not require permission to inject events. */
++   if (fd < 0 && (errno == EACCES || errno == EPERM))
++      fd = open(path, O_RDONLY | O_NONBLOCK);
++
+    if (fd < 0)
+       return fd;
+ 
+@@ -157,7 +163,7 @@
+    struct udev_joypad *pad = (struct udev_joypad*)&udev_pads[i];
+ 
+    /* Does not support > 100 gains */
+-   if ((pad->fd < 0) ||
++   if ((pad->fd < 0) || !pad->writable ||
+        (gain > 100))
+       return false;
+ 
+@@ -281,6 +287,7 @@
+    pad->device = st.st_rdev;
+    pad->fd     = fd;
+    pad->path   = strdup(path);
++   pad->writable = (fcntl(fd, F_GETFL) & O_ACCMODE) == O_RDWR;
+ 
+    if (!string_is_empty(pad->ident))
+    {
+@@ -297,7 +304,8 @@
+    }
+ 
+    /* Check for rumble features. */
+-   if (ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ffbit)), ffbit) >= 0)
++   if (pad->writable &&
++       ioctl(fd, EVIOCGBIT(EV_FF, sizeof(ffbit)), ffbit) >= 0)
+    {
+       if (test_bit(FF_RUMBLE, ffbit))
+          RARCH_LOG("[udev] Pad #%u (%s) supports force feedback.\n",
+@@ -412,7 +420,7 @@
+    uint16_t old_strength;
+    struct udev_joypad *pad = (struct udev_joypad*)&udev_pads[i];
+ 
+-   if (pad->fd < 0)
++   if (pad->fd < 0 || !pad->writable)
+       return false;
+    if (pad->num_effects < 2)
+       return false;

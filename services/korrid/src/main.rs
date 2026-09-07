@@ -390,7 +390,7 @@ fn host_portal_access(
     Ok(Some(korrid::portal_access::PortalAccess::new(
         &capability,
         origin,
-        korrid::portal_access::PortalPermission::ReadOnly,
+        korrid::portal_access::PortalPermission::LocalSessions,
     )))
 }
 
@@ -437,6 +437,16 @@ fn inherited_control_listener() -> Result<Option<std::os::unix::net::UnixListene
 #[tokio::main]
 async fn main() {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if arguments.first().is_some_and(|argument| argument == "catalog") {
+        match korrid::catalog_cli::run_from_environment(&arguments[1..]) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("korrid catalog: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if arguments
         .first()
         .is_some_and(|argument| argument == "identity")
@@ -729,6 +739,68 @@ mod tests {
         );
         std::fs::write(&path, "\n").unwrap();
         assert!(host_portal_access(Some("http://127.0.0.1:8099"), Some(directory.path())).is_err());
+    }
+
+    #[tokio::test]
+    async fn host_portal_credentials_grant_local_sessions_without_other_mutations() {
+        use axum::{
+            body::Body,
+            http::{Request, StatusCode},
+        };
+        use std::os::unix::fs::PermissionsExt;
+        use tower::ServiceExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let credential = root.path().join("KORRID_RPC_CAPABILITY");
+        std::fs::write(&credential, "private-token\n").unwrap();
+        std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"rg353m\"\n").unwrap();
+        let origin = "http://127.0.0.1:8099";
+        let (app, _) = korrid::host_routers_with_storage_and_private(
+            &config,
+            None::<PathBuf>,
+            root.path().join("private"),
+            host_portal_access(Some(origin), Some(root.path())).unwrap(),
+        );
+        for (body, expected) in [
+            (
+                serde_json::json!({"_tag":"system.health","payload":{}}),
+                StatusCode::OK,
+            ),
+            (
+                serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"missing"}}),
+                StatusCode::OK,
+            ),
+            (
+                serde_json::json!({"_tag":"app.session.stop","payload":{}}),
+                StatusCode::OK,
+            ),
+            (
+                serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"missing","host":"rg353m"}}),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                serde_json::json!({"_tag":"app.discovery.rescan","payload":{}}),
+                StatusCode::FORBIDDEN,
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/rpc")
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer private-token")
+                        .header("Origin", origin)
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{body}");
+        }
     }
 
     #[test]

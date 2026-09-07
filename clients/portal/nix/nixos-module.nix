@@ -57,7 +57,10 @@ let
   };
   grantWaylandAccess = pkgs.writeShellApplication {
     name = "korri-portal-wayland-access";
-    runtimeInputs = [ pkgs.coreutils pkgs.acl ];
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.acl
+    ];
     text = ''
       socket=$(readlink -f ${lib.escapeShellArg "${compositor.environment.XDG_RUNTIME_DIR}/${display}"})
       [ -S "$socket" ]
@@ -177,6 +180,8 @@ in
       };
     })
     (lib.mkIf kiosk.enable {
+      # Chromium reads only the validated virtual target, never raw sources.
+      services.korriLinuxInput.inputd.extraActionUsers = [ user ];
       users.groups.${group} = { };
       users.users.${user} = {
         isSystemUser = true;

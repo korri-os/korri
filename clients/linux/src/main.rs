@@ -188,12 +188,17 @@ fn validate_url(origin: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
-fn chromium_arguments() -> Result<(std::ffi::OsString, Vec<std::ffi::OsString>)> {
-    let mut args = env::args_os().skip(1);
+// Inert and shell-owned: app mode needs a supported URL, but the portal must
+// not load until its bridge is installed. No scripts, network, or credentials.
+const BOOTSTRAP_URL: &str = "data:text/html,%3Ctitle%3EKorri%3C/title%3E";
+
+fn chromium_arguments(
+    mut args: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<(std::ffi::OsString, Vec<std::ffi::OsString>)> {
     let executable = args
         .next()
         .ok_or("usage: korri-portal-shell CHROMIUM [--flag ...]")?;
-    let flags: Vec<_> = args.collect();
+    let mut flags: Vec<_> = args.collect();
     for flag in &flags {
         let text = flag.to_str().ok_or("Chromium flags must be UTF-8")?;
         if !text.starts_with("--")
@@ -212,6 +217,15 @@ fn chromium_arguments() -> Result<(std::ffi::OsString, Vec<std::ffi::OsString>)>
             return Err("Chromium flags cannot override navigation, debugging, or sandboxing");
         }
     }
+    flags.extend(
+        [
+            "--remote-debugging-pipe",
+            "--disable-breakpad",
+            "--disable-crash-reporter",
+        ]
+        .map(std::ffi::OsString::from),
+    );
+    flags.push(format!("--app={BOOTSTRAP_URL}").into());
     Ok((executable, flags))
 }
 
@@ -409,9 +423,10 @@ impl Protocol {
     }
 }
 
-fn run() -> Result<()> {
-    let config = Configuration::from_environment()?;
-    let (executable, flags) = chromium_arguments()?;
+fn start_chromium(
+    executable: std::ffi::OsString,
+    flags: Vec<std::ffi::OsString>,
+) -> Result<(Browser, Protocol)> {
     let (input, child_output) =
         UnixStream::pair().map_err(|_| "cannot create the Chromium output pipe")?;
     let (output, child_input) =
@@ -421,12 +436,6 @@ fn run() -> Result<()> {
     let mut command = Command::new(executable);
     command
         .args(flags)
-        .args([
-            "--remote-debugging-pipe",
-            "--disable-breakpad",
-            "--disable-crash-reporter",
-            "about:blank",
-        ])
         .env_remove("NOTIFY_SOCKET")
         .env_remove("CREDENTIALS_DIRECTORY")
         .env_remove("KORRID_RPC_CAPABILITY")
@@ -447,35 +456,36 @@ fn run() -> Result<()> {
             Ok(())
         });
     }
-    let mut browser = Browser(command.spawn().map_err(|_| "cannot start Chromium")?);
+    let browser = Browser(command.spawn().map_err(|_| "cannot start Chromium")?);
     // Command retains the closure and its OwnedFds. Close every local copy of
     // the child ends so EOF reliably detects a failed or stopped browser.
     drop(command);
     drop(child_input);
     drop(child_output);
-    let mut protocol = Protocol {
+    let protocol = Protocol {
         input,
         output,
         pending: Vec::new(),
         sequence: 0,
         readiness: None,
     };
+    Ok((browser, protocol))
+}
+
+fn bootstrap_portal(protocol: &mut Protocol, config: &Configuration) -> Result<()> {
     let targets = protocol.command("Target.getTargets", json!({}), None)?;
-    let existing = targets["targetInfos"]
+    let pages: Vec<_> = targets["targetInfos"]
         .as_array()
-        .and_then(|targets| {
-            targets
-                .iter()
-                .find(|target| target["type"] == "page" && target["url"] == "about:blank")
-        })
-        .and_then(|target| target["targetId"].as_str());
-    let target = if let Some(target) = existing {
-        target.to_owned()
-    } else {
-        protocol.command("Target.createTarget", json!({"url": "about:blank"}), None)?["targetId"]
+        .ok_or("Chromium omitted the initial targets")?
+        .iter()
+        .filter(|target| target["type"] == "page")
+        .collect();
+    // Fail closed rather than creating a regular tab or attaching another page.
+    let target = match pages.as_slice() {
+        [page] if page["url"] == BOOTSTRAP_URL => page["targetId"]
             .as_str()
-            .ok_or("Chromium did not create the initial page")?
-            .to_owned()
+            .ok_or("Chromium omitted the initial app target id")?,
+        _ => return Err("Chromium must start exactly one inert app page"),
     };
     let attached = protocol.command(
         "Target.attachToTarget",
@@ -527,6 +537,14 @@ fn run() -> Result<()> {
             return Err("the portal page crashed");
         }
     }
+    Ok(())
+}
+
+fn run() -> Result<()> {
+    let config = Configuration::from_environment()?;
+    let (executable, flags) = chromium_arguments(env::args_os().skip(1))?;
+    let (mut browser, mut protocol) = start_chromium(executable, flags)?;
+    bootstrap_portal(&mut protocol, &config)?;
     notify_ready_at(env::var_os("NOTIFY_SOCKET").as_deref())?;
     loop {
         if STOP.load(Ordering::Relaxed) {
@@ -590,6 +608,9 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod bootstrap_tests;
 
 #[cfg(test)]
 mod tests {

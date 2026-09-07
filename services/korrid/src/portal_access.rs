@@ -8,6 +8,7 @@ use crate::RpcRequest;
 pub enum PortalPermission {
     Full,
     ReadOnly,
+    LocalSessions,
 }
 
 impl PortalPermission {
@@ -40,7 +41,20 @@ impl PortalPermission {
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_) => false,
         };
-        self == Self::Full || initial_read
+        match self {
+            Self::Full => true,
+            Self::ReadOnly => initial_read,
+            Self::LocalSessions => {
+                initial_read
+                    || match request {
+                        RpcRequest::SessionPrepare(request) => request.host.is_none(),
+                        // The existing stop contract has no peer selector. The host
+                        // executor enforces expectedLaunchId before changing a session.
+                        RpcRequest::SessionStop(_) => true,
+                        _ => false,
+                    }
+            }
+        }
     }
 }
 
@@ -104,5 +118,160 @@ impl PortalAccess {
             return Err(StatusCode::FORBIDDEN);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::Request,
+        Router,
+    };
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    const TOKEN: &str = "portal-test-token";
+    const ORIGIN: &str = "http://127.0.0.1:8099";
+
+    #[test]
+    fn local_sessions_allow_only_prepare_without_a_host_selector() {
+        for host in [None, Some("peer"), Some("rg353m"), Some("")] {
+            let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
+                game_id: "neverball".into(),
+                host: host.map(str::to_owned),
+            });
+            assert_eq!(
+                PortalPermission::LocalSessions.permits(&request),
+                host.is_none()
+            );
+            assert!(!PortalPermission::ReadOnly.permits(&request));
+            assert!(PortalPermission::Full.permits(&request));
+        }
+        // Stop has no host selector; the host executor requires an exact launch ID.
+        let stop = RpcRequest::SessionStop(crate::SessionStopRequest {
+            force: Some(true),
+            expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+        });
+        assert!(PortalPermission::LocalSessions.permits(&stop));
+        assert!(!PortalPermission::ReadOnly.permits(&stop));
+        assert!(PortalPermission::Full.permits(&stop));
+    }
+
+    #[test]
+    fn local_sessions_reject_duplicate_authorization_and_origin_headers() {
+        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::LocalSessions);
+        let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
+            game_id: "neverball".into(),
+            host: None,
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {TOKEN}").parse().unwrap(),
+        );
+        headers.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        assert_eq!(access.authorize(&headers, &request), Ok(()));
+        let mut duplicate = headers.clone();
+        duplicate.append(
+            header::AUTHORIZATION,
+            headers[header::AUTHORIZATION].clone(),
+        );
+        assert_eq!(
+            access.authorize(&duplicate, &request),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+        for origin in [ORIGIN, "https://foreign.example"] {
+            let mut duplicate = headers.clone();
+            duplicate.append(header::ORIGIN, origin.parse().unwrap());
+            assert_eq!(
+                access.authorize(&duplicate, &request),
+                Err(StatusCode::FORBIDDEN)
+            );
+        }
+    }
+
+    async fn rpc(app: &Router, method: &str, payload: Value) -> Value {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+                    .header(header::ORIGIN, ORIGIN)
+                    .body(Body::from(
+                        json!({"_tag":method,"payload":payload}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{method}");
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn local_sessions_prepare_and_exact_stop_use_the_existing_host_executor() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        // Same HostConfig producer as the existing host router tests in lib.rs.
+        std::fs::write(&config, "label = \"rg353m\"\n[[games]]\nid = \"neverball\"\ntitle = \"Neverball\"\ncommand = [\"neverball\"]\n").unwrap();
+        let private = root.path().join("private");
+        let runtime = crate::host::HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            private.clone(),
+            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        );
+        let (app, _) = crate::secure_host_routers(
+            runtime,
+            &private,
+            Some(PortalAccess::new(
+                TOKEN,
+                ORIGIN,
+                PortalPermission::LocalSessions,
+            )),
+        );
+        let prepared = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        assert_eq!(prepared["outcome"]["payload"]["gameId"], "neverball");
+        let launch_id = prepared["outcome"]["payload"]["launchId"].as_str().unwrap();
+        assert_eq!(launch_id.len(), 32);
+        let repeated = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
+        assert_eq!(repeated, prepared);
+        for (payload, code) in [
+            (json!({}), "ExpectedLaunchIdRequired"),
+            (
+                json!({"expectedLaunchId":"stale-launch-id","force":true}),
+                "StaleLaunchIdentity",
+            ),
+        ] {
+            let rejected = rpc(&app, "app.session.stop", payload).await;
+            assert_eq!(rejected["outcome"]["_tag"], "Err");
+            assert_eq!(rejected["outcome"]["payload"]["code"], code);
+            let status = rpc(&app, "app.session.status", json!({})).await;
+            assert_eq!(status["outcome"]["_tag"], "Ok");
+            assert_eq!(
+                status["outcome"]["payload"]["active"]["launchId"],
+                launch_id
+            );
+        }
+        let stopped = rpc(
+            &app,
+            "app.session.stop",
+            json!({"expectedLaunchId":launch_id}),
+        )
+        .await;
+        assert_eq!(
+            stopped["outcome"],
+            json!({"_tag":"Ok","payload":{"phase":"stopped"}})
+        );
+        let status = rpc(&app, "app.session.status", json!({})).await;
+        assert_eq!(status["outcome"]["_tag"], "Err");
+        assert_eq!(status["outcome"]["payload"]["code"], "SessionCompleted");
     }
 }

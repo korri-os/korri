@@ -652,6 +652,16 @@ impl SystemdLaunchUnitBackend {
                 "configured command is empty",
             ));
         }
+        let mut read_only_binds = String::from("/tmp/.X11-unix/X0");
+        if environment.get("PULSE_SERVER").map(String::as_str)
+            == Some("unix:/run/korri-game-audio/native")
+        {
+            // Expose only Pulse outside the hidden runtime, never its control sockets.
+            read_only_binds.push_str(&format!(
+                " /run/user/{}/pulse:/run/korri-game-audio",
+                self.runtime_uid
+            ));
+        }
         let mut arguments = vec![
             "--system".into(),
             "--no-ask-password".into(),
@@ -667,7 +677,7 @@ impl SystemdLaunchUnitBackend {
             "--property=AmbientCapabilities=".into(),
             "--property=PrivateTmp=yes".into(),
             "--property=PrivatePIDs=yes".into(),
-            "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0".into(),
+            format!("--property=BindReadOnlyPaths={read_only_binds}"),
             "--property=ProtectKernelTunables=yes".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
@@ -933,5 +943,125 @@ pub(super) fn validate_launch_id(value: &str) -> Result<(), LaunchUnitError> {
             LaunchUnitErrorKind::InvalidConfiguration,
             "invalid host launch identity",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LAUNCH_ID: &str = "0123456789abcdef0123456789abcdef";
+
+    fn backend(runtime_uid: u32) -> SystemdLaunchUnitBackend {
+        SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            runtime_uid,
+            2002,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn pulse_opt_in_adds_only_the_runtime_audio_bind_and_environment() {
+        for uid in [2001, 3001] {
+            let backend = backend(uid);
+            let command = ["/games/retroarch".into()];
+            let baseline = backend
+                .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
+                .unwrap();
+            let launch = backend
+                .launch_arguments(
+                    LAUNCH_ID,
+                    &command,
+                    &BTreeMap::from([(
+                        "PULSE_SERVER".into(),
+                        "unix:/run/korri-game-audio/native".into(),
+                    )]),
+                )
+                .unwrap();
+            let mut expected = baseline;
+            let bind = expected
+                .iter_mut()
+                .find(|arg| arg.starts_with("--property=BindReadOnlyPaths="))
+                .unwrap();
+            *bind = format!(
+                "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/user/{uid}/pulse:/run/korri-game-audio"
+            );
+            let separator = expected.iter().position(|arg| arg == "--").unwrap();
+            expected.insert(
+                separator,
+                "--setenv=PULSE_SERVER=unix:/run/korri-game-audio/native".into(),
+            );
+            assert_eq!(launch, expected);
+            assert!(launch.contains(&format!(
+                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
+            )));
+        }
+    }
+
+    #[test]
+    fn absent_or_other_pulse_servers_do_not_add_a_bind() {
+        let backend = backend(2001);
+        let command = ["/games/retroarch".into()];
+        let baseline = backend
+            .launch_arguments(LAUNCH_ID, &command, &BTreeMap::new())
+            .unwrap();
+        assert_eq!(
+            baseline
+                .iter()
+                .filter(|arg| arg.starts_with("--property=BindReadOnlyPaths="))
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["--property=BindReadOnlyPaths=/tmp/.X11-unix/X0"]
+        );
+        for value in [
+            "",
+            "tcp:localhost:4713",
+            "unix:/run/user/2001/pulse/native",
+            "/run/korri-game-audio/native",
+            "unix:/run/korri-game-audio/native/",
+            "unix:/run/korri-game-audio/native ",
+            "unix:/run/korri-game-audio/native unix:/run/user/2001/bus",
+        ] {
+            let launch = backend
+                .launch_arguments(
+                    LAUNCH_ID,
+                    &command,
+                    &BTreeMap::from([("PULSE_SERVER".into(), value.into())]),
+                )
+                .unwrap();
+            let mut expected = baseline.clone();
+            let separator = expected.iter().position(|arg| arg == "--").unwrap();
+            expected.insert(separator, format!("--setenv=PULSE_SERVER={value}"));
+            assert_eq!(launch, expected);
+        }
+    }
+
+    #[test]
+    fn configured_runtime_uid_cannot_inject_a_mount_path() {
+        // A test-specific variable avoids changing the process's runtime identity.
+        const NAME: &str = "KORRID_SYSTEMD_UNIT_TEST_RUNTIME_UID";
+        for value in [
+            "../control",
+            "2001/pulse:/run/escape",
+            "2001 /run/escape",
+            "-1",
+            "4294967296",
+            "0",
+        ] {
+            std::env::set_var(NAME, value);
+            let parsed = configured_runtime_id(NAME);
+            std::env::remove_var(NAME);
+            assert_eq!(parsed, None, "accepted {value:?}");
+        }
+        let error = SystemdLaunchUnitBackend::new(
+            "/nix/store/systemd/bin/systemd-run".into(),
+            "/nix/store/systemd/bin/systemctl".into(),
+            0,
+            2002,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::InvalidConfiguration);
     }
 }

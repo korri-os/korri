@@ -1,5 +1,5 @@
 use super::LaunchError;
-use crate::config::resolver::ResolvedRoute;
+use crate::config::{resolver::ResolvedRoute, storage, ConfigSnapshot};
 use std::{
     ffi::OsString,
     fs::{self, OpenOptions},
@@ -10,7 +10,6 @@ use std::{
 const RETROARCH_PROVIDER: &str = "@korri:retroarch";
 const RETROARCH_LAUNCHER: &str = "@korri:retroarch/retroarch";
 const LIBRETRO_CORE_KIND: &str = "libretro-core";
-const ROM_STORAGE: &str = "roms";
 const DEFAULT_ACCOUNT: &str = "default";
 const RETROARCH_AUTOCONFIG_ENV: &str = "KORRI_RETROARCH_AUTOCONFIG";
 
@@ -21,6 +20,7 @@ pub struct LinuxLaunchSpec {
 
 pub(crate) fn launch_route_with_env(
     root: &Path,
+    snapshot: &ConfigSnapshot,
     route: &ResolvedRoute,
     lookup: impl Fn(&str) -> Option<OsString>,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
@@ -63,12 +63,17 @@ pub(crate) fn launch_route_with_env(
             route.playable_id
         ))
     })?;
-    if target.storage_id != ROM_STORAGE || !safe_relative_path(&target.path) {
-        return Err(LaunchError::RouteUnavailable(format!(
-            "RetroArch route {} has an unsupported file target",
-            route.playable_id
-        )));
-    }
+    let rom = storage::resolve_file_target(root, snapshot, target)
+        .map_err(|error| {
+            if error.is_missing_target() {
+                LaunchError::RomMissing(error.to_string())
+            } else if error.is_storage_access() {
+                LaunchError::StorageAccess(error.to_string())
+            } else {
+                LaunchError::RouteUnavailable(error.to_string())
+            }
+        })?
+        .path;
 
     let executable = environment_path(&lookup, &launcher.executable_env)?;
     let core = environment_path(&lookup, core_env)?;
@@ -76,9 +81,6 @@ pub(crate) fn launch_route_with_env(
     require_file(&core, "mGBA core")?;
     let autoconfig = environment_path(&lookup, RETROARCH_AUTOCONFIG_ENV)?;
     require_directory(&autoconfig, "RetroArch joypad autoconfig")?;
-
-    let rom = root.join(ROM_STORAGE).join(&target.path);
-    require_file(&rom, "ROM")?;
 
     let account_root = root.join("users").join(DEFAULT_ACCOUNT);
     for directory in ["system", "saves", "states", "screenshots"] {
@@ -150,14 +152,6 @@ fn require_directory(path: &Path, label: &str) -> Result<(), LaunchError> {
     }
 }
 
-fn safe_relative_path(value: &str) -> bool {
-    let path = Path::new(value);
-    !path.as_os_str().is_empty()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-}
-
 fn safe_absolute_path(path: &Path) -> bool {
     path.is_absolute()
         && path
@@ -182,6 +176,9 @@ input_player1_joypad_index = "0"
 input_player1_analog_dpad_mode = "1"
 # RetroArch value 2 is L3 + R3. Guide remains exclusive to Korri.
 input_menu_toggle_gamepad_combo = "2"
+# Select + Start exits to Korri (RetroArch 1.22.2 INPUT_COMBO_START_SELECT = 4).
+input_quit_gamepad_combo = "4"
+quit_press_twice = "false"
 
 kiosk_mode_enable = "true"
 menu_driver = "null"
@@ -227,6 +224,10 @@ fn write_atomically(path: &Path, content: &[u8]) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+#[path = "linux_retroarch_tests.rs"]
+mod storage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::resolver::{ResolvedFileTarget, ResolvedLinuxLauncher, ResolvedRuntime};
@@ -257,7 +258,7 @@ mod tests {
                 linux_path_env: Some("KORRI_MGBA_CORE".into()),
             }),
             file_target: Some(ResolvedFileTarget {
-                storage_id: ROM_STORAGE.into(),
+                storage_id: storage::IMPLICIT_ROMS_STORAGE_ID.into(),
                 path: "wl4.gba".into(),
             }),
         }
@@ -282,10 +283,11 @@ mod tests {
             ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
         ]);
 
-        let launch = launch_route_with_env(root.path(), &route(), |key| {
-            environment.get(key).map(|value| OsString::from(value))
-        })
-        .unwrap();
+        let launch =
+            launch_route_with_env(root.path(), &ConfigSnapshot::default(), &route(), |key| {
+                environment.get(key).map(|value| OsString::from(value))
+            })
+            .unwrap();
 
         assert_eq!(launch.command[0], executable.display().to_string());
         assert_eq!(launch.command[4], core.display().to_string());
@@ -306,6 +308,15 @@ mod tests {
         // RetroArch value 2 is L3 + R3. Guide remains exclusive to Korri.
         assert!(config.contains("input_menu_toggle_gamepad_combo = \"2\""));
         assert!(!config.contains("input_menu_toggle_btn"));
+        let settings: HashMap<_, _> = config
+            .lines()
+            .filter_map(|line| line.split_once(" = "))
+            .collect();
+        assert_eq!(settings.get("input_quit_gamepad_combo"), Some(&"\"4\""));
+        assert_eq!(settings.get("quit_press_twice"), Some(&"\"false\""));
+        // Keep Guide unbound: exit uses semantic Select + Start, not raw buttons.
+        assert!(!settings.keys().any(|key| key.ends_with("_btn")));
+        assert!(!settings.keys().any(|key| key.contains("guide")));
     }
 
     #[test]
@@ -316,11 +327,16 @@ mod tests {
         let executable = root.path().join("retroarch");
         fs::write(&executable, b"binary").unwrap();
 
-        let error = launch_route_with_env(root.path(), &route(), |key| match key {
-            "KORRI_RETROARCH_EXECUTABLE" => Some(executable.as_os_str().into()),
-            "KORRI_MGBA_CORE" => Some(root.path().join("missing.so").into_os_string()),
-            _ => None,
-        })
+        let error = launch_route_with_env(
+            root.path(),
+            &ConfigSnapshot::default(),
+            &route(),
+            |key| match key {
+                "KORRI_RETROARCH_EXECUTABLE" => Some(executable.as_os_str().into()),
+                "KORRI_MGBA_CORE" => Some(root.path().join("missing.so").into_os_string()),
+                _ => None,
+            },
+        )
         .unwrap_err();
 
         assert!(error.to_string().contains("mGBA core is missing"));

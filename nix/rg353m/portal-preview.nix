@@ -2,6 +2,7 @@
 { ... }:
 {
   imports = [
+    ./gba-gameplay.nix
     (import ../../clients/portal/nix/nixos-module.nix {
       inherit korri;
       # Chromium must receive this as argv; its pinned wrapper does not read

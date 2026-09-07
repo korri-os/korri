@@ -21,6 +21,7 @@ import { mergePlayStats, type PortalGameCopy } from "../launchables/fold-games"
 import type { PlayStats } from "@contracts/generated/korrid"
 import {
   entryKey,
+  isLocalCatalogSession,
   type LaunchablesState,
   type PortalEntry,
 } from "../launchables/state"
@@ -67,6 +68,9 @@ function orderedCopiesForEntry(entry: PortalEntry): readonly PortalGameCopy[] {
     ...(entry.alternatives ?? []),
   ]
   return copies.sort((left, right) => {
+    if (copyIsLocal(left) !== copyIsLocal(right)) {
+      return copyIsLocal(left) ? -1 : 1
+    }
     if (left.kind !== right.kind) return left.kind === "local" ? -1 : 1
     if (left.kind === "local" && right.kind === "local") {
       return left.game.id.localeCompare(right.game.id)
@@ -81,14 +85,18 @@ function orderedCopiesForEntry(entry: PortalEntry): readonly PortalGameCopy[] {
   })
 }
 
+function copyIsLocal(copy: PortalGameCopy): boolean {
+  return copy.kind === "local" || copy.game.source.isLocal
+}
+
 function copyHostKey(copy: PortalGameCopy): string {
-  return copy.kind === "local" ? "local" : `remote:${copy.game.host ?? ""}`
+  if (copy.kind === "local" || copy.game.source.isLocal) return "local"
+  return `remote:${copy.game.host ?? ""}`
 }
 
 function copyLocationLabel(copy: PortalGameCopy): string {
-  return copy.kind === "local"
-    ? "This device"
-    : (copy.game.host ?? "Other device")
+  if (copy.kind === "local" || copy.game.source.isLocal) return "This device"
+  return copy.game.host ?? "Other device"
 }
 
 function copyLocationId(copy: PortalGameCopy): string {
@@ -157,19 +165,23 @@ function playFactsForEntry(
 
 function alternativeLocation(entry: PortalEntry): string | undefined {
   if (entry.kind !== "local-game" && entry.kind !== "game") return undefined
-  const primaryKey =
+  const primaryKey = copyHostKey(
     entry.kind === "local-game"
-      ? "local"
-      : `remote:${entry.game.host ?? ""}`
+      ? { kind: "local", game: entry.game }
+      : { kind: "remote", game: entry.game },
+  )
   const visible = distinctHostCopies(entry)
     .filter(copy => copyHostKey(copy) !== primaryKey)
     .map(copy =>
-      copy.kind === "local" ? "this device" : copyLocationLabel(copy),
+      copyIsLocal(copy) ? "this device" : copyLocationLabel(copy),
     )
   return visible.length === 0 ? undefined : `Also on ${visible.join(", ")}`
 }
 
-function gameFromEntry(entry: PortalEntry): SurfaceGame | null {
+function gameFromEntry(
+  entry: PortalEntry,
+  entries: readonly PortalEntry[],
+): SurfaceGame | null {
   switch (entry.kind) {
     case "now-playing":
       return {
@@ -177,7 +189,9 @@ function gameFromEntry(entry: PortalEntry): SurfaceGame | null {
         title:
           entry.session.title ?? entry.session.gameId ?? "Current session",
         section: SECTION_CONTINUE,
-        subtitle: entry.session.host ?? "Running now",
+        subtitle: isLocalCatalogSession(entry.session, entries)
+          ? SECTION_THIS_DEVICE
+          : (entry.session.host ?? "Running now"),
         resumable: true,
       }
     case "local-game": {
@@ -201,11 +215,14 @@ function gameFromEntry(entry: PortalEntry): SurfaceGame | null {
     case "game": {
       const alternative = alternativeLocation(entry)
       const launchLocations = launchLocationsForEntry(entry)
-      const subtitle = [entry.game.host, alternative].filter(Boolean).join(" · ")
+      const location = entry.game.source.isLocal
+        ? SECTION_THIS_DEVICE
+        : entry.game.host
+      const subtitle = [location, alternative].filter(Boolean).join(" · ")
       return {
         id: entryKey(entry),
         title: entry.game.title,
-        section: entry.game.host ?? "Other devices",
+        section: location ?? "Other devices",
         ...(subtitle.length === 0 ? {} : { subtitle }),
         ...(launchLocations.length < 2 ? {} : { launchLocations }),
         ...playFactsForEntry(entry),
@@ -238,7 +255,7 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
       return {
         _tag: "Busy",
         kicker: `Preparing ${state.title}…`,
-        detail: "Your stream will start in a moment",
+        detail: "Opening your session",
         ...(state.subject ? { gameId: state.subject.id } : {}),
       }
     case "Launching":
@@ -281,7 +298,7 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
 function catalogFrom(state: LaunchablesState): SurfaceCatalog {
   if (state._tag === "Loading") return { _tag: "Loading" }
   const games = state.entries
-    .map(gameFromEntry)
+    .map(entry => gameFromEntry(entry, state.entries))
     .filter((game): game is SurfaceGame => game !== null)
   return games.length === 0
     ? { _tag: "Empty" }

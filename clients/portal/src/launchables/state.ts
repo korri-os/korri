@@ -41,7 +41,12 @@ export type PortalEntry =
    * game safe, so this exists to be seen and switched, not fixed.
    */
   | { readonly kind: "background-notice"; readonly visible: boolean }
-  | { readonly kind: "now-playing"; readonly session: ActiveSession }
+  | {
+      readonly kind: "now-playing"
+      readonly session: ActiveSession
+      /** Source evidence for this launch only, never a stale launchable entry. */
+      readonly localCatalogGame?: Game
+    }
   | {
       readonly kind: "local-game"
       readonly game: PortalLocalGame
@@ -52,6 +57,73 @@ export type PortalEntry =
       readonly game: Game
       readonly alternatives?: readonly PortalGameCopy[]
     }
+
+/**
+ * Linux status omits host (lib.rs::host_session_status_outcome), while its
+ * catalog uses config.label. Require source.isLocal and the game id; an
+ * explicit session host must still match that copy, never a same-id peer.
+ */
+function localCatalogGameForSession(
+  session: ActiveSession,
+  entries: readonly PortalEntry[],
+): Maybe<Game> {
+  const matches = (game: Game) =>
+    game.source.isLocal &&
+    game.id === session.gameId &&
+    (session.host === undefined || game.host === session.host)
+  for (const entry of entries) {
+    if (entry.kind === "game" && matches(entry.game)) {
+      return { _tag: "Some", value: entry.game }
+    }
+    if (entry.kind === "game" || entry.kind === "local-game") {
+      for (const copy of entry.alternatives ?? []) {
+        if (copy.kind === "remote" && matches(copy.game)) {
+          return { _tag: "Some", value: copy.game }
+        }
+      }
+    }
+    if (
+      entry.kind === "now-playing" &&
+      entry.session.launchId === session.launchId &&
+      entry.localCatalogGame !== undefined &&
+      matches(entry.localCatalogGame)
+    ) return { _tag: "Some", value: entry.localCatalogGame }
+  }
+  return { _tag: "None" }
+}
+
+export const isLocalCatalogSession = (
+  session: ActiveSession,
+  entries: readonly PortalEntry[],
+): boolean => localCatalogGameForSession(session, entries)._tag === "Some"
+
+const sessionEntry = (
+  session: ActiveSession,
+  entries: readonly PortalEntry[],
+  previousEntries: readonly PortalEntry[],
+): PortalEntry => {
+  // Old catalog facts establish locality only for the exact observed launch.
+  const previous = previousEntries.some(entry =>
+    entry.kind === "now-playing" && entry.session.launchId === session.launchId,
+  ) && !isLocalCatalogSession(session, entries)
+    ? localCatalogGameForSession(session, previousEntries)
+    : { _tag: "None" as const }
+  return {
+    kind: "now-playing",
+    session,
+    ...(previous._tag === "Some" ? { localCatalogGame: previous.value } : {}),
+  }
+}
+
+/**
+ * The Linux executor reports idle as Err(SessionCompleted/NoActiveSession).
+ * This is session truth, unlike an observation failure. Share that distinction
+ * across refresh, background polling, and exact-stop reconciliation.
+ */
+export const isAuthoritativeSessionStatus = (status: SessionStatusOutcome): boolean =>
+  status._tag === "Ok" ||
+  status.payload.code === "SessionCompleted" ||
+  status.payload.code === "NoActiveSession"
 
 /** One provisioned host's app-query outcome, as gathered by the Root. */
 export interface StreamSource {
@@ -174,6 +246,7 @@ export const LaunchablesState = {
     localGames?: LocalGamesListOutcome,
     storage?: StorageAccessResult,
     notice?: BackgroundNoticeResult,
+    previousEntries: readonly PortalEntry[] = [],
   ): LaunchablesState => {
     const entries: PortalEntry[] = []
     const failures: string[] = []
@@ -183,14 +256,6 @@ export const LaunchablesState = {
     // query is not treated as denial — we do not nag on a failed check.
     if (storage?._tag === "Denied") {
       entries.push({ kind: "storage-access" })
-    }
-
-    // An active host session renders first as a now-playing banner. A
-    // status failure degrades silently — no banner, no notice — rather
-    // than blocking the list. `!= null` also remains compatible with older
-    // korrid builds that emitted Option::None as explicit null.
-    if (session?._tag === "Ok" && session.payload.active != null) {
-      entries.push({ kind: "now-playing", session: session.payload.active })
     }
 
     const localCatalog = localGames?._tag === "Ok" ? localGames.payload.games : []
@@ -213,6 +278,12 @@ export const LaunchablesState = {
           ...alternatives,
         })
       }
+    }
+
+    // Source evidence can outlive a catalog read, but never restores its games.
+    if (session?._tag === "Ok" && session.payload.active != null) {
+      entries.splice(storage?._tag === "Denied" ? 1 : 0, 0,
+        sessionEntry(session.payload.active, entries, previousEntries))
     }
 
     if (localGames?._tag === "Ok") {
@@ -356,6 +427,49 @@ export const LaunchablesState = {
     )
   },
 
+  /** Prepare proves an owned launch exists; no native activity swap follows on Linux. */
+  withLocalCatalogPrepareOutcome: (
+    state: LaunchablesState,
+    outcome: SessionPrepareOutcome,
+    game: Game,
+  ): LaunchablesState => {
+    if (state._tag !== "Preparing") return state
+    if (outcome._tag === "Err") {
+      return readyFrom(state, `${outcome.payload.code}: ${outcome.payload.message}`)
+    }
+    return {
+      _tag: "Ready",
+      notice: null,
+      entries: [
+        {
+          kind: "now-playing",
+          session: {
+            launchId: outcome.payload.launchId,
+            gameId: outcome.payload.gameId,
+            title: game.title,
+            ...(game.host === undefined ? {} : { host: game.host }),
+          },
+        },
+        ...state.entries.filter(entry => entry.kind !== "now-playing"),
+      ],
+    }
+  },
+
+  /** Only authoritative observations replace the last known session. */
+  withSessionStatus: (
+    state: LaunchablesState,
+    status: SessionStatusOutcome,
+  ): LaunchablesState => {
+    if (state._tag !== "Ready" || !isAuthoritativeSessionStatus(status)) return state
+    const entries: PortalEntry[] = state.entries.filter(
+      entry => entry.kind !== "now-playing",
+    )
+    if (status._tag === "Ok" && status.payload.active !== undefined) {
+      entries.unshift(sessionEntry(status.payload.active, entries, state.entries))
+    }
+    return { ...state, entries }
+  },
+
   /**
    * Lock input before the asynchronous stop request leaves the portal. The
    * target session is named by the caller rather than inferred from a cursor:
@@ -388,19 +502,20 @@ export const LaunchablesState = {
         )
   },
 
-  /** Fold a status poll while stopping; only idle removes the banner. */
+  /** Fold a stop poll; completion, idle, or a different launch ends this stop. */
   withStatusAfterStop: (
     state: LaunchablesState,
     status: SessionStatusOutcome,
   ): LaunchablesState => {
     if (state._tag !== "Stopping") return state
-    if (status._tag === "Err") {
+    if (status._tag === "Err" && !isAuthoritativeSessionStatus(status)) {
       return readyFrom(
         state,
         `${status.payload.code}: ${status.payload.message}`,
       )
     }
     if (
+      status._tag === "Ok" &&
       status.payload.active != null &&
       status.payload.active.launchId === state.launchId
     ) {

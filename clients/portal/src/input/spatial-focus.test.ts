@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createInputBus } from "./bus"
 import { createSpatialFocusController, focusInDirection } from "./spatial-focus"
 
@@ -36,6 +36,10 @@ function button(id: string, rect: { x: number; y: number }): HTMLElement {
 }
 
 beforeEach(() => {
+  document.body.innerHTML = ""
+})
+
+afterEach(() => {
   document.body.innerHTML = ""
 })
 
@@ -137,6 +141,130 @@ describe("createSpatialFocusController", () => {
     dispose()
     bus.emit({ type: "confirm" })
     expect(clicks).toBe(1)
+  })
+
+  test("confirm seeds and activates after the focused page unmounts", () => {
+    const bus = createInputBus()
+    const dispose = createSpatialFocusController(bus)
+    const removed = button("removed", { x: 0, y: 0 })
+    removed.focus()
+    removed.remove()
+    const target = button("target", { x: 0, y: 0 })
+    let clicks = 0
+    target.addEventListener("click", () => { clicks += 1 })
+
+    expect(document.activeElement).toBe(document.body)
+    bus.emit({ type: "confirm" })
+    expect(document.activeElement).toBe(target)
+    expect(clicks).toBe(1)
+    dispose()
+  })
+
+  test.each(["hidden", "display", "visibility", "disabled", "inert", "aria-hidden", "zero-sized"])(
+    "confirm skips %s candidates even with tabindex",
+    kind => {
+      const bus = createInputBus()
+      const dispose = createSpatialFocusController(bus)
+      const excluded = button("excluded", { x: 0, y: 0 })
+      excluded.tabIndex = 0
+      const wrapper = document.createElement("div")
+      document.body.prepend(wrapper)
+      wrapper.append(excluded)
+      if (kind === "hidden") wrapper.hidden = true
+      if (kind === "display") wrapper.style.display = "none"
+      if (kind === "visibility") wrapper.style.visibility = "hidden"
+      if (kind === "disabled") excluded.setAttribute("disabled", "")
+      if (kind === "inert") wrapper.setAttribute("inert", "")
+      if (kind === "aria-hidden") wrapper.setAttribute("aria-hidden", "true")
+      if (kind === "zero-sized") place(excluded, { x: 0, y: 0, w: 0 })
+      const target = button("target", { x: 200, y: 0 })
+      let clicks = 0
+      target.addEventListener("click", () => { clicks += 1 })
+
+      bus.emit({ type: "confirm" })
+      expect(document.activeElement).toBe(target)
+      expect(clicks).toBe(1)
+      dispose()
+    },
+  )
+
+  test.each([false, true])("lost focus stays inside a visible trap (empty: %s)", empty => {
+    const bus = createInputBus()
+    const dispose = createSpatialFocusController(bus)
+    const outside = button("outside", { x: 0, y: 0 })
+    let outsideClicks = 0
+    outside.addEventListener("click", () => { outsideClicks += 1 })
+    const panel = document.createElement("div")
+    panel.setAttribute("data-block-exit", "true")
+    place(panel, { x: 0, y: 0 })
+    document.body.append(panel)
+    const inside = empty ? undefined : button("inside", { x: 0, y: 0 })
+    if (inside) panel.append(inside)
+
+    bus.emit({ type: "confirm" })
+    expect(outsideClicks).toBe(0)
+    expect(document.activeElement).toBe(inside ?? document.body)
+    dispose()
+  })
+
+  test("recovery ignores hidden traps and stays in the innermost visible trap", () => {
+    const bus = createInputBus()
+    const dispose = createSpatialFocusController(bus)
+    button("outside", { x: 0, y: 0 })
+    const outer = document.createElement("div")
+    outer.setAttribute("data-block-exit", "true")
+    place(outer, { x: 0, y: 0 })
+    document.body.append(outer)
+    outer.append(button("outer", { x: 0, y: 0 }))
+    const inner = outer.cloneNode(false) as HTMLElement
+    place(inner, { x: 0, y: 0 })
+    outer.append(inner)
+    const target = button("inner", { x: 0, y: 0 })
+    inner.append(target)
+    const hidden = inner.cloneNode(false) as HTMLElement
+    hidden.hidden = true
+    place(hidden, { x: 0, y: 0 })
+    document.body.append(hidden)
+    hidden.append(button("hidden", { x: 0, y: 0 }))
+
+    bus.emit({ type: "confirm" })
+    expect(document.activeElement).toBe(target)
+    dispose()
+  })
+
+  test.each(["input", "textarea", "div", "section"])("confirm preserves an active %s", tag => {
+    const bus = createInputBus()
+    const dispose = createSpatialFocusController(bus)
+    const target = button("target", { x: 0, y: 0 })
+    let clicks = 0
+    target.addEventListener("click", () => { clicks += 1 })
+    const active = document.createElement(tag)
+    active.tabIndex = -1
+    if (tag === "div") active.contentEditable = "true"
+    document.body.append(active)
+    place(active, { x: 200, y: 0 })
+    active.focus()
+    let activeClicks = 0
+    active.addEventListener("click", () => { activeClicks += 1 })
+
+    bus.emit({ type: "confirm" })
+    expect(document.activeElement).toBe(active)
+    expect(clicks).toBe(0)
+    expect(activeClicks).toBe(1)
+    dispose()
+  })
+
+  test("does not click a replacement when focusing changes the page", () => {
+    const bus = createInputBus()
+    const dispose = createSpatialFocusController(bus)
+    const target = button("target", { x: 0, y: 0 })
+    let clicks = 0
+    target.addEventListener("focus", () => { target.remove() })
+    target.addEventListener("click", () => { clicks += 1 })
+
+    bus.emit({ type: "confirm" })
+    expect(clicks).toBe(0)
+    dispose()
   })
 
   test("directions move focus through the bus", () => {

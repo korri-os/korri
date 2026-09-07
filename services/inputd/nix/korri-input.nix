@@ -31,6 +31,7 @@ let
   virtualTargetAcl = import ./virtual-target-acl.nix {
     inherit pkgs;
     inputdPackage = cfg.inputd.package;
+    inherit (cfg.inputd) extraActionUsers;
   };
   actionNames = [
     "system-panel"
@@ -176,6 +177,16 @@ in
       uid = lib.mkOption { type = lib.types.ints.positive; };
       controlGid = lib.mkOption { type = lib.types.ints.positive; };
       actionUser = lib.mkOption { type = lib.types.str; };
+      extraActionUsers = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          Additional trusted local users that may read only the validated
+          InputPlumber virtual Xbox target. Extends actionUser's target ACL,
+          not physical-source access, action execution, or group membership.
+          The ACL helper resolves names at runtime so system UIDs may be unset.
+        '';
+      };
       actionUid = lib.mkOption { type = lib.types.ints.positive; };
       actionGid = lib.mkOption { type = lib.types.ints.positive; };
       controlSocket = lib.mkOption {

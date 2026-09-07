@@ -129,6 +129,21 @@ let
   inputdOnly = withInputd {
     services.korriLinuxInput.inputd.enable = true;
   };
+  extraReader = withInputd {
+    services.korriLinuxInput.inputd = {
+      enable = true;
+      extraActionUsers = [ "korri-portal" ];
+    };
+    users.groups.korri-portal = { };
+    users.users.korri-portal = {
+      isSystemUser = true;
+      group = "korri-portal";
+    };
+  };
+  extraReaderAcl = import ./virtual-target-acl.nix {
+    inherit pkgs inputdPackage;
+    extraActionUsers = [ "korri-portal" ];
+  };
   combined = withInputd {
     services.korriLinuxInput.provider.enable = true;
     services.korriLinuxInput.inputd = {
@@ -301,6 +316,19 @@ assert lib.hasInfix "korri-virtual-target-acl" inputdService.serviceConfig.ExecS
 assert lib.hasSuffix " reapply 977 1000" inputdService.serviceConfig.ExecStartPre;
 assert lib.hasSuffix " revoke" inputdService.serviceConfig.ExecStopPost;
 assert !(inputdService.environment ? KORRI_INPUTD_KILL_CURRENT_GAME);
+assert allAssertionsPass extraReader;
+assert extraReader.config.users.users.korri-portal.uid == null;
+assert extraReader.config.users.users.korri-portal.extraGroups == [ ];
+assert inputdOnly.config.services.korriLinuxInput.inputd.extraActionUsers == [ ];
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "${lib.getExe extraReaderAcl} grant 977 1000 $env{DEVNAME}")
+  extraReader.config.services.udev.extraRules;
+assert
+  extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStartPre
+  == "+${lib.getExe extraReaderAcl} reapply 977 1000";
+assert
+  extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStopPost
+  == "+${lib.getExe extraReaderAcl} revoke";
 assert allAssertionsPass combined;
 assert builtins.elem "inputplumber.service" combinedService.after;
 assert builtins.elem "inputplumber.service" combinedService.wants;
@@ -388,5 +416,7 @@ pkgs.runCommand "korri-input-module-check" { } ''
 
   test -x ${inputdPackage}/bin/korri-virtual-target-acl
   grep -F -- '--device-root /dev/input' ${lib.getExe virtualTargetAcl} >/dev/null
+  grep -F -- '--action-user korri-portal' ${lib.getExe extraReaderAcl} >/dev/null
+  ! grep -F -- '--action-user' ${lib.getExe virtualTargetAcl}
   touch "$out"
 ''

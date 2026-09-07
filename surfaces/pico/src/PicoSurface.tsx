@@ -20,6 +20,7 @@ import {
 } from "./pico-library-view"
 import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoScreenViewFromModel } from "./pico-screen-view"
+import { type PicoSessionReturn, picoSessionReturnFromModel, picoSessionReturnOnPlay } from "./pico-session-return"
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoInitialView } from "./pico-initial-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
@@ -175,6 +176,21 @@ function PicoCatalogSurface({
     { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
   >(undefined)
   const view = picoScreenViewFromModel(model)
+  const sessionReturn = useRef<PicoSessionReturn>({ _tag: "Idle" })
+
+  useEffect(() => {
+    const next = picoSessionReturnFromModel(sessionReturn.current, viewingId, model)
+    sessionReturn.current = next
+    if (next._tag !== "ReturnToLibrary") return
+    sessionReturn.current = { _tag: "Idle" }
+    setViewingId(undefined)
+    setPlacing(undefined)
+    setAskingAction(undefined)
+    setAsking(undefined)
+    setSettingsOpen(false)
+    setFinding(false)
+    setMode("shelf")
+  }, [model.catalog, model.status, viewingId])
 
   /* Attract shows only over a shelf that is sitting there: never over a running
    * game, a launch, a failure, or a library Korri is still reading — those are
@@ -237,6 +253,7 @@ function PicoCatalogSurface({
       : undefined
     if (game === undefined) return
     if (game.locations === undefined || game.locations.length === 0) {
+      sessionReturn.current = picoSessionReturnOnPlay(sessionReturn.current, game.id, model.catalog)
       host.launchGame(game.id)
       return
     }
@@ -245,7 +262,7 @@ function PicoCatalogSurface({
 
   /* The game's own screen is drawn only while the shelf would be: status still
    * outranks it, so a launch that starts from it takes the screen the same way
-   * a launch from the shelf does, and the screen is simply there again after. */
+   * a launch from the shelf does. It stays until Back or an observed session end. */
   const viewing = view._tag === "Shelf" && viewingId !== undefined
     && model.catalog._tag === "Ready"
     ? model.catalog.games.find((game) => game.id === viewingId)
@@ -253,6 +270,7 @@ function PicoCatalogSurface({
 
   const chooseLocation = (locationId: string) => {
     if (placing === undefined) return
+    sessionReturn.current = picoSessionReturnOnPlay(sessionReturn.current, placing.id, model.catalog)
     host.launchGame(placing.id, locationId)
     setPlacing(undefined)
   }

@@ -184,6 +184,7 @@ fetch('/report', {{headers: {{
         .arg(chromium)
         .args([
             "--headless=new",
+            "--kiosk",
             "--disable-gpu",
             "--no-first-run",
             "--no-default-browser-check",
@@ -223,6 +224,23 @@ fetch('/report', {{headers: {{
     };
     let command = fs::read(format!("/proc/{chromium_pid}/cmdline")).unwrap();
     let environment = fs::read(format!("/proc/{chromium_pid}/environ")).unwrap();
+    let arguments: Vec<_> = command.split(|byte| *byte == 0).collect();
+    assert_eq!(
+        arguments
+            .iter()
+            .filter(|arg| **arg == b"--app=data:text/html,%3Ctitle%3EKorri%3C/title%3E")
+            .count(),
+        1,
+        "the shell must start exactly one inert app"
+    );
+    assert!(
+        arguments
+            .iter()
+            .skip(1)
+            .filter(|arg| !arg.is_empty())
+            .all(|arg| arg.starts_with(b"--")),
+        "a positional URL opens an extra regular tab"
+    );
     assert!(!String::from_utf8_lossy(&command).contains(CAPABILITY));
     assert!(!String::from_utf8_lossy(&command).contains("--remote-debugging-port"));
     assert!(!String::from_utf8_lossy(&environment).contains("KORRID_RPC_CAPABILITY="));
@@ -336,6 +354,7 @@ fn assert_not_ready(page: &str, child: &str, external_report: Option<&PageServer
             .arg(chromium)
             .args([
                 "--headless=new",
+                "--kiosk",
                 "--disable-gpu",
                 "--no-first-run",
                 "--no-default-browser-check",

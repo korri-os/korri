@@ -60,9 +60,27 @@ function delegateHorizontalDirectionEnd(
   return true
 }
 
+function isAvailable(element: HTMLElement): boolean {
+  if (element.matches(":disabled")) return false
+  if (element.closest('[hidden], [inert], [aria-hidden="true"]')) return false
+  for (
+    let ancestor: HTMLElement | null = element;
+    ancestor;
+    ancestor = ancestor.parentElement
+  ) {
+    const style = getComputedStyle(ancestor)
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.visibility === "collapse"
+    ) return false
+  }
+  return true
+}
+
 function isVisible(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect()
-  return rect.width > 0 && rect.height > 0
+  return rect.width > 0 && rect.height > 0 && isAvailable(element)
 }
 
 function center(element: Element): { x: number; y: number } {
@@ -77,7 +95,16 @@ function center(element: Element): { x: number; y: number } {
  */
 function scopeFor(active: Element | null): ParentNode {
   const blocked = active?.closest("[data-block-exit]")
-  return blocked ?? document
+  if (blocked) return blocked
+  // A removed control loses its trap ancestry. Recover inside the last visible
+  // (including nested) panel, never on a control behind it, even if it is empty.
+  if (!active) {
+    const panels = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-block-exit]"),
+    )
+    return panels.reverse().find(isVisible) ?? document
+  }
+  return document
 }
 
 export function focusInDirection(direction: Direction): boolean {
@@ -153,8 +180,22 @@ export function createSpatialFocusController(bus: InputBus): () => void {
   })
   const offConfirm = bus.onAction("confirm", () => {
     const active = document.activeElement
-    if (active instanceof HTMLElement && active !== document.body) {
-      active.click()
+    if (active && active !== document.body && active !== document.documentElement) {
+      // Preserve editable controls and custom focus owners; recovery is only
+      // for document focus lost at an unmount, not a new surface autofocus rule.
+      if (active instanceof HTMLElement && isAvailable(active)) active.click()
+      return
+    }
+    const candidate = Array.from(
+      scopeFor(null).querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    ).find(isVisible)
+    if (!candidate) return
+    candidate.focus()
+    // Focus handlers can replace the page. Do not activate stale DOM or replay
+    // this press on its replacement. Native click capture still owns wake-only
+    // overlays, exactly as it does when confirm starts with a focused control.
+    if (document.activeElement === candidate && isVisible(candidate)) {
+      candidate.click()
     }
   })
   return () => {

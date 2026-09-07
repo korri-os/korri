@@ -10,7 +10,7 @@ import {
   SessionStopPhase,
 } from "@contracts/generated/korrid"
 import type { BackgroundNoticeResult } from "@contracts/bridge/korri-native-bridge"
-import { entryKey, entryLabel, LaunchablesState } from "./state"
+import { entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
 import type { LaunchablesState as State, PortalEntry } from "./state"
 
 /** The banner entry a stop is about. Surfaces name it; this ADT never guesses. */
@@ -59,6 +59,110 @@ const localGamesOk: LocalGamesListOutcome = {
 }
 
 const ready = LaunchablesState.fromSources([officeApps], gamesOk)
+
+describe("catalog session locality", () => {
+  const catalogGame = {
+    id: "wl4", title: "Wario Land 4", host: "local-label",
+    source: { label: "local-label", isLocal: true },
+  }
+  const session = { launchId: "exact-launch", gameId: "wl4", host: "local-label" }
+
+  it("matches the source-local catalog when Linux status omits the catalog label", () => {
+    const entries: PortalEntry[] = [{ kind: "game", game: catalogGame }]
+    expect(isLocalCatalogSession(session, entries)).toBe(true)
+    expect(isLocalCatalogSession({ ...session, host: "peer" }, entries)).toBe(false)
+    expect(isLocalCatalogSession({ launchId: session.launchId, gameId: session.gameId, phase: "running" }, entries)).toBe(true)
+    expect(isLocalCatalogSession({ ...session, gameId: "other" }, entries)).toBe(false)
+    expect(isLocalCatalogSession(session, [{ kind: "game", game: { ...catalogGame, source: { ...catalogGame.source, isLocal: false } } }])).toBe(false)
+  })
+
+  it("keeps same-id remote copies isolated, including folded alternatives", () => {
+    const peer = { ...catalogGame, host: "peer", source: source("peer") }
+    const entries: PortalEntry[] = [{
+      kind: "game", game: peer,
+      alternatives: [{ kind: "remote", game: catalogGame }],
+    }]
+    const linuxSession = { launchId: "linux-launch", gameId: catalogGame.id, phase: "running" }
+    expect(isLocalCatalogSession(linuxSession, entries)).toBe(true)
+    expect(isLocalCatalogSession({ ...linuxSession, host: "peer" }, entries)).toBe(false)
+    expect(isLocalCatalogSession(linuxSession, [{ kind: "game", game: peer }])).toBe(false)
+    expect(isLocalCatalogSession(linuxSession, [{ kind: "game", game: { ...peer, host: undefined } }])).toBe(false)
+    expect(isLocalCatalogSession({ launchId: "unknown-game" }, entries)).toBe(false)
+  })
+
+  it("finds a local catalog route folded under another primary copy", () => {
+    expect(isLocalCatalogSession(session, [{
+      kind: "local-game",
+      game: { id: "android-copy", title: "Wario Land 4", system: "GBA" },
+      alternatives: [{ kind: "remote", game: catalogGame }],
+    }])).toBe(true)
+  })
+
+  it("publishes prepare identity immediately, then retains it across failed status until idle", () => {
+    const ready: State = { _tag: "Ready", entries: [{ kind: "game", game: catalogGame }], notice: null }
+    const preparing = LaunchablesState.beginPreparing(ready, catalogGame.title)
+    const acknowledged = LaunchablesState.withLocalCatalogPrepareOutcome(preparing, {
+      _tag: "Ok", payload: { gameId: catalogGame.id, launchId: session.launchId },
+    }, catalogGame)
+    expect(acknowledged._tag).toBe("Ready")
+    expect(nowPlayingEntry(acknowledged)).toEqual({ kind: "now-playing", session: { ...session, title: catalogGame.title } })
+    const failedRead = LaunchablesState.withSessionStatus(acknowledged, {
+      _tag: "Err", payload: { code: "StatusTimeout", message: "timeout" },
+    })
+    expect(failedRead).toBe(acknowledged)
+    expect(LaunchablesState.withSessionStatus(failedRead, { _tag: "Ok", payload: {} })).toEqual(ready)
+  })
+
+  it.each(["SessionCompleted", "NoActiveSession"])("treats %s as authoritative while observation failures retain the banner", code => {
+    const running: SessionStatusOutcome = {
+      _tag: "Ok", payload: { active: { launchId: session.launchId, gameId: catalogGame.id, phase: "running" } },
+    }
+    // services/korrid/src/lib.rs::host_session_status_outcome
+    const completed: SessionStatusOutcome = {
+      _tag: "Err", payload: { code, message: "no host launch is active" },
+    }
+    const loaded = LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, running)
+    const stopped = LaunchablesState.withSessionStatus(loaded, completed)
+    expect(stopped).toMatchObject({ _tag: "Ready", notice: null })
+    if (stopped._tag !== "Ready") throw new Error("not ready")
+    expect(stopped.entries.some(entry => entry.kind === "now-playing")).toBe(false)
+    expect(LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, completed)).toEqual(stopped)
+    const stopping = LaunchablesState.beginStopping(loaded, nowPlayingEntry(loaded))
+    expect(LaunchablesState.withStatusAfterStop(stopping, completed)).toEqual(stopped)
+    expect(LaunchablesState.withSessionStatus(loaded, {
+      _tag: "Err", payload: { code: "BrainUnreachable", message: "disconnected" },
+    })).toBe(loaded)
+  })
+
+  it("retains source evidence only for the same launch without restoring stale catalog games", () => {
+    const active = { launchId: session.launchId, gameId: catalogGame.id }
+    const running: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
+    const loaded = LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, running)
+    if (loaded._tag !== "Ready") throw new Error("not ready")
+    const failedCatalog = { _tag: "Err", payload: { code: "BrainUnreachable", message: "disconnected" } } as const
+    const refreshed = LaunchablesState.fromSources([], failedCatalog, undefined, running, undefined, undefined, undefined, loaded.entries)
+    if (refreshed._tag !== "Ready") throw new Error("not ready")
+    expect(refreshed.entries.some(entry => entry.kind === "game")).toBe(false)
+    expect(isLocalCatalogSession(active, refreshed.entries)).toBe(true)
+    const polled = LaunchablesState.withSessionStatus(refreshed, running)
+    if (polled._tag !== "Ready") throw new Error("not ready")
+    expect(isLocalCatalogSession(active, polled.entries)).toBe(true)
+    for (const active of [
+      { launchId: "replacement", gameId: catalogGame.id },
+      { launchId: session.launchId, gameId: catalogGame.id, host: "peer" },
+      { launchId: session.launchId, gameId: "other" },
+    ]) {
+      const replaced = LaunchablesState.withSessionStatus(polled, { _tag: "Ok", payload: { active } })
+      if (replaced._tag !== "Ready") throw new Error("not ready")
+      expect(isLocalCatalogSession(active, replaced.entries)).toBe(false)
+    }
+  })
+
+  it("a status observation cannot unlock a command in progress", () => {
+    const preparing = LaunchablesState.beginPreparing(ready, "Game")
+    expect(LaunchablesState.withSessionStatus(preparing, { _tag: "Ok", payload: {} })).toBe(preparing)
+  })
+})
 
 describe("LaunchablesState.fromSources", () => {
   it("folds the local game beside Korri catalog entries", () => {

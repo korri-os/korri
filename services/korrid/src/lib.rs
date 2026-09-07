@@ -17,6 +17,7 @@ use tokio::sync::oneshot;
 use typeshare::typeshare;
 
 pub mod authorization;
+pub mod catalog_cli;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;

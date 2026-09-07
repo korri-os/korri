@@ -4,7 +4,7 @@ import { once } from "node:events"
 import { createPortalConnection } from "./portal-connection"
 
 describe("portal connection", () => {
-  it("uses the shared token-authenticated RPC client with an actual local server", async () => {
+  it("uses token-authenticated catalog and hostless local session RPC with an actual local server", async () => {
     const requests: { path: string; authorization: string | null; body: unknown }[] = []
     const server = createServer(async (request, response) => {
       response.setHeader("access-control-allow-origin", request.headers.origin ?? "*")
@@ -22,10 +22,12 @@ describe("portal connection", () => {
         body: JSON.parse(body),
       })
       response.setHeader("content-type", "application/json")
-      response.end(JSON.stringify({
-        _tag: "app.catalog.snapshot",
-        outcome: { _tag: "Ok", payload: { games: [] } },
-      }))
+      const outcomes = [
+        { _tag: "app.catalog.snapshot", outcome: { _tag: "Ok", payload: { games: [] } } },
+        { _tag: "app.session.prepare", outcome: { _tag: "Ok", payload: { gameId: "wl4", launchId: "local-1" } } },
+        { _tag: "app.session.stop", outcome: { _tag: "Ok", payload: { phase: "stopped" } } },
+      ]
+      response.end(JSON.stringify(outcomes[requests.length - 1]))
     })
     server.listen(0, "127.0.0.1")
     await once(server, "listening")
@@ -43,6 +45,8 @@ describe("portal connection", () => {
         });
         process.stdout.write(JSON.stringify({
           catalog: await connection.korrid.catalogSnapshot(),
+          prepared: await connection.korrid.sessionPrepare("wl4"),
+          stopped: await connection.korrid.sessionStop("local-1"),
           system: await connection.bridge.systemInfo(),
         }));
       `], { stdout: "pipe", stderr: "pipe" })
@@ -51,11 +55,17 @@ describe("portal connection", () => {
       expect(output.catalog).toEqual({
         _tag: "Ok", payload: { games: [] },
       })
-      expect(requests).toEqual([{
-        path: "/rpc",
-        authorization: "Bearer private-test-capability",
-        body: { _tag: "app.catalog.snapshot", payload: {} },
-      }])
+      expect(output.prepared).toEqual({
+        _tag: "Ok", payload: { gameId: "wl4", launchId: "local-1" },
+      })
+      expect(output.stopped).toEqual({
+        _tag: "Ok", payload: { phase: "stopped" },
+      })
+      expect(requests).toEqual([
+        { path: "/rpc", authorization: "Bearer private-test-capability", body: { _tag: "app.catalog.snapshot", payload: {} } },
+        { path: "/rpc", authorization: "Bearer private-test-capability", body: { _tag: "app.session.prepare", payload: { gameId: "wl4" } } },
+        { path: "/rpc", authorization: "Bearer private-test-capability", body: { _tag: "app.session.stop", payload: { expectedLaunchId: "local-1" } } },
+      ])
       expect(output.system).toEqual({
         _tag: "Unavailable", message: "Native device operations are unavailable in this shell.",
       })

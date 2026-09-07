@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, jest, mock, test } from "bun:test"
 import * as React from "react"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { act } from "react"
@@ -416,9 +416,18 @@ const mounted: SurfaceRootView[] = []
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.cleanup()
   document.body.innerHTML = ""
+  jest.useRealTimers()
 })
 
-async function renderSurfaceRoot(sources: Sources, calls: Calls): Promise<SurfaceRootView> {
+async function renderSurfaceRoot(
+  sources: Sources,
+  calls: Calls,
+  options: {
+    readonly surface?: PortalSurface
+    readonly korrid?: KorridClient
+    readonly bridge?: LauncherBridge
+  } = {},
+): Promise<SurfaceRootView> {
   const container = document.createElement("div")
   document.body.append(container)
   const root: Root = createRoot(container)
@@ -436,13 +445,13 @@ async function renderSurfaceRoot(sources: Sources, calls: Calls): Promise<Surfac
 
   try {
     const SurfaceRoot = await surfaceRootComponent()
-    const surface = await catalogSurface()
+    const surface = options.surface ?? await catalogSurface()
     await act(async () => {
       root.render(
         <SurfaceRoot
           bus={bus}
-          bridge={buildBridge(sources, calls)}
-          korrid={buildKorrid(sources, calls)}
+          bridge={options.bridge ?? buildBridge(sources, calls)}
+          korrid={options.korrid ?? buildKorrid(sources, calls)}
           surface={surface}
         />,
       )
@@ -511,6 +520,16 @@ async function click(button: HTMLButtonElement) {
   })
 }
 
+// happy-dom has no layout. Supply geometry only; focus and click stay native.
+async function confirm(view: SurfaceRootView) {
+  for (const button of buttons(view.container)) {
+    button.getBoundingClientRect = () => new DOMRect(0, 0, 100, 40)
+  }
+  await act(async () => {
+    view.bus.emit({ type: "confirm" })
+  })
+}
+
 async function openWarioDetail() {
   await click(buttonNamed("Library"))
   await waitFor(
@@ -525,6 +544,114 @@ async function openWarioDetail() {
 }
 
 describe("SurfaceRoot", () => {
+  test("Pico returns from a Linux local catalog session to a usable library cart", async () => {
+    const { PicoSurface } = await import("@korri/pico")
+    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
+    const game = { ...remoteGame("device-label"), source: { label: "device-label", isLocal: true } }
+    const sources: Sources = { localGames: [], remoteGames: [game], streamHosts: [], streamAppsByHost: {} }
+    const nativeLaunches: LocalLaunchSpec[] = []
+    const bridge: LauncherBridge = {
+      ...buildBridge(sources, calls),
+      async launchLocal(spec) {
+        nativeLaunches.push(spec)
+        return { _tag: "Launched" }
+      },
+    }
+    let status: SessionStatusOutcome = {
+      _tag: "Err",
+      payload: { code: "NoActiveSession", message: "no host launch is active" },
+    }
+    let complete!: (value: SessionPrepareOutcome) => void
+    const preparation = new Promise<SessionPrepareOutcome>(resolve => { complete = resolve })
+    const korrid: KorridClient = {
+      ...buildKorrid(sources, calls),
+      sessionPrepare(gameId, host) {
+        calls.prepared.push({ gameId, host })
+        return preparation
+      },
+      async sessionStatus() { return status },
+    }
+    const view = await renderSurfaceRoot(sources, calls, {
+      korrid,
+      bridge,
+      surface: { id: "pico", title: "Pico", presentations: ["catalog"], render: props => <PicoSurface {...props} /> },
+    })
+    await waitFor(() => expect(buttonNamed("Wario Land 4, This device")).toBeDefined(), "local catalog cart")
+    expect(document.activeElement).toBe(document.body)
+    await confirm(view)
+    expect(buttonNamed("▶ PLAY")).toBeDefined()
+    expect(document.activeElement).toBe(document.body)
+    expect(calls.prepared).toEqual([])
+    await confirm(view)
+    expect(view.container.textContent).toContain("Preparing Wario Land 4")
+    expect(calls.prepared).toEqual([{ gameId: game.id, host: undefined }])
+
+    await act(async () => {
+      // Linux session status omits host, even though the catalog has a device label.
+      status = { _tag: "Ok", payload: { active: { launchId: "local-1", gameId: game.id, title: game.title } } }
+      complete({ _tag: "Ok", payload: { gameId: game.id, launchId: "local-1" } })
+      await sleep()
+    })
+    await waitFor(() => expect(buttonNamed("▶ PLAY")).toBeDefined(), "selected detail after prepare")
+    await act(async () => {
+      status = {
+        _tag: "Err",
+        payload: { code: "SessionCompleted", message: "host launch local-1 completed" },
+      }
+      window.dispatchEvent(new Event("focus"))
+      await sleep()
+    })
+    await waitFor(() => {
+      expect(view.container.querySelector(".pico-cart-shelf")).not.toBeNull()
+      expect(buttonNamed("Wario Land 4, This device")).toBeDefined()
+    }, "library after local session completion")
+    expect(view.container.querySelector(".pico-game-detail")).toBeNull()
+    expect(view.container.querySelector(".pico-library-browser")).toBeNull()
+    expect(buttons(view.container).map(accessibleName)).not.toContain("▶ PLAY")
+    expect(view.container.textContent).not.toContain("Preparing Wario Land 4")
+
+    expect(document.activeElement).toBe(document.body)
+    expect(buttonNamed("Wario Land 4, This device").disabled).toBe(false)
+    await confirm(view)
+    await waitFor(() => expect(buttonNamed("▶ PLAY")).toBeDefined(), "semantic confirm reopens the library cart")
+    expect(view.container.querySelector('section[aria-label="Wario Land 4"]')).not.toBeNull()
+    expect(calls.prepared).toEqual([{ gameId: game.id, host: undefined }])
+    expect(calls.streams).toEqual([])
+    expect(calls.localLaunches).toEqual([])
+    expect(nativeLaunches).toEqual([])
+  })
+
+
+  test("Pico body-focus confirm wakes attract without opening or launching a cart", async () => {
+    const { PicoSurface } = await import("@korri/pico")
+    const { PICO_ATTRACT_AFTER_MS } = await import("../../../../surfaces/pico/src/pico-attract")
+    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
+    const sources: Sources = { localGames: [localGame()], remoteGames: [], streamHosts: [], streamAppsByHost: {} }
+    jest.useFakeTimers()
+    const view = await renderSurfaceRoot(sources, calls, {
+      surface: { id: "pico", title: "Pico", presentations: ["catalog"], render: props => <PicoSurface {...props} /> },
+    })
+    await waitFor(() => expect(buttonNamed("Wario Land 4, Game Boy Advance")).toBeDefined(), "loaded cart")
+    act(() => { jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS + 1) })
+    expect(view.container.querySelector('[aria-label="Attract"]')).not.toBeNull()
+    expect(document.activeElement).toBe(document.body)
+
+    await confirm(view)
+    expect(view.container.querySelector('[aria-label="Attract"]')).toBeNull()
+    expect(view.container.querySelector(".pico-game-detail")).toBeNull()
+    expect(calls.localLaunches).toEqual([])
+    expect(calls.prepared).toEqual([])
+
+    await confirm(view)
+    expect(buttonNamed("▶ PLAY")).toBeDefined()
+    expect(calls.localLaunches).toEqual([])
+    expect(calls.prepared).toEqual([])
+    await act(async () => { view.bus.emit({ type: "back" }) })
+    expect(document.activeElement).toBe(document.body)
+    await confirm(view)
+    expect(buttonNamed("▶ PLAY")).toBeDefined()
+  })
+
   test("selecting a folded remote location dispatches the exact non-default stream route", async () => {
     const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
     const sources: Sources = {

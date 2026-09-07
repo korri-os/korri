@@ -15,7 +15,7 @@ struct RunningPortal {
 
 impl RunningPortal {
     async fn start(host: bool) -> Self {
-        Self::with_host_access(host, Some(PortalPermission::ReadOnly)).await
+        Self::with_host_access(host, Some(PortalPermission::LocalSessions)).await
     }
 
     async fn with_host_access(host: bool, permission: Option<PortalPermission>) -> Self {
@@ -138,50 +138,109 @@ async fn shared_portal_rpc_reads_the_actual_linux_catalog_without_android_fixtur
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_read_only_permission_allows_only_the_initial_portal_reads() {
-    let portal = RunningPortal::start(true).await;
-    for method in [
-        "app.catalog.snapshot",
-        "system.health",
-        "app.local-games.list",
-        "system.settings.snapshot",
-        "app.discovery.snapshot",
-        "app.moonlight.resolve",
-        "app.session.status",
-    ] {
-        let response = portal.rpc(Some(TOKEN), Some(ORIGIN), method).await;
-        assert_eq!(response.status(), StatusCode::OK, "{method}");
-        assert_eq!(response.json::<Value>().await.unwrap()["_tag"], method);
+async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local_sessions() {
+    for permission in [PortalPermission::ReadOnly, PortalPermission::LocalSessions] {
+        let portal = RunningPortal::with_host_access(true, Some(permission)).await;
+        for method in [
+            "app.catalog.snapshot",
+            "system.health",
+            "app.local-games.list",
+            "system.settings.snapshot",
+            "app.discovery.snapshot",
+            "app.moonlight.resolve",
+            "app.session.status",
+        ] {
+            let response = portal.rpc(Some(TOKEN), Some(ORIGIN), method).await;
+            assert_eq!(response.status(), StatusCode::OK, "{method}");
+            assert_eq!(response.json::<Value>().await.unwrap()["_tag"], method);
+        }
+        for body in [
+            json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
+            json!({"_tag":"app.moonlight.launch.cancel","payload":{"launchId":"l"}}),
+            json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
+            json!({"_tag":"app.moonlight.certificate.provision","payload":{"hostUuid":"h","clientCertificate":"c"}}),
+            json!({"_tag":"app.moonlight.certificate.revoke","payload":{"hostUuid":"h","clientCertificate":"c"}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"peer"}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"rg353m"}}),
+            json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":""}}),
+            json!({"_tag":"app.session.stop","payload":{}}),
+            json!({"_tag":"app.session.freeze","payload":{}}),
+            json!({"_tag":"app.session.thaw","payload":{}}),
+            json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
+            json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
+            json!({"_tag":"app.session.control.invoke","payload":{"launchId":"l","controlId":"c"}}),
+            json!({"_tag":"app.local-games.launch","payload":{"gameId":"g"}}),
+            json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt":"r"}}),
+            json!({"_tag":"app.discovery.removeLocation","payload":{"locationId":"l"}}),
+            json!({"_tag":"app.discovery.rescan","payload":{}}),
+            json!({"_tag":"system.settings.update","payload":{"expectedRevision":"r","settingId":"s","value":"v"}}),
+            json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"t"}}),
+            json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+        ] {
+            let method = body["_tag"].as_str().unwrap().to_owned();
+            let local_session = (method == "app.session.prepare"
+                && body["payload"].get("host").is_none())
+                || method == "app.session.stop";
+            let allowed = permission == PortalPermission::LocalSessions && local_session;
+            let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
+            assert_eq!(
+                response.status(),
+                if allowed {
+                    StatusCode::OK
+                } else {
+                    StatusCode::FORBIDDEN
+                },
+                "{permission:?}: {method}"
+            );
+            if allowed {
+                // HTTP 200 proves dispatch, not launch: this portal has no configured game.
+                let body = response.json::<Value>().await.unwrap();
+                assert_eq!(body["_tag"], method);
+                assert_eq!(body["outcome"]["_tag"], "Err");
+                assert_eq!(
+                    body["outcome"]["payload"]["code"],
+                    if method == "app.session.prepare" {
+                        "HostGameNotFound"
+                    } else {
+                        "ExpectedLaunchIdRequired"
+                    }
+                );
+            }
+        }
     }
+}
+
+#[tokio::test]
+async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exact_origin() {
+    let portal = RunningPortal::start(true).await;
     for body in [
-        json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
-        json!({"_tag":"app.moonlight.launch.cancel","payload":{"launchId":"l"}}),
-        json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
-        json!({"_tag":"app.moonlight.certificate.provision","payload":{"hostUuid":"h","clientCertificate":"c"}}),
-        json!({"_tag":"app.moonlight.certificate.revoke","payload":{"hostUuid":"h","clientCertificate":"c"}}),
         json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}}),
-        json!({"_tag":"app.session.stop","payload":{}}),
-        json!({"_tag":"app.session.freeze","payload":{}}),
-        json!({"_tag":"app.session.thaw","payload":{}}),
-        json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
-        json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
-        json!({"_tag":"app.session.control.invoke","payload":{"launchId":"l","controlId":"c"}}),
-        json!({"_tag":"app.local-games.launch","payload":{"gameId":"g"}}),
-        json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt":"r"}}),
-        json!({"_tag":"app.discovery.removeLocation","payload":{"locationId":"l"}}),
-        json!({"_tag":"app.discovery.rescan","payload":{}}),
-        json!({"_tag":"system.settings.update","payload":{"expectedRevision":"r","settingId":"s","value":"v"}}),
-        json!({"_tag":"system.settings.steamgriddbCredential.set","payload":{"token":"t"}}),
-        json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
+        json!({"_tag":"app.session.stop","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
     ] {
-        let method = body["_tag"].as_str().unwrap().to_owned();
+        for token in [None, Some("incorrect")] {
+            assert_eq!(
+                portal
+                    .request(token, Some(ORIGIN), body.clone())
+                    .await
+                    .status(),
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        let response = portal
+            .request(Some(TOKEN), Some("https://foreign.example"), body.clone())
+            .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none());
+        // Native callers may omit Origin, but must still hold the capability.
+        let response = portal.request(Some(TOKEN), None, body).await;
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            portal
-                .request(Some(TOKEN), Some(ORIGIN), body)
-                .await
-                .status(),
-            StatusCode::FORBIDDEN,
-            "{method}"
+            response.json::<Value>().await.unwrap()["outcome"]["_tag"],
+            "Err"
         );
     }
 }

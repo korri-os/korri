@@ -141,7 +141,7 @@ const fixture = (
 ) => {
   const korrid = {
     ...createInMemoryKorridClient({
-      games: [{ id: "game", title: "Game", host: "Host" }],
+      games: [{ id: "game", title: "Game", host: "Host", source: { label: "Host", isLocal: false } }],
       moonlight: available,
     }),
     ...korridOverrides,
@@ -448,7 +448,7 @@ describe("Moonlight launch orchestration", () => {
     const signing = deferred<Awaited<ReturnType<KorridClient["moonlightLaunchPrepare"]>>>()
     const calls: string[] = []
     const base = createInMemoryKorridClient({
-      games: [{ id: "game", title: "Game", host: "Host" }],
+      games: [{ id: "game", title: "Game", host: "Host", source: { label: "Host", isLocal: false } }],
       moonlight: available,
       activeSession: {
         launchId: "host-launch",

@@ -87,8 +87,9 @@ impl DynamicHostRuntime {
         }
         let mut games = Vec::new();
         for route in catalog.routes {
-            let launch = linux_retroarch::launch_route_with_env(root, &route, lookup)
-                .map_err(|error| dynamic_failure(error.to_string()))?;
+            let launch =
+                linux_retroarch::launch_route_with_env(root, &state.snapshot, &route, lookup)
+                    .map_err(|error| dynamic_failure(error.to_string()))?;
             games.push(DynamicHostGame {
                 id: route.playable_id,
                 title: route.title.unwrap_or(route.release_id),
@@ -749,6 +750,53 @@ mod tests {
         assert_eq!(
             runtime.catalog_snapshot().unwrap().games[0].play_stats,
             None
+        );
+    }
+
+    #[test]
+    fn linux_host_materializes_a_discovery_registered_gba() {
+        let root = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let rom = folder.path().join("wl4.gba");
+        fs::write(&rom, b"rom").unwrap();
+        let report = crate::discovery::DiscoveryCoordinator::new(root.path(), private.path())
+            .add_location(
+                folder.path(),
+                &crate::discovery::DiscoveryOptions {
+                    first_seen_at: "2026-08-05T00:00:00Z".into(),
+                    ..crate::discovery::DiscoveryOptions::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(report.added_library_records, 1);
+        let executable = root.path().join("retroarch");
+        let core = root.path().join("mgba.so");
+        let autoconfig = root.path().join("autoconfig");
+        fs::write(&executable, b"binary").unwrap();
+        fs::write(&core, b"core").unwrap();
+        fs::create_dir(&autoconfig).unwrap();
+        let environment = HashMap::from([
+            ("KORRI_RETROARCH_EXECUTABLE", executable.as_os_str()),
+            ("KORRI_MGBA_CORE", core.as_os_str()),
+            ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
+        ]);
+
+        let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
+            environment.get(key).map(OsString::from)
+        })
+        .unwrap();
+
+        assert_eq!(runtime.games.len(), 1);
+        assert_eq!(runtime.games[0].id, "wl4");
+        assert_eq!(
+            runtime.games[0].command[0],
+            executable.display().to_string()
+        );
+        assert_eq!(runtime.games[0].command[4], core.display().to_string());
+        assert_eq!(
+            runtime.games[0].command[5],
+            rom.canonicalize().unwrap().display().to_string()
         );
     }
 

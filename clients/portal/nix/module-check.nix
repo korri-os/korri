@@ -9,6 +9,7 @@ let
     nixpkgs.lib.nixosSystem {
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
+        korri.nixosModules.korri-input
         (import ./nixos-module.nix {
           inherit korri;
           chromiumArgs = [
@@ -56,6 +57,10 @@ let
       services.korri.webSurfaceHost.enable = true;
       services.korri.compositor.kiosk.enable = true;
     }).config;
+  serverOnly =
+    (evaluate {
+      services.korri.webSurfaceHost.enable = true;
+    }).config;
   alternate =
     (evaluate {
       services.korri.webSurfaceHost.enable = true;
@@ -90,6 +95,10 @@ assert !(disabled.systemd.services ? korri-chromium-kiosk);
 assert !(disabled.systemd.services ? korri-portal-initialize);
 assert !(disabled.systemd.services ? korri-portal-credentials);
 assert !disabled.services.nginx.enable;
+assert disabled.services.korriLinuxInput.inputd.extraActionUsers == [ ];
+assert serverOnly.services.korriLinuxInput.inputd.extraActionUsers == [ ];
+assert enabled.services.korriLinuxInput.inputd.extraActionUsers == [ "korri-portal" ];
+assert enabled.users.users.korri-portal.uid == null;
 assert service.serviceConfig.User == "korri-portal";
 assert service.serviceConfig.Group == "korri-portal";
 assert enabled.users.users.korri-portal.isSystemUser;
@@ -192,9 +201,11 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F 'Type=notify' ${pkgs.writeText "portal-kiosk.service" unit}
   grep -F 'Restart=on-failure' ${pkgs.writeText "portal-kiosk.service" unit}
   grep -F -- 'korri-portal-shell' ${service.serviceConfig.ExecStart}
+  grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
+  grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
   grep -F -- '--force-prefers-reduced-motion' ${service.serviceConfig.ExecStart}
   grep -F -- '--disable-gpu' ${service.serviceConfig.ExecStart}
-  if grep -E -- '--no-sandbox|--remote-debugging-port|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi
+  if grep -E -- '--app|--no-sandbox|--remote-debugging|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi
   export RUNTIME_DIRECTORY="$TMPDIR/credentials"
   mkdir -m 700 "$RUNTIME_DIRECTORY"
   ${producer.serviceConfig.ExecStart} > "$TMPDIR/credential-output"

@@ -43,6 +43,8 @@ import type { DeviceFacts } from "./settings-model"
 import {
   entryKey,
   entryLabel,
+  isAuthoritativeSessionStatus,
+  isLocalCatalogSession,
   LaunchablesState,
   type PortalEntry,
   type StreamSource,
@@ -57,6 +59,7 @@ const SESSION_STATUS_TIMEOUT_MS = 3000
 const STOP_POLL_INTERVAL_MS = 500
 const STOP_POLL_DEADLINE_MS = 8000
 const DISCOVERY_POLL_INTERVAL_MS = 750
+const LOCAL_SESSION_POLL_INTERVAL_MS = 500
 
 const discoveryActive = (snapshot: DiscoverySnapshot | undefined): boolean =>
   snapshot?.state._tag === "Scanning" || snapshot?.state._tag === "Enriching"
@@ -127,6 +130,8 @@ export function useLaunchables(
   settingsStatusRef.current = settingsStatus
   const stateRef = useRef(state)
   stateRef.current = state
+  // Loading hides the catalog, not the last observed session's source evidence.
+  const lastEntriesRef = useRef<readonly PortalEntry[]>([])
   const factsRef = useRef(facts)
   factsRef.current = facts
   const streamsRef = useRef<readonly StreamSource[]>([])
@@ -157,6 +162,7 @@ export function useLaunchables(
     // Update the ref synchronously: React may defer the render, but a repeated
     // confirm in the same frame must observe the input-locked case.
     stateRef.current = next
+    if (next._tag !== "Loading") lastEntriesRef.current = next.entries
     setState(next)
   }, [])
 
@@ -327,7 +333,7 @@ export function useLaunchables(
     if (
       !mountedRef.current ||
       seq !== loadSeq.current ||
-      (preserveAction && action !== actionSeq.current)
+      action !== actionSeq.current
     ) return
     streamsRef.current = streams
     moonlightRef.current = moonlightDiscovery.resolution
@@ -354,20 +360,29 @@ export function useLaunchables(
       current._tag !== "Loading" &&
       current._tag !== "Ready"
     ) return
+    const previousEntries = lastEntriesRef.current
+    const knownLocalSession = previousEntries.find(entry =>
+      entry.kind === "now-playing" &&
+      isLocalCatalogSession(entry.session, previousEntries),
+    )
     const loaded = LaunchablesState.fromSources(
       streams,
       games,
       hostsResult._tag === "QueryFailed" ? hostsResult.message : undefined,
-      session,
+      // A failed refresh cannot prove that an acknowledged local launch ended.
+      !isAuthoritativeSessionStatus(session) && knownLocalSession?.kind === "now-playing"
+        ? { _tag: "Ok", payload: { active: knownLocalSession.session } }
+        : session,
       localGamesWithCoverUrls,
       storage,
       notice,
+      previousEntries,
     )
     if (current._tag === "Stopping") {
       const active = session._tag === "Ok" ? session.payload.active : undefined
       // Preserve Stopping while the same launch remains active (or status
       // is unavailable). Idle or a different launch resolves this stop.
-      if (session._tag !== "Ok" || active?.launchId === current.launchId) return
+      if (!isAuthoritativeSessionStatus(session) || active?.launchId === current.launchId) return
       // This reload established that the target launch ended. Invalidate a
       // late stop ACK as well as any poll before publishing fresh state.
       actionSeq.current += 1
@@ -407,6 +422,83 @@ export function useLaunchables(
       window.removeEventListener(OWNER_BINDING_CHANGED_EVENT, onOwnerBindingChanged)
     }
   }, [checkFolderPicker, load])
+
+  // Linux has no native activity-resume event. Read on desktop return without
+  // invalidating an in-flight prepare/stop, and keep the catalog mounted so the
+  // surface can retain its selection and focus.
+  useEffect(() => {
+    const onReturn = () => {
+      const current = stateRef.current
+      if (current._tag === "Loading") return
+      const hasLocalCatalog = current.entries.some(entry =>
+        (entry.kind === "now-playing" && isLocalCatalogSession(entry.session, current.entries)) ||
+        (entry.kind === "game" && entry.game.source.isLocal) ||
+        ((entry.kind === "game" || entry.kind === "local-game") &&
+          entry.alternatives?.some(copy =>
+            copy.kind === "remote" && copy.game.source.isLocal,
+          )),
+      )
+      if (hasLocalCatalog) void load(true)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onReturn()
+    }
+    window.addEventListener("focus", onReturn)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("focus", onReturn)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [load])
+
+  const localSession = state._tag === "Loading"
+    ? undefined
+    : state.entries.find(entry =>
+        entry.kind === "now-playing" &&
+        isLocalCatalogSession(entry.session, state.entries),
+      )
+  const localLaunchId = localSession?.kind === "now-playing"
+    ? localSession.session.launchId
+    : undefined
+
+  // Observe only the known local session, with at most one timed status read
+  // in flight. Focus alone misses games that exit before the browser blurs.
+  useEffect(() => {
+    if (localLaunchId === undefined) return
+    let disposed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = async () => {
+      const operation = actionSeq.current
+      const loadOperation = loadSeq.current
+      if (stateRef.current._tag === "Ready") {
+        const status = await sessionStatusWithTimeout()
+        if (disposed || !mountedRef.current) return
+        if (
+          operation === actionSeq.current &&
+          loadOperation === loadSeq.current
+        ) {
+          publish(LaunchablesState.withSessionStatus(stateRef.current, status))
+          if (
+            isAuthoritativeSessionStatus(status) &&
+            (status._tag === "Err" || status.payload.active?.launchId !== localLaunchId)
+          ) {
+            // Refresh play facts after exit. Recovery reads never cancel a
+            // newer command and do not put the surface back into Loading.
+            void load(true)
+            return
+          }
+        }
+      }
+      if (!disposed) {
+        timer = setTimeout(() => void poll(), LOCAL_SESSION_POLL_INTERVAL_MS)
+      }
+    }
+    void poll()
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+    }
+  }, [localLaunchId, load, publish, sessionStatusWithTimeout])
 
   useEffect(() => {
     const previous = discoveryPoller.current
@@ -703,6 +795,30 @@ export function useLaunchables(
       // Only Ready accepts new work; Preparing/Launching/Stopping are locked by
       // the model rather than by a nullable flag convention.
       if (current._tag !== "Ready") return
+      // A retained caller selection is not authority to launch a removed game.
+      if (!current.entries.some(candidate =>
+        entryKey(candidate) === entryKey(entry) ||
+        ((candidate.kind === "game" || candidate.kind === "local-game") &&
+          candidate.alternatives?.some(copy => entryKey(
+            copy.kind === "remote"
+              ? { kind: "game", game: copy.game }
+              : { kind: "local-game", game: copy.game },
+          ) === entryKey(entry))),
+      )) return
+      // A catalog-local process is already running on this display. Neither
+      // its banner nor its catalog copy is an Android/Moonlight resume route.
+      if (
+        entry.kind === "now-playing" &&
+        isLocalCatalogSession(entry.session, current.entries)
+      ) return
+      if (
+        entry.kind === "game" &&
+        entry.game.source.isLocal &&
+        current.entries.some(candidate =>
+          candidate.kind === "now-playing" &&
+          isLocalCatalogSession(candidate.session, [entry]),
+        )
+      ) return
       const operation = ++actionSeq.current
 
       if (entry.kind === "background-notice") {
@@ -826,6 +942,45 @@ export function useLaunchables(
         return
       }
 
+      if (entry.game.source.isLocal) {
+        const preparing = LaunchablesState.beginPreparing(
+          current,
+          entry.game.title,
+          { id: entry.game.id, title: entry.game.title },
+        )
+        publish(preparing)
+        // Catalog locality is the authority: this is korrid's Linux executor,
+        // not Android local inventory and not a remote stream reservation.
+        void korrid.sessionPrepare(entry.game.id).then(async outcome => {
+          if (!mountedRef.current) return
+          if (operation !== actionSeq.current) {
+            if (outcome._tag === "Ok") void load(true)
+            return
+          }
+          // Reads started before the ACK must not erase the newly known launch.
+          const loadOperation = ++loadSeq.current
+          publish(
+            LaunchablesState.withLocalCatalogPrepareOutcome(
+              preparing,
+              outcome,
+              entry.game,
+            ),
+          )
+          if (outcome._tag === "Err") {
+            // An older prepare may have succeeded while this command was
+            // locked. Recover its session without clearing this failure notice.
+            const status = await sessionStatusWithTimeout()
+            if (
+              !mountedRef.current ||
+              operation !== actionSeq.current ||
+              loadOperation !== loadSeq.current
+            ) return
+            publish(LaunchablesState.withSessionStatus(stateRef.current, status))
+          }
+        })
+        return
+      }
+
       // Never arm a host unless the shell can attach to that exact host.
       // Otherwise prepare would leave an unmanaged game running unseen.
       const target = findKorriStreamTarget(entry.game.host)
@@ -912,6 +1067,7 @@ export function useLaunchables(
       moonlightTargetFailure,
       noticeOnReady,
       publish,
+      sessionStatusWithTimeout,
     ],
   )
 
@@ -953,7 +1109,7 @@ export function useLaunchables(
             ) {
               return
             }
-            if (status._tag === "Ok") {
+            if (isAuthoritativeSessionStatus(status)) {
               const afterStatus = LaunchablesState.withStatusAfterStop(
                 stopping,
                 status,
