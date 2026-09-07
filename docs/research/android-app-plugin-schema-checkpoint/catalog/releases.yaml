@@ -1,0 +1,5 @@
+releases:
+  '@korri:android-app/com.playdigious.tmnt':
+    game: 01K4J6K8Y00000000000000001
+    system: android
+    identity: provider

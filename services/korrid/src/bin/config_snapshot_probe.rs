@@ -6,12 +6,15 @@
 
 use std::{env, fs, path::PathBuf, process};
 
-use korrid::config::snapshot::{ConfigSnapshotCoordinator, CONFIG_FILE_NAME, LIBRARY_FILE_NAME};
+use korrid::config::snapshot::{
+    ConfigSnapshotCoordinator, DEVICE_FILE_NAME, GAMES_FILE_NAME, RELEASES_FILE_NAME,
+};
 
-const CHECKPOINT_CONFIG: &str =
-    include_str!("../../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
-const CHECKPOINT_LIBRARY: &str =
-    include_str!("../../../../docs/research/android-app-plugin-schema-checkpoint/library.yaml");
+const CHECKPOINT_DEVICE: &str =
+    include_str!("../../../../docs/research/android-app-plugin-schema-checkpoint/device.yaml");
+const CHECKPOINT_GAMES: &str = include_str!(
+    "../../../../docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml"
+);
 
 fn main() {
     if let Err(error) = run() {
@@ -33,20 +36,27 @@ fn run() -> Result<(), String> {
     print_state(&empty);
     println!(
         "{} bytes: {:?}",
-        CONFIG_FILE_NAME,
-        fs::read(root.join(CONFIG_FILE_NAME)).map_err(|error| error.to_string())?
+        DEVICE_FILE_NAME,
+        fs::read(root.join(DEVICE_FILE_NAME)).map_err(|error| error.to_string())?
     );
     println!(
         "{} bytes: {:?}",
-        LIBRARY_FILE_NAME,
-        fs::read(root.join(LIBRARY_FILE_NAME)).map_err(|error| error.to_string())?
+        GAMES_FILE_NAME,
+        fs::read(root.join(GAMES_FILE_NAME)).map_err(|error| error.to_string())?
     );
 
-    fs::write(root.join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG)
-        .map_err(|error| format!("cannot write checkpoint config: {error}"))?;
-    fs::write(root.join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY)
-        .map_err(|error| format!("cannot write checkpoint library: {error}"))?;
+    fs::write(root.join(DEVICE_FILE_NAME), CHECKPOINT_DEVICE)
+        .map_err(|error| format!("cannot write checkpoint device: {error}"))?;
+    fs::write(root.join(GAMES_FILE_NAME), CHECKPOINT_GAMES)
+        .map_err(|error| format!("cannot write checkpoint games: {error}"))?;
 
+    fs::write(
+        root.join(RELEASES_FILE_NAME),
+        include_str!(
+            "../../../../docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml"
+        ),
+    )
+    .map_err(|error| error.to_string())?;
     println!();
     println!("== exact checkpoint load ==");
     let checkpoint = coordinator.reload();
@@ -65,14 +75,14 @@ fn run() -> Result<(), String> {
         yes_no(
             checkpoint
                 .snapshot
-                .library
-                .contains_key("tmnt-shredders-revenge")
+                .games
+                .contains_key("01K4J6K8Y00000000000000001")
         )
     );
 
     fs::write(
-        root.join(LIBRARY_FILE_NAME),
-        "library:\n  bad id:\n    releases: []\n",
+        root.join(GAMES_FILE_NAME),
+        "games:\n  bad id:\n    releases: []\n",
     )
     .map_err(|error| format!("cannot write rejected edit: {error}"))?;
 
@@ -85,8 +95,8 @@ fn run() -> Result<(), String> {
         yes_no(
             rejected
                 .snapshot
-                .library
-                .contains_key("tmnt-shredders-revenge")
+                .games
+                .contains_key("01K4J6K8Y00000000000000001")
         )
     );
 
@@ -103,7 +113,9 @@ fn print_state(state: &korrid::config::snapshot::ConfigSnapshotState) {
         }
         None => println!("diagnostic: none"),
     }
-    println!("library records: {}", state.snapshot.library.len());
+    println!("game records: {}", state.snapshot.games.len());
+    println!("release records: {}", state.snapshot.releases.len());
+    println!("located releases: {}", state.snapshot.locations.len());
 }
 
 fn yes_no(value: bool) -> &'static str {

@@ -43,9 +43,23 @@ struct DynamicHostGame {
 #[derive(Clone)]
 struct DynamicHostRuntime {
     games: Vec<DynamicHostGame>,
+    declared_ids: std::collections::BTreeSet<String>,
+    failures: Vec<RpcFailure>,
 }
 
 impl DynamicHostRuntime {
+    fn validate_static_games(&self, config: &HostConfig) -> Result<(), RpcFailure> {
+        for game in &config.games {
+            if self.declared_ids.contains(&game.id) {
+                return Err(dynamic_failure(format!(
+                    "game id {:?} is declared by both host.toml and catalog/games.yaml",
+                    game.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn from_root(root: &Path) -> Result<Self, RpcFailure> {
         Self::from_root_with_env(root, |key| std::env::var_os(key))
     }
@@ -70,12 +84,15 @@ impl DynamicHostRuntime {
         let registry = plugin_policy::registry_for_snapshot(&state.snapshot)
             .map_err(|error| dynamic_failure(error.to_string()))?;
         let catalog = resolve_launchable_routes_for_platform(
+            root,
             &state.snapshot,
             &registry,
             std::iter::empty(),
             RoutePlatform::Linux,
         );
-        if !catalog.diagnostics.is_empty() {
+        if catalog.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == crate::config::resolver::RouteDiagnosticCode::LocalRouteCollision
+        }) {
             return Err(dynamic_failure(
                 catalog
                     .diagnostics
@@ -85,10 +102,25 @@ impl DynamicHostRuntime {
                     .join("; "),
             ));
         }
+        let mut failures: Vec<_> = catalog
+            .diagnostics
+            .iter()
+            .map(crate::route_diagnostic_failure)
+            .collect();
         let mut games = Vec::new();
         for route in catalog.routes {
-            let launch = linux_retroarch::launch_route_with_env(root, &route, lookup)
-                .map_err(|error| dynamic_failure(error.to_string()))?;
+            let launch =
+                match linux_retroarch::launch_route_with_env(root, &state.snapshot, &route, lookup)
+                {
+                    Ok(launch) => launch,
+                    Err(error) => {
+                        failures.push(RpcFailure {
+                            code: "LocalRouteUnavailable".into(),
+                            message: format!("{}: {error}", route.playable_id),
+                        });
+                        continue;
+                    }
+                };
             games.push(DynamicHostGame {
                 id: route.playable_id,
                 title: route.title.unwrap_or(route.release_id),
@@ -96,7 +128,11 @@ impl DynamicHostRuntime {
                 command: launch.command,
             });
         }
-        Ok(Self { games })
+        Ok(Self {
+            games,
+            declared_ids: state.snapshot.games.keys().cloned().collect(),
+            failures,
+        })
     }
 }
 
@@ -260,15 +296,21 @@ impl HostRuntime {
                 play_stats: stats_for(&game.id)?,
             });
         }
+        let mut failures = Vec::new();
         if let Some(dynamic) = &self.dynamic {
             let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
+            dynamic.validate_static_games(config)?;
+            failures.extend(
+                dynamic
+                    .failures
+                    .iter()
+                    .map(|failure| crate::CatalogHostFailure {
+                        host: config.label.clone(),
+                        code: failure.code.clone(),
+                        message: failure.message.clone(),
+                    }),
+            );
             for game in &dynamic.games {
-                if games.iter().any(|existing| existing.id == game.id) {
-                    return Err(dynamic_failure(format!(
-                        "game id {:?} is declared by both host.toml and library.yaml",
-                        game.id
-                    )));
-                }
                 games.push(Game {
                     id: game.id.clone(),
                     title: game.title.clone(),
@@ -281,7 +323,7 @@ impl HostRuntime {
         }
         Ok(CatalogSnapshot {
             games,
-            failures: None,
+            failures: (!failures.is_empty()).then_some(failures),
         })
     }
 
@@ -371,6 +413,7 @@ impl HostRuntime {
         })?;
         if let Some(dynamic) = &self.dynamic {
             let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
+            dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if let Some(game) = dynamic.games.iter().find(|game| game.id == game_id) {
                 return launcher.prepare_command(game_id, person_public_key, &game.command);
             }
@@ -755,24 +798,7 @@ mod tests {
     #[test]
     fn linux_host_materializes_wario_from_the_shared_plugins() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        fs::write(
-            root.path().join("library.yaml"),
-            r#"
-library:
-  wl4:
-    title: Wario Land 4
-    releases:
-      - id: gba
-        system: gba
-        target: { kind: file, storage: roms, path: wl4.gba }
-        identity: { kind: hash, value: "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414" }
-        launch:
-          use: "@korri:retroarch/retroarch"
-          runtime: "@korri:mgba/mgba"
-"#,
-        )
-        .unwrap();
+        crate::config::test_fixtures::gba(root.path());
         fs::create_dir(root.path().join("roms")).unwrap();
         fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let executable = root.path().join("bin/retroarch");
@@ -789,13 +815,35 @@ library:
             ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
         ]);
 
+        // Retained catalog facts have no route after their last location is removed.
+        let games_path = root.path().join("catalog/games.yaml");
+        let releases_path = root.path().join("catalog/releases.yaml");
+        let missing_sha = format!("sha256:{}", "a".repeat(64));
+        fs::write(
+            &games_path,
+            format!(
+                "{}  {}:\n    title: Missing game\n    releases: ['{missing_sha}']\n",
+                fs::read_to_string(&games_path).unwrap(),
+                crate::config::test_fixtures::OTHER_ID
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &releases_path,
+            format!(
+                "{}  '{missing_sha}':\n    game: {}\n    system: gba\n",
+                fs::read_to_string(&releases_path).unwrap(),
+                crate::config::test_fixtures::OTHER_ID
+            ),
+        )
+        .unwrap();
         let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
-            environment.get(key).map(|value| OsString::from(value))
+            environment.get(key).map(OsString::from)
         })
         .unwrap();
 
         assert_eq!(runtime.games.len(), 1);
-        assert_eq!(runtime.games[0].id, "wl4");
+        assert_eq!(runtime.games[0].id, "01K4J6K8Y00000000000000002");
         assert_eq!(
             runtime.games[0].identity,
             Some(GameIdentity::Hash(
@@ -807,5 +855,69 @@ library:
             executable.display().to_string()
         );
         assert_eq!(runtime.games[0].command[4], core.display().to_string());
+        let explicit = tempfile::tempdir().unwrap();
+        fs::write(explicit.path().join("wl4.gba"), b"rom").unwrap();
+        fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
+        let device_path = root.path().join("device.yaml");
+        let mut device: serde_yaml::Value =
+            serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
+        device["storage"]["selected"]["root"] = explicit.path().display().to_string().into();
+        device["locations"][crate::config::test_fixtures::GBA_RELEASE]
+            .as_sequence_mut()
+            .unwrap()
+            .push(serde_yaml::from_str("storage: selected\npath: wl4.gba\n").unwrap());
+        fs::write(device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
+            environment.get(key).map(OsString::from)
+        })
+        .unwrap();
+        assert_eq!(
+            runtime.games.len(),
+            1,
+            "explicit copy must also materialize on Linux"
+        );
+        assert_eq!(
+            runtime.games[0].command[5],
+            explicit.path().join("wl4.gba").display().to_string()
+        );
+        let config = root.path().join("host.toml");
+        fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();
+        let mut host =
+            HostRuntime::from_paths_with_private_state(&config, None, root.path().join("private"));
+        host.dynamic = Some(Ok(runtime));
+        let catalog = host.catalog_snapshot().unwrap();
+        assert_eq!(catalog.games.len(), 2);
+        assert_eq!(catalog.games[0].id, "static");
+        let failures = catalog.failures.unwrap();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].code, "LocalRouteUnavailable");
+        assert!(failures[0]
+            .message
+            .contains(crate::config::test_fixtures::OTHER_ID));
+        host.config.as_mut().unwrap().games[0].id = crate::config::test_fixtures::OTHER_ID.into();
+        assert_eq!(
+            host.catalog_snapshot().unwrap_err().code,
+            "HostLibraryInvalid"
+        );
+        assert_eq!(
+            host.prepare_blocking(crate::config::test_fixtures::OTHER_ID, None)
+                .unwrap_err()
+                .code,
+            "HostLibraryInvalid"
+        );
+        device["providers"]["@korri:retroarch"]["title"] = "Copied provider".into();
+        fs::write(
+            root.path().join("device.yaml"),
+            serde_yaml::to_string(&device).unwrap(),
+        )
+        .unwrap();
+        fs::remove_file(explicit.path().join("wl4.gba")).unwrap();
+        let collision = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
+            environment.get(key).map(OsString::from)
+        });
+        assert!(
+            collision.is_err(),
+            "unavailable bytes must not hide declaration collisions"
+        );
     }
 }

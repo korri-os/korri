@@ -59,30 +59,31 @@ pub fn static_playable_ids() -> Vec<&'static str> {
 /// Everything playable on this device, from the immutable configuration state
 /// returned by the caller's reload plus every built-in launcher it knows.
 pub fn local_games(
+    root: &Path,
     config_state: &ConfigSnapshotState,
     registry: &PluginRegistry,
 ) -> LocalGameCatalog {
-    local_games_with_cover_assets(None, None, config_state, registry)
+    local_games_with_cover_assets(root, None, config_state, registry)
 }
 
 pub fn local_games_with_cover_assets(
-    readable_root: Option<&Path>,
+    readable_root: &Path,
     private_root: Option<&Path>,
     config_state: &ConfigSnapshotState,
     registry: &PluginRegistry,
 ) -> LocalGameCatalog {
     let mut diagnostics = Vec::new();
     let mut games = Vec::new();
-    let cover_asset_ids = match (readable_root, private_root) {
-        (Some(readable_root), Some(private_root)) => cover_asset_ids(readable_root, private_root),
-        _ => BTreeMap::new(),
-    };
+    let cover_asset_ids = private_root
+        .map(|private_root| cover_asset_ids(readable_root, private_root))
+        .unwrap_or_default();
     let play_stats = private_root
         .map(|root| crate::play_log::PlayLogRepository::new(root).load_all_stats())
         .unwrap_or_default();
 
     if config_state.authorization == SnapshotAuthorization::Authorized {
         let catalog = resolver::resolve_launchable_routes(
+            readable_root,
             &config_state.snapshot,
             registry,
             static_playable_ids(),
@@ -124,7 +125,7 @@ pub fn launch_game(
     retroarch_control_port: u16,
 ) -> Result<LaunchSpec, LaunchError> {
     if config_state.authorization != SnapshotAuthorization::Authorized {
-        if config_state.generation == 0 || config_state.snapshot.library.contains_key(game_id) {
+        if config_state.generation == 0 || config_state.snapshot.games.contains_key(game_id) {
             let message = config_state
                 .diagnostic
                 .as_ref()
@@ -135,11 +136,12 @@ pub fn launch_game(
         return Err(LaunchError::UnknownGame(game_id.to_owned()));
     }
 
-    if !config_state.snapshot.library.contains_key(game_id) {
+    if !config_state.snapshot.games.contains_key(game_id) {
         return Err(LaunchError::UnknownGame(game_id.to_owned()));
     }
 
     let route = resolver::resolve_route(
+        root,
         &config_state.snapshot,
         registry,
         static_playable_ids(),
@@ -247,6 +249,9 @@ fn cover_asset_ids(readable_root: &Path, private_root: &Path) -> BTreeMap<String
 
 fn launch_error_from_route_diagnostic(diagnostic: RouteDiagnostic) -> LaunchError {
     match diagnostic.code {
+        resolver::RouteDiagnosticCode::LocalRomMissing => {
+            LaunchError::RomMissing(diagnostic.message)
+        }
         resolver::RouteDiagnosticCode::LocalRouteUnavailable => {
             LaunchError::RouteUnavailable(diagnostic.message)
         }
@@ -277,10 +282,8 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
-    const CHECKPOINT_CONFIG: &str =
-        include_str!("../../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
-    const CHECKPOINT_LIBRARY: &str =
-        include_str!("../../../../docs/research/retroarch-plugin-route/library.yaml");
+    use crate::config::test_fixtures as readable;
+    const CHECKPOINT_DEVICE: &str = readable::DEVICE;
     const PNG_1X1: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4,
         0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 250, 207, 0, 0, 2, 7,
@@ -304,25 +307,44 @@ mod tests {
     }
 
     fn checkpoint_state(root: &Path) -> ConfigSnapshotState {
-        checkpoint_state_with_library(root, CHECKPOINT_LIBRARY)
+        readable::combined(root);
+        ConfigSnapshotCoordinator::new(root).reload()
     }
 
     fn checkpoint_state_with_config(root: &Path, config: &str) -> ConfigSnapshotState {
-        checkpoint_state_with_config_and_library(root, config, CHECKPOINT_LIBRARY)
+        checkpoint_state_with_device(root, &format!("{config}\n{CHECKPOINT_DEVICE}"))
     }
 
-    fn checkpoint_state_with_library(root: &Path, library: &str) -> ConfigSnapshotState {
-        checkpoint_state_with_config_and_library(root, CHECKPOINT_CONFIG, library)
-    }
-
-    fn checkpoint_state_with_config_and_library(
-        root: &Path,
-        config: &str,
-        library: &str,
-    ) -> ConfigSnapshotState {
-        std::fs::write(root.join("config.yaml"), config).unwrap();
-        std::fs::write(root.join("library.yaml"), library).unwrap();
-        ConfigSnapshotCoordinator::new(root).reload()
+    fn checkpoint_state_with_device(root: &Path, device: &str) -> ConfigSnapshotState {
+        let invalid = device.contains("ref: com.playdigious.tmnt/invalid");
+        let games = if invalid {
+            readable::GAMES.replace(
+                "@korri:android-app/com.playdigious.tmnt",
+                "@korri:android-app/com.playdigious.tmnt/invalid",
+            )
+        } else {
+            readable::GAMES.into()
+        };
+        let releases = if invalid {
+            readable::RELEASES.replace(
+                "@korri:android-app/com.playdigious.tmnt",
+                "@korri:android-app/com.playdigious.tmnt/invalid",
+            )
+        } else {
+            readable::RELEASES.into()
+        };
+        let device = if invalid {
+            device.replace(
+                "'@korri:android-app/com.playdigious.tmnt':",
+                "'@korri:android-app/com.playdigious.tmnt/invalid':",
+            )
+        } else {
+            device.into()
+        };
+        readable::install(root, &device, &games, &releases);
+        let state = ConfigSnapshotCoordinator::new(root).reload();
+        assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
+        state
     }
 
     fn unauthorized_empty_state() -> ConfigSnapshotState {
@@ -352,8 +374,10 @@ mod tests {
     #[test]
     fn lists_dynamic_games_before_static_games_without_hardcoded_android_entries() {
         let root = tempdir().unwrap();
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let state = checkpoint_state(root.path());
-        let catalog = local_games(&state, &registry());
+        let catalog = local_games(root.path(), &state, &registry());
 
         assert_eq!(
             catalog
@@ -361,13 +385,13 @@ mod tests {
                 .iter()
                 .map(|game| game.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["tmnt-shredders-revenge", "wl4"]
+            vec![readable::ANDROID_ID, readable::GBA_ID]
         );
         assert_eq!(
             catalog
                 .games
                 .iter()
-                .find(|game| game.id == "wl4")
+                .find(|game| game.id == readable::GBA_ID)
                 .and_then(|game| game.identity.as_ref()),
             Some(&crate::GameIdentity::Hash(
                 "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414".into(),
@@ -413,20 +437,20 @@ mod tests {
         let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
 
         let catalog = local_games_with_cover_assets(
-            Some(readable.path()),
+            readable.path(),
             Some(private.path()),
             &state,
             &registry(),
         );
         assert_eq!(catalog.games[0].cover_asset_id, Some(assignment.asset_id));
 
-        let edited = std::fs::read_to_string(readable.path().join("library.yaml"))
+        let edited = std::fs::read_to_string(readable.path().join("catalog/games.yaml"))
             .unwrap()
             .replace("title: wl4", "title: Curated Wario");
-        std::fs::write(readable.path().join("library.yaml"), edited).unwrap();
+        std::fs::write(readable.path().join("catalog/games.yaml"), edited).unwrap();
         let edited_state = ConfigSnapshotCoordinator::new(readable.path()).reload();
         let edited_catalog = local_games_with_cover_assets(
-            Some(readable.path()),
+            readable.path(),
             Some(private.path()),
             &edited_state,
             &registry(),
@@ -440,7 +464,7 @@ mod tests {
         let state = checkpoint_state(root.path());
         let spec = launch_game(
             root.path(),
-            "tmnt-shredders-revenge",
+            readable::ANDROID_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry(),
@@ -450,10 +474,7 @@ mod tests {
 
         assert_eq!(spec.launcher_id, "android-app");
         assert_eq!(spec.component.package_name, "com.playdigious.tmnt");
-        assert_eq!(
-            spec.context.game_id.as_deref(),
-            Some("tmnt-shredders-revenge")
-        );
+        assert_eq!(spec.context.game_id.as_deref(), Some(readable::ANDROID_ID));
         assert_eq!(
             spec.context.title.as_deref(),
             Some("TMNT: Shredder's Revenge")
@@ -478,15 +499,17 @@ mod tests {
     #[test]
     fn mapper_invalid_dynamic_routes_are_omitted_and_diagnosed_on_each_list() {
         let root = tempdir().unwrap();
-        let invalid_library = CHECKPOINT_LIBRARY.replace(
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        let invalid_library = CHECKPOINT_DEVICE.replace(
             "ref: com.playdigious.tmnt",
             "ref: com.playdigious.tmnt/invalid",
         );
-        let state = checkpoint_state_with_library(root.path(), &invalid_library);
+        let state = checkpoint_state_with_device(root.path(), &invalid_library);
 
         for catalog in [
-            local_games(&state, &registry()),
-            local_games(&state, &registry()),
+            local_games(root.path(), &state, &registry()),
+            local_games(root.path(), &state, &registry()),
         ] {
             assert_eq!(
                 catalog
@@ -494,7 +517,7 @@ mod tests {
                     .iter()
                     .map(|game| game.id.as_str())
                     .collect::<Vec<_>>(),
-                vec!["wl4"]
+                vec![readable::GBA_ID]
             );
             assert_eq!(catalog.diagnostics.len(), 1);
             assert_eq!(
@@ -503,7 +526,7 @@ mod tests {
             );
             assert_eq!(
                 catalog.diagnostics[0].playable_id.as_deref(),
-                Some("tmnt-shredders-revenge")
+                Some(readable::ANDROID_ID)
             );
             assert!(catalog.diagnostics[0]
                 .message
@@ -514,16 +537,13 @@ mod tests {
     #[test]
     fn malformed_retroarch_routes_are_omitted_and_diagnosed_in_the_catalog() {
         for library in [
-            CHECKPOINT_LIBRARY.replace("path: wl4.gba", "path: ../outside.gba"),
-            CHECKPOINT_LIBRARY.replace("storage: roms", "storage: outside"),
-            CHECKPOINT_LIBRARY.replace(
-                "runtime: \"@korri:mgba/mgba\"",
-                "runtime: \"@korri:retroarch/missing\"",
-            ),
+            CHECKPOINT_DEVICE.replace("path: wl4.gba", "path: ../outside.gba"),
+            CHECKPOINT_DEVICE.replace("storage: roms", "storage: outside"),
+            CHECKPOINT_DEVICE.replace("storage: roms", "storage: missing-storage"),
         ] {
             let root = tempdir().unwrap();
-            let state = checkpoint_state_with_library(root.path(), &library);
-            let catalog = local_games(&state, &registry());
+            let state = checkpoint_state_with_device(root.path(), &library);
+            let catalog = local_games(root.path(), &state, &registry());
 
             assert_eq!(
                 catalog
@@ -531,10 +551,13 @@ mod tests {
                     .iter()
                     .map(|game| game.id.as_str())
                     .collect::<Vec<_>>(),
-                vec!["tmnt-shredders-revenge"]
+                vec![readable::ANDROID_ID]
             );
             assert_eq!(catalog.diagnostics.len(), 1, "{library}");
-            assert_eq!(catalog.diagnostics[0].playable_id.as_deref(), Some("wl4"));
+            assert_eq!(
+                catalog.diagnostics[0].playable_id.as_deref(),
+                Some(readable::GBA_ID)
+            );
         }
     }
 
@@ -544,7 +567,7 @@ mod tests {
         let state = unauthorized_retained_state(checkpoint_state(root.path()));
         let error = launch_game(
             root.path(),
-            "tmnt-shredders-revenge",
+            readable::ANDROID_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry(),
@@ -584,7 +607,7 @@ mod tests {
         let state = unauthorized_empty_state();
         let error = launch_game(
             root.path(),
-            "tmnt-shredders-revenge",
+            readable::ANDROID_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry(),
@@ -600,7 +623,7 @@ mod tests {
 
         let retroarch_error = launch_game(
             root.path(),
-            "wl4",
+            readable::GBA_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry(),
@@ -616,9 +639,11 @@ mod tests {
     #[test]
     fn disabled_bundled_policy_omits_dynamic_games_and_direct_launch_is_unavailable() {
         let root = tempdir().unwrap();
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let state = checkpoint_state(root.path());
         let registry = android_registry(false);
-        let catalog = local_games(&state, &registry);
+        let catalog = local_games(root.path(), &state, &registry);
 
         assert_eq!(
             catalog
@@ -626,7 +651,7 @@ mod tests {
                 .iter()
                 .map(|game| game.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["wl4"]
+            vec![readable::GBA_ID]
         );
         assert_eq!(catalog.diagnostics.len(), 1);
         assert_eq!(
@@ -635,11 +660,11 @@ mod tests {
         );
         assert!(catalog.diagnostics[0]
             .message
-            .contains("launcher @korri:android-app/android-app is unavailable"));
+            .contains("no launcher supports system android"));
 
         let error = launch_game(
             root.path(),
-            "tmnt-shredders-revenge",
+            readable::ANDROID_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry,
@@ -649,13 +674,15 @@ mod tests {
         let LaunchError::RouteUnavailable(message) = error else {
             panic!("got: {error:?}");
         };
-        assert!(message.contains("launcher @korri:android-app/android-app is unavailable"));
+        assert!(message.contains("no launcher supports system android"));
         assert!(!message.contains("process fallback"));
     }
 
     #[test]
     fn disabled_bundled_policy_rejects_copied_first_party_records() {
         let root = tempdir().unwrap();
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let state = checkpoint_state_with_config(
             root.path(),
             r#"
@@ -672,7 +699,7 @@ launchers:
         );
         let registry = android_registry(false);
 
-        let catalog = local_games(&state, &registry);
+        let catalog = local_games(root.path(), &state, &registry);
 
         assert_eq!(
             catalog
@@ -680,7 +707,7 @@ launchers:
                 .iter()
                 .map(|game| game.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["wl4"]
+            vec![readable::GBA_ID]
         );
         assert_eq!(catalog.diagnostics.len(), 1);
         assert_eq!(
@@ -689,16 +716,16 @@ launchers:
         );
         assert_eq!(
             catalog.diagnostics[0].playable_id.as_deref(),
-            Some("tmnt-shredders-revenge")
+            Some(readable::ANDROID_ID)
         );
         assert!(catalog.diagnostics[0]
             .message
-            .contains("launcher @korri:android-app/android-app is unavailable"));
+            .contains("no launcher supports system android"));
         assert!(!catalog.diagnostics[0].message.contains("process fallback"));
 
         let error = launch_game(
             root.path(),
-            "tmnt-shredders-revenge",
+            readable::ANDROID_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry,
@@ -708,7 +735,7 @@ launchers:
         let LaunchError::RouteUnavailable(message) = error else {
             panic!("got: {error:?}");
         };
-        assert!(message.contains("launcher @korri:android-app/android-app is unavailable"));
+        assert!(message.contains("no launcher supports system android"));
         assert!(!message.contains("process fallback"));
     }
 
@@ -718,7 +745,7 @@ launchers:
         let state = checkpoint_state(root.path());
         let error = launch_game(
             root.path(),
-            "wl4",
+            readable::GBA_ID,
             FileProvisionMode::Deferred,
             &state,
             &registry(),

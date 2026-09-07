@@ -1,3 +1,5 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use axum::{
     body::{to_bytes, Body},
     http::{header, Request, StatusCode},
@@ -5,14 +7,14 @@ use axum::{
 use korrid::config::settings::{
     clear_steamgriddb_credential, read_sensitive, set_steamgriddb_credential, SecretSettingStatus,
 };
-use korrid::config::snapshot::{CONFIG_FILE_NAME, LIBRARY_FILE_NAME};
+use korrid::config::snapshot::{DEVICE_FILE_NAME, GAMES_FILE_NAME};
 use serde_json::Value;
 use tower::ServiceExt;
 
 fn readable_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join(CONFIG_FILE_NAME), "host:\n  title: usu\n").unwrap();
-    std::fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+    std::fs::write(root.path().join(DEVICE_FILE_NAME), "host:\n  title: usu\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
     root
 }
 
@@ -117,12 +119,12 @@ async fn sensitive_rpc_actions_never_return_or_write_the_token_to_readable_confi
     );
     assert!(!snapshot.to_string().contains("sgdb-secret-token"));
     assert!(
-        !std::fs::read_to_string(readable.path().join(CONFIG_FILE_NAME))
+        !std::fs::read_to_string(readable.path().join(DEVICE_FILE_NAME))
             .unwrap()
             .contains("sgdb-secret-token")
     );
     assert!(
-        !std::fs::read_to_string(readable.path().join(LIBRARY_FILE_NAME))
+        !std::fs::read_to_string(readable.path().join(GAMES_FILE_NAME))
             .unwrap()
             .contains("sgdb-secret-token")
     );
@@ -157,7 +159,7 @@ async fn sensitive_rpc_does_not_participate_in_revision_conflicts() {
     .await;
     let revision = before["outcome"]["payload"]["revision"].as_str().unwrap();
     std::fs::write(
-        readable.path().join(CONFIG_FILE_NAME),
+        readable.path().join(DEVICE_FILE_NAME),
         "host:\n  title: outside\n",
     )
     .unwrap();

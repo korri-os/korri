@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl gnugrep gnused jq
+# shellcheck shell=bash
 set -euo pipefail
 
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
@@ -86,9 +88,9 @@ same_url_shell_and_overlay() {
 }
 same_url_shell_and_overlay
 
-output="$($HELPER fake-device com.simonwjackson.korri.debug --expect-game wl4 'Wario Land 4')"
+output="$($HELPER fake-device com.simonwjackson.korri.debug --expect-game 01K4J6K8Y00000000000000002 'Wario Land 4')"
 jq -e --arg url "$trusted" '
-  .url == $url and .mode == "--expect-game" and .gameId == "wl4"
+  .url == $url and .mode == "--expect-game" and .gameId == "01K4J6K8Y00000000000000002"
   and .title == "Wario Land 4" and .reloaded == true
 ' <<<"$output" >/dev/null
 if jq -e 'select((.socket | endswith("/overlay")) and (.expression | contains("hasCapability:") | not))' \

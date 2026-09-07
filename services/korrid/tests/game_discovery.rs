@@ -1,3 +1,5 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use std::{
     fs,
     path::Path,
@@ -8,7 +10,7 @@ use std::{
 use sha2::{Digest, Sha256};
 
 use korrid::{
-    config::{resolver, snapshot::ConfigSnapshotCoordinator, Target},
+    config::{resolver, snapshot::ConfigSnapshotCoordinator, Location},
     discovery::{
         DiscoveryCoordinator, DiscoveryDiagnosticCode, DiscoveryLifecycleCoordinator,
         DiscoveryOptions, DiscoveryPhase, FolderSelectionGrantError, FolderSelectionGrantStore,
@@ -170,8 +172,9 @@ fn lifecycle_registers_receipt_and_publishes_scanning_then_idle_with_game_visibl
     assert!(ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot
-        .library
-        .contains_key("game"));
+        .games
+        .values()
+        .any(|game| game.title == "game"));
 }
 
 #[test]
@@ -194,7 +197,7 @@ fn lifecycle_coalesces_active_rescans() {
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -222,8 +225,8 @@ fn lifecycle_preserves_active_add_location_payloads_while_scan_runs() {
     let snapshot = ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot;
-    assert!(snapshot.library.contains_key("one"));
-    assert!(snapshot.library.contains_key("two"));
+    assert!(snapshot.games.values().any(|game| game.title == "one"));
+    assert!(snapshot.games.values().any(|game| game.title == "two"));
 }
 
 #[test]
@@ -234,7 +237,7 @@ fn lifecycle_hides_authored_storage_from_discovery_locations() {
     let selected = tempfile::tempdir().unwrap();
     fs::write(selected.path().join("game.gba"), b"rom").unwrap();
     fs::write(
-        readable.path().join("config.yaml"),
+        readable.path().join("device.yaml"),
         format!(
             "storage:\n  authored:\n    root: {}\n",
             authored.path().canonicalize().unwrap().display()
@@ -262,14 +265,14 @@ fn lifecycle_recovers_pending_scan_after_config_first_add_restart() {
     let storage_id = "game-folder-recovery";
     let canonical = root.path().canonicalize().unwrap();
     fs::write(
-        readable.path().join("config.yaml"),
+        readable.path().join("device.yaml"),
         format!(
             "storage:\n  {storage_id}:\n    root: {}\n",
             canonical.display()
         ),
     )
     .unwrap();
-    fs::write(readable.path().join("library.yaml"), "{}\n").unwrap();
+    readable::write(readable.path().join("catalog/games.yaml"), "{}\n").unwrap();
     write_private_storage_state(private.path(), storage_id, &canonical, true, false);
 
     let discovery = lifecycle(&readable, &private, FolderSelectionGrantStore::default());
@@ -280,8 +283,9 @@ fn lifecycle_recovers_pending_scan_after_config_first_add_restart() {
     assert!(ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot
-        .library
-        .contains_key("game"));
+        .games
+        .values()
+        .any(|game| game.title == "game"));
 }
 
 #[test]
@@ -306,7 +310,7 @@ fn lifecycle_recovers_pending_removal_after_config_first_remove_restart() {
     assert!(ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot
-        .library
+        .locations
         .is_empty());
 }
 
@@ -333,8 +337,9 @@ fn lifecycle_reports_invalid_location_without_hiding_existing_catalog() {
     assert!(ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot
-        .library
-        .contains_key("good"));
+        .games
+        .values()
+        .any(|game| game.title == "good"));
 }
 
 #[test]
@@ -353,10 +358,10 @@ fn selected_locations_scan_into_launch_resolvable_library_records() {
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
-    assert_eq!(state.snapshot.library.len(), 2);
+    assert_eq!(state.snapshot.games.len(), 2);
     let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
-    for id in state.snapshot.library.keys() {
-        resolver::resolve_route(&state.snapshot, &registry, [], id).unwrap();
+    for id in state.snapshot.games.keys() {
+        resolver::resolve_route(readable.path(), &state.snapshot, &registry, [], id).unwrap();
     }
 }
 
@@ -379,7 +384,7 @@ fn repeated_rescan_is_additive_and_uses_private_hash_cache() {
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -407,11 +412,10 @@ fn removing_location_deletes_only_owned_matching_payload_and_sweeps_remaining_ro
         .remove_location(&first_report.storage_id.unwrap(), &options())
         .unwrap();
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert_eq!(state.snapshot.library.len(), 1);
-    let release = &state.snapshot.library.values().next().unwrap().releases.0[0];
+    assert_eq!(state.snapshot.games.len(), 1);
     assert!(matches!(
-        release.target.as_ref().unwrap(),
-        Target::File { storage, .. } if storage.0 != ""
+        &state.snapshot.locations.values().next().unwrap()[0],
+        Location::File { storage, .. } if !storage.0.is_empty()
     ));
 }
 
@@ -423,20 +427,22 @@ fn edited_generated_record_survives_location_removal() {
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
     let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
     let added = discovery.add_location(root.path(), &options()).unwrap();
-    let library = fs::read_to_string(readable.path().join("library.yaml"))
+    let library = fs::read_to_string(readable.path().join("catalog/games.yaml"))
         .unwrap()
         .replace("title: wl4", "title: Hand Edited");
-    fs::write(readable.path().join("library.yaml"), library).unwrap();
+    readable::write(readable.path().join("catalog/games.yaml"), library).unwrap();
 
     discovery
         .remove_location(&added.storage_id.unwrap(), &options())
         .unwrap();
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert_eq!(state.snapshot.library.len(), 1);
-    assert!(fs::read_to_string(readable.path().join("library.yaml"))
-        .unwrap()
-        .contains("Hand Edited"));
+    assert_eq!(state.snapshot.games.len(), 1);
+    assert!(
+        fs::read_to_string(readable.path().join("catalog/games.yaml"))
+            .unwrap()
+            .contains("Hand Edited")
+    );
 }
 
 #[test]
@@ -446,26 +452,14 @@ fn selecting_root_with_authored_storage_uses_separate_scanner_storage_and_preser
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    fs::write(
-        readable.path().join("config.yaml"),
-        format!(
-            "storage:\n  authored:\n    root: {}\n",
-            root.path().canonicalize().unwrap().display()
-        ),
-    )
-    .unwrap();
-    fs::write(
-        readable.path().join("library.yaml"),
-        "library:\n  curated:\n    title: Curated\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: authored\n          path: wl4.gba\n        launch:\n          use: \"@korri:retroarch/retroarch\"\n          runtime: \"@korri:mgba/mgba\"\n",
-    )
-    .unwrap();
+    authored(readable.path(), root.path(), "wl4.gba", b"rom");
     let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
 
     let added = discovery.add_location(root.path(), &options()).unwrap();
     assert_ne!(added.storage_id.as_deref(), Some("authored"));
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
-    assert_eq!(state.snapshot.library.len(), 1);
+    assert_eq!(state.snapshot.games.len(), 1);
     assert!(state.snapshot.storage.contains_key("authored"));
 
     discovery
@@ -473,9 +467,16 @@ fn selecting_root_with_authored_storage_uses_separate_scanner_storage_and_preser
         .unwrap();
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.snapshot.storage.contains_key("authored"));
-    assert_eq!(state.snapshot.library.len(), 1);
+    assert_eq!(state.snapshot.games.len(), 1);
     let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
-    resolver::resolve_route(&state.snapshot, &registry, [], "curated").unwrap();
+    resolver::resolve_route(
+        readable.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -487,17 +488,24 @@ fn edited_generated_record_keeps_storage_so_route_stays_resolvable_after_removal
     let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
     let added = discovery.add_location(root.path(), &options()).unwrap();
     let storage_id = added.storage_id.unwrap();
-    let library = fs::read_to_string(readable.path().join("library.yaml"))
+    let library = fs::read_to_string(readable.path().join("device.yaml"))
         .unwrap()
-        .replace("title: wl4", "title: Hand Edited");
-    fs::write(readable.path().join("library.yaml"), library).unwrap();
+        .replace("2026-08-05T00:00:00Z", "authored-time");
+    fs::write(readable.path().join("device.yaml"), library).unwrap();
 
     discovery.remove_location(&storage_id, &options()).unwrap();
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.snapshot.storage.contains_key(&storage_id));
     let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
-    resolver::resolve_route(&state.snapshot, &registry, [], "wl4").unwrap();
+    resolver::resolve_route(
+        readable.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        state.snapshot.games.keys().next().unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -508,19 +516,7 @@ fn authored_same_content_later_path_beats_generated_candidate_before_hash_dedupe
     let authored_root = tempfile::tempdir().unwrap();
     fs::write(generated_root.path().join("aaa.gba"), b"same").unwrap();
     fs::write(authored_root.path().join("zzz.gba"), b"same").unwrap();
-    fs::write(
-        readable.path().join("config.yaml"),
-        format!(
-            "storage:\n  authored:\n    root: {}\n",
-            authored_root.path().canonicalize().unwrap().display()
-        ),
-    )
-    .unwrap();
-    fs::write(
-        readable.path().join("library.yaml"),
-        "library:\n  curated:\n    title: Curated\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: authored\n          path: zzz.gba\n        launch:\n          use: \"@korri:retroarch/retroarch\"\n          runtime: \"@korri:mgba/mgba\"\n",
-    )
-    .unwrap();
+    authored(readable.path(), authored_root.path(), "zzz.gba", b"same");
     let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
 
     discovery
@@ -531,10 +527,16 @@ fn authored_same_content_later_path_beats_generated_candidate_before_hash_dedupe
         .unwrap();
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert_eq!(state.snapshot.library.len(), 1);
-    assert!(state.snapshot.library["curated"].releases.0[0]
+    assert_eq!(state.snapshot.games.len(), 1);
+    assert!(state
+        .snapshot
+        .releases
+        .values()
+        .next()
+        .unwrap()
         .identity
         .is_some());
+    assert_eq!(state.snapshot.locations.values().next().unwrap().len(), 3);
 }
 
 #[test]
@@ -559,12 +561,8 @@ fn overlapping_roots_use_registration_order_not_storage_id_sort_order() {
         .unwrap();
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    let storage = match state.snapshot.library.values().next().unwrap().releases.0[0]
-        .target
-        .as_ref()
-        .unwrap()
-    {
-        Target::File { storage, .. } => storage.0.clone(),
+    let storage = match &state.snapshot.locations.values().next().unwrap()[0] {
+        Location::File { storage, .. } => storage.0.clone(),
         _ => panic!("expected file target"),
     };
     assert_eq!(storage, first);
@@ -595,4 +593,20 @@ fn traversal_budget_exhaustion_reports_one_bounded_diagnostic() {
         1
     );
     assert!(report.scan.candidates.len() <= 1);
+}
+
+fn authored(root: &std::path::Path, folder: &std::path::Path, path: &str, bytes: &[u8]) {
+    let sha = format!("sha256:{}", hex::encode(Sha256::digest(bytes)));
+    readable::install(
+        root,
+        &format!(
+            "storage:\n  authored:\n    root: {}\n{}",
+            folder.display(),
+            readable::gba_locations("authored", path, false).replace(readable::GBA_RELEASE, &sha)
+        ),
+        &readable::gba_games()
+            .replace(readable::GBA_RELEASE, &sha)
+            .replace("Wario Land 4", "Curated"),
+        &readable::gba_releases().replace(readable::GBA_RELEASE, &sha),
+    );
 }

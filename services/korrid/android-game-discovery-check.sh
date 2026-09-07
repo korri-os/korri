@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#! nix-shell -i bash -p bash android-tools coreutils curl gnugrep gnused jq websocat
+#! nix-shell -i bash -p diffutils bash android-tools coreutils curl gnugrep gnused jq websocat
 # shellcheck shell=bash
 # Explicit-device Android proof for user-selected game discovery.
 #
@@ -32,15 +32,19 @@ FIXTURE_A="/sdcard/korri-u9-discovery-a-$$"
 FIXTURE_B="/sdcard/korri-u9-discovery-b-$$"
 FIXTURE_A_UNAVAILABLE="${FIXTURE_A}.unavailable"
 FIXTURE_B_UNAVAILABLE="${FIXTURE_B}.unavailable"
-CONFIG_REMOTE="$ANDROID_STORAGE_ROOT/config.yaml"
-LIBRARY_REMOTE="$ANDROID_STORAGE_ROOT/library.yaml"
+DEVICE_REMOTE="$ANDROID_STORAGE_ROOT/device.yaml"
+GAMES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/games.yaml"
+RELEASES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/releases.yaml"
 APK="$ROOT/clients/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk"
 TEST_APK="$ROOT/clients/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 CURL=(curl --connect-timeout 2 --max-time 5)
 FORWARD_ACTIVE=false
 LOCK_ACQUIRED=false
-CONFIG_WAS_PRESENT=false
-LIBRARY_WAS_PRESENT=false
+DEVICE_WAS_PRESENT=false
+GAMES_WAS_PRESENT=false
+RELEASES_WAS_PRESENT=false
+CATALOG_DIR_WAS_PRESENT=false
+BACKUP_CREATED=false
 CHECKPOINT_RESTORE_NEEDED=false
 PRIVATE_STATE_MOVED=false
 PRIOR_UID_APPOP_MODE=""
@@ -116,8 +120,9 @@ adb_command() {
       cat "$stdout_file"
       rm -f "$stdout_file" "$stderr_file" "$combined_file"
       return 0
+    else
+      status=$?
     fi
-    status=$?
     cat "$stdout_file" "$stderr_file" >"$combined_file"
     if [[ "$retry_safe" == true && "$attempt" -lt "$max_attempts" ]] \
       && { [[ "$status" -eq 124 ]] || adb_failure_is_transient "$combined_file"; }; then
@@ -199,7 +204,9 @@ cleanup() {
   restore_checkpoint_files || cleanup_failed=true
   restore_private_state || cleanup_failed=true
   restore_appop || cleanup_failed=true
-  release_device_lock || cleanup_failed=true
+  if [[ "$cleanup_failed" == false ]]; then
+    release_device_lock || cleanup_failed=true
+  fi
   [[ -n "$RUN_DIR" ]] && rm -rf "$RUN_DIR"
 
   if [[ "$cleanup_failed" == true && "$status" -eq 0 ]]; then
@@ -216,8 +223,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-remote_exists() {
-  adb_target -s "$SERIAL" shell "test -e '$1'" >/dev/null 2>&1
+remote_state() {
+  local state
+  state="$(adb_target -s "$SERIAL" shell "if test -e '$1'; then echo present; else echo absent; fi" | tr -d '\r\n')" || return 1
+  case "$state" in
+    present|absent) printf '%s' "$state" ;;
+    *) echo "Cannot classify remote path: $1" >&2; return 1 ;;
+  esac
 }
 
 acquire_device_lock() {
@@ -238,32 +250,62 @@ release_device_lock() {
 
 backup_checkpoint_files() {
   acquire_device_lock
-  adb_target -s "$SERIAL" shell "rm -rf '$BACKUP_REMOTE'; mkdir -p '$BACKUP_REMOTE'"
+  adb_target -s "$SERIAL" shell "mkdir '$BACKUP_REMOTE'"
+  BACKUP_CREATED=true
+  local state
+  state="$(remote_state "$ANDROID_STORAGE_ROOT/catalog")" || return 1
+  [[ "$state" != present ]] || CATALOG_DIR_WAS_PRESENT=true
+  state="$(remote_state "$DEVICE_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$DEVICE_REMOTE' '$BACKUP_REMOTE/device.yaml' && cmp -s '$DEVICE_REMOTE' '$BACKUP_REMOTE/device.yaml'" || return 1
+    DEVICE_WAS_PRESENT=true
+  fi
+  state="$(remote_state "$GAMES_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$GAMES_REMOTE' '$BACKUP_REMOTE/games.yaml' && cmp -s '$GAMES_REMOTE' '$BACKUP_REMOTE/games.yaml'" || return 1
+    GAMES_WAS_PRESENT=true
+  fi
+  state="$(remote_state "$RELEASES_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$RELEASES_REMOTE' '$BACKUP_REMOTE/releases.yaml' && cmp -s '$RELEASES_REMOTE' '$BACKUP_REMOTE/releases.yaml'" || return 1
+    RELEASES_WAS_PRESENT=true
+  fi
+  # Only a complete, verified backup permits mutation or absence-based cleanup.
   CHECKPOINT_RESTORE_NEEDED=true
-  if remote_exists "$CONFIG_REMOTE"; then
-    CONFIG_WAS_PRESENT=true
-    adb_target -s "$SERIAL" shell "cp '$CONFIG_REMOTE' '$BACKUP_REMOTE/config.yaml'"
-  fi
-  if remote_exists "$LIBRARY_REMOTE"; then
-    LIBRARY_WAS_PRESENT=true
-    adb_target -s "$SERIAL" shell "cp '$LIBRARY_REMOTE' '$BACKUP_REMOTE/library.yaml'"
-  fi
+  adb_target -s "$SERIAL" shell "mkdir -p '$ANDROID_STORAGE_ROOT/catalog'"
+
 }
 
 restore_checkpoint_files() {
   local restore_failed=false
   if [[ "$CHECKPOINT_RESTORE_NEEDED" != true ]]; then
+    if [[ "$BACKUP_CREATED" == true ]]; then
+      echo "Incomplete backup retained with device lock; no checkpoint files changed" >&2
+      return 1
+    fi
     return 0
   fi
-  if [[ "$CONFIG_WAS_PRESENT" == true ]]; then
-    adb_target -s "$SERIAL" shell "cp '$BACKUP_REMOTE/config.yaml' '$CONFIG_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  if [[ "$DEVICE_WAS_PRESENT" == true ]]; then
+    adb_target -s "$SERIAL" shell "cp '$BACKUP_REMOTE/device.yaml' '$DEVICE_REMOTE' && cmp -s '$BACKUP_REMOTE/device.yaml' '$DEVICE_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   else
-    adb_target -s "$SERIAL" shell "rm -f '$CONFIG_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+    adb_target -s "$SERIAL" shell "rm -f '$DEVICE_REMOTE' && test ! -e '$DEVICE_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   fi
-  if [[ "$LIBRARY_WAS_PRESENT" == true ]]; then
-    adb_target -s "$SERIAL" shell "cp '$BACKUP_REMOTE/library.yaml' '$LIBRARY_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  if [[ "$GAMES_WAS_PRESENT" == true ]]; then
+    adb_target -s "$SERIAL" shell "cp '$BACKUP_REMOTE/games.yaml' '$GAMES_REMOTE' && cmp -s '$BACKUP_REMOTE/games.yaml' '$GAMES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   else
-    adb_target -s "$SERIAL" shell "rm -f '$LIBRARY_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+    adb_target -s "$SERIAL" shell "rm -f '$GAMES_REMOTE' && test ! -e '$GAMES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$RELEASES_WAS_PRESENT" == true ]]; then
+    adb_target -s "$SERIAL" shell "cp '$BACKUP_REMOTE/releases.yaml' '$RELEASES_REMOTE' && cmp -s '$BACKUP_REMOTE/releases.yaml' '$RELEASES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  else
+    adb_target -s "$SERIAL" shell "rm -f '$RELEASES_REMOTE' && test ! -e '$RELEASES_REMOTE'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$CATALOG_DIR_WAS_PRESENT" != true ]]; then
+    adb_target -s "$SERIAL" shell "rmdir '$ANDROID_STORAGE_ROOT/catalog' 2>/dev/null || test ! -e '$ANDROID_STORAGE_ROOT/catalog'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$restore_failed" == true ]]; then
+    echo "Checkpoint restore failed; backup and lock retained" >&2
+    return 1
   fi
   adb_target -s "$SERIAL" shell "rm -rf '$BACKUP_REMOTE'" >/dev/null 2>&1 || restore_failed=true
   [[ "$restore_failed" == false ]]
@@ -325,12 +367,16 @@ set_appop_and_require_effective_mode() {
 }
 
 write_controlled_config() {
-  cat >"$RUN_DIR/config.yaml" <"$ROOT/docs/research/retroarch-plugin-route/config.yaml"
-  cat >"$RUN_DIR/library.yaml" <<'YAML'
-library: {}
-YAML
-  adb_target -s "$SERIAL" push "$RUN_DIR/config.yaml" "$CONFIG_REMOTE" >/dev/null
-  adb_target -s "$SERIAL" push "$RUN_DIR/library.yaml" "$LIBRARY_REMOTE" >/dev/null
+  mkdir -p "$RUN_DIR/catalog"
+  printf '{}\n' >"$RUN_DIR/device.yaml"
+  printf '{}\n' >"$RUN_DIR/catalog/games.yaml"
+  printf '{}\n' >"$RUN_DIR/catalog/releases.yaml"
+  adb_target -s "$SERIAL" push "$RUN_DIR/device.yaml" "$DEVICE_REMOTE" >/dev/null
+  adb_target -s "$SERIAL" push "$RUN_DIR/catalog/games.yaml" "$GAMES_REMOTE" >/dev/null
+  adb_target -s "$SERIAL" push "$RUN_DIR/catalog/releases.yaml" "$RELEASES_REMOTE" >/dev/null
+  adb_target -s "$SERIAL" exec-out cat "$DEVICE_REMOTE" | cmp -s "$RUN_DIR/device.yaml" -
+  adb_target -s "$SERIAL" exec-out cat "$GAMES_REMOTE" | cmp -s "$RUN_DIR/catalog/games.yaml" -
+  adb_target -s "$SERIAL" exec-out cat "$RELEASES_REMOTE" | cmp -s "$RUN_DIR/catalog/releases.yaml" -
 }
 
 stage_fixtures() {

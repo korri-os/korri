@@ -151,7 +151,7 @@ export const fixtureModel: SurfaceModel = {
           id: "local-games",
           label: "On this device",
           value: "1 game",
-          description: "Declared in library.yaml",
+          description: "Declared in catalog/games.yaml",
         },
       ],
     },

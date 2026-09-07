@@ -1,8 +1,8 @@
-//! Narrow, conflict-safe writes to Korri's fixed `config.yaml`.
+//! Narrow, conflict-safe writes to Korri's fixed `device.yaml`.
 //!
 //! Settings never serialise a `ConfigSnapshot`: that would drop schema content
 //! this slice can read but does not execute. Instead we edit the YAML value,
-//! validate the complete candidate beside the current `library.yaml`, and only
+//! validate the complete candidate beside the current `catalog documents`, and only
 //! then atomically replace the fixed file. The revision is the hash of the bytes
 //! the user actually edited, so a file-manager change between read and save is
 //! rejected rather than silently overwritten.
@@ -17,8 +17,8 @@ use std::{
 use serde_yaml::{Mapping, Value};
 
 use super::{
-    classify_snapshot_support, decode_config_pair,
-    snapshot::{CONFIG_FILE_NAME, LIBRARY_FILE_NAME},
+    classify_snapshot_support, decode_config_documents,
+    snapshot::{DEVICE_FILE_NAME, FILE_NAMES, GAMES_FILE_NAME, RELEASES_FILE_NAME},
 };
 use crate::plugin_policy;
 
@@ -71,9 +71,9 @@ pub enum SettingsError {
 
 pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
     ensure_fixed_files(root)?;
-    let config = read_fixed(root, CONFIG_FILE_NAME)?;
-    let library = read_fixed(root, LIBRARY_FILE_NAME)?;
-    let snapshot = decode_config_pair(&config, &library)
+    let config = read_fixed(root, DEVICE_FILE_NAME)?;
+    let games = read_fixed(root, GAMES_FILE_NAME)?;
+    let snapshot = decode_config_documents(&config, &games, &read_fixed(root, RELEASES_FILE_NAME)?)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     // Existing unsupported content is still reported rather than presenting a
     // settings page that would be unable to save it safely.
@@ -199,14 +199,23 @@ fn secret_path(private_root: &Path) -> PathBuf {
 
 pub fn update(
     root: &Path,
+    private_root: &Path,
+    write_lock: &std::sync::Mutex<()>,
     expected_revision: &str,
     change: SettingChange,
 ) -> Result<ReadableSettings, SettingsError> {
-    let config = read_fixed(root, CONFIG_FILE_NAME)?;
+    let _guard = write_lock.lock().expect("settings write lock poisoned");
+    crate::discovery::reconcile::reject_pending_publication(private_root).map_err(|error| {
+        match error {
+            crate::discovery::DiscoveryError::Conflict => SettingsError::Conflict,
+            other => SettingsError::Storage(other.to_string()),
+        }
+    })?;
+    let config = read_fixed(root, DEVICE_FILE_NAME)?;
     if revision(&config) != expected_revision {
         return Err(SettingsError::Conflict);
     }
-    let library = read_fixed(root, LIBRARY_FILE_NAME)?;
+    let games = read_fixed(root, GAMES_FILE_NAME)?;
     let mut document = parse_mapping(&config)?;
 
     match change {
@@ -218,15 +227,16 @@ pub fn update(
 
     let candidate = serde_yaml::to_string(&Value::Mapping(document))
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    let snapshot = decode_config_pair(&candidate, &library)
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
+    let snapshot =
+        decode_config_documents(&candidate, &games, &read_fixed(root, RELEASES_FILE_NAME)?)
+            .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     plugin_policy::enabled_plugin_ids_for_snapshot(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
 
     write_atomically(
-        &root.join(CONFIG_FILE_NAME),
+        &root.join(DEVICE_FILE_NAME),
         candidate.as_bytes(),
         expected_revision,
     )?;
@@ -284,14 +294,15 @@ fn parse_mapping(config: &str) -> Result<Mapping, SettingsError> {
         Value::Null => Ok(Mapping::new()),
         Value::Mapping(mapping) => Ok(mapping),
         _ => Err(SettingsError::Invalid(
-            "config.yaml must contain a record".into(),
+            "device.yaml must contain a record".into(),
         )),
     }
 }
 
 fn ensure_fixed_files(root: &Path) -> Result<(), SettingsError> {
-    fs::create_dir_all(root).map_err(|error| SettingsError::Storage(error.to_string()))?;
-    for name in [CONFIG_FILE_NAME, LIBRARY_FILE_NAME] {
+    fs::create_dir_all(root.join("catalog"))
+        .map_err(|error| SettingsError::Storage(error.to_string()))?;
+    for name in FILE_NAMES {
         let path = root.join(name);
         if path.exists() {
             continue;
@@ -380,7 +391,7 @@ fn write_atomically(
             .map_err(|error| SettingsError::Storage(error.to_string()))?;
 
         // Validation may take long enough for a file manager or sync tool to
-        // replace config.yaml. Gate the rename on the bytes that are present
+        // replace device.yaml. Gate the rename on the bytes that are present
         // immediately before replacement, not only those read at update start.
         let current =
             fs::read_to_string(path).map_err(|error| SettingsError::Storage(error.to_string()))?;
@@ -403,24 +414,29 @@ mod tests {
 
     fn root(config: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join(CONFIG_FILE_NAME), config).unwrap();
-        fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+        fs::write(root.path().join(DEVICE_FILE_NAME), config).unwrap();
+        crate::config::test_fixtures::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
         root
     }
 
     #[test]
-    fn first_read_creates_only_the_two_fixed_empty_documents() {
+    fn first_read_creates_only_the_three_fixed_empty_documents() {
         let root = tempfile::tempdir().unwrap();
 
         let settings = read(root.path()).unwrap();
 
         assert_eq!(settings.device_name, None);
         assert_eq!(
-            fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
             b"{}\n"
         );
         assert_eq!(
-            fs::read(root.path().join(LIBRARY_FILE_NAME)).unwrap(),
+            fs::read(root.path().join(GAMES_FILE_NAME)).unwrap(),
+            b"{}\n"
+        );
+        assert_eq!(
+            fs::read(root.path().join(RELEASES_FILE_NAME)).unwrap(),
             b"{}\n"
         );
     }
@@ -432,13 +448,15 @@ mod tests {
 
         let after = update(
             root.path(),
+            tempfile::tempdir().unwrap().path(),
+            &std::sync::Mutex::new(()),
             &before.revision,
             SettingChange::DeviceName("  usu  ".into()),
         )
         .unwrap();
 
         assert_eq!(after.device_name.as_deref(), Some("usu"));
-        let saved = fs::read_to_string(root.path().join(CONFIG_FILE_NAME)).unwrap();
+        let saved = fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap();
         assert!(saved.contains("providers: {}"));
     }
 
@@ -450,6 +468,8 @@ mod tests {
 
         let after = update(
             root.path(),
+            tempfile::tempdir().unwrap().path(),
+            &std::sync::Mutex::new(()),
             &before.revision,
             SettingChange::PluginEnabled {
                 id: plugin_policy::MGBA_PLUGIN_ID.into(),
@@ -473,20 +493,22 @@ mod tests {
         let root = root("host:\n  title: first\n");
         let before = read(root.path()).unwrap();
         fs::write(
-            root.path().join(CONFIG_FILE_NAME),
+            root.path().join(DEVICE_FILE_NAME),
             "host:\n  title: outside\n",
         )
         .unwrap();
 
         let error = update(
             root.path(),
+            tempfile::tempdir().unwrap().path(),
+            &std::sync::Mutex::new(()),
             &before.revision,
             SettingChange::DeviceName("inside".into()),
         )
         .unwrap_err();
 
         assert!(matches!(error, SettingsError::Conflict));
-        assert!(fs::read_to_string(root.path().join(CONFIG_FILE_NAME))
+        assert!(fs::read_to_string(root.path().join(DEVICE_FILE_NAME))
             .unwrap()
             .contains("outside"));
     }
@@ -494,7 +516,7 @@ mod tests {
     #[test]
     fn rechecks_external_edits_at_the_final_rename_gate() {
         let root = root("host:\n  title: first\n");
-        let path = root.path().join(CONFIG_FILE_NAME);
+        let path = root.path().join(DEVICE_FILE_NAME);
         let expected_revision = revision(&fs::read_to_string(&path).unwrap());
         fs::write(&path, "host:\n  title: changed-during-validation\n").unwrap();
 
@@ -515,10 +537,12 @@ mod tests {
     fn rejects_unknown_plugins_without_touching_the_file() {
         let root = root("{}\n");
         let before = read(root.path()).unwrap();
-        let original = fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap();
+        let original = fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap();
 
         let error = update(
             root.path(),
+            tempfile::tempdir().unwrap().path(),
+            &std::sync::Mutex::new(()),
             &before.revision,
             SettingChange::PluginEnabled {
                 id: "@someone:surprise".into(),
@@ -529,7 +553,7 @@ mod tests {
 
         assert!(matches!(error, SettingsError::Invalid(_)));
         assert_eq!(
-            fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
             original
         );
     }

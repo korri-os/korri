@@ -199,7 +199,7 @@ export function settingsFrom(facts: DeviceFacts): readonly SurfaceSettingGroup[]
             id: "local-games",
             label: "On this device",
             value: countLabel(facts.localGameCount, "game"),
-            description: "Declared in library.yaml",
+            description: "Declared in catalog/games.yaml",
           },
       facts.discovery === undefined
         ? undefined

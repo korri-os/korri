@@ -1,0 +1,9 @@
+games:
+  01K4J6K8Y00000000000000001:
+    title: 'TMNT: Shredder''s Revenge'
+    releases:
+    - '@korri:android-app/com.playdigious.tmnt'
+  01K4J6K8Y00000000000000002:
+    title: Wario Land 4
+    releases:
+    - sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414

@@ -1,3 +1,6 @@
+mod documents;
+use documents::Documents;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
@@ -14,15 +17,11 @@ use sha2::{Digest, Sha256};
 use crate::{
     config::{
         self,
-        snapshot::{CONFIG_FILE_NAME, LIBRARY_FILE_NAME},
-        Target,
+        snapshot::{DEVICE_FILE_NAME, FILE_NAMES, GAMES_FILE_NAME, RELEASES_FILE_NAME},
     },
-    discovery::{
-        scanner::{
-            DiscoveryDiagnostic, DiscoveryDiagnosticCode, FolderScanner, HashCache, ScanCandidate,
-            ScanReport, TraversalBudget,
-        },
-        title,
+    discovery::scanner::{
+        DiscoveryDiagnostic, DiscoveryDiagnosticCode, FolderScanner, HashCache, ScanCandidate,
+        ScanReport, TraversalBudget,
     },
     plugin_policy,
 };
@@ -61,9 +60,8 @@ pub struct DiscoveryOptions {
 pub struct DiscoveryMutationReport {
     pub scan: ScanReport,
     pub scan_duration_ms: u128,
-    pub added_library_records: usize,
-    pub removed_library_records: usize,
-    pub removed_releases: usize,
+    pub added_games: usize,
+    pub removed_locations: usize,
     pub storage_id: Option<String>,
     pub repaired: bool,
 }
@@ -127,22 +125,25 @@ impl DiscoveryCoordinator {
             .expect("discovery write lock poisoned");
         ensure_fixed_files(&self.readable_root)?;
         let canonical_root = canonical_directory(selected_root.as_ref())?;
-        let mut config_yaml = read_fixed(&self.readable_root, CONFIG_FILE_NAME)?;
-        let library_yaml = read_fixed(&self.readable_root, LIBRARY_FILE_NAME)?;
-        let expected_revision = revision(&config_yaml);
-        let mut document = parse_mapping(&config_yaml)?;
         let mut private = PrivateState::read(&self.private_root)?;
+        documents::recover(&self.readable_root, &self.private_root, &mut private)?;
+        let current = Documents::read(&self.readable_root)?;
+        current.validate()?;
+        let mut document = parse_mapping(&current.device)?;
         let storage_id = storage_id_for_root(&canonical_root, &document, &private);
         let record = set_storage_record(&mut document, &storage_id, &canonical_root)?;
         private.remember_owned_storage(&storage_id, &canonical_root, &record);
         private.repair.pending_scans.insert(storage_id.clone());
         private.write(&self.private_root)?;
-        config_yaml = serialize_mapping(document)?;
-        validate_pair(&config_yaml, &library_yaml)?;
-        write_atomically(
-            &self.readable_root.join(CONFIG_FILE_NAME),
-            config_yaml.as_bytes(),
-            &expected_revision,
+        let candidate = Documents {
+            device: serialize_mapping(document)?,
+            ..current.clone()
+        };
+        current.commit(
+            candidate,
+            &self.readable_root,
+            &self.private_root,
+            &mut private,
         )?;
         drop(_guard);
 
@@ -179,7 +180,9 @@ impl DiscoveryCoordinator {
 
     pub(crate) fn has_recovery_work(&self) -> bool {
         PrivateState::read(&self.private_root).is_ok_and(|private| {
-            !private.repair.pending_scans.is_empty() || !private.repair.pending_removals.is_empty()
+            !private.repair.pending_scans.is_empty()
+                || !private.repair.pending_removals.is_empty()
+                || private.repair.pending_write.is_some()
         })
     }
 
@@ -189,7 +192,7 @@ impl DiscoveryCoordinator {
     ) -> Result<Vec<(String, String)>, DiscoveryError> {
         ensure_fixed_files(readable_root)?;
         let private = PrivateState::read(private_root)?;
-        let config_yaml = read_fixed(readable_root, CONFIG_FILE_NAME)?;
+        let config_yaml = read_fixed(readable_root, DEVICE_FILE_NAME)?;
         let config_doc = parse_mapping(&config_yaml)?;
         Ok(ordered_owned_storage_summaries(&config_doc, &private))
     }
@@ -199,63 +202,36 @@ impl DiscoveryCoordinator {
         options: &DiscoveryOptions,
     ) -> Result<DiscoveryMutationReport, DiscoveryError> {
         let mut report = DiscoveryMutationReport::default();
-        let (config_revision, library_revision, registry, storages, mut hash_cache) = {
+        let (expected, registry, storages, mut hash_cache) = {
             let _guard = self
                 .write_lock
                 .lock()
                 .expect("discovery write lock poisoned");
             ensure_fixed_files(&self.readable_root)?;
             let mut private = PrivateState::read(&self.private_root)?;
-            let mut config_yaml = read_fixed(&self.readable_root, CONFIG_FILE_NAME)?;
-            let mut library_yaml = read_fixed(&self.readable_root, LIBRARY_FILE_NAME)?;
-            let mut repaired = apply_pending_ownership(&library_yaml, &mut private)?;
-            let mut private_changed = repaired;
-
+            report.repaired =
+                documents::recover(&self.readable_root, &self.private_root, &mut private)?;
+            let current = Documents::read(&self.readable_root)?;
+            apply_pending_ownership(&current, &mut private)?;
             if !private.repair.pending_removals.is_empty() {
-                let removals: Vec<String> =
-                    private.repair.pending_removals.iter().cloned().collect();
                 let cleanup = cleanup_removed_storages(
                     &self.readable_root,
-                    &config_yaml,
-                    &library_yaml,
+                    &self.private_root,
+                    &current,
                     &mut private,
-                    &removals,
                 )?;
-                report.removed_library_records += cleanup.removed_items;
-                report.removed_releases += cleanup.removed_releases;
-                repaired |= cleanup.changed;
-                library_yaml = read_fixed(&self.readable_root, LIBRARY_FILE_NAME)?;
-
-                let storage_cleanup = cleanup_removed_storage_records(
-                    &self.readable_root,
-                    &config_yaml,
-                    &library_yaml,
-                    &mut private,
-                    &removals,
-                )?;
-                repaired |= storage_cleanup.changed;
-                if storage_cleanup.changed {
-                    config_yaml = read_fixed(&self.readable_root, CONFIG_FILE_NAME)?;
-                }
-                for storage_id in removals {
-                    private.repair.pending_removals.remove(&storage_id);
-                }
-                private_changed = true;
+                report.removed_locations += cleanup.removed_locations;
+                report.repaired |= cleanup.changed;
+                private.repair.pending_removals.clear();
             }
-
-            if repaired {
-                report.repaired = true;
-            }
-            if private_changed {
-                private.write(&self.private_root)?;
-            }
-            let snapshot = validate_pair(&config_yaml, &library_yaml)?;
+            private.write(&self.private_root)?;
+            let current = Documents::read(&self.readable_root)?;
+            let snapshot = current.validate()?;
             let registry = plugin_policy::registry_for_snapshot(&snapshot)
                 .map_err(|error| DiscoveryError::Candidate(error.to_string()))?;
-            let config_doc = parse_mapping(&config_yaml)?;
+            let config_doc = parse_mapping(&current.device)?;
             (
-                revision(&config_yaml),
-                revision(&library_yaml),
+                current,
                 registry,
                 ordered_storages(&snapshot, &config_doc, &private),
                 private.hash_cache.clone(),
@@ -286,32 +262,41 @@ impl DiscoveryCoordinator {
             .expect("discovery write lock poisoned");
         let mut private = PrivateState::read(&self.private_root)?;
         private.hash_cache = hash_cache;
-        let config_yaml = read_fixed(&self.readable_root, CONFIG_FILE_NAME)?;
-        let library_yaml = read_fixed(&self.readable_root, LIBRARY_FILE_NAME)?;
-        apply_pending_ownership(&library_yaml, &mut private)?;
-        if revision(&config_yaml) != config_revision || revision(&library_yaml) != library_revision
-        {
+        let current = Documents::read(&self.readable_root)?;
+        apply_pending_ownership(&current, &mut private)?;
+        if current != expected {
             private.write(&self.private_root)?;
             return Err(DiscoveryError::Conflict);
         }
         let reconciliation = reconcile_candidates(
             &self.readable_root,
             &self.private_root,
-            &config_yaml,
-            &library_yaml,
+            &current,
             &mut private,
             &scan.candidates,
             options,
         )?;
-        report.added_library_records += reconciliation.added_items;
-        report.removed_library_records += reconciliation.removed_items;
-        report.removed_releases += reconciliation.removed_releases;
+        report.added_games += reconciliation.added_games;
+        report.removed_locations += reconciliation.removed_locations;
         report.scan = scan;
         report.scan_duration_ms = scan_duration_ms;
         private.repair.pending_scans.clear();
         private.write(&self.private_root)?;
         Ok(report)
     }
+}
+
+// Caller holds the shared readable-document write lock. Settings must not
+// change the expected device bytes of an interrupted discovery publication.
+pub(crate) fn reject_pending_publication(private_root: &Path) -> Result<(), DiscoveryError> {
+    if PrivateState::read(private_root)?
+        .repair
+        .pending_write
+        .is_some()
+    {
+        return Err(DiscoveryError::Conflict);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -332,6 +317,8 @@ struct PrivateState {
 struct OwnershipJournal {
     #[serde(default)]
     releases: BTreeMap<String, OwnedRelease>,
+    #[serde(default)]
+    locations: BTreeMap<String, OwnedLocation>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -348,8 +335,13 @@ struct OwnedStorage {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct OwnedRelease {
-    storage_id: String,
     playable_id: String,
+    release_id: String,
+    fingerprint: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct OwnedLocation {
     release_id: String,
     fingerprint: String,
 }
@@ -371,14 +363,17 @@ struct RepairJournal {
     pending_scans: BTreeSet<String>,
     #[serde(default)]
     pending_ownership: BTreeMap<String, OwnedRelease>,
+    #[serde(default)]
+    pending_locations: BTreeMap<String, OwnedLocation>,
+    #[serde(default)]
+    pending_write: Option<documents::PendingWrite>,
 }
 
 #[derive(Debug, Default)]
 struct ReconcileStats {
     changed: bool,
-    added_items: usize,
-    removed_items: usize,
-    removed_releases: usize,
+    added_games: usize,
+    removed_locations: usize,
 }
 
 impl PrivateState {
@@ -429,87 +424,76 @@ impl PrivateState {
         };
         record.is_some_and(|record| owned.fingerprint == fingerprint_mapping(record))
     }
-
-    fn is_owned_current(
-        &self,
-        playable_id: &str,
-        item: &Mapping,
-        storage_id: Option<&str>,
-    ) -> bool {
-        let releases = item_releases(item);
-        releases.iter().any(|release| {
-            let Some(release_id) = mapping_string(release, "id") else {
-                return false;
-            };
-            let key = ownership_key(playable_id, &release_id);
-            let Some(owned) = self.ownership.releases.get(&key) else {
-                return false;
-            };
-            if storage_id.is_some_and(|id| owned.storage_id != id) {
-                return false;
-            }
-            owned.fingerprint == fingerprint_item(item)
-        })
-    }
 }
 
 pub(crate) fn owned_discovery_games(
     readable_root: &Path,
     private_root: &Path,
 ) -> Result<Vec<DiscoveryOwnedGame>, DiscoveryError> {
-    let library_yaml = read_fixed(readable_root, LIBRARY_FILE_NAME)?;
+    let documents = Documents::read(readable_root)?;
     let private = PrivateState::read(private_root)?;
-    let library_doc = parse_mapping(&library_yaml)?;
-    let Some(library) = library_doc
-        .get(Value::String("library".into()))
-        .and_then(Value::as_mapping)
-    else {
-        return Ok(Vec::new());
-    };
-    let mut games = Vec::new();
-    for (key, value) in library {
-        let Some(playable_id) = key.as_str() else {
-            continue;
-        };
-        let Some(item) = value.as_mapping() else {
-            continue;
-        };
-        if let Some(game) = owned_game_from_item(&private, playable_id, item) {
-            games.push(game);
-        }
-    }
-    games.sort_by(|left, right| left.playable_id.cmp(&right.playable_id));
-    Ok(games)
+    owned_games(&documents, &private)
 }
 
-fn owned_game_from_item(
+fn owned_games(
+    documents: &Documents,
     private: &PrivateState,
-    playable_id: &str,
-    item: &Mapping,
-) -> Option<DiscoveryOwnedGame> {
-    let release_fingerprint = fingerprint_item(item);
-    for release in item_releases(item) {
-        let release_id = mapping_string(&release, "id")?;
-        let owned = private
-            .ownership
-            .releases
-            .get(&ownership_key(playable_id, &release_id))?;
-        if owned.fingerprint != release_fingerprint {
+) -> Result<Vec<DiscoveryOwnedGame>, DiscoveryError> {
+    let snapshot = documents.validate()?;
+    let games = parse_mapping(&documents.games)?;
+    let releases = parse_mapping(&documents.releases)?;
+    let mut result = Vec::new();
+    for (id, game) in &snapshot.games {
+        // Enrichment has one content identity only when the game has one release.
+        let [release] = game.releases.as_slice() else {
+            continue;
+        };
+        if !release.0.starts_with("sha256:") {
             continue;
         }
-        let rom_identity = release
-            .get(Value::String("identity".into()))
-            .and_then(Value::as_mapping)
-            .and_then(|identity| mapping_string(identity, "value"))?;
-        return Some(DiscoveryOwnedGame {
-            playable_id: playable_id.to_owned(),
-            title: mapping_string(item, "title").unwrap_or_else(|| playable_id.to_owned()),
-            release_id,
-            release_fingerprint,
-            rom_identity,
+        let Some(owned) = private
+            .ownership
+            .releases
+            .get(&ownership_key(id, &release.0))
+        else {
+            continue;
+        };
+        let Some(fingerprint) = catalog_fingerprint(&games, &releases, id, &release.0) else {
+            continue;
+        };
+        if owned.fingerprint != fingerprint {
+            continue;
+        }
+        if !snapshot
+            .locations
+            .get(&release.0)
+            .is_some_and(|locations| !locations.is_empty())
+        {
+            continue;
+        }
+        result.push(DiscoveryOwnedGame {
+            playable_id: id.clone(),
+            title: game.title.clone(),
+            release_id: release.0.clone(),
+            release_fingerprint: fingerprint,
+            rom_identity: release.0.clone(),
         });
     }
-    None
+    Ok(result)
+}
+
+fn catalog_fingerprint(games: &Mapping, releases: &Mapping, id: &str, sha: &str) -> Option<String> {
+    let game = games.get("games")?.as_mapping()?.get(id)?.as_mapping()?;
+    let release = releases
+        .get("releases")?
+        .as_mapping()?
+        .get(sha)?
+        .as_mapping()?;
+    Some(revision(&format!(
+        "{}\n{}",
+        fingerprint_mapping(game),
+        fingerprint_mapping(release)
+    )))
 }
 
 fn same_owned_identity(left: &DiscoveryOwnedGame, right: &DiscoveryOwnedGame) -> bool {
@@ -524,20 +508,9 @@ pub(crate) fn current_owned_discovery_game(
     private_root: &Path,
     expected: &DiscoveryOwnedGame,
 ) -> Result<Option<DiscoveryOwnedGame>, DiscoveryError> {
-    let library_yaml = read_fixed(readable_root, LIBRARY_FILE_NAME)?;
-    let mut private = PrivateState::read(private_root)?;
-    let ownership_changed = apply_pending_ownership(&library_yaml, &mut private)?;
-    let library_doc = parse_mapping(&library_yaml)?;
-    let current = library_doc
-        .get(Value::String("library".into()))
-        .and_then(Value::as_mapping)
-        .and_then(|library| library.get(Value::String(expected.playable_id.clone())))
-        .and_then(Value::as_mapping)
-        .and_then(|item| owned_game_from_item(&private, &expected.playable_id, item));
-    if ownership_changed {
-        private.write(private_root)?;
-    }
-    Ok(current.filter(|current| same_owned_identity(current, expected)))
+    Ok(owned_discovery_games(readable_root, private_root)?
+        .into_iter()
+        .find(|current| same_owned_identity(current, expected)))
 }
 
 pub(crate) fn update_owned_discovery_title(
@@ -549,529 +522,322 @@ pub(crate) fn update_owned_discovery_title(
 ) -> Result<Option<DiscoveryOwnedGame>, DiscoveryError> {
     let _guard = write_lock.lock().expect("discovery write lock poisoned");
     ensure_fixed_files(readable_root)?;
-    let config_yaml = read_fixed(readable_root, CONFIG_FILE_NAME)?;
-    let library_yaml = read_fixed(readable_root, LIBRARY_FILE_NAME)?;
     let mut private = PrivateState::read(private_root)?;
-    let ownership_changed = apply_pending_ownership(&library_yaml, &mut private)?;
-    let mut library_doc = parse_mapping(&library_yaml)?;
-    let Some(library) = library_doc
-        .get_mut(Value::String("library".into()))
-        .and_then(Value::as_mapping_mut)
+    documents::recover(readable_root, private_root, &mut private)?;
+    let current = Documents::read(readable_root)?;
+    apply_pending_ownership(&current, &mut private)?;
+    let Some(mut owned_game) = owned_games(&current, &private)?
+        .into_iter()
+        .find(|current| same_owned_identity(current, game))
     else {
-        if ownership_changed {
-            private.write(private_root)?;
-        }
         return Ok(None);
     };
-    let key = Value::String(game.playable_id.clone());
-    let Some(item) = library.get_mut(&key).and_then(Value::as_mapping_mut) else {
-        if ownership_changed {
-            private.write(private_root)?;
-        }
-        return Ok(None);
-    };
-    let Some(current) = owned_game_from_item(&private, &game.playable_id, item) else {
-        if ownership_changed {
-            private.write(private_root)?;
-        }
-        return Ok(None);
-    };
-    if !same_owned_identity(&current, game) {
-        if ownership_changed {
-            private.write(private_root)?;
-        }
-        return Ok(None);
+    if owned_game.title == title {
+        return Ok(Some(owned_game));
     }
-    if mapping_string(item, "title").as_deref() == Some(title) {
-        if ownership_changed {
-            private.write(private_root)?;
-        }
-        return Ok(Some(current));
-    }
-    item.insert(
-        Value::String("title".into()),
-        Value::String(title.to_owned()),
-    );
-    let new_fingerprint = fingerprint_item(item);
-    let release_ids: Vec<String> = item_releases(item)
-        .iter()
-        .filter_map(|release| mapping_string(&release, "id"))
-        .collect();
-    let mut updated = current.clone();
-    updated.title = title.to_owned();
-    updated.release_fingerprint = new_fingerprint.clone();
-    for release_id in &release_ids {
-        let key = ownership_key(&game.playable_id, release_id);
-        if let Some(owned) = private.ownership.releases.get(&key) {
-            let mut pending = owned.clone();
-            pending.fingerprint = new_fingerprint.clone();
-            private.repair.pending_ownership.insert(key, pending);
-        }
-    }
-    private.write(private_root)?;
-    let candidate_library = serialize_mapping(library_doc)?;
-    validate_pair(&config_yaml, &candidate_library)?;
-    commit_library_atomically(
+    let mut games = parse_mapping(&current.games)?;
+    let item = mapping_at(&mut games, "games")?
+        .get_mut(game.playable_id.as_str())
+        .and_then(Value::as_mapping_mut)
+        .expect("validated game");
+    item.insert("title".into(), title.into());
+    let releases = parse_mapping(&current.releases)?;
+    let fingerprint = catalog_fingerprint(&games, &releases, &game.playable_id, &game.release_id)
+        .expect("validated release");
+    let key = ownership_key(&game.playable_id, &game.release_id);
+    let mut pending = private.ownership.releases[&key].clone();
+    pending.fingerprint = fingerprint.clone();
+    private.repair.pending_ownership.insert(key, pending);
+    current.commit(
+        Documents {
+            games: serialize_mapping(games)?,
+            ..current.clone()
+        },
         readable_root,
-        &config_yaml,
-        &library_yaml,
-        &candidate_library,
+        private_root,
+        &mut private,
     )?;
-    for release_id in release_ids {
-        let key = ownership_key(&game.playable_id, &release_id);
-        if let Some(owned) = private.ownership.releases.get_mut(&key) {
-            owned.fingerprint = new_fingerprint.clone();
-        }
-        private.repair.pending_ownership.remove(&key);
-    }
-    private.write(private_root)?;
-    Ok(Some(updated))
+    owned_game.title = title.to_owned();
+    owned_game.release_fingerprint = fingerprint;
+    Ok(Some(owned_game))
 }
 
 fn reconcile_candidates(
     root: &Path,
     private_root: &Path,
-    config_yaml: &str,
-    library_yaml: &str,
+    current: &Documents,
     private: &mut PrivateState,
     candidates: &[ScanCandidate],
     options: &DiscoveryOptions,
 ) -> Result<ReconcileStats, DiscoveryError> {
-    let snapshot = validate_pair(config_yaml, library_yaml)?;
-    let mut library_doc = parse_mapping(library_yaml)?;
-    let library = mapping_at(&mut library_doc, "library")?;
+    let snapshot = current.validate()?;
+    let mut device_doc = parse_mapping(&current.device)?;
+    let mut games_doc = parse_mapping(&current.games)?;
+    let mut releases_doc = parse_mapping(&current.releases)?;
     let mut stats = ReconcileStats::default();
-
-    let mut generated_by_path = BTreeMap::<(String, String), (String, String)>::new();
-    let mut generated_by_canonical = BTreeMap::<PathBuf, (String, String)>::new();
-    let mut generated_by_hash = BTreeMap::<String, (String, String)>::new();
-    let mut authored_by_path = BTreeMap::<(String, String), (String, String)>::new();
-    let mut authored_by_canonical = BTreeMap::<PathBuf, (String, String)>::new();
-    let mut authored_by_hash = BTreeMap::<String, (String, String)>::new();
-
-    for (playable_id, item_payload) in &snapshot.library {
-        let current_item = library
-            .get(Value::String(playable_id.clone()))
-            .and_then(Value::as_mapping)
-            .cloned();
-        let current_owned = current_item
-            .as_ref()
-            .is_some_and(|item| private.is_owned_current(playable_id, item, None));
-        for release in &item_payload.releases.0 {
-            let release_id = release.id.0.clone();
-            if let Some(Target::File { storage, path, .. }) = &release.target {
-                let key = (storage.0.clone(), path.0.clone());
-                let canonical = release_canonical_path(&snapshot, &storage.0, &path.0);
-                if current_owned {
-                    generated_by_path.insert(key, (playable_id.clone(), release_id.clone()));
-                    if let Some(canonical) = canonical {
-                        generated_by_canonical
-                            .insert(canonical, (playable_id.clone(), release_id.clone()));
-                    }
-                } else {
-                    authored_by_path.insert(key, (playable_id.clone(), release_id.clone()));
-                    if let Some(canonical) = canonical {
-                        authored_by_canonical
-                            .insert(canonical, (playable_id.clone(), release_id.clone()));
-                    }
-                }
-            }
-            if let Some(identity) = &release.identity {
-                let hash = identity.value.0.clone();
-                if current_owned {
-                    generated_by_hash.insert(hash, (playable_id.clone(), release_id.clone()));
-                } else {
-                    authored_by_hash.insert(hash, (playable_id.clone(), release_id.clone()));
-                }
-            }
-        }
-    }
-
-    let mut authored_reserved_canonical = BTreeSet::<PathBuf>::new();
-    let mut authored_reserved_hashes = BTreeSet::<String>::new();
-    for candidate in candidates {
-        let path_key = (
-            candidate.storage_id.clone(),
-            candidate.relative_path.clone(),
-        );
-        let authored_match = authored_by_path.get(&path_key).cloned().or_else(|| {
-            authored_by_canonical
-                .get(&candidate.canonical_path)
-                .cloned()
-        });
-        if let Some((playable_id, release_id)) = authored_match {
-            if backfill_authored_identity(
-                library,
-                &playable_id,
-                &release_id,
-                &candidate.hash,
-                private,
-            )? {
-                stats.changed = true;
-            }
-            authored_reserved_canonical.insert(candidate.canonical_path.clone());
-            authored_reserved_hashes.insert(candidate.hash.clone());
-        } else if authored_by_hash.contains_key(&candidate.hash) {
-            authored_reserved_canonical.insert(candidate.canonical_path.clone());
-            authored_reserved_hashes.insert(candidate.hash.clone());
-        }
-    }
-
-    let mut generated_shadowed_by_authored = BTreeSet::<String>::new();
-    for hash in &authored_reserved_hashes {
-        if let Some((playable_id, _)) = generated_by_hash.get(hash) {
-            generated_shadowed_by_authored.insert(playable_id.clone());
-        }
-    }
-    for canonical in &authored_reserved_canonical {
-        if let Some((playable_id, _)) = generated_by_canonical.get(canonical) {
-            generated_shadowed_by_authored.insert(playable_id.clone());
-        }
-    }
-    for playable_id in generated_shadowed_by_authored {
-        if library.remove(Value::String(playable_id.clone())).is_some() {
-            private
-                .ownership
-                .releases
-                .retain(|_, owned| owned.playable_id != playable_id);
-            stats.changed = true;
-            stats.removed_items += 1;
-            stats.removed_releases += 1;
-        }
-    }
-
-    let mut claimed_canonical = BTreeSet::<PathBuf>::new();
-    let mut claimed_hashes = BTreeSet::<String>::new();
-    let mut assigned_ids = BTreeSet::<String>::new();
-    let mut planned_ownership = BTreeMap::<String, OwnedRelease>::new();
-    for candidate in candidates {
-        if authored_reserved_canonical.contains(&candidate.canonical_path)
-            || authored_reserved_hashes.contains(&candidate.hash)
+    let locations = mapping_at(&mut device_doc, "locations")?;
+    // Index authored physical files as well as declared storage/path pairs.
+    // Distinct storage IDs may name the same root or overlapping folders.
+    let mut paths: BTreeMap<(String, String), BTreeMap<String, bool>> = BTreeMap::new();
+    let mut authored_paths: BTreeMap<PathBuf, BTreeSet<String>> = BTreeMap::new();
+    for (sha, values) in locations.iter() {
+        let sha = sha.as_str().expect("validated release key");
+        for location in values
+            .as_sequence()
+            .expect("validated locations")
+            .iter()
+            .filter_map(Value::as_mapping)
         {
-            continue;
-        }
-        if !claimed_canonical.insert(candidate.canonical_path.clone()) {
-            continue;
-        }
-        if !claimed_hashes.insert(candidate.hash.clone()) {
-            continue;
-        }
-        let path_key = (
-            candidate.storage_id.clone(),
-            candidate.relative_path.clone(),
-        );
-        let existing_generated = generated_by_path
-            .get(&path_key)
-            .cloned()
-            .or_else(|| {
-                generated_by_canonical
-                    .get(&candidate.canonical_path)
-                    .cloned()
-            })
-            .or_else(|| generated_by_hash.get(&candidate.hash).cloned());
-        let (playable_id, release_id, was_existing) =
-            if let Some((playable_id, release_id)) = existing_generated {
-                (playable_id, release_id, true)
-            } else {
-                let id = allocate_playable_id(&candidate.title, library, &assigned_ids);
-                let release = release_id_for_candidate(candidate);
-                assigned_ids.insert(id.clone());
-                (id, release, false)
+            let (Some(storage_id), Some(path)) = (
+                mapping_string(location, "storage"),
+                mapping_string(location, "path"),
+            ) else {
+                continue;
             };
-        let first_seen_at = existing_first_seen(library, &playable_id, &release_id)
-            .unwrap_or_else(|| options.first_seen_at.clone());
-        let mut item = generated_item(candidate, &playable_id, &release_id, &first_seen_at);
-        let key = Value::String(playable_id.clone());
-        let old = library.get(&key).cloned();
-        if old
-            .as_ref()
-            .and_then(Value::as_mapping)
-            .is_some_and(|current| private.is_owned_current(&playable_id, current, None))
+            let owned = location_owned(private, sha, location);
+            paths
+                .entry((storage_id.clone(), path.clone()))
+                .or_default()
+                .entry(sha.to_owned())
+                .and_modify(|all_owned| *all_owned &= owned)
+                .or_insert(owned);
+            if !owned {
+                let target = config::resolver::ResolvedFileTarget { storage_id, path };
+                if let Ok(file) = config::storage::resolve_file_target(root, &snapshot, &target) {
+                    authored_paths
+                        .entry(file.path)
+                        .or_default()
+                        .insert(sha.to_owned());
+                }
+            }
+        }
+    }
+    let mut replaced = BTreeSet::new();
+    let releases = mapping_at(&mut releases_doc, "releases")?;
+    let games = mapping_at(&mut games_doc, "games")?;
+    for candidate in candidates {
+        let sha = &candidate.hash;
+        let key = (
+            candidate.storage_id.clone(),
+            candidate.relative_path.clone(),
+        );
+        let entries = paths.entry(key.clone()).or_default();
+        if entries
+            .iter()
+            .any(|(existing, owned)| existing != sha && !owned)
+            || authored_paths
+                .get(&candidate.canonical_path)
+                .is_some_and(|hashes| hashes.iter().any(|existing| existing != sha))
         {
-            if let Some(title) = old
-                .as_ref()
-                .and_then(Value::as_mapping)
-                .and_then(|current| mapping_string(current, "title"))
-            {
-                item.insert(Value::String("title".into()), Value::String(title));
+            continue;
+        }
+        // Defer removals to one pass. Catalog facts survive byte replacement.
+        entries.retain(|existing, owned| {
+            if existing != sha && *owned {
+                replaced.insert((existing.clone(), key.clone()));
+                false
+            } else {
+                true
             }
+        });
+        if !releases.contains_key(sha.as_str()) {
+            let id = mint_game_id(games);
+            let game = Mapping::from_iter([
+                ("title".into(), candidate.title.clone().into()),
+                ("releases".into(), Value::Sequence(vec![sha.clone().into()])),
+            ]);
+            let release = Mapping::from_iter([
+                ("game".into(), id.clone().into()),
+                ("system".into(), candidate.system.clone().into()),
+                ("identity".into(), "file".into()),
+            ]);
+            let fingerprint = revision(&format!(
+                "{}\n{}",
+                fingerprint_mapping(&game),
+                fingerprint_mapping(&release)
+            ));
+            games.insert(id.clone().into(), Value::Mapping(game));
+            releases.insert(sha.clone().into(), Value::Mapping(release));
+            private.repair.pending_ownership.insert(
+                ownership_key(&id, sha),
+                OwnedRelease {
+                    playable_id: id.clone(),
+                    release_id: sha.clone(),
+                    fingerprint,
+                },
+            );
+            stats.added_games += 1;
         }
-        let fingerprint = fingerprint_item(&item);
-        let ownership = OwnedRelease {
-            storage_id: candidate.storage_id.clone(),
-            playable_id: playable_id.clone(),
-            release_id: release_id.clone(),
-            fingerprint,
-        };
-        if old.as_ref().and_then(Value::as_mapping) != Some(&item) {
-            library.insert(key, Value::Mapping(item.clone()));
-            planned_ownership.insert(ownership_key(&playable_id, &release_id), ownership);
-            stats.changed = true;
-            if !was_existing {
-                stats.added_items += 1;
-            }
-        } else {
-            private
-                .ownership
-                .releases
-                .insert(ownership_key(&playable_id, &release_id), ownership);
+        let values = locations
+            .entry(Value::String(sha.clone()))
+            .or_insert_with(|| Value::Sequence(Vec::new()))
+            .as_sequence_mut()
+            .expect("validated locations");
+        if entries.contains_key(sha) {
+            continue;
         }
+        entries.insert(sha.clone(), true);
+        let location = generated_location(candidate, &options.first_seen_at);
+        let fingerprint = fingerprint_mapping(&location);
+        private.repair.pending_locations.insert(
+            location_key(sha, &location),
+            OwnedLocation {
+                release_id: sha.clone(),
+                fingerprint,
+            },
+        );
+        values.push(Value::Mapping(location));
     }
-
-    if stats.changed {
-        for (key, ownership) in &planned_ownership {
-            private
-                .repair
-                .pending_ownership
-                .insert(key.clone(), ownership.clone());
-        }
-        private.write(private_root)?;
-        let candidate_library = serialize_mapping(library_doc)?;
-        validate_pair(config_yaml, &candidate_library)?;
-        commit_library_atomically(root, config_yaml, library_yaml, &candidate_library)?;
-        for (key, ownership) in planned_ownership {
-            private.ownership.releases.insert(key.clone(), ownership);
-            private.repair.pending_ownership.remove(&key);
-        }
+    for (sha, values) in locations.iter_mut() {
+        let sha = sha.as_str().expect("validated release key");
+        values
+            .as_sequence_mut()
+            .expect("validated locations")
+            .retain(|value| {
+                let Some(location) = value.as_mapping() else {
+                    return true;
+                };
+                let (Some(storage), Some(path)) = (
+                    mapping_string(location, "storage"),
+                    mapping_string(location, "path"),
+                ) else {
+                    return true;
+                };
+                let remove = replaced.contains(&(sha.to_owned(), (storage, path)));
+                stats.removed_locations += usize::from(remove);
+                !remove
+            });
     }
+    locations.retain(|_, values| !values.as_sequence().is_some_and(Vec::is_empty));
+    // Do not rewrite an unchanged document (including comments and ordering).
+    let candidate = Documents {
+        device: preserve_unchanged(&current.device, device_doc)?,
+        games: preserve_unchanged(&current.games, games_doc)?,
+        releases: preserve_unchanged(&current.releases, releases_doc)?,
+    };
+    stats.changed = &candidate != current;
+    current.commit(candidate, root, private_root, private)?;
     Ok(stats)
+}
+
+fn preserve_unchanged(original: &str, document: Mapping) -> Result<String, DiscoveryError> {
+    if parse_mapping(original)? == document {
+        Ok(original.into())
+    } else {
+        serialize_mapping(document)
+    }
+}
+
+fn location_key(sha: &str, location: &Mapping) -> String {
+    format!(
+        "{sha}\n{}\n{}",
+        mapping_string(location, "storage").unwrap_or_default(),
+        mapping_string(location, "path").unwrap_or_default()
+    )
+}
+
+fn location_owned(private: &PrivateState, sha: &str, location: &Mapping) -> bool {
+    private
+        .ownership
+        .locations
+        .get(&location_key(sha, location))
+        .is_some_and(|owned| owned.fingerprint == fingerprint_mapping(location))
+}
+
+fn generated_location(candidate: &ScanCandidate, first_seen_at: &str) -> Mapping {
+    Mapping::from_iter([
+        ("storage".into(), candidate.storage_id.clone().into()),
+        ("path".into(), candidate.relative_path.clone().into()),
+        (
+            "discovery".into(),
+            Value::Mapping(Mapping::from_iter([(
+                "first-seen-at".into(),
+                first_seen_at.into(),
+            )])),
+        ),
+    ])
+}
+
+fn mint_game_id(games: &Mapping) -> String {
+    // ULID: 48-bit Unix milliseconds followed by 80 random bits, encoded in
+    // Crockford base32. rand already supplies the OS-seeded discovery RNG.
+    const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    loop {
+        let milliseconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before Unix epoch")
+            .as_millis();
+        let mut value = ((milliseconds & ((1u128 << 48) - 1)) << 80)
+            | (rand::random::<u128>() & ((1u128 << 80) - 1));
+        let mut encoded = [b'0'; 26];
+        for byte in encoded.iter_mut().rev() {
+            *byte = ALPHABET[(value & 31) as usize];
+            value >>= 5;
+        }
+        let id = String::from_utf8(encoded.to_vec()).expect("ULID ASCII");
+        if !games.contains_key(id.as_str()) {
+            return id;
+        }
+    }
 }
 
 fn cleanup_removed_storages(
     root: &Path,
-    config_yaml: &str,
-    library_yaml: &str,
+    private_root: &Path,
+    current: &Documents,
     private: &mut PrivateState,
-    storage_ids: &[String],
 ) -> Result<ReconcileStats, DiscoveryError> {
-    let mut library_doc = parse_mapping(library_yaml)?;
-    let Some(library) = library_doc
-        .get_mut(Value::String("library".into()))
-        .and_then(Value::as_mapping_mut)
-    else {
-        return Ok(ReconcileStats::default());
-    };
-    let storage_ids: BTreeSet<&str> = storage_ids.iter().map(String::as_str).collect();
+    current.validate()?;
+    let mut document = parse_mapping(&current.device)?;
     let mut stats = ReconcileStats::default();
-    let playable_ids: Vec<String> = library
-        .keys()
-        .filter_map(|key| key.as_str().map(str::to_owned))
-        .collect();
-    for playable_id in playable_ids {
-        let key = Value::String(playable_id.clone());
-        let Some(item) = library.get(&key).and_then(Value::as_mapping).cloned() else {
-            continue;
-        };
-        if !private.is_owned_current(&playable_id, &item, None) {
-            continue;
+    let removals = private.repair.pending_removals.clone();
+    if let Some(locations) = document
+        .get_mut("locations")
+        .and_then(Value::as_mapping_mut)
+    {
+        for (sha, values) in locations.iter_mut() {
+            if let Some(values) = values.as_sequence_mut() {
+                let before = values.len();
+                values.retain(|value| {
+                    !value.as_mapping().is_some_and(|location| {
+                        mapping_string(location, "storage")
+                            .is_some_and(|storage| removals.contains(&storage))
+                            && location_owned(private, sha.as_str().unwrap_or_default(), location)
+                    })
+                });
+                stats.removed_locations += before - values.len();
+            }
         }
-        let owned_for_removed = item_releases(&item).iter().any(|release| {
-            let Some(release_id) = mapping_string(release, "id") else {
-                return false;
-            };
-            private
-                .ownership
-                .releases
-                .get(&ownership_key(&playable_id, &release_id))
-                .is_some_and(|owned| {
-                    storage_ids.contains(owned.storage_id.as_str())
-                        && owned.fingerprint == fingerprint_item(&item)
-                })
-        });
-        if owned_for_removed {
-            library.remove(&key);
-            private
-                .ownership
-                .releases
-                .retain(|_, owned| owned.playable_id != playable_id);
-            stats.changed = true;
-            stats.removed_items += 1;
-            stats.removed_releases += 1;
-        }
+        locations.retain(|_, values| !values.as_sequence().is_some_and(Vec::is_empty));
     }
-    for storage_id in storage_ids {
+    for storage_id in &removals {
         private.storage_order.retain(|id| id != storage_id);
-    }
-    if stats.changed {
-        let candidate_library = serialize_mapping(library_doc)?;
-        validate_pair(config_yaml, &candidate_library)?;
-        commit_library_atomically(root, config_yaml, library_yaml, &candidate_library)?;
-    }
-    Ok(stats)
-}
-
-fn cleanup_removed_storage_records(
-    root: &Path,
-    config_yaml: &str,
-    library_yaml: &str,
-    private: &mut PrivateState,
-    storage_ids: &[String],
-) -> Result<ReconcileStats, DiscoveryError> {
-    let mut config_doc = parse_mapping(config_yaml)?;
-    let mut stats = ReconcileStats::default();
-    for storage_id in storage_ids {
-        let record = storage_record(&config_doc, storage_id);
-        if !private.storage_is_owned_current(storage_id, record.as_ref()) {
-            continue;
+        if private
+            .storage_is_owned_current(storage_id, storage_record(&document, storage_id).as_ref())
+            && !locations_reference_storage(&document, storage_id)
+        {
+            remove_storage_record(&mut document, storage_id)?;
         }
-        if library_references_storage(library_yaml, storage_id)? {
-            continue;
-        }
-        remove_storage_record(&mut config_doc, storage_id)?;
-        private.storage_ownership.storages.remove(storage_id);
-        stats.changed = true;
     }
-    if stats.changed {
-        let candidate_config = serialize_mapping(config_doc)?;
-        validate_pair(&candidate_config, library_yaml)?;
-        write_atomically(
-            &root.join(CONFIG_FILE_NAME),
-            candidate_config.as_bytes(),
-            &revision(config_yaml),
-        )?;
-    }
-    Ok(stats)
-}
-
-fn backfill_authored_identity(
-    library: &mut Mapping,
-    playable_id: &str,
-    release_id: &str,
-    hash: &str,
-    private: &PrivateState,
-) -> Result<bool, DiscoveryError> {
-    let Some(item) = library
-        .get_mut(Value::String(playable_id.to_owned()))
-        .and_then(Value::as_mapping_mut)
-    else {
-        return Ok(false);
+    let candidate = Documents {
+        device: preserve_unchanged(&current.device, document)?,
+        ..current.clone()
     };
-    if private.is_owned_current(playable_id, item, None) {
-        return Ok(false);
-    }
-    for release in item_releases_mut(item) {
-        if mapping_string(release, "id").as_deref() == Some(release_id)
-            && !release.contains_key(Value::String("identity".into()))
-        {
-            release.insert(Value::String("identity".into()), identity_value(hash));
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    stats.changed = &candidate != current;
+    current.commit(candidate, root, private_root, private)?;
+    Ok(stats)
 }
 
-fn generated_item(
-    candidate: &ScanCandidate,
-    playable_id: &str,
-    release_id: &str,
-    first_seen_at: &str,
-) -> Mapping {
-    let mut item = Mapping::new();
-    item.insert(
-        Value::String("title".into()),
-        Value::String(candidate.title.clone()),
-    );
-    let mut release = Mapping::new();
-    release.insert(Value::String("id".into()), Value::String(release_id.into()));
-    release.insert(
-        Value::String("system".into()),
-        Value::String(candidate.system.clone()),
-    );
-    let mut target = Mapping::new();
-    target.insert(Value::String("kind".into()), Value::String("file".into()));
-    target.insert(
-        Value::String("storage".into()),
-        Value::String(candidate.storage_id.clone()),
-    );
-    target.insert(
-        Value::String("path".into()),
-        Value::String(candidate.relative_path.clone()),
-    );
-    let mut discovery = Mapping::new();
-    discovery.insert(
-        Value::String("first-seen-at".into()),
-        Value::String(first_seen_at.into()),
-    );
-    target.insert(Value::String("discovery".into()), Value::Mapping(discovery));
-    release.insert(Value::String("target".into()), Value::Mapping(target));
-    release.insert(
-        Value::String("identity".into()),
-        identity_value(&candidate.hash),
-    );
-    let mut launch = Mapping::new();
-    launch.insert(
-        Value::String("use".into()),
-        Value::String(candidate.launcher.clone()),
-    );
-    if let Some(runtime) = &candidate.runtime {
-        launch.insert(
-            Value::String("runtime".into()),
-            Value::String(runtime.clone()),
-        );
-    }
-    release.insert(Value::String("launch".into()), Value::Mapping(launch));
-    item.insert(
-        Value::String("releases".into()),
-        Value::Sequence(vec![Value::Mapping(release)]),
-    );
-
-    // Validate the generated item's id shape while keeping the function pure.
-    debug_assert!(!playable_id.is_empty());
-    item
-}
-
-fn identity_value(hash: &str) -> Value {
-    let mut identity = Mapping::new();
-    identity.insert(Value::String("kind".into()), Value::String("hash".into()));
-    identity.insert(Value::String("value".into()), Value::String(hash.into()));
-    Value::Mapping(identity)
-}
-
-fn release_id_for_candidate(candidate: &ScanCandidate) -> String {
-    let base = candidate
-        .system
-        .rsplit('/')
-        .next()
-        .unwrap_or(&candidate.system);
-    title::slug_base(base)
-}
-
-fn allocate_playable_id(title: &str, library: &Mapping, assigned: &BTreeSet<String>) -> String {
-    let base = title::slug_base(title);
-    for suffix in 0..10_000u32 {
-        let candidate = if suffix == 0 {
-            base.clone()
-        } else {
-            format!("{base}-{}", suffix + 1)
-        };
-        if !library.contains_key(Value::String(candidate.clone())) && !assigned.contains(&candidate)
-        {
-            return candidate;
-        }
-    }
-    format!(
-        "{base}-{}",
-        hex::encode(Sha256::digest(title.as_bytes()))[..8].to_owned()
-    )
-}
-
-fn existing_first_seen(library: &Mapping, playable_id: &str, release_id: &str) -> Option<String> {
-    let item = library
-        .get(Value::String(playable_id.into()))?
-        .as_mapping()?;
-    for release in item_releases(item) {
-        if mapping_string(&release, "id").as_deref() == Some(release_id) {
-            return release
-                .get(Value::String("target".into()))?
-                .as_mapping()?
-                .get(Value::String("discovery".into()))?
-                .as_mapping()?
-                .get(Value::String("first-seen-at".into()))?
-                .as_str()
-                .map(str::to_owned);
-        }
-    }
-    None
+fn locations_reference_storage(document: &Mapping, storage_id: &str) -> bool {
+    document
+        .get("locations")
+        .and_then(Value::as_mapping)
+        .into_iter()
+        .flat_map(|locations| locations.values())
+        .filter_map(Value::as_sequence)
+        .flatten()
+        .filter_map(Value::as_mapping)
+        .any(|location| mapping_string(location, "storage").as_deref() == Some(storage_id))
 }
 
 fn append_dedupe_diagnostics(scan: &mut ScanReport, max_diagnostics: usize) {
@@ -1084,7 +850,9 @@ fn append_dedupe_diagnostics(scan: &mut ScanReport, max_diagnostics: usize) {
                 code: DiscoveryDiagnosticCode::ClaimConflict,
                 storage_id: Some(candidate.storage_id.clone()),
                 path: Some(candidate.relative_path.clone()),
-                message: "file overlaps an earlier selected folder and was not duplicated".into(),
+                message:
+                    "file overlaps an earlier selected folder and both locations were recorded"
+                        .into(),
             });
         } else if !hash_seen.insert(candidate.hash.clone()) {
             pending.push(DiscoveryDiagnostic {
@@ -1092,7 +860,7 @@ fn append_dedupe_diagnostics(scan: &mut ScanReport, max_diagnostics: usize) {
                 storage_id: Some(candidate.storage_id.clone()),
                 path: Some(candidate.relative_path.clone()),
                 message:
-                    "file content duplicates an earlier discovered game and was not duplicated"
+                    "file content duplicates an earlier discovered game and both locations were recorded"
                         .into(),
             });
         }
@@ -1238,22 +1006,21 @@ fn canonical_directory(path: &Path) -> Result<PathBuf, DiscoveryError> {
 }
 
 fn ensure_fixed_files(root: &Path) -> Result<(), DiscoveryError> {
-    fs::create_dir_all(root).map_err(|error| DiscoveryError::Storage(error.to_string()))?;
-    for name in [CONFIG_FILE_NAME, LIBRARY_FILE_NAME] {
+    fs::create_dir_all(root.join("catalog"))
+        .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+    for name in FILE_NAMES {
         let path = root.join(name);
         if !path.exists() {
-            fs::write(path, b"{}\n").map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+            match OpenOptions::new().write(true).create_new(true).open(path) {
+                Ok(mut file) => file
+                    .write_all(b"{}\n")
+                    .map_err(|error| DiscoveryError::Storage(error.to_string()))?,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(DiscoveryError::Storage(error.to_string())),
+            }
         }
     }
     Ok(())
-}
-
-fn validate_pair(
-    config_yaml: &str,
-    library_yaml: &str,
-) -> Result<config::ConfigSnapshot, DiscoveryError> {
-    config::decode_config_pair(config_yaml, library_yaml)
-        .map_err(|error| DiscoveryError::Candidate(error.to_string()))
 }
 
 fn parse_mapping(content: &str) -> Result<Mapping, DiscoveryError> {
@@ -1289,69 +1056,57 @@ fn read_fixed(root: &Path, name: &str) -> Result<String, DiscoveryError> {
 }
 
 fn apply_pending_ownership(
-    library_yaml: &str,
+    documents: &Documents,
     private: &mut PrivateState,
 ) -> Result<bool, DiscoveryError> {
-    if private.repair.pending_ownership.is_empty() {
-        return Ok(false);
-    }
-    let library_doc = parse_mapping(library_yaml)?;
-    let library = library_doc
-        .get(Value::String("library".into()))
-        .and_then(Value::as_mapping);
-    let mut changed = false;
-    let pending: Vec<(String, OwnedRelease)> = private
-        .repair
-        .pending_ownership
-        .iter()
-        .map(|(key, ownership)| (key.clone(), ownership.clone()))
-        .collect();
-    for (key, ownership) in pending {
-        let matches = library
-            .and_then(|library| library.get(Value::String(ownership.playable_id.clone())))
-            .and_then(Value::as_mapping)
-            .is_some_and(|item| fingerprint_item(item) == ownership.fingerprint);
-        if matches {
-            private.ownership.releases.insert(key.clone(), ownership);
+    let games = parse_mapping(&documents.games)?;
+    let releases = parse_mapping(&documents.releases)?;
+    let device = parse_mapping(&documents.device)?;
+    let before = private.ownership.clone();
+    let before_storage = private.storage_ownership.clone();
+    let mut locations_by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    if let Some(locations) = device.get("locations").and_then(Value::as_mapping) {
+        for (release_id, values) in locations {
+            let (Some(release_id), Some(values)) = (release_id.as_str(), values.as_sequence())
+            else {
+                continue;
+            };
+            for location in values.iter().filter_map(Value::as_mapping) {
+                locations_by_key
+                    .entry(location_key(release_id, location))
+                    .or_default()
+                    .insert(fingerprint_mapping(location));
+            }
         }
-        private.repair.pending_ownership.remove(&key);
-        changed = true;
+    }
+    private
+        .ownership
+        .locations
+        .retain(|key, _| locations_by_key.contains_key(key));
+    private
+        .storage_ownership
+        .storages
+        .retain(|id, _| storage_record(&device, id).is_some());
+    let changed = before != private.ownership
+        || before_storage != private.storage_ownership
+        || !private.repair.pending_ownership.is_empty()
+        || !private.repair.pending_locations.is_empty();
+    for (key, owned) in std::mem::take(&mut private.repair.pending_ownership) {
+        if catalog_fingerprint(&games, &releases, &owned.playable_id, &owned.release_id).as_ref()
+            == Some(&owned.fingerprint)
+        {
+            private.ownership.releases.insert(key, owned);
+        }
+    }
+    for (key, owned) in std::mem::take(&mut private.repair.pending_locations) {
+        let matches = locations_by_key
+            .get(&key)
+            .is_some_and(|fingerprints| fingerprints.contains(&owned.fingerprint));
+        if matches {
+            private.ownership.locations.insert(key, owned);
+        }
     }
     Ok(changed)
-}
-
-fn release_canonical_path(
-    snapshot: &config::ConfigSnapshot,
-    storage_id: &str,
-    relative_path: &str,
-) -> Option<PathBuf> {
-    let storage = snapshot.storage.get(storage_id)?;
-    Path::new(&storage.root.0)
-        .join(relative_path)
-        .canonicalize()
-        .ok()
-}
-
-fn library_references_storage(
-    library_yaml: &str,
-    storage_id: &str,
-) -> Result<bool, DiscoveryError> {
-    let library_doc = parse_mapping(library_yaml)?;
-    Ok(library_doc
-        .get(Value::String("library".into()))
-        .and_then(Value::as_mapping)
-        .into_iter()
-        .flat_map(|library| library.values())
-        .filter_map(Value::as_mapping)
-        .flat_map(item_releases)
-        .any(|release| {
-            release
-                .get(Value::String("target".into()))
-                .and_then(Value::as_mapping)
-                .and_then(|target| target.get(Value::String("storage".into())))
-                .and_then(Value::as_str)
-                == Some(storage_id)
-        }))
 }
 
 fn storage_record(document: &Mapping, storage_id: &str) -> Option<Mapping> {
@@ -1361,27 +1116,6 @@ fn storage_record(document: &Mapping, storage_id: &str) -> Option<Mapping> {
         .and_then(|storage| storage.get(Value::String(storage_id.into())))
         .and_then(Value::as_mapping)
         .cloned()
-}
-
-fn commit_library_atomically(
-    root: &Path,
-    config_yaml: &str,
-    library_yaml: &str,
-    candidate_library: &str,
-) -> Result<(), DiscoveryError> {
-    let current_config = read_fixed(root, CONFIG_FILE_NAME)?;
-    let current_library = read_fixed(root, LIBRARY_FILE_NAME)?;
-    if revision(&current_config) != revision(config_yaml)
-        || revision(&current_library) != revision(library_yaml)
-    {
-        return Err(DiscoveryError::Conflict);
-    }
-    validate_pair(&current_config, candidate_library)?;
-    write_atomically(
-        &root.join(LIBRARY_FILE_NAME),
-        candidate_library.as_bytes(),
-        &revision(&current_library),
-    )
 }
 
 fn write_atomically(
@@ -1415,6 +1149,9 @@ fn write_atomically(
             return Err(DiscoveryError::Conflict);
         }
         fs::rename(&temporary, path).map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
         Ok(())
     })();
     if result.is_err() {
@@ -1469,6 +1206,9 @@ fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), Dis
         file.sync_all()
             .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
         fs::rename(&temporary, path).map_err(|error| DiscoveryError::Storage(error.to_string()))?;
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| DiscoveryError::Storage(error.to_string()))?;
         Ok(())
     })();
     if result.is_err() {
@@ -1477,34 +1217,11 @@ fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), Dis
     result
 }
 
-fn item_releases(item: &Mapping) -> Vec<Mapping> {
-    item.get(Value::String("releases".into()))
-        .and_then(Value::as_sequence)
-        .into_iter()
-        .flat_map(|sequence| sequence.iter())
-        .filter_map(Value::as_mapping)
-        .cloned()
-        .collect()
-}
-
-fn item_releases_mut(item: &mut Mapping) -> Vec<&mut Mapping> {
-    item.get_mut(Value::String("releases".into()))
-        .and_then(Value::as_sequence_mut)
-        .into_iter()
-        .flat_map(|sequence| sequence.iter_mut())
-        .filter_map(Value::as_mapping_mut)
-        .collect()
-}
-
 fn mapping_string(mapping: &Mapping, key: &str) -> Option<String> {
     mapping
         .get(Value::String(key.into()))
         .and_then(Value::as_str)
         .map(str::to_owned)
-}
-
-fn fingerprint_item(item: &Mapping) -> String {
-    fingerprint_mapping(item)
 }
 
 fn fingerprint_mapping(mapping: &Mapping) -> String {

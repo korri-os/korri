@@ -1,142 +1,78 @@
 # Android application plugin schema checkpoint
 
-Status: passed
+The device gate now reads the minimum-config fixture:
 
-This checkpoint asks one question before the Rust port begins:
-
-> Can the installed Android application already used by Korri be represented by
-> the legacy persisted schema and plugin contribution seam without altering the
-> schema?
-
-The answer is **yes**. The files beside this document are the exact reviewed
-inputs:
-
-- `config.yaml` — trusted device configuration;
-- `library.yaml` — the TMNT library record;
-- `android-app.plugin.ts` — the preserved declaration-only plugin contribution;
-- `validate.sh` and `validate-legacy.ts` — the reproducible validation harness.
-
-They are design fixtures, not production configuration. The production-owned
-copy lives at `services/korrid/plugins/android-app.plugin.ts`; the harness and
-Rust tests require both plugin files to remain byte-for-byte identical so the
-historical proof and bundled source cannot drift independently.
-
-## Result
-
-The unchanged legacy strict schema accepted both YAML documents. The unchanged
-legacy plugin registry accepted the evaluated plugin declaration, and the
-unchanged readable cascade resolver selected this launch context:
-
-```text
-plugin                 @korri:android-app
-provider               @korri:android-app
-system                 android
-launcher               @korri:android-app/android-app
-launcher kind          @korri:android-app
-integration token      android-app
-playable               tmnt-shredders-revenge
-release                android
-resolved target        @korri:android-app:com.playdigious.tmnt
-```
-
-No persisted-schema change is required for this case.
-
-## Grounding
-
-Nothing in the fixture introduces a new persisted vocabulary.
-
-| Fixture value or shape | Existing source |
+| File | Owner and content |
 | --- | --- |
-| `tmnt-shredders-revenge`, display title, `com.playdigious.tmnt` | Former Android application table, now preserved as this checked readable fixture |
-| `android-app` integration token | Current signed `LaunchSpec.launcher_id` and Android shell handling |
-| `android` system id | Legacy's existing Android platform normalization and its unconstrained system-id record |
-| `@korri:android-app` | Legacy provider/plugin identity syntax |
-| Plugin-contributed provider, system, and launcher | Legacy `PluginConfigContributions` and first-party plugin definitions |
-| `target.kind: provider-ref` | Legacy `LibraryReleasePayload`; the package name is the provider-owned reference, analogous to Steam's provider-owned app id |
-| `launch.use` | Legacy release-to-launcher selection |
-| `host.title` | Legacy host payload; `usu` is the real device name |
-| Fixed `config.yaml` and `library.yaml` | The explicitly chosen checkpoint storage shape; both remain parts of one logical legacy schema |
+| `device.yaml` | Device title and the installed package location |
+| `catalog/games.yaml` | TMNT title, game ULID, and release reference |
+| `catalog/releases.yaml` | Provider release identity and Android system |
+| `android-app.plugin.ts` | Declaration-only provider, system, and launcher contribution |
 
-The plugin contributes the provider, system, and launcher. They are not copied
-into `config.yaml`; otherwise disabling the plugin could leave a persisted
-launcher behind and invalidate the later architecture proof.
+The game id is `01K4J6K8Y00000000000000001`. Its release is
+`@korri:android-app/com.playdigious.tmnt`. The package remains
+`com.playdigious.tmnt`. The identity split follows the approved minimum layer in
+`docs/briefs/2026-09-06-config-cascade-discussion.md`.
 
-## What `command: android-app` means
+These are device-gate inputs, not fresh-install defaults. The bundled plugin
+source remains `services/korrid/plugins/android-app.plugin.ts`. Both plugin
+copies must remain byte-for-byte identical.
 
-Legacy's app record requires a command before a custom app can be resolved.
-Here `android-app` is not an executable name. It is the integration token
-already present in the current launch treaty. A provider-qualified Android
-launch integration must consume it. It must never fall through to generic
-process execution.
+## Current route boundary
 
-## Production route boundary
+The catalog owns game and release facts. `device.yaml: locations` owns the
+provider and package reference. The enabled plugin supplies the launcher.
+The Rust route mapper selects the `@korri:android-app` integration and emits
+launcher `android-app`, the package name, an empty Activity class, extras `{}`,
+directories `[]`, and files `[]`. The existing signer adds integrity. Android
+owns the installed-package and Activity checks.
 
-The production Rust path now consumes the same shape proven here. The Android
-route mapper:
+`command: android-app` is an integration token, not a generic executable.
+Disabling the plugin must remove the route's launcher contribution.
 
-1. requires the selected app kind to be `@korri:android-app`;
-2. recovers the package name from the legacy resolver's flattened target by
-   requiring and removing the complete `@korri:android-app:` prefix—not by
-   splitting on `:`, because the provider id itself contains a colon;
-3. emits the current exact unsigned launch instruction: launcher
-   `android-app`, that package name, empty activity class, extras `{}`,
-   directories `[]`, files `[]`, and integrity `""`;
-4. lets the existing signing and JVM PackageManager edge handle the effect and
-   installed-package check.
+The dedicated `services/korrid/android-app-route-check.sh` gate normally uses
+the two-game RetroArch checkpoint. To select this one-game checkpoint, supply
+all three `KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE`,
+`KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES`, and
+`KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES` paths. Partial overrides fail.
+The gate verifies all three files and restores their prior bytes or absence.
+Failed restoration retains the backup and device lock for manual recovery.
+The general Android smoke does not provision these documents.
 
-The production source of truth is therefore split deliberately: the two fixed
-readable documents under Korri's local storage root own the configured library
-record; `services/korrid/plugins/android-app.plugin.ts` owns the bundled plugin
-contribution; the Android shell owns installed package/activity truth. The
-checkpoint files remain historical fixtures and are copied by the device gate
-only to configure that test device. They are not baked into fresh-install
-defaults.
+## Validation
 
-Plugin enablement and package fulfillability remain outside the two persisted
-documents. The first belongs to device/plugin composition; the second is Android
-hardware truth. This checkpoint does not define a future user policy file or a
-federation wire format.
-
-## Validation evidence
-
-Validated against:
-
-- main baseline `c58733d4`;
-- legacy schema and resolver at `0e4cec9d`;
-- the current Rust TypeScript evaluator in its empty sandbox.
-
-Run the checked-in proof from the repository root:
+Current production snapshot and route probes:
 
 ```sh
-docs/research/android-app-plugin-schema-checkpoint/validate.sh
+services/korrid/config-snapshot-review.sh
+services/korrid/plugin-route-review.sh
 ```
 
-The harness first compares the preserved checkpoint plugin with the
-production-owned bundled source byte-for-byte. It then evaluates the production
-copy with current korrid, installs the dependencies pinned by the archived
-legacy revision in a temporary directory, passes the exact YAML through legacy's
-`validateReadableDocumentStrictly`, normalizes the evaluated declaration with
-legacy's `plugin()` and `createPluginRegistry()`, decodes its contributed
-provider/system/launcher records, and runs `resolveReadableLaunchContext` for
-the TMNT item. It also proves that disabling the plugin removes its launcher
-contribution.
+Offline script and fixture checks:
 
-Observed result:
-
-```text
-production plugin parity: PASS
-plugin disabled removes launcher: PASS
-legacy strict schema: PASS
-legacy readable context resolver: PASS
+```sh
+services/korrid/android-device-script-review.sh
+services/korrid/test-minimum-config-fixtures.py
+services/korrid/test-checkpoint-documents.py
 ```
 
-This proves strict decoding and readable launch-context selection. The current
-production mapper and device gate own the later `LaunchSpec`, signing, and
-PackageManager proof.
+These commands do not prove an installed package or a foreground launch.
+The explicit-device gate owns that proof and changes the selected test device.
 
-The exercise also exposed a legacy normalization mismatch: `plugin()`'s
-implicit own-provider payload does not itself satisfy the later strict
-`ProviderRecord` decoder, whose failures are silently dropped. This fixture
-supplies the same provider explicitly with its id so the end-to-end legacy path
-is valid. The Rust port must normalize this correctly and fail malformed
-provider contributions explicitly; it must not reproduce the silent drop.
+## Historical legacy proof
+
+The original checkpoint passed the unchanged strict legacy schema and readable
+cascade resolver at legacy revision `0e4cec9d`, against main baseline
+`c58733d4`. It proved that plugin-contributed Android application routing did
+not need a legacy schema extension. The current three-document fixture is the
+later approved minimum-config cut, not the original legacy input.
+
+`validate.sh` and `validate-legacy.ts` preserve that historical harness. They
+still expect the archived legacy inputs and must be run from their historical
+revision, not against the current fixture directory. They are not a current
+minimum-config acceptance command.
+
+The historical exercise also found that legacy's implicit own-provider payload
+failed its later strict `ProviderRecord` decoder silently. The explicit provider
+in this plugin avoids that mismatch. Production plugin decoding must reject
+malformed contributions instead of reproducing the silent drop.

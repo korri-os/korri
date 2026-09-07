@@ -747,6 +747,7 @@ let
     ra-accept = {
       description = "Run read-only-prerequisite RetroArch acceptance on Android.";
       runtimeInputs = [
+        (pkgs.python3.withPackages (p: [ p.pyyaml ]))
         pkgs.android-tools
         pkgs.coreutils
         pkgs.curl

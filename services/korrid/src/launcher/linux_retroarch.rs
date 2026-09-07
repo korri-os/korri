@@ -1,5 +1,5 @@
 use super::LaunchError;
-use crate::config::resolver::ResolvedRoute;
+use crate::config::{resolver::ResolvedRoute, storage, ConfigSnapshot};
 use std::{
     ffi::OsString,
     fs::{self, OpenOptions},
@@ -10,7 +10,6 @@ use std::{
 const RETROARCH_PROVIDER: &str = "@korri:retroarch";
 const RETROARCH_LAUNCHER: &str = "@korri:retroarch/retroarch";
 const LIBRETRO_CORE_KIND: &str = "libretro-core";
-const ROM_STORAGE: &str = "roms";
 const DEFAULT_ACCOUNT: &str = "default";
 const RETROARCH_AUTOCONFIG_ENV: &str = "KORRI_RETROARCH_AUTOCONFIG";
 
@@ -21,6 +20,7 @@ pub struct LinuxLaunchSpec {
 
 pub(crate) fn launch_route_with_env(
     root: &Path,
+    snapshot: &ConfigSnapshot,
     route: &ResolvedRoute,
     lookup: impl Fn(&str) -> Option<OsString>,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
@@ -63,13 +63,6 @@ pub(crate) fn launch_route_with_env(
             route.playable_id
         ))
     })?;
-    if target.storage_id != ROM_STORAGE || !safe_relative_path(&target.path) {
-        return Err(LaunchError::RouteUnavailable(format!(
-            "RetroArch route {} has an unsupported file target",
-            route.playable_id
-        )));
-    }
-
     let executable = environment_path(&lookup, &launcher.executable_env)?;
     let core = environment_path(&lookup, core_env)?;
     require_file(&executable, "RetroArch executable")?;
@@ -77,8 +70,17 @@ pub(crate) fn launch_route_with_env(
     let autoconfig = environment_path(&lookup, RETROARCH_AUTOCONFIG_ENV)?;
     require_directory(&autoconfig, "RetroArch joypad autoconfig")?;
 
-    let rom = root.join(ROM_STORAGE).join(&target.path);
-    require_file(&rom, "ROM")?;
+    let rom = storage::resolve_file_target(root, snapshot, target)
+        .map_err(|error| {
+            if error.is_missing_target() {
+                LaunchError::RomMissing(error.to_string())
+            } else if error.is_storage_access() {
+                LaunchError::StorageAccess(error.to_string())
+            } else {
+                LaunchError::RouteUnavailable(error.to_string())
+            }
+        })?
+        .path;
 
     let account_root = root.join("users").join(DEFAULT_ACCOUNT);
     for directory in ["system", "saves", "states", "screenshots"] {
@@ -148,14 +150,6 @@ fn require_directory(path: &Path, label: &str) -> Result<(), LaunchError> {
         )),
         Err(error) => Err(LaunchError::StorageAccess(error.to_string())),
     }
-}
-
-fn safe_relative_path(value: &str) -> bool {
-    let path = Path::new(value);
-    !path.as_os_str().is_empty()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 fn safe_absolute_path(path: &Path) -> bool {
@@ -257,7 +251,7 @@ mod tests {
                 linux_path_env: Some("KORRI_MGBA_CORE".into()),
             }),
             file_target: Some(ResolvedFileTarget {
-                storage_id: ROM_STORAGE.into(),
+                storage_id: storage::IMPLICIT_ROMS_STORAGE_ID.into(),
                 path: "wl4.gba".into(),
             }),
         }
@@ -282,10 +276,11 @@ mod tests {
             ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
         ]);
 
-        let launch = launch_route_with_env(root.path(), &route(), |key| {
-            environment.get(key).map(|value| OsString::from(value))
-        })
-        .unwrap();
+        let launch =
+            launch_route_with_env(root.path(), &ConfigSnapshot::default(), &route(), |key| {
+                environment.get(key).map(OsString::from)
+            })
+            .unwrap();
 
         assert_eq!(launch.command[0], executable.display().to_string());
         assert_eq!(launch.command[4], core.display().to_string());
@@ -316,11 +311,16 @@ mod tests {
         let executable = root.path().join("retroarch");
         fs::write(&executable, b"binary").unwrap();
 
-        let error = launch_route_with_env(root.path(), &route(), |key| match key {
-            "KORRI_RETROARCH_EXECUTABLE" => Some(executable.as_os_str().into()),
-            "KORRI_MGBA_CORE" => Some(root.path().join("missing.so").into_os_string()),
-            _ => None,
-        })
+        let error = launch_route_with_env(
+            root.path(),
+            &ConfigSnapshot::default(),
+            &route(),
+            |key| match key {
+                "KORRI_RETROARCH_EXECUTABLE" => Some(executable.as_os_str().into()),
+                "KORRI_MGBA_CORE" => Some(root.path().join("missing.so").into_os_string()),
+                _ => None,
+            },
+        )
         .unwrap_err();
 
         assert!(error.to_string().contains("mGBA core is missing"));

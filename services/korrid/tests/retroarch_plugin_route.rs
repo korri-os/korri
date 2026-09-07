@@ -1,3 +1,5 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use std::path::Path;
 
 use korrid::{
@@ -10,12 +12,8 @@ use korrid::{
     },
 };
 
-const CONFIG: &str = include_str!("../../../docs/research/retroarch-plugin-route/config.yaml");
-const LIBRARY: &str = include_str!("../../../docs/research/retroarch-plugin-route/library.yaml");
-
 fn state(root: &Path) -> korrid::config::snapshot::ConfigSnapshotState {
-    std::fs::write(root.join("config.yaml"), CONFIG).unwrap();
-    std::fs::write(root.join("library.yaml"), LIBRARY).unwrap();
+    readable::combined(root);
     ConfigSnapshotCoordinator::new(root).reload()
 }
 
@@ -54,8 +52,12 @@ fn state_from_docs(
     config: &str,
     library: &str,
 ) -> korrid::config::snapshot::ConfigSnapshotState {
-    std::fs::write(root.join("config.yaml"), config).unwrap();
-    std::fs::write(root.join("library.yaml"), library).unwrap();
+    readable::install(
+        root,
+        &format!("{config}\n{library}"),
+        &readable::gba_games(),
+        &readable::gba_releases(),
+    );
     ConfigSnapshotCoordinator::new(root).reload()
 }
 
@@ -67,14 +69,7 @@ fn explicit_storage_config(storage_id: &str, storage_root: &Path) -> String {
 }
 
 fn explicit_storage_library(storage_id: &str, target_path: &str, discovery: bool) -> String {
-    let discovery_yaml = if discovery {
-        "          discovery:\n            first-seen-at: 2026-08-05T00:00:00Z\n"
-    } else {
-        ""
-    };
-    format!(
-        "library:\n  wl4-selected:\n    title: Wario Land 4\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: {storage_id}\n          path: {target_path}\n{discovery_yaml}        launch:\n          use: \"@korri:retroarch/retroarch\"\n          runtime: \"@korri:mgba/mgba\"\n"
-    )
+    readable::gba_locations(storage_id, target_path, discovery)
 }
 
 #[test]
@@ -90,8 +85,14 @@ fn explicit_storage_root_file_target_launches_through_retroarch() {
     );
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
 
-    let route = resolver::resolve_route(&state.snapshot, &registry(true, true), [], "wl4-selected")
-        .expect("explicit storage route");
+    let route = resolver::resolve_route(
+        korri_root.path(),
+        &state.snapshot,
+        &registry(true, true),
+        [],
+        readable::GBA_ID,
+    )
+    .expect("explicit storage route");
     assert_eq!(
         route.file_target.as_ref().unwrap().storage_id,
         "selected-gba"
@@ -99,7 +100,7 @@ fn explicit_storage_root_file_target_launches_through_retroarch() {
 
     let spec = launcher::launch_game(
         korri_root.path(),
-        "wl4-selected",
+        readable::GBA_ID,
         FileProvisionMode::Deferred,
         &state,
         &registry(true, true),
@@ -158,17 +159,19 @@ fn discovery_metadata_on_file_targets_does_not_change_launch_resolution() {
     );
 
     let plain = resolver::resolve_route(
+        korri_root.path(),
         &without_discovery.snapshot,
         &registry(true, true),
         [],
-        "wl4-selected",
+        readable::GBA_ID,
     )
     .expect("plain file target");
     let discovered = resolver::resolve_route(
+        korri_root.path(),
         &with_discovery.snapshot,
         &registry(true, true),
         [],
-        "wl4-selected",
+        readable::GBA_ID,
     )
     .expect("discovery metadata file target");
 
@@ -209,9 +212,14 @@ fn explicit_storage_root_failures_are_route_diagnostics() {
             &config,
             &explicit_storage_library(storage_id, "wl4.gba", false),
         );
-        let error =
-            resolver::resolve_route(&state.snapshot, &registry(true, true), [], "wl4-selected")
-                .expect_err("invalid storage root should produce a route diagnostic");
+        let error = resolver::resolve_route(
+            korri_root.path(),
+            &state.snapshot,
+            &registry(true, true),
+            [],
+            readable::GBA_ID,
+        )
+        .expect_err("invalid storage root should produce a route diagnostic");
         assert!(
             error.message.contains(expected),
             "expected {expected:?}, got {:?}",
@@ -244,9 +252,14 @@ fn explicit_storage_rejects_parent_and_symlink_target_escapes() {
             &explicit_storage_config("selected-gba", selected_root.path()),
             &explicit_storage_library("selected-gba", target_path, false),
         );
-        let error =
-            resolver::resolve_route(&state.snapshot, &registry(true, true), [], "wl4-selected")
-                .expect_err("escaped target should produce a route diagnostic");
+        let error = resolver::resolve_route(
+            korri_root.path(),
+            &state.snapshot,
+            &registry(true, true),
+            [],
+            readable::GBA_ID,
+        )
+        .expect_err("escaped target should produce a route diagnostic");
         assert!(
             error.message.contains(expected),
             "expected {expected:?}, got {:?}",
@@ -258,11 +271,19 @@ fn explicit_storage_rejects_parent_and_symlink_target_escapes() {
 #[test]
 fn composes_retroarch_launcher_with_mgba_runtime_from_independent_plugins() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("roms")).unwrap();
+    std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let state = state(root.path());
     let registry = registry(true, true);
 
-    let route = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect("composed RetroArch and mGBA route");
+    let route = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect("composed RetroArch and mGBA route");
 
     assert_eq!(route.launcher_id, "@korri:retroarch/retroarch");
     assert_eq!(
@@ -292,13 +313,16 @@ fn composes_retroarch_launcher_with_mgba_runtime_from_independent_plugins() {
 #[test]
 fn resolves_linux_through_the_same_retroarch_and_mgba_plugins() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("roms")).unwrap();
+    std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let state = state(root.path());
 
     let route = resolver::resolve_route_for_platform(
+        root.path(),
         &state.snapshot,
         &registry(true, true),
         [],
-        "wl4",
+        readable::GBA_ID,
         resolver::RoutePlatform::Linux,
     )
     .expect("composed Linux RetroArch and mGBA route");
@@ -322,7 +346,7 @@ fn materializes_the_existing_launch_treaty_from_composed_plugin_records() {
 
     let spec = launcher::launch_game(
         root.path(),
-        "wl4",
+        readable::GBA_ID,
         FileProvisionMode::Deferred,
         &state,
         &registry(true, true),
@@ -361,7 +385,7 @@ fn launch_spec_and_config_follow_values_from_both_plugins() {
 
     let spec = launcher::launch_game(
         root.path(),
-        "wl4",
+        readable::GBA_ID,
         FileProvisionMode::Deferred,
         &state,
         &registry_from_sources(&retroarch_source, &mgba_source),
@@ -396,11 +420,15 @@ fn disabling_retroarch_withholds_only_its_launcher_identity() {
         .contains_key("@korri:retroarch/retroarch"));
     assert!(registry.runtimes().contains_key("@korri:mgba/mgba"));
 
-    let error = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect_err("disabled launcher plugin route");
-    assert!(error
-        .message
-        .contains("launcher @korri:retroarch/retroarch is unavailable"));
+    let error = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect_err("disabled launcher plugin route");
+    assert!(error.message.contains("no launcher supports system gba"));
 }
 
 #[test]
@@ -416,9 +444,15 @@ fn disabling_mgba_withholds_only_its_system_and_runtime_identities() {
     assert!(registry.owns_registered_runtime_id("@korri:mgba/mgba"));
     assert!(!registry.runtimes().contains_key("@korri:mgba/mgba"));
 
-    let error = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect_err("disabled core plugin route");
-    assert!(error.message.contains("system gba is unavailable"));
+    let error = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect_err("disabled core plugin route");
+    assert!(error.message.contains("no launcher supports system gba"));
 }
 
 #[test]
@@ -431,11 +465,15 @@ fn rejects_a_runtime_declared_for_a_different_launcher() {
     );
     let registry = registry_from_sources(RETROARCH_PLUGIN_SOURCE, &incompatible);
 
-    let error = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect_err("runtime app mismatch");
-    assert!(error.message.contains(
-        "runtime @korri:mgba/mgba belongs to @korri:other/launcher, not launcher @korri:retroarch/retroarch"
-    ));
+    let error = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect_err("runtime app mismatch");
+    assert!(error.message.contains("no launcher supports system gba"));
 }
 
 #[test]
@@ -445,20 +483,34 @@ fn rejects_an_mgba_runtime_that_does_not_support_the_release_system() {
     let unsupported = MGBA_PLUGIN_SOURCE.replace("systems: [\"gba\"]", "systems: [\"gb\"]");
     let registry = registry_from_sources(RETROARCH_PLUGIN_SOURCE, &unsupported);
 
-    let error = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect_err("runtime system mismatch");
-    assert!(error.message.contains("does not support system gba"));
+    let error = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect_err("runtime system mismatch");
+    assert!(error.message.contains("no launcher supports system gba"));
 }
 
 #[test]
 fn rejects_an_mgba_runtime_that_is_not_a_libretro_core() {
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("roms")).unwrap();
+    std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
     let state = state(root.path());
     let incompatible = MGBA_PLUGIN_SOURCE.replace("kind: \"libretro-core\"", "kind: \"tool\"");
     let registry = registry_from_sources(RETROARCH_PLUGIN_SOURCE, &incompatible);
 
-    let error = resolver::resolve_route(&state.snapshot, &registry, [], "wl4")
-        .expect_err("incompatible runtime kind");
+    let error = resolver::resolve_route(
+        root.path(),
+        &state.snapshot,
+        &registry,
+        [],
+        readable::GBA_ID,
+    )
+    .expect_err("incompatible runtime kind");
     assert!(error
         .message
         .contains("has kind tool, expected libretro-core"));

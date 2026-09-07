@@ -13,7 +13,7 @@ use korrid::plugin_policy::{
     bundled_plugin_policy_layer, bundled_plugins, resolve_enabled_plugin_ids, PluginPolicyLayer,
 };
 
-const CHECKPOINT_PLAYABLE_ID: &str = "tmnt-shredders-revenge";
+const CHECKPOINT_PLAYABLE_ID: &str = "01K4J6K8Y00000000000000001";
 const STATIC_PLAYABLE_IDS: [&str; 0] = [];
 
 #[derive(Clone, Copy)]
@@ -59,6 +59,7 @@ fn run() -> Result<(), String> {
 }
 
 fn print_report(root: &str, enabled: bool) -> Result<(), String> {
+    let root = std::path::Path::new(root);
     let coordinator = ConfigSnapshotCoordinator::new(root);
     let state = coordinator.reload();
     println!("snapshot generation: {}", state.generation);
@@ -83,7 +84,7 @@ fn print_report(root: &str, enabled: bool) -> Result<(), String> {
         }
     );
 
-    let catalog = resolve_launchable_routes(&state.snapshot, &registry, STATIC_PLAYABLE_IDS);
+    let catalog = resolve_launchable_routes(root, &state.snapshot, &registry, STATIC_PLAYABLE_IDS);
     if catalog.routes.is_empty() {
         println!("route: none");
     } else {
@@ -109,6 +110,7 @@ fn print_report(root: &str, enabled: bool) -> Result<(), String> {
     }
 
     match resolve_route(
+        root,
         &state.snapshot,
         &registry,
         STATIC_PLAYABLE_IDS,

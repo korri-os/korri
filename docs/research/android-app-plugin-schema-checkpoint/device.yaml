@@ -1,0 +1,6 @@
+host:
+  title: usu
+locations:
+  '@korri:android-app/com.playdigious.tmnt':
+  - provider: '@korri:android-app'
+    ref: com.playdigious.tmnt

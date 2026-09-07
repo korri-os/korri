@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl git jq nix openssh
+# shellcheck shell=bash
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -42,10 +44,16 @@ revision_file="$(mktemp)"
 relay_environment="$(mktemp)"
 status_file="$(mktemp)"
 remote_tmp=""
+install_started=false
+install_succeeded=false
 cleanup() {
   rm -f "$revision_file" "$relay_environment" "$status_file"
   if [[ -n "$remote_tmp" ]]; then
-    ssh "${ssh_options[@]}" zao rm -rf -- "$remote_tmp" || true
+    if [[ "$install_started" == false || "$install_succeeded" == true ]]; then
+      ssh "${ssh_options[@]}" zao rm -rf -- "$remote_tmp" || true
+    else
+      echo "Deployment failed; recovery files retained on zao at $remote_tmp" >&2
+    fi
   fi
 }
 trap cleanup EXIT
@@ -54,6 +62,7 @@ printf "KORRID_RELAYS='%s'\n" "$relay_json" > "$relay_environment"
 
 NIX_SSHOPTS="${ssh_options[*]}" nix copy --to ssh://zao "$package"
 remote_tmp="$(ssh "${ssh_options[@]}" zao mktemp -d /tmp/korrid-deploy.XXXXXX)"
+ssh "${ssh_options[@]}" zao mkdir -p "$remote_tmp/catalog"
 scp "${ssh_options[@]}" \
   "$root/services/korrid/deploy/korrid.service" \
   "zao:$remote_tmp/korrid.service"
@@ -61,17 +70,22 @@ scp "${ssh_options[@]}" \
   "$root/services/korrid/deploy/host.zao.toml" \
   "zao:$remote_tmp/host.toml"
 scp "${ssh_options[@]}" \
-  "$root/services/korrid/deploy/config.zao.yaml" \
-  "zao:$remote_tmp/config.yaml"
+  "$root/services/korrid/deploy/device.zao.yaml" \
+  "zao:$remote_tmp/device.yaml"
 scp "${ssh_options[@]}" \
-  "$root/services/korrid/deploy/library.zao.yaml" \
-  "zao:$remote_tmp/library.yaml"
+  "$root/services/korrid/deploy/games.zao.yaml" \
+  "zao:$remote_tmp/catalog/games.yaml"
+scp "${ssh_options[@]}" \
+  "$root/services/korrid/deploy/releases.zao.yaml" \
+  "zao:$remote_tmp/catalog/releases.yaml"
 scp "${ssh_options[@]}" \
   "$root/services/korrid/deploy/zao-remote.sh" \
   "zao:$remote_tmp/zao-remote.sh"
 scp "${ssh_options[@]}" "$revision_file" "zao:$remote_tmp/revision"
 scp "${ssh_options[@]}" "$relay_environment" "zao:$remote_tmp/environment"
+install_started=true
 ssh "${ssh_options[@]}" zao "$remote_tmp/zao-remote.sh" install "$package" "$remote_tmp"
+install_succeeded=true
 
 zao_url="${ZAO_KORRID_URL:-http://zao:43117}"
 for _ in $(seq 1 40); do
@@ -82,7 +96,7 @@ for _ in $(seq 1 40); do
     jq -e '._tag == "app.catalog.snapshot"
       and .outcome._tag == "Ok"
       and any(.outcome.payload.games[]; .id == "neverball" and .host == "zao")
-      and any(.outcome.payload.games[]; .id == "wl4" and .title == "Wario Land 4" and .host == "zao")' \
+      and any(.outcome.payload.games[]; .id == "01K4J6K8Y00000000000000002" and .title == "Wario Land 4" and .host == "zao")' \
       <<<"$response" >/dev/null; then
     ssh "${ssh_options[@]}" zao \
       "KORRID_PRIVATE_STATE_ROOT=\"\$HOME/.local/state/korrid/private\" \"\$HOME/.local/state/korrid/current/bin/korrid\" identity status" \

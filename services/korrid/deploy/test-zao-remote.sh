@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils diffutils findutils gawk gnugrep python3
+# shellcheck shell=bash
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -175,4 +177,5 @@ grep -F '"zao:$remote_tmp/zao-remote.sh"' "$PUSH" >/dev/null
 # shellcheck disable=SC2016
 grep -F '"$remote_tmp/zao-remote.sh" install "$package" "$remote_tmp"' "$PUSH" >/dev/null
 
-echo 'standalone Zao deployment cut tests passed'
+python3 "$ROOT/test-zao-documents.py"
+echo 'standalone Zao deployment cut and three-document tests passed'

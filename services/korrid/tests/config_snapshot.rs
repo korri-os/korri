@@ -1,18 +1,20 @@
+#[path = "fixtures/readable.rs"]
+mod readable;
 use std::fs;
 use std::sync::Arc;
 use std::thread;
 
 use korrid::config::snapshot::{
-    ConfigSnapshotCoordinator, SnapshotAuthorization, SnapshotDiagnosticCode, CONFIG_FILE_NAME,
-    EMPTY_DOCUMENT_BYTES, LIBRARY_FILE_NAME,
+    ConfigSnapshotCoordinator, SnapshotAuthorization, SnapshotDiagnosticCode, DEVICE_FILE_NAME,
+    EMPTY_DOCUMENT_BYTES, GAMES_FILE_NAME, RELEASES_FILE_NAME,
 };
 use proseql_engine::errors::{EngineError, StorageError, StorageOperation};
 use proseql_storage::host::{StorageEvent, StorageHost, WatchHandle};
 
 const CHECKPOINT_CONFIG: &str =
-    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
+    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/device.yaml");
 const CHECKPOINT_LIBRARY: &str =
-    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/library.yaml");
+    include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml");
 
 #[test]
 fn empty_storage_root_creates_only_canonical_fixed_documents_and_loads_empty_snapshot() {
@@ -25,13 +27,13 @@ fn empty_storage_root_creates_only_canonical_fixed_documents_and_loads_empty_sna
     assert_eq!(state.generation, 1);
     assert!(state.diagnostic.is_none());
     assert!(state.snapshot.host.is_none());
-    assert!(state.snapshot.library.is_empty());
+    assert!(state.snapshot.games.is_empty());
     assert_eq!(
-        fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
     assert_eq!(
-        fs::read(root.path().join(LIBRARY_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(GAMES_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
 
@@ -40,14 +42,14 @@ fn empty_storage_root_creates_only_canonical_fixed_documents_and_loads_empty_sna
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     names.sort();
-    assert_eq!(names, vec![CONFIG_FILE_NAME, LIBRARY_FILE_NAME]);
+    assert_eq!(names, vec!["catalog", DEVICE_FILE_NAME]);
 }
 
 #[test]
 fn existing_file_is_preserved_and_only_the_missing_fixed_file_is_created() {
     let root = tempfile::tempdir().unwrap();
     let existing_config = "host:\n  title: preserved\n";
-    fs::write(root.path().join(CONFIG_FILE_NAME), existing_config).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), existing_config).unwrap();
 
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
 
@@ -57,11 +59,11 @@ fn existing_file_is_preserved_and_only_the_missing_fixed_file_is_created() {
         Some("preserved")
     );
     assert_eq!(
-        fs::read_to_string(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+        fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
         existing_config
     );
     assert_eq!(
-        fs::read(root.path().join(LIBRARY_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(GAMES_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
 }
@@ -69,9 +71,10 @@ fn existing_file_is_preserved_and_only_the_missing_fixed_file_is_created() {
 #[test]
 fn additional_files_do_not_contribute_to_the_fixed_snapshot() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), "{}\n").unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
-    fs::write(
+    readable::write(root.path().join(DEVICE_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
+    readable::write(
         root.path().join("extra.yaml"),
         "library:\n  should-not-load:\n    releases:\n      - id: android\n        system: android\n",
     )
@@ -81,14 +84,19 @@ fn additional_files_do_not_contribute_to_the_fixed_snapshot() {
 
     assert_eq!(state.authorization, SnapshotAuthorization::Authorized);
     assert!(state.diagnostic.is_none());
-    assert!(state.snapshot.library.is_empty());
+    assert!(state.snapshot.games.is_empty());
 }
 
 #[test]
 fn exact_checkpoint_pair_loads_as_one_authorized_snapshot() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(
+        root.path().join(RELEASES_FILE_NAME),
+        readable::ANDROID_RELEASES,
+    )
+    .unwrap();
 
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
 
@@ -101,22 +109,23 @@ fn exact_checkpoint_pair_loads_as_one_authorized_snapshot() {
     );
     assert!(state
         .snapshot
-        .library
-        .contains_key("tmnt-shredders-revenge"));
+        .games
+        .contains_key("01K4J6K8Y00000000000000001"));
 }
 
 #[test]
 fn storage_records_load_without_marking_the_snapshot_unsupported() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join(CONFIG_FILE_NAME),
+    readable::write(
+        root.path().join(DEVICE_FILE_NAME),
         format!(
             "host:\n  title: usu\nstorage:\n  selected-gba:\n    root: {}\n",
             root.path().display()
         ),
     )
     .unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
 
     let state = ConfigSnapshotCoordinator::new(root.path()).reload();
 
@@ -128,13 +137,18 @@ fn storage_records_load_without_marking_the_snapshot_unsupported() {
 #[test]
 fn malformed_or_unsupported_reload_retains_last_known_good_and_diagnostic_until_valid_reload() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(
+        root.path().join(RELEASES_FILE_NAME),
+        readable::ANDROID_RELEASES,
+    )
+    .unwrap();
     let coordinator = ConfigSnapshotCoordinator::new(root.path());
     let good = coordinator.reload();
 
-    fs::write(
-        root.path().join(LIBRARY_FILE_NAME),
+    readable::write(
+        root.path().join(GAMES_FILE_NAME),
         "library:\n  bad id:\n    releases: []\n",
     )
     .unwrap();
@@ -144,35 +158,41 @@ fn malformed_or_unsupported_reload_retains_last_known_good_and_diagnostic_until_
     assert_eq!(stale.generation, good.generation);
     assert!(stale
         .snapshot
-        .library
-        .contains_key("tmnt-shredders-revenge"));
+        .games
+        .contains_key("01K4J6K8Y00000000000000001"));
     let diagnostic = stale.diagnostic.as_ref().expect("reload diagnostic");
     assert_eq!(
         diagnostic.code,
         SnapshotDiagnosticCode::LocalConfigReloadFailed
     );
-    assert!(diagnostic.message.contains(LIBRARY_FILE_NAME));
+    assert!(diagnostic.message.contains(GAMES_FILE_NAME));
     assert!(!diagnostic.message.contains(root.path().to_str().unwrap()));
 
-    fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
     let recovered = coordinator.reload();
 
     assert_eq!(recovered.authorization, SnapshotAuthorization::Authorized);
     assert!(recovered.generation > stale.generation);
     assert!(recovered.diagnostic.is_none());
-    assert!(recovered.snapshot.library.is_empty());
+    assert!(recovered.snapshot.games.is_empty());
 }
 
 #[test]
 fn unsupported_populated_behavior_retains_last_known_good_with_unsupported_diagnostic() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(
+        root.path().join(RELEASES_FILE_NAME),
+        readable::ANDROID_RELEASES,
+    )
+    .unwrap();
     let coordinator = ConfigSnapshotCoordinator::new(root.path());
     let good = coordinator.reload();
 
-    fs::write(
-        root.path().join(CONFIG_FILE_NAME),
+    readable::write(
+        root.path().join(DEVICE_FILE_NAME),
         "host:\n  title: usu\n  moonlight:\n    platform:\n      name: v4l2m2m\n",
     )
     .unwrap();
@@ -182,8 +202,8 @@ fn unsupported_populated_behavior_retains_last_known_good_with_unsupported_diagn
     assert_eq!(stale.generation, good.generation);
     assert!(stale
         .snapshot
-        .library
-        .contains_key("tmnt-shredders-revenge"));
+        .games
+        .contains_key("01K4J6K8Y00000000000000001"));
     let diagnostic = stale.diagnostic.as_ref().expect("unsupported diagnostic");
     assert_eq!(
         diagnostic.code,
@@ -195,12 +215,13 @@ fn unsupported_populated_behavior_retains_last_known_good_with_unsupported_diagn
 #[test]
 fn coordinator_publishes_the_once_captured_documents_through_graph_conversion() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join(CONFIG_FILE_NAME),
+    readable::write(
+        root.path().join(DEVICE_FILE_NAME),
         "host:\n  title: captured\n",
     )
     .unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
     let storage = Arc::new(
         SwitchableStorageHost::new(root.path().to_owned())
             .with_config_second_read("host:\n  title: second-read\n"),
@@ -220,15 +241,20 @@ fn coordinator_publishes_the_once_captured_documents_through_graph_conversion() 
         state.snapshot.host.as_ref().unwrap().title.as_deref(),
         Some("second-read")
     );
-    assert_eq!(storage.read_count(CONFIG_FILE_NAME), 1);
-    assert_eq!(storage.read_count(LIBRARY_FILE_NAME), 1);
+    assert_eq!(storage.read_count(DEVICE_FILE_NAME), 1);
+    assert_eq!(storage.read_count("games.yaml"), 1);
 }
 
 #[test]
 fn storage_failures_withhold_the_retained_snapshot_until_a_valid_reload_reauthorizes_it() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(
+        root.path().join(RELEASES_FILE_NAME),
+        readable::ANDROID_RELEASES,
+    )
+    .unwrap();
     let storage = Arc::new(SwitchableStorageHost::new(root.path().to_owned()));
     let coordinator = ConfigSnapshotCoordinator::with_storage(root.path(), storage.clone());
 
@@ -240,8 +266,8 @@ fn storage_failures_withhold_the_retained_snapshot_until_a_valid_reload_reauthor
     assert_eq!(denied.generation, good.generation);
     assert!(denied
         .snapshot
-        .library
-        .contains_key("tmnt-shredders-revenge"));
+        .games
+        .contains_key("01K4J6K8Y00000000000000001"));
     assert_eq!(
         denied.diagnostic.as_ref().unwrap().code,
         SnapshotDiagnosticCode::LocalConfigUnauthorized
@@ -260,31 +286,30 @@ fn storage_failures_withhold_the_retained_snapshot_until_a_valid_reload_reauthor
 #[test]
 fn partial_initialization_is_idempotent_and_does_not_publish_a_candidate() {
     let root = tempfile::tempdir().unwrap();
-    let storage = Arc::new(
-        SwitchableStorageHost::new(root.path().to_owned()).fail_write_once(LIBRARY_FILE_NAME),
-    );
+    let storage =
+        Arc::new(SwitchableStorageHost::new(root.path().to_owned()).fail_write_once("games.yaml"));
     let coordinator = ConfigSnapshotCoordinator::with_storage(root.path(), storage.clone());
 
     let failed = coordinator.reload();
 
     assert_eq!(failed.authorization, SnapshotAuthorization::Unauthorized);
     assert_eq!(failed.generation, 0);
-    assert!(failed.snapshot.library.is_empty());
+    assert!(failed.snapshot.games.is_empty());
     assert_eq!(
-        fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
-    assert!(!root.path().join(LIBRARY_FILE_NAME).exists());
+    assert!(!root.path().join(GAMES_FILE_NAME).exists());
 
     let converged = coordinator.reload();
     assert_eq!(converged.authorization, SnapshotAuthorization::Authorized);
     assert_eq!(converged.generation, 1);
     assert_eq!(
-        fs::read(root.path().join(CONFIG_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
     assert_eq!(
-        fs::read(root.path().join(LIBRARY_FILE_NAME)).unwrap(),
+        fs::read(root.path().join(GAMES_FILE_NAME)).unwrap(),
         EMPTY_DOCUMENT_BYTES
     );
 }
@@ -292,8 +317,13 @@ fn partial_initialization_is_idempotent_and_does_not_publish_a_candidate() {
 #[test]
 fn serialized_reloads_prevent_out_of_order_publication_and_clones_share_state() {
     let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join(CONFIG_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(root.path().join(DEVICE_FILE_NAME), CHECKPOINT_CONFIG).unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), CHECKPOINT_LIBRARY).unwrap();
+    readable::write(
+        root.path().join(RELEASES_FILE_NAME),
+        readable::ANDROID_RELEASES,
+    )
+    .unwrap();
     let storage = Arc::new(SwitchableStorageHost::new(root.path().to_owned()));
     storage.block_reads();
     let coordinator = ConfigSnapshotCoordinator::with_storage(root.path(), storage.clone());
@@ -301,14 +331,15 @@ fn serialized_reloads_prevent_out_of_order_publication_and_clones_share_state() 
 
     let first = thread::spawn(move || clone.reload());
     storage.wait_until_read_is_blocked();
-    fs::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
     storage.unblock_reads();
     let first_state = first.join().unwrap();
     let second_state = coordinator.reload();
 
     assert_eq!(first_state.generation, 1);
     assert_eq!(second_state.generation, 2);
-    assert!(second_state.snapshot.library.is_empty());
+    assert!(second_state.snapshot.games.is_empty());
     assert_eq!(coordinator.current().generation, 2);
 }
 
@@ -428,7 +459,7 @@ impl StorageHost for SwitchableStorageHost {
             *count += 1;
             read_index
         };
-        if filename == CONFIG_FILE_NAME && read_index > 0 {
+        if filename == DEVICE_FILE_NAME && read_index > 0 {
             if let Some(candidate) = self.config_second_read.lock().unwrap().clone() {
                 return Ok(candidate);
             }
@@ -454,7 +485,7 @@ impl StorageHost for SwitchableStorageHost {
             ));
         }
         drop(fail_once);
-        fs::write(path, data)
+        readable::write(path, data)
             .map_err(|error| test_storage_error(path, StorageOperation::Write, error.to_string()))
     }
 
@@ -502,7 +533,16 @@ impl StorageHost for SwitchableStorageHost {
     }
 
     fn list_recursive(&self, root_path: &str) -> Result<Vec<String>, EngineError> {
-        self.list_directory(root_path)
+        let mut files = self.list_directory(root_path)?;
+        let dirs: Vec<_> = files
+            .iter()
+            .filter(|path| std::path::Path::new(path).is_dir())
+            .cloned()
+            .collect();
+        for dir in dirs {
+            files.extend(self.list_recursive(&dir)?);
+        }
+        Ok(files)
     }
 
     fn watch(

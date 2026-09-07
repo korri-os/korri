@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl diffutils findutils gawk git gnugrep gnused imagemagick tesseract jq python3 python3Packages.pyyaml unzip
+# shellcheck shell=bash
 # Deterministic review checks for Android device shell gates. These do not
 # contact hardware; they guard the safety properties that are otherwise easy to
 # regress while preserving the real device gates as the source of journey truth.
@@ -33,7 +35,9 @@ unset \
   KORRI_ADB_BIN \
   KORRI_ANDROID_APK \
   KORRI_ANDROID_APP_PACKAGE \
-  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES \
+  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES \
   KORRI_ANDROID_APP_ROUTE_HOST_PORT \
   KORRI_ANDROID_APP_ROUTE_JOURNEY_SH \
   KORRI_ANDROID_APP_ROUTE_SMOKE_SH \
@@ -74,6 +78,7 @@ bash -n "$ANDROID_SMOKE" "$ANDROID_APP_ROUTE" "$ANDROID_INSTRUMENTATION_RESULT" 
   "$CRATE/test-overlay-evidence-predicates.sh" \
   "$ROOT/clients/android/local-launch-publication.sh" \
   "$ROOT/clients/android/overlay-evidence-predicates.sh"
+python3 "$CRATE/test-checkpoint-documents.py"
 "$CRATE/test-android-debug-capability.sh"
 "$CRATE/test-android-debug-launch-local.sh"
 "$CRATE/test-android-game-discovery-authority-recovery.sh"
@@ -219,7 +224,7 @@ if grep -Eq 'force-stop|am[[:space:]]+kill|pm[[:space:]]+(clear|install|uninstal
 fi
 for acceptance in "$OVERLAY_ACCEPTANCE" "$RETROARCH_ACCEPTANCE"; do
   grep -F 'DEBUG_PORTAL_RELOAD_SH=' "$acceptance" >/dev/null
-  grep -F -- "--expect-game wl4 'Wario Land 4'" "$acceptance" >/dev/null
+  grep -F -- "--expect-game 01K4J6K8Y00000000000000002 'Wario Land 4'" "$acceptance" >/dev/null
   grep -F -- '--expect-portal' "$acceptance" >/dev/null
 done
 grep -F 'DEBUG_PORTAL_FOCUS_GAME_SH=' "$RETROARCH_ACCEPTANCE" >/dev/null
@@ -227,7 +232,7 @@ grep -F 'DEBUG_PORTAL_FOCUS_GAME_SH=' "$RETROARCH_ACCEPTANCE" >/dev/null
 grep -F -- '"$SERIAL" "$KORRI_PACKAGE" --library' "$RETROARCH_ACCEPTANCE" >/dev/null
 # shellcheck disable=SC2016 # Literal source-contract needle.
 grep -F -- '"$SERIAL" "$KORRI_PACKAGE" --verify-library' "$RETROARCH_ACCEPTANCE" >/dev/null
-grep -F -- "--game 'local-game:wl4' 'Wario Land 4'" "$RETROARCH_ACCEPTANCE" >/dev/null
+grep -F -- "--game 'local-game:01K4J6K8Y00000000000000002' 'Wario Land 4'" "$RETROARCH_ACCEPTANCE" >/dev/null
 if grep -F 'KEYCODE_BUTTON_A' "$RETROARCH_ACCEPTANCE" >/dev/null; then
   echo 'RetroArch acceptance must not assume physical A after DevTools focus' >&2
   exit 1
@@ -882,8 +887,8 @@ for resumed_activity_script in \
 done
 
 # shellcheck disable=SC2016 # Literal grep needle; this reviews script text.
-if sed '/^[[:space:]]*#/d' "$ANDROID_SMOKE" | grep -E 'push "\$CHECKPOINT_(CONFIG|LIBRARY)"' >/dev/null; then
-  echo 'android-smoke.sh must not push checkpoint config.yaml/library.yaml in the general device smoke path' >&2
+if sed '/^[[:space:]]*#/d' "$ANDROID_SMOKE" | grep -E 'push "\$CHECKPOINT_(DEVICE|GAMES|RELEASES)"' >/dev/null; then
+  echo 'android-smoke.sh must not push checkpoint device.yaml/catalog/games.yaml in the general device smoke path' >&2
   exit 1
 fi
 if ! grep -F -- '--expect-installed-route' "$ANDROID_SMOKE" >/dev/null; then
@@ -896,12 +901,12 @@ if ! grep -F -- '--expect-installed-route "$SERIAL"' "$ANDROID_APP_ROUTE" >/dev/
   exit 1
 fi
 # shellcheck disable=SC2016 # Literal grep needle; this reviews script text.
-if ! grep -F 'CHECKPOINT_LIBRARY="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$ROOT/docs/research/retroarch-plugin-route/library.yaml}"' "$ANDROID_APP_ROUTE" >/dev/null; then
+if ! grep -F 'CHECKPOINT_GAMES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml}"' "$ANDROID_APP_ROUTE" >/dev/null; then
   echo 'android-app-route-check.sh must expose an override for the checkpoint library while keeping the canonical default' >&2
   exit 1
 fi
 # shellcheck disable=SC2016 # Literal grep needle; this reviews script text.
-if ! grep -F 'CHECKPOINT_LIBRARY="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$ROOT/docs/research/retroarch-plugin-route/library.yaml}"' "$ANDROID_SMOKE" >/dev/null; then
+if ! grep -F 'CHECKPOINT_GAMES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml}"' "$ANDROID_SMOKE" >/dev/null; then
   echo 'android-smoke.sh must byte-check the same overrideable checkpoint library as the dedicated installed-route gate' >&2
   exit 1
 fi
@@ -1845,7 +1850,7 @@ SIGNED_WL4_RESPONSE="$(jq -n --arg root '/storage/emulated/0/korri' '{
       launcherId: "retroarch",
       disposition: "fresh",
       context: {
-        gameId: "wl4",
+        gameId: "01K4J6K8Y00000000000000002",
         title: "Wario Land 4",
         contributors: [
           {kind: "launcher", id: "@korri:retroarch/retroarch"},
@@ -1973,7 +1978,7 @@ case "$subcommand" in
         exit 75
       fi
     fi
-    if [[ "${KORRI_DEVICE_SCRIPT_REVIEW_CLEANUP_FAIL:-}" == restore && "$shell_command" == *"cp '/sdcard/korri/.android-app-route-check-backup-"*"/config.yaml' '/sdcard/korri/config.yaml'"* ]]; then
+    if [[ "${KORRI_DEVICE_SCRIPT_REVIEW_CLEANUP_FAIL:-}" == restore && "$shell_command" == *"cp '/sdcard/korri/.android-app-route-check-backup-"*"/device.yaml' '/sdcard/korri/device.yaml'"* ]]; then
       echo 'fake adb: restore config failed' >&2
       exit 66
     fi
@@ -1986,11 +1991,14 @@ case "$subcommand" in
         package="${shell_command#pm path }"
         printf 'package:/data/app/%s/base.apk\n' "$package"
         ;;
-      "test -e '/sdcard/korri/config.yaml'")
-        exit 0
+      "if test -e '/sdcard/korri/device.yaml'; then echo present; else echo absent; fi")
+        printf present
         ;;
-      "test -e '/sdcard/korri/library.yaml'")
-        exit 1
+      "if test -e '/sdcard/korri/catalog/releases.yaml'; then echo present; else echo absent; fi")
+        printf present
+        ;;
+      "if test -e '/sdcard/korri/catalog/games.yaml'; then echo present; else echo absent; fi"|"if test -e '/sdcard/korri/catalog'; then echo present; else echo absent; fi")
+        printf absent
         ;;
       dumpsys\ activity\ activities*)
         case "${KORRI_DEVICE_SCRIPT_REVIEW_RESUMED_ACTIVITY_FORMAT:-modern}" in
@@ -2019,12 +2027,16 @@ case "$subcommand" in
     exit 0
     ;;
   exec-out)
-    if [[ "${1:-}" == cat && "${2:-}" == /sdcard/korri/config.yaml ]]; then
-      cat "$KORRI_ROOT/docs/research/retroarch-plugin-route/config.yaml"
+    if [[ "${1:-}" == cat && "${2:-}" == /sdcard/korri/device.yaml ]]; then
+      cat "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:-$KORRI_ROOT/docs/research/retroarch-plugin-route/device.yaml}"
       exit 0
     fi
-    if [[ "${1:-}" == cat && "${2:-}" == /sdcard/korri/library.yaml ]]; then
-      cat "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$KORRI_ROOT/docs/research/retroarch-plugin-route/library.yaml}"
+    if [[ "${1:-}" == cat && "${2:-}" == /sdcard/korri/catalog/games.yaml ]]; then
+      cat "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-$KORRI_ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml}"
+      exit 0
+    fi
+    if [[ "${1:-}" == cat && "${2:-}" == /sdcard/korri/catalog/releases.yaml ]]; then
+      cat "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:-$KORRI_ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml}"
       exit 0
     fi
     exit 0
@@ -2043,7 +2055,7 @@ SMOKE="$TMP/smoke.sh"
 cat >"$SMOKE" <<'SMOKE'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'smoke:%s package=%s library=%s retro=%s\n' "$*" "${KORRI_ANDROID_APP_PACKAGE:-}" "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-}" "${KORRI_EXPECT_RETROARCH_ROUTE:-}" >>"$KORRI_DEVICE_SCRIPT_REVIEW_CHILD_LOG"
+printf 'smoke:%s package=%s library=%s retro=%s\n' "$*" "${KORRI_ANDROID_APP_PACKAGE:-}" "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-}" "${KORRI_EXPECT_RETROARCH_ROUTE:-}" >>"$KORRI_DEVICE_SCRIPT_REVIEW_CHILD_LOG"
 exit 42
 SMOKE
 chmod +x "$SMOKE"
@@ -2060,7 +2072,7 @@ SMOKE_SUCCESS="$TMP/smoke-success.sh"
 cat >"$SMOKE_SUCCESS" <<'SMOKE_SUCCESS'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'smoke-success:%s package=%s library=%s\n' "$*" "${KORRI_ANDROID_APP_PACKAGE:-}" "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-}" >>"$KORRI_DEVICE_SCRIPT_REVIEW_CHILD_LOG"
+printf 'smoke-success:%s package=%s library=%s\n' "$*" "${KORRI_ANDROID_APP_PACKAGE:-}" "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-}" >>"$KORRI_DEVICE_SCRIPT_REVIEW_CHILD_LOG"
 SMOKE_SUCCESS
 chmod +x "$SMOKE_SUCCESS"
 
@@ -2075,7 +2087,7 @@ case "$request" in
     printf '{"_tag":"system.health","outcome":{"_tag":"Ok","payload":{"version":"review"}}}\n'
     ;;
   *app.local-games.list*)
-    printf '{"_tag":"app.local-games.list","outcome":{"_tag":"Ok","payload":{"games":[{"id":"tmnt-shredders-revenge"},{"id":"wl4"}]}}}\n'
+    printf '{"_tag":"app.local-games.list","outcome":{"_tag":"Ok","payload":{"games":[{"id":"01K4J6K8Y00000000000000001"},{"id":"01K4J6K8Y00000000000000002"}]}}}\n'
     ;;
   *)
     exit 64
@@ -2084,8 +2096,12 @@ esac
 ROUTE_CURL
 chmod +x "$ROUTE_REVIEW_BIN/curl"
 
-ALT_CHECKPOINT_LIBRARY="$TMP/alternate-library.yaml"
-printf 'alternate installed app checkpoint library\n' >"$ALT_CHECKPOINT_LIBRARY"
+ALT_CHECKPOINT_DEVICE="$TMP/alternate-device.yaml"
+ALT_CHECKPOINT_GAMES="$TMP/alternate-games.yaml"
+ALT_CHECKPOINT_RELEASES="$TMP/alternate-releases.yaml"
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/device.yaml" "$ALT_CHECKPOINT_DEVICE"
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml" "$ALT_CHECKPOINT_GAMES"
+cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml" "$ALT_CHECKPOINT_RELEASES"
 
 set +e
 KORRI_ADB_BIN="$FAKE_ADB" \
@@ -2107,29 +2123,41 @@ if ! grep -F -- 'smoke:--expect-installed-route device-1 package= library= retro
   echo 'android-app-route-check.sh did not invoke canonical smoke with the RetroArch route enabled' >&2
   exit 1
 fi
-if ! grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/config.yaml /sdcard/korri/config.yaml" "$ADB_LOG" >/dev/null; then
-  echo 'android-app-route-check.sh did not provision checkpoint config.yaml in the dedicated gate' >&2
+if ! grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/device.yaml /sdcard/korri/device.yaml" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not provision checkpoint device.yaml in the dedicated gate' >&2
   exit 1
 fi
-if ! grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/library.yaml /sdcard/korri/library.yaml" "$ADB_LOG" >/dev/null; then
-  echo 'android-app-route-check.sh did not provision checkpoint library.yaml in the dedicated gate' >&2
+if ! grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml /sdcard/korri/catalog/games.yaml" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not provision checkpoint catalog/games.yaml in the dedicated gate' >&2
   exit 1
 fi
-if ! grep -F -- "cp '/sdcard/korri/config.yaml' '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" >/dev/null; then
-  echo 'android-app-route-check.sh did not back up a pre-existing config.yaml before provisioning' >&2
+if ! grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml /sdcard/korri/catalog/releases.yaml" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not provision checkpoint catalog/releases.yaml in the dedicated gate' >&2
   exit 1
 fi
-if ! grep -F -- "cp '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" | grep -F -- "/config.yaml' '/sdcard/korri/config.yaml'" >/dev/null; then
-  echo 'android-app-route-check.sh did not restore a pre-existing config.yaml after failure' >&2
+if ! grep -F -- "cp '/sdcard/korri/device.yaml' '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not back up a pre-existing device.yaml before provisioning' >&2
   exit 1
 fi
-if ! grep -F -- "rm -f '/sdcard/korri/library.yaml'" "$ADB_LOG" >/dev/null; then
-  echo 'android-app-route-check.sh did not remove a library.yaml it created after failure' >&2
+if ! grep -F -- "cp '/sdcard/korri/catalog/releases.yaml' '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not back up a pre-existing catalog/releases.yaml before provisioning' >&2
+  exit 1
+fi
+if ! grep -F -- "cp '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" | grep -F -- "/device.yaml' '/sdcard/korri/device.yaml'" >/dev/null; then
+  echo 'android-app-route-check.sh did not restore a pre-existing device.yaml after failure' >&2
+  exit 1
+fi
+if ! grep -F -- "cp '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" | grep -F -- "/releases.yaml' '/sdcard/korri/catalog/releases.yaml'" >/dev/null; then
+  echo 'android-app-route-check.sh did not restore a pre-existing catalog/releases.yaml after failure' >&2
+  exit 1
+fi
+if ! grep -F -- "rm -f '/sdcard/korri/catalog/games.yaml'" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not remove a catalog/games.yaml it created after failure' >&2
   exit 1
 fi
 lock_line="$(grep -nF -- "mkdir '/sdcard/korri/.android-app-route-check.lock'" "$ADB_LOG" | head -1 | cut -d: -f1)"
-backup_line="$(grep -nF -- "cp '/sdcard/korri/config.yaml' '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" | head -1 | cut -d: -f1)"
-restore_line="$(grep -nF -- "/config.yaml' '/sdcard/korri/config.yaml'" "$ADB_LOG" | tail -1 | cut -d: -f1)"
+backup_line="$(grep -nF -- "cp '/sdcard/korri/device.yaml' '/sdcard/korri/.android-app-route-check-backup-" "$ADB_LOG" | head -1 | cut -d: -f1)"
+restore_line="$(grep -nF -- "/device.yaml' '/sdcard/korri/device.yaml'" "$ADB_LOG" | tail -1 | cut -d: -f1)"
 unlock_line="$(grep -nF -- "rm -rf '/sdcard/korri/.android-app-route-check.lock'" "$ADB_LOG" | tail -1 | cut -d: -f1)"
 if [[ -z "$lock_line" || -z "$backup_line" || -z "$restore_line" || -z "$unlock_line" ]]; then
   echo 'android-app-route-check.sh did not acquire and release the route-check lock around config backup/restore' >&2
@@ -2166,7 +2194,7 @@ if ! grep -F -- 'If this is stale, remove it manually only after verifying no ro
   cat "$TMP/route-held-lock.err" >&2
   exit 1
 fi
-if grep -E -- "push .* /sdcard/korri/(config|library)\.yaml|cp '/sdcard/korri/(config|library)\.yaml'" "$ADB_LOG" >/dev/null; then
+if grep -E -- "push .* /sdcard/korri/(device|catalog/(games|releases))\.yaml|cp '/sdcard/korri/(device|catalog/(games|releases))\.yaml'" "$ADB_LOG" >/dev/null; then
   echo 'android-app-route-check.sh mutated fixed config files after failing to acquire the device lock' >&2
   exit 1
 fi
@@ -2190,7 +2218,7 @@ if [[ "$original_cleanup_status" -ne 42 ]]; then
   cat "$TMP/route-original-failure-cleanup.err" >&2
   exit 1
 fi
-if ! grep -F -- 'Android app route check failed to restore prior config.yaml' "$TMP/route-original-failure-cleanup.err" >/dev/null; then
+if ! grep -F -- 'Android app route check failed to restore prior device.yaml' "$TMP/route-original-failure-cleanup.err" >/dev/null; then
   echo 'android-app-route-check.sh did not emit a clear restore failure while preserving original failure status' >&2
   cat "$TMP/route-original-failure-cleanup.err" >&2
   exit 1
@@ -2221,7 +2249,7 @@ if [[ "$success_cleanup_status" -eq 0 ]]; then
   cat "$TMP/route-success-cleanup-failure.err" >&2
   exit 1
 fi
-if ! grep -F -- 'Android app route check failed to restore prior config.yaml' "$TMP/route-success-cleanup-failure.err" >/dev/null; then
+if ! grep -F -- 'Android app route check failed to restore prior device.yaml' "$TMP/route-success-cleanup-failure.err" >/dev/null; then
   echo 'android-app-route-check.sh did not emit a clear successful-main restore failure' >&2
   cat "$TMP/route-success-cleanup-failure.err" >&2
   exit 1
@@ -2231,8 +2259,8 @@ if ! grep -F -- 'Android app route check cleanup failed after successful run' "$
   cat "$TMP/route-success-cleanup-failure.err" >&2
   exit 1
 fi
-if ! grep -F -- "rm -rf '/sdcard/korri/.android-app-route-check.lock'" "$ADB_LOG" >/dev/null; then
-  echo 'android-app-route-check.sh did not attempt to release the route-check lock after a restore cleanup failure' >&2
+if grep -F -- "rm -rf '/sdcard/korri/.android-app-route-check.lock'" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh released the lock despite failed restoration' >&2
   exit 1
 fi
 
@@ -2272,7 +2300,9 @@ fi
 set +e
 KORRI_ADB_BIN="$FAKE_ADB" \
 KORRI_ANDROID_APP_PACKAGE=review.android.game \
-KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY="$ALT_CHECKPOINT_LIBRARY" \
+KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE="$ALT_CHECKPOINT_DEVICE" \
+KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES="$ALT_CHECKPOINT_GAMES" \
+KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES="$ALT_CHECKPOINT_RELEASES" \
 KORRI_ANDROID_APP_ROUTE_SMOKE_SH="$SMOKE" \
 KORRI_ANDROID_APP_ROUTE_JOURNEY_SH="$JOURNEY" \
 KORRI_DEVICE_SCRIPT_REVIEW_ADB_LOG="$ADB_LOG" \
@@ -2291,15 +2321,19 @@ if ! grep -F -- 'pm path review.android.game' "$ADB_LOG" >/dev/null; then
   echo 'android-app-route-check.sh did not require the configured alternate Android app package' >&2
   exit 1
 fi
-if ! grep -F -- "push $ALT_CHECKPOINT_LIBRARY /sdcard/korri/library.yaml" "$ADB_LOG" >/dev/null; then
+if ! grep -F -- "push $ALT_CHECKPOINT_GAMES /sdcard/korri/catalog/games.yaml" "$ADB_LOG" >/dev/null; then
   echo 'android-app-route-check.sh did not provision the configured alternate checkpoint library path' >&2
   exit 1
 fi
-if grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/library.yaml /sdcard/korri/library.yaml" "$ADB_LOG" >/dev/null; then
+if ! grep -F -- "push $ALT_CHECKPOINT_RELEASES /sdcard/korri/catalog/releases.yaml" "$ADB_LOG" >/dev/null; then
+  echo 'android-app-route-check.sh did not provision the configured alternate checkpoint library path' >&2
+  exit 1
+fi
+if grep -F -- "push $ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml /sdcard/korri/catalog/games.yaml" "$ADB_LOG" >/dev/null; then
   echo 'android-app-route-check.sh ignored the alternate checkpoint library path and pushed the canonical library' >&2
   exit 1
 fi
-if ! grep -F -- "smoke:--expect-installed-route device-1 package=review.android.game library=$ALT_CHECKPOINT_LIBRARY retro=false" "$CHILD_LOG" >/dev/null; then
+if ! grep -F -- "smoke:--expect-installed-route device-1 package=review.android.game library=$ALT_CHECKPOINT_GAMES retro=false" "$CHILD_LOG" >/dev/null; then
   echo 'android-app-route-check.sh did not isolate an alternate Android fixture from the canonical RetroArch route' >&2
   exit 1
 fi

@@ -206,8 +206,9 @@ struct LifecycleSnapshotCache {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FixedFilesRevision {
-    config: Option<FileRevision>,
-    library: Option<FileRevision>,
+    device: Option<FileRevision>,
+    games: Option<FileRevision>,
+    releases: Option<FileRevision>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -535,8 +536,9 @@ fn enqueue_work(state: &mut LifecycleState, request: WorkRequest) {
 
 fn fixed_files_revision(root: &Path) -> FixedFilesRevision {
     FixedFilesRevision {
-        config: file_revision(&root.join(crate::config::snapshot::CONFIG_FILE_NAME)),
-        library: file_revision(&root.join(crate::config::snapshot::LIBRARY_FILE_NAME)),
+        device: file_revision(&root.join(crate::config::snapshot::DEVICE_FILE_NAME)),
+        games: file_revision(&root.join(crate::config::snapshot::GAMES_FILE_NAME)),
+        releases: file_revision(&root.join(crate::config::snapshot::RELEASES_FILE_NAME)),
     }
 }
 
@@ -631,9 +633,8 @@ fn scan_metric_json(report: &DiscoveryMutationReport) -> String {
         "hashedBytes": report.scan.hashed_bytes,
         "candidates": report.scan.candidates.len(),
         "diagnostics": report.scan.diagnostics.len(),
-        "addedLibraryRecords": report.added_library_records,
-        "removedLibraryRecords": report.removed_library_records,
-        "removedReleases": report.removed_releases,
+        "addedGames": report.added_games,
+        "removedLocations": report.removed_locations,
         "storageId": report.storage_id.as_deref(),
         "repaired": report.repaired,
     })
@@ -740,7 +741,8 @@ mod tests {
         assert!(ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
-            .contains_key("game"));
+            .games
+            .values()
+            .any(|game| game.title == "game"));
     }
 }

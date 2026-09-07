@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils git nix
+# shellcheck shell=bash
 set -euo pipefail
 
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
@@ -13,12 +15,15 @@ fi
 if [[ -z "$REVIEW_ROOT" ]]; then
   REVIEW_ROOT="$(mktemp -d)"
   trap 'rm -rf "$REVIEW_ROOT"' EXIT
-  cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/config.yaml" \
-    "$REVIEW_ROOT/config.yaml"
-  cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/library.yaml" \
-    "$REVIEW_ROOT/library.yaml"
+  mkdir -p "$REVIEW_ROOT/catalog"
+  cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/device.yaml" \
+    "$REVIEW_ROOT/device.yaml"
+  cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml" \
+    "$REVIEW_ROOT/catalog/games.yaml"
+  cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml" \
+    "$REVIEW_ROOT/catalog/releases.yaml"
 fi
 
-exec cargo run --quiet \
+cargo run --quiet \
   --manifest-path "$ROOT/services/korrid/Cargo.toml" \
   --bin plugin_route_probe -- "$REVIEW_ROOT" --review

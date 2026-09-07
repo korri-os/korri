@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#! nix-shell -i bash -p bash android-tools coreutils curl gnugrep gnused imagemagick jq tesseract websocat
+#! nix-shell -i bash -p diffutils bash android-tools coreutils curl gnugrep gnused imagemagick jq tesseract websocat
 # shellcheck shell=bash
 # Canonical installed Android application route proof.
 #
@@ -18,14 +18,24 @@ KORRI_PACKAGE="${KORRI_ANDROID_PACKAGE:-com.simonwjackson.korri.debug}"
 HOST_PORT="${KORRI_ANDROID_APP_ROUTE_HOST_PORT:-43120}"
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
 ANDROID_STORAGE_ROOT="/sdcard/korri"
-CHECKPOINT_CONFIG="$ROOT/docs/research/retroarch-plugin-route/config.yaml"
-CHECKPOINT_LIBRARY="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$ROOT/docs/research/retroarch-plugin-route/library.yaml}"
+CHECKPOINT_DEVICE="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:-$ROOT/docs/research/retroarch-plugin-route/device.yaml}"
+CHECKPOINT_GAMES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml}"
+CHECKPOINT_RELEASES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:-$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml}"
+if [[ -n "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:-}${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-}${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:-}" ]]; then
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:?alternate checkpoint requires device.yaml}"
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:?alternate checkpoint requires catalog/games.yaml}"
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:?alternate checkpoint requires catalog/releases.yaml}"
+fi
+for checkpoint in "$CHECKPOINT_DEVICE" "$CHECKPOINT_GAMES" "$CHECKPOINT_RELEASES"; do
+  [[ -f "$checkpoint" ]] || { echo "Missing checkpoint file: $checkpoint" >&2; exit 1; }
+done
 EXPECT_RETROARCH_ROUTE=true
-if [[ -n "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-}" ]]; then
+if [[ -n "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-}" ]]; then
   EXPECT_RETROARCH_ROUTE=false
 fi
-CONFIG_REMOTE="$ANDROID_STORAGE_ROOT/config.yaml"
-LIBRARY_REMOTE="$ANDROID_STORAGE_ROOT/library.yaml"
+DEVICE_REMOTE="$ANDROID_STORAGE_ROOT/device.yaml"
+GAMES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/games.yaml"
+RELEASES_REMOTE="$ANDROID_STORAGE_ROOT/catalog/releases.yaml"
 CHECKPOINT_BACKUP_DIR="$ANDROID_STORAGE_ROOT/.android-app-route-check-backup-$$"
 LOCK_REMOTE="$ANDROID_STORAGE_ROOT/.android-app-route-check.lock"
 LOCK_OWNER_REMOTE="$LOCK_REMOTE/owner"
@@ -34,8 +44,11 @@ JOURNEY_RESUME="${KORRI_ANDROID_APP_ROUTE_JOURNEY_SH:-$ROOT/services/korrid/jour
 DEBUG_CAPABILITY_SH="${KORRI_ANDROID_DEBUG_CAPABILITY_SH:-$ROOT/services/korrid/android-debug-capability.sh}"
 ADB_BIN="${KORRI_ADB_BIN:-$(command -v adb)}"
 CURL=(curl --connect-timeout 2 --max-time 5 --retry 2 --retry-connrefused)
-CONFIG_WAS_PRESENT=false
-LIBRARY_WAS_PRESENT=false
+DEVICE_WAS_PRESENT=false
+GAMES_WAS_PRESENT=false
+RELEASES_WAS_PRESENT=false
+CATALOG_DIR_WAS_PRESENT=false
+BACKUP_CREATED=false
 CHECKPOINT_RESTORE_NEEDED=false
 FORWARD_ACTIVE=false
 LOCK_ACQUIRED=false
@@ -88,31 +101,55 @@ restore_checkpoint_files() {
   local restore_failed=false
 
   if [[ "$CHECKPOINT_RESTORE_NEEDED" != true ]]; then
+    if [[ "$BACKUP_CREATED" == true ]]; then
+      echo "Incomplete backup retained with device lock; no checkpoint files changed" >&2
+      return 1
+    fi
     return 0
   fi
 
-  if [[ "$CONFIG_WAS_PRESENT" == true ]]; then
-    if ! adb_target -s "$SERIAL" shell "cp '$CHECKPOINT_BACKUP_DIR/config.yaml' '$CONFIG_REMOTE'" >/dev/null 2>&1; then
-      echo "Android app route check failed to restore prior config.yaml" >&2
+  if [[ "$DEVICE_WAS_PRESENT" == true ]]; then
+    if ! adb_target -s "$SERIAL" shell "cp '$CHECKPOINT_BACKUP_DIR/device.yaml' '$DEVICE_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/device.yaml' '$DEVICE_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to restore prior device.yaml" >&2
       restore_failed=true
     fi
   else
-    if ! adb_target -s "$SERIAL" shell "rm -f '$CONFIG_REMOTE'" >/dev/null 2>&1; then
-      echo "Android app route check failed to remove created config.yaml" >&2
+    if ! adb_target -s "$SERIAL" shell "rm -f '$DEVICE_REMOTE' && test ! -e '$DEVICE_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to remove created device.yaml" >&2
       restore_failed=true
     fi
   fi
 
-  if [[ "$LIBRARY_WAS_PRESENT" == true ]]; then
-    if ! adb_target -s "$SERIAL" shell "cp '$CHECKPOINT_BACKUP_DIR/library.yaml' '$LIBRARY_REMOTE'" >/dev/null 2>&1; then
-      echo "Android app route check failed to restore prior library.yaml" >&2
+  if [[ "$GAMES_WAS_PRESENT" == true ]]; then
+    if ! adb_target -s "$SERIAL" shell "cp '$CHECKPOINT_BACKUP_DIR/games.yaml' '$GAMES_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/games.yaml' '$GAMES_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to restore prior catalog/games.yaml" >&2
       restore_failed=true
     fi
   else
-    if ! adb_target -s "$SERIAL" shell "rm -f '$LIBRARY_REMOTE'" >/dev/null 2>&1; then
-      echo "Android app route check failed to remove created library.yaml" >&2
+    if ! adb_target -s "$SERIAL" shell "rm -f '$GAMES_REMOTE' && test ! -e '$GAMES_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to remove created catalog/games.yaml" >&2
       restore_failed=true
     fi
+  fi
+
+  if [[ "$RELEASES_WAS_PRESENT" == true ]]; then
+    if ! adb_target -s "$SERIAL" shell "cp '$CHECKPOINT_BACKUP_DIR/releases.yaml' '$RELEASES_REMOTE' && cmp -s '$CHECKPOINT_BACKUP_DIR/releases.yaml' '$RELEASES_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to restore prior catalog/releases.yaml" >&2
+      restore_failed=true
+    fi
+  else
+    if ! adb_target -s "$SERIAL" shell "rm -f '$RELEASES_REMOTE' && test ! -e '$RELEASES_REMOTE'" >/dev/null 2>&1; then
+      echo "Android app route check failed to remove created catalog/releases.yaml" >&2
+      restore_failed=true
+    fi
+  fi
+
+  if [[ "$CATALOG_DIR_WAS_PRESENT" != true ]]; then
+    adb_target -s "$SERIAL" shell "rmdir '$ANDROID_STORAGE_ROOT/catalog' 2>/dev/null || test ! -e '$ANDROID_STORAGE_ROOT/catalog'" >/dev/null 2>&1 || restore_failed=true
+  fi
+  if [[ "$restore_failed" == true ]]; then
+    echo "Checkpoint restore failed; backup and lock retained" >&2
+    return 1
   fi
 
   if ! adb_target -s "$SERIAL" shell "rm -rf '$CHECKPOINT_BACKUP_DIR'" >/dev/null 2>&1; then
@@ -130,10 +167,9 @@ cleanup() {
   if [[ "$FORWARD_ACTIVE" == true ]]; then
     adb_target -s "$SERIAL" forward --remove "tcp:$HOST_PORT" >/dev/null 2>&1 || true
   fi
-  if ! restore_checkpoint_files; then
-    cleanup_failed=true
-  fi
-  if ! release_device_lock; then
+  if restore_checkpoint_files; then
+    release_device_lock || cleanup_failed=true
+  else
     cleanup_failed=true
   fi
 
@@ -144,33 +180,56 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-remote_exists() {
-  adb_target -s "$SERIAL" shell "test -e '$1'" >/dev/null 2>&1
+remote_state() {
+  local state
+  state="$(adb_target -s "$SERIAL" shell "if test -e '$1'; then echo present; else echo absent; fi" | tr -d '\r\n')" || return 1
+  case "$state" in
+    present|absent) printf '%s' "$state" ;;
+    *) echo "Cannot classify remote path: $1" >&2; return 1 ;;
+  esac
 }
 
 provision_checkpoint_files() {
   acquire_device_lock
-  adb_target -s "$SERIAL" shell "rm -rf '$CHECKPOINT_BACKUP_DIR'; mkdir -p '$CHECKPOINT_BACKUP_DIR'"
+  adb_target -s "$SERIAL" shell "mkdir '$CHECKPOINT_BACKUP_DIR'"
+  BACKUP_CREATED=true
+  local state
+  state="$(remote_state "$ANDROID_STORAGE_ROOT/catalog")" || return 1
+  [[ "$state" != present ]] || CATALOG_DIR_WAS_PRESENT=true
+  state="$(remote_state "$DEVICE_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$DEVICE_REMOTE' '$CHECKPOINT_BACKUP_DIR/device.yaml' && cmp -s '$DEVICE_REMOTE' '$CHECKPOINT_BACKUP_DIR/device.yaml'" || return 1
+    DEVICE_WAS_PRESENT=true
+  fi
+  state="$(remote_state "$GAMES_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$GAMES_REMOTE' '$CHECKPOINT_BACKUP_DIR/games.yaml' && cmp -s '$GAMES_REMOTE' '$CHECKPOINT_BACKUP_DIR/games.yaml'" || return 1
+    GAMES_WAS_PRESENT=true
+  fi
+  state="$(remote_state "$RELEASES_REMOTE")" || return 1
+  if [[ "$state" == present ]]; then
+    adb_target -s "$SERIAL" shell "cp '$RELEASES_REMOTE' '$CHECKPOINT_BACKUP_DIR/releases.yaml' && cmp -s '$RELEASES_REMOTE' '$CHECKPOINT_BACKUP_DIR/releases.yaml'" || return 1
+    RELEASES_WAS_PRESENT=true
+  fi
+  # Only a complete, verified backup permits mutation or absence-based cleanup.
   CHECKPOINT_RESTORE_NEEDED=true
-
-  if remote_exists "$CONFIG_REMOTE"; then
-    CONFIG_WAS_PRESENT=true
-    adb_target -s "$SERIAL" shell "cp '$CONFIG_REMOTE' '$CHECKPOINT_BACKUP_DIR/config.yaml'"
-  fi
-  if remote_exists "$LIBRARY_REMOTE"; then
-    LIBRARY_WAS_PRESENT=true
-    adb_target -s "$SERIAL" shell "cp '$LIBRARY_REMOTE' '$CHECKPOINT_BACKUP_DIR/library.yaml'"
-  fi
-
-  adb_target -s "$SERIAL" push "$CHECKPOINT_CONFIG" "$CONFIG_REMOTE" >/dev/null
-  adb_target -s "$SERIAL" push "$CHECKPOINT_LIBRARY" "$LIBRARY_REMOTE" >/dev/null
-  if ! adb_target -s "$SERIAL" exec-out cat "$CONFIG_REMOTE" | cmp -s "$CHECKPOINT_CONFIG" -; then
-    echo "Device config.yaml does not match the reviewed checkpoint bytes" >&2
+  adb_target -s "$SERIAL" shell "mkdir -p '$ANDROID_STORAGE_ROOT/catalog'"
+  adb_target -s "$SERIAL" push "$CHECKPOINT_DEVICE" "$DEVICE_REMOTE" >/dev/null
+  adb_target -s "$SERIAL" push "$CHECKPOINT_GAMES" "$GAMES_REMOTE" >/dev/null
+  adb_target -s "$SERIAL" push "$CHECKPOINT_RELEASES" "$RELEASES_REMOTE" >/dev/null
+  if ! adb_target -s "$SERIAL" exec-out cat "$DEVICE_REMOTE" | cmp -s "$CHECKPOINT_DEVICE" -; then
+    echo "Device device.yaml does not match the reviewed checkpoint bytes" >&2
     exit 1
   fi
-  if ! adb_target -s "$SERIAL" exec-out cat "$LIBRARY_REMOTE" | cmp -s "$CHECKPOINT_LIBRARY" -; then
-    echo "Device library.yaml does not match the reviewed checkpoint bytes" >&2
+  if ! adb_target -s "$SERIAL" exec-out cat "$GAMES_REMOTE" | cmp -s "$CHECKPOINT_GAMES" -; then
+    echo "Device catalog/games.yaml does not match the reviewed checkpoint bytes" >&2
+    exit 1
+  fi
+  if ! adb_target -s "$SERIAL" exec-out cat "$RELEASES_REMOTE" | cmp -s "$CHECKPOINT_RELEASES" -; then
+    echo "Device catalog/releases.yaml does not match the reviewed checkpoint bytes" >&2
     exit 1
   fi
 }
@@ -190,7 +249,7 @@ fi
 
 # Only the dedicated installed-route gate provisions the reviewed checkpoint.
 # The general android-smoke/korrid-check-device path must leave user
-# config.yaml and library.yaml untouched.
+# device.yaml and both catalog files untouched.
 provision_checkpoint_files
 
 # The smoke script installs Korri and proves protected RPC list/launch
@@ -266,13 +325,13 @@ local_games_response="$("${CURL[@]}" --fail --silent \
   "http://127.0.0.1:$HOST_PORT/rpc")"
 if ! jq -e '
   .outcome._tag == "Ok"
-  and .outcome.payload.games[0].id == "tmnt-shredders-revenge"
+  and .outcome.payload.games[0].id == "01K4J6K8Y00000000000000001"
 ' <<<"$local_games_response" >/dev/null; then
   echo "Embedded brain survived but Android route state did not: $local_games_response" >&2
   exit 1
 fi
 if [[ "$EXPECT_RETROARCH_ROUTE" == true ]] && ! jq -e '
-  any(.outcome.payload.games[]; .id == "wl4")
+  any(.outcome.payload.games[]; .id == "01K4J6K8Y00000000000000002")
 ' <<<"$local_games_response" >/dev/null; then
   echo "Embedded brain lost the canonical RetroArch route: $local_games_response" >&2
   exit 1

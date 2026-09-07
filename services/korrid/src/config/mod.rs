@@ -1,3 +1,5 @@
+mod catalog;
+pub use catalog::{GameId, GamePayload, ReleaseIdentity, ReleaseKey, ReleasePayload};
 pub mod resolver;
 pub mod settings;
 pub mod snapshot;
@@ -13,18 +15,19 @@ use serde::{
 use serde_json::Value;
 use thiserror::Error;
 
-const CONFIG_SECTIONS: &[&str] = &[
+pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "host",
     "storage",
     "providers",
-    "provider-links",
     "systems",
     "launchers",
     "runtimes",
     "profiles",
     "hooks",
+    "locations",
 ];
-const LIBRARY_SECTIONS: &[&str] = &["collections", "users", "library"];
+pub(crate) const GAMES_SECTIONS: &[&str] = &["games"];
+pub(crate) const RELEASES_SECTIONS: &[&str] = &["releases"];
 
 #[derive(Debug, Error)]
 pub enum ConfigSchemaError {
@@ -45,15 +48,14 @@ pub struct ConfigSnapshot {
     pub host: Option<HostPayload>,
     pub storage: BTreeMap<String, StoragePayload>,
     pub providers: BTreeMap<String, ProviderPayload>,
-    pub provider_links: BTreeMap<String, ProviderLinkPayload>,
     pub systems: BTreeMap<String, SystemPayload>,
     pub launchers: BTreeMap<String, AppPayload>,
     pub runtimes: BTreeMap<String, RuntimePayload>,
     pub profiles: BTreeMap<String, ProfilePayload>,
     pub hooks: BTreeMap<String, HookProfilePayload>,
-    pub collections: BTreeMap<String, CollectionPayload>,
-    pub users: BTreeMap<String, UserPayload>,
-    pub library: BTreeMap<String, LibraryItemPayload>,
+    pub games: BTreeMap<String, GamePayload>,
+    pub releases: BTreeMap<String, ReleasePayload>,
+    pub locations: BTreeMap<String, Vec<Location>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -65,8 +67,6 @@ struct RawDocument {
     storage: SectionRecords<StoragePayload>,
     #[serde(default)]
     providers: SectionRecords<ProviderPayload>,
-    #[serde(default, rename = "provider-links")]
-    provider_links: SectionRecords<ProviderLinkPayload>,
     #[serde(default)]
     systems: SectionRecords<SystemPayload>,
     #[serde(default)]
@@ -78,11 +78,11 @@ struct RawDocument {
     #[serde(default)]
     hooks: SectionRecords<HookProfilePayload>,
     #[serde(default)]
-    collections: SectionRecords<CollectionPayload>,
+    games: SectionRecords<GamePayload>,
     #[serde(default)]
-    users: SectionRecords<UserPayload>,
+    releases: SectionRecords<ReleasePayload>,
     #[serde(default)]
-    library: SectionRecords<LibraryItemPayload>,
+    locations: SectionRecords<Vec<Location>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,56 +150,55 @@ where
     }
 }
 
-pub fn decode_config_pair(
-    config_yaml: &str,
-    library_yaml: &str,
+/// The minimum layer has exactly three documents. No legacy paths or opinions are read.
+pub fn decode_config_documents(
+    device_yaml: &str,
+    games_yaml: &str,
+    releases_yaml: &str,
 ) -> Result<ConfigSnapshot, ConfigSchemaError> {
-    let config = decode_document("config.yaml", config_yaml)?;
-    let library = decode_document("library.yaml", library_yaml)?;
-
-    reject_wrong_file_sections("config.yaml", &config, LIBRARY_SECTIONS)?;
-    reject_wrong_file_sections("library.yaml", &library, CONFIG_SECTIONS)?;
-
-    validate_document_keys("config.yaml", &config)?;
-    validate_document_keys("library.yaml", &library)?;
-    validate_document_values("config.yaml", &config)?;
-    validate_document_values("library.yaml", &library)?;
-
-    Ok(ConfigSnapshot {
-        host: config.host,
-        storage: config.storage.records,
-        providers: config.providers.records,
-        provider_links: config.provider_links.records,
-        systems: config.systems.records,
-        launchers: config.launchers.records,
-        runtimes: config.runtimes.records,
-        profiles: config.profiles.records,
-        hooks: config.hooks.records,
-        collections: library.collections.records,
-        users: library.users.records,
-        library: library.library.records,
-    })
+    let device = decode_document("device.yaml", device_yaml)?;
+    let games = decode_document("catalog/games.yaml", games_yaml)?;
+    let releases = decode_document("catalog/releases.yaml", releases_yaml)?;
+    for (file, document, allowed) in [
+        ("device.yaml", &device, DEVICE_SECTIONS),
+        ("catalog/games.yaml", &games, GAMES_SECTIONS),
+        ("catalog/releases.yaml", &releases, RELEASES_SECTIONS),
+    ] {
+        for section in DEVICE_SECTIONS
+            .iter()
+            .chain(GAMES_SECTIONS)
+            .chain(RELEASES_SECTIONS)
+        {
+            if !allowed.contains(section) && document.has_section(section) {
+                return Err(ConfigSchemaError::WrongFileSection {
+                    file,
+                    section: (*section).into(),
+                });
+            }
+        }
+        validate_document_keys(file, document)?;
+        validate_document_values(file, document)?;
+    }
+    let snapshot = ConfigSnapshot {
+        host: device.host,
+        storage: device.storage.records,
+        providers: device.providers.records,
+        systems: device.systems.records,
+        launchers: device.launchers.records,
+        runtimes: device.runtimes.records,
+        profiles: device.profiles.records,
+        hooks: device.hooks.records,
+        locations: device.locations.records,
+        games: games.games.records,
+        releases: releases.releases.records,
+    };
+    catalog::validate(&snapshot)?;
+    Ok(snapshot)
 }
 
 fn decode_document(file: &'static str, yaml: &str) -> Result<RawDocument, ConfigSchemaError> {
     serde_yaml::from_str::<RawDocument>(yaml)
         .map_err(|source| ConfigSchemaError::Yaml { file, source })
-}
-
-fn reject_wrong_file_sections(
-    file: &'static str,
-    document: &RawDocument,
-    forbidden: &[&str],
-) -> Result<(), ConfigSchemaError> {
-    for section in forbidden {
-        if document.has_section(section) {
-            return Err(ConfigSchemaError::WrongFileSection {
-                file,
-                section: (*section).to_owned(),
-            });
-        }
-    }
-    Ok(())
 }
 
 impl RawDocument {
@@ -208,15 +207,14 @@ impl RawDocument {
             "host" => self.host.is_some(),
             "storage" => self.storage.present,
             "providers" => self.providers.present,
-            "provider-links" => self.provider_links.present,
             "systems" => self.systems.present,
             "launchers" => self.launchers.present,
             "runtimes" => self.runtimes.present,
             "profiles" => self.profiles.present,
             "hooks" => self.hooks.present,
-            "collections" => self.collections.present,
-            "users" => self.users.present,
-            "library" => self.library.present,
+            "games" => self.games.present,
+            "releases" => self.releases.present,
+            "locations" => self.locations.present,
             _ => false,
         }
     }
@@ -232,9 +230,6 @@ fn validate_document_keys(
     for key in document.providers.keys() {
         validate_provider_id(&format!("{file}.providers[{key}]"), key)?;
     }
-    for key in document.provider_links.keys() {
-        validate_non_empty_key(file, "provider-links", key)?;
-    }
     for key in document.systems.keys() {
         validate_non_empty_key(file, "systems", key)?;
     }
@@ -249,15 +244,6 @@ fn validate_document_keys(
     }
     for key in document.hooks.keys() {
         validate_non_empty_key(file, "hooks", key)?;
-    }
-    for key in document.collections.keys() {
-        validate_non_empty_key(file, "collections", key)?;
-    }
-    for key in document.users.keys() {
-        validate_non_empty_key(file, "users", key)?;
-    }
-    for key in document.library.keys() {
-        validate_local_playable_id(&format!("{file}.library[{key}]"), key)?;
     }
     Ok(())
 }
@@ -286,57 +272,6 @@ fn validate_document_values(
                 path: format!("{file}.providers[{id}].kind"),
                 message: "providers no longer carry kind classifications".to_owned(),
             });
-        }
-    }
-
-    for (id, item) in document.library.iter() {
-        if item.source.is_some() {
-            return Err(ConfigSchemaError::Invalid {
-                path: format!("{file}.library[{id}].source"),
-                message: "library item source was removed; use provider-links[]".to_owned(),
-            });
-        }
-        for release in &item.releases.0 {
-            let release_path = format!("{file}.library[{id}].releases[{}]", release.id.0);
-            if release.source.is_some() {
-                return Err(ConfigSchemaError::Invalid {
-                    path: format!("{release_path}.source"),
-                    message: "release.source was removed; use provider-links[]".to_owned(),
-                });
-            }
-            if release.app.is_some() {
-                return Err(ConfigSchemaError::Invalid {
-                    path: format!("{release_path}.app"),
-                    message: "release.app was removed; use release.launch".to_owned(),
-                });
-            }
-            if release.runtime.is_some() {
-                return Err(ConfigSchemaError::Invalid {
-                    path: format!("{release_path}.runtime"),
-                    message: "release.runtime was removed; use release.launch.runtime".to_owned(),
-                });
-            }
-            if release.apps.is_some() {
-                return Err(ConfigSchemaError::Invalid {
-                    path: format!("{release_path}.apps"),
-                    message: "release.apps was removed; use release.launch".to_owned(),
-                });
-            }
-            if release.identity.is_some() && !matches!(release.target, Some(Target::File { .. })) {
-                return Err(ConfigSchemaError::Invalid {
-                    path: format!("{release_path}.identity"),
-                    message: "release identity hash tags may only be declared for file targets"
-                        .to_owned(),
-                });
-            }
-            if let Some(launch) = &release.launch {
-                if launch.use_launcher.is_some() && launch.plugin.is_some() {
-                    return Err(ConfigSchemaError::Invalid {
-                        path: format!("{release_path}.launch"),
-                        message: "release.launch cannot specify both use and plugin".to_owned(),
-                    });
-                }
-            }
         }
     }
 
@@ -374,13 +309,6 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
     if let Some(host) = &snapshot.host {
         host.collect_support_issues("host", &mut issues);
     }
-    if !snapshot.provider_links.is_empty() {
-        push_issue(
-            &mut issues,
-            "provider-links",
-            "provider links are not executable in this slice",
-        );
-    }
     if !snapshot.runtimes.is_empty() {
         push_issue(
             &mut issues,
@@ -402,23 +330,10 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
             "hook profiles are not executable in this slice",
         );
     }
-    if !snapshot.collections.is_empty() {
-        push_issue(
-            &mut issues,
-            "collections",
-            "collection records are not executable in this slice",
-        );
-    }
-    if !snapshot.users.is_empty() {
-        push_issue(
-            &mut issues,
-            "users",
-            "user records are not executable in this slice",
-        );
-    }
-
-    for (id, item) in &snapshot.library {
-        item.collect_support_issues(&format!("library.{id}"), &mut issues);
+    for (id, release) in &snapshot.releases {
+        release
+            .inheritable
+            .collect_support_issues(&format!("releases.{id}"), &mut issues);
     }
 
     if issues.is_empty() {
@@ -568,43 +483,6 @@ pub struct SystemPayload {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct ProviderLinkPayload {
-    pub provider: ProviderIdString,
-    pub playable: PlayableIdString,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub release: Option<NonEmptyString>,
-    pub refs: NonEmptyVec<ProviderRef>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ProviderRef {
-    pub kind: ProviderRefKind,
-    pub value: SafeRefValue,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub scope: Option<ProviderRefScope>,
-    #[serde(default, rename = "targetPart", deserialize_with = "optional_non_null")]
-    pub target_part: Option<NonEmptyString>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ProviderRefKind {
-    Url,
-    ProviderItemId,
-    ExternalId,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum ProviderRefScope {
-    Playable,
-    Release,
-    TargetPart,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct AppPayload {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub settings: Option<BTreeMap<String, Value>>,
@@ -694,225 +572,26 @@ pub struct HookProfilePayload {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct CollectionPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub description: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub items: Option<Vec<PlayableIdString>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub inherit: Option<bool>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub presets: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "byLauncher", deserialize_with = "optional_non_null")]
-    pub by_launcher: Option<BTreeMap<String, InheritableLayer>>,
-    #[serde(flatten)]
-    pub inheritable: CollectionInheritableLayer,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct UserPayload {
-    #[serde(
-        default,
-        rename = "displayName",
-        deserialize_with = "optional_non_null"
-    )]
-    pub display_name: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub favorites: Option<Vec<PlayableIdString>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub hidden: Option<Vec<PlayableIdString>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub launch: Option<LaunchBlock>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub launcher: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub inherit: Option<bool>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub presets: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "byLauncher", deserialize_with = "optional_non_null")]
-    pub by_launcher: Option<BTreeMap<String, InheritableLayer>>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct LibraryItemPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    source: Option<Value>,
-    #[serde(default, rename = "version-of", deserialize_with = "optional_non_null")]
-    pub version_of: Option<PlayableIdString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub relation: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub collections: Option<Vec<NonEmptyString>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub display: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub metadata: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "userData", deserialize_with = "optional_non_null")]
-    pub user_data: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_contains_non_null")]
-    pub contains: Option<ContainsMap>,
-    pub releases: ReleaseList,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
-impl LibraryItemPayload {
-    fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.version_of.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.version-of"),
-                "version relationships are not executable in this slice",
-            );
-        }
-        if self.relation.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.relation"),
-                "playable relations are not executable in this slice",
-            );
-        }
-        if self.collections.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.collections"),
-                "collection membership is not executable in this slice",
-            );
-        }
-        if self.display.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.display"),
-                "display metadata is not executable in this slice",
-            );
-        }
-        if self.metadata.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.metadata"),
-                "metadata is not executable in this slice",
-            );
-        }
-        if self.user_data.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.userData"),
-                "user data is not executable in this slice",
-            );
-        }
-        if self.contains.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.contains"),
-                "contained playables are not executable in this slice",
-            );
-        }
-        self.inheritable.collect_support_issues(path, issues);
-        for (index, release) in self.releases.0.iter().enumerate() {
-            release.collect_support_issues(&format!("{path}.releases[{index}]"), issues);
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReleaseList(pub Vec<LibraryReleasePayload>);
-
-impl<'de> Deserialize<'de> for ReleaseList {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let releases = Vec::<LibraryReleasePayload>::deserialize(deserializer)?;
-        if releases.is_empty() {
-            return Err(D::Error::custom(
-                "library item must declare at least one release",
-            ));
-        }
-        let mut ids = BTreeSet::new();
-        for release in &releases {
-            if !ids.insert(release.id.0.clone()) {
-                return Err(D::Error::custom(format!(
-                    "library item release id '{}' must be unique",
-                    release.id.0
-                )));
-            }
-        }
-        Ok(Self(releases))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct LibraryReleasePayload {
-    pub id: LocalPlayableIdString,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    source: Option<Value>,
-    pub system: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub target: Option<Target>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub identity: Option<ReleaseIdentityTag>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    app: Option<Value>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    runtime: Option<Value>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    apps: Option<Value>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub display: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub launch: Option<ReleaseLaunch>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
-impl LibraryReleasePayload {
-    fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.display.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.display"),
-                "release display metadata is not executable in this slice",
-            );
-        }
-        self.inheritable.collect_support_issues(path, issues);
-        if let Some(launch) = &self.launch {
-            launch.collect_support_issues(&format!("{path}.launch"), issues);
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(tag = "kind", deny_unknown_fields)]
-pub enum Target {
-    #[serde(rename = "file")]
+#[serde(untagged, deny_unknown_fields)]
+pub enum Location {
     File {
         storage: NonEmptyString,
         path: TargetString,
         #[serde(default, deserialize_with = "optional_non_null")]
         discovery: Option<FileTargetDiscovery>,
     },
-    #[serde(rename = "file-set")]
     FileSet {
         storage: NonEmptyString,
         #[serde(default, deserialize_with = "optional_non_null")]
         root: Option<TargetString>,
         files: NonEmptyUniqueFileSetParts,
     },
-    #[serde(rename = "executable")]
-    Executable { path: TargetString },
-    #[serde(rename = "url")]
-    Url { value: TargetString },
-    #[serde(rename = "provider-ref")]
+    Executable {
+        path: TargetString,
+    },
+    Url {
+        value: TargetString,
+    },
     ProviderRef {
         provider: ProviderIdString,
         #[serde(rename = "ref")]
@@ -961,145 +640,6 @@ pub struct FileSetPart {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub role: Option<NonEmptyString>,
     pub path: TargetString,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ReleaseIdentityTag {
-    pub kind: ReleaseIdentityKind,
-    pub value: ArtifactIdString,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReleaseIdentityKind {
-    Hash,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ReleaseLaunch {
-    #[serde(default, rename = "use", deserialize_with = "optional_non_null")]
-    pub use_launcher: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub plugin: Option<ProviderIdString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub runtime: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub input: Option<LaunchInput>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub settings: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "with", deserialize_with = "optional_non_null")]
-    pub with_policy: Option<ProviderValueMap>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub env: Option<BTreeMap<String, String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub cwd: Option<String>,
-    #[serde(default, rename = "argsAppend", deserialize_with = "optional_non_null")]
-    pub args_append: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub overrides: Option<LaunchOverrides>,
-}
-
-impl ReleaseLaunch {
-    fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.plugin.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.plugin"),
-                "release launcher plugin selection is not executable in this slice",
-            );
-        }
-        if self.input.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.input"),
-                "release input selection is not executable in this slice",
-            );
-        }
-        if self.settings.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.settings"),
-                "release launch settings are not executable in this slice",
-            );
-        }
-        if self.with_policy.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.with"),
-                "release launch companion policy is not executable in this slice",
-            );
-        }
-        if self.env.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.env"),
-                "release launch environment is not executable in this slice",
-            );
-        }
-        if self.cwd.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.cwd"),
-                "release launch working directory is not executable in this slice",
-            );
-        }
-        if self.args_append.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.argsAppend"),
-                "release launch arguments are not executable in this slice",
-            );
-        }
-        if self.overrides.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.overrides"),
-                "release launch overrides are not executable in this slice",
-            );
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchInput {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub part: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub roles: Option<Vec<NonEmptyString>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchOverrides {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub args: Option<ArgOverrides>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub config: Option<ConfigOverrides>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ArgOverrides {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub prepend: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub append: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub replace: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ConfigOverrides {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub prepend: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub append: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub replace: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
@@ -1193,43 +733,11 @@ impl InheritableLayer {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct CollectionInheritableLayer {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub launch: Option<LaunchPolicy>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub env: Option<BTreeMap<String, String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub cwd: Option<String>,
-    #[serde(default, rename = "argsAppend", deserialize_with = "optional_non_null")]
-    pub args_append: Option<Vec<String>>,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchPolicy {
     #[serde(default, rename = "with", deserialize_with = "optional_non_null")]
     pub with_policy: Option<ProviderValueMap>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchBlock {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub app: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub module: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub settings: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "with", deserialize_with = "optional_non_null")]
-    pub with_policy: Option<ProviderValueMap>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub args: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub env: Option<BTreeMap<String, String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub cwd: Option<String>,
 }
 
 pub type ProviderValueMap = BTreeMap<ProviderIdString, Value>;
@@ -1336,46 +844,6 @@ pub struct HookAfterStep {
     pub timeout: Option<PositiveInt>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ContainsMap(pub BTreeMap<LocalPlayableIdString, ContainedPlayablePayload>);
-
-impl<'de> Deserialize<'de> for ContainsMap {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let map =
-            BTreeMap::<LocalPlayableIdString, ContainedPlayablePayload>::deserialize(deserializer)?;
-        if map.is_empty() {
-            return Err(D::Error::custom(
-                "contains must name at least one local playable",
-            ));
-        }
-        Ok(Self(map))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ContainedPlayablePayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub title: Option<String>,
-    #[serde(default, rename = "version-of", deserialize_with = "optional_non_null")]
-    pub version_of: Option<PlayableIdString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub relation: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub collections: Option<Vec<NonEmptyString>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub display: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub metadata: Option<BTreeMap<String, Value>>,
-    #[serde(default, rename = "userData", deserialize_with = "optional_non_null")]
-    pub user_data: Option<BTreeMap<String, Value>>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct NonEmptyString(pub String);
 
@@ -1384,7 +852,10 @@ impl<'de> Deserialize<'de> for NonEmptyString {
     where
         D: Deserializer<'de>,
     {
-        let value = String::deserialize(deserializer)?;
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+        let serde_yaml::Value::String(value) = value else {
+            return Err(D::Error::custom("value must be a non-empty string"));
+        };
         if value.is_empty() {
             return Err(D::Error::custom("value must be non-empty"));
         }
@@ -1441,34 +912,6 @@ impl<'de> Deserialize<'de> for ProviderIdString {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LocalPlayableIdString(pub String);
-
-impl<'de> Deserialize<'de> for LocalPlayableIdString {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        validate_local_playable_id("local playable", &value).map_err(D::Error::custom)?;
-        Ok(Self(value))
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct PlayableIdString(pub String);
-
-impl<'de> Deserialize<'de> for PlayableIdString {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        validate_playable_id("playable", &value).map_err(D::Error::custom)?;
-        Ok(Self(value))
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SafeRefValue(pub String);
 
 impl<'de> Deserialize<'de> for SafeRefValue {
@@ -1515,25 +958,6 @@ impl<'de> Deserialize<'de> for ArtifactIdString {
             ));
         }
         Ok(Self(value))
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NonEmptyVec<T>(pub Vec<T>);
-
-impl<'de, T> Deserialize<'de> for NonEmptyVec<T>
-where
-    T: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let values = Vec::<T>::deserialize(deserializer)?;
-        if values.is_empty() {
-            return Err(D::Error::custom("list must not be empty"));
-        }
-        Ok(Self(values))
     }
 }
 
@@ -1587,21 +1011,6 @@ where
     T::deserialize(value).map(Some).map_err(D::Error::custom)
 }
 
-fn optional_contains_non_null<'de, D>(deserializer: D) -> Result<Option<ContainsMap>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = serde_yaml::Value::deserialize(deserializer)?;
-    if matches!(value, serde_yaml::Value::Null) {
-        return Err(D::Error::custom(
-            "explicit null is not valid; omit the field instead",
-        ));
-    }
-    ContainsMap::deserialize(value)
-        .map(Some)
-        .map_err(D::Error::custom)
-}
-
 fn validate_provider_id(path: &str, value: &str) -> Result<(), ConfigSchemaError> {
     let Some(without_at) = value.strip_prefix('@') else {
         return Err(invalid(
@@ -1637,49 +1046,13 @@ fn valid_provider_segment(value: &str) -> bool {
         })
 }
 
-fn validate_local_playable_id(path: &str, value: &str) -> Result<(), ConfigSchemaError> {
-    if valid_playable_segment(value) {
-        Ok(())
-    } else {
-        Err(invalid(
-            path,
-            "local playable ids must be lowercase path segments without slashes",
-        ))
-    }
-}
-
-fn validate_playable_id(path: &str, value: &str) -> Result<(), ConfigSchemaError> {
-    let parts: Vec<_> = value.split('/').collect();
-    let valid = match parts.as_slice() {
-        [item] => valid_playable_segment(item),
-        [item, contained] => valid_playable_segment(item) && valid_playable_segment(contained),
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(invalid(
-            path,
-            "playable ids must be '<item-id>' or '<item-id>/<contained-id>'",
-        ))
-    }
-}
-
-fn valid_playable_segment(segment: &str) -> bool {
-    let mut chars = segment.chars();
-    matches!(chars.next(), Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit())
-        && segment != "."
-        && segment != ".."
-        && chars.all(|character| {
-            character.is_ascii_lowercase()
-                || character.is_ascii_digit()
-                || matches!(character, '.' | '_' | '-')
-        })
-}
-
 fn invalid(path: &str, message: &str) -> ConfigSchemaError {
     ConfigSchemaError::Invalid {
         path: path.to_owned(),
         message: message.to_owned(),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/fixtures/readable.rs"]
+pub(crate) mod test_fixtures;

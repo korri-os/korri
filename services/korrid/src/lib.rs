@@ -1380,6 +1380,7 @@ fn route_diagnostic_failure(diagnostic: &config::resolver::RouteDiagnostic) -> R
 
 fn route_diagnostic_code(code: config::resolver::RouteDiagnosticCode) -> &'static str {
     match code {
+        config::resolver::RouteDiagnosticCode::LocalRomMissing => "LocalRomMissing",
         config::resolver::RouteDiagnosticCode::LocalRouteUnavailable => "LocalRouteUnavailable",
         config::resolver::RouteDiagnosticCode::LocalRouteCollision => "LocalRouteCollision",
     }
@@ -2651,7 +2652,7 @@ async fn dispatch(
                     }
                 };
                 let catalog = launcher::local_games_with_cover_assets(
-                    Some(&brain.local_storage_root),
+                    &brain.local_storage_root,
                     Some(&brain.private_state_root),
                     &config_state,
                     &registry,
@@ -2900,10 +2901,6 @@ async fn dispatch(
         },
         RpcRequest::SettingsUpdate(request) => match &state.mode {
             ServerMode::Brain(brain) => {
-                let _write = brain
-                    .settings_write_lock
-                    .lock()
-                    .expect("settings write lock poisoned");
                 let change = if request.setting_id == config::settings::DEVICE_NAME_SETTING_ID {
                     Ok(config::settings::SettingChange::DeviceName(request.value))
                 } else {
@@ -2923,6 +2920,8 @@ async fn dispatch(
                 let outcome = change.and_then(|change| {
                     config::settings::update(
                         &brain.local_storage_root,
+                        &brain.private_state_root,
+                        &brain.settings_write_lock,
                         &request.expected_revision,
                         change,
                     )
@@ -4401,12 +4400,6 @@ mod tests {
     };
     use tower::ServiceExt;
 
-    const WL4_PLUGIN_LIBRARY: &str =
-        include_str!("../../../docs/research/retroarch-plugin-route/library-wl4.yaml");
-    const CHECKPOINT_ANDROID_CONFIG: &str =
-        include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/config.yaml");
-    const CHECKPOINT_ANDROID_LIBRARY: &str =
-        include_str!("../../../docs/research/android-app-plugin-schema-checkpoint/library.yaml");
     const PNG_1X1: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4,
         0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 250, 207, 0, 0, 2, 7,
@@ -4425,13 +4418,10 @@ mod tests {
     }
 
     fn write_wl4_plugin_config(root: &Path) {
-        std::fs::write(root.join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.join("library.yaml"), WL4_PLUGIN_LIBRARY).unwrap();
+        config::test_fixtures::gba(root);
     }
-
     fn write_checkpoint_android_config(root: &Path) {
-        std::fs::write(root.join("config.yaml"), CHECKPOINT_ANDROID_CONFIG).unwrap();
-        std::fs::write(root.join("library.yaml"), CHECKPOINT_ANDROID_LIBRARY).unwrap();
+        config::test_fixtures::android(root);
     }
 
     #[test]
@@ -4466,8 +4456,9 @@ mod tests {
     #[tokio::test]
     async fn generic_local_launch_materializes_overlay_owned_resume_only() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let active = launcher::AndroidActiveLaunch {
             launch_id: "generic-launch".into(),
             game_id: Some("tmnt".into()),
@@ -4859,8 +4850,9 @@ mod tests {
     #[tokio::test]
     async fn embedded_android_test_router_resolves_artemis_and_honors_current_user_policy() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let app = android_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
@@ -4914,7 +4906,7 @@ mod tests {
         }
 
         std::fs::write(
-            root.path().join("config.yaml"),
+            root.path().join("device.yaml"),
             "host:\n  plugin:\n    '@korri:moonlight': false\n",
         )
         .unwrap();
@@ -5434,7 +5426,14 @@ mod tests {
             Some("right-token"),
         )
         .await;
-        assert_eq!(games["outcome"]["payload"]["games"][0]["id"], "game");
+        assert_eq!(games["outcome"]["payload"]["games"][0]["title"], "game");
+        assert_eq!(
+            games["outcome"]["payload"]["games"][0]["id"]
+                .as_str()
+                .unwrap()
+                .len(),
+            26
+        );
     }
 
     #[tokio::test]
@@ -5486,10 +5485,11 @@ mod tests {
             assignment.asset_id
         );
 
-        let edited = std::fs::read_to_string(readable.path().join("library.yaml"))
+        let edited = std::fs::read_to_string(readable.path().join("catalog/games.yaml"))
             .unwrap()
             .replace("title: game", "title: Player Edited");
-        std::fs::write(readable.path().join("library.yaml"), edited).unwrap();
+        crate::config::test_fixtures::write(readable.path().join("catalog/games.yaml"), edited)
+            .unwrap();
         let stale = rpc_body_authorized(
             app,
             r#"{"_tag":"app.local-games.list","payload":{}}"#,
@@ -5608,7 +5608,14 @@ mod tests {
             Some("right-token"),
         )
         .await;
-        assert_eq!(games["outcome"]["payload"]["games"][0]["id"], "good");
+        assert_eq!(games["outcome"]["payload"]["games"][0]["title"], "good");
+        assert_eq!(
+            games["outcome"]["payload"]["games"][0]["id"]
+                .as_str()
+                .unwrap()
+                .len(),
+            26
+        );
     }
 
     #[tokio::test]
@@ -5904,8 +5911,9 @@ command = ["sh", "-c", "sleep 1"]
     #[tokio::test]
     async fn brain_source_status_fails_closed_for_an_unconfigured_device_key() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
@@ -6182,6 +6190,8 @@ command = ["game-two"]
     async fn local_games_rpc_lists_wario_land_from_the_device_brain() {
         let root = tempfile::tempdir().unwrap();
         write_wl4_plugin_config(root.path());
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
         let app = router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
@@ -6211,8 +6221,9 @@ command = ["game-two"]
     #[tokio::test]
     async fn settings_rpc_round_trips_a_conflict_safe_device_name_write() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "host:\n  title: old\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "host:\n  title: old\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let app = router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
@@ -6247,12 +6258,12 @@ command = ["game-two"]
 
         assert_eq!(updated["outcome"]["_tag"], "Ok");
         assert_eq!(updated["outcome"]["payload"]["deviceName"], "usu");
-        assert!(std::fs::read_to_string(root.path().join("config.yaml"))
+        assert!(std::fs::read_to_string(root.path().join("device.yaml"))
             .unwrap()
             .contains("title: usu"));
 
         let updated_revision = updated["outcome"]["payload"]["revision"].as_str().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "host:\n  title: outside\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "host:\n  title: outside\n").unwrap();
         let stale_request = serde_json::json!({
             "_tag": "system.settings.update",
             "payload": {
@@ -6266,7 +6277,7 @@ command = ["game-two"]
 
         assert_eq!(conflict["outcome"]["_tag"], "Err");
         assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
-        assert!(std::fs::read_to_string(root.path().join("config.yaml"))
+        assert!(std::fs::read_to_string(root.path().join("device.yaml"))
             .unwrap()
             .contains("title: outside"));
     }
@@ -6290,7 +6301,7 @@ command = ["game-two"]
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, "Bearer right-token")
                     .body(Body::from(
-                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}"#,
+                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}"#,
                     ))
                     .unwrap(),
             )
@@ -6335,7 +6346,7 @@ command = ["game-two"]
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, "Bearer right-token")
                     .body(Body::from(
-                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}"#,
+                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}"#,
                     ))
                     .unwrap(),
             )
@@ -6411,7 +6422,7 @@ command = ["game-two"]
                 .bearer_auth(&capability)
                 .json(&serde_json::json!({
                     "_tag": "app.local-games.launch",
-                    "payload": { "gameId": "wl4" }
+                    "payload": { "gameId": "01K4J6K8Y00000000000000002" }
                 }))
                 .send()
                 .await
@@ -6432,7 +6443,7 @@ command = ["game-two"]
             publish_local_active_launch(&spec_json),
             Err(ActiveAndroidLaunchFailure::AlreadyPublished)
         );
-        assert_eq!(local.game_id.as_deref(), Some("wl4"));
+        assert_eq!(local.game_id.as_deref(), Some("01K4J6K8Y00000000000000002"));
         assert_eq!(local.title.as_deref(), Some("Wario Land 4"));
         assert_eq!(
             local.contributors,
@@ -6620,7 +6631,7 @@ command = ["game-two"]
             .bearer_auth(&capability)
             .json(&serde_json::json!({
                 "_tag": "app.local-games.launch",
-                "payload": { "gameId": "wl4" }
+                "payload": { "gameId": "01K4J6K8Y00000000000000002" }
             }))
             .send()
             .await
@@ -6660,7 +6671,10 @@ command = ["game-two"]
             repeated["outcome"]["payload"]["extras"]["LIBRETRO"],
             "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so"
         );
-        assert_eq!(repeated["outcome"]["payload"]["context"]["gameId"], "wl4");
+        assert_eq!(
+            repeated["outcome"]["payload"]["context"]["gameId"],
+            "01K4J6K8Y00000000000000002"
+        );
         assert_eq!(
             repeated["outcome"]["payload"]["context"]["contentCrc32"],
             "cbf43926"
@@ -6682,7 +6696,7 @@ command = ["game-two"]
                 .bearer_auth(&capability)
                 .json(&serde_json::json!({
                     "_tag": "app.local-games.launch",
-                    "payload": { "gameId": "wl4" }
+                    "payload": { "gameId": "01K4J6K8Y00000000000000002" }
                 }))
                 .send()
                 .await
@@ -6704,7 +6718,7 @@ command = ["game-two"]
             .bearer_auth(&capability)
             .json(&serde_json::json!({
                 "_tag": "app.local-games.launch",
-                "payload": { "gameId": "wl4" }
+                "payload": { "gameId": "01K4J6K8Y00000000000000002" }
             }))
             .send()
             .await
@@ -6722,8 +6736,8 @@ command = ["game-two"]
 
         std::fs::write(root.path().join("roms/other.gba"), b"123456789").unwrap();
         std::fs::write(
-            root.path().join("library.yaml"),
-            WL4_PLUGIN_LIBRARY.replace("wl4.gba", "other.gba"),
+            root.path().join("device.yaml"),
+            config::test_fixtures::gba_locations("roms", "other.gba", false),
         )
         .unwrap();
         let different_route = client
@@ -6731,7 +6745,7 @@ command = ["game-two"]
             .bearer_auth(&capability)
             .json(&serde_json::json!({
                 "_tag": "app.local-games.launch",
-                "payload": { "gameId": "wl4" }
+                "payload": { "gameId": "01K4J6K8Y00000000000000002" }
             }))
             .send()
             .await
@@ -6815,7 +6829,7 @@ command = ["game-two"]
             assert!(Arc::ptr_eq(&authority, &original_authority));
         }
         std::fs::write(
-            root.path().join("config.yaml"),
+            root.path().join("device.yaml"),
             "host:\n  plugin:\n    \"@korri:retroarch\": false\n",
         )
         .unwrap();
@@ -6906,7 +6920,7 @@ command = ["game-two"]
             .bearer_auth(&capability)
             .json(&serde_json::json!({
                 "_tag": "app.local-games.launch",
-                "payload": { "gameId": "wl4" }
+                "payload": { "gameId": "01K4J6K8Y00000000000000002" }
             }))
             .send()
             .await
@@ -6991,7 +7005,7 @@ command = ["game-two"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|game| game["id"] == "wl4")
+            .find(|game| game["id"] == "01K4J6K8Y00000000000000002")
             .expect("wl4 is listed");
         assert_eq!(wl4["playStats"]["playCount"], 2);
         assert!(wl4["playStats"]["lastPlayed"].is_string());
@@ -7361,7 +7375,7 @@ command = ["game-two"]
         );
         let policy_instruction_json = serde_json::to_string(&policy_instruction).unwrap();
         std::fs::write(
-            root.path().join("config.yaml"),
+            root.path().join("device.yaml"),
             "host:\n  plugin:\n    '@korri:moonlight': false\n",
         )
         .unwrap();
@@ -7394,7 +7408,7 @@ command = ["game-two"]
             .unwrap()["outcome"]["payload"]
             .clone();
         std::fs::write(
-            root.path().join("config.yaml"),
+            root.path().join("device.yaml"),
             "host:\n  plugin:\n    '@korri:moonlight': false\n",
         )
         .unwrap();
@@ -7427,7 +7441,7 @@ command = ["game-two"]
                     .bearer_auth(capability)
                     .json(&serde_json::json!({
                         "_tag": "app.local-games.launch",
-                        "payload": { "gameId": "wl4" }
+                        "payload": { "gameId": "01K4J6K8Y00000000000000002" }
                     }))
                     .send()
                     .await
@@ -7539,11 +7553,11 @@ command = ["game-two"]
         )
         .await;
         assert_eq!(listed["outcome"]["_tag"], "Ok");
-        assert_eq!(listed_game_ids(&listed), ["tmnt-shredders-revenge"]);
+        assert_eq!(listed_game_ids(&listed), ["01K4J6K8Y00000000000000001"]);
 
         let launched = rpc_body_authorized(
             app.clone(),
-            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"tmnt-shredders-revenge"}}"#,
+            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}"#,
             Some("right-token"),
         )
         .await;
@@ -7590,7 +7604,7 @@ command = ["game-two"]
 
         let disabled_launch = rpc_body_authorized(
             app.clone(),
-            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"tmnt-shredders-revenge"}}"#,
+            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}"#,
             Some("right-token"),
         )
         .await;
@@ -7646,11 +7660,11 @@ command = ["game-two"]
             Some("right-token"),
         )
         .await;
-        assert_eq!(listed_game_ids(&relisted), ["tmnt-shredders-revenge"]);
+        assert_eq!(listed_game_ids(&relisted), ["01K4J6K8Y00000000000000001"]);
 
         let relaunched = rpc_body_authorized(
             app,
-            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"tmnt-shredders-revenge"}}"#,
+            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}"#,
             Some("right-token"),
         )
         .await;
@@ -7681,7 +7695,7 @@ command = ["game-two"]
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, "Bearer right-token")
                     .body(Body::from(
-                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"tmnt-shredders-revenge"}}"#,
+                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}"#,
                     ))
                     .unwrap(),
             )
@@ -7694,7 +7708,10 @@ command = ["game-two"]
 
     #[tokio::test]
     async fn local_launch_rpc_maps_missing_and_unknown_games_to_distinct_codes() {
-        for (game_id, code) in [("wl4", "LocalRomMissing"), ("unknown", "LocalGameNotFound")] {
+        for (game_id, code) in [
+            ("01K4J6K8Y00000000000000002", "LocalRomMissing"),
+            ("unknown", "LocalGameNotFound"),
+        ] {
             let root = tempfile::tempdir().unwrap();
             write_wl4_plugin_config(root.path());
             let app = router_with_capability_and_local_root(
@@ -7749,7 +7766,7 @@ command = ["game-two"]
                         .header(header::CONTENT_TYPE, "application/json")
                         .header(header::AUTHORIZATION, "Bearer right-token")
                         .body(Body::from(
-                            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}"#,
+                            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}"#,
                         ))
                         .unwrap(),
                 )
@@ -8868,8 +8885,9 @@ command = ["game-two"]
     #[tokio::test]
     async fn brain_routes_certificate_mutation_to_one_attested_native_peer_only() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
 
         let first_config = root.path().join("first.toml");
         let second_config = root.path().join("second.toml");
@@ -8930,8 +8948,9 @@ command = ["game-two"]
     #[tokio::test]
     async fn brain_fails_closed_when_an_attestation_peer_is_unavailable() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let config = root.path().join("live.toml");
         std::fs::write(&config, "label = \"live\"\n").unwrap();
         let live = RecordingMoonlightCertificates::matching("sunshine-host");
@@ -8975,8 +8994,9 @@ command = ["game-two"]
     #[tokio::test]
     async fn brain_rejects_a_host_uuid_change_between_attest_and_mutation() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-        std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            .unwrap();
         let config = root.path().join("changing.toml");
         std::fs::write(&config, "label = \"changing\"\n").unwrap();
         let changing = Arc::new(ChangingMoonlightCertificates::default());
@@ -9017,8 +9037,9 @@ command = ["game-two"]
     async fn brain_rejects_zero_or_ambiguous_certificate_routes_without_mutation() {
         for expected in ["none", "sunshine-host"] {
             let root = tempfile::tempdir().unwrap();
-            std::fs::write(root.path().join("config.yaml"), "{}\n").unwrap();
-            std::fs::write(root.path().join("library.yaml"), "{}\n").unwrap();
+            std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+            crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+                .unwrap();
             let mut urls = Vec::new();
             let mut adapters = Vec::new();
             for index in 0..2 {

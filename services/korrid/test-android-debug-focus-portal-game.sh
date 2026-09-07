@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash -p bash coreutils curl gnugrep gnused jq
+# shellcheck shell=bash
 set -euo pipefail
 
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
@@ -56,25 +58,25 @@ elif grep -Fq 'visibleLibraryRoots' <<<"$expression"; then
   value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","visibleLibraryRoots":1}'
 elif grep -Fq 'enabledFocusableRows' <<<"$expression"; then
   case "${FAKE_LOCATION_RESULT:-ok}" in
-    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"wl4\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":2,"identityMatches":1,"activeExact":true,"bounds":{"left":329.5,"top":191.25,"width":280,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
-    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"wl4\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":3,"identityMatches":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
-    wrong-dialog) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Other Game","title":"Other Game","locationId":"[\"local\",null,\"wl4\"]","label":"This device","visibleDialogs":1,"exactDialogs":0,"visibleTitles":1,"exactTitles":0,"enabledFocusableRows":2,"identityMatches":1,"activeExact":true,"bounds":{"left":329,"top":191,"width":280,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
-    disabled) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"wl4\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":1,"identityMatches":0,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
+    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"01K4J6K8Y00000000000000002\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":2,"identityMatches":1,"activeExact":true,"bounds":{"left":329.5,"top":191.25,"width":280,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
+    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"01K4J6K8Y00000000000000002\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":3,"identityMatches":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
+    wrong-dialog) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Other Game","title":"Other Game","locationId":"[\"local\",null,\"01K4J6K8Y00000000000000002\"]","label":"This device","visibleDialogs":1,"exactDialogs":0,"visibleTitles":1,"exactTitles":0,"enabledFocusableRows":2,"identityMatches":1,"activeExact":true,"bounds":{"left":329,"top":191,"width":280,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
+    disabled) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"launch-location","dialogLabel":"Choose where to play Wario Land 4","title":"Wario Land 4","locationId":"[\"local\",null,\"01K4J6K8Y00000000000000002\"]","label":"This device","visibleDialogs":1,"exactDialogs":1,"visibleTitles":1,"exactTitles":1,"enabledFocusableRows":1,"identityMatches":0,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
     *) exit 2 ;;
   esac
 elif grep -Fq 'visibleDetailRoots' <<<"$expression"; then
   case "${FAKE_DETAIL_RESULT:-ok}" in
-    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:wl4","title":"Wario Land 4","label":"Play","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":1,"exactActions":1,"activeExact":true,"bounds":{"left":342.5,"top":287.25,"width":130,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
-    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:wl4","title":"Wario Land 4","label":"Play","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":2,"exactActions":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
+    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","label":"Play","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":1,"exactActions":1,"activeExact":true,"bounds":{"left":342.5,"top":287.25,"width":130,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
+    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","label":"Play","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":2,"exactActions":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
     wrong-game) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"game:aka:wario","title":"Wario Land 4","label":"Play","visibleDetailRoots":1,"exactDetailRoots":0,"visibleTitles":1,"exactTitles":1,"primaryCandidates":1,"exactActions":1,"activeExact":true,"bounds":{"left":342,"top":287,"width":130,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
-    offscreen) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:wl4","title":"Wario Land 4","label":"Continue","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":1,"exactActions":1,"activeExact":true,"bounds":{"left":600,"top":287,"width":130,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":false}' ;;
+    offscreen) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"detail","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","label":"Continue","visibleDetailRoots":1,"exactDetailRoots":1,"visibleTitles":1,"exactTitles":1,"primaryCandidates":1,"exactActions":1,"activeExact":true,"bounds":{"left":600,"top":287,"width":130,"height":52},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":false}' ;;
     *) exit 2 ;;
   esac
 else
   case "${FAKE_GAME_RESULT:-ok}" in
-    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:wl4","title":"Wario Land 4","renderedIdMatches":1,"exactMatches":1,"activeExact":true,"bounds":{"left":548.5,"top":230.25,"width":82,"height":120},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
-    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:wl4","title":"Wario Land 4","renderedIdMatches":2,"exactMatches":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
-    offscreen) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:wl4","title":"Wario Land 4","renderedIdMatches":1,"exactMatches":1,"activeExact":true,"bounds":{"left":620,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":false}' ;;
+    ok) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","renderedIdMatches":1,"exactMatches":1,"activeExact":true,"bounds":{"left":548.5,"top":230.25,"width":82,"height":120},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":true}' ;;
+    ambiguous) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","renderedIdMatches":2,"exactMatches":2,"activeExact":false,"bounds":{"left":0,"top":0,"width":0,"height":0},"viewport":{"width":640,"height":480},"rectFinitePositive":false,"fullyOnScreen":false}' ;;
+    offscreen) value='{"href":"https://appassets.androidplatform.net/assets/portal/index.html","view":"library","gameId":"local-game:01K4J6K8Y00000000000000002","title":"Wario Land 4","renderedIdMatches":1,"exactMatches":1,"activeExact":true,"bounds":{"left":620,"top":230,"width":82,"height":120},"viewport":{"width":640,"height":480},"rectFinitePositive":true,"fullyOnScreen":false}' ;;
     *) exit 2 ;;
   esac
 fi
@@ -113,9 +115,9 @@ jq -e --arg url "$trusted" '
 ' <<<"$library" >/dev/null
 view="$($HELPER fake-device com.simonwjackson.korri.debug --verify-library)"
 jq -e --arg url "$trusted" '.url == $url and .view == "library" and .verified == true' <<<"$view" >/dev/null
-game="$($HELPER fake-device com.simonwjackson.korri.debug --game local-game:wl4 'Wario Land 4')"
+game="$($HELPER fake-device com.simonwjackson.korri.debug --game local-game:01K4J6K8Y00000000000000002 'Wario Land 4')"
 jq -e --arg url "$trusted" '
-  .url == $url and .view == "library" and .gameId == "local-game:wl4"
+  .url == $url and .view == "library" and .gameId == "local-game:01K4J6K8Y00000000000000002"
   and .title == "Wario Land 4" and .focused == true
   and .bounds == {left:548.5,top:230.25,width:82,height:120}
   and .viewport == {width:640,height:480}
@@ -123,13 +125,13 @@ jq -e --arg url "$trusted" '
 ' <<<"$game" >/dev/null
 detail="$($HELPER fake-device com.simonwjackson.korri.debug --detail-play)"
 jq -e --arg url "$trusted" '
-  .url == $url and .view == "detail" and .gameId == "local-game:wl4"
+  .url == $url and .view == "detail" and .gameId == "local-game:01K4J6K8Y00000000000000002"
   and .title == "Wario Land 4" and .label == "Play" and .focused == true
   and .bounds == {left:342.5,top:287.25,width:130,height:52}
   and .viewport == {width:640,height:480}
   and .rectFinitePositive == true and .fullyOnScreen == true
 ' <<<"$detail" >/dev/null
-location_id='["local",null,"wl4"]'
+location_id='["local",null,"01K4J6K8Y00000000000000002"]'
 location="$($HELPER fake-device com.simonwjackson.korri.debug \
   --launch-location "$location_id" 'Wario Land 4')"
 jq -e --arg url "$trusted" --arg locationId "$location_id" '
@@ -186,7 +188,7 @@ grep -F 'did not expose exactly one visible focusable Library tile' \
 unset FAKE_LIBRARY_RESULT
 
 export FAKE_GAME_RESULT=ambiguous
-if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:wl4 'Wario Land 4' \
+if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:01K4J6K8Y00000000000000002 'Wario Land 4' \
   >"$TMP/ambiguous.out" 2>"$TMP/ambiguous.err"; then
   echo 'debug focus helper accepted an ambiguous rendered identity' >&2
   exit 1
@@ -195,7 +197,7 @@ grep -F 'did not expose exactly one focusable game' "$TMP/ambiguous.err" >/dev/n
 unset FAKE_GAME_RESULT
 
 export FAKE_GAME_RESULT=offscreen
-if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:wl4 'Wario Land 4' \
+if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:01K4J6K8Y00000000000000002 'Wario Land 4' \
   >"$TMP/offscreen.out" 2>"$TMP/offscreen.err"; then
   echo 'debug focus helper accepted an off-screen focused game' >&2
   exit 1
@@ -248,7 +250,7 @@ jq -cn --arg url "$trusted" \
   '[{type:"page",url:$url,webSocketDebuggerUrl:"ws://127.0.0.1:43123/devtools/page/a"},
     {type:"page",url:$url,webSocketDebuggerUrl:"ws://127.0.0.1:43123/devtools/page/b"}]' \
   >"$FAKE_TARGETS"
-if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:wl4 'Wario Land 4' \
+if "$HELPER" fake-device com.simonwjackson.korri.debug --game local-game:01K4J6K8Y00000000000000002 'Wario Land 4' \
   >"$TMP/duplicate.out" 2>"$TMP/duplicate.err"; then
   echo 'debug focus helper accepted duplicate trusted portal targets' >&2
   exit 1

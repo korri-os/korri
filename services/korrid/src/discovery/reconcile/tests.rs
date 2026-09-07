@@ -19,7 +19,7 @@ fn coordinator(readable: &Path, private: &Path) -> DiscoveryCoordinator {
 }
 
 fn read_library(root: &Path) -> String {
-    fs::read_to_string(root.join(LIBRARY_FILE_NAME)).unwrap()
+    fs::read_to_string(root.join(GAMES_FILE_NAME)).unwrap()
 }
 
 #[test]
@@ -43,7 +43,8 @@ fn pending_ownership_repairs_crash_after_library_commit_before_final_private_wri
     discovery.remove_location(&storage_id, &options()).unwrap();
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert!(state.snapshot.library.is_empty());
+    assert!(state.snapshot.locations.is_empty());
+    assert_eq!(state.snapshot.games.len(), 1);
     let private_state = PrivateState::read(private.path()).unwrap();
     assert!(private_state.repair.pending_ownership.is_empty());
 }
@@ -58,11 +59,11 @@ fn stale_config_revision_rejects_library_commit() {
     let discovery = coordinator(readable.path(), private.path());
     let added = discovery.add_location(root.path(), &options()).unwrap();
     let storage_id = added.storage_id.unwrap();
-    let config_yaml = read_fixed(readable.path(), CONFIG_FILE_NAME).unwrap();
-    let library_yaml = read_fixed(readable.path(), LIBRARY_FILE_NAME).unwrap();
+    let current = Documents::read(readable.path()).unwrap();
+    let config_yaml = &current.device;
     fs::write(root.path().join("three.gba"), b"tri").unwrap();
     fs::write(
-        readable.path().join(CONFIG_FILE_NAME),
+        readable.path().join(DEVICE_FILE_NAME),
         format!("{config_yaml}\n# external edit during scan\n"),
     )
     .unwrap();
@@ -83,8 +84,7 @@ fn stale_config_revision_rejects_library_commit() {
     let result = reconcile_candidates(
         readable.path(),
         private.path(),
-        &config_yaml,
-        &library_yaml,
+        &current,
         &mut private_state,
         &[candidate],
         &options(),
@@ -151,10 +151,10 @@ fn adds_two_folders_as_launchable_schema_valid_games_and_reuses_hashes() {
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
-    assert_eq!(state.snapshot.library.len(), 2);
+    assert_eq!(state.snapshot.games.len(), 2);
     let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
-    for id in state.snapshot.library.keys() {
-        resolver::resolve_route(&state.snapshot, &registry, [], id).unwrap();
+    for id in state.snapshot.games.keys() {
+        resolver::resolve_route(readable.path(), &state.snapshot, &registry, [], id).unwrap();
     }
 
     let repeated = discovery.rescan(&options()).unwrap();
@@ -163,39 +163,48 @@ fn adds_two_folders_as_launchable_schema_valid_games_and_reuses_hashes() {
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         2
     );
 }
 
 #[test]
-fn preserves_authored_entries_and_backfills_missing_identity_for_same_path() {
+fn preserves_authored_content_identity_and_adds_the_located_copy() {
     let readable = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
     fs::write(
-        readable.path().join(CONFIG_FILE_NAME),
+        readable.path().join(DEVICE_FILE_NAME),
         format!(
             "storage:\n  selected:\n    root: {}\n",
             root.path().display()
         ),
     )
     .unwrap();
-    fs::write(readable.path().join(LIBRARY_FILE_NAME), "library:\n  curated:\n    title: Curated Title\n    releases:\n      - id: gba\n        system: gba\n        target:\n          kind: file\n          storage: selected\n          path: wl4.gba\n        launch:\n          use: \"@korri:retroarch/retroarch\"\n          runtime: \"@korri:mgba/mgba\"\n").unwrap();
+    authored(
+        readable.path(),
+        root.path(),
+        "selected",
+        "wl4.gba",
+        b"rom",
+        "Curated Title",
+    );
 
     coordinator(readable.path(), private.path())
         .add_location(root.path(), &options())
         .unwrap();
     let library = read_library(readable.path());
     assert!(library.contains("Curated Title"));
-    assert!(library.contains("identity:"));
+    assert!(fs::read_to_string(readable.path().join(RELEASES_FILE_NAME))
+        .unwrap()
+        .contains("identity: file"));
     assert_eq!(
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -211,12 +220,12 @@ fn removes_only_fingerprint_matching_generated_records() {
     let add = discovery.add_location(root.path(), &options()).unwrap();
     let storage_id = add.storage_id.unwrap();
     let edited = read_library(readable.path()).replace("title: wl4", "title: Hand Edited");
-    fs::write(readable.path().join(LIBRARY_FILE_NAME), edited).unwrap();
+    crate::config::test_fixtures::write(readable.path().join(GAMES_FILE_NAME), edited).unwrap();
 
     discovery.remove_location(&storage_id, &options()).unwrap();
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert_eq!(
-        state.snapshot.library.len(),
+        state.snapshot.games.len(),
         1,
         "edited generated record survives as user-owned"
     );
@@ -238,7 +247,7 @@ fn edited_generated_record_is_not_current_for_enrichment_assignment() {
         .pop()
         .unwrap();
     let edited = read_library(readable.path()).replace("title: wl4", "title: Hand Edited");
-    fs::write(readable.path().join(LIBRARY_FILE_NAME), edited).unwrap();
+    crate::config::test_fixtures::write(readable.path().join(GAMES_FILE_NAME), edited).unwrap();
 
     assert_eq!(
         current_owned_discovery_game(readable.path(), private.path(), &game).unwrap(),
@@ -271,7 +280,7 @@ fn enriched_owned_title_updates_fingerprint_and_survives_rescan_until_removal() 
     let game = owned_discovery_games(readable.path(), private.path())
         .unwrap()
         .into_iter()
-        .find(|game| game.playable_id == "wl4")
+        .find(|game| game.title == "wl4")
         .unwrap();
     assert!(update_owned_discovery_title(
         readable.path(),
@@ -292,7 +301,7 @@ fn enriched_owned_title_updates_fingerprint_and_survives_rescan_until_removal() 
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .locations
             .len(),
         0
     );
@@ -313,7 +322,7 @@ fn removes_unedited_generated_records_and_sweeps_remaining_roots() {
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -322,12 +331,9 @@ fn removes_unedited_generated_records_and_sweeps_remaining_roots() {
         .remove_location(&first_report.storage_id.unwrap(), &options())
         .unwrap();
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert_eq!(state.snapshot.library.len(), 1);
-    let route = state.snapshot.library.values().next().unwrap().releases.0[0]
-        .target
-        .as_ref()
-        .unwrap();
-    assert!(matches!(route, Target::File { storage, .. } if storage.0 != ""));
+    assert_eq!(state.snapshot.games.len(), 1);
+    let route = &state.snapshot.locations.values().next().unwrap()[0];
+    assert!(matches!(route, config::Location::File { storage, .. } if !storage.0.is_empty()));
 }
 
 #[test]
@@ -342,8 +348,13 @@ fn non_ascii_and_colliding_titles_produce_stable_schema_safe_ids() {
         .add_location(root.path(), &options())
         .unwrap();
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
-    assert!(state.snapshot.library.contains_key("pok-mon"));
-    assert!(state.snapshot.library.contains_key("pok-mon-2"));
+    assert_eq!(state.snapshot.games.len(), 2);
+    assert!(state.snapshot.games.keys().all(|id| id.len() == 26));
+    let before = read_library(readable.path());
+    coordinator(readable.path(), private.path())
+        .rescan(&options())
+        .unwrap();
+    assert_eq!(before, read_library(readable.path()));
     assert!(read_library(readable.path()).contains("Pokémon"));
 }
 
@@ -364,7 +375,7 @@ fn ordinary_rescan_reports_missing_files_but_does_not_delete_generated_records()
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -385,7 +396,7 @@ fn duplicate_content_reports_a_bounded_diagnostic() {
         ConfigSnapshotCoordinator::new(readable.path())
             .reload()
             .snapshot
-            .library
+            .games
             .len(),
         1
     );
@@ -402,20 +413,22 @@ fn preserves_raw_decodable_fields_on_scanner_mutation() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    fs::write(readable.path().join(CONFIG_FILE_NAME), format!("providers:\n  \"@local:source\":\n    title: Source\nstorage:\n  selected:\n    root: {}\n", root.path().display())).unwrap();
-    fs::write(
-        readable.path().join(LIBRARY_FILE_NAME),
-        "collections:\n  favorites:\n    title: Favorites\nlibrary: {}\n",
+    fs::write(readable.path().join(DEVICE_FILE_NAME), format!("providers:\n  \"@local:source\":\n    title: Source\nstorage:\n  selected:\n    root: {}\n", root.path().display())).unwrap();
+    crate::config::test_fixtures::write(
+        readable.path().join(GAMES_FILE_NAME),
+        "games: {}\n# authored comment\n",
     )
     .unwrap();
+    crate::config::test_fixtures::write(readable.path().join(RELEASES_FILE_NAME), "releases: {}\n")
+        .unwrap();
 
     coordinator(readable.path(), private.path())
         .rescan(&options())
         .unwrap();
-    assert!(fs::read_to_string(readable.path().join(CONFIG_FILE_NAME))
+    assert!(fs::read_to_string(readable.path().join(DEVICE_FILE_NAME))
         .unwrap()
         .contains("@local:source"));
-    assert!(read_library(readable.path()).contains("favorites"));
+    assert!(read_library(readable.path()).contains("authored comment"));
 }
 
 #[test]
@@ -433,7 +446,7 @@ fn cleanup_repairs_pending_location_removal_after_config_commit() {
         .pending_removals
         .insert(storage_id.clone());
     private_state.write(private.path()).unwrap();
-    let config = fs::read_to_string(readable.path().join(CONFIG_FILE_NAME))
+    let config = fs::read_to_string(readable.path().join(DEVICE_FILE_NAME))
         .unwrap()
         .replace(
             &format!(
@@ -442,27 +455,51 @@ fn cleanup_repairs_pending_location_removal_after_config_commit() {
             ),
             "",
         );
-    fs::write(readable.path().join(CONFIG_FILE_NAME), config).unwrap();
+    fs::write(
+        readable.path().join(DEVICE_FILE_NAME),
+        config.replace("storage:\nlocations:", "storage: {}\nlocations:"),
+    )
+    .unwrap();
 
     let report = discovery.rescan(&options()).unwrap();
     assert!(report.repaired);
     assert!(ConfigSnapshotCoordinator::new(readable.path())
         .reload()
         .snapshot
-        .library
+        .locations
         .is_empty());
 }
 
 #[test]
 fn final_rename_gate_rejects_external_library_edit() {
     let readable = tempfile::tempdir().unwrap();
-    let path = readable.path().join(LIBRARY_FILE_NAME);
-    fs::create_dir_all(readable.path()).unwrap();
-    fs::write(&path, "library: {}\n").unwrap();
-    let expected = revision("library: {}\n");
-    fs::write(&path, "library:\n  outside:\n    title: Outside\n    releases:\n      - id: gba\n        system: gba\n").unwrap();
+    let path = readable.path().join(GAMES_FILE_NAME);
+    ensure_fixed_files(readable.path()).unwrap();
+    fs::write(&path, "games: {}\n").unwrap();
+    let expected = revision("games: {}\n");
+    fs::write(&path, "games: {}\n# outside edit\n").unwrap();
 
-    let error = write_atomically(&path, b"library: {}\n", &expected).unwrap_err();
+    let error = write_atomically(&path, b"games: {}\n", &expected).unwrap_err();
     assert!(matches!(error, DiscoveryError::Conflict));
     assert!(fs::read_to_string(path).unwrap().contains("outside"));
+}
+
+fn authored(readable: &Path, roms: &Path, storage: &str, path: &str, bytes: &[u8], title: &str) {
+    let fixture = &crate::config::test_fixtures::gba_games();
+    let sha = format!("sha256:{}", hex::encode(Sha256::digest(bytes)));
+    let device = format!(
+        "storage:\n  {storage}:\n    root: {}\n{}",
+        roms.display(),
+        crate::config::test_fixtures::gba_locations(storage, path, false)
+            .replace(crate::config::test_fixtures::GBA_RELEASE, &sha)
+    );
+    crate::config::test_fixtures::install(
+        readable,
+        &device,
+        &fixture
+            .replace(crate::config::test_fixtures::GBA_RELEASE, &sha)
+            .replace("Wario Land 4", title),
+        &crate::config::test_fixtures::gba_releases()
+            .replace(crate::config::test_fixtures::GBA_RELEASE, &sha),
+    );
 }

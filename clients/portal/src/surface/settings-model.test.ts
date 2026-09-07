@@ -204,7 +204,7 @@ describe("settingsFrom", () => {
     expect(games?.items[0]).toMatchObject({
       id: "local-games",
       value: "1 game",
-      description: "Declared in library.yaml",
+      description: "Declared in catalog/games.yaml",
     })
     expect(games?.items.map(item => [item.label, item.value])).toEqual([
       ["On this device", "1 game"],

@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#! nix-shell -i bash -p bash coreutils curl gnugrep gnused android-tools unzip jq websocat
+#! nix-shell -i bash -p diffutils bash coreutils curl gnugrep gnused android-tools unzip jq websocat
 # shellcheck shell=bash
 # Install the built APK and call Rust Axum over adb forward.
 set -euo pipefail
@@ -10,8 +10,14 @@ PACKAGE="com.simonwjackson.korri.debug"
 HOST_PORT=43118
 ANDROID_STORAGE_ALIAS="/sdcard/korri"
 ANDROID_STORAGE_ROOT="$ANDROID_STORAGE_ALIAS"
-CHECKPOINT_CONFIG="$ROOT/docs/research/retroarch-plugin-route/config.yaml"
-CHECKPOINT_LIBRARY="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_LIBRARY:-$ROOT/docs/research/retroarch-plugin-route/library.yaml}"
+CHECKPOINT_DEVICE="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:-$ROOT/docs/research/retroarch-plugin-route/device.yaml}"
+CHECKPOINT_GAMES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml}"
+CHECKPOINT_RELEASES="${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:-$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml}"
+if [[ -n "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:-}${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:-}${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:-}" ]]; then
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE:?alternate checkpoint requires device.yaml}"
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES:?alternate checkpoint requires catalog/games.yaml}"
+  : "${KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES:?alternate checkpoint requires catalog/releases.yaml}"
+fi
 ANDROID_APP_PACKAGE="${KORRI_ANDROID_APP_PACKAGE:-com.playdigious.tmnt}"
 EXPECT_RETROARCH_ROUTE="${KORRI_EXPECT_RETROARCH_ROUTE:-false}"
 UPSTREAMS_CONFIG="${KORRI_ANDROID_UPSTREAMS_CONFIG:-$ROOT/.tmp/upstreams.android.json}"
@@ -34,7 +40,7 @@ require_wl4_local_launch_response() {
         and (.outcome.payload.launchId | test("^[0-9a-f]{32}$"))
         and .outcome.payload.launcherId == "retroarch"
         and .outcome.payload.disposition == "fresh"
-        and .outcome.payload.context.gameId == "wl4"
+        and .outcome.payload.context.gameId == "01K4J6K8Y00000000000000002"
         and .outcome.payload.context.executor == {id: "retroarch-control", available: true}
         and (.outcome.payload.component | exact_keys(["className", "packageName"]))
         and .outcome.payload.component.packageName == "com.korri.retroarch"
@@ -148,12 +154,16 @@ if [[ ! -f "$UPSTREAMS_CONFIG" ]]; then
 fi
 adb -s "$DEVICE" push "$UPSTREAMS_CONFIG" "$ANDROID_STORAGE_ROOT/upstreams.json" >/dev/null
 if [[ "$EXPECT_INSTALLED_ROUTE" == true ]]; then
-  if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/config.yaml" | cmp -s "$CHECKPOINT_CONFIG" -; then
-    echo "Device config.yaml does not match the reviewed checkpoint bytes" >&2
+  if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/device.yaml" | cmp -s "$CHECKPOINT_DEVICE" -; then
+    echo "Device device.yaml does not match the reviewed checkpoint bytes" >&2
     exit 1
   fi
-  if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/library.yaml" | cmp -s "$CHECKPOINT_LIBRARY" -; then
-    echo "Device library.yaml does not match the reviewed checkpoint bytes" >&2
+  if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/catalog/games.yaml" | cmp -s "$CHECKPOINT_GAMES" -; then
+    echo "Device catalog/games.yaml does not match the reviewed checkpoint bytes" >&2
+    exit 1
+  fi
+  if ! adb -s "$DEVICE" exec-out cat "$ANDROID_STORAGE_ROOT/catalog/releases.yaml" | cmp -s "$CHECKPOINT_RELEASES" -; then
+    echo "Device catalog/releases.yaml does not match the reviewed checkpoint bytes" >&2
     exit 1
   fi
 fi
@@ -243,7 +253,7 @@ local_games_response="$("${CURL[@]}" --fail --silent \
 if [[ "$EXPECT_INSTALLED_ROUTE" == true ]]; then
   if ! jq -e '
     .outcome._tag == "Ok"
-    and .outcome.payload.games[0].id == "tmnt-shredders-revenge"
+    and .outcome.payload.games[0].id == "01K4J6K8Y00000000000000001"
     and .outcome.payload.games[0].title == "TMNT: Shredder'"'"'s Revenge"
     and .outcome.payload.games[0].system == "Android"
     and (.outcome.payload.failures | not)
@@ -252,7 +262,7 @@ if [[ "$EXPECT_INSTALLED_ROUTE" == true ]]; then
     exit 1
   fi
   if [[ "$EXPECT_RETROARCH_ROUTE" == true ]] && ! jq -e '
-    .outcome.payload.games[1].id == "wl4"
+    .outcome.payload.games[1].id == "01K4J6K8Y00000000000000002"
     and .outcome.payload.games[1].title == "Wario Land 4"
   ' <<<"$local_games_response" >/dev/null; then
     echo "Local-games probe did not return the canonical RetroArch route: $local_games_response" >&2
@@ -274,7 +284,7 @@ if [[ "$EXPECT_INSTALLED_ROUTE" == true ]]; then
   android_launch_response="$("${CURL[@]}" --fail --silent \
     -H 'content-type: application/json' \
     -H "authorization: Bearer $capability" \
-    -d '{"_tag":"app.local-games.launch","payload":{"gameId":"tmnt-shredders-revenge"}}' \
+    -d '{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}' \
     "http://127.0.0.1:$HOST_PORT/rpc")"
   if ! require_android_app_launch_response "$android_launch_response"; then
     exit 1
@@ -289,7 +299,7 @@ if [[ "$EXPECT_INSTALLED_ROUTE" == true && "$EXPECT_RETROARCH_ROUTE" == true ]];
   local_launch_response="$("${CURL[@]}" --fail --silent \
     -H 'content-type: application/json' \
     -H "authorization: Bearer $capability" \
-    -d '{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}' \
+    -d '{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}' \
     "http://127.0.0.1:$HOST_PORT/rpc")"
   if ! require_wl4_local_launch_response "$local_launch_response"; then
     exit 1
