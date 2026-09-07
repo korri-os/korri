@@ -12,6 +12,7 @@ import {
   createKorriNativeLauncherBridge,
 } from "./bridge/launcher-bridge"
 import { createInputBus } from "./input/bus"
+import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
 import { createKorriNativeAdapter } from "./input/korri-native-adapter"
 import { createSpatialFocusController } from "./input/spatial-focus"
@@ -123,7 +124,9 @@ if (isSessionScreen) {
   // the Android shell or a desktop browser dev session.
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
-  bus.use(createKorriNativeAdapter())
+  // Android already translates hardware in Kotlin. Browser polling there
+  // would deliver each controller press twice.
+  bus.use(window.KorriNative ? createKorriNativeAdapter() : createGamepadAdapter())
   createSpatialFocusController(bus)
 
   const bridge = window.KorriNative
