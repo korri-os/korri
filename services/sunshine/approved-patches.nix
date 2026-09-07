@@ -152,12 +152,21 @@ rec {
     sha256 = "601a6ce16580902dae652920f4af819fa19afb7aa430b1c65860b3c8f99b9086";
   };
 
+  # Scope the stdin pairing fix to the device profile while validating it;
+  # leave the approved x86 build unchanged.
+  stdinPinPatch = {
+    name = "0024-fix-stdin-pin-pairing-return.patch";
+    path = ./patches/0024-fix-stdin-pin-pairing-return.patch;
+    sha256 = "eeab5c78eea1c2c1f72277fb370681b5352b28da75a58668bfda043836b28020";
+  };
+
   rkmppPatches = [
     rkmppPatch
     rkmppZeroCopyPatch
+    stdinPinPatch
   ];
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "4e303ce01f551b3edebb96a987d91df9facd135f47d42dd63da494a265597ce9";
+  rkmppPatchSetSha256 = "d411a243ed42568e270b6ea77a2938a108334f26db95605721d141e95eafbad7";
 }
