@@ -31,7 +31,7 @@ Android integration, a plugin marketplace, a general permission vocabulary, back
 
 ## Constraints and grounding
 
-The user selected Garnix for hosted builds and caching. Cache setup remains a separate workstream.
+The earlier Garnix choice is no longer viable. Its official shutdown notice scheduled hosted-service closure and artifact deletion for July 15, 2026: https://garnix.io/blog/shutting-down/. Replacement hosting remains unresolved. GitHub-based publication and plugin repositories are under discussion.
 
 Concurrent commit `45694bb9` exports the unchanged pinned nixpkgs Tailscale package as `packages.<system>.korri-tailscale`. `plugins/tailscale/README.md` records its package boundary. Use that real producer rather than introducing another source pin.
 
@@ -66,6 +66,20 @@ The user selected owner-approved installation of trusted system software. The in
 The installation behavior and trust model are selected. An isolated VM now demonstrates basic service installation through systemd portable services. This supports that mechanism as the next implementation candidate. It does not approve a final package contract or replace the remaining acceptance tests.
 
 The previous proposed `services.korriPlugins` options, selector directory, units file, and CLI are not ratified by this brief. Paths, schemas, and policy formats must follow verified producers and consumers or an explicit user choice.
+
+## Plugin repository sources
+
+The app supports multiple plugin repositories. Here, a plugin repository supplies plugin listings and release references, not merely a plugin's source code.
+
+- The app includes the official repository as a built-in source.
+- The project owner alone curates the official repository and adds packages to it.
+- Users can add their own repository sources without admission to the official repository.
+- Adding a user repository does not add its packages to the official repository. Each repository retains its own publishing authority.
+- No community-submission workflow is required for the official repository.
+
+Repository registration does not replace owner approval for privileged software installation. The selected trust model above still applies.
+
+Repository addresses, catalog schemas, overlapping package identities, and source-trust delivery remain unresolved. This decision does not select their formats or precedence rules.
 
 ## Open questions
 
