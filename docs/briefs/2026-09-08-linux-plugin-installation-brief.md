@@ -83,11 +83,15 @@ The user selected catalogs served over HTTPS by any host. All repository sources
 
 Repository registration does not replace owner approval for privileged software installation. The selected trust model above still applies.
 
-The official catalog address, catalog schema, overlapping package identities, and source-trust delivery remain unresolved. The HTTPS decision does not select their formats or precedence rules.
+The user selected trust in the HTTPS repository location, without a separate catalog-signing key. Adding the URL trusts the catalog served by that host. Downloaded packages must match the content hashes in that trusted catalog. Hashes detect mismatched downloads, not a malicious publisher. A compromised hosting account can replace both the catalog and its packages. This limitation is accepted for the selected model.
+
+This decision does not disable Nix store signature checks where Nix imports are used. It selects how the app trusts repository catalogs, not an exception to the existing Nix download policy.
+
+The official catalog address, catalog schema, and overlapping package identities remain unresolved. These decisions do not select their formats or precedence rules.
 
 ## Open questions
 
-Resolve package trust, explicit approval delivery, compatibility checks, update and recovery behavior, and state handling during removal. Test authenticated networking, firewall and DNS integration, Nix garbage collection, and the actual handheld kernels. Keep downloaded images reachable while services depend on them.
+Resolve the exact package-validation contract, explicit approval delivery, compatibility checks, update and recovery behavior, and state handling during removal. Test authenticated networking, firewall and DNS integration, Nix garbage collection, and the actual handheld kernels. Keep downloaded images reachable while services depend on them.
 
 ## Mechanism research
 
