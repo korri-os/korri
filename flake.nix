@@ -49,6 +49,7 @@
       nixosConfigurations = {
         rg353m = rg353m.configuration;
         rg353m-portal-preview = rg353m.portalPreviewConfiguration;
+        rg353m-rescue = rg353m.rescueConfiguration;
         odin2portal = odin2portal.configuration;
       };
     }
@@ -138,6 +139,7 @@
           rg353m-sunshine-ffmpeg-rkmpp = rg353m.sunshineFfmpegRkmpp;
           rg353m-sunshine-rkmpp = rg353m.sunshineRkmpp;
           rg353m-sd-image = rg353m.sdImage;
+          rg353m-rescue-sd-image = rg353m.rescueSdImage;
           rg353m-uboot = rg353m.uboot;
           odin2portal-kernel = odin2portal.kernel;
           odin2portal-rescue-kernel = odin2portal.rescueKernel;
