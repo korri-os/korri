@@ -71,6 +71,8 @@ The previous proposed `services.korriPlugins` options, selector directory, units
 
 The app supports multiple plugin repositories. Here, a plugin repository supplies plugin listings and release references, not merely a plugin's source code.
 
+The user selected catalogs served over HTTPS by any host. All repository sources follow the same catalog contract. GitHub is a possible host, not a required repository type. Device-side discovery and installation must not depend on GitHub-specific APIs.
+
 - The app includes the official repository as a built-in source.
 - The project owner alone curates the official repository and adds packages to it.
 - Users can add their own repository sources without admission to the official repository.
@@ -79,7 +81,7 @@ The app supports multiple plugin repositories. Here, a plugin repository supplie
 
 Repository registration does not replace owner approval for privileged software installation. The selected trust model above still applies.
 
-Repository addresses, catalog schemas, overlapping package identities, and source-trust delivery remain unresolved. This decision does not select their formats or precedence rules.
+The official catalog address, catalog schema, overlapping package identities, and source-trust delivery remain unresolved. The HTTPS decision does not select their formats or precedence rules.
 
 ## Open questions
 
