@@ -75,7 +75,7 @@ export function PicoSettings({
           <PicoNotice
             actions={[{ label: "OK", onPress: () => setNoKeyboard(false) }]}
             kicker="NO KEYBOARD YET"
-            message="Pico cannot type this yet. Change it from another surface for now."
+            message="This surface cannot type yet. Change it from another surface for now."
             tone="info"
           />
         </div>
