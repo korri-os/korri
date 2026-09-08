@@ -28,14 +28,14 @@ const open = (overrides: Partial<SurfaceModel> = {}) => {
 describe("opening settings", () => {
   test("the system button opens them over the library", () => {
     open()
-    expect(screen.getByText("PICO ▸ SETTINGS")).toBeTruthy()
-    expect(screen.queryByText("PICO ▸ LIBRARY")).toBeNull()
+    expect(screen.getByText("SETTINGS")).toBeTruthy()
+    expect(screen.queryByText("LIBRARY")).toBeNull()
   })
 
   test("back returns to the library without telling Korri", () => {
     const { host } = open()
     act(() => host.press("back"))
-    expect(screen.getByText("PICO ▸ LIBRARY")).toBeTruthy()
+    expect(screen.getByText("LIBRARY")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 
@@ -132,7 +132,7 @@ describe("running an action", () => {
     fireEvent.click(screen.getByRole("button", { name: /Forget this device/ }))
     act(() => host.press("back"))
     expect(screen.queryByText("FORGET EVERYTHING?")).toBeNull()
-    expect(screen.getByText("PICO ▸ SETTINGS")).toBeTruthy()
+    expect(screen.getByText("SETTINGS")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 })

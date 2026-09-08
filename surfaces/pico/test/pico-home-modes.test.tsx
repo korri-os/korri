@@ -43,7 +43,7 @@ describe("cycling the mode", () => {
   test("tells the user which mode they are in", () => {
     const host = open()
     act(() => host.press("menu"))
-    expect(screen.getByText("PICO ▸ LIBRARY · GRID")).toBeTruthy()
+    expect(screen.getByText("LIBRARY · GRID")).toBeTruthy()
   })
 
   test("never asks Korri for anything to change mode", () => {
@@ -80,7 +80,7 @@ describe("the grid", () => {
     const host = grid()
     fireEvent.click(screen.getByRole("button", { name: /Spelunky/ }))
     expect(host.calls).toEqual([])
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
   })
 
   test("holds games Korri did not group under one honest heading", () => {

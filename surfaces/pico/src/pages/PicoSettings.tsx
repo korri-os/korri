@@ -64,7 +64,7 @@ export function PicoSettings({
   }
 
   return (
-    <PicoScreenShell backdrop="none" clockLabel={clockLabel} hints={HINTS} label="PICO ▸ SETTINGS">
+    <PicoScreenShell backdrop="none" clockLabel={clockLabel} hints={HINTS} label="SETTINGS">
       <PicoSettingsPanel
         onActivate={activate}
         onDismissProblem={onDismissProblem}

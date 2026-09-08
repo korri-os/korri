@@ -9,6 +9,9 @@ import { PicoCart } from "../molecules/PicoCart"
  * showing what you could be playing, and everything here is a game already on
  * the device.
  *
+ * No wordmark: the surface does not announce itself to the person holding the
+ * device. What is on screen is their library.
+ *
  * Marked as one image for assistive technology: it is decorative motion, and
  * announcing eight cart labels to someone who cannot see it drifting would be
  * noise. The screen underneath is what they are actually navigating.
@@ -17,7 +20,6 @@ export function PicoAttract({ games }: { readonly games: readonly PicoShelfGame[
   const carts = games.slice(0, 6)
   return (
     <div aria-label="Attract" className="pico-attract" role="img">
-      <span className="pico-attract-wordmark">PICO</span>
       <div className="pico-attract-rail">
         {[0, 1].map((copy) => (
           <div className="pico-attract-set" key={copy}>

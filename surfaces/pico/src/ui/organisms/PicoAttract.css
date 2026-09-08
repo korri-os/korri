@@ -5,7 +5,7 @@
 	display: grid;
 	/* An explicit column that cannot exceed the screen: the rail is deliberately
 	 * wider than the display, and a max-content column would let it push the
-	 * wordmark and the hint off to one side. */
+	 * hint off to one side. */
 	grid-template-columns: minmax(0, 1fr);
 	grid-template-rows: 1fr auto 1fr;
 	align-items: center;
@@ -14,15 +14,6 @@
 	overflow: hidden;
 	background: var(--pico-bg);
 	animation: pico-rise 400ms steps(4, end) both;
-}
-
-.pico-attract-wordmark {
-	align-self: end;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xl);
-	color: var(--pico-ink);
-	letter-spacing: 0.25em;
-	text-shadow: var(--pico-edge) var(--pico-edge) 0 var(--pico-cast-shadow);
 }
 
 .pico-attract-rail {

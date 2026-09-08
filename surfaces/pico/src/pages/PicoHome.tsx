@@ -23,9 +23,9 @@ const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 /* The mode is in the breadcrumb rather than a badge of its own: the user is
  * already reading that line to know where they are. */
 const MODE_LABELS: Record<PicoHomeMode, string> = {
-  shelf: "PICO ▸ LIBRARY",
-  grid: "PICO ▸ LIBRARY · GRID",
-  hero: "PICO ▸ LIBRARY · HERO",
+  shelf: "LIBRARY",
+  grid: "LIBRARY · GRID",
+  hero: "LIBRARY · HERO",
 }
 
 /**

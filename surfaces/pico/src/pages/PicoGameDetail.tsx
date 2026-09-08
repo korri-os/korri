@@ -52,7 +52,7 @@ export function PicoGameDetail({
       backdrop="stars"
       clockLabel={clockLabel}
       hints={placing === undefined ? DETAIL_HINTS : QUIET_HINTS}
-      label="PICO ▸ GAME"
+      label="GAME"
     >
       <PicoKeyArtStage src={game.wideArtUrl} />
       {placing === undefined ? (

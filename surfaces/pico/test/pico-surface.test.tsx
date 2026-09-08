@@ -76,7 +76,7 @@ describe("launching", () => {
     fireEvent.click(screen.getByRole("button", { name: /Celeste Classic/ }))
 
     expect(host.calls).toEqual([])
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Celeste Classic" })).toBeTruthy()
   })
 })
@@ -130,8 +130,8 @@ describe("a game's own screen", () => {
 
     act(() => host.press("back"))
 
-    expect(screen.queryByText("PICO ▸ GAME")).toBeNull()
-    expect(screen.getByText("PICO ▸ LIBRARY")).toBeTruthy()
+    expect(screen.queryByText("GAME")).toBeNull()
+    expect(screen.getByText("LIBRARY")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 
@@ -286,7 +286,7 @@ describe("the Back button", () => {
 
     // The question is gone; the game's screen is still up.
     expect(screen.queryByText("PLAY WHERE?")).toBeNull()
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 
@@ -339,7 +339,7 @@ describe("presentations Pico does not implement", () => {
     )
 
     expect(screen.getByRole("dialog", { name: /Hollow Knight/ })).toBeTruthy()
-    expect(screen.queryByText("PICO ▸ LIBRARY")).toBeNull()
+    expect(screen.queryByText("LIBRARY")).toBeNull()
   })
 })
 

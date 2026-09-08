@@ -12,7 +12,7 @@ export default function PicoScreenShellPart() {
         { hintKey: "a", label: "PLAY" },
         { hintKey: "b", label: "BACK" },
       ]}
-      label="PICO ▸ LIBRARY"
+      label="LIBRARY"
     >
       <span />
     </PicoScreenShell>

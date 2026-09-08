@@ -63,7 +63,7 @@ describe("what the hero states", () => {
     const heroSection = screen.getByRole("region", { name: "Hollow Knight" })
     fireEvent.click(heroSection.querySelector("button")!)
     expect(host.calls).toEqual([])
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
   })
 })
 
@@ -87,6 +87,6 @@ describe("what can be resumed", () => {
     const resume = screen.getByRole("list", { name: "Resume" })
     fireEvent.click(resume.querySelector("button")!)
     expect(host.calls).toEqual([])
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
   })
 })

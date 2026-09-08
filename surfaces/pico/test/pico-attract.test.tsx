@@ -7,7 +7,7 @@
  * someone is holding the device.
  */
 import { afterEach, describe, expect, jest, test } from "bun:test"
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { PICO_ATTRACT_AFTER_MS } from "../src/pico-attract"
@@ -89,6 +89,12 @@ describe("what it shows", () => {
   test("the library, not an invented advertisement", () => {
     idle()
     const attract = screen.getByRole("img", { name: "Attract" })
-    expect(attract.textContent).toContain("PICO")
+    expect(within(attract).getAllByLabelText(/Celeste Classic/).length).toBeGreaterThan(0)
+  })
+
+  test("no wordmark: the surface does not name itself", () => {
+    idle()
+    const attract = screen.getByRole("img", { name: "Attract" })
+    expect(attract.textContent).not.toContain("PICO")
   })
 })

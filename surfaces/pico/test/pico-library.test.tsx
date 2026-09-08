@@ -28,13 +28,13 @@ const type = (word: string) => {
 describe("opening the browser", () => {
   test("the options button opens it over the shelf", () => {
     open()
-    expect(screen.getByText("PICO ▸ FIND")).toBeTruthy()
+    expect(screen.getByText("FIND")).toBeTruthy()
   })
 
   test("back returns to the shelf without telling Korri", () => {
     const host = open()
     act(() => host.press("back"))
-    expect(screen.getByText("PICO ▸ LIBRARY")).toBeTruthy()
+    expect(screen.getByText("LIBRARY")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 
@@ -124,7 +124,7 @@ describe("choosing a result", () => {
     type("SP")
     fireEvent.click(screen.getByRole("button", { name: /Spelunky/ }))
     expect(host.calls).toEqual([])
-    expect(screen.getByText("PICO ▸ GAME")).toBeTruthy()
+    expect(screen.getByText("GAME")).toBeTruthy()
   })
 })
 
