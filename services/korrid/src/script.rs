@@ -13,7 +13,11 @@
 //! transpiled in-process at load, so adding or editing a plugin never requires
 //! rebuilding korrid or the app that embeds it.
 
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use oxc::allocator::Allocator;
 use oxc::codegen::Codegen;
@@ -25,6 +29,9 @@ use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type,
 
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
+    if source.len() > 128 * 1024 {
+        return Err("plugin source exceeds 128 KiB".into());
+    }
     let allocator = Allocator::default();
     let source_type = SourceType::ts();
 
@@ -57,7 +64,16 @@ pub fn transpile_ts(source: &str) -> Result<String, String> {
 /// The sandbox is empty: no module loader, no host bindings, no I/O. A plugin
 /// that tries to reach the outside world finds nothing there.
 pub fn eval_plugin(source: &str) -> Result<String, String> {
+    if source.len() > 512 * 1024 {
+        return Err("plugin JavaScript exceeds 512 KiB".into());
+    }
     let runtime = Runtime::new().map_err(|error| error.to_string())?;
+    // External declarations run before permission approval. Resource limits
+    // therefore belong to the empty interpreter, not to the installed payload.
+    runtime.set_memory_limit(16 * 1024 * 1024);
+    runtime.set_max_stack_size(512 * 1024);
+    let deadline = Instant::now() + Duration::from_millis(250);
+    runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
     context.with(|ctx| {
@@ -75,11 +91,38 @@ pub fn eval_plugin(source: &str) -> Result<String, String> {
             .eval(source)
             .map_err(|error| format!("plugin evaluation failed: {error}"))?;
 
-        let declaration =
-            json_data_from_js(&value, "$", 0, &plain_object_prototype, &object_to_string)?;
+        let mut budget = OutputBudget {
+            nodes: 8192,
+            string_bytes: 512 * 1024,
+        };
+        let declaration = json_data_from_js(
+            &value,
+            "$",
+            0,
+            &plain_object_prototype,
+            &object_to_string,
+            &mut budget,
+        )?;
         serde_json::to_string(&declaration)
             .map_err(|error| format!("plugin result not serialisable: {error}"))
     })
+}
+
+// QuickJS accounts for shared strings once. Rust's JSON tree copies them, so
+// its output needs a separate budget to prevent amplification outside the VM.
+struct OutputBudget {
+    nodes: usize,
+    string_bytes: usize,
+}
+
+impl OutputBudget {
+    fn string(&mut self, value: &str) -> Result<(), String> {
+        self.string_bytes = self
+            .string_bytes
+            .checked_sub(value.len())
+            .ok_or_else(|| "plugin result exceeds its 512 KiB string budget".to_owned())?;
+        Ok(())
+    }
 }
 
 fn json_data_from_js<'js>(
@@ -88,7 +131,12 @@ fn json_data_from_js<'js>(
     depth: usize,
     plain_object_prototype: &Object<'js>,
     object_to_string: &Function<'js>,
+    budget: &mut OutputBudget,
 ) -> Result<serde_json::Value, String> {
+    budget.nodes = budget
+        .nodes
+        .checked_sub(1)
+        .ok_or_else(|| "plugin result exceeds its 8192 node budget".to_owned())?;
     if depth > 64 {
         return Err(format!(
             "plugin result is not JSON data at {path}: nesting exceeds 64 levels"
@@ -115,19 +163,26 @@ fn json_data_from_js<'js>(
             })?;
             Ok(serde_json::Value::Number(number))
         }
-        Type::String => value
-            .get::<String>()
-            .map(serde_json::Value::String)
-            .map_err(|error| format!("plugin result not inspectable at {path}: {error}")),
+        Type::String => {
+            let string = value
+                .get::<String>()
+                .map_err(|error| format!("plugin result not inspectable at {path}: {error}"))?;
+            budget.string(&string)?;
+            Ok(serde_json::Value::String(string))
+        }
         Type::Array => {
             let array = value
                 .clone()
                 .into_array()
                 .expect("value type was checked as an array");
+            if array.len() > budget.nodes {
+                return Err("plugin result exceeds its 8192 node budget".into());
+            }
             reject_symbol_properties(array.as_object(), path)?;
             let keys: BTreeSet<String> = array
                 .as_object()
                 .keys::<String>()
+                .take(8193)
                 .collect::<rquickjs::Result<_>>()
                 .map_err(|error| format!("plugin result not inspectable at {path}: {error}"))?;
             let expected_keys: BTreeSet<String> =
@@ -148,6 +203,7 @@ fn json_data_from_js<'js>(
                     depth + 1,
                     plain_object_prototype,
                     object_to_string,
+                    budget,
                 )?);
             }
             Ok(serde_json::Value::Array(items))
@@ -177,6 +233,7 @@ fn json_data_from_js<'js>(
             for property in object.props::<String, Value>() {
                 let (key, property_value) = property
                     .map_err(|error| format!("plugin result not inspectable at {path}: {error}"))?;
+                budget.string(&key)?;
                 let property_path = format!("{path}.{key}");
                 properties.insert(
                     key,
@@ -186,6 +243,7 @@ fn json_data_from_js<'js>(
                         depth + 1,
                         plain_object_prototype,
                         object_to_string,
+                        budget,
                     )?,
                 );
             }
@@ -269,6 +327,16 @@ mod tests {
 
         assert!(json.contains("\"kind\":\"catalog\""), "got: {json}");
         assert!(json.contains("\"routes\""), "got: {json}");
+    }
+
+    #[test]
+    fn shared_strings_cannot_expand_into_unbounded_rust_output() {
+        let result =
+            eval_plugin("const value = 'x'.repeat(10000); ({values: Array(1000).fill(value)})");
+        assert!(
+            result.is_err(),
+            "output expansion must be bounded outside QuickJS too"
+        );
     }
 
     #[test]

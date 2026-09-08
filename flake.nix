@@ -42,6 +42,7 @@
         korrid-linux-device = import ./services/korrid/nixos-module.nix { korri = self; };
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
         korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
+        korri-plugin-host = import ./services/korrid/plugin-host/nixos-module.nix { korri = self; };
       };
     in
     {
@@ -64,6 +65,10 @@
             android_sdk.accept_license = true;
             allowUnfree = true;
           };
+        };
+        pluginHost = import ./services/korrid/plugin-host {
+          inherit pkgs crane;
+          hostModule = nixosModules.korri-plugin-host;
         };
         korridPackage = import ./services/korrid/package.nix {
           inherit pkgs proseql crane;
@@ -110,13 +115,15 @@
               nix run .#korri-dev -- [--physical]
                   Run isolated korrid and inputd development processes without host mutation.
               nix run .#korri-bundle-select -- COMMAND
-                  Select or roll back one immutable Korri bundle without NixOS activation.'';
+                  Select or roll back one immutable Korri bundle without NixOS activation.
+              ${pluginHost.help}'';
           })
-          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux inputplumber.apps;
+          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
         devShells.android = import ./clients/android/devshell.nix { inherit pkgs; };
         devShells.portal = import ./clients/portal/devshell.nix { inherit pkgs; };
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
         devShells.inputd = import ./services/inputd/devshell.nix { inherit pkgs; };
+        devShells.plugin-host = pluginHost.devShell;
         devShells.retroarch = import ./plugins/retroarch/android/devshell.nix { inherit pkgs; };
         packages = {
           korrid = korridPackage;
@@ -125,11 +132,11 @@
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.packages
+          // pluginHost.packages
           // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
-            korri-tailscale = pkgs.tailscale;
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -157,6 +164,7 @@
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
+          // pluginHost.checks
           // {
             korri-device-cache = import ./nix/device-cache/module-check.nix {
               inherit pkgs;

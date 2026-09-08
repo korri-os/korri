@@ -5,9 +5,11 @@ device Korri targets. A plugin is source text that evaluates to a declaration;
 korrid performs any resulting effects itself.
 
 Plugin source is evaluated at runtime rather than compiled into native code.
-Bundled first-party source still ships through the normal korrid build; future
-external plugin sources can be evaluated without a native rebuild once a real
-source/installation policy exists.
+Bundled first-party source still ships through the normal korrid build. The
+Linux administrator CLI in `plugin-host/` now imports independently packaged
+external daemon declarations. It uses this same interpreter and requires
+exact-package approval before native execution. This does not add daemon
+contributions to the game-route registry below.
 
 ## Shape
 
@@ -206,7 +208,12 @@ Fixed in `devshell.nix`, but they return on a new machine or a version bump.
   `AGENTS.md`).
 - **Imports between plugin files.** There is no module resolver; a plugin is
   currently a single self-contained file.
-- **Runaway plugins.** No execution limits are set: an infinite loop would hang
-  the calling thread. QuickJS supports interrupt handlers and memory limits;
-  neither is configured yet. This must be settled before any plugin arrives
-  from outside the device.
+
+## Interpreter limits
+
+TypeScript source is bounded to 128 KiB. Generated JavaScript is bounded to
+512 KiB. Each QuickJS runtime has a 16 MiB memory limit, a 512 KiB stack limit,
+and a 250 ms interrupt deadline. The existing empty I/O sandbox remains.
+`plugin-host/tests/declaration.rs` exercises nonterminating and memory-growing
+source through the real evaluator. These limits govern declarations, not the
+separately approved native daemon.

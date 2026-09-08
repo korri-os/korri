@@ -6,6 +6,8 @@ artifact: brief
 
 # Linux plugin installation
 
+Implementation update: [runtime plugin host](../research/runtime-plugin-host.md) records the administrator CLI, concrete declaration contract, authenticated VM evidence, and the choice of a restricted systemd adapter instead of this brief's portable-service candidate. The sections below preserve the earlier research and its limits.
+
 ## Chosen thing
 
 A Linux device that has never encountered Tailscale can install, enable, update, and remove it without compilation or a NixOS system update. Tailscale remains optional.
