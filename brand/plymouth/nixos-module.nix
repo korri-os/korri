@@ -109,7 +109,16 @@ in
 
         # Upstream quits without --retain-splash, which blanks the screen the
         # moment Plymouth exits and leaves the panel dark until Chromium paints.
-        plymouth-quit.serviceConfig.ExecStart = lib.mkForce "-${plymouth}/bin/plymouth quit --retain-splash";
+        #
+        # plymouth-quit.service comes from the plymouth package, so this lands
+        # in a drop-in, and ExecStart in a drop-in appends. The empty first
+        # entry emits a bare `ExecStart=` that clears the package's command;
+        # without it systemd runs both, the plain quit wins, and the splash is
+        # gone before the retained one is reached.
+        plymouth-quit.serviceConfig.ExecStart = [
+          ""
+          "-${plymouth}/bin/plymouth quit --retain-splash"
+        ];
       }
 
       # Sway must not race Plymouth for DRM master. Only where the host that

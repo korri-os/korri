@@ -91,5 +91,13 @@ pkgs.testers.runNixOSTest {
 
     machine.wait_for_unit("multi-user.target")
     machine.succeed("journalctl -b -u korri-boot-splash-handoff | grep -q 'Finished'")
+
+    # plymouth-quit.service ships with the plymouth package, so overriding
+    # ExecStart lands in a drop-in and appends unless the package's command is
+    # cleared first. Two commands means the plain `quit` runs, the screen
+    # blanks, and the wordmark is never held for the compositor.
+    quit = machine.succeed("systemctl show plymouth-quit.service -p ExecStart").strip()
+    assert quit.count("argv[]=") == 1, f"expected exactly one ExecStart, got: {quit}"
+    assert "--retain-splash" in quit, f"quit must retain the splash, got: {quit}"
   '';
 }
