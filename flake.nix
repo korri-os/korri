@@ -159,6 +159,9 @@
               inherit pkgs nixpkgs;
               korri = self;
             };
+            korri-boot-splash = import ./brand/plymouth/module-check.nix {
+              inherit pkgs nixpkgs;
+            };
           }
         );
       }
