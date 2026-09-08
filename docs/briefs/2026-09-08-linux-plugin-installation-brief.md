@@ -87,7 +87,9 @@ The user selected trust in the HTTPS repository location, without a separate cat
 
 This decision does not disable Nix store signature checks where Nix imports are used. It selects how the app trusts repository catalogs, not an exception to the existing Nix download policy.
 
-The official catalog address, catalog schema, and overlapping package identities remain unresolved. These decisions do not select their formats or precedence rules.
+When multiple repositories offer the same plugin, the user explicitly chooses the repository. The app shows the sources separately rather than selecting by repository order or a globally highest version. Installation records the chosen source. Updates remain tied to it until the user explicitly switches repositories. An unavailable source does not authorize replacement from another source.
+
+The official catalog address and catalog schema remain unresolved. Source selection does not rename existing plugin identities or permit multiple active installations of one identity.
 
 ## Open questions
 
