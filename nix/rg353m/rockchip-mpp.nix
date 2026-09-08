@@ -17,7 +17,7 @@ stdenv.mkDerivation {
     hash = "sha256-kr+4pcV9Ch2oUg3DFUJ5WrvV0xCV2HfO9o/KABg/n3Q=";
   };
 
-  patches = [ ./patches/rockchip-mpp-card0-first.patch ];
+  patches = [ ./patches/rockchip-mpp-configurable-drm-device.patch ];
 
   nativeBuildInputs = [
     cmake

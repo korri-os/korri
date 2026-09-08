@@ -1188,6 +1188,17 @@ in
         LD_LIBRARY_PATH = "/run/opengl-driver/lib";
       }
       //
+        lib.optionalAttrs (cfg.sunshine.encoder == "rkmpp" && cfg.compositor.drmDevice != null)
+          {
+            # RKMPP allocates dumb buffers from a DRM device and otherwise takes
+            # the first of /dev/dri/card0 and /dev/dri/renderD128 that opens,
+            # without checking that it can allocate. Card numbers follow probe
+            # order, so when a render-only GPU probes first both of those are the
+            # GPU and every allocation fails. Name the display controller, which
+            # is the same device the compositor drives.
+            mpp_drm_dev = cfg.compositor.drmDevice;
+          }
+      //
         lib.optionalAttrs
           (builtins.elem cfg.sunshine.encoder [
             "nvenc"
