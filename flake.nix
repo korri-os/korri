@@ -125,6 +125,7 @@
           inputplumber.packages // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
+            korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {

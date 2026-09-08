@@ -13,6 +13,7 @@ in
 {
   imports = [
     "${modulesPath}/installer/sd-card/sd-image.nix"
+    ../../brand/plymouth/nixos-module.nix
     ./expand-root.nix
     ./browser-bench.nix
     ./gpu.nix
@@ -23,6 +24,15 @@ in
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
+
+  # The panel is 640x480 at 60 Hz (rg353v2_mode: 24150 kHz / (762 x 528)), so
+  # the splash renders at 60 fps. `quiet` stays off until this device is seen
+  # to boot with the splash: the panel is the only debugging channel it has.
+  services.korri.bootSplash = {
+    enable = true;
+    refreshRate = 60;
+    quiet = false;
+  };
 
   boot = {
     consoleLogLevel = 7;

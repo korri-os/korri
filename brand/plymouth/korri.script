@@ -1,0 +1,186 @@
+# Korri boot splash.
+#
+#   sprout   the leaf grows from its stem, overshoots, settles
+#   sway     it leans gently for as long as boot takes
+#   fall     on `plymouth display-message --text=korri:wordmark`, sent by the
+#            compositor unit as it starts, the leaf drops onto the i and
+#            "korri" snaps in one glyph at a time, from the i outwards
+#   quit     `plymouth quit --retain-splash` snaps to the finished wordmark
+#            and that frame is held until the portal paints the same thing
+#
+# The script plugin has no end animation: on quit it calls the quit function
+# once, redraws once and exits. So the wordmark is driven by the message, and
+# quit only has to guarantee the final frame.
+#
+# Geometry comes from geometry.script, measured from the brand SVGs at build
+# time. Timings are in milliseconds and converted with the refresh rate, so
+# the animation is the same length whether it runs at 60 or 120 fps.
+
+Window.SetBackgroundTopColor (0, 0, 0);
+Window.SetBackgroundBottomColor (0, 0, 0);
+Plymouth.SetRefreshRate (REFRESH_RATE);
+
+# --- timings, ms (the prototype's T table) ---------------------------------
+global.MS_GROW = 900;
+global.MS_GROW_ROT = -30;      # degrees the sprout leans at t=0
+global.MS_SWAY_FROM = 700;
+global.MS_SWAY_FADE = 600;
+global.SWAY_AMP = 1.5;         # degrees
+global.MS_SWAY_PERIOD = 2600;
+global.MS_WINDUP = 160;
+global.WINDUP_AMP = 6;         # degrees
+global.MS_FALL = 240;
+global.MS_SQUASH = 90;
+global.SQUASH_AMT = 0.12;
+global.MS_GLYPH_STEP = 40;     # per glyph in the snap-in
+
+global.LEAF_FRAC = 0.3333;     # leaf height as a fraction of panel height
+global.WORD_FRAC = 0.6;        # wordmark width as a fraction of panel width
+global.ROT_STEPS = 64;         # distinct rotations cached over the sway range
+
+global.frame = 0;
+global.signal_frame = -1;
+global.quit = 0;
+global.rot_cache;
+
+fun ms () { return global.frame * 1000 / REFRESH_RATE; }
+fun clamp (v) { if (v < 0) return 0; if (v > 1) return 1; return v; }
+fun lerp (a, b, t) { return a + (b - a) * t; }
+fun ease_out (t) { local.u = 1 - t; return 1 - u * u * u; }
+fun ease_out_back (t) {
+    local.u = t - 1;
+    return 1 + 2.70158 * u * u * u + 1.70158 * u * u;
+  }
+
+# --- layout, a pure function of the window ---------------------------------
+
+global.W = Window.GetWidth ();
+global.H = Window.GetHeight ();
+global.wm_scale = (WORD_FRAC * W) / WM_REF_W;
+global.wm_x = W / 2 - (WORD_FRAC * W) / 2;
+global.wm_y = H / 2 - (WM_REF_H * wm_scale) / 2;
+
+# Leaf scale at each step: centred, then seated on the i.
+global.s1 = (H * LEAF_FRAC) / LEAF_H_PX;
+global.s2 = (WM_LEAF_H * wm_scale) / LEAF_H_PX;
+# Where the petiole must land at each step.
+global.p1x = W / 2 + (LEAF_PET_X - LEAF_BC_X) * s1;
+global.p1y = H / 2 + (LEAF_PET_Y - LEAF_BC_Y) * s1;
+global.p2x = wm_x + WM_PET_X * wm_scale;
+global.p2y = wm_y + WM_PET_Y * wm_scale;
+
+global.leaf_image = Image ("leaf.png");
+global.leaf = Sprite ();
+leaf.SetZ (10);
+
+# Glyphs share the wordmark canvas, so they all sit at the same origin.
+global.glyphs;
+for (i = 0; i < GLYPHS; i++) {
+    local.img = Image ("glyph-" + i + ".png");
+    glyphs[i].sprite = Sprite (img.Scale (WORD_FRAC * W, WM_REF_H * wm_scale));
+    glyphs[i].sprite.SetX (wm_x);
+    glyphs[i].sprite.SetY (wm_y);
+    glyphs[i].sprite.SetZ (5);
+    glyphs[i].sprite.SetOpacity (0);
+  }
+
+# --- the leaf, scaled and rotated about its petiole ------------------------
+#
+# Image.Rotate turns about the image centre and keeps the canvas size, so the
+# petiole moves; put it back by hand. Rotations are cached by step, because
+# the sway runs for the whole boot and every Rotate allocates a new buffer.
+
+fun draw_leaf (scale_x, scale_y, degrees, px, py) {
+    local.w = LEAF_IMG_W * scale_x;
+    local.h = LEAF_IMG_H * scale_y;
+    local.step = Math.Int (degrees * 2 + 0.5);   # 0.5 degree buckets
+    local.key = step + "@" + Math.Int (w) + "x" + Math.Int (h);
+    local.img = rot_cache[key];
+    if (!img) {
+        img = leaf_image.Scale (w, h);
+        if (step != 0) img = img.Rotate (step / 2 * Math.Pi () / 180);
+        rot_cache[key] = img;
+      }
+    leaf.SetImage (img);
+
+    # Petiole offset from the image centre, rotated with the image.
+    local.vx = (LEAF_PET_X - LEAF_IMG_W / 2) * scale_x;
+    local.vy = (LEAF_PET_Y - LEAF_IMG_H / 2) * scale_y;
+    local.a = step / 2 * Math.Pi () / 180;
+    local.rx = vx * Math.Cos (a) - vy * Math.Sin (a);
+    local.ry = vx * Math.Sin (a) + vy * Math.Cos (a);
+    leaf.SetX (px - w / 2 - rx);
+    leaf.SetY (py - h / 2 - ry);
+  }
+
+# --- one frame -------------------------------------------------------------
+
+fun refresh () {
+    global.frame++;
+    local.t = ms ();
+    local.grow = clamp (t / MS_GROW);
+    local.sway_in = clamp ((t - MS_SWAY_FROM) / MS_SWAY_FADE);
+    local.k = 0;              # 0 centred, 1 seated on the i
+    local.extra_rot = 0;
+    local.squash = 1;
+    local.lit = 0;            # glyphs shown
+
+    if (quit) {
+        k = 1;
+        lit = GLYPHS;
+      }
+    else if (signal_frame >= 0) {
+        local.s = t - signal_frame * 1000 / REFRESH_RATE;
+        if (s < MS_WINDUP) {
+            extra_rot = WINDUP_AMP * Math.Sin (Math.Pi () * s / MS_WINDUP);
+          }
+        else if (s < MS_WINDUP + MS_FALL) {
+            local.f = (s - MS_WINDUP) / MS_FALL;
+            k = f * f;                       # ease in: gravity
+            extra_rot = WINDUP_AMP * (1 - f) * -0.5;
+          }
+        else {
+            k = 1;
+            local.landed = s - MS_WINDUP - MS_FALL;
+            if (landed < MS_SQUASH)
+                squash = 1 - SQUASH_AMT * Math.Sin (Math.Pi () * landed / MS_SQUASH);
+            lit = 1 + Math.Int (landed / MS_GLYPH_STEP);
+            if (lit > GLYPHS) lit = GLYPHS;
+          }
+      }
+
+    local.sway = SWAY_AMP * sway_in * (1 - k) * Math.Sin (2 * Math.Pi () * t / MS_SWAY_PERIOD);
+    local.rot = (1 - grow) * MS_GROW_ROT + sway + extra_rot;
+    local.scale = ease_out_back (grow);
+    if (scale < 0.001) scale = 0.001;
+    if (quit) { scale = 1; rot = 0; }
+
+    local.s = lerp (s1, s2, k) * scale;
+    draw_leaf (s / squash, s * squash, rot, lerp (p1x, p2x, k), lerp (p1y, p2y, k));
+
+    # Glyphs light up from the i outwards: the last path is the i stem.
+    for (i = 0; i < GLYPHS; i++) {
+        if (GLYPHS - i <= lit)
+            glyphs[i].sprite.SetOpacity (1);
+        else
+            glyphs[i].sprite.SetOpacity (0);
+      }
+  }
+
+Plymouth.SetRefreshFunction (refresh);
+
+# The compositor sends `korri:wordmark` as it starts. Any other message is
+# ignored: this splash shows no text.
+fun display_message (text) {
+    if (text == "korri:wordmark" && signal_frame < 0)
+        global.signal_frame = global.frame;
+  }
+Plymouth.SetDisplayMessageFunction (display_message);
+
+# Quit redraws exactly once, so make that frame the finished wordmark
+# whether or not the fall had time to run.
+fun on_quit () {
+    global.quit = 1;
+    refresh ();
+  }
+Plymouth.SetQuitFunction (on_quit);
