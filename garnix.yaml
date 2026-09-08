@@ -1,0 +1,22 @@
+# Schema and ARM support: https://garnix.io/docs/ci/yaml_config/
+# List exact outputs. Do not opt in kernels, images, dev shells, or VM checks.
+builds:
+  include:
+    - packages.x86_64-linux.korrid
+    - packages.x86_64-linux.korri-inputd
+    - packages.x86_64-linux.inputplumber-korri
+    - packages.x86_64-linux.korri-bundle
+    - packages.x86_64-linux.sunshine-korri
+    - packages.aarch64-linux.korrid
+    - packages.aarch64-linux.korri-inputd
+    - packages.aarch64-linux.inputplumber-korri
+    - packages.aarch64-linux.korri-bundle
+    - packages.aarch64-linux.sunshine-korri
+    - packages.aarch64-linux.sunshine-korri-rkmpp
+    - packages.aarch64-linux.sunshine-korri-v4l2m2m
+    - checks.x86_64-linux.korri-device-cache
+    - checks.x86_64-linux.korri-input-module
+    - checks.x86_64-linux.korri-bundle-module
+    - checks.aarch64-linux.korri-device-cache
+    - checks.aarch64-linux.korri-input-module
+    - checks.aarch64-linux.korri-bundle-module

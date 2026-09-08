@@ -102,6 +102,9 @@ is no such concern, propose no schema change.
   toolchain composition lives in per-area Nix expressions; `devshell.nix`
   owns the interactive shell. No inline derivations or shells.
 - Project tasks are Nix apps; discover them with `nix run .#help`.
+- Never compile software or dispatch builds from target devices. Follow
+  `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
+  Runtime TS/JS transpilation remains part of the plugin scripting contract.
 - Android's user-visible Korri root is exactly
   `/storage/emulated/0/korri`. Product code must not recognize older root
   names; device cutovers are performed and verified outside the runtime.

@@ -36,6 +36,7 @@
       };
       odin2portal = import ./nix/odin2portal { inherit nixpkgs; };
       nixosModules = {
+        korri-device-cache = import ./nix/device-cache/nixos-module.nix;
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };
         korrid-linux-device = import ./services/korrid/nixos-module.nix { korri = self; };
@@ -155,6 +156,10 @@
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
           // {
+            korri-device-cache = import ./nix/device-cache/module-check.nix {
+              inherit pkgs;
+              cacheModule = nixosModules.korri-device-cache;
+            };
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {
