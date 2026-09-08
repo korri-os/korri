@@ -61,10 +61,12 @@ def mark_svg(body, size=1024, leaf_frac=0.62):
 
 def wordmark_svg(ink):
     """Letters in `ink`; the leaf replaces the i-dot as a sprout, 34% of the
-    ascender, petiole 10 units above the i stem."""
-    petiole, i_top = (33.0, 423.0), (1250.5, 197.6)
+    ascender. The petiole sits 27 units above the i stem: the same gap the
+    type's own dot has (path 10 bottom 169.3 vs path 9 top 196.5), so the
+    leaf lands where the eye expects a dot. 10 read as jammed."""
+    petiole, i_top, gap = (33.0, 423.0), (1250.5, 197.6), 27
     s = 315 * 0.34 / LEAF_H
-    tx, ty = i_top[0] - petiole[0] * s, i_top[1] - 10 - petiole[1] * s
+    tx, ty = i_top[0] - petiole[0] * s, i_top[1] - gap - petiole[1] * s
     top = ty + 75.6 * s - 20
     right = tx + 320 * s + 20
     left, bottom = 400.0, 425.0

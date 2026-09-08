@@ -21,6 +21,10 @@ python3 "$HERE/build-leaf-mark.py"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# ImageMagick writes tIME and date chunks, which would dirty every PNG on
+# each run. Write no metadata so unchanged pixels mean an unchanged file.
+magick() { command magick "${@:1:$#-1}" -strip -define png:exclude-chunks=date,time "${!#}"; }
+
 # --- helpers ---------------------------------------------------------------
 
 # leaf_png <size> <out>: transparent leaf, centred, 62% of the canvas.
