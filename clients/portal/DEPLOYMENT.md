@@ -16,7 +16,7 @@ fixtures.
 Import `nixosModules.korri-portal` alongside the existing Korri Linux host module.
 Enable `services.korri.webSurfaceHost.enable` and
 `services.korri.compositor.kiosk.enable`. The RG353M composition is available as
-`nixosConfigurations.rg353m-portal-preview`.
+`nixosConfigurations.rg353m`.
 
 The browser runs as `korri-portal`, separate from the untrusted game user. Its
 private home is `/var/lib/korri-portal`. Its private runtime directory is

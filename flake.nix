@@ -48,8 +48,12 @@
     {
       inherit nixosModules;
       nixosConfigurations = {
-        rg353m = rg353m.configuration;
-        rg353m-portal-preview = rg353m.portalPreviewConfiguration;
+        # nixos-rebuild resolves nixosConfigurations.<hostname> when no target is
+        # named, and the host is rg353m. This name therefore has to mean the
+        # device as it ships. The base configuration below it carries the
+        # hardware but enables no surface, so a system built from it boots to a
+        # blank screen; it stays an internal layer and gets no public name.
+        rg353m = rg353m.portalPreviewConfiguration;
         rg353m-rescue = rg353m.rescueConfiguration;
         odin2portal = odin2portal.configuration;
       };

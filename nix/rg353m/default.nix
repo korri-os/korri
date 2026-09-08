@@ -35,7 +35,10 @@ rec {
     ffmpegRkmpp = sunshineFfmpegRkmpp;
     inherit rockchipMpp;
   };
-  sdImage = configuration.config.system.build.sdImage;
+  # Build the card from the portal configuration for the same reason the host
+  # name does: a card written from the base configuration boots and draws
+  # nothing, which reads as dead hardware rather than a missing surface.
+  sdImage = portalPreviewConfiguration.config.system.build.sdImage;
   # A rescue card has to sit in the slot of a device that already has a system
   # on eMMC. The sd-image module derives the root device from the volume label,
   # as /dev/disk/by-label/<rootVolumeLabel>, so two roots sharing a label leave
