@@ -7,6 +7,7 @@ let
     fileset = lib.fileset.unions [
       ../index.html
       ../package.json
+      ../public
       ../tsconfig.json
       ../vite.config.ts
       ../src
@@ -118,6 +119,10 @@ pkgs.stdenvNoCC.mkDerivation {
     test -d "$out/assets"
     test ! -e "$out/node_modules"
     grep -Fq './assets/' "$out/index.html"
+    # Brand assets from clients/portal/public must ship with the bundle.
+    test -s "$out/manifest.webmanifest"
+    test -s "$out/favicon.svg"
+    test -s "$out/icon-512.png"
     js=("$out"/assets/*.js)
     css=("$out"/assets/*.css)
     test -s "''${js[0]}"

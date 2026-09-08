@@ -681,6 +681,20 @@ let
       '';
     };
 
+    brand-assets = {
+      description = "Regenerate the PWA and Android icons from brand/*.svg.";
+      runtimeInputs = [
+        pkgs.bash
+        pkgs.coreutils
+        pkgs.imagemagick
+        pkgs.python3
+        pkgs.resvg
+      ];
+      script = ''
+        bash "$KORRI_ROOT/brand/build-assets.sh"
+      '';
+    };
+
     portal-bundle = {
       description = "Build the portal into the Android app assets.";
       runtimeInputs = [
