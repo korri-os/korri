@@ -45,8 +45,10 @@ plugin installation.
 
 Installation must work on a device with no Tailscale-specific service or package
 registration in its system configuration. Generic installation support and
-required kernel capabilities can exist beforehand. The shared installation
-design must settle authorization before implementation.
+required kernel capabilities can exist beforehand. The owner approved installation
+of trusted system software. The [installation brief](../../docs/briefs/2026-09-08-linux-plugin-installation-brief.md)
+records that decision, an isolated portable-service VM test, and the remaining
+implementation requirements.
 
 The existing core bundle initializer requires an initial package. Do not reuse
 that requirement for Tailscale. Do not add the earlier proposed per-plugin
@@ -54,9 +56,9 @@ NixOS registration: the owner installs a plugin the image does not know.
 
 The Tailscale integration must meet these requirements:
 
-- Generic installation support obtains authorization to install the service
-  and its prebuilt program files. Administrator-level trust versus restricted
-  execution remains an open design decision.
+- Generic installation support obtains explicit owner authorization to install
+  the service and its prebuilt program files. Native payloads can receive
+  administrator-level authority. Korri does not promise browser-style isolation.
 - The daemon and every CLI consumer use the selected Tailscale version.
   Nixpkgs uses `services.tailscale.package` for the vendor unit, the system CLI,
   autoconnect, and the set helper. A daemon-only override is insufficient.
