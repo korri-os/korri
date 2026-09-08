@@ -217,6 +217,60 @@ let
     workspace "${compositorWorkspace}" output ${cfg.compositor.outputName}
     workspace "${compositorWorkspace}"
   '';
+  # /dev/dri/by-path/ links are created by udev, which does not reach the DRM
+  # device until about 24 s on this hardware. The card nodes themselves appear in
+  # devtmpfs as soon as the driver binds, at about 2 s, and /sys/class/drm
+  # carries the same platform-device identity that the by-path name encodes:
+  # /dev/dri/by-path/platform-display-subsystem-card names the card whose
+  # /sys/class/drm/cardN/device resolves to "display-subsystem".
+  #
+  # Resolve the configured name through sysfs so the compositor can start once
+  # the driver is up rather than waiting for udev. Waiting for udev cost about
+  # 10 s and six failed starts on every boot. If the link already exists, or the
+  # name is not a by-path link, the configured value is used unchanged.
+  resolveDrmDevice = pkgs.writeShellScript "korri-resolve-drm-device" ''
+    set -eu
+    want="''${WLR_DRM_DEVICES:-}"
+    if [ -n "$want" ] && [ ! -e "$want" ]; then
+      case "$want" in
+        /dev/dri/by-path/platform-*-card)
+          name="''${want#/dev/dri/by-path/platform-}"
+          name="''${name%-card}"
+          for card in /sys/class/drm/card[0-9]*; do
+            [ -e "$card/device" ] || continue
+            target=$(${pkgs.coreutils}/bin/readlink -f "$card/device")
+            if [ "''${target##*/}" = "$name" ]; then
+              WLR_DRM_DEVICES="/dev/dri/''${card##*/}"
+              export WLR_DRM_DEVICES
+              break
+            fi
+          done
+          ;;
+      esac
+    fi
+    exec "$@"
+  '';
+  # panfrost creates the render node when it binds, at about 2 s, but the node
+  # keeps its devtmpfs default of root:root 0600 until udev applies the render
+  # group. udev does not reach the DRM devices until about 20 s here, so the
+  # compositor raced it and exited with "Failed to open '/dev/dri/renderD128':
+  # Permission denied" six times before winning.
+  #
+  # Wait for the node to become usable by this service's own user instead. This
+  # only gates startup; it does not widen access to the device, which must not
+  # be used to paper over the race.
+  waitForRenderDevice = pkgs.writeShellScript "korri-wait-for-render-device" ''
+    set -eu
+    device=${lib.escapeShellArg cfg.compositor.renderDevice}
+    for _ in $(${pkgs.coreutils}/bin/seq 1 300); do
+      if [ -r "$device" ] && [ -w "$device" ]; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.1
+    done
+    echo "render node $device did not become usable" >&2
+    exit 1
+  '';
   # systemd starts ExecStartPost as soon as the main process is spawned, and it
   # will not act on the main process exiting until every ExecStartPost has
   # returned. When Sway fails at startup these waits still polled for their full
@@ -1024,8 +1078,11 @@ in
         ++ lib.optional (cfg.compositor.backend == "drm") "seat";
         RuntimeDirectory = "korri-compositor";
         RuntimeDirectoryMode = "0700";
-        ExecStartPre = "+${cleanupCompositorSockets}";
-        ExecStart = "${pkgs.sway}/bin/sway --unsupported-gpu --config ${swayConfig}";
+        ExecStartPre = [
+          "+${cleanupCompositorSockets}"
+          waitForRenderDevice
+        ];
+        ExecStart = "${resolveDrmDevice} ${pkgs.sway}/bin/sway --unsupported-gpu --config ${swayConfig}";
         ExecStartPost = [
           publishWaylandSocket
           waitForCompositor
