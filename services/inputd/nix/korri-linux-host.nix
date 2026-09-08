@@ -217,11 +217,24 @@ let
     workspace "${compositorWorkspace}" output ${cfg.compositor.outputName}
     workspace "${compositorWorkspace}"
   '';
+  # systemd starts ExecStartPost as soon as the main process is spawned, and it
+  # will not act on the main process exiting until every ExecStartPost has
+  # returned. When Sway fails at startup these waits still polled for their full
+  # 15 s, so systemd only marked the unit failed 15.7 s after Sway had died, and
+  # the restart was delayed by that much on every boot. Stop waiting the moment
+  # the compositor is gone.
+  compositorStillRunning = ''
+    if [ -n "''${MAINPID:-}" ] && ! kill -0 "$MAINPID" 2>/dev/null; then
+      echo "compositor exited before it became ready" >&2
+      exit 1
+    fi
+  '';
   publishWaylandSocket = pkgs.writeShellScript "korri-publish-wayland-socket" ''
     set -eu
     destination="$XDG_RUNTIME_DIR/${waylandDisplay}"
     attempt=0
     while [ "$attempt" -lt 60 ]; do
+      ${compositorStillRunning}
       source=
       count=0
       for socket in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
@@ -314,6 +327,7 @@ let
     set -eu
     attempt=0
     while [ "$attempt" -lt 60 ]; do
+      ${compositorStillRunning}
       if [ -S ${lib.escapeShellArg "${runtimeDir}/${waylandDisplay}"} ] \
         && [ -S ${lib.escapeShellArg xwaylandSocket} ]; then
         outputs="$(${pkgs.sway}/bin/swaymsg -s ${lib.escapeShellArg compositorControlSocket} -t get_outputs -r 2>/dev/null || true)"
@@ -920,6 +934,14 @@ in
     systemd.services.korri-compositor = {
       description = "Korri Sway compositor";
       wantedBy = [ "multi-user.target" ];
+      # Sway cannot take the KMS device until its seat is active, so the first
+      # attempts of a cold boot fail with EAGAIN and the unit restarts. Those
+      # attempts now fail in under a second instead of stalling, which would
+      # exhaust the default budget of 5 starts per 10 s long before the seat is
+      # ready. Allow enough attempts to cover the wait and still give up if the
+      # seat never arrives.
+      startLimitIntervalSec = 120;
+      startLimitBurst = 60;
       wants = [
         "korrid.service"
         "sunshine.service"
