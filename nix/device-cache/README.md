@@ -47,7 +47,8 @@ the prebuilt directory that joins those components. It excludes kernels, SD
 images, development shells, Darwin outputs, and the boot-splash VM test.
 `korrid-linux-device-module` and `korri-linux-host-module` also stay outside
 this list. Their evaluation reads generated helper files and requires builds.
-There is no Tailscale output yet. Add it when that package exists.
+The list includes `korri-tailscale` and its package check on both Linux
+architectures. `plugins/tailscale/` owns that independently installed dependency.
 
 An explicit list prevents new flake outputs from silently increasing CI work.
 It does not limit the dependencies of a listed output. For example, korrid
@@ -90,8 +91,9 @@ replacement.
 
 An exact output-path fetch does not evaluate nixpkgs. A request such as
 `nix build .#korrid` still evaluates the flake. A cache stores Nix archives and
-metadata, not ZIP files. Offline archive delivery, third-party plugin trust,
-and plugin installation policy are separate work.
+metadata, not ZIP files. Offline archive delivery and plugin installation are
+separate work. The [Linux plugin installation brief](../../docs/briefs/2026-09-08-linux-plugin-installation-brief.md)
+records the owner's trust decision.
 
 ## Local verification
 

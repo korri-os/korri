@@ -7,6 +7,7 @@ builds:
     - packages.x86_64-linux.inputplumber-korri
     - packages.x86_64-linux.korri-bundle
     - packages.x86_64-linux.sunshine-korri
+    - packages.x86_64-linux.korri-tailscale
     - packages.aarch64-linux.korrid
     - packages.aarch64-linux.korri-inputd
     - packages.aarch64-linux.inputplumber-korri
@@ -14,9 +15,12 @@ builds:
     - packages.aarch64-linux.sunshine-korri
     - packages.aarch64-linux.sunshine-korri-rkmpp
     - packages.aarch64-linux.sunshine-korri-v4l2m2m
+    - packages.aarch64-linux.korri-tailscale
     - checks.x86_64-linux.korri-device-cache
     - checks.x86_64-linux.korri-input-module
     - checks.x86_64-linux.korri-bundle-module
+    - checks.x86_64-linux.korri-tailscale-package
     - checks.aarch64-linux.korri-device-cache
     - checks.aarch64-linux.korri-input-module
     - checks.aarch64-linux.korri-bundle-module
+    - checks.aarch64-linux.korri-tailscale-package
