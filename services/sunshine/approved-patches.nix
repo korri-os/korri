@@ -168,5 +168,5 @@ rec {
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "d411a243ed42568e270b6ea77a2938a108334f26db95605721d141e95eafbad7";
+  rkmppPatchSetSha256 = "287ff6ef2a6789d4abfd73dc05b839384b17a71b0a45d768e3764626e553b5c6";
 }
