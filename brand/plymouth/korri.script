@@ -98,7 +98,7 @@ fun draw_leaf (scale_x, scale_y, degrees, px, py) {
     local.img = rot_cache[key];
     if (!img) {
         img = leaf_image.Scale (w, h);
-        if (step != 0) img = img.Rotate (step / 2 * Math.Pi () / 180);
+        if (step != 0) img = img.Rotate (step / 2 * Math.Pi / 180);
         rot_cache[key] = img;
       }
     leaf.SetImage (img);
@@ -106,7 +106,7 @@ fun draw_leaf (scale_x, scale_y, degrees, px, py) {
     # Petiole offset from the image centre, rotated with the image.
     local.vx = (LEAF_PET_X - LEAF_IMG_W / 2) * scale_x;
     local.vy = (LEAF_PET_Y - LEAF_IMG_H / 2) * scale_y;
-    local.a = step / 2 * Math.Pi () / 180;
+    local.a = step / 2 * Math.Pi / 180;
     local.rx = vx * Math.Cos (a) - vy * Math.Sin (a);
     local.ry = vx * Math.Sin (a) + vy * Math.Cos (a);
     leaf.SetX (px - w / 2 - rx);
@@ -132,7 +132,7 @@ fun refresh () {
     else if (signal_frame >= 0) {
         local.s = t - signal_frame * 1000 / REFRESH_RATE;
         if (s < MS_WINDUP) {
-            extra_rot = WINDUP_AMP * Math.Sin (Math.Pi () * s / MS_WINDUP);
+            extra_rot = WINDUP_AMP * Math.Sin (Math.Pi * s / MS_WINDUP);
           }
         else if (s < MS_WINDUP + MS_FALL) {
             local.f = (s - MS_WINDUP) / MS_FALL;
@@ -143,13 +143,13 @@ fun refresh () {
             k = 1;
             local.landed = s - MS_WINDUP - MS_FALL;
             if (landed < MS_SQUASH)
-                squash = 1 - SQUASH_AMT * Math.Sin (Math.Pi () * landed / MS_SQUASH);
+                squash = 1 - SQUASH_AMT * Math.Sin (Math.Pi * landed / MS_SQUASH);
             lit = 1 + Math.Int (landed / MS_GLYPH_STEP);
             if (lit > GLYPHS) lit = GLYPHS;
           }
       }
 
-    local.sway = SWAY_AMP * sway_in * (1 - k) * Math.Sin (2 * Math.Pi () * t / MS_SWAY_PERIOD);
+    local.sway = SWAY_AMP * sway_in * (1 - k) * Math.Sin (2 * Math.Pi * t / MS_SWAY_PERIOD);
     local.rot = (1 - grow) * MS_GROW_ROT + sway + extra_rot;
     local.scale = ease_out_back (grow);
     if (scale < 0.001) scale = 0.001;

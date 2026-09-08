@@ -76,7 +76,15 @@ in
       theme = "korri";
     };
 
-    boot.kernelParams = lib.mkIf cfg.quiet [
+    # Plymouth forces the details plugin when a serial console is on the
+    # kernel command line (main.c:1188, has_serial_consoles ->
+    # should_force_details), and then no theme ever draws. Both handhelds
+    # keep a serial console for debugging, so opt out of that rule; serial
+    # still receives kernel output, it just no longer suppresses the splash.
+    boot.kernelParams = [
+      "plymouth.ignore-serial-consoles"
+    ]
+    ++ lib.optionals cfg.quiet [
       "quiet"
       "logo.nologo"
     ];
