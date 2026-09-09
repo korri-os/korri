@@ -78,6 +78,43 @@ fn imports_accept_only_exact_output_paths() {
 }
 
 #[test]
+fn imports_reject_whitespace_in_cache_sources_before_running_nix() {
+    for source in [
+        "https://cache.example ssh://127.0.0.1",
+        "https://cache.example\tssh://127.0.0.1",
+        "https://cache.example\nssh://127.0.0.1",
+        "https://cache.example\rssh://127.0.0.1",
+        "https://cache.example\u{00a0}ssh://127.0.0.1",
+        "https://cache.example\u{2003}ssh://127.0.0.1",
+        " https://cache.example",
+        "https://cache.example ",
+        "file:///cache directory",
+    ] {
+        let error = package::import(
+            Path::new("/unavailable-nix-must-not-run"),
+            source,
+            Path::new("/nix/store/00000000000000000000000000000000-package"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error, "source must be an HTTP(S) or local file binary cache",
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn cache_sources_accept_percent_encoded_spaces() {
+    for source in [
+        "https://cache.example/cache%20directory",
+        "http://cache.example/cache%20directory",
+        "file:///cache%20directory",
+    ] {
+        package::validate_cache_source(source).unwrap();
+    }
+}
+
+#[test]
 fn receipts_are_private_regular_files_and_never_follow_links() {
     let root = tempfile::tempdir().unwrap();
     let receipt = root.path().join("selection.json");

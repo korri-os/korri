@@ -74,7 +74,7 @@ pub fn validate_cache_source(source: &str) -> Result<(), String> {
         || source.starts_with("http://")
         || source.starts_with("file:///"))
         || source.len() > 4096
-        || source.chars().any(char::is_control)
+        || source.chars().any(|c| c.is_control() || c.is_whitespace())
     {
         return Err("source must be an HTTP(S) or local file binary cache".into());
     }
