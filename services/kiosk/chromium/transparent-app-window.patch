@@ -1,0 +1,132 @@
+--- a/chrome/browser/ui/views/frame/browser_widget.h
++++ b/chrome/browser/ui/views/frame/browser_widget.h
+@@ -73,6 +73,10 @@
+ 
+   // Initialize the frame (creates the underlying native window).
+   void InitBrowserWidget();
++
++  // Opt-in for dedicated Linux --app processes. Normal browser invocations
++  // retain their native opaque backgrounds and compositor hints.
++  static bool UseTransparentAppWindows();
+ 
+   // Returns the FrameView of this frame.
+   BrowserFrameView* GetFrameView() const;
+--- a/chrome/browser/ui/views/frame/browser_widget.cc
++++ b/chrome/browser/ui/views/frame/browser_widget.cc
+@@ -143,6 +143,17 @@
+   browser_view_->browser()->GetFeatures().TearDownPreBrowserWindowDestruction();
+ }
+ 
++// static
++bool BrowserWidget::UseTransparentAppWindows() {
++#if BUILDFLAG(IS_LINUX)
++  const auto* command_line = base::CommandLine::ForCurrentProcess();
++  return command_line->HasSwitch(switches::kApp) &&
++         command_line->HasSwitch("enable-transparent-visuals");
++#else
++  return false;
++#endif
++}
++
+ void BrowserWidget::InitBrowserWidget() {
+   browser_native_widget_ =
+       BrowserNativeWidgetFactory::CreateBrowserNativeWidget(this,
+@@ -151,6 +162,9 @@
+       views::Widget::InitParams::CLIENT_OWNS_WIDGET);
+   params.name = "BrowserWidget";
+   params.delegate = browser_view_;
++  if (UseTransparentAppWindows()) {
++    params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++  }
+ 
+   Browser* browser = browser_view_->browser();
+   if (browser->is_type_picture_in_picture()) {
+--- a/chrome/browser/ui/views/frame/contents_web_view.cc
++++ b/chrome/browser/ui/views/frame/contents_web_view.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/debug/dump_without_crashing.h"
+ #include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
+ #include "chrome/browser/ui/views/status_bubble_views.h"
+ #include "components/search/ntp_features.h"
+@@ -119,6 +120,8 @@
+ }
+ 
+ void ContentsWebView::UpdateBackgroundColor() {
++  const bool show_background =
++      background_visible_ && !BrowserWidget::UseTransparentAppWindows();
+   const SkColor color = GetColorProvider()->GetColor(
+       is_letterboxing() ? kColorWebContentsBackgroundLetterboxing
+                         : kColorWebContentsBackground);
+@@ -127,19 +130,20 @@
+   // TODO(crbug.com/456309057): Update this to be a CHECK.
+   if (SkColorGetA(color) != SK_AlphaOPAQUE) {
+     base::debug::DumpWithoutCrashing();
+-    if (background_visible_) {
++    if (show_background) {
+       return;
+     }
+   }
+ 
+   ui::Layer* background_layer = layer();
+-  background_layer->SetColor(background_visible_ ? color : SK_ColorTRANSPARENT);
++  // Solid-color layers derive opaqueness from their color's alpha.
++  background_layer->SetColor(show_background ? color : SK_ColorTRANSPARENT);
+ 
+   if (web_contents()) {
+     content::RenderWidgetHostView* rwhv =
+         web_contents()->GetRenderWidgetHostView();
+     if (rwhv) {
+-      rwhv->SetBackgroundColor(background_visible_ ? color
++      rwhv->SetBackgroundColor(show_background ? color
+                                                    : SK_ColorTRANSPARENT);
+     }
+   }
+--- a/chrome/browser/ui/views/frame/multi_contents_background_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_background_view.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "chrome/browser/ui/views/frame/multi_contents_background_view.h"
+ 
++#include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/top_container_background.h"
++#include "third_party/skia/include/core/SkColor.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ #include "ui/compositor/layer.h"
+ #include "ui/gfx/geometry/rounded_corners_f.h"
+@@ -30,6 +32,11 @@
+ 
+ void MultiContentsBackgroundView::OnThemeChanged() {
+   views::View::OnThemeChanged();
++  if (BrowserWidget::UseTransparentAppWindows()) {
++    SetPaintToLayer(ui::LAYER_SOLID_COLOR);
++    layer()->SetColor(SK_ColorTRANSPARENT);
++    return;
++  }
+   if (auto new_type = CalculateLayerType(); new_type != layer()->type()) {
+     SetPaintToLayer(new_type);
+   }
+--- a/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_linux.cc
++++ b/chrome/browser/ui/views/frame/browser_desktop_window_tree_host_linux.cc
+@@ -16,6 +16,7 @@
+ #include "chrome/browser/ui/views/frame/browser_frame_view_linux.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget_aura_linux.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/ui/views/frame/browser_widget.h"
+ #include "chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.h"
+ #include "chrome/browser/ui/views/tabs/dragging/tab_drag_controller.h"
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
+@@ -278,6 +279,11 @@
+       opaque_region.push_back(
+           gfx::ScaleToEnclosingRect(opaque_region_dip, scale));
+     }
++    if (BrowserWidget::UseTransparentAppWindows()) {
++      // CSS/CDP alpha does not override the native Wayland opaque region.
++      // Let the compositor blend the application's content buffer instead.
++      opaque_region.clear();
++    }
+     window->SetOpaqueRegion(opaque_region);
+   }
+ 

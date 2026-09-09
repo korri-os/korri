@@ -146,6 +146,7 @@
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-kiosk = import ./services/kiosk/package.nix { inherit pkgs crane; };
+            korri-chromium = import ./services/kiosk/chromium/package.nix { inherit pkgs; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -168,6 +169,7 @@
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
+          korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
