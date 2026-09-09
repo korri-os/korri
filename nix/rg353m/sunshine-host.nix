@@ -47,7 +47,7 @@ in
 
   services.korriLinuxHost = {
     enable = true;
-    label = "rg353m";
+    label = "haku";
     runtimeUser = "gameplay";
     runtimeUid = 1001;
     runtimeGroup = "games";

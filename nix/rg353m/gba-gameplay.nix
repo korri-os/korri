@@ -8,7 +8,7 @@
   powerManagement.cpufreq.max = 1104000;
 
   services.korriLinuxHost.deviceConfig = pkgs.writeText "korrid-rg353m-gba-host.toml" ''
-    label = "rg353m"
+    label = "haku"
     [environment]
     DISPLAY = ":0"
     XDG_SESSION_TYPE = "x11"

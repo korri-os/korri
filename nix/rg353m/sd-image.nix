@@ -156,7 +156,7 @@ in
   };
 
   networking = {
-    hostName = "rg353m";
+    hostName = "haku";
     networkmanager.enable = true;
   };
 
