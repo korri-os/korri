@@ -1,6 +1,6 @@
 # Runtime installation of Linux plugins
 
-Status: the original native lifecycle is implemented and locally verified. The evidence below records that slice, not a live publication result. HTTPS repository publication preparation now follows [PUBLICATION.md](../../services/korrid/plugin-host/PUBLICATION.md). No live destination is configured.
+Status: the original native lifecycle is implemented and locally verified. The evidence below records that slice, not a live publication result. Production Tailscale packaging and HTTPS repository publication preparation now live in [korri-os/plugins](https://github.com/korri-os/plugins). Core retains the generic host, publisher, and test-only Tailscale fixture. No live destination is configured.
 
 ## Approved requirements
 
@@ -49,7 +49,7 @@ The new evidence is the maintained cold-host VM: this restricted service carries
 
 The cost is maintaining the unit adapter and its interruption tests. Its permission set is intentionally limited to the actual case. Host DNS administration is not implemented; login uses `--accept-dns=false`. This does not promise browser-style isolation. Host-network administration can still redirect traffic or interrupt access to the device.
 
-The existing `korri-tailscale` native export is now a small declaration package linked to the same unchanged nixpkgs binaries. Its version check still exercises both actual executables. The host reuses the separately landed download-only device policy. The current owner-triggered workflow explicitly checks both Linux architectures and the host's Rust tests, with x86_64 VM acceptance as a separate gate. It replaces the former Garnix operational wiring; its presence is not evidence of a live CI run.
+The original `korri-tailscale` native export became a small declaration package linked to the same unchanged nixpkgs binaries. That production package, executable checks, and owner-triggered publication workflow have moved to `korri-os/plugins`; core no longer exports the package. The host reuses the separately landed download-only device policy. Core keeps its real cold-host VM and publisher tests, and the plugins repository can invoke them with its actual package. The workflow replaced the former Garnix operational wiring; its presence is not evidence of a live CI run.
 
 ## Verified evidence
 

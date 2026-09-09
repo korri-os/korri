@@ -5,28 +5,14 @@
 }:
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
-  tailscalePackage = import ../../../plugins/tailscale/package.nix { inherit pkgs; };
+  tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
 in
 {
   packages = {
     korri-plugin-host = hostPackage;
-    korri-tailscale = tailscalePackage;
   };
   checks = {
     korri-plugin-host = hostPackage;
-    korri-publication-workflow =
-      pkgs.runCommand "korri-publication-workflow-check"
-        {
-          nativeBuildInputs = [
-            (pkgs.python3.withPackages (p: [ p.pyyaml ]))
-            pkgs.actionlint
-          ];
-        }
-        ''
-          python3 ${./publication_test.py} ${./publication.py} ${../../../.github/workflows/plugin-repository.yml}
-          actionlint ${../../../.github/workflows/plugin-repository.yml}
-          touch "$out"
-        '';
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs
@@ -55,16 +41,36 @@ in
         pkgs.writeShellApplication {
           name = "korri-publisher-check";
           runtimeInputs = [
-            pkgs.git
+            pkgs.coreutils
             pkgs.nix
+            pkgs.rust-bin.stable.latest.default
+            pkgs.stdenv.cc
+            pkgs.stdenv.cc.bintools
           ];
           text = ''
-            root="$(git rev-parse --show-toplevel)"
-            cd "$root"
+            if (( $# > 1 )); then
+              echo 'usage: korri-publisher-check [STORE_PACKAGE]' >&2
+              exit 2
+            fi
+            package="''${1:-${tailscalePackage}}"
+            if [[ "$package" != /nix/store/* || ! -f "$package/plugin.ts" ]]; then
+              echo 'STORE_PACKAGE must be an existing /nix/store package with plugin.ts' >&2
+              exit 2
+            fi
+            workspace="$(mktemp -d -t korri-publisher-check.XXXXXXXX)"
+            trap 'rm -rf "$workspace"' EXIT
+            trap 'exit 130' INT
+            trap 'exit 143' TERM
+            # Use the same immutable source as the host build, including the
+            # shared ../../src/script.rs. Tests need a writable crate cwd too.
+            cp -R ${hostPackage.src}/. "$workspace/"
+            chmod -R u+w "$workspace"
+            cd "$workspace/plugin-host"
+            export CARGO_TARGET_DIR="$workspace/target"
             export KORRI_PUBLISH_NIX=${pkgs.nix}/bin/nix
-            export KORRI_PUBLISH_TEST_PACKAGE=${tailscalePackage}
+            export KORRI_PUBLISH_TEST_PACKAGE="$package"
             export KORRI_PUBLISH_TEST_SYSTEM=${pkgs.stdenv.hostPlatform.system}
-            nix develop .#plugin-host --command cargo test --manifest-path services/korrid/plugin-host/Cargo.toml --test publish -- --ignored
+            cargo test --locked --manifest-path Cargo.toml --test publish -- --ignored
           '';
         }
       }/bin/korri-publisher-check";
@@ -100,8 +106,8 @@ in
         Merge records through the same strict Rust contract used by devices.
     nix run .#korri-publish -- verify-release CATALOG ASSET_DIR BASE_URL ID RELEASE PLATFORM...
         Verify the complete platform set, upload URLs, sizes and archive hashes.
-    nix run .#korri-publisher-check
-        Run opt-in actual publisher tests using locked Nix and Tailscale in a writable builder store.
+    nix run .#korri-publisher-check -- [STORE_PACKAGE]
+        Test the actual Tailscale package (default: core test fixture) with pinned core and toolchain on a build machine.
     nix run .#korri-plugin-check
         Check plugin-host Rust code and the cold-host systemd VM lifecycle.
   '';

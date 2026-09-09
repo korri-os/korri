@@ -36,12 +36,13 @@ unresolved. The stock cache does not contain Korri's custom outputs. Do not
 activate a device generation until every required output has a verified
 prebuilt delivery route.
 
-The [plugin publication workflow](../../services/korrid/plugin-host/PUBLICATION.md)
-explicitly checks the Tailscale package, generic host, and relevant modules on
-both Linux architectures. It prepares complete content-addressed Nix file-cache
-archives for Releases and a small, separately hosted HTTPS catalog. It does not
-publish `korrid`, `korri-bundle`, Sunshine, or other core binaries as plugins.
-Only a package with the actual declaration is eligible.
+Production plugin packaging and the publication workflow belong to
+[korri-os/plugins](https://github.com/korri-os/plugins). Core retains the generic
+Rust host, publisher, and real cold-host tests. Plugin delivery uses complete
+content-addressed Nix file-cache archives for Releases and a small, separately
+hosted HTTPS catalog. It does not publish `korrid`, `korri-bundle`, Sunshine, or
+other core binaries as plugins. Only a package with the actual declaration is
+eligible; core's Tailscale fixture is test-only.
 
 GitHub Releases serves files, not a standard Nix substituter directory. Do not
 put a Release URL in `nix.settings.substituters`. The repository installer checks

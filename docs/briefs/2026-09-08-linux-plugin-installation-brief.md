@@ -8,6 +8,16 @@ artifact: brief
 
 Implementation update: [runtime plugin host](../research/runtime-plugin-host.md) records the administrator CLI, concrete declaration contract, authenticated VM evidence, and the choice of a restricted systemd adapter instead of this brief's portable-service candidate. The sections below preserve the earlier research and its limits.
 
+## Approved repository split
+
+The user moved core to `korri-os/korri` and approved a public `korri-os/plugins` repository for independently released plugins. The first move includes only Tailscale, its package check, and draft-only release preparation. Android build tooling and compiled-in declarations stay in core.
+
+Core owns the generic installer, publisher, catalog contract, and test-only fixtures. The plugins repository pins core through `flake.lock` and tests its actual package with core's publisher and cold-host VM. Pin updates require compatibility verification, not an identical core revision on every device.
+
+The sole release curator remains `simonwjackson`. Organization ownership does not authorize every organization member to dispatch or rerun preparation. Existing plugin identity and tag validation remain unchanged.
+
+The user approved repository creation and verified source pushes. Tags, releases, Pages/catalog publication, device changes, and paid services remain outside that approval. The official catalog URL remains unset until publication is separately approved.
+
 ## Chosen thing
 
 A Linux device that has never encountered Tailscale can install, enable, update, and remove it without compilation or a NixOS system update. Tailscale remains optional.

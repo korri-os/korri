@@ -23,9 +23,9 @@ let
   '';
   updated = pkgs.runCommand "tailscale-plugin-update" { } ''
     mkdir -p "$out/bin"
-    ln -s ${pkgs.tailscale}/bin/tailscaled "$out/bin/tailscaled"
-    ln -s ${pkgs.tailscale}/bin/tailscale "$out/bin/tailscale"
-    sed 's/title: "Tailscale"/title: "Tailscale updated"/' ${../../../plugins/tailscale/plugin.ts} > "$out/plugin.ts"
+    ln -s ${tailscalePackage}/bin/tailscaled "$out/bin/tailscaled"
+    ln -s ${tailscalePackage}/bin/tailscale "$out/bin/tailscale"
+    sed 's/title: "Tailscale"/title: "Tailscale updated"/' ${tailscalePackage}/plugin.ts > "$out/plugin.ts"
   '';
   broken = pkgs.runCommand "tailscale-plugin-failed-update" { } ''
     mkdir -p "$out/bin"

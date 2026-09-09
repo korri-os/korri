@@ -183,10 +183,6 @@
             korri-boot-splash = import ./brand/plymouth/module-check.nix {
               inherit pkgs nixpkgs;
             };
-            korri-tailscale-package = import ./plugins/tailscale/package-check.nix {
-              inherit pkgs;
-              tailscale = self.packages.${system}.korri-tailscale;
-            };
           }
         );
       }

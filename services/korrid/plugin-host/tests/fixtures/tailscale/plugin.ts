@@ -1,3 +1,4 @@
+// Test-only copy of the real Tailscale declaration moved to korri-os/plugins.
 // Identity and contributes.daemons follow Korri's existing plugin declaration.
 // Service fields come from upstream cmd/tailscaled/tailscaled.service. The host
 // supplies isolated state/runtime directories and an unprivileged service user.
