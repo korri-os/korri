@@ -1,10 +1,10 @@
 # Runtime installation of Linux plugins
 
-Status: implemented and locally verified. This replaces the proposed per-plugin generation configuration, not an existing user-data format.
+Status: the original native lifecycle is implemented and locally verified. The evidence below records that slice, not a live publication result. HTTPS repository publication preparation now follows [PUBLICATION.md](../../services/korrid/plugin-host/PUBLICATION.md). No live destination is configured.
 
 ## Approved requirements
 
-A device with generic host support must install a plugin that its system generation never named. Install, enable, update, disable, and remove require neither native compilation on the device nor a NixOS update. Plugins are independently redistributable. Garnix builds and caches the native closures. Prebuilt native payloads are permitted. TypeScript/JavaScript declarations remain interpreted and effect-free.
+A device with generic host support must install a plugin that its system generation never named. Install, enable, update, disable, and remove require neither native compilation on the device nor a NixOS update. Plugins are independently redistributable. Build machines produce native closures; devices download prebuilt content. Prebuilt native payloads are permitted. TypeScript/JavaScript declarations remain interpreted and effect-free.
 
 The first real payload is Tailscale. The owner approved an administrator CLI for the first permission flow. Portal controls and Android integration are out of scope. There are no compatibility requirements for bundle paths or commands. Do not remove unrelated core deployment code merely because compatibility is unnecessary.
 
@@ -35,7 +35,7 @@ Keep declaration evaluation bounded and separate from privileged effects. Pin ap
 1. Write public CLI/VM acceptance for an empty generic host. Prove missing functionality before implementation.
 2. Implement bounded declaration loading, policy validation, immutable package identity, and approval. Test malformed source, path traversal, unsupported permissions, and exact-package approval.
 3. Implement lifecycle and boot recovery against real files and real systemd units. Test failed updates, disabled updates, interrupted work, and removal.
-4. Package the host and Tailscale outside the device. Integrate with the Garnix work without modifying another session's worktree.
+4. Package the host and Tailscale outside the device. Keep build-side delivery separate from the runtime lifecycle.
 5. Boot a VM with no Tailscale package or named configuration. Import prebuilt closures, exercise the complete CLI lifecycle, and assert the system generation does not change. Exercise a second plugin identity and prove isolation.
 6. Run static checks, Rust tests, package checks, VM tests, and security review before landing.
 
@@ -49,7 +49,7 @@ The new evidence is the maintained cold-host VM: this restricted service carries
 
 The cost is maintaining the unit adapter and its interruption tests. Its permission set is intentionally limited to the actual case. Host DNS administration is not implemented; login uses `--accept-dns=false`. This does not promise browser-style isolation. Host-network administration can still redirect traffic or interrupt access to the device.
 
-The existing `korri-tailscale` native export is now a small declaration package linked to the same unchanged nixpkgs binaries. Its version check still exercises both actual executables. The host reuses the separately landed download-only device policy. Garnix's explicit list includes both Linux architectures and the host's Rust checks, but excludes the VM check.
+The existing `korri-tailscale` native export is now a small declaration package linked to the same unchanged nixpkgs binaries. Its version check still exercises both actual executables. The host reuses the separately landed download-only device policy. The current owner-triggered workflow explicitly checks both Linux architectures and the host's Rust tests, with x86_64 VM acceptance as a separate gate. It replaces the former Garnix operational wiring; its presence is not evidence of a live CI run.
 
 ## Verified evidence
 
@@ -64,4 +64,4 @@ The existing `korri-tailscale` native export is now a small declaration package 
 
 The aarch64 host and Tailscale package expressions evaluate successfully. Their ARM binaries have not been executed in this session. The diff received a direct security and correctness review; an independent subagent review was unavailable after provider errors.
 
-No physical device, owner credential, or public tailnet changed. Local verification does not prove publication of these new outputs to Garnix. That requires the normal repository publication workflow. Application-data rollback across incompatible upstream versions remains outside package-selection rollback.
+No physical device, owner credential, or public tailnet changed. Local verification does not prove live publication. The current workflow only prepares artifacts or an explicitly approved draft; immutable-release settings and separate HTTPS catalog deployment remain operator prerequisites. Application-data rollback across incompatible upstream versions remains outside package-selection rollback.

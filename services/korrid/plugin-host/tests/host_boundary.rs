@@ -8,6 +8,49 @@ use std::{
 };
 
 #[test]
+fn old_source_less_receipts_fail_without_mutation() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("selection.json");
+    let old = serde_json::json!({"id":"@test:plugin", "package":"/nix/store/00000000000000000000000000000000-package", "approval":"a".repeat(64), "desired":{"state":"Disabled"}});
+    storage::write_json(&path, &old).unwrap();
+    let before = fs::read(&path).unwrap();
+    assert!(
+        storage::read_json::<korri_plugin_host::host::Receipt>(&path)
+            .unwrap_err()
+            .contains("provenance")
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn staging_cleanup_is_locked_and_only_removes_owned_directories() {
+    let root = tempfile::tempdir().unwrap();
+    let state_root = root.path().join("state");
+    let state = storage::State::open(&state_root).unwrap();
+    let abandoned = state.staging().unwrap().keep();
+    fs::write(abandoned.join("partial"), "interrupted archive").unwrap();
+    assert!(storage::State::open(&state_root).is_err());
+    state.cleanup_staging().unwrap();
+    assert!(!abandoned.exists());
+    let outside = tempfile::tempdir().unwrap();
+    let marker = outside.path().join("keep");
+    fs::write(&marker, "must remain").unwrap();
+    let symlink_path = state_root
+        .join(storage::STAGING_DIR)
+        .join("download-12345678");
+    symlink(outside.path(), &symlink_path).unwrap();
+    assert!(state.cleanup_staging().is_err());
+    assert!(marker.exists());
+    fs::remove_file(symlink_path).unwrap();
+    fs::write(
+        state_root.join(storage::STAGING_DIR).join("unrelated"),
+        "keep",
+    )
+    .unwrap();
+    assert!(state.cleanup_staging().is_err());
+}
+
+#[test]
 fn imports_accept_only_exact_output_paths() {
     package::validate_store_path(Path::new(
         "/nix/store/00000000000000000000000000000000-package",

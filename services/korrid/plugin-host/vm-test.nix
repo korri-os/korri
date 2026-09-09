@@ -100,6 +100,9 @@ pkgs.testers.runNixOSTest {
             addSSL = true;
             sslCertificate = "${certificate}/cert.pem";
             sslCertificateKey = "${certificate}/key.pem";
+            locations."/repositories/" = {
+              alias = "/var/www/repositories/";
+            };
             locations."/" = {
               proxyPass = "http://127.0.0.1:8080";
               proxyWebsockets = true;
@@ -108,7 +111,15 @@ pkgs.testers.runNixOSTest {
         };
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
         services.tailscale.enable = true;
-        environment.systemPackages = [ pkgs.headscale ];
+        # The fixture server runs the prebuilt build-side publisher. The cold
+        # machine only downloads; neither VM evaluates flakes or compiles.
+        environment.systemPackages = [
+          pkgs.headscale
+          hostPackage
+        ];
+        virtualisation.writableStore = true;
+        virtualisation.writableStoreUseTmpfs = false;
+        virtualisation.diskSize = 8192;
         networking.firewall.allowedTCPPorts = [
           5000
           443
@@ -125,6 +136,7 @@ pkgs.testers.runNixOSTest {
         imports = [ hostModule ];
         services.korri.pluginHost.enable = true;
         services.korri.pluginHost.package = hostPackage;
+        services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
         nix.settings.trusted-public-keys = [ publicKey ];
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
         environment.systemPackages = [ pkgs.jq ];
@@ -159,11 +171,70 @@ pkgs.testers.runNixOSTest {
         machine.succeed("korri-plugin install http://cache:5000 " + package + " " + report["approval"])
         return report
 
-    report = inspect("${tailscalePackage}")
+    source_a = "https://cache/repositories/a.json"
+    source_b = "https://cache/repositories/b.json"
+    cache.succeed("mkdir -p /var/www/repositories")
+
+    def write_catalog(name, records):
+        cache.succeed("printf %s " + shlex.quote(json.dumps({"records": records})) + " > /var/www/repositories/" + name + ".json")
+
+    records = []
+    for release, package in [("v1", "${tailscalePackage}"), ("v2", "${updated}"), ("broken", "${broken}"), ("pending", "${interrupted}")]:
+        output = "/var/lib/publication-" + release
+        cache.succeed("mkdir -p " + output)
+        record = json.loads(cache.succeed("korri-publish " + package + " " + release + " ${pkgs.stdenv.hostPlatform.system} https://cache/repositories/" + release + ".tar " + output))
+        cache.succeed("cp " + output + "/*.tar /var/www/repositories/" + release + ".tar")
+        records.append(record)
+    write_catalog("a", records)
+    write_catalog("b", records)
+    write_catalog("official", [])
+    cache.wait_for_unit("nginx.service")
+    machine.succeed("korri-plugin repository list | grep -F 'official: https://cache/repositories/official.json'")
+    machine.fail("korri-plugin repository remove https://cache/repositories/official.json")
+    machine.succeed("mv /etc/korri-plugin-host/official-catalog-url /etc/korri-plugin-host/official-catalog-url.saved")
+    machine.succeed("korri-plugin repository list | grep -F 'official: not configured'")
+    machine.succeed("korri-plugin restore")
+    machine.succeed("mv /etc/korri-plugin-host/official-catalog-url.saved /etc/korri-plugin-host/official-catalog-url")
+    machine.succeed("korri-plugin repository add " + source_a)
+    machine.succeed("korri-plugin repository add " + source_a)
+    machine.succeed("korri-plugin repository add " + source_b)
+    listed = machine.succeed("korri-plugin repository list")
+    assert listed.count("user-added: " + source_a) == 1
+    assert "user-added: " + source_b in listed
+    # The repository writer takes the same lock as installation and recovery.
+    machine.succeed("systemd-run --unit=hold-plugin-lock /run/current-system/sw/bin/flock /var/lib/korri-plugin-host/lock /run/current-system/sw/bin/sleep infinity")
+    try:
+        machine.wait_until_succeeds("! /run/current-system/sw/bin/flock -n /var/lib/korri-plugin-host/lock /run/current-system/sw/bin/true", timeout=10)
+        error = machine.fail("korri-plugin repository remove " + source_a + " 2>&1")
+        assert "another plugin operation is in progress" in error, error
+    finally:
+        machine.succeed("systemctl stop hold-plugin-lock.service")
+
+    def repository_inspect(source, release):
+        return json.loads(machine.succeed("korri-plugin repository inspect " + source + " @korri:tailscale " + release))
+
+    machine.fail("test -e " + records[0]["store_path"])
+    report = repository_inspect(source_a, "v1")
+    alternative = repository_inspect(source_b, "v1")
+    assert report["package"] == alternative["package"]
+    assert report["approval"] != alternative["approval"]
     assert "HOST NETWORK ADMINISTRATION" in report["warning"]
-    machine.fail("korri-plugin install http://cache:5000 ${tailscalePackage} wrong-approval")
+    machine.fail("korri-plugin repository install " + source_a + " @korri:tailscale v1 wrong-approval")
+    machine.fail("korri-plugin repository install " + source_b + " @korri:tailscale v1 " + report["approval"])
     machine.fail("korri-plugin status @korri:tailscale")
-    report = install("${tailscalePackage}")
+    # A changed release between inspection and installation invalidates approval.
+    changed = dict(records[1], release_version="v1")
+    write_catalog("a", [changed])
+    machine.fail("korri-plugin repository install " + source_a + " @korri:tailscale v1 " + report["approval"])
+    # Identity, platform and archive hashes are checked before selection.
+    write_catalog("a", [dict(records[0], archive_sha256="0" * 64)])
+    assert "SHA256" in machine.fail("korri-plugin repository inspect " + source_a + " @korri:tailscale v1 2>&1")
+    write_catalog("a", [dict(records[0], plugin_id="@example:wrong")])
+    machine.fail("korri-plugin repository inspect " + source_a + " @example:wrong v1")
+    write_catalog("a", [dict(records[0], platform="unsupported-linux")])
+    machine.fail("korri-plugin repository inspect " + source_a + " @korri:tailscale v1")
+    write_catalog("a", records)
+    machine.succeed("korri-plugin repository install " + source_a + " @korri:tailscale v1 " + report["approval"])
     unit = report["unit"]
     machine.fail("systemctl is-active " + unit)
     ipv4_rules = json.loads(machine.succeed("ip -j rule show"))
@@ -173,7 +244,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("ip link show tailscale0")
     machine.succeed("test -S " + report["runtime_directory"] + "/tailscaled.sock")
     assert machine.succeed("systemctl show " + unit + " --property=DynamicUser --value").strip() == "yes"
-    assert machine.succeed("${tailscalePackage}/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock status --json | ${pkgs.jq}/bin/jq -r .BackendState").strip() == "NeedsLogin"
+    assert machine.succeed(report["package"] + "/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock status --json | ${pkgs.jq}/bin/jq -r .BackendState").strip() == "NeedsLogin"
     machine.succeed("touch " + report["state_directory"] + "/retained-data")
 
     # A disposable local tailnet uses no owner's credentials or public service.
@@ -182,7 +253,7 @@ pkgs.testers.runNixOSTest {
     authkey = cache.succeed("headscale preauthkeys -u 1 create --reusable").strip()
     cache.wait_for_unit("nginx.service")
     cache.succeed("tailscale up --login-server=https://cache --accept-dns=false --auth-key=" + shlex.quote(authkey))
-    ts = "${tailscalePackage}/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock"
+    ts = report["package"] + "/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock"
     machine.succeed(ts + " up --login-server=https://cache --accept-dns=false --auth-key=" + shlex.quote(authkey))
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     assert json.loads(machine.succeed(ts + " status --json"))["BackendState"] == "Running"
@@ -192,19 +263,32 @@ pkgs.testers.runNixOSTest {
     clock = install("${alternate}")
     machine.succeed("korri-plugin enable @example:clock")
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
-    update = inspect("${updated}")
-    machine.succeed("korri-plugin update @korri:tailscale http://cache:5000 ${updated} " + update["approval"])
+    update = repository_inspect(source_a, "v2")
+    available_alternative = repository_inspect(source_b, "v2")
+    machine.succeed("korri-plugin repository remove " + source_a)
+    machine.fail("korri-plugin repository update @korri:tailscale v2 " + available_alternative["approval"])
+    machine.succeed("korri-plugin repository add " + source_a)
+    machine.fail("korri-plugin repository update @korri:tailscale v2 " + available_alternative["approval"])
+    machine.succeed("korri-plugin repository update @korri:tailscale v2 " + update["approval"])
+    selected = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    assert selected["provenance"]["source_url"] == source_a
+    machine.fail("korri-plugin repository switch @korri:tailscale " + source_b + " v2 " + update["approval"])
+    machine.succeed("korri-plugin repository switch @korri:tailscale " + source_b + " v2 " + available_alternative["approval"])
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["provenance"]["source_url"] == source_b
+    machine.succeed("korri-plugin repository switch @korri:tailscale " + source_a + " v2 " + update["approval"])
     ts = update["package"] + "/bin/tailscale --socket=" + update["runtime_directory"] + "/tailscaled.sock"
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
-    candidate = inspect("${broken}")
-    machine.fail("korri-plugin update @korri:tailscale http://cache:5000 ${broken} " + candidate["approval"])
+    candidate = repository_inspect(source_b, "broken")
+    machine.fail("korri-plugin repository switch @korri:tailscale " + source_b + " broken " + candidate["approval"])
     machine.wait_for_unit(unit)
-    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["package"] == "${updated}"
+    restored = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    assert restored["package"] == update["package"]
+    assert restored["provenance"] == update["provenance"]
 
-    pending = inspect("${interrupted}")
-    machine.succeed("systemd-run --unit=interrupted-plugin-update /run/current-system/sw/bin/korri-plugin update @korri:tailscale http://cache:5000 ${interrupted} " + pending["approval"])
-    machine.wait_until_succeeds("grep -F ${interrupted} /run/systemd/system/" + unit)
+    pending = repository_inspect(source_b, "pending")
+    machine.succeed("systemd-run --unit=interrupted-plugin-update /run/current-system/sw/bin/korri-plugin repository switch @korri:tailscale " + source_b + " pending " + pending["approval"])
+    machine.wait_until_succeeds("grep -F " + pending["package"] + " /run/systemd/system/" + unit)
     machine.wait_until_succeeds("test $(systemctl show " + unit + " --property=ActiveState --value) = activating")
     machine.crash()
     machine.start()
@@ -214,7 +298,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test -e " + report["state_directory"] + "/retained-data")
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     machine.wait_until_succeeds("ping -c 1 -W 2 " + peer_ip)
-    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["package"] == "${updated}"
+    restored = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    assert restored["package"] == update["package"]
+    assert restored["provenance"] == update["provenance"]
     machine.succeed("test ! -L /nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service") + "/pending")
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
     machine.succeed("korri-plugin restore")
@@ -224,9 +310,20 @@ pkgs.testers.runNixOSTest {
     machine.fail("ip link show tailscale0")
     assert json.loads(machine.succeed("ip -j rule show")) == ipv4_rules
     assert json.loads(machine.succeed("ip -6 -j rule show")) == ipv6_rules
-    report = inspect("${tailscalePackage}")
-    machine.succeed("korri-plugin update @korri:tailscale http://cache:5000 ${tailscalePackage} " + report["approval"])
+    report = repository_inspect(source_a, "v1")
+    machine.succeed("korri-plugin repository update @korri:tailscale v1 " + report["approval"])
     machine.fail("systemctl is-active " + unit)
+    machine.succeed("korri-plugin repository remove " + source_a)
+    cache.succeed("systemctl stop nginx.service")
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["provenance"]["source_url"] == source_a
+    machine.succeed("korri-plugin enable @korri:tailscale")
+    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin disable @korri:tailscale")
+    # Recovery owns only its bounded private staging entries, even offline.
+    machine.succeed("mkdir -m 700 /var/lib/korri-plugin-host/staging/download-12345678")
+    machine.succeed("touch /var/lib/korri-plugin-host/staging/download-12345678/partial")
+    machine.succeed("korri-plugin restore")
+    machine.fail("test -e /var/lib/korri-plugin-host/staging/download-12345678")
     machine.succeed("korri-plugin remove @korri:tailscale")
     machine.fail("korri-plugin status @korri:tailscale")
     machine.succeed("test -e " + report["state_directory"] + "/retained-data")

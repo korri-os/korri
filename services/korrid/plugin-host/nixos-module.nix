@@ -11,6 +11,11 @@ in
 {
   options.services.korri.pluginHost = {
     enable = lib.mkEnableOption "administrator-approved runtime plugins";
+    officialCatalogUrl = lib.mkOption {
+      type = lib.types.nullOr (lib.types.strMatching "https://[^[:space:]]+");
+      default = null;
+      description = "Owner-curated HTTPS catalog URL. No production address is assumed; absence is shown explicitly by repository list.";
+    };
     package = lib.mkOption {
       type = lib.types.package;
       default = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
@@ -22,6 +27,9 @@ in
       (import ../../../nix/device-cache/nixos-module.nix { inherit lib; })
       {
         environment.systemPackages = [ cfg.package ];
+        environment.etc = lib.optionalAttrs (cfg.officialCatalogUrl != null) {
+          "korri-plugin-host/official-catalog-url".text = cfg.officialCatalogUrl + "\n";
+        };
         boot.kernelModules = [ "tun" ];
         nix.settings.experimental-features = [ "nix-command" ];
         systemd.tmpfiles.rules = [

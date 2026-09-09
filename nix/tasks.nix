@@ -351,7 +351,11 @@ let
       description = "Run the full host, contracts, portal, and Android check.";
       needsProseql = true;
       runtimeInputs = [ pkgs.nix ];
-      env.KORRI_PORTAL_BUNDLE = "${packages.portal-bundle}/bin/portal-bundle";
+      env = {
+        KORRI_PORTAL_BUNDLE = "${packages.portal-bundle}/bin/portal-bundle";
+        # Child nix-shell helpers must use this task's locked nixpkgs, not a channel.
+        NIX_PATH = "nixpkgs=${pkgs.path}";
+      };
       script = ''
         exec bash "$KORRI_ROOT/services/korrid/check.sh" "$@"
       '';
@@ -800,7 +804,10 @@ let
         pkgs.git
         pkgs.gnugrep
         pkgs.gnused
+        pkgs.nix
       ];
+      # test-acceptance-contract.sh has a nix-shell shebang with package lookups.
+      env.NIX_PATH = "nixpkgs=${pkgs.path}";
       script = ''
         "$KORRI_ROOT/plugins/retroarch/android/test-fetch-upstream.sh"
         "$KORRI_ROOT/plugins/retroarch/android/test-build.sh"

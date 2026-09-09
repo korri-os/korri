@@ -26,10 +26,18 @@ craneLib.buildPackage (
     cargoArtifacts = artifacts;
     postUnpack = ''sourceRoot="$sourceRoot/plugin-host"'';
     nativeBuildInputs = [ pkgs.makeWrapper ];
+    KORRI_TEST_CURL = "${pkgs.curl}/bin/curl";
     postInstall = ''
       wrapProgram "$out/bin/korri-plugin" \
         --set KORRI_PLUGIN_NIX ${pkgs.nix}/bin/nix \
-        --set KORRI_PLUGIN_SYSTEMCTL ${pkgs.systemd}/bin/systemctl
+        --set KORRI_PLUGIN_SYSTEMCTL ${pkgs.systemd}/bin/systemctl \
+        --set KORRI_PLUGIN_CURL ${pkgs.curl}/bin/curl
+
+      # korri-publish is build-side only; it does not need systemctl.
+      # The Nix binary is injected so publication does not require an ambient
+      # nix on PATH, matching the same isolation used by korri-plugin.
+      wrapProgram "$out/bin/korri-publish" \
+        --set KORRI_PUBLISH_NIX ${pkgs.nix}/bin/nix
     '';
     meta.mainProgram = "korri-plugin";
   }

@@ -2,20 +2,21 @@
 
 Tailscale installs independently through the [generic plugin host](../../services/korrid/plugin-host/README.md). The system image contains no Tailscale package or named service registration. Install, enable, update, disable, and remove use the administrator CLI without a NixOS update.
 
-`packages.<system>.korri-tailscale` contains the runtime-interpreted `plugin.ts` declaration and links to the unchanged `pkgs.tailscale` binaries from `flake.lock`. The small declaration package is also built in CI. Devices fetch its signed closure from Garnix and never build it locally. Both CLI and daemon come from that same selected package.
+`packages.<system>.korri-tailscale` contains the runtime-interpreted `plugin.ts` declaration and links to the unchanged `pkgs.tailscale` binaries from `flake.lock`. The small declaration package is also built in CI. The publisher converts its complete closure to content-addressed form for a verified HTTPS archive. Devices never build it locally. Both CLI and daemon come from that same selected package.
 
 ## Installation
 
-First install generic `nixosModules.korri-plugin-host` support in the base system. The module does not name Tailscale. Use the exact package path from the build for the device architecture.
+First install generic `nixosModules.korri-plugin-host` support in the base system. The module does not name Tailscale. After the owner publishes a real catalog, use its explicit URL and plugin release label. No official destination is configured by this change.
 
 ```sh
-sudo korri-plugin inspect https://cache.garnix.io "$PACKAGE"
+sudo korri-plugin repository add "$CATALOG_URL"
+sudo korri-plugin repository inspect "$CATALOG_URL" @korri:tailscale "$RELEASE"
 ```
 
 Read the reported declaration, effective systemd policy, and permission warning. Then supply the report's exact approval value:
 
 ```sh
-sudo korri-plugin install https://cache.garnix.io "$PACKAGE" "$APPROVAL"
+sudo korri-plugin repository install "$CATALOG_URL" @korri:tailscale "$RELEASE" "$APPROVAL"
 sudo korri-plugin enable @korri:tailscale
 ```
 
@@ -37,7 +38,8 @@ Run these on a development or CI machine, never on a download-only device:
 
 ```sh
 nix run .#korri-plugin-check
+nix run .#korri-publisher-check
 nix build .#checks.x86_64-linux.korri-tailscale-package --no-link
 ```
 
-Garnix's explicit build list includes the native package and generic host for both Linux architectures. Publication still requires the normal repository push and configured Garnix app. No device deployment or real tailnet enrollment is part of these checks.
+The [owner-triggered publication workflow](../../services/korrid/plugin-host/PUBLICATION.md) builds this actual plugin and checks the host on standard x86_64 and ARM64 Linux runners. Its Rust producer supplies archive names and catalog records. A plugin release label is independent of the upstream Tailscale binary version. Preparation is not live publication: destination, tag, draft approval, immutable-release settings and separate catalog deployment still need owner action. No device deployment or real tailnet enrollment is part of these checks.

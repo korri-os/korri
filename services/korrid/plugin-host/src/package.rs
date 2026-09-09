@@ -1,4 +1,4 @@
-use crate::{declaration::Declaration, process};
+use crate::{declaration::Declaration, process, provenance::Provenance};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -18,6 +18,7 @@ pub const BASE_POLICY: &str = "policy-v1: dynamic unprivileged user; read-only s
 pub struct Report {
     pub id: String,
     pub package: PathBuf,
+    pub provenance: Provenance,
     pub approval: String,
     pub policy: &'static str,
     pub warning: &'static str,
@@ -68,8 +69,7 @@ pub fn tools(path: &Path) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
-    validate_store_path(package)?;
+pub fn validate_cache_source(source: &str) -> Result<(), String> {
     if !(source.starts_with("https://")
         || source.starts_with("http://")
         || source.starts_with("file:///"))
@@ -78,6 +78,12 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     {
         return Err("source must be an HTTP(S) or local file binary cache".into());
     }
+    Ok(())
+}
+
+pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
+    validate_store_path(package)?;
+    validate_cache_source(source)?;
     let package_text = package.to_str().ok_or("invalid package path")?;
     process::checked(
         nix,
@@ -132,7 +138,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn load(package: &Path) -> Result<Report, String> {
+pub fn load_declaration(package: &Path) -> Result<Declaration, String> {
     validate_store_path(package)?;
     if fs::canonicalize(package).map_err(|e| e.to_string())? != package || !package.is_dir() {
         return Err("package must be an exact immutable directory".into());
@@ -155,12 +161,15 @@ pub fn load(package: &Path) -> Result<Report, String> {
     if let Some(cleanup) = &daemon.cleanup {
         resolve_executable(package, &cleanup[0])?;
     }
+    Ok(declaration)
+}
+
+pub fn load(package: &Path, provenance: Provenance) -> Result<Report, String> {
+    let declaration = load_declaration(package)?;
     let id = declaration.id();
+    provenance.validate(&id)?;
     let unit = unit_name(&id);
-    let mut digest = Sha256::new();
-    digest.update(BASE_POLICY.as_bytes());
-    digest.update(package.as_os_str().as_encoded_bytes());
-    digest.update(serde_json::to_vec(&declaration).map_err(|e| e.to_string())?);
+    let daemon = &declaration.contributes.daemons[0];
     let warning = if declaration.host_network_admin() {
         "HOST NETWORK ADMINISTRATION: this daemon can change host routes, interfaces and firewall rules. It can interrupt connectivity or redirect traffic. This access is not confined to its own interface."
     } else if daemon.capabilities.iter().any(|c| c == "CAP_NET_RAW") {
@@ -171,6 +180,7 @@ pub fn load(package: &Path) -> Result<Report, String> {
     let mut report = Report {
         id,
         package: package.into(),
+        provenance,
         approval: String::new(),
         policy: BASE_POLICY,
         warning,
@@ -181,9 +191,24 @@ pub fn load(package: &Path) -> Result<Report, String> {
         declaration,
     };
     report.unit_configuration = crate::unit::render(&report)?;
-    digest.update(report.unit_configuration.as_bytes());
-    report.approval = hex::encode(digest.finalize());
+    report.approval = approval_digest(
+        &report.package,
+        &report.provenance,
+        &report.declaration,
+        &report.unit_configuration,
+    )?;
     Ok(report)
+}
+
+fn approval_digest(
+    package: &Path,
+    provenance: &Provenance,
+    declaration: &Declaration,
+    unit: &str,
+) -> Result<String, String> {
+    let bytes = serde_json::to_vec(&(BASE_POLICY, package, provenance, declaration, unit))
+        .map_err(|e| e.to_string())?;
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 pub fn unit_name(id: &str) -> String {
@@ -211,4 +236,61 @@ pub fn resolve_executable(package: &Path, selected: &str) -> Result<PathBuf, Str
     // Preserve argv[0] for multicall binaries such as coreutils and Tailscale.
     // Validation follows the link; execution uses the selected immutable name.
     Ok(package.join(selected))
+}
+
+#[cfg(test)]
+mod approval_tests {
+    use super::*;
+    #[test]
+    fn approval_binds_source_release_archive_package_and_effective_policy_not_staging() {
+        let declaration = Declaration::evaluate("({namespace:'@test',name:'plugin',contributes:{daemons:[{Type:'exec',ExecStart:['bin/run'],CapabilityBoundingSet:[]}]}})").unwrap();
+        let package = Path::new("/nix/store/00000000000000000000000000000000-package");
+        let origin = Provenance::Repository {
+            source_url: "https://a.example/catalog".into(),
+            plugin_id: declaration.id(),
+            release_version: "1".into(),
+            platform: crate::provenance::current_platform().into(),
+            archive_sha256: "a".repeat(64),
+        };
+        let digest = approval_digest(package, &origin, &declaration, "effective unit").unwrap();
+        assert_eq!(
+            digest,
+            approval_digest(package, &origin.clone(), &declaration, "effective unit").unwrap()
+        );
+        for field in ["source_url", "release_version", "archive_sha256"] {
+            let mut changed = serde_json::to_value(&origin).unwrap();
+            changed[field] = serde_json::Value::String("different".into());
+            let changed: Provenance = serde_json::from_value(changed).unwrap();
+            assert_ne!(
+                digest,
+                approval_digest(package, &changed, &declaration, "effective unit").unwrap()
+            );
+        }
+        assert_ne!(
+            digest,
+            approval_digest(
+                Path::new("/nix/store/11111111111111111111111111111111-package"),
+                &origin,
+                &declaration,
+                "effective unit"
+            )
+            .unwrap()
+        );
+        assert_ne!(
+            digest,
+            approval_digest(package, &origin, &declaration, "new policy").unwrap()
+        );
+        assert_ne!(
+            digest,
+            approval_digest(
+                package,
+                &Provenance::RawCache {
+                    cache_url: "file:///staging/cache".into()
+                },
+                &declaration,
+                "effective unit"
+            )
+            .unwrap()
+        );
+    }
 }

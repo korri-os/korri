@@ -38,11 +38,10 @@ assert !conflicting.nix.settings.fallback;
 assert conflicting.nix.settings.require-sigs;
 assert settings.always-allow-substitutes;
 assert builtins.elem "https://cache.nixos.org/" settings.substituters;
-assert builtins.elem "https://cache.garnix.io" settings.substituters;
+assert settings.substituters == builder.nix.settings.substituters;
 assert builtins.elem "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
   settings.trusted-public-keys;
-assert builtins.elem "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g="
-  settings.trusted-public-keys;
+assert settings.trusted-public-keys == builder.nix.settings.trusted-public-keys;
 pkgs.runCommand "korri-device-cache-module-check"
   {
     nativeBuildInputs = [

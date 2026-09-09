@@ -10,11 +10,7 @@
     # Small Nix outputs can declare allowSubstitutes = false. Devices must
     # fetch these outputs too, rather than build wrappers or symlink trees.
     always-allow-substitutes = true;
-    # Published by https://garnix.io/docs/ci/caching/.
-    # NixOS appends cache.nixos.org and its key in its own Nix module.
-    substituters = [ "https://cache.garnix.io" ];
-    trusted-public-keys = [
-      "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g="
-    ];
+    # Keep NixOS's stock cache and key. Plugin release archives are not Nix
+    # substituters; the host verifies and stages them as local file caches.
   };
 }

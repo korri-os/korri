@@ -6,8 +6,69 @@ use std::{
         fd::AsRawFd,
         unix::fs::{symlink, MetadataExt, OpenOptionsExt, PermissionsExt},
     },
-    path::Path,
+    path::{Path, PathBuf},
 };
+
+pub const STATE_ROOT: &str = "/var/lib/korri-plugin-host";
+pub const ROOTS: &str = "/nix/var/nix/gcroots/korri-plugin-host";
+pub const OFFICIAL_CATALOG: &str = "/etc/korri-plugin-host/official-catalog-url";
+pub const SOURCES_DIR: &str = "sources";
+pub const STAGING_DIR: &str = "staging";
+pub const MAX_JSON_BYTES: usize = 128 * 1024;
+
+/// Every state mutation, including source writes and stale staging cleanup,
+/// requires the same exclusive lock for this root.
+pub struct State {
+    root: PathBuf,
+    _lock: File,
+}
+
+impl State {
+    pub fn open(root: &Path) -> Result<Self, String> {
+        directory(root)?;
+        let lock = lock(&root.join("lock"))?;
+        Ok(Self {
+            root: root.into(),
+            _lock: lock,
+        })
+    }
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+    pub fn staging(&self) -> Result<tempfile::TempDir, String> {
+        let root = self.root.join(STAGING_DIR);
+        directory(&root)?;
+        tempfile::Builder::new()
+            .prefix("download-")
+            .rand_bytes(8)
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir_in(root)
+            .map_err(|e| e.to_string())
+    }
+    pub fn cleanup_staging(&self) -> Result<(), String> {
+        let root = self.root.join(STAGING_DIR);
+        if fs::symlink_metadata(&root).is_err() {
+            return Ok(());
+        }
+        directory(&root)?;
+        for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            if !name
+                .to_str()
+                .and_then(|s| s.strip_prefix("download-"))
+                .is_some_and(|s| s.len() == 8 && s.bytes().all(|b| b.is_ascii_alphanumeric()))
+            {
+                return Err("unexpected entry in plugin staging directory".into());
+            }
+            directory(&entry.path())?;
+            fs::remove_dir_all(entry.path()).map_err(|e| e.to_string())?;
+        }
+        File::open(root)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| e.to_string())
+    }
+}
 
 pub fn directory(path: &Path) -> Result<(), String> {
     if !path.exists() {
@@ -66,11 +127,11 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> 
     };
     protect_file(&file)?;
     let mut bytes = Vec::new();
-    file.take(128 * 1024 + 1)
+    file.take(MAX_JSON_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
-    if bytes.len() > 128 * 1024 {
-        return Err("plugin receipt is too large".into());
+    if bytes.len() > MAX_JSON_BYTES {
+        return Err("plugin state JSON is too large".into());
     }
     serde_json::from_slice(&bytes)
         .map(Some)
@@ -78,7 +139,11 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> 
 }
 
 pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
-    write_atomic(path, &serde_json::to_vec(value).map_err(|e| e.to_string())?)
+    let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_JSON_BYTES {
+        return Err("plugin state JSON is too large".into());
+    }
+    write_atomic(path, &bytes)
 }
 
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
