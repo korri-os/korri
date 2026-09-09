@@ -15,7 +15,10 @@ was introduced.
 
 Post-rebase checks passed: 483 korrid tests, 264 Portal tests and TypeScript,
 25 kiosk unit tests, and the korrid-device, Linux-host, and kiosk module checks.
-The worker did not rerun the explicit Chromium integration after rebase.
+The explicit Chromium integration was subsequently rerun with the patched
+x86_64 Chromium 143 wrapper: 25 kiosk unit tests and the private-pipe integration
+passed, along with formatting and Clippy (`proc_1c80`). This does not establish
+ARM or Odin acceptance.
 Logs are `/tmp/rebase-korrid-final.log`, `/tmp/rebase-portal-final.log`, and
 `/tmp/rebase-module-check.log`. The system closure below predates the rebase
 and must be rebuilt before deployment.
@@ -25,7 +28,8 @@ Read-only device record `proc_1597` confirms Linux 7.2.0 with root and boot on
 The controller reports `AYN Odin2 Gamepad`, bus `0003`, vendor `2020`, product
 `3001`, currently `event3`. Touch reports `generic ft5x06 (44)`, currently
 `event4`. Event numbers are observations, not stable device identities.
-The SD root has 431 GiB free. Fuji's build filesystem has 13 GiB free.
+The SD root had 431 GiB free at that device check. Earlier Fuji capacity
+readings are superseded by the native-build checkpoint below.
 
 Chromium 143 source inspection confirms two native opacity layers:
 `chrome/browser/ui/views/frame/contents_web_view.cc:121-143` fills the native
@@ -126,10 +130,68 @@ again behind the persistent overlay. This uses software GL, not the Odin GPU,
 and does not exercise korrid launch authority. Screenshot:
 `/tmp/korri-native-alpha-eXXDBJ/game-resumed.png`.
 
-`korri-chromium-aarch64` (`863d2bb5`) is building on zao through the existing
-cross toolchain. Process `proc_49df` is the source of build status. ARM success
-must not be inferred from x86_64. Fuji's latest read-only report shows 27 GiB
-free and zero unreachable store paths (`proc_b2b0`); no GC was run.
+The Zao cross-build (`proc_49df`) failed after 11,914 seconds. Its host-side
+fontconfig binding generator targeted x86_64 but consumed AArch64 glibc headers,
+which produced unknown SVE type errors. The cross-build remains stopped.
+
+A matched Clang 21.1.2 benchmark used four real Chromium C++ files with an ARM
+target. Output hashes matched on both machines. Zao achieved 1.78 times Fuji's
+throughput at four workers, and 2.27 times with eight workers against Fuji's
+four. Preprocessing and final linking were excluded. This does not establish a
+whole-build ETA, especially because cross-compilation adds host-toolchain work.
+Evidence: `/tmp/korri-chromium-speed-kbyhx998/summary.json` on Zao.
+
+### Native build checkpoint, 2026-09-07
+
+The native `packages.aarch64-linux.korri-chromium` build is running on Fuji.
+The first native run stopped after 5,981 of 55,237 Ninja steps because its
+observer treated `ProcessLookupError` from an exiting compiler as fatal. The
+observer stopped the build, not Chromium or the resource limits. Its failed
+source tree was retained. A clean retry repeats that work.
+
+The verified package
+derivation is `/nix/store/hf73x4j6345i9d3jvyq1plia4g3bhwc1-chromium-143.0.7499.169.drv`.
+Only the already-reviewed transparency patch is applied. Release flags and the
+sandbox remain enabled.
+
+The current build unit is `korri-chromium-arm-build-56k4824i.service`, not a
+client of the shared Nix daemon. It runs the local Nix store with one build and
+four compiler jobs. Kernel cgroup checks verified a 16 GiB memory maximum,
+14 GiB memory-high threshold, and zero swap allowance. The durable supervisor
+stops only this build if free disk falls below 12 GiB. It survives SSH loss.
+The shared Nix daemon remains PID 1891; no host activation was performed.
+
+The ESRCH fix passes six supervisor tests. Review then found two more observer
+risks: successful transient-unit results can disappear before they are read, and
+failed diagnostic writes can bypass cleanup. A separate corrected guard took over
+without restarting the build. Nix PID 481716 remained unchanged. Six additional
+guard tests pass, including cgroup removal at completion and failed receipt writes.
+A follow-up review found no remaining defects within that operational scope.
+
+The guard proves package realization through registration of the exact Nix output
+paths. It does not infer success from a vanished systemd result. It stops the owned
+build before attempting failure diagnostics. The earlier observer is retired.
+
+At the retry checkpoint the compiler had completed 2,872 of 55,237 Ninja steps.
+Free space was 60.8 GiB, peak cgroup memory was 7.3 GiB, and no OOM events had
+occurred. These observations do not predict final-link memory or build duration.
+
+Current records on Fuji:
+- `/var/lib/korri-chromium-build/run-56k4824i/build.log`
+- `/var/lib/korri-chromium-build/run-56k4824i/guard.log`
+- `/var/lib/korri-chromium-build/run-56k4824i/completion.json`
+
+Guard unit: `korri-chromium-arm-guard-56k4824i.service`. Managed process
+`proc_277c` waits for it, then copies successful outputs to Zao, adds GC roots,
+and verifies stored contents. `proc_aa76` follows compiler logs with failure and
+final-link alerts. Zao evidence and the tested operator scripts live under
+`/home/simonwjackson/artifacts/korri-chromium-native/run-56k4824i/`.
+No completed ARM artifact or Odin acceptance is claimed yet.
+
+The input derivation has a dedicated GC root. Successful outputs will be rooted
+under the run directory. Two earlier startup attempts stopped before compilation:
+the first exposed a missing launcher PATH; the second found the previously
+unpinned derivation absent. Both were corrected before the first native run.
 
 The following records describe the original stock-browser failure. The local Chromium 143 probe
 found an opaque native window even when CDP captured a page pixel with alpha
@@ -147,14 +209,32 @@ window transparency.
 
 ## Remaining deployment gates
 
+Rust already reconciles natural unit completion when session status is requested.
+The Linux Portal now observes that status once per second while Ready (`2c62a3e4`).
+The policy comes from the actual legacy consumer,
+`product/platform/react/library/library-atoms.ts`, using `Atom.withRefresh` at one
+second through `ForegroundSessionStatusLayerLive`. No legacy schema was imported.
+The current Portal continues to use its existing local authenticated session RPC.
+
+Session-only reconciliation preserves catalog, device facts, notices, and action
+locks. It rejects stale responses after reload, prepare, stop, and unmount; it
+skips overlapping observations. A failed query keeps the last known session and
+does not prove exit. Unchanged observations preserve state identity.
+
+`nix run .#portal-check` passed 274 tests and TypeScript (`proc_b5df`). Coverage
+includes actual HTTP null-idle replies and controlled timer/race tests. Two
+independent reviewers found no Portal defects. These tests do not constitute a
+real game-exit or controller test on Odin. Exact-session freeze/thaw exists, but
+compositor resume does not follow from process thaw alone.
+
 1. Connect launch, return, and resume to compositor focus and browser
    presentation. The floating opaque hub currently covers normal game
    windows. Linux resume explicitly reports unavailable.
 2. Deliver real Odin controller actions to the Portal without exposing raw
    hardware to JavaScript. Verify directions, confirm, back, overlay opening,
    touch, and return to the game. Ground InputPlumber mapping in device records.
-3. Refresh Linux session state after natural game exit. Android lifecycle
-   events do not provide that signal on Linux.
+3. Verify the new Linux session observer after a real game exits on Odin.
+   Portal tests pass, but the hardware behavior remains unverified.
 4. Complete the ARM Chromium build and verify native transparency on the Odin,
    then wire partial/full overlay presentation without adding another browser
    instance. Local native transparency is already proven; do not repeat the

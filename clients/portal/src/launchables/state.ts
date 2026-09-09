@@ -320,6 +320,29 @@ export const LaunchablesState = {
     }
   },
 
+  /** Observe session truth without changing catalog, notices, or action locks. */
+  withSessionStatus: (
+    state: LaunchablesState,
+    status: SessionStatusOutcome,
+  ): LaunchablesState => {
+    if (state._tag !== "Ready" || status._tag !== "Ok") return state
+    const active = status.payload.active
+    const previous = state.entries.find(entry => entry.kind === "now-playing")?.session
+    // Rust's absent session is null on the wire. Do not republish unchanged
+    // observations or equate a failed query with proof that a game ended.
+    if (active == null && previous === undefined) return state
+    if (active != null && previous !== undefined &&
+      active.launchId === previous.launchId && active.host === previous.host &&
+      active.gameId === previous.gameId && active.title === previous.title &&
+      active.phase === previous.phase) return state
+    const entries: PortalEntry[] = state.entries.filter(entry => entry.kind !== "now-playing")
+    if (active != null) {
+      const index = entries[0]?.kind === "storage-access" ? 1 : 0
+      entries.splice(index, 0, { kind: "now-playing", session: active })
+    }
+    return { ...state, entries }
+  },
+
   /** Replace the notice on a Ready state, leaving its entries alone. */
   withNotice: (state: ReadyState, message: string): ReadyState => ({
     ...state,

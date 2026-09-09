@@ -56,6 +56,9 @@ import {
  * the status degrades to the same silent no-banner path as a failure.
  */
 const SESSION_STATUS_TIMEOUT_MS = 3000
+// Preserve legacy product/platform/react/library/library-atoms.ts's 1 Hz
+// status observation through the local brain, without importing its schema.
+const SESSION_POLL_INTERVAL_MS = 1000
 const STOP_POLL_INTERVAL_MS = 500
 const STOP_POLL_DEADLINE_MS = 8000
 const DISCOVERY_POLL_INTERVAL_MS = 750
@@ -411,6 +414,33 @@ export function useLaunchables(
       discoveryPoller.current.dispose()
     }
   }, [checkFolderPicker, load])
+
+  useEffect(() => {
+    if (bridge) return
+    let disposed = false
+    let inFlight = false
+    const observe = async () => {
+      if (disposed || inFlight || stateRef.current._tag !== "Ready") return
+      const load = loadSeq.current
+      const action = actionSeq.current
+      inFlight = true
+      try {
+        const status = await sessionStatusWithTimeout()
+        if (disposed || !mountedRef.current ||
+          load !== loadSeq.current || action !== actionSeq.current) return
+        const current = stateRef.current
+        const next = LaunchablesState.withSessionStatus(current, status)
+        if (next !== current) publish(next)
+      } finally {
+        inFlight = false
+      }
+    }
+    const timer = setInterval(() => void observe(), SESSION_POLL_INTERVAL_MS)
+    return () => {
+      disposed = true
+      clearInterval(timer)
+    }
+  }, [bridge, publish, sessionStatusWithTimeout])
 
   // Returning from a stream, Android picker, settings, or a completed
   // background app-list repair means the launchable view may be stale.
