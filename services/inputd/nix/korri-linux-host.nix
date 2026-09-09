@@ -551,6 +551,15 @@ in
         default = "";
         description = "Additional native Sway configuration, including output transforms and touch mapping.";
       };
+      neverFocusAppIds = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          Window identities korrid must never raise when a player resumes a
+          game, such as the kiosk hub. The hub runs as the same runtime user as
+          games, so process ownership alone cannot tell them apart.
+        '';
+      };
       renderer = lib.mkOption {
         type = lib.types.enum [
           "gles2"
@@ -853,6 +862,10 @@ in
         moonlightAddress
         ;
       inherit compositorControlDirectory certificateControlDirectory;
+      # korrid brings a resumed game back to the front. The hub shares the
+      # runtime user, so process ownership alone cannot tell it from a game.
+      inherit compositorControlSocket;
+      neverFocusAppIds = cfg.compositor.neverFocusAppIds;
     };
 
     services.sunshine = {
@@ -1090,7 +1103,10 @@ in
         ]
         ++ lib.optional (cfg.compositor.backend == "drm") "seat";
         RuntimeDirectory = "korri-compositor";
-        RuntimeDirectoryMode = "0700";
+        # korrid must reach the control socket to raise a resumed game. Games
+        # stay blocked because this whole directory is hidden from their
+        # namespace, not because of these file permissions.
+        RuntimeDirectoryMode = "0750";
         ExecStartPre = [
           "+${cleanupCompositorSockets}"
           waitForRenderDevice
@@ -1103,7 +1119,8 @@ in
         ExecStopPost = "+${cleanupCompositorSockets}";
         Restart = "on-failure";
         RestartSec = 2;
-        UMask = "0077";
+        # Group access is what lets korrid speak to the compositor.
+        UMask = "0007";
         NoNewPrivileges = true;
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];

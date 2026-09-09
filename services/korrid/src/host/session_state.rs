@@ -11,6 +11,7 @@ use super::identity::{ACTIVE_FILE, TEMP_ACTIVE_PREFIX};
 #[cfg(test)]
 use std::fs;
 
+use super::compositor_focus::{focus_launch_window, CompositorControl, FocusOutcome};
 use super::identity::{
     clear_active, clear_crash_temporary_active, consume_active, persist_active, read_active,
     replace_active, ActiveSession,
@@ -19,9 +20,11 @@ use super::identity::{
 use super::input_seat::DisabledInputSeats;
 use super::input_seat::{InputSeatLease, InputSeatManager};
 use super::play_log::{PlayHistoryKey, PlayLogStore};
-use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState};
 #[cfg(test)]
-use super::systemd_unit::{LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUnitBackend};
+use super::systemd_unit::{
+    read_unit_pids, LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUnitBackend,
+};
+use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState};
 
 /// Wall-clock seam. Production reads the system clock; tests supply
 /// deterministic instants so recorded durations are exact.
@@ -89,6 +92,12 @@ pub enum HostSessionFreezeChange {
     Stopping {
         launch_id: String,
     },
+    /// The unit runs again, but its window could not be raised. The session is
+    /// exact and running; only the return to the game is incomplete.
+    FocusFailed {
+        launch_id: String,
+        message: String,
+    },
     /// The systemd helper refused the change. The unit is untouched and
     /// the session stays in its last known state.
     HelperFailed {
@@ -135,6 +144,10 @@ pub struct HostSessionControl {
     clock: Arc<dyn WallClock>,
     state: Arc<Mutex<ActiveState>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
+    /// Absent when no compositor is configured, as on a headless host.
+    compositor: Option<Arc<dyn CompositorControl>>,
+    /// Surfaces that must never be focused as a game, such as the kiosk hub.
+    never_focus: Vec<String>,
 }
 
 impl HostSessionControl {
@@ -171,7 +184,34 @@ impl HostSessionControl {
             clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
             seat_lease: Arc::new(Mutex::new(None)),
+            compositor: None,
+            never_focus: Vec::new(),
         }
+    }
+
+    /// Give this session control a compositor so a resumed game returns to the
+    /// front. Without it, thaw still runs the game, but nothing is raised.
+    pub(crate) fn with_compositor(
+        mut self,
+        compositor: Arc<dyn CompositorControl>,
+        never_focus: Vec<String>,
+    ) -> Self {
+        self.compositor = Some(compositor);
+        self.never_focus = never_focus;
+        self
+    }
+
+    /// Raise the window of the exact launch that was just resumed.
+    fn focus_launch(&self, launch_id: &str) -> FocusOutcome {
+        let Some(compositor) = self.compositor.as_ref() else {
+            return FocusOutcome::NothingToFocus;
+        };
+        let pids = match self.backend.window_pids(launch_id) {
+            Ok(pids) => pids,
+            Err(error) => return FocusOutcome::Failed(error.message),
+        };
+        let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
+        focus_launch_window(compositor.as_ref(), &pids, &excluded)
     }
 
     pub(crate) fn play_log(&self) -> &PlayLogStore {
@@ -659,6 +699,14 @@ impl HostSessionControl {
                 game_id,
             },
         };
+        // Returning to a game means the player can see it again, so a resume
+        // raises its window. A game that has not mapped a window yet is normal;
+        // only a compositor that answered and then refused is a real failure.
+        if target == FreezerTarget::Running {
+            if let FocusOutcome::Failed(message) = self.focus_launch(&launch_id) {
+                return HostSessionFreezeChange::FocusFailed { launch_id, message };
+            }
+        }
         if already {
             HostSessionFreezeChange::Unchanged { launch_id }
         } else {
@@ -915,6 +963,8 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    use std::collections::BTreeSet;
+
     #[derive(Default)]
     struct BackendState {
         units: BTreeMap<String, LaunchUnitState>,
@@ -927,6 +977,8 @@ mod tests {
         enumeration_unavailable: bool,
         stop_fails_when_collected: bool,
         freezer_fails: bool,
+        window_pids: BTreeMap<String, BTreeSet<i32>>,
+        window_pids_fail: bool,
     }
 
     #[derive(Default)]
@@ -940,6 +992,14 @@ mod tests {
             self.state.lock().unwrap().units.insert(id.into(), state);
         }
 
+        fn set_pids(&self, id: &str, pids: &[i32]) {
+            self.state
+                .lock()
+                .unwrap()
+                .window_pids
+                .insert(id.into(), pids.iter().copied().collect());
+        }
+
         fn release_stop(&self) {
             let mut state = self.state.lock().unwrap();
             state.block_stop = false;
@@ -948,6 +1008,21 @@ mod tests {
     }
 
     impl LaunchUnitBackend for DeterministicBackend {
+        fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+            let state = self.state.lock().unwrap();
+            if state.window_pids_fail {
+                return Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    "control group unreadable",
+                ));
+            }
+            Ok(state
+                .window_pids
+                .get(launch_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+
         fn launch(
             &self,
             launch_id: &str,
@@ -1777,6 +1852,205 @@ mod tests {
             format!(
                 "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState\n"
             )
+        );
+    }
+
+    /// The production reader must name windows from the kernel's own view of
+    /// the exact unit, and must not treat a finished unit as a failure.
+    #[test]
+    fn unit_processes_come_from_that_units_own_control_group() {
+        let root = tempfile::tempdir().unwrap();
+        let unit = "korri-game-0123456789abcdef0123456789abcdef.service";
+        let group = root.path().join(unit);
+        fs::create_dir_all(&group).unwrap();
+        fs::write(group.join("cgroup.procs"), "9100\n9101\n\n0\nnot-a-pid\n").unwrap();
+
+        assert_eq!(
+            read_unit_pids(root.path(), unit).unwrap(),
+            BTreeSet::from([9100, 9101])
+        );
+        // A unit that already finished has no control group. That is an empty
+        // process set, never a helper failure.
+        assert_eq!(
+            read_unit_pids(
+                root.path(),
+                "korri-game-ffffffffffffffffffffffffffffffff.service"
+            )
+            .unwrap(),
+            BTreeSet::new()
+        );
+        // An unreadable group must not be mistaken for a game without windows.
+        let broken = "korri-game-11111111111111111111111111111111.service";
+        fs::create_dir_all(root.path().join(broken).join("cgroup.procs")).unwrap();
+        assert!(read_unit_pids(root.path(), broken).is_err());
+    }
+
+    /// Records what korrid asked the compositor to do while resuming.
+    #[derive(Debug, Default)]
+    struct RecordingCompositor {
+        tree: Mutex<String>,
+        focused: Mutex<Vec<i64>>,
+        focus_fails: bool,
+    }
+
+    impl CompositorControl for RecordingCompositor {
+        fn tree(&self) -> Result<String, String> {
+            Ok(self.tree.lock().unwrap().clone())
+        }
+
+        fn focus(&self, node_id: i64) -> Result<(), String> {
+            self.focused.lock().unwrap().push(node_id);
+            if self.focus_fails {
+                return Err("compositor refused focus".into());
+            }
+            Ok(())
+        }
+    }
+
+    const KIOSK_APP_ID: &str = "chrome-127.0.0.1__kiosk-blank.html-Default";
+
+    fn compositor_tree(game_pid: i32) -> String {
+        format!(
+            r#"{{"id": 1, "nodes": [
+                 {{"id": 2, "pid": 4100, "app_id": "{KIOSK_APP_ID}",
+                  "nodes": [], "floating_nodes": []}},
+                 {{"id": 3, "pid": {game_pid}, "app_id": null,
+                  "nodes": [], "floating_nodes": []}}
+               ], "floating_nodes": []}}"#
+        )
+    }
+
+    fn resuming_control(
+        root: &Path,
+        backend: Arc<DeterministicBackend>,
+        compositor: Arc<RecordingCompositor>,
+    ) -> HostSessionControl {
+        HostSessionControl::new(root, backend)
+            .with_compositor(compositor, vec![KIOSK_APP_ID.to_string()])
+    }
+
+    #[test]
+    fn resuming_raises_the_window_of_that_exact_game() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+
+        assert_eq!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        assert!(compositor.focused.lock().unwrap().is_empty());
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(*compositor.focused.lock().unwrap(), vec![3]);
+    }
+
+    #[test]
+    fn resuming_never_raises_the_kiosk_window_and_still_reports_the_session() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        // The hub shares the runtime user, so its process can appear here.
+        backend.set_pids(&id, &[4100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+
+        assert_eq!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        assert!(compositor.focused.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_refused_focus_is_reported_instead_of_claiming_the_game_returned() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor {
+            focus_fails: true,
+            ..RecordingCompositor::default()
+        });
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.freeze(&id);
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed {
+                launch_id: id.clone(),
+                message: "compositor refused focus".into()
+            }
+        );
+        // The unit itself is running again, so the session stays exact.
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+    }
+
+    #[test]
+    fn an_unreadable_control_group_does_not_silently_resume_without_the_game() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        control.freeze(&id);
+        backend.state.lock().unwrap().window_pids_fail = true;
+
+        assert!(matches!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed { .. }
+        ));
+    }
+
+    #[test]
+    fn freezing_and_stopping_never_touch_the_compositor() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+
+        control.freeze(&id);
+        control.stop(&id);
+        assert!(compositor.focused.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_host_without_a_compositor_still_resumes_the_game() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        control.freeze(&id);
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
         );
     }
 

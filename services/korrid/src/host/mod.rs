@@ -1,3 +1,4 @@
+mod compositor_focus;
 mod config;
 pub(crate) mod control;
 mod identity;

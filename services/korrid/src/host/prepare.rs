@@ -1,4 +1,5 @@
 use super::{
+    compositor_focus::{CompositorControl, SwaymsgCompositorControl},
     config::{HostConfig, HostGame},
     input_seat::{DisabledInputSeats, InputSeatManager, UnixInputSeatManager},
     session_state::HostSessionControl,
@@ -9,7 +10,28 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
+
+/// How long korrid waits for one compositor answer while resuming a game.
+const COMPOSITOR_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Read the compositor korrid may use to bring a resumed game forward. A host
+/// without both settings keeps working; it simply raises no window.
+fn configured_compositor() -> Option<(Arc<dyn CompositorControl>, Vec<String>)> {
+    let program = PathBuf::from(std::env::var_os("KORRID_SWAYMSG")?);
+    let socket = PathBuf::from(std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?);
+    let control = SwaymsgCompositorControl::new(program, socket, COMPOSITOR_TIMEOUT)?;
+    // The kiosk hub is the surface the player leaves, never a game to return to.
+    let never_focus = std::env::var("KORRID_NEVER_FOCUS_APP_IDS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect();
+    Some((Arc::new(control), never_focus))
+}
 
 #[derive(Clone)]
 pub struct HostLauncher {
@@ -63,7 +85,12 @@ impl HostLauncher {
                     .collect(),
             ),
             environment: Arc::new(config.environment.clone()),
-            control: HostSessionControl::with_input_seats(private_state_root, backend, input_seats),
+            control: configured_compositor().into_iter().fold(
+                HostSessionControl::with_input_seats(private_state_root, backend, input_seats),
+                |control, (compositor, never_focus)| {
+                    control.with_compositor(compositor, never_focus)
+                },
+            ),
         }
     }
 

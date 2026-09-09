@@ -224,6 +224,23 @@ in
       default = "/run/korri-compositor";
       description = "Exact compositor control directory hidden from every game unit.";
     };
+    compositorControlSocket = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Exact Sway control socket korrid uses to bring a resumed game back to
+        the front. Null leaves resume without compositor focus.
+      '';
+    };
+    neverFocusAppIds = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Window identities korrid must never raise as a game, such as the kiosk
+        hub. The hub shares the runtime user, so process ownership alone cannot
+        tell it apart from a game.
+      '';
+    };
     certificateControlDirectory = lib.mkOption {
       type = lib.types.str;
       default = "/run/korri-certificate-control";
@@ -365,6 +382,26 @@ in
       {
         assertion = validAbsolutePath cfg.certificateControlDirectory;
         message = "korrid certificateControlDirectory must be a normalized absolute path.";
+      }
+      {
+        assertion = cfg.compositorControlSocket == null || validAbsolutePath cfg.compositorControlSocket;
+        message = "korrid compositorControlSocket must be a normalized absolute path.";
+      }
+      {
+        assertion = cfg.compositorControlSocket != null || cfg.neverFocusAppIds == [ ];
+        message = "korrid neverFocusAppIds needs compositorControlSocket to have any effect.";
+      }
+      {
+        # Games cannot reach the compositor because that directory is hidden
+        # from every game unit. A socket outside it would undo that.
+        assertion =
+          cfg.compositorControlSocket == null
+          || lib.hasPrefix "${cfg.compositorControlDirectory}/" cfg.compositorControlSocket;
+        message = "korrid compositorControlSocket must sit inside compositorControlDirectory.";
+      }
+      {
+        assertion = !lib.any (identity: lib.hasInfix "," identity) cfg.neverFocusAppIds;
+        message = "korrid neverFocusAppIds entries must not contain a comma.";
       }
       {
         assertion = !cfg.browser.enable || lib.hasPrefix "127.0.0.1:" cfg.browser.address;
@@ -529,6 +566,12 @@ in
       // lib.optionalAttrs (cfg.moonlightAddress != null) {
         KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
       }
+      // lib.optionalAttrs (cfg.compositorControlSocket != null) {
+        KORRID_SWAYMSG = "${pkgs.sway}/bin/swaymsg";
+        KORRID_COMPOSITOR_CONTROL_SOCKET = cfg.compositorControlSocket;
+        KORRID_NEVER_FOCUS_APP_IDS = lib.concatStringsSep "," cfg.neverFocusAppIds;
+      }
+      }
       // lib.optionalAttrs cfg.browser.enable {
         KORRID_BROWSER_ADDRESS = cfg.browser.address;
         KORRID_BROWSER_ORIGIN = cfg.browser.origin;
@@ -551,6 +594,11 @@ in
         );
         User = serviceUser;
         Group = serviceGroup;
+        # Reaching the compositor socket is what lets korrid raise a resumed
+        # game. Games stay shut out by namespace hiding, not by this group.
+        SupplementaryGroups = lib.optional (
+          cfg.compositorControlSocket != null
+        ) config.users.users.${cfg.runtimeUser}.group;
         StateDirectory = "korrid";
         StateDirectoryMode = "0700";
         RuntimeDirectory = "korrid";

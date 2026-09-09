@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{self, Read},
     os::fd::AsRawFd,
     path::{Component, Path, PathBuf},
@@ -21,6 +21,8 @@ const DEFAULT_CONTROL_SOCKET: &str = "/run/korrid-control/control.sock";
 const DEFAULT_CONTROL_DIRECTORY: &str = "/run/korrid-control";
 const DEFAULT_BROWSER_RUNTIME_DIRECTORY: &str = "/run/korrid-browser";
 const DEFAULT_COMPOSITOR_CONTROL_DIRECTORY: &str = "/run/korri-compositor";
+/// Control group of a system unit started by systemd-run.
+const DEFAULT_UNIT_CGROUP_ROOT: &str = "/sys/fs/cgroup/system.slice";
 const DEFAULT_CERTIFICATE_CONTROL_DIRECTORY: &str = "/run/korri-certificate-control";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,6 +87,12 @@ pub trait LaunchUnitBackend: Send + Sync {
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError>;
+    /// Processes of this launch, used to recognize its compositor windows.
+    /// A backend that cannot see processes reports none, which makes korrid
+    /// focus nothing rather than guess at another program's window.
+    fn window_pids(&self, _launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        Ok(BTreeSet::new())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +103,28 @@ struct ProtectedPaths {
     sunshine_private_state_root: PathBuf,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
+}
+
+/// Reads one unit's control group. A missing group means the unit already
+/// finished or has not started, which is an empty process set rather than a
+/// failure. Only an unreadable group is reported as an error.
+pub(super) fn read_unit_pids(root: &Path, unit: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+    let procs = root.join(unit).join("cgroup.procs");
+    let text = match std::fs::read_to_string(&procs) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(error) => {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                format!("could not read {}: {error}", procs.display()),
+            ))
+        }
+    };
+    Ok(text
+        .lines()
+        .filter_map(|line| line.trim().parse::<i32>().ok())
+        .filter(|pid| *pid > 0)
+        .collect())
 }
 
 #[derive(Clone, Debug)]
@@ -802,6 +832,15 @@ impl SystemdLaunchUnitBackend {
 }
 
 impl LaunchUnitBackend for SystemdLaunchUnitBackend {
+    /// Reads the unit's own control group. Kernel process membership is the
+    /// only honest answer to "which windows belong to this launch"; window
+    /// titles and classes are set by the game itself.
+    fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        let unit = Self::unit_name(launch_id)?;
+        let root = configured_path("KORRID_UNIT_CGROUP_ROOT", DEFAULT_UNIT_CGROUP_ROOT);
+        read_unit_pids(&root, &unit)
+    }
+
     fn launch(
         &self,
         launch_id: &str,

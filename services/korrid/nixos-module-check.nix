@@ -170,6 +170,37 @@ let
       compositorControlDirectory = "relative/compositor-control";
     };
   };
+  # A socket outside the hidden directory would be reachable by games, which
+  # is exactly what hiding that directory prevents.
+  compositorSocketOutsideHiddenDirectory = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      compositorControlSocket = "/run/elsewhere/sway-ipc.sock";
+    };
+  };
+  focusExclusionWithoutCompositor = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      neverFocusAppIds = [ "chrome-kiosk" ];
+    };
+  };
+  focusExclusionWithComma = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      compositorControlSocket = "/run/korri-test/compositor-control/sway-ipc.sock";
+      neverFocusAppIds = [ "one,two" ];
+    };
+  };
+  focusEnabled = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      compositorControlSocket = "/run/korri-test/compositor-control/sway-ipc.sock";
+      neverFocusAppIds = [
+        "chrome-kiosk"
+        "other-hub"
+      ];
+    };
+  };
   emptyRelays = evaluate {
     services.korridLinuxDevice = {
       enable = true;
@@ -305,6 +336,21 @@ assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.c
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
 assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
+# Focus is off unless a socket is configured, and korrid then stays out of the
+# runtime user's group.
+assert !(service.environment ? KORRID_COMPOSITOR_CONTROL_SOCKET);
+assert !(service.environment ? KORRID_SWAYMSG);
+assert service.serviceConfig.SupplementaryGroups == [ ];
+assert
+  (focusEnabled.config.systemd.services.korrid.environment.KORRID_COMPOSITOR_CONTROL_SOCKET)
+  == "/run/korri-test/compositor-control/sway-ipc.sock";
+assert
+  (focusEnabled.config.systemd.services.korrid.environment.KORRID_NEVER_FOCUS_APP_IDS)
+  == "chrome-kiosk,other-hub";
+assert
+  (focusEnabled.config.systemd.services.korrid.environment.KORRID_SWAYMSG)
+  == "${pkgs.sway}/bin/swaymsg";
+assert focusEnabled.config.systemd.services.korrid.serviceConfig.SupplementaryGroups == [ "korri" ];
 assert service.environment.KORRID_CERTIFICATE_CONTROL_DIRECTORY == "/run/korri-certificate-control";
 assert
   builtins.removeAttrs identityService.environment [ "PATH" ] == {
@@ -416,6 +462,10 @@ assert hasFailedAssertion "native peers require" missingMoonlightAddress;
 assert hasFailedAssertion "exact Korri korrid package" wrongPackage;
 assert hasFailedAssertion "no Nostr secret-key form" secretOwnerBinding;
 assert hasFailedAssertion "no Nostr secret-key form" secretFieldOwnerBinding;
+assert hasFailedAssertion "must sit inside compositorControlDirectory"
+  compositorSocketOutsideHiddenDirectory;
+assert hasFailedAssertion "needs compositorControlSocket" focusExclusionWithoutCompositor;
+assert hasFailedAssertion "must not contain a comma" focusExclusionWithComma;
 assert evaluationRejected sameUid;
 assert evaluationRejected broadRuntime;
 assert evaluationRejected certificateControlRuntime;

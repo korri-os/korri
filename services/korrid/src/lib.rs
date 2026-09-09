@@ -1635,6 +1635,15 @@ fn host_session_freeze_outcome(
             code: "SessionStopping".into(),
             message: "the host launch is stopping".into(),
         }),
+        // The game is running again; only its window stayed behind. A separate
+        // code stops a caller from retrying a freezer change that already
+        // succeeded, and lets a surface say what actually failed.
+        Ok(HostSessionFreezeChange::FocusFailed { message, .. }) => {
+            SessionFreezeOutcome::Err(RpcFailure {
+                code: "HostFocusFailed".into(),
+                message,
+            })
+        }
         Ok(HostSessionFreezeChange::HelperFailed { message, .. }) => {
             SessionFreezeOutcome::Err(RpcFailure {
                 code: "HostFreezerFailed".into(),

@@ -3,6 +3,7 @@ import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import {
   SecretSettingStatus,
+  SessionFreezerState,
   SessionStopPhase,
   type ActiveSession,
   type Game,
@@ -214,13 +215,19 @@ describe("Linux session observation", () => {
   it("observes replacements and phase changes without clearing an existing notice", async () => {
     const clock = sessionClock()
     let status: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
-    const harness = await mount(linuxClient({ async sessionStatus() { return status } }))
+    const harness = await mount(linuxClient({
+      async sessionStatus() { return status },
+      async sessionThaw() {
+        return { _tag: "Err", payload: { code: "HostFocusFailed", message: "compositor refused focus" } }
+      },
+    }))
+    // A refused resume leaves a notice the observer must not wipe out.
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "now-playing")))
     const replacement = { ...active, launchId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", phase: "frozen" }
     status = { _tag: "Ok", payload: { active: replacement } }
     await clock.tick()
     expect(entry(harness.current(), "now-playing")).toEqual({ kind: "now-playing", session: replacement })
-    expect(harness.current().state).toMatchObject({ notice: { message: "Resume is unavailable: compositor focus is not connected." } })
+    expect(harness.current().state).toMatchObject({ notice: { message: "HostFocusFailed: compositor refused focus" } })
     status = { _tag: "Ok", payload: { active: { ...replacement, phase: "running" } } }
     await clock.tick()
     expect(entry(harness.current(), "now-playing")).toMatchObject({ session: { phase: "running" } })
@@ -388,16 +395,58 @@ describe("Linux catalog execution without a native bridge", () => {
     })
   })
 
-  it("reports resume unavailable until compositor focus is wired", async () => {
+  it("resumes exactly the displayed launch and keeps showing it", async () => {
+    const thawed: string[] = []
     const harness = await mount(linuxClient({
       async sessionStatus() { return { _tag: "Ok", payload: { active } } },
       sessionPrepare: async () => { throw new Error("resume must not prepare") },
+      async sessionThaw(expectedLaunchId) {
+        thawed.push(expectedLaunchId)
+        return {
+          _tag: "Ok",
+          payload: {
+            launchId: active.launchId,
+            state: SessionFreezerState.Running,
+            changed: true,
+          },
+        }
+      },
+    }))
+    await invoke(() => {
+      harness.current().confirmEntry(entry(harness.current(), "now-playing"))
+      harness.current().confirmEntry(entry(harness.current(), "now-playing"))
+    })
+    expect(thawed).toEqual([active.launchId])
+    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: null })
+    expect(entry(harness.current(), "now-playing")).toEqual({ kind: "now-playing", session: active })
+  })
+
+  it("reports a refused resume without claiming the game returned", async () => {
+    const harness = await mount(linuxClient({
+      async sessionStatus() { return { _tag: "Ok", payload: { active } } },
+      async sessionThaw() {
+        return { _tag: "Err", payload: { code: "HostFocusFailed", message: "compositor refused focus" } }
+      },
     }))
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "now-playing")))
     expect(harness.current().state).toMatchObject({
-      _tag: "Ready", notice: { message: "Resume is unavailable: compositor focus is not connected." },
+      _tag: "Ready",
+      notice: { message: "HostFocusFailed: compositor refused focus", subject: { title: active.title } },
     })
     expect(entry(harness.current(), "now-playing")).toEqual({ kind: "now-playing", session: active })
+  })
+
+  it("refuses to resume a session that was replaced while the player chose", async () => {
+    const harness = await mount(linuxClient({
+      async sessionStatus() { return { _tag: "Ok", payload: { active } } },
+      async sessionThaw() {
+        return { _tag: "Err", payload: { code: "StaleLaunchIdentity", message: "old launch" } }
+      },
+    }))
+    await invoke(() => harness.current().confirmEntry(entry(harness.current(), "now-playing")))
+    expect(harness.current().state).toMatchObject({
+      _tag: "Ready", notice: { message: "StaleLaunchIdentity: old launch" },
+    })
   })
 
   it("stops exactly the displayed launch once, then confirms idle", async () => {

@@ -141,6 +141,26 @@ four. Preprocessing and final linking were excluded. This does not establish a
 whole-build ETA, especially because cross-compilation adds host-toolchain work.
 Evidence: `/tmp/korri-chromium-speed-kbyhx998/summary.json` on Zao.
 
+### Resume and compositor focus
+
+The user chose korrid as the owner of compositor focus, over routing it
+through inputd. Resume reuses the existing thaw contract, so no wire schema
+was added. korrid talks to Sway with `swaymsg -s <socket>`, draining the reply
+while the child runs and killing it on timeout, so a large tree cannot deadlock
+a resume.
+
+korrid reaches the compositor only when `compositorControlSocket` is set. It
+then joins the runtime user's group, and the compositor runtime directory
+allows group access. Games stay shut out because that directory is hidden from
+their namespace; the module refuses a socket outside it. The kiosk window
+identity is written once in `nix/odin2portal/web-session.nix` and used for both
+the Sway rule and korrid's exclusion.
+
+Evidence: 505 korrid tests, 276 Portal tests with TypeScript, and korrid,
+kiosk, and Linux host module checks evaluating, including three new refusal
+assertions. A reviewer's blocker claiming `pkgs.sway` lacks `swaymsg` was
+checked against the pinned sway 1.11 and is false.
+
 ### Native build checkpoint, 2026-09-07
 
 The native `packages.aarch64-linux.korri-chromium` build is running on Fuji.
@@ -181,10 +201,16 @@ Current records on Fuji:
 - `/var/lib/korri-chromium-build/run-56k4824i/guard.log`
 - `/var/lib/korri-chromium-build/run-56k4824i/completion.json`
 
-Guard unit: `korri-chromium-arm-guard-56k4824i.service`. Managed process
-`proc_277c` waits for it, then copies successful outputs to Zao, adds GC roots,
-and verifies stored contents. `proc_aa76` follows compiler logs with failure and
-final-link alerts. Zao evidence and the tested operator scripts live under
+Guard unit: `korri-chromium-arm-guard-56k4824i.service`. The waiter
+`/tmp/watch-fuji-native-chromium-result.py` polls it, tolerates lost SSH
+connections, and copies verified outputs to Zao. An earlier waiter died from a
+dropped connection while the build itself continued, which is why transport
+failure is now retried rather than reported as a build result.
+
+The build can be paused with `systemctl freeze` and resumed with `thaw`, proven
+by zero processor time across ten frozen seconds. Freezing holds its memory,
+about 1.6 to 8 GiB, because Fuji has no swap. Stopping instead would discard the
+work, since Nix cannot resume a killed build. Zao evidence and the tested operator scripts live under
 `/home/simonwjackson/artifacts/korri-chromium-native/run-56k4824i/`.
 No completed ARM artifact or Odin acceptance is claimed yet.
 
@@ -227,9 +253,16 @@ independent reviewers found no Portal defects. These tests do not constitute a
 real game-exit or controller test on Odin. Exact-session freeze/thaw exists, but
 compositor resume does not follow from process thaw alone.
 
-1. Connect launch, return, and resume to compositor focus and browser
-   presentation. The floating opaque hub currently covers normal game
-   windows. Linux resume explicitly reports unavailable.
+1. Verify launch, return, and resume against a real compositor. Resume now
+   works in code (`8ee6d986`, `ea707bfa`): the hub asks korrid to thaw the
+   exact launch, and korrid raises that game's window. korrid names a game
+   window only from the launch unit's own control group, never focuses the
+   configured kiosk identity, and refuses to choose between several windows.
+   A compositor refusal returns `HostFocusFailed`, which keeps the session on
+   screen and says the game runs while its window stayed behind.
+   Unverified: no device has run this. Also unproven is whether the browser
+   yields the screen once the game is raised, since the hub is output-sized
+   and floating.
 2. Deliver real Odin controller actions to the Portal without exposing raw
    hardware to JavaScript. Verify directions, confirm, back, overlay opening,
    touch, and return to the game. Ground InputPlumber mapping in device records.

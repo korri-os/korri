@@ -868,10 +868,28 @@ export function useLaunchables(
       const operation = ++actionSeq.current
 
       if (!bridge) {
+        if (entry.kind === "now-playing") {
+          // Thaw names the exact launch, so a session that ended or was
+          // replaced while the player was choosing is refused by korrid
+          // instead of resuming whatever runs now.
+          const resuming = LaunchablesState.beginLaunching(
+            current,
+            entryLabel(entry),
+            { id: entry.session.gameId ?? entry.session.launchId, title: entryLabel(entry) },
+          )
+          publish(resuming)
+          void korrid.sessionThaw(entry.session.launchId).then(outcome => {
+            if (!mountedRef.current || operation !== actionSeq.current) return
+            publish(
+              outcome._tag === "Ok"
+                ? { _tag: "Ready", entries: current.entries, notice: null }
+                : LaunchablesState.withLocalLaunchOutcome(resuming, outcome),
+            )
+          })
+          return
+        }
         if (entry.kind !== "game") {
-          noticeOnReady(operation, entry.kind === "now-playing"
-            ? "Resume is unavailable: compositor focus is not connected."
-            : "This action requires a native executor that is not available.")
+          noticeOnReady(operation, "This action requires a native executor that is not available.")
           return
         }
         const preparing = LaunchablesState.beginPreparing(
