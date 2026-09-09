@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Question: what should the Plymouth boot animation
+  for the Korri leaf look like? Answer so far: sprout, then wordmark.
+  One timeline; see splash.mjs for the Plymouth mapping and every constant.
+
+  Plymouth facts (verified in plymouth 24.004.60 source):
+    - the script plugin refreshes at 50 fps by default; the theme can call
+      Plymouth.SetRefreshRate(n) (script-lib-plymouth.c) — no rebuild needed
+    - it has no end animation: on quit it calls the theme's quit function
+      once, redraws once, and exits
+    - the DRM renderer memcpy's dirty rects into one dumb buffer with no
+      page flip and no vblank wait, so frames can tear
+    - `plymouth display-message --text=…` reaches the theme via
+      SetDisplayMessageFunction while the daemon is alive
+    - `plymouth quit --retain-splash` leaves the last frame on the framebuffer
+  The page simulates that: ↵ is the message, q is quit, at the device's real
+  pixel size, so what is judged here is what ships.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Korri boot splash — prototype</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0e0e0e; font: 13px/1.4 ui-monospace, monospace; color: #999; }
+  body { display: grid; grid-template-rows: 1fr auto; }
+  main { display: grid; place-items: center; overflow: auto; padding: 24px; }
+  /* The "device": the panel at its real pixel size, scaled to be visible. */
+  #panel { background: #000; overflow: hidden; position: relative; box-shadow: 0 0 0 1px #333, 0 30px 60px #000; }
+  #panel svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #bar { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; background: #1a1a1a; border-top: 1px solid #333; flex-wrap: wrap; }
+  #bar button, #bar select { font: inherit; background: #2a2a2a; color: #eee; border: 1px solid #444; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  #bar button:hover { background: #3a3a3a; }
+  #boot { width: 100%; text-align: center; color: #7EFD3B; }
+</style>
+</head>
+<body>
+<main><div id="panel"></div></main>
+<div id="bar">
+  <button id="restart">restart  r</button>
+  <button id="signal">compositor starting  ↵</button>
+  <button id="quit">plymouth quit  q</button>
+  <select id="device">
+    <option value="rg353m">RG353M 640×480 ×2</option>
+    <option value="odin">Odin 2 Portal 1920×1080 ×0.6</option>
+  </select>
+  <span id="hz"></span>
+  <select id="fps" title="Plymouth.SetRefreshRate">
+    <option value="50">render 50 fps (stock)</option>
+    <option value="60">render 60 fps</option>
+    <option value="120">render 120 fps</option>
+  </select>
+  <label><input type="checkbox" id="slow" /> 4× slow</label>
+  <span id="boot"></span>
+</div>
+<script type="module" src="./splash.mjs"></script>
+</body>
+</html>
