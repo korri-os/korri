@@ -20,6 +20,7 @@ import { createOverlayController } from "./overlay/overlay-controller"
 import { createNativeOverlayHost } from "./overlay/overlay-host"
 import { createNativeOverlayConnection } from "./overlay/overlay-native"
 import { OverlayRoot } from "./overlay/OverlayRoot"
+import { loadLinuxRuntimeConfig } from "./runtime-config"
 import { createSessionLifecycleAdapter } from "./session/lifecycle-adapter"
 import {
   createFixtureLifecycleAdapter,
@@ -43,14 +44,6 @@ if (!rootElement) throw new Error("#app element not found")
 const root = ReactDOM.createRoot(rootElement)
 const query = new URLSearchParams(window.location.search)
 
-/* Which surface the user has chosen, resolved once. The registry decides
- * whether that choice can serve a given presentation; a surface with no
- * gameplay overlay still gets to own the catalog. */
-const preferredSurfaceId = resolveSurfacePreference(
-  window.location,
-  window.localStorage,
-)
-
 // The session screen is the same bundled app booted with a query param
 // (treaty: SESSION_SCREEN_PARAM). Inside the stream Activity's overlay the
 // shell injects KorriSession; in browser dev a fixture timeline plays.
@@ -58,6 +51,13 @@ const isSessionScreen =
   query.get(SESSION_SCREEN_PARAM) === SESSION_SCREEN_VALUE
 const isGameplayOverlay =
   query.get(GAMEPLAY_OVERLAY_SCREEN_PARAM) === GAMEPLAY_OVERLAY_SCREEN_VALUE
+/* The registry decides whether the chosen surface can serve a presentation.
+ * A surface with no gameplay overlay still gets to own the catalog. */
+const preferredSurfaceId = resolveSurfacePreference(
+  window.location,
+  window.localStorage,
+)
+
 if (isGameplayOverlay) {
   // Window transparency must exist before React's first overlay frame.
   document.documentElement.dataset.korriGameplayOverlay = ""
@@ -116,7 +116,19 @@ if (isSessionScreen) {
     )
   }
 } else {
-  // The shell supplies RPC credentials independently of native hardware.
+  void mountCatalog().catch(error => {
+    rootElement.textContent = "Korri could not connect to this device."
+    console.error("Portal startup failed", error)
+  })
+}
+
+// Composition root for Android, production Linux, and browser development.
+async function mountCatalog() {
+  // Production Linux has no shell at all. Its korrid credential arrives
+  // privately at runtime, so it must be read before anything mounts.
+  const linuxRuntime = !window.KorriNative && !window.KorriRpc && !import.meta.env.DEV
+    ? await loadLinuxRuntimeConfig()
+    : undefined
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
   // Android already translates hardware in Kotlin. Browser polling there
@@ -124,14 +136,29 @@ if (isSessionScreen) {
   bus.use(window.KorriNative ? createKorriNativeAdapter() : createGamepadAdapter())
   createSpatialFocusController(bus)
 
-  const { bridge, korrid } = createPortalConnection(window.KorriRpc, window.KorriNative)
+  // The shell supplies RPC credentials independently of native hardware.
+  // Linux has no shell and no native launcher: korrid's browser host dispatch
+  // owns catalog execution there, so that path carries no bridge at all.
+  const { bridge, korrid } = linuxRuntime
+    ? {
+        bridge: undefined,
+        korrid: createHttpKorridClient(
+          `http://127.0.0.1:${linuxRuntime.korridPort}`,
+          linuxRuntime.korridCapability,
+        ),
+      }
+    : createPortalConnection(window.KorriRpc, window.KorriNative)
 
   root.render(
     <SurfaceRoot
       bridge={bridge}
       bus={bus}
       korrid={korrid}
-      surface={portalSurfaceFor("catalog", preferredSurfaceId)}
+      surface={portalSurfaceFor("catalog", resolveSurfacePreference(
+        window.location,
+        window.localStorage,
+        linuxRuntime?.surfaceId,
+      ))}
     />,
   )
 }

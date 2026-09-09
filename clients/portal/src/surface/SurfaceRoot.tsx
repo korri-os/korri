@@ -44,7 +44,7 @@ function formatClock(): string {
 
 export interface SurfaceRootProps {
   readonly bus: InputBus
-  readonly bridge: LauncherBridge
+  readonly bridge?: LauncherBridge
   readonly korrid: KorridClient
   readonly surface: PortalSurface
 }
@@ -75,7 +75,10 @@ export function SurfaceRoot({
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const settings = useMemo(() => settingsFrom(facts), [facts])
+  const settings = useMemo(
+    () => settingsFrom(facts, bridge !== undefined),
+    [facts, bridge],
+  )
 
   const model = useMemo(
     () =>

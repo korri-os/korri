@@ -59,6 +59,7 @@ let
               }
             ];
             compositor.renderDevice = "/dev/dri/renderD128";
+            compositor.extraConfig = "# module-check-extra-config";
           };
         }
         extra
@@ -117,6 +118,12 @@ let
   noRuntimeSettings = evaluate {
     services.korriLinuxHost.sunshine.runtimeSettings.enable = false;
   };
+  browserPortal = evaluate {
+    services.korridLinuxDevice.browser = {
+      enable = true;
+      origin = "http://127.0.0.1:8099";
+    };
+  };
   inputSeats = evaluate {
     services.korriLinuxHost.sunshine.inputSeats.enable = true;
   };
@@ -156,6 +163,9 @@ let
   };
   remoteInputPhysical = physicalSoftware.extendModules {
     modules = [ { services.korriLinuxHost.compositor.remoteInput.enable = true; } ];
+  };
+  localInputPhysical = physicalSoftware.extendModules {
+    modules = [ { services.korriLinuxHost.compositor.localInput.enable = true; } ];
   };
   # Card numbers follow driver probe order, so a by-path link is the stable way
   # to name the KMS device. It must be accepted; a render node must not be.
@@ -217,6 +227,7 @@ let
   compositor = cfg.systemd.services.korri-compositor;
   inputSeatReceiver = inputSeats.config.systemd.services.korri-input-seat-receiver;
   inputSeatKorrid = inputSeats.config.systemd.services.korrid;
+  browserKorrid = browserPortal.config.systemd.services.korrid;
   inputSeatSunshine = inputSeats.config.systemd.services.sunshine;
   nvencCompositor = nvenc.config.systemd.services.korri-compositor;
   vaapiCompositor = vaapi.config.systemd.services.korri-compositor;
@@ -304,6 +315,18 @@ assert cfg.services.sunshine.package == sunshinePackage;
 assert builtins.elem "0020-add-korrid-certificate-control.patch" sunshinePackage.korriPatchNames;
 assert cfg.services.korriLinuxHost.sunshine.runtimeSettings.enable;
 assert !cfg.services.korriLinuxHost.sunshine.inputSeats.enable;
+assert builtins.elem "d /run/korrid-browser 2750 korrid korrid -" cfg.systemd.tmpfiles.rules;
+assert builtins.elem "d /run/korri-kiosk 0700 korri korri -" cfg.systemd.tmpfiles.rules;
+assert allAssertionsPass browserPortal;
+assert browserKorrid.environment.KORRID_BROWSER_ADDRESS == "127.0.0.1:0";
+assert browserKorrid.environment.KORRID_BROWSER_ORIGIN == "http://127.0.0.1:8099";
+assert browserKorrid.environment.KORRID_BROWSER_INFO_PATH == "/run/korrid-browser/brain.json";
+assert builtins.elem "/run/korrid-browser" browserKorrid.serviceConfig.ReadWritePaths;
+assert builtins.elem "d /run/korrid-browser 2750 korrid korri -"
+  browserPortal.config.systemd.tmpfiles.rules;
+assert lib.hasInfix "rm -f /run/korrid-browser/brain.json" (
+  builtins.readFile (builtins.head browserKorrid.serviceConfig.ExecStartPre)
+);
 assert !(builtins.hasAttr "korri-input-seat-receiver" cfg.systemd.services);
 assert allAssertionsPass inputSeats;
 assert inputSeatReceiver.serviceConfig.User == "root";
@@ -455,6 +478,11 @@ assert
   remoteInputPhysical.config.systemd.services.korri-compositor.environment.WLR_BACKENDS
   == "drm,libinput";
 assert !(builtins.elem "input" remoteInputPhysical.config.users.users.korri.extraGroups);
+# A kiosk the player touches needs libinput without Sunshine's virtual-only
+# input policy, so local input reaches the compositor on its own switch.
+assert
+  localInputPhysical.config.systemd.services.korri-compositor.environment.WLR_BACKENDS
+  == "drm,libinput";
 assert physicalSoftwareCompositor.environment.WLR_DRM_DEVICES == "/dev/dri/card0";
 assert allAssertionsPass physicalByPathCard;
 assert
@@ -481,8 +509,8 @@ assert
   == "/run/wrappers/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null capture=kms encoder=software";
 assert lib.hasInfix "DSI-1" physicalSoftwareReadiness;
 assert lib.hasInfix ".active == true" physicalSoftwareReadiness;
-assert lib.hasInfix ".rect.width == $width" physicalSoftwareReadiness;
-assert lib.hasInfix ".rect.height == $height" physicalSoftwareReadiness;
+assert lib.hasInfix ".current_mode.width == $width" physicalSoftwareReadiness;
+assert lib.hasInfix ".current_mode.height == $height" physicalSoftwareReadiness;
 assert builtins.elem "uinput" cfg.boot.kernelModules;
 assert cfg.users.users.korri-inputd.uid == 977;
 assert cfg.users.groups.korri-control.gid == 977;
@@ -738,6 +766,7 @@ pkgs.runCommand "korri-linux-host-module-check" { passthru = { inherit tmpfilesC
 
     compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${compositorExec} | head -n1)"
     test -f "$compositor_config"
+    ${pkgs.gnugrep}/bin/grep -F '# module-check-extra-config' "$compositor_config" >/dev/null
     ! ${pkgs.gnugrep}/bin/grep -F 'exec_always' "$compositor_config" >/dev/null
     runtime="$TMPDIR/runtime"
     control="$TMPDIR/control"

@@ -81,6 +81,25 @@ describe("resolveSurfacePreference", () => {
     ).toBe("pico")
   })
 
+  test("uses a valid runtime surface when the user has not chosen one", () => {
+    expect(resolveSurfacePreference({ search: "" }, storage(), "pico")).toBe("pico")
+    expect(resolveSurfacePreference({ search: "" }, storage(), "nope")).toBe(
+      DEFAULT_SURFACE_ID,
+    )
+  })
+
+  test("keeps query and remembered choices above the runtime default", () => {
+    expect(
+      resolveSurfacePreference(
+        { search: `?${SURFACE_PARAM}=shift` },
+        storage("shift"),
+        "pico",
+      ),
+    ).toBe("shift")
+    expect(resolveSurfacePreference({ search: "" }, storage("shift"), "pico"))
+      .toBe("shift")
+  })
+
   test("defaults when there is no storage at all", () => {
     expect(resolveSurfacePreference({ search: "" })).toBe(DEFAULT_SURFACE_ID)
   })

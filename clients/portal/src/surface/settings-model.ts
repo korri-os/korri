@@ -91,7 +91,10 @@ const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string =>
   return exhaustive
 }
 
-export function settingsFrom(facts: DeviceFacts): readonly SurfaceSettingGroup[] {
+export function settingsFrom(
+  facts: DeviceFacts,
+  nativeActionsAvailable = true,
+): readonly SurfaceSettingGroup[] {
   const streamHosts = facts.hosts ?? []
   const android =
     facts.systemInfo?._tag === "SystemInfo"
@@ -211,12 +214,15 @@ export function settingsFrom(facts: DeviceFacts): readonly SurfaceSettingGroup[]
               facts.discovery.diagnostics[0]?.message ??
               "Games appear as soon as scanning finds them",
           },
-      {
-        id: "game-folder-add",
-        label: "Add game folder",
-        description: "Choose a folder on this Android device",
-        interaction: { kind: "action" as const, actionId: "game-folder-add" },
-      },
+      // The picker belongs to LauncherBridge.openGameFolderPicker, not korrid.
+      nativeActionsAvailable
+        ? {
+            id: "game-folder-add",
+            label: "Add game folder",
+            description: "Choose a folder on this Android device",
+            interaction: { kind: "action" as const, actionId: "game-folder-add" },
+          }
+        : undefined,
       facts.discovery === undefined
         ? undefined
         : {

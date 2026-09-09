@@ -17,9 +17,11 @@ const STORAGE_KEY = "korri.surface"
  * The query parameter wins and persists, so setting a surface once on a device
  * that can only load a fixed URL survives the next boot.
  */
-export function resolveSurfacePreference(location: {
-  readonly search: string
-}, storage?: Storage): string {
+export function resolveSurfacePreference(
+  location: { readonly search: string },
+  storage?: Storage,
+  runtimeDefault?: string,
+): string {
   const requested = new URLSearchParams(location.search).get(SURFACE_PARAM)
   if (requested !== null && portalSurfaceById(requested) !== undefined) {
     remember(requested, storage)
@@ -29,6 +31,9 @@ export function resolveSurfacePreference(location: {
   const remembered = read(storage)
   if (remembered !== undefined && portalSurfaceById(remembered) !== undefined) {
     return remembered
+  }
+  if (runtimeDefault !== undefined && portalSurfaceById(runtimeDefault) !== undefined) {
+    return runtimeDefault
   }
   return DEFAULT_SURFACE_ID
 }

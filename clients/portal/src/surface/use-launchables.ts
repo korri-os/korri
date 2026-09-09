@@ -115,7 +115,7 @@ export async function resolveLocalGameCoverUrls(
 }
 
 export function useLaunchables(
-  bridge: LauncherBridge,
+  bridge: LauncherBridge | undefined,
   korrid: KorridClient,
 ): Launchables {
   const [state, setState] = useState<LaunchablesState>(LaunchablesState.loading)
@@ -185,7 +185,7 @@ export function useLaunchables(
 
   const acknowledgeFolderPicker = useCallback(
     (generation: string) => {
-      void bridge.acknowledgeGameFolderPicker(generation)
+      void bridge?.acknowledgeGameFolderPicker(generation)
     },
     [bridge],
   )
@@ -265,6 +265,7 @@ export function useLaunchables(
   )
 
   const checkFolderPicker = useCallback(async () => {
+    if (!bridge) return
     const seq = ++folderPickerSeq.current
     const snapshot = await bridge.gameFolderPickerSnapshot()
     if (!mountedRef.current || seq !== folderPickerSeq.current) return
@@ -272,6 +273,7 @@ export function useLaunchables(
   }, [bridge, processFolderPickerSnapshot])
 
   const load = useCallback(async (preserveAction = false) => {
+    if (!mountedRef.current) return
     const preservingStop = stateRef.current._tag === "Stopping"
     if (!preserveAction && !preservingStop) {
       // A normal full reload supersedes pending UI work. A reload while
@@ -298,35 +300,37 @@ export function useLaunchables(
       discovery,
     ] = await Promise.all([
         korrid.catalogSnapshot(),
-        korrid.localGames(),
-        korrid
-          .moonlightResolve()
-          .then(resolution => discoverResolvedMoonlight(resolution, bridge)),
+        // Rust's browser host dispatch uses catalog/session RPCs. Android
+        // LocalGame/LaunchSpec and Moonlight discovery are not Linux routes.
+        bridge ? korrid.localGames() : undefined,
+        bridge
+          ? korrid.moonlightResolve().then(resolution =>
+              discoverResolvedMoonlight(resolution, bridge))
+          : undefined,
         sessionStatusWithTimeout(),
         // Re-read on every load so returning from system settings clears the
         // prompt without the user restarting Korri.
-        bridge.storageAccess(),
+        bridge?.storageAccess(),
         // Same reason: returning from the notification screen should be
         // reflected without a restart.
-        bridge.backgroundNotice(),
+        bridge?.backgroundNotice(),
         // The accessibility grant may be revoked while Korri is backgrounded.
-        bridge.overlayPermission(),
+        bridge?.overlayPermission(),
         // Identity, not content: it names the software the user is running.
         korrid.health(),
         korrid.settingsSnapshot(),
-        bridge.systemInfo(),
-        bridge.ownerBindingSnapshot(),
-        korrid.discoverySnapshot(),
+        bridge?.systemInfo(),
+        bridge?.ownerBindingSnapshot(),
+        bridge ? korrid.discoverySnapshot() : undefined,
       ])
-    const localGamesWithCoverUrls = await resolveLocalGameCoverUrls(
-      bridge,
-      localGames,
-    )
-    const streams: readonly StreamSource[] = moonlightDiscovery.streams
-    const hostsResult = moonlightDiscovery.hostsResult ?? {
+    const localGamesWithCoverUrls = bridge && localGames
+      ? await resolveLocalGameCoverUrls(bridge, localGames)
+      : undefined
+    const streams: readonly StreamSource[] = moonlightDiscovery?.streams ?? []
+    const hostsResult = moonlightDiscovery?.hostsResult ?? {
       _tag: "QueryFailed" as const,
       message:
-        moonlightDiscovery.resolution._tag === "Unavailable"
+        moonlightDiscovery?.resolution._tag === "Unavailable"
           ? moonlightDiscovery.resolution.payload.message
           : "Moonlight discovery unavailable",
     }
@@ -336,22 +340,22 @@ export function useLaunchables(
       action !== actionSeq.current
     ) return
     streamsRef.current = streams
-    moonlightRef.current = moonlightDiscovery.resolution
+    if (moonlightDiscovery) moonlightRef.current = moonlightDiscovery.resolution
     setFacts({
       ...(health._tag === "Ok" ? { version: health.payload.version } : {}),
       ...(settings._tag === "Ok" ? { settings: settings.payload } : {}),
-      systemInfo,
-      ownerBinding,
-      storage,
-      notice,
-      overlay,
+      ...(systemInfo ? { systemInfo } : {}),
+      ...(ownerBinding ? { ownerBinding } : {}),
+      ...(storage ? { storage } : {}),
+      ...(notice ? { notice } : {}),
+      ...(overlay ? { overlay } : {}),
       ...(hostsResult._tag === "StreamHosts"
         ? { hosts: hostsResult.items }
         : {}),
-      ...(localGamesWithCoverUrls._tag === "Ok"
+      ...(localGamesWithCoverUrls?._tag === "Ok"
         ? { localGameCount: localGamesWithCoverUrls.payload.games.length }
         : {}),
-      ...(discovery._tag === "Ok" ? { discovery: discovery.payload } : {}),
+      ...(discovery?._tag === "Ok" ? { discovery: discovery.payload } : {}),
     })
     const current = stateRef.current
     // Recovery reads must not replace a newer launch operation's visible lock.
@@ -388,7 +392,11 @@ export function useLaunchables(
       actionSeq.current += 1
       stopPollSeq.current += 1
     }
-    publish(loaded)
+    // fromSources retains the native background-notice entry for Android/dev.
+    // No native executor means no Android permission prompt on this host.
+    publish(!bridge && loaded._tag === "Ready"
+      ? { ...loaded, entries: loaded.entries.filter(entry => entry.kind !== "background-notice") }
+      : loaded)
   }, [bridge, korrid, publish, sessionStatusWithTimeout])
 
   useEffect(() => {
@@ -556,6 +564,10 @@ export function useLaunchables(
 
   const runDeviceAction = useCallback(
     (actionId: string) => {
+      if (!bridge) {
+        settingsProblem(actionId, "This device action is not available")
+        return
+      }
       if (actionId === "owner-binding") {
         if (
           settingsStatusRef.current._tag === "Saving" &&
@@ -794,7 +806,7 @@ export function useLaunchables(
       const current = stateRef.current
       // Only Ready accepts new work; Preparing/Launching/Stopping are locked by
       // the model rather than by a nullable flag convention.
-      if (current._tag !== "Ready") return
+      if (!mountedRef.current || current._tag !== "Ready") return
       // A retained caller selection is not authority to launch a removed game.
       if (!current.entries.some(candidate =>
         entryKey(candidate) === entryKey(entry) ||
@@ -807,19 +819,51 @@ export function useLaunchables(
       )) return
       // A catalog-local process is already running on this display. Neither
       // its banner nor its catalog copy is an Android/Moonlight resume route.
-      if (
-        entry.kind === "now-playing" &&
-        isLocalCatalogSession(entry.session, current.entries)
-      ) return
-      if (
-        entry.kind === "game" &&
-        entry.game.source.isLocal &&
-        current.entries.some(candidate =>
-          candidate.kind === "now-playing" &&
-          isLocalCatalogSession(candidate.session, [entry]),
-        )
-      ) return
+      // Linux resumes the exact session through korrid instead, so these
+      // guards protect only the native routes.
+      if (bridge !== undefined) {
+        if (
+          entry.kind === "now-playing" &&
+          isLocalCatalogSession(entry.session, current.entries)
+        ) return
+        if (
+          entry.kind === "game" &&
+          entry.game.source.isLocal &&
+          current.entries.some(candidate =>
+            candidate.kind === "now-playing" &&
+            isLocalCatalogSession(candidate.session, [entry]),
+          )
+        ) return
+      }
       const operation = ++actionSeq.current
+
+      if (!bridge) {
+        if (entry.kind !== "game") {
+          noticeOnReady(operation, entry.kind === "now-playing"
+            ? "Resume is unavailable: compositor focus is not connected."
+            : "This action requires a native executor that is not available.")
+          return
+        }
+        const preparing = LaunchablesState.beginPreparing(
+          current,
+          entry.game.title,
+          { id: entry.game.id, title: entry.game.title },
+        )
+        // Same-device Linux execution is owned by Rust's browser host dispatch
+        // of SessionPrepareRequest, not Android LocalGame or Moonlight effects.
+        publish(preparing)
+        void korrid.sessionPrepare(entry.game.id, entry.game.host).then(outcome => {
+          if (!mountedRef.current || operation !== actionSeq.current) return
+          if (outcome._tag !== "Ok") {
+            publish(LaunchablesState.withPrepareOutcome(preparing, outcome))
+            return
+          }
+          // Preparation is not a native activity swap. Observe the real host
+          // session and return to browsing; do not synthesize a Launched result.
+          void load()
+        })
+        return
+      }
 
       if (entry.kind === "background-notice") {
         // Turning it on is a prompt Korri may show; turning it off is not
@@ -1074,12 +1118,14 @@ export function useLaunchables(
   const stopSession = useCallback(
     (entry: PortalEntry) => {
       const current = stateRef.current
-      if (current._tag !== "Ready" || entry.kind !== "now-playing") return
+      if (!mountedRef.current || current._tag !== "Ready" || entry.kind !== "now-playing") return
       const operation = ++actionSeq.current
       // Lock input before the Promise resolves so repeated stop requests
       // cannot be issued twice.
       const stopRequested = LaunchablesState.beginStopping(current, entry)
       publish(stopRequested)
+      // SessionStopRequest.expectedLaunchId already exists in the Rust treaty.
+      // Capture the displayed session, never infer a newer target after an await.
       void korrid.sessionStop(entry.session.launchId).then(outcome => {
         if (!mountedRef.current || operation !== actionSeq.current) return
         const stopping = LaunchablesState.withStopOutcome(

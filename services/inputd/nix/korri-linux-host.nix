@@ -216,6 +216,7 @@ let
     output ${cfg.compositor.outputName} bg #000000 solid_color
     workspace "${compositorWorkspace}" output ${cfg.compositor.outputName}
     workspace "${compositorWorkspace}"
+    ${cfg.compositor.extraConfig}
   '';
   # /dev/dri/by-path/ links are created by udev, which does not reach the DRM
   # device until about 24 s on this hardware. The card nodes themselves appear in
@@ -389,7 +390,7 @@ let
           --arg name ${lib.escapeShellArg cfg.compositor.outputName} \
           --argjson width ${lib.escapeShellArg compositorWidth} \
           --argjson height ${lib.escapeShellArg compositorHeight} \
-          '.[] | select(.name == $name and .active == true and .rect.width == $width and .rect.height == $height)' \
+          '.[] | select(.name == $name and .active == true and .current_mode.width == $width and .current_mode.height == $height)' \
           >/dev/null; then
           exit 0
         fi
@@ -517,6 +518,9 @@ in
 
     compositor = {
       remoteInput.enable = lib.mkEnableOption "Sunshine virtual pointer, keyboard and touch input on DRM";
+      # Remote input accepts only Sunshine's virtual devices and disables
+      # everything physical. A kiosk the player touches needs the opposite.
+      localInput.enable = lib.mkEnableOption "physical touch and controller input on DRM";
       backend = lib.mkOption {
         type = lib.types.enum [
           "headless"
@@ -541,6 +545,11 @@ in
       mode = lib.mkOption {
         type = lib.types.strMatching "^[1-9][0-9]*x[1-9][0-9]*@[1-9][0-9]*Hz$";
         default = "1920x1080@60Hz";
+      };
+      extraConfig = lib.mkOption {
+        type = lib.types.lines;
+        default = "";
+        description = "Additional native Sway configuration, including output transforms and touch mapping.";
       };
       renderer = lib.mkOption {
         type = lib.types.enum [
@@ -1059,7 +1068,11 @@ in
       }
       // lib.optionalAttrs (cfg.compositor.backend == "drm") {
         LIBSEAT_BACKEND = "seatd";
-        WLR_BACKENDS = if cfg.compositor.remoteInput.enable then "drm,libinput" else "drm";
+        WLR_BACKENDS =
+          if cfg.compositor.remoteInput.enable || cfg.compositor.localInput.enable then
+            "drm,libinput"
+          else
+            "drm";
         WLR_DRM_DEVICES = cfg.compositor.drmDevice;
       }
       // lib.optionalAttrs (cfg.sunshine.encoder == "nvenc") {

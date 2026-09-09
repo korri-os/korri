@@ -34,7 +34,10 @@
         inherit nixpkgs;
         korri = self;
       };
-      odin2portal = import ./nix/odin2portal { inherit nixpkgs; };
+      odin2portal = import ./nix/odin2portal {
+        inherit nixpkgs;
+        korri = self;
+      };
       nixosModules = {
         korri-device-cache = import ./nix/device-cache/nixos-module.nix;
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
@@ -43,6 +46,7 @@
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
         korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
         korri-plugin-host = import ./services/korrid/plugin-host/nixos-module.nix { korri = self; };
+        korri-kiosk = import ./services/kiosk/nixos-module.nix { korri = self; };
       };
     in
     {
@@ -141,6 +145,7 @@
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
+            korri-kiosk = import ./services/kiosk/package.nix { inherit pkgs crane; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -162,6 +167,7 @@
           odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
@@ -182,6 +188,10 @@
             };
             korri-boot-splash = import ./brand/plymouth/module-check.nix {
               inherit pkgs nixpkgs;
+            };
+            korri-kiosk-module = import ./services/kiosk/module-check.nix {
+              inherit pkgs;
+              korri = self;
             };
           }
         );

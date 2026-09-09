@@ -19,6 +19,7 @@ const MAX_HELPER_OUTPUT_BYTES: u64 = 64 * 1024;
 const DEFAULT_PRIVATE_STATE_ROOT: &str = "/var/lib/korrid";
 const DEFAULT_CONTROL_SOCKET: &str = "/run/korrid-control/control.sock";
 const DEFAULT_CONTROL_DIRECTORY: &str = "/run/korrid-control";
+const DEFAULT_BROWSER_RUNTIME_DIRECTORY: &str = "/run/korrid-browser";
 const DEFAULT_COMPOSITOR_CONTROL_DIRECTORY: &str = "/run/korri-compositor";
 const DEFAULT_CERTIFICATE_CONTROL_DIRECTORY: &str = "/run/korri-certificate-control";
 
@@ -684,8 +685,9 @@ impl SystemdLaunchUnitBackend {
             "--property=ProtectProc=invisible".into(),
             "--property=ProcSubset=pid".into(),
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} {} {} {} {} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources",
+                "--property=InaccessiblePaths={} /run/korrid {} /run/korri-kiosk {} {} {} {} {} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources",
                 self.private_state_root.display(),
+                DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
                 self.control_directory.display(),
                 self.sunshine_private_state_root.display(),

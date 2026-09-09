@@ -24,6 +24,53 @@ afterEach(() => {
 })
 
 describe("callKorrid", () => {
+  it("sends the displayed launch identity through the existing stop wire field", async () => {
+    let body: unknown
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        body = await request.json()
+        return Response.json({
+          _tag: "app.session.stop",
+          outcome: { _tag: "Ok", payload: { phase: "stopped" } },
+        })
+      },
+    })
+    try {
+      const client = createHttpKorridClient(server.url.origin, "capability")
+      await client.sessionStop("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+      expect(body).toEqual({
+        _tag: "app.session.stop",
+        payload: { expectedLaunchId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      })
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it("rejects a missing stop identity without changing the in-memory session", async () => {
+    for (const active of [undefined, { launchId: "current", gameId: "neverball" }]) {
+      const client = createInMemoryKorridClient({ activeSession: active })
+      const before = await client.sessionStatus()
+      expect(await client.sessionStop()).toMatchObject({
+        _tag: "Err", payload: { code: "ExpectedLaunchIdRequired" },
+      })
+      expect(await client.sessionStatus()).toEqual(before)
+    }
+  })
+
+  it("does not stop a replacement in-memory session using an old launch identity", async () => {
+    const active = { launchId: "current", gameId: "neverball" }
+    const client = createInMemoryKorridClient({ activeSession: active })
+    expect(await client.sessionStop("old")).toMatchObject({
+      _tag: "Err", payload: { code: "StaleLaunchIdentity" },
+    })
+    expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: { active } })
+    expect(await client.sessionStop("current")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
+  })
+
   it("sends the per-server capability as a bearer token", async () => {
     let authorization: string | null = null
     globalThis.fetch = (async (_input, init) => {

@@ -9,7 +9,7 @@
 # x86_64. The aarch64 builder cannot spare the ~30 GB a kernel compile needs,
 # so the system is assembled from the cross-built kernel while the rest of the
 # closure substitutes from cache.
-{ nixpkgs }:
+{ nixpkgs, korri }:
 
 let
   mkPkgs =
@@ -34,12 +34,18 @@ let
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = {
+      inherit korri;
       odinKernel = kernelCross;
       odinRescueKernel = rescueKernelCross;
       odinFirmware = firmwareCross;
       odinRocknix = rocknix;
     };
-    modules = [ ./sd-image.nix ];
+    modules = [
+      (import ../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      (import ../../services/kiosk/nixos-module.nix { inherit korri; })
+      ./sd-image.nix
+      ./web-session.nix
+    ];
   };
 in
 {

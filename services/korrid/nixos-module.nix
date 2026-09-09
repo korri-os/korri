@@ -185,6 +185,24 @@ in
       type = lib.types.str;
       default = "127.0.0.1:43117";
     };
+    browser = {
+      enable = lib.mkEnableOption "the capability-bound local browser RPC listener";
+      address = lib.mkOption {
+        type = lib.types.str;
+        default = "127.0.0.1:0";
+        description = "Loopback address for the local browser RPC listener.";
+      };
+      origin = lib.mkOption {
+        type = lib.types.str;
+        default = "http://127.0.0.1:8099";
+        description = "Exact browser origin allowed to call the local RPC listener.";
+      };
+      readGroup = lib.mkOption {
+        type = lib.types.str;
+        default = "korri";
+        description = "Group allowed to read the generated browser capability file.";
+      };
+    };
     deviceConfig = lib.mkOption {
       type = lib.types.path;
       description = "Root-owned immutable Linux device TOML configuration.";
@@ -349,6 +367,14 @@ in
         message = "korrid certificateControlDirectory must be a normalized absolute path.";
       }
       {
+        assertion = !cfg.browser.enable || lib.hasPrefix "127.0.0.1:" cfg.browser.address;
+        message = "korrid browser.address must use IPv4 loopback.";
+      }
+      {
+        assertion = !cfg.browser.enable || (config.users.groups.${cfg.browser.readGroup} or { }) != { };
+        message = "korrid browser.readGroup must name an existing group.";
+      }
+      {
         assertion =
           let
             user = config.users.users.${cfg.runtimeUser} or { };
@@ -377,6 +403,13 @@ in
       "d ${cfg.privateStateRoot}/identity 0700 ${serviceUser} ${serviceGroup} -"
       "d /dev/inputplumber 0700 root root -"
       "d /dev/inputplumber/sources 0700 root root -"
+      # These parents must exist before any game namespace is created and
+      # remain across browser restarts. Optional missing-path exclusions do
+      # not protect directories that appear after a game has started.
+      "d /run/korrid-browser 2750 ${serviceUser} ${
+        if cfg.browser.enable then cfg.browser.readGroup else serviceGroup
+      } -"
+      "d /run/korri-kiosk 0700 ${cfg.runtimeUser} ${config.users.users.${cfg.runtimeUser}.group} -"
     ];
 
     systemd.sockets.korrid-control = {
@@ -496,6 +529,12 @@ in
       // lib.optionalAttrs (cfg.moonlightAddress != null) {
         KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
       }
+      // lib.optionalAttrs cfg.browser.enable {
+        KORRID_BROWSER_ADDRESS = cfg.browser.address;
+        KORRID_BROWSER_ORIGIN = cfg.browser.origin;
+        KORRID_BROWSER_INFO_PATH = "/run/korrid-browser/brain.json";
+      }
+      }
       // lib.optionalAttrs bundleCfg.enable {
         KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
       };
@@ -505,6 +544,11 @@ in
             "${bundleCfg.launcherPackage}/bin/korri-bundle-launch korrid"
           else
             lib.getExe cfg.package;
+        ExecStartPre = lib.optional cfg.browser.enable (
+          pkgs.writeShellScript "korrid-remove-stale-browser-runtime" ''
+            rm -f /run/korrid-browser/brain.json
+          ''
+        );
         User = serviceUser;
         Group = serviceGroup;
         StateDirectory = "korrid";
@@ -538,7 +582,8 @@ in
         ReadWritePaths = [
           cfg.privateStateRoot
           cfg.storageRoot
-        ];
+        ]
+        ++ lib.optional cfg.browser.enable "/run/korrid-browser";
         InaccessiblePaths = [
           "/dev/uinput"
           "-/dev/inputplumber/sources"

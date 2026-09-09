@@ -83,7 +83,8 @@ export interface KorridClient {
   localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
-  sessionStop(expectedLaunchId: string): Promise<SessionStopOutcome>
+  /** Existing SessionStopRequest field; callers must name the displayed launch. */
+  sessionStop(expectedLaunchId?: string): Promise<SessionStopOutcome>
   /** Freezes the exact launch on its host. Repeated calls are no-ops. */
   sessionFreeze(expectedLaunchId: string): Promise<SessionFreezeOutcome>
   /** Thaws the exact launch on its host. Repeated calls are no-ops. */
@@ -963,6 +964,15 @@ export function createInMemoryKorridClient(
         return {
           _tag: "Err",
           payload: { code: "HostUnavailable", message: "configured to fail" },
+        }
+      }
+      if (expectedLaunchId === undefined) {
+        return {
+          _tag: "Err",
+          payload: {
+            code: "ExpectedLaunchIdRequired",
+            message: "expectedLaunchId is required for exact host stop",
+          },
         }
       }
       if (activeSession?.launchId !== expectedLaunchId) {
