@@ -58,15 +58,22 @@ fn imports_accept_only_exact_output_paths() {
     .unwrap();
     for path in [
         "github:example/plugin",
+        ".#plugin",
+        "(import <nixpkgs> {}).hello",
         "/tmp/plugin",
         "/nix/store/not-a-hash",
         "/nix/store/00000000000000000000000000000000-package.drv",
         "/nix/store/00000000000000000000000000000000-package/bin/tool",
+        "/nix/store/00000000000000000000000000000000-package^out",
+        "/nix/store/00000000000000000000000000000000-package#attr",
     ] {
-        assert!(
-            package::validate_store_path(Path::new(path)).is_err(),
-            "{path}"
-        );
+        let error = package::import(
+            Path::new("/unavailable-nix-must-not-run"),
+            "https://cache.example",
+            Path::new(path),
+        )
+        .unwrap_err();
+        assert!(error.contains("exact /nix/store output"), "{path}: {error}");
     }
 }
 

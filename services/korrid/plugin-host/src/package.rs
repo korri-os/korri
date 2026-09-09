@@ -85,6 +85,8 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     validate_store_path(package)?;
     validate_cache_source(source)?;
     let package_text = package.to_str().ok_or("invalid package path")?;
+    // Resolve across the plugin cache and configured upstream substituters.
+    // `copy --from` requires one source to contain the entire closure.
     process::checked(
         nix,
         [
@@ -99,33 +101,51 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
             "--option",
             "fallback",
             "false",
-            "copy",
-            "--from",
+            "--option",
+            "require-sigs",
+            "true",
+            "build",
+            "--no-link",
+            "--extra-substituters",
             source,
             package_text,
         ],
         Duration::from_secs(180),
     )?;
-    // Copy can skip an already present path. Verify its entire closure too,
-    // rather than accidentally accepting an unsigned local installation.
-    process::checked(
+    // Realization can reuse paths without locally registered signatures (for
+    // example, in a NixOS store image). Unlike build, store verify consults only
+    // explicit --substituter arguments, not the configured substituters.
+    // `nix config show substituters` prints Nix's effective whitespace-separated
+    // list, including extra-substituters; keep that policy owned by Nix.
+    let substituters = process::checked(
         nix,
         [
             "--extra-experimental-features",
             "nix-command",
-            "store",
-            "verify",
-            "--recursive",
-            "--sigs-needed",
-            "1",
-            "--substituter",
-            source,
-            package_text,
+            "config",
+            "show",
+            "substituters",
         ],
-        Duration::from_secs(180),
+        Duration::from_secs(10),
     )?;
+    let mut verify_args = vec![
+        "--extra-experimental-features",
+        "nix-command",
+        "store",
+        "verify",
+        "--recursive",
+        "--sigs-needed",
+        "1",
+        "--substituter",
+        source,
+    ];
+    for substituter in substituters.split_whitespace() {
+        verify_args.extend(["--substituter", substituter]);
+    }
+    verify_args.push(package_text);
+    process::checked(nix, verify_args, Duration::from_secs(180))?;
     // The receipt must not become durable before downloaded store contents.
-    // Nix may register copied outputs while their data still lives in the
+    // Nix may register substituted outputs while their data still lives in the
     // filesystem's writeback cache. Sync the whole store filesystem, including
     // the transitive closure, before permission approval or activation.
     let store = fs::File::open("/nix/store").map_err(|e| e.to_string())?;

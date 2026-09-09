@@ -49,6 +49,34 @@ let
     ({namespace:'@example',name:'unclean',contributes:{daemons:[{Type:'exec',ExecStart:['bin/sleep','3600'],ExecStopPost:['bin/false'],CapabilityBoundingSet:[]}]}})
     EOF
   '';
+  # Keep a real buildable deriver on the client, but not its output. A failed
+  # substitution must not run this canary, even with permissive ambient options.
+  splitDependency = builtins.derivation {
+    name = "plugin-split-cache-dependency";
+    system = pkgs.stdenv.hostPlatform.system;
+    # Treat the prebuilt shell as a source, not a derivation dependency. This
+    # keeps the test deriver's closure free of the shell's compiler/bootstrap.
+    builder = builtins.appendContext (builtins.unsafeDiscardStringContext "${pkgs.bash}/bin/bash") {
+      ${builtins.unsafeDiscardStringContext (toString pkgs.bash)} = {
+        path = true;
+      };
+    };
+    args = [
+      "-c"
+      ''
+        echo attempted > /tmp/korri-plugin-build-attempt
+        echo upstream-dependency > "$out"
+      ''
+    ];
+  };
+  splitPlugin = pkgs.runCommand "plugin-split-cache" { } ''
+    mkdir -p "$out/bin"
+    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
+    ln -s ${splitDependency} "$out/upstream-dependency"
+    cat > "$out/plugin.ts" <<'EOF'
+    ({namespace:'@example',name:'split-cache',contributes:{daemons:[{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}]}})
+    EOF
+  '';
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
@@ -69,6 +97,8 @@ pkgs.testers.runNixOSTest {
           broken
           interrupted
           unclean
+          splitPlugin
+          splitDependency.drvPath
         ];
         services.nix-serve = {
           enable = true;
@@ -100,6 +130,9 @@ pkgs.testers.runNixOSTest {
             addSSL = true;
             sslCertificate = "${certificate}/cert.pem";
             sslCertificateKey = "${certificate}/key.pem";
+            locations."/split/" = {
+              alias = "/var/www/split/";
+            };
             locations."/repositories/" = {
               alias = "/var/www/repositories/";
             };
@@ -131,12 +164,15 @@ pkgs.testers.runNixOSTest {
         virtualisation.memorySize = 1536;
       };
     machine =
-      { ... }:
+      { lib, ... }:
       {
         imports = [ hostModule ];
         services.korri.pluginHost.enable = true;
         services.korri.pluginHost.package = hostPackage;
         services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
+        # Exercise configured substitution without contacting public caches
+        # from the isolated VM. The production module keeps NixOS's stock cache.
+        nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
         nix.settings.trusted-public-keys = [ publicKey ];
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
         environment.systemPackages = [ pkgs.jq ];
@@ -170,6 +206,74 @@ pkgs.testers.runNixOSTest {
         report = inspect(package)
         machine.succeed("korri-plugin install http://cache:5000 " + package + " " + report["approval"])
         return report
+
+    # Two real signed caches: the plugin cache has no dependency NAR or
+    # narinfo; only the independently signed upstream can supply that output.
+    cache.wait_for_unit("nginx.service")
+    cache.succeed("mkdir -p /var/www/split/plugin /var/www/split/upstream /var/www/split/missing")
+    cache.succeed("nix-store --generate-binary-cache-key split-upstream /tmp/upstream.key /tmp/upstream.pub")
+    upstream_key = cache.succeed("cat /tmp/upstream.pub").strip()
+    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/plugin?secret-key=${key}' ${splitPlugin}")
+    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/upstream?secret-key=/tmp/upstream.key' ${splitDependency}")
+    dependency_hash = "${builtins.substring 0 32 (builtins.baseNameOf splitDependency)}"
+    dependency_info = "/var/www/split/plugin/" + dependency_hash + ".narinfo"
+    dependency_nar = cache.succeed("sed -n 's/^URL: //p' " + dependency_info).strip()
+    cache.succeed("rm " + dependency_info + " /var/www/split/plugin/" + dependency_nar)
+    cache.succeed("cp /var/www/split/plugin/nix-cache-info /var/www/split/missing/")
+    plugin_cache = "https://cache/split/plugin"
+    upstream_cache = "https://cache/split/upstream"
+    # Copy only the deriver at runtime: VM closure injection of a .drv also
+    # includes its output and would invalidate the cold-cache test.
+    machine.succeed("nix --extra-experimental-features nix-command copy --from http://cache:5000 ${splitDependency.drvPath}")
+    machine.fail("test -e ${splitPlugin}")
+    machine.fail("test -e ${splitDependency}")
+    machine.succeed("test -e ${splitDependency.drvPath}")
+
+    def split_command(upstream, trusted, command):
+        # Deliberately weaken ambient policy. The importer must force signature
+        # checks and disable local, remote and fallback builds itself.
+        config = "substituters = " + upstream + "\ntrusted-public-keys = ${publicKey} " + trusted + "\nextra-trusted-public-keys =\nmax-jobs = 1\nbuilders = ssh://cache\nfallback = true\nrequire-sigs = false\nsandbox = false\nnarinfo-cache-negative-ttl = 0\n"
+        return "NIX_CONFIG=" + shlex.quote(config) + " korri-plugin " + command
+
+    split_inspect = "inspect " + plugin_cache + " ${splitPlugin}"
+    for upstream, trusted in [("https://cache/split/missing", upstream_key), (upstream_cache, "")]:
+        # Also request the known buildable output directly. Refusal must not
+        # depend on the plugin's own deriver being unavailable on the client.
+        for command in ["inspect " + plugin_cache + " ${splitDependency}", split_inspect]:
+            error = machine.fail(split_command(upstream, trusted, command) + " 2>&1")
+            assert "building '/nix/store/" not in error, error
+            machine.fail("test -e /tmp/korri-plugin-build-attempt")
+            machine.fail("test -e ${splitDependency}")
+            machine.fail("korri-plugin status @example:split-cache")
+    split_report = json.loads(machine.succeed(split_command(upstream_cache, upstream_key, split_inspect)))
+    assert split_report["package"] == "${splitPlugin}"
+    assert split_report["provenance"] == {"kind": "RawCache", "cache_url": plugin_cache}
+    machine.succeed("grep -Fx upstream-dependency ${splitPlugin}/upstream-dependency")
+    machine.fail("test -e /tmp/korri-plugin-build-attempt")
+    # Verification must still reject an already imported closure if its
+    # dependency's signing key is no longer trusted (realization can skip it).
+    machine.fail(split_command(upstream_cache, "", split_inspect))
+    machine.fail("korri-plugin status @example:split-cache")
+    machine.fail(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} wrong-approval"))
+    machine.succeed(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} " + split_report["approval"]))
+    split_receipt = json.loads(machine.succeed("korri-plugin status @example:split-cache"))
+    assert split_receipt["provenance"] == split_report["provenance"]
+    machine.succeed("korri-plugin enable @example:split-cache")
+    machine.wait_for_unit(split_report["unit"])
+    machine.succeed("korri-plugin remove @example:split-cache --purge")
+    # NixOS store images can contain paths without locally registered cache
+    # signatures. Verification must also consult the configured upstream when
+    # realization reuses such a path rather than downloading it again.
+    machine.succeed("nix-store --delete ${splitPlugin} ${splitDependency}")
+    cache.succeed("cp -r /var/www/split/upstream /var/www/split/unsigned")
+    cache.succeed("sed -i '/^Sig:/d' /var/www/split/unsigned/" + dependency_hash + ".narinfo")
+    machine.succeed("nix --extra-experimental-features nix-command copy --no-check-sigs --from https://cache/split/unsigned ${splitDependency}")
+    dependency_info = json.loads(machine.succeed("nix --extra-experimental-features nix-command path-info --json ${splitDependency}"))
+    assert not dependency_info["${splitDependency}"].get("signatures", [])
+    machine.fail(split_command(upstream_cache, "", split_inspect))
+    reused = json.loads(machine.succeed(split_command(upstream_cache, upstream_key, split_inspect)))
+    assert reused["approval"] == split_report["approval"]
+    machine.fail("test -e /tmp/korri-plugin-build-attempt")
 
     source_a = "https://cache/repositories/a.json"
     source_b = "https://cache/repositories/b.json"
