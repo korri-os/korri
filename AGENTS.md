@@ -91,6 +91,33 @@ only specific alterations for which there is a concrete idea or concern. Name
 the legacy element, the proposed delta, and why it may be warranted. When there
 is no such concern, propose no schema change.
 
+## Plugin boundaries
+
+Keep `plugin.ts` thin. It declares the plugin's identity and Korri integration,
+not a replacement configuration language for the systems the plugin uses.
+This rule applies to every plugin and platform, not only Tailscale.
+
+- Put system-specific configuration in its established native format. A Linux
+  daemon belongs in an actual systemd `.service` file shipped with the plugin.
+  Do not encode service directives in TypeScript or JSON merely so Korri can
+  translate them back into a service file.
+- Use the declaration to register contributions and reference their native
+  artifacts. Each artifact owns its configuration. Do not keep a second,
+  hand-maintained representation in `plugin.ts` or a Korri-specific schema.
+- Generate derived packaging and discovery metadata from those sources. Plugin
+  authors must not maintain duplicate manifests to keep the representations
+  aligned.
+- Korri still owns artifact validation, permission approval, lifecycle and
+  effects. A native configuration file does not grant permission to bypass the
+  host's security policy. Plugin declaration code remains effect-free.
+- Native programs arrive prebuilt. Native configuration and interpreted plugin
+  declarations do not make compilation on a target device acceptable.
+
+This is the required design direction. It does not claim that the current host
+already accepts raw service files. Changing that runtime boundary requires its
+own implementation and verification; this rule does not authorize a silent
+permission expansion.
+
 ## Standing decisions
 
 - WebViews are hardware-blind: they receive semantic input actions
