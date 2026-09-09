@@ -52,9 +52,13 @@ in
     runtimeUid = 1001;
     runtimeGroup = "games";
     runtimeGid = 1001;
-    # This first host slice has no production federation relay. Keep the
-    # existing module's explicit loopback-test contract until one is assigned.
-    relays = [ "ws://127.0.0.1:9" ];
+    # The same relays Zao publishes to, so the two devices can find each other.
+    # Peers are matched by owner, so this device must also carry an owner
+    # binding before discovery produces anything.
+    relays = [
+      "wss://relay.nostr.band"
+      "wss://relay.primal.net"
+    ];
     # The current deployment gate is intentionally NVIDIA-specific. Keep its
     # validation game disabled until that existing gate gains an ARM profile.
     validation.enable = false;
