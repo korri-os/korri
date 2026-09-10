@@ -372,3 +372,331 @@ fn credential_probe() {
     // The ambient curlrc's insecure setting must not trust this private CA.
     assert!(fetch_catalog(&curl(), &url, None).is_err());
 }
+
+#[test]
+#[ignore = "writes build-machine Nix store; run explicitly with KORRI_PUBLISH_NIX"]
+fn release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix() {
+    use base64::Engine;
+    use korri_plugin_host::{package, provenance::Provenance, release};
+    use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path};
+
+    let nix = std::env::var("KORRI_PUBLISH_NIX").expect("supply the build-machine Nix executable");
+    let run = |args: &[&str]| {
+        let output = Command::new(&nix)
+            .args(["--extra-experimental-features", "nix-command"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    let files = tempfile::tempdir().unwrap();
+    let root = files.path().to_path_buf();
+    let secret = run(&["key", "generate-secret", "--key-name", "release-test"]);
+    let other_secret = run(&["key", "generate-secret", "--key-name", "release-test"]);
+    let secret_file = root.join("key");
+    let other_file = root.join("other-key");
+    fs::write(&secret_file, &secret).unwrap();
+    fs::write(&other_file, &other_secret).unwrap();
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(secret.split_once(':').unwrap().1)
+        .unwrap();
+    let public = format!(
+        "release-test:{}",
+        base64::engine::general_purpose::STANDARD.encode(&raw[32..])
+    );
+    let cache = format!("file://{}", root.join("cache").display());
+    let make_package = |directory: &str, name: &str, key: &Path| {
+        let input = root.join(directory);
+        fs::create_dir(&input).unwrap();
+        fs::write(
+            input.join("manifest.json"),
+            r#"{"publisher":{"namespace":"@example"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            input.join("plugin.ts"),
+            format!("export const name = '{name}';"),
+        )
+        .unwrap();
+        fs::write(input.join("test-run"), input.to_str().unwrap()).unwrap();
+        let path = run(&["store", "add-path", input.to_str().unwrap()]);
+        run(&[
+            "copy",
+            "--to",
+            &format!("{cache}?secret-key={}", key.display()),
+            &path,
+        ]);
+        PathBuf::from(path)
+    };
+    let first = make_package("first", "game", &secret_file);
+    let unrelated = make_package("unrelated", "other", &secret_file);
+    let ambiguous = make_package("ambiguous", "game", &secret_file);
+    let untrusted = make_package("untrusted", "game", &other_file);
+    let malformed = make_package(
+        "malformed",
+        "game'; export const unexpected = true; //",
+        &secret_file,
+    );
+    // Remove only this test's unique output so success exercises a real NAR
+    // download and content verification, not merely a cached local package.
+    run(&["store", "delete", first.to_str().unwrap()]);
+    assert!(!first.exists());
+    let served = root.clone();
+    let server = HttpsServer::start(move |request, _| {
+        let target = request.split_whitespace().nth(1).unwrap();
+        if target.contains("..") {
+            return b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".to_vec();
+        }
+        match fs::read(served.join(target.trim_start_matches('/'))) {
+            Ok(body) => ok(&body),
+            Err(_) => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        }
+    });
+    let base = server.url.as_str().strip_suffix("catalog").unwrap();
+    let source = format!("{base}cache");
+    let batch = root.join("build-0123456789ab");
+    fs::create_dir(&batch).unwrap();
+    fs::write(batch.join("revision.txt"), format!("{BATCH_REVISION}\n")).unwrap();
+    // This wrapper only configures the actual Nix process. It neither supplies
+    // responses nor replaces Nix metadata/signature/import implementations.
+    let configured_nix = root.join("nix");
+    fs::write(&configured_nix, format!(
+        "#!{}\nexec '{}' --option trusted-public-keys '{}' --option ssl-cert-file '{}' --option substituters '' --option narinfo-cache-negative-ttl 0 --option narinfo-cache-positive-ttl 0 \"$@\"\n",
+        std::env::var("SHELL").unwrap(), nix, public, server.ca.display(),
+    )).unwrap();
+    fs::set_permissions(&configured_nix, fs::Permissions::from_mode(0o700)).unwrap();
+    let bindings = BTreeMap::from([(
+        "@example".into(),
+        package::PublisherBinding {
+            public_key: public,
+            cache_url: source.clone(),
+        },
+    )]);
+    let inspect = |path: &Path| {
+        package::import(&configured_nix, &source, path)?;
+        package::verify_publisher(&configured_nix, path, Some(&source), &bindings)?;
+        package::load(
+            &configured_nix,
+            path,
+            Provenance::RawCache {
+                cache_url: source.clone(),
+            },
+        )
+        .map(|report| report.id)
+    };
+    let select = |paths: &[&Path], id: &str| {
+        let text = paths
+            .iter()
+            .map(|p| format!("{}\n", p.display()))
+            .collect::<String>();
+        fs::write(batch.join("paths-x86_64-linux.txt"), text).unwrap();
+        let paths = fetch_batch(&server, "x86_64-linux")?;
+        release::select_output(&paths, id, inspect)
+    };
+    assert_eq!(
+        select(&[&first, &unrelated], "@example:game").unwrap(),
+        first
+    );
+    assert!(select(&[&first, &unrelated], "@example:missing")
+        .unwrap_err()
+        .contains("no verified output"));
+    assert!(select(&[&first, &ambiguous], "@example:game")
+        .unwrap_err()
+        .contains("multiple outputs"));
+    let error = select(&[&first, &untrusted], "@example:game").unwrap_err();
+    assert!(error.contains("not signed by the full key"), "{error}");
+    assert!(
+        select(&[&first, &malformed], "@example:game").is_err(),
+        "a signed but invalid later declaration must fail the batch"
+    );
+    assert!(package::verify_publisher(
+        &configured_nix,
+        &first,
+        Some("https://different.example/cache"),
+        &bindings
+    )
+    .is_err());
+    let missing = Path::new("/nix/store/00000000000000000000000000000000-unavailable");
+    assert!(
+        select(&[&first, missing], "@example:game").is_err(),
+        "a cache miss after a match must fail, never build or choose the earlier match"
+    );
+    // Instantiate (never build) a real derivation on this build machine. The
+    // consumer sees only its exact output and must refuse its available builder.
+    let marker = root.join("builder-ran");
+    let expression = format!("derivation {{ name = \"release-no-build\"; system = builtins.currentSystem; builder = \"/bin/sh\"; args = [ \"-c\" \"touch {}; mkdir $out\" ]; }}", marker.display());
+    let instantiated = Command::new(Path::new(&nix).with_file_name("nix-instantiate"))
+        .args(["--expr", &expression])
+        .output()
+        .unwrap();
+    assert!(
+        instantiated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&instantiated.stderr)
+    );
+    let drv = String::from_utf8(instantiated.stdout).unwrap();
+    let queried = Command::new(Path::new(&nix).with_file_name("nix-store"))
+        .args(["--query", "--outputs", drv.trim()])
+        .output()
+        .unwrap();
+    assert!(queried.status.success());
+    let output = String::from_utf8(queried.stdout).unwrap();
+    let output = output.trim();
+    let error = select(&[&first, Path::new(output)], "@example:game").unwrap_err();
+    assert!(
+        error.contains("no substituter"),
+        "the consumer must refuse the absent output instead of evaluating its derivation: {error}"
+    );
+    assert!(!marker.exists());
+    assert!(!Path::new(output).exists());
+    let report = package::load(
+        &configured_nix,
+        &first,
+        Provenance::RawCache {
+            cache_url: source.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(report.package, first);
+    assert_eq!(report.id, "@example:game");
+    assert!(!report.approval.is_empty());
+    // A valid signature over metadata must not admit damaged payload bytes.
+    let hash = &first.file_name().unwrap().to_str().unwrap()[..32];
+    let narinfo = fs::read_to_string(root.join(format!("cache/{hash}.narinfo"))).unwrap();
+    let nar = narinfo
+        .lines()
+        .find_map(|line| line.strip_prefix("URL: "))
+        .unwrap();
+    let payload = root.join("cache").join(nar);
+    let mut bytes = fs::read(&payload).unwrap();
+    bytes[0] ^= 0xff;
+    fs::write(payload, bytes).unwrap();
+    run(&["store", "delete", first.to_str().unwrap()]);
+    let error = select(&[&first], "@example:game").unwrap_err();
+    assert!(
+        error.contains("input compression not recognized"),
+        "Nix must refuse the damaged payload bytes: {error}"
+    );
+    assert!(
+        !first.exists(),
+        "damaged NAR must not become an installed store output"
+    );
+    let requests = server.requests.lock().unwrap();
+    assert!(
+        requests.iter().any(|r| r.contains(".narinfo ")),
+        "Nix must verify real remote metadata, not just local signatures"
+    );
+    assert!(requests.iter().any(|r| r.contains("/nix-cache-info ")));
+    assert!(
+        requests.iter().any(|r| r.starts_with("GET /cache/nar/")),
+        "the selected output must be downloaded from the real HTTPS cache"
+    );
+}
+
+const BATCH_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+const BATCH_OUTPUT: &str = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-plugin";
+
+fn fetch_batch(server: &HttpsServer, system: &str) -> Result<Vec<PathBuf>, String> {
+    let base = server.url.as_str().strip_suffix("catalog").unwrap();
+    korri_plugin_host::release::fetch_paths(
+        &curl(),
+        &SourceUrl::parse(&format!("{base}build-0123456789ab/")).unwrap(),
+        BATCH_REVISION,
+        system,
+        Some(&server.ca),
+    )
+}
+
+#[test]
+fn release_lookup_fetches_exact_revision_then_only_the_host_architecture() {
+    for system in ["x86_64-linux", "aarch64-linux"] {
+        let server = HttpsServer::start(move |request, _| {
+            if request.starts_with("GET /build-0123456789ab/revision.txt ") {
+                ok(format!("{BATCH_REVISION}\n").as_bytes())
+            } else if request.starts_with(&format!("GET /build-0123456789ab/paths-{system}.txt ")) {
+                ok(format!("{BATCH_OUTPUT}\n").as_bytes())
+            } else {
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec()
+            }
+        });
+        assert_eq!(
+            fetch_batch(&server, system).unwrap(),
+            vec![PathBuf::from(BATCH_OUTPUT)]
+        );
+        assert_eq!(server.requests.lock().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn release_lookup_refuses_wrong_or_malformed_revision_before_requesting_paths() {
+    for revision in [
+        format!("{}\n", "f".repeat(40)),
+        format!("{}{}\n", &BATCH_REVISION[..12], "f".repeat(28)),
+        format!("{}\n", BATCH_REVISION.to_uppercase()),
+        BATCH_REVISION.into(),
+        format!("{BATCH_REVISION}\r\n"),
+        format!("{BATCH_REVISION}\n{BATCH_REVISION}\n"),
+        "latest\n".into(),
+        String::new(),
+    ] {
+        let server = HttpsServer::start(move |_, _| ok(revision.as_bytes()));
+        assert!(fetch_batch(&server, "x86_64-linux").is_err());
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn release_lookup_keeps_https_authentication_and_refuses_unknown_architectures() {
+    let server = HttpsServer::start(|_, _| redirect("http://127.0.0.1/batch"));
+    assert!(fetch_batch(&server, "x86_64-linux").is_err());
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    assert!(fetch_batch(&server, "armv7l-linux").is_err());
+    assert_eq!(
+        server.requests.lock().unwrap().len(),
+        1,
+        "unsupported architecture must not fetch"
+    );
+    let other = HttpsServer::start(|_, _| ok(b"unused"));
+    let base = SourceUrl::parse(server.url.as_str().strip_suffix("catalog").unwrap()).unwrap();
+    assert!(korri_plugin_host::release::fetch_paths(
+        &curl(),
+        &base,
+        BATCH_REVISION,
+        "x86_64-linux",
+        Some(&other.ca)
+    )
+    .is_err());
+    assert_eq!(
+        server.requests.lock().unwrap().len(),
+        1,
+        "untrusted TLS must not reach the batch endpoint"
+    );
+}
+
+#[test]
+fn release_lookup_refuses_http_errors_malformed_paths_and_incomplete_transfers() {
+    for response in [
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        b"HTTP/1.1 500 Server Error\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n/nix/store/".to_vec(),
+        ok(b"not an output\n"),
+        ok(format!("{BATCH_OUTPUT}\n{BATCH_OUTPUT}\n").as_bytes()),
+        ok(&vec![b'x'; 64 * 1024 + 1]),
+    ] {
+        let server = HttpsServer::start(move |request, _| {
+            if request.contains("/revision.txt ") {
+                ok(format!("{BATCH_REVISION}\n").as_bytes())
+            } else {
+                response.clone()
+            }
+        });
+        assert!(fetch_batch(&server, "x86_64-linux").is_err());
+        assert_eq!(server.requests.lock().unwrap().len(), 2);
+    }
+}

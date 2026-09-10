@@ -54,6 +54,16 @@ fn run(args: Vec<String>) -> Result<(), String> {
             print_json(&host.inspect(source, Path::new(path))?)?;
             host.release_download()
         }
+        ["install", source, id, "--release", revision] => {
+            let curl = env::var("KORRI_PLUGIN_CURL").map_err(|_| "host package must supply KORRI_PLUGIN_CURL")?;
+            let report = host.inspect_release(Path::new(&curl), source, id, revision)?;
+            print_json(&report)?;
+            eprintln!(
+                "Release {revision}: not installed. Review this exact package and approval report, then run:\nsudo korri-plugin install '{}' '{}' '{}'\nEnable the plugin separately after installation.",
+                source, report.package.display(), report.approval,
+            );
+            host.release_download()
+        }
         ["install", source, path, approval] => {
             let report = host.inspect(source, Path::new(path))?;
             print_json(&report)?;
@@ -77,7 +87,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin inspect CACHE PACKAGE | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
+        _ => Err("usage: korri-plugin inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
     }
 }
 

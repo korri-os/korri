@@ -68,11 +68,42 @@ When a local store image lacks signatures, the host fetches metadata only from t
 
 Namespace verification does not authorize permissions. The administrator still approves the exact package. This is a clean cut: old completion-value plugins and packages without a manifest cannot be installed. Production publication in `korri-os/plugins` must adopt the manifest and named exports separately; this core slice changes its test fixture, not that repository.
 
+## Exact publishing-commit lookup
+
+```sh
+sudo korri-plugin install "$CACHE_URL" @korri:tailscale --release "$COMMIT"
+```
+
+`COMMIT` must be the full lowercase 40-character publishing commit. `CACHE_URL` must be the publisher-bound, exact `https://github.com/OWNER/REPO/releases/download/CACHE_TAG/` metadata cache URL (the final slash is optional only if the binding omits it). This command resolves and **inspects only**. It prints the exact package, permissions and approval digest, then the existing `install CACHE PACKAGE APPROVAL` command. Review the report before running that command. Installation still leaves the plugin disabled; enable it separately. There is no implicit approval, prompt default, mutable pointer or new catalog.
+
+The lookup is grounded in the approved authoring brief's Versions section and the actual `korri-os/plugins` `PUBLICATION.md` / `nix/github-cache.py` producer (`batch_files`, `build`, `publish`):
+
+| Evidence | Consumer check |
+|---|---|
+| Batch `build-<first 12 commit characters>` | Derive its location in the same GitHub repository, separate from the metadata cache tag. Never infer trust from that name. |
+| Batch `revision.txt` | Fetch at most 41 bytes. Require the exact requested full commit followed by one newline, before requesting paths. A shared 12-character prefix is insufficient. |
+| Batch `paths-x86_64-linux.txt` or `paths-aarch64-linux.txt` | Fetch only the running host's architecture, at most 64 KiB. Require nonempty, unique, newline-terminated exact store outputs. Reject derivations, expressions, malformed paths and duplicate lines. |
+| Each listed candidate | Use the existing download-only Nix importer, full namespace-bound signature verification, declaration and native artifact validation. Select by the verified declaration ID, never by the store-path name. |
+
+Lookup refuses missing IDs, multiple outputs for the requested ID, and any invalid, unavailable or untrusted candidate, even after finding a match. It re-inspects the selected output to retain its download GC root after scanning other candidates. HTTPS transfers use the existing certificate, redirect, size and timeout policy. Cache and build failures remain errors; lookup never evaluates a flake, instantiates a derivation, compiles, or changes Nix trust.
+
+The cost is downloading and inspecting every listed output, not just the requested plugin. A broken unrelated output blocks that batch. The selected output is inspected again before its report and again during exact-path installation. Custom batch tags and other cache hosts still use raw exact-path inspection; there is no custom-tag lookup option. Evidence is unsigned: the full revision check detects mismatches, but is not cryptographic proof that a package was built from that commit. Nix signatures authenticate package bytes and publisher authority, not the tag or path list. No installed release record is added: the existing receipt and approval keep the exact store path and raw cache provenance, not this lookup commit. Publication immutability and availability remain publisher operations.
+
+Focused local checks (no VM or full plugin check):
+
+```sh
+nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test release --test repository
+KORRI_PUBLISH_NIX="$(command -v nix)" nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test repository release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix -- --ignored --exact
+```
+
+The second check runs on a build machine. It creates unique test outputs with `nix store add-path`, exports them with real Nix signatures, serves evidence and cache files over local HTTPS, deletes one test output, and downloads its NAR through the real importer. It checks identity, ambiguity, wrong bound keys, malformed declarations, a missing output, an instantiated-but-never-built derivation, and damaged NAR bytes. It does not change host publisher configuration or activate a plugin. Live GitHub lookup, privileged CLI lifecycle, physical ARM installation and cold-store multi-cache closure acceptance are separate gates.
+
 ## Lifecycle commands
 
 | Command | Effect |
 |---|---|
 | `inspect CACHE PACKAGE` | Import and verify the signed closure, then show the bounded declaration and effective policy. Run no payload. |
+| `install CACHE ID --release COMMIT` | Resolve the exact publishing batch and show inspection plus the exact-path approval command. Do not install or enable. |
 | `install CACHE PACKAGE APPROVAL` | Record an approved package, initially disabled. |
 | `update ID CACHE PACKAGE APPROVAL` | Update an existing raw-cache installation of that ID. Preserve enabled state. Restore the prior selection after a failed start when cleanup succeeds. |
 | `enable ID` | Enable the approved package and start its daemon, if any. Require enabled exact dependencies. |

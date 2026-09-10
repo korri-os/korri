@@ -10,6 +10,7 @@ pub mod package;
 pub mod process;
 pub mod provenance;
 pub mod publisher;
+pub mod release;
 pub mod repository;
 pub mod selection;
 pub mod source_store;

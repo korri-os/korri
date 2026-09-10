@@ -73,6 +73,47 @@ impl Host {
         )
     }
 
+    /// Resolve unsigned batch evidence through the existing signed-package
+    /// inspection boundary. This grants neither installation nor activation.
+    pub fn inspect_release(
+        &self,
+        curl: &Path,
+        source: &str,
+        id: &str,
+        revision: &str,
+    ) -> Result<Report, String> {
+        validate_id(id)?;
+        let batch = crate::release::batch_url(source, revision)?;
+        let namespace = id.split_once(':').ok_or("invalid plugin ID")?.0;
+        let binding = self
+            .publishers
+            .get(namespace)
+            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
+        if binding.cache_url != source {
+            return Err(format!(
+                "publisher {namespace} is bound to cache {}",
+                binding.cache_url
+            ));
+        }
+        let paths = crate::release::fetch_paths(
+            &package::tools(curl)?,
+            &batch,
+            revision,
+            current_platform(),
+            None,
+        )?;
+        let selected = crate::release::select_output(&paths, id, |path| {
+            self.inspect(source, path).map(|report| report.id)
+        })?;
+        // Each candidate replaces the temporary download root. Reinspect the
+        // selected output to retain its root, even if GC ran during the scan.
+        let report = self.inspect(source, &selected)?;
+        if report.id != id {
+            return Err("selected release package changed identity".into());
+        }
+        Ok(report)
+    }
+
     pub fn sources(&self) -> Result<Vec<SourceUrl>, String> {
         source_store::list_sources(&self.state)
     }
