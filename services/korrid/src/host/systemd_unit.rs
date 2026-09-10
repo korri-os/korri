@@ -1036,7 +1036,7 @@ mod tests {
             );
             assert_eq!(launch, expected);
             assert!(launch.contains(&format!(
-                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
+                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korri-kiosk /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
             )));
         }
     }

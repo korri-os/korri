@@ -571,12 +571,10 @@ in
         KORRID_COMPOSITOR_CONTROL_SOCKET = cfg.compositorControlSocket;
         KORRID_NEVER_FOCUS_APP_IDS = lib.concatStringsSep "," cfg.neverFocusAppIds;
       }
-      }
       // lib.optionalAttrs cfg.browser.enable {
         KORRID_BROWSER_ADDRESS = cfg.browser.address;
         KORRID_BROWSER_ORIGIN = cfg.browser.origin;
         KORRID_BROWSER_INFO_PATH = "/run/korrid-browser/brain.json";
-      }
       }
       // lib.optionalAttrs bundleCfg.enable {
         KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;

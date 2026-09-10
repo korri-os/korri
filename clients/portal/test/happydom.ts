@@ -3,7 +3,19 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 
+// Bun.serve requires native Response objects. Keep one native HTTP stack
+// instead of mixing it with Happy DOM's browser fetch/preflight emulation.
+const nativeHttp = {
+  fetch,
+  Headers,
+  Request,
+  Response,
+  AbortController,
+  AbortSignal,
+  DOMException,
+}
 GlobalRegistrator.register()
+Object.assign(globalThis, nativeHttp)
 
 /**
  * Surfaces install their own toolchains, but React belongs to their host.
