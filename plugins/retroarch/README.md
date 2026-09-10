@@ -39,6 +39,68 @@ Java String until RetroArch copies and wipes its native bootstrap storage.
 Repository checks prove the patch/config/build contract; installed-device
 behavior remains a separate acceptance gate.
 
+## Linux typed settings
+
+The nested schema in `policy.ts` is the unchanged legacy RetroArch policy
+(`legacy:product/plugins/retroarch/src/policy.ts`, Effect `4.0.0-beta.78`).
+`render-settings.ts` extracts only the pure cfg-pair renderer from legacy
+`launch-spec.ts`; it retains nested names, enums, defaults and null omission.
+It does not port argv, environment or persistence. The callback consumes
+**rendered scalar pairs**, not a new flat user-settings schema. Supplying and
+persisting nested policy through the host remains an unresolved integration
+boundary; do not encode it in the scalar `overrides.settings` map.
+
+`settings-types.json` is the kind-owned table of all 166 fixed renderer output
+keys and their scalar types. The schema-driven test checks it against the
+actual renderer. `settings-check.nix` accepts an instance's own `program`;
+it inherits that program's unpack/patch phases and checks its
+`configuration.c`. It derives the executable path as `${program}/bin/retroarch`,
+like the existing manifest file producer. It does not compile plugin code. The installed declaration
+remains TS source evaluated by korrid at runtime.
+
+`plugin.nix` registers the generated evidence under the existing
+`packages.retroarch-settings` and `files.retroarch-settings`. The generic
+consumer derives the file key from the launcher's existing `program` file key.
+Artifact fields have existing consumers: `program` is the exact callback
+executable path; `version` and `keys` are `SourceCheckedSettings` evidence.
+The consumer checks that executable before binding the enclosing installed
+plugin package as `build`. It never reads evidence from the kind package for
+another instance. No second catalog, manifest extension, `since` table, user
+schema or runtime migration exists.
+
+For the pinned 1.22.2 source, 155 keys match. Eleven are withheld:
+`config_save_on_exit` and `menu_driver` are reserved; `libretro_log_level` is a
+legacy String but a source Number; `content_directory`,
+`core_updater_buildbot_url`, `input_overlay_scale`, `menu_show_start_screen`,
+`preemptive_frames`, `rewind_auto_stride`, `video_hdr_contrast`, and
+`video_shader` have no verified key. Dynamic input-port outputs also have no
+evidence yet. These remain legacy policy fields; they are not silently renamed,
+coerced or admitted. Requests produce warnings with setting, launcher, version
+and exact build. Source recognition does not prove conditional feature support.
+
+The callback rejects reserved keys in both typed and raw input. Typed pairs
+follow Korri's baseline. Raw prepend follows typed pairs; raw append comes
+last. Quoted strings use the legacy JSON escaping; booleans are quoted and
+numbers are bare.
+
+Focused build-machine verification (no VM):
+
+```sh
+# Also called by the existing korrid-check CI task.
+KORRI_ROOT="$PWD" nix develop .#korrid --command bash plugins/retroarch/check.sh
+package="$(nix build --no-link --print-out-paths .#korri-plugin-retroarch)"
+KORRI_ROOT="$PWD" KORRI_TEST_RETROARCH_PACKAGE="$package" \
+  nix develop .#korrid --command cargo test \
+  --manifest-path services/korrid/Cargo.toml --test typed_settings -- --include-ignored
+```
+
+The Nix check is `checks.<system>.korri-retroarch-settings`. Building it runs
+the parser tests and checks the pinned patched source. Building the plugin
+also requires this evidence. The packaged callback test reads the real
+manifest, evidence and shipped TS, then checks its emitted configuration bytes.
+It does not boot a VM or run a game. An uncached native program dependency can
+make this build-machine gate expensive; it must never run on a target device.
+
 ## Distribution builds
 
 `.github/workflows/retroarch-distribution.yml` builds and stages the custom

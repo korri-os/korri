@@ -1,10 +1,8 @@
-//! Source-check output belongs to the launching build, not a version table.
-//! The package publisher does not yet supply this evidence. Until it does,
-//! omit typed settings with explicit warnings; never claim a key is supported.
-use crate::config::cascade::LaunchSettingValue;
-use std::collections::HashMap;
+//! Source-check output belongs to the launching instance, never its kind.
+use crate::{config::cascade::LaunchSettingValue, plugin_installation::EnabledPackage};
+use std::{collections::HashMap, fs::File, io::Read};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 pub enum SettingType {
     Boolean,
     Number,
@@ -18,6 +16,65 @@ pub struct SourceCheckedSettings<'a> {
     pub version: &'a str,
     pub build: &'a str,
     pub keys: &'a HashMap<String, SettingType>,
+}
+
+/// Derived artifact registered in the existing manifest files map as
+/// `<program file key>-settings`. `program` is PluginLaunchInput.program;
+/// version/keys are the existing SourceCheckedSettings evidence. Binding the
+/// enclosing installed package here avoids a self-referential Nix output.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackagedSettings {
+    program: String,
+    version: String,
+    keys: HashMap<String, SettingType>,
+}
+
+impl PackagedSettings {
+    pub fn read(package: &EnabledPackage, program_key: &str) -> Result<Option<Self>, String> {
+        let Some(path) = package.files.get(&format!("{program_key}-settings")) else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        File::open(path)
+            .and_then(|file| file.take(1024 * 1024 + 1).read_to_end(&mut bytes))
+            .map_err(|error| format!("read source-checked settings {}: {error}", path.display()))?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("source-checked settings exceed 1 MiB".into());
+        }
+        let evidence: Self = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("invalid source-checked settings: {error}"))?;
+        if evidence.version.is_empty() {
+            return Err("source-checked settings have no program version".into());
+        }
+        Ok(Some(evidence))
+    }
+
+    pub fn validate(
+        &self,
+        settings: HashMap<String, LaunchSettingValue>,
+        launcher_id: &str,
+        build: &str,
+        program: &str,
+    ) -> (HashMap<String, LaunchSettingValue>, Vec<LaunchWarning>) {
+        let unverified = HashMap::new();
+        validate(
+            settings,
+            launcher_id,
+            build,
+            Some(SourceCheckedSettings {
+                version: &self.version,
+                build,
+                // Preserve the display version in warnings, but accept no
+                // evidence for a different executable in this instance.
+                keys: if self.program == program {
+                    &self.keys
+                } else {
+                    &unverified
+                },
+            }),
+        )
+    }
 }
 
 #[typeshare::typeshare]

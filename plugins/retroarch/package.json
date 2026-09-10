@@ -1,0 +1,14 @@
+{
+  "name": "korri-retroarch-policy-check",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.13",
+    "effect": "4.0.0-beta.78",
+    "typescript": "5.9.3"
+  }
+}

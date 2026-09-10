@@ -45,39 +45,53 @@ runtime identity, so reusing it could falsely report that the selected runtime
 ran. Stop that exact session before switching routes. Ordinary
 `app.session.prepare` retains its existing same-game resume behavior.
 
-## Typed metadata producer handoff
+## Source-checked rendered settings
 
-The producer is not implemented in this slice. No metadata path, manifest field,
-version table, or `since` table has been invented.
+`launcher::typed_settings::validate(settings, launcher_id, build,
+Option<SourceCheckedSettings>)` accepts only matching keys and scalar types.
+Its borrowed evidence uses the exact launching instance package path as
+`build`, the pinned program display `version`, and a `keys` map with
+`SettingType::{Boolean, Number, String}`. There is no `since` table.
 
-The smallest seam is `launcher::typed_settings::validate(settings, launcher_id,
-build, Option<SourceCheckedSettings>)`. The borrowed evidence contains:
+RetroArch owns the producer in `plugins/retroarch/settings-check.nix` and
+`check-settings.py`. It checks the kind's `settings-types.json` against the
+supplied instance program's patched `configuration.c`. The shared builder and
+Rust core do not parse RetroArch source. Other instances call this check with
+their own program derivation, never with the kind's default program.
 
-- `build`: the exact launching instance package path, not its kind package;
-- `version`: the pinned program's display version;
-- `keys`: a map from rendered setting key to `SettingType::{Boolean, Number,
-  String}`.
+Derived metadata uses the existing manifest `packages` and `files` maps. The
+file key is `<program file key>-settings`. Its three fields are grounded in
+existing consumers: `program` is `PluginLaunchInput.program`; `version` and
+`keys` are the `SourceCheckedSettings` fields above. `PackagedSettings` reads
+only the selected instance's file, verifies the exact executable path, then
+binds the evidence to that installed package's path. This avoids a Nix package
+referring to its own output. No user configuration schema or manifest field
+was added. Missing or mismatched evidence admits no settings; malformed
+artifacts fail the route rather than becoming authority.
 
-Grounding: `legacy:product/plugins/retroarch/src/policy.ts` owns the scalar
-`LaunchSettingValue` union and the nested RetroArch policy. Its
-`launch-spec.ts::renderRetroArchSettings` produces scalar cfg pairs.
-`legacy:product/platform/library/config/launch-block.ts::mergeLaunchSettings`
-defines shallow per-key last-wins merging. The current scalar seam represents
-those renderer outputs; it does not claim to port the complete nested policy.
-The parent must preserve that policy when adding its producer and renderer.
+Grounding: `legacy:product/plugins/retroarch/src/policy.ts` owns the nested
+RetroArch policy. That schema is preserved in `plugins/retroarch/policy.ts`.
+The pure `renderRetroArchSettings` code is extracted from legacy
+`launch-spec.ts` into `render-settings.ts`. Its scalar outputs define the
+kind's key/type table. A schema-driven test checks every fixed output against
+that table. `legacy:product/platform/library/config/launch-block.ts` defines
+shallow per-key last-wins merging; the existing cascade is unchanged.
 
-The kind must check keys and types against the instance's pinned
-`configuration.c`, then supply the evidence at the current `None` call site
-in `launcher/linux_plugin.rs`. Evidence for another build accepts no settings.
-The callback input is `PluginLaunchInput.overrides.settings`; the kind's
-renderer must consume accepted pairs before raw config. The current RetroArch
-callback has no typed-pair renderer yet. That belongs with the producer slice.
+The scalar callback seam is **rendered output**, not a replacement flat user
+policy. The callback renders accepted pairs before raw config, preserving
+legacy boolean/number/string quoting. Nested policy persistence and entry into
+the host remain outside this seam; this change does not invent that contract.
+Dynamic per-port settings currently lack evidence and are omitted with warnings.
 
-Until then, every requested typed setting is omitted, not silently accepted.
-Warnings name the setting, launcher, exact build, and unavailable version
-metadata. Route listing and selected launch expose warnings directly. The
-ordinary catalog exposes them as `LaunchSettingUnsupported` diagnostics.
-This is a safe incomplete producer boundary, not a completed typed policy.
+Warnings name the setting, launcher, exact instance build, and pinned version
+(or explicitly unavailable metadata). Route listing and selected launch expose
+`LaunchWarning[]`; the ordinary catalog uses `LaunchSettingUnsupported`.
+These are the existing UI warning seams; no UI or warning treaty changed.
+
+The check proves source key/type recognition, not that every conditional
+upstream feature was compiled in. Unsupported or type-conflicting legacy keys
+are omitted, not renamed or coerced. See `plugins/retroarch/README.md` for the
+current source result and focused verification commands.
 
 Raw `LaunchOverrides.config.prepend/append` retains the existing legacy
 contract: scalar fields merge last-wins, both render after Korri's lines, and

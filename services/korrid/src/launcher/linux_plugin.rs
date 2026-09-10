@@ -27,7 +27,7 @@ pub fn launch_route(
     overrides: Option<PluginLaunchOverrides>,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
-    let (_, kind) = registry
+    let (instance, kind) = registry
         .native_launcher(&route.launcher_id)
         .map_err(|e| error(e.to_string()))?;
     let kind_package = registry
@@ -62,12 +62,24 @@ pub fn launch_route(
     let package = registry
         .installed_package(&route.launcher_id)
         .map_err(|e| error(e.to_string()))?;
-    let (settings, warnings) = super::typed_settings::validate(
-        folded.settings,
-        &route.launcher_id,
-        &package.package.display().to_string(),
-        None,
-    );
+    let build = package.package.display().to_string();
+    let evidence = super::typed_settings::PackagedSettings::read(
+        package,
+        instance
+            .program
+            .as_deref()
+            .expect("native launcher has a program"),
+    )
+    .map_err(error)?;
+    let (settings, warnings) = match evidence {
+        Some(evidence) => evidence.validate(
+            folded.settings,
+            &route.launcher_id,
+            &build,
+            &launcher.program,
+        ),
+        None => super::typed_settings::validate(folded.settings, &route.launcher_id, &build, None),
+    };
     let input = PluginLaunchInput {
         launcher_id: route.launcher_id.clone(),
         launcher_kind: kind.id.clone(),

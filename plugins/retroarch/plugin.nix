@@ -14,15 +14,21 @@ let
       test -e ${retroarchUdevReadOnlyCheck}
     '';
   });
+  retroarchSettings = import ./settings-check.nix {
+    inherit pkgs;
+    program = retroarch;
+  };
   retroarchInputplumberAutoconfig = pkgs.callPackage ./retroarch-inputplumber-autoconfig.nix { };
 in
 {
   packages = {
     inherit retroarch;
     autoconfig = retroarchInputplumberAutoconfig;
+    retroarch-settings = retroarchSettings;
   };
   files = {
     retroarch = "${retroarch}/bin/retroarch";
+    retroarch-settings = retroarchSettings;
     autoconfig = "${retroarchInputplumberAutoconfig}/share/libretro/autoconfig";
   };
 }

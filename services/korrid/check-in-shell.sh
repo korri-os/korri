@@ -23,6 +23,7 @@ fi
 cargo fmt --check
 cargo check
 cargo test
+bash "$ROOT/plugins/retroarch/check.sh"
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
 KORRI_PLUGIN_REVIEW_IN_SHELL=1 "$CRATE/plugin-registry-review.sh"
 KORRI_PLUGIN_ROUTE_REVIEW_IN_SHELL=1 "$CRATE/plugin-route-review.sh"

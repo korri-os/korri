@@ -24,6 +24,8 @@ in
   };
   checks = {
     korri-plugin-host = hostPackage;
+    korri-retroarch-settings =
+      (import ../../../plugins/retroarch/plugin.nix { inherit pkgs; }).packages.retroarch-settings;
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs
