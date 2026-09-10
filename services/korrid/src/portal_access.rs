@@ -14,7 +14,8 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
-            RpcRequest::CatalogSnapshot(_)
+            RpcRequest::GameRoutes(_)
+            | RpcRequest::CatalogSnapshot(_)
             | RpcRequest::Health(_)
             | RpcRequest::LocalGamesList(_)
             | RpcRequest::SettingsSnapshot(_)
@@ -22,7 +23,9 @@ impl PortalPermission {
             | RpcRequest::MoonlightResolve(_)
             | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_) => true,
-            RpcRequest::MoonlightLaunchPrepare(_)
+            RpcRequest::GameRuntimeSet(_)
+            | RpcRequest::SelectedGameLaunch(_)
+            | RpcRequest::MoonlightLaunchPrepare(_)
             | RpcRequest::MoonlightLaunchCancel(_)
             | RpcRequest::MoonlightCertificateAttest(_)
             | RpcRequest::MoonlightCertificateProvision(_)
@@ -51,7 +54,7 @@ impl PortalPermission {
                         RpcRequest::SessionPrepare(request) => request.host.is_none(),
                         // The existing stop contract has no peer selector. The host
                         // executor enforces expectedLaunchId before changing a session.
-                        RpcRequest::SessionStop(_) => true,
+                        RpcRequest::SessionStop(_) | RpcRequest::SelectedGameLaunch(_) => true,
                         _ => false,
                     }
             }
@@ -223,6 +226,98 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK, "{method}");
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn installed_routes_persist_choices_and_launch_explicit_runtime_through_rpc() {
+        let root = tempfile::tempdir().unwrap();
+        crate::config::test_fixtures::gba(root.path());
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
+        let private = root.path().join("private");
+        let runtime = crate::host::HostRuntime::from_paths_with_backend(
+            &config,
+            Some(root.path().into()),
+            private.clone(),
+            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        )
+        .with_route_registry(root.path().into(), registry);
+        let (app, _) = crate::secure_host_routers(
+            runtime,
+            &private,
+            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+        );
+        let game_id = crate::config::test_fixtures::GBA_ID;
+        let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        let listed = &list["outcome"]["payload"];
+        assert_eq!(
+            listed["selection"],
+            json!({"_tag":"Selected","runtimeId":"@korri:mgba/mgba"}),
+            "{list}"
+        );
+        assert_eq!(
+            listed["routes"][0]["launcherId"],
+            "@korri:retroarch/retroarch"
+        );
+        let set = json!({"scope":{"_tag":"Game","id":game_id},"runtimeId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
+        let saved = rpc(&app, "app.local-games.runtime.set", set.clone()).await;
+        assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
+        let conflict = rpc(&app, "app.local-games.runtime.set", set).await;
+        assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
+        let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        assert_eq!(list["outcome"]["payload"]["selection"]["_tag"], "Choose");
+        assert_eq!(
+            list["outcome"]["payload"]["gameRuntime"],
+            "@missing:build/core"
+        );
+        let prepare = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
+        assert_eq!(prepare["outcome"]["_tag"], "Err");
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false}}})).await;
+        assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
+        assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
+        assert_eq!(
+            launch["outcome"]["payload"]["warnings"][0]["setting"],
+            "video_vsync"
+        );
+        let repeated = rpc(
+            &app,
+            "app.local-games.launch.selected",
+            json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba"}),
+        )
+        .await;
+        assert_eq!(
+            repeated["outcome"]["payload"]["code"], "ActiveSessionConflict",
+            "explicit runtime launch must not claim it changed an already running route"
+        );
+        let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        assert_eq!(
+            list["outcome"]["payload"]["gameRuntime"], "@missing:build/core",
+            "explicit launch must not rewrite preference"
+        );
+    }
+
+    #[test]
+    fn route_reads_and_explicit_launch_do_not_grant_preference_write_permission() {
+        let request = |tag: &str, payload| {
+            serde_json::from_value::<RpcRequest>(json!({"_tag":tag,"payload":payload})).unwrap()
+        };
+        let list = request("app.local-games.routes", json!({"gameId":"game"}));
+        let launch = request(
+            "app.local-games.launch.selected",
+            json!({"gameId":"game","runtimeId":"@korri:mgba/mgba"}),
+        );
+        let set = request(
+            "app.local-games.runtime.set",
+            json!({"scope":{"_tag":"System","id":"gba"},"runtimeId":null,"expectedRevision":"r"}),
+        );
+        assert!(PortalPermission::ReadOnly.permits(&list));
+        assert!(!PortalPermission::ReadOnly.permits(&launch));
+        assert!(PortalPermission::LocalSessions.permits(&launch));
+        assert!(!PortalPermission::LocalSessions.permits(&set));
+        assert!(PortalPermission::Full.permits(&set));
     }
 
     #[tokio::test]

@@ -15,6 +15,7 @@ mod tests;
 #[derive(Clone, Debug)]
 pub struct LinuxLaunchSpec {
     pub command: Vec<String>,
+    pub warnings: Vec<super::typed_settings::LaunchWarning>,
 }
 
 /// Build argv only. No callback output or runtime file is written by korrid.
@@ -53,6 +54,20 @@ pub fn launch_route(
             error(e.to_string())
         }
     })?;
+    let overrides = overrides.map(|value| crate::config::cascade::LauncherConfig {
+        settings: value.settings,
+        config: value.config,
+    });
+    let folded = crate::config::cascade::resolve(snapshot, route, overrides.as_ref());
+    let package = registry
+        .installed_package(&route.launcher_id)
+        .map_err(|e| error(e.to_string()))?;
+    let (settings, warnings) = super::typed_settings::validate(
+        folded.settings,
+        &route.launcher_id,
+        &package.package.display().to_string(),
+        None,
+    );
     let input = PluginLaunchInput {
         launcher_id: route.launcher_id.clone(),
         launcher_kind: kind.id.clone(),
@@ -66,9 +81,13 @@ pub fn launch_route(
             .iter()
             .map(|(key, path)| (key.clone(), path.display().to_string()))
             .collect(),
-        overrides,
+        overrides: Some(PluginLaunchOverrides {
+            settings,
+            config: folded.config,
+        }),
     };
     Ok(LinuxLaunchSpec {
+        warnings,
         command: vec![
             std::env::current_exe()
                 .map_err(|e| error(e.to_string()))?

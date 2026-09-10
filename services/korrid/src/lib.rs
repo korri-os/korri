@@ -26,6 +26,7 @@ pub mod discovery;
 pub mod enrichment;
 pub mod federation;
 mod game_assets;
+pub mod game_routes;
 pub mod identity;
 pub mod identity_cli;
 mod peer_rpc;
@@ -36,6 +37,13 @@ pub mod remote_signer;
 
 pub use play_log::{PlayEntry, PlayLog};
 use portal_access::{PortalAccess, PortalPermission};
+
+fn installed_routes_unsupported() -> RpcFailure {
+    RpcFailure {
+        code: "OperationUnsupported".into(),
+        message: "installed Linux routes are unavailable on this device".into(),
+    }
+}
 
 pub const VERSION: &str = "korrid-v0";
 const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
@@ -1176,6 +1184,12 @@ pub enum HealthOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "app.local-games.routes")]
+    GameRoutes(game_routes::GameRoutesRequest),
+    #[serde(rename = "app.local-games.runtime.set")]
+    GameRuntimeSet(game_routes::GameRuntimeSetRequest),
+    #[serde(rename = "app.local-games.launch.selected")]
+    SelectedGameLaunch(game_routes::SelectedGameLaunchRequest),
     #[serde(rename = "app.catalog.snapshot")]
     CatalogSnapshot(CatalogSnapshotRequest),
     #[serde(rename = "app.moonlight.resolve")]
@@ -1236,6 +1250,12 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "app.local-games.routes")]
+    GameRoutes(game_routes::GameRoutesOutcome),
+    #[serde(rename = "app.local-games.runtime.set")]
+    GameRuntimeSet(game_routes::GameRuntimeSetOutcome),
+    #[serde(rename = "app.local-games.launch.selected")]
+    SelectedGameLaunch(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.catalog.snapshot")]
     CatalogSnapshot(CatalogSnapshotOutcome),
     #[serde(rename = "app.moonlight.resolve")]
@@ -2357,6 +2377,41 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let response = match request {
+        RpcRequest::GameRoutes(request) => RpcResponse::GameRoutes(match &state.mode {
+            ServerMode::Host(host) => host
+                .game_routes(request.game_id)
+                .await
+                .map(game_routes::GameRoutesOutcome::Ok)
+                .unwrap_or_else(game_routes::GameRoutesOutcome::Err),
+            ServerMode::Brain(_) => {
+                game_routes::GameRoutesOutcome::Err(installed_routes_unsupported())
+            }
+        }),
+        RpcRequest::GameRuntimeSet(request) => RpcResponse::GameRuntimeSet(match &state.mode {
+            ServerMode::Host(host) => host
+                .set_game_runtime(request)
+                .await
+                .map(game_routes::GameRuntimeSetOutcome::Ok)
+                .unwrap_or_else(game_routes::GameRuntimeSetOutcome::Err),
+            ServerMode::Brain(_) => {
+                game_routes::GameRuntimeSetOutcome::Err(installed_routes_unsupported())
+            }
+        }),
+        RpcRequest::SelectedGameLaunch(request) => {
+            RpcResponse::SelectedGameLaunch(match &state.mode {
+                ServerMode::Host(host) => host
+                    .prepare_selected(
+                        request,
+                        authorization.person_public_key(host.owner_public_key()),
+                    )
+                    .await
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
+                ServerMode::Brain(_) => {
+                    game_routes::SelectedGameLaunchOutcome::Err(installed_routes_unsupported())
+                }
+            })
+        }
         RpcRequest::PeerList(_) => RpcResponse::PeerList(peer_list(state)),
         RpcRequest::CatalogSnapshot(_) => {
             let outcome = match &state.mode {

@@ -14,7 +14,7 @@ use crate::{
     GameIdentity,
 };
 
-pub use super::linux_routes::resolve_linux_route;
+pub use super::linux_routes::{linux_route_candidates, resolve_linux_route, stored_runtime};
 use super::{storage, AppPayload, ConfigSnapshot, GamePayload, Location};
 
 const PROCESS_LAUNCHER_KIND: &str = "@korri:process";
@@ -243,10 +243,10 @@ pub fn resolve_launchable_routes_for_platform<'a>(
             let route = if static_ids.contains(id.as_str()) {
                 Err(static_playable_collision(id))
             } else {
-                resolve_linux_route(root, snapshot, registry, id, None)
+                linux_route_candidates(root, snapshot, registry, id)
             };
             match route {
-                Ok(route) => catalog.routes.push(route),
+                Ok(routes) => catalog.routes.extend(routes),
                 Err(error) => catalog.diagnostics.push(error),
             }
         }

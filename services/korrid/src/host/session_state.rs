@@ -366,13 +366,49 @@ impl HostSessionControl {
         configured_command: &[String],
         environment: &BTreeMap<String, String>,
     ) -> Result<SessionPrepared, RpcFailure> {
+        self.prepare_inner(
+            game_id,
+            person_public_key,
+            configured_command,
+            environment,
+            true,
+        )
+    }
+
+    /// An explicit route must start fresh: a recovered session has no runtime
+    /// identity with which to prove it matches the requested route. Check under
+    /// the same lock as launch, rather than a racy status preflight.
+    pub fn prepare_fresh(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        configured_command: &[String],
+        environment: &BTreeMap<String, String>,
+    ) -> Result<SessionPrepared, RpcFailure> {
+        self.prepare_inner(
+            game_id,
+            person_public_key,
+            configured_command,
+            environment,
+            false,
+        )
+    }
+
+    fn prepare_inner(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        configured_command: &[String],
+        environment: &BTreeMap<String, String>,
+        resume_same_game: bool,
+    ) -> Result<SessionPrepared, RpcFailure> {
         let mut state = self.state.lock().expect("host session mutex poisoned");
         self.refresh_recovery(&mut state);
         match &*state {
             ActiveState::Running {
                 launch_id,
                 game_id: Some(active_game_id),
-            } if active_game_id == game_id => {
+            } if resume_same_game && active_game_id == game_id => {
                 if self.ensure_seats(launch_id).is_err() {
                     let launch_id = launch_id.clone();
                     self.stop_game_after_seat_failure(&mut state, &launch_id);

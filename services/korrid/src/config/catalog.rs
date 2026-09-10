@@ -11,6 +11,10 @@ use super::{
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GamePayload {
+    #[serde(default, deserialize_with = "optional_non_null")]
+    pub runtime: Option<NonEmptyString>,
+    #[serde(default)]
+    pub launchers: super::cascade::LauncherConfigs,
     #[serde(deserialize_with = "required_non_null")]
     pub title: String,
     pub releases: Vec<ReleaseKey>,

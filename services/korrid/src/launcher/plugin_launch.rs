@@ -7,7 +7,7 @@ use typeshare::typeshare;
 
 /// Legacy LaunchOverrides.config from library-item.ts; RetroArch rejects replace.
 #[typeshare]
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchConfigOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -22,6 +22,8 @@ pub struct LaunchConfigOverrides {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginLaunchOverrides {
+    #[serde(default)]
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<LaunchConfigOverrides>,
 }

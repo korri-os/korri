@@ -3,6 +3,7 @@ pub mod linux_plugin;
 pub mod plugin_launch;
 mod retroarch;
 pub mod retroarch_control;
+pub mod typed_settings;
 mod types;
 
 use crate::{

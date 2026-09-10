@@ -120,6 +120,20 @@ impl HostLauncher {
         )
     }
 
+    pub fn prepare_fresh_command(
+        &self,
+        game_id: &str,
+        person_public_key: Option<&str>,
+        configured_command: &[String],
+    ) -> Result<SessionPrepared, RpcFailure> {
+        self.control.prepare_fresh(
+            game_id,
+            person_public_key,
+            configured_command,
+            &self.environment,
+        )
+    }
+
     pub fn control(&self) -> &HostSessionControl {
         &self.control
     }

@@ -192,6 +192,9 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::PeerList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::GameRoutes(_)
+        | RpcRequest::GameRuntimeSet(_)
+        | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,

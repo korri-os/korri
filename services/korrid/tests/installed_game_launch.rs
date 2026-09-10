@@ -80,23 +80,101 @@ fn a_chosen_runtime_borrows_the_kind_callback_but_uses_its_instances_own_program
     alternate.requires.push(default.package.clone());
     let callback_path = default.package.join("plugin.ts");
     let registry = PluginRegistry::from_installed(vec![default, mgba, alternate]).unwrap();
-    let snapshot = ConfigSnapshotCoordinator::new(root.path())
+    let mut snapshot = (*ConfigSnapshotCoordinator::new(root.path())
         .reload()
-        .snapshot;
+        .snapshot)
+        .clone();
     assert!(
         resolve_linux_route(root.path(), &snapshot, &registry, readable::GBA_ID, None)
             .unwrap_err()
             .message
             .contains("choose a runtime")
     );
-    let route = resolve_linux_route(
+    let candidates = korrid::config::resolver::linux_route_candidates(
         root.path(),
         &snapshot,
         &registry,
         readable::GBA_ID,
-        Some("@simon:build/mgba"),
     )
     .unwrap();
+    assert_eq!(candidates.len(), 4);
+    let listed = korrid::game_routes::list(root.path(), &registry, readable::GBA_ID).unwrap();
+    assert_eq!(listed.routes.len(), 4);
+    assert!(matches!(
+        listed.selection,
+        korrid::game_routes::GameRouteSelection::Choose
+    ));
+    assert_ne!(
+        listed
+            .routes
+            .iter()
+            .find(|route| route.runtime_id == "@korri:mgba/mgba")
+            .unwrap()
+            .launcher_build,
+        listed
+            .routes
+            .iter()
+            .find(|route| route.runtime_id == "@simon:build/mgba")
+            .unwrap()
+            .launcher_build
+    );
+    let selected = korrid::game_routes::selected_launch(root.path(), &registry, &korrid::game_routes::SelectedGameLaunchRequest {
+        game_id: readable::GBA_ID.into(), runtime_id: "@simon:build/mgba".into(),
+        overrides: Some(serde_json::from_value(serde_json::json!({"settings":{"video_vsync":false},"config":{"append":"video_vsync = true"}})).unwrap()),
+    }).unwrap();
+    assert_eq!(selected.warnings.len(), 1);
+    assert_eq!(selected.warnings[0].setting, "video_vsync");
+    let input: PluginLaunchInput = serde_json::from_str(&selected.command[3]).unwrap();
+    assert!(input.overrides.as_ref().unwrap().settings.is_empty());
+    assert_eq!(
+        input.overrides.unwrap().config.unwrap().append.as_deref(),
+        Some("video_vsync = true")
+    );
+    snapshot
+        .systems
+        .entry("gba".into())
+        .or_insert_with(|| serde_yaml::from_str("{}").unwrap())
+        .runtime = Some(korrid::config::NonEmptyString("@korri:mgba/mgba".into()));
+    assert_eq!(
+        resolve_linux_route(root.path(), &snapshot, &registry, readable::GBA_ID, None)
+            .unwrap()
+            .runtime
+            .unwrap()
+            .id,
+        "@korri:mgba/mgba"
+    );
+    snapshot.runtimes.insert(
+        "@simon:build/mgba".into(),
+        serde_yaml::from_str(
+            "launchers: {'@simon:build/retroarch': {settings: {video_vsync: false}}}",
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        korrid::config::resolver::linux_route_candidates(
+            root.path(),
+            &snapshot,
+            &registry,
+            readable::GBA_ID
+        )
+        .unwrap()
+        .len(),
+        4
+    );
+    snapshot.games.get_mut(readable::GBA_ID).unwrap().runtime = Some(
+        korrid::config::NonEmptyString("@missing:plugin/runtime".into()),
+    );
+    assert!(
+        resolve_linux_route(root.path(), &snapshot, &registry, readable::GBA_ID, None).is_err()
+    );
+    assert_eq!(
+        snapshot.games[readable::GBA_ID].runtime.as_ref().unwrap().0,
+        "@missing:plugin/runtime"
+    );
+    snapshot.games.get_mut(readable::GBA_ID).unwrap().runtime =
+        Some(korrid::config::NonEmptyString("@simon:build/mgba".into()));
+    let route =
+        resolve_linux_route(root.path(), &snapshot, &registry, readable::GBA_ID, None).unwrap();
     assert_eq!(route.launcher_id, "@simon:build/retroarch");
     let spec = launch_route(root.path(), &snapshot, &registry, &route, None).unwrap();
     assert_eq!(spec.command[2], callback_path.display().to_string());

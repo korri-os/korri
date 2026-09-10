@@ -1,3 +1,4 @@
+pub mod cascade;
 mod catalog;
 pub use catalog::{GameId, GamePayload, ReleaseIdentity, ReleaseKey, ReleasePayload};
 mod linux_routes;
@@ -310,13 +311,6 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
     if let Some(host) = &snapshot.host {
         host.collect_support_issues("host", &mut issues);
     }
-    if !snapshot.runtimes.is_empty() {
-        push_issue(
-            &mut issues,
-            "runtimes",
-            "runtime records are not executable in this slice",
-        );
-    }
     if !snapshot.profiles.is_empty() {
         push_issue(
             &mut issues,
@@ -471,6 +465,10 @@ pub struct ProviderPayload {
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
     #[serde(default, deserialize_with = "optional_non_null")]
+    pub runtime: Option<NonEmptyString>,
+    #[serde(default)]
+    pub launchers: cascade::LauncherConfigs,
+    #[serde(default, deserialize_with = "optional_non_null")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub title: Option<String>,
@@ -485,6 +483,8 @@ pub struct SystemPayload {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AppPayload {
+    #[serde(default)]
+    pub launchers: cascade::LauncherConfigs,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub settings: Option<BTreeMap<String, Value>>,
     #[serde(default, deserialize_with = "optional_non_null")]
@@ -521,18 +521,10 @@ pub struct AppPolicy {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimePayload {
-    pub kind: RuntimeKind,
-    pub path: AbsolutePathString,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub title: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub tool: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub app: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub supports: Option<RuntimeSupportsPayload>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
+    // User-approved runtimes[fullRuntimeId].launchers overrides. Executable
+    // identity comes only from installed plugin RuntimeRecord contributions.
+    #[serde(default)]
+    pub launchers: cascade::LauncherConfigs,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]

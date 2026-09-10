@@ -1,0 +1,3 @@
+# Typeshare cannot infer Serde's untagged scalar union. Rust owns its decoder.
+[typescript.type_mappings]
+LaunchSettingScalar = "boolean | number | string"
