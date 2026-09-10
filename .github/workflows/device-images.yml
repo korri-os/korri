@@ -151,7 +151,8 @@ jobs:
 
   release:
     name: Publish unverified ${{ inputs.device }} prerelease
-    if: ${{ inputs.publish && github.ref_type == 'tag' }}
+    # Override implicit success(): RG353M intentionally skips the Odin ancestor.
+    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.publish && github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 30
