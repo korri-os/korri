@@ -38,17 +38,26 @@ prebuilt delivery route.
 
 Production plugin packaging and the publication workflow belong to
 [korri-os/plugins](https://github.com/korri-os/plugins). Core retains the generic
-Rust host, publisher, and real cold-host tests. Plugin delivery uses complete
-content-addressed Nix file-cache archives for Releases and a small, separately
-hosted HTTPS catalog. It does not publish `korrid`, `korri-bundle`, Sunshine, or
-other core binaries as plugins. Only a package with the actual declaration is
-eligible; core's Tailscale fixture is test-only.
+Rust host, publisher, and real cold-host tests. First-party publication uses
+standard signed Nix file caches hosted by GitHub Releases. A mutable cache
+release holds `nix-cache-info` and signed `.narinfo` files; immutable build
+batches hold the compressed NAR payloads. Dependencies already verified in
+trusted upstream caches are not uploaded again. See that repository's
+`PUBLICATION.md` for the producer and core's plugin-host README for the importer.
 
-GitHub Releases serves files, not a standard Nix substituter directory. Do not
-put a Release URL in `nix.settings.substituters`. The repository installer checks
-the archive, stages a private local cache, then uses the existing verified Nix
-importer. The explicit raw-cache CLI remains available for a separately
-configured real Nix cache. Neither route may build on a device.
+Only a URL that serves the Nix cache protocol is a substituter. A generic
+GitHub release page or an archive download URL is not. The raw-cache installer
+combines the bound publisher cache with configured trusted upstream caches,
+requires signatures, and refuses local or remote builds. The separate catalog
+installer explicitly verifies and stages its archive before using the same
+importer; it is not an automatic fallback for a failed raw-cache download.
+
+Plugin publication does not make `korrid`, `korri-bundle`, Sunshine, or other
+core binaries into plugins. Only an output with an actual plugin declaration
+is eligible. Core's Tailscale fixture remains test-only; first-party game and
+SSH outputs can be re-exported by the plugin repository without copying their
+sources. Device-generation delivery still requires its own verified prebuilt
+route.
 
 ## Device integration and cache failure
 

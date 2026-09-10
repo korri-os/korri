@@ -1,57 +1,105 @@
 # Plugin standard implementation status
 
 This status accompanies `2026-09-09-plugin-authoring-standard-brief.md`.
-The brief records decisions, not completion. Local integration of the completed
-slices does not mean the end-to-end rollout is complete.
+The brief records decisions, not completion. Verified local slices do not mean
+the end-to-end rollout is complete. No physical-device deployment or GitHub
+publication is implied by this document.
 
 ## Implemented slices
 
 - Named ES-module exports, bounded callback execution, generated publisher
   identity and full-key signature verification for cold and cached packages.
-- Nix-generated native service units, directive validation, host hardening,
-  declared IPv4/IPv6 ports and lifecycle cleanup.
-- Approved installed game declarations, exact dependency references,
-  dependency-first recovery and isolation from unrelated corrupt receipts.
-- Real RetroArch and mGBA plugin packages, installed Linux registry, runtime-user
-  callback execution and per-runtime savestate separation. Android retains its
-  separate existing platform declarations.
-- Current/previous approved selections, dependency-safe rollback, offline
-  `restore ID` and boot `restore-all` reconciliation.
-- Backend route candidates, saved system/game runtime choices, per-launcher
-  configuration cascade, explicit selected launch and visible setting warnings.
-  Runtime preference writes have durable signed-request replay protection.
+- Native service artifacts, directive validation, host hardening, declared
+  IPv4/IPv6 ports and lifecycle cleanup. Native references require exact
+  manifest dependency pins. Native launcher kinds require callable launch
+  exports without running the callback during admission.
+- Approved installed game declarations, dependency-first recovery, corruption
+  isolation, current/previous selections and dependency-safe offline rollback.
+- Real RetroArch and mGBA packages, installed Linux registry, runtime-user
+  callback execution and per-runtime savestate separation. Android retains
+  its separate platform declarations.
+- Backend route candidates, saved game/system choices, per-launcher cascade,
+  explicit selected launch and durable request replay protection. Same-game
+  resume runs before fresh route resolution. Preference writes return their
+  own committed revisions while holding the write lock.
+- Runtime choosers in Shift and Pico. Device choice remains separate. Users
+  can launch once or save/clear game and system preferences. Missing choices
+  stay stored. An explicit producer fact distinguishes installed runtimes from
+  local `host.toml` commands. Launch acknowledgements survive failed status
+  reads but cannot replace newer observed session lifecycles, including exits.
+- RetroArch source-backed scalar-setting evidence and native serialization.
+  The pinned parser verifies effective values, not just emitted text. Each key
+  has one assignment with the intended precedence. Compact raw assignments are
+  normalized; invalid values are not copied into diagnostics. This is not yet
+  complete nested-policy support, as described below.
+- Exact-commit batch lookup verifies revision evidence and signed candidate
+  outputs, then prints inspection and the separate exact-path approval command.
+  Lookup does not install or enable a plugin.
+- Optional `@korri:ssh` on TCP 2222. The user approved explicit per-build root
+  service authority and public-key-only login for existing accounts. After a
+  compatible host update, normal plugin enable/disable needs no system switch.
+  Native artifacts own configuration and per-device host-key preparation.
+  Recovery SSH is not replaced. See `plugins/ssh/README.md` for costs and limits.
 
-The six original core commits were rebased without content changes. The routes
-commit was reapplied after a test-fixture overlap; exact dependency pins and all
-route assertions were retained. Independent review findings were fixed before
-integration.
+## Verification on 2026-09-10
 
-## Verification
+| Check | Result |
+|---|---|
+| Korrid Rust suite and prescribed Typeshare regeneration | Passed. |
+| Portal tests and typecheck | 385 tests passed. |
+| Pico tests and typecheck | 343 tests passed. |
+| Shift tests and typecheck | 59 tests passed. |
+| Browser fixture checks | Both surfaces passed at five container sizes, including focus, cancellation and permissions. |
+| Native RetroArch parser regressions | 10 tests and 119 assertions passed. |
+| Real packaged SSH process tests | Key acceptance/refusal, PTY, identity persistence, unsafe state, partial binds and driver-stdin preservation passed. |
+| Plugin-host strict all-target Clippy | Passed. |
+| Combined native plugin-host VM | Passed. The build finished in 493 seconds; the test script ran for 478.13 seconds. |
 
-- Combined korrid Rust tests passed after integration.
-- Portal checks passed after integration.
-- Rust formatting passed.
-- `nix run .#korri-plugin-check` passed, including the combined plugin-host VM.
-  Logs: `/tmp/plugin-integration-korrid.log`,
-  `/tmp/plugin-integration-portal.log`, `/tmp/plugin-integration-host-vm.log`.
+The VM verifies initially disabled SSH, root and ordinary-account login,
+refused approvals and keys, toggle/firewall behavior, enabled/disabled reboot
+recovery, damaged-key startup and restoration cleanup, purge, recovery SSH
+coexistence, and unchanged system generations. Existing dependency, signing,
+no-build, rollback and Tailscale lifecycle gates also passed. It does not prove
+physical ARM gameplay.
 
-Focused tests were used during the later work. One combined VM run gates this
-integration, rather than another VM run per commit.
+Three earlier attempts exposed test-fixture defects: missing stderr capture,
+a public substituter on an isolated node, and SSH consuming the command
+stream. The last caused the one-hour timeout. The input-consumption defect was
+reproduced without a VM before rerunning. Automated SSH now uses `-n` and a
+20-second total timeout. The untrusted-key test also now requires real signature
+rejection instead of accepting a configuration syntax error.
+
+Evidence remains in the execution environment:
+
+- `/tmp/pi-processes-hVmpYv/proc_20ac-stderr.log` records the passing VM.
+- `/tmp/pi-processes-hVmpYv/proc_43d5-stderr.log` records final portal checks.
+- `/tmp/korri-finish-pico-check-328c9453.log` and
+  `/tmp/korri-finish-shift-check-328c9453.log` record surface checks.
+- `/tmp/korri-runtime-screenshots-328c9453-fixed/` contains corrected captures.
+  The earlier capture script reset scrolling after focus; it no longer does.
 
 ## Still unfinished
 
-- Portal runtime chooser wiring. The backend methods are documented in
-  `services/korrid/ROUTES.md`; the surface does not yet use them.
-- RetroArch source-backed typed-settings metadata and its renderer. Until that
-  producer lands, requested typed settings generate omission warnings. The
-  current code must not be described as complete typed-policy support.
-- Production publisher core-lock cutover, publication and core CLI commit lookup.
-  The separate `korri-plugins` branch `feat/plugin-standard` contains local commit
-  `ad103dcc`, but its core lock still points to the previous published API. Do
-  not merge or publish it against that lock. Do not commit a local-path lock.
+- Connect the unchanged legacy nested RetroArch policy decoder and renderer to
+  installed-package runtime input. Source-backed scalar evidence works, but
+  nested-policy ingress and its source-module delivery remain unfinished.
+  Do not present the scalar output map as a replacement user policy schema.
+- Production publisher core-lock cutover and publication. The external
+  `korri-plugins` branch `feat/plugin-standard` contains `ad103dcc`. Its sibling
+  `feat/plugin-standard-ssh-328c9453` stages SSH re-export, checks and docs.
+  Development evaluation passed with a local Git core override, including ARM
+  output evaluation. The actual lock still names the previous API. Do not
+  publish it against that lock or commit a local-path override.
 - Haku generation integration, explicit receipt/data cutover, deployment,
   Tailscale account login/connectivity and physical gameplay verification.
-- SSH plugin implementation and an explicit privilege/authentication decision.
-  Existing recovery SSH must remain available while that plugin is proved.
+  The latest SSH attempt to `192.168.1.239` timed out. Neither `haku.local` nor
+  `rg353m.local` resolved. No recovery access was changed.
+- Local owner enrollment and graphical Linux plugin management. The SSH slice
+  implements the administrator CLI, not those missing consumers. The parked
+  owner-approved SSH/public-image acceptance item remains open.
+- Public-image console policy remains separate. Current main disables network
+  SSH but retains passwordless root console access. This plugin does not make
+  that image satisfy the parked secure-owner-enrollment requirements.
 
-No device deployment or GitHub push is implied by this local integration.
+Full strict korrid Clippy also retains previously identified warnings outside
+this change. They were not hidden by unrelated refactoring.
