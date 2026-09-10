@@ -15,7 +15,7 @@ if git grep -n -E 'psk = "[^$]|ssid = "[^$]' -- '*.nix'; then
   fail "a literal ssid or psk is committed"
 fi
 
-for host in rg353m odin2portal; do
+for host in rg353m odin2portal rgds; do
   echo "== $host: pure evaluation (no env file)"
   profiles="$(nix eval --json ".#nixosConfigurations.$host.config.networking.networkmanager.ensureProfiles" 2>/dev/null)"
   ssid="$(jq -r '.profiles.korri.wifi.ssid' <<<"$profiles")"
@@ -33,7 +33,7 @@ done
 
 if [ -n "${KORRI_WIFI_ENV:-}" ]; then
   echo "== impure evaluation with KORRI_WIFI_ENV=$KORRI_WIFI_ENV"
-  for host in rg353m odin2portal; do
+  for host in rg353m odin2portal rgds; do
     populate="$(nix eval --impure --raw ".#nixosConfigurations.$host.config.sdImage.populateRootCommands")"
     rg -q 'install -m 0600 /nix/store/[a-z0-9]+-[^ ]+ \./files/etc/korri/wifi.env' <<<"$populate" \
       || fail "$host impure build does not install wifi.env: $populate"

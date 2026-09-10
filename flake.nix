@@ -34,6 +34,10 @@
         inherit nixpkgs;
         korri = self;
       };
+      rgds = import ./nix/devices/rgds {
+        inherit nixpkgs;
+        korri = self;
+      };
       odin2portal = import ./nix/devices/odin2portal {
         inherit nixpkgs;
         korri = self;
@@ -59,6 +63,7 @@
         # blank screen; it stays an internal layer and gets no public name.
         rg353m = rg353m.portalPreviewConfiguration;
         rg353m-rescue = rg353m.rescueConfiguration;
+        rgds = rgds.configuration;
         odin2portal = odin2portal.configuration;
       };
     }
@@ -159,6 +164,9 @@
           rg353m-sd-image = rg353m.sdImage;
           rg353m-rescue-sd-image = rg353m.rescueSdImage;
           rg353m-uboot = rg353m.uboot;
+          rgds-sd-image = rgds.sdImage;
+          rgds-kernel = rgds.kernel;
+          rgds-uboot = rgds.uboot;
           odin2portal-kernel = odin2portal.kernel;
           odin2portal-rescue-kernel = odin2portal.rescueKernel;
           odin2portal-firmware = odin2portal.firmware;
@@ -171,6 +179,8 @@
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
+          rgds-kernel = rgds.kernelCross;
+          rgds-uboot = rgds.ubootCross;
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
@@ -202,6 +212,7 @@
               inherit pkgs;
               korri = self;
             };
+            rgds = rgds.moduleCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {
