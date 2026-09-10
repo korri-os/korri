@@ -3,10 +3,10 @@
 # Prove that the WiFi SSID and key never enter the flake, and that the
 # populated env file lands on the image root when KORRI_WIFI_ENV is set.
 #
-#   nix/wifi-check.sh            pure and impure evaluation checks
-#   KORRI_WIFI_ENV=... nix/wifi-check.sh
+#   nix/base/wifi-check.sh            pure and impure evaluation checks
+#   KORRI_WIFI_ENV=... nix/base/wifi-check.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 

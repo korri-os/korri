@@ -131,6 +131,34 @@ let
     };
 
   definitions = {
+    nixos-layout-check = {
+      description = "Check the shared NixOS base, SD format, device data, and WiFi provisioning without deploying.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.jq
+        pkgs.ripgrep
+        pkgs.gnused
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        nix build --no-link \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.korri-base \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.korri-sd-card \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.korri-inputplumber-data \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-inputplumber \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.odin2portal-inputplumber \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-usb-gadget
+        # Exercise impure staging on every run without real network credentials.
+        if [ -z "''${KORRI_WIFI_ENV:-}" ]; then
+          wifi_fixture="$(mktemp)"
+          trap 'rm -f "$wifi_fixture"' EXIT
+          printf '%s\n' 'WIFI_SSID=korri-layout-test' 'WIFI_PSK=korri-layout-test-only' > "$wifi_fixture"
+          export KORRI_WIFI_ENV="$wifi_fixture"
+        fi
+        bash "$KORRI_ROOT/nix/base/wifi-check.sh"
+      '';
+    };
     android-apk = {
       description = "Build the debug Android APK (run portal-bundle first for bundled assets).";
       runtimeInputs = androidInputs;

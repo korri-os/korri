@@ -13,13 +13,11 @@
 # is written with empty values and stays inactive until /etc/korri/wifi.env is
 # placed on the device and NetworkManager-ensure-profiles.service restarts.
 #
-# Device modules import this and add radio-specific settings through
-# `networking.networkmanager.ensureProfiles.profiles.korri.wifi`.
-{ lib, ... }:
+# base/default.nix imports this. Device modules add radio-specific settings
+# through networking.networkmanager.ensureProfiles.profiles.korri.wifi.
+# ../formats/sd-card.nix owns the optional build-time copy of wifi.env.
+{ ... }:
 
-let
-  wifiEnvPath = builtins.getEnv "KORRI_WIFI_ENV";
-in
 {
   networking.networkmanager.ensureProfiles = {
     environmentFiles = [ "/etc/korri/wifi.env" ];
@@ -42,12 +40,4 @@ in
       ipv6.method = "auto";
     };
   };
-
-  # A flake build sees only git-tracked files, so a gitignored path inside
-  # the repo is invisible to it by design. The env file is copied from the
-  # build host instead.
-  sdImage.populateRootCommands = lib.optionalString (wifiEnvPath != "") ''
-    mkdir -p ./files/etc/korri
-    install -m 0600 ${/. + wifiEnvPath} ./files/etc/korri/wifi.env
-  '';
 }

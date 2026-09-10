@@ -30,11 +30,11 @@
       proseql,
     }:
     let
-      rg353m = import ./nix/rg353m {
+      rg353m = import ./nix/devices/rg353m {
         inherit nixpkgs;
         korri = self;
       };
-      odin2portal = import ./nix/odin2portal {
+      odin2portal = import ./nix/devices/odin2portal {
         inherit nixpkgs;
         korri = self;
       };
@@ -182,8 +182,19 @@
               inherit pkgs;
               cacheModule = nixosModules.korri-device-cache;
             };
+            korri-base = import ./nix/base/module-check.nix {
+              inherit pkgs nixpkgs;
+              korri = self;
+            };
+            korri-sd-card = import ./nix/formats/sd-card-check.nix { inherit pkgs nixpkgs; };
+            korri-inputplumber-data = import ./nix/base/inputplumber-data-check.nix {
+              inherit pkgs;
+              inputplumber = inputplumber.packages.inputplumber-korri;
+              dataPackage = self.packages.${system}.rg353m-inputplumber-data;
+            };
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
+            odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {
               inherit pkgs nixpkgs;
               korri = self;

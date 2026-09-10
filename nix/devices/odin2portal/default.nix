@@ -29,7 +29,9 @@ let
   rescueKernelCross = crossPkgs.callPackage ./kernel-rescue-7.0.2 { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
-  rocknix = pkgs.callPackage ./rocknix { };
+  rocknix = pkgs.callPackage ./rocknix {
+    inputplumber = korri.packages.aarch64-linux.inputplumber-korri;
+  };
 
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
@@ -41,8 +43,8 @@ let
       odinRocknix = rocknix;
     };
     modules = [
-      (import ../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
-      (import ../../services/kiosk/nixos-module.nix { inherit korri; })
+      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      (import ../../../services/kiosk/nixos-module.nix { inherit korri; })
       ./sd-image.nix
       ./web-session.nix
     ];
@@ -60,4 +62,6 @@ in
     configuration
     ;
   sdImage = configuration.config.system.build.sdImage;
+  inputplumberData =
+    pkgs: inputplumber: (pkgs.callPackage ./rocknix { inherit inputplumber; }).inputplumberData;
 }

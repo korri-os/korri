@@ -6,7 +6,7 @@ let
     inherit system;
     specialArgs = { inherit korri; };
     modules = [
-      (import ../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
       ./sd-image.nix
     ];
   };
@@ -24,11 +24,11 @@ rec {
     inherit rockchipMpp;
   };
   sunshineFfmpegRkmpp =
-    configuration.pkgs.callPackage ../../services/sunshine/ffmpeg-rkmpp-static.nix
+    configuration.pkgs.callPackage ../../../services/sunshine/ffmpeg-rkmpp-static.nix
       {
         inherit rockchipMpp;
       };
-  sunshineRkmpp = configuration.pkgs.callPackage ../../services/sunshine/package.nix {
+  sunshineRkmpp = configuration.pkgs.callPackage ../../../services/sunshine/package.nix {
     sunshine = configuration.pkgs.sunshine;
     cudaSupport = false;
     rkmppSupport = true;
@@ -56,7 +56,8 @@ rec {
   };
   rescueSdImage = rescueConfiguration.config.system.build.sdImage;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
-  inputplumberData = pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
+  inputplumberData =
+    pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
   usbGadgetCheck =
     pkgs:
     pkgs.callPackage ./usb-gadget-check.nix {

@@ -45,7 +45,8 @@
 # ported from the exact text ROCKNIX runs, not from memory.
 {
   lib,
-  stdenvNoCC,
+  pkgs,
+  inputplumber,
   writeTextDir,
   callPackage,
   alsa-lib,
@@ -91,20 +92,21 @@ in
 
   mangohud = callPackage ./mangohud { };
 
-  inputplumberData = stdenvNoCC.mkDerivation {
-    pname = "inputplumber-ayn-sm8550-data";
-    version = "2026-09-04";
-    dontUnpack = true;
-    installPhase = ''
-      runHook preInstall
-      mkdir -p $out/share/inputplumber
-      cp -a ${./inputplumber}/. $out/share/inputplumber/
-      runHook postInstall
-    '';
-    meta.description = "ROCKNIX InputPlumber device match and capability map for the AYN MCU gamepad";
-  };
+  inputplumberData =
+    (import ../../../base/inputplumber-data.nix {
+      inherit pkgs inputplumber;
+      name = "inputplumber-ayn-sm8550-data-2026-09-04";
+      src = ./inputplumber;
+    }).overrideAttrs
+      {
+        pname = "inputplumber-ayn-sm8550-data";
+        version = "2026-09-04";
+        meta.description = "ROCKNIX InputPlumber device match and capability map for the AYN MCU gamepad";
+      };
 
-  hwdb = writeTextDir "lib/udev/hwdb.d/61-thor-ft5x06.hwdb" (builtins.readFile ./hwdb/61-thor-ft5x06.hwdb);
+  hwdb = writeTextDir "lib/udev/hwdb.d/61-thor-ft5x06.hwdb" (
+    builtins.readFile ./hwdb/61-thor-ft5x06.hwdb
+  );
 
   gamecontrollerdb = ./gamecontrollerdb/ayn-odin2.txt;
 

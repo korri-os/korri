@@ -31,7 +31,7 @@
 # projects/ROCKNIX/devices/SM8550/filesystem/usr/lib/kernel-overlays/base/lib/firmware.
 #
 # Regenerate the pin list after a ROCKNIX bump with
-# nix/odin2portal/firmware/update-hashes.sh.
+# nix/devices/odin2portal/firmware/update-hashes.sh.
 #
 # A fourth class is the Adreno 740 GPU firmware. The 7.0 msm driver names
 # three files for chip 0x43050a01 (a6xx_catalog.c): a740_sqe.fw,

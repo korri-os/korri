@@ -50,7 +50,7 @@ Import runs as the catalog owner; it does not automatically make ROMs readable
 by the gameplay identity. Validate traversal, ROM reads and writable save paths
 separately. Keep configuration and private state inaccessible to games.
 
-The RG353M composition explicitly imports `nix/rg353m/gba-gameplay.nix`. Its
+The RG353M composition explicitly imports `nix/devices/rg353m/gba-gameplay.nix`. Its
 access module grants named traversal/read ACLs and account save access, denies
 gameplay reads of the existing root YAML documents and the `catalog/`
 directory by name, and adds a default deny for new private descendants. Default ACLs do not retroactively protect existing

@@ -9,7 +9,15 @@
 # filesystem stuck at image size and an unusable Nix database.
 #
 # Read the partition number from sysfs instead, where it is stated directly.
-{ config, pkgs, ... }:
+# The Odin's GPT card must also move its backup header before growing. The
+# RG353M's MBR card must not run that step. Preserve both existing sequences.
+{ gpt }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 {
   sdImage.expandOnBoot = false;
@@ -23,7 +31,7 @@
       bootDevice="$(${pkgs.util-linux}/bin/lsblk -npo PKNAME "$rootPart")"
       partNum="$(cat "/sys/class/block/$(${pkgs.coreutils}/bin/basename "$rootPart")/partition")"
 
-      echo ",+," | ${pkgs.util-linux}/bin/sfdisk -N"$partNum" --no-reread --force "$bootDevice" || true
+      ${lib.optionalString gpt "${pkgs.gptfdisk}/bin/sgdisk -e \"$bootDevice\" || true\n  "}echo ",+," | ${pkgs.util-linux}/bin/sfdisk -N"$partNum" --no-reread --force "$bootDevice" || true
       ${pkgs.util-linux}/bin/partx -u "$bootDevice" || true
       ${pkgs.e2fsprogs}/bin/resize2fs "$rootPart" || true
 

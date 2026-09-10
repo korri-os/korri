@@ -4,7 +4,7 @@
   imports = [
     ./gba-gameplay.nix
     ./network-online.nix
-    (import ../../clients/portal/nix/nixos-module.nix {
+    (import ../../../clients/portal/nix/nixos-module.nix {
       inherit korri;
       # Chromium must receive this as argv; its pinned wrapper does not read
       # CHROMIUM_FLAGS. This uses each surface's existing reduced-motion path.

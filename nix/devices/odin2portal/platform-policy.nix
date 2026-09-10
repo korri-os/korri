@@ -21,8 +21,8 @@ let
 in
 {
   imports = [
-    ./clock-governor.nix
-    ./fan-control.nix
+    ../../base/clock-governor.nix
+    ../../base/fan-control.nix
   ];
 
   # ROCKNIX's EXTRA_CMDLINE for SM8550 (projects/ROCKNIX/devices/SM8550/
