@@ -49,12 +49,6 @@ pub struct AndroidLauncherRecord {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LinuxLauncherRecord {
-    pub executable_env: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LauncherRecord {
     pub id: String,
@@ -67,7 +61,9 @@ pub struct LauncherRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub android: Option<AndroidLauncherRecord>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub linux: Option<LinuxLauncherRecord>,
+    pub kind: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub program: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -78,20 +74,15 @@ pub struct RuntimeSupportsRecord {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LinuxRuntimeRecord {
-    pub path_env: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeRecord {
     pub id: String,
     pub kind: String,
-    pub app: String,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub app: Option<String>,
     pub path: String,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub linux: Option<LinuxRuntimeRecord>,
+    pub launcher: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub supports: Option<RuntimeSupportsRecord>,
 }
@@ -391,6 +382,8 @@ pub struct SessionControlRecord {
 #[derive(Clone, Debug)]
 pub struct Plugin {
     id: String,
+    config: Option<BTreeMap<String, serde_json::Value>>,
+    android: Option<BTreeMap<String, serde_json::Value>>,
     title: String,
     description: Option<String>,
     providers: BTreeMap<String, ProviderRecord>,
@@ -414,11 +407,19 @@ impl Plugin {
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
     }
+
+    pub fn config(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
+        self.config.as_ref()
+    }
+    pub fn android(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
+        self.android.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct PluginRegistry {
     plugins: BTreeMap<String, Plugin>,
+    installed: BTreeMap<String, crate::plugin_installation::EnabledPackage>,
     enabled_plugin_ids: BTreeSet<String>,
     registered_provider_ids: BTreeSet<String>,
     registered_system_ids: BTreeSet<String>,
@@ -569,6 +570,7 @@ impl PluginRegistry {
         }
 
         Ok(Self {
+            installed: BTreeMap::new(),
             plugins: by_id,
             enabled_plugin_ids,
             registered_provider_ids,
@@ -585,6 +587,129 @@ impl PluginRegistry {
             session_controls,
             file_release_discovery_claims,
         })
+    }
+
+    pub fn from_installed(
+        packages: Vec<crate::plugin_installation::EnabledPackage>,
+    ) -> Result<Self, PluginError> {
+        let mut plugins = Vec::new();
+        let mut installed = BTreeMap::new();
+        let mut declarations = Vec::new();
+        for package in packages {
+            let (namespace, _) = package
+                .id
+                .split_once(':')
+                .ok_or_else(|| PluginError::InvalidPluginId(package.id.clone()))?;
+            let source = std::fs::read_to_string(package.package.join("plugin.ts"))
+                .map_err(|e| PluginError::Evaluation(e.to_string()))?;
+            let json = script::eval_plugin_ts(&source).map_err(PluginError::Evaluation)?;
+            let declaration: serde_json::Value = serde_json::from_str(&json)?;
+            crate::plugin_references::validate_files(declaration.clone(), &package.files)
+                .map_err(PluginError::Evaluation)?;
+            declarations.push((package.id.clone(), declaration));
+            let plugin = decode_plugin_declaration(namespace, &json)?;
+            if plugin.id != package.id {
+                return Err(PluginError::InvalidPluginId(package.id));
+            }
+            if installed.insert(package.id.clone(), package).is_some() {
+                return Err(PluginError::DuplicatePluginId(plugin.id));
+            }
+            plugins.push(plugin);
+        }
+        crate::plugin_references::validate(declarations).map_err(PluginError::Evaluation)?;
+        for package in installed.values() {
+            for required in &package.requires {
+                if !installed
+                    .values()
+                    .any(|candidate| candidate.package == *required)
+                {
+                    return Err(PluginError::Evaluation(format!(
+                        "{} requires unavailable selection {}",
+                        package.id,
+                        required.display()
+                    )));
+                }
+            }
+        }
+        let mut registry = Self::new(plugins, installed.keys().cloned())?;
+        registry.installed = installed;
+        for launcher in registry
+            .launchers
+            .values()
+            .filter(|launcher| launcher.kind.is_some())
+        {
+            registry.native_launcher(&launcher.id)?;
+        }
+        for runtime in registry
+            .runtimes
+            .values()
+            .filter(|runtime| runtime.launcher.is_some())
+        {
+            registry.native_launcher(runtime.launcher.as_deref().unwrap())?;
+            registry.installed_file(&runtime.id, &runtime.path)?;
+        }
+        Ok(registry)
+    }
+
+    pub fn installed_file(
+        &self,
+        contribution: &str,
+        key: &str,
+    ) -> Result<std::path::PathBuf, PluginError> {
+        let (owner, _) = contribution
+            .split_once('/')
+            .ok_or_else(|| PluginError::InvalidPluginId(contribution.into()))?;
+        self.installed
+            .get(owner)
+            .and_then(|package| package.files.get(key))
+            .cloned()
+            .ok_or_else(|| {
+                PluginError::Evaluation(format!(
+                    "{contribution} requires file {key} from its own installed package {owner}"
+                ))
+            })
+    }
+
+    pub fn native_launcher(
+        &self,
+        id: &str,
+    ) -> Result<(&LauncherRecord, &LauncherRecord), PluginError> {
+        let instance = self
+            .launchers
+            .get(id)
+            .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} is unavailable")))?;
+        let kind_id = instance
+            .kind
+            .as_ref()
+            .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} has no native kind")))?;
+        let kind = self.launchers.get(kind_id).ok_or_else(|| {
+            PluginError::Evaluation(format!("launcher {id} requires missing kind {kind_id}"))
+        })?;
+        if kind.kind.as_deref() != Some(kind_id) {
+            return Err(PluginError::Evaluation(format!(
+                "launcher kind {kind_id} is not a kind's own instance"
+            )));
+        }
+        self.installed_file(
+            id,
+            instance
+                .program
+                .as_deref()
+                .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} has no program")))?,
+        )?;
+        Ok((instance, kind))
+    }
+
+    pub fn installed_package(
+        &self,
+        contribution: &str,
+    ) -> Result<&crate::plugin_installation::EnabledPackage, PluginError> {
+        let (owner, _) = contribution
+            .split_once('/')
+            .ok_or_else(|| PluginError::InvalidPluginId(contribution.into()))?;
+        self.installed
+            .get(owner)
+            .ok_or_else(|| PluginError::Evaluation(format!("{owner} is not installed and enabled")))
     }
 
     pub fn registered_plugin_ids(&self) -> Vec<&str> {
@@ -730,6 +855,10 @@ struct PluginDeclaration {
     session_controls: BTreeMap<String, SessionControlRecord>,
     #[serde(default)]
     discovery: PluginDiscoveryContributions,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    config: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    android: Option<BTreeMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -868,15 +997,17 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 });
             }
         }
-        if launcher
-            .linux
-            .as_ref()
-            .is_some_and(|linux| !is_environment_key(&linux.executable_env))
+        if launcher.kind.is_some() != launcher.program.is_some()
+            || (launcher.kind.is_some()
+                && (launcher.android.is_some()
+                    || launcher.command.is_some()
+                    || launcher.plugin.is_some()))
+            || launcher.program.as_deref() == Some("")
         {
             return Err(PluginError::InvalidContribution {
                 kind: "launcher",
                 record_id: local_id.clone(),
-                reason: "Linux executable environment key is invalid".to_owned(),
+                reason: "native launchers require kind and program file key, without Android integration fields".to_owned(),
             });
         }
     }
@@ -919,17 +1050,20 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
             });
         }
         if runtime.kind.is_empty()
-            || runtime.app.is_empty()
-            || !is_safe_absolute_path(&runtime.path)
-            || runtime
-                .linux
-                .as_ref()
-                .is_some_and(|linux| !is_environment_key(&linux.path_env))
+            || match &runtime.launcher {
+                Some(launcher) => {
+                    launcher.is_empty() || runtime.app.is_some() || runtime.path.is_empty()
+                }
+                None => {
+                    runtime.app.as_deref().is_none_or(str::is_empty)
+                        || !is_safe_absolute_path(&runtime.path)
+                }
+            }
         {
             return Err(PluginError::InvalidContribution {
                 kind: "runtime",
                 record_id: local_id.clone(),
-                reason: "runtime kind and app must be non-empty, Android path must be a safe absolute path, and Linux environment key must be valid"
+                reason: "runtime requires a kind, and either Android app/absolute path or native launcher/file key"
                     .to_owned(),
             });
         }
@@ -1070,6 +1204,8 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
     }
 
     Ok(Plugin {
+        config: declaration.config,
+        android: declaration.android,
         id,
         title,
         description: declaration.description,
@@ -1289,14 +1425,6 @@ fn is_android_identifier(value: &str, allow_dollar: bool) -> bool {
                     || (allow_dollar && character == '$')
             })
     }) && value.contains('.')
-}
-
-fn is_environment_key(value: &str) -> bool {
-    let mut characters = value.chars();
-    matches!(characters.next(), Some(first) if first.is_ascii_uppercase() || first == '_')
-        && characters.all(|character| {
-            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
-        })
 }
 
 fn is_safe_absolute_path(value: &str) -> bool {

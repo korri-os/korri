@@ -645,9 +645,9 @@ udp_log_line="$(grep -nF 'assert_udp_rejection_log "$UDP_REJECTION_LOG_MARKER"' 
 }
 grep -F 'enabled_accessibility_services' "$ACCEPTANCE" >/dev/null
 # Runtime choice is now derived from plugin system declarations, not launch opinions.
-grep -F 'systems: ["gba"]' "$ROOT/plugins/mgba/plugin.ts" >/dev/null
-grep -F 'app: "@korri:retroarch/retroarch"' "$ROOT/plugins/mgba/plugin.ts" >/dev/null
-grep -F 'id: "@korri:retroarch/retroarch"' "$ROOT/plugins/retroarch/plugin.ts" >/dev/null
+grep -F 'systems: ["gba"]' "$ROOT/plugins/mgba/android/plugin.ts" >/dev/null
+grep -F 'app: "@korri:retroarch/retroarch"' "$ROOT/plugins/mgba/android/plugin.ts" >/dev/null
+grep -F 'id: "@korri:retroarch/retroarch"' "$ROOT/plugins/retroarch/android/plugin.ts" >/dev/null
 python3 "$ROOT/services/korrid/test-minimum-config-fixtures.py"
 library_focus_source="$(sed -n '/^focus_wario_in_installed_library() {/,/^}/p' "$ACCEPTANCE")"
 # shellcheck disable=SC2016 # Literal source-contract needles.

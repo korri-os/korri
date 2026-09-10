@@ -224,13 +224,30 @@ impl DiscoveryLifecycleCoordinator {
         write_lock: Arc<Mutex<()>>,
         grants: FolderSelectionGrantStore,
     ) -> Self {
+        Self::new_with_registry_source(
+            readable_root,
+            private_root,
+            write_lock,
+            grants,
+            crate::plugin_policy::RegistrySource::Android,
+        )
+    }
+
+    pub fn new_with_registry_source(
+        readable_root: impl AsRef<Path>,
+        private_root: impl AsRef<Path>,
+        write_lock: Arc<Mutex<()>>,
+        grants: FolderSelectionGrantStore,
+        registry_source: crate::plugin_policy::RegistrySource,
+    ) -> Self {
         let readable_root = readable_root.as_ref().to_owned();
         let private_root = private_root.as_ref().to_owned();
         let reconciler = ReconcileCoordinator::with_write_lock(
             &readable_root,
             &private_root,
             write_lock.clone(),
-        );
+        )
+        .with_registry_source(registry_source);
         let enricher = SteamGridDbEnricher::new(&readable_root, &private_root, write_lock);
         let snapshot_reader = ConfigSnapshotCoordinator::new(&readable_root);
         snapshot_reader.reload();

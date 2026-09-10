@@ -311,7 +311,7 @@ fn composes_retroarch_launcher_with_mgba_runtime_from_independent_plugins() {
 }
 
 #[test]
-fn resolves_linux_through_the_same_retroarch_and_mgba_plugins() {
+fn linux_never_falls_back_to_bundled_android_plugins() {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join("roms")).unwrap();
     std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
@@ -325,16 +325,8 @@ fn resolves_linux_through_the_same_retroarch_and_mgba_plugins() {
         readable::GBA_ID,
         resolver::RoutePlatform::Linux,
     )
-    .expect("composed Linux RetroArch and mGBA route");
-
-    assert_eq!(
-        route.linux_launcher.unwrap().executable_env,
-        "KORRI_RETROARCH_EXECUTABLE"
-    );
-    assert_eq!(
-        route.runtime.unwrap().linux_path_env.as_deref(),
-        Some("KORRI_MGBA_CORE")
-    );
+    .unwrap_err();
+    assert!(route.message.contains("no installed Linux route"));
 }
 
 #[test]

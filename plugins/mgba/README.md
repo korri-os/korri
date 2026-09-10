@@ -5,8 +5,11 @@ This plugin owns the pinned mGBA source/build pipeline and declares the
 
 The runtime explicitly targets `@korri:retroarch/retroarch`; korrid composes
 the two independently enabled plugins through that declaration. The same
-runtime identity selects the Android core packaged by Korri or the Linux core
-supplied by Nix, depending on the device doing the launch.
+runtime identity selects the Android core declared in `android/plugin.ts` or
+the independently installed Linux `plugin.ts`/`plugin.nix` package. Linux names
+its own `files.mgba` key and requires the exact RetroArch plugin output. Each
+package needs administrator approval and enablement; closure presence alone is
+not launch authority.
 
 ## Temporary Android packaging
 

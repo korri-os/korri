@@ -98,13 +98,13 @@ Zero-service packages can carry the shipped `systems`, `launchers`, `runtimes`, 
 
 `Host::enabled_packages()` and the administrator-only `enabled-packages` command expose a consistent admission snapshot. They perform no receipt repair, package realization or callback effects. If Nix lacks a saved signature, verification can fetch signing metadata from the bound cache and retain it, as activation does. They reject changed approvals, revoked signing keys, unfinished selections, inconsistent active roots, and missing or disabled exact dependencies. A cached signature still requires the full bound key. Verification holds the host lock and can be slow for large installed sets; a concurrent install makes the query fail as busy.
 
-Lifecycle changes validate the complete post-operation selection, including cycle rejection. Update or removal cannot replace a build named by any installed dependent, including a disabled one. Disable is refused while an enabled dependent needs that package. Disable dependents first; remove dependents before replacing their exact dependency builds. The cost is explicit dependency-order administration. This checks manifest `requires`, not yet launcher-instance-to-kind or runtime-to-launcher records.
+Lifecycle changes validate the complete post-operation selection, including cycle rejection. Update or removal cannot replace a build named by any installed dependent, including a disabled one. Disable is refused while an enabled dependent needs that package. Disable dependents first; remove dependents before replacing their exact dependency builds. The cost is explicit dependency-order administration. This checks manifest `requires`, launcher-instance-to-kind references, and runtime-to-launcher references. Native file keys must belong to the declaring package.
 
 Recovery loads the rooted dependency graph and orders it once without recursion. It recovers each required selection before its dependents, regardless of directory enumeration order. A failed dependency recovery stops its enabled dependents and retains their pins. Cycles and their dependents cannot start. Required receipts are read by the immutable package's identity and exact selected path; an unrelated corrupt receipt is reported separately without stopping a healthy dependency chain. This isolation applies to recovery, not the all-or-error registry snapshot or lifecycle selection validation. Graph memory grows with the number of packages and requirement edges; publisher verification still holds the host lock.
 
-**This is admission, not the Linux launch cutover.** Korrid does not yet consume this snapshot. Its Linux bundled declarations and environment-based RetroArch runner are unchanged. No `plugin.nix` game payload migration, callback effect executor, configuration cascade, typed-setting source check, route chooser, deployment, or user-data migration is included here. The VM game fixtures use actual shipped declaration source but contain no emulator binary and launch no game.
+Korrid now consumes the read-only projection described under **Installed Linux game registry**. RetroArch and mGBA ship real `plugin.nix` payloads; callbacks execute inside the existing runtime-user game unit. Configuration cascade, typed-setting source checks, route chooser, deployment, and user-data migration remain separate. The existing VM game fixtures still prove admission only; the final integrated game-launch acceptance must use the real payloads.
 
-For the remaining configuration cutover, the task's requirement to preserve grounded legacy schemas takes precedence over the brief's illustrative `extraConfig` spelling. `legacy:product/plugins/retroarch/src/launch-spec.ts` consumes `LaunchOverrides.config` through `renderRetroArchOverrideConfigLines`. That producer uses `overrides.config.prepend` and `.append`, refuses `.replace`, and validates configuration keys and plaintext credential exclusions. `legacy:product/plugins/retroarch/src/policy.ts` contains the nested typed policy. This admission slice makes no replacement configuration schema.
+For the remaining configuration cutover, the task's requirement to preserve grounded legacy schemas takes precedence over the brief's illustrative `extraConfig` spelling. `legacy:product/plugins/retroarch/src/launch-spec.ts` consumes `LaunchOverrides.config` through `renderRetroArchOverrideConfigLines`. That producer uses `overrides.config.prepend` and `.append`, refuses `.replace`, and validates configuration keys and plaintext credential exclusions. `legacy:product/plugins/retroarch/src/policy.ts` contains the nested typed policy. The launch treaty retains that raw configuration shape. It does not introduce a replacement persisted configuration schema.
 
 ## Declaration and storage grounding
 
@@ -149,6 +149,54 @@ This is a clean receipt cut. A receipt without `provenance` fails deserializatio
 `src/storage.rs` owns host-root policy and the lock. Under the existing state root, `sources/list.json` contains only `sources`: the normalized URLs produced by successful `repository add` commands, in insertion order with no duplicates. Both reads and writes cap the serialized JSON at the existing 128 KiB reader bound. Stored malformed, noncanonical or duplicate URLs fail without replacing the list.
 
 The same storage owner creates private `staging/download-<8 alphanumeric characters>` directories. The suffix comes from tempfile's random directory producer, not metadata. Success and ordinary failures remove their own staging directory; acquisition and restore remove owned stale directories under the host lock. Cleanup rejects links or unrecognized entries rather than deleting arbitrary paths. Restore recognizes only the locked `sources` and `staging` directories in addition to its existing receipt directories and lock. Unexpected entries still fail, while errors from one receipt or staging entry do not prevent recovery of other receipts.
+
+## Installed Linux game registry
+
+After a lifecycle commit, the host publishes an atomic, root-owned snapshot at
+`/run/korri-plugin-host/enabled-packages.json`. It projects the existing report
+fields `id`, `package`, `files`, and `requires`; it adds no plugin manifest
+fields. The snapshot contains only approved, enabled, committed selections.
+The host removes it before any selection mutation or recovery. A failed
+transition cannot leave stale launch authority published. Publisher-configuration
+changes restart the NixOS restore service before korrid.
+
+`services/korrid/src/plugin_installation.rs` is shared by the host and reader.
+Korrid reads a bounded regular file, refuses symlinks and writable parents, and
+requires root ownership. The directory is mode 0755 and each published file is
+0644. Receipts, approvals, source administration, and the host lock remain
+private. There is no privileged reader RPC or WebView access to `korri-plugin`.
+The settings backend refuses native install/enable changes from browser callers.
+
+Linux discovery reads these selections, not Android's bundled policy. Several
+claims for one system make one catalog candidate; a disagreement about the
+system remains explicit. `resolve_linux_route` accepts a full runtime ID and
+resolves its launcher instance and kind. Without a choice it accepts only one
+compatible runtime. The launcher program comes from its instance's package;
+the callback and auxiliary files come from its kind's package. Lifecycle
+validation rejects removal or renaming of referenced launcher/kind exports,
+even when a plugin omitted the corresponding manifest dependency.
+
+Build-side payload checks (no VM):
+
+```sh
+nix build --no-link .#korri-plugin-mgba
+KORRI_TEST_GAME_PACKAGE="$(nix build --no-link --print-out-paths .#korri-plugin-mgba)" \
+  nix develop .#korrid --command cargo test \
+  --manifest-path services/korrid/Cargo.toml --test installed_game_launch \
+  built_plugin_nix_payload -- --ignored
+```
+
+Install and enable the required RetroArch selection before mGBA. Each build
+still needs its own publisher-bound signature and explicit approval. An empty
+but initialized host publishes `[]`; a missing snapshot is an authority error,
+not a request to use bundled games. `korri-plugin restore` rebuilds the view.
+The runtime user needs the existing account-directory and ROM access described
+in `nix/rg353m/gba-library-access.nix`. This cut does not migrate user files.
+
+The focused package test resolves the real built dependency, discovers a ROM,
+checks callback config/argv, and executes that package's `retroarch --version`.
+It does not prove a systemd game launch. Final install/enable, runtime-user
+sandbox, and gameplay checks belong to the integrated VM/device acceptance.
 
 ## Verification
 

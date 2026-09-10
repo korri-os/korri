@@ -7,9 +7,12 @@ use korrid::{
         snapshot::{ConfigSnapshotCoordinator, FILE_NAMES},
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
+    plugin,
     plugin::{load_plugin_source, PluginRegistry},
-    plugin_policy,
+    plugin_installation, plugin_policy,
 };
+#[path = "../src/plugin_test_fixtures.rs"]
+mod native_packages;
 use serde_yaml::Value;
 use std::{fs, path::Path};
 
@@ -234,11 +237,16 @@ fn missing_implicit_copy_does_not_hide_an_existing_explicit_copy_from_launch_or_
         spec.extras["ROM"],
         second.path().join("game.gba").display().to_string()
     );
+    let native_registry = native_packages::installed(private.path());
     for platform in [RoutePlatform::Android, RoutePlatform::Linux] {
         let route = resolver::resolve_route_for_platform(
             root.path(),
             state,
-            &registry,
+            if platform == RoutePlatform::Linux {
+                &native_registry
+            } else {
+                &registry
+            },
             [],
             state.games.keys().next().unwrap(),
             platform,
@@ -311,7 +319,7 @@ fn runtime_ambiguity_counts_only_candidates_capable_of_the_requested_platform() 
     let route = resolver::resolve_route_for_platform(
         root.path(),
         &state,
-        &registry,
+        &native_packages::installed(root.path()),
         [],
         readable::GBA_ID,
         RoutePlatform::Linux,
@@ -360,7 +368,7 @@ fn launcher_ambiguity_counts_only_candidates_capable_of_the_requested_platform()
     let route = resolver::resolve_route_for_platform(
         root.path(),
         &state,
-        &registry,
+        &native_packages::installed(root.path()),
         [],
         readable::GBA_ID,
         RoutePlatform::Linux,

@@ -4,8 +4,8 @@ use korrid::plugin::{
 };
 
 const ANDROID_PLUGIN: &str = include_str!("../plugins/android-app.plugin.ts");
-const MGBA_PLUGIN: &str = include_str!("../../../plugins/mgba/plugin.ts");
-const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
+const MGBA_PLUGIN: &str = include_str!("../../../plugins/mgba/android/plugin.ts");
+const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/android/plugin.ts");
 const MOONLIGHT_PLUGIN: &str = include_str!("../../../plugins/moonlight/plugin.ts");
 
 #[test]
@@ -101,7 +101,7 @@ fn enabled_mgba_plugin_announces_its_system_and_runtime() {
         .get("@korri:mgba/mgba")
         .expect("plugin runtime");
     assert_eq!(runtime.kind, "libretro-core");
-    assert_eq!(runtime.app, "@korri:retroarch/retroarch");
+    assert_eq!(runtime.app.as_deref(), Some("@korri:retroarch/retroarch"));
     assert_eq!(
         runtime.path,
         "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so"

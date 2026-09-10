@@ -74,10 +74,7 @@ fn stale_config_revision_rejects_library_commit() {
         title: "two".into(),
         hash: "sha256:cddd67830982a78cc83998c15c13e49e1cb6bea286c4507cb5510d9c6aba4ec3".into(),
         size: 3,
-        claim_id: "@korri:mgba/gba".into(),
         system: "gba".into(),
-        launcher: "@korri:retroarch/retroarch".into(),
-        runtime: Some("@korri:mgba/mgba".into()),
     };
     let mut private_state = PrivateState::read(private.path()).unwrap();
 

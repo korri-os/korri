@@ -4,6 +4,10 @@ Stop the device's korrid daemon before import. Keep it stopped until the command
 exits. Do not run two imports at once. The coordinator's locks are in-process;
 this command does not detect or stop another process.
 
+On Linux, first install and enable the approved game packages through the plugin
+host. Its committed registry snapshot must be readable by the catalog owner.
+There is no bundled Linux emulator or plugin-environment fallback.
+
 Copy the GBA files into their intended persistent directory first. Run the command
 as the same account that owns the daemon's catalog and private state. Set both
 roots to the existing directories used by that daemon; no defaults are accepted.

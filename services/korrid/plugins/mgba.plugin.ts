@@ -1,1 +1,1 @@
-../../../plugins/mgba/plugin.ts
+../../../plugins/mgba/android/plugin.ts

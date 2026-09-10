@@ -465,6 +465,25 @@ async fn main() {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
     if arguments
         .first()
+        .is_some_and(|argument| argument == "plugin-launch")
+    {
+        let result = match arguments.as_slice() {
+            [_, source, input] => input
+                .to_str()
+                .ok_or_else(|| "launch input must be UTF-8".to_owned())
+                .and_then(|input| {
+                    korrid::launcher::plugin_launch::execute(std::path::Path::new(source), input)
+                }),
+            _ => Err("usage: korrid plugin-launch SOURCE INPUT_JSON".into()),
+        };
+        if let Err(error) = result {
+            eprintln!("korrid plugin-launch: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if arguments
+        .first()
         .is_some_and(|argument| argument == "catalog")
     {
         match korrid::catalog_cli::run_from_environment(&arguments[1..]) {

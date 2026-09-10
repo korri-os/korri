@@ -147,6 +147,10 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
 }
 
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    write_atomic_mode(path, bytes, 0o600)
+}
+
+pub fn write_atomic_mode(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
     let temporary = path.with_extension("new");
     // This path is inside the locked, root-owned host directory. Leftovers are
     // never followed, even after an interrupted write.
@@ -157,6 +161,8 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW)
         .open(&temporary)
+        .map_err(|e| e.to_string())?;
+    file.set_permissions(fs::Permissions::from_mode(mode))
         .map_err(|e| e.to_string())?;
     file.write_all(bytes)
         .and_then(|_| file.sync_all())

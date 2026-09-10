@@ -43,6 +43,7 @@ pub struct DiscoveryCoordinator {
     private_root: PathBuf,
     write_lock: Arc<Mutex<()>>,
     scan_lock: Arc<Mutex<()>>,
+    registry_source: plugin_policy::RegistrySource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,7 +112,13 @@ impl DiscoveryCoordinator {
             private_root: private_root.as_ref().to_owned(),
             write_lock,
             scan_lock: Arc::new(Mutex::new(())),
+            registry_source: plugin_policy::RegistrySource::Android,
         }
+    }
+
+    pub fn with_registry_source(mut self, source: plugin_policy::RegistrySource) -> Self {
+        self.registry_source = source;
+        self
     }
 
     pub fn add_location(
@@ -227,7 +234,9 @@ impl DiscoveryCoordinator {
             private.write(&self.private_root)?;
             let current = Documents::read(&self.readable_root)?;
             let snapshot = current.validate()?;
-            let registry = plugin_policy::registry_for_snapshot(&snapshot)
+            let registry = self
+                .registry_source
+                .registry(&snapshot)
                 .map_err(|error| DiscoveryError::Candidate(error.to_string()))?;
             let config_doc = parse_mapping(&current.device)?;
             (

@@ -70,6 +70,13 @@ pub enum SettingsError {
 }
 
 pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
+    read_with_registry_source(root, &plugin_policy::RegistrySource::Android)
+}
+
+pub fn read_with_registry_source(
+    root: &Path,
+    source: &plugin_policy::RegistrySource,
+) -> Result<ReadableSettings, SettingsError> {
     ensure_fixed_files(root)?;
     let config = read_fixed(root, DEVICE_FILE_NAME)?;
     let games = read_fixed(root, GAMES_FILE_NAME)?;
@@ -80,15 +87,17 @@ pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
 
-    let enabled = plugin_policy::enabled_plugin_ids_for_snapshot(&snapshot)
+    let registry = source
+        .registry(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    let plugins = plugin_policy::bundled_plugins()
-        .map_err(|error| SettingsError::Candidate(error.to_string()))?
+    let enabled = registry.enabled_plugin_ids();
+    let plugins = registry
+        .registered_plugin_ids()
         .into_iter()
-        .map(|plugin| ReadablePluginSetting {
-            enabled: enabled.iter().any(|id| id == plugin.id()),
-            id: plugin.id().to_owned(),
-            title: plugin.title().to_owned(),
+        .map(|id| ReadablePluginSetting {
+            enabled: enabled.contains(&id),
+            id: id.into(),
+            title: registry.plugin_title(id).unwrap_or(id).into(),
         })
         .collect();
 
@@ -204,6 +213,31 @@ pub fn update(
     expected_revision: &str,
     change: SettingChange,
 ) -> Result<ReadableSettings, SettingsError> {
+    update_with_registry_source(
+        root,
+        private_root,
+        write_lock,
+        expected_revision,
+        change,
+        &plugin_policy::RegistrySource::Android,
+    )
+}
+
+pub fn update_with_registry_source(
+    root: &Path,
+    private_root: &Path,
+    write_lock: &std::sync::Mutex<()>,
+    expected_revision: &str,
+    change: SettingChange,
+    source: &plugin_policy::RegistrySource,
+) -> Result<ReadableSettings, SettingsError> {
+    if !matches!(source, plugin_policy::RegistrySource::Android)
+        && matches!(change, SettingChange::PluginEnabled { .. })
+    {
+        return Err(SettingsError::Invalid(
+            "installed plugin selections require local administrator approval".into(),
+        ));
+    }
     let _guard = write_lock.lock().expect("settings write lock poisoned");
     crate::discovery::reconcile::reject_pending_publication(private_root).map_err(|error| {
         match error {
@@ -232,7 +266,8 @@ pub fn update(
             .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    plugin_policy::enabled_plugin_ids_for_snapshot(&snapshot)
+    source
+        .registry(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
 
     write_atomically(
@@ -240,7 +275,7 @@ pub fn update(
         candidate.as_bytes(),
         expected_revision,
     )?;
-    read(root)
+    read_with_registry_source(root, source)
 }
 
 fn set_device_name(document: &mut Mapping, value: String) -> Result<(), SettingsError> {

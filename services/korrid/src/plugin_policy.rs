@@ -100,6 +100,29 @@ pub fn enabled_plugin_ids_for_snapshot(
     Ok(enabled)
 }
 
+#[derive(Clone)]
+pub enum RegistrySource {
+    Android,
+    Installed,
+    Selected(std::sync::Arc<PluginRegistry>),
+}
+
+impl RegistrySource {
+    pub fn registry(&self, snapshot: &ConfigSnapshot) -> Result<PluginRegistry, PluginError> {
+        match self {
+            Self::Android => registry_for_snapshot(snapshot),
+            Self::Installed => installed_registry(),
+            Self::Selected(registry) => Ok((**registry).clone()),
+        }
+    }
+}
+
+pub fn installed_registry() -> Result<PluginRegistry, PluginError> {
+    PluginRegistry::from_installed(
+        crate::plugin_installation::read().map_err(PluginError::Evaluation)?,
+    )
+}
+
 pub fn registry_for_snapshot(snapshot: &ConfigSnapshot) -> Result<PluginRegistry, PluginError> {
     PluginRegistry::new(
         bundled_plugins()?,

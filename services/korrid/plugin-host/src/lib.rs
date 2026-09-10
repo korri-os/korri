@@ -15,5 +15,10 @@ pub mod source_store;
 pub mod storage;
 pub mod unit;
 
+#[path = "../../src/plugin_installation.rs"]
+pub mod plugin_installation;
+#[path = "../../src/plugin_references.rs"]
+pub mod plugin_references;
+
 #[path = "../../src/script.rs"]
 pub mod script;

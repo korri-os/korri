@@ -17,9 +17,11 @@ let
     mkdir -p "$out/src" "$out/examples" "$out/plugins"
     cp -R ${clean} "$out/plugin-host"
     cp ${../src/script.rs} "$out/src/script.rs"
+    cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
+    cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
-    cp ${../../../plugins/retroarch/plugin.ts} "$out/plugins/retroarch.plugin.ts"
-    cp ${../../../plugins/mgba/plugin.ts} "$out/plugins/mgba.plugin.ts"
+    cp ${../../../plugins/retroarch/android/plugin.ts} "$out/plugins/retroarch.plugin.ts"
+    cp ${../../../plugins/mgba/android/plugin.ts} "$out/plugins/mgba.plugin.ts"
     cp ${../../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
   '';
 in

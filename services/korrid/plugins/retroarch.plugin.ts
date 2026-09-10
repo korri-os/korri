@@ -1,1 +1,1 @@
-../../../plugins/retroarch/plugin.ts
+../../../plugins/retroarch/android/plugin.ts

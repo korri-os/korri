@@ -26,7 +26,9 @@ impl RunningPortal {
             std::fs::write(&config, "label = \"rg353m\"\n").unwrap();
             host_routers_with_storage_and_private(
                 &config,
-                Some(root.path().join("storage")),
+                // This access-control fixture has only host.toml games. Native
+                // catalog tests supply approved installed selections separately.
+                None::<std::path::PathBuf>,
                 &private,
                 permission.map(|permission| PortalAccess::new(TOKEN, ORIGIN, permission)),
             )

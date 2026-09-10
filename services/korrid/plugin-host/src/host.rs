@@ -281,8 +281,10 @@ impl Host {
         // must never roll back this intent into a (possibly revoked) start.
         receipt.desired = desired;
         self.check_selection(&receipt)?;
+        self.invalidate_registry()?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
-        self.restore_one(id)
+        self.restore_one(id)?;
+        self.publish_registry()
     }
 
     pub fn status(&self, id: &str) -> Result<Option<Receipt>, String> {
@@ -325,6 +327,17 @@ impl Host {
                     requires: report.requires.clone(),
                 })
                 .collect::<Vec<_>>(),
+        )?;
+        crate::plugin_references::validate(
+            reports
+                .iter()
+                .map(|report| {
+                    Ok((
+                        report.id.clone(),
+                        serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         )?;
         Ok(reports)
     }
@@ -369,11 +382,21 @@ impl Host {
         receipts.retain(|r| r.id != candidate.id);
         receipts.push(candidate.clone());
         let mut packages = Vec::new();
+        let mut all_declarations = Vec::new();
+        let mut enabled_declarations = Vec::new();
         for receipt in receipts {
             if matches!(receipt.desired, Desired::Removed { .. }) {
                 continue;
             }
             let report = self.approved(&receipt)?;
+            let declaration = (
+                report.id.clone(),
+                serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?,
+            );
+            if matches!(receipt.desired, Desired::Enabled) {
+                enabled_declarations.push(declaration.clone());
+            }
+            all_declarations.push(declaration);
             packages.push(SelectedPackage {
                 id: receipt.id,
                 package: receipt.package,
@@ -381,7 +404,9 @@ impl Host {
                 requires: report.requires,
             });
         }
-        validate_selection(&packages)
+        validate_selection(&packages)?;
+        crate::plugin_references::validate(all_declarations)?;
+        crate::plugin_references::validate(enabled_declarations)
     }
 
     fn selected_receipt(&self, package: &Path) -> Result<Receipt, String> {
@@ -442,6 +467,7 @@ impl Host {
     }
 
     pub fn restore(&self) -> Result<(), String> {
+        self.invalidate_registry()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
             errors.push(error);
@@ -538,7 +564,7 @@ impl Host {
         }
         self.release_download()?;
         if errors.is_empty() {
-            Ok(())
+            self.publish_registry()
         } else {
             Err(errors.join("; "))
         }
@@ -604,6 +630,7 @@ impl Host {
         let report = self.approved(&candidate)?;
         self.verify_publisher(&candidate.package, &candidate.provenance)?;
         self.check_selection(&candidate)?;
+        self.invalidate_registry()?;
         let pending = self.root(id, "pending");
         storage::root_link(&pending, &candidate.package)?;
         let result = self.units.stop(id, false).and_then(|_| {
@@ -622,7 +649,41 @@ impl Host {
         }
         storage::write_json(&self.receipt_path(id), &candidate)?;
         storage::root_link(&self.root(id, "active"), &candidate.package)?;
-        storage::remove(&pending)
+        storage::remove(&pending)?;
+        self.publish_registry()
+    }
+
+    fn invalidate_registry(&self) -> Result<(), String> {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let directory = Path::new(crate::plugin_installation::REGISTRY_DIRECTORY);
+        if !directory.exists() {
+            fs::create_dir(directory).map_err(|e| e.to_string())?;
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
+                .map_err(|e| e.to_string())?;
+        }
+        let metadata = fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+        if !metadata.is_dir() || metadata.uid() != 0 || metadata.permissions().mode() & 0o022 != 0 {
+            return Err("plugin registry directory must be protected by root".into());
+        }
+        storage::remove(Path::new(crate::plugin_installation::REGISTRY_PATH))
+    }
+
+    fn publish_registry(&self) -> Result<(), String> {
+        let reports = self.enabled_packages()?;
+        let selections: Vec<_> = reports
+            .into_iter()
+            .map(|report| crate::plugin_installation::EnabledPackage {
+                id: report.id,
+                package: report.package,
+                files: report.files,
+                requires: report.requires,
+            })
+            .collect();
+        storage::write_atomic_mode(
+            Path::new(crate::plugin_installation::REGISTRY_PATH),
+            &crate::plugin_installation::encode(&selections)?,
+            0o644,
+        )
     }
 
     fn approved(&self, receipt: &Receipt) -> Result<Report, String> {

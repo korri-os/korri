@@ -6,16 +6,16 @@ use crate::{
         ConfigSnapshot,
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin_policy,
+    plugin::PluginRegistry,
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 struct DiscoveredGame {
     root: tempfile::TempDir,
     folder: tempfile::TempDir,
     snapshot: ConfigSnapshot,
     route: ResolvedRoute,
-    environment: HashMap<&'static str, OsString>,
+    registry: PluginRegistry,
 }
 
 impl DiscoveredGame {
@@ -38,7 +38,7 @@ impl DiscoveredGame {
         let state = ConfigSnapshotCoordinator::new(root.path()).reload();
         assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
         let snapshot = (*state.snapshot).clone();
-        let registry = plugin_policy::registry_for_snapshot(&snapshot).unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
         let mut catalog = resolve_launchable_routes_for_platform(
             root.path(),
             &snapshot,
@@ -66,11 +66,7 @@ impl DiscoveredGame {
             folder,
             snapshot,
             route,
-            environment: HashMap::from([
-                ("KORRI_RETROARCH_EXECUTABLE", executable.into_os_string()),
-                ("KORRI_MGBA_CORE", core.into_os_string()),
-                ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.into_os_string()),
-            ]),
+            registry,
         }
     }
 
@@ -81,9 +77,13 @@ impl DiscoveredGame {
     }
 
     fn launch(&self) -> Result<LinuxLaunchSpec, LaunchError> {
-        launch_route_with_env(self.root.path(), &self.snapshot, &self.route, |key| {
-            self.environment.get(key).cloned()
-        })
+        launch_route(
+            self.root.path(),
+            &self.snapshot,
+            &self.registry,
+            &self.route,
+            None,
+        )
     }
 
     fn assert_unavailable(&self) {
@@ -100,14 +100,15 @@ fn discovery_registered_gba_launches_from_its_snapshot_storage_root() {
     let game = DiscoveredGame::new();
     let launch = game.launch().unwrap();
     assert_eq!(
-        launch.command[5],
+        serde_json::from_str::<PluginLaunchInput>(&launch.command[3])
+            .unwrap()
+            .content_path,
         game.rom().canonicalize().unwrap().display().to_string()
     );
-    assert!(game
-        .root
-        .path()
-        .join("users/default/retroarch.cfg")
-        .is_file());
+    assert!(
+        !game.root.path().join("users").exists(),
+        "no daemon-owned runtime artifacts"
+    );
 }
 
 #[test]
@@ -159,7 +160,9 @@ fn configured_root_and_internal_target_symlinks_use_the_canonical_file() {
     let storage_id = &game.route.file_target.as_ref().unwrap().storage_id;
     game.snapshot.storage.get_mut(storage_id).unwrap().root.0 = root_alias.display().to_string();
     assert_eq!(
-        game.launch().unwrap().command[5],
+        serde_json::from_str::<PluginLaunchInput>(&game.launch().unwrap().command[3])
+            .unwrap()
+            .content_path,
         canonical.canonicalize().unwrap().display().to_string()
     );
 }

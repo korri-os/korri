@@ -1298,6 +1298,15 @@ enum NativePlatform {
     EmbeddedAndroid,
 }
 
+impl NativePlatform {
+    fn registry_source(self) -> plugin_policy::RegistrySource {
+        match self {
+            Self::Standalone => plugin_policy::RegistrySource::Installed,
+            Self::EmbeddedAndroid => plugin_policy::RegistrySource::Android,
+        }
+    }
+}
+
 type RetroarchControlAuthority = Arc<launcher::retroarch_control::RetroarchControlAuthority>;
 type RetroarchControlSlot = Arc<Mutex<Option<RetroarchControlAuthority>>>;
 
@@ -1705,7 +1714,16 @@ fn resolve_moonlight_outcome(
         );
     }
 
-    match plugin_policy::registry_for_snapshot(&config_state.snapshot) {
+    if native_platform == NativePlatform::Standalone {
+        return MoonlightResolveOutcome::Unavailable(RpcFailure {
+            code: "MoonlightUnavailable".into(),
+            message: "Artemis is unavailable on this platform".into(),
+        });
+    }
+    match native_platform
+        .registry_source()
+        .registry(&config_state.snapshot)
+    {
         Ok(registry) => (native_platform == NativePlatform::EmbeddedAndroid)
             .then(|| {
                 config::resolver::resolve_moonlight_transport(
@@ -2757,7 +2775,11 @@ async fn dispatch(
         RpcRequest::LocalGamesList(_) => match &state.mode {
             ServerMode::Brain(brain) => {
                 let config_state = brain.config_snapshot.reload();
-                let registry = match plugin_policy::registry_for_snapshot(&config_state.snapshot) {
+                let registry = match brain
+                    .native_platform
+                    .registry_source()
+                    .registry(&config_state.snapshot)
+                {
                     Ok(registry) => registry,
                     Err(error) => {
                         return Ok(RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(
@@ -2794,7 +2816,11 @@ async fn dispatch(
         RpcRequest::LocalGameLaunch(request) => match &state.mode {
             ServerMode::Brain(brain) => {
                 let config_state = brain.config_snapshot.reload();
-                let registry = match plugin_policy::registry_for_snapshot(&config_state.snapshot) {
+                let registry = match brain
+                    .native_platform
+                    .registry_source()
+                    .registry(&config_state.snapshot)
+                {
                     Ok(registry) => registry,
                     Err(error) => {
                         return Ok(RpcResponse::LocalGameLaunch(LocalGameLaunchOutcome::Err(
@@ -3001,13 +3027,16 @@ async fn dispatch(
         },
         RpcRequest::SettingsSnapshot(_) => match &state.mode {
             ServerMode::Brain(brain) => RpcResponse::SettingsSnapshot(
-                config::settings::read(&brain.local_storage_root)
-                    .and_then(|readable| {
-                        config::settings::read_sensitive(&brain.private_state_root)
-                            .map(|sensitive| settings_snapshot(readable, sensitive))
-                    })
-                    .map(SettingsSnapshotOutcome::Ok)
-                    .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
+                config::settings::read_with_registry_source(
+                    &brain.local_storage_root,
+                    &brain.native_platform.registry_source(),
+                )
+                .and_then(|readable| {
+                    config::settings::read_sensitive(&brain.private_state_root)
+                        .map(|sensitive| settings_snapshot(readable, sensitive))
+                })
+                .map(SettingsSnapshotOutcome::Ok)
+                .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
             ),
             ServerMode::Host(_) => {
                 RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Err(RpcFailure {
@@ -3035,12 +3064,13 @@ async fn dispatch(
                         })
                 };
                 let outcome = change.and_then(|change| {
-                    config::settings::update(
+                    config::settings::update_with_registry_source(
                         &brain.local_storage_root,
                         &brain.private_state_root,
                         &brain.settings_write_lock,
                         &request.expected_revision,
                         change,
+                        &brain.native_platform.registry_source(),
                     )
                 });
                 if outcome.is_ok() {
@@ -3351,6 +3381,21 @@ fn android_router_with_capability_and_local_root(
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
 ) -> Router {
+    android_router_with_provision(
+        rpc_capability,
+        allowed_origin,
+        local_storage_root,
+        launcher::FileProvisionMode::Deferred,
+    )
+}
+
+#[cfg(test)]
+fn android_router_with_provision(
+    rpc_capability: &str,
+    allowed_origin: &str,
+    local_storage_root: impl AsRef<Path>,
+    provision: launcher::FileProvisionMode,
+) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let signing_key = generate_launch_signing_key();
     let local_launch_reservations =
@@ -3364,7 +3409,7 @@ fn android_router_with_capability_and_local_root(
         allowed_origin,
         local_storage_root.clone(),
         local_storage_root.join(".private-test"),
-        launcher::FileProvisionMode::Deferred,
+        provision,
         signing_key,
         local_launch_reservations,
         moonlight_launch_authority,
@@ -3476,11 +3521,12 @@ fn brain_app_state(
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
     let settings_write_lock = Arc::new(Mutex::new(()));
-    let discovery = discovery::DiscoveryLifecycleCoordinator::new(
+    let discovery = discovery::DiscoveryLifecycleCoordinator::new_with_registry_source(
         &local_storage_root,
         &private_state_root,
         settings_write_lock.clone(),
         folder_selection_grants.clone(),
+        native_platform.registry_source(),
     );
     #[cfg(not(test))]
     let resources = resources.or_else(|| {
@@ -4625,11 +4671,19 @@ pub fn verify_local_launch_spec(spec_json: &str) -> bool {
     })
 }
 
+#[cfg(test)]
+mod android_app_route_tests;
 pub mod host;
 pub mod launcher;
 pub mod plugin;
+pub mod plugin_installation;
 pub mod plugin_policy;
+mod plugin_references;
+#[cfg(test)]
+mod plugin_test_fixtures;
 pub mod script;
+#[cfg(test)]
+mod settings_secrets_tests;
 pub mod upstream;
 pub mod upstream_native;
 pub mod upstreams;
@@ -4668,7 +4722,7 @@ mod tests {
     /// them, so a panicking test still hands the next one a usable lock.
     static EMBEDDED_SERVER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    fn embedded_server_guard() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn embedded_server_guard() -> std::sync::MutexGuard<'static, ()> {
         EMBEDDED_SERVER_TEST_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -5621,7 +5675,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
-            NativePlatform::Standalone,
+            NativePlatform::EmbeddedAndroid,
             config::snapshot::ConfigSnapshotCoordinator::new(readable),
             grants,
             None,
@@ -6451,7 +6505,7 @@ command = ["game-two"]
         write_wl4_plugin_config(root.path());
         std::fs::create_dir(root.path().join("roms")).unwrap();
         std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-        let app = router_with_capability_and_local_root(
+        let app = android_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -6483,7 +6537,7 @@ command = ["game-two"]
         std::fs::write(root.path().join("device.yaml"), "host:\n  title: old\n").unwrap();
         crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
             .unwrap();
-        let app = router_with_capability_and_local_root(
+        let app = android_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -6547,10 +6601,11 @@ command = ["game-two"]
         write_wl4_plugin_config(root.path());
         std::fs::create_dir_all(root.path().join("roms")).unwrap();
         std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-        let app = router_with_capability_and_local_root(
+        let app = android_router_with_provision(
             "right-token",
             "https://portal.example",
             root.path(),
+            launcher::FileProvisionMode::Direct,
         );
         let response = app
             .oneshot(
@@ -7727,10 +7782,11 @@ command = ["game-two"]
             std::os::unix::fs::PermissionsExt::from_mode(0o700),
         )
         .unwrap();
-        let first_port = start_local_server(
+        let first_port = start_local_server_for_platform(
             "https://portal.example",
             root.path().to_str().expect("UTF-8 temp path"),
             private_root.path().to_str().expect("UTF-8 temp path"),
+            NativePlatform::EmbeddedAndroid,
         )
         .unwrap();
         let _stop = StopServer;
@@ -7755,10 +7811,11 @@ command = ["game-two"]
         assert!(local_server_capability().is_none());
         assert!(!verify_local_launch_spec(&first_spec_json));
 
-        let second_port = start_local_server(
+        let second_port = start_local_server_for_platform(
             "https://portal.example",
             root.path().to_str().expect("UTF-8 temp path"),
             private_root.path().to_str().expect("UTF-8 temp path"),
+            NativePlatform::EmbeddedAndroid,
         )
         .unwrap();
         let second_capability = local_server_capability().unwrap();
@@ -7809,7 +7866,7 @@ command = ["game-two"]
 
         let root = tempfile::tempdir().unwrap();
         write_checkpoint_android_config(root.path());
-        let app = router_with_capability_and_local_root(
+        let app = android_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -7950,7 +8007,7 @@ command = ["game-two"]
         use std::os::unix::fs::PermissionsExt;
 
         let root = tempfile::tempdir().unwrap();
-        let app = router_with_capability_and_local_root(
+        let app = android_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -7983,7 +8040,7 @@ command = ["game-two"]
         ] {
             let root = tempfile::tempdir().unwrap();
             write_wl4_plugin_config(root.path());
-            let app = router_with_capability_and_local_root(
+            let app = android_router_with_capability_and_local_root(
                 "right-token",
                 "https://portal.example",
                 root.path(),
@@ -8021,10 +8078,11 @@ command = ["game-two"]
             write_wl4_plugin_config(root.path());
             std::fs::create_dir_all(root.path().join("roms")).unwrap();
             std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-            let app = router_with_capability_and_local_root(
+            let app = android_router_with_provision(
                 "right-token",
                 "https://portal.example",
                 root.path(),
+                launcher::FileProvisionMode::Direct,
             );
             std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(mode)).unwrap();
             let response = app

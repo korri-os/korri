@@ -14,6 +14,12 @@ GENERATED_TS="$ROOT/contracts/generated/korrid.ts"
 ANDROID_LIBS="$ROOT/clients/android/app/src/main/jniLibs"
 
 cd "$CRATE"
+# Focused treaty regeneration uses the same Typeshare invocation as the full gate.
+if [[ "${1:-}" == "--types-only" && $# == 1 ]]; then
+  typeshare . --lang=typescript --output-file="$GENERATED_TS"
+  sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
+  exit 0
+fi
 cargo fmt --check
 cargo check
 cargo test

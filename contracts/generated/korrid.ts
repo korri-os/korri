@@ -158,6 +158,13 @@ export interface Health {
 export interface HealthRequest {
 }
 
+/** Legacy LaunchOverrides.config from library-item.ts; RetroArch rejects replace. */
+export interface LaunchConfigOverrides {
+	prepend?: string;
+	append?: string;
+	replace?: string;
+}
+
 export interface LaunchContext {
 	gameId?: string;
 	title?: string;
@@ -342,6 +349,37 @@ export interface PlayEntry {
 export interface PlayLog {
 	gameId: string;
 	entries: PlayEntry[];
+}
+
+export interface PluginLaunchOverrides {
+	config?: LaunchConfigOverrides;
+}
+
+/** The existing RetroArch launch facts, selected full IDs and manifest files. */
+export interface PluginLaunchInput {
+	launcherId: string;
+	launcherKind: string;
+	runtimeId: string;
+	program: string;
+	runtimePath: string;
+	contentPath: string;
+	accountRoot: string;
+	files: Record<string, string>;
+	overrides?: PluginLaunchOverrides;
+}
+
+/**
+ * Legacy launcher LaunchSpec plus the existing provisioned files/directories.
+ * Approval authorizes output; this treaty adds no path or argument policy.
+ */
+export interface PluginLaunchOutput {
+	command: string;
+	args: string[];
+	env?: Record<string, string>;
+	envUnset?: string[];
+	cwd?: string;
+	directories?: string[];
+	files?: ProvisionedFile[];
 }
 
 export interface PluginSetting {

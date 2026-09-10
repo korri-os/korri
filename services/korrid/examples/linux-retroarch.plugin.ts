@@ -1,0 +1,1 @@
+../../../plugins/retroarch/plugin.ts

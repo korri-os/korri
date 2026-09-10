@@ -1,9 +1,10 @@
-#[path = "fixtures/readable.rs"]
-mod readable;
+use crate as korrid;
+use crate::config::test_fixtures as readable;
 use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 use korrid::{
-    local_server_capability, start_local_server, stop_local_server, verify_local_launch_spec,
+    local_server_capability, start_local_server_for_platform, stop_local_server,
+    verify_local_launch_spec,
 };
 use reqwest::Client;
 use serde_json::json;
@@ -40,8 +41,15 @@ async fn rpc(
     panic!("korrid RPC did not become reachable");
 }
 
-#[tokio::test]
-async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_retained_config() {
+#[test]
+fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_retained_config() {
+    let _guard = crate::tests::embedded_server_guard();
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(android_route_cases());
+}
+
+async fn android_route_cases() {
     let root = tempfile::tempdir().unwrap();
     readable::combined(root.path());
     std::fs::create_dir(root.path().join("roms")).unwrap();
@@ -49,10 +57,11 @@ async fn protected_rpc_lists_and_launches_the_checkpoint_android_route_from_reta
 
     let private = tempfile::tempdir().unwrap();
     std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let port = start_local_server(
+    let port = start_local_server_for_platform(
         "https://portal.example",
         root.path().to_str().expect("UTF-8 temp path"),
         private.path().to_str().expect("UTF-8 temp path"),
+        crate::NativePlatform::EmbeddedAndroid,
     )
     .unwrap();
     let _stop = StopServer;

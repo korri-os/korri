@@ -2,11 +2,14 @@
 
 This plugin owns the RetroArch launcher across platforms:
 
-- `plugin.ts` declares one `@korri:retroarch/retroarch` identity with Android
-  and Linux implementations.
-- `android/` obtains, patches, builds, verifies, and installs the signed
+- `plugin.ts` declares the Linux kind and its default launcher instance. Its
+  `launch` callback owns configuration and argv; `plugin.nix` owns the patched
+  prebuilt executable and InputPlumber autoconfig payload.
+- `android/plugin.ts` retains the Android record and session controls. The
+  adjacent package obtains, patches, builds, verifies, and installs the signed
   `com.korri.retroarch` APK.
-- Nix supplies the Linux RetroArch executable to korrid at deployment time.
+- Linux consumes only administrator-approved installed selections. Korrid no
+  longer bundles a Linux emulator or receives plugin executable environment keys.
 
 Libretro cores are independent plugins. A library route selects this launcher
 and a compatible runtime such as `@korri:mgba/mgba`; korrid composes them using
@@ -14,7 +17,8 @@ the runtime's explicit launcher and system compatibility declarations.
 
 The APK temporarily carries the independently built Android mGBA `.so` so it
 can install into RetroArch's private executable core directory. On Linux, Nix
-supplies the independently packaged mGBA core. Neither packaging bridge makes
+supplies mGBA through its own `plugin.nix`, with an exact required RetroArch
+plugin output. Neither packaging bridge makes
 mGBA part of the RetroArch plugin.
 
 Android session control uses a launch-derived high loopback UDP port and

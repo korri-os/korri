@@ -1,0 +1,82 @@
+use super::{
+    plugin_launch::{PluginLaunchInput, PluginLaunchOverrides},
+    LaunchError,
+};
+use crate::{
+    config::{resolver::ResolvedRoute, storage, ConfigSnapshot},
+    plugin::PluginRegistry,
+};
+use std::path::Path;
+
+#[cfg(test)]
+#[path = "linux_plugin_tests.rs"]
+mod tests;
+
+#[derive(Clone, Debug)]
+pub struct LinuxLaunchSpec {
+    pub command: Vec<String>,
+}
+
+/// Build argv only. No callback output or runtime file is written by korrid.
+pub fn launch_route(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    route: &ResolvedRoute,
+    overrides: Option<PluginLaunchOverrides>,
+) -> Result<LinuxLaunchSpec, LaunchError> {
+    let error = |message| LaunchError::RouteUnavailable(message);
+    let (_, kind) = registry
+        .native_launcher(&route.launcher_id)
+        .map_err(|e| error(e.to_string()))?;
+    let kind_package = registry
+        .installed_package(&kind.id)
+        .map_err(|e| error(e.to_string()))?;
+    let runtime = route
+        .runtime
+        .as_ref()
+        .ok_or_else(|| error("native route has no runtime".into()))?;
+    let launcher = route
+        .linux_launcher
+        .as_ref()
+        .ok_or_else(|| error("native route has no program".into()))?;
+    let target = route
+        .file_target
+        .as_ref()
+        .ok_or_else(|| error("native route has no file".into()))?;
+    let content = storage::resolve_file_target(root, snapshot, target).map_err(|e| {
+        if e.is_missing_target() {
+            LaunchError::RomMissing(e.to_string())
+        } else if e.is_storage_access() {
+            LaunchError::StorageAccess(e.to_string())
+        } else {
+            error(e.to_string())
+        }
+    })?;
+    let input = PluginLaunchInput {
+        launcher_id: route.launcher_id.clone(),
+        launcher_kind: kind.id.clone(),
+        runtime_id: runtime.id.clone(),
+        program: launcher.program.clone(),
+        runtime_path: runtime.path.clone(),
+        content_path: content.path.display().to_string(),
+        account_root: root.join("users/default").display().to_string(),
+        files: kind_package
+            .files
+            .iter()
+            .map(|(key, path)| (key.clone(), path.display().to_string()))
+            .collect(),
+        overrides,
+    };
+    Ok(LinuxLaunchSpec {
+        command: vec![
+            std::env::current_exe()
+                .map_err(|e| error(e.to_string()))?
+                .display()
+                .to_string(),
+            "plugin-launch".into(),
+            kind_package.package.join("plugin.ts").display().to_string(),
+            serde_json::to_string(&input).map_err(|e| error(e.to_string()))?,
+        ],
+    })
+}

@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     plugin::{
-        AndroidLauncherRecord, AndroidTransportImplementation, LauncherRecord, LinuxLauncherRecord,
-        PluginRegistry, ProviderRecord, RuntimeRecord, SessionControlExecutor,
-        SessionControlOwnerKind, SessionControlPlatform, SessionControlRecord, SystemRecord,
+        AndroidLauncherRecord, AndroidTransportImplementation, LauncherRecord, PluginRegistry,
+        ProviderRecord, RuntimeRecord, SessionControlExecutor, SessionControlOwnerKind,
+        SessionControlPlatform, SessionControlRecord, SystemRecord,
     },
     GameIdentity,
 };
 
+pub use super::linux_routes::resolve_linux_route;
 use super::{storage, AppPayload, ConfigSnapshot, GamePayload, Location};
 
 const PROCESS_LAUNCHER_KIND: &str = "@korri:process";
@@ -137,7 +138,7 @@ pub struct ResolvedAndroidComponent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedLinuxLauncher {
-    pub executable_env: String,
+    pub program: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,7 +147,6 @@ pub struct ResolvedRuntime {
     pub kind: String,
     pub app: String,
     pub path: String,
-    pub linux_path_env: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,7 +198,6 @@ struct RouteLauncher {
     command: Option<String>,
     systems: Option<Vec<String>>,
     android: Option<AndroidLauncherRecord>,
-    linux: Option<LinuxLauncherRecord>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -234,6 +233,25 @@ pub fn resolve_launchable_routes_for_platform<'a>(
     static_playable_ids: impl IntoIterator<Item = &'a str>,
     platform: RoutePlatform,
 ) -> RouteCatalog {
+    if platform == RoutePlatform::Linux {
+        let static_ids: BTreeSet<_> = static_playable_ids.into_iter().collect();
+        let mut catalog = RouteCatalog {
+            routes: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        for id in snapshot.games.keys() {
+            let route = if static_ids.contains(id.as_str()) {
+                Err(static_playable_collision(id))
+            } else {
+                resolve_linux_route(root, snapshot, registry, id, None)
+            };
+            match route {
+                Ok(route) => catalog.routes.push(route),
+                Err(error) => catalog.diagnostics.push(error),
+            }
+        }
+        return catalog;
+    }
     let contributions = compose_contributions(snapshot, registry);
     let static_playable_ids: BTreeSet<String> =
         static_playable_ids.into_iter().map(str::to_owned).collect();
@@ -296,6 +314,9 @@ pub fn resolve_route_for_platform<'a>(
         return Err(static_playable_collision(playable_id));
     }
 
+    if platform == RoutePlatform::Linux {
+        return resolve_linux_route(root, snapshot, registry, playable_id, None);
+    }
     let contributions = compose_contributions(snapshot, registry);
     resolve_route_with_contributions(root, snapshot, &contributions, playable_id, platform)
 }
@@ -356,7 +377,7 @@ fn resolve_located_release(
     playable_id: &str,
     (release_id, release): (&str, &super::ReleasePayload),
     target: &Location,
-    platform: RoutePlatform,
+    _platform: RoutePlatform,
 ) -> Result<ResolvedRoute, RouteUnavailable> {
     for id in &contributions.launcher_collisions {
         let supports = snapshot
@@ -365,7 +386,7 @@ fn resolve_located_release(
             .and_then(|launcher| launcher.systems.as_ref())
             .is_some_and(|systems| systems.contains(&release.system.0))
             || contributions.runtimes.values().any(|runtime| {
-                runtime.app == *id
+                runtime.app.as_deref() == Some(id.as_str())
                     && runtime
                         .supports
                         .as_ref()
@@ -384,13 +405,8 @@ fn resolve_located_release(
     let candidates: Vec<_> = contributions
         .launchers
         .values()
-        .filter(|launcher| match platform {
-            RoutePlatform::Android => {
-                launcher.command.as_deref() != Some(RETROARCH_COMMAND) || launcher.android.is_some()
-            }
-            RoutePlatform::Linux => {
-                launcher.command.as_deref() == Some(RETROARCH_COMMAND) && launcher.linux.is_some()
-            }
+        .filter(|launcher| {
+            launcher.command.as_deref() != Some(RETROARCH_COMMAND) || launcher.android.is_some()
         })
         .filter(|launcher| {
             // RetroArch is system-agnostic. Its enabled cores declare both app
@@ -401,8 +417,8 @@ fn resolve_located_release(
                 .is_some_and(|systems| systems.contains(&release.system.0))
                 || (launcher.systems.as_ref().is_none_or(Vec::is_empty)
                     && contributions.runtimes.values().any(|runtime| {
-                        runtime.app == launcher.id
-                            && (platform == RoutePlatform::Android || runtime.linux.is_some())
+                        runtime.app.as_deref() == Some(launcher.id.as_str())
+                            && runtime.launcher.is_none()
                             && runtime
                                 .supports
                                 .as_ref()
@@ -539,8 +555,8 @@ fn resolve_located_release(
                 .runtimes
                 .values()
                 .filter(|runtime| {
-                    runtime.app == launcher.id
-                        && (platform == RoutePlatform::Android || runtime.linux.is_some())
+                    runtime.app.as_deref() == Some(launcher.id.as_str())
+                        && runtime.launcher.is_none()
                         && runtime
                             .supports
                             .as_ref()
@@ -581,9 +597,8 @@ fn resolve_located_release(
             Some(ResolvedRuntime {
                 id: runtime.id.clone(),
                 kind: runtime.kind.clone(),
-                app: runtime.app.clone(),
+                app: runtime.app.clone().expect("validated Android runtime"),
                 path: runtime.path.clone(),
-                linux_path_env: runtime.linux.as_ref().map(|linux| linux.path_env.clone()),
             })
         }
         _ => unreachable!("integration token was validated above"),
@@ -596,9 +611,7 @@ fn resolve_located_release(
             package_name: component.package_name.clone(),
             class_name: component.class_name.clone(),
         });
-    let linux_launcher = launcher.linux.as_ref().map(|linux| ResolvedLinuxLauncher {
-        executable_env: linux.executable_env.clone(),
-    });
+    let linux_launcher = None;
     // Observe bytes only after contribution validation. Missing media must not
     // conceal a declaration collision, but it must permit another healthy copy.
     if let Some(file_target) = &file_target {
@@ -723,7 +736,6 @@ fn launcher_from_plugin(record: &LauncherRecord) -> RouteLauncher {
         command: record.command.clone(),
         systems: record.systems.clone(),
         android: record.android.clone(),
-        linux: record.linux.clone(),
     }
 }
 
@@ -734,7 +746,6 @@ fn launcher_from_snapshot(id: &str, payload: &AppPayload) -> RouteLauncher {
         command: payload.command.as_ref().map(|value| value.0.clone()),
         systems: payload.systems.clone(),
         android: None,
-        linux: None,
     }
 }
 

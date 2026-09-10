@@ -1,5 +1,4 @@
-// Installed Linux mGBA payload. Android keeps its platform declaration in android/.
-
+// Android platform declaration; the core remains packaged in RetroArch's APK.
 export const name = "mgba"
 export const title = "mGBA"
 export const description =
@@ -14,8 +13,8 @@ export const runtimes = {
   mgba: {
     id: "@korri:mgba/mgba",
     kind: "libretro-core",
-    launcher: "@korri:retroarch/retroarch",
-    path: "mgba",
+    app: "@korri:retroarch/retroarch",
+    path: "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so",
     supports: {
       systems: ["gba"],
     },

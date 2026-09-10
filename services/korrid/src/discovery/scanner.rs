@@ -41,10 +41,7 @@ pub struct ScanCandidate {
     pub title: String,
     pub hash: String,
     pub size: u64,
-    pub claim_id: String,
     pub system: String,
-    pub launcher: String,
-    pub runtime: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -377,13 +374,15 @@ impl<'a> FolderScanner<'a> {
             );
             return;
         }
-        if claims.len() > 1 {
+        // Catalog releases own a system, not a launch route. Several claims
+        // for that same system must not discard bytes or select an emulator.
+        if claims.iter().any(|claim| claim.system != claims[0].system) {
             self.push_diag(
                 report,
                 DiscoveryDiagnosticCode::ClaimConflict,
                 Some(storage_id),
                 Some(relative_path),
-                "multiple enabled plugins claim this file",
+                "enabled plugins disagree about this file's system",
             );
             return;
         }
@@ -419,10 +418,7 @@ impl<'a> FolderScanner<'a> {
             title: title::fallback_title(&file_name, &extension),
             hash: hash.value,
             size: hash.snapshot.size,
-            claim_id: claim.id.clone(),
             system: claim.system.clone(),
-            launcher: claim.launcher.clone(),
-            runtime: claim.runtime.clone(),
         });
     }
 
@@ -601,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_claims_are_diagnostics_not_candidates() {
+    fn multiple_claims_for_one_system_make_one_candidate_not_a_route_choice() {
         let conflict = r#"
 
 export const name = "conflict";
@@ -639,8 +635,10 @@ export const discovery = {
         let scanner = FolderScanner::new(&registry, 20, 100);
 
         let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert!(report.candidates.is_empty());
-        assert!(report
+        assert_eq!(report.candidates.len(), 1);
+        assert_eq!(report.candidates[0].system, "gba");
+        assert_eq!(report.hashed_bytes, 3);
+        assert!(!report
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::ClaimConflict));

@@ -448,6 +448,10 @@ pub fn load_declaration(package: &Path) -> Result<Declaration, String> {
     let namespace = manifest_namespace(package)?;
     let declaration = Declaration::evaluate(&namespace, &source)?;
     let manifest = manifest(package)?;
+    crate::plugin_references::validate_files(
+        serde_json::to_value(&declaration).map_err(|e| e.to_string())?,
+        &manifest.files,
+    )?;
     for name in &declaration.services {
         if !manifest.services.contains_key(name) {
             return Err(format!("service {name} has no packaged native unit"));

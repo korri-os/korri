@@ -23,6 +23,20 @@ pub fn run(
     storage_root: Option<&OsStr>,
     private_state_root: Option<&OsStr>,
 ) -> Result<String, String> {
+    run_with_registry_source(
+        arguments,
+        storage_root,
+        private_state_root,
+        crate::plugin_policy::RegistrySource::Installed,
+    )
+}
+
+pub fn run_with_registry_source(
+    arguments: &[OsString],
+    storage_root: Option<&OsStr>,
+    private_state_root: Option<&OsStr>,
+    registry_source: crate::plugin_policy::RegistrySource,
+) -> Result<String, String> {
     let [command, directory] = arguments else {
         return Err(USAGE.into());
     };
@@ -32,6 +46,7 @@ pub fn run(
     let storage_root = required_root("KORRID_STORAGE_ROOT", storage_root)?;
     let private_state_root = required_root("KORRID_PRIVATE_STATE_ROOT", private_state_root)?;
     let report = DiscoveryCoordinator::new(storage_root, private_state_root)
+        .with_registry_source(registry_source)
         .add_location(PathBuf::from(directory), &DiscoveryOptions::default())
         .map_err(|error| match error {
             // Schema errors can quote user configuration, including credentials.

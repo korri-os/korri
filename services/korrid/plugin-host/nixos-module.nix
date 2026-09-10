@@ -58,11 +58,15 @@ in
         nix.settings.experimental-features = [ "nix-command" ];
         systemd.tmpfiles.rules = [
           "d /var/lib/korri-plugin-host 0700 root root -"
+          # Read-only admission snapshot, never a privileged executable or socket.
+          "d /run/korri-plugin-host 0755 root root -"
           "d /nix/var/nix/gcroots/korri-plugin-host 0700 root root -"
         ];
         systemd.services.korri-plugin-host = {
           description = "Restore administrator-approved runtime plugins";
           wantedBy = [ "multi-user.target" ];
+          before = [ "korrid.service" ];
+          restartTriggers = [ config.environment.etc."korri-plugin-host/publishers.json".source ];
           after = [
             "systemd-tmpfiles-setup.service"
             "network.target"
@@ -81,6 +85,7 @@ in
             PrivateTmp = true;
             ReadWritePaths = [
               "/var/lib/korri-plugin-host"
+              "/run/korri-plugin-host"
               "/nix/var/nix/gcroots/korri-plugin-host"
               "/run/systemd/system"
             ];

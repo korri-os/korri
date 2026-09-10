@@ -7,10 +7,10 @@ korrid performs any resulting effects itself. Completion values, default exports
 
 Plugin source is evaluated at runtime rather than compiled into native code.
 Bundled first-party source still ships through the normal korrid build. The
-Linux administrator CLI in `plugin-host/` now imports independently packaged
-external daemon declarations. It uses this same interpreter and requires
-exact-package approval before native execution. This does not add daemon
-contributions to the game-route registry below.
+Linux administrator CLI in `plugin-host/` imports independently packaged
+services and games. It uses this same interpreter and requires exact-package
+approval before native execution. Linux discovery and launching read only the
+committed enabled selection projection. They never invoke the administrator CLI.
 
 ## Shape
 
@@ -29,9 +29,9 @@ plugin file runs on every device: **source is portable where binaries are not.**
 The first bundled production source is `plugins/android-app.plugin.ts`. It is
 byte-for-byte pinned to the reviewed checkpoint copy under
 `docs/research/android-app-plugin-schema-checkpoint/`, and parity is part of the
-check suite so either copy changing alone fails. The mGBA production source is
-shared by the repository plugin path and the bundled korrid path so discovery
-and runtime declarations cannot drift.
+check suite so either copy changing alone fails. Bundled mGBA and RetroArch
+sources come from their `android/plugin.ts` files. The Linux packages use their
+parent `plugin.ts` files; no environment-based Linux implementation remains.
 
 ## Named exports and publisher identity
 
@@ -40,7 +40,8 @@ JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
 `systems`, `launchers`, `transports`, `runtimes`, `sessionControls`, and
-`discovery`. Their record shapes are unchanged. Discovery remains the shipped
+`discovery`. Android record shapes are retained; native launcher/runtime fields
+follow the instance/kind model described below. Discovery remains the shipped
 `fileReleases` map, never a callback. `services` names native units packaged by
 `plugin.nix`. The Linux host selects those units; the data registry validates
 the names but does not activate them or change its existing records. `android`
@@ -60,8 +61,32 @@ calls it. `script::call_plugin_launch_ts(source, input)` invokes it in a fresh
 interpreter with bounded JSON input and output. Module evaluation and invocation
 share one deadline, memory limit, and output budget. Launch must return JSON
 synchronously; a promise, function, non-finite number, or undefined is rejected.
-The API performs no effects and defines no launch-spec schema. The generic
-Linux runner and its approved source-driven effects remain a later slice.
+The evaluator performs no effects. `launcher/plugin_launch.rs` defines the
+Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
+contains the selected full launcher/kind/runtime IDs, program and core file paths,
+content path, existing account root, and kind-owned manifest files. Output
+preserves legacy `command`, `args`, `env`, `envUnset`, and `cwd`, plus the
+existing directory and provisioned-file declarations.
+
+`launcher/linux_plugin.rs` builds a `korrid plugin-launch SOURCE INPUT_JSON`
+command. The existing systemd game unit starts this command as the runtime
+user, with its existing sandbox. That process calls the callback, writes the
+files atomically, applies environment/cwd, and replaces itself with the
+program. It refuses root. The daemon never writes callback-selected paths.
+Approval authorizes output; the runner adds no path or argument policy.
+
+Native instances use the approved `{ id, kind, program }` fields. A runtime
+uses `launcher` and its existing `path` field as a manifest file key. The
+instance owns the program key, the runtime owns the core key, and the kind
+owns callback source and auxiliary files. The kind's default instance points
+to itself. Android retains its `app` and absolute `path` records; these are
+platform-specific declarations, not Linux fallback aliases.
+
+The RetroArch callback preserves the existing Linux settings and argv. It
+places savestates under `states/<full-runtime-id>/`. Raw configuration retains
+legacy `overrides.config.prepend/append`, after Korri's lines; `replace` and
+the approved reserved keys fail. Typed configuration cascade, stored route
+choices, and chooser UI are not implemented by this slice.
 
 The read-only registry probe requires an explicit publisher namespace for an
 external source: `nix run .#korrid-plugin-review -- @publisher plugin.ts`.

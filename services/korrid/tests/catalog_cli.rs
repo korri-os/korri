@@ -8,16 +8,20 @@ use korrid::{
         storage::resolve_file_target,
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin_policy::registry_for_snapshot,
-    GameIdentity,
+    plugin, plugin_installation, GameIdentity,
 };
 use sha2::{Digest, Sha256};
+#[path = "../src/plugin_test_fixtures.rs"]
+mod native_packages;
 
 fn import(storage: &Path, private: &Path, selected: &Path) -> Result<String, String> {
-    catalog_cli::run(
+    catalog_cli::run_with_registry_source(
         &["import".into(), selected.as_os_str().to_owned()],
         Some(storage.as_os_str()),
         Some(private.as_os_str()),
+        korrid::plugin_policy::RegistrySource::Selected(
+            native_packages::installed(&private.join("packages")).into(),
+        ),
     )
 }
 
@@ -40,7 +44,7 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
     assert_eq!(snapshot.snapshot.games.len(), 1);
     assert_eq!(snapshot.snapshot.releases.len(), 1);
     assert_eq!(snapshot.snapshot.locations.len(), 1);
-    let registry = registry_for_snapshot(&snapshot.snapshot).unwrap();
+    let registry = native_packages::installed(&private.path().join("packages"));
     let routes = resolve_launchable_routes_for_platform(
         storage.path(),
         &snapshot.snapshot,
@@ -204,7 +208,7 @@ fn command() -> Command {
 }
 
 #[test]
-fn binary_imports_offline_then_exits_before_server_configuration() {
+fn binary_requires_the_administrator_registry_before_importing_linux_games() {
     let storage = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let selected = tempfile::tempdir().unwrap();
@@ -216,8 +220,11 @@ fn binary_imports_offline_then_exits_before_server_configuration() {
         .env("KORRID_PRIVATE_STATE_ROOT", private.path())
         .output()
         .unwrap();
-    assert!(output.status.success(), "{:?}", output);
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Added games: 1"));
+    assert!(
+        !output.status.success(),
+        "a missing admission snapshot must not fall back to bundled plugins: {output:?}"
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Added games: 1"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("daemon must be stopped"));
     assert_eq!(
         ConfigSnapshotCoordinator::new(storage.path())
@@ -225,7 +232,7 @@ fn binary_imports_offline_then_exits_before_server_configuration() {
             .snapshot
             .games
             .len(),
-        1
+        0
     );
 }
 

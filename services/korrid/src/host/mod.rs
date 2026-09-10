@@ -15,7 +15,7 @@ use crate::{
         snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
     },
     identity::DeviceIdentity,
-    launcher::linux_retroarch,
+    launcher::linux_plugin,
     plugin_policy, CatalogSnapshot, Game, GameIdentity, GameSource, RpcFailure, SessionPrepared,
     SourceCatalogState, SourceStatus, SourceStreamControlState,
 };
@@ -26,7 +26,6 @@ use session_state::{
     HostSessionControl, HostSessionFreezeChange, HostSessionStatus, HostSessionStop,
 };
 use std::{
-    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -62,12 +61,14 @@ impl DynamicHostRuntime {
     }
 
     fn from_root(root: &Path) -> Result<Self, RpcFailure> {
-        Self::from_root_with_env(root, |key| std::env::var_os(key))
+        let registry = plugin_policy::installed_registry()
+            .map_err(|error| dynamic_failure(error.to_string()))?;
+        Self::from_root_with_registry(root, &registry)
     }
 
-    fn from_root_with_env(
+    fn from_root_with_registry(
         root: &Path,
-        lookup: impl Fn(&str) -> Option<OsString> + Copy,
+        registry: &crate::plugin::PluginRegistry,
     ) -> Result<Self, RpcFailure> {
         let coordinator = ConfigSnapshotCoordinator::new(root);
         let state = coordinator.reload();
@@ -82,12 +83,10 @@ impl DynamicHostRuntime {
         if let Some(diagnostic) = state.diagnostic {
             return Err(dynamic_failure(diagnostic.message));
         }
-        let registry = plugin_policy::registry_for_snapshot(&state.snapshot)
-            .map_err(|error| dynamic_failure(error.to_string()))?;
         let catalog = resolve_launchable_routes_for_platform(
             root,
             &state.snapshot,
-            &registry,
+            registry,
             std::iter::empty(),
             RoutePlatform::Linux,
         );
@@ -111,8 +110,7 @@ impl DynamicHostRuntime {
         let mut games = Vec::new();
         for route in catalog.routes {
             let launch =
-                match linux_retroarch::launch_route_with_env(root, &state.snapshot, &route, lookup)
-                {
+                match linux_plugin::launch_route(root, &state.snapshot, registry, &route, None) {
                     Ok(launch) => launch,
                     Err(error) => {
                         failures.push(RpcFailure {
@@ -137,6 +135,23 @@ impl DynamicHostRuntime {
     }
 }
 
+#[derive(Clone)]
+enum DynamicHostSource {
+    Installed(PathBuf),
+    #[cfg(test)]
+    Fixed(DynamicHostRuntime),
+}
+
+impl DynamicHostSource {
+    fn load(&self) -> Result<DynamicHostRuntime, RpcFailure> {
+        match self {
+            Self::Installed(root) => DynamicHostRuntime::from_root(root),
+            #[cfg(test)]
+            Self::Fixed(runtime) => Ok(runtime.clone()),
+        }
+    }
+}
+
 const MAX_CONCURRENT_CERTIFICATE_CONTROLS: usize = 4;
 
 fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) {
@@ -157,7 +172,7 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 pub struct HostRuntime {
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
-    dynamic: Option<Result<DynamicHostRuntime, RpcFailure>>,
+    dynamic: Option<DynamicHostSource>,
     device_public_key: Option<String>,
     owner_public_key: Option<String>,
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
@@ -183,7 +198,7 @@ impl HostRuntime {
             .as_ref()
             .ok()
             .map(|config| HostLauncher::new(config, &private_state_root));
-        let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
+        let dynamic = storage_root.map(DynamicHostSource::Installed);
         let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
         Self {
             config,
@@ -210,7 +225,7 @@ impl HostRuntime {
             .as_ref()
             .ok()
             .map(|config| HostLauncher::with_backend(config, &private_state_root, backend));
-        let dynamic = storage_root.map(|root| DynamicHostRuntime::from_root(&root));
+        let dynamic = storage_root.map(DynamicHostSource::Installed);
         let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
         Self {
             config,
@@ -299,7 +314,7 @@ impl HostRuntime {
         }
         let mut failures = Vec::new();
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
+            let dynamic = dynamic.load()?;
             dynamic.validate_static_games(config)?;
             failures.extend(
                 dynamic
@@ -413,7 +428,7 @@ impl HostRuntime {
             config_failure(self.config.as_ref().expect_err("invalid host config"))
         })?;
         if let Some(dynamic) = &self.dynamic {
-            let dynamic = dynamic.as_ref().map_err(Clone::clone)?;
+            let dynamic = dynamic.load()?;
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if let Some(game) = dynamic.games.iter().find(|game| game.id == game_id) {
                 return launcher.prepare_command(game_id, person_public_key, &game.command);
@@ -558,7 +573,7 @@ mod tests {
     use super::*;
     use crate::host::systemd_unit::{LaunchUnitError, LaunchUnitState};
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::BTreeMap,
         fs,
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -823,30 +838,26 @@ mod tests {
         fs::write(&executable, b"binary").unwrap();
         fs::write(&core, b"core").unwrap();
         fs::create_dir(&autoconfig).unwrap();
-        let environment = HashMap::from([
-            ("KORRI_RETROARCH_EXECUTABLE", executable.as_os_str()),
-            ("KORRI_MGBA_CORE", core.as_os_str()),
-            ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
-        ]);
-
-        let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
-            environment.get(key).map(OsString::from)
-        })
-        .unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
+        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
 
         assert_eq!(runtime.games.len(), 1);
         // Discovery mints the catalog game id; the route must carry it through.
         assert_eq!(&runtime.games[0].id, game_id);
         assert_eq!(runtime.games[0].title, game.title);
         assert!(runtime.failures.is_empty(), "{:?}", runtime.failures);
+        assert_eq!(runtime.games[0].command[1], "plugin-launch");
+        let input: crate::launcher::plugin_launch::PluginLaunchInput =
+            serde_json::from_str(&runtime.games[0].command[3]).unwrap();
+        assert_eq!(input.program, executable.display().to_string());
+        assert_eq!(input.runtime_path, core.display().to_string());
         assert_eq!(
-            runtime.games[0].command[0],
-            executable.display().to_string()
-        );
-        assert_eq!(runtime.games[0].command[4], core.display().to_string());
-        assert_eq!(
-            runtime.games[0].command[5],
+            input.content_path,
             rom.canonicalize().unwrap().display().to_string()
+        );
+        assert!(
+            !root.path().join("users").exists(),
+            "catalog must not perform runtime writes"
         );
     }
 
@@ -864,11 +875,7 @@ mod tests {
         fs::create_dir_all(&autoconfig).unwrap();
         fs::write(&executable, b"binary").unwrap();
         fs::write(&core, b"core").unwrap();
-        let environment = HashMap::from([
-            ("KORRI_RETROARCH_EXECUTABLE", executable.as_os_str()),
-            ("KORRI_MGBA_CORE", core.as_os_str()),
-            ("KORRI_RETROARCH_AUTOCONFIG", autoconfig.as_os_str()),
-        ]);
+        let registry = crate::plugin_test_fixtures::installed(root.path());
 
         // Retained catalog facts have no route after their last location is removed.
         let games_path = root.path().join("catalog/games.yaml");
@@ -892,10 +899,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
-            environment.get(key).map(OsString::from)
-        })
-        .unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
 
         assert_eq!(runtime.games.len(), 1);
         assert_eq!(runtime.games[0].id, "01K4J6K8Y00000000000000002");
@@ -905,11 +909,10 @@ mod tests {
                 "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414".into()
             ))
         );
-        assert_eq!(
-            runtime.games[0].command[0],
-            executable.display().to_string()
-        );
-        assert_eq!(runtime.games[0].command[4], core.display().to_string());
+        assert_eq!(runtime.games[0].command[1], "plugin-launch");
+        let input: crate::launcher::plugin_launch::PluginLaunchInput =
+            serde_json::from_str(&runtime.games[0].command[3]).unwrap();
+        assert_eq!(input.runtime_id, "@korri:mgba/mgba");
         let explicit = tempfile::tempdir().unwrap();
         fs::write(explicit.path().join("wl4.gba"), b"rom").unwrap();
         fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
@@ -922,24 +925,23 @@ mod tests {
             .unwrap()
             .push(serde_yaml::from_str("storage: selected\npath: wl4.gba\n").unwrap());
         fs::write(device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
-        let runtime = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
-            environment.get(key).map(OsString::from)
-        })
-        .unwrap();
+        let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
         assert_eq!(
             runtime.games.len(),
             1,
             "explicit copy must also materialize on Linux"
         );
+        let input: crate::launcher::plugin_launch::PluginLaunchInput =
+            serde_json::from_str(&runtime.games[0].command[3]).unwrap();
         assert_eq!(
-            runtime.games[0].command[5],
+            input.content_path,
             explicit.path().join("wl4.gba").display().to_string()
         );
         let config = root.path().join("host.toml");
         fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();
         let mut host =
             HostRuntime::from_paths_with_private_state(&config, None, root.path().join("private"));
-        host.dynamic = Some(Ok(runtime));
+        host.dynamic = Some(DynamicHostSource::Fixed(runtime));
         let catalog = host.catalog_snapshot().unwrap();
         assert_eq!(catalog.games.len(), 2);
         assert_eq!(catalog.games[0].id, "static");
@@ -967,9 +969,7 @@ mod tests {
         )
         .unwrap();
         fs::remove_file(explicit.path().join("wl4.gba")).unwrap();
-        let collision = DynamicHostRuntime::from_root_with_env(root.path(), |key| {
-            environment.get(key).map(OsString::from)
-        });
+        let collision = DynamicHostRuntime::from_root_with_registry(root.path(), &registry);
         assert!(
             collision.is_err(),
             "unavailable bytes must not hide declaration collisions"

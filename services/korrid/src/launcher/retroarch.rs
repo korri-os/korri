@@ -270,7 +270,6 @@ mod tests {
                 kind: LIBRETRO_CORE_KIND.into(),
                 app: RETROARCH_LAUNCHER.into(),
                 path: "/plugin/owned/mgba_libretro_android.so".into(),
-                linux_path_env: None,
             }),
             file_target: Some(crate::config::resolver::ResolvedFileTarget {
                 storage_id: storage::IMPLICIT_ROMS_STORAGE_ID.into(),

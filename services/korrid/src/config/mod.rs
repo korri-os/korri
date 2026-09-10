@@ -1,5 +1,6 @@
 mod catalog;
 pub use catalog::{GameId, GamePayload, ReleaseIdentity, ReleaseKey, ReleasePayload};
+mod linux_routes;
 pub mod resolver;
 pub mod settings;
 pub mod snapshot;

@@ -6,11 +6,21 @@
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
+  mkPlugin = import ./builder.nix { inherit pkgs; };
+  gamePlugin =
+    name:
+    mkPlugin {
+      publisher.namespace = "@korri";
+      source = ../../../plugins/${name}/plugin.ts;
+      plugin = ../../../plugins/${name}/plugin.nix;
+    };
 in
 {
   lib.mkPlugin = import ./builder.nix { inherit pkgs; };
   packages = {
     korri-plugin-host = hostPackage;
+    korri-plugin-retroarch = gamePlugin "retroarch";
+    korri-plugin-mgba = gamePlugin "mgba";
   };
   checks = {
     korri-plugin-host = hostPackage;

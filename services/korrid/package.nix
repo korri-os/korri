@@ -7,23 +7,6 @@ let
   lib = pkgs.lib;
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
   proseqlSource = import ./proseql-source.nix { inherit pkgs proseql; };
-  retroarchReadOnlyPatch = ./patches/retroarch-udev-read-only.patch;
-  retroarchUdevReadOnlyCheck =
-    pkgs.buildPackages.callPackage ./patches/retroarch-udev-read-only-check.nix
-      {
-        retroarchSource = pkgs.retroarch-bare.src;
-        readOnlyPatch = retroarchReadOnlyPatch;
-      };
-  retroarch = pkgs.retroarch-bare.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ retroarchReadOnlyPatch ];
-    # Keep the actual packaged emulator behind the compiled source regression.
-    postPatch = (old.postPatch or "") + ''
-      test -e ${retroarchUdevReadOnlyCheck}
-    '';
-  });
-  retroarchInputplumberAutoconfig =
-    pkgs.callPackage ../inputd/nix/retroarch-inputplumber-autoconfig.nix
-      { };
   sourceRoot = ./.;
   sourceRootString = toString sourceRoot;
   bundledPluginSources = [
@@ -54,9 +37,12 @@ let
     mkdir -p "$out"
     cp -R --no-preserve=mode,ownership ${composedSource}/. "$out/"
     rm -f "$out/plugins/mgba.plugin.ts" "$out/plugins/moonlight.plugin.ts" "$out/plugins/retroarch.plugin.ts"
-    cp ${../../plugins/mgba/plugin.ts} "$out/plugins/mgba.plugin.ts"
+    cp ${../../plugins/mgba/android/plugin.ts} "$out/plugins/mgba.plugin.ts"
     cp ${../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
-    cp ${../../plugins/retroarch/plugin.ts} "$out/plugins/retroarch.plugin.ts"
+    cp ${../../plugins/retroarch/android/plugin.ts} "$out/plugins/retroarch.plugin.ts"
+    rm -f "$out/examples/linux-retroarch.plugin.ts" "$out/examples/linux-mgba.plugin.ts"
+    cp ${../../plugins/retroarch/plugin.ts} "$out/examples/linux-retroarch.plugin.ts"
+    cp ${../../plugins/mgba/plugin.ts} "$out/examples/linux-mgba.plugin.ts"
   '';
   commonArgs = {
     inherit src;
@@ -71,7 +57,6 @@ let
     nativeBuildInputs = [
       pkgs.clang
       pkgs.llvmPackages.libclang
-      pkgs.makeWrapper
     ];
     LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
   };
@@ -92,10 +77,6 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
-    passthru = {
-      inherit retroarch;
-      tests.retroarchUdevReadOnly = retroarchUdevReadOnlyCheck;
-    };
     preConfigure = ''
       plugin_sources="$(${pkgs.findutils}/bin/find plugins -type f -name '*.plugin.ts' -printf '%P\n' | sort)"
       expected_plugin_sources=$'android-app.plugin.ts\nmgba.plugin.ts\nmoonlight.plugin.ts\nretroarch.plugin.ts'
@@ -117,10 +98,6 @@ craneLib.buildPackage (
         echo 'korrid source contains the retired private-state environment name' >&2
         exit 1
       fi
-      wrapProgram "$out/bin/korrid" \
-        --set KORRI_RETROARCH_EXECUTABLE ${retroarch}/bin/retroarch \
-        --set KORRI_MGBA_CORE ${pkgs.libretro.mgba}/lib/retroarch/cores/mgba_libretro.so \
-        --set KORRI_RETROARCH_AUTOCONFIG ${retroarchInputplumberAutoconfig}/share/libretro/autoconfig
       ${pkgs.bash}/bin/bash ${./package-runtime-check.sh} \
         "$out/bin/korrid" \
         ${pkgs.bash}/bin/bash \

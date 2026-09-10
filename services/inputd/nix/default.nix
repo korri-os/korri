@@ -20,7 +20,9 @@ let
   };
   inputplumberData = import ./inputplumber-data.nix { inherit pkgs; };
   inputplumberKorri = inputplumberData.compose { inherit inputplumberRuntime; };
-  retroarchInputplumberAutoconfig = pkgs.callPackage ./retroarch-inputplumber-autoconfig.nix { };
+  retroarchInputplumberAutoconfig =
+    pkgs.callPackage ../../../plugins/retroarch/retroarch-inputplumber-autoconfig.nix
+      { };
   sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
   sunshinePatchDefinitions =
     sunshineApprovedPatches.patches

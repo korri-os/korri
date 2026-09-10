@@ -1,0 +1,1 @@
+../../../plugins/mgba/plugin.ts
