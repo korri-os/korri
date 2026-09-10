@@ -8,13 +8,14 @@
 let
   lib = pkgs.lib;
   evaluate =
-    recovery: compatible:
+    recovery: compatible: extra:
     (import (pkgs.path + "/nixos/lib/eval-config.nix") {
       inherit pkgs;
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
         { services.openssh.enable = recovery; }
       ]
+      ++ [ extra ]
       ++ lib.optionals compatible [
         hostModule
         {
@@ -25,9 +26,16 @@ let
         }
       ];
     }).config;
-  cold = evaluate false true;
-  before = evaluate true false;
-  after = evaluate true true;
+  cold = evaluate false true { };
+  before = evaluate true false { };
+  after = evaluate true true { };
+  noPamRecovery = evaluate true true { services.openssh.settings.UsePAM = false; };
+  noPamBefore = evaluate true false { services.openssh.settings.UsePAM = false; };
+  custom = {
+    security.pam.services.sshd.text = "auth required pam_deny.so\naccount required pam_permit.so\n";
+  };
+  customCold = evaluate false true custom;
+  customRecovery = evaluate true true (custom // { services.openssh.settings.UsePAM = false; });
   same = path: lib.getAttrFromPath path before == lib.getAttrFromPath path after;
   unchanged = [
     [
@@ -79,6 +87,23 @@ let
     ]
   ];
 in
+assert noPamRecovery.security.pam.services ? sshd;
+assert noPamRecovery.security.pam.services.sshd.startSession;
+assert !noPamRecovery.security.pam.services.sshd.unixAuth;
+assert noPamRecovery.services.openssh.settings.UsePAM == false;
+assert
+  noPamRecovery.environment.etc."ssh/sshd_config".source
+  == noPamBefore.environment.etc."ssh/sshd_config".source;
+assert
+  noPamRecovery.systemd.services.sshd.serviceConfig
+  == noPamBefore.systemd.services.sshd.serviceConfig;
+assert
+  noPamRecovery.systemd.services.sshd.environment == noPamBefore.systemd.services.sshd.environment;
+assert
+  noPamRecovery.networking.firewall.allowedTCPPorts
+  == noPamBefore.networking.firewall.allowedTCPPorts;
+assert customCold.security.pam.services.sshd.text == custom.security.pam.services.sshd.text;
+assert customRecovery.security.pam.services.sshd.text == custom.security.pam.services.sshd.text;
 assert !cold.services.openssh.enable;
 assert !cold.services.openssh.generateHostKeys;
 assert !(cold.environment.etc ? "ssh/sshd_config");

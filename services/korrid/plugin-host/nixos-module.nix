@@ -54,13 +54,15 @@ in
           description = "SSH privilege separation user";
         };
         users.groups.sshd = { };
-        security.pam.services.sshd = {
+      })
+      {
+        # Recovery SSH may use UsePAM=false and provide no policy at all.
+        # Default the whole service: any upstream/custom policy wins intact.
+        security.pam.services.sshd = lib.mkDefault {
           startSession = true;
           showMotd = true;
           unixAuth = false;
         };
-      })
-      {
         environment.systemPackages = [ cfg.package ];
         environment.etc = {
           "korri-plugin-host/publishers.json".text = builtins.toJSON cfg.publishers;

@@ -29,10 +29,11 @@ Existing account authorization files remain device-owned. No private host key,
 personal public key, password, or new account credential is packaged.
 
 The compatible host supplies the upstream `sshd` privilege-separation account
-and PAM account/session support when NixOS recovery SSH is disabled. NixOS base
-activation already supplies the `/var/empty` privilege-separation chroot; the
-host-support check also verifies that prerequisite. When it
-is enabled, the host leaves its account/PAM configuration alone. The plugin
+when NixOS recovery SSH is disabled. It supplies PAM account/session support
+only when no upstream or custom `sshd` PAM policy exists, including recovery
+SSH with `UsePAM=false`. NixOS base activation supplies the `/var/empty`
+privilege-separation chroot; the host-support check verifies that prerequisite.
+Existing recovery and custom PAM policies remain unchanged. The plugin
 uses that existing PAM policy; account expiry and host login restrictions can
 still deny a key. It neither edits accounts nor enrolls keys.
 
@@ -41,6 +42,10 @@ Re-enable and boot recovery retain the same host key. `remove` retains data;
 `remove --purge` deletes the plugin state and therefore its host identity. A
 later installation creates a new identity and clients must verify it again.
 A damaged existing key fails activation rather than silently rotating it.
+Preparation also refuses symlinks (including dangling links), nonregular or
+non-root-owned keys, unsafe key permissions, and a public key with no private
+key. Only absent identity entries permit generation. Operator repair is
+required for rejected state; preparation does not change it.
 
 **Cost:** this is a privileged administrative service, not a confined network
 capability. Root sessions can change the whole device. Disable does not undo

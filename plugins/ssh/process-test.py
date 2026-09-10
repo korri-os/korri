@@ -49,6 +49,44 @@ def main(package):
         assert key.stat().st_mode & 0o777 == 0o600
         run([files["prepare"]], env=env)
         assert key.read_bytes() == identity
+        # Existing directory entries are identity, even if dangling or damaged.
+        # Preparation must fail without replacing any of them or their targets.
+        for case in ["dangling", "symlink", "directory", "fifo", "owner", "readable", "writable", "executable", "public-symlink", "public-only"]:
+            invalid = root / case
+            invalid.mkdir(mode=0o700)
+            private = invalid / key.name
+            public = invalid / (key.name + ".pub")
+            target = invalid / "target"
+            target.write_bytes(identity)
+            target.chmod(0o600)
+            if case == "dangling":
+                private.symlink_to(invalid / "missing")
+            elif case == "symlink":
+                private.symlink_to(target)
+            elif case == "directory":
+                private.mkdir()
+            elif case == "fifo":
+                os.mkfifo(private, 0o600)
+            elif case == "public-only":
+                public.write_text("retained public identity\n")
+            else:
+                private.write_bytes(identity)
+                private.chmod(0o600)
+                if case == "owner":
+                    os.chown(private, 65534, 65534)
+                elif case == "public-symlink":
+                    public.symlink_to(target)
+                else:
+                    private.chmod({"readable": 0o644, "writable": 0o620, "executable": 0o700}[case])
+            entry = public if case == "public-only" else private
+            before = entry.lstat()
+            failure = subprocess.run([files["prepare"]], env=dict(env, STATE_DIRECTORY=str(invalid)), capture_output=True, timeout=10)
+            assert failure.returncode != 0, case
+            after = entry.lstat()
+            assert (before.st_ino, before.st_mode, before.st_uid) == (after.st_ino, after.st_mode, after.st_uid), case
+            assert target.read_bytes() == identity, case
+            if case in ["dangling", "symlink"]:
+                assert private.is_symlink(), case
         second = root / "second-device"
         second.mkdir(mode=0o700)
         run([files["prepare"]], env=dict(env, STATE_DIRECTORY=str(second)))
