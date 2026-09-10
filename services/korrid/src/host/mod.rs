@@ -193,6 +193,9 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 pub struct HostRuntime {
     private_state_root: PathBuf,
     route_write_lock: Arc<std::sync::Mutex<()>>,
+    // Tests can delay one response after the real setter releases its lock.
+    #[cfg(test)]
+    after_runtime_choice_write: Option<Arc<dyn Fn() + Send + Sync>>,
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<DynamicHostSource>,
@@ -226,6 +229,8 @@ impl HostRuntime {
         Self {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            #[cfg(test)]
+            after_runtime_choice_write: None,
             config,
             launcher,
             dynamic,
@@ -255,6 +260,7 @@ impl HostRuntime {
         Self {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            after_runtime_choice_write: None,
             config,
             launcher,
             dynamic,
@@ -461,7 +467,7 @@ impl HostRuntime {
                 return launcher.prepare_command(
                     game_id,
                     person_public_key,
-                    game.command.as_ref().map_err(Clone::clone)?,
+                    game.command.as_deref().map_err(Clone::clone),
                 );
             }
         }
@@ -515,7 +521,7 @@ impl HostRuntime {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
             let root = runtime.route_root()?;
-            crate::config::settings::set_runtime_choice(
+            let revisions = crate::config::settings::set_runtime_choice(
                 root,
                 &runtime.private_state_root,
                 &runtime.route_write_lock,
@@ -524,8 +530,11 @@ impl HostRuntime {
                 request.runtime_id.as_deref(),
             )
             .map_err(crate::game_routes::settings_failure)?;
-            crate::config::settings::runtime_choice_revisions(root)
-                .map_err(crate::game_routes::settings_failure)
+            #[cfg(test)]
+            if let Some(after_write) = &runtime.after_runtime_choice_write {
+                after_write();
+            }
+            Ok(revisions)
         })
         .await
         .map_err(host_worker_failure)?
@@ -709,6 +718,103 @@ mod tests {
         thread,
         time::Duration,
     };
+
+    #[tokio::test]
+    async fn concurrent_runtime_choice_responses_keep_their_own_committed_revisions() {
+        use crate::config::settings::{runtime_choice_revisions, RuntimeChoiceScope};
+        use crate::game_routes::GameRuntimeSetRequest;
+
+        for scope in [
+            RuntimeChoiceScope::System("gba".into()),
+            RuntimeChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into()),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            crate::config::test_fixtures::gba(root.path());
+            let config = root.path().join("host.toml");
+            fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
+            let runtime = HostRuntime::from_paths_with_backend(
+                &config,
+                Some(root.path().into()),
+                root.path().join("private"),
+                Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
+            );
+            let expected =
+                |revisions: &crate::config::settings::RuntimeChoiceRevisions| match &scope {
+                    RuntimeChoiceScope::System(_) => revisions.device.clone(),
+                    RuntimeChoiceScope::Game(_) => revisions.games.clone(),
+                };
+            let request = |revision, runtime_id: &str| GameRuntimeSetRequest {
+                scope: scope.clone(),
+                expected_revision: revision,
+                runtime_id: Some(runtime_id.into()),
+            };
+            let before = runtime_choice_revisions(root.path()).unwrap();
+            let (entered, committed) = tokio::sync::oneshot::channel();
+            let entered = Mutex::new(Some(entered));
+            let (release, released) = std::sync::mpsc::channel();
+            let released = Mutex::new(released);
+            let mut delayed = runtime.clone();
+            delayed.after_runtime_choice_write = Some(Arc::new(move || {
+                entered.lock().unwrap().take().unwrap().send(()).unwrap();
+                released
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10))
+                    .unwrap();
+            }));
+            let first_request = request(expected(&before), "@test:first/core");
+            let first = tokio::spawn(async move { delayed.set_game_runtime(first_request).await });
+            tokio::time::timeout(Duration::from_secs(10), committed)
+                .await
+                .unwrap()
+                .unwrap();
+            // Caller A has committed, but cannot deliver its response yet. Caller B
+            // reads those bytes and commits a second real write through the host.
+            let first_bytes = runtime_choice_revisions(root.path()).unwrap();
+            let second = runtime
+                .set_game_runtime(request(expected(&first_bytes), "@test:second/core"))
+                .await
+                .unwrap();
+            // Also change the other document: the response must describe the pair
+            // observed at A's commit, not a later mixed snapshot.
+            let other_scope = match &scope {
+                RuntimeChoiceScope::System(_) => {
+                    RuntimeChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into())
+                }
+                RuntimeChoiceScope::Game(_) => RuntimeChoiceScope::System("gba".into()),
+            };
+            let other_revision = match &other_scope {
+                RuntimeChoiceScope::System(_) => second.device.clone(),
+                RuntimeChoiceScope::Game(_) => second.games.clone(),
+            };
+            runtime
+                .set_game_runtime(GameRuntimeSetRequest {
+                    scope: other_scope,
+                    expected_revision: other_revision,
+                    runtime_id: Some("@test:other/core".into()),
+                })
+                .await
+                .unwrap();
+            release.send(()).unwrap();
+            let first = first.await.unwrap().unwrap();
+            assert_eq!(
+                first.device, first_bytes.device,
+                "{scope:?}: device revision belongs to caller A"
+            );
+            assert_eq!(
+                first.games, first_bytes.games,
+                "{scope:?}: games revision belongs to caller A"
+            );
+            let conflict = runtime
+                .set_game_runtime(request(expected(&first), "@test:third/core"))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                conflict.code, "SettingsConflict",
+                "A must not overwrite B using A's response"
+            );
+        }
+    }
 
     struct BlockingEnumerationBackend {
         entered: AtomicBool,

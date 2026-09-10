@@ -103,14 +103,14 @@ impl HostLauncher {
             code: "HostGameNotFound".into(),
             message: format!("host game {game_id:?} is not configured"),
         })?;
-        self.prepare_command(game_id, person_public_key, &game.command)
+        self.prepare_command(game_id, person_public_key, Ok(&game.command))
     }
 
     pub fn prepare_command(
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.control.prepare(
             game_id,

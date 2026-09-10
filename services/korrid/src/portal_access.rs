@@ -282,6 +282,12 @@ mod tests {
             launch["outcome"]["payload"]["warnings"][0]["setting"],
             "video_vsync"
         );
+        let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
+        assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");
+        assert_eq!(
+            resumed["outcome"]["payload"], launch["outcome"]["payload"]["session"],
+            "ordinary prepare must resume the explicit launch despite the stale preference"
+        );
         let repeated = rpc(
             &app,
             "app.local-games.launch.selected",
@@ -296,6 +302,84 @@ mod tests {
         assert_eq!(
             list["outcome"]["payload"]["gameRuntime"], "@missing:build/core",
             "explicit launch must not rewrite preference"
+        );
+    }
+
+    #[tokio::test]
+    async fn ordinary_prepare_resumes_explicit_runtime_despite_ambiguous_routes() {
+        let root = tempfile::tempdir().unwrap();
+        crate::config::test_fixtures::gba(root.path());
+        std::fs::create_dir(root.path().join("roms")).unwrap();
+        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+        let registry = crate::plugin_test_fixtures::installed(root.path());
+        let mgba = registry
+            .installed_package("@korri:mgba/mgba")
+            .unwrap()
+            .clone();
+        let retroarch = registry
+            .installed_package("@korri:retroarch/retroarch")
+            .unwrap()
+            .clone();
+        // A second runtime uses the same installed declaration and payload.
+        let source = std::fs::read_to_string(mgba.package.join("plugin.ts")).unwrap();
+        std::fs::write(
+            mgba.package.join("plugin.ts"),
+            format!(
+                "{source}\nruntimes.other = {{ ...runtimes.mgba, id: '@korri:mgba/other' }};\n"
+            ),
+        )
+        .unwrap();
+        let registry =
+            crate::plugin::PluginRegistry::from_installed(vec![retroarch, mgba]).unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
+        let private = root.path().join("private");
+        let runtime = crate::host::HostRuntime::from_paths_with_backend(
+            &config,
+            Some(root.path().into()),
+            private.clone(),
+            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+        )
+        .with_route_registry(root.path().into(), registry);
+        let (app, _) = crate::secure_host_routers(
+            runtime,
+            &private,
+            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+        );
+        let game_id = crate::config::test_fixtures::GBA_ID;
+        let routes = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        assert_eq!(
+            routes["outcome"]["payload"]["routes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(routes["outcome"]["payload"]["selection"]["_tag"], "Choose");
+        let prepare = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
+        assert_eq!(prepare["outcome"]["_tag"], "Err", "{prepare}");
+        let launch = rpc(
+            &app,
+            "app.local-games.launch.selected",
+            json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba"}),
+        )
+        .await;
+        assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
+        let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
+        assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");
+        assert_eq!(
+            resumed["outcome"]["payload"],
+            launch["outcome"]["payload"]["session"]
+        );
+        let switched = rpc(
+            &app,
+            "app.local-games.launch.selected",
+            json!({"gameId":game_id,"runtimeId":"@korri:mgba/other"}),
+        )
+        .await;
+        assert_eq!(
+            switched["outcome"]["payload"]["code"],
+            "ActiveSessionConflict"
         );
     }
 

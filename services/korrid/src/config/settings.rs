@@ -324,7 +324,7 @@ pub fn set_runtime_choice(
     expected_revision: &str,
     scope: &RuntimeChoiceScope,
     runtime_id: Option<&str>,
-) -> Result<(), SettingsError> {
+) -> Result<RuntimeChoiceRevisions, SettingsError> {
     if let Some(id) = runtime_id {
         // The same fully-qualified contribution syntax as release provider refs.
         if !id.starts_with('@') || serde_json::from_value::<super::ReleaseKey>(id.into()).is_err() {
@@ -385,7 +385,12 @@ pub fn set_runtime_choice(
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    write_atomically(&root.join(file), candidate.as_bytes(), expected_revision)
+    write_atomically(&root.join(file), candidate.as_bytes(), expected_revision)?;
+    // These are this commit's bytes, captured before another writer can enter.
+    Ok(RuntimeChoiceRevisions {
+        device: revision(&device),
+        games: revision(&games),
+    })
 }
 
 fn set_device_name(document: &mut Mapping, value: String) -> Result<(), SettingsError> {

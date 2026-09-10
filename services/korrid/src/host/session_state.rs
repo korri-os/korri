@@ -363,7 +363,7 @@ impl HostSessionControl {
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
     ) -> Result<SessionPrepared, RpcFailure> {
         self.prepare_inner(
@@ -388,7 +388,7 @@ impl HostSessionControl {
         self.prepare_inner(
             game_id,
             person_public_key,
-            configured_command,
+            Ok(configured_command),
             environment,
             false,
         )
@@ -398,7 +398,7 @@ impl HostSessionControl {
         &self,
         game_id: &str,
         person_public_key: Option<&str>,
-        configured_command: &[String],
+        configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
         resume_same_game: bool,
     ) -> Result<SessionPrepared, RpcFailure> {
@@ -435,6 +435,9 @@ impl HostSessionControl {
             }
             ActiveState::Completed { .. } | ActiveState::NoActive => {}
         }
+        // Stored route choices apply to new launches, not the running game.
+        // Resolve failures only after resume and conflicts under the same lock.
+        let configured_command = configured_command?;
         if let Some(person) = person_public_key {
             self.play_log
                 .validate_key(&PlayHistoryKey {
@@ -1305,7 +1308,7 @@ mod tests {
 
     fn prepare(control: &HostSessionControl, game: &str) -> SessionPrepared {
         control
-            .prepare(game, None, &["game".into()], &BTreeMap::new())
+            .prepare(game, None, Ok(&["game".into()]), &BTreeMap::new())
             .unwrap()
     }
 
@@ -1327,7 +1330,7 @@ mod tests {
         );
         assert_eq!(
             recovered
-                .prepare("two", None, &["game".into()], &BTreeMap::new())
+                .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -1371,7 +1374,7 @@ mod tests {
             assert_eq!(control.status(), HostSessionStatus::RecoveryBlocked);
             assert_eq!(
                 control
-                    .prepare("two", None, &["game".into()], &BTreeMap::new())
+                    .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
                     .unwrap_err()
                     .code,
                 "HostRecoveryBlocked"
@@ -1391,7 +1394,7 @@ mod tests {
 
         assert_eq!(
             control
-                .prepare("one", None, &["game".into()], &BTreeMap::new())
+                .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "HostRecoveryBlocked"
@@ -1459,7 +1462,7 @@ mod tests {
 
         assert_eq!(
             control
-                .prepare("two", None, &["game".into()], &BTreeMap::new())
+                .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -1528,7 +1531,7 @@ mod tests {
         backend.state.lock().unwrap().enumeration_unavailable = false;
         assert_eq!(runtime_control.status(), HostSessionStatus::NoActive);
         assert!(runtime_control
-            .prepare("one", None, &["game".into()], &BTreeMap::new())
+            .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
             .is_ok());
 
         let prepare_root = tempfile::tempdir().unwrap();
@@ -1546,7 +1549,7 @@ mod tests {
             .unwrap()
             .enumeration_unavailable = false;
         assert!(prepare_control
-            .prepare("one", None, &["game".into()], &BTreeMap::new())
+            .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
             .is_ok());
     }
 
@@ -2482,7 +2485,7 @@ mod tests {
         // launch is real: it is recorded as frozen, seats are kept, and
         // recovery is not blocked.
         let prepared = session
-            .prepare("one", None, &["game".into()], &BTreeMap::new())
+            .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
             .unwrap();
         assert_eq!(
             session.status(),
@@ -2535,7 +2538,7 @@ mod tests {
         assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
         assert_eq!(
             control
-                .prepare("two", None, &["game".into()], &BTreeMap::new())
+                .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
                 .unwrap_err()
                 .code,
             "ActiveSessionConflict"
@@ -2894,7 +2897,12 @@ mod tests {
         let clock = TestClock::at(1_700_000_000);
         let control = control_with_clock(root.path(), backend.clone(), clock.clone());
         let prepared = control
-            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .prepare(
+                "wario",
+                Some(PERSON),
+                Ok(&["game".into()]),
+                &BTreeMap::new(),
+            )
             .unwrap();
         clock.advance(42);
         backend.insert(&prepared.launch_id, LaunchUnitState::Completed);
@@ -2924,7 +2932,12 @@ mod tests {
         let clock = TestClock::at(1_700_000_000);
         let control = control_with_clock(root.path(), backend, clock.clone());
         let prepared = control
-            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .prepare(
+                "wario",
+                Some(PERSON),
+                Ok(&["game".into()]),
+                &BTreeMap::new(),
+            )
             .unwrap();
         clock.advance(5);
         assert!(matches!(
@@ -2982,7 +2995,12 @@ mod tests {
         let clock = TestClock::at(1_700_000_000);
         let control = control_with_clock(root.path(), backend.clone(), clock.clone());
         let prepared = control
-            .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+            .prepare(
+                "wario",
+                Some(PERSON),
+                Ok(&["game".into()]),
+                &BTreeMap::new(),
+            )
             .unwrap();
         let outside = tempfile::tempdir().unwrap();
         symlink(outside.path(), root.path().join("play-log")).unwrap();
@@ -3006,7 +3024,12 @@ mod tests {
 
         assert_eq!(
             control
-                .prepare("wario", Some(PERSON), &["game".into()], &BTreeMap::new())
+                .prepare(
+                    "wario",
+                    Some(PERSON),
+                    Ok(&["game".into()]),
+                    &BTreeMap::new()
+                )
                 .unwrap_err()
                 .code,
             "HostLaunchFailed"
@@ -3117,7 +3140,12 @@ mod tests {
             let control =
                 control_with_clock(root.path(), backend.clone(), TestClock::at(1_700_000_000));
             let failure = control
-                .prepare(&game_id, Some(PERSON), &["game".into()], &BTreeMap::new())
+                .prepare(
+                    &game_id,
+                    Some(PERSON),
+                    Ok(&["game".into()]),
+                    &BTreeMap::new(),
+                )
                 .unwrap_err();
             assert_eq!(failure.code, "PlayLogPathUnavailable");
             assert!(backend.state.lock().unwrap().units.is_empty());
