@@ -49,11 +49,17 @@ class ImageDistributionTests(unittest.TestCase):
             {p.name for p in self.destination.iterdir()},
             {image.name, image.name + ".sha256", "korri-revision.txt"},
         )
+        published = self.destination / image.name
+        self.assertNotEqual(published.read_bytes(), image.read_bytes())
         self.assertEqual(
-            (self.destination / image.name).read_bytes(), image.read_bytes()
+            subprocess.check_output(["zstd", "-d", "-q", "-c", str(published)]),
+            subprocess.check_output(["zstd", "-d", "-q", "-c", str(image)]),
         )
         expected = (
-            hashlib.sha256(image.read_bytes()).hexdigest() + "  " + image.name + "\n"
+            hashlib.sha256(published.read_bytes()).hexdigest()
+            + "  "
+            + image.name
+            + "\n"
         )
         self.assertEqual(
             (self.destination / (image.name + ".sha256")).read_text(), expected

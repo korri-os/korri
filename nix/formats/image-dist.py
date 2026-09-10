@@ -77,6 +77,29 @@ def verify_distribution(directory: Path, revision: str, release: bool = False) -
     return image
 
 
+def copy_image(source: Path, destination: Path) -> None:
+    if not source.name.endswith(".zst"):
+        shutil.copyfile(source, destination)
+        return
+    # The first real image exceeded GitHub's asset limit at the SD builder's
+    # default compression. Recompress the stream without a second raw image on
+    # disk. Two workers bound memory and CPU use on the hosted ARM runner.
+    with subprocess.Popen(
+        ["zstd", "-d", "-q", "-c", "--", str(source)], stdout=subprocess.PIPE
+    ) as decompressor:
+        assert decompressor.stdout is not None
+        try:
+            subprocess.run(
+                ["zstd", "-19", "-T2", "-q", "-o", str(destination)],
+                stdin=decompressor.stdout,
+                check=True,
+            )
+        finally:
+            decompressor.stdout.close()
+        if decompressor.wait() != 0:
+            raise ValueError("source image decompression failed")
+
+
 def stage_image(result: Path, destination: Path, revision: str) -> Path:
     require_revision(revision)
     destination = destination.absolute()
@@ -90,7 +113,7 @@ def stage_image(result: Path, destination: Path, revision: str) -> Path:
         staging = Path(temporary) / "dist"
         staging.mkdir()
         staged_image = staging / image.name
-        shutil.copyfile(image, staged_image)
+        copy_image(image, staged_image)
         (staging / (image.name + ".sha256")).write_text(checksum_line(staged_image))
         (staging / REVISION_FILE).write_text(revision + "\n")
         verify_distribution(staging, revision)

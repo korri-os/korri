@@ -57,6 +57,10 @@ nix run .#device-image-dist-check
 The destination must not already exist. The revision record uses the same
 filename as the existing RetroArch distribution. Image names come directly from
 the Nix SD builder; checksums use the standard `sha256sum` file format.
+Compressed images are streamed through `zstd -19 -T2` during staging to reduce
+release size without changing the decompressed disk image. This adds compression
+time but does not write a second uncompressed image to the runner's disk.
+Checksums describe the final, recompressed download.
 
 ## Runner and publication limits
 
