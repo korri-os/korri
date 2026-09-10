@@ -92,8 +92,11 @@ Evidence remains in the execution environment:
   publish it against that lock or commit a local-path override.
 - Haku generation integration, explicit receipt/data cutover, deployment,
   Tailscale account login/connectivity and physical gameplay verification.
-  The latest SSH attempt to `192.168.1.239` timed out. Neither `haku.local` nor
-  `rg353m.local` resolved. No recovery access was changed.
+  Haku is now reachable as `root@192.168.1.239`, still named `rg353m` and
+  running kernel 6.18.2. The plugin host is absent and effective Nix `max-jobs`
+  is still 4. The read-only probe confirmed key-only recovery SSH on TCP 22.
+  The first deployment must preserve that access and install the compatible
+  host with its download-only policy. No device generation was changed.
 - Local owner enrollment and graphical Linux plugin management. The SSH slice
   implements the administrator CLI, not those missing consumers. The parked
   owner-approved SSH/public-image acceptance item remains open.
