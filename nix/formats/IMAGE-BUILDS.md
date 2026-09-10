@@ -63,6 +63,18 @@ only the release job is retried.
 - First-boot setup and plugin support are TBD. This workflow does not promise
   that the current image can later enable SSH through a plugin without an update.
 
+## Runtime footprint
+
+Production images omit `glmark2`, `mesa-demos`, `vulkan-tools`, and the RG353M
+browser benchmark helpers. The layout check guards the package selections and
+retained graphics/seat/kiosk configuration. Chromium, graphics drivers, firmware,
+and recovery kernels are unchanged.
+
+Sunshine provenance retains its approved source hash, version, derivation, and
+patch records, but not a reference to the full build-source checkout. Its Nix
+package rejects output references to that source. The existing package and
+runtime-settings checks verify the remaining approval contract.
+
 ## Local commands
 
 Run from a clean checkout on a suitable build machine:

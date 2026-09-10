@@ -28,6 +28,21 @@ let
   };
   samePolicy = device: shared device.config == shared base.config;
   profile = base.config.networking.networkmanager.ensureProfiles;
+  # Production device package selections must not install bring-up benchmarks.
+  benchmarkPackageNames = [
+    "glmark2"
+    "mesa-demos"
+    "vulkan-tools"
+    "browser-bench"
+    "browser-gpu-report"
+  ];
+  deviceSystemPackageNames = device: map lib.getName device.config.environment.systemPackages;
+  noBenchmarksIn =
+    device:
+    let
+      names = deviceSystemPackageNames device;
+    in
+    builtins.all (bench: !(builtins.elem bench names)) benchmarkPackageNames;
 in
 assert !(base.options ? sdImage);
 assert !(base.options ? isoImage);
@@ -40,6 +55,16 @@ assert profile.environmentFiles == [ "/etc/korri/wifi.env" ];
 assert !base.config.services.openssh.enable;
 assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
+assert lib.all noBenchmarksIn (lib.attrValues korri.nixosConfigurations);
+# Removing the browser benchmark module must not remove the product's DRM seat.
+assert lib.all (
+  device:
+  device.config.hardware.graphics.enable
+  && device.config.services.seatd.enable
+  && device.config.security.polkit.enable
+) (lib.attrValues korri.nixosConfigurations);
+assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
+assert korri.nixosConfigurations.odin2portal.config.services.korriKiosk.enable;
 pkgs.runCommand "korri-base-module-check" { } ''
   touch "$out"
 ''

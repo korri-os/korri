@@ -22,11 +22,7 @@
   };
 
   environment.systemPackages = with pkgs; [
-    # Measurement before tuning. glmark2 has a DRM/KMS backend, so it runs on
-    # the panel with no display server.
-    glmark2
-    mesa-demos
-    # Inspect and exercise the decoder, encoder, and RGA.
+    # Inspect and exercise the Hantro decoder/encoder and RGA.
     v4l-utils
     libva-utils
   ];

@@ -162,11 +162,6 @@
   environment.systemPackages = with pkgs; [
     pciutils
     usbutils
-    # Measure before tuning: glmark2 has a DRM/KMS backend and vulkaninfo
-    # reports whether turnip found the GPU.
-    glmark2
-    mesa-demos
-    vulkan-tools
   ];
 
   image.baseName = "nixos-odin2portal";

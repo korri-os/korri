@@ -59,7 +59,6 @@ let
     cuda_enabled=${if sunshinePackage.korriCudaEnabled then "1" else "0"}
     base_sunshine_version=${approved.baseSunshineVersion}
     approved_base_sunshine_source_hash=${approved.approvedBaseSourceHash}
-    base_sunshine_source=${sunshinePackage.korriBaseSunshineSource}
     base_sunshine_derivation=${sunshinePackage.korriBaseSunshineDerivation}
     approved_base_sunshine_derivation=${sunshinePackage.korriBaseSunshineDerivation}
     reviewed_libavcodec_version=${approved.reviewedLibavcodecVersion}

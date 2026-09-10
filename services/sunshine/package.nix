@@ -32,6 +32,9 @@ baseSunshine.overrideAttrs (
     approvedBaseDerivations =
       approved.approvedBaseDerivationsByProfile.${buildProfile}
         or approved.approvedBaseDerivationsByProfile.${baseBuildProfile} or [ ];
+    # Build-time identity only: emitting this path in runtime provenance retains
+    # the entire checkout, even with its string context discarded. Runtime
+    # provenance records the approved source hash instead.
     baseSunshineSource = builtins.unsafeDiscardStringContext (toString baseSunshine.src);
     baseSunshineSourceHash = baseSunshine.src.outputHash;
     baseSunshineDerivation = builtins.unsafeDiscardStringContext baseSunshine.drvPath;
@@ -113,7 +116,6 @@ baseSunshine.overrideAttrs (
       cuda_enabled=${if cudaEnabled then "1" else "0"}
       base_sunshine_version=${approved.baseSunshineVersion}
       approved_base_sunshine_source_hash=${approved.approvedBaseSourceHash}
-      base_sunshine_source=${baseSunshineSource}
       base_sunshine_derivation=${baseSunshineDerivation}
       approved_base_sunshine_derivation=${approvedBaseSunshineDerivation}
       reviewed_libavcodec_version=${approved.reviewedLibavcodecVersion}
@@ -163,6 +165,9 @@ baseSunshine.overrideAttrs (
       pname = "sunshine-korri";
       version = "${approved.baseSunshineVersion}-korri";
       __intentionallyOverridingVersion = true;
+
+      # Reject accidental output references to the build-only source checkout.
+      disallowedReferences = (old.disallowedReferences or [ ]) ++ [ baseSunshine.src ];
 
       patches = map (record: record.path) approvedPatchDefinitions;
 
