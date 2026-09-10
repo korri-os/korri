@@ -16,6 +16,7 @@ export interface ShiftDetailActionsProps {
   readonly onPlay?: (id: string) => void
   readonly onNewGame?: (id: string) => void
   readonly onFavorite?: (id: string) => void
+  readonly onOptions?: (id: string) => void
 }
 
 export function ShiftDetailActions({
@@ -23,6 +24,7 @@ export function ShiftDetailActions({
   onPlay,
   onNewGame,
   onFavorite,
+  onOptions,
 }: ShiftDetailActionsProps) {
   const played = Boolean(game.lastPlayedLabel)
 
@@ -39,6 +41,7 @@ export function ShiftDetailActions({
       {played && onNewGame ? (
         <ShiftDetailButton label="New Game" onClick={() => onNewGame(game.id)} />
       ) : null}
+      {onOptions ? <ShiftDetailButton label="Options" onClick={() => onOptions(game.id)} /> : null}
       {onFavorite ? (
         <ShiftDetailButton
           pressed={game.favorite === true}

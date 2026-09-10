@@ -24,6 +24,7 @@ export interface ShiftDetailSplitProps {
   readonly onPlay?: (id: string) => void
   readonly onNewGame?: (id: string) => void
   readonly onFavorite?: (id: string) => void
+  readonly onOptions?: (id: string) => void
   readonly onBack?: () => void
 }
 
@@ -33,8 +34,10 @@ export function ShiftDetailSplit({
   onNewGame,
   onFavorite,
   onBack,
+  onOptions,
 }: ShiftDetailSplitProps) {
   useSurfaceAction("back", () => onBack?.())
+  useSurfaceAction("options", () => onOptions?.(game.id))
 
   const tags = [game.genre, game.developer].filter(Boolean).join(" · ")
 
@@ -61,6 +64,7 @@ export function ShiftDetailSplit({
           onPlay={onPlay}
           onNewGame={onNewGame}
           onFavorite={onFavorite}
+          onOptions={onOptions}
         />
         <ShiftDetailHints game={game} favoriteAvailable={Boolean(onFavorite)} />
       </div>

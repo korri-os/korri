@@ -1,0 +1,38 @@
+/* The existing overlay owns the frame. One scroll region keeps all runtime
+ * identities and commands reachable on either axis, with no size tiers. */
+.pico-runtime-picker {
+  --pico-button-min-height: var(--pico-runtime-target);
+  --pico-button-text: var(--pico-runtime-label);
+  height: 100%;
+  min-width: 0;
+  font-family: var(--pico-font-term);
+  font-size: var(--pico-runtime-text);
+  color: var(--pico-ink);
+  overflow-wrap: anywhere;
+}
+
+.pico-runtime-picker :is(h1, h2) {
+  margin: 0;
+  font-family: var(--pico-font-display);
+  font-size: var(--pico-runtime-label);
+}
+
+.pico-runtime-picker :is(p, dl, dd) {
+  margin: 0;
+}
+
+.pico-runtime-picker dt {
+  color: var(--pico-ink-dim);
+}
+
+.pico-runtime-picker-route {
+  display: grid;
+  gap: var(--pico-space-1);
+  padding-block: var(--pico-space-2);
+}
+
+.pico-runtime-picker button {
+  flex-shrink: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

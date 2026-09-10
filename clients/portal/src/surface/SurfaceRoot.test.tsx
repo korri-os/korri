@@ -45,7 +45,7 @@ import {
   LaunchForegroundKind,
   MoonlightImplementation,
 } from "@contracts/generated/korrid"
-import type { KorridClient } from "../korrid/client"
+import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"
 // The portal compiles Shift from source, but Bun resolves Shift's peer React
 // from the surface package once its dependencies are installed. Derive that
@@ -179,6 +179,7 @@ function okSettings(): SettingsSnapshotOutcome {
 
 function buildKorrid(sources: Sources, calls: Calls): KorridClient {
   return {
+    ...createInMemoryKorridClient(),
     async health(): Promise<HealthOutcome> {
       return { _tag: "Ok", payload: { version: "surface-root-test" } }
     },
@@ -568,9 +569,15 @@ describe("SurfaceRoot", () => {
     const preparation = new Promise<SessionPrepareOutcome>(resolve => { complete = resolve })
     const korrid: KorridClient = {
       ...buildKorrid(sources, calls),
-      sessionPrepare(gameId, host) {
-        calls.prepared.push({ gameId, host })
-        return preparation
+      ...createInMemoryKorridClient({ gameRoutes: [{
+        gameId: game.id, selection: { _tag: "Choose" }, systemRuntimes: {}, revisions: { games: "g1", device: "d1" },
+        routes: [{ runtimeId: "retroarch/mgba", launcherId: "retroarch/linux", launcherKind: "retroarch", systemId: "gba", runtimeBuild: "/nix/store/mgba", launcherBuild: "/nix/store/retroarch", program: "/nix/store/retroarch/bin/retroarch", warnings: [] }],
+      }] }),
+      async catalogSnapshot() { return okCatalog(sources.remoteGames) },
+      async launchSelectedGame(gameId) {
+        calls.prepared.push({ gameId, host: undefined })
+        const outcome = await preparation
+        return outcome._tag === "Err" ? outcome : { _tag: "Ok", payload: { session: outcome.payload, warnings: [] } }
       },
       async sessionStatus() { return status },
     }
@@ -586,7 +593,7 @@ describe("SurfaceRoot", () => {
     expect(document.activeElement).toBe(document.body)
     expect(calls.prepared).toEqual([])
     await confirm(view)
-    expect(view.container.textContent).toContain("Preparing Wario Land 4")
+    expect(view.container.textContent).toContain("Launching…")
     expect(calls.prepared).toEqual([{ gameId: game.id, host: undefined }])
 
     await act(async () => {

@@ -265,11 +265,41 @@ export type SurfaceGameplayControlValue =
   | { readonly kind: "choice"; readonly value: string }
   | { readonly kind: "range"; readonly value: number }
 
+/** Installed local runtime facts from GameRoutes, not device/location choices.
+ * Build identities are exact package paths, never inferred version labels. */
+export interface SurfaceRuntimeRoute {
+  readonly runtimeId: string
+  readonly launcherId: string
+  readonly launcherKind: string
+  readonly systemId: string
+  readonly runtimeBuild: string
+  readonly launcherBuild: string
+  readonly program: string
+  readonly warnings: readonly string[]
+  readonly actions: readonly SurfaceAction[]
+}
+
+export interface SurfaceRuntimeChoiceContent {
+  readonly gameTitle: string
+  readonly message: string
+  readonly routes: readonly SurfaceRuntimeRoute[]
+  readonly saved: readonly { readonly label: string; readonly runtimeId: string }[]
+  readonly warnings: readonly string[]
+  /** IDs go unchanged to runAction. The host binds them to this route read. */
+  readonly actions: readonly SurfaceAction[]
+}
+
+export type SurfaceRuntimeChoice =
+  | { readonly _tag: "Closed" }
+  | ({ readonly _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRuntimeChoiceContent)
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
   readonly catalog: SurfaceCatalog
   readonly status: SurfaceStatus
+  /** Absent in hosts that do not offer installed Linux runtime selection. */
+  readonly runtimeChoice?: SurfaceRuntimeChoice
   /** Preformatted local time. Absent when the surface should show no clock. */
   readonly clockLabel?: string
   /** Device-level actions for permissions and session control. May be empty. */

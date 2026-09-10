@@ -31,6 +31,7 @@ import { ShiftSettings } from "./pages/ShiftSettings"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
 import { ShiftGameplayOverlaySheet } from "./ui/organisms/ShiftGameplayOverlaySheet"
 import { ShiftLaunchLocationSheet } from "./ui/organisms/ShiftLaunchLocationSheet"
+import { ShiftRuntimeSheet } from "./ui/organisms/ShiftRuntimeSheet"
 
 export interface ShiftSurfaceProps {
   readonly model: SurfaceModel
@@ -173,6 +174,8 @@ const SETTINGS_AFFORDANCE: SurfaceAction = {
 }
 
 export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
+  const runtime = model.runtimeChoice
+  const runtimeOpen = runtime !== undefined && runtime._tag !== "Closed"
   const [sheetGameId, setSheetGameId] = useState<string | null>(null)
   const [launchGameId, setLaunchGameId] = useState<string | null>(null)
   const [detailGameId, setDetailGameId] = useState<string | null>(null)
@@ -224,7 +227,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     if (actionId === SHIFT_SETTINGS_ACTION_ID) setScreen("settings")
   }, [])
 
-  const sheetGame = games.find(game => game.id === sheetGameId)
+  const sheetGame = allGames.find(game => game.id === sheetGameId)
   const launchSurfaceGame = surfaceGames.find(game => game.id === launchGameId)
   const launchChooserOpen =
     (launchSurfaceGame?.launchLocations?.length ?? 0) > 1
@@ -278,8 +281,9 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
       <ShiftDetailSplit
         game={detailGame}
         onPlay={() => requestLaunch(detailGame.id)}
+        {...(host.gameActions(detailGame.id).length ? { onOptions: setSheetGameId } : {})}
         onBack={() => {
-          if (!launchChooserOpen) setScreen("home")
+          if (!runtimeOpen && !launchChooserOpen && sheetGameId === null) setScreen("home")
         }}
       />
     ) : screen === "detail" ? (
@@ -340,7 +344,8 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         }
         className="shift-sheet-host intrinsic"
       >
-        {body}
+        <div className="shift-runtime-background" inert={runtimeOpen}>{body}</div>
+        {runtimeOpen ? <ShiftRuntimeSheet choice={runtime} onAction={id => host.runAction(id)} /> : null}
         {model.presentation.kind === "gameplay-overlay" ? (
           <ShiftGameplayOverlaySheet
             presentation={model.presentation}

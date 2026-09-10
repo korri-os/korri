@@ -20,6 +20,7 @@
 @import "../../../packages/intrinsic-design/recipe.css";
 @import "./pico-tokens.css";
 @import "./pico-motion.css";
+@import "./ui/organisms/PicoRuntimePicker.css";
 @import "./pages/PicoHome.css";
 @import "./ui/atoms/PicoBackdrop.css";
 @import "./ui/atoms/PicoButton.css";
@@ -105,6 +106,10 @@
 .pico-catalog-surface {
 	position: relative;
 	height: 100%;
+}
+
+.pico-catalog-surface[hidden] {
+	display: none;
 }
 
 .pico-screen {

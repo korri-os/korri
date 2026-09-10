@@ -240,6 +240,12 @@
 	height: 100vh;
 }
 
+/* A mounted surface, including its runtime sheet, fills the host's container.
+ * Only standalone page frames above own a viewport-sized decision. */
+[data-shift-surface][data-shift-home-frame] {
+	height: 100%;
+}
+
 /*
  * Route transition stage — owns the fullscreen frame + overflow clip for the
  * directional page slide (see ShiftRouteTransition). The background mirrors the
@@ -2623,6 +2629,36 @@
 	background: transparent;
 	pointer-events: none;
 	overflow: hidden;
+}
+
+/* Runtime choice composes the sheet unchanged. Long package paths wrap;
+ * the existing body scrolls on both narrow-tall and wide-short containers. */
+.shift-runtime-background {
+	width: 100%;
+	height: 100%;
+}
+
+.shift-runtime-sheet {
+	color: var(--shift-ink);
+	font-size: var(--shift-text-body);
+	overflow-wrap: anywhere;
+}
+
+.shift-runtime-sheet :is(p, dl, dd) {
+	margin: 0;
+}
+
+.shift-runtime-sheet dt {
+	color: var(--shift-ink-dim);
+}
+
+.shift-runtime-sheet .shift-sheet-body {
+	flex-shrink: 0;
+	overflow: visible;
+}
+
+.shift-runtime-sheet .shift-sheet-head {
+	flex-shrink: 0;
 }
 
 .shift-sheet-scrim {

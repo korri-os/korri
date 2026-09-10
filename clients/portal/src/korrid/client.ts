@@ -7,6 +7,11 @@
  */
 import type {
   ActiveSession,
+  GameRoutes,
+  GameRoutesOutcome,
+  GameRuntimeSetRequest,
+  GameRuntimeSetOutcome,
+  SelectedGameLaunchOutcome,
   CatalogSnapshotOutcome,
   DiscoverySnapshot,
   DiscoverySnapshotOutcome,
@@ -81,6 +86,9 @@ export interface KorridClient {
   moonlightLaunchCancel(launchId: string): Promise<MoonlightLaunchCancelOutcome>
   localGames(): Promise<LocalGamesListOutcome>
   localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
+  gameRoutes(gameId: string): Promise<GameRoutesOutcome>
+  setGameRuntime(request: GameRuntimeSetRequest): Promise<GameRuntimeSetOutcome>
+  launchSelectedGame(gameId: string, runtimeId: string): Promise<SelectedGameLaunchOutcome>
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
   /** Existing SessionStopRequest field; callers must name the displayed launch. */
@@ -102,6 +110,12 @@ export interface KorridClient {
 
 const RPC_TIMEOUT_MS = 25_000
 
+class KorridHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`korrid returned HTTP ${status}`)
+  }
+}
+
 export async function callKorrid<Request extends RpcRequest>(
   baseUrl: string,
   capability: string,
@@ -117,7 +131,7 @@ export async function callKorrid<Request extends RpcRequest>(
     body: JSON.stringify(request),
     signal: AbortSignal.timeout(timeoutMs),
   })
-  if (!response.ok) throw new Error(`korrid returned HTTP ${response.status}`)
+  if (!response.ok) throw new KorridHttpError(response.status)
   return (await response.json()) as RpcResponseFor<Request>
 }
 
@@ -128,6 +142,10 @@ const unreachable = (error: unknown) => ({
     message: error instanceof Error ? error.message : String(error),
   },
 })
+
+const routeUnavailable = (error: unknown) => error instanceof KorridHttpError && error.status === 403
+  ? { _tag: "Err" as const, payload: { code: "PermissionDenied", message: "This portal does not have permission for this action. Runtime reads remain available." } }
+  : unreachable(error)
 
 const statusUnavailable = (error: unknown): SessionStatusOutcome =>
   error instanceof DOMException && error.name === "TimeoutError"
@@ -423,6 +441,27 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
+    async gameRoutes(gameId) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.local-games.routes", payload: { gameId },
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async setGameRuntime(payload) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.local-games.runtime.set", payload,
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async launchSelectedGame(gameId, runtimeId) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.local-games.launch.selected", payload: { gameId, runtimeId },
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
     async localGameLaunch(gameId) {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -557,6 +596,10 @@ export interface InMemoryKorridClientConfig {
     | "status-fail"
     | "stop-fail"
   readonly games?: readonly Game[]
+  readonly gameRoutes?: readonly GameRoutes[]
+  readonly routeDelayMs?: number
+  readonly routeMutationDelayMs?: number
+  readonly routePermission?: "Full" | "LocalSessions" | "ReadOnly"
   readonly moonlight?: MoonlightResolveOutcome
   readonly localGames?: readonly LocalGame[]
   readonly localLaunchSpecs?: Readonly<Record<string, LaunchSpec>>
@@ -661,6 +704,12 @@ export function createInMemoryKorridClient(
   const localLaunchSpecs = config.localLaunchSpecs ?? {}
   const localFailures = config.localFailures
   let activeSession = config.activeSession
+  const routeRecords = structuredClone([...(config.gameRoutes ?? [])])
+  const routePermission = config.routePermission ?? "Full"
+  let routeRevision = 0
+  const routeFailure = (code: string, message: string) => ({
+    _tag: "Err" as const, payload: { code, message },
+  })
   let overlayControls = config.sessionControls
   const sessionControlBehavior = config.sessionControlBehavior ?? "ok"
   const setFreezer = (
@@ -914,6 +963,49 @@ export function createInMemoryKorridClient(
           ...(localFailures === undefined ? {} : { failures: [...localFailures] }),
         },
       }
+    },
+    async gameRoutes(gameId) {
+      if (config.routeDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeDelayMs))
+      const record = routeRecords.find(record => record.gameId === gameId)
+      if (!record) return routeFailure("NoPlayableRoute", "No installed runtime is available")
+      const preferred = record.gameRuntime ?? record.systemRuntimes[record.routes[0]?.systemId ?? ""]
+      const selected = preferred === undefined
+        ? (record.routes.length === 1 ? record.routes[0]?.runtimeId : undefined)
+        : record.routes.find(route => route.runtimeId === preferred)?.runtimeId
+      return { _tag: "Ok", payload: structuredClone({ ...record,
+        selection: selected === undefined ? { _tag: "Choose" } : { _tag: "Selected", runtimeId: selected },
+      }) }
+    },
+    async setGameRuntime(request) {
+      if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
+      if (routePermission !== "Full") return routeFailure("PermissionDenied", "Saving runtime choices requires Full access")
+      const matching = routeRecords.filter(record => request.scope._tag === "Game"
+        ? record.gameId === request.scope.id
+        : record.routes.some(route => route.systemId === request.scope.id))
+      const key = request.scope._tag === "Game" ? "games" : "device"
+      const record = matching[0]
+      if (!record) return routeFailure("GameNotFound", "Game or system is not available")
+      if (request.expectedRevision !== record.revisions[key]) return routeFailure("SettingsConflict", "Runtime choices changed. Reload before saving.")
+      if (request.runtimeId !== undefined && !record.routes.some(route => route.runtimeId === request.runtimeId)) return routeFailure("RuntimeUnavailable", "Runtime is no longer installed")
+      for (const item of matching) {
+        if (request.scope._tag === "Game") {
+          if (request.runtimeId === undefined) delete item.gameRuntime
+          else item.gameRuntime = request.runtimeId
+        } else if (request.runtimeId === undefined) delete item.systemRuntimes[request.scope.id]
+        else item.systemRuntimes[request.scope.id] = request.runtimeId
+      }
+      const revision = `route-${++routeRevision}`
+      for (const item of routeRecords) item.revisions[key] = revision
+      return { _tag: "Ok", payload: { ...record.revisions } }
+    },
+    async launchSelectedGame(gameId, runtimeId) {
+      if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
+      if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
+      if (activeSession) return routeFailure("ActiveSessionConflict", "Stop the active session before switching runtimes")
+      const route = routeRecords.find(record => record.gameId === gameId)?.routes.find(route => route.runtimeId === runtimeId)
+      if (!route) return routeFailure("RuntimeUnavailable", "Runtime is no longer installed")
+      activeSession = { gameId, launchId: `selected:${gameId}` }
+      return { _tag: "Ok", payload: { session: { gameId, launchId: activeSession.launchId }, warnings: [...route.warnings] } }
     },
     async localGameLaunch(gameId) {
       const spec = localLaunchSpecs[gameId]

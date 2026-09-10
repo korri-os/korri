@@ -1,0 +1,6 @@
+/* Fixture dimensions are measurement inputs, not product layout tokens.
+ * Browser verification changes this container while keeping the window fixed. */
+#app {
+  width: var(--fixture-width, 960px);
+  height: var(--fixture-height, 640px);
+}
