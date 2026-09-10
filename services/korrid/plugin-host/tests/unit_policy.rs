@@ -30,13 +30,53 @@ fn report(source: &str) -> package::Report {
 }
 
 #[test]
+#[ignore = "requires actual pinned systemd-analyze; no service is started"]
+fn pinned_systemd_preserves_approved_root_and_applies_unprivileged_reset() {
+    let analyze = std::env::var("KORRI_TEST_SYSTEMD_ANALYZE").expect("pinned systemd-analyze");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("authority.service");
+    let source = format!("[Service]\nType=exec\nExecStart={analyze} --version\n");
+    let verify = |text: &str| {
+        std::fs::write(&path, text).unwrap();
+        let result = std::process::Command::new(&analyze)
+            .env("SYSTEMD_LOG_LEVEL", "debug")
+            .args(["verify", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(result.status.success(), "{output}");
+        output
+    };
+    // The actual systemd parser ignores the NBSP assignment, retaining root.
+    let ambiguous = format!("{source}User=root\nUser\u{00a0}=\nDynamicUser=yes\n");
+    let output = verify(&ambiguous);
+    assert!(output.contains("User: root\n"), "{output}");
+    assert!(output.contains("DynamicUser: yes\n"), "{output}");
+    assert!(NativeUnit::parse(&ambiguous).is_err());
+    // Defense in depth: the host drop-in must clear even a retained root.
+    let output = verify(&format!(
+        "{ambiguous}\n{}",
+        unit::hardening(&report(&source))
+    ));
+    assert!(!output.contains("User: root\n"), "{output}");
+    assert!(output.contains("DynamicUser: yes\n"), "{output}");
+    let output = verify(&unit::render(&report(&format!("{source}User=root\n"))).unwrap());
+    assert!(output.contains("User: root\n"), "{output}");
+    assert!(output.contains("DynamicUser: no\n"), "{output}");
+}
+
+#[test]
 fn root_authority_requires_native_request_not_identity_and_default_isolation_is_unchanged() {
     let source = "[Service]\nType=exec\nExecStart=/nix/store/00000000000000000000000000000000-service/bin/run\n";
     let mut ordinary = report(source);
     ordinary.id = "@korri:ssh".into();
     let isolated = unit::hardening(&ordinary);
     for directive in [
-        "DynamicUser=yes",
+        "User=\nDynamicUser=yes",
         "NoNewPrivileges=yes",
         "ProtectSystem=strict",
         "ProtectHome=yes",

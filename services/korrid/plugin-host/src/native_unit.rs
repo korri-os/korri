@@ -23,6 +23,12 @@ impl NativeUnit {
         {
             return Err("unit contains unsupported control characters or exceeds 128 KiB".into());
         }
+        // systemd strips ASCII whitespace, not Rust's Unicode White_Space.
+        // Reject the unsupported language even in comments/values so it cannot
+        // turn an ignored systemd assignment into an authority reset here.
+        if source.chars().any(|c| c.is_whitespace() && !c.is_ascii()) {
+            return Err("unit contains unsupported non-ASCII whitespace".into());
+        }
         // systemd treats bare CR as a line boundary; str::lines does not.
         // Permit CRLF only, before skipping comments or parsing any values.
         if source

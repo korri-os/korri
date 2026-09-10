@@ -76,6 +76,23 @@ fn bare_carriage_returns_cannot_hide_systemd_directives() {
 }
 
 #[test]
+fn unicode_whitespace_cannot_reset_or_hide_native_authority() {
+    for whitespace in [
+        '\u{00a0}', '\u{1680}', '\u{2003}', '\u{2028}', '\u{2029}', '\u{202f}', '\u{3000}',
+    ] {
+        for directive in [
+            format!("User{whitespace}="),
+            format!("{whitespace}User="),
+            format!("User={whitespace}"),
+            format!("# comment{whitespace}User="),
+        ] {
+            let source = format!("{UNIT}User=root\n{directive}\n");
+            assert!(NativeUnit::parse(&source).is_err(), "{source:?}");
+        }
+    }
+}
+
+#[test]
 fn crlf_line_endings_preserve_the_approved_source() {
     let source = format!("# comment\n{UNIT}").replace('\n', "\r\n");
     let unit = NativeUnit::parse(&source).unwrap();
