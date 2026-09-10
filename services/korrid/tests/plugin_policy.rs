@@ -10,6 +10,21 @@ const CHECKPOINT_ANDROID_PLUGIN: &str = include_str!(
 const PRODUCTION_ANDROID_PLUGIN: &str = include_str!("../plugins/android-app.plugin.ts");
 
 #[test]
+fn native_service_exports_do_not_change_registry_data_contributions() {
+    let source = "export const name='network'; export const services=['tailscaled']; export const systems={};";
+    let plugin = load_plugin_source("@example", source).unwrap();
+    assert_eq!(plugin.id(), "@example:network");
+    let registry = PluginRegistry::new(vec![plugin], ["@example:network".to_owned()]).unwrap();
+    assert_eq!(registry.registered_plugin_ids(), ["@example:network"]);
+    assert!(registry.systems().is_empty());
+    for invalid in ["null", "['../daemon']", "['daemon','daemon']"] {
+        assert!(
+            load_plugin_source("@example", &source.replace("['tailscaled']", invalid)).is_err()
+        );
+    }
+}
+
+#[test]
 fn bundled_policy_enables_first_party_android_plugins_by_default() {
     let plugins = bundled_plugins().expect("bundled plugins should load");
     let enabled_ids = resolve_enabled_plugin_ids([

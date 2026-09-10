@@ -41,10 +41,11 @@ JSON containing its data exports, not the JavaScript completion value.
 `description`. Data export names come from the current producers: `providers`,
 `systems`, `launchers`, `transports`, `runtimes`, `sessionControls`, and
 `discovery`. Their record shapes are unchanged. Discovery remains the shipped
-`fileReleases` map, never a callback. `services` and `android` are reserved by
-the approved standard; the current narrow consumers reject unsupported fields.
-The daemon host temporarily accepts `daemons` with its existing allowlisted
-systemd fields. This slice does not load native unit files.
+`fileReleases` map, never a callback. `services` names native units packaged by
+`plugin.nix`. The Linux host selects those units; the data registry validates
+the names but does not activate them or change its existing records. `android`
+remains reserved for its platform consumer. `daemons` and the old `contributes`
+wrapper are rejected. No TypeScript export encodes systemd directives.
 
 `plugin::load_plugin_source(namespace, source)` and
 `decode_plugin_declaration(namespace, json)` receive publisher identity from

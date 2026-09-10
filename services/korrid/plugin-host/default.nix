@@ -8,6 +8,7 @@ let
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
 in
 {
+  lib.mkPlugin = import ./builder.nix { inherit pkgs; };
   packages = {
     korri-plugin-host = hostPackage;
   };

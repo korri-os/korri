@@ -710,6 +710,8 @@ struct PluginDeclaration {
     #[serde(skip)]
     namespace: String,
     name: String,
+    #[serde(default)]
+    services: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     title: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -759,6 +761,18 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         return Err(PluginError::InvalidPluginId(id));
     }
 
+    // Native services belong to the Linux host, not the data registry. Accept
+    // the named export without changing any existing contribution record.
+    let mut services = BTreeSet::new();
+    for service in &declaration.services {
+        if service.len() > 64 || !is_provider_segment(service) || !services.insert(service) {
+            return Err(PluginError::InvalidContribution {
+                kind: "service",
+                record_id: service.clone(),
+                reason: "invalid or repeated service name".into(),
+            });
+        }
+    }
     let title = declaration
         .title
         .unwrap_or_else(|| titleize(&declaration.name));

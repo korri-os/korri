@@ -14,53 +14,126 @@ let
           -out "$out/cert.pem" -keyout "$out/key.pem" \
           -subj '/CN=cache' -addext 'subjectAltName=DNS:cache'
       '';
-  alternate = pkgs.runCommand "independent-plugin" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'clock';
-    export const title = 'Clock';
-    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@example"; }}' > "$out/manifest.json"
-  '';
+  mkPlugin = import ./builder.nix { inherit pkgs; };
+  alternate = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "clock.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['clock'];";
+    plugin = _: {
+      services.clock.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+      ports.allowedTCPPorts = [ 443 ];
+    };
+  };
   updated = pkgs.runCommand "tailscale-plugin-update" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${tailscalePackage}/bin/tailscaled "$out/bin/tailscaled"
-    ln -s ${tailscalePackage}/bin/tailscale "$out/bin/tailscale"
+    mkdir -p "$out"
     cp ${tailscalePackage}/manifest.json "$out/manifest.json"
     sed 's/title = "Tailscale"/title = "Tailscale updated"/' ${tailscalePackage}/plugin.ts > "$out/plugin.ts"
   '';
-  broken = pkgs.runCommand "tailscale-plugin-failed-update" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/false "$out/bin/daemon"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'tailscale';
-    export const title = 'Unhealthy candidate';
-    export const daemons = [{Type:'exec',ExecStart:['bin/daemon'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@korri"; }}' > "$out/manifest.json"
+  broken = mkPlugin {
+    publisher.namespace = "@korri";
+    source = pkgs.writeText "broken.ts" "export const name = 'tailscale'; export const title = 'Unhealthy candidate'; export const services = ['broken'];";
+    plugin = _: {
+      services.broken.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/false";
+      };
+      ports.allowedTCPPorts = [ 443 ];
+    };
+  };
+  interrupted = mkPlugin {
+    publisher.namespace = "@korri";
+    source = pkgs.writeText "pending.ts" "export const name = 'tailscale'; export const title = 'Pending candidate'; export const services = ['pending'];";
+    plugin = _: {
+      services.pending.serviceConfig = {
+        Type = "notify";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 30";
+      };
+      ports.allowedTCPPorts = [ 443 ];
+    };
+  };
+  unclean = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "unclean.ts" "export const name = 'unclean'; export const services = ['unclean'];";
+    plugin = _: {
+      services.unclean.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+        ExecStopPost = "${pkgs.coreutils}/bin/false";
+      };
+      ports.allowedUDPPorts = [ 41641 ];
+    };
+  };
+  credential = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "credential.ts" "export const name = 'credential'; export const services = ['credential'];";
+    plugin = _: {
+      services.credential.serviceConfig = {
+        Type = "exec";
+        ExecStart = "\"${pkgs.coreutils}/bin/sleep\" \\\n# a native systemd continuation comment\n \"\\x33\\x36\\x30\\x30\"";
+        CapabilityBoundingSet = [
+          "CAP_NET_ADMIN"
+          ""
+          "CAP_NET_RAW"
+        ];
+        DeviceAllow = [
+          "/dev/net/tun rw"
+          ""
+        ];
+        LoadCredential = "authkey:tailscale-authkey";
+      };
+    };
+  };
+  forbidden = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "forbidden.ts" "export const name = 'forbidden'; export const services = ['forbidden'];";
+    plugin = _: {
+      services.forbidden.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+        User = "root";
+      };
+    };
+  };
+  injections =
+    map
+      (
+        description:
+        mkPlugin {
+          publisher.namespace = "@example";
+          source = pkgs.writeText "injection.ts" "export const name = 'injection'; export const services = ['injection'];";
+          plugin = _: {
+            services.injection = {
+              unitConfig.Description = description;
+              serviceConfig = {
+                Type = "exec";
+                ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+              };
+            };
+          };
+        }
+      )
+      [
+        "Network daemon\n# hidden\r[Service]\rUser=root\rExecStartPre=+${pkgs.coreutils}/bin/touch /tmp/injected-command"
+        "Network daemon\r[Service]\rUser=root\rExecStartPre=+${pkgs.coreutils}/bin/touch /tmp/injected-command"
+      ];
+  emptyClock = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "empty-clock.ts" "export const name = 'clock'; export const services = [];";
+    plugin = _: { };
+  };
+  ipv6RejectAdds = pkgs.writeShellScriptBin "ip6tables" ''
+    for argument in "$@"; do
+      if [ "$argument" = -A ]; then exit 42; fi
+    done
+    exec ${pkgs.iptables}/bin/ip6tables "$@"
   '';
-  interrupted = pkgs.runCommand "tailscale-plugin-interrupted-update" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'tailscale';
-    export const title = 'Pending candidate';
-    export const daemons = [{Type:'notify',ExecStart:['bin/sleep','30'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@korri"; }}' > "$out/manifest.json"
-  '';
-  unclean = pkgs.runCommand "plugin-cleanup-failure" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
-    ln -s ${pkgs.coreutils}/bin/false "$out/bin/false"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'unclean';
-    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],ExecStopPost:['bin/false'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@example"; }}' > "$out/manifest.json"
-  '';
+  empty = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeText "empty.ts" "export const name = 'empty'; export const services = [];";
+    plugin = _: { };
+  };
   # Keep a real buildable deriver on the client, but not its output. A failed
   # substitution must not run this canary, even with permissive ambient options.
   splitDependency = builtins.derivation {
@@ -81,25 +154,31 @@ let
       ''
     ];
   };
+  splitPayload = mkPlugin {
+    publisher.namespace = "@split";
+    source = pkgs.writeText "split.ts" "export const name = 'split-cache'; export const services = ['clock'];";
+    plugin = _: {
+      services.clock.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+    };
+  };
   splitPlugin = pkgs.runCommand "plugin-split-cache" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
+    mkdir -p "$out"
+    cp ${splitPayload}/{plugin.ts,manifest.json} "$out/"
     ln -s ${splitDependency} "$out/upstream-dependency"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'split-cache';
-    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@split"; }}' > "$out/manifest.json"
   '';
-  impostor = pkgs.runCommand "plugin-publisher-impersonation" { } ''
-    mkdir -p "$out/bin"
-    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
-    cat > "$out/plugin.ts" <<'EOF'
-    export const name = 'clock';
-    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
-    EOF
-    echo '${builtins.toJSON { publisher.namespace = "@victim"; }}' > "$out/manifest.json"
-  '';
+  impostor = mkPlugin {
+    publisher.namespace = "@victim";
+    source = pkgs.writeText "impostor.ts" "export const name = 'clock'; export const services = ['clock'];";
+    plugin = _: {
+      services.clock.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+    };
+  };
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
@@ -120,10 +199,15 @@ pkgs.testers.runNixOSTest {
           broken
           interrupted
           unclean
+          empty
+          emptyClock
+          credential
+          forbidden
           splitPlugin
           impostor
           splitDependency.drvPath
-        ];
+        ]
+        ++ injections;
         services.nix-serve = {
           enable = true;
           secretKeyFile = toString key;
@@ -216,7 +300,11 @@ pkgs.testers.runNixOSTest {
           };
         };
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
-        environment.systemPackages = [ pkgs.jq ];
+        environment.systemPackages = [
+          pkgs.jq
+          pkgs.iptables
+        ];
+        virtualisation.additionalPaths = [ ipv6RejectAdds ];
         virtualisation.useNixStoreImage = true;
         virtualisation.writableStore = true;
         virtualisation.writableStoreUseTmpfs = false;
@@ -247,6 +335,69 @@ pkgs.testers.runNixOSTest {
         report = inspect(package)
         machine.succeed("korri-plugin install http://cache:5000 " + package + " " + report["approval"])
         return report
+
+    def plugin_file(report, name):
+        manifest = json.loads(machine.succeed("cat " + report["package"] + "/manifest.json"))
+        return manifest["files"][name]
+
+    def assert_ports(report, enabled):
+        marker = report["unit"].removesuffix(".service")
+        expected = []
+        if enabled:
+            for protocol, field in [("tcp", "allowedTCPPorts"), ("udp", "allowedUDPPorts")]:
+                expected.extend((protocol, str(port)) for port in report["ports"][field])
+        for tool in ["iptables", "ip6tables"]:
+            rules = machine.succeed(tool + " -w -S").splitlines()
+            owned = [r for r in rules if r.startswith("-A korri-plugins ") and marker in r]
+            assert len(owned) == len(expected), (tool, owned, expected)
+            for protocol, port in expected:
+                assert sum("-p " + protocol + " " in r and "--dport " + port + " " in r for r in owned) == 1, owned
+            if enabled:
+                input_rules = [r for r in rules if r.startswith("-A INPUT ")]
+                assert input_rules.index("-A INPUT -j korri-plugins") < input_rules.index("-A INPUT -j nixos-fw"), input_rules
+                assert input_rules.count("-A INPUT -j korri-plugins") == 1, input_rules
+
+    empty = install("${empty}")
+    machine.succeed("korri-plugin enable @example:empty")
+    machine.succeed("korri-plugin restore")
+    machine.fail("test -e /run/systemd/system/" + empty["unit"])
+    machine.succeed("korri-plugin disable @example:empty")
+    machine.succeed("korri-plugin remove @example:empty --purge")
+
+    # Load, but never start, the actual hostile bytes in systemd. Bare CR is a
+    # directive boundary there, even after a comment or inside Description.
+    for package in ${builtins.toJSON (map toString injections)}:
+        native = json.loads(cache.succeed("cat " + package + "/manifest.json"))["services"]["injection"]
+        cache.succeed("cp " + native + " /run/systemd/system/cr-injection.service; systemctl daemon-reload")
+        assert cache.succeed("systemctl show cr-injection.service --property=User --value").strip() == "root"
+        assert "/tmp/injected-command" in cache.succeed("systemctl show cr-injection.service --property=ExecStartPre --value")
+        cache.fail("test -e /tmp/injected-command")
+        cache.succeed("rm /run/systemd/system/cr-injection.service; systemctl daemon-reload")
+        assert "bare carriage return" in machine.fail("korri-plugin inspect http://cache:5000 " + package + " 2>&1")
+        machine.fail("korri-plugin status @example:injection")
+        machine.fail("test -e /tmp/injected-command")
+
+    assert "User" in machine.fail("korri-plugin inspect http://cache:5000 ${forbidden} 2>&1")
+    machine.fail("korri-plugin status @example:forbidden")
+    credential = install("${credential}")
+    assert "missing named credential is non-fatal" in credential["warning"]
+    machine.succeed("korri-plugin enable @example:credential")
+    credential_file = "/run/credentials/" + credential["unit"] + "/authkey"
+    credential_pid = machine.succeed("systemctl show " + credential["unit"] + " --property=MainPID --value").strip()
+    assert machine.succeed("tr '\\0' '\\n' < /proc/" + credential_pid + "/cmdline").splitlines() == ["${pkgs.coreutils}/bin/sleep", "3600"]
+    machine.fail("test -e " + credential_file)
+    for property in ["CapabilityBoundingSet", "AmbientCapabilities"]:
+        assert machine.succeed("systemctl show " + credential["unit"] + " --property=" + property + " --value").strip() == "cap_net_raw"
+    assert "/dev/net/tun" not in machine.succeed("systemctl show " + credential["unit"] + " --property=DeviceAllow --value")
+    machine.succeed("korri-plugin disable @example:credential")
+    # Native systemd credential lookup only. This is deliberately not a login
+    # credential and no host code reads it or runs tailscale up.
+    machine.succeed("install -d -m 0700 /run/credstore; printf test-credential > /run/credstore/tailscale-authkey; chmod 0600 /run/credstore/tailscale-authkey")
+    machine.succeed("korri-plugin enable @example:credential")
+    machine.succeed("grep -Fx test-credential " + credential_file)
+    machine.succeed("korri-plugin remove @example:credential --purge")
+    machine.fail("test -e " + credential_file)
+    machine.succeed("rm /run/credstore/tailscale-authkey")
 
     # Two real signed caches: the plugin cache has no dependency NAR or
     # narinfo; only the independently signed upstream can supply that output.
@@ -401,7 +552,15 @@ pkgs.testers.runNixOSTest {
     machine.succeed("ip link show tailscale0")
     machine.succeed("test -S " + report["runtime_directory"] + "/tailscaled.sock")
     assert machine.succeed("systemctl show " + unit + " --property=DynamicUser --value").strip() == "yes"
-    assert machine.succeed(report["package"] + "/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock status --json | ${pkgs.jq}/bin/jq -r .BackendState").strip() == "NeedsLogin"
+    assert machine.succeed(plugin_file(report, "tailscale") + " --socket=" + report["runtime_directory"] + "/tailscaled.sock status --json | ${pkgs.jq}/bin/jq -r .BackendState").strip() == "NeedsLogin"
+    assert machine.succeed("cat /run/systemd/system/" + unit) == report["native_unit"]["source"]
+    for property, expected in [("NoNewPrivileges", "yes"), ("ProtectSystem", "strict"), ("DevicePolicy", "closed"), ("CapabilityBoundingSet", "cap_net_admin cap_net_raw"), ("AmbientCapabilities", "cap_net_admin cap_net_raw")]:
+        assert machine.succeed("systemctl show " + unit + " --property=" + property + " --value").strip() == expected
+    machine.succeed("systemctl cat " + unit + " | grep -Fx 'DeviceAllow='")
+    machine.succeed("systemctl cat " + unit + " | grep -Fx 'CapabilityBoundingSet='")
+    assert_ports(report, True)
+    machine.succeed("systemctl restart firewall.service")
+    assert_ports(report, True)
     machine.succeed("touch " + report["state_directory"] + "/retained-data")
 
     # A disposable local tailnet uses no owner's credentials or public service.
@@ -410,7 +569,7 @@ pkgs.testers.runNixOSTest {
     authkey = cache.succeed("headscale preauthkeys -u 1 create --reusable").strip()
     cache.wait_for_unit("nginx.service")
     cache.succeed("tailscale up --login-server=https://cache --accept-dns=false --auth-key=" + shlex.quote(authkey))
-    ts = report["package"] + "/bin/tailscale --socket=" + report["runtime_directory"] + "/tailscaled.sock"
+    ts = plugin_file(report, "tailscale") + " --socket=" + report["runtime_directory"] + "/tailscaled.sock"
     machine.succeed(ts + " up --login-server=https://cache --accept-dns=false --auth-key=" + shlex.quote(authkey))
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     assert json.loads(machine.succeed(ts + " status --json"))["BackendState"] == "Running"
@@ -418,7 +577,16 @@ pkgs.testers.runNixOSTest {
     machine.wait_until_succeeds("ping -c 1 -W 2 " + peer_ip)
 
     clock = install("${alternate}")
+    # A real IPv6 helper fails only rule insertion, after IPv4 succeeded.
+    # The failed enable must remove both families and leave the receipt disabled.
+    failing_command = "env KORRI_PLUGIN_NIX=${pkgs.nix}/bin/nix KORRI_PLUGIN_SYSTEMCTL=${pkgs.systemd}/bin/systemctl KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables KORRI_PLUGIN_IP6TABLES=${ipv6RejectAdds}/bin/ip6tables ${hostPackage}/bin/.korri-plugin-wrapped enable @example:clock"
+    machine.fail(failing_command)
+    assert_ports(clock, False)
+    assert_ports(report, True)
+    assert json.loads(machine.succeed("korri-plugin status @example:clock"))["desired"] == {"state": "Disabled"}
+    machine.fail("systemctl is-active " + clock["unit"])
     machine.succeed("korri-plugin enable @example:clock")
+    assert_ports(clock, True)
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
     update = repository_inspect(source_a, "v2")
     available_alternative = repository_inspect(source_b, "v2")
@@ -433,25 +601,31 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin repository switch @korri:tailscale " + source_b + " v2 " + available_alternative["approval"])
     assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["provenance"]["source_url"] == source_b
     machine.succeed("korri-plugin repository switch @korri:tailscale " + source_a + " v2 " + update["approval"])
-    ts = update["package"] + "/bin/tailscale --socket=" + update["runtime_directory"] + "/tailscaled.sock"
+    ts = plugin_file(update, "tailscale") + " --socket=" + update["runtime_directory"] + "/tailscaled.sock"
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
+    assert_ports(update, True)
     candidate = repository_inspect(source_b, "broken")
     machine.fail("korri-plugin repository switch @korri:tailscale " + source_b + " broken " + candidate["approval"])
     machine.wait_for_unit(unit)
+    assert_ports(update, True)
+    assert_ports(clock, True)
     restored = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
     assert restored["package"] == update["package"]
     assert restored["provenance"] == update["provenance"]
 
     pending = repository_inspect(source_b, "pending")
     machine.succeed("systemd-run --unit=interrupted-plugin-update /run/current-system/sw/bin/korri-plugin repository switch @korri:tailscale " + source_b + " pending " + pending["approval"])
-    machine.wait_until_succeeds("grep -F " + pending["package"] + " /run/systemd/system/" + unit)
+    machine.wait_until_succeeds("grep -Fx 'Type=notify' /run/systemd/system/" + unit)
+    machine.wait_until_succeeds("grep -F 'sleep 30' /run/systemd/system/" + unit)
     machine.wait_until_succeeds("test $(systemctl show " + unit + " --property=ActiveState --value) = activating")
     machine.crash()
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
     machine.wait_for_unit(unit)
     machine.wait_for_unit(clock["unit"])
+    assert_ports(update, True)
+    assert_ports(clock, True)
     machine.succeed("test -e " + report["state_directory"] + "/retained-data")
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     machine.wait_until_succeeds("ping -c 1 -W 2 " + peer_ip)
@@ -460,9 +634,17 @@ pkgs.testers.runNixOSTest {
     assert restored["provenance"] == update["provenance"]
     machine.succeed("test ! -L /nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service") + "/pending")
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
+    machine.succeed("iptables -w -F korri-plugins; ip6tables -w -F korri-plugins")
     machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore")
+    for tool in ["iptables", "ip6tables"]:
+        assert machine.succeed(tool + " -w -S INPUT").splitlines()[1] == "-A INPUT -j korri-plugins"
+    assert_ports(update, True)
+    assert_ports(clock, True)
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     machine.succeed("korri-plugin disable @korri:tailscale")
+    assert_ports(update, False)
+    assert_ports(clock, True)
     machine.fail("systemctl is-active " + unit)
     machine.fail("ip link show tailscale0")
     assert json.loads(machine.succeed("ip -j rule show")) == ipv4_rules
@@ -487,7 +669,28 @@ pkgs.testers.runNixOSTest {
     report = install("${tailscalePackage}")
     machine.succeed("korri-plugin remove @korri:tailscale --purge")
     machine.fail("test -e " + report["state_directory"] + "/retained-data")
+    # Service removal on update keeps per-ID data. Purge must still clean it
+    # after reboot, when neither the selected package nor /run has that unit.
+    machine.succeed("touch " + clock["state_directory"] + "/retained-data")
+    empty_clock = inspect("${emptyClock}")
+    machine.succeed("korri-plugin update @example:clock http://cache:5000 ${emptyClock} " + empty_clock["approval"])
+    machine.fail("test -e /run/systemd/system/" + clock["unit"])
+    machine.succeed("test -e " + clock["state_directory"] + "/retained-data")
+    assert_ports(clock, False)
+    machine.crash()
+    machine.start()
+    machine.wait_for_unit("korri-plugin-host.service")
+    machine.succeed("test -e " + clock["state_directory"] + "/retained-data")
+    machine.fail("test -e /run/systemd/system/" + clock["unit"])
     machine.succeed("korri-plugin remove @example:clock --purge")
+    machine.fail("test -e " + clock["state_directory"])
+    machine.fail("test -L " + clock["state_directory"])
+    machine.fail("test -e /var/lib/private/" + clock["unit"].removesuffix(".service"))
+    machine.fail("korri-plugin status @example:clock")
+    machine.fail("test -e /run/systemd/system/" + clock["unit"])
+    machine.fail("test -e /run/systemd/system/" + clock["unit"] + ".d")
+    assert_ports(clock, False)
+    assert_ports(report, False)
 
     # Kill-equivalent boundary: unit file is durable, but daemon-reload/start
     # never ran. Restore must not require an already loaded systemd unit.
@@ -581,6 +784,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("mv " + bindings_path + " " + bindings_path + ".saved")
     write_bindings(dict(bindings, **{"@example": dict(bindings["@example"], publicKey=upstream_key)}))
     machine.fail("korri-plugin disable @example:unclean")
+    assert_ports(failed_cleanup, False)
     assert json.loads(machine.succeed("korri-plugin status @example:unclean"))["desired"] == {"state": "Disabled"}
     machine.fail("systemctl is-active " + failed_cleanup["unit"])
     machine.fail("korri-plugin restore")

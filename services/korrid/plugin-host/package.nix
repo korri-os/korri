@@ -31,6 +31,8 @@ craneLib.buildPackage (
       wrapProgram "$out/bin/korri-plugin" \
         --set KORRI_PLUGIN_NIX ${pkgs.nix}/bin/nix \
         --set KORRI_PLUGIN_SYSTEMCTL ${pkgs.systemd}/bin/systemctl \
+        --set KORRI_PLUGIN_IPTABLES ${pkgs.iptables}/bin/iptables \
+        --set KORRI_PLUGIN_IP6TABLES ${pkgs.iptables}/bin/ip6tables \
         --set KORRI_PLUGIN_CURL ${pkgs.curl}/bin/curl
 
       # korri-publish is build-side only; it does not need systemctl.

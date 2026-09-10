@@ -132,6 +132,7 @@
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
         devShells.inputd = import ./services/inputd/devshell.nix { inherit pkgs; };
         devShells.plugin-host = pluginHost.devShell;
+        lib = pluginHost.lib;
         devShells.retroarch = import ./plugins/retroarch/android/devshell.nix { inherit pkgs; };
         packages = {
           korrid = korridPackage;

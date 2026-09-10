@@ -117,7 +117,7 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "launchers"
                 | "transports" | "runtimes" | "sessionControls" | "discovery" | "android"
-                | "services" | "daemons" => {
+                | "services" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
                 "launch" if value.is_function() => {}

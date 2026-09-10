@@ -34,7 +34,16 @@ fn run(args: Vec<String>) -> Result<(), String> {
         env::var("KORRI_PLUGIN_NIX").map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
     let systemctl = env::var("KORRI_PLUGIN_SYSTEMCTL")
         .map_err(|_| "host package must supply KORRI_PLUGIN_SYSTEMCTL")?;
-    let host = Host::open(Path::new(&nix), Path::new(&systemctl))?;
+    let iptables = env::var("KORRI_PLUGIN_IPTABLES")
+        .map_err(|_| "host package must supply KORRI_PLUGIN_IPTABLES")?;
+    let ip6tables = env::var("KORRI_PLUGIN_IP6TABLES")
+        .map_err(|_| "host package must supply KORRI_PLUGIN_IP6TABLES")?;
+    let host = Host::open(
+        Path::new(&nix),
+        Path::new(&systemctl),
+        Path::new(&iptables),
+        Path::new(&ip6tables),
+    )?;
     let words = args.iter().map(String::as_str).collect::<Vec<_>>();
     match words.as_slice() {
         ["repository", commands @ ..] => {

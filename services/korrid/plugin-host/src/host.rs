@@ -48,7 +48,12 @@ impl Drop for Host {
 }
 
 impl Host {
-    pub fn open(nix: &Path, systemctl: &Path) -> Result<Self, String> {
+    pub fn open(
+        nix: &Path,
+        systemctl: &Path,
+        iptables: &Path,
+        ip6tables: &Path,
+    ) -> Result<Self, String> {
         let nix = package::tools(nix)?;
         let systemctl = package::tools(systemctl)?;
         let state = State::open(Path::new(STATE_ROOT))?;
@@ -60,7 +65,13 @@ impl Host {
         Ok(Self {
             nix,
             publishers,
-            units: Units { systemctl },
+            units: Units {
+                systemctl,
+                firewall: crate::firewall::Firewall {
+                    ipv4: package::tools(iptables)?,
+                    ipv6: package::tools(ip6tables)?,
+                },
+            },
             state,
         })
     }
@@ -171,7 +182,7 @@ impl Host {
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
         self.verify_publisher(selected, &provenance)?;
-        package::load(selected, provenance)
+        package::load(&self.nix, selected, provenance)
     }
 
     fn verify_publisher(&self, selected: &Path, provenance: &Provenance) -> Result<(), String> {
@@ -320,6 +331,7 @@ impl Host {
                     .is_ok()
                     && self.units.matches_running(&report)?
                 {
+                    self.units.firewall.apply(&report.id, &report.ports)?;
                     return Ok(());
                 }
             }
@@ -372,7 +384,7 @@ impl Host {
 
     fn approved(&self, receipt: &Receipt) -> Result<Report, String> {
         validate_id(&receipt.id)?;
-        let report = package::load(&receipt.package, receipt.provenance.clone())?;
+        let report = package::load(&self.nix, &receipt.package, receipt.provenance.clone())?;
         if report.id != receipt.id || report.approval != receipt.approval {
             return Err("installed package or host policy no longer matches its approval".into());
         }

@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-pub const BASE_POLICY: &str = "policy-v1: dynamic unprivileged user; read-only system; private state; private temporary files; no privilege escalation; one managed daemon; no install scripts; no host module loading";
+pub const BASE_POLICY: &str = "policy-v2: validated native systemd unit; host hardening drop-in; dynamic unprivileged user; read-only system; private state; private temporary files; no privilege escalation; at most one managed service; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
 
 #[derive(Serialize)]
 pub struct Report {
@@ -23,12 +23,14 @@ pub struct Report {
     pub provenance: Provenance,
     pub approval: String,
     pub policy: &'static str,
-    pub warning: &'static str,
+    pub warning: String,
     pub unit: String,
     pub state_directory: String,
     pub runtime_directory: String,
     pub unit_configuration: String,
     pub declaration: Declaration,
+    pub native_unit: Option<crate::native_unit::NativeUnit>,
+    pub ports: crate::firewall::Ports,
 }
 
 pub fn validate_store_path(path: &Path) -> Result<(), String> {
@@ -68,7 +70,10 @@ pub fn tools(path: &Path) -> Result<PathBuf, String> {
     {
         return Err("helper must be an immutable store executable".into());
     }
-    Ok(canonical)
+    // Preserve the selected immutable argv[0] for multicall helpers such as
+    // iptables/ip6tables (both resolve to xtables-nft-multi).
+    crate::native_unit::immutable_path(path.to_str().ok_or("invalid helper path")?)?;
+    Ok(path.to_path_buf())
 }
 
 pub fn validate_cache_source(source: &str) -> Result<(), String> {
@@ -166,6 +171,16 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
 #[serde(deny_unknown_fields)]
 struct Manifest {
     publisher: Publisher,
+    #[serde(default)]
+    packages: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    files: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    services: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    requires: Vec<PathBuf>,
+    #[serde(default)]
+    ports: crate::firewall::Ports,
 }
 
 #[derive(Deserialize)]
@@ -217,12 +232,23 @@ fn read_regular(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn manifest_namespace(package: &Path) -> Result<String, String> {
+fn manifest(package: &Path) -> Result<Manifest, String> {
     let manifest: Manifest =
-        serde_json::from_slice(&read_regular(&package.join("manifest.json"), 4096)?)
+        serde_json::from_slice(&read_regular(&package.join("manifest.json"), 64 * 1024)?)
             .map_err(|error| format!("invalid plugin manifest: {error}"))?;
     crate::declaration::validate_id(&format!("{}:manifest", manifest.publisher.namespace))?;
-    Ok(manifest.publisher.namespace)
+    for names in [&manifest.packages, &manifest.files, &manifest.services] {
+        crate::native_unit::validate_names(&names.keys().cloned().collect::<Vec<_>>())?;
+    }
+    manifest.ports.validate()?;
+    for path in &manifest.requires {
+        validate_store_path(path)?;
+    }
+    Ok(manifest)
+}
+
+fn manifest_namespace(package: &Path) -> Result<String, String> {
+    Ok(manifest(package)?.publisher.namespace)
 }
 
 fn public_key_bytes(key: &str) -> Result<Vec<u8>, String> {
@@ -418,23 +444,80 @@ pub fn load_declaration(package: &Path) -> Result<Declaration, String> {
         .map_err(|e| e.to_string())?;
     let namespace = manifest_namespace(package)?;
     let declaration = Declaration::evaluate(&namespace, &source)?;
-    let daemon = &declaration.daemons[0];
-    resolve_executable(package, &daemon.start[0])?;
-    if let Some(cleanup) = &daemon.cleanup {
-        resolve_executable(package, &cleanup[0])?;
+    let manifest = manifest(package)?;
+    for name in &declaration.services {
+        if !manifest.services.contains_key(name) {
+            return Err(format!("service {name} has no packaged native unit"));
+        }
     }
     Ok(declaration)
 }
 
-pub fn load(package: &Path, provenance: Provenance) -> Result<Report, String> {
+pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report, String> {
     let declaration = load_declaration(package)?;
     let id = declaration.id();
     provenance.validate(&id)?;
     let unit = unit_name(&id);
-    let daemon = &declaration.daemons[0];
-    let warning = if declaration.host_network_admin() {
+    let manifest = manifest(package)?;
+    if !manifest.requires.is_empty() {
+        return Err(
+            "required plugin activation is not implemented; refusing a package with requires"
+                .into(),
+        );
+    }
+    let closure = process::checked(
+        nix,
+        [
+            "--extra-experimental-features",
+            "nix-command",
+            "path-info",
+            "--recursive",
+            package.to_str().ok_or("invalid package path")?,
+        ],
+        Duration::from_secs(30),
+    )?;
+    let closure: std::collections::BTreeSet<PathBuf> = closure.lines().map(PathBuf::from).collect();
+    for path in &closure {
+        validate_store_path(path)?;
+    }
+    for path in manifest.packages.values() {
+        validate_store_path(path)?;
+        if !closure.contains(path) || fs::canonicalize(path).map_err(|e| e.to_string())? != *path {
+            return Err("package is outside the immutable closure".into());
+        }
+    }
+    for path in manifest.files.values().chain(manifest.services.values()) {
+        validate_artifact(path, &closure, false)?;
+    }
+    let native_unit = declaration
+        .services
+        .first()
+        .map(|name| {
+            let bytes = read_regular(
+                &fs::canonicalize(&manifest.services[name]).map_err(|e| e.to_string())?,
+                128 * 1024,
+            )?;
+            let unit = crate::native_unit::NativeUnit::parse(
+                std::str::from_utf8(&bytes).map_err(|_| "native unit is not UTF-8")?,
+            )?;
+            for executable in &unit.executables {
+                validate_artifact(Path::new(executable), &closure, true)?;
+            }
+            Ok::<_, String>(unit)
+        })
+        .transpose()?;
+    if native_unit.is_none() && !manifest.ports.is_empty() {
+        return Err("ports require an active service contribution".into());
+    }
+    let capabilities = native_unit
+        .as_ref()
+        .map(|u| u.capabilities.as_slice())
+        .unwrap_or_default();
+    let warning = if native_unit.is_none() {
+        "No native service is activated by this package."
+    } else if capabilities.iter().any(|c| c == "CAP_NET_ADMIN") {
         "HOST NETWORK ADMINISTRATION: this daemon can change host routes, interfaces and firewall rules. It can interrupt connectivity or redirect traffic. This access is not confined to its own interface."
-    } else if daemon.capabilities.iter().any(|c| c == "CAP_NET_RAW") {
+    } else if capabilities.iter().any(|c| c == "CAP_NET_RAW") {
         "RAW HOST NETWORK: this daemon can create raw sockets and observe or forge IP traffic."
     } else {
         "This daemon has ordinary host-network access. It has no Linux capabilities."
@@ -445,12 +528,21 @@ pub fn load(package: &Path, provenance: Provenance) -> Result<Report, String> {
         provenance,
         approval: String::new(),
         policy: BASE_POLICY,
-        warning,
+        warning: if native_unit
+            .as_ref()
+            .is_some_and(|u| !u.credentials.is_empty())
+        {
+            format!("{warning} NATIVE CREDENTIAL LOOKUP: systemd searches its inherited credentials and credstore for tailscale-authkey. A missing named credential is non-fatal in systemd. Korri supplies no secret and performs no login; Tailscale still needs an explicit operator tailscale up.")
+        } else {
+            warning.into()
+        },
         state_directory: format!("/var/lib/{unit}"),
         runtime_directory: format!("/run/{unit}"),
         unit: format!("{unit}.service"),
         unit_configuration: String::new(),
         declaration,
+        native_unit,
+        ports: manifest.ports,
     };
     report.unit_configuration = crate::unit::render(&report)?;
     report.approval = approval_digest(
@@ -469,7 +561,7 @@ fn approval_digest(
     unit: &str,
 ) -> Result<String, String> {
     let source = read_regular(&package.join("plugin.ts"), 128 * 1024)?;
-    let manifest = read_regular(&package.join("manifest.json"), 4096)?;
+    let manifest = read_regular(&package.join("manifest.json"), 64 * 1024)?;
     let bytes = serde_json::to_vec(&(
         BASE_POLICY,
         package,
@@ -490,24 +582,29 @@ pub fn unit_name(id: &str) -> String {
     )
 }
 
-pub fn resolve_executable(package: &Path, selected: &str) -> Result<PathBuf, String> {
-    let path = fs::canonicalize(package.join(selected))
-        .map_err(|e| format!("payload executable is unavailable: {e}"))?;
-    if !path.starts_with("/nix/store")
-        || path.components().count() < 5
-        || !path.is_file()
-        || fs::metadata(&path)
-            .map_err(|e| e.to_string())?
-            .permissions()
-            .mode()
-            & 0o111
-            == 0
-    {
+fn validate_artifact(
+    path: &Path,
+    closure: &std::collections::BTreeSet<PathBuf>,
+    executable: bool,
+) -> Result<(), String> {
+    let canonical = fs::canonicalize(path)
+        .map_err(|e| format!("artifact {} is unavailable: {e}", path.display()))?;
+    for path in [path, canonical.as_path()] {
+        let text = path.to_str().ok_or("invalid artifact path")?;
+        crate::native_unit::immutable_path(text)?;
+        let root = path.components().take(4).collect::<PathBuf>();
+        if !closure.contains(&root) {
+            return Err(format!(
+                "artifact {} is outside the selected closure",
+                path.display()
+            ));
+        }
+    }
+    let metadata = fs::metadata(&canonical).map_err(|e| e.to_string())?;
+    if executable && (!metadata.is_file() || metadata.permissions().mode() & 0o111 == 0) {
         return Err("payload must resolve to an immutable regular executable".into());
     }
-    // Preserve argv[0] for multicall binaries such as coreutils and Tailscale.
-    // Validation follows the link; execution uses the selected immutable name.
-    Ok(package.join(selected))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -515,7 +612,11 @@ mod approval_tests {
     use super::*;
     #[test]
     fn approval_binds_source_release_archive_package_and_effective_policy_not_staging() {
-        let declaration = Declaration::evaluate("@test", "export const name = 'plugin'; export const daemons = [{Type:'exec',ExecStart:['bin/run'],CapabilityBoundingSet:[]}];").unwrap();
+        let declaration = Declaration::evaluate(
+            "@test",
+            "export const name = 'plugin'; export const services = [];",
+        )
+        .unwrap();
         let directory = tempfile::tempdir().unwrap();
         let package_path = directory.path().join("package");
         let other_package = directory.path().join("other-package");

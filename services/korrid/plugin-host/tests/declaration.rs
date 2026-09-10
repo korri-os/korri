@@ -1,22 +1,20 @@
 use korri_plugin_host::declaration::Declaration;
 
-const PLUGIN: &str = r#"
-export const name = 'network';
-export const title = 'Network';
-export const daemons = [{Type: 'notify', ExecStart: ['bin/daemon', '--state=${STATE_DIRECTORY}/state'], ExecStopPost: ['bin/daemon', '--cleanup'], CapabilityBoundingSet: ['CAP_NET_ADMIN', 'CAP_NET_RAW']}];
-"#;
+const PLUGIN: &str = "export const name = 'network'; export const title = 'Network'; export const services = ['daemon'];";
 
 #[test]
-fn unknown_plugin_identity_declares_a_network_daemon() {
+fn unknown_plugin_identity_selects_a_named_native_service() {
     let declaration = Declaration::evaluate("@example", PLUGIN).unwrap();
     assert_eq!(declaration.id(), "@example:network");
-    assert!(declaration.host_network_admin());
+    assert_eq!(declaration.services, ["daemon"]);
 }
 
 #[test]
 fn only_the_callers_publisher_can_supply_identity() {
-    let declaration = Declaration::evaluate("@owner", PLUGIN).unwrap();
-    assert_eq!(declaration.id(), "@owner:network");
+    assert_eq!(
+        Declaration::evaluate("@owner", PLUGIN).unwrap().id(),
+        "@owner:network"
+    );
     assert!(Declaration::evaluate(
         "@owner",
         &format!("{PLUGIN}\nexport const namespace = '@example';")
@@ -26,21 +24,18 @@ fn only_the_callers_publisher_can_supply_identity() {
 }
 
 #[test]
-fn unsupported_permissions_and_executable_paths_are_rejected() {
-    for replacement in ["CAP_SYS_ADMIN", "CAP_SETUID"] {
-        assert!(
-            Declaration::evaluate("@example", &PLUGIN.replace("CAP_NET_ADMIN", replacement))
-                .is_err()
-        );
-    }
-    for replacement in ["../daemon", "/bin/daemon", "bin/../daemon"] {
-        assert!(
-            Declaration::evaluate("@example", &PLUGIN.replace("bin/daemon", replacement)).is_err()
-        );
+fn service_names_are_not_a_second_systemd_language() {
+    for value in [
+        "[{Type:'exec',ExecStart:['bin/run']}]",
+        "['../run']",
+        "['daemon','daemon']",
+        "null",
+    ] {
+        assert!(Declaration::evaluate("@example", &PLUGIN.replace("['daemon']", value)).is_err());
     }
     assert!(Declaration::evaluate(
         "@example",
-        &PLUGIN.replace("Type: 'notify'", "User: 'root', Type: 'notify'")
+        "export const name='old'; export const daemons=[];"
     )
     .is_err());
 }
@@ -57,13 +52,21 @@ fn external_source_cannot_hang_or_exhaust_the_host() {
 }
 
 #[test]
-fn identity_and_daemon_bounds_are_checked() {
+fn empty_service_packages_remain_valid_for_the_game_only_cutover() {
     assert!(
         Declaration::evaluate("@example", &PLUGIN.replace("'network'", "'../../other'")).is_err()
     );
     assert!(Declaration::evaluate(
         "@example",
-        "export const name = 'y'; export const title = 'Y'; export const daemons = [];"
+        "export const name = 'empty'; export const services = []; "
     )
-    .is_err());
+    .unwrap()
+    .services
+    .is_empty());
+    assert!(
+        Declaration::evaluate("@example", "export const name = 'empty';")
+            .unwrap()
+            .services
+            .is_empty()
+    );
 }

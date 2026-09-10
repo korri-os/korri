@@ -17,6 +17,37 @@ fn nix(args: &[&str]) -> String {
 
 #[test]
 #[ignore = "writes build-machine Nix store; run korri-publisher-check"]
+fn immutable_but_unreferenced_native_artifacts_are_not_package_authority() {
+    let directory = tempfile::tempdir().unwrap();
+    let artifact = directory.path().join("native");
+    fs::create_dir(&artifact).unwrap();
+    fs::write(artifact.join("daemon.service"), "[Service]\nType=exec\nExecStart=/nix/store/00000000000000000000000000000000-program/bin/run\n").unwrap();
+    let native = nix(&["store", "add-path", artifact.to_str().unwrap()]);
+    let package = directory.path().join("package");
+    fs::create_dir(&package).unwrap();
+    fs::write(
+        package.join("plugin.ts"),
+        "export const name='outside'; export const services=['daemon'];",
+    )
+    .unwrap();
+    fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher":{"namespace":"@example"},"services":{"daemon":format!("{native}/daemon.service")}})).unwrap()).unwrap();
+    // add-path imports a source NAR with no declared references. Being present
+    // in the global store does not put the named unit in this package closure.
+    let path = nix(&["store", "add-path", package.to_str().unwrap()]);
+    let error = korri_plugin_host::package::load(
+        Path::new(&env::var("KORRI_PUBLISH_NIX").unwrap()),
+        Path::new(&path),
+        korri_plugin_host::provenance::Provenance::RawCache {
+            cache_url: "file:///test".into(),
+        },
+    )
+    .err()
+    .unwrap();
+    assert!(error.contains("outside the selected closure"), "{error}");
+}
+
+#[test]
+#[ignore = "writes build-machine Nix store; run korri-publisher-check"]
 fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_label() {
     let directory = tempfile::tempdir().unwrap();
     let public = nix(&["key", "generate-secret", "--key-name", "publisher"]);

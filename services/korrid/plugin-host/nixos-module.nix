@@ -66,6 +66,7 @@ in
           after = [
             "systemd-tmpfiles-setup.service"
             "network.target"
+            "firewall.service"
           ];
           serviceConfig = {
             Type = "oneshot";
