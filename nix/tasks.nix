@@ -131,6 +131,18 @@ let
     };
 
   definitions = {
+    rgds-image-check = {
+      description = "Inspect an uncompressed RG DS image and its matching U-Boot without mounting or writing media.";
+      usageSuffix = " -- <image.img> <u-boot-rockchip.bin>";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.util-linux
+        pkgs.e2fsprogs
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rgds/verify-image.py" "$@"
+      '';
+    };
     odin2portal-cross-cache = {
       description = "Build/export or import Odin Linux cross inputs through a signed, revision-bound Nix cache.";
       usageSuffix = " -- <export|import> <directory>";
@@ -211,7 +223,8 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.korri-inputplumber-data \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-inputplumber \
           .#checks.${pkgs.stdenv.hostPlatform.system}.odin2portal-inputplumber \
-          .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-usb-gadget
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-usb-gadget \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rgds
         # Exercise impure staging on every run without real network credentials.
         if [ -z "''${KORRI_WIFI_ENV:-}" ]; then
           wifi_fixture="$(mktemp)"

@@ -1,10 +1,15 @@
 # Device image builds
 
 `.github/workflows/device-images.yml` builds the selected Linux SD image.
-The `device` choice is `rg353m` or `odin2portal`, with RG353M as the default.
-Both use their existing `packages.aarch64-linux.<device>-sd-image` output on
+The `device` choice is `rg353m`, `odin2portal`, or `rgds`, with RG353M as the default.
+All use their `packages.aarch64-linux.<device>-sd-image` output on
 `ubuntu-24.04-arm`. No Android repacking, installer ISO, plugin integration,
 or first-boot setup is performed.
+
+RG DS is a console bring-up candidate, not an automatic portal session.
+Its device-local Linux and U-Boot sources do not alter the other devices.
+See [`../devices/rgds/README.md`](../devices/rgds/README.md) for SD-only
+arrival checks, physical root-console access, and unverified hardware gates.
 
 Odin first builds its existing x86 cross-compiled kernel, rescue kernel, firmware,
 and static portal bundle in a separate `ubuntu-24.04` job. The kiosk already

@@ -9,6 +9,7 @@ on:
         options:
           - rg353m
           - odin2portal
+          - rgds
         required: true
         default: rg353m
       publish:
@@ -38,7 +39,7 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           case "$DEVICE" in
-            rg353m|odin2portal) ;;
+            rg353m|odin2portal|rgds) ;;
             *) echo 'Unsupported Linux device image.' >&2; exit 1 ;;
           esac
           if [ "$PUBLISH" = true ] && [ "$REF_TYPE" != tag ]; then
@@ -204,6 +205,7 @@ jobs:
           dist="$RUNNER_TEMP/device-dist"
           case "$DEVICE" in
             rg353m) recovery='Physical recovery consoles, including USB serial, grant root access.' ;;
+            rgds) recovery='RG DS bring-up image: physical recovery consoles, including USB serial, grant root access. No automatic Korri portal session yet. SD only; do not write internal storage.' ;;
             odin2portal) recovery='The panel recovery console grants root access. This Linux SD image does not modify Android or internal storage.' ;;
           esac
           notes="$DEVICE Linux build candidate. This artifact has not been boot-verified on hardware.
