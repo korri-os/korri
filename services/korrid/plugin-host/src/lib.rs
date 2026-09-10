@@ -11,6 +11,7 @@ pub mod process;
 pub mod provenance;
 pub mod publisher;
 pub mod repository;
+pub mod selection;
 pub mod source_store;
 pub mod storage;
 pub mod unit;

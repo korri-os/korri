@@ -25,6 +25,68 @@ fn an_exact_requirement_is_not_satisfied_by_a_different_build_or_store_presence(
 }
 
 #[test]
+fn rollback_keeps_exact_closure_pins_even_for_disabled_installed_dependents() {
+    use korri_plugin_host::selection::Receipt;
+    let first: Receipt = serde_json::from_str(include_str!("fixtures/selection.json")).unwrap();
+    let current = first
+        .select(
+            "/nix/store/11111111111111111111111111111111-new".into(),
+            first.provenance.clone(),
+            "new-approval".into(),
+        )
+        .unwrap();
+    let restored = current.rollback().unwrap();
+    for enabled in [false, true] {
+        let dependency = selected(&current.id, current.package.to_str().unwrap(), enabled, &[]);
+        let dependent = selected(
+            "@korri:mgba",
+            "/core",
+            enabled,
+            &[current.package.to_str().unwrap()],
+        );
+        validate_selection(&[dependency.clone(), dependent.clone()]).unwrap();
+        let candidate = SelectedPackage {
+            package: restored.package.clone(),
+            ..dependency
+        };
+        let error = validate_selection(&[candidate, dependent]).unwrap_err();
+        assert!(error.contains("@korri:mgba"), "{error}");
+        assert!(error.contains(current.package.to_str().unwrap()), "{error}");
+    }
+}
+
+#[test]
+fn removing_or_renaming_a_launcher_or_kind_is_refused_without_manifest_requires() {
+    use korri_plugin_host::plugin_references;
+    use serde_json::json;
+    // Native field names and IDs come from plugins/{retroarch,mgba}/plugin.ts.
+    let kind = (
+        "@korri:retroarch".into(),
+        json!({"launchers":{"retroarch":{"id":"@korri:retroarch/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    );
+    let launcher = (
+        "@test:launcher".into(),
+        json!({"launchers":{"retroarch":{"id":"@test:launcher/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    );
+    let runtime = (
+        "@korri:mgba".into(),
+        json!({"runtimes":{"mgba":{"id":"@korri:mgba/mgba", "launcher":"@test:launcher/retroarch", "path":"mgba"}}}),
+    );
+    plugin_references::validate([kind.clone(), launcher.clone(), runtime.clone()]).unwrap();
+    let error = plugin_references::validate([launcher.clone(), runtime.clone()]).unwrap_err();
+    assert!(error.contains("@korri:retroarch/retroarch"), "{error}");
+    let error = plugin_references::validate([kind.clone(), runtime.clone()]).unwrap_err();
+    assert!(error.contains("@test:launcher/retroarch"), "{error}");
+    let renamed = (
+        "@test:launcher".into(),
+        json!({"launchers":{"renamed":{"id":"@test:launcher/renamed", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    );
+    assert!(plugin_references::validate([kind, renamed, runtime])
+        .unwrap_err()
+        .contains("@test:launcher/retroarch"));
+}
+
+#[test]
 fn enabling_a_core_requires_enabled_dependencies_but_install_can_prepare_disabled_packages() {
     let launcher = selected("@korri:retroarch", "/launcher", false, &[]);
     let core = selected("@korri:mgba", "/core", false, &["/launcher"]);

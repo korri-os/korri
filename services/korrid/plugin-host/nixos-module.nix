@@ -74,7 +74,7 @@ in
           ];
           serviceConfig = {
             Type = "oneshot";
-            ExecStart = "${cfg.package}/bin/korri-plugin restore";
+            ExecStart = "${cfg.package}/bin/korri-plugin restore-all";
             RemainAfterExit = true;
             User = "root";
             UMask = "0077";

@@ -15,7 +15,7 @@ fn old_source_less_receipts_fail_without_mutation() {
     storage::write_json(&path, &old).unwrap();
     let before = fs::read(&path).unwrap();
     assert!(
-        storage::read_json::<korri_plugin_host::host::Receipt>(&path)
+        storage::read_json::<korri_plugin_host::selection::Receipt>(&path)
             .unwrap_err()
             .contains("provenance")
     );

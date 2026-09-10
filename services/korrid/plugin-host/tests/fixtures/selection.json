@@ -1,0 +1,8 @@
+{
+  "id": "@test:plugin",
+  "package": "/nix/store/00000000000000000000000000000000-current",
+  "provenance": {"kind": "RawCache", "cache_url": "https://cache.example"},
+  "approval": "current-approval",
+  "desired": {"state": "Disabled"},
+  "previous": null
+}

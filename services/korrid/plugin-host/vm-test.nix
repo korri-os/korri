@@ -134,20 +134,25 @@ let
   gameLauncher = mkPlugin {
     publisher.namespace = "@korri";
     source = ../../../plugins/retroarch/plugin.ts;
-    plugin = _: { };
+    plugin = _: { files.retroarch = "${pkgs.coreutils}/bin/true"; };
   };
   gameRuntime = mkPlugin {
     publisher.namespace = "@korri";
     source = ../../../plugins/mgba/plugin.ts;
-    plugin = _: { requires = [ gameLauncher ]; };
+    plugin = _: {
+      files.mgba = "${pkgs.coreutils}/bin/true";
+      requires = [ gameLauncher ];
+    };
   };
   changedLauncher = mkPlugin {
     publisher.namespace = "@korri";
     source = pkgs.writeText "retroarch-callback.ts" ''
-      ${builtins.readFile ../../../plugins/retroarch/plugin.ts}
+      ${builtins.replaceStrings [ "export function launch(" ] [ "function originalLaunch(" ] (
+        builtins.readFile ../../../plugins/retroarch/plugin.ts
+      )}
       export function launch(input) { throw new Error("never run during approval"); }
     '';
-    plugin = _: { };
+    plugin = _: { files.retroarch = "${pkgs.coreutils}/bin/true"; };
   };
   emptyClock = mkPlugin {
     publisher.namespace = "@example";
@@ -394,7 +399,7 @@ pkgs.testers.runNixOSTest {
 
     empty = install("${empty}")
     machine.succeed("korri-plugin enable @example:empty")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.fail("test -e /run/systemd/system/" + empty["unit"])
     machine.succeed("korri-plugin disable @example:empty")
     machine.succeed("korri-plugin remove @example:empty --purge")
@@ -423,7 +428,7 @@ pkgs.testers.runNixOSTest {
     game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + game_launcher["unit"].removesuffix(".service")
     machine.succeed("ln -s ${changedLauncher} " + game_root + "/pending")
     assert "unfinished selection" in machine.fail("korri-plugin enabled-packages 2>&1")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.fail("test -L " + game_root + "/pending")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
     machine.succeed("ln -sfn ${changedLauncher} " + game_root + "/active")
@@ -448,6 +453,22 @@ pkgs.testers.runNixOSTest {
     machine.fail("korri-plugin remove @korri:retroarch")
     machine.succeed("korri-plugin remove @korri:mgba --purge")
     machine.succeed("korri-plugin update @korri:retroarch http://cache:5000 ${changedLauncher} " + changed_launcher["approval"])
+    # Rollback reuses exact approval, but it cannot strand even a disabled
+    # runtime on a different launcher build. Closure presence is not selection.
+    machine.succeed("korri-plugin restore @korri:retroarch")
+    rollback_launcher = json.loads(machine.succeed("korri-plugin status @korri:retroarch"))
+    assert rollback_launcher["package"] == game_launcher["package"]
+    assert rollback_launcher["previous"]["package"] == changed_launcher["package"]
+    assert rollback_launcher["desired"] == {"state": "Disabled"}
+    install("${gameRuntime}")
+    for enabled in [False, True]:
+        if enabled:
+            machine.succeed("korri-plugin enable @korri:retroarch; korri-plugin enable @korri:mgba")
+        before_swap = json.loads(machine.succeed("korri-plugin status @korri:retroarch"))
+        assert "@korri:mgba" in machine.fail("korri-plugin restore @korri:retroarch 2>&1")
+        assert json.loads(machine.succeed("korri-plugin status @korri:retroarch")) == before_swap
+    machine.succeed("korri-plugin disable @korri:mgba; korri-plugin remove @korri:mgba")
+    machine.succeed("korri-plugin disable @korri:retroarch; korri-plugin restore @korri:retroarch")
     machine.succeed("korri-plugin enable @korri:retroarch")
     assert len(json.loads(machine.succeed("korri-plugin enabled-packages"))) == 1
     machine.succeed("korri-plugin remove @korri:retroarch --purge")
@@ -589,7 +610,7 @@ pkgs.testers.runNixOSTest {
     machine.fail("korri-plugin repository remove https://cache/repositories/official.json")
     machine.succeed("mv /etc/korri-plugin-host/official-catalog-url /etc/korri-plugin-host/official-catalog-url.saved")
     machine.succeed("korri-plugin repository list | grep -F 'official: not configured'")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.succeed("mv /etc/korri-plugin-host/official-catalog-url.saved /etc/korri-plugin-host/official-catalog-url")
     machine.succeed("korri-plugin repository add " + source_a)
     machine.succeed("korri-plugin repository add " + source_a)
@@ -684,7 +705,7 @@ pkgs.testers.runNixOSTest {
     # or a healthy A -> B chain. Restore reports the bad receipt independently.
     corrupt = "/var/lib/korri-plugin-host/korri-plugin-" + "0" * 64
     machine.succeed("mkdir -m 700 " + corrupt + "; (umask 077; printf broken > " + corrupt + "/selection.json)")
-    assert "invalid plugin receipt" in machine.fail("korri-plugin restore 2>&1")
+    assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
     machine.succeed("systemctl is-active " + unit)
@@ -692,7 +713,7 @@ pkgs.testers.runNixOSTest {
     # B before considering A; unrelated C must still be reported separately.
     clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + clock["unit"].removesuffix(".service")
     machine.succeed("ln -s ${alternate} " + clock_root + "/pending; systemctl stop " + clock["unit"])
-    assert "invalid plugin receipt" in machine.fail("korri-plugin restore 2>&1")
+    assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     machine.succeed("systemctl is-active " + clock["unit"])
     machine.fail("test -L " + clock_root + "/pending")
     assert machine.succeed("readlink " + clock_root + "/active").strip() == "${alternate}"
@@ -704,12 +725,12 @@ pkgs.testers.runNixOSTest {
     clock_receipt_path = "/var/lib/korri-plugin-host/" + clock["unit"].removesuffix(".service") + "/selection.json"
     clock_receipt = machine.succeed("cat " + clock_receipt_path)
     machine.succeed("printf broken > " + clock_receipt_path)
-    assert "invalid plugin receipt" in machine.fail("korri-plugin restore 2>&1")
+    assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     machine.fail("systemctl is-active " + dependent_clock["unit"])
     machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + dependent_clock["unit"].removesuffix(".service") + "/active")
     machine.fail("korri-plugin enabled-packages")
     machine.succeed("printf %s " + shlex.quote(clock_receipt) + " > " + clock_receipt_path)
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.succeed("systemctl is-active " + clock["unit"])
     machine.succeed("systemctl is-active " + dependent_clock["unit"])
     machine.succeed("korri-plugin remove @example:dependent-clock --purge")
@@ -731,14 +752,30 @@ pkgs.testers.runNixOSTest {
     machine.wait_until_succeeds(ts + " ping --timeout=5s --c=1 cache")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     assert_ports(update, True)
+    before_failed_update = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    lifecycle_root = "/nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service")
+    assert machine.succeed("readlink " + lifecycle_root + "/previous").strip() == before_failed_update["previous"]["package"]
     candidate = repository_inspect(source_b, "broken")
     machine.fail("korri-plugin repository switch @korri:tailscale " + source_b + " broken " + candidate["approval"])
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale")) == before_failed_update
     machine.wait_for_unit(unit)
     assert_ports(update, True)
     assert_ports(clock, True)
     restored = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
     assert restored["package"] == update["package"]
     assert restored["provenance"] == update["provenance"]
+
+    # Retain an approved but non-starting build while disabled, then prove a
+    # failed explicit restore preserves both selections and enabled intent.
+    machine.succeed("korri-plugin disable @korri:tailscale")
+    machine.succeed("korri-plugin repository switch @korri:tailscale " + source_b + " broken " + candidate["approval"])
+    machine.succeed("korri-plugin restore @korri:tailscale; korri-plugin enable @korri:tailscale")
+    before_failed_update = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    assert before_failed_update["previous"]["package"] == candidate["package"]
+    machine.fail("korri-plugin restore @korri:tailscale")
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale")) == before_failed_update
+    machine.wait_for_unit(unit)
+    assert_ports(update, True)
 
     pending = repository_inspect(source_b, "pending")
     machine.succeed("systemd-run --unit=interrupted-plugin-update /run/current-system/sw/bin/korri-plugin repository switch @korri:tailscale " + source_b + " pending " + pending["approval"])
@@ -758,11 +795,13 @@ pkgs.testers.runNixOSTest {
     restored = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
     assert restored["package"] == update["package"]
     assert restored["provenance"] == update["provenance"]
+    assert restored == before_failed_update
+    assert machine.succeed("readlink " + lifecycle_root + "/previous").strip() == restored["previous"]["package"]
     machine.succeed("test ! -L /nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service") + "/pending")
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
     machine.succeed("iptables -w -F korri-plugins; ip6tables -w -F korri-plugins")
-    machine.succeed("korri-plugin restore")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
+    machine.succeed("korri-plugin restore-all")
     for tool in ["iptables", "ip6tables"]:
         assert machine.succeed(tool + " -w -S INPUT").splitlines()[1] == "-A INPUT -j korri-plugins"
     assert_ports(update, True)
@@ -780,14 +819,28 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl is-active " + unit)
     machine.succeed("korri-plugin repository remove " + source_a)
     cache.succeed("systemctl stop nginx.service")
+    cache.succeed("systemctl stop nix-serve.service")
+    # The previous receipt, not the unavailable catalog/cache, owns rollback.
+    offline_current = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    machine.succeed("korri-plugin restore @korri:tailscale")
+    offline_previous = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    for key in ["package", "provenance", "approval"]:
+        assert offline_previous[key] == offline_current["previous"][key]
+        assert offline_previous["previous"][key] == offline_current[key]
+    assert offline_previous["desired"] == {"state": "Disabled"}
+    machine.fail("systemctl is-active " + unit)
+    machine.succeed("korri-plugin restore @korri:tailscale")
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale")) == offline_current
+    machine.succeed("test $(find " + lifecycle_root + " -type l | wc -l) = 2")
+    cache.succeed("systemctl start nix-serve.service")
     assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["provenance"]["source_url"] == source_a
     machine.succeed("korri-plugin enable @korri:tailscale")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.succeed("korri-plugin disable @korri:tailscale")
     # Recovery owns only its bounded private staging entries, even offline.
     machine.succeed("mkdir -m 700 /var/lib/korri-plugin-host/staging/download-12345678")
     machine.succeed("touch /var/lib/korri-plugin-host/staging/download-12345678/partial")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.fail("test -e /var/lib/korri-plugin-host/staging/download-12345678")
     machine.succeed("korri-plugin remove @korri:tailscale")
     machine.fail("korri-plugin status @korri:tailscale")
@@ -823,7 +876,7 @@ pkgs.testers.runNixOSTest {
     staged = install("${tailscalePackage}")
     machine.succeed("printf %s " + shlex.quote(staged["unit_configuration"]) + " > /run/systemd/system/" + staged["unit"])
     machine.succeed("ln -s ${tailscalePackage} /nix/var/nix/gcroots/korri-plugin-host/" + staged["unit"].removesuffix(".service") + "/pending")
-    machine.succeed("korri-plugin restore")
+    machine.succeed("korri-plugin restore-all")
     machine.fail("systemctl is-active " + staged["unit"])
     machine.succeed("korri-plugin remove @korri:tailscale --purge")
     # Revocation changes START authority, not the exact receipt's authority to
@@ -840,6 +893,8 @@ pkgs.testers.runNixOSTest {
         revoked = install("${tailscalePackage}")
         revoked_unit = revoked["unit"]
         revoked_root = "/nix/var/nix/gcroots/korri-plugin-host/" + revoked_unit.removesuffix(".service")
+        revoked_update = inspect("${updated}")
+        machine.succeed("korri-plugin update @korri:tailscale http://cache:5000 ${updated} " + revoked_update["approval"])
         machine.succeed("korri-plugin enable @korri:tailscale")
         machine.succeed("touch " + revoked["state_directory"] + "/revocation-data")
         changed_bindings = json.loads(json.dumps(bindings))
@@ -848,6 +903,10 @@ pkgs.testers.runNixOSTest {
         else:
             changed_bindings["@korri"]["publicKey"] = upstream_key
         write_bindings(changed_bindings)
+        before_revoked_swap = machine.succeed("korri-plugin status @korri:tailscale")
+        machine.fail("korri-plugin restore @korri:tailscale")
+        assert machine.succeed("korri-plugin status @korri:tailscale") == before_revoked_swap
+        machine.succeed("test -L " + revoked_root + "/previous")
         machine.fail("korri-plugin enabled-packages")
         machine.fail("korri-plugin enable @korri:tailscale")
         # Deactivation must not recover an Enabled receipt first, even when an
@@ -874,23 +933,23 @@ pkgs.testers.runNixOSTest {
         machine.succeed("test -e " + revoked["state_directory"] + "/revocation-data")
         assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Disabled"}
         machine.fail("korri-plugin enable @korri:tailscale")
-        machine.succeed("korri-plugin restore")
+        machine.succeed("korri-plugin restore-all")
         machine.fail("systemctl is-active " + revoked_unit)
         write_bindings(bindings)
         machine.succeed("korri-plugin enable @korri:tailscale")
         write_bindings(changed_bindings)
         # Ordinary recovery must stop a revoked running unit, not take the
         # healthy-unit shortcut. Pending recovery must also refuse a new start.
-        machine.fail("korri-plugin restore")
+        machine.fail("korri-plugin restore-all")
         machine.fail("systemctl is-active " + revoked_unit)
         machine.succeed("ln -s " + revoked["package"] + " " + revoked_root + "/pending")
-        machine.fail("korri-plugin restore")
+        machine.fail("korri-plugin restore-all")
         machine.fail("systemctl is-active " + revoked_unit)
         machine.succeed("test -L " + revoked_root + "/pending")
         # Kill-equivalent boundary: disable intent reached disk but cleanup did
         # not run. Recovery uses that intent with no current signing authority.
         write_receipt(dict(receipt, desired={"state": "Disabled"}))
-        machine.succeed("korri-plugin restore")
+        machine.succeed("korri-plugin restore-all")
         machine.fail("test -L " + revoked_root + "/pending")
         machine.fail("systemctl is-active " + revoked_unit)
         write_bindings(bindings)
@@ -903,6 +962,7 @@ pkgs.testers.runNixOSTest {
         machine.fail("korri-plugin status @korri:tailscale")
         machine.fail("test -e " + revoked["state_directory"] + "/revocation-data")
         machine.fail("test -L " + revoked_root + "/active")
+        machine.fail("test -L " + revoked_root + "/previous")
         machine.fail("korri-plugin enable @korri:tailscale")
     machine.succeed("rm " + bindings_path + "; mv " + bindings_path + ".saved " + bindings_path)
 
@@ -914,12 +974,12 @@ pkgs.testers.runNixOSTest {
     assert_ports(failed_cleanup, False)
     assert json.loads(machine.succeed("korri-plugin status @example:unclean"))["desired"] == {"state": "Disabled"}
     machine.fail("systemctl is-active " + failed_cleanup["unit"])
-    machine.fail("korri-plugin restore")
+    machine.fail("korri-plugin restore-all")
     machine.fail("systemctl is-active " + failed_cleanup["unit"])
     machine.fail("korri-plugin enable @example:unclean")
     machine.fail("korri-plugin remove @example:unclean --purge")
     assert json.loads(machine.succeed("korri-plugin status @example:unclean"))["desired"] == {"state": "Removed", "purge": True}
-    machine.fail("korri-plugin restore")
+    machine.fail("korri-plugin restore-all")
     machine.fail("systemctl is-active " + failed_cleanup["unit"])
     machine.succeed("rm " + bindings_path + "; mv " + bindings_path + ".saved " + bindings_path)
     machine.succeed("korri-plugin status @example:unclean")

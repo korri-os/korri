@@ -5,35 +5,17 @@ use crate::{
     package::{self, Report},
     provenance::{current_platform, Provenance, SelectionIntent},
     repository::{self, Configuration, SourceUrl},
+    selection::{Desired, Receipt, SelectionStore},
     source_store,
     storage::{self, State, ROOTS, STATE_ROOT},
     unit::Units,
 };
-use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::Duration,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Receipt {
-    pub id: String,
-    pub package: PathBuf,
-    pub provenance: Provenance,
-    pub approval: String,
-    pub desired: Desired,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "state", deny_unknown_fields)]
-pub enum Desired {
-    Disabled,
-    Enabled,
-    Removed { purge: bool },
-}
 
 pub struct Host {
     nix: PathBuf,
@@ -44,7 +26,7 @@ pub struct Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        // Pending/active roots own selected packages independently of acquisition.
+        // Selection roots own current/previous/pending independently of acquisition.
         let _ = self.release_download();
     }
 }
@@ -235,18 +217,41 @@ impl Host {
             old.as_ref().map(|r| &r.provenance),
             &report.provenance,
         )?;
-        let desired = old
-            .as_ref()
-            .map(|r| r.desired.clone())
-            .unwrap_or(Desired::Disabled);
-        self.apply(Receipt {
-            id: report.id,
-            package: report.package,
-            provenance: report.provenance,
-            approval: report.approval,
-            desired,
-        })?;
+        let candidate = match old {
+            Some(old) => {
+                // Retaining a prior approval does not require its publisher
+                // to remain authorized, but it must still match exact bytes.
+                self.approved(&old)?;
+                old.select(report.package, report.provenance, report.approval)?
+            }
+            None => Receipt {
+                id: report.id,
+                package: report.package,
+                provenance: report.provenance,
+                approval: report.approval,
+                desired: Desired::Disabled,
+                previous: None,
+            },
+        };
+        self.apply(candidate)?;
         self.release_download()
+    }
+
+    /// Swap the two exact approved selections. No inspection, repository
+    /// lookup, import, or dependency substitution is part of rollback.
+    pub fn rollback(&self, id: &str) -> Result<(), String> {
+        validate_id(id)?;
+        self.prepare(id)?;
+        // Validate before recovery can start anything. A refused swap must
+        // not disturb the installed graph or discard an interrupted operation.
+        let current = self.receipt(id)?.ok_or("plugin is not installed")?;
+        self.approved(&current)?;
+        let candidate = current.rollback()?;
+        self.approved(&candidate)?;
+        self.verify_publisher(&candidate.package, &candidate.provenance)?;
+        self.check_selection(&candidate)?;
+        self.recover_one(id)?;
+        self.apply(candidate)
     }
 
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
@@ -466,7 +471,7 @@ impl Host {
         Ok(())
     }
 
-    pub fn restore(&self) -> Result<(), String> {
+    pub fn restore_all(&self) -> Result<(), String> {
         self.invalidate_registry()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
@@ -597,6 +602,7 @@ impl Host {
                     && self.units.matches_running(&report)?
                 {
                     self.units.firewall.apply(&report.id, &report.ports)?;
+                    self.selection(&receipt.id).settle(&receipt)?;
                     return Ok(());
                 }
             }
@@ -619,8 +625,7 @@ impl Host {
             }
             let roots = Path::new(ROOTS).join(name);
             storage::directory(&roots)?;
-            storage::remove(&roots.join("pending"))?;
-            storage::remove(&roots.join("active"))?;
+            SelectionStore::new(path.join("selection.json"), roots).remove()?;
         }
         Ok(())
     }
@@ -631,8 +636,7 @@ impl Host {
         self.verify_publisher(&candidate.package, &candidate.provenance)?;
         self.check_selection(&candidate)?;
         self.invalidate_registry()?;
-        let pending = self.root(id, "pending");
-        storage::root_link(&pending, &candidate.package)?;
+        self.selection(id).stage(&candidate.package)?;
         let result = self.units.stop(id, false).and_then(|_| {
             if matches!(candidate.desired, Desired::Enabled) {
                 self.verify_dependencies(&report)?;
@@ -643,13 +647,11 @@ impl Host {
         });
         if let Err(error) = result {
             return match self.restore_one(id) {
-                Ok(()) => Err(format!("operation failed; previous selection restored: {error}")),
-                Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore")),
+                Ok(()) => Err(format!("operation failed; committed selection restored: {error}")),
+                Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore-all")),
             };
         }
-        storage::write_json(&self.receipt_path(id), &candidate)?;
-        storage::root_link(&self.root(id, "active"), &candidate.package)?;
-        storage::remove(&pending)?;
+        self.selection(id).commit(&candidate)?;
         self.publish_registry()
     }
 
@@ -725,8 +727,7 @@ impl Host {
                     } else {
                         self.units.stop(id, purge)?;
                     }
-                    storage::remove(&self.receipt_path(id))?;
-                    storage::remove(&self.root(id, "active"))?;
+                    self.selection(id).remove()?;
                 } else {
                     self.units.stop(id, false)?;
                     if matches!(receipt.desired, Desired::Enabled) {
@@ -736,14 +737,15 @@ impl Host {
                         verify_dependencies(&report)?;
                         self.units.start(&report)?;
                     }
-                    storage::root_link(&self.root(id, "active"), &receipt.package)?;
+                    self.selection(id).settle(&receipt)?;
                 }
             }
             None => {
                 self.units.stop(id, false)?;
+                self.selection(id).remove()?;
             }
         }
-        storage::remove(&self.root(id, "pending"))
+        Ok(())
     }
 
     fn prepare(&self, id: &str) -> Result<(), String> {
@@ -760,7 +762,13 @@ impl Host {
     fn receipt_path(&self, id: &str) -> PathBuf {
         self.directory(id).join("selection.json")
     }
+    fn selection(&self, id: &str) -> SelectionStore {
+        SelectionStore::new(
+            self.receipt_path(id),
+            Path::new(ROOTS).join(package::unit_name(id)),
+        )
+    }
     fn receipt(&self, id: &str) -> Result<Option<Receipt>, String> {
-        storage::read_json(&self.receipt_path(id))
+        self.selection(id).read()
     }
 }

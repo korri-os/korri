@@ -1,7 +1,12 @@
 { pkgs, crane }:
 let
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
-  clean = craneLib.cleanCargoSource ./.;
+  clean = pkgs.lib.cleanSourceWith {
+    src = ./.;
+    filter =
+      path: type:
+      craneLib.filterCargoSources path type || path == toString ./tests/fixtures/selection.json;
+  };
   vendor = craneLib.vendorCargoDeps { src = clean; };
   common = {
     pname = "korri-plugin-host";
