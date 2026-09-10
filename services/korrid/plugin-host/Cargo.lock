@@ -758,6 +758,7 @@ dependencies = [
  "libc",
  "oxc",
  "rcgen",
+ "ring",
  "rquickjs",
  "rustls",
  "serde",

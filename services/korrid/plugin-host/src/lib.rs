@@ -13,4 +13,4 @@ pub mod storage;
 pub mod unit;
 
 #[path = "../../src/script.rs"]
-mod script;
+pub mod script;

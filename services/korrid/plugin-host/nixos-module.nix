@@ -16,6 +16,24 @@ in
       default = null;
       description = "Owner-curated HTTPS catalog URL. No production address is assumed; absence is shown explicitly by repository list.";
     };
+    publishers = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            publicKey = lib.mkOption {
+              type = lib.types.str;
+              description = "Full Nix Ed25519 public key bound to this publisher namespace.";
+            };
+            cacheUrl = lib.mkOption {
+              type = lib.types.str;
+              description = "Exact signed binary cache URL bound to this publisher namespace.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Device-owned publisher bindings. Keys are @publisher namespaces, not plugin-controlled claims.";
+    };
     package = lib.mkOption {
       type = lib.types.package;
       default = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
@@ -27,9 +45,15 @@ in
       (import ../../../nix/device-cache/nixos-module.nix { inherit lib; })
       {
         environment.systemPackages = [ cfg.package ];
-        environment.etc = lib.optionalAttrs (cfg.officialCatalogUrl != null) {
+        environment.etc = {
+          "korri-plugin-host/publishers.json".text = builtins.toJSON cfg.publishers;
+        }
+        // lib.optionalAttrs (cfg.officialCatalogUrl != null) {
           "korri-plugin-host/official-catalog-url".text = cfg.officialCatalogUrl + "\n";
         };
+        nix.settings.trusted-public-keys = map (binding: binding.publicKey) (
+          builtins.attrValues cfg.publishers
+        );
         boot.kernelModules = [ "tun" ];
         nix.settings.experimental-features = [ "nix-command" ];
         systemd.tmpfiles.rules = [

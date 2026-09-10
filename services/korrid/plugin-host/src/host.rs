@@ -35,6 +35,7 @@ pub enum Desired {
 
 pub struct Host {
     nix: PathBuf,
+    publishers: package::PublisherBindings,
     units: Units,
     state: State,
 }
@@ -52,8 +53,13 @@ impl Host {
         let systemctl = package::tools(systemctl)?;
         let state = State::open(Path::new(STATE_ROOT))?;
         storage::directory(Path::new(ROOTS))?;
+        let publishers = package::publisher_bindings(
+            &fs::canonicalize("/etc/korri-plugin-host/publishers.json")
+                .map_err(|error| format!("publisher bindings are unavailable: {error}"))?,
+        )?;
         Ok(Self {
             nix,
+            publishers,
             units: Units { systemctl },
             state,
         })
@@ -64,7 +70,7 @@ impl Host {
         let download = Path::new(ROOTS).join("download");
         storage::root_link(&download, package)?;
         package::import(&self.nix, source, package)?;
-        package::load(
+        self.load(
             package,
             Provenance::RawCache {
                 cache_url: source.into(),
@@ -160,7 +166,21 @@ impl Host {
             platform: record.platform.clone(),
             archive_sha256: record.archive_sha256.clone(),
         };
-        package::load(package, provenance)
+        self.load(package, provenance)
+    }
+
+    fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
+        self.verify_publisher(selected, &provenance)?;
+        package::load(selected, provenance)
+    }
+
+    fn verify_publisher(&self, selected: &Path, provenance: &Provenance) -> Result<(), String> {
+        let cache = match provenance {
+            Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
+            Provenance::Repository { .. } => None,
+        };
+        package::verify_publisher(&self.nix, selected, cache, &self.publishers)?;
+        Ok(())
     }
 
     pub fn release_download(&self) -> Result<(), String> {
@@ -219,27 +239,36 @@ impl Host {
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
         validate_id(id)?;
         self.prepare(id)?;
+        if !enabled {
+            return self.deactivate(id, Desired::Disabled);
+        }
         self.recover_one(id)?;
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
-        receipt.desired = if enabled {
-            Desired::Enabled
-        } else {
-            Desired::Disabled
-        };
+        receipt.desired = Desired::Enabled;
         self.apply(receipt)
     }
 
     pub fn remove(&self, id: &str, purge: bool) -> Result<(), String> {
         validate_id(id)?;
         self.prepare(id)?;
-        self.recover_one(id)?;
+        self.deactivate(id, Desired::Removed { purge })
+    }
+
+    fn deactivate(&self, id: &str, desired: Desired) -> Result<(), String> {
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
+        if matches!(receipt.desired, Desired::Removed { .. }) {
+            // A prior removal keeps its original purge choice.
+            self.restore_one(id)?;
+            return Err("plugin is not installed".into());
+        }
+        // Do not restore a pending enabled selection before stopping it. The
+        // immutable approval still authorizes cleanup, not a new daemon start.
         self.approved(&receipt)?;
-        // A removal is a durable intent, including the explicit data-deletion
-        // choice. Recovery must finish it, never resurrect an enabled plugin.
-        receipt.desired = Desired::Removed { purge };
+        // Persist both disable and removal before cleanup: failure or a crash
+        // must never roll back this intent into a (possibly revoked) start.
+        receipt.desired = desired;
         storage::write_json(&self.receipt_path(id), &receipt)?;
-        self.recover_one(id)
+        self.restore_one(id)
     }
 
     pub fn status(&self, id: &str) -> Result<Option<Receipt>, String> {
@@ -284,11 +313,15 @@ impl Host {
             }
             self.prepare(&receipt.id)?;
             let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
-            if !pending
-                && matches!(receipt.desired, Desired::Enabled)
-                && self.units.matches_running(&self.approved(&receipt)?)?
-            {
-                return Ok(());
+            if !pending && matches!(receipt.desired, Desired::Enabled) {
+                let report = self.approved(&receipt)?;
+                if self
+                    .verify_publisher(&receipt.package, &receipt.provenance)
+                    .is_ok()
+                    && self.units.matches_running(&report)?
+                {
+                    return Ok(());
+                }
             }
             self.restore_one(&receipt.id)?;
         } else {
@@ -316,6 +349,7 @@ impl Host {
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
+        self.verify_publisher(&candidate.package, &candidate.provenance)?;
         let pending = self.root(id, "pending");
         storage::root_link(&pending, &candidate.package)?;
         let result = self.units.stop(id, false).and_then(|_| {
@@ -372,6 +406,9 @@ impl Host {
                 } else {
                     self.units.stop(id, false)?;
                     if matches!(receipt.desired, Desired::Enabled) {
+                        // Stop first even when authority was revoked. Keep the
+                        // receipt and roots on denial; never restart revoked code.
+                        self.verify_publisher(&receipt.package, &receipt.provenance)?;
                         self.units.start(&report)?;
                     }
                     storage::root_link(&self.root(id, "active"), &receipt.package)?;

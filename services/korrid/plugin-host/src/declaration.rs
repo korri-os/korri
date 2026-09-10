@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
+    #[serde(skip_deserializing)]
     pub namespace: String,
     pub name: String,
     #[serde(
@@ -18,12 +19,6 @@ pub struct Declaration {
         skip_serializing_if = "Option::is_none"
     )]
     pub description: Option<String>,
-    pub contributes: Contributions,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Contributions {
     pub daemons: Vec<Daemon>,
 }
 
@@ -74,10 +69,11 @@ pub fn validate_id(id: &str) -> Result<(), String> {
 }
 
 impl Declaration {
-    pub fn evaluate(source: &str) -> Result<Self, String> {
+    pub fn evaluate(namespace: &str, source: &str) -> Result<Self, String> {
         let json = crate::script::eval_plugin_ts(source)?;
-        let declaration: Self =
+        let mut declaration: Self =
             serde_json::from_str(&json).map_err(|e| format!("invalid daemon declaration: {e}"))?;
+        declaration.namespace = namespace.to_owned();
         declaration.validate()?;
         Ok(declaration)
     }
@@ -100,10 +96,10 @@ impl Declaration {
                 "plugin description must be at most 1024 bytes without control characters".into(),
             );
         }
-        if self.contributes.daemons.len() != 1 {
+        if self.daemons.len() != 1 {
             return Err("this host supports exactly one daemon per plugin".into());
         }
-        let daemon = &self.contributes.daemons[0];
+        let daemon = &self.daemons[0];
         validate_command(&daemon.start)?;
         if let Some(cleanup) = &daemon.cleanup {
             validate_command(cleanup)?;
@@ -125,7 +121,7 @@ impl Declaration {
         format!("{}:{}", self.namespace, self.name)
     }
     pub fn host_network_admin(&self) -> bool {
-        self.contributes.daemons[0]
+        self.daemons[0]
             .capabilities
             .iter()
             .any(|c| c == "CAP_NET_ADMIN")

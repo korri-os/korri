@@ -35,9 +35,9 @@ fn registry(retroarch_enabled: bool, mgba_enabled: bool) -> PluginRegistry {
 fn registry_from_sources(retroarch_source: &str, mgba_source: &str) -> PluginRegistry {
     PluginRegistry::new(
         vec![
-            load_plugin_source(ANDROID_APP_PLUGIN_SOURCE).unwrap(),
-            load_plugin_source(retroarch_source).unwrap(),
-            load_plugin_source(mgba_source).unwrap(),
+            load_plugin_source("@korri", ANDROID_APP_PLUGIN_SOURCE).unwrap(),
+            load_plugin_source("@korri", retroarch_source).unwrap(),
+            load_plugin_source("@korri", mgba_source).unwrap(),
         ],
         resolve_enabled_plugin_ids([
             bundled_plugin_policy_layer(),

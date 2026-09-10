@@ -135,9 +135,9 @@ fn unknown_enabled_policy_override_is_rejected_by_registry() {
 fn production_android_plugin_matches_reviewed_checkpoint_bytes() {
     assert_eq!(PRODUCTION_ANDROID_PLUGIN, CHECKPOINT_ANDROID_PLUGIN);
 
-    let production = load_plugin_source(PRODUCTION_ANDROID_PLUGIN)
+    let production = load_plugin_source("@korri", PRODUCTION_ANDROID_PLUGIN)
         .expect("production Android plugin should load");
-    let checkpoint = load_plugin_source(CHECKPOINT_ANDROID_PLUGIN)
+    let checkpoint = load_plugin_source("@korri", CHECKPOINT_ANDROID_PLUGIN)
         .expect("checkpoint Android plugin should load");
 
     assert_eq!(production.id(), checkpoint.id());

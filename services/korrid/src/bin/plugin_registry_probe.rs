@@ -24,9 +24,11 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
-    let path = args.next().ok_or_else(|| {
-        "usage: plugin_registry_probe <plugin.ts> [--disabled|--review]".to_owned()
+    let namespace = args.next().ok_or_else(|| {
+        "usage: plugin_registry_probe <publisher-namespace> <plugin.ts> [--disabled|--review]"
+            .to_owned()
     })?;
+    let path = args.next().ok_or("missing plugin.ts path")?;
     let mode = match args.next().as_deref() {
         None => ReportMode::Enabled,
         Some("--disabled") => ReportMode::Disabled,
@@ -39,7 +41,9 @@ fn run() -> Result<(), String> {
 
     let source =
         fs::read_to_string(&path).map_err(|error| format!("cannot read {path}: {error}"))?;
-    let plugin = load_plugin_source(&source).map_err(|error| error.to_string())?;
+    // This read-only probe has no package authority. The reviewer supplies
+    // the namespace explicitly; only compiled bundled source uses @korri.
+    let plugin = load_plugin_source(&namespace, &source).map_err(|error| error.to_string())?;
 
     match mode {
         ReportMode::Enabled => print_report(plugin, true),
@@ -59,8 +63,10 @@ fn print_report(plugin: Plugin, enabled: bool) -> Result<(), String> {
     let mut plugins = Vec::new();
     let mut enabled_ids = Vec::new();
     if plugin_id == MGBA_PLUGIN_ID {
-        plugins
-            .push(load_plugin_source(RETROARCH_PLUGIN_SOURCE).map_err(|error| error.to_string())?);
+        plugins.push(
+            load_plugin_source("@korri", RETROARCH_PLUGIN_SOURCE)
+                .map_err(|error| error.to_string())?,
+        );
         enabled_ids.push(RETROARCH_PLUGIN_ID.to_owned());
     }
     if enabled {

@@ -284,7 +284,7 @@ fn runtime_ambiguity_counts_only_candidates_capable_of_the_requested_platform() 
         .into_iter()
         .map(|plugin| {
             if plugin.id() == "@korri:mgba" {
-                load_plugin_source(&source).unwrap()
+                load_plugin_source("@korri", &source).unwrap()
             } else {
                 plugin
             }
@@ -337,7 +337,7 @@ fn launcher_ambiguity_counts_only_candidates_capable_of_the_requested_platform()
         .into_iter()
         .map(|plugin| {
             if plugin.id() == "@korri:retroarch" {
-                load_plugin_source(&source).unwrap()
+                load_plugin_source("@korri", &source).unwrap()
             } else {
                 plugin
             }

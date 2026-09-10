@@ -9,7 +9,8 @@ use korrid::plugin::{
 const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
 
 fn controls(enabled: bool) -> Vec<korrid::plugin::SessionControlRecord> {
-    let plugin = load_plugin_source(RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
+    let plugin =
+        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
     let registry = PluginRegistry::new(
         vec![plugin],
         enabled.then(|| "@korri:retroarch".to_owned()).into_iter(),
@@ -61,7 +62,8 @@ fn canonical_retroarch_declares_ordered_menu_and_truthful_quit_controls() {
 fn retroarch_controls_require_enablement_route_ownership_and_live_executor() {
     assert!(controls(false).is_empty());
 
-    let plugin = load_plugin_source(RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
+    let plugin =
+        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:retroarch".to_owned()])
         .expect("RetroArch registry");
     for context in [

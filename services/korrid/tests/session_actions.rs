@@ -16,17 +16,12 @@ use tower::ServiceExt;
 const CANONICAL_MOONLIGHT_PLUGIN: &str = include_str!("../../../plugins/moonlight/plugin.ts");
 
 const MOONLIGHT_PLUGIN: &str = r#"
-({
-  namespace: "@korri",
-  name: "moonlight",
-  title: "Moonlight",
-  contributes: {
-    config: {
-      transports: {
+export const name = "moonlight";
+export const title = "Moonlight";
+export const transports = {
         moonlight: { id: "@korri:moonlight/moonlight" },
-      },
-    },
-    sessionControls: {
+      };
+export const sessionControls = {
       disconnect: {
         order: 0,
         id: "@korri:moonlight/disconnect",
@@ -68,19 +63,13 @@ const MOONLIGHT_PLUGIN: &str = r#"
         interaction: { kind: "range", min: 0, max: 100, step: 5 },
         effect: "@korri:moonlight/set-sgsr-sharpness",
       },
-    },
-  },
-})
+    };
 "#;
 
 const RETROARCH_PLUGIN: &str = r#"
-({
-  namespace: "@korri",
-  name: "retroarch",
-  title: "RetroArch",
-  contributes: {
-    config: {
-      launchers: {
+export const name = "retroarch";
+export const title = "RetroArch";
+export const launchers = {
         retroarch: {
           id: "@korri:retroarch/retroarch",
           plugin: "@korri:retroarch",
@@ -90,9 +79,8 @@ const RETROARCH_PLUGIN: &str = r#"
             className: "com.retroarch.browser.retroactivity.RetroActivityFuture",
           },
         },
-      },
-    },
-    sessionControls: {
+      };
+export const sessionControls = {
       openMenu: {
         order: 0,
         id: "@korri:retroarch/open-menu",
@@ -102,16 +90,14 @@ const RETROARCH_PLUGIN: &str = r#"
         effect: "@korri:retroarch/open-menu",
         dismissOnSuccess: true,
       },
-    },
-  },
-})
+    };
 "#;
 
 fn registry(enabled: &[&str]) -> PluginRegistry {
     PluginRegistry::new(
         vec![
-            load_plugin_source(MOONLIGHT_PLUGIN).expect("Moonlight declaration"),
-            load_plugin_source(RETROARCH_PLUGIN).expect("RetroArch declaration"),
+            load_plugin_source("@korri", MOONLIGHT_PLUGIN).expect("Moonlight declaration"),
+            load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch declaration"),
         ],
         enabled.iter().map(|id| (*id).to_owned()),
     )
@@ -198,7 +184,8 @@ fn active_route_owns_the_only_controls_that_resolve_in_deterministic_order() {
 
 #[test]
 fn canonical_moonlight_resolves_typed_artemis_availability_only_when_enabled() {
-    let plugin = load_plugin_source(CANONICAL_MOONLIGHT_PLUGIN).expect("Moonlight declaration");
+    let plugin =
+        load_plugin_source("@korri", CANONICAL_MOONLIGHT_PLUGIN).expect("Moonlight declaration");
     let enabled = PluginRegistry::new(vec![plugin.clone()], vec!["@korri:moonlight".to_owned()])
         .expect("enabled Moonlight registry");
 

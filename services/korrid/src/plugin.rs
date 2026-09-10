@@ -707,30 +707,13 @@ pub enum PluginError {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PluginDeclaration {
+    #[serde(skip)]
     namespace: String,
     name: String,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     title: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     description: Option<String>,
-    #[serde(default)]
-    contributes: PluginContributions,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PluginContributions {
-    #[serde(default)]
-    config: PluginConfigContributions,
-    #[serde(default, rename = "sessionControls")]
-    session_controls: BTreeMap<String, SessionControlRecord>,
-    #[serde(default)]
-    discovery: PluginDiscoveryContributions,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PluginConfigContributions {
     #[serde(default)]
     providers: BTreeMap<String, ProviderContribution>,
     #[serde(default)]
@@ -741,6 +724,10 @@ struct PluginConfigContributions {
     transports: BTreeMap<String, TransportRecord>,
     #[serde(default)]
     runtimes: BTreeMap<String, RuntimeRecord>,
+    #[serde(default, rename = "sessionControls")]
+    session_controls: BTreeMap<String, SessionControlRecord>,
+    #[serde(default)]
+    discovery: PluginDiscoveryContributions,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -750,13 +737,19 @@ struct PluginDiscoveryContributions {
     file_releases: BTreeMap<String, FileReleaseDiscoveryContribution>,
 }
 
-pub fn load_plugin_source(source: &str) -> Result<Plugin, PluginError> {
+/// The caller supplies publisher identity from verified packaging or trusted
+/// compiled composition. Plugin source cannot select its own publisher.
+pub fn load_plugin_source(namespace: &str, source: &str) -> Result<Plugin, PluginError> {
     let declaration_json = script::eval_plugin_ts(source).map_err(PluginError::Evaluation)?;
-    decode_plugin_declaration(&declaration_json)
+    decode_plugin_declaration(namespace, &declaration_json)
 }
 
-pub fn decode_plugin_declaration(declaration_json: &str) -> Result<Plugin, PluginError> {
-    let declaration: PluginDeclaration = serde_json::from_str(declaration_json)?;
+pub fn decode_plugin_declaration(
+    namespace: &str,
+    declaration_json: &str,
+) -> Result<Plugin, PluginError> {
+    let mut declaration: PluginDeclaration = serde_json::from_str(declaration_json)?;
+    declaration.namespace = namespace.to_owned();
     normalize_plugin(declaration)
 }
 
@@ -771,7 +764,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         .unwrap_or_else(|| titleize(&declaration.name));
     let mut providers = BTreeMap::new();
 
-    for (record_id, contribution) in declaration.contributes.config.providers {
+    for (record_id, contribution) in declaration.providers {
         if !is_provider_id(&record_id) {
             return Err(PluginError::InvalidContribution {
                 kind: "provider",
@@ -814,7 +807,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, system) in &declaration.contributes.config.systems {
+    for (local_id, system) in &declaration.systems {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "system" });
         }
@@ -827,7 +820,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, launcher) in &declaration.contributes.config.launchers {
+    for (local_id, launcher) in &declaration.launchers {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "launcher" });
         }
@@ -874,7 +867,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, transport) in &declaration.contributes.config.transports {
+    for (local_id, transport) in &declaration.transports {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "transport" });
         }
@@ -899,7 +892,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, runtime) in &declaration.contributes.config.runtimes {
+    for (local_id, runtime) in &declaration.runtimes {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "runtime" });
         }
@@ -929,29 +922,23 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
     }
 
     let owned_launchers: BTreeSet<String> = declaration
-        .contributes
-        .config
         .launchers
         .values()
         .map(|record| record.id.clone())
         .collect();
     let owned_transports: BTreeSet<String> = declaration
-        .contributes
-        .config
         .transports
         .values()
         .map(|record| record.id.clone())
         .collect();
     let owned_runtimes: BTreeSet<String> = declaration
-        .contributes
-        .config
         .runtimes
         .values()
         .map(|record| record.id.clone())
         .collect();
 
     let mut session_control_orders = BTreeMap::new();
-    for (local_id, control) in &mut declaration.contributes.session_controls {
+    for (local_id, control) in &mut declaration.session_controls {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId {
                 kind: "session control",
@@ -1005,7 +992,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
     }
 
     let mut file_release_discovery_claims = BTreeMap::new();
-    for (local_id, claim) in declaration.contributes.discovery.file_releases {
+    for (local_id, claim) in declaration.discovery.file_releases {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId {
                 kind: "discovery file release",
@@ -1073,11 +1060,11 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         title,
         description: declaration.description,
         providers,
-        systems: declaration.contributes.config.systems,
-        launchers: declaration.contributes.config.launchers,
-        transports: declaration.contributes.config.transports,
-        runtimes: declaration.contributes.config.runtimes,
-        session_controls: declaration.contributes.session_controls,
+        systems: declaration.systems,
+        launchers: declaration.launchers,
+        transports: declaration.transports,
+        runtimes: declaration.runtimes,
+        session_controls: declaration.session_controls,
         file_release_discovery_claims,
     })
 }

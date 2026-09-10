@@ -603,12 +603,10 @@ mod tests {
     #[test]
     fn conflicting_claims_are_diagnostics_not_candidates() {
         let conflict = r#"
-const declaration = {
-  namespace: "@test",
-  name: "conflict",
-  title: "Conflicting GBA Claim",
-  contributes: {
-    discovery: {
+
+export const name = "conflict";
+export const title = "Conflicting GBA Claim";
+export const discovery = {
       fileReleases: {
         gba: {
           id: "@test:conflict/gba",
@@ -618,18 +616,14 @@ const declaration = {
           runtime: "@korri:mgba/mgba",
         },
       },
-    },
-  },
-} as const
-
-declaration
+    };
 "#;
         let registry = PluginRegistry::new(
             vec![
-                load_plugin_source(ANDROID_APP_PLUGIN_SOURCE).unwrap(),
-                load_plugin_source(MGBA_PLUGIN_SOURCE).unwrap(),
-                load_plugin_source(RETROARCH_PLUGIN_SOURCE).unwrap(),
-                load_plugin_source(conflict).unwrap(),
+                load_plugin_source("@korri", ANDROID_APP_PLUGIN_SOURCE).unwrap(),
+                load_plugin_source("@korri", MGBA_PLUGIN_SOURCE).unwrap(),
+                load_plugin_source("@korri", RETROARCH_PLUGIN_SOURCE).unwrap(),
+                load_plugin_source("@test", conflict).unwrap(),
             ],
             vec![
                 "@korri:android-app".into(),

@@ -45,12 +45,12 @@ ensure_device
 OUTPUT="$("${ADB[@]}" shell /data/local/tmp/korri_script_probe /data/local/tmp/korri_example.plugin.ts)"
 echo "$OUTPUT"
 
-grep -q '"kind":"catalog"' <<<"$OUTPUT" || {
+grep -q '"name":"catalog"' <<<"$OUTPUT" || {
   echo "FAILED: device did not return a catalog declaration" >&2
   exit 1
 }
-grep -q '"routes"' <<<"$OUTPUT" || {
-  echo "FAILED: declaration lost its fulfilment routes" >&2
+grep -q '"id":"gba"' <<<"$OUTPUT" || {
+  echo "FAILED: declaration lost its system record" >&2
   exit 1
 }
 echo "OK: TypeScript plugin transpiled and evaluated on device"

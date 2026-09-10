@@ -70,7 +70,7 @@ in
             export KORRI_PUBLISH_NIX=${pkgs.nix}/bin/nix
             export KORRI_PUBLISH_TEST_PACKAGE="$package"
             export KORRI_PUBLISH_TEST_SYSTEM=${pkgs.stdenv.hostPlatform.system}
-            cargo test --locked --manifest-path Cargo.toml --test publish -- --ignored
+            cargo test --locked --manifest-path Cargo.toml --test publish --test namespace -- --ignored
           '';
         }
       }/bin/korri-publisher-check";

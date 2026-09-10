@@ -8,7 +8,7 @@ Import `nixosModules.korri-plugin-host` and enable `services.korri.pluginHost.en
 
 The module composes `nix/device-cache/nixos-module.nix`, which sets `max-jobs = 0` and disables remote builders. The importer realizes an exact output with `nix build --no-link --extra-substituters SOURCE OUTPUT`. Despite the command name, it forces `max-jobs = 0`, empty `builders`, `fallback = false`, and `require-sigs = true`: no local or remote builds are allowed. It validates the exact `/nix/store` output before invoking Nix; derivations, flakes and expressions are rejected. Nix can download dependencies from the host's configured trusted caches, including `cache.nixos.org`, rather than requiring the plugin cache to duplicate them. Recursive signature verification consults the same caches, including for already-present paths without locally registered signatures. Verification and store filesystem synchronization still complete before approval.
 
-Core exports `packages.<system>.korri-plugin-host`, including the generic Rust host and publisher. Production Tailscale packaging and publication belong to [korri-os/plugins](https://github.com/korri-os/plugins). Core retains only a test fixture under `tests/fixtures/tailscale`, copied from that real package and declaration with the same `@korri:tailscale` identity and unchanged nixpkgs binaries. The fixture is not a public package or a distributable plugin. Live publication and the official HTTPS destination still need owner approval. General core binary caching is separate; Releases is not a Nix substituter.
+Core exports `packages.<system>.korri-plugin-host`, including the generic Rust host and publisher. Production Tailscale packaging and publication belong to [korri-os/plugins](https://github.com/korri-os/plugins). Core retains only a test fixture under `tests/fixtures/tailscale`, copied from that real package and declaration with the same `@korri:tailscale` identity and unchanged nixpkgs binaries. The fixture is not a public package or a distributable plugin. Live publication and the official HTTPS destination still need owner approval. General core binary caching is separate from plugin cache publication.
 
 ## HTTPS repositories
 
@@ -31,6 +31,8 @@ Review `warning`, `provenance`, `declaration`, and `unit_configuration` before c
 
 Acquisition validates certificates and follows at most three HTTPS redirects. HTTP downgrades, URL credentials, curlrc and netrc credentials are disabled. Catalog transfers allow 30 seconds and 4 MiB; archive transfers allow 180 seconds and less than 2 GiB. Connection setup allows 10 seconds within the total deadline. The host measures the actual archive SHA256 **before** extraction. It checks confined extraction, typed Nix closure metadata, compressed file sizes/hashes and actual bounded xz/NAR hashes through `archive::preflight_cache`. Only this private local file cache reaches the existing Nix importer. Recursive `--sigs-needed 1` verification remains active. No downloaded Nix options, builds, flake evaluation or signature bypass are accepted.
 
+A repository archive must now also identify an output signed by the namespace's bound key. Unsigned content-addressed archives alone are refused. If the archive omits that signature, the bound cache must supply matching signed metadata; the catalog URL is not signing authority.
+
 The cost is a complete per-release archive and temporary disk use: up to 2 GiB downloaded plus 3 GiB extracted compressed cache, in addition to imported store paths. NAR validation permits at most 3 GiB of actual decompressed bytes. Downloads and validation hold the exclusive host lock, so concurrent commands fail as busy. A lost connection requires a new download; there is no partial resume.
 
 ## Raw-cache installation and approval
@@ -48,9 +50,15 @@ sudo korri-plugin install "$CACHE_URL" "$PACKAGE" "$APPROVAL"
 sudo korri-plugin enable @korri:tailscale
 ```
 
-Install leaves the plugin disabled. Approval binds to the exact store path, explicit input provenance, declaration, base policy, and complete rendered unit. Repository approval never includes the disposable staging/cache path. Two sources serving identical bytes have different approvals. There is no blanket `--yes` grant.
+Install leaves the plugin disabled. Approval binds to the exact store path, `plugin.ts` bytes (including any `launch` function), manifest bytes, explicit input provenance, declaration, base policy, and complete rendered unit. Repository approval never includes the disposable staging/cache path. Two sources serving identical bytes have different approvals. There is no blanket `--yes` grant.
 
-A Nix signature proves cache integrity. It does not prove the publisher's identity or authorize permissions. Plugin IDs are self-declared. The administrator approves the exact package, not an automatically trusted publisher.
+The device binds each publisher namespace to one full Nix public key and one exact cache URL through `services.korri.pluginHost.publishers`. Each binding has `publicKey` and `cacheUrl`; the module writes `/etc/korri-plugin-host/publishers.json` and adds those keys to Nix's trust list. A non-NixOS administrator supplies that root-owned file and configures the same Nix keys. Missing or malformed configuration fails closed. An empty map permits no external plugin.
+
+The immutable package contains `plugin.ts` and a generated `manifest.json`. Its only identity field is `publisher.namespace`, grounded in the approved authoring brief. The package producer supplies that value from trusted publisher composition; `tests/fixtures/tailscale/package.nix` is the build-side fixture. No manifest key is authoritative. The host verifies the actual selected NAR contents and checks an Ed25519 signature over Nix's fingerprint (path, NAR hash, NAR size, sorted references) with the bound full key. A matching signature label, another globally trusted signer, or content-addressed identity alone is insufficient. Raw-cache inspection also requires the bound cache URL.
+
+When a local store image lacks signatures, the host fetches metadata only from the bound cache, checks it against the local NAR fingerprint, and retains verified signatures in Nix's own metadata. Later offline activation checks that full key again. This can require one metadata request during initial inspection. Removing a binding or replacing its key prevents new starts of old packages, including rollback and boot recovery. It does not revoke the exact installed receipt's authority to stop and clean up. Republish selected builds and cut over bindings operationally; there is no runtime migration.
+
+Namespace verification does not authorize permissions. The administrator still approves the exact package. This is a clean cut: old completion-value plugins and packages without a manifest cannot be installed. Production publication in `korri-os/plugins` must adopt the manifest and named exports separately; this core slice changes its test fixture, not that repository.
 
 ## Lifecycle commands
 
@@ -67,15 +75,19 @@ A Nix signature proves cache integrity. It does not prove the publisher's identi
 | `unit ID` | Print the managed systemd unit name for status and journal commands. |
 | `restore` | Reconcile interrupted operations and restore enabled daemons. Leave matching healthy daemons running. |
 
-The generic boot service runs `restore`. Every command opens the same exclusive host lock, including source writes. Local `status`, `enable`, `disable`, `remove`, and `restore` use the receipt and immutable store; they do not need a configured or reachable repository. Pending and active package symlinks are Nix GC roots. The host commits a selection only after its service operation succeeds. If the device loses power before that commit, boot restores the previous selection. Removal records its intent before cleanup, so recovery cannot silently re-enable it.
+The generic boot service runs `restore`. Every command opens the same exclusive host lock, including source writes. Local `status`, `enable`, `disable`, `remove`, and `restore` use the receipt and immutable store; they do not need a configured or reachable repository. Pending and active package symlinks are Nix GC roots. The host commits a new package or enable selection only after its service operation succeeds. If the device loses power before that commit, boot restores the previous selection only if its publisher is still authorized. Disable and removal record their intent before cleanup, so an error or crash cannot silently re-enable them. They replace a pending enabled operation without first restarting the previous selection. A prior removal keeps its original purge choice.
 
-If cleanup fails, removal and automatic rollback stop. The receipt and package remain available for inspection. Read the unit journal. Do not delete the roots to force success. A failed native cleanup can need separate administrator repair; the CLI does not pretend to reverse arbitrary native effects.
+Deactivation still checks the receipt's exact package, source bytes, manifest, provenance, identity and effective policy against its approval. It skips only current publisher authorization, not approval equality. The existing managed unit may run its already approved `ExecStopPost`, including cleanup from an approved pending update; there is no general cleanup-command bypass. Purging an inactive plugin renders that exact approved unit for systemd's state deletion without starting its daemon. Missing or malformed publisher configuration still prevents opening the host; remove a namespace from the valid binding map to revoke it.
+
+Recovery stops a revoked enabled unit before refusing its restart, even if it was healthy. It retains the receipt and GC roots on refusal. This is not a live revocation watcher: a running daemon is stopped by disable, remove or restore, not by the configuration edit alone. If disable or removal reached disk before a crash, recovery only completes cleanup and optional purge; it never starts that daemon.
+
+If cleanup fails, disable, removal and automatic rollback stop. The receipt and package remain available for inspection. Read the unit journal. Do not delete the roots to force success. A failed native cleanup can need separate administrator repair; the CLI does not pretend to reverse arbitrary native effects.
 
 ## Declaration and storage grounding
 
-`src/declaration.rs` preserves Korri's `namespace`, `name`, optional `title` and `description`, and `contributes`. ID segments follow the grammar in `services/korrid/src/plugin.rs`, with a 64-byte bound.
+`src/declaration.rs` consumes named exports `name`, optional `title` and `description`, and `daemons`. The publisher namespace comes from verified packaging, not source. ID segments follow the grammar in `services/korrid/src/plugin.rs`, with a 64-byte bound.
 
-Legacy's `contributes.daemons` contains executable factories. This host replaces factories with the systemd fields exercised by Tailscale: `Type`, `ExecStart`, optional `ExecStopPost`, and `CapabilityBoundingSet`. Only `notify` and `exec` service types are supported. The only nonempty capabilities are `CAP_NET_ADMIN` and `CAP_NET_RAW`. Unknown fields, explicit nulls, duplicate capabilities, and executable path traversal fail.
+For this module/identity slice, `daemons` retains the internal systemd fields exercised by Tailscale: `Type`, `ExecStart`, optional `ExecStopPost`, and `CapabilityBoundingSet`. Only `notify` and `exec` service types are supported. The only nonempty capabilities are `CAP_NET_ADMIN` and `CAP_NET_RAW`. Unknown fields, explicit nulls, duplicate capabilities, and executable path traversal fail.
 
 Commands name `bin/<program>` inside the immutable package. Their arguments can use systemd's `STATE_DIRECTORY` and `RUNTIME_DIRECTORY` names. The host substitutes its own directories. It never passes untrusted unit directives, environment variables, specifiers, or a shell command string to systemd.
 
@@ -93,7 +105,7 @@ The CLI uses korrid's actual evaluator from `services/korrid/src/script.rs`. Tha
 
 | Field | Existing producer grounding |
 |---|---|
-| `plugin_id` | `Declaration::id()` combines the existing namespace/name treaty. The imported declaration must match the selected ID. |
+| `plugin_id` | `Declaration::id()` combines the manifest publisher namespace with the named `name` export. The imported declaration must match the selected ID. |
 | `title`, `description` | The existing optional fields in `plugin.ts`; the publisher loads the real declaration through `package::load_declaration`. |
 | `release_version` | The explicit publisher CLI release label, independent of upstream binary version. |
 | `platform` | The Nix build system string supplied to the publisher. The consumer selects its compiled Nix system, not one supplied by the catalog caller. |
@@ -118,6 +130,8 @@ nix develop .#plugin-host --command cargo clippy --manifest-path services/korrid
 ```
 
 The VM starts without the Tailscale package. A second fixture VM serves signed raw caches, real HTTPS catalogs and complete content-addressed archives produced by the prebuilt publisher. The cold client never publishes or builds. The test disables automatic test-script closure injection, so the client must actually import the package. It proves signature refusal, explicit approval, installation, service readiness, a TUN interface, independent plugin updates, failed-start rollback, power-loss recovery, data retention, purge, cleanup-failure refusal, and an unchanged NixOS generation. No compiler is on the client command path. The extended gates also cover two sources sharing an ID and identical bytes, same-source update, cross-source approval rejection, changed catalogs, failed/interrupted source-switch rollback, source removal with offline lifecycle, and owned stale-staging cleanup. These new VM gates must be run before claiming end-to-end verification.
+
+The revocation VM gates remove a publisher binding and rotate its full key. Both deny enable, permit disable and removal with real Tailscale cleanup, retain data on disable, and purge it on removal. They reject a changed receipt approval, cover pending-operation and persisted-disable recovery boundaries, stop a revoked healthy daemon during restore, refuse revoked restarts, and retain receipts and roots after native cleanup failure.
 
 The split-cache VM gate removes a dependency's NAR and narinfo from the plugin cache. An independently signed, configured upstream supplies it through the real `inspect` and `install` commands. Missing and untrusted upstream cases fail without running an available build canary, even with permissive ambient Nix settings. A later inspection without the dependency's trusted key also fails after the output is already present. A separately seeded unsigned local dependency requires a trusted upstream signature before inspection succeeds. The gate checks unchanged raw-cache provenance, explicit approval, activation and removal. It uses local fixture caches, not a live `cache.nixos.org` connection.
 

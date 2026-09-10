@@ -9,8 +9,24 @@ const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.t
 const MOONLIGHT_PLUGIN: &str = include_str!("../../../plugins/moonlight/plugin.ts");
 
 #[test]
+fn publisher_identity_comes_from_composition_not_module_source() {
+    let source = "export const name = 'clock'; export const title = 'Clock';";
+    let plugin = load_plugin_source("@owner", source).unwrap();
+    assert_eq!(plugin.id(), "@owner:clock");
+    assert!(load_plugin_source(
+        "@owner",
+        &format!("{source} export const namespace = '@korri';")
+    )
+    .is_err());
+    assert!(
+        decode_plugin_declaration("@owner", r#"{"name":"clock","namespace":"@korri"}"#).is_err()
+    );
+}
+
+#[test]
 fn enabled_android_plugin_announces_its_legacy_contributions() {
-    let plugin = load_plugin_source(ANDROID_PLUGIN).expect("checkpoint plugin should load");
+    let plugin =
+        load_plugin_source("@korri", ANDROID_PLUGIN).expect("checkpoint plugin should load");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:android-app".to_owned()])
         .expect("checkpoint plugin should register");
 
@@ -41,7 +57,8 @@ fn enabled_android_plugin_announces_its_legacy_contributions() {
 
 #[test]
 fn enabled_retroarch_plugin_announces_only_its_launcher_component() {
-    let plugin = load_plugin_source(RETROARCH_PLUGIN).expect("RetroArch plugin should load");
+    let plugin =
+        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch plugin should load");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:retroarch".to_owned()])
         .expect("RetroArch plugin should register");
 
@@ -63,8 +80,9 @@ fn enabled_retroarch_plugin_announces_only_its_launcher_component() {
 
 #[test]
 fn enabled_mgba_plugin_announces_its_system_and_runtime() {
-    let retroarch = load_plugin_source(RETROARCH_PLUGIN).expect("RetroArch plugin should load");
-    let mgba = load_plugin_source(MGBA_PLUGIN).expect("mGBA plugin should load");
+    let retroarch =
+        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch plugin should load");
+    let mgba = load_plugin_source("@korri", MGBA_PLUGIN).expect("mGBA plugin should load");
     let registry = PluginRegistry::new(
         vec![retroarch, mgba],
         vec!["@korri:retroarch".to_owned(), "@korri:mgba".to_owned()],
@@ -92,7 +110,8 @@ fn enabled_mgba_plugin_announces_its_system_and_runtime() {
 
 #[test]
 fn enabled_moonlight_plugin_declares_artemis_streaming_and_the_full_control_inventory() {
-    let plugin = load_plugin_source(MOONLIGHT_PLUGIN).expect("Moonlight plugin should load");
+    let plugin =
+        load_plugin_source("@korri", MOONLIGHT_PLUGIN).expect("Moonlight plugin should load");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:moonlight".to_owned()])
         .expect("Moonlight plugin should register");
 
@@ -177,18 +196,8 @@ fn enabled_moonlight_plugin_declares_artemis_streaming_and_the_full_control_inve
 
 #[test]
 fn plugin_system_aliases_follow_the_readable_system_shape() {
-    let plugin = decode_plugin_declaration(
-        r#"{
-          "namespace":"@korri",
-          "name":"other",
-          "contributes":{
-            "config":{
-              "systems":{
-                "gba":{"id":"gba","title":"Game Boy Advance","aliases":["game-boy-advance"]}
-              }
-            }
-          }
-        }"#,
+    let plugin = decode_plugin_declaration("@korri",
+        r#"{"name":"other","systems":{"gba":{"id":"gba","title":"Game Boy Advance","aliases":["game-boy-advance"]}}}"#,
     )
     .expect("system aliases should decode like readable systems");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:other".to_owned()])
@@ -205,8 +214,9 @@ fn plugin_system_aliases_follow_the_readable_system_shape() {
 
 #[test]
 fn enabled_mgba_plugin_announces_gba_file_release_discovery_claim() {
-    let retroarch = load_plugin_source(RETROARCH_PLUGIN).expect("RetroArch plugin should load");
-    let mgba = load_plugin_source(MGBA_PLUGIN).expect("mGBA plugin should load");
+    let retroarch =
+        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch plugin should load");
+    let mgba = load_plugin_source("@korri", MGBA_PLUGIN).expect("mGBA plugin should load");
     let registry = PluginRegistry::new(
         vec![retroarch, mgba],
         vec!["@korri:retroarch".to_owned(), "@korri:mgba".to_owned()],
@@ -242,7 +252,7 @@ fn malformed_discovery_claims_fail_explicitly() {
     ];
     for source in malformed_at_decode {
         assert!(
-            load_plugin_source(&source).is_err(),
+            load_plugin_source("@korri", &source).is_err(),
             "malformed discovery declaration unexpectedly loaded: {source}"
         );
     }
@@ -258,8 +268,9 @@ fn malformed_discovery_claims_fail_explicitly() {
             "runtime: \"@korri:missing/mgba\"",
         ),
     ] {
-        let retroarch = load_plugin_source(RETROARCH_PLUGIN).expect("RetroArch plugin should load");
-        let mgba = load_plugin_source(&source).expect("plugin shape should decode");
+        let retroarch =
+            load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch plugin should load");
+        let mgba = load_plugin_source("@korri", &source).expect("plugin shape should decode");
         PluginRegistry::new(
             vec![retroarch, mgba],
             vec!["@korri:retroarch".to_owned(), "@korri:mgba".to_owned()],
@@ -279,14 +290,14 @@ fn malformed_moonlight_android_implementation_is_rejected_strictly() {
         ),
         MOONLIGHT_PLUGIN.replace("android: {", "android: null, ignored: {"),
     ] {
-        load_plugin_source(&source).expect_err("invalid Artemis declaration must fail");
+        load_plugin_source("@korri", &source).expect_err("invalid Artemis declaration must fail");
     }
 }
 
 #[test]
 fn disabled_plugins_reserve_only_their_own_contribution_identities() {
     let retroarch = PluginRegistry::new(
-        vec![load_plugin_source(RETROARCH_PLUGIN).unwrap()],
+        vec![load_plugin_source("@korri", RETROARCH_PLUGIN).unwrap()],
         Vec::new(),
     )
     .expect("RetroArch plugin should register");
@@ -294,8 +305,11 @@ fn disabled_plugins_reserve_only_their_own_contribution_identities() {
     assert!(!retroarch.owns_registered_runtime_id("@korri:mgba/mgba"));
     assert!(!retroarch.owns_registered_system_id("gba"));
 
-    let mgba = PluginRegistry::new(vec![load_plugin_source(MGBA_PLUGIN).unwrap()], Vec::new())
-        .expect("mGBA plugin should register");
+    let mgba = PluginRegistry::new(
+        vec![load_plugin_source("@korri", MGBA_PLUGIN).unwrap()],
+        Vec::new(),
+    )
+    .expect("mGBA plugin should register");
     assert!(mgba.owns_registered_runtime_id("@korri:mgba/mgba"));
     assert!(mgba.owns_registered_system_id("gba"));
     assert!(!mgba.owns_registered_launcher_id("@korri:retroarch/retroarch"));
@@ -324,7 +338,7 @@ fn malformed_runtime_and_android_launcher_fields_are_rejected() {
 
     for source in invalid_sources {
         assert!(
-            load_plugin_source(&source).is_err(),
+            load_plugin_source("@korri", &source).is_err(),
             "malformed declaration unexpectedly loaded: {source}"
         );
     }
@@ -332,7 +346,8 @@ fn malformed_runtime_and_android_launcher_fields_are_rejected() {
 
 #[test]
 fn disabled_plugin_announces_no_contributions_but_reserves_its_record_identities() {
-    let plugin = load_plugin_source(ANDROID_PLUGIN).expect("checkpoint plugin should load");
+    let plugin =
+        load_plugin_source("@korri", ANDROID_PLUGIN).expect("checkpoint plugin should load");
     let registry = PluginRegistry::new(vec![plugin], Vec::new()).expect("plugin should register");
 
     assert_eq!(registry.registered_plugin_ids(), ["@korri:android-app"]);
@@ -351,14 +366,11 @@ fn disabled_plugin_announces_no_contributions_but_reserves_its_record_identities
 #[test]
 fn implicit_own_provider_is_normalized_with_its_provider_id() {
     let plugin = load_plugin_source(
+        "@korri",
         r#"
-        ({
-          namespace: "@korri",
-          name: "android-app",
-          title: "Android",
-          contributes: { config: {} },
-        })
-        "#,
+export const name = "android-app";
+export const title = "Android";
+"#,
     )
     .expect("plugin should load");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:android-app".to_owned()])
@@ -375,19 +387,13 @@ fn implicit_own_provider_is_normalized_with_its_provider_id() {
 #[test]
 fn provider_contribution_keys_supply_the_readable_provider_id() {
     let plugin = load_plugin_source(
+        "@korri",
         r#"
-        ({
-          namespace: "@korri",
-          name: "android-app",
-          contributes: {
-            config: {
-              providers: {
+export const name = "android-app";
+export const providers = {
                 "@korri:android-app": { title: "Android applications" },
-              },
-            },
-          },
-        })
-        "#,
+              };
+"#,
     )
     .expect("provider contribution key should supply its id");
     let registry = PluginRegistry::new(vec![plugin], vec!["@korri:android-app".to_owned()])
@@ -404,22 +410,16 @@ fn provider_contribution_keys_supply_the_readable_provider_id() {
 #[test]
 fn non_json_fields_fail_before_json_stringification_can_erase_them() {
     let error = load_plugin_source(
+        "@korri",
         r#"
-        ({
-          namespace: "@korri",
-          name: "android-app",
-          contributes: {
-            config: {
-              providers: {
+export const name = "android-app";
+export const providers = {
                 "@korri:android-app": {
                   title: "Android",
                   unsupported: undefined,
                 },
-              },
-            },
-          },
-        })
-        "#,
+              };
+"#,
     )
     .expect_err("undefined fields must not disappear before strict decoding");
 
@@ -432,6 +432,7 @@ fn non_json_fields_fail_before_json_stringification_can_erase_them() {
 #[test]
 fn accessors_and_to_json_cannot_change_the_validated_declaration() {
     let accessor_error = load_plugin_source(
+        "@korri",
         r#"
         let reads = 0
         const provider = { title: "Android" }
@@ -439,14 +440,10 @@ fn accessors_and_to_json_cannot_change_the_validated_declaration() {
           enumerable: true,
           get() { reads += 1; return reads === 1 ? true : undefined },
         })
-        ;({
-          namespace: "@korri",
-          name: "android-app",
-          contributes: {
-            config: { providers: { "@korri:android-app": provider } },
-          },
-        })
-        "#,
+
+export const name = "android-app";
+export const providers = { "@korri:android-app": provider };
+"#,
     )
     .expect_err("an accessor must be captured once before strict decoding");
     assert!(
@@ -455,10 +452,13 @@ fn accessors_and_to_json_cannot_change_the_validated_declaration() {
     );
 
     let to_json_error = load_plugin_source(
+        "@korri",
         r#"
-        const title = Object.create({ toJSON() { return "Android" } })
-        ;({ namespace: "@korri", name: "android-app", title })
-        "#,
+        const invalidTitle = Object.create({ toJSON() { return "Android" } })
+
+export const name = "android-app";
+export const title = invalidTitle;
+"#,
     )
     .expect_err("custom JSON serialization must not replace declaration values");
     assert!(
@@ -470,12 +470,24 @@ fn accessors_and_to_json_cannot_change_the_validated_declaration() {
 #[test]
 fn non_plain_objects_cannot_collapse_into_empty_declaration_maps() {
     for source in [
-        r#"({ namespace: "@korri", name: "android-app", contributes: new Boolean(false) })"#,
-        r#"({ namespace: "@korri", name: "android-app", contributes: { config: new Date() } })"#,
-        r#"({ namespace: "@korri", name: "android-app", contributes: { config: { providers: new Map() } } })"#,
-        r#"const value = new Date(); Object.setPrototypeOf(value, Object.prototype); ({ namespace: "@korri", name: "android-app", contributes: value })"#,
+        r#"
+export const name = "android-app";
+export const systems = new Boolean(false);
+"#,
+        r#"
+export const name = "android-app";
+export const systems = new Date();
+"#,
+        r#"
+export const name = "android-app";
+export const providers = new Map();
+"#,
+        r#"const value = new Date(); Object.setPrototypeOf(value, Object.prototype)
+export const name = "android-app";
+export const systems = value;
+"#,
     ] {
-        let error = load_plugin_source(source)
+        let error = load_plugin_source("@korri", source)
             .expect_err("non-plain objects must not become empty declaration maps");
         assert!(
             error.to_string().contains("not JSON data"),
@@ -487,23 +499,17 @@ fn non_plain_objects_cannot_collapse_into_empty_declaration_maps() {
 #[test]
 fn malformed_provider_contributions_fail_instead_of_disappearing() {
     let error = load_plugin_source(
+        "@korri",
         r#"
-        ({
-          namespace: "@korri",
-          name: "android-app",
-          contributes: {
-            config: {
-              providers: {
+export const name = "android-app";
+export const providers = {
                 "@korri:android-app": {
                   id: "@korri:android-app",
                   title: "Android",
                   unsupported: true,
                 },
-              },
-            },
-          },
-        })
-        "#,
+              };
+"#,
     )
     .expect_err("unsupported provider fields must fail explicitly");
 
@@ -516,14 +522,14 @@ fn malformed_provider_contributions_fail_instead_of_disappearing() {
 #[test]
 fn contribution_identity_mismatches_are_rejected() {
     let declarations = [
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"providers":{"android-app":{"title":"Android"}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"providers":{"@korri:android-app":{"id":"@korri:other"}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"systems":{"android":{"id":"switch"}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:other/android-app"}}}}}"#,
+        r#"{"name":"android-app","providers":{"android-app":{"title":"Android"}}}"#,
+        r#"{"name":"android-app","providers":{"@korri:android-app":{"id":"@korri:other"}}}"#,
+        r#"{"name":"android-app","systems":{"android":{"id":"switch"}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:other/android-app"}}}"#,
     ];
 
     for declaration in declarations {
-        decode_plugin_declaration(declaration)
+        decode_plugin_declaration("@korri", declaration)
             .expect_err("contribution identities must agree with their registry keys");
     }
 }
@@ -531,14 +537,14 @@ fn contribution_identity_mismatches_are_rejected() {
 #[test]
 fn empty_keys_and_malformed_launcher_fields_are_rejected() {
     let declarations = [
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"systems":{"":{"id":""}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"":{"id":"@korri:android-app/"}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:android-app/android-app","plugin":"android-app"}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:android-app/android-app","command":""}}}}}"#,
+        r#"{"name":"android-app","systems":{"":{"id":""}}}"#,
+        r#"{"name":"android-app","launchers":{"":{"id":"@korri:android-app/"}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:android-app/android-app","plugin":"android-app"}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:android-app/android-app","command":""}}}"#,
     ];
 
     for declaration in declarations {
-        decode_plugin_declaration(declaration)
+        decode_plugin_declaration("@korri", declaration)
             .expect_err("malformed contribution values must fail explicitly");
     }
 }
@@ -546,16 +552,16 @@ fn empty_keys_and_malformed_launcher_fields_are_rejected() {
 #[test]
 fn explicit_nulls_do_not_pass_as_absent_legacy_fields() {
     let declarations = [
-        r#"{"namespace":"@korri","name":"android-app","title":null}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"providers":{"@korri:android-app":{"title":null}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"systems":{"android":{"id":"android","title":null}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:android-app/android-app","plugin":null}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:android-app/android-app","command":null}}}}}"#,
-        r#"{"namespace":"@korri","name":"android-app","contributes":{"config":{"launchers":{"android-app":{"id":"@korri:android-app/android-app","systems":null}}}}}"#,
+        r#"{"name":"android-app","title":null}"#,
+        r#"{"name":"android-app","providers":{"@korri:android-app":{"title":null}}}"#,
+        r#"{"name":"android-app","systems":{"android":{"id":"android","title":null}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:android-app/android-app","plugin":null}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:android-app/android-app","command":null}}}"#,
+        r#"{"name":"android-app","launchers":{"android-app":{"id":"@korri:android-app/android-app","systems":null}}}"#,
     ];
 
     for declaration in declarations {
-        let error = decode_plugin_declaration(declaration)
+        let error = decode_plugin_declaration("@korri", declaration)
             .expect_err("explicit null must not be normalized to an absent field");
         assert!(
             error.to_string().contains("invalid plugin declaration"),
@@ -566,7 +572,7 @@ fn explicit_nulls_do_not_pass_as_absent_legacy_fields() {
 
 #[test]
 fn unknown_enabled_plugin_ids_are_rejected() {
-    let plugin = load_plugin_source(ANDROID_PLUGIN).expect("plugin should load");
+    let plugin = load_plugin_source("@korri", ANDROID_PLUGIN).expect("plugin should load");
 
     let error = PluginRegistry::new(vec![plugin], vec!["@korri:missing".to_owned()])
         .expect_err("unknown enabled plugin ids must fail");
@@ -581,9 +587,10 @@ fn unknown_enabled_plugin_ids_are_rejected() {
 
 #[test]
 fn multiple_plugins_announce_only_when_each_is_enabled() {
-    let android = load_plugin_source(ANDROID_PLUGIN).expect("Android plugin should load");
+    let android = load_plugin_source("@korri", ANDROID_PLUGIN).expect("Android plugin should load");
     let other = decode_plugin_declaration(
-        r#"{"namespace":"@korri","name":"other","contributes":{"config":{"systems":{"other":{"id":"other"}}}}}"#,
+        "@korri",
+        r#"{"name":"other","systems":{"other":{"id":"other"}}}"#,
     )
     .expect("second plugin should decode");
 
@@ -611,20 +618,15 @@ fn multiple_plugins_announce_only_when_each_is_enabled() {
 #[test]
 fn strict_session_control_declarations_reserve_disabled_identities() {
     let source = r#"
-      ({
-        namespace: "@korri",
-        name: "retroarch",
-        contributes: {
-          config: {
-            launchers: {
+export const name = "retroarch";
+export const launchers = {
               retroarch: {
                 id: "@korri:retroarch/retroarch",
                 plugin: "@korri:retroarch",
                 command: "retroarch",
               },
-            },
-          },
-          sessionControls: {
+            };
+export const sessionControls = {
             openMenu: {
               order: 0,
               id: "@korri:retroarch/open-menu",
@@ -634,11 +636,10 @@ fn strict_session_control_declarations_reserve_disabled_identities() {
               effect: "@korri:retroarch/open-menu",
               dismissOnSuccess: true,
             },
-          },
-        },
-      })
-    "#;
-    let plugin = load_plugin_source(source).expect("session-control declaration should load");
+          };
+"#;
+    let plugin =
+        load_plugin_source("@korri", source).expect("session-control declaration should load");
 
     let disabled = PluginRegistry::new(vec![plugin.clone()], Vec::new())
         .expect("disabled plugin should remain registered");
@@ -659,16 +660,11 @@ fn strict_session_control_declarations_reserve_disabled_identities() {
 #[test]
 fn malformed_session_controls_and_arbitrary_effect_payloads_are_rejected() {
     let valid = r#"
-      ({
-        namespace: "@korri",
-        name: "moonlight",
-        contributes: {
-          config: {
-            transports: {
+export const name = "moonlight";
+export const transports = {
               moonlight: { id: "@korri:moonlight/moonlight" },
-            },
-          },
-          sessionControls: {
+            };
+export const sessionControls = {
             sharpness: {
               order: 0,
               id: "@korri:moonlight/sharpness",
@@ -677,10 +673,8 @@ fn malformed_session_controls_and_arbitrary_effect_payloads_are_rejected() {
               interaction: { kind: "range", min: 0, max: 100, step: 5 },
               effect: "@korri:moonlight/set-sgsr-sharpness",
             },
-          },
-        },
-      })
-    "#;
+          };
+"#;
 
     let malformed = [
         valid.replace("order: 0,", ""),
@@ -743,19 +737,17 @@ fn malformed_session_controls_and_arbitrary_effect_payloads_are_rejected() {
     ];
 
     for source in malformed {
-        load_plugin_source(&source).expect_err("unsafe session-control declaration must fail");
+        load_plugin_source("@korri", &source)
+            .expect_err("unsafe session-control declaration must fail");
     }
 }
 
 #[test]
 fn malformed_choice_and_duplicate_session_control_identities_are_rejected() {
     let empty_options = r#"
-      ({
-        namespace: "@korri",
-        name: "moonlight",
-        contributes: {
-          config: { transports: { moonlight: { id: "@korri:moonlight/moonlight" } } },
-          sessionControls: {
+export const name = "moonlight";
+export const transports = { moonlight: { id: "@korri:moonlight/moonlight" } };
+export const sessionControls = {
             mouse: {
               order: 0,
               id: "@korri:moonlight/mouse",
@@ -764,24 +756,19 @@ fn malformed_choice_and_duplicate_session_control_identities_are_rejected() {
               interaction: { kind: "choice", options: [] },
               effect: "@korri:moonlight/set-mouse-mode",
             },
-          },
-        },
-      })
-    "#;
-    load_plugin_source(empty_options).expect_err("choice controls need options");
-    load_plugin_source(&empty_options.replace(
+          };
+"#;
+    load_plugin_source("@korri", empty_options).expect_err("choice controls need options");
+    load_plugin_source("@korri", &empty_options.replace(
         "options: []",
         "options: [{ value: \"direct\", label: \"Direct\" }, { value: \"direct\", label: \"Again\" }]",
     ))
     .expect_err("choice option identities must be unique");
 
     let duplicate_global_id = r#"
-      ({
-        namespace: "@korri",
-        name: "moonlight",
-        contributes: {
-          config: { transports: { moonlight: { id: "@korri:moonlight/moonlight" } } },
-          sessionControls: {
+export const name = "moonlight";
+export const transports = { moonlight: { id: "@korri:moonlight/moonlight" } };
+export const sessionControls = {
             first: {
               order: 0,
               id: "@korri:moonlight/shared",
@@ -798,16 +785,15 @@ fn malformed_choice_and_duplicate_session_control_identities_are_rejected() {
               interaction: { kind: "command" },
               effect: "@korri:moonlight/set-local-cursor",
             },
-          },
-        },
-      })
-    "#;
-    let plugin = load_plugin_source(duplicate_global_id)
+          };
+"#;
+    let plugin = load_plugin_source("@korri", duplicate_global_id)
         .expect("duplicate global ids are a registry-level collision");
     PluginRegistry::new(vec![plugin], vec!["@korri:moonlight".to_owned()])
         .expect_err("duplicate global session-control ids must fail registry construction");
 
     load_plugin_source(
+        "@korri",
         &duplicate_global_id
             .replacen("@korri:moonlight/shared", "@korri:moonlight/first", 1)
             .replacen("@korri:moonlight/shared", "@korri:moonlight/second", 1)
@@ -818,8 +804,8 @@ fn malformed_choice_and_duplicate_session_control_identities_are_rejected() {
 
 #[test]
 fn duplicate_plugin_ids_are_rejected() {
-    let first = load_plugin_source(ANDROID_PLUGIN).expect("first plugin should load");
-    let second = load_plugin_source(ANDROID_PLUGIN).expect("second plugin should load");
+    let first = load_plugin_source("@korri", ANDROID_PLUGIN).expect("first plugin should load");
+    let second = load_plugin_source("@korri", ANDROID_PLUGIN).expect("second plugin should load");
 
     let error = PluginRegistry::new(vec![first, second], vec!["@korri:android-app".to_owned()])
         .expect_err("duplicate plugin ids must fail");

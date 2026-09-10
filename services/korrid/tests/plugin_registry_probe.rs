@@ -72,20 +72,15 @@ const RETROARCH_ENABLED_REPORT: &str = concat!(
 );
 
 const SESSION_CONTROL_PLUGIN: &str = r#"
-({
-  namespace: "@korri",
-  name: "retroarch",
-  contributes: {
-    config: {
-      launchers: {
+export const name = "retroarch";
+export const launchers = {
         retroarch: {
           id: "@korri:retroarch/retroarch",
           plugin: "@korri:retroarch",
           command: "retroarch",
         },
-      },
-    },
-    sessionControls: {
+      };
+export const sessionControls = {
       openMenu: {
         order: 0,
         id: "@korri:retroarch/open-menu",
@@ -94,9 +89,7 @@ const SESSION_CONTROL_PLUGIN: &str = r#"
         interaction: { kind: "command" },
         effect: "@korri:retroarch/open-menu",
       },
-    },
-  },
-})
+    };
 "#;
 
 #[test]
@@ -135,6 +128,7 @@ fn probe_distinguishes_registered_and_enabled_session_controls() {
 
 fn run_probe(args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_plugin_registry_probe"))
+        .arg("@korri")
         .args(args)
         .output()
         .expect("plugin registry probe should start");

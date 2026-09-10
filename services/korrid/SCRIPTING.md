@@ -1,8 +1,9 @@
 # Plugin scripting in korrid
 
 korrid can transpile and run TypeScript or JavaScript **at runtime**, on every
-device Korri targets. A plugin is source text that evaluates to a declaration;
-korrid performs any resulting effects itself.
+device Korri targets. A plugin is a self-contained ES module with named exports;
+korrid performs any resulting effects itself. Completion values, default exports,
+`namespace` exports, and the old `contributes` wrapper are rejected.
 
 Plugin source is evaluated at runtime rather than compiled into native code.
 Bundled first-party source still ships through the normal korrid build. The
@@ -31,6 +32,39 @@ byte-for-byte pinned to the reviewed checkpoint copy under
 check suite so either copy changing alone fails. The mGBA production source is
 shared by the repository plugin path and the bundled korrid path so discovery
 and runtime declarations cannot drift.
+
+## Named exports and publisher identity
+
+`script::eval_plugin_ts(source)` transpiles and evaluates a module. It returns
+JSON containing its data exports, not the JavaScript completion value.
+`name` must be a non-empty string. Optional identity exports are `title` and
+`description`. Data export names come from the current producers: `providers`,
+`systems`, `launchers`, `transports`, `runtimes`, `sessionControls`, and
+`discovery`. Their record shapes are unchanged. Discovery remains the shipped
+`fileReleases` map, never a callback. `services` and `android` are reserved by
+the approved standard; the current narrow consumers reject unsupported fields.
+The daemon host temporarily accepts `daemons` with its existing allowlisted
+systemd fields. This slice does not load native unit files.
+
+`plugin::load_plugin_source(namespace, source)` and
+`decode_plugin_declaration(namespace, json)` receive publisher identity from
+the caller. Bundled sources receive `@korri` explicitly in `plugin_policy.rs`.
+Nothing infers it from a filename or trusts a namespace inside plugin source.
+External daemon packages instead carry a generated `manifest.json` with
+`publisher.namespace`. The host verifies the selected NAR against the device's
+bound full public key before using that claim. See `plugin-host/README.md`.
+
+An optional `launch` export must be a function. Evaluation checks but never
+calls it. `script::call_plugin_launch_ts(source, input)` invokes it in a fresh
+interpreter with bounded JSON input and output. Module evaluation and invocation
+share one deadline, memory limit, and output budget. Launch must return JSON
+synchronously; a promise, function, non-finite number, or undefined is rejected.
+The API performs no effects and defines no launch-spec schema. The generic
+Linux runner and its approved source-driven effects remain a later slice.
+
+The read-only registry probe requires an explicit publisher namespace for an
+external source: `nix run .#korrid-plugin-review -- @publisher plugin.ts`.
+With no arguments, it reviews the trusted bundled Android source.
 
 ## The sandbox is empty on purpose
 
@@ -115,7 +149,10 @@ artifact while `plugins/mgba/android/` owns the core build. The launcher APK
 temporarily carries the core as an Android packaging bridge; plugin evaluation
 itself still performs no I/O.
 
-## Verified on hardware
+## Earlier script evaluator measured on hardware
+
+These measurements predate the named-module cut. This slice has not been run
+on Android hardware.
 
 Tablet SM-X930 (Android 16, aarch64), running the example plugin: transpile
 1.78 ms, evaluate 1.22 ms. Runtime transpilation is not a performance concern
@@ -215,5 +252,8 @@ TypeScript source is bounded to 128 KiB. Generated JavaScript is bounded to
 512 KiB. Each QuickJS runtime has a 16 MiB memory limit, a 512 KiB stack limit,
 and a 250 ms interrupt deadline. The existing empty I/O sandbox remains.
 `plugin-host/tests/declaration.rs` exercises nonterminating and memory-growing
-source through the real evaluator. These limits govern declarations, not the
-separately approved native daemon.
+source through the real evaluator. Launch inputs are bounded to 512 KiB.
+Data conversion permits 8,192 nodes, 64 nesting levels, and 512 KiB of copied
+strings across declaration and callback output. Each callback starts with a
+fresh module instance. These limits govern interpreted code, not the separately
+approved native daemon or the existing Linux session sandbox.

@@ -18,36 +18,48 @@ let
     mkdir -p "$out/bin"
     ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
     cat > "$out/plugin.ts" <<'EOF'
-    ({namespace:'@example',name:'clock',title:'Clock',contributes:{daemons:[{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}]}})
+    export const name = 'clock';
+    export const title = 'Clock';
+    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
     EOF
+    echo '${builtins.toJSON { publisher.namespace = "@example"; }}' > "$out/manifest.json"
   '';
   updated = pkgs.runCommand "tailscale-plugin-update" { } ''
     mkdir -p "$out/bin"
     ln -s ${tailscalePackage}/bin/tailscaled "$out/bin/tailscaled"
     ln -s ${tailscalePackage}/bin/tailscale "$out/bin/tailscale"
-    sed 's/title: "Tailscale"/title: "Tailscale updated"/' ${tailscalePackage}/plugin.ts > "$out/plugin.ts"
+    cp ${tailscalePackage}/manifest.json "$out/manifest.json"
+    sed 's/title = "Tailscale"/title = "Tailscale updated"/' ${tailscalePackage}/plugin.ts > "$out/plugin.ts"
   '';
   broken = pkgs.runCommand "tailscale-plugin-failed-update" { } ''
     mkdir -p "$out/bin"
     ln -s ${pkgs.coreutils}/bin/false "$out/bin/daemon"
     cat > "$out/plugin.ts" <<'EOF'
-    ({namespace:'@korri',name:'tailscale',title:'Unhealthy candidate',contributes:{daemons:[{Type:'exec',ExecStart:['bin/daemon'],CapabilityBoundingSet:[]}]}})
+    export const name = 'tailscale';
+    export const title = 'Unhealthy candidate';
+    export const daemons = [{Type:'exec',ExecStart:['bin/daemon'],CapabilityBoundingSet:[]}];
     EOF
+    echo '${builtins.toJSON { publisher.namespace = "@korri"; }}' > "$out/manifest.json"
   '';
   interrupted = pkgs.runCommand "tailscale-plugin-interrupted-update" { } ''
     mkdir -p "$out/bin"
     ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
     cat > "$out/plugin.ts" <<'EOF'
-    ({namespace:'@korri',name:'tailscale',title:'Pending candidate',contributes:{daemons:[{Type:'notify',ExecStart:['bin/sleep','30'],CapabilityBoundingSet:[]}]}})
+    export const name = 'tailscale';
+    export const title = 'Pending candidate';
+    export const daemons = [{Type:'notify',ExecStart:['bin/sleep','30'],CapabilityBoundingSet:[]}];
     EOF
+    echo '${builtins.toJSON { publisher.namespace = "@korri"; }}' > "$out/manifest.json"
   '';
   unclean = pkgs.runCommand "plugin-cleanup-failure" { } ''
     mkdir -p "$out/bin"
     ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
     ln -s ${pkgs.coreutils}/bin/false "$out/bin/false"
     cat > "$out/plugin.ts" <<'EOF'
-    ({namespace:'@example',name:'unclean',contributes:{daemons:[{Type:'exec',ExecStart:['bin/sleep','3600'],ExecStopPost:['bin/false'],CapabilityBoundingSet:[]}]}})
+    export const name = 'unclean';
+    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],ExecStopPost:['bin/false'],CapabilityBoundingSet:[]}];
     EOF
+    echo '${builtins.toJSON { publisher.namespace = "@example"; }}' > "$out/manifest.json"
   '';
   # Keep a real buildable deriver on the client, but not its output. A failed
   # substitution must not run this canary, even with permissive ambient options.
@@ -74,8 +86,19 @@ let
     ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
     ln -s ${splitDependency} "$out/upstream-dependency"
     cat > "$out/plugin.ts" <<'EOF'
-    ({namespace:'@example',name:'split-cache',contributes:{daemons:[{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}]}})
+    export const name = 'split-cache';
+    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
     EOF
+    echo '${builtins.toJSON { publisher.namespace = "@split"; }}' > "$out/manifest.json"
+  '';
+  impostor = pkgs.runCommand "plugin-publisher-impersonation" { } ''
+    mkdir -p "$out/bin"
+    ln -s ${pkgs.coreutils}/bin/sleep "$out/bin/sleep"
+    cat > "$out/plugin.ts" <<'EOF'
+    export const name = 'clock';
+    export const daemons = [{Type:'exec',ExecStart:['bin/sleep','3600'],CapabilityBoundingSet:[]}];
+    EOF
+    echo '${builtins.toJSON { publisher.namespace = "@victim"; }}' > "$out/manifest.json"
   '';
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
@@ -98,6 +121,7 @@ pkgs.testers.runNixOSTest {
           interrupted
           unclean
           splitPlugin
+          impostor
           splitDependency.drvPath
         ];
         services.nix-serve = {
@@ -173,7 +197,24 @@ pkgs.testers.runNixOSTest {
         # Exercise configured substitution without contacting public caches
         # from the isolated VM. The production module keeps NixOS's stock cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
-        nix.settings.trusted-public-keys = [ publicKey ];
+        services.korri.pluginHost.publishers = {
+          "@korri" = {
+            inherit publicKey;
+            cacheUrl = "http://cache:5000";
+          };
+          "@example" = {
+            inherit publicKey;
+            cacheUrl = "http://cache:5000";
+          };
+          "@split" = {
+            inherit publicKey;
+            cacheUrl = "https://cache/split/plugin";
+          };
+          "@victim" = {
+            inherit publicKey;
+            cacheUrl = "https://cache/split/impostor";
+          };
+        };
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
         environment.systemPackages = [ pkgs.jq ];
         virtualisation.useNixStoreImage = true;
@@ -235,6 +276,18 @@ pkgs.testers.runNixOSTest {
         config = "substituters = " + upstream + "\ntrusted-public-keys = ${publicKey} " + trusted + "\nextra-trusted-public-keys =\nmax-jobs = 1\nbuilders = ssh://cache\nfallback = true\nrequire-sigs = false\nsandbox = false\nnarinfo-cache-negative-ttl = 0\n"
         return "NIX_CONFIG=" + shlex.quote(config) + " korri-plugin " + command
 
+    # A second signer is trusted for dependencies, not for @victim. Nix accepts
+    # its output into the store; both cold and cached host inspection must fail.
+    cache.succeed("mkdir -p /var/www/split/impostor")
+    cache.succeed("nix --extra-experimental-features nix-command copy --to 'file:///var/www/split/impostor?secret-key=/tmp/upstream.key' ${impostor}")
+    impersonation = "inspect https://cache/split/impostor ${impostor}"
+    machine.fail("test -e ${impostor}")
+    for attempt in range(2):
+        rejected = machine.fail(split_command(upstream_cache, upstream_key, impersonation) + " 2>&1")
+        assert "full key bound to publisher @victim" in rejected, rejected
+        machine.succeed("test -e ${impostor}")
+        machine.fail("korri-plugin status @victim:clock")
+
     split_inspect = "inspect " + plugin_cache + " ${splitPlugin}"
     for upstream, trusted in [("https://cache/split/missing", upstream_key), (upstream_cache, "")]:
         # Also request the known buildable output directly. Refusal must not
@@ -244,7 +297,7 @@ pkgs.testers.runNixOSTest {
             assert "building '/nix/store/" not in error, error
             machine.fail("test -e /tmp/korri-plugin-build-attempt")
             machine.fail("test -e ${splitDependency}")
-            machine.fail("korri-plugin status @example:split-cache")
+            machine.fail("korri-plugin status @split:split-cache")
     split_report = json.loads(machine.succeed(split_command(upstream_cache, upstream_key, split_inspect)))
     assert split_report["package"] == "${splitPlugin}"
     assert split_report["provenance"] == {"kind": "RawCache", "cache_url": plugin_cache}
@@ -253,14 +306,14 @@ pkgs.testers.runNixOSTest {
     # Verification must still reject an already imported closure if its
     # dependency's signing key is no longer trusted (realization can skip it).
     machine.fail(split_command(upstream_cache, "", split_inspect))
-    machine.fail("korri-plugin status @example:split-cache")
+    machine.fail("korri-plugin status @split:split-cache")
     machine.fail(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} wrong-approval"))
     machine.succeed(split_command(upstream_cache, upstream_key, "install " + plugin_cache + " ${splitPlugin} " + split_report["approval"]))
-    split_receipt = json.loads(machine.succeed("korri-plugin status @example:split-cache"))
+    split_receipt = json.loads(machine.succeed("korri-plugin status @split:split-cache"))
     assert split_receipt["provenance"] == split_report["provenance"]
-    machine.succeed("korri-plugin enable @example:split-cache")
+    machine.succeed("korri-plugin enable @split:split-cache")
     machine.wait_for_unit(split_report["unit"])
-    machine.succeed("korri-plugin remove @example:split-cache --purge")
+    machine.succeed("korri-plugin remove @split:split-cache --purge")
     # NixOS store images can contain paths without locally registered cache
     # signatures. Verification must also consult the configured upstream when
     # realization reuses such a path rather than downloading it again.
@@ -444,9 +497,100 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore")
     machine.fail("systemctl is-active " + staged["unit"])
     machine.succeed("korri-plugin remove @korri:tailscale --purge")
+    # Revocation changes START authority, not the exact receipt's authority to
+    # stop and run its already approved native cleanup. Exercise both forms.
+    bindings_path = "/etc/korri-plugin-host/publishers.json"
+    bindings = json.loads(machine.succeed("cat " + bindings_path))
+    machine.succeed("mv " + bindings_path + " " + bindings_path + ".saved")
+
+    def write_bindings(value):
+        machine.succeed("printf %s " + shlex.quote(json.dumps(value)) + " > " + bindings_path)
+
+    for revocation in ["removed", "rotated"]:
+        write_bindings(bindings)
+        revoked = install("${tailscalePackage}")
+        revoked_unit = revoked["unit"]
+        revoked_root = "/nix/var/nix/gcroots/korri-plugin-host/" + revoked_unit.removesuffix(".service")
+        machine.succeed("korri-plugin enable @korri:tailscale")
+        machine.succeed("touch " + revoked["state_directory"] + "/revocation-data")
+        changed_bindings = json.loads(json.dumps(bindings))
+        if revocation == "removed":
+            del changed_bindings["@korri"]
+        else:
+            changed_bindings["@korri"]["publicKey"] = upstream_key
+        write_bindings(changed_bindings)
+        machine.fail("korri-plugin enable @korri:tailscale")
+        # Deactivation must not recover an Enabled receipt first, even when an
+        # interrupted operation left a GC root. It still requires exact approval.
+        receipt_path = "/var/lib/korri-plugin-host/" + revoked_unit.removesuffix(".service") + "/selection.json"
+        receipt = json.loads(machine.succeed("cat " + receipt_path))
+
+        def write_receipt(value):
+            machine.succeed("printf %s " + shlex.quote(json.dumps(value)) + " > " + receipt_path + "; sync")
+
+        write_receipt(dict(receipt, approval="0" * 64))
+        for command in ["disable", "remove"]:
+            error = machine.fail("korri-plugin " + command + " @korri:tailscale 2>&1")
+            assert "no longer matches its approval" in error, error
+        machine.succeed("systemctl is-active " + revoked_unit)
+        write_receipt(receipt)
+        machine.succeed("ln -s " + revoked["package"] + " " + revoked_root + "/pending")
+        machine.succeed("korri-plugin disable @korri:tailscale")
+        machine.fail("test -L " + revoked_root + "/pending")
+        machine.fail("systemctl is-active " + revoked_unit)
+        machine.fail("ip link show tailscale0")
+        assert json.loads(machine.succeed("ip -j rule show")) == ipv4_rules
+        assert json.loads(machine.succeed("ip -6 -j rule show")) == ipv6_rules
+        machine.succeed("test -e " + revoked["state_directory"] + "/revocation-data")
+        assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Disabled"}
+        machine.fail("korri-plugin enable @korri:tailscale")
+        machine.succeed("korri-plugin restore")
+        machine.fail("systemctl is-active " + revoked_unit)
+        write_bindings(bindings)
+        machine.succeed("korri-plugin enable @korri:tailscale")
+        write_bindings(changed_bindings)
+        # Ordinary recovery must stop a revoked running unit, not take the
+        # healthy-unit shortcut. Pending recovery must also refuse a new start.
+        machine.fail("korri-plugin restore")
+        machine.fail("systemctl is-active " + revoked_unit)
+        machine.succeed("ln -s " + revoked["package"] + " " + revoked_root + "/pending")
+        machine.fail("korri-plugin restore")
+        machine.fail("systemctl is-active " + revoked_unit)
+        machine.succeed("test -L " + revoked_root + "/pending")
+        # Kill-equivalent boundary: disable intent reached disk but cleanup did
+        # not run. Recovery uses that intent with no current signing authority.
+        write_receipt(dict(receipt, desired={"state": "Disabled"}))
+        machine.succeed("korri-plugin restore")
+        machine.fail("test -L " + revoked_root + "/pending")
+        machine.fail("systemctl is-active " + revoked_unit)
+        write_bindings(bindings)
+        machine.succeed("korri-plugin enable @korri:tailscale")
+        write_bindings(changed_bindings)
+        machine.succeed("ln -s " + revoked["package"] + " " + revoked_root + "/pending")
+        machine.succeed("korri-plugin remove @korri:tailscale --purge")
+        machine.fail("systemctl is-active " + revoked_unit)
+        machine.fail("ip link show tailscale0")
+        machine.fail("korri-plugin status @korri:tailscale")
+        machine.fail("test -e " + revoked["state_directory"] + "/revocation-data")
+        machine.fail("test -L " + revoked_root + "/active")
+        machine.fail("korri-plugin enable @korri:tailscale")
+    machine.succeed("rm " + bindings_path + "; mv " + bindings_path + ".saved " + bindings_path)
+
     failed_cleanup = install("${unclean}")
     machine.succeed("korri-plugin enable @example:unclean")
+    machine.succeed("mv " + bindings_path + " " + bindings_path + ".saved")
+    write_bindings(dict(bindings, **{"@example": dict(bindings["@example"], publicKey=upstream_key)}))
+    machine.fail("korri-plugin disable @example:unclean")
+    assert json.loads(machine.succeed("korri-plugin status @example:unclean"))["desired"] == {"state": "Disabled"}
+    machine.fail("systemctl is-active " + failed_cleanup["unit"])
+    machine.fail("korri-plugin restore")
+    machine.fail("systemctl is-active " + failed_cleanup["unit"])
+    machine.fail("korri-plugin enable @example:unclean")
     machine.fail("korri-plugin remove @example:unclean --purge")
+    assert json.loads(machine.succeed("korri-plugin status @example:unclean"))["desired"] == {"state": "Removed", "purge": True}
+    machine.fail("korri-plugin restore")
+    machine.fail("systemctl is-active " + failed_cleanup["unit"])
+    machine.succeed("rm " + bindings_path + "; mv " + bindings_path + ".saved " + bindings_path)
     machine.succeed("korri-plugin status @example:unclean")
     machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + failed_cleanup["unit"].removesuffix(".service") + "/active")
     assert machine.succeed("readlink -f /run/current-system").strip() == generation

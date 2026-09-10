@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 base64 = "0.22"
+ring = "0.17"
 tempfile = "3"
 xz2 = "0.1"
 hex = "0.4"

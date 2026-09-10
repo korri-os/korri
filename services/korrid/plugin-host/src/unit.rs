@@ -149,7 +149,7 @@ impl Units {
 }
 
 pub fn render(report: &Report) -> Result<String, String> {
-    let daemon = &report.declaration.contributes.daemons[0];
+    let daemon = &report.declaration.daemons[0];
     let name = package::unit_name(&report.id);
     let service_type = match daemon.service_type {
         ServiceType::Notify => "notify",

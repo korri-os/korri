@@ -38,11 +38,13 @@ impl PluginPolicyLayer {
 }
 
 pub fn bundled_plugins() -> Result<Vec<Plugin>, PluginError> {
+    // Publisher authority is compiled composition, not a claim in source or
+    // an inference from the bundled filename.
     Ok(vec![
-        load_plugin_source(ANDROID_APP_PLUGIN_SOURCE)?,
-        load_plugin_source(MGBA_PLUGIN_SOURCE)?,
-        load_plugin_source(MOONLIGHT_PLUGIN_SOURCE)?,
-        load_plugin_source(RETROARCH_PLUGIN_SOURCE)?,
+        load_plugin_source("@korri", ANDROID_APP_PLUGIN_SOURCE)?,
+        load_plugin_source("@korri", MGBA_PLUGIN_SOURCE)?,
+        load_plugin_source("@korri", MOONLIGHT_PLUGIN_SOURCE)?,
+        load_plugin_source("@korri", RETROARCH_PLUGIN_SOURCE)?,
     ])
 }
 

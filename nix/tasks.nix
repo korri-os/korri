@@ -494,7 +494,7 @@ let
         HOST_CC = "${pkgs.clang}/bin/clang";
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
-      usageSuffix = " -- [plugin.ts]";
+      usageSuffix = " -- [PUBLISHER_NAMESPACE plugin.ts]";
       script = ''
         export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/korrid-target"
         export KORRI_PLUGIN_REVIEW_IN_SHELL=1
