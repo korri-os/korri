@@ -26,12 +26,13 @@ fn real_game_payloads_pass_the_host_package_boundary_before_approval() {
         .unwrap()
         .contains_key("quit"));
     assert_eq!(launcher.approval.len(), 64);
-    korri_plugin_host::plugin_references::validate([
-        (core.id, serde_json::to_value(core.declaration).unwrap()),
-        (
-            launcher.id,
-            serde_json::to_value(launcher.declaration).unwrap(),
-        ),
-    ])
+    korri_plugin_host::plugin_references::validate([core, launcher].into_iter().map(|report| {
+        korri_plugin_host::plugin_references::PackageDeclaration {
+            id: report.id,
+            package: report.package,
+            requires: report.requires,
+            declaration: serde_json::to_value(report.declaration).unwrap(),
+        }
+    }))
     .unwrap();
 }

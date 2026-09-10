@@ -1,7 +1,17 @@
 //! Native references use the brief's kind/program/launcher fields. Android
 //! app/path records remain platform declarations, not native launcher aliases.
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
+
+/// Existing approved package identity, exact manifest pins and evaluated data.
+/// Used for installed and enabled selections; not a persisted representation.
+#[derive(Clone)]
+pub struct PackageDeclaration {
+    pub id: String,
+    pub package: PathBuf,
+    pub requires: Vec<PathBuf>,
+    pub declaration: serde_json::Value,
+}
 
 #[derive(Deserialize)]
 struct LauncherReference {
@@ -64,14 +74,22 @@ pub fn validate_files(
 }
 
 /// Validate both all-installed and enabled-only selections with the same
-/// algorithm. Exact manifest dependencies remain separately mandatory.
-pub fn validate(
-    declarations: impl IntoIterator<Item = (String, serde_json::Value)>,
-) -> Result<(), String> {
+/// algorithm. Cross-package references require a direct pin to the selected
+/// package, not merely its presence or a transitive dependency.
+pub fn validate(declarations: impl IntoIterator<Item = PackageDeclaration>) -> Result<(), String> {
     let mut launchers = BTreeMap::new();
     let mut runtimes = Vec::new();
-    for (owner, value) in declarations {
-        let references: References = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    let mut packages = BTreeMap::new();
+    for declaration in declarations {
+        let owner = declaration.id;
+        if packages
+            .insert(owner.clone(), (declaration.package, declaration.requires))
+            .is_some()
+        {
+            return Err(format!("duplicate package {owner}"));
+        }
+        let references: References =
+            serde_json::from_value(declaration.declaration).map_err(|e| e.to_string())?;
         for (local, launcher) in references.launchers {
             if launcher.id != format!("{owner}/{local}") {
                 return Err(format!(
@@ -85,7 +103,10 @@ pub fn validate(
                     launcher.id
                 ));
             }
-            if launchers.insert(launcher.id.clone(), launcher).is_some() {
+            if launchers
+                .insert(launcher.id.clone(), (owner.clone(), launcher))
+                .is_some()
+            {
                 return Err("duplicate launcher".into());
             }
         }
@@ -96,33 +117,42 @@ pub fn validate(
                     runtime.id
                 ));
             }
-            runtimes.push(runtime);
+            runtimes.push((owner.clone(), runtime));
         }
     }
-    for launcher in launchers.values() {
+    let validate_dependency = |owner: &str, target_owner: &str, reference: &str| {
+        let (target_path, _) = &packages[target_owner];
+        if owner != target_owner && !packages[owner].1.contains(target_path) {
+            return Err(format!(
+                "{owner} reference {reference} requires exact manifest dependency {}",
+                target_path.display()
+            ));
+        }
+        Ok(())
+    };
+    for (owner, launcher) in launchers.values() {
         if let Some(kind) = &launcher.kind {
-            if !launchers
+            let (target_owner, _) = launchers
                 .get(kind)
-                .is_some_and(|record| record.kind.as_ref() == Some(kind))
-            {
-                return Err(format!(
-                    "launcher {} requires unavailable kind {kind}",
-                    launcher.id
-                ));
-            }
+                .filter(|(_, record)| record.kind.as_ref() == Some(kind))
+                .ok_or_else(|| {
+                    format!("launcher {} requires unavailable kind {kind}", launcher.id)
+                })?;
+            validate_dependency(owner, target_owner, kind)?;
         }
     }
-    for runtime in runtimes {
+    for (owner, runtime) in runtimes {
         if let Some(launcher) = runtime.launcher {
-            if !launchers
+            let (target_owner, _) = launchers
                 .get(&launcher)
-                .is_some_and(|record| record.kind.is_some())
-            {
-                return Err(format!(
-                    "runtime {} requires unavailable launcher {launcher}",
-                    runtime.id
-                ));
-            }
+                .filter(|(_, record)| record.kind.is_some())
+                .ok_or_else(|| {
+                    format!(
+                        "runtime {} requires unavailable launcher {launcher}",
+                        runtime.id
+                    )
+                })?;
+            validate_dependency(&owner, target_owner, &launcher)?;
         }
     }
     Ok(())
@@ -146,14 +176,18 @@ mod tests {
 
     #[test]
     fn a_named_export_removal_cannot_hide_behind_an_unchanged_package_dependency() {
-        let runtime = (
-            "@simon:mgba".into(),
-            json!({"runtimes":{"mgba":{"id":"@simon:mgba/mgba", "launcher":"@korri:retroarch/retroarch"}}}),
-        );
-        let renamed = (
-            "@korri:retroarch".into(),
-            json!({"launchers":{"changed":{"id":"@korri:retroarch/changed", "kind":"@korri:retroarch/changed", "program":"retroarch"}}}),
-        );
+        let runtime = PackageDeclaration {
+            id: "@simon:mgba".into(),
+            package: "/mgba".into(),
+            requires: vec!["/retroarch".into()],
+            declaration: json!({"runtimes":{"mgba":{"id":"@simon:mgba/mgba", "launcher":"@korri:retroarch/retroarch"}}}),
+        };
+        let renamed = PackageDeclaration {
+            id: "@korri:retroarch".into(),
+            package: "/retroarch".into(),
+            requires: vec![],
+            declaration: json!({"launchers":{"changed":{"id":"@korri:retroarch/changed", "kind":"@korri:retroarch/changed", "program":"retroarch"}}}),
+        };
         assert!(validate([runtime, renamed])
             .unwrap_err()
             .contains("@korri:retroarch/retroarch"));
@@ -165,8 +199,13 @@ mod tests {
             "instance":{"id":"@korri:ra/instance", "kind":"@korri:ra/kind", "program":"other"},
             "chain":{"id":"@korri:ra/chain", "kind":"@korri:ra/instance", "program":"third"}
         }});
-        assert!(validate([("@korri:ra".into(), data)])
-            .unwrap_err()
-            .contains("@korri:ra/instance"));
+        assert!(validate([PackageDeclaration {
+            id: "@korri:ra".into(),
+            package: "/ra".into(),
+            requires: vec![],
+            declaration: data,
+        }])
+        .unwrap_err()
+        .contains("@korri:ra/instance"));
     }
 }

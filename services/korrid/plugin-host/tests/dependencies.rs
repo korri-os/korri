@@ -56,34 +56,79 @@ fn rollback_keeps_exact_closure_pins_even_for_disabled_installed_dependents() {
 }
 
 #[test]
-fn removing_or_renaming_a_launcher_or_kind_is_refused_without_manifest_requires() {
-    use korri_plugin_host::plugin_references;
+fn removing_or_renaming_a_launcher_or_kind_is_refused_even_with_manifest_requires() {
+    use korri_plugin_host::plugin_references::{self, PackageDeclaration};
     use serde_json::json;
     // Native field names and IDs come from plugins/{retroarch,mgba}/plugin.ts.
-    let kind = (
-        "@korri:retroarch".into(),
-        json!({"launchers":{"retroarch":{"id":"@korri:retroarch/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
-    );
-    let launcher = (
-        "@test:launcher".into(),
-        json!({"launchers":{"retroarch":{"id":"@test:launcher/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
-    );
-    let runtime = (
-        "@korri:mgba".into(),
-        json!({"runtimes":{"mgba":{"id":"@korri:mgba/mgba", "launcher":"@test:launcher/retroarch", "path":"mgba"}}}),
-    );
+    let kind = PackageDeclaration {
+        id: "@korri:retroarch".into(),
+        package: "/kind".into(),
+        requires: vec![],
+        declaration: json!({"launchers":{"retroarch":{"id":"@korri:retroarch/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    };
+    let launcher = PackageDeclaration {
+        id: "@test:launcher".into(),
+        package: "/launcher".into(),
+        requires: vec!["/kind".into()],
+        declaration: json!({"launchers":{"retroarch":{"id":"@test:launcher/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    };
+    let runtime = PackageDeclaration {
+        id: "@korri:mgba".into(),
+        package: "/mgba".into(),
+        requires: vec!["/launcher".into()],
+        declaration: json!({"runtimes":{"mgba":{"id":"@korri:mgba/mgba", "launcher":"@test:launcher/retroarch", "path":"mgba"}}}),
+    };
     plugin_references::validate([kind.clone(), launcher.clone(), runtime.clone()]).unwrap();
     let error = plugin_references::validate([launcher.clone(), runtime.clone()]).unwrap_err();
     assert!(error.contains("@korri:retroarch/retroarch"), "{error}");
     let error = plugin_references::validate([kind.clone(), runtime.clone()]).unwrap_err();
     assert!(error.contains("@test:launcher/retroarch"), "{error}");
-    let renamed = (
-        "@test:launcher".into(),
-        json!({"launchers":{"renamed":{"id":"@test:launcher/renamed", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
-    );
+    let renamed = PackageDeclaration {
+        declaration: json!({"launchers":{"renamed":{"id":"@test:launcher/renamed", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+        ..launcher
+    };
     assert!(plugin_references::validate([kind, renamed, runtime])
         .unwrap_err()
         .contains("@test:launcher/retroarch"));
+}
+
+#[test]
+fn native_references_cannot_borrow_unpinned_or_transitively_pinned_packages() {
+    use korri_plugin_host::plugin_references::{validate, PackageDeclaration};
+    use serde_json::json;
+    let kind = PackageDeclaration {
+        id: "@korri:retroarch".into(),
+        package: "/kind".into(),
+        requires: vec![],
+        declaration: json!({"launchers":{"retroarch":{"id":"@korri:retroarch/retroarch", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+    };
+    let indirect = PackageDeclaration {
+        id: "@test:indirect".into(),
+        package: "/indirect".into(),
+        requires: vec![kind.package.clone()],
+        declaration: json!({}),
+    };
+    for declaration in [
+        json!({"launchers":{"main":{"id":"@test:consumer/main", "kind":"@korri:retroarch/retroarch", "program":"retroarch"}}}),
+        json!({"runtimes":{"main":{"id":"@test:consumer/main", "launcher":"@korri:retroarch/retroarch", "path":"core"}}}),
+    ] {
+        for requires in [vec![], vec!["/indirect"], vec!["/old-kind"], vec!["/kind"]] {
+            let consumer = PackageDeclaration {
+                id: "@test:consumer".into(),
+                package: "/consumer".into(),
+                requires: requires.iter().map(PathBuf::from).collect(),
+                declaration: declaration.clone(),
+            };
+            let result = validate([kind.clone(), indirect.clone(), consumer]);
+            if requires == ["/kind"] {
+                result.unwrap();
+            } else {
+                let error = result.unwrap_err();
+                assert!(error.contains("@test:consumer"), "{error}");
+                assert!(error.contains("exact manifest dependency /kind"), "{error}");
+            }
+        }
+    }
 }
 
 #[test]

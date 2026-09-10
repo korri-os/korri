@@ -606,7 +606,12 @@ impl PluginRegistry {
             let declaration: serde_json::Value = serde_json::from_str(&json)?;
             crate::plugin_references::validate_files(declaration.clone(), &package.files)
                 .map_err(PluginError::Evaluation)?;
-            declarations.push((package.id.clone(), declaration));
+            declarations.push(crate::plugin_references::PackageDeclaration {
+                id: package.id.clone(),
+                package: package.package.clone(),
+                requires: package.requires.clone(),
+                declaration,
+            });
             let plugin = decode_plugin_declaration(namespace, &json)?;
             if plugin.id != package.id {
                 return Err(PluginError::InvalidPluginId(package.id));

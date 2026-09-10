@@ -27,6 +27,22 @@ fn game_packages_preserve_the_shipped_declaration_exports_without_a_service() {
 }
 
 #[test]
+fn native_kind_admission_requires_launch_but_does_not_call_it() {
+    let declaration = "export const name = 'game';
+        export const launchers = {game: {id:'@example:game/game', kind:'@example:game/game', program:'game'}};";
+    for callback in ["", "export const launch = 42;"] {
+        let error = Declaration::evaluate("@example", &format!("{declaration} {callback}"))
+            .expect_err("native kind without a callable launch must fail admission");
+        assert!(error.contains("launch"), "{error}");
+    }
+    Declaration::evaluate(
+        "@example",
+        &format!("{declaration} export function launch() {{ throw new Error('must not run'); }}"),
+    )
+    .unwrap();
+}
+
+#[test]
 fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
     for export in [
         "providers",

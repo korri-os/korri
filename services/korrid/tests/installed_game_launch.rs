@@ -43,13 +43,13 @@ fn a_chosen_runtime_borrows_the_kind_callback_but_uses_its_instances_own_program
             ("autoconfig".into(), root.path().join("kind-autoconfig")),
         ]),
     );
-    let mgba = package(
+    let mut mgba = package(
         root.path(),
         "@korri:mgba",
         include_str!("../../../plugins/mgba/plugin.ts"),
         BTreeMap::from([("mgba".into(), root.path().join("default-mgba.so"))]),
     );
-    let alternate = package(
+    let mut alternate = package(
         root.path(),
         "@simon:build",
         r#"
@@ -76,6 +76,8 @@ fn a_chosen_runtime_borrows_the_kind_callback_but_uses_its_instances_own_program
             ),
         ]),
     );
+    mgba.requires.push(default.package.clone());
+    alternate.requires.push(default.package.clone());
     let callback_path = default.package.join("plugin.ts");
     let registry = PluginRegistry::from_installed(vec![default, mgba, alternate]).unwrap();
     let snapshot = ConfigSnapshotCoordinator::new(root.path())

@@ -337,10 +337,13 @@ impl Host {
             reports
                 .iter()
                 .map(|report| {
-                    Ok((
-                        report.id.clone(),
-                        serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?,
-                    ))
+                    Ok(crate::plugin_references::PackageDeclaration {
+                        id: report.id.clone(),
+                        package: report.package.clone(),
+                        requires: report.requires.clone(),
+                        declaration: serde_json::to_value(&report.declaration)
+                            .map_err(|e| e.to_string())?,
+                    })
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         )?;
@@ -394,10 +397,13 @@ impl Host {
                 continue;
             }
             let report = self.approved(&receipt)?;
-            let declaration = (
-                report.id.clone(),
-                serde_json::to_value(&report.declaration).map_err(|e| e.to_string())?,
-            );
+            let declaration = crate::plugin_references::PackageDeclaration {
+                id: report.id.clone(),
+                package: report.package.clone(),
+                requires: report.requires.clone(),
+                declaration: serde_json::to_value(&report.declaration)
+                    .map_err(|e| e.to_string())?,
+            };
             if matches!(receipt.desired, Desired::Enabled) {
                 enabled_declarations.push(declaration.clone());
             }

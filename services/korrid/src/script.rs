@@ -146,6 +146,26 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
             &object_to_string,
             &mut budget,
         )?;
+        // A native kind owns the module callback. Inspect the export only;
+        // admission must never invoke it or impose policy on its output.
+        if declaration
+            .get("launchers")
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|launchers| {
+                launchers.values().any(|launcher| {
+                    launcher
+                        .get("id")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|id| {
+                            launcher.get("kind").and_then(serde_json::Value::as_str) == Some(id)
+                        })
+                })
+            })
+        {
+            exports
+                .get::<_, Function>("launch")
+                .map_err(|_| "native launcher kind has no callable launch export".to_owned())?;
+        }
         let result = if let Some(input) = input {
             let launch: Function = exports
                 .get("launch")
