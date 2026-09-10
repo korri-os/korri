@@ -3,8 +3,16 @@ name: Device images
 on:
   workflow_dispatch:
     inputs:
+      device:
+        description: "Linux SD image to build"
+        type: choice
+        options:
+          - rg353m
+          - odin2portal
+        required: true
+        default: rg353m
       publish:
-        description: "Publish an unverified RG353M prerelease (select an existing tag, not a branch)"
+        description: "Publish an unverified prerelease (use an existing, device-specific tag)"
         type: boolean
         required: true
         default: false
@@ -12,29 +20,88 @@ on:
 permissions:
   contents: read
 
+env:
+  DEVICE: ${{ inputs.device }}
+
 concurrency:
-  group: device-images-${{ github.ref }}
+  group: device-images-${{ inputs.device }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Validate image request
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate device and publication ref
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          case "$DEVICE" in
+            rg353m|odin2portal) ;;
+            *) echo 'Unsupported Linux device image.' >&2; exit 1 ;;
+          esac
+          if [ "$PUBLISH" = true ] && [ "$REF_TYPE" != tag ]; then
+            echo 'Select an existing tag to publish; branch builds produce Actions artifacts only.' >&2
+            exit 1
+          fi
+
+  odin-cross:
+    name: Odin Linux kernels and firmware (x86 to ARM)
+    needs: preflight
+    if: ${{ inputs.device == 'odin2portal' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Check out the selected commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Free hosted-runner SDK space for kernel builds
+        run: |
+          df -h /
+          # This hosted Linux job uses none of these preinstalled SDKs.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h /
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            max-jobs = 1
+            cores = 4
+
+      - name: Test signed cache transfer
+        run: nix run .#odin2portal-cross-cache-check
+
+      - name: Build and export Odin Linux cross inputs
+        run: nix run .#odin2portal-cross-cache -- export "$RUNNER_TEMP/odin-cross-cache"
+
+      - name: Upload signed cross-build cache
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: odin2portal-cross-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/odin-cross-cache/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
   build:
-    name: RG353M SD image
+    name: ${{ inputs.device }} Linux SD image
+    needs: [preflight, odin-cross]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' && (needs.odin-cross.result == 'success' || needs.odin-cross.result == 'skipped') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     outputs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
 
     steps:
-      - name: Require a tag for prerelease publication
-        env:
-          PUBLISH: ${{ inputs.publish }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          if [ "$PUBLISH" = true ] && [ "$REF_TYPE" != tag ]; then
-            echo 'Select an existing tag to publish; branch builds produce Actions artifacts only.' >&2
-            exit 1
-          fi
-
       - name: Check out the selected commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -49,6 +116,18 @@ jobs:
             max-jobs = 2
             cores = 2
 
+      - name: Download this run's signed Odin cross inputs
+        if: ${{ inputs.device == 'odin2portal' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.odin-cross.outputs.artifact-id }}
+          path: ${{ runner.temp }}/odin-cross-cache
+          merge-multiple: true
+
+      - name: Import Odin cross inputs with signature checking
+        if: ${{ inputs.device == 'odin2portal' }}
+        run: nix run .#odin2portal-cross-cache -- import "$RUNNER_TEMP/odin-cross-cache"
+
       - name: Report available disk space
         run: df -h / /nix
 
@@ -57,21 +136,21 @@ jobs:
           nix run .#nixos-layout-check
           nix run .#device-image-dist-check
 
-      - name: Build and stage the RG353M image
-        run: nix run .#device-image-dist -- packages.aarch64-linux.rg353m-sd-image "$RUNNER_TEMP/rg353m-dist"
+      - name: Build and stage the selected Linux SD image
+        run: nix run .#device-image-dist -- "packages.aarch64-linux.$DEVICE-sd-image" "$RUNNER_TEMP/device-dist"
 
       - name: Upload build candidate
         id: upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: rg353m-image-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/rg353m-dist/
+          name: ${{ inputs.device }}-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/device-dist/
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
 
   release:
-    name: Publish unverified RG353M prerelease
+    name: Publish unverified ${{ inputs.device }} prerelease
     if: ${{ inputs.publish && github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-24.04
@@ -91,7 +170,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           artifact-ids: ${{ needs.build.outputs.artifact-id }}
-          path: ${{ runner.temp }}/rg353m-dist
+          path: ${{ runner.temp }}/device-dist
           merge-multiple: true
 
       - name: Install Nix
@@ -110,7 +189,7 @@ jobs:
             echo 'The release tag no longer names the commit that was built.' >&2
             exit 1
           fi
-          image="$(nix run .#device-image-verify -- "$RUNNER_TEMP/rg353m-dist" "$GITHUB_SHA" --release)"
+          image="$(nix run .#device-image-verify -- "$RUNNER_TEMP/device-dist" "$GITHUB_SHA" --release)"
           printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
 
       - name: Publish prerelease without replacing existing releases
@@ -121,17 +200,21 @@ jobs:
           IMAGE: ${{ steps.verify.outputs.image }}
         run: |
           set -euo pipefail
-          dist="$RUNNER_TEMP/rg353m-dist"
-          notes="RG353M build candidate. This artifact has not been boot-verified on hardware.
+          dist="$RUNNER_TEMP/device-dist"
+          case "$DEVICE" in
+            rg353m) recovery='Physical recovery consoles, including USB serial, grant root access.' ;;
+            odin2portal) recovery='The panel recovery console grants root access. This Linux SD image does not modify Android or internal storage.' ;;
+          esac
+          notes="$DEVICE Linux build candidate. This artifact has not been boot-verified on hardware.
 
           Source commit: $GITHUB_SHA
 
           SSH is disabled and no personal SSH key or WiFi credentials are included.
-          Physical recovery consoles, including USB serial, remain enabled and grant root access.
+          $recovery
           First-boot setup and plugin support are TBD. Hardware verification follows separately."
           # Upload into a draft first: an upload failure must not expose a partial release.
           # An existing tag's release is never overwritten, including failed drafts.
           gh release create --verify-tag --draft --prerelease --latest=false \
-            --title "RG353M image $RELEASE_TAG (unverified)" --notes "$notes" \
+            --title "$DEVICE Linux image $RELEASE_TAG (unverified)" --notes "$notes" \
             -- "$RELEASE_TAG" "$dist/$IMAGE" "$dist/$IMAGE.sha256" "$dist/korri-revision.txt"
           gh release edit --draft=false --prerelease --latest=false -- "$RELEASE_TAG"

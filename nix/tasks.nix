@@ -131,6 +131,30 @@ let
     };
 
   definitions = {
+    odin2portal-cross-cache = {
+      description = "Build/export or import Odin Linux cross inputs through a signed, revision-bound Nix cache.";
+      usageSuffix = " -- <export|import> <directory>";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.coreutils
+      ];
+      script = ''
+        exec bash "$KORRI_ROOT/nix/devices/odin2portal/cross-cache.sh" "$@"
+      '';
+    };
+    odin2portal-cross-cache-check = {
+      description = "Test Odin cross-job cache transfer with real Nix stores and tiny signed fixtures.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.coreutils
+        pkgs.python3
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/odin2portal/cross-cache.test.py" "$KORRI_ROOT" ${pkgs.path}
+      '';
+    };
     device-image-dist = {
       description = "Build a pinned SD image from a clean checkout and stage its checksum and source revision.";
       usageSuffix = " -- <flake-package> <output-directory>";

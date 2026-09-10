@@ -1,26 +1,40 @@
 # Device image builds
 
-`.github/workflows/device-images.yml` builds RG353M first. It uses the existing
-`packages.aarch64-linux.rg353m-sd-image` output on `ubuntu-24.04-arm`. Shared
-staging code accepts the existing `.img.zst` and `.img` SD outputs. No Odin job,
-installer ISO, plugin integration, or first-boot setup is added here.
+`.github/workflows/device-images.yml` builds the selected Linux SD image.
+The `device` choice is `rg353m` or `odin2portal`, with RG353M as the default.
+Both use their existing `packages.aarch64-linux.<device>-sd-image` output on
+`ubuntu-24.04-arm`. No Android repacking, installer ISO, plugin integration,
+or first-boot setup is performed.
+
+Odin first builds its existing x86 cross-compiled kernel, rescue kernel, and
+firmware outputs in a separate `ubuntu-24.04` job. It builds sequentially to
+bound temporary disk use. That job exports every output and its closure to a
+native signed Nix binary cache, then uploads the cache as an exact workflow
+artifact. The ARM job checks the source revision and imports the paths derived
+from its own checkout with signature checking enabled.
+
+The signing key is generated per export. Only the public key enters the cache
+artifact; the secret is removed with the temporary build directory. Trust in
+this public key comes from the same workflow's exact artifact ID, not a general
+publisher identity. It is supplied only to the CI import command and is never
+added to device configuration. Cross-cache artifacts expire after one day.
 
 ## Run through GitHub Actions
 
 1. Open **Actions → Device images → Run workflow**.
-2. Select a branch. Leave `publish` off for a candidate build.
+2. Select a branch and device. Leave `publish` off for a candidate build.
 3. Download the workflow artifact containing the image, its `.sha256` file,
    and `korri-revision.txt`.
 
 To publish an existing tag, dispatch through the GitHub CLI:
 
 ```sh
-gh workflow run device-images.yml --ref <existing-tag> -f publish=true
+gh workflow run device-images.yml --ref <existing-device-tag> -f device=odin2portal -f publish=true
 ```
 
 The workflow must already exist on GitHub's default branch, and the selected
-tag must contain it. The workflow checks that the tag still names the built
-commit, then creates a GitHub prerelease.
+tag must contain it. Use a distinct tag for each device release. The workflow
+checks that the tag still names the built commit, then creates a GitHub prerelease.
 It uploads into a draft before making the release visible. It never creates or
 moves tags and never replaces existing releases or assets. After a failed upload,
 inspect the draft and remove it explicitly before retrying publication.
@@ -33,8 +47,11 @@ only the release job is retried.
 ## Access policy and verification scope
 
 - SSH is disabled. No personal root SSH key is included.
-- USB networking and serial remain enabled. Physical recovery consoles grant
-  passwordless root access, as requested for these initial images.
+- RG353M USB networking and serial remain enabled. Odin retains its panel
+  recovery console. Physical consoles grant passwordless root access.
+- Odin produces SD-card files only. Its existing AYN loader and Android install
+  remain untouched. Firmware keeps its existing `unfreeRedistributableFirmware`
+  classification; downloaded blobs are included in the resulting image.
 - Builds use pure flake evaluation and unset `KORRI_WIFI_ENV`. Test-only WiFi
   fixtures used by the policy checks are not supplied to the image build.
 - Staging checks compression, SHA256, and source revision. These are artifact
@@ -65,10 +82,10 @@ Checksums describe the final, recompressed download.
 ## Runner and publication limits
 
 The workflow uses standard GitHub-hosted runners and no external cache account,
-paid runner, or self-hosted machine. It limits Nix to two concurrent jobs and
-reports free disk space. The first hosted image build must establish whether
-its disk and time budget is sufficient. No successful hosted image build is
-claimed by adding this workflow.
+paid runner, or self-hosted machine. ARM assembly uses two concurrent Nix jobs.
+Odin's x86 kernel job uses one Nix job with four cores and removes unused Android,
+.NET, and GHC SDKs from that ephemeral runner to make space. Both report disk use.
+A successful image build does not establish hardware boot or gameplay behavior.
 
 GitHub documents 14 GB storage for the standard ARM runner. If the build exhausts
 storage, keep the failure visible and choose additional capacity or caching

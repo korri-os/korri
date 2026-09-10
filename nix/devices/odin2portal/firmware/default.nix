@@ -24,7 +24,8 @@
 # The blobs are proprietary and are never committed to Korri. They are
 # fetched by URL and content hash from the ROCKNIX distribution repository
 # at the revision nix-on-rocks pins and sobo runs, so the build is
-# reproducible without redistributing anything ourselves.
+# reproducible without checking blobs into this repository. Built images do
+# include these blobs under their existing firmware license classification.
 #
 # Provenance: ROCKNIX distribution rev f080b462f54b5807bdd16ac7cc2ab64528b038b1
 # (branch next, 2026-05-13), path

@@ -172,7 +172,8 @@
   image.baseName = "nixos-odin2portal";
 
   sdImage = {
-    compressImage = false;
+    # Distribution staging applies the same lossless release compression as RG353M.
+    compressImage = true;
     firmwarePartitionName = "ODIN2P_ESP";
     rootVolumeLabel = "ODIN2P_ROOT";
     # Three generations of kernel (30 MiB) plus initrd and DTB.
