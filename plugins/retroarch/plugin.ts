@@ -88,11 +88,13 @@ export function launch(input: PluginLaunchInput): PluginLaunchOutput {
     const separator = line.indexOf("=")
     const key = line.slice(0, separator).trim()
     if (separator < 0 || !/^[A-Za-z0-9_]+$/.test(key)) {
-      throw new Error(`Invalid RetroArch overrides.config line: ${line}`)
+      throw new Error("Invalid RetroArch overrides.config assignment")
     }
     if (reservedKeys.includes(key))
       throw new Error(`Reserved RetroArch overrides.config key: ${key}`)
-    lines.push(line)
+    // RetroArch requires whitespace before the separator even though this
+    // input contract accepts compact assignments. Preserve native value bytes.
+    lines.push(`${key} = ${line.slice(separator + 1).trimStart()}`)
   }
   // These are source-checked renderer outputs, not a flat policy schema.
   // Booleans stay quoted and numbers bare; strings use native, not JSON, syntax.

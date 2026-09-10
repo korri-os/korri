@@ -72,6 +72,11 @@ describe("RetroArch native configuration", () => {
     }
   })
 
+  it("redacts raw assignment values from validation errors", () => {
+    expect(() => content({ config: { append: "cheevos-password = private-token-marker" } }))
+      .toThrow(/^Invalid RetroArch overrides.config assignment$/)
+  })
+
   it("rejects unsupported typed strings without logging their values, including shadowed values", () => {
     for (const value of ['device "quoted"', '"leading', 'a"#unclosed', 'a"b#outside', 'é"x', "a\nb", "a\rb", "a\0b", "a\ud800b", "a\udfffb"]) {
       for (const config of [undefined, { append: 'audio_device = "valid"' }]) {
@@ -127,6 +132,13 @@ describe.skipIf(!parser)("pinned config_file_new/config_get_string semantics", (
     expect(parsed(content({ settings: { video_vsync: false, audio_volume: -3.5, video_fullscreen: true, audio_latency: 0 } }),
       ["video_vsync", "audio_volume", "video_fullscreen", "audio_latency", "config_save_on_exit", "kiosk_mode_enable", "menu_driver"]))
       .toEqual(["false", "-3.5", "true", "0", "false", "true", "null"])
+  })
+
+  it("normalizes raw separators before replacing a native assignment", () => {
+    for (const assignment of ['video_driver="vulkan"', 'video_driver ="vulkan"', 'video_driver= "vulkan"']) {
+      expect(parsed(content({ config: { append: assignment } }), ["video_driver"]))
+        .toEqual(["vulkan"])
+    }
   })
 
   it("round-trips native strings, literal backslashes, whitespace, hashes and Unicode", () => {
