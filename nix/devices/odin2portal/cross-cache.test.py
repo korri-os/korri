@@ -27,6 +27,7 @@ flake = """{
       odin2portal-kernel = fixture "odin-kernel-cache-fixture";
       odin2portal-rescue-kernel = fixture "odin-rescue-cache-fixture";
       odin2portal-firmware = fixture "odin-firmware-cache-fixture";
+      korri-portal = fixture "odin-portal-cache-fixture";
     };
   };
 }
@@ -86,9 +87,9 @@ with tempfile.TemporaryDirectory(prefix="odin-cross-cache-check-") as temporary:
             "nix",
             "eval",
             "--raw",
-            str(repo) + "#packages.x86_64-linux.odin2portal-kernel",
+            str(repo) + "#packages.x86_64-linux",
             "--apply",
-            'p: builtins.concatStringsSep "\\n" (map (name: p.${name}.outPath) p.outputs)',
+            'packages: builtins.concatStringsSep "\\n" (builtins.concatMap (p: map (name: p.${name}.outPath) p.outputs) (builtins.attrValues packages))',
         ],
         text=True,
     ).splitlines()

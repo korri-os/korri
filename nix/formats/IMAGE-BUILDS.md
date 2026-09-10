@@ -6,8 +6,10 @@ Both use their existing `packages.aarch64-linux.<device>-sd-image` output on
 `ubuntu-24.04-arm`. No Android repacking, installer ISO, plugin integration,
 or first-boot setup is performed.
 
-Odin first builds its existing x86 cross-compiled kernel, rescue kernel, and
-firmware outputs in a separate `ubuntu-24.04` job. It builds sequentially to
+Odin first builds its existing x86 cross-compiled kernel, rescue kernel, firmware,
+and static portal bundle in a separate `ubuntu-24.04` job. The kiosk already
+selects that x86-built web bundle because its Bun dependency hash is platform-specific.
+Only static web assets enter the ARM image. The job builds sequentially to
 bound temporary disk use. That job exports every output and its closure to a
 native signed Nix binary cache, then uploads the cache as an exact workflow
 artifact. The ARM job checks the source revision and imports the paths derived

@@ -12,12 +12,14 @@ directory="$(realpath -m -- "${2:?cache directory is required}")"
 cd "${KORRI_ROOT:?run through the odin2portal-cross-cache Nix app}"
 git diff --quiet HEAD --
 revision="$(git rev-parse HEAD)"
-# These are the public outputs consumed as odinKernel, odinRescueKernel and
-# odinFirmware by this device's default.nix. Both transfer directions use them.
+# The device's default.nix consumes the cross-built kernels and firmware.
+# services/kiosk/nixos-module.nix also consumes the x86-built static web bundle.
+# Both transfer directions use these existing public outputs.
 packages=(
   packages.x86_64-linux.odin2portal-kernel
   packages.x86_64-linux.odin2portal-rescue-kernel
   packages.x86_64-linux.odin2portal-firmware
+  packages.x86_64-linux.korri-portal
 )
 
 case "$mode" in
