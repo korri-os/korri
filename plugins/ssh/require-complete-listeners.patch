@@ -1,0 +1,14 @@
+--- a/sshd.c
++++ b/sshd.c
+@@ -882,0 +883,2 @@
++	int expected_socks = 0;
++	struct addrinfo *ai;
+@@ -892,0 +895,4 @@
++		for (ai = options.listen_addrs[i].addrs; ai; ai = ai->ai_next) {
++			if (ai->ai_family == AF_INET || ai->ai_family == AF_INET6)
++				expected_socks++;
++		}
+@@ -904,0 +911,3 @@
++	/* Readiness must not expose another process through a declared port. */
++	if (num_listen_socks != expected_socks)
++		fatal("Cannot bind every requested address.");

@@ -227,9 +227,12 @@ pkgs.testers.runNixOSTest {
   includeTestScriptReferences = false;
   nodes = {
     cache =
-      { ... }:
+      { lib, ... }:
       {
         imports = [ hostModule ];
+        # This node now also installs the SSH plugin for the coexistence gate.
+        # Like the cold client, it must use only the real isolated test cache.
+        nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
         services.korri.pluginHost = {
           enable = true;
           package = hostPackage;
@@ -383,7 +386,10 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl cat tailscaled.service")
     for compiler in ["cc", "cargo", "rustc"]:
         machine.fail("command -v " + compiler)
-    machine.fail("NIX_CONFIG='trusted-public-keys =\\nextra-trusted-public-keys =' korri-plugin inspect http://cache:5000 ${tailscalePackage}")
+    untrusted_env = shlex.quote("trusted-public-keys =\nextra-trusted-public-keys =")
+    untrusted_error = machine.fail("NIX_CONFIG=" + untrusted_env + " korri-plugin inspect http://cache:5000 ${tailscalePackage} 2>&1", timeout=60)
+    assert "syntax error" not in untrusted_error, untrusted_error
+    assert "not signed" in untrusted_error or "signature" in untrusted_error, untrusted_error
     machine.fail("test -e ${tailscalePackage}")
     machine.fail("korri-plugin inspect http://cache:5000 github:example/plugin")
 
@@ -447,10 +453,14 @@ pkgs.testers.runNixOSTest {
     # Trust exactly this generated host key, not StrictHostKeyChecking=no.
     host_public = machine.succeed("cat " + host_key + ".pub").strip()
     cache.succeed("printf '%s\\n' " + shlex.quote("[machine]:2222 " + host_public) + " > /root/plugin-known-hosts")
-    client = "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/plugin-known-hosts -o ConnectTimeout=2 -p 2222 "
+    # SSH must not consume the command stream used by the test backdoor.
+    # Bound the child too, so a transport failure cannot occupy the whole gate.
+    ssh_command = "${pkgs.coreutils}/bin/timeout -k 5s 20s ssh -n -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=2 "
+    client = ssh_command + "-o UserKnownHostsFile=/root/plugin-known-hosts -p 2222 "
     def login(account="root", key="plugin-login", command="id -u", succeeds=True):
         operation = cache.succeed if succeeds else cache.fail
-        return operation(client + "-i /root/" + key + " " + account + "@machine " + shlex.quote(command)).strip()
+        capture = "" if succeeds else " 2>&1"
+        return operation(client + "-i /root/" + key + " " + account + "@machine " + shlex.quote(command) + capture, timeout=30).strip()
     assert login() == "0"
     assert login("plugin-user") == machine.succeed("id -u plugin-user").strip()
     assert "Permission denied (publickey)" in login(key="rejected-login", command="true", succeeds=False)
@@ -465,6 +475,20 @@ pkgs.testers.runNixOSTest {
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
     machine.wait_for_open_port(2222)
+    assert_ports(ssh, True)
+    assert machine.succeed("sha256sum " + host_key).strip() == fingerprint
+    assert login() == "0"
+    # Boot recovery, unlike explicit enable, retains the Enabled receipt on
+    # failure. It must still stop the staged service and close its ports.
+    machine.succeed("cp " + host_key + " /root/plugin-enabled-key-backup; printf damaged > " + host_key)
+    machine.shutdown()
+    machine.start()
+    machine.wait_until_succeeds("systemctl is-failed --quiet korri-plugin-host.service")
+    assert_ports(ssh, False)
+    machine.fail("systemctl is-active " + ssh["unit"])
+    assert json.loads(machine.succeed("korri-plugin status @korri:ssh"))["desired"] == {"state": "Enabled"}
+    assert machine.succeed("cat " + host_key).strip() == "damaged"
+    machine.succeed("cp /root/plugin-enabled-key-backup " + host_key + "; korri-plugin restore-all")
     assert_ports(ssh, True)
     assert machine.succeed("sha256sum " + host_key).strip() == fingerprint
     assert login() == "0"
@@ -496,7 +520,7 @@ pkgs.testers.runNixOSTest {
     recovery_before = cache.succeed("sha256sum /etc/ssh/sshd_config /etc/ssh/ssh_host_* /etc/pam.d/sshd; systemctl show sshd -p MainPID; readlink -f /run/current-system")
     cache.succeed("mkdir -p /root/.ssh; chmod 700 /root/.ssh; cp /root/plugin-login.pub /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys")
     cache.succeed("ssh-keyscan -p 22 cache > /root/recovery-known-hosts")
-    recovery_client = "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/recovery-known-hosts -i /root/plugin-login root@cache id -u"
+    recovery_client = ssh_command + "-o UserKnownHostsFile=/root/recovery-known-hosts -i /root/plugin-login root@cache id -u"
     assert cache.succeed(recovery_client).strip() == "0"
     coexist = json.loads(cache.succeed("korri-plugin inspect http://cache:5000 ${sshPackage}"))
     cache.succeed("korri-plugin install http://cache:5000 ${sshPackage} " + coexist["approval"])

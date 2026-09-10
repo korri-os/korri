@@ -1,6 +1,9 @@
 # Build-side extraction of the *pinned* NixOS OpenSSH module. No module is
 # shipped for device evaluation. See README.md for every non-config effect.
-{ pkgs }:
+{
+  pkgs,
+  openssh ? pkgs.openssh,
+}:
 let
   lib = pkgs.lib;
   evaluated = import (pkgs.path + "/nixos/lib/eval-config.nix") {
@@ -10,6 +13,7 @@ let
       {
         services.openssh = {
           enable = true;
+          package = openssh;
           # Coexist with recovery SSH. Firewall metadata derives from this same
           # native NixOS option, never from a second hand-written manifest.
           ports = [ 2222 ];

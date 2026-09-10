@@ -15,7 +15,7 @@ Do not promise that the image meets the full parked SSH acceptance item yet.
 | Native request | Effect |
 |---|---|
 | `User=root` | Device-wide authority, named in the approval report. No dynamic-user sandbox. This applies only to the exact approved build, not to other plugins. |
-| `Type=notify` | Wait for the pinned OpenSSH daemon's readiness notification. A failed bind does not commit enablement. |
+| `Type=notify` | Wait for the pinned OpenSSH daemon's readiness notification. The packaged daemon refuses partial listener binding before it announces readiness. |
 | `ExecStartPre` | Generate and synchronize a per-device Ed25519 host key in the host's existing private `StateDirectory`, before listening. Never overwrite an existing identity. |
 | Native NixOS `services.openssh.ports = [ 2222 ]` | A deliberate separate TCP listener. Generate the plugin's firewall metadata from this same option. No UDP port and no plugin rule for TCP 22. |
 | Native `sshd_config` | Public-key authentication only. Password, keyboard-interactive and empty-password authentication are disabled. Root requires a valid key, even on a device with root console autologin. |
@@ -37,6 +37,11 @@ Existing recovery and custom PAM policies remain unchanged. The plugin
 uses that existing PAM policy; account expiry and host login restrictions can
 still deny a key. It neither edits accounts nor enrolls keys.
 
+The host opens declared ports only after native readiness. Failed activation,
+including boot restoration of an enabled receipt, stops the staged service and
+removes its port rules. Cleanup failures are reported alongside the startup
+error. The enabled receipt remains available for an explicit repair and retry.
+
 Disable removes the plugin's declared port rules and stops its managed daemon.
 Re-enable and boot recovery retain the same host key. `remove` retains data;
 `remove --purge` deletes the plugin state and therefore its host identity. A
@@ -46,6 +51,13 @@ Preparation also refuses symlinks (including dangling links), nonregular or
 non-root-owned keys, unsafe key permissions, and a public key with no private
 key. Only absent identity entries permit generation. Operator repair is
 required for rejected state; preparation does not change it.
+
+`require-complete-listeners.patch` changes the pinned OpenSSH listener loop to
+require every configured IPv4 and IPv6 address. Standard OpenSSH can announce
+readiness with only one family bound. An occupied port or unavailable requested
+address family now fails activation instead. The patch has no new configuration
+language. It requires a separately built and published OpenSSH output for each
+architecture. Devices still download prebuilt outputs and never compile it.
 
 **Cost:** this is a privileged administrative service, not a confined network
 capability. Root sessions can change the whole device. Disable does not undo
@@ -130,7 +142,7 @@ with test-only keys under `/run/korri-ssh-process-*`. It does not edit host
 accounts, authorization files, firewall rules, units or configuration. It
 checks the actual prebuilt daemon's readiness, key-only root login, PTY,
 wrong/no-key rejection, key uniqueness, restart identity, listener stop,
-occupied-port failure, and damaged-key refusal.
+occupied-port failure in each individual address family, and damaged-key refusal.
 
 Verified locally: the above package/admission/process checks and the full
 Rust test, clippy and formatter scope. The host-support check evaluates the
@@ -143,8 +155,8 @@ packaging now uses native directory outputs. A process-test fixture under
 `/tmp` failed OpenSSH StrictModes; the fixture now uses root-owned `/run`
 without weakening authorization checks.
 
-**Integrated VM assertions are added but not run in this slice.** The parent
-runs this single final gate (never on a target device):
+**The combined VM gate passed on 2026-09-10.** Run it on a build machine,
+never on a target device:
 
 ```sh
 nix build --no-link -L .#checks.x86_64-linux.korri-runtime-plugin-host
@@ -152,8 +164,15 @@ nix build --no-link -L .#checks.x86_64-linux.korri-runtime-plugin-host
 
 It covers the initially SSH-disabled host, root and ordinary account keys,
 refused approval and keys, enable/disable firewall rules, enabled/disabled
-reboot recovery, damaged-key activation rollback, purge, and coexistence with
+reboot recovery, damaged-key activation and boot-recovery rollback, purge, and coexistence with
 the real upstream NixOS recovery daemon. The recovery unit PID, configuration,
-PAM file, host keys and system generation must remain unchanged. Systemd and
-firewall lifecycle remain unverified until that gate passes. Physical-device
-acceptance remains a separate, unrun gate.
+PAM file, host keys and system generation remained unchanged. Systemd and
+firewall lifecycle passed in that VM. Physical-device acceptance remains an
+unrun gate.
+
+The final test script ran for 478.13 seconds. Three earlier attempts exposed
+fixture errors, including a successful SSH client consuming the test driver's
+next command. The real process regression now checks stdin preservation.
+Automated test clients use `ssh -n` plus a 20-second command timeout; interactive
+operator commands do not use `-n`. See the plugin-standard status document for
+all verification limits and remaining rollout work.

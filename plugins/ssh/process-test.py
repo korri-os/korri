@@ -51,7 +51,18 @@ def main(package):
         assert key.read_bytes() == identity
         # Existing directory entries are identity, even if dangling or damaged.
         # Preparation must fail without replacing any of them or their targets.
-        for case in ["dangling", "symlink", "directory", "fifo", "owner", "readable", "writable", "executable", "public-symlink", "public-only"]:
+        for case in [
+            "dangling",
+            "symlink",
+            "directory",
+            "fifo",
+            "owner",
+            "readable",
+            "writable",
+            "executable",
+            "public-symlink",
+            "public-only",
+        ]:
             invalid = root / case
             invalid.mkdir(mode=0o700)
             private = invalid / key.name
@@ -77,13 +88,26 @@ def main(package):
                 elif case == "public-symlink":
                     public.symlink_to(target)
                 else:
-                    private.chmod({"readable": 0o644, "writable": 0o620, "executable": 0o700}[case])
+                    private.chmod(
+                        {"readable": 0o644, "writable": 0o620, "executable": 0o700}[
+                            case
+                        ]
+                    )
             entry = public if case == "public-only" else private
             before = entry.lstat()
-            failure = subprocess.run([files["prepare"]], env=dict(env, STATE_DIRECTORY=str(invalid)), capture_output=True, timeout=10)
+            failure = subprocess.run(
+                [files["prepare"]],
+                env=dict(env, STATE_DIRECTORY=str(invalid)),
+                capture_output=True,
+                timeout=10,
+            )
             assert failure.returncode != 0, case
             after = entry.lstat()
-            assert (before.st_ino, before.st_mode, before.st_uid) == (after.st_ino, after.st_mode, after.st_uid), case
+            assert (before.st_ino, before.st_mode, before.st_uid) == (
+                after.st_ino,
+                after.st_mode,
+                after.st_uid,
+            ), case
             assert target.read_bytes() == identity, case
             if case in ["dangling", "symlink"]:
                 assert private.is_symlink(), case
@@ -140,6 +164,7 @@ def main(package):
         ]
         client = [
             str(openssh / "bin/ssh"),
+            "-n",
             "-F",
             "/dev/null",
             "-p",
@@ -194,6 +219,20 @@ def main(package):
                     accepted = client + ["-i", str(root / "accepted"), "root@127.0.0.1"]
                     try:
                         assert run(accepted + ["id -u"]).stdout.strip() == "0"
+                        # Automation can share stdin with its command driver.
+                        # SSH must not consume that driver's next command.
+                        commands = root / "driver-commands"
+                        commands.write_text("printf command-complete\\n\n")
+                        with commands.open() as driver_input:
+                            assert (
+                                run(
+                                    accepted + ["sleep 0.2; id -u"], stdin=driver_input
+                                ).stdout.strip()
+                                == "0"
+                            )
+                            assert driver_input.tell() == 0, (
+                                "SSH consumed the command driver's stdin"
+                            )
                         assert (
                             "pty-ready"
                             in run(
@@ -237,6 +276,54 @@ def main(package):
             assert key.read_bytes() == identity
             with socket.socket() as connection:
                 assert connection.connect_ex(("127.0.0.1", port)) != 0
+        # A single-family conflict must not leave the other family serving or
+        # announce READY. The real kernel sockets, not log wording, are proof.
+        for family, address, other_family, other_address in [
+            (socket.AF_INET, "127.0.0.1", socket.AF_INET6, "::1"),
+            (socket.AF_INET6, "::1", socket.AF_INET, "127.0.0.1"),
+        ]:
+            with (
+                socket.socket(family) as occupied,
+                socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notification,
+            ):
+                if family == socket.AF_INET6:
+                    occupied.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                occupied.bind((address, 0))
+                occupied.listen()
+                conflict_port = occupied.getsockname()[1]
+                notification.bind(env["NOTIFY_SOCKET"])
+                notification.settimeout(2)
+                daemon = subprocess.Popen(
+                    [
+                        files["start"],
+                        "-p",
+                        str(conflict_port),
+                        "-o",
+                        "ListenAddress=127.0.0.1",
+                        "-o",
+                        "ListenAddress=::1",
+                    ],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                try:
+                    try:
+                        message = notification.recv(4096)
+                    except socket.timeout:
+                        message = b""
+                    assert b"READY=1" not in message, (family, message)
+                    assert daemon.wait(timeout=5) != 0, family
+                    with socket.socket(other_family) as connection:
+                        assert (
+                            connection.connect_ex((other_address, conflict_port)) != 0
+                        ), family
+                finally:
+                    if daemon.poll() is None:
+                        os.killpg(daemon.pid, signal.SIGTERM)
+                        daemon.wait(timeout=5)
+            (runtime / "notify").unlink()
         key.write_text("damaged identity\n")
         failure = subprocess.run(
             [files["prepare"]], env=env, capture_output=True, timeout=10

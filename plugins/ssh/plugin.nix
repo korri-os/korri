@@ -1,6 +1,11 @@
 { pkgs }:
 let
-  upstream = import ./upstream.nix { inherit pkgs; };
+  # OpenSSH normally signals readiness after even one address binds. The host
+  # must not open both firewall families for a partly occupied listener set.
+  openssh = pkgs.openssh.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./require-complete-listeners.patch ];
+  });
+  upstream = import ./upstream.nix { inherit pkgs openssh; };
   configuration = pkgs.runCommand "korri-sshd-config" { } ''
     mkdir -p "$out/etc/ssh"
     cat ${./sshd_config} ${upstream.config} > "$out/etc/ssh/sshd_config"
@@ -11,7 +16,7 @@ let
     path:
     pkgs.lib.replaceStrings
       [ "@openssh@" "@coreutils@" "@config@" ]
-      [ (toString pkgs.openssh) (toString pkgs.coreutils) config ]
+      [ (toString openssh) (toString pkgs.coreutils) config ]
       (builtins.readFile path);
   preparation = pkgs.writeShellScriptBin "korri-sshd-prepare" (substitute ./prepare.sh);
   startup = pkgs.writeShellScriptBin "korri-sshd-start" (substitute ./start.sh);
@@ -26,10 +31,10 @@ let
   };
 in
 {
-  packages.openssh = pkgs.openssh;
+  packages = { inherit openssh; };
   files = {
-    sshd = "${pkgs.openssh}/bin/sshd";
-    ssh-keygen = "${pkgs.openssh}/bin/ssh-keygen";
+    sshd = "${openssh}/bin/sshd";
+    ssh-keygen = "${openssh}/bin/ssh-keygen";
     inherit config prepare start;
   };
   services.sshd = "${service}/lib/systemd/system/sshd.service";

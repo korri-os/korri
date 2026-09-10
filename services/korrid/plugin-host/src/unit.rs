@@ -21,9 +21,18 @@ impl Units {
         if report.native_unit.is_none() {
             return Ok(());
         }
+        match self.start_service(report) {
+            Ok(()) => Ok(()),
+            Err(error) => match self.stop(&report.id, false) {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(format!("{error}; activation cleanup failed: {cleanup}")),
+            },
+        }
+    }
+
+    fn start_service(&self, report: &Report) -> Result<(), String> {
         self.write(report)?;
         self.checked(["daemon-reload"])?;
-        self.firewall.apply(&report.id, &report.ports)?;
         let connection = zbus::blocking::connection::Builder::system()
             .map_err(|e| e.to_string())?
             .method_timeout(Duration::from_secs(10))
@@ -47,8 +56,10 @@ impl Units {
             .map_err(|e| e.to_string())?;
         self.checked(["start", &report.unit])?;
         self.checked(["is-active", "--quiet", &report.unit])?;
-        // A network-administration daemon can add its own INPUT jumps while
-        // starting. Finish this operation with the host chain first.
+        // Do not expose a competing listener while activation is pending.
+        // Tailscale and SSH announce readiness without an inbound connection.
+        // A network-administration daemon can also add INPUT jumps during
+        // startup, so finish with the host chain first.
         self.firewall.apply(&report.id, &report.ports)?;
         Ok(())
     }
