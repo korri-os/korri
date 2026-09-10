@@ -31,9 +31,13 @@ and hardware settings remain device-specific and unchanged. InputPlumber data
 keeps its bytes; both packages now use the same installed-schema check. RG353M
 also keeps its physical-button assertions.
 
-The base preserves the existing root console autologin and operator SSH key.
-Physical console access therefore grants root. A public installer needs a
-separate access-policy decision before it can reuse this configuration.
+SSH is disabled in the base and no operator SSH key is included. Physical
+recovery consoles, including RG353M USB serial, remain enabled and grant root.
+First-boot setup and plugin support remain separate work. A future SSH plugin
+requires explicit owner approval and compatible plugin-host support.
+
+See [device image builds](formats/IMAGE-BUILDS.md) for the manual GitHub Actions
+workflow and its optional, explicitly unverified prereleases.
 
 ## Future output formats
 

@@ -131,6 +131,45 @@ let
     };
 
   definitions = {
+    device-image-dist = {
+      description = "Build a pinned SD image from a clean checkout and stage its checksum and source revision.";
+      usageSuffix = " -- <flake-package> <output-directory>";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.python3
+        pkgs.zstd
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/formats/image-dist.py" build "$KORRI_ROOT" "$@"
+      '';
+    };
+    device-image-verify = {
+      description = "Check staged image checksums, compression, and revision; --release also checks GitHub asset size.";
+      usageSuffix = " -- <distribution-directory> <commit-sha> [--release]";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.zstd
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/formats/image-dist.py" verify "$@"
+      '';
+    };
+    device-image-dist-check = {
+      description = "Test image distribution and a tiny real Nix build without building a device image.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.python3
+        pkgs.git
+        pkgs.zstd
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.korri-image-dist
+        exec python3 "$KORRI_ROOT/nix/formats/image-dist-build.test.py" \
+          "$KORRI_ROOT" ${pkgs.path} ${pkgs.stdenv.hostPlatform.system}
+      '';
+    };
     nixos-layout-check = {
       description = "Check the shared NixOS base, SD format, device data, and WiFi provisioning without deploying.";
       runtimeInputs = [

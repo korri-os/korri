@@ -187,6 +187,7 @@
               korri = self;
             };
             korri-sd-card = import ./nix/formats/sd-card-check.nix { inherit pkgs nixpkgs; };
+            korri-image-dist = import ./nix/formats/image-dist-check.nix { inherit pkgs; };
             korri-inputplumber-data = import ./nix/base/inputplumber-data-check.nix {
               inherit pkgs;
               inputplumber = inputplumber.packages.inputplumber-korri;
