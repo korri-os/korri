@@ -1,0 +1,9 @@
+# These precede the pinned NixOS module's defaults (sshd uses the first value).
+# The module supplies the separate listener, algorithms and account key paths.
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin prohibit-password
+UsePAM yes

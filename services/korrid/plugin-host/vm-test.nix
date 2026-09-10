@@ -3,6 +3,7 @@
   hostModule,
   hostPackage,
   tailscalePackage,
+  sshPackage,
 }:
 let
   # Disposable local TLS, following nixpkgs nixos/tests/headscale.nix.
@@ -103,7 +104,7 @@ let
       services.forbidden.serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
-        User = "root";
+        User = "nobody";
       };
     };
   };
@@ -228,6 +229,21 @@ pkgs.testers.runNixOSTest {
     cache =
       { ... }:
       {
+        imports = [ hostModule ];
+        services.korri.pluginHost = {
+          enable = true;
+          package = hostPackage;
+          publishers."@korri" = {
+            inherit publicKey;
+            cacheUrl = "http://cache:5000";
+          };
+        };
+        # Coexistence target: keep the real pinned NixOS recovery daemon on 22.
+        services.openssh = {
+          enable = true;
+          settings.PasswordAuthentication = false;
+          settings.KbdInteractiveAuthentication = false;
+        };
         virtualisation.additionalPaths = [
           tailscalePackage
           alternate
@@ -243,6 +259,7 @@ pkgs.testers.runNixOSTest {
           changedLauncher
           credential
           forbidden
+          sshPackage
           splitPlugin
           impostor
           splitDependency.drvPath
@@ -318,6 +335,8 @@ pkgs.testers.runNixOSTest {
         services.korri.pluginHost.enable = true;
         services.korri.pluginHost.package = hostPackage;
         services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
+        users.users.plugin-user.isNormalUser = true;
+        users.users.plugin-user.hashedPassword = "!";
         # Exercise configured substitution without contacting public caches
         # from the isolated VM. The production module keeps NixOS's stock cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
@@ -396,6 +415,101 @@ pkgs.testers.runNixOSTest {
                 input_rules = [r for r in rules if r.startswith("-A INPUT ")]
                 assert input_rules.index("-A INPUT -j korri-plugins") < input_rules.index("-A INPUT -j nixos-fw"), input_rules
                 assert input_rules.count("-A INPUT -j korri-plugins") == 1, input_rules
+
+    # First prove an SSH-disabled compatible host. Keys are generated in the
+    # running test, never included in a plugin/image, and use existing account
+    # authorization paths. No system switch or device-side build is involved.
+    machine.fail("systemctl cat sshd.service")
+    machine.fail("test -e /etc/ssh/sshd_config")
+    machine.succeed("getent passwd sshd; test -f /etc/pam.d/sshd")
+    cache.succeed('ssh-keygen -q -t ed25519 -N "" -f /root/plugin-login; ssh-keygen -q -t ed25519 -N "" -f /root/rejected-login')
+    login_key = cache.succeed("cat /root/plugin-login.pub").strip()
+    machine.succeed("mkdir -p /etc/ssh/authorized_keys.d /home/plugin-user/.ssh; chmod 700 /home/plugin-user/.ssh")
+    machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /etc/ssh/authorized_keys.d/root")
+    machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /home/plugin-user/.ssh/authorized_keys; chown -R plugin-user:users /home/plugin-user/.ssh; chmod 600 /home/plugin-user/.ssh/authorized_keys")
+    ssh = inspect("${sshPackage}")
+    assert ssh["policy"].startswith("policy-root-v1:")
+    assert "DEVICE-WIDE ROOT AUTHORITY" in ssh["warning"]
+    assert ssh["native_unit"]["user"] == "root"
+    assert "DynamicUser=no" in ssh["unit_configuration"]
+    assert ssh["ports"] == {"allowedTCPPorts": [2222], "allowedUDPPorts": []}
+    machine.fail("korri-plugin install http://cache:5000 ${sshPackage} " + "0" * 64)
+    machine.fail("test -e " + ssh["state_directory"])
+    install("${sshPackage}")
+    assert_ports(ssh, False)
+    machine.fail("systemctl is-active " + ssh["unit"])
+    machine.succeed("korri-plugin enable @korri:ssh")
+    machine.wait_for_open_port(2222)
+    assert_ports(ssh, True)
+    host_key = ssh["state_directory"] + "/ssh_host_ed25519_key"
+    fingerprint = machine.succeed("sha256sum " + host_key).strip()
+    assert machine.succeed("stat -c '%U:%a' " + host_key).strip() == "root:600"
+    # Trust exactly this generated host key, not StrictHostKeyChecking=no.
+    host_public = machine.succeed("cat " + host_key + ".pub").strip()
+    cache.succeed("printf '%s\\n' " + shlex.quote("[machine]:2222 " + host_public) + " > /root/plugin-known-hosts")
+    client = "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/plugin-known-hosts -o ConnectTimeout=2 -p 2222 "
+    def login(account="root", key="plugin-login", command="id -u", succeeds=True):
+        operation = cache.succeed if succeeds else cache.fail
+        return operation(client + "-i /root/" + key + " " + account + "@machine " + shlex.quote(command)).strip()
+    assert login() == "0"
+    assert login("plugin-user") == machine.succeed("id -u plugin-user").strip()
+    assert "Permission denied (publickey)" in login(key="rejected-login", command="true", succeeds=False)
+    cache.fail(client + "-o PubkeyAuthentication=no root@machine true")
+    machine.succeed("korri-plugin disable @korri:ssh")
+    assert_ports(ssh, False)
+    login(succeeds=False)
+    machine.succeed("korri-plugin restore-all")
+    machine.fail("systemctl is-active " + ssh["unit"])
+    machine.succeed("korri-plugin enable @korri:ssh")
+    machine.shutdown()
+    machine.start()
+    machine.wait_for_unit("korri-plugin-host.service")
+    machine.wait_for_open_port(2222)
+    assert_ports(ssh, True)
+    assert machine.succeed("sha256sum " + host_key).strip() == fingerprint
+    assert login() == "0"
+    machine.succeed("korri-plugin disable @korri:ssh")
+    machine.shutdown()
+    machine.start()
+    machine.wait_for_unit("korri-plugin-host.service")
+    assert_ports(ssh, False)
+    login(succeeds=False)
+    # A bad persistent key must fail before activation and unwind the port,
+    # not silently rotate identity or change the disabled recovery intent.
+    machine.succeed("cp " + host_key + " /root/plugin-host-key-backup; printf damaged > " + host_key)
+    machine.fail("korri-plugin enable @korri:ssh")
+    assert_ports(ssh, False)
+    assert machine.succeed("cat " + host_key).strip() == "damaged"
+    machine.succeed("cp /root/plugin-host-key-backup " + host_key + "; korri-plugin restore-all")
+    assert_ports(ssh, False)
+    machine.succeed("korri-plugin enable @korri:ssh")
+    assert login() == "0"
+    machine.succeed("korri-plugin disable @korri:ssh; korri-plugin remove @korri:ssh --purge")
+    machine.fail("test -e " + ssh["state_directory"])
+    machine.fail("test -e /etc/ssh/sshd_config")
+    machine.fail("test -e /etc/ssh/ssh_host_ed25519_key")
+    assert machine.succeed("readlink -f /run/current-system").strip() == generation
+
+    # The cache node already has the *upstream* recovery SSH unit. Installing
+    # the optional daemon must preserve its configuration, keys, PAM and port.
+    cache.wait_for_unit("sshd.service")
+    recovery_before = cache.succeed("sha256sum /etc/ssh/sshd_config /etc/ssh/ssh_host_* /etc/pam.d/sshd; systemctl show sshd -p MainPID; readlink -f /run/current-system")
+    cache.succeed("mkdir -p /root/.ssh; chmod 700 /root/.ssh; cp /root/plugin-login.pub /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys")
+    cache.succeed("ssh-keyscan -p 22 cache > /root/recovery-known-hosts")
+    recovery_client = "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/recovery-known-hosts -i /root/plugin-login root@cache id -u"
+    assert cache.succeed(recovery_client).strip() == "0"
+    coexist = json.loads(cache.succeed("korri-plugin inspect http://cache:5000 ${sshPackage}"))
+    cache.succeed("korri-plugin install http://cache:5000 ${sshPackage} " + coexist["approval"])
+    cache.succeed("korri-plugin enable @korri:ssh")
+    cache.wait_for_open_port(2222)
+    cache.succeed("ssh-keyscan -p 2222 cache > /root/coexist-known-hosts")
+    assert cache.succeed(recovery_client.replace("recovery-known-hosts", "coexist-known-hosts").replace("root@cache", "-p 2222 root@cache")).strip() == "0"
+    assert cache.succeed("cat " + coexist["state_directory"] + "/ssh_host_ed25519_key.pub").strip() != host_public
+    for command in ["disable @korri:ssh", "restore-all", "enable @korri:ssh", "disable @korri:ssh", "remove @korri:ssh --purge"]:
+        cache.succeed("korri-plugin " + command)
+        assert cache.succeed(recovery_client).strip() == "0"
+        assert cache.succeed("sha256sum /etc/ssh/sshd_config /etc/ssh/ssh_host_* /etc/pam.d/sshd; systemctl show sshd -p MainPID; readlink -f /run/current-system") == recovery_before
+    cache.fail("iptables -w -S korri-plugins | grep -- --dport")
 
     empty = install("${empty}")
     machine.succeed("korri-plugin enable @example:empty")

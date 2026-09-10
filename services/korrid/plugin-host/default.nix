@@ -7,7 +7,7 @@ let
   hostPackage = import ./package.nix { inherit pkgs crane; };
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
   mkPlugin = import ./builder.nix { inherit pkgs; };
-  gamePlugin =
+  firstPartyPlugin =
     name:
     mkPlugin {
       publisher.namespace = "@korri";
@@ -19,11 +19,14 @@ in
   lib.mkPlugin = import ./builder.nix { inherit pkgs; };
   packages = {
     korri-plugin-host = hostPackage;
-    korri-plugin-retroarch = gamePlugin "retroarch";
-    korri-plugin-mgba = gamePlugin "mgba";
+    korri-plugin-retroarch = firstPartyPlugin "retroarch";
+    korri-plugin-mgba = firstPartyPlugin "mgba";
+    korri-plugin-ssh = firstPartyPlugin "ssh";
   };
   checks = {
     korri-plugin-host = hostPackage;
+    korri-ssh-upstream = (import ../../../plugins/ssh/upstream.nix { inherit pkgs; }).report;
+    korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
     korri-retroarch-settings =
       (import ../../../plugins/retroarch/plugin.nix { inherit pkgs; }).packages.retroarch-settings;
     korri-runtime-plugin-host = import ./vm-test.nix {
@@ -33,6 +36,7 @@ in
         hostPackage
         tailscalePackage
         ;
+      sshPackage = firstPartyPlugin "ssh";
     };
   };
   apps = {

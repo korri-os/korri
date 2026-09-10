@@ -20,6 +20,10 @@ let
       ports ? { },
     }:
     let
+      isNative =
+        service: builtins.isPath service || builtins.isString service || lib.isDerivation service;
+      nativeServices = lib.filterAttrs (_: isNative) services;
+      renderedServices = lib.filterAttrs (_: service: !isNative service) services;
       evaluated = import (pkgs.path + "/nixos/lib/eval-config.nix") {
         inherit pkgs;
         system = pkgs.stdenv.hostPlatform.system;
@@ -35,13 +39,15 @@ let
                 service
                 { path = lib.mkForce [ ]; }
               ]
-            ) services;
+            ) renderedServices;
           }
         ];
       };
-      units = lib.mapAttrs (
-        name: _: "${evaluated.config.systemd.units."${name}.service".unit}/${name}.service"
-      ) services;
+      units =
+        lib.mapAttrs (_: toString) nativeServices
+        // lib.mapAttrs (
+          name: _: "${evaluated.config.systemd.units."${name}.service".unit}/${name}.service"
+        ) renderedServices;
       # Schema grounding: approved plugin.nix fields, publisher.namespace from
       # the existing signed manifest, and NixOS's firewall protocol lists.
       manifest = pkgs.writeText "plugin-manifest.json" (
@@ -58,7 +64,9 @@ let
       );
       validName =
         name: builtins.match "[a-z0-9][a-z0-9_.-]*" name != null && builtins.stringLength name <= 64;
-      searchPaths = builtins.filter (name: services.${name} ? path) (builtins.attrNames services);
+      searchPaths = builtins.filter (name: renderedServices.${name} ? path) (
+        builtins.attrNames renderedServices
+      );
     in
     assert lib.assertMsg (searchPaths == [ ])
       "plugin services ${builtins.concatStringsSep ", " searchPaths}: path is unsupported; use immutable ExecStart paths";

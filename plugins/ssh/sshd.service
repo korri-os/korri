@@ -1,0 +1,8 @@
+[Unit]
+Description=Optional key-only administrative OpenSSH
+
+[Service]
+Type=notify
+User=root
+ExecStartPre=@prepare@
+ExecStart=@start@

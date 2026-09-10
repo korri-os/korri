@@ -43,6 +43,23 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       (import ../../../nix/device-cache/nixos-module.nix { inherit lib; })
+      # Pinned nixpkgs services/networking/ssh/sshd.nix requires these host
+      # account/session facilities even for a separate key-only daemon. Do not
+      # enable its listener, keygen, root credential provisioning, or overwrite
+      # any existing recovery SSH/PAM configuration.
+      (lib.mkIf (!config.services.openssh.enable) {
+        users.users.sshd = {
+          isSystemUser = true;
+          group = "sshd";
+          description = "SSH privilege separation user";
+        };
+        users.groups.sshd = { };
+        security.pam.services.sshd = {
+          startSession = true;
+          showMotd = true;
+          unixAuth = false;
+        };
+      })
       {
         environment.systemPackages = [ cfg.package ];
         environment.etc = {
