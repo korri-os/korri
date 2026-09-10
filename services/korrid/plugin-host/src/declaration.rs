@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -20,6 +21,64 @@ pub struct Declaration {
     pub description: Option<String>,
     #[serde(default)]
     pub services: Vec<String>,
+    // These are the existing named data exports, not a second plugin schema.
+    // Admission retains their values; the registry owns their meaning. Explicit
+    // empty records remain present. No data contribution becomes permission.
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub providers: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub systems: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub launchers: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub runtimes: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub transports: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        rename = "sessionControls",
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub session_controls: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub discovery: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub android: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub config: Option<BTreeMap<String, serde_json::Value>>,
 }
 
 pub fn valid_name(name: &str) -> bool {

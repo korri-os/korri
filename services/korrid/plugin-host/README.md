@@ -16,7 +16,7 @@ Core exports `packages.<system>.korri-plugin-host`, including the generic Rust h
 
 The concrete example is `tests/fixtures/tailscale/plugin.nix`. Its `packages`, named `files`, and standard NixOS `services` produce the generated manifest. `files` are checked with `test -e` during the build. Service values are rendered by NixOS, not a Korri template. The build context has no global locale, timezone or command-search environment from the CI system. Explicit service `path` is refused; use an immutable `ExecStart` path. Explicit environment directives still render and the host refuses them by name.
 
-The manifest fields are grounded in the approved authoring brief and this builder: `publisher`, `packages`, `files`, `services`, `requires`, and `ports`. `services` maps names to rendered immutable unit paths. `ports` uses NixOS's `allowedUDPPorts` and `allowedTCPPorts` lists. Tailscale requests UDP 41641. Empty contributions need no payload; nonempty `requires` are refused by this host until dependency-safe activation lands. There is no implicit dependency authorization. The current one-service limit is retained; game contribution activation remains a separate slice.
+The manifest fields are grounded in the approved authoring brief and this builder: `publisher`, `packages`, `files`, `services`, `requires`, and `ports`. `services` maps names to rendered immutable unit paths. `ports` uses NixOS's `allowedUDPPorts` and `allowedTCPPorts` lists. Tailscale requests UDP 41641. Empty contributions need no payload. Each `requires` entry is an exact plugin output in the package's Nix closure. It must also be installed with its own approval before the dependent can be installed. Install dependencies first, then enable them before enabling the dependent. Closure download does not grant installation or activation authority. The host does not recursively approve dependencies. The current one-service limit is retained.
 
 ## HTTPS repositories
 
@@ -75,12 +75,13 @@ Namespace verification does not authorize permissions. The administrator still a
 | `inspect CACHE PACKAGE` | Import and verify the signed closure, then show the bounded declaration and effective policy. Run no payload. |
 | `install CACHE PACKAGE APPROVAL` | Record an approved package, initially disabled. |
 | `update ID CACHE PACKAGE APPROVAL` | Update an existing raw-cache installation of that ID. Preserve enabled state. Restore the prior selection after a failed start when cleanup succeeds. |
-| `enable ID` | Start the approved daemon. |
+| `enable ID` | Enable the approved package and start its daemon, if any. Require enabled exact dependencies. |
 | `disable ID` | Stop and clean up the daemon. Retain private data. |
 | `remove ID` | Stop, clean up, and release the package and approval. Retain private data. |
 | `remove ID --purge` | Also ask systemd to delete the plugin's private state. |
 | `status ID` | Show the committed package, provenance, approval, and desired state. This is not a live health report. |
 | `unit ID` | Print the managed systemd unit name for status and journal commands. |
+| `enabled-packages` | Return approved reports for enabled committed selections under the host lock. Recheck publisher signatures, exact dependencies and active roots; refuse pending transitions. |
 | `restore` | Reconcile interrupted operations and restore enabled daemons. Leave matching healthy daemons running. |
 
 The generic boot service runs `restore`. Every command opens the same exclusive host lock, including source writes. Local `status`, `enable`, `disable`, `remove`, and `restore` use the receipt and immutable store; they do not need a configured or reachable repository. Pending and active package symlinks are Nix GC roots. The host commits a new package or enable selection only after its service operation succeeds. If the device loses power before that commit, boot restores the previous selection only if its publisher is still authorized. Disable and removal record their intent before cleanup, so an error or crash cannot silently re-enable them. They replace a pending enabled operation without first restarting the previous selection. A prior removal keeps its original purge choice.
@@ -91,9 +92,23 @@ Recovery stops a revoked enabled unit before refusing its restart, even if it wa
 
 If cleanup fails, disable, removal and automatic rollback stop. The receipt and package remain available for inspection. Read the unit journal. Do not delete the roots to force success. A failed native cleanup can need separate administrator repair; the CLI does not pretend to reverse arbitrary native effects.
 
+## Installed game admission
+
+Zero-service packages can carry the shipped `systems`, `launchers`, `runtimes`, `discovery`, `sessionControls`, `transports`, `providers`, `android`, and `config` data exports. The installer retains these records without translating them. Record interpretation belongs to the game registry. Inspection never calls `launch`; approval binds its exact source bytes. Reports expose the manifest's existing `packages`, `files`, and `requires` fields.
+
+`Host::enabled_packages()` and the administrator-only `enabled-packages` command expose a consistent admission snapshot. They perform no receipt repair, package realization or callback effects. If Nix lacks a saved signature, verification can fetch signing metadata from the bound cache and retain it, as activation does. They reject changed approvals, revoked signing keys, unfinished selections, inconsistent active roots, and missing or disabled exact dependencies. A cached signature still requires the full bound key. Verification holds the host lock and can be slow for large installed sets; a concurrent install makes the query fail as busy.
+
+Lifecycle changes validate the complete post-operation selection, including cycle rejection. Update or removal cannot replace a build named by any installed dependent, including a disabled one. Disable is refused while an enabled dependent needs that package. Disable dependents first; remove dependents before replacing their exact dependency builds. The cost is explicit dependency-order administration. This checks manifest `requires`, not yet launcher-instance-to-kind or runtime-to-launcher records.
+
+Recovery loads the rooted dependency graph and orders it once without recursion. It recovers each required selection before its dependents, regardless of directory enumeration order. A failed dependency recovery stops its enabled dependents and retains their pins. Cycles and their dependents cannot start. Required receipts are read by the immutable package's identity and exact selected path; an unrelated corrupt receipt is reported separately without stopping a healthy dependency chain. This isolation applies to recovery, not the all-or-error registry snapshot or lifecycle selection validation. Graph memory grows with the number of packages and requirement edges; publisher verification still holds the host lock.
+
+**This is admission, not the Linux launch cutover.** Korrid does not yet consume this snapshot. Its Linux bundled declarations and environment-based RetroArch runner are unchanged. No `plugin.nix` game payload migration, callback effect executor, configuration cascade, typed-setting source check, route chooser, deployment, or user-data migration is included here. The VM game fixtures use actual shipped declaration source but contain no emulator binary and launch no game.
+
+For the remaining configuration cutover, the task's requirement to preserve grounded legacy schemas takes precedence over the brief's illustrative `extraConfig` spelling. `legacy:product/plugins/retroarch/src/launch-spec.ts` consumes `LaunchOverrides.config` through `renderRetroArchOverrideConfigLines`. That producer uses `overrides.config.prepend` and `.append`, refuses `.replace`, and validates configuration keys and plaintext credential exclusions. `legacy:product/plugins/retroarch/src/policy.ts` contains the nested typed policy. This admission slice makes no replacement configuration schema.
+
 ## Declaration and storage grounding
 
-`src/declaration.rs` consumes named exports `name`, optional `title` and `description`, and `services`. Service names reference the generated manifest. Missing or repeated names fail. No `daemons` export or compatibility reader remains. The publisher namespace comes from verified packaging, not source. ID segments follow the grammar in `services/korrid/src/plugin.rs`, with a 64-byte bound.
+`src/declaration.rs` consumes named exports `name`, optional `title` and `description`, `services`, and the existing data exports listed above. Service names reference the generated manifest. Missing or repeated names fail. No `daemons` export or compatibility reader remains. The publisher namespace comes from verified packaging, not source. ID segments follow the grammar in `services/korrid/src/plugin.rs`, with a 64-byte bound.
 
 `src/native_unit.rs` parses systemd logical lines, comments, quotes, C escapes and list resets. Unsupported grammar fails closed. The allowlist is `[Unit] Description` and `[Service] Type`, `ExecStart`, `ExecStopPost`, `CapabilityBoundingSet`, `DeviceAllow`, and `LoadCredential`. `Type` is `notify` or `exec`. Capabilities are limited to `CAP_NET_ADMIN` and `CAP_NET_RAW`; the only device request is `/dev/net/tun rw`. Unknown directives are refused by name, not dropped. Execution prefixes, non-store programs, systemd specifiers and arbitrary environment expansion are refused. Native `${STATE_DIRECTORY}` and `${RUNTIME_DIRECTORY}` expansion stays owned by systemd.
 

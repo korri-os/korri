@@ -10,13 +10,17 @@ let
     cargoVendorDir = vendor;
   };
   artifacts = craneLib.buildDepsOnly (common // { src = clean; });
-  # The separate CLI crate uses korrid's actual evaluator. Materialize exactly
-  # that shared source and its existing example test, rather than cloning it.
+  # The separate CLI crate uses korrid's actual evaluator. Materialize that
+  # source, its example, and the shipped declarations used by admission tests.
+  # Tests must not substitute copies for the real plugin sources.
   source = pkgs.runCommand "korri-plugin-host-source" { } ''
-    mkdir -p "$out/src" "$out/examples"
+    mkdir -p "$out/src" "$out/examples" "$out/plugins"
     cp -R ${clean} "$out/plugin-host"
     cp ${../src/script.rs} "$out/src/script.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
+    cp ${../../../plugins/retroarch/plugin.ts} "$out/plugins/retroarch.plugin.ts"
+    cp ${../../../plugins/mgba/plugin.ts} "$out/plugins/mgba.plugin.ts"
+    cp ${../../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
   '';
 in
 craneLib.buildPackage (

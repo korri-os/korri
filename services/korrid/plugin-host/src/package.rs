@@ -31,6 +31,9 @@ pub struct Report {
     pub declaration: Declaration,
     pub native_unit: Option<crate::native_unit::NativeUnit>,
     pub ports: crate::firewall::Ports,
+    pub packages: BTreeMap<String, PathBuf>,
+    pub files: BTreeMap<String, PathBuf>,
+    pub requires: Vec<PathBuf>,
 }
 
 pub fn validate_store_path(path: &Path) -> Result<(), String> {
@@ -459,12 +462,6 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
     provenance.validate(&id)?;
     let unit = unit_name(&id);
     let manifest = manifest(package)?;
-    if !manifest.requires.is_empty() {
-        return Err(
-            "required plugin activation is not implemented; refusing a package with requires"
-                .into(),
-        );
-    }
     let closure = process::checked(
         nix,
         [
@@ -480,7 +477,7 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
     for path in &closure {
         validate_store_path(path)?;
     }
-    for path in manifest.packages.values() {
+    for path in manifest.packages.values().chain(&manifest.requires) {
         validate_store_path(path)?;
         if !closure.contains(path) || fs::canonicalize(path).map_err(|e| e.to_string())? != *path {
             return Err("package is outside the immutable closure".into());
@@ -514,7 +511,7 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         .map(|u| u.capabilities.as_slice())
         .unwrap_or_default();
     let warning = if native_unit.is_none() {
-        "No native service is activated by this package."
+        "No native service is activated by this package. Approval covers the exact declaration and launch callback source. Game launch effects can access the runtime user's files and display; they must run in the existing runtime-user systemd sandbox, never as the administrator."
     } else if capabilities.iter().any(|c| c == "CAP_NET_ADMIN") {
         "HOST NETWORK ADMINISTRATION: this daemon can change host routes, interfaces and firewall rules. It can interrupt connectivity or redirect traffic. This access is not confined to its own interface."
     } else if capabilities.iter().any(|c| c == "CAP_NET_RAW") {
@@ -543,6 +540,9 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         declaration,
         native_unit,
         ports: manifest.ports,
+        packages: manifest.packages,
+        files: manifest.files,
+        requires: manifest.requires,
     };
     report.unit_configuration = crate::unit::render(&report)?;
     report.approval = approval_digest(

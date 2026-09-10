@@ -1,6 +1,7 @@
 use crate::{
     archive,
     declaration::validate_id,
+    dependencies::{dependency_order, validate_selection, SelectedPackage},
     package::{self, Report},
     provenance::{current_platform, Provenance, SelectionIntent},
     repository::{self, Configuration, SourceUrl},
@@ -10,6 +11,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::Duration,
@@ -278,6 +280,7 @@ impl Host {
         // Persist both disable and removal before cleanup: failure or a crash
         // must never roll back this intent into a (possibly revoked) start.
         receipt.desired = desired;
+        self.check_selection(&receipt)?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
         self.restore_one(id)
     }
@@ -287,11 +290,163 @@ impl Host {
         self.receipt(id)
     }
 
+    /// The local registry's admission boundary. The host lock makes the list a
+    /// single selection snapshot. No package realization, receipt repair or
+    /// callback execution occurs. Signature verification may consult the bound
+    /// cache; pending transitions never publish launch authority.
+    pub fn enabled_packages(&self) -> Result<Vec<Report>, String> {
+        let mut reports = Vec::new();
+        for receipt in self.receipts()? {
+            if !matches!(receipt.desired, Desired::Enabled) {
+                continue;
+            }
+            if fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok() {
+                return Err(format!("plugin {} has an unfinished selection", receipt.id));
+            }
+            if fs::read_link(self.root(&receipt.id, "active")).map_err(|e| e.to_string())?
+                != receipt.package
+            {
+                return Err(format!(
+                    "plugin {} has an inconsistent active root",
+                    receipt.id
+                ));
+            }
+            let report = self.approved(&receipt)?;
+            self.verify_publisher(&receipt.package, &receipt.provenance)?;
+            reports.push(report);
+        }
+        validate_selection(
+            &reports
+                .iter()
+                .map(|report| SelectedPackage {
+                    id: report.id.clone(),
+                    package: report.package.clone(),
+                    enabled: true,
+                    requires: report.requires.clone(),
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(reports)
+    }
+
+    fn receipts(&self) -> Result<Vec<Receipt>, String> {
+        let mut receipts = Vec::new();
+        for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.file_name() == "lock"
+                || entry.file_name() == storage::SOURCES_DIR
+                || entry.file_name() == storage::STAGING_DIR
+            {
+                continue;
+            }
+            let name = entry.file_name();
+            if !name
+                .to_str()
+                .and_then(|name| name.strip_prefix("korri-plugin-"))
+                .is_some_and(|suffix| {
+                    suffix.len() == 64 && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+            {
+                return Err("unexpected entry in plugin state directory".into());
+            }
+            storage::directory(&entry.path())?;
+            if let Some(receipt) =
+                storage::read_json::<Receipt>(&entry.path().join("selection.json"))?
+            {
+                validate_id(&receipt.id)?;
+                if self.directory(&receipt.id) != entry.path() {
+                    return Err("receipt identity does not match its directory".into());
+                }
+                receipts.push(receipt);
+            }
+        }
+        receipts.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(receipts)
+    }
+
+    fn check_selection(&self, candidate: &Receipt) -> Result<(), String> {
+        let mut receipts = self.receipts()?;
+        receipts.retain(|r| r.id != candidate.id);
+        receipts.push(candidate.clone());
+        let mut packages = Vec::new();
+        for receipt in receipts {
+            if matches!(receipt.desired, Desired::Removed { .. }) {
+                continue;
+            }
+            let report = self.approved(&receipt)?;
+            packages.push(SelectedPackage {
+                id: receipt.id,
+                package: receipt.package,
+                enabled: matches!(receipt.desired, Desired::Enabled),
+                requires: report.requires,
+            });
+        }
+        validate_selection(&packages)
+    }
+
+    fn selected_receipt(&self, package: &Path) -> Result<Receipt, String> {
+        // Resolve identity from the required immutable artifact, never by
+        // enumerating unrelated receipts. Approval and trust are checked by
+        // the caller before any start; this lookup grants no authority.
+        package::validate_store_path(package)?;
+        let id = package::load_declaration(package)?.id();
+        let receipt = self.receipt(&id)?.ok_or_else(|| {
+            format!(
+                "required plugin {id} ({}) is not installed",
+                package.display()
+            )
+        })?;
+        if receipt.id != id || receipt.package != package {
+            return Err(format!(
+                "required plugin {id} is not selected at {}",
+                package.display()
+            ));
+        }
+        Ok(receipt)
+    }
+
+    fn verify_dependencies(&self, report: &Report) -> Result<(), String> {
+        for (_, result) in dependency_order([report.package.clone()], |required| {
+            if required == &report.package {
+                return Ok(report.requires.clone());
+            }
+            let receipt = self.selected_receipt(required)?;
+            if !matches!(receipt.desired, Desired::Enabled) {
+                return Err(format!(
+                    "{} requires enabled exact plugin {}",
+                    report.id,
+                    required.display()
+                ));
+            }
+            if fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok() {
+                return Err(format!(
+                    "required plugin {} has an unfinished selection",
+                    receipt.id
+                ));
+            }
+            if fs::read_link(self.root(&receipt.id, "active")).map_err(|e| e.to_string())?
+                != *required
+            {
+                return Err(format!(
+                    "required plugin {} has an inconsistent active root",
+                    receipt.id
+                ));
+            }
+            let dependency = self.approved(&receipt)?;
+            self.verify_publisher(&receipt.package, &receipt.provenance)?;
+            Ok(dependency.requires)
+        }) {
+            result?;
+        }
+        Ok(())
+    }
+
     pub fn restore(&self) -> Result<(), String> {
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
             errors.push(error);
         }
+        let mut receipts = BTreeMap::new();
         for entry in fs::read_dir(STATE_ROOT).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
@@ -302,11 +457,84 @@ impl Host {
             {
                 storage::directory(&entry.path())
             } else {
-                self.restore_directory(&entry.path())
+                (|| {
+                    storage::directory(&entry.path())?;
+                    match storage::read_json::<Receipt>(&entry.path().join("selection.json"))? {
+                        Some(receipt) => {
+                            validate_id(&receipt.id)?;
+                            if self.directory(&receipt.id) != entry.path() {
+                                return Err("receipt identity does not match its directory".into());
+                            }
+                            if self.selected_receipt(&receipt.package)?.id != receipt.id {
+                                return Err("receipt identity does not match its package".into());
+                            }
+                            receipts.insert(receipt.package.clone(), receipt);
+                            Ok(())
+                        }
+                        None => self.restore_directory(&entry.path(), None),
+                    }
+                })()
             };
             if let Err(error) = result {
                 errors.push(error);
             }
+        }
+        // Plan the rooted graph once, then recover each exact selection once.
+        // Directory order cannot make a dependent restart before a dependency
+        // has committed its interrupted selection. Failed recovery also blocks
+        // its dependents, even when no pending root was present.
+        let order = dependency_order(receipts.keys().cloned().collect::<Vec<_>>(), |path| {
+            let receipt = self.selected_receipt(path)?;
+            let report = self.approved(&receipt)?;
+            let requires = if matches!(receipt.desired, Desired::Enabled) {
+                for required in &report.requires {
+                    let dependency = self.selected_receipt(required)?;
+                    if !matches!(dependency.desired, Desired::Enabled) {
+                        return Err(format!(
+                            "{} requires enabled exact plugin {}",
+                            report.id,
+                            required.display()
+                        ));
+                    }
+                }
+                report.requires
+            } else {
+                Vec::new()
+            };
+            receipts.insert(path.clone(), receipt);
+            Ok(requires)
+        });
+        let mut outcomes: BTreeMap<PathBuf, Result<(), String>> = BTreeMap::new();
+        for (path, dependencies) in order {
+            let authority = dependencies.and_then(|required| {
+                for dependency in required {
+                    match outcomes.get(&dependency) {
+                        Some(Ok(())) => {}
+                        Some(Err(error)) => {
+                            return Err(format!(
+                                "required plugin {} failed recovery: {error}",
+                                dependency.display()
+                            ))
+                        }
+                        None => {
+                            return Err(format!(
+                                "required plugin {} has no recovery outcome",
+                                dependency.display()
+                            ))
+                        }
+                    }
+                }
+                Ok(())
+            });
+            let result = if let Some(receipt) = receipts.get(&path) {
+                self.restore_directory(&self.directory(&receipt.id), authority.err().as_deref())
+            } else {
+                authority
+            };
+            if let Err(error) = &result {
+                errors.push(error.clone());
+            }
+            outcomes.insert(path, result);
         }
         self.release_download()?;
         if errors.is_empty() {
@@ -316,26 +544,39 @@ impl Host {
         }
     }
 
-    fn restore_directory(&self, path: &Path) -> Result<(), String> {
+    fn restore_directory(&self, path: &Path, dependency_error: Option<&str>) -> Result<(), String> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
             if self.directory(&receipt.id) != path {
                 return Err("receipt identity does not match its directory".into());
             }
             self.prepare(&receipt.id)?;
+            if let Some(error) = dependency_error {
+                // Retain pins and approval on denial, but never leave an
+                // enabled dependent running after required recovery failed.
+                self.approved(&receipt)?;
+                if matches!(receipt.desired, Desired::Enabled) {
+                    self.units.stop(&receipt.id, false)?;
+                }
+                return Err(error.into());
+            }
             let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
             if !pending && matches!(receipt.desired, Desired::Enabled) {
                 let report = self.approved(&receipt)?;
                 if self
                     .verify_publisher(&receipt.package, &receipt.provenance)
                     .is_ok()
+                    && fs::read_link(self.root(&receipt.id, "active"))
+                        .is_ok_and(|path| path == receipt.package)
                     && self.units.matches_running(&report)?
                 {
                     self.units.firewall.apply(&report.id, &report.ports)?;
                     return Ok(());
                 }
             }
-            self.restore_one(&receipt.id)?;
+            // The ordered pass has already recovered and verified the whole
+            // required graph. Do not traverse it again for each dependent.
+            self.restore_one_with_dependencies(&receipt.id, |_| Ok(()))?;
         } else {
             // Install is always disabled. Without a committed receipt it
             // cannot have started a daemon. A completed removal also reaches
@@ -362,10 +603,12 @@ impl Host {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
         self.verify_publisher(&candidate.package, &candidate.provenance)?;
+        self.check_selection(&candidate)?;
         let pending = self.root(id, "pending");
         storage::root_link(&pending, &candidate.package)?;
         let result = self.units.stop(id, false).and_then(|_| {
             if matches!(candidate.desired, Desired::Enabled) {
+                self.verify_dependencies(&report)?;
                 self.units.start(&report)
             } else {
                 Ok(())
@@ -403,6 +646,14 @@ impl Host {
     }
 
     fn restore_one(&self, id: &str) -> Result<(), String> {
+        self.restore_one_with_dependencies(id, |report| self.verify_dependencies(report))
+    }
+
+    fn restore_one_with_dependencies(
+        &self,
+        id: &str,
+        verify_dependencies: impl FnOnce(&Report) -> Result<(), String>,
+    ) -> Result<(), String> {
         let receipt = self.receipt(id)?;
         match receipt {
             Some(receipt) => {
@@ -421,6 +672,7 @@ impl Host {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
                         self.verify_publisher(&receipt.package, &receipt.provenance)?;
+                        verify_dependencies(&report)?;
                         self.units.start(&report)?;
                     }
                     storage::root_link(&self.root(id, "active"), &receipt.package)?;

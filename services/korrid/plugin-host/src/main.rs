@@ -70,12 +70,13 @@ fn run(args: Vec<String>) -> Result<(), String> {
         ["remove", id, "--purge"] => host.remove(id, true),
         ["status", id] => print_json(&host.status(id)?.ok_or("plugin is not installed")?),
         ["restore"] => host.restore(),
+        ["enabled-packages"] => print_json(&host.enabled_packages()?),
         ["unit", id] => {
             korri_plugin_host::declaration::validate_id(id)?;
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin inspect CACHE PACKAGE | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore | repository COMMAND".into()),
+        _ => Err("usage: korri-plugin inspect CACHE PACKAGE | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore | enabled-packages | repository COMMAND".into()),
     }
 }
 
