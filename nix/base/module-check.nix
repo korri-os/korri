@@ -28,6 +28,8 @@ let
   };
   samePolicy = device: shared device.config == shared base.config;
   profile = base.config.networking.networkmanager.ensureProfiles;
+  rescue = korri.nixosConfigurations.rg353m-rescue.config;
+  normal = korri.nixosConfigurations.rg353m.config;
   # Production device package selections must not install bring-up benchmarks.
   benchmarkPackageNames = [
     "glmark2"
@@ -44,6 +46,12 @@ let
     in
     builtins.all (bench: !(builtins.elem bench names)) benchmarkPackageNames;
 in
+assert rescue.sdImage.rootVolumeLabel != normal.sdImage.rootVolumeLabel;
+assert rescue.sdImage.firmwarePartitionName != normal.sdImage.firmwarePartitionName;
+assert rescue.fileSystems."/".device == "/dev/disk/by-label/${rescue.sdImage.rootVolumeLabel}";
+assert
+  rescue.fileSystems."/boot/firmware".device
+  == "/dev/disk/by-label/${rescue.sdImage.firmwarePartitionName}";
 assert !(base.options ? sdImage);
 assert !(base.options ? isoImage);
 assert base.config.boot.postBootCommands == "";

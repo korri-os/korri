@@ -51,6 +51,8 @@ rec {
       {
         image.baseName = nixpkgs.lib.mkForce "nixos-rg353m-rescue";
         sdImage.rootVolumeLabel = nixpkgs.lib.mkForce "KORRI_RESCUE";
+        # The NixOS SD builder derives /boot/firmware's device from this label.
+        sdImage.firmwarePartitionName = nixpkgs.lib.mkForce "KORRI_RBOOT";
       }
     ];
   };
