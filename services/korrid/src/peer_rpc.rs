@@ -1237,6 +1237,48 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn game_runtime_set_nonce_survives_server_restart() {
+        let (host_root, _client_root, credentials, host_key, config) = setup();
+        let encoded = credentials
+            .encode_request_with_tokens(
+                &host_key,
+                RpcRequest::GameRuntimeSet(crate::game_routes::GameRuntimeSetRequest {
+                    scope: crate::config::settings::RuntimeChoiceScope::Game("neverball".into()),
+                    runtime_id: None,
+                    expected_revision: String::new(),
+                }),
+                NOW,
+                token(64),
+                token(65),
+            )
+            .unwrap();
+        let first = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        assert_eq!(
+            post(&first, "/peer-rpc", encoded.event_json.clone())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let restarted = serve(crate::secure_host_router_with_in_memory_units_at(
+            &config,
+            host_root.path(),
+            NOW,
+        ))
+        .await;
+        assert_eq!(
+            post(&restarted, "/peer-rpc", encoded.event_json)
+                .await
+                .status(),
+            StatusCode::CONFLICT
+        );
+    }
+
     #[test]
     fn response_must_bind_request_id_nonce_sender_and_recipient() {
         let (host_root, _client_root, credentials, host_key, _config) = setup();

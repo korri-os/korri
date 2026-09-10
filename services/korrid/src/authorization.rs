@@ -246,6 +246,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::DiscoveryRemoveLocation(_)
             | RpcRequest::DiscoveryRescan(_)
             | RpcRequest::SettingsUpdate(_)
+            | RpcRequest::GameRuntimeSet(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
     )
