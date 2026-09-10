@@ -587,6 +587,7 @@ describe("in-memory source status", () => {
   const remoteGame = {
     id: "neverball",
     title: "Neverball",
+    supportsRuntimeSelection: false,
     source: { devicePublicKey: peerKey, label: "zao", isLocal: false },
   }
 
@@ -611,6 +612,7 @@ describe("in-memory source status", () => {
         {
           id: "skate3",
           title: "Skate 3",
+          supportsRuntimeSelection: false,
           source: { devicePublicKey: peerKey, label: "browser", isLocal: true },
         },
       ],

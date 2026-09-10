@@ -6,8 +6,8 @@ const client = () => createInMemoryKorridClient({ gameRoutes: [routes] })
 
 /** Press an action from the current published model, like a surface button.
  * Commands on the real controller are opaque and bound to one generation. */
-function createRuntimeChooser(...args: Parameters<typeof createController>) {
-  const controller = createController(...args)
+function createRuntimeChooser(korrid: Parameters<typeof createController>[0], onAcknowledged: () => void) {
+  const controller = createController(korrid, { beginLaunch: () => onAcknowledged, reload: onAcknowledged })
   return {
     ...controller,
     act(command: string) {
@@ -25,7 +25,7 @@ function createRuntimeChooser(...args: Parameters<typeof createController>) {
 describe("runtime chooser", () => {
   it("cannot apply an old button to a newer route read", async () => {
     const korrid = client()
-    const chooser = createController(korrid, () => {})
+    const chooser = createController(korrid, { beginLaunch: () => () => {}, reload: () => {} })
     await chooser.open("wl4", "Wario Land 4", "inspect")
     const state = chooser.getSnapshot()
     if (state._tag === "Closed") throw new Error("Expected chooser")
@@ -74,7 +74,7 @@ describe("runtime chooser", () => {
   it("continues the same game using ordinary prepare without needing a route read", async () => {
     const korrid = createInMemoryKorridClient({
       games: [
-        { id: "wl4", title: "Wario Land 4", source: { label: "This device", isLocal: true } },
+        { id: "wl4", title: "Wario Land 4", supportsRuntimeSelection: true, source: { label: "This device", isLocal: true } },
       ],
       activeSession: { launchId: "existing", gameId: "wl4" },
     })

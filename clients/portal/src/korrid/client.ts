@@ -619,11 +619,13 @@ const sampleGames: readonly Game[] = [
   {
     id: "skate3",
     title: "Skate 3",
+    supportsRuntimeSelection: false,
     source: { label: "browser", isLocal: true },
   },
   {
     id: "neverball",
     title: "Neverball",
+    supportsRuntimeSelection: false,
     source: { label: "browser", isLocal: true },
   },
 ]

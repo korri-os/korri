@@ -28,9 +28,9 @@ import {
 import { useLaunchables } from "./use-launchables"
 
 function localRuntimeEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
-  if (entry?.kind === "game" && entry.game.source.isLocal) return entry
+  if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRuntimeSelection) return entry
   if (entry?.kind !== "game" && entry?.kind !== "local-game") return undefined
-  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal)
+  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal && copy.game.supportsRuntimeSelection)
   return copy?.kind === "remote" ? { kind: "game", game: copy.game } : undefined
 }
 
@@ -66,9 +66,12 @@ export function SurfaceRoot({
 }: SurfaceRootProps) {
   const launchables = useLaunchables(bridge, korrid)
   const clockLabel = useClockLabel()
-  const reloadRef = useRef(launchables.reload)
-  reloadRef.current = launchables.reload
-  const runtime = useMemo(() => createRuntimeChooser(korrid, () => reloadRef.current()), [korrid])
+  const launchablesRef = useRef(launchables)
+  launchablesRef.current = launchables
+  const runtime = useMemo(() => createRuntimeChooser(korrid, {
+    beginLaunch: id => launchablesRef.current.beginCatalogLaunch(id),
+    reload: () => launchablesRef.current.reload(),
+  }), [korrid])
   const runtimeChoice = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot)
   const surfaceInput = useMemo(createInputBus, [])
   useEffect(() => bus.on(action => {
@@ -126,7 +129,7 @@ export function SurfaceRoot({
         const entry = entryForId(stateRef.current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
-          if (chosen.kind === "game" && chosen.game.source.isLocal) {
+          if (chosen.kind === "game" && chosen.game.source.isLocal && chosen.game.supportsRuntimeSelection) {
             void runtime.open(chosen.game.id, chosen.game.title, "launch")
           } else confirmEntry(chosen)
         }

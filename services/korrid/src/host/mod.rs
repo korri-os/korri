@@ -342,6 +342,7 @@ impl HostRuntime {
                 host: Some(config.label.clone()),
                 identity: game.identity.clone(),
                 source: source.clone(),
+                supports_runtime_selection: false,
                 play_stats: stats_for(&game.id)?,
             });
         }
@@ -366,6 +367,7 @@ impl HostRuntime {
                     host: Some(config.label.clone()),
                     identity: game.identity.clone(),
                     source: source.clone(),
+                    supports_runtime_selection: true,
                     play_stats: stats_for(&game.id)?,
                 });
             }
@@ -1180,6 +1182,11 @@ mod tests {
         let catalog = host.catalog_snapshot().unwrap();
         assert_eq!(catalog.games.len(), 2);
         assert_eq!(catalog.games[0].id, "static");
+        // Locality is shared; only the dynamic producer supports route selection.
+        let wire = serde_json::to_value(&catalog).unwrap();
+        assert_eq!(wire["games"][0]["supportsRuntimeSelection"], false);
+        assert_eq!(wire["games"][1]["supportsRuntimeSelection"], true);
+        assert!(catalog.games.iter().all(|game| game.source.is_local));
         let failures = catalog.failures.unwrap();
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].code, "LocalRouteUnavailable");

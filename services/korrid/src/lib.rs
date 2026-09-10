@@ -103,6 +103,9 @@ pub struct Game {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<GameIdentity>,
     pub source: GameSource,
+    /// The host's dynamic catalog producer supports installed-runtime selection.
+    /// Static host.toml commands do not, even when source.isLocal is true.
+    pub supports_runtime_selection: bool,
     /// Play statistics for the authenticated person who asked. A host
     /// derives them from its own play log; a brain forwards what the peer
     /// returned for the brain's own identity.

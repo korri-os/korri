@@ -21,6 +21,7 @@ const remote = (
   id,
   title: id,
   host,
+  supportsRuntimeSelection: false,
   source: { label: host, isLocal: false },
   ...(identity === undefined ? {} : { identity }),
 })

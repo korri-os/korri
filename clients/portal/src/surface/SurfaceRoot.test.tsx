@@ -107,6 +107,7 @@ const remoteGame = (host: string, id = "wl4"): Game => ({
   title: "Wario Land 4",
   host,
   identity,
+  supportsRuntimeSelection: false,
   source: { label: host, isLocal: false },
 })
 
@@ -551,7 +552,7 @@ describe("SurfaceRoot", () => {
   test("Pico returns from a Linux local catalog session to a usable library cart", async () => {
     const { PicoSurface } = await import("@korri/pico")
     const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const game = { ...remoteGame("device-label"), source: { label: "device-label", isLocal: true } }
+    const game = { ...remoteGame("device-label"), supportsRuntimeSelection: true, source: { label: "device-label", isLocal: true } }
     const sources: Sources = { localGames: [], remoteGames: [game], streamHosts: [], streamAppsByHost: {} }
     const nativeLaunches: LocalLaunchSpec[] = []
     const bridge: LauncherBridge = {

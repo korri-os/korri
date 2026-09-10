@@ -36,6 +36,7 @@ const game: Game = {
   id: "wl4",
   title: "Wario Land 4",
   host: "device-label",
+  supportsRuntimeSelection: false,
   source: { label: "device-label", isLocal: true },
 }
 // Linux's host_session_status_outcome omits host and title even though the

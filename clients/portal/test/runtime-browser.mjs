@@ -105,9 +105,6 @@ try {
         `${surface} ${name}: directional input reaches the final action`,
       )
       await dialog().getByRole("button", { name: "Launch once", exact: true }).first().focus()
-      await dialog().evaluate(element => {
-        element.scrollTop = 0
-      })
       await page.locator("#app").screenshot({ path: `${output}/${surface}-${name}.png` })
       await page.keyboard.press("ArrowDown")
       assert(

@@ -3,6 +3,7 @@ import type {
   GameRoutes,
   LaunchWarning,
   RpcFailure,
+  SessionPrepared,
 } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceRuntimeChoice } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
@@ -12,10 +13,16 @@ const cancelAction: SurfaceAction = { id: "runtime:cancel", label: "Cancel", ena
 const warningText = (warning: LaunchWarning) =>
   `${warning.setting} · ${warning.launcherId} · ${warning.build}: ${warning.message}`
 
+export interface RuntimeLaunchIntegration {
+  /** Capture the catalog source and launch ordering before the RPC starts. */
+  beginLaunch(gameId: string): (session: SessionPrepared) => void
+  reload(): void
+}
+
 /** Host-owned interaction boundary. No DOM, hardware, or surface dependency.
  * Each read/write has one generation. Cancel withdraws UI intent, not an RPC
  * already sent. In particular, it cannot undo an acknowledged save or launch. */
-export function createRuntimeChooser(korrid: KorridClient, onLaunched: () => void) {
+export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaunchIntegration) {
   let state: SurfaceRuntimeChoice = { _tag: "Closed" }
   let generation = 0
   let disposed = false
@@ -124,10 +131,12 @@ export function createRuntimeChooser(korrid: KorridClient, onLaunched: () => voi
       _tag: "Busy",
       ...blank("Launching… Cancel closes this panel; it cannot undo a launch already sent."),
     })
-    const result = await korrid.launchSelectedGame(gameId, runtimeId)
-    // Even a cancelled launch can succeed. Refresh session truth without
-    // reopening the cancelled panel or initiating another effect.
-    if (result._tag === "Ok") onLaunched()
+    const requestedGameId = gameId
+    const acknowledge = launches.beginLaunch(requestedGameId)
+    const result = await korrid.launchSelectedGame(requestedGameId, runtimeId)
+    // UI cancellation cannot discard a launch acknowledgement. Commit it with
+    // its captured source before an observational read can fail or race it.
+    if (result._tag === "Ok") acknowledge(result.payload.session)
     if (!current(operation)) return
     if (result._tag === "Err") {
       if (result.payload.code === "ActiveSessionConflict") await conflict(operation)
@@ -162,8 +171,9 @@ export function createRuntimeChooser(korrid: KorridClient, onLaunched: () => voi
         // Ordinary prepare preserves same-game resume. Selected launch cannot:
         // the existing recovery record has no runtime identity.
         publish({ _tag: "Busy", ...blank("Continuing the active game…") })
+        const acknowledge = launches.beginLaunch(id)
         const resumed = await korrid.sessionPrepare(id)
-        if (resumed._tag === "Ok") onLaunched()
+        if (resumed._tag === "Ok") acknowledge(resumed.payload)
         if (!current(operation)) return
         if (resumed._tag === "Err") problem(resumed.payload)
         else cancel()
@@ -218,7 +228,7 @@ export function createRuntimeChooser(korrid: KorridClient, onLaunched: () => voi
           return
         }
         if (status._tag === "Err" || status.payload.active?.launchId !== launchId) {
-          onLaunched()
+          launches.reload()
           await open(gameId, title, "inspect")
           return
         }

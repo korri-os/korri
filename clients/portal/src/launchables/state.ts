@@ -14,6 +14,7 @@ import type {
   LocalGamesListOutcome,
   ResolvedMoonlight,
   SessionPrepareOutcome,
+  SessionPrepared,
   SessionStatusOutcome,
   SessionStopOutcome,
 } from "@contracts/generated/korrid"
@@ -437,18 +438,30 @@ export const LaunchablesState = {
     if (outcome._tag === "Err") {
       return readyFrom(state, `${outcome.payload.code}: ${outcome.payload.message}`)
     }
+    return LaunchablesState.withLocalCatalogAcknowledgement(
+      { _tag: "Ready", entries: state.entries, notice: null }, outcome.payload, game,
+    )
+  },
+
+  /** An ACK owns its source evidence even if the next catalog read loses it. */
+  withLocalCatalogAcknowledgement: (
+    state: LaunchablesState,
+    session: SessionPrepared,
+    game: Game,
+  ): LaunchablesState => {
+    if (state._tag === "Loading") return state
     return {
-      _tag: "Ready",
-      notice: null,
+      ...state,
       entries: [
         {
           kind: "now-playing",
           session: {
-            launchId: outcome.payload.launchId,
-            gameId: outcome.payload.gameId,
+            launchId: session.launchId,
+            gameId: session.gameId,
             title: game.title,
             ...(game.host === undefined ? {} : { host: game.host }),
           },
+          localCatalogGame: game,
         },
         ...state.entries.filter(entry => entry.kind !== "now-playing"),
       ],

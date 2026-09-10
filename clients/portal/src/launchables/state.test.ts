@@ -40,8 +40,8 @@ const gamesOk: CatalogSnapshotOutcome = {
   _tag: "Ok",
   payload: {
     games: [
-      { id: "skate3", title: "Skate 3", source: source("aka") },
-      { id: "neverball", title: "Neverball", source: source("zao") },
+      { id: "skate3", title: "Skate 3", supportsRuntimeSelection: false, source: source("aka") },
+      { id: "neverball", title: "Neverball", supportsRuntimeSelection: false, source: source("zao") },
     ],
   },
 }
@@ -63,6 +63,7 @@ const ready = LaunchablesState.fromSources([officeApps], gamesOk)
 describe("catalog session locality", () => {
   const catalogGame = {
     id: "wl4", title: "Wario Land 4", host: "local-label",
+    supportsRuntimeSelection: false,
     source: { label: "local-label", isLocal: true },
   }
   const session = { launchId: "exact-launch", gameId: "wl4", host: "local-label" }
@@ -105,7 +106,7 @@ describe("catalog session locality", () => {
       _tag: "Ok", payload: { gameId: catalogGame.id, launchId: session.launchId },
     }, catalogGame)
     expect(acknowledged._tag).toBe("Ready")
-    expect(nowPlayingEntry(acknowledged)).toEqual({ kind: "now-playing", session: { ...session, title: catalogGame.title } })
+    expect(nowPlayingEntry(acknowledged)).toEqual({ kind: "now-playing", session: { ...session, title: catalogGame.title }, localCatalogGame: catalogGame })
     const failedRead = LaunchablesState.withSessionStatus(acknowledged, {
       _tag: "Err", payload: { code: "StatusTimeout", message: "timeout" },
     })
@@ -199,6 +200,7 @@ describe("LaunchablesState.fromSources", () => {
               title: "Wario Land 4",
               host: "zao",
               identity,
+              supportsRuntimeSelection: false,
               source: source("zao"),
             },
           ],
@@ -239,6 +241,7 @@ describe("LaunchablesState.fromSources", () => {
               title: "Wario Land 4",
               host: "zao",
               identity,
+              supportsRuntimeSelection: false,
               source: source("zao"),
             },
           },
@@ -342,6 +345,7 @@ describe("LaunchablesState.fromSources", () => {
             id: "legacy",
             title: "Legacy game",
             host: "aka",
+            supportsRuntimeSelection: false,
             source: source("aka"),
           },
         ],
@@ -403,6 +407,7 @@ describe("hosted game identity", () => {
             id: "shared",
             title: "Shared",
             host: "aka",
+            supportsRuntimeSelection: false,
             source: source("aka"),
           },
         }),
@@ -412,6 +417,7 @@ describe("hosted game identity", () => {
             id: "shared",
             title: "Shared",
             host: "zao",
+            supportsRuntimeSelection: false,
             source: source("zao"),
           },
         }),

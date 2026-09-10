@@ -87,6 +87,7 @@ const remoteGame = (host = "zao"): Game => ({
   id: "wl4",
   title: "Wario Land 4",
   host,
+  supportsRuntimeSelection: false,
   source: { label: host, isLocal: false },
 })
 
@@ -681,6 +682,7 @@ describe("useLaunchables sequence guards", () => {
         {
           id: "new",
           title: "New Game",
+          supportsRuntimeSelection: false,
           source: { label: "zao", isLocal: false },
         },
       ]),
@@ -695,6 +697,7 @@ describe("useLaunchables sequence guards", () => {
         {
           id: "old",
           title: "Old Game",
+          supportsRuntimeSelection: false,
           source: { label: "zao", isLocal: false },
         },
       ]),

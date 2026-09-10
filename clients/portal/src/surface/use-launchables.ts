@@ -20,6 +20,7 @@ import type {
   LocalGame,
   LocalGamesListOutcome,
   RpcFailure,
+  SessionPrepared,
 } from "@contracts/generated/korrid"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
@@ -77,6 +78,8 @@ export interface Launchables {
   runDeviceAction(actionId: string): void
   /** Act on one entry: launch, resume, pair, or open a system screen. */
   confirmEntry(entry: PortalEntry): void
+  /** Capture source evidence and ordering for a chooser-owned catalog launch. */
+  beginCatalogLaunch(gameId: string): (session: SessionPrepared) => void
   /** Ask the host to stop the running session and wait for it to be gone. */
   stopSession(entry: PortalEntry): void
   /** Clear the current notice without re-reading anything. */
@@ -159,13 +162,22 @@ export function useLaunchables(
   const loadSeq = useRef(0)
   const actionSeq = useRef(0)
   const stopPollSeq = useRef(0)
+  const catalogLaunchSeq = useRef(0)
+  const acknowledgedCatalogLaunchSeq = useRef(0)
+  // Unlike the current banner, this evidence survives a later observed exit.
+  const sessionIdentityVersion = useRef(0)
   const mountedRef = useRef(true)
 
   const publish = useCallback((next: LaunchablesState) => {
     // Update the ref synchronously: React may defer the render, but a repeated
     // confirm in the same frame must observe the input-locked case.
     stateRef.current = next
-    if (next._tag !== "Loading") lastEntriesRef.current = next.entries
+    if (next._tag !== "Loading") {
+      const previous = lastEntriesRef.current.find(entry => entry.kind === "now-playing")?.session.launchId
+      const current = next.entries.find(entry => entry.kind === "now-playing")?.session.launchId
+      if (previous !== current) ++sessionIdentityVersion.current
+      lastEntriesRef.current = next.entries
+    }
     setState(next)
   }, [])
 
@@ -1223,6 +1235,43 @@ export function useLaunchables(
     publish({ ...current, notice: null })
   }, [publish])
 
+  const beginCatalogLaunch = useCallback((gameId: string) => {
+    const entries = lastEntriesRef.current
+    const game = entries.flatMap(entry => [
+      ...(entry.kind === "game" ? [entry.game] : []),
+      ...((entry.kind === "game" || entry.kind === "local-game")
+        ? (entry.alternatives ?? []).flatMap(copy => copy.kind === "remote" ? [copy.game] : [])
+        : []),
+    ]).find(game => game.id === gameId && game.source.isLocal)
+    const identityVersion = sessionIdentityVersion.current
+    const request = ++catalogLaunchSeq.current
+    return (session: SessionPrepared) => {
+      if (!mountedRef.current || !game || session.gameId !== game.id) return
+      const current = stateRef.current
+      const currentEntries = current._tag === "Loading" ? lastEntriesRef.current : current.entries
+      const active = currentEntries.find(entry => entry.kind === "now-playing")?.session
+      // Cancellation withdraws UI intent, not the acknowledged process. But an
+      // old ACK cannot replace a newer ACK or a newly observed session.
+      if (request < acknowledgedCatalogLaunchSeq.current ||
+        (identityVersion !== sessionIdentityVersion.current && active?.launchId !== session.launchId)) {
+        // A fresh observation can still discover a genuinely later start. Do
+        // not resurrect an old banner merely because that observation fails.
+        void load(true)
+        return
+      }
+      acknowledgedCatalogLaunchSeq.current = request
+      ++loadSeq.current
+      publish(LaunchablesState.withLocalCatalogAcknowledgement(
+        current._tag === "Loading" ? { _tag: "Ready", entries: currentEntries, notice: null } : current,
+        session,
+        game,
+      ))
+      // Failure is not evidence that this exact launch ended. The normal
+      // observer retains the acknowledged source and continues its status poll.
+      void load(true)
+    }
+  }, [load, publish])
+
   const reload = useCallback(() => void load(), [load])
 
   return {
@@ -1233,6 +1282,7 @@ export function useLaunchables(
     dismissSettingsProblem,
     runDeviceAction,
     confirmEntry,
+    beginCatalogLaunch,
     stopSession,
     dismissNotice,
     reload,

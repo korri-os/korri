@@ -37,6 +37,7 @@ function deferred<A>() {
 // LocalGame/LaunchSpec. There is deliberately no native or identity fixture.
 const game = {
   id: "neverball", title: "Neverball", host: "odin2portal",
+  supportsRuntimeSelection: false,
   source: { label: "odin2portal", isLocal: true },
 } satisfies Game
 const active: ActiveSession = {

@@ -236,6 +236,7 @@ impl RegisteredHost {
                                 label: self.label.clone(),
                                 is_local: false,
                             },
+                            supports_runtime_selection: false,
                             play_stats: None,
                         }
                     })
@@ -1559,6 +1560,7 @@ mod tests {
                             label: "attacker".into(),
                             is_local: true,
                         },
+                        supports_runtime_selection: true,
                         play_stats: Some(crate::PlayStats {
                             last_played: Some("2026-09-04T10:00:00.000Z".into()),
                             play_count: 2,

@@ -25,7 +25,7 @@ if (fixture === "warnings") {
     })
 }
 const korrid = createInMemoryKorridClient({
-  games: [{ id: "wl4", title: "Wario Land 4", source: { label: "This device", isLocal: true } }],
+  games: [{ id: "wl4", title: "Wario Land 4", supportsRuntimeSelection: true, source: { label: "This device", isLocal: true } }],
   gameRoutes: fixture === "error" ? [] : [routes],
   routeDelayMs: fixture === "loading" ? 4000 : 0,
   routeMutationDelayMs: fixture === "busy" ? 4000 : 0,
