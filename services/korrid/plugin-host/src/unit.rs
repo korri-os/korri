@@ -156,7 +156,9 @@ impl Units {
         // State belongs to the plugin ID, not its current services. An update
         // can remove every service while retaining data from an older unit.
         // Load only host-owned cleanup metadata; never start plugin code just
-        // to give systemd the StateDirectory/DynamicUser cleanup contract.
+        // to give systemd the StateDirectory cleanup contract. systemd 258's
+        // exec_context_get_clean_directories removes both public and private
+        // state paths unconditionally, including an earlier User=root build.
         let executable = self
             .systemctl
             .to_str()
@@ -230,6 +232,13 @@ pub fn hardening(report: &Report) -> String {
         return String::new();
     };
     let name = package::unit_name(&report.id);
+    if native.user.as_deref() == Some("root") {
+        // User=root requests device-wide authority, not another sandbox profile.
+        // Administrative login sessions must retain account switching, writable
+        // homes, PTYs and normal device access. Never grant this by plugin ID.
+        let policy = package::ROOT_POLICY;
+        return format!("# {policy}\n[Unit]\nAfter=network.target\n\n[Service]\nUser=root\nDynamicUser=no\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={name}\nRuntimeDirectoryMode=0700\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\n");
+    }
     let capabilities = native.capabilities.join(" ");
     // List directives merge across fragments. Reset them explicitly before
     // installing the approved request. The native unit owns commands; the

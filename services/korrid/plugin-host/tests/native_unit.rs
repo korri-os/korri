@@ -22,7 +22,7 @@ fn native_systemd_grammar_preserves_requests_and_resets() {
 #[test]
 fn unknown_directives_and_systemd_execution_escape_hatches_fail_by_name() {
     for directive in [
-        "User=root",
+        "User=daemon",
         "ExecStartPre=/bin/true",
         "Environment=LD_PRELOAD=evil",
         "AmbientCapabilities=CAP_SYS_ADMIN",
@@ -107,4 +107,20 @@ fn quotes_escapes_and_native_credentials_are_validated_not_translated() {
     let unit = NativeUnit::parse(&source).unwrap();
     assert_eq!(unit.credentials, ["authkey:tailscale-authkey"]);
     assert_eq!(unit.source, source);
+}
+
+#[test]
+fn native_root_request_and_pre_start_commands_are_explicit_and_resettable() {
+    let source = format!("{UNIT}User=root\nExecStartPre=/nix/store/00000000000000000000000000000000-daemon/bin/keygen ${{STATE_DIRECTORY}}\n");
+    let unit = NativeUnit::parse(&source).unwrap();
+    assert_eq!(unit.user.as_deref(), Some("root"));
+    assert_eq!(unit.executables.len(), 2);
+    assert_eq!(unit.source, source);
+    let reset = NativeUnit::parse(&format!("{source}User=\nExecStartPre=\n")).unwrap();
+    assert_eq!(reset.user, None);
+    assert_eq!(reset.executables.len(), 1);
+    assert_eq!(NativeUnit::parse(UNIT).unwrap().user, None);
+    for value in ["+", "!", "-", "@"] {
+        assert!(NativeUnit::parse(&format!("{UNIT}ExecStartPre={value}/nix/store/00000000000000000000000000000000-daemon/bin/run\n")).is_err());
+    }
 }

@@ -16,6 +16,8 @@ use std::{
 
 pub const BASE_POLICY: &str = "policy-v2: validated native systemd unit; host hardening drop-in; dynamic unprivileged user; read-only system; private state; private temporary files; no privilege escalation; at most one managed service; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
 
+pub const ROOT_POLICY: &str = "policy-root-v1: explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
+
 #[derive(Serialize)]
 pub struct Report {
     pub id: String,
@@ -516,6 +518,11 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         .unwrap_or_default();
     let warning = if native_unit.is_none() {
         "No native service is activated by this package. Approval covers the exact declaration and launch callback source. Game launch effects can access the runtime user's files and display; they must run in the existing runtime-user systemd sandbox, never as the administrator."
+    } else if native_unit
+        .as_ref()
+        .is_some_and(|u| u.user.as_deref() == Some("root"))
+    {
+        "DEVICE-WIDE ROOT AUTHORITY: User=root runs every service command as root. This plugin can read or change all device files, accounts, credentials, devices and network policy, and start administrative sessions. It is NOT confined by the default dynamic-user sandbox. Approval grants this authority only to this exact plugin build."
     } else if capabilities.iter().any(|c| c == "CAP_NET_ADMIN") {
         "HOST NETWORK ADMINISTRATION: this daemon can change host routes, interfaces and firewall rules. It can interrupt connectivity or redirect traffic. This access is not confined to its own interface."
     } else if capabilities.iter().any(|c| c == "CAP_NET_RAW") {
@@ -528,7 +535,14 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         package: package.into(),
         provenance,
         approval: String::new(),
-        policy: BASE_POLICY,
+        policy: if native_unit
+            .as_ref()
+            .is_some_and(|u| u.user.as_deref() == Some("root"))
+        {
+            ROOT_POLICY
+        } else {
+            BASE_POLICY
+        },
         warning: if native_unit
             .as_ref()
             .is_some_and(|u| !u.credentials.is_empty())

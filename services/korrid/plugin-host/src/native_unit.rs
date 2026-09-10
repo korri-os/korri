@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeUnit {
     pub source: String,
+    pub user: Option<String>,
     pub capabilities: Vec<String>,
     pub devices: Vec<String>,
     pub credentials: Vec<String>,
@@ -34,6 +35,7 @@ impl NativeUnit {
         }
         let mut unit = Self {
             source: source.into(),
+            user: None,
             capabilities: vec![],
             devices: vec![],
             credentials: vec![],
@@ -42,6 +44,7 @@ impl NativeUnit {
         let mut section = "".to_owned();
         let mut logical = String::new();
         let mut start = None;
+        let mut prepare = Vec::new();
         let mut cleanup = Vec::new();
         let mut service_type = None;
         for line in source.lines() {
@@ -86,6 +89,16 @@ impl NativeUnit {
                             return Err("ExecStart must name exactly one command".into());
                         } else {
                             start = Some(command(value).map_err(|e| format!("ExecStart: {e}"))?);
+                        }
+                    }
+                    ("[Service]", "User") if matches!(value, "" | "root") => {
+                        unit.user = (!value.is_empty()).then(|| value.to_owned());
+                    }
+                    ("[Service]", "ExecStartPre") => {
+                        if value.is_empty() {
+                            prepare.clear();
+                        } else {
+                            prepare.push(command(value).map_err(|e| format!("ExecStartPre: {e}"))?);
                         }
                     }
                     ("[Service]", "ExecStopPost") => {
@@ -153,6 +166,7 @@ impl NativeUnit {
             return Err("Type must be exec or notify".into());
         }
         unit.executables.push(start.ok_or("ExecStart is required")?);
+        unit.executables.extend(prepare);
         unit.executables.extend(cleanup);
         Ok(unit)
     }
