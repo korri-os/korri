@@ -78,10 +78,37 @@ evidence yet. These remain legacy policy fields; they are not silently renamed,
 coerced or admitted. Requests produce warnings with setting, launcher, version
 and exact build. Source recognition does not prove conditional feature support.
 
-The callback rejects reserved keys in both typed and raw input. Typed pairs
-follow Korri's baseline. Raw prepend follows typed pairs; raw append comes
-last. Quoted strings use the legacy JSON escaping; booleans are quoted and
-numbers are bare.
+The callback rejects reserved keys in both typed and raw input, even when a
+later assignment would hide them. It emits one native assignment per key with
+precedence **baseline < typed < raw prepend < raw append**. The last assignment
+within a raw block wins. Baseline comments remain; raw blank/comment-only lines
+are ignored as before. Raw keys still require `[A-Za-z0-9_]+`; raw values retain
+native syntax, including inline comments. Raw input is not JSON-decoded.
+
+This corrects legacy serializer behavior, not the byte-identical legacy policy
+input schema. New evidence from the pinned RetroArch 1.22.2
+`libretro-common/file/config_file.c` shows first-occurrence lookup
+(lines 479–488, 977–980), not last-occurrence lookup. Appending duplicate lines
+did not implement the intended overrides. Its quote scanner (lines 221–239)
+stops at the next double quote and does not decode JSON escapes. The old
+`device "quoted"` input fixture therefore read as `device ` followed by a backslash,
+not the supplied value.
+
+Booleans stay quoted and numbers stay bare. Quote-free strings are enclosed in
+native double quotes **without escaping**: literal backslashes, tabs, spaces,
+`#`, and Unicode round-trip unchanged. A string containing double quotes uses
+the native bare form only when all characters are printable ASCII (`!` through
+`~`), it does not start with a double quote, and any first `#` is inside the
+first complete quote pair. This preserves values such as `hw:"quoted"` and
+`hw:"dev#1"` without pretending native syntax supports JSON escapes.
+
+The callback rejects NUL, CR, LF, unpaired UTF-16 surrogates, and quote-bearing
+strings that do not meet those bare-form rules (for example `device "quoted"`).
+It throws `Unsupported RetroArch string setting: <key>` without including the
+value. The same validation applies to generated baseline paths and to typed
+values even when raw input would override them. No file declaration is returned
+on failure. This is serializer validation, not a callback-output permission
+change or nested-policy ingress implementation.
 
 Focused build-machine verification (no VM):
 
@@ -95,11 +122,21 @@ KORRI_ROOT="$PWD" KORRI_TEST_RETROARCH_PACKAGE="$package" \
 ```
 
 The Nix check is `checks.<system>.korri-retroarch-settings`. Building it runs
-the parser tests and checks the pinned patched source. Building the plugin
-also requires this evidence. The packaged callback test reads the real
-manifest, evidence and shipped TS, then checks its emitted configuration bytes.
-It does not boot a VM or run a game. An uncached native program dependency can
-make this build-machine gate expensive; it must never run on a target device.
+the Python source-recognition tests and checks the pinned patched source. It
+also compiles that program's actual native config parser and file/path adapters
+with a **build-machine** compiler. `plugin.test.ts` sends the callback's emitted
+files through `config_file_new` and asserts `config_get_string` values, including
+precedence and string round-trips. The check supplies
+`KORRI_TEST_RETROARCH_CONFIG_PARSER` to make these semantic tests mandatory;
+standalone `bun test` without that executable skips the three native tests and
+is not a substitute for the Nix gate. No parser logic is copied into the probe.
+
+Building the plugin also requires this evidence. The packaged Rust callback
+test reads the real manifest, evidence and shipped TS, then checks its emitted
+configuration bytes. The focused Rust tests also check rejection through the
+actual QuickJS callback evaluator. No check boots a VM or runs a game. An
+uncached native program dependency can make this build-machine gate expensive;
+it must never run on a target device.
 
 ## Distribution builds
 

@@ -50,10 +50,10 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
 }
 
 #[test]
-fn callback_renders_quoted_values_and_raw_after_typed_without_relaxing_reserved_keys() {
+fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
     let source = include_str!("../../../plugins/retroarch/plugin.ts");
     let mut input = input(serde_json::json!({
-        "video_vsync":false, "audio_volume":-3.5, "audio_device":"device \"quoted\"\\path\nnext",
+        "video_vsync":false, "video_driver":"vulkan", "audio_volume":-3.5, "audio_device":"device\\path",
     }));
     input.overrides.as_mut().unwrap().config = Some(
         serde_json::from_value(serde_json::json!({
@@ -62,14 +62,12 @@ fn callback_renders_quoted_values_and_raw_after_typed_without_relaxing_reserved_
         .unwrap(),
     );
     let content = evaluate(source, &input).unwrap().files.remove(0).content;
-    assert!(content.ends_with("video_vsync = true\nvideo_vsync = false\n"));
-    assert!(content.contains("video_vsync = \"false\"\n"));
+    assert!(content.contains("video_vsync = false\n"));
+    assert_eq!(content.matches("video_vsync =").count(), 1);
+    assert!(content.contains("video_driver = \"vulkan\"\n"));
+    assert_eq!(content.matches("video_driver =").count(), 1);
     assert!(content.contains("audio_volume = -3.5\n"));
-    assert!(content.contains("audio_device = \"device \\\"quoted\\\"\\\\path\\nnext\"\n"));
-    assert!(
-        content.find("video_vsync = \"false\"").unwrap()
-            < content.find("video_vsync = true").unwrap()
-    );
+    assert!(content.contains("audio_device = \"device\\path\"\n"));
     for key in [
         "config_save_on_exit",
         "kiosk_mode_enable",
@@ -90,6 +88,18 @@ fn callback_renders_quoted_values_and_raw_after_typed_without_relaxing_reserved_
         );
         assert!(evaluate(source, &raw).is_err(), "raw {key}");
     }
+}
+
+#[test]
+fn callback_rejects_strings_that_cannot_round_trip_through_native_cfg() {
+    let source = include_str!("../../../plugins/retroarch/plugin.ts");
+    for value in ["device \"quoted\"", "a\nb", "a\rb", "a\0b"] {
+        let input = input(serde_json::json!({"audio_device":value}));
+        assert!(evaluate(source, &input).is_err(), "{value:?}");
+    }
+    let input = input(serde_json::json!({"audio_device":"hw:\"quoted\""}));
+    let content = evaluate(source, &input).unwrap().files.remove(0).content;
+    assert!(content.contains("audio_device = hw:\"quoted\"\n"));
 }
 
 #[test]
@@ -241,7 +251,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         .unwrap()
         .unwrap();
     let mut input = input(
-        serde_json::json!({"video_vsync":false,"audio_volume":-3.5,"audio_device":"quoted \"device\"","absent_key":true,"config_save_on_exit":true}),
+        serde_json::json!({"video_vsync":false,"audio_volume":-3.5,"audio_device":"device\\path","absent_key":true,"config_save_on_exit":true}),
     );
     let (accepted, warnings) = evidence.validate(
         input.overrides.take().unwrap().settings,
@@ -273,7 +283,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     for line in [
         "video_vsync = \"false\"\n",
         "audio_volume = -3.5\n",
-        "audio_device = \"quoted \\\"device\\\"\"\n",
+        "audio_device = \"device\\path\"\n",
         "config_save_on_exit = \"false\"\n",
     ] {
         assert!(
