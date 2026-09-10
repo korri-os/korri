@@ -109,23 +109,32 @@ instance and ships that build in `plugin.nix`.
 ## Configuration cascade
 
 Legacy's layer model, with launcher and runtime IDs fully qualified. Layers,
-least to most specific: launcher kind, launcher instance, system, runtime,
-game, override. Top-level records are `launchers`, `systems`, `runtimes`,
-`games`. Each record carries a `launchers.<full-id>` block for its
-launcher-specific settings. No key names a resolver step; legacy's plans
-named `byLauncher` as debt and this design does not carry it.
+least to most specific: launcher, system, runtime, game, override. Top-level
+records are `launchers`, `systems`, `runtimes`, `games`. Each record carries
+a `launchers.<full-id>` block for its launcher-specific settings. No key
+names a resolver step; legacy's plans named `byLauncher` as debt and this
+design does not carry it.
+
+"Kind" is a plugin-side concept only. An instance borrows `launch` and the
+settings table from its kind; the cascade never sees the word. Each launcher
+ID is configured on its own, as legacy did. A setting placed on
+`@korri:retroarch/retroarch` does not reach `@korri:snes9x/retroarch`. A
+user with several RetroArch builds repeats the lines; if that becomes a real
+complaint, the additive fix is legacy's profile layer, not a fold.
 
 Typed settings are validated against the launching build. Raw `extraConfig`
 passes through after Korri's lines and the typed lines; RetroArch decides,
 and Korri records which build ran. `reservedKeys` blocks legacy's credential
 keys plus `kiosk_mode_enable`, `config_save_on_exit` and `menu_driver`.
 
-Two choices the assistant made and marked, still open to reversal:
+Decided 2026-09-09, user's choice on the assistant's recommendation:
 
-- A kind's config folds into its instances before the instance's own config.
-  Legacy configured each app on its own.
-- A typed setting the launching build cannot honor is omitted with a visible
-  message, and the launch proceeds.
+- No fold from kind to instance. One layer per launcher ID.
+- A typed setting the launching build cannot honor is omitted with a message
+  that names the setting, the launcher and the version, and the launch
+  proceeds. Without the fold, such a setting can only reach a build because
+  the user set it on that exact launcher; refusing the launch for the user's
+  own explicit choice is worse than telling them by name.
 
 ## Versions
 
@@ -194,7 +203,7 @@ Binding. Do not reopen without new evidence.
 | 2 | Plugins can only ask for a unit. | Permissions are allowlisted systemd directives plus one `ports` field. No new Korri vocabulary. | The approval prompt shows raw directives. |
 | 3 | `disable`, `remove` or `update` can leave a runtime pointing at a missing launcher or kind. | Refuse. The host re-resolves every installed runtime's `launcher` and every instance's `kind` against the post-operation state and refuses by name. | A launcher export rename needs `remove` then `install`. |
 | 4 | Discovery callbacks contradict `SCRIPTING.md` and the scanner's 100,000-entry budget. | Discovery is data: the shipped `fileReleases` record. `ClaimConflict` stops being terminal; a file with several claims is one candidate and the route resolver offers a chooser. | One scanner change. |
-| 5 | `launch` output is unvalidated. | No validation beyond approval. The approval digest covers the `plugin.ts` bytes, so the administrator approves the exact `launch` function. The existing `systemd-run` sandbox stays. | A bad plugin update reaches the runtime user's files and display sockets with no check in between. |
+| 5 | `launch` output is unvalidated. | No validation beyond approval. Reconfirmed by the user 2026-09-09 against a three-rule alternative. The approval digest covers the `plugin.ts` bytes, so the administrator approves the exact `launch` function. The existing `systemd-run` sandbox stays: runtime user, no capabilities, private `/tmp`, korrid state inaccessible, compositor sockets stripped (`src/host/systemd_unit.rs`). | A bad plugin update reaches the runtime user's files and display sockets with no check in between. |
 | 6 | Two runtimes share one flat savestate directory. | The RetroArch kind writes `savestate_directory = states/<runtime-id>/`. Saves, BIOS and screenshots stay shared. Host unchanged. | Each launcher kind decides portability for its own program. |
 | 7 | The host keeps only the active build; no rollback exists. | Keep current and previous. `update` moves `active` to `previous`; `korri-plugin restore ID` swaps them with no download. Two stored approvals per plugin. | At most two builds per plugin on disk. |
 | 8 | The `since` table is hand-written. | Drop `since`. The table holds `key` and `type`. CI checks each key against `configuration.c` of the instance's pinned RetroArch (802 registrations at 1.22.2), type included. The check lives with the kind, not in the shared builder. | Launcher kinds that are not RetroArch supply their own check or none. |
