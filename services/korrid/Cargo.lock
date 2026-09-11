@@ -1325,6 +1325,7 @@ dependencies = [
  "hex",
  "hmac",
  "image",
+ "indexmap",
  "jni",
  "libc",
  "nostr",

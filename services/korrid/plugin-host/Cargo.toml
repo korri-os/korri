@@ -15,6 +15,7 @@ oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
 rquickjs = { version = "0.9", features = ["loader"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }
 sha2 = "0.10"
 tar = "0.4"
 url = "2.5.8"

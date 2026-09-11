@@ -128,7 +128,7 @@ fn true_type_only_dependencies_do_not_require_admission() {
 }
 
 #[test]
-fn only_explicit_relative_js_ts_and_extensionless_ts_helpers_are_resolved() {
+fn unselected_packages_and_unsupported_relative_forms_remain_rejected() {
     for specifier in [
         "fs",
         "node:fs",
@@ -220,28 +220,60 @@ fn frozen_filesystem_aliases_use_canonical_identity_and_canonical_parent() {
 }
 
 #[test]
+fn a_single_transformed_module_keeps_its_emitted_output_ceiling() {
+    let helper = (0..3200)
+        .map(|n| format!("enum E{n} {{ A, B, C, D }}\n"))
+        .collect::<String>();
+    let emitted = script::transpile_ts(&helper).unwrap().len();
+    assert!(helper.len() < 128 * 1024);
+    assert!(emitted > 512 * 1024 && emitted < 4 * 1024 * 1024);
+    eprintln!(
+        "single-module expansion: {} source bytes, {emitted} emitted bytes",
+        helper.len()
+    );
+    let graph = snapshot(&[
+        ("plugin.ts", "import './helper.ts'; export const name = 'bounded'; export function launch() { return {}; }"),
+        ("helper.ts", &helper),
+    ]);
+    for result in [
+        script::eval_plugin_snapshot(&graph),
+        script::call_plugin_launch_snapshot(&graph, "null"),
+    ] {
+        let error = result.expect_err("oversized emitted module must fail preparation");
+        assert!(error.contains("JavaScript exceeds 512 KiB"), "{error}");
+    }
+}
+
+#[test]
 fn transformed_output_is_bounded_in_aggregate_before_evaluation() {
     // Repeated TS enums expand well beyond their input size. Each module is
-    // below the source ceiling; together they exceed the 512 KiB JS ceiling.
+    // below the source ceiling; together they exceed the 4 MiB graph ceiling.
     let helper = (0..1100)
         .map(|n| format!("enum E{n} {{ A, B, C, D }}\n"))
         .collect::<String>();
     let emitted = script::transpile_ts(&helper).unwrap().len();
-    assert!(emitted <= 512 * 1024 && emitted * 3 > 512 * 1024);
-    let graph = snapshot(&[
-        (
-            "plugin.ts",
-            "import './a.ts'; import './b.ts'; import './c.ts'; export const name = 'bounded';",
-        ),
-        ("a.ts", &helper),
-        ("b.ts", &helper),
-        ("c.ts", &helper),
-    ]);
+    assert!(emitted <= 512 * 1024 && emitted * 24 > 4 * 1024 * 1024);
+    let names: Vec<_> = (0..24).map(|n| format!("helper{n}.ts")).collect();
+    let entry = names
+        .iter()
+        .map(|name| format!("import './{name}';"))
+        .collect::<String>()
+        + "export const name = 'bounded';";
+    let mut sources = vec![("plugin.ts", entry.as_bytes())];
+    sources.extend(names.iter().map(|name| (name.as_str(), helper.as_bytes())));
+    let graph = SourceSnapshot::from_memory(
+        &sources,
+        SnapshotLimits {
+            bytes: 2 * 1024 * 1024,
+            ..limits()
+        },
+    )
+    .unwrap();
     let error = script::eval_plugin_snapshot(&graph).unwrap_err();
-    assert!(error.contains("JavaScript exceeds 512 KiB"), "{error}");
+    assert!(error.contains("JavaScript graph exceeds 4 MiB"), "{error}");
     assert!(script::call_plugin_launch_snapshot(&graph, "null")
         .unwrap_err()
-        .contains("JavaScript exceeds 512 KiB"));
+        .contains("JavaScript graph exceeds 4 MiB"));
 }
 
 #[test]

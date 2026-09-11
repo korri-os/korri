@@ -13,8 +13,12 @@
 //! transpiled in-process at load, so adding or editing a plugin never requires
 //! rebuilding korrid or the app that embeds it.
 
+#[path = "script/commonjs.rs"]
+mod commonjs;
 #[path = "script/completion.rs"]
 mod completion;
+#[path = "script/packages.rs"]
+mod packages;
 #[path = "script/preparation.rs"]
 mod preparation;
 #[path = "script/source.rs"]
@@ -25,7 +29,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rquickjs::{function::This, Context, Filter, Function, Module, Object, Runtime, Type, Value};
+use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type, Value};
 
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
@@ -72,7 +76,7 @@ fn evaluate_module(
     // therefore belong to the empty interpreter, not to the installed payload.
     runtime.set_memory_limit(16 * 1024 * 1024);
     runtime.set_max_stack_size(512 * 1024);
-    let (entry, source, linking) = graph.install(&runtime);
+    let installed = graph.install(&runtime);
     let rejections = completion::Rejections::install(&runtime);
     // Preparation has finished. One deadline includes context initialization,
     // extraction, queued jobs and timers. It never resets between phases.
@@ -82,6 +86,9 @@ fn evaluate_module(
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
     context.with(|ctx| {
+        // Own all module roots inside this scope. Loader/native callbacks retain
+        // only Weak references and cannot keep the interpreter alive on errors.
+        let mut installed = installed;
         let completion = completion::Completion::install(&ctx, started, deadline)?;
         let object_constructor: Object = ctx
             .globals()
@@ -93,15 +100,7 @@ fn evaluate_module(
         let object_to_string: Function = plain_object_prototype
             .get("toString")
             .map_err(|error| format!("plugin sandbox not inspectable: {error}"))?;
-        let module = Module::declare(ctx.clone(), entry, source)
-            .map_err(|error| format!("plugin evaluation failed: {error}"))?;
-        // QuickJS resolves the full static graph during declaration. Disable
-        // resolution before any code runs, including imports synthesized by eval
-        // or Function. Even already-loaded modules must pass the resolver.
-        linking.set(false);
-        let (module, evaluated) = module
-            .eval()
-            .map_err(|error| format!("plugin evaluation failed: {error}"))?;
+        let (module, evaluated) = installed.evaluate(&ctx)?;
         completion.initialize(&ctx, &evaluated)?;
         let exports = module.namespace().map_err(|error| error.to_string())?;
         let data = Object::new(ctx.clone()).map_err(|error| error.to_string())?;
@@ -361,7 +360,7 @@ pub fn eval_plugin_ts(source: &str) -> Result<String, String> {
     eval_plugin_snapshot(&source::SourceSnapshot::plugin(source)?)
 }
 
-/// Eagerly prepare the closed relative-module graph from retained bytes only.
+/// Eagerly prepare the closed source graph from retained bytes only.
 /// Preparation has no hard host-memory or time guarantee; VM limits start after it.
 pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String, String> {
     evaluate_module(

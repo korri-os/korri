@@ -47,15 +47,24 @@ current single-file producer consequently still requires a regular `plugin.ts`.
 Absolute symlinks also fail, including links back into the same output. No
 recursive directory discovery or ancestor `node_modules` search is allowed.
 
-**Remaining registration gate:** full Effect loading needs an actual source-tree
-producer through the existing builder `source` boundary. It must ship original
-helper source, native npm metadata/lock and locked dependency source, and bind
-all selected resolution decisions and bytes to the package's authority. The
-current file-copy producer cannot prove that contract for an external source
-output. Do not invent a dependency manifest or extend the registry to compensate.
-Source-only cross-output registration, export conditions and full-graph approval
-must be settled against that producer before enabling imports. The first slice
-changes no persisted representation and grants no helper/dependency imports.
+**Approved source-tree contract, not yet implemented:** on 2026-09-11 the user
+approved packaging a plugin's sources together. The existing builder `source`
+input will carry the plugin entry, its helpers, native npm metadata, the lock and
+the locked dependency sources as one tree copied into the signed output. The
+signed output and its bound fingerprint remain the only authority. Admission
+enumerates that packaged subtree with bounded traversal, entry, name and byte
+accounting, accepts regular source files only, and keeps rejecting escapes,
+loops, special files and cross-output links. Enumeration replaces the earlier
+single-file rule for this producer because the plan forbids a second dependency
+manifest; nothing outside the packaged subtree becomes importable. Approval must
+cover every retained source, canonical identity and resolution input through the
+same snapshot evaluation consumed. Administrator, installed-registry and
+runtime-user launch consumers use that one admission path; no independent source
+read remains. Native artifacts, required packages and closure membership still
+grant no imports, and no new manifest or registry field is approved.
+
+This contract is recorded, not delivered. Until it ships, installed registration
+still selects a single `plugin.ts` and grants no helper or dependency imports.
 
 The existing 128 KiB source ceiling remains the first slice's aggregate content
 ceiling, not a measured Effect graph limit. Bounded snapshot storage is not a
@@ -103,6 +112,14 @@ remain separate from the QuickJS execution budget; they are not enforceable
 whole-process memory or cancellation guarantees.
 The runtime-user launch process's separate source-path read is not migrated by
 this slice; U4 must carry source admission through that consumer as well.
+
+Native package tests use the two existing frozen fixture locks. The normal
+`korrid-check` task provisions them before the Rust tests. For focused package
+tests, run `services/korrid/script-fixtures-setup.sh` first, or
+`KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash services/korrid/script-fixtures-setup.sh`
+inside the existing devshell. Installs are frozen with install scripts disabled,
+and they need cached downloads or network access on the build machine. Missing
+fixtures fail; they are never silently skipped.
 
 Focused verification uses the existing Rust toolchain, with Cargo locks frozen:
 
@@ -247,18 +264,54 @@ index file. QuickJS owns module cycles, cache identity and live bindings.
 True type-only imports do not request runtime source.
 
 Preparation follows the emitted static module record and checks dependencies
-before any plugin code runs. Package imports, CommonJS, JSON modules, dynamic
-imports, `import.meta`, absolute paths and snapshot escapes remain unsupported
-in this slice. The resolver closes before module evaluation, so `eval` and
-`Function` cannot use it for dynamic discovery. Preparation and evaluation never
-reopen files. A filesystem snapshot still relies on the caller's existing
-immutable-package authority.
+before any plugin code runs. Native package metadata in the snapshot now selects
+ESM, CommonJS and required JSON. Resolution uses only its root `node_modules`
+set. Native export conditions retain metadata order: `browser`, the request's
+`import` or `require` condition, and `default` are active. Exact and wildcard
+exports, blocked paths, nested package types and the pinned browser file mappings
+follow the original packages. There is no ambient ancestor search.
 
-The existing per-source and aggregate generated-JavaScript limits remain. This
-is not full Effect loading: installed-package admission still selects only
-`plugin.ts`, and the measured Effect graph exceeds the current graph allowance.
-Native package source registration and dependency loading remain separate
-implementation work. No new persisted source manifest or registry field exists.
+CommonJS receives a module-local `require` restricted to admitted literal edges.
+All reachable sources are prepared and declared before execution. Evaluation
+of a required module remains lazy. Repeated JSON requires share one parsed value;
+CommonJS cycles share partial exports. Failed CommonJS entries leave the cache,
+while successful dependencies remain. ESM identity remains native to QuickJS.
+The evaluator owns all retained JS roots; loaders and callbacks hold weak
+references so failures cannot retain the interpreter.
+
+Dynamic imports, dynamic require expressions, `import.meta`, absolute requests,
+snapshot escapes, ESM JSON imports and synthesized CommonJS named exports remain
+unsupported. Require into top-level-await graphs or mixed require/ESM cycles
+fails during preparation. Pure ESM and pure CommonJS cycles remain supported.
+
+QuickJS aborts the process when an ES module that is already evaluating is
+evaluated again. A guest callback stored on a global can reach that state, and
+static dependency analysis cannot see such an edge. The host therefore marks the
+static import graph it hands to the engine for the synchronous extent of that
+evaluation, and a require into that marked set fails as an ordinary plugin error.
+The engine exposes no module status, so this guard over-approximates: requiring
+an ES module of the graph currently evaluating fails even when the engine already
+finished that module. All pinned dependency graphs still load.
+A caught ESM initializer exception still fails shared completion because QuickJS
+also produces an internal unhandled rejection. The host does not suppress guest
+rejections to hide that engine behavior.
+
+The resolver closes before module evaluation. Preparation and evaluation never
+reopen files. A filesystem snapshot still relies on the caller's existing
+immutable-package authority. Installed-package admission still selects only
+`plugin.ts`; no source-tree grant, manifest field or registry field is added.
+
+Original pinned sources measured 2,698,372 prepared bytes across 102 modules for
+`effect/Schema`, and 625,525 bytes across 49 modules for `whatwg-url`. The aggregate
+prepared graph allowance is now 4 MiB. Per-file, input, stack, output and QuickJS
+execution limits are unchanged. Larger graphs cost more host preparation storage
+and VM compilation time; passing preparation does not guarantee VM acceptance.
+
+This is not full Effect validation. Tests execute real Option, fast-check,
+pure-rand, text codecs and lazy dependency JSON. Full Schema and URL graphs are
+prepared, but their initialization and policy validation still need the shared
+platform APIs. Installed source-tree registration and nested-policy integration
+also remain unfinished.
 
 ### Shared completion and timers
 
@@ -463,13 +516,17 @@ Fixed in `devshell.nix`, but they return on a new machine or a version bump.
 - **What a plugin may declare**, and how korrid matches declarations to device
   capabilities. This is the capability model, deliberately unbuilt (see
   `AGENTS.md`).
-- **Imports between plugin files.** There is no module resolver; a plugin is
-  currently a single self-contained file.
+- **Installed source-tree registration.** The closed evaluator resolves admitted
+  modules, but the current package producer registers only `plugin.ts`.
 
 ## Interpreter limits
 
-TypeScript source is bounded to 128 KiB. Generated JavaScript is bounded to
-512 KiB. Each QuickJS runtime has a 16 MiB memory limit, a 512 KiB stack limit,
+Each TypeScript source is bounded to 128 KiB. Each JavaScript source is bounded
+to 512 KiB. That per-module ceiling also applies to the JavaScript emitted from
+TypeScript, so compact source cannot expand past it. The aggregate prepared graph
+is bounded to 4 MiB. Both checks run after Oxc allocates; they bound retained and
+executed code, not preparation time or host memory. Each QuickJS runtime
+has a 16 MiB memory limit, a 512 KiB stack limit,
 and a 250 ms interrupt deadline. The existing empty I/O sandbox remains.
 `plugin-host/tests/declaration.rs` exercises nonterminating and memory-growing
 source through the real evaluator. Launch inputs are bounded to 512 KiB.
