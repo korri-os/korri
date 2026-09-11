@@ -93,6 +93,23 @@ kernel execution or complete filesystem integrity.
 
 A build, checksum, or source inspection cannot prove a successful hardware boot.
 
+## Verified build candidate
+
+[Actions run 34554771999](https://github.com/korri-os/korri/actions/runs/34554771999)
+passed for source `b26a379b4b7df630b9cece04116a30640dff0a83`.
+On 2026-09-11, the downloaded checksum, source revision, compression,
+partition layout, filesystem labels and geometry, and boot-file references
+passed local checks. CI checked the embedded U-Boot against its native build.
+
+The prepared image on the build machine is
+`~/Downloads/korri-rgds/nixos-rgds-b26a379b4b7d.img`, 4,704,157,696 bytes.
+Use an 8 GB or larger card. The compressed distribution and its metadata
+remain in `~/Downloads/korri-rgds/b26a379b4b7d/`.
+
+The code was then rebased onto newer `main` work. The artifact retains its
+original source revision above; it is not an image of the later `main` tip.
+No hardware boot or media write has been performed.
+
 ## Arrival checklist
 
 1. Boot stock Android without the new SD. Check both displays, both touchscreens,
