@@ -22,8 +22,9 @@
   };
 
   environment.systemPackages = with pkgs; [
-    # Inspect and exercise the Hantro decoder/encoder and RGA.
-    v4l-utils
+    # Keep CLI diagnostics without the Qt GUI tools. Do not globally override
+    # v4l-utils, which would also change unrelated Mesa dependencies.
+    (v4l-utils.override { withGUI = false; })
     libva-utils
   ];
 

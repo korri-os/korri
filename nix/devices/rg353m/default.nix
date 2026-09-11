@@ -66,6 +66,12 @@ rec {
     pkgs.callPackage ./usb-gadget-check.nix {
       inherit configuration;
     };
+  diagnosticsCheck =
+    pkgs:
+    import ./diagnostics-check.nix {
+      inherit pkgs;
+      configuration = portalPreviewConfiguration;
+    };
   audioCheck =
     pkgs:
     import ./audio-check.nix {
