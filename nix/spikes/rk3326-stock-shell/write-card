@@ -1,0 +1,140 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux parted dosfstools coreutils
+# Write the stock-firmware SSH payload to an SD card.
+#
+# Destructive. The target is named on the command line and must be confirmed
+# a second time with --i-know, because this host also has a multi-terabyte
+# disk array attached and a mistyped device node here is unrecoverable.
+#
+# The card becomes a single FAT32 data volume. It holds no bootloader, so the
+# handheld's boot ROM skips it and still boots the stock firmware from
+# internal storage. That is deliberate: the stock system stays the recovery
+# path and is never written to by this script.
+set -euo pipefail
+
+usage() {
+  echo "usage: write-card /dev/<device> --i-know" >&2
+  echo >&2
+  echo "Refuses anything that is mounted, larger than 128 GB, or not named." >&2
+  exit 2
+}
+
+target=${1:-}
+confirm=${2:-}
+[ -n "$target" ] || usage
+[ "$confirm" = "--i-know" ] || usage
+
+repo_root=$(git rev-parse --show-toplevel)
+payload_src="$repo_root/nix/spikes/rk3326-stock-shell/payload"
+key_dir=${KORRI_RK3326_KEY_DIR:-$HOME/.local/share/korri/rk3326-stock-shell}
+dropbear_bin=${KORRI_RK3326_DROPBEAR:-}
+
+# --- gate 1: the node is a whole block device -----------------------------
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+base=$(basename "$target")
+[ -e "/sys/block/$base" ] || {
+  echo "not a whole disk (looks like a partition): $target" >&2
+  exit 1
+}
+
+# --- gate 2: nothing on it is mounted -------------------------------------
+if lsblk -no MOUNTPOINT "$target" | grep -q .; then
+  echo "refusing: something on $target is mounted" >&2
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT "$target" >&2
+  exit 1
+fi
+
+# --- gate 3: it is card-sized ---------------------------------------------
+size_bytes=$(blockdev --getsize64 "$target")
+max_bytes=$((128 * 1000 * 1000 * 1000))
+if [ "$size_bytes" -gt "$max_bytes" ]; then
+  echo "refusing: $target is $((size_bytes / 1000 / 1000 / 1000)) GB, over the 128 GB cap" >&2
+  exit 1
+fi
+
+# --- gate 4: the payload inputs exist -------------------------------------
+[ -d "$payload_src" ] || { echo "missing payload: $payload_src" >&2; exit 1; }
+[ -f "$key_dir/dropbear_ed25519_host_key" ] || {
+  echo "missing host key; run make-keys first" >&2; exit 1;
+}
+[ -f "$key_dir/id_ed25519.pub" ] || {
+  echo "missing client key; run make-keys first" >&2; exit 1;
+}
+if [ -z "$dropbear_bin" ] || [ ! -f "$dropbear_bin" ]; then
+  echo "set KORRI_RK3326_DROPBEAR to the aarch64 static dropbear binary" >&2
+  echo "build it with: ./nix/spikes/rk3326-stock-shell/build dropbearStatic" >&2
+  exit 1
+fi
+
+echo "target:  $target  ($((size_bytes / 1000 / 1000 / 1000)) GB)"
+lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"
+echo
+
+# --- partition and format -------------------------------------------------
+# One FAT32 volume labelled EEROMS, matching the label the stock ROM card
+# uses so the frontend's automounter treats it the same way.
+wipefs -a "$target"
+
+# wipefs clears filesystem and partition-table signatures but leaves the gap
+# before the first partition untouched. Rockchip's boot ROM looks for a
+# loader at sector 64, well inside that gap, so a card previously imaged
+# with ROCKNIX stays bootable through a reformat and would take boot
+# priority over the handheld's internal firmware. Zero the whole 4 MiB gap.
+dd if=/dev/zero of="$target" bs=1M count=4 conv=fsync status=none
+
+parted -s "$target" mklabel msdos
+parted -s "$target" mkpart primary fat32 4MiB 100%
+parted -s "$target" set 1 lba on
+partprobe "$target"
+sleep 2
+
+part="${target}p1"
+[ -b "$part" ] || part="${target}1"
+[ -b "$part" ] || { echo "no partition node appeared for $target" >&2; exit 1; }
+
+mkfs.vfat -F 32 -n EEROMS "$part"
+
+# --- populate -------------------------------------------------------------
+mount_dir=$(mktemp -d)
+cleanup() {
+  if mountpoint -q "$mount_dir"; then umount "$mount_dir"; fi
+  rmdir "$mount_dir" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+mount "$part" "$mount_dir"
+
+mkdir -p "$mount_dir/.korri"
+install -m 0644 "$payload_src/korri/install-ssh.sh" "$mount_dir/.korri/install-ssh.sh"
+install -m 0644 "$payload_src/korri/korri-ssh.service" "$mount_dir/.korri/korri-ssh.service"
+install -m 0644 "$dropbear_bin" "$mount_dir/.korri/dropbear"
+install -m 0644 "$key_dir/dropbear_ed25519_host_key" "$mount_dir/.korri/dropbear_ed25519_host_key"
+install -m 0644 "$key_dir/id_ed25519.pub" "$mount_dir/.korri/authorized_keys"
+
+# The frontend's menu is theme-dependent, so the launcher is placed in every
+# folder these stock images are known to scan. Whichever one shows up works.
+for folder in ports tools manual applyCenter downloads ports_scripts tic-80; do
+  mkdir -p "$mount_dir/$folder"
+  install -m 0644 "$payload_src/launcher.sh" "$mount_dir/$folder/Korri SSH.sh"
+done
+
+install -m 0644 "$payload_src/gamelist.xml" "$mount_dir/ports/gamelist.xml"
+
+sync
+echo
+echo "written. contents:"
+find "$mount_dir" -maxdepth 2 -not -path '*/System Volume Information*' | sort
+
+# --- verify the card cannot boot -----------------------------------------
+# This is the property the whole approach depends on: the handheld must
+# ignore the card at boot and start its stock firmware from internal
+# storage, which stays the recovery path.
+loader_bytes=$(dd if="$target" bs=512 skip=64 count=8 2>/dev/null | tr -d '\0' | wc -c)
+if [ "$loader_bytes" -ne 0 ]; then
+  echo >&2
+  echo "WARNING: $target still has non-zero data at sector 64." >&2
+  echo "The handheld may boot this card instead of its stock firmware." >&2
+  exit 1
+fi
+echo
+echo "verified: no bootloader at sector 64; the handheld will boot its stock firmware"

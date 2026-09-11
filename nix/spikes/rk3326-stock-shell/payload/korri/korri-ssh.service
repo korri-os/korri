@@ -1,0 +1,17 @@
+[Unit]
+Description=Korri persistent Dropbear SSH on stock firmware
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# -F keeps Dropbear in the foreground: without it systemd sees the immediate
+# fork as the service exiting. -s is key-only auth. -D names the directory
+# holding authorized_keys. Port 2222 avoids colliding with anything the
+# stock image may later start on 22.
+ExecStart=/storage/.ssh/dropbear -E -s -F -p 2222 -r /storage/.ssh/dropbear_ed25519_host_key -D /storage/.ssh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!--
+  Metadata for the Korri SSH launcher.
+
+  EmulationStation will usually list a script in a scanned folder without
+  any metadata, but some stock themes hide entries that have no gamelist
+  record. Providing one costs nothing and removes that failure mode.
+-->
+<gameList>
+  <game>
+    <path>./Korri SSH.sh</path>
+    <name>Korri SSH</name>
+    <desc>Starts an SSH server on this device so it can be set up over the network. Safe to run more than once.</desc>
+  </game>
+</gameList>

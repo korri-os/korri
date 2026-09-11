@@ -1,0 +1,55 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash nix openssh python3
+# Create the key material for the stock-firmware SSH payload.
+#
+# Two separate keys, neither of which may enter the repository:
+#
+#   - a client keypair dedicated to this device, so no existing personal key
+#     is copied onto a handheld running vendor firmware;
+#   - a Dropbear host key, generated here because the stock image has no key
+#     generator and the format is architecture independent.
+#
+# Idempotent: existing keys are kept, so re-running never invalidates a
+# device that has already been set up.
+set -euo pipefail
+
+key_dir=${KORRI_RK3326_KEY_DIR:-$HOME/.local/share/korri/rk3326-stock-shell}
+repo_root=$(git rev-parse --show-toplevel)
+
+mkdir -p "$key_dir"
+chmod 700 "$key_dir"
+
+client_key="$key_dir/id_ed25519"
+host_key="$key_dir/dropbear_ed25519_host_key"
+
+if [ ! -f "$client_key" ]; then
+  ssh-keygen -t ed25519 -N '' -C korri-rk3326-stock -f "$client_key"
+fi
+
+if [ ! -f "$host_key" ]; then
+  nixpkgs_rev=$(python3 - "$repo_root/flake.lock" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    lock = json.load(handle)
+
+for node in lock["nodes"].values():
+    locked = node.get("locked", {})
+    if locked.get("type") == "github" and locked.get("repo") == "nixpkgs":
+        if node.get("original", {}).get("ref", "").startswith("nixos-"):
+            print(locked["rev"])
+            break
+else:
+    sys.exit("no nixpkgs github node in flake.lock")
+PY
+)
+  nix shell "github:NixOS/nixpkgs/${nixpkgs_rev}#dropbear" \
+    -c dropbearkey -t ed25519 -f "$host_key"
+fi
+
+chmod 600 "$client_key" "$host_key"
+
+echo "key directory: $key_dir"
+echo "client public key:"
+cat "$client_key.pub"
