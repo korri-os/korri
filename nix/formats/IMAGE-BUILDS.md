@@ -76,6 +76,20 @@ retained graphics/seat/kiosk configuration. Benchmark removal does not remove
 Chromium, graphics drivers, or recovery kernels. RG353M firmware now follows the
 [board/accessory family policy](../devices/rg353m/FIRMWARE.md); Odin firmware is unchanged.
 
+RG353M private candidates measured these comparable `zstd -19 -T2` image sizes,
+using the same kernel and SSH settings at each step:
+
+| Change | Image bytes | Step reduction |
+|---|---:|---:|
+| Before the board firmware policy | 1,623,922,066 | |
+| Board and accessory firmware families | 985,040,250 | 39.3% |
+| Command-line V4L diagnostics | 938,109,208 | 4.8% |
+| On-demand pinned Nixpkgs source | 900,591,314 | 4.0% |
+
+Each candidate booted from the authorized SD with the previous generation kept
+for rollback. Chromium, graphics drivers, Mesa, LLVM and the recovery kernel are
+unchanged and are not size candidates without separate hardware acceptance.
+
 Sunshine provenance retains its approved source hash, version, derivation, and
 patch records, but not a reference to the full build-source checkout. Its Nix
 package rejects output references to that source. The existing package and
