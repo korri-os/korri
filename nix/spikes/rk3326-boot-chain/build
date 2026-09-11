@@ -1,0 +1,28 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash nix
+# Build the RK3326 boot-chain spike on the aarch64 builder.
+#
+# Never build on a target device. `fuji` is the aarch64 builder; this script
+# only ever produces host-side files.
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+attr=${1:-uboot}
+
+# The Nix daemon runs the remote build as root, and root has no key for the
+# builder. Name the key explicitly in the builder spec so the daemon can read
+# it; the fields are uri, systems, sshKey, maxJobs.
+builder_host=${KORRI_AARCH64_BUILDER:-ssh://simonwjackson@fuji}
+builder_key=${KORRI_AARCH64_BUILDER_KEY:-$HOME/.ssh/id_rsa}
+
+cd "$repo_root"
+
+exec nix build --impure --print-out-paths --no-link \
+  --builders "$builder_host aarch64-linux $builder_key 4" \
+  --expr "
+    let
+      flake = builtins.getFlake (toString ./.);
+      spike = import ./nix/spikes/rk3326-boot-chain { nixpkgs = flake.inputs.nixpkgs; };
+    in
+    spike.${attr}
+  "
