@@ -117,7 +117,6 @@ in
         }
       ];
     };
-    enableRedistributableFirmware = true;
   };
 
   image.baseName = "nixos-rg353m";

@@ -208,7 +208,7 @@
             rg353m-audio = rg353m.audioCheck pkgs;
             rg353m-bluetooth = rg353m.bluetoothCheck pkgs;
             rg353m-plugin-host = rg353m.pluginHostCheck pkgs;
-            rg353m-firmware-phase1 = import ./nix/devices/rg353m/firmware-check.nix {
+            rg353m-firmware = import ./nix/devices/rg353m/firmware-check.nix {
               inherit pkgs;
               korri = self;
             };

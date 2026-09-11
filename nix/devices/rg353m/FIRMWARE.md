@@ -1,38 +1,42 @@
 # RG353M firmware reduction
 
-Phase 1 removes only `amdgpu/`, `radeon/`, `nvidia/`, `i915/`, `xe/`, and
-root-level `iwlwifi-*` from the pinned Linux firmware package. The RK3566/Mali-G52
-board has none of those PCIe GPU/radio devices. Intel Bluetooth and all other
-firmware families remain. This is not the later board-only allowlist.
+Phase 2 retains complete `rtw88`, `rtl_bt`, `rtl_nic`, and `rockchip` families
+from the pinned Linux firmware package, plus the signed wireless regulatory
+database. These cover the inspected RTL8821CS Wi-Fi/Bluetooth, RTL8156 USB
+Ethernet adapter, and Rockchip display firmware. This is not a promise of
+support for arbitrary USB radios or other board variants.
 
-The read-only Linux 6.18.2 inventory identified RTL8821CS SDIO Wi-Fi and an
-RTL8156 USB Ethernet adapter (USB ID `0bda:8156`). The connection used Ethernet;
-Wi-Fi had SDIO errors and was disconnected. Bluetooth was not exposed. Keep
-complete Realtek and Rockchip families until those paths have working baselines.
+The working firmware union overrides two `rtl_bt/rtl8761b` files through the
+separate `rtl8761b-firmware` package. That package remains so the effective
+family bytes do not change. The other generic firmware bundles are removed.
+ALSA UCM profiles, audio drivers, Bluetooth configuration, kernel, recovery
+labels and SSH policy do not change. Odin does not import this policy.
 
-The device-scoped overlay changes only `linux-firmware`. Other packages selected
-by `hardware.enableRedistributableFirmware`, the regulatory database, firmware
-compression, drivers, recovery labels, and public SSH defaults are unchanged.
-Odin does not import this overlay. Original firmware licenses are retained.
+The upstream installed firmware output does not include its source notices.
+The selected package now carries the pinned WHENCE and license/copyright texts
+under `share/licenses/linux-firmware-rg353m` without retaining the source tree.
 
 ## Build-host verification
 
 Run on Fuji, not on the handheld:
 
 ```sh
-nix build .#checks.aarch64-linux.rg353m-firmware-phase1
+nix build .#checks.aarch64-linux.rg353m-firmware
 ```
 
-The check rejects the untrimmed baseline, compares every retained file against
-the original package by SHA256, checks directory/symlink preservation and target
-resolution, and verifies the observed firmware families remain. The package also
-rejects output references to its full upstream package and source checkout.
+The check rejects an untrimmed baseline, compares every retained package file,
+checks internal symlinks and license text, and compares the effective NixOS
+firmware union including the Realtek overrides and regulatory signatures.
+Only the selected families and regulatory files can appear in that union.
 
 ## Hardware gate
 
-A successful build is not boot verification. Test a separate candidate SD, keeping
-the verified recovery card unchanged and internal eMMC unmounted. If the candidate
-uses the existing recovery labels, swap cards while powered off: do not insert
-both labeled recovery cards simultaneously. No flash or boot operation is part
-of these build checks. Validate boot, display, audio, USB Ethernet, Wi-Fi,
-Bluetooth, and suspend/resume before proceeding to a narrower allowlist.
+The preceding candidate verified RTL8821CS firmware loading, Bluetooth discovery,
+Wi-Fi association and scoped IPv6 traffic during discovery, and a timed wake
+cycle. IPv4 with Ethernet and Wi-Fi on the same subnet still needs separate
+routing/filter investigation. No firewall changes belong in this firmware cut.
+
+Install a new prebuilt SD generation and retain the working generation for
+rollback. Keep internal eMMC unmounted. Verify the same kernel, retained firmware,
+SSH, default audio metadata, Wi-Fi and Bluetooth before accepting this cut.
+No sound tests or permanent brightness changes are part of this phase.

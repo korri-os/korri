@@ -72,8 +72,9 @@ only the release job is retried.
 
 Production images omit `glmark2`, `mesa-demos`, `vulkan-tools`, and the RG353M
 browser benchmark helpers. The layout check guards the package selections and
-retained graphics/seat/kiosk configuration. Chromium, graphics drivers, firmware,
-and recovery kernels are unchanged.
+retained graphics/seat/kiosk configuration. Benchmark removal does not remove
+Chromium, graphics drivers, or recovery kernels. RG353M firmware now follows the
+[board/accessory family policy](../devices/rg353m/FIRMWARE.md); Odin firmware is unchanged.
 
 Sunshine provenance retains its approved source hash, version, derivation, and
 patch records, but not a reference to the full build-source checkout. Its Nix
