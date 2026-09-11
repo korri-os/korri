@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Reproduce the handheld's Dropbear setup on an aarch64 host.
+#
+# Same binary, same file layout, same flags as the on-device installer, so a
+# publickey rejection here is the same rejection the handheld gives — and
+# here the server's stderr is readable. On the device it is not: the client
+# sees only "Permission denied (publickey)" and the log is on a card inside
+# the handheld.
+#
+# This exists because the first payload staged its authorized_keys under
+# /tmp. Dropbear checks every ancestor of that directory and rejects one
+# writable by others, so every key failed with no usable diagnosis. Run this
+# against any candidate directory before shipping a payload that uses it:
+#
+#   verify-authorized-keys-path <dropbear> <host_key> <pubkey> <port> <dir>
+#
+# A directory passes only if a client can actually log in through it.
+set -euo pipefail
+
+dropbear=$1
+host_key=$2
+authorized_key=$3
+port=${4:-2223}
+
+work=${5:-/tmp/korri-ssh-repro}
+rm -rf "$work"
+mkdir -p "$work"
+
+cp "$dropbear" "$work/dropbear"
+cp "$host_key" "$work/host_key"
+cp "$authorized_key" "$work/authorized_keys"
+
+chmod 755 "$work/dropbear"
+chmod 700 "$work"
+chmod 600 "$work/host_key" "$work/authorized_keys"
+
+pkill -f 'korri-ssh-repro/dropbear' 2>/dev/null || true
+sleep 1
+
+# -E sends the server log to stderr; capture it so the rejection reason is
+# visible rather than guessed at.
+"$work/dropbear" -E -s -p "$port" \
+  -r "$work/host_key" \
+  -D "$work" \
+  -P "$work/dropbear.pid" \
+  >"$work/server.log" 2>&1
+
+sleep 2
+echo "port: $port"
+echo "dir:  $work"
+ls -la "$work"

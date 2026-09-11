@@ -34,13 +34,41 @@ cat /proc/cmdline
 free -m 2>/dev/null || cat /proc/meminfo
 cat /proc/mounts
 ls -la /storage/ 2>/dev/null
+# Dropbear rejects an authorized_keys directory whose ancestors are writable
+# by others, so the modes of these two matter as much as the files' own.
+ls -ld / /storage /run /tmp 2>/dev/null
 ip addr 2>/dev/null || ifconfig -a 2>/dev/null
 command -v systemctl && systemctl show --property=UnitPath 2>/dev/null
+
+# --- stop anything a previous run left behind ---------------------------
+# Otherwise the old server keeps the port and the new one exits, so a fixed
+# payload would appear not to have taken effect at all.
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl stop korri-ssh.service 2>/dev/null
+fi
+for stale in /storage/.korri-ssh/dropbear.pid /run/korri-ssh/dropbear.pid /tmp/korri-ssh/dropbear.pid; do
+  if [ -f "$stale" ]; then
+    kill "$(cat "$stale")" 2>/dev/null
+    rm -f "$stale"
+  fi
+done
+sleep 1
 
 # --- goal 1: a shell this session, straight off the card ----------------
 # The card is usually FAT, which cannot hold the executable bit, so the
 # binary is copied to a real filesystem before it is run.
-run_dir=/tmp/korri-ssh
+#
+# Not /tmp. Dropbear checks every ancestor of its authorized_keys directory
+# and refuses one that is writable by others, so a world-writable /tmp makes
+# every public key fail with nothing but "Permission denied" on the client:
+#   "/tmp must be owned by user or root, and not writable by group or others"
+# /storage is the writable partition on internal storage; /run is a
+# root-owned tmpfs. Both have clean ancestors.
+if [ -d /storage ]; then
+  run_dir=/storage/.korri-ssh
+else
+  run_dir=/run/korri-ssh
+fi
 mkdir -p "$run_dir"
 cp "$card_root/.korri/dropbear" "$run_dir/dropbear"
 cp "$card_root/.korri/dropbear_ed25519_host_key" "$run_dir/host_key"
@@ -52,7 +80,12 @@ chmod 600 "$run_dir/host_key" "$run_dir/authorized_keys"
 # -D names the directory holding authorized_keys, so no home-directory
 # rewriting is needed. Key-only: -s disables password logins.
 # No -F here, so this copy forks and the launcher can return to the menu.
-"$run_dir/dropbear" -E -s -p 2222 \
+#
+# Port 2223, not 2222. The persistent service below listens on 2222, and two
+# servers cannot share a port: whichever loses would exit, and with
+# Restart=always the service would loop instead of failing visibly. Keeping
+# them apart also makes the reachable port say which path succeeded.
+"$run_dir/dropbear" -E -s -p 2223 \
   -r "$run_dir/host_key" \
   -D "$run_dir" \
   -P "$run_dir/dropbear.pid"
@@ -95,7 +128,9 @@ if [ -d /storage ] && mkdir -p "$persist_dir" 2>/dev/null; then
 fi
 
 # --- report what we ended up with ---------------------------------------
-(netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null) | grep -E '2222|:22 '
+# 2223 means the card-launched server is up; 2222 means persistence worked
+# too and SSH will survive a reboot and the card being removed.
+(netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null) | grep -E '2222|2223|:22 '
 ip addr 2>/dev/null | grep -E 'inet |state '
 echo "korri ssh install: done"
 sync
