@@ -195,6 +195,7 @@
               dataPackage = self.packages.${system}.rg353m-inputplumber-data;
             };
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
+            rg353m-audio = rg353m.audioCheck pkgs;
             rg353m-firmware-phase1 = import ./nix/devices/rg353m/firmware-check.nix {
               inherit pkgs;
               korri = self;

@@ -14,6 +14,7 @@ in
     ../../base
     (import ../../formats/sd-card.nix { gpt = false; })
     ../../../brand/plymouth/nixos-module.nix
+    ./audio.nix
     ./gpu.nix
     ./rk-mpp-service.nix
     ./sunshine-host.nix
