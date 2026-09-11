@@ -1,9 +1,16 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i bash -p bash nix
-# Build the RK3326 boot-chain spike on the aarch64 builder.
+#!nix-shell -i bash -p bash nix python3
+# Build one attribute of the RK3326 boot-chain spike on the aarch64 builder.
 #
 # Never build on a target device. `fuji` is the aarch64 builder; this script
 # only ever produces host-side files.
+#
+# Nixpkgs is addressed by the revision recorded in flake.lock, not through
+# `getFlake` on the working tree. Evaluating the local tree as a flake copies
+# every untracked file into the Nix store, and this repo routinely carries
+# multi-gigabyte Rust build output under `services/korrid/target` and sibling
+# worktrees under `.worktree`. That turns a two-minute build into an
+# unbounded store copy with no progress output.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -17,12 +24,33 @@ builder_key=${KORRI_AARCH64_BUILDER_KEY:-$HOME/.ssh/id_rsa}
 
 cd "$repo_root"
 
+nixpkgs_rev=$(python3 - "$repo_root/flake.lock" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    lock = json.load(handle)
+
+for node in lock["nodes"].values():
+    locked = node.get("locked", {})
+    if locked.get("type") == "github" and locked.get("repo") == "nixpkgs":
+        if node.get("original", {}).get("ref", "").startswith("nixos-"):
+            print(locked["rev"])
+            break
+else:
+    sys.exit("no nixpkgs github node in flake.lock")
+PY
+)
+
+# `--impure` is needed only to read this checkout's spike files by absolute
+# path. Nixpkgs is still pinned by revision, and `import` of a directory
+# reads it in place rather than copying it into the store.
 exec nix build --impure --print-out-paths --no-link \
   --builders "$builder_host aarch64-linux $builder_key 4" \
   --expr "
     let
-      flake = builtins.getFlake (toString ./.);
-      spike = import ./nix/spikes/rk3326-boot-chain { nixpkgs = flake.inputs.nixpkgs; };
+      nixpkgs = builtins.getFlake \"github:NixOS/nixpkgs/${nixpkgs_rev}\";
+      spike = import ${repo_root}/nix/spikes/rk3326-boot-chain { inherit nixpkgs; };
     in
     spike.${attr}
   "

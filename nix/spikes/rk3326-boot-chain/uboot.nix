@@ -29,14 +29,17 @@ buildUBoot {
   # (`CONFIG_TPL_MAX_SIZE` in `common/spl/Kconfig.tpl`). As shipped, the
   # stage measures 0x3000 and mkimage refuses it.
   #
-  # Dropping the serial console out of the TPL is the cheapest 2 KiB
-  # available. `CONFIG_DEBUG_UART` has to go with it: `sdram_common.c`
-  # calls `printascii` unconditionally under that symbol, so leaving it on
-  # with `TPL_SERIAL` off fails to link. The SPL runs from DRAM moments
-  # later and keeps its console, so early output is delayed, not lost.
+  # `RAM_ROCKCHIP_DEBUG` is what pays for the overflow: it compiles the
+  # SDRAM capacity and timing reporting in `sdram_common.c`, whose
+  # `printascii` calls are the TPL's only reason to carry a console
+  # formatter. The RG353M's own upstream defconfig,
+  # `anbernic-rgxx3-rk3566_defconfig`, disables it for the same reason.
+  #
+  # Dropping it keeps `TPL_SERIAL` and `DEBUG_UART`, so a board that hangs
+  # during DRAM training can still say so. Only the informational capacity
+  # dump is lost.
   extraConfig = ''
-    # CONFIG_TPL_SERIAL is not set
-    # CONFIG_DEBUG_UART is not set
+    # CONFIG_RAM_ROCKCHIP_DEBUG is not set
   '';
 
   filesToInstall = [

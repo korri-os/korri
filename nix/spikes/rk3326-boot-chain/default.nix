@@ -17,5 +17,9 @@ let
   };
 in
 {
-  inherit armTrustedFirmwarePX30 uboot ubootTplSizeProbe;
+  inherit
+    armTrustedFirmwarePX30
+    uboot
+    ubootTplSizeProbe
+    ;
 }
