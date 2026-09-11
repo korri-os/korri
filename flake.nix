@@ -207,6 +207,7 @@
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
             rg353m-audio = rg353m.audioCheck pkgs;
             rg353m-diagnostics = rg353m.diagnosticsCheck pkgs;
+            rg353m-registry = rg353m.registryCheck pkgs;
             rg353m-bluetooth = rg353m.bluetoothCheck pkgs;
             rg353m-plugin-host = rg353m.pluginHostCheck pkgs;
             rg353m-firmware = import ./nix/devices/rg353m/firmware-check.nix {

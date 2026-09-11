@@ -81,6 +81,19 @@ patch records, but not a reference to the full build-source checkout. Its Nix
 package rejects output references to that source. The existing package and
 runtime-settings checks verify the remaining approval contract.
 
+## Nixpkgs source delivery on RG353M
+
+The RG353M registry uses the exact fetcher attributes from `flake.lock`, including
+revision and NAR hash, instead of a path to bundled Nixpkgs sources. The existing
+`nixpkgs=flake:nixpkgs` NIX_PATH alias remains. An uncached lookup of that alias
+needs network access, but retains the same revision and content pin.
+Nix itself and the download-only device policy are unchanged.
+
+The registry check verifies the emitted JSON and the native Nix reader. The
+system builder rejects the Nixpkgs source path anywhere in its output closure.
+Existing copies can remain on a device through rollback generations or a later
+explicit source lookup; this change does not delete them or run garbage collection.
+
 ## Local commands
 
 Run from a clean checkout on a suitable build machine:

@@ -23,6 +23,7 @@ in
     ./usb-gadget.nix
     ./wifi.nix
     ./firmware.nix
+    ./nixpkgs-registry.nix
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
