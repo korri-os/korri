@@ -24,6 +24,11 @@ The kernel override stays inside this device directory. It does not change
 `flake.lock`, the RG353M kernel, or the Odin kernel. The pinned nixpkgs common
 kernel configuration predates 7.2. `kernel.nix` removes audited obsolete
 symbols and selects supported replacements while retaining strict checks.
+The RG DS disables the SD installer's broad `hardware.enableAllHardware`
+list. That list requests obsolete PC drivers such as `pata_qdi` and caused
+CI run 34538825543 to fail after the kernel compiled. Normal NixOS initrd
+defaults and the device's explicit display modules remain enabled. Missing
+modules still fail the build; they are never silently skipped.
 
 Primary source files:
 
@@ -52,11 +57,16 @@ nix run .#nixos-layout-check
 nix run .#device-image-dist-check
 nix build --no-link .#rgds-uboot
 nix build --no-link .#rgds-kernel.configfile
+nix run .#rgds-initrd-check
 ```
 
-On x86_64, the last two commands cross-build ARM boot components. On ARM,
+On x86_64, the last three commands cross-build ARM boot components. On ARM,
 they build natively. They do not write media. A full kernel preflight is
-`nix build --no-link .#rgds-kernel`.
+`nix build --no-link .#rgds-kernel`. The initrd check uses NixOS's real module
+shrinker and the configured module names against the built ARM kernel. It
+uses the pinned Linux firmware package; final image assembly uses the full
+configured firmware set. On a cold development store this check includes a
+full kernel build. It is separate from the fast layout checks.
 
 Verify the downloaded distribution before decompression:
 

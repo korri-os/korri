@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   korri,
   ...
@@ -54,6 +55,10 @@ in
   systemd.services."serial-getty@ttyGS0".wantedBy = [ "getty.target" ];
 
   hardware = {
+    # The installer-wide list includes PC drivers removed from Linux 7.2
+    # (pata_qdi first failed the image build). This board has explicit early
+    # display modules above; retain normal NixOS defaults and strict checking.
+    enableAllHardware = lib.mkForce false;
     deviceTree = {
       enable = true;
       filter = "rk3568-anbernic-rg-ds.dtb";
