@@ -108,7 +108,13 @@ remain in `~/Downloads/korri-rgds/b26a379b4b7d/`.
 
 The code was then rebased onto newer `main` work. The artifact retains its
 original source revision above; it is not an image of the later `main` tip.
-No hardware boot or media write has been performed.
+The owner-authorized 63,908,610,048-byte microSD was written and verified
+by reading all 4,704,157,696 image bytes back after flushing the block cache.
+The read-back SHA-256 matched
+`2dbc81ec130fe9944e45bfa319d0a0ac6958a290ecb2d89d4e805f94b900277b`.
+Both `NIXOS_BOOT` and `NIXOS_RGDS` partitions were unmounted after verification.
+The write report is `~/Downloads/korri-rgds/sdh-write-b26a379b4b7d.txt`.
+No internal device storage was written. Hardware boot remains unverified.
 
 ## Arrival checklist
 
