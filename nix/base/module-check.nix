@@ -24,7 +24,9 @@ let
     networkmanager = config.networking.networkmanager.enable;
     inherit (config.system) stateVersion;
     documentation = config.documentation.enable;
-    nixFeatures = config.nix.settings.experimental-features;
+    # Multiple modules may request the same feature. Compare enabled features,
+    # not the order or repetition of their native Nix list declarations.
+    nixFeatures = lib.sort builtins.lessThan (lib.unique config.nix.settings.experimental-features);
   };
   samePolicy = device: shared device.config == shared base.config;
   profile = base.config.networking.networkmanager.ensureProfiles;

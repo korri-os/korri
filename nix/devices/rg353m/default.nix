@@ -60,6 +60,7 @@ rec {
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   inputplumberData =
     pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
+  pluginHostCheck = pkgs: import ./plugin-host-check.nix { inherit pkgs korri; };
   usbGadgetCheck =
     pkgs:
     pkgs.callPackage ./usb-gadget-check.nix {

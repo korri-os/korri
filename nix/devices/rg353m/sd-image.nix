@@ -17,6 +17,7 @@ in
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
+    ./plugin-host.nix
     ./rk-mpp-service.nix
     ./sunshine-host.nix
     ./usb-gadget.nix
