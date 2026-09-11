@@ -1,0 +1,1 @@
+{"engine":"Node 24.18.0 (supplementary native control)","cases":{"decode-stream-bom":{"ok":true,"value":["","A"]},"decoder-invalid-input":{"ok":false,"error":"TypeError"},"encoder-string-coercion":{"ok":true,"value":"49,50,51"}}}

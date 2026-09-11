@@ -78,9 +78,29 @@ Evidence remains in the execution environment:
 - `/tmp/korri-runtime-screenshots-328c9453-fixed/` contains corrected captures.
   The earlier capture script reset scrolling after focus; it no longer does.
 
+## Effect runtime direction
+
+The user requires Effect at the authoring level or validation level. Production,
+tests and previews must use the same shipped checker. There are no users whose
+old validation behavior must be preserved. Compatibility branches are not wanted.
+The user approved investigating Effect runtime validation before replacing it.
+
+That investigation succeeded in an unshipped x86_64 QuickJS experiment. With
+real text/URL libraries and deadline-bounded timers available, the actual Effect
+decoder and renderer passed 14 fixtures in three rounds across three fresh
+runtimes on each of two preparation paths. The existing 16 MiB memory cap and
+250 ms execution deadline sufficed. Policy initialization and validation
+scheduled zero timers. Timer availability was needed by a dependency at import.
+
+See `docs/research/retroarch-effect-quickjs-probe/TIMERS.md` for reproduction,
+measurements and limits. Source preparation is additional work outside the
+execution deadline. Production source loading and API support remain unbuilt;
+text/timer conformance and device performance still need work. No production
+sandbox limits or APIs changed, and no generated-schema replacement was chosen.
+
 ## Still unfinished
 
-- Connect the unchanged legacy nested RetroArch policy decoder and renderer to
+- Connect the Effect-based nested RetroArch policy decoder and renderer to
   installed-package runtime input. Source-backed scalar evidence works, but
   nested-policy ingress and its source-module delivery remain unfinished.
   Do not present the scalar output map as a replacement user policy schema.

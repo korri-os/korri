@@ -1,0 +1,1 @@
+Verified: 14 policy fixtures x 3 rounds per sample; exact native outputs; 48/51 primitive differential matches; real timers, cancellation, retention and lifetime cleanup.

@@ -1,0 +1,2 @@
+   Compiling retroarch-effect-quickjs-probe v0.0.0 (/tmp/retroarch-effect-quickjs-probe)
+    Finished `release` profile [optimized] target(s) in 2.39s

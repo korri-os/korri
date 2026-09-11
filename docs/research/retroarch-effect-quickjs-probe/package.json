@@ -1,0 +1,12 @@
+{
+  "name": "retroarch-effect-quickjs-probe",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@kayahr/text-encoding": "2.2.0",
+    "whatwg-url": "17.1.1"
+  },
+  "devDependencies": {
+    "@types/whatwg-url": "13.0.0"
+  }
+}

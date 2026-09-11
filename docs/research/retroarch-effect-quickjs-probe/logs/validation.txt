@@ -1,0 +1,28 @@
+$ bun plugins/retroarch/node_modules/typescript/bin/tsc --noEmit --strict --skipLibCheck --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --types bun --typeRoots plugins/retroarch/node_modules/@types docs/research/retroarch-effect-quickjs-probe/{prepare,control}.ts
+$ bash -n docs/research/retroarch-effect-quickjs-probe/run.sh
+$ cd plugins/retroarch && bun run typecheck && bun test
+$ tsc --noEmit
+bun test v1.3.11 (af24e281)
+
+plugin.test.ts:
+(pass) RetroArch native configuration > emits one assignment per key across baseline, typed and repeated raw values [1.00ms]
+(pass) RetroArch native configuration > rejects every reserved key even when a later assignment would hide it [1.00ms]
+(pass) RetroArch native configuration > retains raw comments, native values and config key validation rules [1.00ms]
+(pass) RetroArch native configuration > redacts raw assignment values from validation errors
+(pass) RetroArch native configuration > rejects unsupported typed strings without logging their values, including shadowed values
+(pass) RetroArch native configuration > uses the same string safety for baseline directories and autoconfig [1.00ms]
+(skip) pinned config_file_new/config_get_string semantics > proves the parser keeps the first duplicate and does not JSON-decode strings
+(skip) pinned config_file_new/config_get_string semantics > applies baseline < typed < raw prepend < raw append in native lookups
+(skip) pinned config_file_new/config_get_string semantics > normalizes raw separators before replacing a native assignment
+(skip) pinned config_file_new/config_get_string semantics > round-trips native strings, literal backslashes, whitespace, hashes and Unicode
+
+render-settings.test.ts:
+(pass) legacy nested policy renderer > keeps the kind key/type table equal to the actual renderer outputs [23.00ms]
+(pass) legacy nested policy renderer > preserves nested names, enum conversion, nullable omission and input ports [1.00ms]
+(pass) legacy nested policy renderer > rejects flat cfg keys, wrong nested types and legacy range violations [2.00ms]
+
+ 9 pass
+ 4 skip
+ 0 fail
+ 87 expect() calls
+Ran 13 tests across 2 files. [237.00ms]
