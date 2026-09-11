@@ -49,6 +49,10 @@ registry/interpreter/administrator checks. Fresh parent verification passed all
 explicitly ignored. The installed suite's stale duplicate-setting assertion was
 reproduced and corrected separately to require one winning native assignment.
 
+The full korrid test task and full administrator crate test suite then passed
+on the build machine. Logs are retained as `proc_7474` and `proc_204f` in this
+session's process records. No VM or device check was run for this slice.
+
 ## Preparation gate
 
 Source inspection and an independent review confirm that stock Oxc 0.142 exposes
