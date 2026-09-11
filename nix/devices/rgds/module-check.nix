@@ -36,7 +36,13 @@ assert !c.services.openssh.enable && !c.services.openssh.openFirewall;
 assert c.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert c.nix.settings.max-jobs == 0;
 assert c.nix.settings.require-sigs;
-assert !c.services.sunshine.enable;
+assert c.services.korriLinuxHost.enable;
+assert c.services.korri.webSurfaceHost.enable;
+assert c.services.korri.compositor.kiosk.enable;
+assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
+assert builtins.match "/dev/dri/card[0-9]+" c.services.korriLinuxHost.compositor.drmDevice == null;
+# The streaming host ships with this session, but no stream port is exposed.
+assert !c.services.korriLinuxHost.sunshine.openFirewall;
 assert lib.elem "korrid" (map lib.getName c.environment.systemPackages);
 pkgs.runCommand "rgds-module-check"
   {

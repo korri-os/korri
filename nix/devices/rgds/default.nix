@@ -3,7 +3,11 @@ let
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = { inherit korri; };
-    modules = [ ./sd-image.nix ];
+    modules = [
+      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      ./sd-image.nix
+      ./portal.nix
+    ];
   };
   # Expose local cross-builds for preflight on development machines, never on
   # the handheld. The distribution workflow builds the native ARM image.
