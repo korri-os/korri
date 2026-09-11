@@ -131,6 +131,14 @@ let
     };
 
   definitions = {
+    rgds-initrd-check = {
+      description = "Build the RG DS initrd module closure with strict missing-module checks; cross-build on x86_64.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-initrd-modules
+      '';
+    };
     rgds-image-check = {
       description = "Inspect an uncompressed RG DS image and its matching U-Boot without mounting or writing media.";
       usageSuffix = " -- <image.img> <u-boot-rockchip.bin>";

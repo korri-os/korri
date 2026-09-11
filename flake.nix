@@ -213,6 +213,7 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            rgds-initrd-modules = rgds.initrdModulesCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {

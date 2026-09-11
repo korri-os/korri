@@ -8,13 +8,32 @@ let
   # Expose local cross-builds for preflight on development machines, never on
   # the handheld. The distribution workflow builds the native ARM image.
   crossPkgs = (import nixpkgs { system = "x86_64-linux"; }).pkgsCross.aarch64-multiplatform;
+  kernelCross = crossPkgs.callPackage ./kernel.nix { };
 in
 {
   inherit configuration;
   sdImage = configuration.config.system.build.sdImage;
   kernel = configuration.config.boot.kernelPackages.kernel;
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
-  kernelCross = crossPkgs.callPackage ./kernel.nix { };
+  inherit kernelCross;
   ubootCross = crossPkgs.callPackage ./uboot.nix { };
   moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
+  # Exercise the same shrinker as NixOS stage-1 against built ARM modules.
+  # Cross builds make this gate runnable before another native CI image build.
+  initrdModulesCheck =
+    pkgs:
+    pkgs.makeModulesClosure {
+      kernel =
+        (
+          if pkgs.stdenv.hostPlatform.isx86_64 then
+            kernelCross
+          else
+            configuration.config.boot.kernelPackages.kernel
+        ).modules;
+      firmware = [ pkgs.linux-firmware ];
+      rootModules =
+        configuration.config.boot.initrd.availableKernelModules
+        ++ configuration.config.boot.initrd.kernelModules;
+      allowMissing = false;
+    };
 }
