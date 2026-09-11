@@ -19,6 +19,7 @@ in
     ./sunshine-host.nix
     ./usb-gadget.nix
     ./wifi.nix
+    ./firmware.nix
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";

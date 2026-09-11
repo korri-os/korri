@@ -195,6 +195,10 @@
               dataPackage = self.packages.${system}.rg353m-inputplumber-data;
             };
             rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
+            rg353m-firmware-phase1 = import ./nix/devices/rg353m/firmware-check.nix {
+              inherit pkgs;
+              korri = self;
+            };
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {
