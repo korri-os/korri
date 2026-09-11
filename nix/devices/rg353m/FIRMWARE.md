@@ -29,6 +29,26 @@ checks internal symlinks and license text, and compares the effective NixOS
 firmware union including the Realtek overrides and regulatory signatures.
 Only the selected families and regulatory files can appear in that union.
 
+## Measured phase-2 result
+
+A controlled comparison used the same kernel, core packages and private SSH
+settings, with both images recompressed using `zstd -19 -T2`:
+
+| | Before phase 2 | After phase 2 |
+|---|---:|---:|
+| Compressed SD image | 1,623,922,066 bytes | 985,040,250 bytes |
+| Firmware closure | 607.1 MiB | 1.4 MiB |
+
+The compressed image shrank by 638,881,816 bytes, or 39.3%. Both recompressed
+images matched their original Nix disk bytes, and the downloaded candidate's
+checksum matched. This private comparison is not a public release.
+
+The candidate booted as a new SD generation with rollback retained. Bluetooth
+discovery and scoped IPv6 Wi-Fi traffic passed together before and after a timed
+wake cycle. Kernel identity and eMMC boot checksums stayed unchanged. Audio was
+checked by metadata only; no sound tests were run. Pairing, headphone/HDMI
+switching and the separate dual-interface IPv4 issue remain outside this result.
+
 ## Hardware gate
 
 The preceding candidate verified RTL8821CS firmware loading, Bluetooth discovery,
