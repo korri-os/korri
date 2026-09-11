@@ -36,7 +36,7 @@ remain explicit gates.
 
 ## First implementation slice
 
-`0727559e` implements bounded source snapshots for the current single-file
+`6bb27152` implements bounded source snapshots for the current single-file
 producer. Administrator evaluation and approval use the same retained bytes;
 installed registration no longer performs its own unbounded source read.
 Compiled Android sources use the same in-memory interface. No dependency imports,
@@ -68,3 +68,16 @@ A disposable resource-limited Rust helper is a proposed investigation only; it
 has not been authorized or implemented. Android process/packaging support is
 unverified. Effect, source-only shipment and the shared checker remain binding.
 No VM, device, deployment or publication operation ran in this implementation.
+
+## Execution closeout before SSH rollout
+
+The bounded snapshot slice is complete and landed. The broader Effect runtime
+remains active at the preparation gate above, not complete. The user did not
+approve the proposed helper investigation. Do not enable graph preparation or
+change isolation while that decision remains open.
+
+The user redirected execution to the original SSH outcome on 2026-09-11.
+Effect runtime work is not a prerequisite for publishing the optional SSH plugin
+or installing its compatible host. Keep the working game stack during that
+rollout instead of requiring the unfinished nested-policy cutover. The approved
+Effect decoder, shared checker and source-only direction remain unchanged.
