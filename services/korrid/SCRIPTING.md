@@ -64,7 +64,7 @@ between parses cannot interrupt one parse. Preparation memory and cancellation
 remain release gates. QuickJS stays at 16 MiB / 250 ms; this checkpoint adds no
 platform APIs, timers, policy integration, device operations or deployment.
 
-### First U1 slice: shipped interface and verification
+### First U1 slice: implemented interface and verification
 
 `script::source::SourceSnapshot` has two admission adapters:
 `from_memory(sources, limits)` and `from_directory(root, names, limits)`.
@@ -108,8 +108,9 @@ cargo test --offline --locked --manifest-path services/korrid/plugin-host/Cargo.
 
 Verified on the build machine: 13 source tests pass on both `/tmp` and tmpfs;
 6 plugin-policy tests, 27 registry tests, 8 interpreter tests and 3 focused
-installed-launch tests pass. The latter run excludes the baseline failure below
-and leaves the built-payload test ignored. The administrator run passes 30 tests.
+installed-launch tests passed in the initial slice. The corrected full installed
+launch test file now passes four tests and leaves the built-payload test ignored.
+The administrator run passes 30 tests.
 Both crates pass all-targets `cargo check` and `cargo fmt --check`. Strict
 all-targets Clippy passes for the administrator host.
 
@@ -123,10 +124,11 @@ regression first failed with `alias.ts -> redirect/../plugin.ts` and
 `redirect -> real/deep`: lexical collapse selected the wrong `plugin.ts`.
 The corrected traversal resolves directory symlinks before `..`.
 
-**Existing failures outside this slice:** the installed launch suite's
+**Stale regression assertion corrected separately:** the installed launch suite's
 `real_linux_plugins_declare_immutable_file_keys_and_return_the_existing_retroarch_command`
-fails at `installed_game_launch.rs:421` on its `video_vsync` suffix assertion.
-The same command fails on an untouched archive of `c751233c`:
+required duplicate `video_vsync` assignments, contradicting the native parser
+fix. It also failed on an untouched archive of `c751233c`. The assertion now
+requires exactly one winning assignment, and this command passes:
 
 ```sh
 cargo test --offline --locked --manifest-path services/korrid/Cargo.toml --test installed_game_launch real_linux_plugins_declare_immutable_file_keys_and_return_the_existing_retroarch_command
@@ -137,7 +139,7 @@ a stale baseline rlib to hide the new snapshot API. Cleaning only the local
 `korrid` package artifacts and rebuilding restored the source suite. Strict
 whole-korrid Clippy also reports existing errors outside the changed files,
 including `discovery/scanner.rs:184` and async test locks in `src/lib.rs`.
-Neither failure is fixed by expanding this source-admission slice.
+Those unrelated Clippy findings are not included in this source-admission change.
 
 ## Shape
 

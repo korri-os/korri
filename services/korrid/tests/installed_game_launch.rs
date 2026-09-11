@@ -418,7 +418,13 @@ fn real_linux_plugins_declare_immutable_file_keys_and_return_the_existing_retroa
     ] {
         assert!(config.contains(line), "{line}");
     }
-    assert!(config.ends_with("video_vsync = false\nvideo_vsync = true\n"));
+    // Native RetroArch lookup takes the first assignment. The serializer must
+    // emit the winning override once, not leave a shadowed duplicate behind.
+    let vsync: Vec<_> = config
+        .lines()
+        .filter(|line| line.starts_with("video_vsync ="))
+        .collect();
+    assert_eq!(vsync, ["video_vsync = true"]);
 }
 
 #[test]
