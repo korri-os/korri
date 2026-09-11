@@ -60,9 +60,14 @@ changes no persisted representation and grants no helper/dependency imports.
 The existing 128 KiB source ceiling remains the first slice's aggregate content
 ceiling, not a measured Effect graph limit. Bounded snapshot storage is not a
 bound on Oxc's parse/transform allocations or cancellation. A wall-clock check
-between parses cannot interrupt one parse. Preparation memory and cancellation
-remain release gates. QuickJS stays at 16 MiB / 250 ms; this checkpoint adds no
-platform APIs, timers, policy integration, device operations or deployment.
+between parses cannot interrupt one parse. Hard preparation memory and cancellation guarantees are deferred by the user's
+2026-09-11 decision in
+`work/items/active/01M26Z12QCQ708KHWXSDK80GAC-effect-plugin-validation-runtime/work.md`.
+Preparation stays inside korrid. A pathological parse can stall or crash the
+process, even with approved source. Keep the source-admission checks; no helper
+process, parser fork or hard preparation watchdog is implied. QuickJS stays at
+16 MiB / 250 ms. This decision adds no platform APIs, timers, policy integration,
+device operations or deployment.
 
 ### First U1 slice: implemented interface and verification
 
@@ -92,8 +97,10 @@ snapshot checks regular-file length, reserves it, then reads exactly that many
 bytes into fixed-capacity storage. A final length check detects size changes
 without reading an unreserved sentinel byte. This bounds requested source
 storage, plus fixed descriptor/stack overhead. It does not bound allocator
-overhead, process RSS or Oxc allocations. Interruptible preparation and measured
-host-memory limits still block production graph enablement.
+overhead, process RSS or Oxc allocations. The accepted in-process preparation
+risk does not remove these admission checks. Preparation measurements must
+remain separate from the QuickJS execution budget; they are not enforceable
+whole-process memory or cancellation guarantees.
 The runtime-user launch process's separate source-path read is not migrated by
 this slice; U4 must carry source admission through that consumer as well.
 
@@ -221,13 +228,71 @@ The read-only registry probe requires an explicit publisher namespace for an
 external source: `nix run .#korrid-plugin-review -- @publisher plugin.ts`.
 With no arguments, it reviews the trusted bundled Android source.
 
-## The sandbox is empty on purpose
+## The sandbox has no I/O
 
-A plugin gets no module loader, no host bindings, and no I/O. `require`,
-`process`, `fetch`, and `XMLHttpRequest` are all `undefined` — asserted in
-tests. The rule "plugins declare, korrid performs effects" is therefore
-enforced by construction rather than by convention, and a plugin cannot pin
-itself to one machine by reaching for local resources.
+A plugin gets only prepared source from its immutable snapshot, plus the
+function-only timers described below. `require`, `process`, `fetch`,
+`XMLHttpRequest` and `setInterval` remain undefined. Plugins declare effects;
+korrid performs them. Neither source imports nor timers grant filesystem,
+network or process access.
+
+### In-process module preparation
+
+`eval_plugin_snapshot` and `call_plugin_launch_snapshot` prepare the same closed
+graph with Oxc before creating a fresh QuickJS runtime. The single-file helpers
+use that same path. Static relative imports and re-exports resolve only against
+retained snapshot identities. Explicit `.js` and `.ts` paths are exact. Existing
+extensionless TypeScript helper imports select `.ts`, not an ambient package or
+index file. QuickJS owns module cycles, cache identity and live bindings.
+True type-only imports do not request runtime source.
+
+Preparation follows the emitted static module record and checks dependencies
+before any plugin code runs. Package imports, CommonJS, JSON modules, dynamic
+imports, `import.meta`, absolute paths and snapshot escapes remain unsupported
+in this slice. The resolver closes before module evaluation, so `eval` and
+`Function` cannot use it for dynamic discovery. Preparation and evaluation never
+reopen files. A filesystem snapshot still relies on the caller's existing
+immutable-package authority.
+
+The existing per-source and aggregate generated-JavaScript limits remain. This
+is not full Effect loading: installed-package admission still selects only
+`plugin.ts`, and the measured Effect graph exceeds the current graph allowance.
+Native package source registration and dependency loading remain separate
+implementation work. No new persisted source manifest or registry field exists.
+
+### Shared completion and timers
+
+Every evaluator consumer installs the same `setTimeout` and `clearTimeout`.
+Callbacks must be functions. Zero delay is deferred, equal due times retain
+registration order, and cancellation accepts numeric ID conversion. Negative or
+non-finite delays become zero; delays above 2,147,483,647 ms become 1 ms. Fractional
+delays truncate. There are no intervals, strings or browser background-timer
+policies. Queued callbacks and arguments stay in the existing limited JS heap;
+the research probe's 256-callback limit is not adopted.
+
+The existing 250 ms deadline starts before context and timer initialization.
+It includes module evaluation, output extraction, promise jobs, timer waits,
+callbacks and final serialization. Source preparation stays outside it under
+the explicitly accepted stall/crash risk.
+
+Module initialization must fulfill before output extraction. Promise jobs can
+complete it, but stalled or timer-dependent top-level await fails without
+invoking launch. Declaration output is captured before initialization jobs and
+timers drain. Initialization must finish before launch. A synchronous launch
+result is captured before its queued work drains. Later mutation cannot change
+the captured result, but a later error invalidates it. Returned promises remain
+unsupported.
+
+At each exhausted promise-job checkpoint, remaining unhandled rejections fail
+before another timer or success. A handler in that checkpoint can clear its
+promise's rejection; a later timer cannot. The host tracks retained promise
+identities without inspecting error payloads.
+
+Timer state uses a private null-prototype array. Native cleanup truncates that
+array while its context is alive, including on interruption. This releases
+pending module resolvers without executing callbacks or more JS cleanup.
+Rejection references are released before runtime destruction. No queued work
+survives into another evaluation.
 
 ## Local announcement registry
 

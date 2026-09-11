@@ -36,7 +36,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 typeshare = "1"
 zeroize = "1"
 
-rquickjs = { version = "0.9", features = ["macro", "bindgen"] }
+rquickjs = { version = "0.9", features = ["macro", "bindgen", "loader"] }
 oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
 proseql-engine = { path = ".cache/proseql/crates/proseql-engine" }
 proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }

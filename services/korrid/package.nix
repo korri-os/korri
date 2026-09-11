@@ -21,6 +21,8 @@ let
     filter =
       path: type:
       (craneLib.filterCargoSources path type)
+      # The shared scheduler is host runtime source included by completion.rs.
+      || (type != "directory" && relativeSourcePath path == "src/script/completion.js")
       # The script unit tests include the checked-in example plugin source.
       || lib.hasPrefix "${sourceRootString}/examples/" (toString path)
       # The production plugin is bundled with include_str! and must survive the

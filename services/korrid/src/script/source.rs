@@ -66,6 +66,19 @@ impl SourceSnapshot {
         )
     }
 
+    pub(super) fn javascript(source: &str) -> Result<Self, String> {
+        if source.len() > super::preparation::JAVASCRIPT_BYTES {
+            return Err("plugin JavaScript exceeds 512 KiB".into());
+        }
+        Self::from_memory(
+            &[("plugin.js", source.as_bytes())],
+            SnapshotLimits {
+                bytes: super::preparation::JAVASCRIPT_BYTES,
+                ..SnapshotLimits::plugin()
+            },
+        )
+    }
+
     /// Only the source registered by the actual file-copy package producer.
     /// Signature/namespace/selection verification remains the caller's job.
     pub fn package_plugin(package: &Path) -> Result<Self, String> {

@@ -13,92 +13,76 @@
 //! transpiled in-process at load, so adding or editing a plugin never requires
 //! rebuilding korrid or the app that embeds it.
 
+#[path = "script/completion.rs"]
+mod completion;
+#[path = "script/preparation.rs"]
+mod preparation;
 #[path = "script/source.rs"]
 pub mod source;
 
 use std::{
     collections::BTreeSet,
-    path::Path,
     time::{Duration, Instant},
 };
 
-use oxc::allocator::Allocator;
-use oxc::codegen::Codegen;
-use oxc::parser::Parser;
-use oxc::semantic::SemanticBuilder;
-use oxc::span::SourceType;
-use oxc::transformer::{TransformOptions, Transformer};
 use rquickjs::{function::This, Context, Filter, Function, Module, Object, Runtime, Type, Value};
 
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
-    if source.len() > source::PLUGIN_SOURCE_BYTES {
-        return Err("plugin source exceeds 128 KiB".into());
-    }
-    let allocator = Allocator::default();
-    let source_type = SourceType::ts();
-
-    let parsed = Parser::new(&allocator, source, source_type).parse();
-    if let Some(first) = parsed.diagnostics.first() {
-        return Err(format!("plugin failed to parse: {first}"));
-    }
-
-    let mut program = parsed.program;
-    // `with_enum_eval` is required for TS `enum` lowering; without it the
-    // transformer panics instead of returning an error.
-    let scoping = SemanticBuilder::new()
-        .with_enum_eval(true)
-        .build(&program)
-        .semantic
-        .into_scoping();
-
-    let mut options = TransformOptions::default();
-    // Value imports must reach the loader-less interpreter even if unused.
-    options.typescript.only_remove_type_imports = true;
-    let transformed = Transformer::new(&allocator, Path::new("plugin.ts"), &options)
-        .build_with_scoping(scoping, &mut program);
-    if let Some(first) = transformed.diagnostics.first() {
-        return Err(format!("plugin failed to transpile: {first}"));
-    }
-
-    Ok(Codegen::new().build(&program).code)
+    preparation::transpile(source, "plugin.ts")
 }
 
 /// Evaluate plugin JavaScript and return its declaration as JSON text.
 ///
-/// The sandbox is empty: no module loader, no host bindings, no I/O. A plugin
-/// that tries to reach the outside world finds nothing there.
+/// The loader reads only prepared snapshot bytes: no host bindings or I/O.
 pub fn eval_plugin(source: &str) -> Result<String, String> {
-    evaluate_module(source, None)
+    let snapshot = source::SourceSnapshot::javascript(source)?;
+    evaluate_module(
+        preparation::PreparedGraph::new(&snapshot, "plugin.js")?,
+        None,
+    )
 }
 
 /// Call the module's synchronous launch export with JSON input in a fresh,
 /// empty interpreter. Evaluation and invocation share the same resource budget.
 pub fn call_plugin_launch_ts(source: &str, input_json: &str) -> Result<String, String> {
+    call_plugin_launch_snapshot(&source::SourceSnapshot::plugin(source)?, input_json)
+}
+
+/// Prepare the retained graph, then invoke launch in a fresh interpreter.
+pub fn call_plugin_launch_snapshot(
+    snapshot: &source::SourceSnapshot,
+    input_json: &str,
+) -> Result<String, String> {
     if input_json.len() > 512 * 1024 {
         return Err("plugin launch input exceeds 512 KiB".into());
     }
-    let snapshot = source::SourceSnapshot::plugin(source)?;
     evaluate_module(
-        &transpile_ts(snapshot.text("plugin.ts")?)?,
+        preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
         Some(input_json),
     )
 }
 
-fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> {
-    if source.len() > 512 * 1024 {
-        return Err("plugin JavaScript exceeds 512 KiB".into());
-    }
+fn evaluate_module(
+    graph: preparation::PreparedGraph,
+    input: Option<&str>,
+) -> Result<String, String> {
     let runtime = Runtime::new().map_err(|error| error.to_string())?;
     // External declarations run before permission approval. Resource limits
     // therefore belong to the empty interpreter, not to the installed payload.
     runtime.set_memory_limit(16 * 1024 * 1024);
     runtime.set_max_stack_size(512 * 1024);
-    let deadline = Instant::now() + Duration::from_millis(250);
+    let (entry, source, linking) = graph.install(&runtime);
+    let rejections = completion::Rejections::install(&runtime);
+    // Preparation has finished. One deadline includes context initialization,
+    // extraction, queued jobs and timers. It never resets between phases.
+    let started = Instant::now();
+    let deadline = started + Duration::from_millis(250);
     runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
     context.with(|ctx| {
+        let completion = completion::Completion::install(&ctx, started, deadline)?;
         let object_constructor: Object = ctx
             .globals()
             .get("Object")
@@ -109,14 +93,16 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
         let object_to_string: Function = plain_object_prototype
             .get("toString")
             .map_err(|error| format!("plugin sandbox not inspectable: {error}"))?;
-        let module = Module::declare(ctx.clone(), "plugin", source)
+        let module = Module::declare(ctx.clone(), entry, source)
             .map_err(|error| format!("plugin evaluation failed: {error}"))?;
+        // QuickJS resolves the full static graph during declaration. Disable
+        // resolution before any code runs, including imports synthesized by eval
+        // or Function. Even already-loaded modules must pass the resolver.
+        linking.set(false);
         let (module, evaluated) = module
             .eval()
             .map_err(|error| format!("plugin evaluation failed: {error}"))?;
-        evaluated
-            .finish::<()>()
-            .map_err(|error| format!("plugin evaluation failed: {error}"))?;
+        completion.initialize(&ctx, &evaluated)?;
         let exports = module.namespace().map_err(|error| error.to_string())?;
         let data = Object::new(ctx.clone()).map_err(|error| error.to_string())?;
         for property in exports.props::<String, Value>() {
@@ -144,6 +130,7 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
         let mut budget = OutputBudget {
             nodes: 8192,
             string_bytes: 512 * 1024,
+            deadline,
         };
         let declaration = json_data_from_js(
             data.as_value(),
@@ -153,6 +140,9 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
             &object_to_string,
             &mut budget,
         )?;
+        // Capture declaration bytes before queued mutation, then complete all
+        // initialization work before inspecting the callable or invoking it.
+        completion.drain(&ctx, &rejections)?;
         // A native kind owns the module callback. Inspect the export only;
         // admission must never invoke it or impose policy on its output.
         if declaration
@@ -192,8 +182,11 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
         } else {
             declaration
         };
-        serde_json::to_string(&result)
-            .map_err(|error| format!("plugin result not serialisable: {error}"))
+        completion.drain(&ctx, &rejections)?;
+        let output = serde_json::to_string(&result)
+            .map_err(|error| format!("plugin result not serialisable: {error}"))?;
+        completion.check_deadline()?;
+        Ok(output)
     })
 }
 
@@ -202,6 +195,7 @@ fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> 
 struct OutputBudget {
     nodes: usize,
     string_bytes: usize,
+    deadline: Instant,
 }
 
 impl OutputBudget {
@@ -222,6 +216,9 @@ fn json_data_from_js<'js>(
     object_to_string: &Function<'js>,
     budget: &mut OutputBudget,
 ) -> Result<serde_json::Value, String> {
+    if Instant::now() >= budget.deadline {
+        return Err("plugin execution deadline exceeded".into());
+    }
     budget.nodes = budget
         .nodes
         .checked_sub(1)
@@ -364,11 +361,13 @@ pub fn eval_plugin_ts(source: &str) -> Result<String, String> {
     eval_plugin_snapshot(&source::SourceSnapshot::plugin(source)?)
 }
 
-/// Consume retained bytes only. Snapshot admission is not a module loader;
-/// imports remain unsupported until graph preparation is implemented.
+/// Eagerly prepare the closed relative-module graph from retained bytes only.
+/// Preparation has no hard host-memory or time guarantee; VM limits start after it.
 pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String, String> {
-    let javascript = transpile_ts(snapshot.text("plugin.ts")?)?;
-    eval_plugin(&javascript)
+    evaluate_module(
+        preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -423,7 +422,7 @@ mod tests {
     fn syntax_and_missing_names_are_errors_not_panics() {
         assert!(eval_plugin("this is not javascript {{{")
             .unwrap_err()
-            .contains("plugin evaluation failed"));
+            .contains("failed to parse"));
         assert!(eval_plugin_ts("const x: = 3")
             .unwrap_err()
             .contains("failed to parse"));

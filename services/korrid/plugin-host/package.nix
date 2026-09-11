@@ -22,6 +22,7 @@ let
     mkdir -p "$out/src" "$out/examples" "$out/plugins"
     cp -R ${clean} "$out/plugin-host"
     cp ${../src/script.rs} "$out/src/script.rs"
+    cp -R ${../src/script} "$out/src/script"
     cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
     cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
