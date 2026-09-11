@@ -71,4 +71,10 @@ rec {
       inherit pkgs;
       configuration = portalPreviewConfiguration;
     };
+  bluetoothCheck =
+    pkgs:
+    import ./bluetooth-check.nix {
+      inherit pkgs;
+      configuration = portalPreviewConfiguration;
+    };
 }
