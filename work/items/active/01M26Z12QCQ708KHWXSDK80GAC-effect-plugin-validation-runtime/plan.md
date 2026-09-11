@@ -1,7 +1,7 @@
 ---
 title: Ship Effect validation inside the bounded plugin runtime
 type: feat
-status: draft
+status: active
 date: 2026-09-11
 origin: docs/briefs/2026-09-09-plugin-authoring-standard-brief.md
 ---
