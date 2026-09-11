@@ -3,6 +3,10 @@
 let
   inherit (pkgs) lib;
   c = configuration.config;
+  usbConsoleCheck = import ./usb-console-check.nix {
+    inherit pkgs;
+    config = c;
+  };
   rawWrite = builtins.unsafeDiscardStringContext c.sdImage.postBuildCommands;
 in
 assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
@@ -26,7 +30,7 @@ assert lib.hasInfix "U-Boot exceeds the raw area" rawWrite;
 assert lib.elem "panel-jadard-jd9365da-h3" c.boot.initrd.kernelModules;
 assert lib.elem "panfrost" c.boot.initrd.kernelModules;
 assert lib.elem "g_serial" c.boot.kernelModules;
-assert lib.elem "getty.target" c.systemd.services."serial-getty@ttyGS0".wantedBy;
+assert !(c.systemd.units ? "serial-getty@ttyGS0.service");
 assert c.services.getty.autologinUser == "root";
 assert !c.services.openssh.enable && !c.services.openssh.openFirewall;
 assert c.users.users.root.openssh.authorizedKeys.keys == [ ];
@@ -44,6 +48,7 @@ pkgs.runCommand "rgds-module-check"
     ];
   }
   ''
+    test -f ${usbConsoleCheck}
     cp ${./verify-image.py} verify-image.py
     cp ${./verify-image.test.py} verify-image.test.py
     python3 verify-image.test.py

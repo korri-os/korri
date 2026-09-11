@@ -114,7 +114,12 @@ The read-back SHA-256 matched
 `2dbc81ec130fe9944e45bfa319d0a0ac6958a290ecb2d89d4e805f94b900277b`.
 Both `NIXOS_BOOT` and `NIXOS_RGDS` partitions were unmounted after verification.
 The write report is `~/Downloads/korri-rgds/sdh-write-b26a379b4b7d.txt`.
-No internal device storage was written. Hardware boot remains unverified.
+No internal device storage was written. The device subsequently reached the
+root console on both panels. Saved journals confirm SD-root mounting and
+expansion. USB enumeration worked, but its login service failed during
+startup. See [USB-CONSOLE.md](USB-CONSOLE.md) for the confirmed cause,
+source correction, and owner-approved temporary SD repair. USB login and
+time-dependent stability remain hardware acceptance gates.
 
 ## Arrival checklist
 

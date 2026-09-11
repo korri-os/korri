@@ -52,7 +52,13 @@ in
       };
     };
   };
-  systemd.services."serial-getty@ttyGS0".wantedBy = [ "getty.target" ];
+  # Start the USB login when the gadget tty appears, using systemd's own
+  # device-driven mechanism. Declaring the instance in NixOS instead produced
+  # a unit that ran before /dev/ttyGS0 existed and never restarted, and any
+  # instance drop-in would discard the packaged agetty and root autologin.
+  services.udev.extraRules = ''
+    SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="serial-getty@ttyGS0.service"
+  '';
 
   hardware = {
     # The installer-wide list includes PC drivers removed from Linux 7.2
