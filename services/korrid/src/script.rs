@@ -13,6 +13,9 @@
 //! transpiled in-process at load, so adding or editing a plugin never requires
 //! rebuilding korrid or the app that embeds it.
 
+#[path = "script/source.rs"]
+pub mod source;
+
 use std::{
     collections::BTreeSet,
     path::Path,
@@ -29,7 +32,7 @@ use rquickjs::{function::This, Context, Filter, Function, Module, Object, Runtim
 
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
-    if source.len() > 128 * 1024 {
+    if source.len() > source::PLUGIN_SOURCE_BYTES {
         return Err("plugin source exceeds 128 KiB".into());
     }
     let allocator = Allocator::default();
@@ -75,7 +78,11 @@ pub fn call_plugin_launch_ts(source: &str, input_json: &str) -> Result<String, S
     if input_json.len() > 512 * 1024 {
         return Err("plugin launch input exceeds 512 KiB".into());
     }
-    evaluate_module(&transpile_ts(source)?, Some(input_json))
+    let snapshot = source::SourceSnapshot::plugin(source)?;
+    evaluate_module(
+        &transpile_ts(snapshot.text("plugin.ts")?)?,
+        Some(input_json),
+    )
 }
 
 fn evaluate_module(source: &str, input: Option<&str>) -> Result<String, String> {
@@ -354,7 +361,13 @@ fn reject_symbol_properties(object: &rquickjs::Object<'_>, path: &str) -> Result
 
 /// Load a TypeScript plugin end to end: transpile, then evaluate.
 pub fn eval_plugin_ts(source: &str) -> Result<String, String> {
-    let javascript = transpile_ts(source)?;
+    eval_plugin_snapshot(&source::SourceSnapshot::plugin(source)?)
+}
+
+/// Consume retained bytes only. Snapshot admission is not a module loader;
+/// imports remain unsupported until graph preparation is implemented.
+pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String, String> {
+    let javascript = transpile_ts(snapshot.text("plugin.ts")?)?;
     eval_plugin(&javascript)
 }
 

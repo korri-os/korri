@@ -1,4 +1,6 @@
-use crate::{declaration::Declaration, process, provenance::Provenance};
+use crate::{
+    declaration::Declaration, process, provenance::Provenance, script::source::SourceSnapshot,
+};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -431,24 +433,17 @@ pub fn verify_publisher(
 }
 
 pub fn load_declaration(package: &Path) -> Result<Declaration, String> {
+    Ok(load_declaration_snapshot(package)?.0)
+}
+
+fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnapshot), String> {
     validate_store_path(package)?;
     if fs::canonicalize(package).map_err(|e| e.to_string())? != package || !package.is_dir() {
         return Err("package must be an exact immutable directory".into());
     }
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(package.join("plugin.ts"))
-        .map_err(|e| format!("plugin.ts is unavailable: {e}"))?;
-    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-        return Err("plugin.ts must be a regular file".into());
-    }
-    let mut source = String::new();
-    file.take(128 * 1024 + 1)
-        .read_to_string(&mut source)
-        .map_err(|e| e.to_string())?;
+    let source = SourceSnapshot::package_plugin(package)?;
     let namespace = manifest_namespace(package)?;
-    let declaration = Declaration::evaluate(&namespace, &source)?;
+    let declaration = Declaration::evaluate_snapshot(&namespace, &source)?;
     let manifest = manifest(package)?;
     crate::plugin_references::validate_files(
         serde_json::to_value(&declaration).map_err(|e| e.to_string())?,
@@ -459,11 +454,11 @@ pub fn load_declaration(package: &Path) -> Result<Declaration, String> {
             return Err(format!("service {name} has no packaged native unit"));
         }
     }
-    Ok(declaration)
+    Ok((declaration, source))
 }
 
 pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report, String> {
-    let declaration = load_declaration(package)?;
+    let (declaration, source) = load_declaration_snapshot(package)?;
     let id = declaration.id();
     provenance.validate(&id)?;
     let unit = unit_name(&id);
@@ -568,6 +563,7 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         &report.provenance,
         &report.declaration,
         &report.unit_configuration,
+        &source,
     )?;
     Ok(report)
 }
@@ -577,8 +573,9 @@ fn approval_digest(
     provenance: &Provenance,
     declaration: &Declaration,
     unit: &str,
+    source: &SourceSnapshot,
 ) -> Result<String, String> {
-    let source = read_regular(&package.join("plugin.ts"), 128 * 1024)?;
+    let source = source.bytes("plugin.ts")?;
     let manifest = read_regular(&package.join("manifest.json"), 64 * 1024)?;
     let bytes = serde_json::to_vec(&(
         BASE_POLICY,
@@ -628,6 +625,61 @@ fn validate_artifact(
 #[cfg(test)]
 mod approval_tests {
     use super::*;
+
+    fn approval_digest(
+        package: &Path,
+        provenance: &Provenance,
+        declaration: &Declaration,
+        unit: &str,
+    ) -> Result<String, String> {
+        super::approval_digest(
+            package,
+            provenance,
+            declaration,
+            unit,
+            &SourceSnapshot::package_plugin(package)?,
+        )
+    }
+
+    #[test]
+    fn source_approval_consumes_the_evaluated_snapshot_without_reopening_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let package = directory.path();
+        fs::write(package.join("plugin.ts"), "export const name = 'snapshot';").unwrap();
+        fs::write(package.join("manifest.json"), "approved manifest").unwrap();
+        let source = SourceSnapshot::package_plugin(package).unwrap();
+        let declaration = Declaration::evaluate_snapshot("@test", &source).unwrap();
+        let origin = Provenance::RawCache {
+            cache_url: "file:///cache".into(),
+        };
+        let digest =
+            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap();
+        // Snapshot ownership does not change the existing approval tuple or
+        // the source's JSON byte-array representation.
+        let approved = serde_json::to_vec(&(
+            BASE_POLICY,
+            package,
+            &origin,
+            &declaration,
+            "unit",
+            fs::read(package.join("plugin.ts")).unwrap(),
+            fs::read(package.join("manifest.json")).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(digest, hex::encode(Sha256::digest(approved)));
+        fs::remove_file(package.join("plugin.ts")).unwrap();
+        assert_eq!(
+            digest,
+            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap()
+        );
+        assert_eq!(
+            Declaration::evaluate_snapshot("@test", &source)
+                .unwrap()
+                .id(),
+            "@test:snapshot"
+        );
+    }
+
     #[test]
     fn approval_binds_source_release_archive_package_and_effective_policy_not_staging() {
         let declaration = Declaration::evaluate(

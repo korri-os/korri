@@ -102,7 +102,17 @@ pub fn validate_id(id: &str) -> Result<(), String> {
 
 impl Declaration {
     pub fn evaluate(namespace: &str, source: &str) -> Result<Self, String> {
-        let json = crate::script::eval_plugin_ts(source)?;
+        Self::evaluate_snapshot(
+            namespace,
+            &crate::script::source::SourceSnapshot::plugin(source)?,
+        )
+    }
+
+    pub fn evaluate_snapshot(
+        namespace: &str,
+        source: &crate::script::source::SourceSnapshot,
+    ) -> Result<Self, String> {
+        let json = crate::script::eval_plugin_snapshot(source)?;
         let mut declaration: Self =
             serde_json::from_str(&json).map_err(|e| format!("invalid plugin declaration: {e}"))?;
         declaration.namespace = namespace.to_owned();

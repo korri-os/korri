@@ -600,9 +600,9 @@ impl PluginRegistry {
                 .id
                 .split_once(':')
                 .ok_or_else(|| PluginError::InvalidPluginId(package.id.clone()))?;
-            let source = std::fs::read_to_string(package.package.join("plugin.ts"))
-                .map_err(|e| PluginError::Evaluation(e.to_string()))?;
-            let json = script::eval_plugin_ts(&source).map_err(PluginError::Evaluation)?;
+            let source = script::source::SourceSnapshot::package_plugin(&package.package)
+                .map_err(PluginError::Evaluation)?;
+            let json = script::eval_plugin_snapshot(&source).map_err(PluginError::Evaluation)?;
             let declaration: serde_json::Value = serde_json::from_str(&json)?;
             crate::plugin_references::validate_files(declaration.clone(), &package.files)
                 .map_err(PluginError::Evaluation)?;

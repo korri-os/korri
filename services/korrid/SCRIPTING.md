@@ -12,6 +12,133 @@ services and games. It uses this same interpreter and requires exact-package
 approval before native execution. Linux discovery and launching read only the
 committed enabled selection projection. They never invoke the administrator CLI.
 
+## Source authority and snapshot checkpoint
+
+This contract is extracted from the current producers and consumers. It does
+not register the research probe's graph or authorize a Nix closure as code.
+
+| Producer or consumer | Source authority and snapshot use |
+|---|---|
+| `plugin-host/builder.nix` | Trusted composition supplies `publisher` and `source`. The builder copies that **file** to the output's `plugin.ts`. It generates `manifest.json` for native artifacts. Today the only registered executable source is `plugin.ts`; `packages`, `files`, `services` and `requires` are not JavaScript source grants. |
+| `plugin-host/src/package.rs` | The namespace comes from the generated manifest after verification against the device's bound full key. Nix's signed fingerprint binds the exact output path, `narHash`, `narSize` and sorted references. Reference membership alone does not register executable source. Admission snapshots the registered source before evaluating it. |
+| `Report.approval` | The existing approval digest covers policy, package, provenance, declaration, effective unit, complete `plugin.ts` bytes and manifest bytes. Evaluation and source approval must consume the **same** snapshot, not reopen source for hashing. No new receipt field or preparation cache is needed for the current single-file producer. |
+| `plugin-host/src/host.rs::publish_registry` and `plugin_installation.rs` | The owner-protected registry projects the existing Report fields `id`, `package`, `files`, `requires`. `package` selects the previously approved immutable output; `id` supplies the approved namespace. The reader does not verify a second signature or infer source grants from native files or required packages. |
+| `PluginRegistry::from_installed` | Read only the registered `plugin.ts` through bounded snapshot admission, then evaluate those bytes and verify the resulting ID. Do not use an independent unbounded source read. The filesystem adapter relies on the administrator's immutable-output authority; a temporary directory in a test is not installation authority. |
+| `plugin_policy.rs` | `include_str!` and explicit `@korri` composition own bundled Android source and namespace. Those bytes enter the same snapshot interface. Linux receipts and Android PackageManager do not authorize external Android plugin source. |
+| `plugins/retroarch/package.json` and `bun.lock` | These are the existing npm resolution and locked-source records (`effect` is `4.0.0-beta.78`). The current builder does **not** ship them or the policy's helper/dependency source. They are not yet registered runtime resolution inputs. |
+
+The first U1 slice supplies an in-memory, closed byte snapshot, not a resolver.
+Admission selects every identity explicitly. Source and resolution metadata,
+when registered, use the same byte accounting; JSON is not an unmetered side
+channel. Charge aggregate bytes, entry storage, identity storage and path
+traversal before reads or owned allocations. Check regular-file sizes before
+allocating content. Never use an unbounded `read_to_string` to construct a
+snapshot. Completed snapshots expose only their retained bytes, without a
+filesystem callback. Changing or deleting a file after admission cannot change
+those bytes. This does not make a mutable directory an atomic or trusted
+package; production still depends on immutable, verified Nix outputs.
+
+Identities are normalized, package-relative paths under one exact directory.
+Root ancestors must not be symlinks. Resolve selected relative symlink aliases
+with bounded traversal before assigning identity; the canonical target must
+also be explicitly selected. Reject escapes, loops, special files and missing
+inputs. A link to another store output is not an implicit source grant. The
+current single-file producer consequently still requires a regular `plugin.ts`.
+Absolute symlinks also fail, including links back into the same output. No
+recursive directory discovery or ancestor `node_modules` search is allowed.
+
+**Remaining registration gate:** full Effect loading needs an actual source-tree
+producer through the existing builder `source` boundary. It must ship original
+helper source, native npm metadata/lock and locked dependency source, and bind
+all selected resolution decisions and bytes to the package's authority. The
+current file-copy producer cannot prove that contract for an external source
+output. Do not invent a dependency manifest or extend the registry to compensate.
+Source-only cross-output registration, export conditions and full-graph approval
+must be settled against that producer before enabling imports. The first slice
+changes no persisted representation and grants no helper/dependency imports.
+
+The existing 128 KiB source ceiling remains the first slice's aggregate content
+ceiling, not a measured Effect graph limit. Bounded snapshot storage is not a
+bound on Oxc's parse/transform allocations or cancellation. A wall-clock check
+between parses cannot interrupt one parse. Preparation memory and cancellation
+remain release gates. QuickJS stays at 16 MiB / 250 ms; this checkpoint adds no
+platform APIs, timers, policy integration, device operations or deployment.
+
+### First U1 slice: shipped interface and verification
+
+`script::source::SourceSnapshot` has two admission adapters:
+`from_memory(sources, limits)` and `from_directory(root, names, limits)`.
+`bytes`, `text` and `identity` only query retained entries; they cannot resolve
+or read anything. `plugin(source)` and `package_plugin(package)` select the
+current single-file contract. `script::eval_plugin_snapshot` consumes that
+snapshot. `eval_plugin_ts`, bundled registration, installed registration and
+administrator declaration evaluation use this seam. The administrator passes
+that same source snapshot to its existing approval digest.
+
+`SnapshotLimits` is a Rust call argument, not persisted configuration. Its
+`bytes` bounds aggregate content, `entries` bounds entry slots and per-entry
+reference-counted buffer headers, `path_bytes` bounds cumulative name/scratch
+reservations, and `steps` bounds filesystem traversal. The shipped single-file
+adapters use 131,072 content bytes, one entry, and the platform `PATH_MAX` for
+both path reservations and traversal steps (4,096 on the tested Linux host).
+Tests vary each limit independently. Aliases share a canonical buffer;
+empty files still consume entry slots. Each symlink read reserves `PATH_MAX`
+bytes before the syscall. This conservative accounting may reject a graph long
+before its content ceiling. It is not a measured full-graph retention policy.
+
+Directory traversal uses descriptor-relative `openat` with `O_NOFOLLOW` and
+`O_NONBLOCK`; it does not canonicalize an unbounded path through libc. The
+snapshot checks regular-file length, reserves it, then reads exactly that many
+bytes into fixed-capacity storage. A final length check detects size changes
+without reading an unreserved sentinel byte. This bounds requested source
+storage, plus fixed descriptor/stack overhead. It does not bound allocator
+overhead, process RSS or Oxc allocations. Interruptible preparation and measured
+host-memory limits still block production graph enablement.
+The runtime-user launch process's separate source-path read is not migrated by
+this slice; U4 must carry source admission through that consumer as well.
+
+Focused verification uses the existing Rust toolchain, with Cargo locks frozen:
+
+```sh
+cargo test --offline --locked --manifest-path services/korrid/Cargo.toml --test script_sources
+TMPDIR=/dev/shm cargo test --offline --locked --manifest-path services/korrid/Cargo.toml --test script_sources
+cargo test --offline --locked --manifest-path services/korrid/Cargo.toml --lib script::
+cargo test --offline --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib --test declaration --test game_declaration
+```
+
+Verified on the build machine: 13 source tests pass on both `/tmp` and tmpfs;
+6 plugin-policy tests, 27 registry tests, 8 interpreter tests and 3 focused
+installed-launch tests pass. The latter run excludes the baseline failure below
+and leaves the built-payload test ignored. The administrator run passes 30 tests.
+Both crates pass all-targets `cargo check` and `cargo fmt --check`. Strict
+all-targets Clippy passes for the administrator host.
+
+The source contract suite includes filesystem and tmpfs admission, exact and
+aggregate limits, sparse oversized files, metadata accounting, canonical alias
+sharing, symlink cycles/escapes, special files, missing entries, frozen bytes and
+installed-registry rejection. A real Linux inotify access watch proves size
+rejection and unselected-target rejection happen without a content read; a
+positive-control read proves that the watch is active. The parent-component
+regression first failed with `alias.ts -> redirect/../plugin.ts` and
+`redirect -> real/deep`: lexical collapse selected the wrong `plugin.ts`.
+The corrected traversal resolves directory symlinks before `..`.
+
+**Existing failures outside this slice:** the installed launch suite's
+`real_linux_plugins_declare_immutable_file_keys_and_return_the_existing_retroarch_command`
+fails at `installed_game_launch.rs:421` on its `video_vsync` suffix assertion.
+The same command fails on an untouched archive of `c751233c`:
+
+```sh
+cargo test --offline --locked --manifest-path services/korrid/Cargo.toml --test installed_game_launch real_linux_plugins_declare_immutable_file_keys_and_return_the_existing_retroarch_command
+```
+
+Use a separate Cargo target directory for baseline archives; reusing one caused
+a stale baseline rlib to hide the new snapshot API. Cleaning only the local
+`korrid` package artifacts and rebuilding restored the source suite. Strict
+whole-korrid Clippy also reports existing errors outside the changed files,
+including `discovery/scanner.rs:184` and async test locks in `src/lib.rs`.
+Neither failure is fixed by expanding this source-admission slice.
+
 ## Shape
 
 ```
