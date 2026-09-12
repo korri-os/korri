@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#! nix-shell -i bash -p nix git coreutils jq gh python3
+#! nix-shell -i bash -p nix git coreutils curl jq gh python3
 # Publish what a Korri device installs to Korri's signed cache.
 #
 # A device may not build: nix/device-cache/nixos-module.nix forces max-jobs = 0
@@ -10,8 +10,8 @@
 # project asked for them, so it would publish whatever else that machine built.
 #
 # Nothing is uploaded that a cache the device already trusts can serve, Korri's
-# own cache included. Both lists come from the device being published, so there
-# is no list here to keep in step with anything.
+# own cache included. The list comes from the device being published, so there is
+# no list here to keep in step with anything.
 set -euo pipefail
 
 usage() {
@@ -90,11 +90,19 @@ for device in "${devices[@]}"; do
   trusted="$device_trusted"
 done
 
+# Korri's cache is checked separately, below. Its narinfos are GitHub release
+# assets, and a release download redirects to a signed URL carrying a query
+# string, which the publisher refuses to follow for a cache location. Handing it
+# to prepare therefore fails, so prepare gets the caches it can read and the one
+# it cannot is applied to prepare's own output afterwards.
 upstreams=()
 serves_us=0
 while IFS= read -r entry; do
-  [ "$entry" = "$ours" ] && serves_us=1
-  upstreams+=(--upstream-cache "$entry")
+  if [ "$entry" = "$ours" ]; then
+    serves_us=1
+  else
+    upstreams+=(--upstream-cache "$entry")
+  fi
 done <<<"$trusted"
 
 if [ "$serves_us" -eq 0 ]; then
@@ -102,10 +110,13 @@ if [ "$serves_us" -eq 0 ]; then
   exit 1
 fi
 
+if [ "${#upstreams[@]}" -eq 0 ]; then
+  echo "korri-cache: these devices trust no other cache, so every path would be uploaded" >&2
+  exit 1
+fi
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-# Korri's own cache stays in the list above, so a path it already serves is
-# dropped here instead of being uploaded a second time.
 store="${KORRI_CACHE_STORE:-$work/store}"
 
 # One release per day. GitHub caps a release at 1,000 assets, and a dated tag
@@ -117,6 +128,7 @@ if [ "$dry_run" -eq 1 ]; then
   echo "korri-cache: signing with $key into $store"
   echo "korri-cache: skipping whatever these caches already serve"
   printf '  %s\n' ${upstreams[@]+"${upstreams[@]}"} | grep -v -- '--upstream-cache'
+  echo "  $ours (checked after preparing, see the note in this script)"
   echo "korri-cache: uploading to $repo, NARs on $batch_tag, metadata on $metadata_tag"
   exit 0
 fi
@@ -141,7 +153,24 @@ python3 "$publisher" prepare "$store" "$work/prepared" \
   --nar-base-url "$download_base$batch_tag/" \
   "${upstreams[@]}"
 
+# Drop what Korri's cache already serves, so a second publish of the same
+# generation uploads only what changed. A narinfo is named after the store path
+# hash, so its presence identifies the exact path; compare StorePath anyway,
+# because a published narinfo is the claim being relied on.
 shopt -s nullglob
+republished=0
+for narinfo in "$work/prepared/metadata"/*.narinfo; do
+  hash="$(basename "$narinfo" .narinfo)"
+  curl -fsSL --max-time 60 -o "$work/remote.narinfo" "$ours$hash.narinfo" || continue
+  if grep -qxF "$(grep '^StorePath: ' "$narinfo")" "$work/remote.narinfo"; then
+    rm -f "$work/prepared/nars/$(sed -n 's|^URL: .*/||p' "$narinfo")" "$narinfo"
+    republished=$((republished + 1))
+  fi
+done
+if [ "$republished" -gt 0 ]; then
+  echo "korri-cache: $republished paths are already published, so they are not uploaded again"
+fi
+
 prepared=("$work/prepared/metadata"/*.narinfo)
 staged=("$store"/*.narinfo)
 
@@ -149,6 +178,7 @@ if [ "${#prepared[@]}" -eq 0 ]; then
   echo "korri-cache: all ${#staged[@]} paths are already served by a cache these devices trust"
   exit 0
 fi
+
 
 echo "korri-cache: ${#prepared[@]} of ${#staged[@]} paths are new, $(du -sh "$work/prepared/nars" | cut -f1) to upload"
 

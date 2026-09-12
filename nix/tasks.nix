@@ -169,13 +169,14 @@ let
 
     korri-nix-cache-publish = {
       description = "Build what named devices install and publish the paths no cache they trust already serves.";
-      usageSuffix = " -- <device>...";
+      usageSuffix = " -- [--dry-run] <device>...";
       runtimeInputs = [
         pkgs.nix
         pkgs.git
         pkgs.python3
         pkgs.jq
         pkgs.gh
+        pkgs.curl
         pkgs.coreutils
       ];
       script = ''

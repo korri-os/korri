@@ -29,15 +29,22 @@ would not be enough — a closure also holds hundreds of small NixOS-generated
 paths, unit files and `/etc` fragments among them, that no public cache serves
 and that no naming scheme identifies as Korri's.
 
-`publish.sh` asks the device being published which caches it trusts, and hands
-every one of them to `prepare` as an upstream, Korri's own cache included. So two
-kinds of path are dropped: those a public cache serves, and those Korri has
-already published. What remains is new. Nobody maintains a list, which makes the
-binding rule structural: **the publisher cannot skip a path because of a cache its
-consumers do not trust.** If it could, the device would resolve Korri's output and
-then fail on a dependency it has no source for — at install time, not at publish
-time. Adding a cache to `nix/base/default.nix` widens the filter in the same
-change.
+`publish.sh` asks the device being published which caches it trusts, and skips any
+path one of them can already serve. So two kinds of path are dropped: those a
+public cache serves, and those Korri has already published. What remains is new.
+Nobody maintains a list, which makes the binding rule structural: **the publisher
+cannot skip a path because of a cache its consumers do not trust.** If it could,
+the device would resolve Korri's output and then fail on a dependency it has no
+source for — at install time, not at publish time. Adding a cache to
+`nix/base/default.nix` widens the filter in the same change.
+
+Korri's own cache is the one entry `prepare` cannot check. A GitHub release
+download answers with a redirect to a signed URL carrying a query string, and
+`github-cache.py` refuses to follow a redirect like that for a cache location — a
+reasonable rule for a tool that treats cache URLs as trusted input. So `publish.sh`
+hands `prepare` the caches it can read, and applies Korri's own cache to
+`prepare`'s output itself, comparing `StorePath` in the published narinfo before
+dropping a path.
 
 `prepare` does not take the list on faith either: it fetches each upstream's
 `nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
