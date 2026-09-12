@@ -20,19 +20,24 @@ copy of the address.
 
 ## What goes in it
 
-Only outputs no public cache already serves. `github-cache.py prepare` takes a
-`--upstream-cache` per public cache and drops every path those caches can
-verify, so glibc, gcc-lib, avahi and the rest are never uploaded. The first
-publication signed ten paths and uploaded four: `korrid`, `korri-inputd`,
-`korri-portal`, `korri-kiosk`, 9.0 MB total.
+What a device installs, minus what it can already get elsewhere.
 
-Nobody maintains that list of caches. `upload-staged.sh` reads the substituters
-a real device trusts and treats every entry except Korri's own as an upstream to
-filter against, which makes the binding rule structural: **the publisher cannot
-skip a path because of a cache its consumers do not trust.** If it could, the
-device would resolve Korri's output and then fail on a dependency it has no
-source for — at install time, not at publish time. Adding a cache to
-`nix/base/default.nix` widens the filter in the same change.
+The unit of publication is a device's system closure, because that is the unit a
+device installs and it may not build any of it: `nix/device-cache/nixos-module.nix`
+forces `max-jobs = 0` and `fallback = false`. Publishing only Korri's own packages
+would not be enough — a closure also holds hundreds of small NixOS-generated
+paths, unit files and `/etc` fragments among them, that no public cache serves
+and that no naming scheme identifies as Korri's.
+
+`publish.sh` asks the device being published which caches it trusts, and hands
+every one of them to `prepare` as an upstream, Korri's own cache included. So two
+kinds of path are dropped: those a public cache serves, and those Korri has
+already published. What remains is new. Nobody maintains a list, which makes the
+binding rule structural: **the publisher cannot skip a path because of a cache its
+consumers do not trust.** If it could, the device would resolve Korri's output and
+then fail on a dependency it has no source for — at install time, not at publish
+time. Adding a cache to `nix/base/default.nix` widens the filter in the same
+change.
 
 `prepare` does not take the list on faith either: it fetches each upstream's
 `nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
@@ -40,7 +45,14 @@ a path, so a wrong list over-publishes rather than breaking a closure.
 
 This matters more than it sounds. `nix copy` works on closures, so publishing
 `inputplumber-korri` without the filter would upload 2198 MiB to deliver
-136 MiB of InputPlumber.
+136 MiB of InputPlumber. The first publication signed ten paths and uploaded
+four — `korrid`, `korri-inputd`, `korri-portal`, `korri-kiosk`, 9.0 MB total.
+
+Publishing deliberately does **not** happen through a machine-wide Nix
+`post-build-hook`. A hook is handed store paths with no idea which project asked
+for them, so on a machine that builds anything else it would publish that too —
+including the builder's own system closure. The closure Korri cares about is known
+when Korri builds it, so that is where publishing happens.
 
 ## Signing
 
@@ -66,19 +78,27 @@ everywhere; a signature bypass is never the fix for a failed download.
 `nix/github-cache.py`, unchanged apart from this note, so both repositories
 publish the same format and a consumer needs one importer.
 
-A builder publishes with one command and no arguments:
+Name the devices, from any checkout, on any machine that can build them:
 
 ```sh
-nix run .#korri-nix-cache-upload               # or -- --dry-run
+nix run .#korri-nix-cache-publish -- odin2portal rg353m
 ```
 
-`post-build-hook.sh` signs every locally built path into a staging file cache
-(`/var/cache/korri-nix-cache` by default), which is fast and never fails a
-build. `upload-staged.sh` is the batch half: it derives the upstream filter,
-prepares a batch, creates that day's `batch-<date>` release if it is missing,
-uploads NARs and then metadata, and clears the staged entries it handled. An
-idle builder exits 0 without contacting GitHub, so a timer failure always means
-a real failure.
+That builds each device's system closure, signs it into a local NAR cache with
+this machine's key, drops every path a cache the device trusts already serves,
+creates that day's `batch-<date>` release if it is missing, and uploads NARs and
+then metadata. Nothing else on the machine is touched or inspected.
+
+Two environment variables change how it runs:
+
+| Variable | Effect |
+|---|---|
+| `KORRI_CACHE_SECRET_KEY` | This builder's signing key. Defaults to `~/.config/korri/cache-key.secret`, and must be private and outside the store. |
+| `KORRI_CACHE_STORE` | Keep the local NAR cache at this path instead of a temporary directory, so a later publish does not compress the same paths again. |
+
+Compression is zstd, not Nix's default xz. Most of a device closure is public and
+is dropped moments after it is compressed, so the work is thrown away either way
+and the fast setting is the honest one.
 
 The underlying steps stay available for one-off work:
 

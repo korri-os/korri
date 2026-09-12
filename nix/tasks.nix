@@ -167,9 +167,9 @@ let
       '';
     };
 
-    korri-nix-cache-upload = {
-      description = "Upload this builder's staged outputs to korri-os/nix-cache, skipping anything already publicly cached.";
-      usageSuffix = " -- [--staging DIR] [--dry-run]";
+    korri-nix-cache-publish = {
+      description = "Build what named devices install and publish the paths no cache they trust already serves.";
+      usageSuffix = " -- <device>...";
       runtimeInputs = [
         pkgs.nix
         pkgs.git
@@ -179,7 +179,7 @@ let
         pkgs.coreutils
       ];
       script = ''
-        exec bash "$KORRI_ROOT/nix/cache/upload-staged.sh" "$@"
+        exec bash "$KORRI_ROOT/nix/cache/publish.sh" "$@"
       '';
     };
 

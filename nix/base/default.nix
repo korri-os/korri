@@ -48,9 +48,10 @@ in
   nix.checkConfig = false;
 
   nix.settings = {
-    # This list is also the publisher's filter list: nix/cache/upload-staged.sh
-    # treats every entry except Korri's own as a cache it may skip. Add one here
-    # and the publisher widens in the same change, by construction.
+    # This list is also the publisher's filter list: nix/cache/publish.sh asks a
+    # device which caches it trusts and skips any path one of them already
+    # serves. Add one here and the publisher widens in the same change, by
+    # construction.
     substituters = [
       "https://cache.nixos.org/"
       korriCache.url
