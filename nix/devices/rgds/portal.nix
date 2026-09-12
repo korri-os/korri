@@ -13,6 +13,18 @@
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
+  inputplumberData = import ../../../services/inputd/nix/inputplumber-data.nix { inherit pkgs; };
+  # InputPlumber found this board's buttons but had no profile for them, so it
+  # never built a controller target and only the touchscreens worked.
+  inputplumber = inputplumberData.composeResolved {
+    inputplumberKorri = korri.packages.${system}.inputplumber-korri;
+    additionalDataPackages = [
+      (import ./inputplumber-data.nix {
+        inherit pkgs;
+        inputplumber = korri.packages.${system}.inputplumber-korri;
+      })
+    ];
+  };
 in
 {
   imports = [
@@ -40,12 +52,12 @@ in
   services.korriBundle.initialPackage = import ../../../services/inputd/nix/korri-bundle.nix {
     inherit pkgs;
     inputdPackage = korri.packages.${system}.korri-inputd;
-    inputplumberKorri = korri.packages.${system}.inputplumber-korri;
+    inputplumberKorri = inputplumber;
     korridPackage = korri.packages.${system}.korrid;
   };
   services.korriBundle.launcherPackage = korri.packages.${system}.korri-inputd;
   services.korriLinuxInput = {
-    provider.package = korri.packages.${system}.inputplumber-korri;
+    provider.package = inputplumber;
     inputd.package = korri.packages.${system}.korri-inputd;
   };
   services.korridLinuxDevice.package = korri.packages.${system}.korrid;

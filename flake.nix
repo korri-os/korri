@@ -152,6 +152,7 @@
           // pluginHost.packages
           // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-kiosk = import ./services/kiosk/package.nix { inherit pkgs crane; };
@@ -218,6 +219,7 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            rgds-inputplumber = self.packages.${system}.rgds-inputplumber-data;
             rgds-initrd-modules = rgds.initrdModulesCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
