@@ -1,0 +1,459 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Device tree for the AISLPC R36T Max handheld.
+ *
+ * Copyright (c) 2026 Simon W. Jackson
+ *
+ * Written against mainline conventions so it can be submitted upstream, and
+ * usable as-is if it never is. Values come from the running device: the
+ * display controller for panel timings, resolved phandles from the vendor
+ * device tree for GPIO assignments, and measured SDIO behaviour for the
+ * Wi-Fi bus. Nothing is copied from the vendor tree's structure, which is a
+ * generic Rockchip EVB with board nodes grafted onto it.
+ *
+ * Closest upstream relative is rk3326-anbernic-rg351m.dtsi: same SoC, same
+ * RK817 PMIC, same audio routing, same SD card wiring. Where this board
+ * agrees with it, it deliberately says the same thing.
+ *
+ * Unresolved, and deliberately absent rather than guessed:
+ *
+ *  - Buttons. The vendor driver takes 19 GPIOs as one ordered list with no
+ *    labels and assigns key codes by position inside a non-mainline driver.
+ *    The pins are known (gpio3 PB3..PD3, gpio2 PB5, PB6, gpio3 PB2) but
+ *    which pin is which button is not derivable from the device tree and
+ *    needs testing on hardware. gpio-keys is therefore not written yet.
+ *  - Analog sticks. Four SARADC channels are known; the axis mapping and
+ *    calibration ranges need the same hardware pass, then an adc-joystick
+ *    node in the mainline binding rather than the vendor's play_joystick.
+ */
+
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include "rk3326.dtsi"
+
+/ {
+	model = "AISLPC R36T Max";
+	compatible = "aislpc,r36t-max", "rockchip,rk3326";
+
+	aliases {
+		mmc0 = &sdmmc;
+	};
+
+	chosen {
+		/*
+		 * UART5, not the UART2 that most RK3326 boards use. The stock
+		 * kernel is started with earlycon at 0xff178000, which is
+		 * UART5 on this SoC. Boards in this clone family share the
+		 * wiring; ROCKNIX retunes its DDR blob for the same reason.
+		 */
+		stdout-path = "serial5:1500000n8";
+	};
+
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm1 0 25000 0>;
+		power-supply = <&vcc_bl>;
+	};
+
+	/*
+	 * Supplies the panel's 1.8 V rail. Held on by the bootloader; the
+	 * regulator core switches unclaimed rails off a few seconds after
+	 * boot, which on a panel rail means the display goes dark once
+	 * userspace is up.
+	 */
+	vcc18_lcd_n: regulator-vcc18-lcd-n {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+		regulator-name = "vcc18_lcd_n";
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc_3v3>;
+
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
+	/* Ring lights around both analog sticks. */
+	vcc_led: regulator-vcc-led {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&led_vcc_en>;
+		regulator-name = "vcc_led";
+		vin-supply = <&vcc_3v3>;
+	};
+
+	vccsys: regulator-vccsys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		clocks = <&cru SCLK_WIFI_PMU>;
+		clock-names = "ext_clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		post-power-on-delay-ms = <100>;
+		/*
+		 * The vendor tree declares this active-high. On a mainline
+		 * kernel that inverts what mmc-pwrseq-simple asserts, and the
+		 * June bring-up measured the result directly: active-high
+		 * stopped SDIO enumerating at all, reporting
+		 * "mmc2: Failed to initialize a non-removable card".
+		 * Active-low enumerates, downloads firmware, and associates.
+		 */
+		reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>;
+	};
+
+	rk817-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "rk817_int";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,hp-det-gpios = <&gpio2 RK_PC6 GPIO_ACTIVE_HIGH>;
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphones",
+			"Speaker", "Speaker";
+		simple-audio-card,routing =
+			"MICL", "Mic Jack",
+			"Headphones", "HPOL",
+			"Headphones", "HPOR",
+			"Speaker", "SPKO";
+
+		simple-audio-card,codec {
+			sound-dai = <&rk817>;
+		};
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1_2ch>;
+		};
+	};
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&display_subsystem {
+	status = "okay";
+};
+
+&dsi {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	ports {
+		mipi_out: port@1 {
+			reg = <1>;
+
+			mipi_out_panel: endpoint {
+				remote-endpoint = <&mipi_in_panel>;
+			};
+		};
+	};
+
+	/*
+	 * 720x720 at 61 Hz on a 50 MHz pixel clock, four DSI lanes. Read
+	 * from the display controller while the stock system was running:
+	 *
+	 *   Display mode: 720x720p61  clk[50000]
+	 *   H: 720 860 940 1080       V: 720 740 744 764
+	 *
+	 * Note that /sys/class/graphics/fb0 reports 680x680 on the stock
+	 * system. That is the plane, inset 20 px inside the display, not the
+	 * panel.
+	 *
+	 * The mode itself lives in the panel driver, not here: mainline's
+	 * ST7703 driver carries per-compatible timings and init sequences in
+	 * C. This board needs its own compatible there, because its glass
+	 * wants SETVCOM 0x97 0x97 and SETPOWER_EXT 0x26 0x22 where the
+	 * RG353M's wants 0x7f 0x7f and 0x26 0x62 -- the two registers that
+	 * decide whether an ST7703 reports ready and still draws nothing.
+	 */
+	panel: panel@0 {
+		compatible = "aislpc,r36t-max-panel", "sitronix,st7703";
+		reg = <0>;
+		backlight = <&backlight>;
+		reset-gpios = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
+		iovcc-supply = <&vcc18_lcd_n>;
+		vcc-supply = <&vcc_3v3>;
+
+		port {
+			mipi_in_panel: endpoint {
+				remote-endpoint = <&mipi_out_panel>;
+			};
+		};
+	};
+};
+
+&dsi_dphy {
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&i2c0 {
+	clock-frequency = <400000>;
+	i2c-scl-falling-time-ns = <16>;
+	i2c-scl-rising-time-ns = <280>;
+	status = "okay";
+
+	rk817: pmic@20 {
+		compatible = "rockchip,rk817";
+		reg = <0x20>;
+		#clock-cells = <1>;
+		clock-names = "mclk";
+		clock-output-names = "rk808-clkout1", "xin32k";
+		clocks = <&cru SCLK_I2S1_OUT>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PB2 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-0 = <&pmic_int>, <&i2s1_2ch_mclk>;
+		pinctrl-names = "default";
+		#sound-dai-cells = <0>;
+		wakeup-source;
+
+		vcc1-supply = <&vccsys>;
+		vcc2-supply = <&vccsys>;
+		vcc3-supply = <&vccsys>;
+		vcc4-supply = <&vccsys>;
+		vcc5-supply = <&vccsys>;
+		vcc6-supply = <&vccsys>;
+		vcc7-supply = <&vccsys>;
+		vcc8-supply = <&vccsys>;
+
+		regulators {
+			vdd_logic: DCDC_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1150000>;
+				regulator-name = "vdd_logic";
+				regulator-ramp-delay = <6001>;
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <950000>;
+				};
+			};
+
+			vdd_arm: DCDC_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-name = "vdd_arm";
+				regulator-ramp-delay = <6001>;
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <950000>;
+				};
+			};
+
+			vcc_ddr: DCDC_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc_ddr";
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+				};
+			};
+
+			vcc_3v3: DCDC_REG4 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc_3v3";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
+				};
+			};
+
+			vcc_1v8: LDO_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcc_1v8";
+
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
+				};
+			};
+
+			vcc_bl: LDO_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc_bl";
+
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+		};
+
+		rk817_codec: codec {
+			rockchip,mic-in-differential;
+		};
+	};
+};
+
+&i2s1_2ch {
+	status = "okay";
+};
+
+&io_domains {
+	vccio1-supply = <&vcc_3v3>;
+	vccio2-supply = <&vccio_sd>;
+	vccio3-supply = <&vcc_3v3>;
+	vccio4-supply = <&vcc_3v3>;
+	vccio5-supply = <&vcc_3v3>;
+	vccio6-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+&pmu_io_domains {
+	pmuio1-supply = <&vcc3v3_pmu>;
+	pmuio2-supply = <&vcc3v3_pmu>;
+	status = "okay";
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&saradc {
+	vref-supply = <&vcc_1v8>;
+	status = "okay";
+};
+
+/* SDIO, Wi-Fi only. */
+&sdio {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	/*
+	 * 25 MHz, not the 50 the bus is capable of. Measured: at 50 MHz the
+	 * card enumerates but RK915 firmware reset times out with -110.
+	 * 25 MHz holds the bus stable long enough for firmware download,
+	 * reset, scan, and association.
+	 */
+	max-frequency = <25000000>;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	no-mmc;
+	no-sd;
+	vqmmc-supply = <&vcc_1v8>;
+	status = "okay";
+
+	/*
+	 * RK915 over SDIO. There is no mainline driver for this part, so the
+	 * node exists to power and clock the bus correctly; the driver is
+	 * carried out of tree along with rk915_fw.bin and rk915_patch.bin.
+	 * Host wake is gpio0 RK_PA5.
+	 */
+};
+
+&sdmmc {
+	cap-sd-highspeed;
+	card-detect-delay = <200>;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vmmc-supply = <&vcc_sd>;
+	vqmmc-supply = <&vccio_sd>;
+	status = "okay";
+};
+
+&tsadc {
+	status = "okay";
+};
+
+&u2phy {
+	status = "okay";
+
+	u2phy_host: host-port {
+		status = "okay";
+	};
+
+	u2phy_otg: otg-port {
+		status = "okay";
+	};
+};
+
+&usb20_otg {
+	status = "okay";
+};
+
+&uart5 {
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&pinctrl {
+	leds {
+		led_vcc_en: led-vcc-en {
+			rockchip,pins = <2 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	pmic {
+		pmic_int: pmic-int {
+			rockchip,pins = <0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	wifi {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake: wifi-host-wake {
+			rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+};
