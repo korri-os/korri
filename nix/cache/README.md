@@ -11,11 +11,12 @@ metadata    release tag `cache`   — mutable: nix-cache-info and signed .narinf
 payloads    release tag `batch-*` — NAR files, one release per batch
 ```
 
-That address is written once, in `nix/cache/url.nix`. `nix/base/default.nix`
-builds every device's substituter list from it, the flake re-exports it as
-`cache` for the publisher and for other repositories that configure these
-machines, and `nix flake check` warns about the unknown output — a warning worth
-more than a second copy of the URL.
+That address is written once, in `nix/cache/identity.nix`, together with the keys
+that may sign for it. `nix/base/default.nix` builds every device's substituter
+and trusted-key lists from it, the flake re-exports it as `cache` for the
+publisher and for the repositories that configure Korri's builders, and `nix
+flake check` warns about the unknown output — a warning worth more than a second
+copy of the address.
 
 ## What goes in it
 
@@ -50,6 +51,10 @@ reissuing the others.
 |---|---|
 | fuji (aarch64) | `korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ=` |
 | zao (x86_64) | `korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4=` |
+
+`nix/cache/identity.nix` holds that list. Adding a builder means adding its key
+there, and revoking one means deleting its line; both devices and builders read
+the result, so there is no second list to remember.
 
 Secrets live at `~/.config/korri/cache-key.secret` on each builder, mode 0600,
 and are backed up outside this repository. `require-sigs = true` stays on

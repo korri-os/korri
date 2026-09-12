@@ -2,7 +2,7 @@
 # This module chooses neither a board nor an image format.
 { pkgs, ... }:
 let
-  korriCache = import ../cache/url.nix;
+  korriCache = import ../cache/identity.nix;
 in
 {
   imports = [ ./wifi.nix ];
@@ -57,9 +57,8 @@ in
     ];
     trusted-public-keys = [
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      "korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ="
-      "korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4="
-    ];
+    ]
+    ++ korriCache.publicKeys;
     experimental-features = [
       "nix-command"
       "flakes"
