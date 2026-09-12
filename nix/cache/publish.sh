@@ -15,18 +15,29 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: publish.sh [--dry-run] <device>..." >&2
+  echo "usage: publish.sh [--dry-run] [--package ATTR]... [<device>...]" >&2
   echo "       KORRI_CACHE_SECRET_KEY  this builder's signing key" >&2
   echo "       KORRI_CACHE_STORE       keep the local NAR cache here to reuse it" >&2
 }
 
 dry_run=0
 devices=()
+packages=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run)
       dry_run=1
       shift
+      ;;
+    # A device's closure is the unit that matters, but part of it is produced by
+    # derivations of another system: an aarch64 device carries a kernel that is
+    # cross-built on x86_64. A machine of that other system can publish those
+    # outputs on their own, so a machine that has neither has nothing left to
+    # build. Without this, an aarch64 CI runner is stuck the first time the
+    # kernel changes.
+    --package)
+      packages+=("${2:?--package needs a flake attribute}")
+      shift 2
       ;;
     -*)
       usage
@@ -39,7 +50,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ "${#devices[@]}" -eq 0 ]; then
+if [ "${#devices[@]}" -eq 0 ] && [ "${#packages[@]}" -eq 0 ]; then
   usage
   exit 2
 fi
@@ -59,7 +70,7 @@ if [ -n "$(find "$key" -perm /0077 -maxdepth 0)" ] || [ "${key#/nix/store/}" != 
 fi
 
 mapfile -t known < <(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]')
-for device in "${devices[@]}"; do
+for device in ${devices[@]+"${devices[@]}"}; do
   if ! printf '%s\n' "${known[@]}" | grep -qxF "$device"; then
     echo "korri-cache: $device is not a Korri device; known: ${known[*]}" >&2
     exit 1
@@ -76,8 +87,16 @@ download_base="$(jq -r .downloadBase <<<"$cache")"
 # list, is what keeps the publisher from filtering against a cache a device does
 # not trust: that would leave the device able to fetch Korri's output and unable
 # to fetch something it depends on, at install time rather than at publish time.
+# Every device shares nix/base, so any of them answers the question. When only
+# packages are published there is still a device to ask: the caches a consumer
+# trusts do not depend on which output is being published.
+reference_devices=("${devices[@]}")
+if [ "${#reference_devices[@]}" -eq 0 ]; then
+  reference_devices=("${known[0]}")
+fi
+
 trusted=""
-for device in "${devices[@]}"; do
+for device in "${reference_devices[@]}"; do
   device_trusted="$(
     nix eval --json \
       ".#nixosConfigurations.$device.config.nix.settings.substituters" |
@@ -124,7 +143,7 @@ store="${KORRI_CACHE_STORE:-$work/store}"
 batch_tag="batch-$(date -u +%Y-%m-%d)"
 
 if [ "$dry_run" -eq 1 ]; then
-  echo "korri-cache: would publish ${devices[*]}"
+  echo "korri-cache: would publish ${devices[*]-} ${packages[*]-}"
   echo "korri-cache: signing with $key into $store"
   echo "korri-cache: skipping whatever these caches already serve"
   printf '  %s\n' ${upstreams[@]+"${upstreams[@]}"} | grep -v -- '--upstream-cache'
@@ -136,12 +155,18 @@ fi
 mkdir -p "$store"
 
 outputs=()
-for device in "${devices[@]}"; do
+for device in ${devices[@]+"${devices[@]}"}; do
   echo "korri-cache: building what $device installs"
   outputs+=("$(
     nix build --no-link --print-out-paths \
       ".#nixosConfigurations.$device.config.system.build.toplevel"
   )")
+done
+for package in ${packages[@]+"${packages[@]}"}; do
+  echo "korri-cache: building $package"
+  while IFS= read -r out; do
+    outputs+=("$out")
+  done < <(nix build --no-link --print-out-paths ".#$package")
 done
 
 # zstd rather than the default xz: most of a device closure is public and will be
@@ -198,4 +223,4 @@ for part in nars metadata; do
     --repo "$repo" --tag "$batch_tag" --cache-tag "$metadata_tag" --part "$part"
 done
 
-echo "korri-cache: ${devices[*]} published to $ours"
+echo "korri-cache: ${devices[*]-} ${packages[*]-} published to $ours"

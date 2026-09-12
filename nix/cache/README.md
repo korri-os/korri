@@ -70,6 +70,12 @@ reissuing the others.
 |---|---|
 | fuji (aarch64) | `korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ=` |
 | zao (x86_64) | `korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4=` |
+| CI | `korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c=` |
+
+CI's key is the weakest of the three. It lives in GitHub Actions secrets, so
+anyone who can land a workflow change can sign with it, and it is trusted because
+a device that cannot install what CI built gains nothing from CI. Revoking it is
+the same one-line deletion as revoking a machine.
 
 `nix/cache/identity.nix` holds that list. Adding a builder means adding its key
 there, and revoking one means deleting its line; both devices and builders read
@@ -106,6 +112,29 @@ Two environment variables change how it runs:
 Compression is zstd, not Nix's default xz. Most of a device closure is public and
 is dropped moments after it is compressed, so the work is thrown away either way
 and the fast setting is the honest one.
+
+### From CI
+
+`.github/workflows/nix-cache.yml` runs the same command on every push to main, on
+GitHub-hosted runners, so publishing never waits for a machine of ours to be
+awake. It has no `pull_request` trigger: the workflow holds a signing key, and a
+fork must not reach it.
+
+It takes two jobs because a device closure is not one architecture. The
+odin2portal closure holds 544 x86_64 derivations beside 6460 aarch64 ones — the
+kernel and firmware are cross-built, by design, because the aarch64 builder cannot
+spare the disk. The x86_64 job publishes those outputs first with `--package`, and
+the aarch64 job then substitutes them rather than failing on work its runner
+cannot do.
+
+That is also why `--package` exists. A device closure is the unit that matters,
+but a machine can only publish the part of it that its own system can build.
+
+CI needs two secrets on `korri-os/korri`: `KORRI_CACHE_SECRET_KEY`, the CI signing
+key, and `KORRI_CACHE_GITHUB_TOKEN`, a token with contents write access to
+`korri-os/nix-cache` and nothing else. The automatic `GITHUB_TOKEN` cannot be used
+— it is scoped to this repository, and the cache lives in another one, which is
+part of why the cache has its own repository.
 
 The underlying steps stay available for one-off work:
 

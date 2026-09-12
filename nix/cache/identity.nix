@@ -27,5 +27,9 @@ in
   publicKeys = [
     "korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ="
     "korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4="
+    # CI's key is the weakest of the three: it lives in GitHub Actions secrets,
+    # so anyone who can land a workflow change can sign with it. It is here
+    # because a device that cannot install what CI built gains nothing from CI.
+    "korri-cache-ci-1:iH8gsPMtGrreeuXt2kt6M2ca+y4u/dO+T2km6AUuI8c="
   ];
 }

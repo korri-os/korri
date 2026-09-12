@@ -1,0 +1,95 @@
+# Publish what devices install to Korri's signed Nix cache.
+#
+# A device may not build: nix/device-cache/nixos-module.nix forces max-jobs = 0
+# and fallback = false. Anything a generation needs and no public cache serves
+# has to be in Korri's cache before the device can install it, so this runs on
+# every push to main rather than on demand.
+#
+# Two jobs because a device closure is not one architecture. The odin2portal
+# closure holds 544 x86_64 derivations beside 6460 aarch64 ones: the kernel and
+# firmware are cross-built. The x86_64 job publishes those outputs first, so the
+# aarch64 job substitutes them instead of failing on work it cannot do.
+#
+# Both runners are GitHub-hosted and native, so no build depends on a machine of
+# ours being awake. There is no pull_request trigger: this workflow holds a
+# signing key, and a fork must never reach it.
+name: nix-cache
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: nix-cache
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cross:
+    name: cross-built outputs (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Before Nix is installed: this reformats the runner's spare disk into
+      # /nix. A GitHub runner otherwise offers about 20 GB, and a kernel build
+      # needs more than that.
+      - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+        with:
+          hatchet-protocol: cleave
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
+      - name: Stage the signing key
+        env:
+          SIGNING_KEY: ${{ secrets.KORRI_CACHE_SECRET_KEY }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
+          printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
+
+      # The one list here that is not derived. These are the x86_64 attributes
+      # whose outputs land in a device's runtime closure; anything else x86_64
+      # in that closure is build-time only and already on a public cache.
+      - name: Publish cross-built outputs
+        env:
+          KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
+          GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
+        run: |
+          nix run .#korri-nix-cache-publish -- \
+            --package packages.x86_64-linux.odin2portal-kernel \
+            --package packages.x86_64-linux.odin2portal-rescue-kernel \
+            --package packages.x86_64-linux.odin2portal-firmware \
+            --package packages.x86_64-linux.rgds-kernel \
+            --package packages.x86_64-linux.rgds-uboot \
+            --package packages.x86_64-linux.korri-chromium-aarch64 \
+            --package packages.x86_64-linux.korri-portal
+
+  devices:
+    name: device closures (aarch64)
+    needs: cross
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+        with:
+          hatchet-protocol: cleave
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
+      - name: Stage the signing key
+        env:
+          SIGNING_KEY: ${{ secrets.KORRI_CACHE_SECRET_KEY }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
+          printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
+
+      - name: Publish device closures
+        env:
+          KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
+          GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
+        run: |
+          nix run .#korri-nix-cache-publish -- odin2portal rg353m rgds
