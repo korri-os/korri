@@ -4,10 +4,17 @@
 # hours and competes with everything else that machine is doing, so this runs
 # the same derivations on a runner instead.
 #
-# workflow_dispatch only, and deliberately no push trigger. nix-cache.yml runs
-# on every push to main and holds a signing key, so adding a push trigger here
-# would make a routine kernel build kick off a cache publish as a side effect.
-# Dispatch this against a branch ref; nothing needs to reach main.
+# Never triggered from main. nix-cache.yml runs on every push to main and
+# holds a signing key, so a trigger there would make a routine kernel build
+# kick off a cache publish as a side effect.
+#
+# That rules out dispatching this the obvious way: GitHub only offers
+# workflow_dispatch for workflows already on the default branch, so reaching
+# the dispatch button would mean putting the file on main first. A push
+# trigger scoped to this spike branch has no such restriction and keeps the
+# whole thing off main.
+#
+# The workflow_dispatch trigger is kept for the day this does live on main.
 #
 # Nothing here publishes. The unit of publication is a device's system closure
 # and this board is not a device yet, so there is nothing for the publisher to
@@ -19,6 +26,8 @@
 name: rk3326-kernel
 
 on:
+  push:
+    branches: [spike/rk3326-kernel]
   workflow_dispatch:
     inputs:
       target:
@@ -39,7 +48,7 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ inputs.target }}
+    name: ${{ inputs.target || 'boardKernelCross' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,4 +68,4 @@ jobs:
           # need one.
           KORRI_AARCH64_BUILDER: none
         run: |
-          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target }}"
+          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'boardKernelCross' }}"
