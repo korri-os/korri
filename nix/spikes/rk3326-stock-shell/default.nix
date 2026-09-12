@@ -20,4 +20,16 @@ in
   # key generator, which is what fits on a card and runs with no runtime
   # dependencies on the host filesystem.
   dropbearStatic = pkgs.pkgsStatic.dropbear;
+
+  # The board device tree, compiled against a mainline kernel's sources
+  # without building a kernel.
+  boardDtb = pkgs.callPackage ./dts/dtb.nix {
+    kernel = pkgs.linuxPackages_latest.kernel;
+  };
+
+  # Stock mainline plus the board device tree. No panel driver yet; see
+  # dts/kernel.nix for why that is deliberate.
+  boardKernel = pkgs.callPackage ./dts/kernel.nix {
+    linuxPackages = pkgs.linuxPackages_latest;
+  };
 }

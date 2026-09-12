@@ -45,8 +45,12 @@ PY
 # `--impure` is needed only to read this checkout's spike files by absolute
 # path. Nixpkgs is still pinned by revision, and `import` of a directory
 # reads it in place rather than copying it into the store.
+# Fields are uri, systems, sshKey, maxJobs, speedFactor, supportedFeatures.
+# big-parallel has to be declared or the kernel refuses to build here: it
+# asks for that feature and Nix will not schedule it on a builder that does
+# not claim it.
 exec nix build --impure --print-out-paths --no-link \
-  --builders "$builder_host aarch64-linux $builder_key 4" \
+  --builders "$builder_host aarch64-linux $builder_key 4 1 big-parallel" \
   --expr "
     let
       nixpkgs = builtins.getFlake \"github:NixOS/nixpkgs/${nixpkgs_rev}\";
