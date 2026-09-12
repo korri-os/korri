@@ -35,9 +35,14 @@ let
     assert builtins.fromJSON c.environment.etc."korri-plugin-host/publishers.json".text == binding;
     assert builtins.elem publicKey c.nix.settings.trusted-public-keys;
     assert host.officialCatalogUrl == null;
-    # The plugin cache is selected explicitly by the importer, not installed
-    # as a general substitute source for device generations.
-    assert c.nix.settings.substituters == [ "https://cache.nixos.org/" ];
+    # The plugin cache is still selected explicitly by the importer and is not
+    # a general substitute source. The Korri cache is different: device
+    # generations are delivered from it, so it is configured here. Both stay
+    # signature-checked.
+    assert c.nix.settings.substituters == [
+      "https://cache.nixos.org/"
+      "https://github.com/korri-os/nix-cache/releases/download/cache/"
+    ];
     assert c.nix.settings.max-jobs == 0;
     assert c.nix.settings.builders == "";
     assert !c.nix.distributedBuilds;

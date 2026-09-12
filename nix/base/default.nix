@@ -25,9 +25,40 @@
 
   environment.systemPackages = [ pkgs.iw ];
   documentation.enable = false;
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
+
+  # Korri's own outputs are not on any public cache, and devices may not build
+  # them: nix/device-cache/nixos-module.nix forces max-jobs = 0 and
+  # fallback = false. Without a Korri cache a device generation can only be
+  # delivered by rewriting the card. korri-os/nix-cache serves those outputs
+  # over the standard cache protocol; see nix/cache/README.md.
+  #
+  # Each builder signs with its own key, so a machine can be revoked by
+  # removing one line here. require-sigs stays true and no signature bypass is
+  # permitted; an unsigned path fails the download instead of being built.
+  # nixpkgs validates a generated nix.conf by building a check derivation for
+  # the target system. These configurations are aarch64, so adding any
+  # substituter makes every x86_64 evaluation of a device config require an
+  # aarch64 builder; without one, Nix 2.31 fails with the misleading
+  # "experimental Nix feature 'dynamic-derivations' is disabled". The check
+  # was run once against the real conf on fuji and passed. Turn it off so the
+  # layout check and CI stay self-contained on x86_64, and re-enable it when
+  # aarch64 build capacity is configured everywhere that evaluates these.
+  nix.checkConfig = false;
+
+  nix.settings = {
+    substituters = [
+      "https://cache.nixos.org/"
+      "https://github.com/korri-os/nix-cache/releases/download/cache/"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "korri-cache-fuji-1:E8MOww6FoNRlVavEll8JPc2XHYC4HhZnrhqQcd64OtQ="
+      "korri-cache-zao-1:thKjQnMnPl8AqTuZWJTn+ej9BORTPqzleGue4ZfJ2u4="
+    ];
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+  };
   system.stateVersion = "25.11";
 }

@@ -151,6 +151,22 @@ let
         exec python3 "$KORRI_ROOT/nix/devices/rgds/verify-image.py" "$@"
       '';
     };
+    korri-nix-cache = {
+      description = "Publish Korri's own outputs to korri-os/nix-cache as a signed Nix binary cache.";
+      usageSuffix = " -- <export|prepare|upload|combine|validate> ...";
+      # gh is included deliberately: upload shells out to it, and a task that
+      # needs a tool the app does not provide fails at the worst moment.
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.python3
+        pkgs.gh
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/cache/github-cache.py" "$@"
+      '';
+    };
+
     odin2portal-cross-cache = {
       description = "Build/export or import Odin Linux cross inputs through a signed, revision-bound Nix cache.";
       usageSuffix = " -- <export|import> <directory>";
