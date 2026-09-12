@@ -34,10 +34,11 @@ on:
         description: "What to build"
         type: choice
         options:
+          - boardKernelTrimmedCross
           - boardDtbCross
           - boardKernelCross
         required: true
-        default: boardKernelCross
+        default: boardKernelTrimmedCross
 
 permissions:
   contents: read
@@ -48,7 +49,7 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ inputs.target || 'boardKernelCross' }}
+    name: ${{ inputs.target || 'boardKernelTrimmedCross' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,4 +69,4 @@ jobs:
           # need one.
           KORRI_AARCH64_BUILDER: none
         run: |
-          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'boardKernelCross' }}"
+          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'boardKernelTrimmedCross' }}"

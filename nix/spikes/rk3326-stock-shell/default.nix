@@ -46,4 +46,10 @@ in
   boardKernelCross = crossPkgs.callPackage ./dts/kernel.nix {
     linuxPackages = crossPkgs.linuxPackages_latest;
   };
+
+  # The one to build. See dts/kernel-trimmed.nix for why the stock config is
+  # the wrong size for this board.
+  boardKernelTrimmed = pkgs.callPackage ./dts/kernel-trimmed.nix { };
+
+  boardKernelTrimmedCross = crossPkgs.callPackage ./dts/kernel-trimmed.nix { };
 }
