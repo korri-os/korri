@@ -50,6 +50,12 @@ in
 
   # The device side of the link. NetworkManager must leave it alone.
   networking.networkmanager.unmanaged = [ "usb0" ];
+
+  # The link hands the workstation an address, so the DHCP server must be able
+  # to answer on this interface. Without this the cable comes up and stays
+  # silent, and the workstation needs an address set by hand. This opens the
+  # one port that serves the lease, on the cable only, and nothing else.
+  networking.firewall.interfaces.usb0.allowedUDPPorts = [ 67 ];
   systemd.network = {
     enable = true;
     networks."10-usb-gadget" = {

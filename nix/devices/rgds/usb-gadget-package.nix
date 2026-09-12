@@ -6,6 +6,7 @@
   pkgs,
   configfsRoot ? "/sys/kernel/config/usb_gadget",
   udcRoot ? "/sys/class/udc",
+  udcWaitSeconds ? 60,
   hostMac ? "02:52:47:52:47:01",
   deviceMac ? "02:52:47:52:47:02",
 }:
@@ -60,8 +61,23 @@ pkgs.writeShellApplication {
     mkdir -p functions/acm.usb0
     ln -sf functions/ncm.usb0 configs/c.1/
     ln -sf functions/acm.usb0 configs/c.1/
-    udc="$(find "$udc_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | head -n 1)"
-    test -n "$udc"
+    # The controller can register after this service starts: the first boot of
+    # the composed gadget on the RG DS found /sys/class/udc still empty one
+    # second in. Wait for it, and say so on failure. A bare test exits silently,
+    # which took the USB console down with nothing in the journal to explain it.
+    udc=""
+    for _ in $(seq 1 ${toString udcWaitSeconds}); do
+      udc="$(find "$udc_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | head -n 1)"
+      if [ -n "$udc" ]; then
+        break
+      fi
+      sleep 1
+    done
+    if [ -z "$udc" ]; then
+      printf 'no USB device controller appeared in %s after %s seconds\n' \
+        "$udc_root" ${toString udcWaitSeconds} >&2
+      exit 1
+    fi
     echo "$udc" > UDC
   '';
 }
