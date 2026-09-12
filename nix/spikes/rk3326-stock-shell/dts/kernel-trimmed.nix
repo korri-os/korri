@@ -25,6 +25,11 @@
   lib,
   linuxManualConfig,
   linux_6_12,
+  # linuxPackagesFor re-invokes this function through `override` to attach
+  # kernel features; accept and ignore what it passes. Same reason as
+  # nix/devices/odin2portal/kernel/default.nix.
+  features ? { },
+  ...
 }:
 
 let
