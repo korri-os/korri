@@ -142,7 +142,10 @@ fi
 if [ -n "${KORRI_CACHE_STORE:-}" ]; then
   store="$KORRI_CACHE_STORE"
   mkdir -p "$store"
-  work="$(mktemp -d -p "$(dirname "$store")")"
+  # Inside the store, not beside it. A caller who names a store has made that one
+  # directory writable and says nothing about its parent: on a CI runner the
+  # parent is /nix/var, which belongs to root.
+  work="$(mktemp -d -p "$store")"
 else
   work="$(mktemp -d)"
   store="$work/store"
