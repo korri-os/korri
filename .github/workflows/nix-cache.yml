@@ -53,6 +53,11 @@ jobs:
           install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
           printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
 
+      # /nix has the room and root owns /nix/var, so the directory has to be
+      # handed over before an unprivileged publish can write a signed cache.
+      - name: Make room for the signed cache
+        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /nix/var/korri-nix-cache
+
       # The one list here that is not derived, so check it rather than trust it.
       # An attribute belongs here only if its derivation appears in a device's
       # build closure; today only odin2portal cross-builds anything, because the
@@ -113,6 +118,9 @@ jobs:
         run: |
           install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
           printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
+
+      - name: Make room for the signed cache
+        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /nix/var/korri-nix-cache
 
       - name: Publish the device closure
         env:
