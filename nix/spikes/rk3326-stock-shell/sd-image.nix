@@ -16,6 +16,7 @@
 {
   config,
   pkgs,
+  lib,
   ...
 }:
 
@@ -114,6 +115,40 @@ in
         conv=notrunc
     '';
   };
+
+  # systemd requires DMIID unconditionally, and this board cannot provide it:
+  # DMI on arm64 comes from EFI or ACPI, and ROCKNIX's configuration has
+  # neither (`# CONFIG_EFI is not set`). Writing CONFIG_DMIID=y anyway would
+  # satisfy the assertion, which reads the file, while Kconfig dropped the
+  # symbol for an unmet dependency -- a check that passes and a kernel that
+  # does not have it.
+  #
+  # So the requirement is dropped rather than faked, and the other seventeen
+  # are restated rather than disabled wholesale. Each one was checked present
+  # in dts/config before this was written. The list mirrors
+  # nixos/modules/system/boot/systemd.nix; if that grows an entry, this needs
+  # the same entry.
+  system.requiredKernelConfig = lib.mkForce (
+    map config.lib.kernelConfig.isEnabled [
+      "DEVTMPFS"
+      "CGROUPS"
+      "INOTIFY_USER"
+      "SIGNALFD"
+      "TIMERFD"
+      "EPOLL"
+      "NET"
+      "SYSFS"
+      "PROC_FS"
+      "FHANDLE"
+      "CRYPTO_USER_API_HASH"
+      "CRYPTO_HMAC"
+      "CRYPTO_SHA256"
+      "AUTOFS_FS"
+      "TMPFS_POSIX_ACL"
+      "TMPFS_XATTR"
+      "SECCOMP"
+    ]
+  );
 
   networking.hostName = "r36tmax";
 
