@@ -155,6 +155,17 @@ assert
   enabled.systemd.sockets.korrid-control.socketConfig
   == disabled.systemd.sockets.korrid-control.socketConfig;
 assert service.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/";
+# A device that names a surface opens it through the portal's own preference
+# seam; the served origin and asset root stay identical either way.
+assert
+  (evaluate {
+    services.korri.webSurfaceHost = {
+      enable = true;
+      surfaceId = "pico";
+    };
+    services.korri.compositor.kiosk.enable = true;
+  }).config.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL
+  == "http://127.0.0.1:8099/?surface=pico";
 assert service.environment.KORRI_ASSET_ROOT == profile;
 assert
   service.environment.KORRI_CHROMIUM_USER_DATA_DIR

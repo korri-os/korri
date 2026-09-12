@@ -5,6 +5,7 @@ let
     specialArgs = { inherit korri; };
     modules = [
       (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      korri.nixosModules.korri-plugin-host
       ./sd-image.nix
       ./portal.nix
     ];

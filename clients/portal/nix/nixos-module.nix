@@ -21,7 +21,10 @@ let
   display = config.systemd.services.sunshine.environment.WAYLAND_DISPLAY;
   profile = "${home}${policy.chromiumProfileSuffix}";
   origin = "http://${cfg.host}:${toString cfg.port}";
-  url = "${origin}/";
+  # The surface resolver reads ?surface= first and remembers it, so a device
+  # that can only open one fixed URL still picks its surface. This path serves
+  # no runtime.json, so the query parameter is the seam that exists here.
+  url = "${origin}/${lib.optionalString (cfg.surfaceId != null) "?surface=${cfg.surfaceId}"}";
   address = config.systemd.services.korrid.environment.KORRID_ADDRESS or "";
   addressPort = builtins.match ".*:([0-9]+)" address;
   korridOrigin =
@@ -105,6 +108,16 @@ in
       port = lib.mkOption {
         type = lib.types.port;
         default = policy.port;
+      };
+      surfaceId = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "^[a-z0-9-]+$");
+        default = null;
+        description = ''
+          Surface this device opens with, passed to the portal's existing
+          surface preference. Null keeps the portal's own default. An
+          unrecognized id is ignored by the resolver, which falls back rather
+          than failing. This is a display preference, not a capability.
+        '';
       };
       environment = lib.mkOption {
         type = lib.types.attrsOf lib.types.str;

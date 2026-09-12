@@ -28,6 +28,7 @@ let
 in
 {
   imports = [
+    ./gba-gameplay.nix
     (import ../../../clients/portal/nix/nixos-module.nix {
       inherit korri;
       # The RG353M's Chromium hits a GPU-process seccomp fault on this same
@@ -91,7 +92,12 @@ in
     sunshine.openFirewall = false;
   };
 
-  services.korri.webSurfaceHost.enable = true;
+  services.korri.webSurfaceHost = {
+    enable = true;
+    # Pico is the surface this handheld opens with. The portal still resolves
+    # ?surface= and a stored choice first, so switching remains possible.
+    surfaceId = "pico";
+  };
   services.korri.compositor.kiosk.enable = true;
 
   assertions = [

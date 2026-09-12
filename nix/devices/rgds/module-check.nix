@@ -29,7 +29,12 @@ assert lib.hasInfix "seek=64 conv=notrunc" rawWrite;
 assert lib.hasInfix "U-Boot exceeds the raw area" rawWrite;
 assert lib.elem "panel-jadard-jd9365da-h3" c.boot.initrd.kernelModules;
 assert lib.elem "panfrost" c.boot.initrd.kernelModules;
-assert lib.elem "g_serial" c.boot.kernelModules;
+assert lib.elem "libcomposite" c.boot.kernelModules;
+assert !(lib.elem "g_serial" c.boot.kernelModules);
+assert c.systemd.network.networks."10-usb-gadget".matchConfig.Name == "usb0";
+assert lib.elem "usb0" c.networking.networkmanager.unmanaged;
+# The cable carries a link, not an open door: no port is opened on it here.
+assert !(c.networking.firewall.interfaces ? usb0);
 assert !(c.systemd.units ? "serial-getty@ttyGS0.service");
 assert c.services.getty.autologinUser == "root";
 assert !c.services.openssh.enable && !c.services.openssh.openFirewall;
@@ -37,6 +42,10 @@ assert c.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert c.nix.settings.max-jobs == 0;
 assert c.nix.settings.require-sigs;
 assert c.services.korriLinuxHost.enable;
+# The plugin host is present so RetroArch and mGBA can be installed; it names
+# and approves no plugin by itself.
+assert c.services.korri.pluginHost.enable;
+assert c.nix.settings.max-jobs == 0;
 assert c.services.korri.webSurfaceHost.enable;
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";

@@ -15,6 +15,7 @@ in
     ../../base
     ../../device-cache/nixos-module.nix
     (import ../../formats/sd-card.nix { gpt = false; })
+    ./usb-gadget.nix
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
   networking.hostName = "rgds";
@@ -37,12 +38,8 @@ in
       "pwm_bl"
       "panfrost"
     ];
-    # The board DTS selects peripheral mode on usb_host0_xhci. ACM serial is
-    # independent of WiFi and needs no guessed Ethernet address or input map.
-    kernelModules = [
-      "g_serial"
-      "goodix_ts"
-    ];
+    # usb-gadget.nix composes the console and the network link through
+    # configfs, so no legacy single-function gadget module is loaded here.
     loader = {
       grub.enable = false;
       timeout = 3;
