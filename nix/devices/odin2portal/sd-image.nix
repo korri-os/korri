@@ -118,8 +118,13 @@
   specialisation.linux-7_0_2-rescue.configuration = {
     system.nixos.tags = [ "linux-7.0.2-rescue" ];
     boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor odinRescueKernel);
+    # The DTB lives under the kernel's dtbs/ directory, which is where the
+    # NixOS default for this option points. Forcing the package to the kernel
+    # root made the bootloader builder look for qcom/<board>.dtb one level
+    # too high, and every switch failed with FileNotFoundError while writing
+    # this specialisation's boot entry.
     hardware.deviceTree = {
-      package = lib.mkForce odinRescueKernel;
+      package = lib.mkForce "${odinRescueKernel}/dtbs";
       name = lib.mkForce "qcom/${odinRescueKernel.dtbName}.dtb";
     };
   };
