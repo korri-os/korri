@@ -164,9 +164,13 @@ for device in ${devices[@]+"${devices[@]}"}; do
 done
 for package in ${packages[@]+"${packages[@]}"}; do
   echo "korri-cache: building $package"
+  # ^* selects every output, not just the default one. A kernel has out, dev and
+  # modules, and a device installs the modules; publishing only the default
+  # output leaves a machine that cannot cross-build unable to finish the closure,
+  # and it reports that as a platform mismatch on the kernel derivation.
   while IFS= read -r out; do
     outputs+=("$out")
-  done < <(nix build --no-link --print-out-paths ".#$package")
+  done < <(nix build --no-link --print-out-paths ".#$package^*")
 done
 
 # zstd rather than the default xz: most of a device closure is public and will be
