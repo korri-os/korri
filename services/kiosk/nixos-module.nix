@@ -115,6 +115,12 @@ in
         AmbientCapabilities = [ ];
         ProtectSystem = "strict";
         ProtectHome = true;
+        # ProtectHome=yes empties /home, /root *and* /run/user. The compositor
+        # publishes its Wayland socket under the last one, so hiding it left
+        # Chromium with "Failed to connect to Wayland display: Permission
+        # denied" and a black panel. Keep the browser out of home directories
+        # and bind back only the runtime directory it must reach.
+        BindPaths = [ runtime ];
         ProtectProc = "invisible";
         ProcSubset = "pid";
         ProtectKernelTunables = true;
