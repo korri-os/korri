@@ -114,13 +114,17 @@ in
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];
         ProtectSystem = "strict";
-        ProtectHome = true;
-        # ProtectHome=yes empties /home, /root *and* /run/user. The compositor
-        # publishes its Wayland socket under the last one, so hiding it left
-        # Chromium with "Failed to connect to Wayland display: Permission
-        # denied" and a black panel. Keep the browser out of home directories
-        # and bind back only the runtime directory it must reach.
-        BindPaths = [ runtime ];
+        # Not ProtectHome. That flag empties /home, /root *and* /run/user,
+        # and the compositor publishes its Wayland socket under the last one,
+        # so it left Chromium with "Failed to connect to Wayland display:
+        # Permission denied" and a black panel. Binding the runtime directory
+        # back does not win against its tmpfs. Hide the home trees directly,
+        # which is all this unit ever wanted: the kiosk keeps HOME and both
+        # XDG directories under /run/korri-kiosk and never reads /home.
+        InaccessiblePaths = [
+          "/home"
+          "/root"
+        ];
         ProtectProc = "invisible";
         ProcSubset = "pid";
         ProtectKernelTunables = true;
