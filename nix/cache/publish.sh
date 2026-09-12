@@ -134,9 +134,20 @@ if [ "${#upstreams[@]}" -eq 0 ]; then
   exit 1
 fi
 
-work="$(mktemp -d)"
+# Keep the prepared batch on the same filesystem as the signed cache. Naming a
+# store is how a caller says where the room is, and the batch is a copy of part
+# of that cache; putting it somewhere else defeats the point. A CI runner is the
+# case that forced this: its Nix volume is carved out of /mnt, so /mnt itself has
+# nearly nothing left and a default temporary directory lands there.
+if [ -n "${KORRI_CACHE_STORE:-}" ]; then
+  store="$KORRI_CACHE_STORE"
+  mkdir -p "$store"
+  work="$(mktemp -d -p "$(dirname "$store")")"
+else
+  work="$(mktemp -d)"
+  store="$work/store"
+fi
 trap 'rm -rf "$work"' EXIT
-store="${KORRI_CACHE_STORE:-$work/store}"
 
 # One release per day. GitHub caps a release at 1,000 assets, and a dated tag
 # keeps a bad batch deletable without touching the ones before it.

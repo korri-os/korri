@@ -67,6 +67,10 @@ jobs:
       - name: Publish cross-built outputs
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
+          # Sign into the filesystem that has room. nothing-but-nix carves its
+          # volume out of /mnt, so /nix holds ~107 GB while /mnt keeps almost
+          # nothing, and a default temporary directory lands on /mnt.
+          KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
         run: |
           nix run .#korri-nix-cache-publish -- \
@@ -113,6 +117,9 @@ jobs:
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
+          # See the cross job: /mnt is nearly full once the Nix volume is carved
+          # from it, and signing a closure writes a second copy of it.
+          KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
         run: |
           nix run .#korri-nix-cache-publish -- "${{ matrix.device }}"
