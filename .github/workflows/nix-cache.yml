@@ -50,9 +50,17 @@ jobs:
           install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
           printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
 
-      # The one list here that is not derived. These are the x86_64 attributes
-      # whose outputs land in a device's runtime closure; anything else x86_64
-      # in that closure is build-time only and already on a public cache.
+      # The one list here that is not derived, so check it rather than trust it.
+      # An attribute belongs here only if its derivation appears in a device's
+      # build closure; today only odin2portal cross-builds anything, because the
+      # RG353M and RG DS kernels are native aarch64:
+      #
+      #   nix derivation show -r .#nixosConfigurations.<device>.config.system.build.toplevel \
+      #     | jq -r '.derivations | has("<drv name>")'
+      #
+      # korri-chromium-aarch64 is deliberately absent. It is a cross-build no
+      # device uses — every device closure carries an aarch64 chromium — and
+      # building it here cost two runs of over an hour each before it was caught.
       - name: Publish cross-built outputs
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -62,9 +70,6 @@ jobs:
             --package packages.x86_64-linux.odin2portal-kernel \
             --package packages.x86_64-linux.odin2portal-rescue-kernel \
             --package packages.x86_64-linux.odin2portal-firmware \
-            --package packages.x86_64-linux.rgds-kernel \
-            --package packages.x86_64-linux.rgds-uboot \
-            --package packages.x86_64-linux.korri-chromium-aarch64 \
             --package packages.x86_64-linux.korri-portal
 
   devices:
