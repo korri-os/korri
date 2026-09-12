@@ -120,12 +120,22 @@ GitHub-hosted runners, so publishing never waits for a machine of ours to be
 awake. It has no `pull_request` trigger: the workflow holds a signing key, and a
 fork must not reach it.
 
-It takes two jobs because a device closure is not one architecture. The
+It takes two stages because a device closure is not one architecture. The
 odin2portal closure holds 544 x86_64 derivations beside 6460 aarch64 ones — the
 kernel and firmware are cross-built, by design, because the aarch64 builder cannot
 spare the disk. The x86_64 job publishes those outputs first with `--package`, and
-the aarch64 job then substitutes them rather than failing on work its runner
+the aarch64 jobs then substitute them rather than failing on work their runner
 cannot do.
+
+The second stage is one job per device. Signing a closure writes a second,
+compressed copy of it beside the closure, so three devices on one runner need
+three of each; the first attempt built all three and then ran out of disk while
+signing, four hours in. Per-device jobs bound the peak to one closure, run the
+three at once, and keep one device's failure from hiding another's result.
+
+The cache pays for itself immediately and measurably: the cross job took 32
+minutes when it built both kernels and **2 minutes 14 seconds** on the next run,
+when it substituted them from what it had just published.
 
 That is also why `--package` exists. A device closure is the unit that matters,
 but a machine can only publish the part of it that its own system can build.

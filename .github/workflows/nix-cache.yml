@@ -75,10 +75,19 @@ jobs:
             --package packages.x86_64-linux.odin2portal-firmware \
             --package packages.x86_64-linux.korri-portal
 
+  # One device per runner. Signing a closure means writing a second, compressed
+  # copy of it next to the closure itself, so three devices on one runner needs
+  # three of each: the first attempt built all three, then ran out of disk while
+  # signing, four hours in. A matrix also lets the three run at once and keeps one
+  # device's failure from hiding another's result.
   devices:
-    name: device closures (aarch64)
+    name: ${{ matrix.device }} closure (aarch64)
     needs: cross
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [odin2portal, rg353m, rgds]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -101,9 +110,9 @@ jobs:
           install -m 600 /dev/null "$RUNNER_TEMP/cache-key.secret"
           printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/cache-key.secret"
 
-      - name: Publish device closures
+      - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
         run: |
-          nix run .#korri-nix-cache-publish -- odin2portal rg353m rgds
+          nix run .#korri-nix-cache-publish -- "${{ matrix.device }}"
