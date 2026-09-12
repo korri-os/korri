@@ -14,6 +14,12 @@
 let
   system = "aarch64-linux";
   pkgs = nixpkgs.legacyPackages.${system};
+
+  # Cross-built from x86_64 for CI, where every runner is x86_64 and no
+  # aarch64 builder is reachable. This is how the repo already builds
+  # odin2portal-kernel and rgds-kernel, so the kernel is a cross target here
+  # by precedent rather than by invention.
+  crossPkgs = nixpkgs.legacyPackages.x86_64-linux.pkgsCross.aarch64-multiplatform;
 in
 {
   # Dropbear rather than OpenSSH: one small static binary with a built-in
@@ -31,5 +37,13 @@ in
   # dts/kernel.nix for why that is deliberate.
   boardKernel = pkgs.callPackage ./dts/kernel.nix {
     linuxPackages = pkgs.linuxPackages_latest;
+  };
+
+  boardDtbCross = crossPkgs.callPackage ./dts/dtb.nix {
+    kernel = crossPkgs.linuxPackages_latest.kernel;
+  };
+
+  boardKernelCross = crossPkgs.callPackage ./dts/kernel.nix {
+    linuxPackages = crossPkgs.linuxPackages_latest;
   };
 }

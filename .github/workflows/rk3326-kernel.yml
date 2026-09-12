@@ -1,0 +1,62 @@
+# Build the R36T Max board device tree and kernel on GitHub's hardware.
+#
+# A hedge, not a release path. Building this on our own aarch64 builder takes
+# hours and competes with everything else that machine is doing, so this runs
+# the same derivations on a runner instead.
+#
+# workflow_dispatch only, and deliberately no push trigger. nix-cache.yml runs
+# on every push to main and holds a signing key, so adding a push trigger here
+# would make a routine kernel build kick off a cache publish as a side effect.
+# Dispatch this against a branch ref; nothing needs to reach main.
+#
+# Nothing here publishes. The unit of publication is a device's system closure
+# and this board is not a device yet, so there is nothing for the publisher to
+# name and no secret is used.
+#
+# The kernel is cross-built from x86_64, which is how the repo already builds
+# odin2portal-kernel and rgds-kernel. GitHub offers no aarch64 runner here and
+# cross is faster than emulation.
+name: rk3326-kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to build"
+        type: choice
+        options:
+          - boardDtbCross
+          - boardKernelCross
+        required: true
+        default: boardKernelCross
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rk3326-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Before Nix is installed: this reformats the runner's spare disk into
+      # /nix. A GitHub runner otherwise offers about 20 GB, and a kernel build
+      # needs more than that.
+      - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+        with:
+          hatchet-protocol: cleave
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
+      - name: Build
+        env:
+          # No aarch64 builder exists here, and the cross attributes do not
+          # need one.
+          KORRI_AARCH64_BUILDER: none
+        run: |
+          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target }}"
