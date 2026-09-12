@@ -43,6 +43,9 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
 
+      - name: Trust Korri's cache
+        run: .github/workflows/trust-korri-cache.sh
+
       - name: Stage the signing key
         env:
           SIGNING_KEY: ${{ secrets.KORRI_CACHE_SECRET_KEY }}
@@ -84,6 +87,12 @@ jobs:
           hatchet-protocol: cleave
 
       - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
+      # Without this the job cannot fetch what the job before it just published,
+      # and an aarch64 runner then tries to build the cross-compiled firmware
+      # itself, which fails on a platform mismatch rather than on anything real.
+      - name: Trust Korri's cache
+        run: .github/workflows/trust-korri-cache.sh
 
       - name: Stage the signing key
         env:
