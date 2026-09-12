@@ -52,4 +52,13 @@ in
   boardKernelTrimmed = pkgs.callPackage ./dts/kernel-trimmed.nix { };
 
   boardKernelTrimmedCross = crossPkgs.callPackage ./dts/kernel-trimmed.nix { };
+
+  # A first-boot SD image. Built natively on aarch64 rather than cross: a
+  # whole NixOS closure is not the same proposition as one kernel, and the
+  # repo already builds its device images on an aarch64 runner.
+  sdImage =
+    (nixpkgs.lib.nixosSystem {
+      system = "aarch64-linux";
+      modules = [ ./sd-image.nix ];
+    }).config.system.build.sdImage;
 }
