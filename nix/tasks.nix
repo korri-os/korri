@@ -167,6 +167,22 @@ let
       '';
     };
 
+    korri-nix-cache-upload = {
+      description = "Upload this builder's staged outputs to korri-os/nix-cache, skipping anything already publicly cached.";
+      usageSuffix = " -- [--staging DIR] [--dry-run]";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.git
+        pkgs.python3
+        pkgs.jq
+        pkgs.gh
+        pkgs.coreutils
+      ];
+      script = ''
+        exec bash "$KORRI_ROOT/nix/cache/upload-staged.sh" "$@"
+      '';
+    };
+
     odin2portal-cross-cache = {
       description = "Build/export or import Odin Linux cross inputs through a signed, revision-bound Nix cache.";
       usageSuffix = " -- <export|import> <directory>";

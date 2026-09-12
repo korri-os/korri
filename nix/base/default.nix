@@ -1,7 +1,9 @@
 # Shared policy for the RG353M and Odin 2 Portal configurations.
 # This module chooses neither a board nor an image format.
 { pkgs, ... }:
-
+let
+  korriCache = import ../cache/url.nix;
+in
 {
   imports = [ ./wifi.nix ];
 
@@ -46,9 +48,12 @@
   nix.checkConfig = false;
 
   nix.settings = {
+    # This list is also the publisher's filter list: nix/cache/upload-staged.sh
+    # treats every entry except Korri's own as a cache it may skip. Add one here
+    # and the publisher widens in the same change, by construction.
     substituters = [
       "https://cache.nixos.org/"
-      "https://github.com/korri-os/nix-cache/releases/download/cache/"
+      korriCache.url
     ];
     trusted-public-keys = [
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="

@@ -55,6 +55,9 @@
     in
     {
       inherit nixosModules;
+      # Where Korri's own signed cache lives. Device configurations consume it as
+      # a substituter and the publisher reads it here; see nix/cache/url.nix.
+      cache = import ./nix/cache/url.nix;
       nixosConfigurations = {
         # nixos-rebuild resolves nixosConfigurations.<hostname> when no target is
         # named, and the host is rg353m. This name therefore has to mean the

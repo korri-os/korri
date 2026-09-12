@@ -11,13 +11,31 @@ metadata    release tag `cache`   — mutable: nix-cache-info and signed .narinf
 payloads    release tag `batch-*` — NAR files, one release per batch
 ```
 
+That address is written once, in `nix/cache/url.nix`. `nix/base/default.nix`
+builds every device's substituter list from it, the flake re-exports it as
+`cache` for the publisher and for other repositories that configure these
+machines, and `nix flake check` warns about the unknown output — a warning worth
+more than a second copy of the URL.
+
 ## What goes in it
 
-Only outputs no public cache already serves. `github-cache.py prepare` takes
-`--upstream-cache https://cache.nixos.org` and drops every path that cache can
+Only outputs no public cache already serves. `github-cache.py prepare` takes a
+`--upstream-cache` per public cache and drops every path those caches can
 verify, so glibc, gcc-lib, avahi and the rest are never uploaded. The first
 publication signed ten paths and uploaded four: `korrid`, `korri-inputd`,
 `korri-portal`, `korri-kiosk`, 9.0 MB total.
+
+Nobody maintains that list of caches. `upload-staged.sh` reads the substituters
+a real device trusts and treats every entry except Korri's own as an upstream to
+filter against, which makes the binding rule structural: **the publisher cannot
+skip a path because of a cache its consumers do not trust.** If it could, the
+device would resolve Korri's output and then fail on a dependency it has no
+source for — at install time, not at publish time. Adding a cache to
+`nix/base/default.nix` widens the filter in the same change.
+
+`prepare` does not take the list on faith either: it fetches each upstream's
+`nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
+a path, so a wrong list over-publishes rather than breaking a closure.
 
 This matters more than it sounds. `nix copy` works on closures, so publishing
 `inputplumber-korri` without the filter would upload 2198 MiB to deliver
@@ -43,6 +61,22 @@ everywhere; a signature bypass is never the fix for a failed download.
 `nix/github-cache.py`, unchanged apart from this note, so both repositories
 publish the same format and a consumer needs one importer.
 
+A builder publishes with one command and no arguments:
+
+```sh
+nix run .#korri-nix-cache-upload               # or -- --dry-run
+```
+
+`post-build-hook.sh` signs every locally built path into a staging file cache
+(`/var/cache/korri-nix-cache` by default), which is fast and never fails a
+build. `upload-staged.sh` is the batch half: it derives the upstream filter,
+prepares a batch, creates that day's `batch-<date>` release if it is missing,
+uploads NARs and then metadata, and clears the staged entries it handled. An
+idle builder exits 0 without contacting GitHub, so a timer failure always means
+a real failure.
+
+The underlying steps stay available for one-off work:
+
 ```sh
 nix run .#korri-nix-cache -- export  "$WORK/cache" --key-file ~/.config/korri/cache-key.secret PATH...
 nix run .#korri-nix-cache -- prepare "$WORK/cache" "$WORK/prepared" \
@@ -58,9 +92,6 @@ nix run .#korri-nix-cache -- upload  "$WORK/prepared" --repo korri-os/nix-cache 
 source commit. That cannot hold when source and cache live in different
 repositories, so core uses `upload` and accepts the weaker provenance: the
 signature still binds the bytes to a builder.
-
-Builders do not run these commands by hand. A `post-build-hook` signs every
-locally built path into a staging cache, and a batch job uploads it.
 
 ## Verification
 
