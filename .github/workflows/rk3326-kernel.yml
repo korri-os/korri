@@ -39,7 +39,7 @@ on:
           - boardKernelCross
           - sdImage
         required: true
-        default: boardKernelTrimmedCross
+        default: sdImage
 
 permissions:
   contents: read
@@ -50,12 +50,13 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ inputs.target || 'boardKernelTrimmedCross' }}
+    name: ${{ inputs.target || 'sdImage' }}
     # The SD image is a whole NixOS closure and is built natively on aarch64,
-    # the way device-images.yml already builds this repo's device images. The
-    # cross targets do not need it but run fine here, so one runner serves
-    # both rather than duplicating the job.
-    runs-on: ${{ inputs.target == 'sdImage' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    # the way device-images.yml already builds this repo's device images, so
+    # it needs an arm runner. The cross targets do not, and run faster on the
+    # x86 one. A push supplies no input, so the default has to appear on both
+    # sides of this expression.
+    runs-on: ${{ (inputs.target || 'sdImage') == 'sdImage' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -74,4 +75,4 @@ jobs:
           # need one.
           KORRI_AARCH64_BUILDER: none
         run: |
-          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'boardKernelTrimmedCross' }}"
+          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'sdImage' }}"
