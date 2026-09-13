@@ -1,0 +1,79 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux coreutils gzip
+# Write a ROCKNIX card that can read our kernel's crash log.
+#
+# Our image panics with no console and leaves its log in the ramoops region
+# at 0x110000. ROCKNIX boots this board with a screen and SSH and has
+# PSTORE_RAM built in, but declares no ramoops region, so on its own it
+# would never mount the log. Two overlays fix that: the community panel
+# overlay that makes ROCKNIX boot this board at all, and a ramoops overlay
+# that reserves the same region our kernel wrote to.
+#
+# The write is the ROCKNIX -b image verbatim, then the two overlays dropped
+# where its own extlinux.conf already looks, then that file edited to name
+# both. Nothing else on the image changes.
+#
+# Boot order that makes this useful: our card, panic, then this card. Any
+# other boot in between overwrites the region.
+set -euo pipefail
+
+target=${1:-}
+confirm=${2:-}
+[ -n "$target" ] && [ "$confirm" = "--i-know" ] || {
+  echo "usage: write-rocknix-reader /dev/<device> --i-know" >&2
+  exit 2
+}
+
+state=$HOME/.local/share/korri/rk3326-stock-shell
+image=${KORRI_ROCKNIX_B_IMAGE:-$state/images/ROCKNIX-RK3326-b.img.gz}
+panel=${KORRI_PANEL_OVERLAY:-$state/mipi-panel.dtbo}
+ramoops=${KORRI_RAMOOPS_OVERLAY:-$state/ramoops.dtbo}
+for f in "$image" "$panel" "$ramoops"; do
+  [ -f "$f" ] || { echo "missing: $f" >&2; exit 1; }
+done
+
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+[ -e "/sys/block/$(basename "$target")" ] || { echo "not a whole disk: $target" >&2; exit 1; }
+if lsblk -no MOUNTPOINT "$target" | grep -q .; then
+  echo "refusing: something on $target is mounted" >&2
+  exit 1
+fi
+size_bytes=$(blockdev --getsize64 "$target")
+[ "$size_bytes" -gt 0 ] && [ "$size_bytes" -le $((128 * 1000 * 1000 * 1000)) ] || {
+  echo "refusing: $target is empty or over the 128 GB cap" >&2
+  exit 1
+}
+
+echo "target: $target ($((size_bytes / 1000 / 1000 / 1000)) GB)"
+echo "image:  $image"
+echo "writing..."
+gzip -dc "$image" | dd of="$target" bs=4M conv=fsync status=none
+sync
+blockdev --rereadpt "$target" 2>/dev/null || true
+sleep 2
+
+if [ -b "${target}1" ]; then boot_part="${target}1"; else boot_part="${target}p1"; fi
+[ -b "$boot_part" ] || { echo "no boot partition after write" >&2; exit 1; }
+
+mnt=$(mktemp -d)
+trap 'mountpoint -q "$mnt" && umount "$mnt"; rm -rf "$mnt"' EXIT
+mount "$boot_part" "$mnt"
+
+install -Dm444 "$panel" "$mnt/overlays/mipi-panel.dtbo"
+install -Dm444 "$ramoops" "$mnt/overlays/ramoops.dtbo"
+
+conf="$mnt/extlinux/extlinux.conf"
+grep -q '^  FDTOVERLAYS /overlays/mipi-panel.dtbo$' "$conf" || {
+  echo "extlinux.conf does not look like the ROCKNIX I expect:" >&2
+  cat "$conf" >&2
+  exit 1
+}
+sed -i 's|^  FDTOVERLAYS /overlays/mipi-panel.dtbo$|  FDTOVERLAYS /overlays/mipi-panel.dtbo /overlays/ramoops.dtbo|' "$conf"
+sync
+
+echo
+echo "overlays:"
+ls -l "$mnt/overlays/"
+echo
+echo "extlinux.conf:"
+sed 's/^/  /' "$conf"

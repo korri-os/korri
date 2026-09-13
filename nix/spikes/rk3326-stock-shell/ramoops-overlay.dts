@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Reserve the R36T Max's ramoops region on a ROCKNIX kernel.
+ *
+ * Our own image panics about a second into boot and has no console, so its
+ * kernel writes its last words to the ramoops region the board's stock
+ * firmware reserves at 0x110000. Something then has to boot and read that
+ * RAM before anything overwrites it. ROCKNIX boots this board with a working
+ * screen and SSH, and its kernel has PSTORE_RAM built in, but none of its
+ * device trees declare the region. This overlay adds it.
+ *
+ * Same address and layout as the stock firmware's ramoops@110000 and as our
+ * own device tree, so the three kernels agree on where the log lives.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	fragment@0 {
+		target-path = "/";
+
+		__overlay__ {
+			reserved-memory {
+				#address-cells = <2>;
+				#size-cells = <2>;
+				ranges;
+
+				ramoops@110000 {
+					compatible = "ramoops";
+					reg = <0x0 0x110000 0x0 0xf0000>;
+					record-size = <0x20000>;
+					console-size = <0x80000>;
+					pmsg-size = <0x50000>;
+					max-reason = <5>;
+				};
+			};
+		};
+	};
+};
