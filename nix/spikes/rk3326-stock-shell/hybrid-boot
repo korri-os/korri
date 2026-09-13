@@ -132,7 +132,23 @@ echo
 # The command line is used exactly as the generation wrote it. It carries
 # init=/nix/store/...; stage 1 mounts the root filesystem by the label in its
 # own configuration.
+#
+# KORRI_DROP_PARAMS removes whole parameters by prefix, for bisecting a boot
+# that dies before it can say anything. Rewriting the card takes seconds,
+# where changing kernelParams costs an image build. Dropping is all that is
+# offered on purpose: init= has to survive, and a free-form replacement is
+# one typo away from a card that cannot boot for a new reason.
+#
+#   KORRI_DROP_PARAMS='earlycon console=ttyS5' hybrid-boot /dev/sdX --i-know
 append_fixed=$append
+for drop in ${KORRI_DROP_PARAMS:-}; do
+  append_fixed=$(echo "$append_fixed" | sed -E "s#(^| )${drop}[^ ]*##g")
+done
+append_fixed=$(echo "$append_fixed" | tr -s ' ' | sed 's/^ //;s/ $//')
+case "$append_fixed" in
+  *init=/nix/store/*) ;;
+  *) echo "refusing: init= was lost from the command line" >&2; exit 1 ;;
+esac
 
 boot_scr=${KORRI_ROCKNIX_BOOT_SCR:-$HOME/.local/share/korri/rk3326-stock-shell/rocknix-boot.scr}
 [ -f "$boot_scr" ] || { echo "missing ROCKNIX boot.scr: $boot_scr" >&2; exit 1; }
