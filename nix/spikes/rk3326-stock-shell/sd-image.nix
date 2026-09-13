@@ -48,10 +48,18 @@ in
     # finds it in the kernel's own dtbs directory with no extra wiring.
     kernelPackages = pkgs.linuxPackagesFor kernel;
 
-    # No initrd storage modules: ROCKNIX's configuration builds MMC_BLOCK,
-    # MMC_DW, MMC_DW_ROCKCHIP, and EXT4_FS into the kernel rather than as
-    # modules, so the root filesystem mounts with nothing loaded. Listing them
-    # here would fail the build looking for .ko files that do not exist.
+    # No initrd storage modules at all. ROCKNIX's configuration builds
+    # MMC_BLOCK, MMC_DW, MMC_DW_ROCKCHIP, and EXT4_FS into the kernel, so the
+    # root filesystem mounts with nothing loaded.
+    #
+    # The default list has to be forced empty, not just left alone. NixOS
+    # fills availableKernelModules with PC storage controllers -- 3w-9xxx,
+    # megaraid, and friends -- and modules-shrunk fails hard on the first one
+    # a handheld kernel does not build:
+    #   modprobe: FATAL: Module 3w-9xxx not found
+    initrd.availableKernelModules = lib.mkForce [ ];
+    initrd.kernelModules = lib.mkForce [ ];
+    initrd.includeDefaultModules = false;
 
     kernelParams = [
       # UART5 at 1500000, taken from the stock system's own earlycon
