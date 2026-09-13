@@ -164,6 +164,58 @@ in
     ]
   );
 
+  # --- flight recorder ---------------------------------------------------
+  #
+  # The panel does not work, the USB gadget has never appeared, and the UART
+  # console exists only on internal pads. The device can still write to its
+  # own boot partition, which we can read back in a card reader, so let it
+  # keep a log of how far it got.
+  #
+  # Everything is appended, never overwritten, and each entry is stamped with
+  # the boot id. Several entries from one power-on means the board is
+  # restarting in a loop -- which is what a blinking charge LED suggests,
+  # against the stock system's stable blue-then-red.
+  #
+  # VFAT, FAT, and the two needed NLS tables are built into this kernel, so
+  # mounting works with no modules loaded.
+  boot.initrd.postDeviceCommands = lib.mkAfter ''
+    mkdir -p /flight
+    if mount -t vfat /dev/disk/by-label/NIXOS_BOOT /flight 2>/dev/null; then
+      {
+        echo "=== initrd $(cat /proc/sys/kernel/random/boot_id 2>/dev/null) ==="
+        cat /proc/uptime
+        cat /proc/cmdline
+        dmesg || true
+      } >> /flight/flight.log 2>&1
+      sync
+      umount /flight
+    fi
+  '';
+
+  systemd.services.flight-recorder = {
+    description = "Append this boot's kernel log to the boot partition";
+    wantedBy = [ "sysinit.target" ];
+    after = [ "systemd-udev-settle.service" ];
+    unitConfig.DefaultDependencies = false;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      mkdir -p /run/flight
+      mount -t vfat /dev/disk/by-label/NIXOS_BOOT /run/flight
+      {
+        echo "=== stage2 $(cat /proc/sys/kernel/random/boot_id) ==="
+        cat /proc/uptime
+        ${pkgs.util-linux}/bin/dmesg || true
+        echo "--- failed units ---"
+        systemctl --failed --no-legend || true
+      } >> /run/flight/flight.log 2>&1
+      sync
+      umount /run/flight
+    '';
+  };
+
   networking.hostName = "r36tmax";
 
   # Serial console only. Root login without a password is acceptable here and
