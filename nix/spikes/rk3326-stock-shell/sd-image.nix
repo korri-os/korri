@@ -101,8 +101,17 @@ in
     firmwarePartitionName = "NIXOS_BOOT";
     rootVolumeLabel = "NIXOS_R36TMAX";
 
-    # U-Boot lives in the raw space before the first partition. The FAT
-    # partition is unused but the shared NixOS image builder requires it.
+    # 128 MiB, against a default of 30. Our own boot chain does not need any
+    # of it -- U-Boot lives in the raw space before the first partition -- but
+    # `hybrid-boot` boots this kernel through ROCKNIX's loader, and that
+    # loader reads only the first partition. A 21 MB kernel and a 10 MB
+    # initrd do not fit in 30 MiB alongside a device tree per name its
+    # boot.scr can ask for.
+    firmwareSize = 128;
+
+    # Nothing is put here at build time; `hybrid-boot` fills it later when it
+    # is needed. The shared NixOS image builder requires the partition to
+    # exist either way.
     populateFirmwareCommands = ":";
     populateRootCommands = ''
       mkdir -p ./files/boot
