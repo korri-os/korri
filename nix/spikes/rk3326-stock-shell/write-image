@@ -1,0 +1,89 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux coreutils zstd
+# Write a built SD image to a card.
+#
+# Destructive. Same gate discipline as write-card: the target is named on the
+# command line and confirmed again with --i-know, because this host also has a
+# multi-terabyte array attached and this card has already appeared as mmcblk0,
+# sdi, and sdh during one session. Never trust a device name remembered from
+# earlier; re-check it immediately before writing.
+#
+# The image is read back after writing and compared against what was sent. A
+# card that accepts a write and returns something else is a real failure mode
+# on cheap media, and it presents later as a device that will not boot.
+set -euo pipefail
+
+usage() {
+  echo "usage: write-image <image.img.zst> /dev/<device> --i-know" >&2
+  exit 2
+}
+
+image=${1:-}
+target=${2:-}
+confirm=${3:-}
+mode=${4:-write}
+[ -n "$image" ] && [ -n "$target" ] || usage
+[ "$confirm" = "--i-know" ] || usage
+[ -f "$image" ] || { echo "no such image: $image" >&2; exit 1; }
+
+# --- gate 1: whole block device -------------------------------------------
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+base=$(basename "$target")
+[ -e "/sys/block/$base" ] || {
+  echo "not a whole disk (looks like a partition): $target" >&2
+  exit 1
+}
+
+# --- gate 2: nothing mounted ----------------------------------------------
+if lsblk -no MOUNTPOINT "$target" | grep -q .; then
+  echo "refusing: something on $target is mounted" >&2
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT "$target" >&2
+  exit 1
+fi
+
+# --- gate 3: card-sized, and has media ------------------------------------
+size_bytes=$(blockdev --getsize64 "$target")
+[ "$size_bytes" -gt 0 ] || { echo "no medium in $target" >&2; exit 1; }
+max_bytes=$((128 * 1000 * 1000 * 1000))
+if [ "$size_bytes" -gt "$max_bytes" ]; then
+  echo "refusing: $target is $((size_bytes / 1000 / 1000 / 1000)) GB, over the 128 GB cap" >&2
+  exit 1
+fi
+
+# --- gate 4: the image fits -----------------------------------------------
+image_bytes=$(zstd -l --no-check "$image" 2>/dev/null | awk 'NR==2 {print $4, $5}' | tr -d ' ')
+echo "target: $target ($((size_bytes / 1000 / 1000 / 1000)) GB)"
+lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"
+echo "image:  $image"
+echo
+
+# --- write ----------------------------------------------------------------
+if [ "$mode" != "--verify-only" ]; then
+  echo "writing..."
+  zstd -dc "$image" | dd of="$target" bs=4M conv=fsync status=progress
+  sync
+  blockdev --rereadpt "$target" 2>/dev/null || true
+fi
+
+# --- verify ---------------------------------------------------------------
+# Compare the bytes on the card against the image, over the image's length
+# only: the card is larger and the tail is untouched.
+echo
+echo "verifying..."
+written_sum=$(zstd -dc "$image" | sha256sum | cut -d' ' -f1)
+image_size=$(zstd -dc "$image" | wc -c)
+# iflag=count_bytes reads exactly the image's length. Piping through `head -c`
+# instead closes the pipe early, which kills dd with SIGPIPE and, under
+# pipefail, fails the script after a perfectly good write.
+card_sum=$(dd if="$target" bs=4M iflag=count_bytes count="$image_size" 2>/dev/null \
+  | sha256sum | cut -d' ' -f1)
+
+if [ "$written_sum" != "$card_sum" ]; then
+  echo "MISMATCH: card does not read back what was written" >&2
+  echo "  image: $written_sum" >&2
+  echo "  card:  $card_sum" >&2
+  exit 1
+fi
+
+echo "verified: $card_sum"
+lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"

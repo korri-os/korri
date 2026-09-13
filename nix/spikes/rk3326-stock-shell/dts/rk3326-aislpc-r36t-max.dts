@@ -78,7 +78,17 @@
 		};
 	};
 
-	/* Ring lights around both analog sticks. */
+	/*
+	 * Ring lights around both analog sticks.
+	 *
+	 * Held on deliberately. This board's panel does not work yet and its USB
+	 * port has produced no gadget, so the rings are the only thing it can
+	 * say out loud. The regulator core switches this on during its own init,
+	 * which is early: rings lit means the kernel got at least that far.
+	 *
+	 * Drop always-on once there is a real console and something owns the
+	 * LEDs.
+	 */
 	vcc_led: regulator-vcc-led {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -86,6 +96,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&led_vcc_en>;
 		regulator-name = "vcc_led";
+		regulator-always-on;
+		regulator-boot-on;
 		vin-supply = <&vcc_3v3>;
 	};
 
@@ -519,6 +531,29 @@
 
 &vopb_mmu {
 	status = "okay";
+};
+
+/*
+ * The vibration motor runs continuously on a board booted from this tree,
+ * because nothing claims its enable line and it powers up asserted. The
+ * vendor tree drives it from its own joystick driver via `moto-gpio`; there
+ * is no mainline binding for that, so hold the line low with a hog instead.
+ *
+ * A hog is applied when the kernel parses this tree, before drivers probe,
+ * which also makes it a usable progress signal on a device with no working
+ * display and no console: if the rumble stops, this tree was read.
+ *
+ * This is very likely the "loud heavy buzz immediately from power-on"
+ * recorded against the June nix-on-rocks images, which was guessed at the
+ * time to be the speaker amplifier.
+ */
+&gpio3 {
+	vibrator-off-hog {
+		gpio-hog;
+		gpios = <RK_PA6 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "vibration-motor";
+	};
 };
 
 &pinctrl {
