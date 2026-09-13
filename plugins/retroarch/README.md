@@ -59,7 +59,9 @@ like the existing manifest file producer. It does not compile plugin code. The i
 remains TS source evaluated by korrid at runtime.
 
 `plugin.nix` registers the generated evidence under the existing
-`packages.retroarch-settings` and `files.retroarch-settings`. The generic
+`packages.retroarch-settings` and `files.retroarch-settings`. The evidence
+is `settings.json` inside that package's output: the host names a file as a
+path inside a store output and refuses a bare output at inspection. The generic
 consumer derives the file key from the launcher's existing `program` file key.
 Artifact fields have existing consumers: `program` is the exact callback
 executable path; `version` and `keys` are `SourceCheckedSettings` evidence.

@@ -29,6 +29,7 @@ in
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
     korri-retroarch-settings =
       (import ../../../plugins/retroarch/plugin.nix { inherit pkgs; }).packages.retroarch-settings;
+    korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs

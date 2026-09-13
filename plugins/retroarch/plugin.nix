@@ -28,7 +28,7 @@ in
   };
   files = {
     retroarch = "${retroarch}/bin/retroarch";
-    retroarch-settings = retroarchSettings;
+    retroarch-settings = "${retroarchSettings}/settings.json";
     autoconfig = "${retroarchInputplumberAutoconfig}/share/libretro/autoconfig";
   };
 }

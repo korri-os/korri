@@ -16,6 +16,9 @@ program.overrideAttrs (old: {
     "installPhase"
   ];
   installPhase = ''
+    # The host names a file as a path inside a store output. Making $out the
+    # file itself produced a bare output the device refused at inspection.
+    mkdir -p "$out"
     CC=${pkgs.buildPackages.stdenv.cc}/bin/cc bash ${./build-config-parser.sh} \
       "$PWD" ${./config-parser-probe.c} "$PWD/config-parser-probe"
     cp ${./plugin.ts} plugin.ts
@@ -30,6 +33,6 @@ program.overrideAttrs (old: {
       --callback ${./plugin.ts} \
       --program ${pkgs.lib.escapeShellArg "${program}/bin/retroarch"} \
       --version ${pkgs.lib.escapeShellArg program.version} \
-      --output "$out"
+      --output "$out/settings.json"
   '';
 })

@@ -67,7 +67,17 @@ let
       searchPaths = builtins.filter (name: renderedServices.${name} ? path) (
         builtins.attrNames renderedServices
       );
+      # The host's immutable_path rule: a file is a path inside a store output,
+      # never the output itself. A derivation whose $out is the file passes
+      # `test -e` here and is then refused on the device at inspection, which
+      # is where RetroArch's settings evidence was first caught. Refuse it at
+      # build instead, where the author can act on it.
+      bareOutputs = builtins.filter (
+        name: builtins.match "/nix/store/[^/]+" (toString files.${name}) != null
+      ) (builtins.attrNames files);
     in
+    assert lib.assertMsg (bareOutputs == [ ])
+      "plugin files ${builtins.concatStringsSep ", " bareOutputs}: a file must be a path inside a store output, not the output itself";
     assert lib.assertMsg (searchPaths == [ ])
       "plugin services ${builtins.concatStringsSep ", " searchPaths}: path is unsupported; use immutable ExecStart paths";
     assert builtins.all validName (
