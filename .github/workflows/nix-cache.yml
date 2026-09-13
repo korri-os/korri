@@ -122,6 +122,11 @@ jobs:
       - name: Make room for the signed cache
         run: sudo install -d -o "$(id -u)" -g "$(id -g)" /nix/var/korri-nix-cache
 
+      # The kernel is named as well as the closure, because a closure only holds
+      # what a device installs. Building the out-of-tree display driver needs the
+      # kernel's dev output, which no device installs and no closure therefore
+      # carries, so a cold runner rebuilt the whole kernel to obtain it: 1 h 50 m
+      # for one output it could not download.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -130,4 +135,5 @@ jobs:
           KORRI_CACHE_STORE: /nix/var/korri-nix-cache
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
         run: |
-          nix run .#korri-nix-cache-publish -- "${{ matrix.device }}"
+          nix run .#korri-nix-cache-publish -- "${{ matrix.device }}" \
+            --package "nixosConfigurations.${{ matrix.device }}.config.boot.kernelPackages.kernel"

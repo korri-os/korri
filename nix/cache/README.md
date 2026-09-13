@@ -137,6 +137,14 @@ The cache pays for itself immediately and measurably: the cross job took 32
 minutes when it built both kernels and **2 minutes 14 seconds** on the next run,
 when it substituted them from what it had just published.
 
+`--package` also covers what a closure cannot reach: outputs a device does not
+install but a builder still needs. The kernel proved it. Its `dev` output is what
+an out-of-tree display driver compiles against, no device installs it, so no
+closure carries it — and a cold runner rebuilt an entire kernel for 1 hour
+50 minutes to obtain one output it could not download. Each device job therefore
+names its kernel beside its closure, and `--package` publishes every output of
+what it is given.
+
 That is also why `--package` exists. A device closure is the unit that matters,
 but a machine can only publish the part of it that its own system can build.
 
