@@ -49,6 +49,30 @@
 		mmc0 = &sdmmc;
 	};
 
+	/*
+	 * Persistent crash log. The stock firmware reserves this exact region
+	 * for the same purpose, so it is memory the boot chain already treats
+	 * as off limits, and a log written here survives the one-second
+	 * panic reboot into the next kernel's /sys/fs/pstore.
+	 *
+	 * On a board with no console, this is the console. Keep it even after
+	 * a wire exists; it costs 960 KB.
+	 */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops@110000 {
+			compatible = "ramoops";
+			reg = <0x0 0x110000 0x0 0xf0000>;
+			record-size = <0x20000>;
+			console-size = <0x80000>;
+			pmsg-size = <0x50000>;
+			max-reason = <5>;
+		};
+	};
+
 	chosen {
 		/*
 		 * UART5, not the UART2 that most RK3326 boards use. The stock

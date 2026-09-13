@@ -63,12 +63,26 @@ in
     initrd.includeDefaultModules = false;
 
     kernelParams = [
-      # UART5 at 1500000, taken from the stock system's own earlycon
-      # (0xff178000). Most RK3326 boards use UART2; this family does not.
-      "console=ttyS5,1500000n8"
-      "earlycon=uart8250,mmio32,0xff178000"
-      # Keep the framebuffer console too, in case the panel ever lights.
+      # No serial console, on purpose, and no earlycon.
+      #
+      # Two things were wrong with the previous line. `earlycon` writes to
+      # UART5 before any clock driver runs, and this kernel hung on it: the
+      # first boot that got past the regulator core was the first boot
+      # without it. And `console=ttyS5` named a port this kernel cannot
+      # have, because ROCKNIX's config sets SERIAL_8250_NR_UARTS=5, which
+      # is ttyS0 through ttyS4. Neither parameter could pay for itself on a
+      # board whose UART pins are internal pads.
+      #
+      # The console is ramoops. Every printk lands in the reserved region
+      # the device tree declares, survives the panic reboot, and is read
+      # back by the next boot's flight recorder.
       "console=tty0"
+      # Store every kmsg dump reason, not only oops and panic, so a clean
+      # shutdown and a watchdog reset are distinguishable afterwards.
+      "printk.always_kmsg_dump=1"
+      # A crash that resets in one second is unreadable. Give ramoops time
+      # to flush, and give a human time to notice the rings stayed on.
+      "panic=10"
     ];
 
     loader = {
@@ -187,8 +201,10 @@ in
   #
   # VFAT, FAT, and the two needed NLS tables are built into this kernel, so
   # mounting works with no modules loaded.
+  # pstore has to be mounted to be read, and the initrd does not do it for
+  # us. PSTORE_RAM is built in, so the filesystem is there once mounted.
   boot.initrd.postDeviceCommands = lib.mkAfter ''
-    mkdir -p /flight
+    mkdir -p /flight /pstore
     if mount -t vfat /dev/disk/by-label/NIXOS_BOOT /flight 2>/dev/null; then
       {
         echo "=== initrd $(cat /proc/sys/kernel/random/boot_id 2>/dev/null) ==="
@@ -196,6 +212,20 @@ in
         cat /proc/cmdline
         dmesg || true
       } >> /flight/flight.log 2>&1
+
+      # What the previous kernel wrote before it died. This is the only
+      # console this board has, so copy every record and leave them in
+      # place: the second read is the one a human does.
+      if mount -t pstore pstore /pstore 2>/dev/null; then
+        for f in /pstore/*; do
+          [ -e "$f" ] || continue
+          {
+            echo "=== pstore $(basename "$f") ==="
+            cat "$f"
+          } >> /flight/pstore.log 2>&1
+        done
+        umount /pstore
+      fi
       sync
       umount /flight
     fi
