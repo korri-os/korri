@@ -37,6 +37,7 @@ in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
+    ./usb-gadget.nix
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
@@ -80,6 +81,11 @@ in
       };
     };
   };
+
+  # The installer-wide hardware list pulls in PC drivers this kernel does not
+  # build, which is what made modules-shrunk fail on 3w-9xxx. The RG DS turns
+  # it off for the same reason.
+  hardware.enableAllHardware = lib.mkForce false;
 
   hardware.deviceTree = {
     enable = true;

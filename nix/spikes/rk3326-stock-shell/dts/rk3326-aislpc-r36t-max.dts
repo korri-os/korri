@@ -499,6 +499,13 @@
 };
 
 &usb20_otg {
+	/*
+	 * Peripheral, not otg. The USB-C port has no ID pin to arbitrate with,
+	 * and this port's job is the recovery console: a composed NCM plus ACM
+	 * gadget over the one cable, because the UART console exists only on
+	 * internal pads.
+	 */
+	dr_mode = "peripheral";
 	status = "okay";
 };
 
