@@ -36,6 +36,19 @@
 # what the empty flight.log said. Carry INITRD through, and do not invent a
 # root= argument -- the kernel cannot resolve root=LABEL= on its own, and
 # stage 1 does not need to be told.
+#
+# One risk this carries, named here so the symptom is readable when it is
+# still only a symptom. U-Boot places an initrd at ramdisk_addr_r and skips
+# any extlinux entry whose initrd it cannot place, printing
+# "Skipping korri for failure retrieving initrd". That variable is not in
+# this loader's default environment -- only fdt_addr_r and loadaddr are --
+# and whether Rockchip's U-Boot sets it at runtime cannot be read out of the
+# binary. ROCKNIX itself never exercises the path, because it builds its
+# initramfs into its kernel and its own extlinux.conf has no INITRD line.
+#
+# If the next boot leaves that message in error.log on the boot partition,
+# the fix is a boot.scr of our own that sets ramdisk_addr_r, kernel_addr_r,
+# and fdtfile before calling sysboot, instead of shipping ROCKNIX's.
 set -euo pipefail
 
 target=${1:-}
