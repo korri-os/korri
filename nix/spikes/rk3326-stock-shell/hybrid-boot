@@ -1,0 +1,109 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux coreutils
+# Boot our kernel through ROCKNIX's bootloader.
+#
+# A bisection, not a product. Our own boot chain builds U-Boot's open PX30
+# DRAM init, which no shipping RK3326 distribution uses, and a card written
+# with it shows no sign of life on this board. ROCKNIX boots the same board,
+# so putting our kernel behind its loader isolates which half is at fault.
+#
+# Three things make this work:
+#
+#   - ROCKNIX's loader already sits at sector 64 from swap-loader.
+#   - Its U-Boot ends in `sysboot ... /extlinux/extlinux.conf` against the
+#     first partition, and our image already has an unused 30 MB FAT there.
+#   - Its boot.scr picks a device tree by reading an ADC pin and falls back to
+#     the Odroid Go Advance tree for anything it does not recognise -- which is
+#     what put a lit backlight and no picture on this board. Naming FDT
+#     explicitly in extlinux.conf bypasses that guess entirely.
+#
+# The root filesystem and its own /boot are untouched; this only fills the FAT
+# partition U-Boot reads first.
+set -euo pipefail
+
+target=${1:-}
+confirm=${2:-}
+[ -n "$target" ] && [ "$confirm" = "--i-know" ] || {
+  echo "usage: hybrid-boot /dev/<device> --i-know" >&2
+  exit 2
+}
+
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+[ -e "/sys/block/$(basename "$target")" ] || { echo "not a whole disk" >&2; exit 1; }
+if lsblk -no MOUNTPOINT "$target" | grep -q .; then
+  echo "refusing: something on $target is mounted" >&2
+  exit 1
+fi
+size_bytes=$(blockdev --getsize64 "$target")
+[ "$size_bytes" -gt 0 ] && [ "$size_bytes" -le $((128 * 1000 * 1000 * 1000)) ] || {
+  echo "refusing: $target is empty or over the 128 GB cap" >&2
+  exit 1
+}
+
+boot_part="${target}1"
+root_part="${target}2"
+[ -b "$boot_part" ] && [ -b "$root_part" ] || {
+  echo "expected two partitions on $target" >&2
+  exit 1
+}
+
+work=$(mktemp -d)
+bootmnt="$work/boot"
+rootmnt="$work/root"
+mkdir -p "$bootmnt" "$rootmnt"
+cleanup() {
+  mountpoint -q "$bootmnt" && umount "$bootmnt"
+  mountpoint -q "$rootmnt" && umount "$rootmnt"
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+mount -o ro "$root_part" "$rootmnt"
+mount "$boot_part" "$bootmnt"
+
+# Read what our own extlinux entry resolved to, rather than guessing at store
+# paths: the generation's config already names the kernel, the device tree,
+# and the exact kernel command line.
+src_conf="$rootmnt/boot/extlinux/extlinux.conf"
+[ -f "$src_conf" ] || { echo "no extlinux.conf on the root partition" >&2; exit 1; }
+
+kernel_rel=$(awk '/^[[:space:]]*LINUX/ {print $2; exit}' "$src_conf")
+fdt_rel=$(awk '/^[[:space:]]*FDT/ {print $2; exit}' "$src_conf")
+append=$(awk '/^[[:space:]]*APPEND/ {sub(/^[[:space:]]*APPEND[[:space:]]+/,""); print; exit}' "$src_conf")
+
+kernel_src="$rootmnt/boot/$(echo "$kernel_rel" | sed 's|^\.\./|../|')"
+kernel_src=$(readlink -f "$rootmnt/boot/extlinux/$kernel_rel")
+fdt_src=$(readlink -f "$rootmnt/boot/extlinux/$fdt_rel")
+[ -f "$kernel_src" ] || { echo "kernel not found: $kernel_rel" >&2; exit 1; }
+[ -f "$fdt_src" ] || { echo "device tree not found: $fdt_rel" >&2; exit 1; }
+
+echo "kernel: $kernel_src ($(stat -c%s "$kernel_src") bytes)"
+echo "fdt:    $fdt_src ($(stat -c%s "$fdt_src") bytes)"
+echo
+
+# The root filesystem is named by label rather than by the device node U-Boot
+# happened to use, so the kernel finds it regardless of enumeration order.
+root_spec="root=LABEL=NIXOS_R36TMAX"
+append_fixed=$(echo "$append" | sed -E "s|root=[^ ]*|$root_spec|")
+case "$append_fixed" in
+  *root=*) ;;
+  *) append_fixed="$root_spec $append_fixed" ;;
+esac
+
+install -Dm444 "$kernel_src" "$bootmnt/Image"
+install -Dm444 "$fdt_src" "$bootmnt/board.dtb"
+mkdir -p "$bootmnt/extlinux"
+cat > "$bootmnt/extlinux/extlinux.conf" <<EOF
+DEFAULT korri
+LABEL korri
+  LINUX /Image
+  FDT /board.dtb
+  APPEND $append_fixed
+EOF
+
+sync
+echo "wrote:"
+find "$bootmnt" -type f -printf '  %P  %s bytes\n' | sort
+echo
+echo "extlinux.conf:"
+sed 's/^/  /' "$bootmnt/extlinux/extlinux.conf"

@@ -1,0 +1,72 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux coreutils
+# Replace the bootloader on a written card, leaving everything else alone.
+#
+# Destructive to sectors 64 through 8191 only -- the raw area a Rockchip boot
+# ROM reads. The partition table, kernel, device tree, and root filesystem are
+# untouched, so this isolates the boot chain from everything above it.
+#
+# Same gates as the other card tools: named target, confirmed twice, refuses
+# anything mounted, non-removable, oversized, or empty.
+set -euo pipefail
+
+usage() {
+  echo "usage: swap-loader <loader.bin> /dev/<device> --i-know" >&2
+  exit 2
+}
+
+loader=${1:-}
+target=${2:-}
+confirm=${3:-}
+[ -n "$loader" ] && [ -n "$target" ] || usage
+[ "$confirm" = "--i-know" ] || usage
+[ -f "$loader" ] || { echo "no such loader: $loader" >&2; exit 1; }
+
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+base=$(basename "$target")
+[ -e "/sys/block/$base" ] || { echo "not a whole disk: $target" >&2; exit 1; }
+
+if lsblk -no MOUNTPOINT "$target" | grep -q .; then
+  echo "refusing: something on $target is mounted" >&2
+  exit 1
+fi
+
+size_bytes=$(blockdev --getsize64 "$target")
+[ "$size_bytes" -gt 0 ] || { echo "no medium in $target" >&2; exit 1; }
+[ "$size_bytes" -le $((128 * 1000 * 1000 * 1000)) ] || {
+  echo "refusing: $target is larger than the 128 GB cap" >&2; exit 1;
+}
+
+# The loader must fit between sector 64 and the first partition at 16 MiB.
+#
+# 16 MiB, not 4. A Rockchip card puts TPL and SPL at sector 64 and U-Boot
+# proper at sector 16384, with an empty gap between them. Copying only the
+# first 4 MiB takes the memory init and the first-stage loader and leaves
+# U-Boot behind, so SPL runs, finds zeros where U-Boot should be, and stops --
+# silently, with no display and no console.
+region_bytes=$(( (32768 - 64) * 512 ))
+loader_bytes=$(stat -c%s "$loader")
+[ "$loader_bytes" -le "$region_bytes" ] || {
+  echo "loader is $loader_bytes bytes, region holds $region_bytes" >&2; exit 1;
+}
+
+echo "target: $target"
+lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"
+echo "loader: $loader ($loader_bytes bytes)"
+echo
+
+# Clear the whole region first so nothing of the previous loader survives past
+# the new one's length.
+dd if=/dev/zero of="$target" bs=512 seek=64 count=32704 conv=fsync status=none
+dd if="$loader" of="$target" bs=512 seek=64 conv=fsync,notrunc status=none
+sync
+
+echo "verifying..."
+written=$(dd if="$target" bs=512 skip=64 iflag=count_bytes count="$loader_bytes" 2>/dev/null | sha256sum | cut -d' ' -f1)
+expected=$(sha256sum "$loader" | cut -d' ' -f1)
+if [ "$written" != "$expected" ]; then
+  echo "MISMATCH: card does not read back the loader" >&2
+  exit 1
+fi
+echo "verified: $written"
+lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"

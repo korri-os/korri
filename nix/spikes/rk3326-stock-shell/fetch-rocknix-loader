@@ -1,0 +1,65 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash curl gzip coreutils
+# Extract ROCKNIX's RK3326 bootloader from a release image.
+#
+# This is a diagnostic, not a dependency. Our own boot chain builds U-Boot's
+# open PX30 DRAM init, which no shipping RK3326 distribution uses; every one
+# of them ships Rockchip's closed rk3326_ddr_333MHz blob instead. When a board
+# boots ours and shows no sign of life, swapping in a bootloader that is known
+# to start this exact device separates "our boot chain is wrong" from "our
+# kernel is wrong".
+#
+# The whole raw area before the first partition is taken: sectors 64 through
+# 32767. A Rockchip card puts TPL and SPL at sector 64 and U-Boot proper at
+# sector 16384, separated by an empty gap, so a shorter copy yields a card that
+# runs SPL, finds zeros where U-Boot should be, and stops without a word. The
+# partitions, kernel, and root filesystem are untouched.
+#
+# The image is a 1.2 GiB gzip and only its first megabytes are needed. gzip is
+# a stream, so a ranged request for the head of the compressed file yields the
+# head of the decompressed one; the truncated tail makes gzip complain on exit
+# and that is expected.
+set -uo pipefail
+
+release=${1:-20260901}
+variant=${2:-a}
+out=${KORRI_RK3326_LOADER:-$HOME/.local/share/korri/rk3326-stock-shell/rocknix-loader.bin}
+
+url="https://github.com/ROCKNIX/distribution/releases/download/${release}/ROCKNIX-RK3326.aarch64-${release}-${variant}.img.gz"
+# 4 MiB of image, so fetch generously: the boot area compresses well but the
+# ratio is not known in advance.
+fetch_bytes=$((96 * 1024 * 1024))
+want_bytes=$((16 * 1024 * 1024))
+
+mkdir -p "$(dirname "$out")"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+echo "fetching the head of $url"
+curl -sL -r "0-$((fetch_bytes - 1))" "$url" -o "$tmp/head.gz"
+echo "compressed head: $(stat -c%s "$tmp/head.gz") bytes"
+
+# gzip exits non-zero on the truncated stream; keep whatever it produced.
+gzip -dc "$tmp/head.gz" 2>/dev/null | head -c "$want_bytes" > "$tmp/head.img"
+got=$(stat -c%s "$tmp/head.img")
+echo "decompressed head: $got bytes"
+
+if [ "$got" -lt "$want_bytes" ]; then
+  echo "only $got bytes recovered, need $want_bytes; raise fetch_bytes" >&2
+  exit 1
+fi
+
+# Sector 64 onward, up to the first partition at 4 MiB.
+dd if="$tmp/head.img" of="$out" bs=512 skip=64 count=32704 status=none
+
+# U-Boot proper must be present, or this is the truncated copy that fails
+# silently on the device.
+if ! dd if="$out" bs=512 skip=16320 count=1 status=none | grep -q LOADER; then
+  echo "no LOADER signature at sector 16384: the copy is short" >&2
+  exit 1
+fi
+
+echo
+echo "loader: $out ($(stat -c%s "$out") bytes)"
+echo "first 16 bytes (Rockchip rksd magic expected):"
+dd if="$out" bs=16 count=1 status=none | od -An -tx1
