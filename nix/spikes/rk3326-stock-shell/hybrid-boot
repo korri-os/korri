@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i bash -p bash util-linux coreutils
+#!nix-shell -i bash -p bash util-linux coreutils ubootTools
 # Boot our kernel through ROCKNIX's bootloader.
 #
 # A bisection, not a product. Our own boot chain builds U-Boot's open PX30
@@ -37,18 +37,20 @@
 # root= argument -- the kernel cannot resolve root=LABEL= on its own, and
 # stage 1 does not need to be told.
 #
-# One risk this carries, named here so the symptom is readable when it is
-# still only a symptom. U-Boot places an initrd at ramdisk_addr_r and skips
-# any extlinux entry whose initrd it cannot place, printing
-# "Skipping korri for failure retrieving initrd". That variable is not in
-# this loader's default environment -- only fdt_addr_r and loadaddr are --
-# and whether Rockchip's U-Boot sets it at runtime cannot be read out of the
-# binary. ROCKNIX itself never exercises the path, because it builds its
-# initramfs into its kernel and its own extlinux.conf has no INITRD line.
+# U-Boot places an initrd at ramdisk_addr_r and skips any extlinux entry
+# whose initrd it cannot place. ROCKNIX's boot.scr ends by setting
+# kernel_addr_r and fdtoverlay_addr_r and nothing else, and the loader's
+# default environment holds only fdt_addr_r and loadaddr. So the entry was
+# skipped and nothing booted. It left no error.log, because that message is
+# a print to a console this board does not expose, not one of the failures
+# ROCKNIX's own patches record on the card.
 #
-# If the next boot leaves that message in error.log on the boot partition,
-# the fix is a boot.scr of our own that sets ramdisk_addr_r, kernel_addr_r,
-# and fdtfile before calling sysboot, instead of shipping ROCKNIX's.
+# ROCKNIX never meets this, because it builds its initramfs into its kernel
+# and its own extlinux.conf has no INITRD line.
+#
+# So set the variable. The script below is ROCKNIX's own, with one line
+# added next to the two addresses it already sets, which keeps its device
+# detection intact and keeps the delta readable.
 set -euo pipefail
 
 target=${1:-}
@@ -160,9 +162,29 @@ if [ "$needed" -gt "$free" ]; then
   exit 1
 fi
 
+# ROCKNIX's script with one added line.
+#
+# A U-Boot legacy image is a 64-byte header, then 8 bytes of script length
+# and padding, then the text. Read the text back out, add the address, and
+# repack with the same header fields mkimage's defaults produced.
+#
+# 0x0c000000 sits above the kernel, which ROCKNIX loads at 0x09000000 and
+# which is 21 MB, and below the top of this board's 1 GB of DRAM. It is
+# clear of fdt_addr_r (0x01f00000), fdtoverlay_addr_r (0x08000000), and the
+# 0x100000 the config file loads at.
+script_txt="$work/boot.txt"
+tail -c +73 "$boot_scr" | tr -d '\000' > "$script_txt"
+grep -q '^sysboot ' "$script_txt" || {
+  echo "no sysboot line in $boot_scr -- refusing to patch a script I do not recognise" >&2
+  exit 1
+}
+sed -i 's|^sysboot |setenv ramdisk_addr_r "0x0c000000"\nsysboot |' "$script_txt"
+mkimage -A ppc -O linux -T script -C gzip -n '' \
+  -d "$script_txt" "$work/boot.scr" > /dev/null
+
 install -Dm444 "$kernel_src" "$bootmnt/Image"
 install -Dm444 "$initrd_src" "$bootmnt/initrd"
-install -Dm444 "$boot_scr" "$bootmnt/boot.scr"
+install -Dm444 "$work/boot.scr" "$bootmnt/boot.scr"
 
 # Every filename boot.scr can choose, all holding our device tree.
 #
