@@ -74,5 +74,27 @@ jobs:
           # No aarch64 builder exists here, and the cross attributes do not
           # need one.
           KORRI_AARCH64_BUILDER: none
+        id: build
         run: |
-          ./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'sdImage' }}"
+          out="$(./nix/spikes/rk3326-stock-shell/build "${{ inputs.target || 'sdImage' }}")"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+
+      # Without this the image exists only in the runner's store, which is
+      # discarded when the job ends. A green build that leaves nothing behind
+      # cannot be written to a card.
+      - name: Stage the image
+        if: ${{ (inputs.target || 'sdImage') == 'sdImage' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/image"
+          cp -L "${{ steps.build.outputs.out }}"/sd-image/*.img.zst "$RUNNER_TEMP/image/"
+          ls -la "$RUNNER_TEMP/image"
+          sha256sum "$RUNNER_TEMP/image"/*.img.zst | tee "$RUNNER_TEMP/image/SHA256SUMS"
+
+      - name: Upload the image
+        if: ${{ (inputs.target || 'sdImage') == 'sdImage' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nixos-r36t-max-sd-image
+          path: ${{ runner.temp }}/image
+          retention-days: 7
+          compression-level: 0
