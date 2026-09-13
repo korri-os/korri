@@ -1,0 +1,67 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash curl coreutils
+# Generate a ROCKNIX panel overlay from this board's stock device tree.
+#
+# The R36T Max is an "EE Clone": ROCKNIX has no device tree for it, picks one
+# by reading an ADC pin, and lands on something close but wrong -- a lit
+# backlight with no picture. The community answer is the B image plus an
+# overlay generated from the device's own stock dtb, which carries the panel
+# timings, joystick channels, audio routing, and rotation that ROCKNIX's
+# baseline does not know.
+#
+# https://rocknix.gosk.in/dtbo/ is a browser form, but its API is plain HTTP:
+# the page hashes the dtb, asks for a cached result, and otherwise posts the
+# file. Doing the same here keeps the step reproducible and out of a browser.
+#
+# The overlay is the authoritative description of what differs between this
+# board and ROCKNIX's baseline, so it is also the right source to build our
+# own device tree against -- better than a hand transcription of a decompiled
+# vendor blob.
+set -euo pipefail
+
+dtb=${1:-$HOME/.local/share/korri/rk3326-stock-shell/artifacts/rg42t.dtb}
+# Options use the same suffix grammar as the page: -JPk36 for the two-stick
+# joypad, -DR270 for rotation, -HPi / -SRs for audio faults. Empty means let
+# the service autodetect, which it has done for the K36 joypad since 2025-06.
+opts=${2:-}
+out=${3:-$HOME/.local/share/korri/rk3326-stock-shell/mipi-panel.dtbo}
+
+base="https://rocknix.gosk.in/dtbo"
+[ -f "$dtb" ] || { echo "no such dtb: $dtb" >&2; exit 1; }
+
+md5=$(md5sum "$dtb" | cut -d' ' -f1)
+name="${md5}${opts}"
+echo "dtb:  $dtb"
+echo "md5:  $md5"
+echo "name: $name"
+
+mkdir -p "$(dirname "$out")"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# Ask for a previously generated overlay first, exactly as the page does.
+code=$(curl -s -o "$tmp/cached.dtbo" -w '%{http_code}' "$base/dtbo/$name")
+if [ "$code" = "200" ]; then
+  echo "served from cache"
+  cp "$tmp/cached.dtbo" "$out"
+else
+  echo "not cached (HTTP $code); uploading"
+  code=$(curl -s -o "$tmp/generated.dtbo" -w '%{http_code}' \
+    -F "file=@$dtb" "$base/convert_dtb?opts=$opts")
+  [ "$code" = "200" ] || {
+    echo "generation failed (HTTP $code)" >&2
+    head -c 400 "$tmp/generated.dtbo" >&2 || true
+    exit 1
+  }
+  cp "$tmp/generated.dtbo" "$out"
+fi
+
+size=$(stat -c%s "$out")
+echo "overlay: $out ($size bytes)"
+# A device tree blob starts with 0xd00dfeed. Anything else is an error page.
+magic=$(od -An -tx1 -N4 "$out" | tr -d ' \n')
+[ "$magic" = "d00dfeed" ] || {
+  echo "not a device tree blob (magic $magic)" >&2
+  exit 1
+}
+echo "verified: device tree blob magic"
