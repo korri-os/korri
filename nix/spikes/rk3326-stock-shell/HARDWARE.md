@@ -72,6 +72,33 @@ lanes, `dsi,format = 0`, `dsi,flags = 0xa03`, reset GPIO active-low.
 `width-mm = 153`, `height-mm = 85` — implausible for a square panel and
 probably vendor boilerplate; do not trust it.
 
+### A second, independent source agrees
+
+`fetch-panel-overlay` sends `rg42t.dtb` to the community overlay generator
+at <https://rocknix.gosk.in/dtbo/> and gets back a ROCKNIX panel overlay.
+The service returned ours **from cache**, so another owner of this board
+generated the same file first: it is tested output, not a first attempt.
+
+Everything above survives the comparison. The overlay states the same pixel
+clock and the same porches, the same four lanes and rgb888, the same
+active-low reset on `gpio3` pin 15, the same amplifier and headphone-detect
+pins, and the same `153,85` physical size. Two derivations from different
+directions reached one answer.
+
+**The overlay lists twelve display modes. Eleven of them are not this
+device.** The vendor device tree contains exactly one — `timing0` — and the
+overlay marks the identical mode `default=1`, first in its list. The other
+eleven are the generator's table for the panel batches this board class
+ships with, offered so an owner whose unit differs can pick another. A
+device tree that carries our measured mode alone is therefore right for this
+unit, and the eleven are a menu to try from if a *different* unit shows a
+lit backlight and no picture.
+
+The overlay also raises `dsi,flags` from the vendor's `0xa03` to `0xe03`.
+That difference is unexplained, and both values are vendor-kernel flag sets
+rather than mainline ones, so neither transfers directly. Resolve it when
+the mainline panel driver is written, not before.
+
 ### Init sequence
 
 `decode-panel-init.py` unpacks the vendor `panel-init-sequence` blob into 24

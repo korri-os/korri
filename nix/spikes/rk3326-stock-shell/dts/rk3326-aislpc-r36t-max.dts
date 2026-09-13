@@ -25,6 +25,14 @@
  *  - Analog sticks. Four SARADC channels are known; the axis mapping and
  *    calibration ranges need the same hardware pass, then an adc-joystick
  *    node in the mainline binding rather than the vendor's play_joystick.
+ *  - The speaker amplifier. Its enable line is known and agreed on by two
+ *    sources: the vendor tree says `spk-con-gpio = <&gpio3 RK_PA7 0>`, and
+ *    the generated ROCKNIX overlay says `enable-gpios = <&gpio3 RK_PA7>`
+ *    on an `audio-amplifier` node. Mainline spells this as a
+ *    `simple-audio-amplifier` referenced from
+ *    `simple-audio-card,aux-devs`. Until this board boots far enough to
+ *    hear it, the speaker stays silent and unwritten rather than added on
+ *    faith; headphones do not depend on it.
  */
 
 /dts-v1/;
