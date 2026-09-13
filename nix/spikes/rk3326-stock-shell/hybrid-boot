@@ -104,9 +104,31 @@ boot_scr=${KORRI_ROCKNIX_BOOT_SCR:-$HOME/.local/share/korri/rk3326-stock-shell/r
 
 install -Dm444 "$kernel_src" "$bootmnt/Image"
 install -Dm444 "$boot_scr" "$bootmnt/boot.scr"
-# The name its ADC fallback selects for an unrecognised board. The contents
-# are our device tree.
-install -Dm444 "$fdt_src" "$bootmnt/rk3326-odroid-go2.dtb"
+
+# Every filename boot.scr can choose, all holding our device tree.
+#
+# One name is not enough. boot.scr reads an ADC pin and maps it to a model,
+# and its ranges include a catch-all -- anything under 541 becomes
+# rg351v.dtb -- so an unrecognised board does not reliably reach the
+# "unexpected value" fallback. Providing only the fallback name produced
+# 'dtb load fail' twice. A full ROCKNIX card never hits this because it
+# ships all fifteen trees.
+#
+# Which name it picks is not interesting; the bytes behind every one of them
+# are the same.
+for name in \
+  rk3326-odroid-go2.dtb \
+  rk3326-odroid-go2-v11.dtb \
+  rk3326-odroid-go3.dtb \
+  rk3326-gameconsole-r33s.dtb \
+  rk3326-gameforce-chi.dtb \
+  rk3326-anbernic-rg351v.dtb \
+  rk3326-anbernic-rg351m.dtb \
+  rk3326-powkiddy-rgb10.dtb \
+  rk3326-magicx-xu10.dtb
+do
+  install -Dm444 "$fdt_src" "$bootmnt/$name"
+done
 rm -f "$bootmnt/error.log"
 mkdir -p "$bootmnt/extlinux"
 cat > "$bootmnt/extlinux/extlinux.conf" <<EOF
