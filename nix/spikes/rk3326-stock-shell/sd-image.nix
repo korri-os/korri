@@ -116,6 +116,10 @@ in
   # it off for the same reason.
   hardware.enableAllHardware = lib.mkForce false;
 
+  # This kernel has no device-mapper, and stage 1's LVM probe logs two
+  # errors per boot into a flight.log that is read by eye.
+  services.lvm.enable = false;
+
   hardware.deviceTree = {
     enable = true;
     filter = "rk3326-aislpc-r36t-max.dtb";
@@ -251,7 +255,11 @@ in
     wantedBy = [ "sysinit.target" ];
     after = [ "systemd-udev-settle.service" ];
     unitConfig.DefaultDependencies = false;
-    path = [ pkgs.util-linux pkgs.coreutils pkgs.iproute2 pkgs.alsa-utils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
+    # The survey's inline commands run under `sh -c`; on the first boot every
+    # one of them failed because the unit's PATH had no `sh`. busybox gives
+    # the initrd's toolset to stage 2 as well, which keeps the script one
+    # file for both cards.
+    path = [ pkgs.busybox pkgs.util-linux pkgs.coreutils pkgs.iproute2 pkgs.alsa-utils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;

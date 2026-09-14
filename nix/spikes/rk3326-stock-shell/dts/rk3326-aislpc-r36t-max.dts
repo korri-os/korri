@@ -91,10 +91,19 @@
 		stdout-path = "serial5:1500000n8";
 	};
 
+	/*
+	 * No power-supply, on purpose. The rail is the RK817's SWITCH_REG2,
+	 * which the vendor keeps always-on and which mainline's rk808 driver
+	 * does not register for the RK817 (its rk817_reg[] table stops at
+	 * BOOST and OTG_SWITCH; the switches exist only in rk809_reg[]).
+	 * Naming it here makes pwm-backlight defer forever on a regulator
+	 * that never appears, which is a dark panel with no error. ROCKNIX
+	 * omits the supply for the same reason. Restore it when the switch
+	 * descriptors are added to the driver.
+	 */
 	backlight: backlight {
 		compatible = "pwm-backlight";
 		pwms = <&pwm1 0 25000 0>;
-		power-supply = <&vcc3v3_lcd>;
 	};
 
 	/*
@@ -253,7 +262,7 @@
 		backlight = <&backlight>;
 		reset-gpios = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
 		iovcc-supply = <&vcc18_lcd_n>;
-		vcc-supply = <&vcc3v3_lcd>;
+		/* vcc is SWITCH_REG2; see the backlight node for why it is absent. */
 
 		port {
 			mipi_in_panel: endpoint {
@@ -498,21 +507,14 @@
 			};
 
 			/*
-			 * The RK817 switches are on/off only. The LCD one is the
-			 * panel's 3.3 V and the backlight's supply; the host one is
-			 * USB VBUS, kept on as the vendor does.
+			 * The RK817 also has SWITCH_REG1 (vcc5v0_host, USB VBUS) and
+			 * SWITCH_REG2 (vcc3v3_lcd, the panel's 3.3 V), both always on
+			 * in the vendor tree. Mainline's rk808 driver registers
+			 * neither for the RK817, so they are not declared: a node no
+			 * driver claims is a supply every consumer waits on forever.
+			 * The boot ROM leaves both switches on. Declare them once the
+			 * descriptors are added to rk817_reg[] in rk808-regulator.c.
 			 */
-			vcc5v0_host: SWITCH_REG1 {
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-name = "vcc5v0_host";
-			};
-
-			vcc3v3_lcd: SWITCH_REG2 {
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-name = "vcc3v3_lcd";
-			};
 		};
 
 		rk817_codec: codec {
