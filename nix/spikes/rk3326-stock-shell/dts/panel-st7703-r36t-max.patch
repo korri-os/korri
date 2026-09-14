@@ -1,6 +1,6 @@
 --- a/drivers/gpu/drm/panel/panel-sitronix-st7703.c
 +++ b/drivers/gpu/drm/panel/panel-sitronix-st7703.c
-@@ -70,6 +70,12 @@
+@@ -70,6 +70,20 @@
  	unsigned long mode_flags;
  	enum mipi_dsi_pixel_format format;
  	void (*init_sequence)(struct mipi_dsi_multi_context *dsi_ctx);
@@ -10,13 +10,22 @@
 +	 * do not need it.
 +	 */
 +	unsigned int enable_delay_ms;
++	/*
++	 * Run the init sequence, exit-sleep and display-on from prepare(),
++	 * while the DSI host is still in LP command mode, instead of from
++	 * enable(), after the host has switched to HS video. Some glass
++	 * only accepts its setup before video starts; the vendor drivers
++	 * for such panels do all of it in prepare.
++	 */
++	bool init_in_prepare;
  };
  
  static inline struct st7703 *panel_to_st7703(struct drm_panel *panel)
-@@ -673,6 +679,122 @@
+@@ -673,9 +687,131 @@
  	.init_sequence = gameforcechi_init_sequence,
  };
  
+-static int st7703_enable(struct drm_panel *panel)
 +static void r36tmax_init_sequence(struct mipi_dsi_multi_context *dsi_ctx)
 +{
 +	/*
@@ -130,13 +139,23 @@
 +	 * glass stays white behind a lit backlight.
 +	 */
 +	.enable_delay_ms = 120,
++	/*
++	 * The vendor driver and ROCKNIX's generic-dsi driver both send this
++	 * glass its setup from prepare, before the host starts video. Sent
++	 * from enable, after HS video is running, every sequence tried
++	 * leaves the glass white behind a lit backlight.
++	 */
++	.init_in_prepare = true,
 +};
 +
 +
- static int st7703_enable(struct drm_panel *panel)
++static int st7703_init(struct st7703 *ctx)
  {
- 	struct st7703 *ctx = panel_to_st7703(panel);
-@@ -688,6 +810,9 @@
+-	struct st7703 *ctx = panel_to_st7703(panel);
+ 	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
+ 	struct mipi_dsi_multi_context dsi_ctx = {.dsi = dsi};
+ 
+@@ -688,12 +824,25 @@
  
  	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
  
@@ -146,7 +165,33 @@
  	if (!dsi_ctx.accum_err)
  		dev_dbg(ctx->dev, "Panel init sequence done\n");
  
-@@ -916,6 +1041,7 @@
+ 	return dsi_ctx.accum_err;
+ }
+ 
++static int st7703_enable(struct drm_panel *panel)
++{
++	struct st7703 *ctx = panel_to_st7703(panel);
++
++	if (ctx->desc->init_in_prepare)
++		return 0;
++
++	return st7703_init(ctx);
++}
++
+ static int st7703_disable(struct drm_panel *panel)
+ {
+ 	struct st7703 *ctx = panel_to_st7703(panel);
+@@ -748,6 +897,9 @@
+ 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
+ 	usleep_range(15000, 20000);
+ 
++	if (ctx->desc->init_in_prepare)
++		return st7703_init(ctx);
++
+ 	return 0;
+ }
+ 
+@@ -916,6 +1068,7 @@
  }
  
  static const struct of_device_id st7703_of_match[] = {
