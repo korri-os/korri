@@ -201,34 +201,30 @@ in
   #
   # VFAT, FAT, and the two needed NLS tables are built into this kernel, so
   # mounting works with no modules loaded.
-  # pstore has to be mounted to be read, and the initrd does not do it for
-  # us. PSTORE_RAM is built in, so the filesystem is there once mounted.
-  boot.initrd.postDeviceCommands = lib.mkAfter ''
-    mkdir -p /flight /pstore
-    if mount -t vfat /dev/disk/by-label/NIXOS_BOOT /flight 2>/dev/null; then
-      {
-        echo "=== initrd $(cat /proc/sys/kernel/random/boot_id 2>/dev/null) ==="
-        cat /proc/uptime
-        cat /proc/cmdline
-        dmesg || true
-      } >> /flight/flight.log 2>&1
+  # The recorder must not depend on the thing it is diagnosing. A boot that
+  # cannot find the root label is exactly the boot that needs a log, and
+  # by-label is what it cannot find. So: try the label, and if that is
+  # absent, try every vfat partition the kernel can see, and write to the
+  # first one that mounts. Record what block devices exist at all, which is
+  # the question a missing root actually asks.
+  #
+  # It runs twice: after udev settles, and again from fail(), because a
+  # root that never appears ends in fail(), and on a board with no console
+  # fail() waits forever for a keypress. The second write is the one that
+  # says why.
+  boot.initrd.extraUtilsCommands = ''
+    # The initrd's shell is busybox ash at $out/bin/ash; point the script
+    # there so it runs with the initrd's PATH and nothing from the host.
+    sed "1s|.*|#!$out/bin/ash|" ${./payload/korri-flight.sh} > $out/bin/korri-flight
+    chmod +x $out/bin/korri-flight
+  '';
 
-      # What the previous kernel wrote before it died. This is the only
-      # console this board has, so copy every record and leave them in
-      # place: the second read is the one a human does.
-      if mount -t pstore pstore /pstore 2>/dev/null; then
-        for f in /pstore/*; do
-          [ -e "$f" ] || continue
-          {
-            echo "=== pstore $(basename "$f") ==="
-            cat "$f"
-          } >> /flight/pstore.log 2>&1
-        done
-        umount /pstore
-      fi
-      sync
-      umount /flight
-    fi
+  boot.initrd.postDeviceCommands = lib.mkAfter ''
+    korri-flight initrd
+  '';
+
+  boot.initrd.preFailCommands = ''
+    korri-flight initrd-FAIL
   '';
 
   # Stage 2 runs the same survey the ROCKNIX card runs, so the first boot of

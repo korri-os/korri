@@ -134,8 +134,14 @@ reset with `-110`.
 family. `rk817-battery: energy_mode missing!` is a stock warning, not a
 fault.
 
-Three controllers: `ff370000.dwmmc` (eMMC), `ff380000.dwmmc` (SDIO/Wi-Fi),
-`ff390000.dwmmc` (SD card).
+Three controllers: `ff370000.dwmmc` (SD card, 4-bit, card-detect on
+`gpio0 RK_PA3`), `ff380000.dwmmc` (SDIO/Wi-Fi), `ff390000.dwmmc` (eMMC,
+8-bit, non-removable). The vendor tree's aliases, ROCKNIX's tree, and
+ROCKNIX's running dmesg (`mmc1: SD32G` on `ff370000`) all agree.
+
+An earlier version of this line had SD and eMMC swapped, and that error
+was then repeated in a diagnosis. `rk3326.dtsi` labels are right:
+`&sdmmc` is `ff370000`, `&emmc` is `ff390000`.
 
 | Mount | Device | Type |
 |---|---|---|
