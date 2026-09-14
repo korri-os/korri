@@ -636,27 +636,16 @@
 };
 
 /*
- * The vibration motor runs continuously on a board booted from this tree,
- * because nothing claims its enable line and it powers up asserted. The
- * vendor tree drives it from its own joystick driver via `moto-gpio`; there
- * is no mainline binding for that, so hold the line low with a hog instead.
+ * The vibration motor, gpio3 RK_PA6, is deliberately unclaimed.
  *
- * A hog is applied when the kernel parses this tree, before drivers probe,
- * which also makes it a usable progress signal on a device with no working
- * display and no console: if the rumble stops, this tree was read.
- *
- * This is very likely the "loud heavy buzz immediately from power-on"
- * recorded against the June nix-on-rocks images, which was guessed at the
- * time to be the speaker amplifier.
+ * A gpio-hog on it was the one node in this tree that neither the vendor
+ * tree nor ROCKNIX's carries, and the board it was meant to quiet never
+ * went quiet. A hog is applied inside the GPIO bank's own probe, at 0.1 s
+ * on this board, and an error there fails the whole bank: gpio3 never
+ * registers, and the panel reset, the amplifier enable and the motor line
+ * all sit on it. ROCKNIX leaves the line unclaimed and its boot is silent,
+ * so quiet comes from elsewhere. Find where before claiming it again.
  */
-&gpio3 {
-	vibrator-off-hog {
-		gpio-hog;
-		gpios = <RK_PA6 GPIO_ACTIVE_HIGH>;
-		output-low;
-		line-name = "vibration-motor";
-	};
-};
 
 &pinctrl {
 	leds {
