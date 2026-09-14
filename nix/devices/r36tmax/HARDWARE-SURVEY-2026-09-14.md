@@ -399,3 +399,9 @@ brightness/actual 833, panel power unchanged at zero, no remaining test units,
 and journaled gray-layer stop and timer cancellation about 26.6 seconds after
 arming. The gray helper used 95 ms CPU and peaked at 3.2 MiB memory.
 The boot ID remained `d34efbf7-915d-4b39-9795-1bb2083b13d5`.
+
+After this sequence, the owner reported neither continuous buzzing nor
+perceptible vibration. Chromium remained paused, the dock remained connected,
+and no audio playback or rumble command was issued. This records quiet idle
+behavior in that state. It does not verify speaker output, rumble actuation or
+reliable stopping after an intentional rumble command.
