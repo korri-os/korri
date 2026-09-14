@@ -56,7 +56,11 @@ bus_format[100a]: RGB888_1X24
 
 This corresponds to approximately 60.60 Hz. The stock framebuffer's 680 by
 680 plane is not the panel resolution. The NixOS survey also reports DSI-1
-connected and enabled at 720 by 720.
+connected and enabled at 720 by 720. In the later owner-observed check,
+a temporary gray layer visibly dimmed at backlight values 833, 416 and 208,
+then returned to 833 out of 1666. The owner confirmed restoration and removal
+of the test layer. This does not test full brightness range, blank/wake or
+suspend/resume.
 
 The vendor DTS declares four DSI lanes, RGB888, active-low GPIO3 PB7 reset,
 and GPIO0 PB5 panel enable. Its 153 by 85 mm physical size is implausible for

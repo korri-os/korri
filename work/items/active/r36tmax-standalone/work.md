@@ -209,3 +209,14 @@ The browser-load issue is parked as `01M2GS38QWXK9HM7ENCMAW6GXG` while applicati
 work remains paused. Battery properties, game controls, rumble and the remaining
 physical/power-cycle acceptance are still open. The original eight-step work
 is not complete.
+
+
+## Owner-observed backlight check
+
+With Chromium paused, the owner confirmed the gray-screen sequence at
+brightness 833 → 416 → 208 → 833 out of 1666, followed by removal of the gray
+layer. Driver readbacks and normal cleanup agreed. An independent restoration
+timer was armed and then cancelled after successful restoration; it did not fire.
+This accepts dimming/restoration at those levels only. No panel-power, mode,
+boot, voltage or governor change occurred. Full range, blank/wake and suspend
+remain untested. See Stage 3 of the hardware survey for evidence.

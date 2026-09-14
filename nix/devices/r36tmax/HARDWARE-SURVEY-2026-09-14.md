@@ -370,3 +370,32 @@ In the same private logs directory as Stage 1:
   output and the corresponding commands with local and remote builds disabled.
 - `hardware-usb-r36tmax-inspector-signature-proof-20260914-204535.log`: repeated
   read-only verification, recording exact paths/options and explicit exit zero.
+
+
+## Stage 3: owner-observed brightness control
+
+The owner confirmed readiness and watched the complete sequence. A temporary
+native swaybg layer showed solid gray at the existing panel mode. Backlight
+brightness changed from 833 to 416, then 208, then back to 833 out of 1666.
+The driver reported each requested value. The owner confirmed that gray
+appeared, dimmed twice, brightened again and disappeared as expected.
+
+An independent 40-second restoration timer was armed before changes. The gray
+layer also had its own runtime limit. Normal cleanup verified brightness 833,
+stopped the temporary layer and cancelled the unused restoration timer. No
+panel-power, mode, governor, voltage or boot configuration was changed.
+Chromium remained paused. The fallback timer was armed but did not need to fire;
+its failure-recovery behavior was not tested.
+
+This physically verifies dimming and restoration at these three levels. It
+does not verify full brightness range, minimum/maximum output, PWM flicker
+measurement, DPMS blank/wake, suspend/resume or panel reinitialization.
+
+Evidence: `hardware-usb-r36tmax-screen-brightness-check-20260914-205442.log`
+in the same private log directory, plus the owner's `expected` response to the
+brightness-observation question. A later read-only check,
+`hardware-usb-r36tmax-display-restoration-state-20260914-205834.log`, verified
+brightness/actual 833, panel power unchanged at zero, no remaining test units,
+and journaled gray-layer stop and timer cancellation about 26.6 seconds after
+arming. The gray helper used 95 ms CPU and peaked at 3.2 MiB memory.
+The boot ID remained `d34efbf7-915d-4b39-9795-1bb2083b13d5`.
