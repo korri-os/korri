@@ -11,6 +11,7 @@ let
   c = configuration.config;
   console = consoleConfiguration.config;
   sanity = pkgs.callPackage ./session-sanity.nix { };
+  gameButtons = import ./dts/game-buttons-check.nix { inherit pkgs; };
   common =
     config:
     lib.all (a: a.assertion) config.assertions
@@ -157,6 +158,7 @@ pkgs.runCommand "r36tmax-module-check"
     ];
   }
   ''
+    test -f ${gameButtons}/rockchip/rk3326-aislpc-r36t-max.dtb
     cp ${./boot-media-check.py} boot-media-check.py
     cp ${./check-boot-media.sh} check-boot-media.sh
     mkdir payload

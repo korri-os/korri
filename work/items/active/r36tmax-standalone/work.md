@@ -232,3 +232,15 @@ IRQ 25 (`ff442800.iommu`). No JPEG was produced. The device remains reachable
 and cool, with Chromium paused, but no more encoder/decoder jobs may run in
 this boot before coordinated recovery. No reboot, system suspend, charging
 change or speculative register access occurred. See Stage 4 of the survey.
+
+## Button-only source slice
+
+Seventeen GPIO game buttons now use the native `gpio-keys-polled` binding,
+with the pinned ROCKNIX mapping, 10 ms polling and exact input pull-up pinctrl.
+No volume, axis, motor, amplifier, panel or charging change is included.
+The host DTB check passed after a real missing-binding RED result; 14 malformed
+DTB cases are retained and run by the device check. Parent reruns of those
+checks, the five existing boot-media tests, formatting and Python lint passed.
+Review found no blocking issue. Native kernel/image build and physical
+press/release, classification and Korri delivery remain pending. The running
+device has not changed; codec jobs remain held after the IOMMU fault.

@@ -130,8 +130,11 @@ charger-only classification did not prove missing data wires.
 
 The ROCKNIX stick implementation uses a GPIO-controlled analog multiplexer
 feeding ADC channel 1, not four independent channels. The vendor DTS's four
-logical axis labels do not contradict that physical multiplexing route. Game
-buttons, sticks, speaker-amplifier control and rumble remain unintegrated.
+logical axis labels do not contradict that physical multiplexing route. The
+17 game buttons now have a source-grounded native `gpio-keys-polled` DTS
+binding and a host-only compiled-DTB check; see [dts/README.md](dts/README.md).
+They are not deployed or physically accepted by that check. Sticks,
+speaker-amplifier control and rumble remain unintegrated.
 The current kernel registers RK817 ALSA and headphone detection, but no audible
 output or jack-change test has been performed. An existing shared InputPlumber
 process is not proof that the handheld controls work.
