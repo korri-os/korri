@@ -41,9 +41,11 @@ nix build .#packages.aarch64-linux.r36tmax-sd-image
 `nix run .#device-image-dist` stages a pinned image, checksum and revision from
 a clean checkout. Its image argument is
 `packages.aarch64-linux.r36tmax-sd-image`. The separate signed-cache workflow
-is configured to publish the public system closure and every kernel output.
-Publication has not run for this candidate. The diagnostic image is not in
-its device list. Preserve signature checking and the no-build policy.
+publishes the public system closure and every kernel output. Publication on
+2026-09-14 added 73 paths, about 69 MiB. A host-side empty-store test downloaded
+the exact native RK915 module with signatures required and builds disabled.
+This is not a device download or module-load test. The diagnostic image is
+not in the publisher's device list. Preserve the no-build policy.
 
 Normal boot-generation installation is explicitly blocked. The preserved
 loader reads FAT, while the generic NixOS installer targets root `/boot`.
