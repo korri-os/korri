@@ -25,6 +25,7 @@ in
     (import ../../formats/sd-card.nix { gpt = false; })
     ./usb-gadget.nix
     ./wifi
+    ./audio
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";

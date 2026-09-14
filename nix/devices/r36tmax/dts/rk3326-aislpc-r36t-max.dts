@@ -12,7 +12,7 @@
  * generic Rockchip EVB with board nodes grafted onto it.
  *
  * Closest upstream relative is rk3326-anbernic-rg351m.dtsi: same SoC, same
- * RK817 PMIC, same audio routing, same SD card wiring. Where this board
+ * RK817 PMIC, same I2S interface, same SD card wiring. Where this board
  * agrees with it, it deliberately says the same thing.
  *
  * The PMIC is declared as RK817, not identified by a silicon ID read.
@@ -27,14 +27,8 @@
  *    SARADC channel 1, not four independent ADC inputs. Mux enable wiring,
  *    physical axis mapping and calibration still need hardware acceptance.
  *    The 17 GPIO game buttons below do not implement analog movement.
- *  - The speaker amplifier. Its enable line is known and agreed on by two
- *    sources: the vendor tree says `spk-con-gpio = <&gpio3 RK_PA7 0>`, and
- *    the generated ROCKNIX overlay says `enable-gpios = <&gpio3 RK_PA7>`
- *    on an `audio-amplifier` node. Mainline spells this as a
- *    `simple-audio-amplifier` referenced from
- *    `simple-audio-card,aux-devs`. Until this board boots far enough to
- *    hear it, the speaker stays silent and unwritten rather than added on
- *    faith; headphones do not depend on it.
+ *  - Battery/charger profile and amplifier electrical characteristics.
+ *    The source-grounded speaker route below is not audible acceptance.
  */
 
 /dts-v1/;
@@ -288,8 +282,24 @@
 		reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>;
 	};
 
+	/*
+	 * ROCKNIX distribution@697d112a64e442e79e3d27b064351d917657301a,
+	 * rk3326-gameconsole-eeclone.dts:292-330,896-900. Vendor rg42t.dts
+	 * spk-con-gpio corroborates GPIO3 PA7 active-high. No measured gain
+	 * or controllable supply is known; do not invent either. The card now
+	 * depends on the simple-amplifier auxiliary component probing.
+	 */
+	spk_amp: audio-amplifier {
+		compatible = "simple-audio-amplifier";
+		enable-gpios = <&gpio3 RK_PA7 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&spk_amp_enable_h>;
+		pinctrl-names = "default";
+		sound-name-prefix = "Speaker Amp";
+	};
+
 	rk817-sound {
 		compatible = "simple-audio-card";
+		simple-audio-card,aux-devs = <&spk_amp>;
 		simple-audio-card,name = "rk817_int";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,hp-det-gpios = <&gpio2 RK_PC6 GPIO_ACTIVE_HIGH>;
@@ -297,12 +307,17 @@
 		simple-audio-card,widgets =
 			"Microphone", "Mic Jack",
 			"Headphone", "Headphones",
-			"Speaker", "Speaker";
+			"Speaker", "Internal Speakers";
+		/* Route both amp channels: an unconnected output can keep DRV on. */
 		simple-audio-card,routing =
 			"MICL", "Mic Jack",
 			"Headphones", "HPOL",
 			"Headphones", "HPOR",
-			"Speaker", "SPKO";
+			"Internal Speakers", "Speaker Amp OUTL",
+			"Internal Speakers", "Speaker Amp OUTR",
+			"Speaker Amp INL", "HPOL",
+			"Speaker Amp INR", "HPOR";
+		simple-audio-card,pin-switches = "Internal Speakers";
 
 		simple-audio-card,codec {
 			sound-dai = <&rk817>;
@@ -833,6 +848,12 @@
 				<3 RK_PC7 RK_FUNC_GPIO &pcfg_pull_up>,
 				<3 RK_PD0 RK_FUNC_GPIO &pcfg_pull_up>,
 				<3 RK_PD1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	speaker {
+		spk_amp_enable_h: spk-amp-enable-h {
+			rockchip,pins = <3 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 

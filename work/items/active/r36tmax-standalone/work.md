@@ -244,3 +244,20 @@ checks, the five existing boot-media tests, formatting and Python lint passed.
 Review found no blocking issue. Native kernel/image build and physical
 press/release, classification and Korri delivery remain pending. The running
 device has not changed; codec jobs remain held after the IOMMU fault.
+
+## Speaker source slice
+
+The existing card now declares the PA7 external amplifier, both HP-to-amplifier
+channels and the native Internal Speakers switch. A device-only patched UCM
+data tree adds the existing ROCKNIX headphone speaker-off guard without an
+alsa-lib overlay or a sound server. Mic, jack, card identity, buttons, panel,
+Wi-Fi and battery/charger omission remain unchanged.
+
+Compiled-DTB RED→GREEN, 20 speaker rejection cases, 14 button cases, four native
+libasound-parsed UCM mutations and the existing five boot-media tests passed.
+Parent check evaluation/lint passed; independent review reran the focused
+tests and found no blocking defect. No playback or deployment has occurred.
+Build and physical acceptance remain pending. Inherited volume is not made
+safe by this source change: the test must verify the lowest mixer level,
+use an attenuated finite signal and confirm speaker-off cleanup. No automatic
+jack switching or volume-button functionality is claimed.

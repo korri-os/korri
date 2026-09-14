@@ -12,6 +12,8 @@ let
   console = consoleConfiguration.config;
   sanity = pkgs.callPackage ./session-sanity.nix { };
   gameButtons = import ./dts/game-buttons-check.nix { inherit pkgs; };
+  speakerUcm = import ./audio/check.nix { inherit pkgs; };
+  deviceUcm = "${configuration.pkgs.callPackage ./audio/ucm.nix { }}/share/alsa/ucm2";
   common =
     config:
     lib.all (a: a.assertion) config.assertions
@@ -52,6 +54,13 @@ let
     && lib.elem "libcomposite" config.boot.kernelModules
     && lib.elem "usb_f_acm" config.boot.kernelModules
     && lib.elem "usb_f_ncm" config.boot.kernelModules
+    &&
+      config.environment.sessionVariables.ALSA_CONFIG_UCM2
+      == config.systemd.globalEnvironment.ALSA_CONFIG_UCM2
+    && config.systemd.globalEnvironment.ALSA_CONFIG_UCM2 == deviceUcm
+    &&
+      lib.hasInfix (builtins.unsafeDiscardStringContext deviceUcm)
+        config.systemd.units."flight-recorder.service".text
     && config.systemd.services.usb-gadget.wantedBy == [ "multi-user.target" ]
     && config.systemd.services.flight-recorder.wantedBy == [ "sysinit.target" ];
   kiosk = c.systemd.services.korri-chromium-kiosk;
@@ -60,6 +69,7 @@ let
   installerScript = pkgs.writeText "r36tmax-selected-installer" c.system.build.installBootLoader.text;
 in
 assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelConfig)) [
+  "SND_SOC_SIMPLE_AMPLIFIER"
   "NFT_CT"
   "NFT_LOG"
   "NFT_COMPAT"
@@ -159,6 +169,7 @@ pkgs.runCommand "r36tmax-module-check"
   }
   ''
     test -f ${gameButtons}/rockchip/rk3326-aislpc-r36t-max.dtb
+    test -f ${speakerUcm}
     cp ${./boot-media-check.py} boot-media-check.py
     cp ${./check-boot-media.sh} check-boot-media.sh
     mkdir payload

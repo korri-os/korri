@@ -133,8 +133,18 @@ feeding ADC channel 1, not four independent channels. The vendor DTS's four
 logical axis labels do not contradict that physical multiplexing route. The
 17 game buttons now have a source-grounded native `gpio-keys-polled` DTS
 binding and a host-only compiled-DTB check; see [dts/README.md](dts/README.md).
-They are not deployed or physically accepted by that check. Sticks,
-speaker-amplifier control and rumble remain unintegrated.
-The current kernel registers RK817 ALSA and headphone detection, but no audible
+They are not deployed or physically accepted by that check. Sticks and rumble
+remain unintegrated.
+
+The external speaker now has a source-grounded `simple-audio-amplifier` route:
+GPIO3 PA7 active-high, both HP channels and `Internal Speakers Switch`, with
+the existing `rk817_int` card and mic route retained. A device-scoped native
+UCM patch explicitly disables the speaker when Headphones is enabled. See
+[audio/README.md](audio/README.md) for source evidence, host checks and quiet
+playback gates. This change is not deployed or physically accepted. The whole
+card now depends on the amplifier component probing; headphone registration
+alone cannot establish the new route or its mute behavior.
+
+The recorded kernel registers RK817 ALSA and headphone detection, but no audible
 output or jack-change test has been performed. An existing shared InputPlumber
 process is not proof that the handheld controls work.

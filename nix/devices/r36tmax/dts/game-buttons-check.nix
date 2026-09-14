@@ -22,5 +22,6 @@ pkgs.runCommand "r36tmax-game-buttons-check"
     dtb="$out/rockchip/rk3326-aislpc-r36t-max.dtb"
     dtc -I dts -O dtb -o "$dtb" board.dts
     python3 ${./test-game-buttons.py} "$dtb" ${./check-game-buttons.py}
+    python3 ${./test-speaker.py} "$dtb" ${./check-speaker.py}
     python3 ${../wifi/check-dtb.py} "$dtb"
   ''

@@ -86,9 +86,19 @@ No device deployment or input-policy change is implied by a passing check.
 Confirm that panel operation, Wi-Fi and quiet idle remain unchanged on the
 acceptance boot. Do not treat registration alone as working controls.
 
+## External speaker
+
+The existing card now binds a native GPIO3 PA7 active-high amplifier, both
+HPOL/HPOR channels and the `Internal Speakers` pin switch. `check-speaker.py`
+and `test-speaker.py` run in the same focused host compilation above, including
+20 malformed-DTB rejection cases. The 17-button, generic DSI, Wi-Fi and mic
+bindings remain unchanged. See [audio/README.md](../audio/README.md) for pinned
+sources, the device-scoped native UCM headphone guard, module dependency and
+quiet-playback prerequisites. Host success is not driver or audible acceptance.
+
 ## Exclusions and upstream work
 
-Sticks, speaker-amplifier control and rumble remain outside this slice. The
+Sticks and rumble remain outside these slices. The
 working ROCKNIX stick driver uses an analog multiplexer on ADC channel 1.
 Do not replace it with an assumed four-channel joystick description.
 
