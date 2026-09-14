@@ -1,0 +1,58 @@
+#!/usr/bin/env nix-shell
+#!nix-shell -i bash -p bash util-linux coreutils
+# Put the pstore-reading autostart on a ROCKNIX card's STORAGE partition.
+#
+# ROCKNIX's /usr/bin/autostart runs every file in /storage/.config/autostart/
+# as root at every boot, after its own device quirks. STORAGE
+# is the card's second partition, ext4, and on first boot ROCKNIX grows it
+# to fill the card and creates .config in it. So this only works on a card
+# that has booted ROCKNIX at least once; a freshly written card has a 32 MB
+# STORAGE with no .config yet.
+#
+# Also reads back whatever a previous run of the autostart left on the FAT
+# partition, so one card round trip both collects and installs.
+set -euo pipefail
+
+target=${1:-}
+confirm=${2:-}
+[ -n "$target" ] && [ "$confirm" = "--i-know" ] || {
+  echo "usage: install-autostart /dev/<device> --i-know" >&2
+  exit 2
+}
+[ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
+if [ -b "${target}1" ]; then p="$target"; else p="${target}p"; fi
+boot="${p}1"; storage="${p}2"
+[ -b "$boot" ] && [ -b "$storage" ] || { echo "expected two partitions" >&2; exit 1; }
+
+here=$(cd "$(dirname "$0")" && pwd)
+script="$here/payload/rocknix-autostart.sh"
+collect=${KORRI_PSTORE_OUT:-$HOME/.local/share/korri/rk3326-stock-shell/logs/pstore-$(date +%Y%m%d-%H%M%S)}
+
+work=$(mktemp -d)
+cleanup() {
+  mountpoint -q "$work/boot" && umount "$work/boot"
+  mountpoint -q "$work/storage" && umount "$work/storage"
+  rm -rf "$work"
+}
+trap cleanup EXIT
+mkdir -p "$work/boot" "$work/storage"
+
+mount "$boot" "$work/boot"
+if [ -d "$work/boot/pstore" ]; then
+  mkdir -p "$collect"
+  cp -a "$work/boot/pstore/." "$collect/"
+  echo "collected a previous run into $collect:"
+  find "$collect" -type f -printf '  %8s  %P\n' | sort -k2
+  echo
+else
+  echo "no pstore directory on the boot partition yet"
+fi
+
+mount "$storage" "$work/storage"
+[ -d "$work/storage/.config" ] || {
+  echo "no /storage/.config on $storage -- has this card booted ROCKNIX?" >&2
+  exit 1
+}
+install -Dm755 "$script" "$work/storage/.config/autostart/00-korri-pstore.sh"
+sync
+echo "installed: /storage/.config/autostart/00-korri-pstore.sh ($(stat -c%s "$script") bytes)"
