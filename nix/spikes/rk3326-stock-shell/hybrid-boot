@@ -124,6 +124,23 @@ fdt_src=$(readlink -f "$rootmnt/boot/extlinux/$fdt_rel")
 [ -f "$initrd_src" ] || { echo "initrd not found: $initrd_rel" >&2; exit 1; }
 [ -f "$fdt_src" ] || { echo "device tree not found: $fdt_rel" >&2; exit 1; }
 
+# KORRI_FDT swaps in a different compiled device tree without a rebuild.
+#
+# Our own tree panics a second into boot and this board has no console to
+# say why. ROCKNIX's tree for this board boots it with a screen, so the
+# bisection runs the other way round: start from the tree that works,
+# under our kernel, and let dmesg on the card name what does not bind.
+# The two ROCKNIX-only compatibles, rocknix,generic-dsi and
+# rocknix-singleadc-joypad, will not bind under mainline; everything else
+# will, and stage 2 is reachable without them.
+#
+#   KORRI_FDT=~/.local/share/korri/rk3326-stock-shell/rocknix-eeclone-panel.dtb
+if [ -n "${KORRI_FDT:-}" ]; then
+  [ -f "$KORRI_FDT" ] || { echo "KORRI_FDT not found: $KORRI_FDT" >&2; exit 1; }
+  fdt_src=$KORRI_FDT
+  echo "fdt override: $fdt_src"
+fi
+
 echo "kernel: $kernel_src ($(stat -c%s "$kernel_src") bytes)"
 echo "initrd: $initrd_src ($(stat -c%s "$initrd_src") bytes)"
 echo "fdt:    $fdt_src ($(stat -c%s "$fdt_src") bytes)"
