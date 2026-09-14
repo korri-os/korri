@@ -1,0 +1,18 @@
+PX30: do not build the open TPL when binman uses Rockchip's DDR binary.
+
+U-Boot 2025.10 already supports ROCKCHIP_EXTERNAL_TPL in rockchip-u-boot.dtsi.
+PX30's unconditional select is the only change needed to let that path omit
+an in-tree TPL. Keep the original selection when no external TPL is requested.
+No SRAM limits, DRAM timings, or hardware registers are changed.
+
+--- a/arch/arm/mach-rockchip/Kconfig
++++ b/arch/arm/mach-rockchip/Kconfig
+@@ -7,7 +7,7 @@ config ROCKCHIP_PX30
+ 	select SUPPORT_SPL
+ 	select SUPPORT_TPL
+ 	select SPL
+-	select TPL
++	select TPL if !ROCKCHIP_EXTERNAL_TPL
+ 	select TPL_TINY_FRAMEWORK if TPL
+ 	select TPL_HAVE_INIT_STACK if TPL
+ 	imply SPL_SEPARATE_BSS

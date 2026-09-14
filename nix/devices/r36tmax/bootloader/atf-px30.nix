@@ -7,7 +7,8 @@
 #
 # Contrast with the RG353M and RG DS: those consume a prebuilt Rockchip
 # `rkbin.BL31_RK3568` blob because nixpkgs carries no RK3568 TF-A platform
-# path for them. RK3326 needs no vendor blob at any boot stage.
+# path for them. This BL31 remains source-built; uboot.nix uses vendor DDR
+# firmware for the earlier stage.
 {
   buildArmTrustedFirmware,
   lib,

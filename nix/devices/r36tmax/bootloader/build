@@ -50,7 +50,7 @@ exec nix build --impure --print-out-paths --no-link \
   --expr "
     let
       nixpkgs = builtins.getFlake \"github:NixOS/nixpkgs/${nixpkgs_rev}\";
-      spike = import ${repo_root}/nix/spikes/rk3326-boot-chain { inherit nixpkgs; };
+      spike = import ${repo_root}/nix/devices/r36tmax/bootloader { inherit nixpkgs; };
     in
     spike.${attr}
   "
