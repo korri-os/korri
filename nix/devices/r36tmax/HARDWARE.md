@@ -1,8 +1,10 @@
 # R36T Max hardware evidence
 
 This records saved stock/ROCKNIX surveys and the NixOS bring-up. A device-tree
-value is a software declaration, not an electrical measurement. The current
-image candidates still need physical acceptance.
+value is a software declaration, not an electrical measurement. The diagnostic
+image has booted on the handheld; physical acceptance is still incomplete.
+See [the autonomous live survey](HARDWARE-SURVEY-2026-09-14.md) for current
+thermal, network, storage and driver observations.
 
 Original artifacts remain outside Git at
 `~/.local/share/korri/rk3326-stock-shell/artifacts/`. They include `rg42t.dtb`,
@@ -84,9 +86,12 @@ source. See `wifi/README.md` for hashes and distribution restrictions.
 The legacy June proof records working association and SSH on Linux 6.12.79
 with GPIO0 PA2 active-low reset, PA5 host wake, and 25 MHz SDIO. It records
 50 MHz firmware-reset timeouts and failed enumeration with active-high reset.
-The current 6.12.63 kernel/module/compiled DTB checks pass. This run has not
-tested radio operation on the handheld. The existing SDIO supply definitions
-differ from the proof and remain a physical validation question.
+The current 6.12.63 kernel/module/compiled DTB checks pass. The diagnostic boot
+has working Wi-Fi and pinned SSH at 25 MHz SDIO. A five-minute low-rate probe
+recorded 6.33% packet loss and multi-second delays; a subsequent one-minute
+handheld/router control was clean. Reliability is not accepted. The existing
+SDIO supply definitions differ from the proof and remain a physical validation
+question.
 
 ## PMIC and storage
 
@@ -111,9 +116,13 @@ FAT filesystems for somewhere to write.
 
 USB reachability is unresolved. A saved survey reported a configured CDC
 function at high speed; zero extcon values alone do not prove missing data
-wires. No USB connection to the handheld exists in this run.
+wires. The current PHY reports a dedicated charger while the UDC is not
+attached. A working host USB data connection is still unverified.
 
 The ROCKNIX stick implementation uses a GPIO-controlled analog multiplexer
-feeding ADC channel 1, not four independent channels. Buttons, sticks, sound
-and rumble remain outside the current integration. An existing shared
-InputPlumber process is not proof that the handheld controls work.
+feeding ADC channel 1, not four independent channels. The vendor DTS's four
+logical axis labels do not contradict that physical multiplexing route. Game
+buttons, sticks, speaker-amplifier control and rumble remain unintegrated.
+The current kernel registers RK817 ALSA and headphone detection, but no audible
+output or jack-change test has been performed. An existing shared InputPlumber
+process is not proof that the handheld controls work.

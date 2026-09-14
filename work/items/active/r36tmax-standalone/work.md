@@ -142,3 +142,36 @@ The unrelated networkd wait-online unit still fails and makes test activation
 return 4 despite the new services starting. Its follow-up is
 `01M2GJVDYB8HZRC44JZV1VHNVF`. Other retired kiosk consumers are tracked under
 `01M2GJV1N2FBKP3D0SFQPMY5N5`. Neither follow-up was folded into this fix.
+
+## Autonomous hardware survey after pausing application work
+
+The owner redirected this session to safe autonomous hardware checks, with
+physical actions deferred until requested. Full evidence and limits are in
+[nix/devices/r36tmax/HARDWARE-SURVEY-2026-09-14.md](../../../../nix/devices/r36tmax/HARDWARE-SURVEY-2026-09-14.md).
+
+- No runtime service, boot, voltage, governor, charging, mixer or input setting
+  was changed. No target build, stress workload or storage write test ran.
+- The existing workload reports SoC/GPU temperatures around 83–87°C and active
+  thermal cooling states. Browser accounting consumed 17.25 CPU-seconds in
+  10.21 wall-seconds. Additional load is withheld pending a cooler baseline;
+  the browser is still running, not silently stopped.
+- A five-minute, 600-probe Wi-Fi test lost 38 replies and had a 5.52-second
+  maximum RTT. A subsequent concurrent one-minute handheld/router control had
+  no loss. This is an unexplained intermittent failure, not accepted reliability.
+- Root filesystem expansion is verified against the card's reported capacity.
+  Panfrost clients, Hantro VPU nodes, RK817 ALSA and headphone detection exist;
+  those are not physical audio/input or video-decode acceptance.
+- The actual built kernel contains RK817 charging support. The live PMIC has
+  no charger DT child; its charger platform device is unbound. Exact 6.12.63
+  probe code explains the resulting absence of power supplies. An empty child
+  cannot provide telemetry; do not guess a battery profile to force a probe.
+  Early voltage-calibration reads are distinct from later gauge-state writes.
+- Game controls and rumble have no board consumers. A button-press session is
+  premature until source-grounded input integration exists.
+- Final read-only check retained the same boot and browser invocation, zero
+  browser restarts and zero OOM kills. The UI's catalog issue remains paused.
+
+Next owner input is needed for a temporary browser-pause/cooling comparison
+and physical placement/power context. Suspend, reboot, voltage changes,
+full-card integrity, battery calibration, audible playback and cable changes
+remain unperformed. The original eight-step acceptance is still incomplete.
