@@ -220,3 +220,15 @@ timer was armed and then cancelled after successful restoration; it did not fire
 This accepts dimming/restoration at those levels only. No panel-power, mode,
 boot, voltage or governor change occurred. Full range, blank/wake and suspend
 remain untested. See Stage 3 of the hardware survey for evidence.
+
+
+## Remaining-hardware execution started
+
+The owner approved starting controls/rumble, battery/audio, codec jobs and
+coordinated recovery work. Host source audits are underway; battery values
+remain gated on board-specific evidence. A first bounded JPEG encode failed
+with a VPU IOMMU read fault at 0x80 and watchdog timeout. Cleanup then disabled
+IRQ 25 (`ff442800.iommu`). No JPEG was produced. The device remains reachable
+and cool, with Chromium paused, but no more encoder/decoder jobs may run in
+this boot before coordinated recovery. No reboot, system suspend, charging
+change or speculative register access occurred. See Stage 4 of the survey.

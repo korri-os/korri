@@ -405,3 +405,43 @@ perceptible vibration. Chromium remained paused, the dock remained connected,
 and no audio playback or rumble command was issued. This records quiet idle
 behavior in that state. It does not verify speaker output, rumble actuation or
 reliable stopping after an intentional rumble command.
+
+
+## Stage 4: first codec job failed
+
+After the owner approved starting the remaining hardware work, one bounded
+Hantro JPEG encode was attempted with Chromium paused. Initial die readings
+were below 65°C; the encoder used a native generated test pattern, output YUYV
+128×96, capture JPEG 128×96, two MMAP buffers on each queue and stream count
+one. An independent 12-second timeout and a 70°C monitoring cutoff were in
+place. Formats were accepted, but the utility returned exit 1 and no JPEG.
+The sampled peak was 56.818°C. Temporary files were removed.
+
+The kernel recorded a VPU IOMMU read fault at address 0x80, then a Hantro frame
+watchdog timeout. Runtime power-management cleanup reported stall/paging
+timeouts, an unhandled interrupt storm and `Disabling IRQ #25`. The IRQ belongs
+to `ff442800.iommu`; its count reached 100001. Both codec completion interrupt
+counts remained zero. This is not a successful codec test and must not be
+attributed solely to the test utility. Root cause is under source investigation.
+The utility turns off its ioctl trace after starting the output queue, so
+missing later trace lines do not establish that capture was never started.
+
+**Hold further encoder and decoder jobs in this boot.** Both interfaces share
+the affected VPU/IOMMU. Do not force interrupt re-enabling, unbind the driver,
+disable the IOMMU or add `irqpoll` as a workaround. Recover under a coordinated
+procedure after source investigation. No system suspend, reboot or manual
+power-domain/register change was attempted.
+
+A post-check found the same boot, active compositor/SSH, no scratch directory,
+and die readings of 55.000/54.166°C. These do not make the video engine healthy:
+its disabled IOMMU interrupt is a new limitation of the current running state.
+Chromium remains paused. Controls/rumble and battery/audio source work proceeds
+on hosts; no speculative charging data has been installed.
+
+Evidence in the private log directory:
+
+- `hardware-usb-r36tmax-codec-test-readiness-20260914-211009.log`.
+- `hardware-usb-r36tmax-bounded-jpeg-encode-20260914-211154.log`.
+- `hardware-usb-r36tmax-codec-post-check-20260914-211411.log`.
+- `hardware-usb-r36tmax-codec-fault-detail-20260914-211733.log`: full fault chain
+  and interrupt counts, including the IRQ disable missing from narrower queries.
