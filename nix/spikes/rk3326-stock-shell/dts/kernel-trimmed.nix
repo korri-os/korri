@@ -48,6 +48,14 @@ let
   };
 in
 kernel.overrideAttrs (previous: {
+  # The panel. Mainline's ST7703 driver carries per-panel init sequences in
+  # C, and this glass needs its own: SETVCOM 0x97 and SETPOWER_EXT 0x26 0x22
+  # where every variant the driver knows wants something else. The sequence
+  # is the vendor's, decoded from the stock device tree and checked byte for
+  # byte against the community ROCKNIX overlay. Same shape as the RG353M's
+  # st7703 patch on main; a candidate for upstream once the board is.
+  patches = (previous.patches or [ ]) ++ [ ./panel-st7703-r36t-max.patch ];
+
   postPatch = (previous.postPatch or "") + ''
     cp ${./rk3326-aislpc-r36t-max.dts} arch/arm64/boot/dts/rockchip/${dtbName}.dts
     echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += ${dtbName}.dtb' \
