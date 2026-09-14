@@ -51,6 +51,19 @@ class ArtifactRejectionTests(unittest.TestCase):
         data[offset + 100] ^= 1
         self.rejects("u-boot.itb", data, "FIT payload differs")
 
+    def test_changed_fit_loadables(self):
+        import libfdt
+
+        data = bytearray((build / "u-boot.itb").read_bytes())
+        fdt = libfdt.Fdt(data)
+        configs = fdt.path_offset("/configurations")
+        selected = fdt.subnode_offset(configs, fdt.getprop(configs, "default").as_str())
+        loadables = bytes(fdt.getprop(selected, "loadables"))
+        offset = data.find(loadables, 0, fdt.totalsize())
+        assert offset >= 0
+        data[offset] = ord("X")
+        self.rejects("u-boot.itb", data, "FIT loadables")
+
     def test_changed_combined_loader(self):
         data = bytearray((build / "u-boot-rockchip.bin").read_bytes())
         data[2048 + 100] ^= 1

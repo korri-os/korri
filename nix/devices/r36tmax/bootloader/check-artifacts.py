@@ -94,6 +94,11 @@ def check(build: Path, ddr_path: Path, bl31_path: Path) -> None:
     selected = fdt.subnode_offset(configurations, default)
     assert fdt.getprop(selected, "firmware").as_str() == "atf-1"
     assert fdt.getprop(selected, "fdt").as_str() == "fdt-1"
+    loadables = bytes(fdt.getprop(selected, "loadables")).split(b"\0")
+    required_loadables = [b"u-boot"] + [
+        name.encode() for name in expected if name != "atf-1"
+    ]
+    assert loadables == required_loadables + [b""], "FIT loadables omit or reorder a required payload"
 
     combined = (build / "u-boot-rockchip.bin").read_bytes()
     # arch/arm/dts/rockchip-u-boot.dtsi places FIT at CONFIG_SPL_PAD_TO.

@@ -142,6 +142,10 @@ jobs:
           nix run .#nixos-layout-check
           nix run .#device-image-dist-check
 
+      - name: Check R36T Max device contracts
+        if: ${{ inputs.device == 'r36tmax' }}
+        run: nix run .#r36tmax-check
+
       - name: Build and stage the selected Linux SD image
         run: nix run .#device-image-dist -- "packages.aarch64-linux.$DEVICE-sd-image" "$RUNNER_TEMP/device-dist"
 
