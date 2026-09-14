@@ -60,6 +60,11 @@ kernel.overrideAttrs (previous: {
     cp ${./rk3326-aislpc-r36t-max.dts} arch/arm64/boot/dts/rockchip/${dtbName}.dts
     echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += ${dtbName}.dtb' \
       >> arch/arm64/boot/dts/rockchip/Makefile
+
+    # ROCKNIX's data-driven panel driver, built in unconditionally: it is
+    # the one driver known to draw on this glass. See drivers/README.md.
+    cp ${./drivers/panel-generic-dsi.c} drivers/gpu/drm/panel/panel-generic-dsi.c
+    echo 'obj-y += panel-generic-dsi.o' >> drivers/gpu/drm/panel/Makefile
   '';
 
   passthru = (previous.passthru or { }) // { inherit dtbName; };

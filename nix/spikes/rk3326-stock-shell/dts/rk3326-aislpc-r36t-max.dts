@@ -249,20 +249,66 @@
 	 * system. That is the plane, inset 20 px inside the display, not the
 	 * panel.
 	 *
-	 * The mode itself lives in the panel driver, not here: mainline's
-	 * ST7703 driver carries per-compatible timings and init sequences in
-	 * C. This board needs its own compatible there, because its glass
-	 * wants SETVCOM 0x97 0x97 and SETPOWER_EXT 0x26 0x22 where the
-	 * RG353M's wants 0x7f 0x7f and 0x26 0x62 -- the two registers that
-	 * decide whether an ST7703 reports ready and still draws nothing.
+	 * NOT UPSTREAMABLE AS WRITTEN. This node drives ROCKNIX's
+	 * data-driven panel driver, carried out of tree, with the description
+	 * the community generator produced from this unit's stock dtb. It is
+	 * here because seven boots of mainline's ST7703 driver with this
+	 * glass's own sequence, timings and phase left the panel white, and
+	 * this description draws on this exact unit under ROCKNIX. With a
+	 * working screen in hand, the ST7703 entry can be made right and this
+	 * node goes back to compatible = "aislpc,r36t-max-panel",
+	 * "sitronix,st7703" with no description.
+	 *
+	 * The description's lines: G is geometry, delays
+	 * (prepare,reset,init,enable,disable), format, lanes and DSI flags;
+	 * M is a display mode, default=1 marks the one to use; I is one DCS
+	 * write as hex, with an optional wait after it.
 	 */
 	panel: panel@0 {
-		compatible = "aislpc,r36t-max-panel", "sitronix,st7703";
+		compatible = "rocknix,generic-dsi";
 		reg = <0>;
 		backlight = <&backlight>;
 		reset-gpios = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
 		iovcc-supply = <&vcc18_lcd_n>;
-		/* vcc is SWITCH_REG2; see the backlight node for why it is absent. */
+		vdd-supply = <&vcc18_lcd_n>;
+		panel_description =
+			"G size=153,85 delays=20,20,20,120,20 format=rgb888 lanes=4 flags=0xe03",
+			"M clock=50000 horizontal=720,140,80,140 vertical=720,20,4,20 default=1",
+			"M clock=50000 horizontal=720,140,100,140 vertical=720,20,150,20",
+			"M clock=50040 horizontal=720,140,112,140 vertical=720,20,140,20",
+			"M clock=51400 horizontal=720,140,132,140 vertical=720,20,148,20",
+			"M clock=50140 horizontal=720,140,90,140 vertical=720,20,40,20",
+			"M clock=56900 horizontal=720,140,90,140 vertical=720,20,114,20",
+			"M clock=50400 horizontal=720,140,92,140 vertical=720,20,10,20",
+			"M clock=50220 horizontal=720,140,80,140 vertical=720,20,15,20",
+			"M clock=54600 horizontal=720,140,112,140 vertical=720,20,57,20",
+			"M clock=75450 horizontal=720,140,95,140 vertical=720,20,153,20",
+			"M clock=75330 horizontal=720,140,80,140 vertical=720,20,15,20",
+			"M clock=100440 horizontal=720,140,80,140 vertical=720,20,15,20",
+			"I seq=b9f11283",
+			"I seq=b1000000da80",
+			"I seq=b23c1230",
+			"I seq=b31010282803ff00000000",
+			"I seq=b480",
+			"I seq=b50a0a",
+			"I seq=b69797",
+			"I seq=b82622f013",
+			"I seq=ba338105f90e0e2000000000000000442500900a0000014f01000037",
+			"I seq=bc47",
+			"I seq=bf021100",
+			"I seq=c0737350500000127000",
+			"I seq=c12500323277e4ffffcccc7777",
+			"I seq=c68200bfff00ff",
+			"I seq=c7b8000a000000",
+			"I seq=c810401e02",
+			"I seq=cc0b",
+			"I seq=e0000b102c3d3f423a070d0f131513140f16000b102c3d3f423a070d0f131513140f16",
+			"I seq=e307070b0b0b0b00000000ff00c010",
+			"I seq=e9c8100a000080811231234f86a000470800000c00000000000c00000098028baf4602888888888898138baf5713888888888800000000000000000000000000",
+			"I seq=ea970c090909780000000000009f318ba8317588888888889f208ba820648888888888230000027100000000000000000000000000000040808100000000",
+			"I seq=efffff01",
+			"I seq=11 wait=250",
+			"I seq=29 wait=50";
 
 		port {
 			mipi_in_panel: endpoint {
