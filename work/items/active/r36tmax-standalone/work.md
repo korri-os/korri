@@ -175,3 +175,37 @@ Next owner input is needed for a temporary browser-pause/cooling comparison
 and physical placement/power context. Suspend, reboot, voltage changes,
 full-card integrity, battery calibration, audible playback and cable changes
 remain unperformed. The original eight-step acceptance is still incomplete.
+
+## Owner-approved cooldown and dock follow-up
+
+The owner approved pausing Chromium and changed the power connection from the
+charger to a laptop dock. The same boot and runtime system remained active.
+Chromium is now intentionally stopped; compositor, korrid and SSH remain up.
+No reboot, suspend, boot default, manual voltage, charger, governor, mixer or
+input configuration change was made. Details and exact logs are in Stage 2 of
+the hardware survey linked above.
+
+- SoC/GPU readings fell from 85.384/84.230°C before the stop to about 64–66°C
+  within two minutes, and later about 56°C. Both thermal cooling states cleared.
+- A guarded 30-second single-core workload passed at a sampled peak of 62.5°C.
+  This does not accept sustained all-core or GPU stress.
+- A 32 MiB SD scratch copy and direct-read SHA-256 comparison passed. Scratch
+  cleanup was checked. No raw block-device write or full-capacity test ran.
+- USB NCM, the observed host address/prefix and pinned SSH are verified. ACM console
+  output is verified without sending commands or retaining raw console text.
+- Verified 8 MiB payload transfers passed both ways over Wi-Fi and USB. A later
+  concurrent ten-minute run returned all 600 probes on Wi-Fi, USB and router.
+  The earlier loss remains unexplained; changed conditions prevent causal claims.
+- A Wayland EGL context reports Mali-G31/Panfrost and GLES 3.1 Mesa 25.3.2.
+  Hantro enumerates JPEG-only output on its encoder, plus parsed H.264/MPEG-2
+  and VP8 input on its decoder. No actual codec job was tested.
+- The final check found zero OOM kills, about 668 MiB available memory, no
+  matching kernel errors and the expected intentionally paused browser.
+- ALSA `Headphones Jack` reads off and both PCM nodes are closed. The owner has
+  no wired headphones available, so plug/unplug testing is deferred. No sound
+  or capture was initiated.
+
+The browser-load issue is parked as `01M2GS38QWXK9HM7ENCMAW6GXG` while application
+work remains paused. Battery properties, game controls, rumble and the remaining
+physical/power-cycle acceptance are still open. The original eight-step work
+is not complete.

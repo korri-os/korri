@@ -1,6 +1,8 @@
 # R36T Max autonomous hardware survey — 2026-09-14
 
-## Scope and baseline
+## Stage 1: read-only scope and baseline
+
+This first stage preceded the separately authorized follow-up below.
 
 Read-only inspection of the running handheld, passive sampling and low-rate
 ICMP probes. No reboot, suspend, browser/service restart, governor change,
@@ -203,3 +205,168 @@ Exact source archive: `/nix/store/adddx8796jmn91lvgnsd05ycl180as99-linux-6.12.63
 Compiled configuration: native dev output
 `nf4sh4lm7jvkqbshv0xj8kb1bmzc85h5`, `lib/modules/6.12.63/build/.config`.
 No credentials or raw owner configuration were included in this report.
+
+
+## Stage 2: approved browser pause, dock connection and bounded tests
+
+The owner approved pausing Chromium and said the handheld had been moved from
+a charger to a laptop dock. The device remained on the same boot and runtime
+system. Only the browser service was stopped; compositor, korrid and SSH stayed
+active. Browser shutdown was intentional, not a crash or rollback. No automatic
+restart was scheduled while hardware tests continued.
+
+### Cooldown
+
+After the cable move, immediately before stopping Chromium, the SoC/GPU sensors
+reported 85.384/84.230°C. About 10 seconds after the stop they reported
+72.500/73.333°C, with both cooling states zero. At roughly two minutes they were
+64.583/65.769°C. The GPU clock settled at 200 MHz, while the unchanged performance
+CPU governor selected 1296 MHz. Later test preflights were around 56–58°C.
+
+This is strong evidence that the browser workload contributed substantially
+to the heat. It is not a measurement of battery/enclosure temperature or a
+fully isolated comparison of the earlier charger and dock power conditions.
+No governor, voltage or charger property was changed.
+
+### USB data and console
+
+The dock exposed a Korri/R36T Max composite device at USB high speed (480 Mbit/s
+bus signaling). The host bound `cdc_ncm`, showed `10.42.2.24/24`, and exposed
+`ttyACM0`. On the handheld, UDC state became `configured`, with `USB=1`, `SDP=1`
+and `DCP=0`. This verifies a working USB data connection with this dock/cable;
+it does not accept every cable/port or USB host/OTG mode.
+
+Strict host-key-pinned SSH to the existing gadget address `10.42.2.1` returned
+the same boot ID as Wi-Fi. This establishes a working Linux-stage wired
+management path independent of the WLAN address, not early-boot UART recovery.
+
+The ACM endpoint was verified to share the NCM device's physical USB parent.
+A bounded read received 830 bytes containing a recognized NixOS/hostname/login
+marker. No newline, command or credential was sent, and raw console text was
+not retained. The host's existing administrator access was used only to open
+the root/dialout tty; its termios settings were restored. This accepts console
+output, not an interactive command session or pre-kernel logging.
+
+### CPU and storage checks
+
+All added workload tests required a cool preflight, used independent worker
+runtime limits, and had a 70°C temperature stop. The measurements below did not
+hit that stop.
+
+- One SHA-256 worker read `/dev/zero` for 30 seconds. The hottest preflight
+  sensor was 58.181°C; highest sampled value under load was 62.500°C. CPU
+  frequency remained 1296 MHz in the samples, and OOM kills stayed zero. This
+  is a short single-core check, not all-core or GPU stress acceptance.
+- A root-owned scratch directory on the verified SD-backed `/var/tmp` held a
+  new 32 MiB random source and a 32 MiB copy. Source creation was fsynced; the
+  copy used direct reads/writes and fsync; its direct-read SHA-256 matched the
+  original source hash. Both files and the directory were removed afterward.
+  Highest sampled temperature was 58.181°C.
+- `dd` reported 25.2 MB/s for random source creation, 29.2 MB/s for direct
+  file-to-file copy, and 21.6 MB/s for direct read into the hash pipeline. These
+  small composite operations include generation/hash/filesystem overhead and
+  are not isolated SD bandwidth benchmarks or full-capacity integrity tests.
+- The first storage attempt used an invalid `dd` flag and stopped before writing
+  the source. Correcting `oflag=excl` to the documented `conv=excl` allowed the
+  retry above. That first failure was a diagnostic-script error, not a card fault.
+
+### Bounded encrypted payload transfers
+
+An 8 MiB payload was verified in each direction over both Wi-Fi and USB, with
+local temperature monitoring and independently timed workers. Upload hashes
+matched the host-generated data; downloads had the expected length and hash.
+
+| Link/direction | Elapsed time | Effective payload rate |
+|---|---:|---:|
+| Wi-Fi upload | 3.919 s | 17.124 Mbit/s |
+| Wi-Fi download | 5.968 s | 11.245 Mbit/s |
+| USB upload | 1.866 s | 35.965 Mbit/s |
+| USB download | 1.686 s | 39.811 Mbit/s |
+
+Elapsed times include SSH setup, encryption, hashing and the monitor's polling
+interval. They are application-test results, not radio/USB link-speed claims.
+The earlier intermittent ICMP loss is not erased by these successful transfers.
+
+### Longer connectivity check
+
+With Chromium paused and the dock connected, concurrent probes ran at one per
+second to Wi-Fi, USB and the router. Each path returned all 600 replies.
+
+| Path | Loss | Mean RTT | Maximum RTT |
+|---|---:|---:|---:|
+| Wi-Fi | 0/600 | 6.211 ms | 143.247 ms |
+| USB | 0/600 | 2.195 ms | 2.333 ms |
+| Router | 0/600 | 0.505 ms | 0.819 ms |
+
+This is a clean roughly ten-minute run, not a fix for or explanation of the
+original loss. Browser state, power connection and probe rate differ from the
+first test. Inspection-tool copying started only after this run ended.
+
+### GLES context and video capabilities
+
+A native query as the existing gameplay user created a Wayland GLES context
+using the existing system driver. It returned EGL 1.5, renderer
+`Mali-G31 (Panfrost)`, and `OpenGL ES 3.1 Mesa 25.3.2`. This verifies context
+creation on the hardware-rendering path, not sustained drawing performance or
+which decoder Chromium would select during video playback.
+
+The actual Hantro V4L2 interfaces reported:
+
+| Device | Accepted input | Produced output |
+|---|---|---|
+| Encoder `/dev/video0` | YM12, NM12, YUYV, UYVY | JPEG only |
+| Decoder `/dev/video1` | H.264 parsed slices, MPEG-2 parsed slices, VP8 frames | NV12 |
+
+The decoder reports H.264/MPEG-2 sizes up to 1920×1088 and VP8 up to 3840×2160.
+These are advertised format limits, not successful playback results. No codec
+job or video stream was submitted. In particular, this Linux encoder interface
+does not expose H.264 encoding. That does not establish the silicon's complete
+capabilities under other drivers.
+
+Mesa demos and v4l-utils were downloaded prebuilt on the host, copied over USB,
+and recursively signature-verified on the handheld. No target build ran. The
+headless v4l-utils variant was not cached and was refused with builds disabled;
+the cached standard package was used instead. No GUI utility was launched.
+The queried temperatures afterward were 57.727/57.272°C, with zero OOM kills.
+
+### State left for physical checks
+
+At boot uptime 9654.76 seconds, the same runtime and boot remained active.
+Chromium was still intentionally stopped. Compositor, korrid and SSH had zero
+restarts; die sensors both reported 56.363°C. MemAvailable was 683860 kB, about
+668 MiB, with no swap and zero OOM kills. The bounded kernel-error query still
+returned no matching entries. Both scratch-directory searches returned empty.
+
+The read-only ALSA control `Headphones Jack` reported off, and playback/capture
+PCM nodes were closed. The owner reported no wired headphones available, so
+plug/unplug testing is deferred. No playback, capture, volume or routing change
+occurred. Game controls
+and rumble still need board integration; battery characterization and recovery
+cycles remain unresolved. No boot default was changed.
+
+The separate browser-load investigation is captured as
+`01M2GS38QWXK9HM7ENCMAW6GXG`. Application changes remain paused.
+
+### Follow-up evidence
+
+In the same private logs directory as Stage 1:
+
+- `browser-loop-20260914-193000.log`: authorized stop, cooldown and dock state.
+- `usb-ssh-20260914-193006.log`: pinned USB SSH and matching boot.
+- `hardware-usb-r36tmax-bounded-cpu-check-20260914-195039.log`.
+- `hardware-usb-r36tmax-bounded-storage-check-20260914-195252.log`: rejected flag.
+- `hardware-usb-r36tmax-bounded-storage-check-20260914-195420.log`: corrected test.
+- `usb-serial-20260914-195509.log`: projected console observations, no raw text.
+- `hardware-network-payload-20260914-195727.log`: transfer results and temperatures.
+- `cool-network-soak-20260914-195937-{wifi,usb,router}.log`: 600-probe controls.
+- `inspection-tools-copy-20260914-201006.log`: prebuilt copy and signature checks.
+- `hardware-usb-r36tmax-graphics-video-capabilities-20260914-201139.log`.
+- `hardware-usb-r36tmax-final-hardware-state-20260914-201517.log`: final state,
+  actual scratch cleanup, jack baseline and the repeated kernel-error query.
+- `host-usb-address-proof-20260914-204603.log`: repeated host driver, address/prefix,
+  composite-device and ACM observations. This does not independently prove DHCP.
+- `host-prebuilt-inspectors-proc_d1c7.log` and
+  `host-prebuilt-inspectors-proc_cef3.log`: original retained host download/refusal
+  output and the corresponding commands with local and remote builds disabled.
+- `hardware-usb-r36tmax-inspector-signature-proof-20260914-204535.log`: repeated
+  read-only verification, recording exact paths/options and explicit exit zero.

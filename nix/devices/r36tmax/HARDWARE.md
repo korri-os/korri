@@ -4,7 +4,8 @@ This records saved stock/ROCKNIX surveys and the NixOS bring-up. A device-tree
 value is a software declaration, not an electrical measurement. The diagnostic
 image has booted on the handheld; physical acceptance is still incomplete.
 See [the autonomous live survey](HARDWARE-SURVEY-2026-09-14.md) for current
-thermal, network, storage and driver observations.
+thermal, network, storage and driver observations, including the approved
+browser-pause and dock follow-up.
 
 Original artifacts remain outside Git at
 `~/.local/share/korri/rk3326-stock-shell/artifacts/`. They include `rg42t.dtb`,
@@ -88,10 +89,13 @@ with GPIO0 PA2 active-low reset, PA5 host wake, and 25 MHz SDIO. It records
 50 MHz firmware-reset timeouts and failed enumeration with active-high reset.
 The current 6.12.63 kernel/module/compiled DTB checks pass. The diagnostic boot
 has working Wi-Fi and pinned SSH at 25 MHz SDIO. A five-minute low-rate probe
-recorded 6.33% packet loss and multi-second delays; a subsequent one-minute
-handheld/router control was clean. Reliability is not accepted. The existing
-SDIO supply definitions differ from the proof and remain a physical validation
-question.
+recorded 6.33% packet loss and multi-second delays. A subsequent one-minute
+handheld/router control was clean. After the owner approved pausing Chromium
+and connected the dock, a ten-minute control returned all 600 replies on
+Wi-Fi, USB and the router. Verified 8 MiB transfers also passed in both
+directions. These results do not explain the initial loss or accept reconnect,
+suspend or long-term reliability. The existing SDIO supply definitions differ
+from the proof and remain a physical validation question.
 
 ## PMIC and storage
 
@@ -114,10 +118,11 @@ FAT filesystems for somewhere to write.
 
 ## USB, input and sound
 
-USB reachability is unresolved. A saved survey reported a configured CDC
-function at high speed; zero extcon values alone do not prove missing data
-wires. The current PHY reports a dedicated charger while the UDC is not
-attached. A working host USB data connection is still unverified.
+USB device-mode data now works with the owner's laptop dock. NCM provides
+pinned SSH to `10.42.2.1`, and the ACM endpoint returned recognizable console
+output. The handheld reports a configured high-speed UDC. No serial command
+session, USB host/OTG role or early-boot recovery was tested. The earlier
+charger-only classification did not prove missing data wires.
 
 The ROCKNIX stick implementation uses a GPIO-controlled analog multiplexer
 feeding ADC channel 1, not four independent channels. The vendor DTS's four
