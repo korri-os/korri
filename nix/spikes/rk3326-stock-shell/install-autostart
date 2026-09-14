@@ -38,14 +38,17 @@ trap cleanup EXIT
 mkdir -p "$work/boot" "$work/storage"
 
 mount "$boot" "$work/boot"
-if [ -d "$work/boot/pstore" ]; then
+if [ -d "$work/boot/korri" ] && [ -n "$(ls -A "$work/boot/korri")" ]; then
   mkdir -p "$collect"
-  cp -a "$work/boot/pstore/." "$collect/"
-  echo "collected a previous run into $collect:"
-  find "$collect" -type f -printf '  %8s  %P\n' | sort -k2
+  cp -a "$work/boot/korri/." "$collect/"
+  echo "collected $(ls "$work/boot/korri" | wc -l) survey run(s) into $collect"
+  for r in "$collect"/*/; do
+    echo "== $(basename "$r")"
+    sed 's/^/   /' "$r/README.txt" 2>/dev/null | grep -E "^   (===|kernel|live|archived|FAIL)" 
+  done
   echo
 else
-  echo "no pstore directory on the boot partition yet"
+  echo "no survey on the boot partition yet"
 fi
 
 mount "$storage" "$work/storage"

@@ -231,27 +231,33 @@ in
     fi
   '';
 
+  # Stage 2 runs the same survey the ROCKNIX card runs, so the first boot of
+  # ours that gets this far leaves a complete description of itself on the
+  # card without anyone asking for it. The script expects /flash; give it
+  # one.
   systemd.services.flight-recorder = {
-    description = "Append this boot's kernel log to the boot partition";
+    description = "Write this boot's kernel log and hardware survey to the boot partition";
     wantedBy = [ "sysinit.target" ];
     after = [ "systemd-udev-settle.service" ];
     unitConfig.DefaultDependencies = false;
+    path = [ pkgs.util-linux pkgs.coreutils pkgs.iproute2 pkgs.alsa-utils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
     };
     script = ''
-      mkdir -p /run/flight
-      mount -t vfat /dev/disk/by-label/NIXOS_BOOT /run/flight
+      mkdir -p /flash
+      mount -t vfat /dev/disk/by-label/NIXOS_BOOT /flash
       {
         echo "=== stage2 $(cat /proc/sys/kernel/random/boot_id) ==="
         cat /proc/uptime
-        ${pkgs.util-linux}/bin/dmesg || true
+        dmesg || true
         echo "--- failed units ---"
         systemctl --failed --no-legend || true
-      } >> /run/flight/flight.log 2>&1
+      } >> /flash/flight.log 2>&1
+      ${pkgs.runtimeShell} ${./payload/rocknix-autostart.sh} || true
       sync
-      umount /run/flight
+      umount /flash
     '';
   };
 
