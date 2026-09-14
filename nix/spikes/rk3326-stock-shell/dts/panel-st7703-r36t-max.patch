@@ -1,5 +1,5 @@
---- drivers/gpu/drm/panel/panel-sitronix-st7703.c.orig	2026-09-13 23:40:03.107907701 -0600
-+++ drivers/gpu/drm/panel/panel-sitronix-st7703.c	2026-09-13 23:40:03.125160164 -0600
+--- a/drivers/gpu/drm/panel/panel-sitronix-st7703.c
++++ b/drivers/gpu/drm/panel/panel-sitronix-st7703.c
 @@ -673,6 +673,96 @@
  	.init_sequence = gameforcechi_init_sequence,
  };

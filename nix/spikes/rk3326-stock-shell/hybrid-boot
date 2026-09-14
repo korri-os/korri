@@ -124,6 +124,32 @@ fdt_src=$(readlink -f "$rootmnt/boot/extlinux/$fdt_rel")
 [ -f "$initrd_src" ] || { echo "initrd not found: $initrd_rel" >&2; exit 1; }
 [ -f "$fdt_src" ] || { echo "device tree not found: $fdt_rel" >&2; exit 1; }
 
+# KORRI_KERNEL swaps in a kernel built here, cross-compiled in ten minutes,
+# in place of the one the image was built with. The initrd and root on the
+# card stay: a kernel change alone does not touch them. This is the loop for
+# every kernel-side change, which is most of what is left on this board.
+#
+# The one thing it cannot carry is modules: the root's modules directory
+# was built for the image's kernel. A kernel that adds a module needs the
+# image rebuilt. The script says so when the two versions disagree.
+#
+#   KORRI_KERNEL=/nix/store/...-linux-6.12.63 hybrid-boot /dev/sdX --i-know
+if [ -n "${KORRI_KERNEL:-}" ]; then
+  [ -f "$KORRI_KERNEL/Image" ] || { echo "KORRI_KERNEL has no Image: $KORRI_KERNEL" >&2; exit 1; }
+  kernel_src=$KORRI_KERNEL/Image
+  echo "kernel override: $kernel_src"
+  new_dtb=$(find "$KORRI_KERNEL/dtbs" -name 'rk3326-aislpc-r36t-max.dtb' | head -1)
+  if [ -n "$new_dtb" ] && [ -z "${KORRI_FDT:-}" ]; then
+    KORRI_FDT=$new_dtb
+    echo "fdt from the same kernel: $new_dtb"
+  fi
+  old_ver=$(basename "$(readlink -f "$rootmnt/boot/extlinux/$kernel_rel")" | sed -E 's/.*-linux-([0-9.]+)-Image/\1/')
+  new_ver=$(basename "$KORRI_KERNEL" | sed -E 's/.*-linux-([0-9.]+)$/\1/')
+  if [ "$old_ver" != "$new_ver" ]; then
+    echo "NOTE: root modules are for $old_ver, this kernel is $new_ver; anything modular will not load" >&2
+  fi
+fi
+
 # KORRI_FDT swaps in a different compiled device tree without a rebuild.
 #
 # Our own tree panics a second into boot and this board has no console to
