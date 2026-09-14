@@ -68,8 +68,12 @@ in
     sunshine.openFirewall = false;
   };
 
-  # One private Chromium launcher and static-web-server. Do not also enable the
-  # nginx/korri-chromium-kiosk module. Keep the launcher's existing GPU flags and
-  # Chromium sandbox; no unverified --disable-gpu workaround.
-  services.korriKiosk.enable = true;
+  # Use the current credential-backed portal integration. The retired private
+  # kiosk expects brain.json, which the current korrid does not publish.
+  # Keep one browser and its sandbox; do not manufacture a compatibility file.
+  services.korri.webSurfaceHost = {
+    enable = true;
+    surfaceId = "pico";
+  };
+  services.korri.compositor.kiosk.enable = true;
 }

@@ -104,8 +104,9 @@ fit. Capture those separately. The helper takes at most 47 seconds.
   node and udev convention, but is not present in the saved survey. The
   candidate loads Panfrost and fails normally if its render node is absent.
 - The existing full Linux host starts Sunshine, InputPlumber, inputd,
-  Sway/Xwayland and korrid. The private kiosk adds Chromium and
-  static-web-server. This is not a minimal daemon-only memory test. It adds no
+  Sway/Xwayland and korrid. The current portal shell adds Chromium and nginx,
+  with a systemd credential shared with korrid. It does not require the retired
+  `brain.json` producer. This is not a minimal daemon-only memory test. It adds no
   controller profile, local compositor input, audio or rumble implementation.
 - The loopback test relay is the existing Odin/RG353M local-session precedent.
   It is not federation discovery. No owner or peer binding is invented.

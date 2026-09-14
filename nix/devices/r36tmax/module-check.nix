@@ -53,7 +53,8 @@ let
     && lib.elem "usb_f_ncm" config.boot.kernelModules
     && config.systemd.services.usb-gadget.wantedBy == [ "multi-user.target" ]
     && config.systemd.services.flight-recorder.wantedBy == [ "sysinit.target" ];
-  kiosk = c.systemd.services.korri-kiosk;
+  kiosk = c.systemd.services.korri-chromium-kiosk;
+  credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
   kernelConfig = builtins.readFile ./dts/config;
   installerScript = pkgs.writeText "r36tmax-selected-installer" c.system.build.installBootLoader.text;
 in
@@ -67,6 +68,10 @@ assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelCo
 ];
 assert !(lib.hasInfix "wifi.env" c.sdImage.populateRootCommands);
 assert !(lib.hasInfix "wifi.env" console.sdImage.populateRootCommands);
+# The running korrid consumes a systemd credential and KORRID_PORTAL_ORIGIN.
+# A launcher expecting the retired brain.json producer is not compatible.
+assert !(c.systemd.services ? korri-kiosk);
+assert c.systemd.services.korrid.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
 assert common c;
 assert common console;
 assert lib.all (a: a.assertion) diagnosticConfiguration.config.assertions;
@@ -85,6 +90,8 @@ assert lib.all (name: !(builtins.hasAttr name console.systemd.services)) [
   "korri-compositor"
   "korrid"
   "korri-kiosk"
+  "korri-chromium-kiosk"
+  "korri-portal-credentials"
   "sunshine"
   "korri-inputd"
   "inputplumber"
@@ -93,12 +100,22 @@ assert !(console.services.static-web-server.enable);
 assert !console.services.nginx.enable;
 assert c.services.korriLinuxHost.enable;
 assert c.services.korridLinuxDevice.enable;
-assert c.services.korriKiosk.enable;
-assert c.services.korridLinuxDevice.browser.enable;
-assert c.services.static-web-server.enable;
-assert c.services.static-web-server.listen == "127.0.0.1:8099";
-assert !c.services.nginx.enable;
-assert !(c.systemd.services ? korri-chromium-kiosk);
+assert c.services.korri.webSurfaceHost.enable;
+assert c.services.korri.webSurfaceHost.surfaceId == "pico";
+assert c.services.korri.compositor.kiosk.enable;
+assert !c.services.korridLinuxDevice.browser.enable;
+assert !(c.systemd.services.korrid.environment ? KORRID_BROWSER_INFO_PATH);
+assert !c.services.static-web-server.enable;
+assert c.services.nginx.enable;
+assert builtins.length c.services.nginx.virtualHosts.korri-portal.listen == 1;
+assert lib.all (
+  listener: listener.addr == "127.0.0.1" && listener.port == 8099
+) c.services.nginx.virtualHosts.korri-portal.listen;
+assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
+assert kiosk.serviceConfig.LoadCredential == [ credential ];
+assert lib.elem "korri-portal-credentials.service" c.systemd.services.korrid.requires;
+assert lib.elem "korri-portal-credentials.service" kiosk.requires;
+assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
 assert
   c.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";
@@ -124,11 +141,11 @@ assert c.services.korriLinuxHost.relays == [ "ws://127.0.0.1:9" ];
 assert kiosk.serviceConfig.NoNewPrivileges;
 assert kiosk.serviceConfig.PrivateTmp;
 assert kiosk.serviceConfig.ProtectSystem == "strict";
-assert kiosk.serviceConfig.CapabilityBoundingSet == [ ];
+assert kiosk.serviceConfig.LimitCORE == 0;
 assert kiosk.serviceConfig.User != "root";
 assert lib.elem "korrid.service" kiosk.requires;
 assert lib.elem "korri-compositor.service" kiosk.after;
-assert lib.hasInfix "/bin/korri-kiosk --chromium " kiosk.serviceConfig.ExecStart;
+assert lib.hasSuffix "/bin/korri-chromium-kiosk" kiosk.serviceConfig.ExecStart;
 assert !(lib.hasInfix "--no-sandbox" kiosk.serviceConfig.ExecStart);
 assert lib.elem "korrid" (map lib.getName c.environment.systemPackages);
 pkgs.runCommand "r36tmax-module-check"

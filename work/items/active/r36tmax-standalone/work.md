@@ -90,3 +90,55 @@ the publisher completed successfully and the later signed download passed.
 ## Boundaries
 
 Buttons, sticks, sound, and rumble are not included. Keep release SSH policy separate from owner-approved diagnostics. Do not put Wi-Fi credentials or private keys in source, build outputs, or published images. Do not enable builds or disable signature checks on the device. No new product data schema or UI layout is required.
+
+
+## Physical portal restart diagnosis and temporary fix
+
+The diagnostic card booted and reached pinned SSH at `192.168.1.195`.
+Its saved boot ID is `d34efbf7-915d-4b39-9795-1bb2083b13d5`. Wi-Fi, the
+Panfrost render node and the display compositor are working in this boot.
+
+The selected private kiosk repeatedly failed to open the retired
+`/run/korrid-browser/brain.json`. Current korrid does not produce that file.
+The launcher then killed Chromium and systemd restarted it. The initial
+snapshot had 39 kiosk restarts, zero compositor/brain restarts and zero OOM
+kills. This was an integration error, not an observed memory kill.
+
+The fix uses the existing `clients/portal/nix/nixos-module.nix` credential
+contract and native `window.KorriRpc` shell. It removes the incompatible
+private kiosk/static server from this device, retains Pico, and adds no
+compatibility file or sandbox exception. The old-consumer assertion failed
+before the fix; device/base/shared-portal checks pass afterward. Review found
+no source blocker.
+
+The signed diagnostic closure
+`/nix/store/86nzj98zyqx0w2cz6ikw4xzgb5gwjnkn-nixos-system-r36tmax-sd-card-26.05.20251221.a653104`
+was copied privately and activated with `switch-to-configuration test`.
+Missing per-path signatures from the SD image were imported as native Nix
+metadata from the build host. Recursive signature verification then passed;
+no trust key, signature requirement or device build setting was weakened.
+
+The first temporary activation stayed up, but the acceptance script incorrectly
+used Android-only `system.settings.snapshot`. The safety timer restored the
+old looping configuration. The second activation used supported `system.health`
+and completed activation plus acceptance in one remote operation. Authenticated
+health returned Ok; an unauthenticated browser request returned 401. The old
+kiosk/static server/socket stopped. The new browser reported zero restarts,
+and the rollback timer was cancelled. Direct hashes of the first 144 MiB and
+the permanent system profile were unchanged. This fix is temporary: reboot
+still selects the old image.
+
+At acceptance, MemAvailable was 464160 kB, no swap was configured, and oom_kill
+was zero. These are startup observations, not a game workload or leak test.
+Actual screenshot `portal-fixed-live.png` in the local diagnostic logs shows
+Pico rendering a distinct `HostLibraryInvalid` error, not a browser crash loop.
+The catalog RPC reports `plugin evaluation failed: No such file or directory`.
+Its real missing input is `/run/korri-plugin-host/enabled-packages.json`;
+the plugin-host unit and administrator state directory are absent. Do not
+fabricate that report or add a missing-file fallback. The existing administrator
+producer must initialize it through its normal policy.
+
+The unrelated networkd wait-online unit still fails and makes test activation
+return 4 despite the new services starting. Its follow-up is
+`01M2GJVDYB8HZRC44JZV1VHNVF`. Other retired kiosk consumers are tracked under
+`01M2GJV1N2FBKP3D0SFQPMY5N5`. Neither follow-up was folded into this fix.

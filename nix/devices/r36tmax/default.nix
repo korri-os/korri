@@ -24,7 +24,7 @@ let
   configuration = consoleConfiguration.extendModules {
     modules = [
       (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
-      (import ../../../services/kiosk/nixos-module.nix { inherit korri; })
+      (import ../../../clients/portal/nix/nixos-module.nix { inherit korri; })
       ./portal.nix
     ];
   };
