@@ -1,18 +1,7 @@
-# A first-boot SD image for the R36T Max.
-#
-# The goal is one thing only: reach a shell on the serial console. No Korri
-# services, no display, no splash. This deliberately does not import
-# `nix/base`, because everything in there is another way for a first boot to
-# fail before it says anything.
-#
-# Expect a black screen. The panel needs an ST7703 variant carrying this
-# board's init sequence and that work has not started, so the only output is
-# UART5.
-#
-# The card is the whole boot path. The handheld's boot ROM prefers SD over
-# its internal eMMC, and the device tree leaves eMMC disabled, so the stock
-# EmuELEC system and the SSH access installed on it stay untouched and remain
-# the way back if this image does nothing at all.
+# Complete SD hardware image for the R36T Max. The generic panel driver is the
+# working display baseline. The pinned recovery loader, kernel, DTB, LZO initrd,
+# and modules come from one build; no post-write kernel override is needed.
+# eMMC stays disabled. This image never installs a bootloader to the device.
 {
   config,
   pkgs,
@@ -27,17 +16,15 @@ let
   firmwarePartitionOffsetMiB = 16;
   ubootStartSector = 64;
 
-  armTrustedFirmwarePX30 = pkgs.callPackage ../rk3326-boot-chain/atf-px30.nix { };
-  uboot = pkgs.callPackage ../rk3326-boot-chain/uboot.nix {
-    inherit armTrustedFirmwarePX30;
-  };
-
+  recovery = import ./recovery { pkgs = pkgs.buildPackages; };
+  bootFiles = recovery.bootFiles { system = config.system.build.toplevel; };
   kernel = pkgs.callPackage ./dts/kernel-trimmed.nix { };
 in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
     ./usb-gadget.nix
+    ./wifi
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
@@ -88,9 +75,8 @@ in
       # is ttyS0 through ttyS4. Neither parameter could pay for itself on a
       # board whose UART pins are internal pads.
       #
-      # The console is ramoops. Every printk lands in the reserved region
-      # the device tree declares, survives the panic reboot, and is read
-      # back by the next boot's flight recorder.
+      # The panel is the console. Ramoops is additional crash evidence;
+      # retention across warm reset is unverified and power-off can erase it.
       "console=tty0"
       # Store every kmsg dump reason, not only oops and panic, so a clean
       # shutdown and a watchdog reset are distinguishable afterwards.
@@ -142,11 +128,13 @@ in
     # boot.scr can ask for.
     firmwareSize = 128;
 
-    # Nothing is put here at build time; `hybrid-boot` fills it later when it
-    # is needed. The shared NixOS image builder requires the partition to
-    # exist either way.
-    populateFirmwareCommands = ":";
-    populateRootCommands = ''
+    populateFirmwareCommands = ''
+      cp -r ${bootFiles}/. firmware/
+      chmod -R u+w firmware
+    '';
+    # Do not inherit the shared format's impure build-time credential copy.
+    # Owner Wi-Fi credentials are provisioned after the public image is built.
+    populateRootCommands = lib.mkForce ''
       mkdir -p ./files/boot
       ${config.boot.loader.generic-extlinux-compatible.populateCmd} \
         -c ${config.system.build.toplevel} \
@@ -154,7 +142,7 @@ in
     '';
 
     postBuildCommands = ''
-      uboot_size="$(${pkgs.coreutils}/bin/stat -c %s ${uboot}/u-boot-rockchip.bin)"
+      uboot_size="$(${pkgs.coreutils}/bin/stat -c %s ${recovery.loader}/rocknix-loader-full.bin)"
       boot_area_size="$((
         ${toString firmwarePartitionOffsetMiB} * 1024 * 1024
         - ${toString ubootStartSector} * 512
@@ -164,11 +152,13 @@ in
         exit 1
       fi
       dd \
-        if=${uboot}/u-boot-rockchip.bin \
+        if=${recovery.loader}/rocknix-loader-full.bin \
         of="$img" \
         bs=512 \
         seek=${toString ubootStartSector} \
         conv=notrunc
+      ${recovery.tools}/bin/r36tmax-recovery verify-image \
+        ${config.system.build.toplevel} ${recovery.loader} "$img"
     '';
   };
 
@@ -203,15 +193,33 @@ in
       "TMPFS_POSIX_ACL"
       "TMPFS_XATTR"
       "SECCOMP"
+      # The pinned NixOS iptables package uses its nft backend. Missing these
+      # leaves the newly networked device without its configured firewall.
+      "NF_TABLES"
+      "NFT_CT"
+      "NFT_LOG"
+      "NFT_COMPAT"
+      "NFT_LIMIT"
+      "NFT_REJECT"
+      "NETFILTER_XT_MATCH_PKTTYPE"
     ]
+  );
+
+  # The recovery loader reads FAT, while NixOS's generic installer writes
+  # root /boot. Until a transactional FAT installer is tested, fail explicitly
+  # rather than claim that a reboot will run the newly downloaded generation.
+  # Image construction uses populateCmd directly and does not run this hook.
+  system.build.installBootLoader = lib.mkForce (
+    pkgs.writeShellScript "r36tmax-image-only-update" ''
+      echo "R36T Max boot updates require a complete SD image rewrite; FAT generation installation is not verified." >&2
+      exit 1
+    ''
   );
 
   # --- flight recorder ---------------------------------------------------
   #
-  # The panel does not work, the USB gadget has never appeared, and the UART
-  # console exists only on internal pads. The device can still write to its
-  # own boot partition, which we can read back in a card reader, so let it
-  # keep a log of how far it got.
+  # Card logs remain useful even with the panel working. USB reachability is
+  # unverified and the UART console exists only on internal pads.
   #
   # Everything is appended, never overwritten, and each entry is stamped with
   # the boot id. Several entries from one power-on means the board is
@@ -256,7 +264,16 @@ in
     # one of them failed because the unit's PATH had no `sh`. busybox gives
     # the initrd's toolset to stage 2 as well, which keeps the script one
     # file for both cards.
-    path = [ pkgs.busybox pkgs.util-linux pkgs.coreutils pkgs.iproute2 pkgs.alsa-utils pkgs.findutils pkgs.gnugrep pkgs.gnused ];
+    path = [
+      pkgs.busybox
+      pkgs.util-linux
+      pkgs.coreutils
+      pkgs.iproute2
+      pkgs.alsa-utils
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -285,9 +302,8 @@ in
 
   networking.hostName = "r36tmax";
 
-  # Serial console only. Root login without a password is acceptable here and
-  # nowhere else: this image has no network, exists to be watched over a wire,
-  # and is replaced the moment it boots.
+  # Physical recovery console only. The shared base keeps network SSH off;
+  # owner-approved diagnostic access must use key-only authentication.
   users.users.root.initialHashedPassword = "";
   services.getty.autologinUser = "root";
 

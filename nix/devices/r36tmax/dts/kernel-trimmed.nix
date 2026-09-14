@@ -54,7 +54,12 @@ kernel.overrideAttrs (previous: {
   # is the vendor's, decoded from the stock device tree and checked byte for
   # byte against the community ROCKNIX overlay. Same shape as the RG353M's
   # st7703 patch on main; a candidate for upstream once the board is.
-  patches = (previous.patches or [ ]) ++ [ ./panel-st7703-r36t-max.patch ];
+  patches = (previous.patches or [ ]) ++ [
+    ./panel-st7703-r36t-max.patch
+    # Prior RK915 proof's per-host MMC quirks. The local copy retains a
+    # 14-byte CIS bound because the parser reads buf[12] and buf[13].
+    ../wifi/mmc-support.patch
+  ];
 
   postPatch = (previous.postPatch or "") + ''
     cp ${./rk3326-aislpc-r36t-max.dts} arch/arm64/boot/dts/rockchip/${dtbName}.dts
@@ -67,5 +72,7 @@ kernel.overrideAttrs (previous: {
     echo 'obj-y += panel-generic-dsi.o' >> drivers/gpu/drm/panel/Makefile
   '';
 
-  passthru = (previous.passthru or { }) // { inherit dtbName; };
+  passthru = (previous.passthru or { }) // {
+    inherit dtbName;
+  };
 })

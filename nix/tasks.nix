@@ -131,6 +131,27 @@ let
     };
 
   definitions = {
+    r36tmax-check = {
+      description = "Check the R36T Max console and Korri configurations without deploying.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax-recovery \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax-mmc
+      '';
+    };
+    r36tmax-session-check = {
+      description = "Read bounded R36T Max memory and service diagnostics over an existing SSH connection.";
+      usageSuffix = " -- <ssh-target>";
+      runtimeInputs = [ pkgs.openssh ];
+      script = ''
+        target="''${1:?usage: r36tmax-session-check <ssh-target>}"
+        exec ssh -o BatchMode=yes -o ConnectTimeout=10 "$target" \
+          /run/current-system/sw/bin/r36tmax-session-sanity
+      '';
+    };
     rgds-initrd-check = {
       description = "Build the RG DS initrd module closure with strict missing-module checks; cross-build on x86_64.";
       runtimeInputs = [ pkgs.nix ];

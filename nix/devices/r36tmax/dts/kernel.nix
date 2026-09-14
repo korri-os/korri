@@ -24,5 +24,7 @@ linuxPackages.kernel.overrideAttrs (old: {
       >> arch/arm64/boot/dts/rockchip/Makefile
   '';
 
-  passthru = (old.passthru or { }) // { inherit dtbName; };
+  passthru = (old.passthru or { }) // {
+    inherit dtbName;
+  };
 })

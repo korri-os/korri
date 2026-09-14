@@ -38,6 +38,10 @@
         inherit nixpkgs;
         korri = self;
       };
+      r36tmax = import ./nix/devices/r36tmax {
+        inherit nixpkgs;
+        korri = self;
+      };
       odin2portal = import ./nix/devices/odin2portal {
         inherit nixpkgs;
         korri = self;
@@ -67,6 +71,8 @@
         rg353m = rg353m.portalPreviewConfiguration;
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
+        r36tmax = r36tmax.configuration;
+        r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
       };
     }
@@ -171,6 +177,12 @@
           rgds-sd-image = rgds.sdImage;
           rgds-kernel = rgds.kernel;
           rgds-uboot = rgds.uboot;
+          r36tmax-sd-image = r36tmax.sdImage;
+          r36tmax-recovery-sd-image = r36tmax.consoleSdImage;
+          r36tmax-kernel = r36tmax.kernel;
+          r36tmax-uboot = r36tmax.uboot;
+          r36tmax-diagnostic-sd-image = r36tmax.diagnosticSdImage;
+          r36tmax-mainline-sd-image = r36tmax.mainlineSdImage;
           odin2portal-kernel = odin2portal.kernel;
           odin2portal-rescue-kernel = odin2portal.rescueKernel;
           odin2portal-firmware = odin2portal.firmware;
@@ -184,6 +196,7 @@
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
           rgds-kernel = rgds.kernelCross;
+          r36tmax-kernel = r36tmax.kernelCross;
           rgds-uboot = rgds.ubootCross;
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
@@ -219,6 +232,9 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            r36tmax = r36tmax.moduleCheck pkgs;
+            r36tmax-recovery = (import ./nix/devices/r36tmax/recovery { inherit pkgs; }).checks;
+            r36tmax-mmc = import ./nix/devices/r36tmax/wifi/mmc-check.nix { inherit pkgs; };
             rgds-inputplumber = self.packages.${system}.rgds-inputplumber-data;
             rgds-initrd-modules = rgds.initrdModulesCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;

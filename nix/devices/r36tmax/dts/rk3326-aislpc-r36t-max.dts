@@ -15,13 +15,11 @@
  * RK817 PMIC, same audio routing, same SD card wiring. Where this board
  * agrees with it, it deliberately says the same thing.
  *
- * The PMIC regulator table is the exception, and it is the vendor's, not
- * the RG351M's. The two boards wire the RK817 differently: this one runs
- * its PMU I/O domain at 3.0 V where the RG351M runs 3.3 V, keeps LDO_REG1
- * and the three DVP rails on where the RG351M leaves them unused, and puts
- * 1.5 V on LDO_REG9 where the RG351M puts nothing. Every row below is the
- * vendor tree's, and ROCKNIX's resolved tree on this exact board says the
- * same, so two independent sources agree on each line.
+ * The PMIC is declared as RK817, not identified by a silicon ID read.
+ * The regulator table is not a verbatim vendor copy: vcc7's input and
+ * BOOST's voltage constraints differ. The vendor also declares mixed
+ * RK809/RK817 regulator nodes. See PANEL-PMIC-AUDIT.md for exact Linux
+ * 6.12.63 matches, source differences and unresolved electrical routes.
  *
  * Unresolved, and deliberately absent rather than guessed:
  *
@@ -92,14 +90,10 @@
 	};
 
 	/*
-	 * No power-supply, on purpose. The rail is the RK817's SWITCH_REG2,
-	 * which the vendor keeps always-on and which mainline's rk808 driver
-	 * does not register for the RK817 (its rk817_reg[] table stops at
-	 * BOOST and OTG_SWITCH; the switches exist only in rk809_reg[]).
-	 * Naming it here makes pwm-backlight defer forever on a regulator
-	 * that never appears, which is a dark panel with no error. ROCKNIX
-	 * omits the supply for the same reason. Restore it when the switch
-	 * descriptors are added to the driver.
+	 * The vendor backlight has no power-supply property. Its electrical
+	 * feed is unresolved; PWM1 identifies brightness control only.
+	 * SWITCH_REG2 is an RK809 descriptor, not a missing RK817 descriptor.
+	 * Do not add a supply reference without evidence of the board route.
 	 */
 	backlight: backlight {
 		compatible = "pwm-backlight";
@@ -107,10 +101,10 @@
 	};
 
 	/*
-	 * Supplies the panel's 1.8 V rail. Held on by the bootloader; the
-	 * regulator core switches unclaimed rails off a few seconds after
-	 * boot, which on a panel rail means the display goes dark once
-	 * userspace is up.
+	 * Vendor panel power-supply resolves to this GPIO0 PB5 fixed rail.
+	 * The vendor declares neither voltage constraints nor vin-supply;
+	 * the 1.8 V value and vcc_3v0 input below are not verified by that
+	 * record. Preserve the current setup pending electrical evidence.
 	 */
 	vcc18_lcd_n: regulator-vcc18-lcd-n {
 		compatible = "regulator-fixed";
@@ -256,13 +250,16 @@
 	 * glass's own sequence, timings and phase left the panel white, and
 	 * this description draws on this exact unit under ROCKNIX. With a
 	 * working screen in hand, the ST7703 entry can be made right and this
-	 * node goes back to compatible = "aislpc,r36t-max-panel",
-	 * "sitronix,st7703" with no description.
+	 * node can use the candidate only after its supply binding, error
+	 * cleanup and transaction schedule are checked on hardware.
 	 *
 	 * The description's lines: G is geometry, delays
-	 * (prepare,reset,init,enable,disable), format, lanes and DSI flags;
-	 * M is a display mode, default=1 marks the one to use; I is one DCS
-	 * write as hex, with an optional wait after it.
+	 * (prepare,reset,init,enable,ready), format, lanes and DSI flags.
+	 * The ready delay is unused by the carried driver. M is a display
+	 * mode; default=1 marks the preferred mode. I is one DCS write as
+	 * hex. Its wait is also hex: 250 means 592 ms; 50 means 80 ms.
+	 * The driver then adds display-on, sleep-out and 120 ms. Keep this
+	 * schedule; source comparison does not establish minimum timing.
 	 */
 	panel: panel@0 {
 		compatible = "rocknix,generic-dsi";
@@ -396,9 +393,9 @@
 			};
 
 			/*
-			 * Named vcc_3v0 by the vendor and set to 3.3 V there; ROCKNIX
-			 * runs it at 3.0 V and the board is fine with either. It feeds
-			 * io domains 4 and 5. Keep the vendor's number.
+			 * Named vcc_3v0 by the vendor but declared as 3.3 V there.
+			 * It feeds io domains 4 and 5 in both trees. The name is not
+			 * a voltage measurement. Keep the existing 3.3 V constraint.
 			 */
 			vcc_3v0: DCDC_REG4 {
 				regulator-always-on;
@@ -540,9 +537,10 @@
 			};
 
 			/*
-			 * Vendor names it "boost" with no voltage. RG351M's usb_midu
-			 * range is the RK817 datasheet range and is what ROCKNIX
-			 * resolves to on this board.
+			 * Vendor "boost" declares 4.8 V: dtc renders its cells as
+			 * "", "I>" (00 49 3e 00). Linux 6.12.63 supports 4.7-5.4 V
+			 * in 0.1 V steps. Preserve this differing constraint until
+			 * the board route and operating requirements are verified.
 			 */
 			usb_midu: BOOST {
 				regulator-always-on;
@@ -553,13 +551,11 @@
 			};
 
 			/*
-			 * The RK817 also has SWITCH_REG1 (vcc5v0_host, USB VBUS) and
-			 * SWITCH_REG2 (vcc3v3_lcd, the panel's 3.3 V), both always on
-			 * in the vendor tree. Mainline's rk808 driver registers
-			 * neither for the RK817, so they are not declared: a node no
-			 * driver claims is a supply every consumer waits on forever.
-			 * The boot ROM leaves both switches on. Declare them once the
-			 * descriptors are added to rk817_reg[] in rk808-regulator.c.
+			 * Vendor DCDC_REG5 and SWITCH_REG1/2 belong to the RK809
+			 * descriptor set in Linux 6.12.63. RK817 instead has BOOST
+			 * and OTG_SWITCH. Mixed vendor nodes do not prove extra
+			 * silicon switches, their boot state or a backlight feed.
+			 * Do not copy RK809 descriptors into rk817_reg[].
 			 */
 		};
 
@@ -624,12 +620,16 @@
 	vqmmc-supply = <&vcc1v8_soc>;
 	status = "okay";
 
-	/*
-	 * RK915 over SDIO. There is no mainline driver for this part, so the
-	 * node exists to power and clock the bus correctly; the driver is
-	 * carried out of tree along with rk915_fw.bin and rk915_patch.bin.
-	 * Host wake is gpio0 RK_PA5.
-	 */
+	/* The prior RK915 proof and its pinned MMC patch use this property. */
+	supports-rk912;
+	wifi@1 {
+		reg = <1>;
+		interrupt-names = "host-wake";
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PA5 IRQ_TYPE_LEVEL_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake>;
+	};
 };
 
 &sdmmc {

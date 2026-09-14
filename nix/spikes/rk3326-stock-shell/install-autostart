@@ -25,7 +25,7 @@ boot="${p}1"; storage="${p}2"
 [ -b "$boot" ] && [ -b "$storage" ] || { echo "expected two partitions" >&2; exit 1; }
 
 here=$(cd "$(dirname "$0")" && pwd)
-script="$here/payload/rocknix-autostart.sh"
+script="$here/../../devices/r36tmax/payload/rocknix-autostart.sh"
 collect=${KORRI_PSTORE_OUT:-$HOME/.local/share/korri/rk3326-stock-shell/logs/pstore-$(date +%Y%m%d-%H%M%S)}
 
 work=$(mktemp -d)

@@ -14,7 +14,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: write-image <image.img.zst> /dev/<device> --i-know" >&2
+  echo "usage: write-image <image.img.zst> /dev/<device> --i-know [--verify-only]" >&2
   exit 2
 }
 
@@ -24,7 +24,11 @@ confirm=${3:-}
 mode=${4:-write}
 [ -n "$image" ] && [ -n "$target" ] || usage
 [ "$confirm" = "--i-know" ] || usage
+case "$mode" in write|--verify-only) ;; *) usage ;; esac
 [ -f "$image" ] || { echo "no such image: $image" >&2; exit 1; }
+# Resolve once before the basename/sysfs check. An alias named like a whole
+# disk must not pass that check while pointing at one of its partitions.
+target=$(readlink -e -- "$target") || { echo "target does not exist" >&2; exit 1; }
 
 # --- gate 1: whole block device -------------------------------------------
 [ -b "$target" ] || { echo "not a block device: $target" >&2; exit 1; }
@@ -33,6 +37,13 @@ base=$(basename "$target")
   echo "not a whole disk (looks like a partition): $target" >&2
   exit 1
 }
+
+# Only the removable card reader is in scope. A small internal disk is not
+# made safe by falling below the capacity cap.
+if [ "$(lsblk -dnro RM "$target")" != 1 ]; then
+  echo "refusing: $target is not removable media" >&2
+  exit 1
+fi
 
 # --- gate 2: nothing mounted ----------------------------------------------
 if lsblk -no MOUNTPOINT "$target" | grep -q .; then
@@ -51,9 +62,15 @@ if [ "$size_bytes" -gt "$max_bytes" ]; then
 fi
 
 # --- gate 4: the image fits -----------------------------------------------
-image_bytes=$(zstd -l --no-check "$image" 2>/dev/null | awk 'NR==2 {print $4, $5}' | tr -d ' ')
+# Decode the complete stream before any write. A truncated frame or oversized
+# image must fail here, not after replacing the card's partition table.
+image_size=$(zstd -dc "$image" | wc -c)
+if [ "$image_size" -eq 0 ] || [ "$image_size" -gt "$size_bytes" ]; then
+  echo "refusing: image is $image_size bytes; target holds $size_bytes bytes" >&2
+  exit 1
+fi
 echo "target: $target ($((size_bytes / 1000 / 1000 / 1000)) GB)"
-lsblk -o NAME,SIZE,FSTYPE,LABEL "$target"
+lsblk -o NAME,SIZE,MODEL,SERIAL,TRAN,RM,FSTYPE,LABEL "$target"
 echo "image:  $image"
 echo
 
@@ -71,7 +88,6 @@ fi
 echo
 echo "verifying..."
 written_sum=$(zstd -dc "$image" | sha256sum | cut -d' ' -f1)
-image_size=$(zstd -dc "$image" | wc -c)
 # iflag=count_bytes reads exactly the image's length. Piping through `head -c`
 # instead closes the pipe early, which kills dd with SIGPIPE and, under
 # pipefail, fails the script after a perfectly good write.

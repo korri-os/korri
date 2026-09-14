@@ -66,13 +66,16 @@ assert !base.config.services.openssh.enable;
 assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert lib.all noBenchmarksIn (lib.attrValues korri.nixosConfigurations);
-# Removing the browser benchmark module must not remove the product's DRM seat.
+# Product systems keep their DRM seat. The R36T Max console image deliberately
+# starts no graphics stack so it can recover a failed kiosk generation.
+assert !korri.nixosConfigurations.r36tmax-recovery.config.hardware.graphics.enable;
+assert !korri.nixosConfigurations.r36tmax-recovery.config.services.seatd.enable;
 assert lib.all (
   device:
   device.config.hardware.graphics.enable
   && device.config.services.seatd.enable
   && device.config.security.polkit.enable
-) (lib.attrValues korri.nixosConfigurations);
+) (lib.attrValues (builtins.removeAttrs korri.nixosConfigurations [ "r36tmax-recovery" ]));
 assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
 assert korri.nixosConfigurations.odin2portal.config.services.korriKiosk.enable;
 pkgs.runCommand "korri-base-module-check" { } ''

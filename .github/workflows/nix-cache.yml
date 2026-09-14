@@ -96,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [odin2portal, rg353m, rgds]
+        device: [odin2portal, rg353m, rgds, r36tmax]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -121,6 +121,10 @@ jobs:
 
       - name: Make room for the signed cache
         run: sudo install -d -o "$(id -u)" -g "$(id -g)" /nix/var/korri-nix-cache
+
+      - name: Check R36T Max device contracts
+        if: ${{ matrix.device == 'r36tmax' }}
+        run: nix run .#r36tmax-check
 
       # The kernel is named as well as the closure, because a closure only holds
       # what a device installs. Building the out-of-tree display driver needs the
