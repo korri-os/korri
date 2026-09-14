@@ -220,12 +220,8 @@ in
   #
   # VFAT, FAT, and the two needed NLS tables are built into this kernel, so
   # mounting works with no modules loaded.
-  # The recorder must not depend on the thing it is diagnosing. A boot that
-  # cannot find the root label is exactly the boot that needs a log, and
-  # by-label is what it cannot find. So: try the label, and if that is
-  # absent, try every vfat partition the kernel can see, and write to the
-  # first one that mounts. Record what block devices exist at all, which is
-  # the question a missing root actually asks.
+  # Require NIXOS_BOOT on the physical SD controller. Missing labels mean
+  # no card log, not permission to search other writable filesystems.
   #
   # It runs twice: after udev settles, and again from fail(), because a
   # root that never appears ends in fail(), and on a board with no console
@@ -236,6 +232,7 @@ in
     # there so it runs with the initrd's PATH and nothing from the host.
     sed "1s|.*|#!$out/bin/ash|" ${./payload/korri-flight.sh} > $out/bin/korri-flight
     chmod +x $out/bin/korri-flight
+    cp ${./payload/boot-media.sh} $out/bin/boot-media.sh
   '';
 
   boot.initrd.postDeviceCommands = lib.mkAfter ''
@@ -265,8 +262,14 @@ in
       RemainAfterExit = true;
     };
     script = ''
+      . ${./payload/boot-media.sh}
+      boot_part=$(r36tmax_boot_partition) || {
+        echo "flight recorder: no verified SD boot partition; skipping write" >&2
+        exit 0
+      }
+      test -b "$boot_part"
       mkdir -p /flash
-      mount -t vfat /dev/disk/by-label/NIXOS_BOOT /flash
+      mount -t vfat "$boot_part" /flash
       {
         echo "=== stage2 $(cat /proc/sys/kernel/random/boot_id) ==="
         cat /proc/uptime
