@@ -62,6 +62,21 @@ in
     initrd.kernelModules = lib.mkForce [ ];
     initrd.includeDefaultModules = false;
 
+    # LZO, because it is the only decompressor this kernel has. ROCKNIX
+    # builds its initramfs into the kernel and enables exactly the one
+    # compressor it uses:
+    #
+    #   # CONFIG_RD_GZIP is not set
+    #   # CONFIG_RD_ZSTD is not set
+    #   CONFIG_RD_LZO=y
+    #
+    # NixOS defaults to zstd on any kernel newer than 5.9. A kernel handed
+    # an initrd it cannot unpack has no rootfs and panics about a second
+    # in, before any driver has probed, which on a board with no console
+    # looks exactly like a device tree fault. It cost a day.
+    initrd.compressor = "lzop";
+    initrd.compressorArgs = [ "-9" ];
+
     kernelParams = [
       # No serial console, on purpose, and no earlycon.
       #
