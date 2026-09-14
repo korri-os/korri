@@ -261,3 +261,24 @@ Build and physical acceptance remain pending. Inherited volume is not made
 safe by this source change: the test must verify the lowest mixer level,
 use an attenuated finite signal and confirm speaker-off cleanup. No automatic
 jack switching or volume-button functionality is claimed.
+
+
+## Button-only diagnostic artifact verified
+
+The source-2345e3ec button-only build and transfer completed. A separate local
+check verified the received image: original loader hash, FAT/root layout and
+labels, exact boot kernel/DTBs/LZO initrd/module closure, all17 button mappings
+and radio/eMMC contract. The built browser unit is masked; compositor, korrid
+and SSH units are present. This is an artifact check, not physical acceptance.
+
+- System: `/nix/store/ap67s80lidnfa8j5afnnk17rh770bxk4-nixos-system-r36tmax-sd-card-26.05.20251221.a653104`.
+- Image output: `/nix/store/y70ys698wcl2jpcixavc2szbq0g0pkp2-nixos-r36t-max.img.zst`.
+- Compressed file: `sd-image/nixos-r36t-max.img.zst`, 765155325 bytes.
+- SHA256: `a23cc5e3e8fe0f558aab3356c6a649c3d8c3cbc36b528f7fa5d19733e676befe`.
+- Decompressed image: 3746811904 bytes.
+- Evidence: private `logs/button-artifact-verification-2345e3ec.log`.
+
+Both outputs have separate GC roots; original image roots were not replaced.
+The completed source worktree/branch was removed. This image is a retained
+button-only fallback and does NOT contain speaker routing. The combined source
+9989fef3 image is building separately. No card write, reboot or playback occurred.
