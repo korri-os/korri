@@ -1,6 +1,19 @@
 --- a/drivers/gpu/drm/panel/panel-sitronix-st7703.c
 +++ b/drivers/gpu/drm/panel/panel-sitronix-st7703.c
-@@ -673,6 +673,121 @@
+@@ -70,6 +70,12 @@
+ 	unsigned long mode_flags;
+ 	enum mipi_dsi_pixel_format format;
+ 	void (*init_sequence)(struct mipi_dsi_multi_context *dsi_ctx);
++	/*
++	 * Some glass is not ready for video the moment it acknowledges
++	 * display-on; the vendor's enable-delay-ms. Zero for panels that
++	 * do not need it.
++	 */
++	unsigned int enable_delay_ms;
+ };
+ 
+ static inline struct st7703 *panel_to_st7703(struct drm_panel *panel)
+@@ -673,6 +679,122 @@
  	.init_sequence = gameforcechi_init_sequence,
  };
  
@@ -78,26 +91,20 @@
 +}
 +
 +/*
-+ * Not the vendor kernel's timing. That one is 50 MHz with 140/80/140 and
-+ * 20/4/20 porches, and it is what the vendor's own DSI host drives this
-+ * glass with. Mainline's Rockchip DSI host derives its lane rate from the
-+ * mode, and with that mode the glass stays white through a sequence that
-+ * runs to completion. The community ROCKNIX overlay carries twelve
-+ * candidate timings for this panel class for the same reason. This is the
-+ * 720x720 timing mainline already drives an ST7703 with, from the RGB30
-+ * entry above; it is the known-good host side, held fixed while the init
-+ * sequence is the variable.
++ * Read off the stock system's display controller while it was drawing:
++ * 720x720p61 at 50 MHz, porches 140/80/140 and 20/4/20. The vendor tree's
++ * timing0 says the same.
 + */
 +static const struct drm_display_mode r36tmax_mode = {
 +	.hdisplay	= 720,
-+	.hsync_start	= 720 + 45,
-+	.hsync_end	= 720 + 45 + 4,
-+	.htotal		= 720 + 45 + 4 + 45,
++	.hsync_start	= 720 + 140,
++	.hsync_end	= 720 + 140 + 80,
++	.htotal		= 720 + 140 + 80 + 140,
 +	.vdisplay	= 720,
-+	.vsync_start	= 720 + 15,
-+	.vsync_end	= 720 + 15 + 3,
-+	.vtotal		= 720 + 15 + 3 + 11,
-+	.clock		= 36570,
++	.vsync_start	= 720 + 20,
++	.vsync_end	= 720 + 20 + 4,
++	.vtotal		= 720 + 20 + 4 + 20,
++	.clock		= 50000,
 +	.flags		= DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_NVSYNC,
 +	.width_mm	= 76,
 +	.height_mm	= 76,
@@ -116,13 +123,30 @@
 +		      MIPI_DSI_MODE_NO_EOT_PACKET | MIPI_DSI_MODE_LPM,
 +	.format = MIPI_DSI_FMT_RGB888,
 +	.init_sequence = r36tmax_init_sequence,
++	/*
++	 * The vendor's enable-delay-ms, also the panel-exit-sequence's own
++	 * 50 ms after display-on. Without it the DSI host switches to HS
++	 * video while the controller is still finishing display-on, and the
++	 * glass stays white behind a lit backlight.
++	 */
++	.enable_delay_ms = 120,
 +};
 +
 +
  static int st7703_enable(struct drm_panel *panel)
  {
  	struct st7703 *ctx = panel_to_st7703(panel);
-@@ -916,6 +1006,7 @@
+@@ -688,6 +810,9 @@
+ 
+ 	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
+ 
++	if (ctx->desc->enable_delay_ms)
++		mipi_dsi_msleep(&dsi_ctx, ctx->desc->enable_delay_ms);
++
+ 	if (!dsi_ctx.accum_err)
+ 		dev_dbg(ctx->dev, "Panel init sequence done\n");
+ 
+@@ -916,6 +1041,7 @@
  }
  
  static const struct of_device_id st7703_of_match[] = {
