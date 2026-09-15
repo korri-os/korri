@@ -61,34 +61,174 @@ static void request_fullscreen(Display *display, Window window, Window root) {
   );
 }
 
+static const unsigned long band_colors[] = {
+  0x171926,
+  0x202c55,
+  0x174f55,
+  0x5b3b66,
+  0x60471f,
+  0x263f25,
+};
+
+#define BAND_COUNT ((int) (sizeof(band_colors) / sizeof(band_colors[0])))
+
 static void draw_background(Display *display, Window window, GC gc, int width, int height) {
-  static const unsigned long colors[] = {
-    0x171926,
-    0x202c55,
-    0x174f55,
-    0x5b3b66,
-    0x60471f,
-    0x263f25,
-  };
-  int count = (int) (sizeof(colors) / sizeof(colors[0]));
-  int band_width = (width + count - 1) / count;
-  for (int index = 0; index < count; ++index) {
-    XSetForeground(display, gc, colors[index]);
+  int band_width = (width + BAND_COUNT - 1) / BAND_COUNT;
+  for (int index = 0; index < BAND_COUNT; ++index) {
+    XSetForeground(display, gc, band_colors[index]);
     XFillRectangle(display, window, gc, index * band_width, 0, (unsigned int) band_width, (unsigned int) height);
   }
 }
 
+/*
+ * Repaint the banded background inside one rectangle. Every moving object
+ * erases itself this way, so the window never needs a full repaint and the
+ * per-frame cost stays proportional to what actually moved.
+ */
+static void restore_background(
+  Display *display,
+  Window window,
+  GC gc,
+  int width,
+  int x,
+  int y,
+  int w,
+  int h
+) {
+  if (w <= 0 || h <= 0) return;
+  int band_width = (width + BAND_COUNT - 1) / BAND_COUNT;
+  for (int index = 0; index < BAND_COUNT; ++index) {
+    int band_start = index * band_width;
+    int band_end = band_start + band_width;
+    int start = x > band_start ? x : band_start;
+    int end = (x + w) < band_end ? (x + w) : band_end;
+    if (end <= start) continue;
+    XSetForeground(display, gc, band_colors[index]);
+    XFillRectangle(display, window, gc, start, y, (unsigned int) (end - start), (unsigned int) h);
+  }
+}
+
+/*
+ * Seven-segment digits drawn from filled rectangles. A core X font would be
+ * easier, but it is neither guaranteed to be present nor large enough to stay
+ * legible once the frame has been encoded, scaled and shown on a phone.
+ */
+static const unsigned char digit_segments[10] = {
+  /* 0 */ 0x3F, /* 1 */ 0x06, /* 2 */ 0x5B, /* 3 */ 0x4F, /* 4 */ 0x66,
+  /* 5 */ 0x6D, /* 6 */ 0x7D, /* 7 */ 0x07, /* 8 */ 0x7F, /* 9 */ 0x6F,
+};
+
+static void draw_digit(
+  Display *display,
+  Window window,
+  GC gc,
+  int value,
+  int x,
+  int y,
+  int w,
+  int h,
+  int thickness
+) {
+  if (value < 0 || value > 9) return;
+  unsigned char mask = digit_segments[value];
+  int mid = y + (h - thickness) / 2;
+  /* a, b, c, d, e, f, g as x, y, width, height. */
+  const int segments[7][4] = {
+    {x, y, w, thickness},
+    {x + w - thickness, y, thickness, h / 2},
+    {x + w - thickness, mid, thickness, h - (mid - y)},
+    {x, y + h - thickness, w, thickness},
+    {x, mid, thickness, h - (mid - y)},
+    {x, y, thickness, h / 2},
+    {x, mid, w, thickness},
+  };
+  for (int index = 0; index < 7; ++index) {
+    if (!(mask & (1u << index))) continue;
+    XFillRectangle(
+      display,
+      window,
+      gc,
+      segments[index][0],
+      segments[index][1],
+      (unsigned int) segments[index][2],
+      (unsigned int) segments[index][3]
+    );
+  }
+}
+
+/* Renders a rate as three digits and one decimal, for example 59.9. */
+static void draw_rate(
+  Display *display,
+  Window window,
+  GC gc,
+  double rate,
+  int x,
+  int y,
+  int digit_width,
+  int digit_height,
+  int thickness
+) {
+  int scaled = (int) (rate * 10.0 + 0.5);
+  if (scaled < 0) scaled = 0;
+  if (scaled > 9999) scaled = 9999;
+  int digits[3] = {(scaled / 1000) % 10, (scaled / 100) % 10, (scaled / 10) % 10};
+  int gap = digit_width / 4;
+  int cursor = x;
+  for (int index = 0; index < 3; ++index) {
+    if (index == 0 && digits[0] == 0) {
+      cursor += digit_width + gap;
+      continue;
+    }
+    draw_digit(display, window, gc, digits[index], cursor, y, digit_width, digit_height, thickness);
+    cursor += digit_width + gap;
+  }
+  XFillRectangle(
+    display,
+    window,
+    gc,
+    cursor,
+    y + digit_height - thickness,
+    (unsigned int) thickness,
+    (unsigned int) thickness
+  );
+  cursor += thickness + gap;
+  draw_digit(display, window, gc, scaled % 10, cursor, y, digit_width, digit_height, thickness);
+}
+
 int main(int argc, char **argv) {
-  if (argc != 4 && !(argc == 5 && strcmp(argv[4], "--fullscreen") == 0)) {
-    fprintf(stderr, "usage: %s WIDTH HEIGHT FPS [--fullscreen]\n", argv[0]);
+  int fullscreen = 0;
+  int show_rate = 0;
+  int busy = 0;
+  for (int index = 4; index < argc; ++index) {
+    if (strcmp(argv[index], "--fullscreen") == 0) {
+      fullscreen = 1;
+    } else if (strcmp(argv[index], "--show-fps") == 0) {
+      show_rate = 1;
+    } else if (strcmp(argv[index], "--busy") == 0) {
+      busy = 1;
+    } else {
+      fprintf(stderr, "usage: %s WIDTH HEIGHT FPS [--fullscreen] [--show-fps] [--busy]\n", argv[0]);
+      return 2;
+    }
+  }
+  if (argc < 4) {
+    fprintf(stderr, "usage: %s WIDTH HEIGHT FPS [--fullscreen] [--show-fps] [--busy]\n", argv[0]);
     return 2;
   }
 
-  int fullscreen = argc == 5;
   int requested_width = parse_positive(argv[1], "width");
   int requested_height = parse_positive(argv[2], "height");
   int fps = parse_positive(argv[3], "fps");
   int64_t frame_nanoseconds = 1000000000LL / fps;
+
+  /* Extra movers for --busy. Sized so each frame changes a large area. */
+  enum { MOVER_LIMIT = 10 };
+  struct mover {
+    int x, y, dx, dy, size;
+    int previous_x, previous_y;
+    unsigned long color;
+  } movers[MOVER_LIMIT];
+  int mover_count = busy ? MOVER_LIMIT : 0;
 
   signal(SIGINT, stop);
   signal(SIGTERM, stop);
@@ -126,10 +266,36 @@ int main(int argc, char **argv) {
   int previous_x = -1;
   uint64_t frame = 0;
   uint64_t interval_frames = 0;
+  double measured_rate = 0.0;
   struct timespec next;
   struct timespec interval_start;
   clock_gettime(CLOCK_MONOTONIC, &next);
   interval_start = next;
+
+  static const unsigned long mover_colors[] = {
+    0xff5f56, 0xffbd2e, 0x27c93f, 0x3fa7ff, 0xc678dd, 0x56d7d7,
+  };
+  for (int index = 0; index < mover_count; ++index) {
+    int size = requested_height / 14;
+    if (size < 24) size = 24;
+    movers[index].size = size;
+    movers[index].x = (requested_width - size) * (index + 1) / (mover_count + 1);
+    movers[index].y = (requested_height - size) * ((index * 7) % 11 + 1) / 12;
+    movers[index].dx = (index % 2 ? 1 : -1) * (3 + index % 5);
+    movers[index].dy = (index % 3 ? 1 : -1) * (2 + (index * 3) % 6);
+    movers[index].previous_x = -1;
+    movers[index].previous_y = -1;
+    movers[index].color = mover_colors[index % (int) (sizeof(mover_colors) / sizeof(mover_colors[0]))];
+  }
+
+  int rate_digit_width = requested_width / 9;
+  if (rate_digit_width < 18) rate_digit_width = 18;
+  int rate_digit_height = rate_digit_width * 2;
+  int rate_thickness = rate_digit_width / 5;
+  if (rate_thickness < 3) rate_thickness = 3;
+  int rate_margin = rate_digit_width / 2;
+  int rate_box_width = rate_digit_width * 4 + rate_thickness + rate_digit_width / 4 * 4 + rate_margin;
+  int rate_box_height = rate_digit_height + rate_margin;
 
   while (running) {
     while (XPending(display)) {
@@ -165,6 +331,9 @@ int main(int argc, char **argv) {
       XSetForeground(display, gc, 0x090b12);
       XFillRectangle(display, window, gc, 0, lane_y, (unsigned int) width, (unsigned int) lane_height);
       redraw = 0;
+      for (int index = 0; index < mover_count; ++index) {
+        movers[index].previous_x = -1;
+      }
     } else if (previous_x >= 0) {
       XSetForeground(display, gc, 0x090b12);
       XFillRectangle(
@@ -178,6 +347,36 @@ int main(int argc, char **argv) {
       );
     }
 
+    for (int index = 0; index < mover_count; ++index) {
+      struct mover *mover = &movers[index];
+      if (mover->previous_x >= 0) {
+        restore_background(
+          display, window, gc, width,
+          mover->previous_x, mover->previous_y, mover->size, mover->size
+        );
+        if (mover->previous_y + mover->size > lane_y && mover->previous_y < lane_y + lane_height) {
+          int top = mover->previous_y > lane_y ? mover->previous_y : lane_y;
+          int bottom = mover->previous_y + mover->size;
+          int lane_bottom = lane_y + lane_height;
+          if (bottom > lane_bottom) bottom = lane_bottom;
+          XSetForeground(display, gc, 0x090b12);
+          XFillRectangle(
+            display, window, gc,
+            mover->previous_x, top,
+            (unsigned int) mover->size, (unsigned int) (bottom - top)
+          );
+        }
+      }
+      mover->x += mover->dx;
+      mover->y += mover->dy;
+      if (mover->x < 0) { mover->x = 0; mover->dx = -mover->dx; }
+      if (mover->x > width - mover->size) { mover->x = width - mover->size; mover->dx = -mover->dx; }
+      if (mover->y < 0) { mover->y = 0; mover->dy = -mover->dy; }
+      if (mover->y > height - mover->size) { mover->y = height - mover->size; mover->dy = -mover->dy; }
+      mover->previous_x = mover->x;
+      mover->previous_y = mover->y;
+    }
+
     unsigned long color = 0x55d9ff + ((frame / (uint64_t) fps) % 3U) * 0x220900;
     XSetForeground(display, gc, color);
     XFillRectangle(
@@ -189,6 +388,27 @@ int main(int argc, char **argv) {
       (unsigned int) block_width,
       (unsigned int) block_height
     );
+
+    for (int index = 0; index < mover_count; ++index) {
+      XSetForeground(display, gc, movers[index].color);
+      XFillRectangle(
+        display, window, gc,
+        movers[index].x, movers[index].y,
+        (unsigned int) movers[index].size, (unsigned int) movers[index].size
+      );
+    }
+
+    if (show_rate) {
+      XSetForeground(display, gc, 0x000000);
+      XFillRectangle(display, window, gc, 0, 0, (unsigned int) rate_box_width, (unsigned int) rate_box_height);
+      XSetForeground(display, gc, 0x00ff88);
+      draw_rate(
+        display, window, gc, measured_rate,
+        rate_margin / 2, rate_margin / 2,
+        rate_digit_width, rate_digit_height, rate_thickness
+      );
+    }
+
     XSync(display, False);
     previous_x = x;
     ++frame;
@@ -201,7 +421,8 @@ int main(int argc, char **argv) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     double interval = elapsed_seconds(interval_start, now);
     if (interval >= 1.0) {
-      fprintf(stderr, "korri-validation-fps=%.3f\n", (double) interval_frames / interval);
+      measured_rate = (double) interval_frames / interval;
+      fprintf(stderr, "korri-validation-fps=%.3f\n", measured_rate);
       interval_start = now;
       interval_frames = 0;
       if (elapsed_seconds(next, now) > 1.0) {
