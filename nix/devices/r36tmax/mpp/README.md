@@ -1,85 +1,70 @@
-# R36T Max Sunshine encoding: host-only prototype
+# R36T Max hardware H.264 encoding
 
-Hardware-encoded Sunshine hosting is not working yet. Do not load this driver
-or apply this overlay to the handheld. The earlier successful module build
-proved compilation only; it did not prove the PX30 port was correct.
+The R36T Max encodes H.264 on its PX30/RK3326 VEPU2 block through Rockchip's
+MPP service. Mainline Linux 7.2.6 binds that block with the Hantro driver, which
+offers JPEG encoding only, so hardware H.264 needs this out-of-tree service.
 
-The normal portal, governor, board DTS and boot images remain unchanged.
-`compile-check.nix` installs ELF/module metadata only. It installs no `.ko`.
-`binding-check.nix` applies a disabled candidate to the real board DTB on the
-host. Neither check has a device deployment path.
+This directory holds the kernel side. The userspace side is the existing
+`aarch64-linux-rkmpp` Sunshine profile plus `services/sunshine/patches/0027`,
+which hands the compositor's dma-buf to the encoder without a CPU copy.
 
-## Corrections to the first draft
+## What is here
 
-The first draft used a generic VEPU2 binding, omitted GRF configuration,
-removed the PX30 workaround and copied the RG353M no-op PM idle operation.
-Its runtime overlay also used power-domain ID 1, which is `PX30_PD_A35_1`,
-not `PX30_PD_VPU`, whose ID is 11. Those are defects, not tested alternatives.
-The board DTS used the correct symbolic constant, so the two artifacts were
-not equivalent. The unsafe runtime loader and service module were removed.
+| File | Purpose |
+| --- | --- |
+| `src/mpp_vepu2.c` | PX30 VEPU2 device variant for Rockchip's MPP service. |
+| `src/Makefile` | Builds `rk_vcodec.ko` and `rk_vepu_overlay.ko`. |
+| `src/PROVENANCE.md` | Vendor source, what was kept, and what was dropped. |
+| `rk-mpp-runtime-overlay.dts` | Live overlay that adds `mpp-srv` and `vepu@ff442000`. |
+| `rk-mpp-service-module.nix` | Builds both modules against the device kernel. |
+| `compile-check.nix` | Reads real module metadata from that same derivation. |
+| `binding-check.nix` | Compiles the offline binding candidate and rejects mutations. |
 
-The previous output at
-`/nix/store/3big9xm0ckb6cmpkj90kidppx1b0xhbv-rk-mpp-service-vepu2-6.12.63`
-is not approved for device use. Its `result` link was removed from the worktree.
-No module, overlay, governor change or reboot was applied to the handheld.
+## Bring-up on a running device
 
-Claims that software encoding must shut down the R36T Max, that changing the
-CPU governor fixes its heat, and that 720x720 at 60 fps is proven were incorrect.
-No such measurements were made. RG353M results do not prove R36T Max performance.
-The earlier VPU fault belongs to the boot recorded in the
-[hardware survey](../HARDWARE-SURVEY-2026-09-14.md#stage-4-first-codec-job-failed).
-Read the current boot identity before making a recovery decision.
+The Hantro driver owns `ff442000.video-codec` at boot. Unbind it before adding
+the MPP nodes; a device-tree overlay cannot take a live IOMMU-attached node away
+from a bound driver without faulting inside `rk_iommu_release_device`.
 
-## Grounding
+```sh
+rmmod hantro_vpu
+insmod .../updates/rk_vepu_overlay.ko
+insmod .../updates/rk_vcodec.ko
+```
 
-The kernel reference is
-[rockchip-linux/kernel at 470f9dccbdc42e7b8a824d0a5c5640a10e9457d2](https://github.com/rockchip-linux/kernel/tree/470f9dccbdc42e7b8a824d0a5c5640a10e9457d2).
-Relevant files:
+`/dev/mpp_service` and `/dev/dma_heap/system` both have to be reachable by the
+user that runs Sunshine. MPP allocates its reference frames from the dma-heap,
+and a `root:root 0600` heap fails the encoder probe with
+`Failed to get MPP internal buffer group`.
 
-- `arch/arm64/boot/dts/rockchip/px30.dtsi:1627-1694` defines the service,
-  encoder, GRF selection, shared resets, clocks and IOMMU references.
-- `drivers/video/rockchip/mpp/mpp_vepu2.c` defines distinct generic and PX30
-  variants. PX30 uses `vepu_px30_init`, `vepu_px30_run` and
-  `px30_workaround_combo_switch_grf`.
-- `drivers/video/rockchip/mpp/hack/mpp_hack_px30.c` owns the vendor combo
-  switching sequence. It reads paging state, controls clocks/power, changes
-  GRF selection and restores the page-directory address and paging state.
-- `include/dt-bindings/power/px30-power.h` defines the power-domain IDs.
+## Measured on hardware, 2026-09-15
 
-The selected mainline kernel is Linux 6.12.63. The host source archive is
-`/nix/store/adddx8796jmn91lvgnsd05ycl180as99-linux-6.12.63.tar.xz`.
-Its `include/linux/iommu.h:856-859` calls `flush_iotlb_all` only if the driver
-supplies that callback. Its `drivers/iommu/rockchip-iommu.c:1164-1178` supplies
-no such callback. This concerns the explicit full flush in this port;
-mainline's own mapping/unmapping paths still perform their own invalidation.
+Linux 7.2.6, Sway compositor, 720x720, H.264, zero-copy Wayland dma-buf input.
 
-Pinned userspace is
-[rockchip-linux/mpp at 0986d01294d5c2449c14cf13af9b740368c33967](https://github.com/rockchip-linux/mpp/tree/0986d01294d5c2449c14cf13af9b740368c33967).
-`osal/mpp_soc.c:916-934` lists RK3326/PX30 with VEPU2.
-`mpp/hal/vpu/h264e/hal_h264e_vepu2_v2.c` implements the H.264 backend.
-`mpp/hal/vpu/common/vepu_common.c` has RGB format configurations. This is source
-support, not proof of dma-buf import or KMS zero-copy on this handheld.
+| Measure | Result |
+| --- | --- |
+| Client-decoded frame rate | 10,514 frames in 178.7 s, **58.83 fps** |
+| Per-window spread | 86 of 89 two-second windows at 117 frames or more |
+| Sunshine CPU | about 40% of one core |
+| Idle CPU during the stream | about 49% across four cores |
+| Peak package temperature | 80.8 C, settling to 70 C |
+| Kernel log | no IOMMU page faults, no resets logged as errors, no timeouts |
 
-## Dependency ledger
+Standalone `mpi_enc_test` reached 90.84 fps at 720x720 over 200 frames with a
+13 ms per-frame latency, so the encoder is not the pacing limit; Sunshine paces
+its encode loop to the negotiated 60 fps.
 
-| Operation | Current draft | Required before a device load |
-|---|---|---|
-| PX30 selection and GRF switching | The generic variant replaced the PX30 path. | Preserve the vendor semantics through a reviewed mainline implementation, or prove a narrower encoder-only route. Do not remove switching merely because one encoder is requested. |
-| Bus idle around reset | Copied `mpp_pmu_idle_request` returns success without an operation. | Provide the required handshake at the PM-domain owner. Runtime PM being active does not establish bus idle. |
-| Explicit full TLB flush | Calls `iommu_flush_iotlb_all`, which does nothing with the selected Rockchip driver's callbacks. | Implement and check a real full flush at the IOMMU owner. |
-| Post-reset IOMMU restoration | Refresh only invokes that full-flush helper. | Restore valid directory, paging and interrupt state after reset, with ordering and failures checked. A flush alone is not reset recovery. |
-| Fault containment | Vendor interrupt masking was removed. | Bound repeated faults and prove cleanup after a failed job without bypassing IOMMU protection. |
-| Initialization and power failures | The common driver continues after IOMMU probe failure and ignores power/clock errors. | Stop before register writes on failed dependencies. Prove resource cleanup and error propagation. |
+The same session on the software `libx264` profile sustained 28.5 fps at about
+210% CPU. The win comes from two places: the VEPU2 does the encode, and its
+preprocessor does the RGB-to-YUV conversion that previously cost 8.3 ms of CPU
+per frame.
 
-The vendor IOMMU also consumes `rockchip,shootdown-entire`; mainline 6.12.63
-does not. The offline overlay does not copy that ineffective property. Its
-presence alone would not implement the missing operation.
+### What this does not cover
 
-These gaps are in kernel boundaries, not Sunshine codec configuration.
-Resolving them can require a narrow kernel patch as well as an external module.
-The cost is a larger reviewed kernel change and another image build before
-hardware tests. Copying vendor MMIO manipulation alongside the mainline IOMMU
-owner is not an accepted shortcut.
+Audio, persistent boot activation, and input have not been tested on this path.
+The overlay is loaded by hand; nothing in the normal image loads it yet. The
+recorded temperatures were taken with the portal browser stopped, which by
+itself accounts for about 15 C on this board.
 
 ## Checks
 
@@ -92,53 +77,46 @@ nix build .#checks.x86_64-linux.r36tmax --no-link -L
 ```
 
 The binding check compiles the actual board and overlay, applies the overlay
-with `fdtoverlay`, and checks the resulting DTB. It requires MPP and VEPU to
-remain disabled. It also runs the existing button, speaker and radio/eMMC
-checks against the candidate. Twenty-five mutations cover the old generic
-binding, reset ownership, power domain, clocks, GRF, IRQ and queue mistakes.
-The stricter checker rejects the old previously passing DTB.
+with `fdtoverlay`, and checks the resulting DTB. It requires both MPP nodes to
+remain disabled in that offline candidate. Twenty-five mutations cover the old
+generic binding, reset ownership, power domain, clocks, GRF, IRQ and queue
+mistakes. It also runs the existing button, speaker and radio/eMMC checks
+against the candidate.
 
-The ARM compile check uses the selected kernel and a build host, never the
-handheld. It reads `modinfo` and the ELF symbol table. It cannot establish
-register correctness, fault recovery, encoding, streaming or thermal limits.
+The compile check reads `modinfo` and the ELF symbol table of the same modules
+the device loads. It establishes identity and ABI, not register correctness.
 
-## Host verification on 2026-09-15
+## Grounding
 
-The three check commands above passed. ARM compilation ran on fuji against
-Linux 6.12.63. The final compile output is
-`/nix/store/77pv8j718965sw8gbg6274h4lr2ys2l0-r36tmax-mpp-compile-check-6.12.63`.
-The binding output is
-`/nix/store/prmdj217aalb60qfa164k4729sf5drbd-r36tmax-mpp-binding-check`.
-Twenty-five MPP, fourteen button and twenty speaker mutations were rejected.
-Python lint, Nix formatting checks and `git diff --check HEAD` also passed.
-The build retains existing board DTC warnings; this is not a warning-free
-or physical-device acceptance claim.
+The kernel reference is
+[rockchip-linux/kernel at 470f9dccbdc42e7b8a824d0a5c5640a10e9457d2](https://github.com/rockchip-linux/kernel/tree/470f9dccbdc42e7b8a824d0a5c5640a10e9457d2).
+Relevant files:
 
-A read-only comparison against main at `f3aa66d9` found identical derivations
-for the normal system, recovery system, diagnostic SD image and mainline-loader
-SD image. A separate source review found no remaining automatic deployment
-wiring. The review did not approve the unfinished driver for hardware use.
-No change from this work is deployed or merged.
+- `arch/arm64/boot/dts/rockchip/px30.dtsi:1627-1694` defines the service,
+  encoder, GRF selection, shared resets, clocks and IOMMU references.
+- `drivers/video/rockchip/mpp/mpp_vepu2.c` defines distinct generic and PX30
+  variants.
+- `include/dt-bindings/power/px30-power.h` defines the power-domain IDs;
+  `PX30_PD_VPU` is 11.
+
+Pinned userspace is
+[rockchip-linux/mpp at 0986d01294d5c2449c14cf13af9b740368c33967](https://github.com/rockchip-linux/mpp/tree/0986d01294d5c2449c14cf13af9b740368c33967).
+`osal/mpp_soc.c:916-934` lists RK3326/PX30 with VEPU2.
+
+The RG353M comparison is
+[the RKMPP acceptance record](../../../../docs/acceptance/sunshine-korri-rg353m-rkmpp-2026-09-05.md).
+That device uses RKVENC-v1 and KMS capture; this one uses VEPU2 and Wayland
+capture, so the encoder driver and the Sunshine capture route both differ.
 
 ## Next steps
 
-1. Resolve the dependency ledger against the owning mainline PM-domain and
-   IOMMU drivers. Keep all normal image wiring unchanged during that work.
-2. Add tests for initialization failures, real flush/reset ordering and bounded
-   fault recovery before exposing a loadable package again.
-3. Review the exact driver and compiled DTB together. One reviewed artifact
-   must own the binding; do not keep a second, divergent runtime overlay.
-4. Build and sign a separate SD test image. Verify the actual boot/recovery
-   state and agree the physical test window before changing the handheld.
-   Never write internal storage or compile on the target.
-5. Prove a bounded standalone H.264 encode and decode the output on a host.
-   Record completions, errors, memory, temperature and cleanup. Then test KMS
-   dma-buf import before a Sunshine session.
-6. Reuse the existing strict RKMPP Sunshine profile only after those gates.
-   Its framebuffer formats, stride, synchronization and fallback costs need
-   R36T Max measurements. Start with a bounded target; do not promise 60 fps.
-
-The RG353M comparison remains
-[the RKMPP acceptance record](../../../../docs/acceptance/sunshine-korri-rg353m-rkmpp-2026-09-05.md).
-The existing userspace pieces are reusable candidates, not proof that no
-FFmpeg or Sunshine changes will be needed.
+1. Wire the overlay, modules and device permissions into the normal image so
+   the encoder survives a reboot, then re-measure from a cold boot.
+2. Give Sunshine the `rkmpp` encoder and `SUNSHINE_STRICT_ENCODER=1` on this
+   device, matching the RG353M policy, so a probe failure fails the unit rather
+   than silently streaming at 28 fps on the CPU.
+3. Fix audio capture. Sunshine cannot reach PulseAudio from its hardened unit
+   (`/run/user/1001/pulse` is read-only), so every session is video-only.
+4. Decide whether the handheld's own Moonlight client should use the Hantro
+   decoder that
+   [the codec path record](../CODEC-PATH.md) already proves.
