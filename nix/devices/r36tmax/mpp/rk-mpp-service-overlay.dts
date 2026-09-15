@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// Offline binding candidate, not a boot or runtime overlay.
+// Sources: rockchip-linux/kernel@470f9dccbdc42e7b8a824d0a5c5640a10e9457d2,
+// arch/arm64/boot/dts/rockchip/px30.dtsi:1627-1694. Enable neither MPP
+// node until the PX30 GRF/IOMMU and shared-reset port passes review.
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/clock/px30-cru.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/power/px30-power.h>
+
+/ {
+	compatible = "aislpc,r36t-max", "rockchip,rk3326";
+
+	fragment@0 {
+		target-path = "/video-codec@ff442000";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			mpp_srv: mpp-srv {
+				compatible = "rockchip,mpp-service";
+				rockchip,taskqueue-count = <1>;
+				rockchip,resetgroup-count = <1>;
+				rockchip,grf = <&grf>;
+				rockchip,grf-offset = <0x0410>;
+				rockchip,grf-values = <0x80008000>, <0x80000000>, <0x80000000>;
+				rockchip,grf-names = "grf_rkvdec", "grf_vdpu2", "grf_vepu2";
+				status = "disabled";
+			};
+
+			vepu: vepu@ff442000 {
+				compatible = "rockchip,vpu-encoder-px30";
+				reg = <0x0 0xff442000 0x0 0x400>;
+				interrupt-parent = <&gic>;
+				interrupts = <GIC_SPI 80 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "irq_enc";
+				clocks = <&cru ACLK_VPU>, <&cru HCLK_VPU>;
+				clock-names = "aclk_vcodec", "hclk_vcodec";
+				resets = <&cru SRST_VPU_A>, <&cru SRST_VPU_H>;
+				reset-names = "shared_video_a", "shared_video_h";
+				iommus = <&vpu_mmu>;
+				power-domains = <&power PX30_PD_VPU>;
+				rockchip,srv = <&mpp_srv>;
+				rockchip,taskqueue-node = <0>;
+				rockchip,resetgroup-node = <0>;
+				status = "disabled";
+			};
+		};
+	};
+};

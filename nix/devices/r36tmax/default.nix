@@ -62,8 +62,12 @@ let
       )
     ];
   };
+  rkMppServiceModule =
+    configuration.config.boot.kernelPackages.callPackage ./mpp/rk-mpp-service-module.nix
+      { };
 in
 {
+  inherit rkMppServiceModule;
   inherit
     configuration
     consoleConfiguration
@@ -75,6 +79,10 @@ in
   mainlineSdImage = mainlineConfiguration.config.system.build.sdImage;
   sdImage = configuration.config.system.build.sdImage;
   consoleSdImage = consoleConfiguration.config.system.build.sdImage;
+  mppCompileCheck = configuration.config.boot.kernelPackages.callPackage ./mpp/compile-check.nix {
+    inherit rkMppServiceModule;
+  };
+  mppBindingCheck = pkgs: import ./mpp/binding-check.nix { inherit pkgs; };
   kernel = configuration.config.boot.kernelPackages.kernel;
   # Host-side preflight only. Devices download complete prebuilt generations.
   kernelCross =

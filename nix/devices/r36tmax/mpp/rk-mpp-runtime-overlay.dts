@@ -1,0 +1,43 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "aislpc,r36t-max", "rockchip,rk3326";
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			mpp_srv: mpp-srv {
+				compatible = "rockchip,mpp-service";
+				rockchip,taskqueue-count = <1>;
+				rockchip,resetgroup-count = <1>;
+				rockchip,grf = <&grf>;
+				rockchip,grf-offset = <0x0410>;
+				rockchip,grf-values = <0x80008000 0x80000000 0x80000000>;
+				rockchip,grf-names = "grf_rkvdec", "grf_vdpu2", "grf_vepu2";
+				status = "okay";
+			};
+
+			vepu: vepu@ff442000 {
+				compatible = "rockchip,vpu-encoder-px30";
+				reg = <0x0 0xff442000 0x0 0x400>;
+				interrupt-parent = <&gic>;
+				interrupts = <0 80 4>;
+				interrupt-names = "irq_enc";
+				clocks = <&cru 175>, <&cru 244>;
+				clock-names = "aclk_vcodec", "hclk_vcodec";
+				resets = <&cru 36>, <&cru 38>;
+				reset-names = "shared_video_a", "shared_video_h";
+				iommus = <&vpu_mmu>;
+				power-domains = <&power 11>;
+				rockchip,srv = <&mpp_srv>;
+				rockchip,taskqueue-node = <0>;
+				rockchip,resetgroup-node = <0>;
+				status = "okay";
+			};
+		};
+	};
+};

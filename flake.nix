@@ -186,6 +186,7 @@
           rpminiv2-kernel = rpminiv2.kernel;
           rpminiv2-firmware = rpminiv2.firmware;
           r36tmax-sd-image = r36tmax.sdImage;
+          r36tmax-rk-mpp-service-module = r36tmax.rkMppServiceModule;
           r36tmax-recovery-sd-image = r36tmax.consoleSdImage;
           r36tmax-kernel = r36tmax.kernel;
           r36tmax-uboot = r36tmax.uboot;
@@ -246,6 +247,7 @@
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
             r36tmax-registry = r36tmax.registryCheck pkgs;
+            r36tmax-mpp-binding = r36tmax.mppBindingCheck pkgs;
             r36tmax-recovery = (import ./nix/devices/r36tmax/recovery { inherit pkgs; }).checks;
             r36tmax-mmc = import ./nix/devices/r36tmax/wifi/mmc-check.nix { inherit pkgs; };
             rgds-inputplumber = self.packages.${system}.rgds-inputplumber-data;
@@ -263,6 +265,9 @@
               inherit pkgs;
               korri = self;
             };
+          }
+          // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
+            r36tmax-mpp-compile = r36tmax.mppCompileCheck;
           }
         );
       }
