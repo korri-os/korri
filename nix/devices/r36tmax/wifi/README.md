@@ -1,6 +1,6 @@
 # R36T Max RK915: build proof, not hardware proof
 
-The image packages RK915 for its exact Linux 6.12.63 kernel, with the prior
+The image packages RK915 for its exact Linux 7.2.6 kernel, with the prior
 proof's MMC quirks and PA5 host-wake binding. Public images omit the firmware.
 Owner-provisioned blobs use Linux's native `/lib/firmware` search path. No live
 Wi-Fi test has run on this build.
@@ -44,6 +44,34 @@ These names come from `src/firmware.c`'s `request_firmware` calls. The disabled
 invent that file. `rk915_cal.bin` is optional in the existing driver; no device's
 calibration data is copied here.
 
+## Linux 7.2.6 port
+
+`linux-7.2.patch` follows the 7.2.6 kernel's `pm_wakeup.h`, `syscore_ops.h`,
+`timer.h`, `string.h`, `moduleparam.h`, and mac80211 callback declarations.
+Wakeup sources now use the public allocator. Allocation failure stops HAL
+initialization before threads start. Later failure paths release the source;
+normal teardown releases it after the work and TX/RX threads stop. Syscore
+registration owns a `struct syscore` with a separate constant operations table.
+
+The radio-index callback arguments do not add multi-radio support. RK915 does
+not advertise wiphy radios and keeps its existing `hw->conf` behavior. Timer
+renames retain asynchronous versus synchronous cancellation. RF parameter
+copies retain their fixed-width bytes; only the driver name is a C string.
+The namespace import now uses the required string literal. The Makefile uses
+`ccflags-y`, because 7.2 no longer reads external-module `EXTRA_CFLAGS`.
+
+Verified on the native AArch64 builder using the image configuration's actual
+`boot.extraModulePackages`, not a substitute kernel:
+
+- Output: `/nix/store/gqv13jvjj9b7chsys5c48ixvjgd9f6vd-rk915-7.2.6-unstable-2025-07-08`.
+- `check-module.sh` passed after stripping, including all 162 imported symbol
+  CRCs against the exact 7.2.6 kernel.
+- `check-dtb.py` passed: 25 MHz SDIO, RK915 quirk, PA5 level-high host wake,
+  and disabled eMMC.
+
+Compiler warnings remain in the vendor source. No hardware, failure-injection,
+suspend/resume, or unload test ran. This is module-build evidence only.
+
 ## Host-only build and checks
 
 Run from the repository root on x86_64 Linux. The commands disable remote
@@ -73,8 +101,9 @@ Firmware installs only the two files under `lib/firmware/`. Native tools inspect
 the module after stripping, even in a cross build. Checks cover AArch64 ELF,
 release/vermagic, GPL metadata, both SDIO aliases, the three module parameters,
 firmware names, and every imported symbol CRC against this kernel's
-`Module.symvers` (159 imports in the verified build). A separate `nix build
---rebuild` produced the same module output; Nix reported no reproducibility error.
+`Module.symvers`. The earlier 6.12.63 build had 159 imports; its separate
+`nix build --rebuild` produced the same module output with no reproducibility
+error. The 7.2.6 build above has 162 imports; it has not had a rebuild comparison.
 
 The `checks` output also rejects absent modules, wrong release paths, a changed
 `module_layout` CRC, and missing/corrupt firmware. It compares packaged firmware

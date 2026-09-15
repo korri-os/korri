@@ -1,6 +1,6 @@
 # R36T Max device tree and kernel
 
-`kernel-trimmed.nix` builds Linux 6.12 with the retained RK3326 configuration,
+`kernel-trimmed.nix` builds Linux 7.2.6 with the retained RK3326 configuration,
 this board DTS, the working generic panel driver and the RK915 MMC quirks.
 `config` derives from ROCKNIX's RK3326 configuration. The device integration
 adds the nft-backed firewall features required by the pinned NixOS policy.
