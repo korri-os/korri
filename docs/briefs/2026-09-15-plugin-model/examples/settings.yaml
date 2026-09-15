@@ -1,0 +1,53 @@
+# REVIEW EXAMPLE: three separate documents/homes, not duplicate YAML keys.
+# Device home. These are illustrative choices, not hardware claims.
+---
+runners:
+  "@korri:mgba/mgba":
+    settings:
+      video:
+        integer-scale: false
+
+# Person home. Broad defaults plus one selected-runner opinion.
+---
+families:
+  "@korri:retroarch":
+    settings:
+      video:
+        integer-scale: true
+      saves:
+        auto-save-state: true
+runners:
+  "@korri:mgba/mgba":
+    settings:
+      video:
+        integer-scale: true
+devices:
+  "<selected-device-id>":
+    runners:
+      "@korri:mgba/mgba":
+        settings:
+          core:
+            skip-bios: false
+
+# Person's library home. A more specific game exception.
+---
+library:
+  "<game-id>":
+    launch:
+      use: "@korri:mgba/mgba"
+    runners:
+      "@korri:mgba/mgba":
+        settings:
+          video:
+            integer-scale: false
+        launch:
+          overrides:
+            config:
+              # Use an actual native key supported by your selected build.
+              # This illustrates placement; it is not validated RetroArch input.
+              append: |
+                example_native_key = "value"
+
+# Final integer-scale: false from game scope.
+# Final skip-bios on the selected device: false from person-device runner scope.
+# Raw config follows ESCAPE-HATCHES.md, NOT the generic settings-array fold.
