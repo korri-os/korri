@@ -160,13 +160,25 @@ rec {
     sha256 = "eeab5c78eea1c2c1f72277fb370681b5352b28da75a58668bfda043836b28020";
   };
 
+  # Applied after the stdin pairing fix, only for the aarch64-linux-rkmpp
+  # profile. wlroots compositors expose no KMS scanout framebuffer, so the
+  # KMS zero-copy route never runs on a Wayland host. This hands the
+  # compositor's exported dma-buf to h264_rkmpp as a DRM_PRIME frame, which
+  # keeps both the readback and the RGB-to-YUV conversion off the CPU.
+  rkmppWaylandPatch = {
+    name = "0027-capture-wayland-frames-for-rkmpp.patch";
+    path = ./patches/0027-capture-wayland-frames-for-rkmpp.patch;
+    sha256 = "d501ea2c8db6ed4905794b036094796a82aa04d147e92f54b6f73feb35f443b5";
+  };
+
   rkmppPatches = [
     rkmppPatch
     rkmppZeroCopyPatch
     stdinPinPatch
+    rkmppWaylandPatch
   ];
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "287ff6ef2a6789d4abfd73dc05b839384b17a71b0a45d768e3764626e553b5c6";
+  rkmppPatchSetSha256 = "190c34524326292434c1c3c1a141f2453555850fa798256446f66933f93eff22";
 }
