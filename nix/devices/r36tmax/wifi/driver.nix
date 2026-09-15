@@ -12,6 +12,7 @@ stdenv.mkDerivation {
   pname = "rk915";
   version = "${kernel.version}-unstable-2025-07-08";
   src = callPackage ./source.nix { };
+  patches = [ ./linux-7.2.patch ];
 
   hardeningDisable = [ "pic" ];
   nativeBuildInputs = [
@@ -25,6 +26,11 @@ stdenv.mkDerivation {
   ];
   dontPatchELF = true;
   enableParallelBuilding = true;
+
+  # Linux 7.2 no longer consumes EXTRA_CFLAGS from external modules.
+  postPatch = ''
+    substituteInPlace Makefile --replace-fail EXTRA_CFLAGS ccflags-y
+  '';
 
   # Use the configured kernel and its symbol CRCs, never the build host's kernel.
   makeFlags = kernelModuleMakeFlags ++ [

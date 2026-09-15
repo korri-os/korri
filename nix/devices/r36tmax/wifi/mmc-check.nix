@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, kernel ? pkgs.callPackage ../dts/kernel-trimmed.nix { } }:
 pkgs.runCommand "r36tmax-mmc-parser-check"
   {
     nativeBuildInputs = [
@@ -10,12 +10,12 @@ pkgs.runCommand "r36tmax-mmc-parser-check"
   }
   ''
     mkdir linux
-    tar -xJf ${pkgs.linux_6_12.src} -C linux --strip-components=1 \
-      linux-${pkgs.linux_6_12.version}/drivers/mmc/core/host.c \
-      linux-${pkgs.linux_6_12.version}/drivers/mmc/core/sdio.c \
-      linux-${pkgs.linux_6_12.version}/drivers/mmc/core/sdio_cis.c \
-      linux-${pkgs.linux_6_12.version}/drivers/mmc/host/dw_mmc.c \
-      linux-${pkgs.linux_6_12.version}/include/linux/mmc/host.h
+    tar -xJf ${kernel.src} -C linux --strip-components=1 \
+      linux-${kernel.version}/drivers/mmc/core/host.c \
+      linux-${kernel.version}/drivers/mmc/core/sdio.c \
+      linux-${kernel.version}/drivers/mmc/core/sdio_cis.c \
+      linux-${kernel.version}/drivers/mmc/host/dw_mmc.c \
+      linux-${kernel.version}/include/linux/mmc/host.h
     patch --batch --fuzz=0 -d linux -p1 < ${./mmc-support.patch}
     python3 ${./check-cis.py} linux
     touch "$out"

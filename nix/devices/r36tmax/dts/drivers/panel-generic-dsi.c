@@ -12,6 +12,10 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/kernel.h>	/* hex2bin; <linux/hex.h> is newer than 6.12 */
+#include <linux/version.h>
+#if __has_include(<linux/hex.h>)
+#include <linux/hex.h>
+#endif
 #include <linux/media-bus-format.h>
 #include <linux/module.h>
 #include <linux/firmware.h>
@@ -573,9 +577,17 @@ static int generic_panel_probe(struct mipi_dsi_device *dsi)
     struct generic_panel *ctx;
     int ret;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+    ctx = devm_drm_panel_alloc(dev, struct generic_panel, panel,
+                               &generic_panel_funcs,
+                               DRM_MODE_CONNECTOR_DSI);
+    if (IS_ERR(ctx))
+        return PTR_ERR(ctx);
+#else
     ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
     if (!ctx)
         return -ENOMEM;
+#endif
 
     ctx->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
     if (IS_ERR(ctx->enable_gpio)) {
@@ -632,8 +644,10 @@ static int generic_panel_probe(struct mipi_dsi_device *dsi)
 
     dev_info(dev, "lanes %d, format %d, mode %lx\n", dsi->lanes, dsi->format, dsi->mode_flags);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
     drm_panel_init(&ctx->panel, &dsi->dev, &generic_panel_funcs,
                DRM_MODE_CONNECTOR_DSI);
+#endif
 
     ret = drm_panel_of_backlight(&ctx->panel);
     if (ret)

@@ -1,0 +1,335 @@
+Port the pinned RK915 source to Linux 7.2.6.
+
+Use the public wakeup-source allocator and release it only after users stop,
+including HAL initialization failures. Keep syscore state separate from ops.
+Retain single-radio mac80211 behavior, timer cancellation semantics, and
+fixed-width RF parameter bytes (not NUL-terminated strings).
+
+--- a/inc/wake_lock.h
++++ b/inc/wake_lock.h
+@@ -30,47 +30,41 @@
+ };
+ 
+ struct wake_lock {
+-	struct wakeup_source ws;
++	struct wakeup_source *ws;
+ };
+ 
+-static inline void wake_lock_init(struct wake_lock *lock, int type,
+-				  const char *name)
++static inline int wake_lock_init(struct wake_lock *lock, int type,
++				 const char *name)
+ {
+-	struct wakeup_source *ws = &lock->ws;
+-
+-	if (ws) {
+-		memset(ws, 0, sizeof(*ws));
+-		ws->name = name;
+-	}
+-	wakeup_source_add(ws);
++	lock->ws = wakeup_source_register(NULL, name);
++	return lock->ws ? 0 : -ENOMEM;
+ }
+ 
+ static inline void wake_lock_destroy(struct wake_lock *lock)
+ {
+-	struct wakeup_source *ws = &lock->ws;
+-
+-	wakeup_source_remove(ws);
+-	__pm_relax(ws);
++	/* Unregister also cancels the wakeup timer and relaxes the source. */
++	wakeup_source_unregister(lock->ws);
++	lock->ws = NULL;
+ }
+ 
+ static inline void wake_lock(struct wake_lock *lock)
+ {
+-	__pm_stay_awake(&lock->ws);
++	__pm_stay_awake(lock->ws);
+ }
+ 
+ static inline void wake_lock_timeout(struct wake_lock *lock, long timeout)
+ {
+-	__pm_wakeup_event(&lock->ws, jiffies_to_msecs(timeout));
++	__pm_wakeup_event(lock->ws, jiffies_to_msecs(timeout));
+ }
+ 
+ static inline void wake_unlock(struct wake_lock *lock)
+ {
+-	__pm_relax(&lock->ws);
++	__pm_relax(lock->ws);
+ }
+ 
+ static inline int wake_lock_active(struct wake_lock *lock)
+ {
+-	return lock->ws.active;
++	return lock->ws->active;
+ }
+ 
+ #endif
+--- a/inc/wow.h
++++ b/inc/wow.h
+@@ -11,7 +11,7 @@
+ #define _WOW_H_
+ #include <linux/syscore_ops.h>
+ 
+-extern struct syscore_ops host_syscore_ops;
++extern struct syscore host_syscore;
+ 
+ void wow_enable_irq_wake(void);
+ void wow_disable_irq_wake(void);
+--- a/src/beacon.c
++++ b/src/beacon.c
+@@ -31,7 +31,7 @@
+ 			  uvif->vif->addr,
+ 			  bcn_int);
+ 	} else {
+-		del_timer(&uvif->bcn_timer);
++		timer_delete(&uvif->bcn_timer);
+ 	}
+ prog_rpu_fail:
+ 	return;
+@@ -42,7 +42,7 @@
+ #if (LINUX_VERSION_CODE > KERNEL_VERSION(4, 6, 0))
+ static void vif_bcn_timer_expiry(struct timer_list *t)
+ {
+-	struct umac_vif *uvif = from_timer(uvif, t, bcn_timer);
++	struct umac_vif *uvif = timer_container_of(uvif, t, bcn_timer);
+ #else
+ static void vif_bcn_timer_expiry(unsigned long data)
+ {
+@@ -146,6 +146,6 @@
+ 
+ void deinit_beacon (struct umac_vif *uvif)
+ {
+-	del_timer(&uvif->bcn_timer);
++	timer_delete(&uvif->bcn_timer);
+ 
+ }
+--- a/src/hal.c
++++ b/src/hal.c
+@@ -1496,7 +1496,7 @@
+ static int cleanup_all_resources(void)
+ {
+ 	unregister_pm_notifier(&hpriv->pm_notifier);
+-	unregister_syscore_ops(&host_syscore_ops);
++	unregister_syscore(&host_syscore);
+ 
+ 	/* Free private structure
+ 	kfree(hpriv);
+@@ -1534,14 +1534,14 @@
+ 	}
+ #endif
+ 
+-	cancel_work_sync(&hpriv->fw_err_work);
+-
+-	wake_lock_destroy(&hpriv->fw_err_lock);
+-
+ #ifdef TX_USE_THREAD
+ 	PROC_STOP(&hpriv->thr_tx_ctl);
+ #endif
+ 	PROC_STOP(&hpriv->thr_rx_ctl);
++
++	/* No worker or TX/RX thread may use the source after unregister. */
++	cancel_work_sync(&hpriv->fw_err_work);
++	wake_lock_destroy(&hpriv->fw_err_lock);
+ 
+ 	while ((skb = skb_dequeue(&hpriv->rxq)))
+ 		dev_kfree_skb_any(skb);
+@@ -1569,6 +1569,12 @@
+ #endif
+ 
+ 	hpriv->hal_disabled = 1;
++
++	/* Allocate the wakeup source before starting any of its users. */
++	err = wake_lock_init(&hpriv->fw_err_lock, WAKE_LOCK_SUSPEND, "rk915_lock");
++	if (err)
++		return err;
++	INIT_WORK(&hpriv->fw_err_work, fw_err_work_fn);
+ 
+ #ifdef TX_USE_THREAD
+ 	PROC_START(tx_thread, hpriv, &hpriv->thr_tx_ctl, 0, "rk915_tx_thr");
+@@ -1596,14 +1602,12 @@
+ 	skb_queue_head_init(&hpriv->rxq);
+ 	skb_queue_head_init(&hpriv->txq);
+ 
+-	INIT_WORK(&hpriv->fw_err_work, fw_err_work_fn);
+-
+-	wake_lock_init(&hpriv->fw_err_lock, WAKE_LOCK_SUSPEND, "rk915_lock");
+-
+ 	hpriv->pm_notifier.notifier_call = rk915_pm_notifier;
+-	register_pm_notifier(&hpriv->pm_notifier);
+-
+-	register_syscore_ops(&host_syscore_ops);
++	err = register_pm_notifier(&hpriv->pm_notifier);
++	if (err)
++		goto error_rx_wkq;
++
++	register_syscore(&host_syscore);
+ 	if (_rpu_umac_if_init(&main_dir_entry) < 0) {
+ 		RPU_ERROR_HAL("%s: wlan_init failed\n", hal_name);
+ 		err = -ENOMEM;
+@@ -1623,10 +1627,11 @@
+ umac_if_deinit:
+ 	_rpu_umac_if_exit();
+ error2:
++	unregister_syscore(&host_syscore);
++	unregister_pm_notifier(&hpriv->pm_notifier);
++error_rx_wkq:
+ 	if (hpriv->rx_wkq != NULL)
+ 		destroy_workqueue(hpriv->rx_wkq);
+-	unregister_syscore_ops(&host_syscore_ops);
+-	unregister_pm_notifier(&hpriv->pm_notifier);
+ error1:
+ #ifdef TX_USE_THREAD
+     PROC_STOP(&hpriv->thr_tx_ctl);
+@@ -1638,6 +1643,8 @@
+ #ifndef TX_USE_THREAD
+ error:
+ #endif
++	cancel_work_sync(&hpriv->fw_err_work);
++	wake_lock_destroy(&hpriv->fw_err_lock);
+ 	return err;
+ }
+ 
+--- a/src/init.c
++++ b/src/init.c
+@@ -281,6 +281,4 @@
+ MODULE_AUTHOR("Rockchips");
+ MODULE_DESCRIPTION("Driver for Rockchips RK915 SDIO WiFi Devices");
+ MODULE_LICENSE("GPL");
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+-#endif
++MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+--- a/src/p2p.c
++++ b/src/p2p.c
+@@ -42,7 +42,7 @@
+ void deinit_roc_timeout_timer (struct img_priv *priv)
+ {
+ 	RPU_DEBUG_ROC("%s: %p\n", __func__, priv);
+-	del_timer(&priv->roc_timer);
++	timer_delete(&priv->roc_timer);
+ }
+ 
+ void rpu_roc_complete_work(struct work_struct *work)
+--- a/src/procfs.c
++++ b/src/procfs.c
+@@ -1877,7 +1877,7 @@
+ 	sprintf(def, "%02x", default_phy_threshold);
+ 
+ 	for (i = 0; i < 14; i++) {
+-		strncpy(&rf_params[(len - i)*2 - 2], def, 2);
++		memcpy(&rf_params[(len - i)*2 - 2], def, 2);
+ 	}
+ }
+ 
+@@ -1910,8 +1910,8 @@
+ 	//	(94 * 2));
+ 	//strncpy(rf_params,"00204000240210020403040404050406040704080409040A040B040C040CF80b0C04FEF8ECEC0000000000000000000000000000000000000000000000000000000008080808080808080808080808088C8C8C8C8C8C8C8C8C8C8C8C8C8C",
+ 	//	(94 * 2));
+-        strncpy(rf_params,"00204000240210020403040404050406040704080409040A040B040C040CF80B0C04FFFAF2EC0000000000000000000000000000000000000000000000000000000008080808080808080808080808088C8C8C8C8C8C8C8C8C8C8C8C8C8C",
+-                (94 * 2)); 
++        memcpy(rf_params,"00204000240210020403040404050406040704080409040A040B040C040CF80B0C04FFFAF2EC0000000000000000000000000000000000000000000000000000000008080808080808080808080808088C8C8C8C8C8C8C8C8C8C8C8C8C8C",
++                (94 * 2));
+ 	set_default_phy_thresh(rf_params, 94);
+ 
+ 	wifi = kzalloc(sizeof(struct wifi_dev), GFP_KERNEL);
+--- a/src/rx.c
++++ b/src/rx.c
+@@ -63,7 +63,7 @@
+ 	RPU_DEBUG_DAPT("%s\n", __func__);
+ 
+ 	if (!dapt->dapt_disable) {
+-		del_timer_sync(&dapt->dapt_timer);
++		timer_delete_sync(&dapt->dapt_timer);
+ 		dapt->timer_start = 0;
+ 	}
+ }
+--- a/src/umac_if.c
++++ b/src/umac_if.c
+@@ -611,7 +611,7 @@
+ static void deinit_keep_alive_timer (struct img_priv *priv)
+ {
+ 	RPU_DEBUG_UMACIF("%s: %p\n", __func__, priv);
+-	del_timer(&priv->keep_alive_timer);
++	timer_delete(&priv->keep_alive_timer);
+ }
+ #endif
+ 
+@@ -921,8 +921,9 @@
+ 	return ret;
+ }
+ 
+-static int config(struct ieee80211_hw *hw,
+-		unsigned int changed)
++/* RK915 advertises no wiphy radios; configuration remains in hw->conf. */
++static int config(struct ieee80211_hw *hw, int radio_idx,
++		u32 changed)
+ {
+ 	struct img_priv *priv = hw->priv;
+ 	struct ieee80211_conf *conf = &hw->conf;
+@@ -1790,7 +1791,8 @@
+ }
+ 
+ 
+-static int set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
++static int set_antenna(struct ieee80211_hw *hw, int radio_idx,
++		       u32 tx_ant, u32 rx_ant)
+ {
+ 	struct img_priv *priv = (struct img_priv *)hw->priv;
+ 
+@@ -1851,7 +1853,7 @@
+ static void deinit_scan_timeout_timer (struct img_priv *priv)
+ {
+ 	RPU_DEBUG_UMACIF("%s: %p\n", __func__, priv);
+-	del_timer(&priv->scan_timer);
++	timer_delete(&priv->scan_timer);
+ }
+ #endif
+ 
+@@ -2140,7 +2142,7 @@
+ }
+ 
+ 
+-int set_rts_threshold(struct ieee80211_hw *hw,
++int set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+ 		      u32 value)
+ {
+ 	struct img_priv *priv = NULL;
+@@ -2310,8 +2312,7 @@
+ 	priv->txpower = DEFAULT_TX_POWER;
+ 	priv->tx_antenna = DEFAULT_TX_ANT_SELECT;
+ 	priv->rts_threshold = DEFAULT_RTS_THRESHOLD;
+-	strncpy(priv->name, RPU_DRIVER_NAME, 11);
+-	priv->name[11] = '\0';
++	strscpy_pad(priv->name, RPU_DRIVER_NAME, sizeof(priv->name));
+ 
+ 	for (i = 0; i < wifi->params.num_vifs; i++)
+ 		img_ether_addr_copy(priv->if_mac_addresses[i].addr, vif_macs[i]);
+--- a/src/wow.c
++++ b/src/wow.c
+@@ -14,9 +14,12 @@
+ #ifdef CONFIG_PM
+ 
+ unsigned char img_suspend_status;
+-static int host_suspend(void);
+-struct syscore_ops host_syscore_ops = {
++static int host_suspend(void *data);
++static const struct syscore_ops host_syscore_ops = {
+ 	.suspend = host_suspend,
++};
++struct syscore host_syscore = {
++	.ops = &host_syscore_ops,
+ };
+ 
+ #if 0
+@@ -250,7 +253,7 @@
+ }
+ 
+ 
+-static int host_suspend(void)
++static int host_suspend(void *data)
+ {
+ 	/*if ((img_suspend_status == 1) && (rx_interrupt_status == 1)) {
+ 		RPU_ERROR_UMACIF("%s: Interrupt raised during Suspend, cancel suspend",

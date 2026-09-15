@@ -17,14 +17,14 @@
 # was `@INITRAMFS_SOURCE@`. ROCKNIX builds its initramfs into the kernel;
 # NixOS supplies its own initrd, so that one is emptied.
 #
-# The kernel is pinned to the 6.12 series to match what the configuration was
-# generated against. linuxManualConfig takes the file verbatim, so a config
-# from a different series would silently default every symbol it does not
-# mention.
+# Linux 7.2.6 uses this retained configuration as its seed. Kconfig resolves
+# new symbols during the build. Native and cross builds passed, and the SD
+# image booted with USB console access; peripheral regression tests remain.
 {
   lib,
+  fetchurl,
   linuxManualConfig,
-  linux_6_12,
+  stdenv,
   # linuxPackagesFor re-invokes this function through `override` to attach
   # kernel features; accept and ignore what it passes. Same reason as
   # nix/devices/odin2portal/kernel/default.nix.
@@ -33,10 +33,18 @@
 }:
 
 let
+  version = "7.2.6";
   dtbName = "rk3326-aislpc-r36t-max";
 
   kernel = linuxManualConfig {
-    inherit (linux_6_12) src version modDirVersion;
+    inherit version stdenv;
+    modDirVersion = version;
+
+    src = fetchurl {
+      url = "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${version}.tar.xz";
+      hash = "sha256-A5rvhPKwmUrto/T8/D0C7J16m7uQIOomTEP0Rshg9gY=";
+    };
+
     configfile = ./config;
     allowImportFromDerivation = true;
 
