@@ -81,6 +81,17 @@ in
     nixpkgs.legacyPackages.x86_64-linux.pkgsCross.aarch64-multiplatform.callPackage
       ./dts/kernel-trimmed.nix
       { };
+  registryCheck =
+    pkgs:
+    import ./nixpkgs-registry-check.nix {
+      inherit pkgs;
+      configurations = [
+        configuration
+        consoleConfiguration
+        diagnosticConfiguration
+        mainlineConfiguration
+      ];
+    };
   moduleCheck =
     pkgs:
     import ./module-check.nix {

@@ -24,6 +24,7 @@ in
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
     ./usb-gadget.nix
+    ./nixpkgs-registry.nix
     ./wifi
     ./audio
   ];

@@ -233,6 +233,7 @@
             };
             rgds = rgds.moduleCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
+            r36tmax-registry = r36tmax.registryCheck pkgs;
             r36tmax-recovery = (import ./nix/devices/r36tmax/recovery { inherit pkgs; }).checks;
             r36tmax-mmc = import ./nix/devices/r36tmax/wifi/mmc-check.nix { inherit pkgs; };
             rgds-inputplumber = self.packages.${system}.rgds-inputplumber-data;

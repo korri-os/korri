@@ -138,6 +138,7 @@ let
         cd "$KORRI_ROOT"
         exec nix build --no-link \
           .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax-registry \
           .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax-recovery \
           .#checks.${pkgs.stdenv.hostPlatform.system}.r36tmax-mmc
       '';

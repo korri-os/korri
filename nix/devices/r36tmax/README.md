@@ -27,6 +27,12 @@ The mainline loader remains a separate candidate. Its exact DDR, SPL, FIT and
 combined-image checks pass, but cold starts, warm restarts and recovery are
 not verified. Read `bootloader/README.md` before selecting it.
 
+## Image footprint
+
+[IMAGE-REDUCTION.md](IMAGE-REDUCTION.md) records the on-demand Nixpkgs source,
+lossless image compression, measurements and hardware acceptance limits.
+Generic firmware is already excluded; the RG353M firmware cuts do not apply.
+
 ## Build and inspect
 
 Use a build machine, never the handheld. `fuji` is the established ARM builder.
