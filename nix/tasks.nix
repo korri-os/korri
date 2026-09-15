@@ -153,6 +153,37 @@ let
           /run/current-system/sw/bin/r36tmax-session-sanity
       '';
     };
+    rpminiv2-check = {
+      description = "Check the Retroid Pocket Mini V2 console configuration and offline image verifier.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2
+      '';
+    };
+    rpminiv2-initrd-check = {
+      description = "Build the Mini V2 early module closure and USB serial module; cross-build on x86_64.";
+      runtimeInputs = [ pkgs.nix ];
+      script = ''
+        cd "$KORRI_ROOT"
+        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-initrd-modules
+      '';
+    };
+    rpminiv2-image-check = {
+      description = "Inspect a Mini V2 GPT SD image, EFI boot references, root and device tree without mounting media.";
+      usageSuffix = " -- <image.img>";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.util-linux
+        pkgs.e2fsprogs
+        pkgs.mtools
+        pkgs.dtc
+        pkgs.gptfdisk
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/verify-image.py" "$@"
+      '';
+    };
     rgds-initrd-check = {
       description = "Build the RG DS initrd module closure with strict missing-module checks; cross-build on x86_64.";
       runtimeInputs = [ pkgs.nix ];
@@ -288,6 +319,7 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.odin2portal-inputplumber \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-usb-gadget \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rgds \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2 \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-inputplumber
         # Exercise impure staging on every run without real network credentials.
         if [ -z "''${KORRI_WIFI_ENV:-}" ]; then

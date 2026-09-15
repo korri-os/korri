@@ -42,6 +42,10 @@
         inherit nixpkgs;
         korri = self;
       };
+      rpminiv2 = import ./nix/devices/rpminiv2 {
+        inherit nixpkgs;
+        korri = self;
+      };
       odin2portal = import ./nix/devices/odin2portal {
         inherit nixpkgs;
         korri = self;
@@ -71,6 +75,7 @@
         rg353m = rg353m.portalPreviewConfiguration;
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
+        rpminiv2 = rpminiv2.configuration;
         r36tmax = r36tmax.configuration;
         r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
@@ -177,6 +182,9 @@
           rgds-sd-image = rgds.sdImage;
           rgds-kernel = rgds.kernel;
           rgds-uboot = rgds.uboot;
+          rpminiv2-sd-image = rpminiv2.sdImage;
+          rpminiv2-kernel = rpminiv2.kernel;
+          rpminiv2-firmware = rpminiv2.firmware;
           r36tmax-sd-image = r36tmax.sdImage;
           r36tmax-recovery-sd-image = r36tmax.consoleSdImage;
           r36tmax-kernel = r36tmax.kernel;
@@ -195,6 +203,8 @@
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
+          rpminiv2-kernel = rpminiv2.kernelCross;
+          rpminiv2-firmware = rpminiv2.firmwareCross;
           rgds-kernel = rgds.kernelCross;
           r36tmax-kernel = r36tmax.kernelCross;
           rgds-uboot = rgds.ubootCross;
@@ -232,6 +242,8 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            rpminiv2 = rpminiv2.moduleCheck pkgs;
+            rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
             r36tmax-registry = r36tmax.registryCheck pkgs;
             r36tmax-recovery = (import ./nix/devices/r36tmax/recovery { inherit pkgs; }).checks;
