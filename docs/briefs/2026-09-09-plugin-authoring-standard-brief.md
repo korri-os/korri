@@ -8,6 +8,11 @@ supersedes: the 2026-09-09 first draft of this file (commit c40480e6)
 
 # Plugin authoring standard
 
+> For the new plugin model, read the [September 15 briefing](2026-09-15-plugin-model-brief.md).
+> It supersedes conflicting authoring, runner, dependency, and family-setting
+> proposals below. Unrelated publication and native-artifact decisions remain
+> in force; this document is retained as the historical record.
+
 The design below has user approval, decision by decision. Nothing in it is
 implemented. Field names and file layouts are illustrative unless a section
 says a real producer already exists. Implementation must ground each schema

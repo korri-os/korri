@@ -1,0 +1,29 @@
+{
+  "contract": "korri.plugin/v1-review",
+  "id": "@local:ppsspp",
+  "declaration": {
+    "name": "ppsspp",
+    "title": "PPSSPP",
+    "runners": {
+      "ppsspp": {
+        "id": "@local:ppsspp/ppsspp",
+        "title": "PPSSPP",
+        "systems": ["psp"]
+      }
+    },
+    "discovery": {
+      "psp": {
+        "id": "@local:ppsspp/psp-files",
+        "extensions": ["iso", "cso", "pbp"],
+        "system": "psp",
+        "runners": ["@local:ppsspp/ppsspp"]
+      }
+    }
+  },
+  "operations": ["launch.prepare"],
+  "entry": "plugin.ts",
+  "sources": ["plugin.ts"],
+  "files": {
+    "program": "/nix/store/<hash>-ppsspp/bin/PPSSPPSDL"
+  }
+}
