@@ -85,9 +85,30 @@ the clock holds 1.296 GHz even at idle. Switching to `schedutil` and
 Chromium keeps real demand near the ceiling. The device was reverted to
 `performance` and no configuration changed. Heat belongs to browser load.
 
+## GPU rendering: working
+
+Panfrost binds the Mali-G31 and reports `[drm] Initialized panfrost 1.6.0`.
+Measured through the live Sway session that the kiosk uses, with
+`WLR_RENDERER=gles2` on the render node:
+
+```
+GL_RENDERER:  Mali-G31 (Panfrost)
+GL_VERSION:   OpenGL ES 3.1 Mesa 25.3.2
+glmark2 Score: 237
+```
+
+Per scene: build 257 FPS, texture 253 FPS, shading 189 FPS, bump 256 FPS. The
+GPU devfreq table logged 185 transitions during the run, so `simple_ondemand`
+tracked real load rather than sitting pinned. The kernel logged no Panfrost
+fault, timeout or reset. Temperature reached 85.0 C, matching the earlier
+measurements.
+
+This covers desktop GL 3.1 core and ES 3.1 on one short benchmark. Sustained
+gameplay, a full emulator run and the video codec path are separate gates.
+
 ## Remaining acceptance
 
-Verify GPU rendering, buttons and audio on this kernel. Suspend, resume and
+Verify buttons and audio on this kernel. Suspend, resume and
 video codec jobs are not accepted by this boot result. Do not resume prior
 faulting codec jobs without their separate recovery and test gates. Ask for
 owner readiness before each hands-on test.
