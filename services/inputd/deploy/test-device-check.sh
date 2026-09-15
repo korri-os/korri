@@ -2649,7 +2649,9 @@ for startup_window in pre-marker post-marker; do
       "${startup_pending_args[@]}"
     startup_nonce="$(awk -F= '$1 == "attempt_nonce" {print $2}' "$startup_pending_ledger/state")"
     rm -f "$HARNESS_ATTEMPT_LEASE"
-    printf 'nonce=%s\ncandidate=%s\n' "f${startup_nonce:1}" "$CANDIDATE" >"$HARNESS_ATTEMPT_MARKER"
+    bad_startup_nonce="f${startup_nonce:1}"
+    [[ "$bad_startup_nonce" != "$startup_nonce" ]] || bad_startup_nonce="e${startup_nonce:1}"
+    printf 'nonce=%s\ncandidate=%s\n' "$bad_startup_nonce" "$CANDIDATE" >"$HARNESS_ATTEMPT_MARKER"
     assert_fails_with 'marker does not match this private attempt' run_gate --mode reconcile \
       "${startup_pending_args[@]}"
     printf 'nonce=%s\ncandidate=%s\n' "$startup_nonce" "$CANDIDATE" >"$HARNESS_ATTEMPT_MARKER"
