@@ -25,6 +25,38 @@ firmware. Evaluation of the actual configuration found only `wireless-regdb`.
 already false. There is no generic firmware package to trim. Adding the RG353M
 firmware allowlist here would add files, not remove them.
 
+## Image measurements
+
+The controlled comparison uses baseline `f3aa66d9` and candidate `1c853f10`,
+with the same diagnostic SSH policy and no private provisioning. Both complete
+images passed the native image verifier. The existing distribution command
+recompressed both with `zstd -19 -T2`.
+
+| Metric | Before, bytes | After, bytes | Reduction |
+|---|---:|---:|---:|
+| Raw SD image | 5,335,453,696 | 4,584,374,272 | 751,079,424 / 14.1% |
+| Builder-compressed image | 1,034,857,085 | 987,291,805 | 47,565,280 / 4.6% |
+| Equally compressed download | 810,989,562 | 773,457,839 | 37,531,723 / 4.6% |
+
+Raw images include ext4 metadata and allocation slack, not only file payloads.
+Removing the source tree also removes thousands of directory entries and files.
+Do not report the raw-image difference as the NAR-closure saving.
+
+Each staged download decompressed to exactly its original image SHA-256. The
+candidate raw image hash is
+`a6d17f466cede9d4431d1139dee5515bc510ab716494e39542b28809b4ab2bc9`.
+Its distributed compressed hash is
+`1e1bbdd8afdef4ae33efa66e0ec8a4981f092a5116db7fbf63f834191c34b25c`.
+Compression and the existing revision/checksum verifier passed on the staged
+candidate. The code commit is `1c853f1084360abbae87467b495964b8af07330a`.
+
+Local evidence and artifacts:
+
+- `/tmp/r36tmax-reduction/` contains baseline/candidate evaluation and recursive
+  closure records, the source-guard rejection log, image hashes and comparisons.
+- `/tmp/r36tmax-reduced-dist/` contains the candidate image, checksum and code
+  revision. These local artifacts are not a public release or boot acceptance.
+
 ## Changes and costs
 
 | Change | Grounding | Cost and limits |
@@ -77,6 +109,16 @@ A completed image build is not boot acceptance. No target writes, restarts,
 service changes or private provisioning are part of this pass. Keep the working
 SD card and internal eMMC unchanged. Follow `README.md` for owner provisioning,
 live reader identification, complete-image writing and readback verification.
+Only after separate approval and verification of a spare removable SD device,
+the existing writer command is:
+
+```sh
+sudo nix/devices/r36tmax/write-image \
+  /tmp/r36tmax-reduced-dist/nixos-r36t-max.img.zst \
+  "${VERIFIED_SD_DEVICE:?Set this only after live reader identification}" --i-know
+```
+
+This command erases that SD card. It does not provision keys or Wi-Fi firmware.
 Normal generation installation remains blocked for the preserved FAT loader.
 
 Before accepting a new card, verify boot, USB recovery, Wi-Fi, panel output,
