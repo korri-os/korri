@@ -1,0 +1,43 @@
+Undo hal_init when the rest of rk915_probe fails.
+
+hal_init creates /proc/net/rk915, registers syscore ops and a PM notifier,
+starts the TX and RX threads, and sets hpriv->hal_init. When firmware download
+or IRQ registration then failed, probe returned without undoing any of it. The
+platform device stays unbound, so rk915_remove -- the only caller of hal_deinit
+and its proc_exit -- never runs.
+
+The leaked proc tree makes the next module load fail outright with "Failed to
+create proc dir", and the leaked registrations and threads outlive a driver
+that no longer owns a device.
+
+This is a vendor-source defect, not a Linux 7.2 API change.
+
+--- a/src/init.c
++++ b/src/init.c
+@@ -164,16 +164,24 @@
+ 	if (down_fw_in_probe) {
+ 		if (fw_bring_up(hpriv)) {
+ 			RPU_ERROR_MAIN("%s: fw_bring_up failed\n", __func__);
+-			return -1;
++			goto deinit_hal;
+ 		}
+ 
+ 		if (rk915_register_irq(hpriv->io_info)) {
+ 			RPU_ERROR_MAIN("%s: rk915_irq_register failed\n", __func__);
+-			return -1;
++			goto deinit_hal;
+ 		}
+ 	}
+ 
+ 	return 0;
++
++deinit_hal:
++	/* Undo everything hal_init registered. Without this the platform
++	 * device stays unbound, so rk915_remove and its proc_exit never run,
++	 * and the next module load fails on the leftover /proc/net/rk915.
++	 */
++	hal_ops.deinit(NULL);
++	return -1;
+ }
+ 
+ void rk915_remove(struct platform_device *pdev)

@@ -12,7 +12,10 @@ stdenv.mkDerivation {
   pname = "rk915";
   version = "${kernel.version}-unstable-2025-07-08";
   src = callPackage ./source.nix { };
-  patches = [ ./linux-7.2.patch ];
+  patches = [
+    ./linux-7.2.patch
+    ./probe-cleanup.patch
+  ];
 
   hardeningDisable = [ "pic" ];
   nativeBuildInputs = [
