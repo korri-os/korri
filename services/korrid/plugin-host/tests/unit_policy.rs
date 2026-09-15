@@ -26,6 +26,7 @@ fn report(source: &str) -> package::Report {
         packages: Default::default(),
         files: Default::default(),
         requires: vec![],
+        brings: vec![],
     }
 }
 

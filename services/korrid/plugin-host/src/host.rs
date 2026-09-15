@@ -207,7 +207,15 @@ impl Host {
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
         self.verify_publisher(selected, &provenance)?;
-        package::load(&self.nix, selected, provenance)
+        let mut report = package::load(&self.nix, selected, provenance)?;
+        for dep in &mut report.brings {
+            if let Ok(Some(existing)) = self.receipt(&dep.id) {
+                if existing.package == dep.package && existing.approval == dep.approval {
+                    dep.already_approved = true;
+                }
+            }
+        }
+        Ok(report)
     }
 
     fn verify_publisher(&self, selected: &Path, provenance: &Provenance) -> Result<(), String> {
@@ -263,17 +271,50 @@ impl Host {
                 // Retaining a prior approval does not require its publisher
                 // to remain authorized, but it must still match exact bytes.
                 self.approved(&old)?;
-                old.select(report.package, report.provenance, report.approval)?
+                old.select(
+                    report.package.clone(),
+                    report.provenance.clone(),
+                    report.approval.clone(),
+                )?
             }
             None => Receipt {
-                id: report.id,
-                package: report.package,
-                provenance: report.provenance,
-                approval: report.approval,
+                id: report.id.clone(),
+                package: report.package.clone(),
+                provenance: report.provenance.clone(),
+                approval: report.approval.clone(),
                 desired: Desired::Disabled,
                 previous: None,
             },
         };
+        for dep in &report.brings {
+            if let Some(existing) = self.receipt(&dep.id)? {
+                if existing.package == dep.package && existing.approval == dep.approval {
+                    continue;
+                }
+            }
+            self.prepare(&dep.id)?;
+            self.recover_one(&dep.id)?;
+            let dep_old = self.receipt(&dep.id)?;
+            let dep_candidate = match dep_old {
+                Some(old) => {
+                    self.approved(&old)?;
+                    old.select(
+                        dep.package.clone(),
+                        report.provenance.clone(),
+                        dep.approval.clone(),
+                    )?
+                }
+                None => Receipt {
+                    id: dep.id.clone(),
+                    package: dep.package.clone(),
+                    provenance: report.provenance.clone(),
+                    approval: dep.approval.clone(),
+                    desired: Desired::Disabled,
+                    previous: None,
+                },
+            };
+            self.apply(dep_candidate)?;
+        }
         self.apply(candidate)?;
         self.release_download()
     }
@@ -303,6 +344,19 @@ impl Host {
         }
         self.recover_one(id)?;
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
+        let report = self.approved(&receipt)?;
+        for required_path in &report.requires {
+            if let Some(mut dep_receipt) = self
+                .receipts()?
+                .into_iter()
+                .find(|r| r.package == *required_path)
+            {
+                if matches!(dep_receipt.desired, Desired::Disabled) {
+                    dep_receipt.desired = Desired::Enabled;
+                    self.apply(dep_receipt)?;
+                }
+            }
+        }
         receipt.desired = Desired::Enabled;
         self.apply(receipt)
     }
@@ -322,7 +376,7 @@ impl Host {
         }
         // Do not restore a pending enabled selection before stopping it. The
         // immutable approval still authorizes cleanup, not a new daemon start.
-        self.approved(&receipt)?;
+        let report = self.approved(&receipt)?;
         // Persist both disable and removal before cleanup: failure or a crash
         // must never roll back this intent into a (possibly revoked) start.
         receipt.desired = desired;
@@ -330,6 +384,25 @@ impl Host {
         self.invalidate_registry()?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
         self.restore_one(id)?;
+        let remaining_receipts = self.receipts()?;
+        for required_path in &report.requires {
+            let still_needed = remaining_receipts.iter().any(|r| {
+                r.id != id && matches!(r.desired, Desired::Enabled) && {
+                    self.approved(r)
+                        .is_ok_and(|rep| rep.requires.contains(required_path))
+                }
+            });
+            if !still_needed {
+                if let Some(dep_receipt) = remaining_receipts
+                    .iter()
+                    .find(|r| r.package == *required_path)
+                {
+                    if matches!(dep_receipt.desired, Desired::Enabled) {
+                        let _ = self.set_enabled(&dep_receipt.id, false);
+                    }
+                }
+            }
+        }
         self.publish_registry()
     }
 

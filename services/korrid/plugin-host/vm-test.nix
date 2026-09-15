@@ -542,17 +542,14 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin disable @example:empty")
     machine.succeed("korri-plugin remove @example:empty --purge")
 
-    # A cached closure is not activation approval. Install in dependency order,
-    # then activate explicitly. The enabled listing rechecks exact source bytes,
-    # approvals and the full bound publisher key without executing a callback.
+    # Closure approval: inspecting a dependent plugin imports its closure and
+    # discloses what it brings. Installing with that approval commits the whole
+    # closure atomically, and enabling the dependent activates its dependencies.
     game_runtime = inspect("${gameRuntime}")
-    error = machine.fail("korri-plugin install http://cache:5000 ${gameRuntime} " + game_runtime["approval"] + " 2>&1")
-    assert "requires exact installed plugin" in error
-    game_launcher = install("${gameLauncher}")
+    assert len(game_runtime["brings"]) == 1
+    assert game_runtime["brings"][0]["id"] == "@korri:retroarch"
     install("${gameRuntime}")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
-    machine.fail("korri-plugin enable @korri:mgba")
-    machine.succeed("korri-plugin enable @korri:retroarch")
     machine.succeed("korri-plugin enable @korri:mgba")
     game_packages = json.loads(machine.succeed("korri-plugin enabled-packages"))
     assert [p["id"] for p in game_packages] == ["@korri:mgba", "@korri:retroarch"]

@@ -58,7 +58,7 @@ sudo korri-plugin install "$CACHE_URL" "$PACKAGE" "$APPROVAL"
 sudo korri-plugin enable @korri:tailscale
 ```
 
-Install leaves the plugin disabled. Approval binds to the exact store path, `plugin.ts` bytes (including any `launch` function), manifest bytes, explicit input provenance, declaration, base policy, and complete rendered unit. Repository approval never includes the disposable staging/cache path. Two sources serving identical bytes have different approvals. There is no blanket `--yes` grant.
+Install leaves the plugin disabled. Approval binds to the exact store path, `plugin.ts` bytes (including any `launch` function), manifest bytes, explicit input provenance, declaration, base policy, complete rendered unit, and any required packages in its closure (reported under `brings`). Installing an approved package commits receipts for its entire closure atomically, and enabling the dependent activates its required dependencies. Repository approval never includes the disposable staging/cache path. Two sources serving identical bytes have different approvals. There is no blanket `--yes` grant.
 
 The device binds each publisher namespace to one full Nix public key and one exact cache URL through `services.korri.pluginHost.publishers`. Each binding has `publicKey` and `cacheUrl`; the module writes `/etc/korri-plugin-host/publishers.json` and adds those keys to Nix's trust list. A non-NixOS administrator supplies that root-owned file and configures the same Nix keys. Missing or malformed configuration fails closed. An empty map permits no external plugin.
 
