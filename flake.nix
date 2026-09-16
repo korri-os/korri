@@ -132,20 +132,25 @@
           korridLinuxDeviceModule = nixosModules.korrid-linux-device;
           korriLinuxHostModule = nixosModules.korri-linux-host;
         };
+        tasks = import ./nix/tasks.nix {
+          inherit pkgs proseql;
+          extraHelpText = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+
+            nix run .#korri-dev -- [--physical]
+                Run isolated korrid and inputd development processes without host mutation.
+            nix run .#korri-bundle-select -- COMMAND
+                Select or roll back one immutable Korri bundle without NixOS activation.
+            ${pluginHost.help}'';
+        };
       in
       {
         apps =
-          (import ./nix/tasks.nix {
-            inherit pkgs proseql;
-            extraHelpText = pkgs.lib.optionalString pkgs.stdenv.isLinux ''
-
-              nix run .#korri-dev -- [--physical]
-                  Run isolated korrid and inputd development processes without host mutation.
-              nix run .#korri-bundle-select -- COMMAND
-                  Select or roll back one immutable Korri bundle without NixOS activation.
-              ${pluginHost.help}'';
-          })
+          tasks
           // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
+        devShells.default = import ./devshell.nix {
+          inherit pkgs;
+          hooksInstall = tasks.hooks-install.program;
+        };
         devShells.android = import ./clients/android/devshell.nix { inherit pkgs; };
         devShells.portal = import ./clients/portal/devshell.nix { inherit pkgs; };
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
