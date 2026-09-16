@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { PluginLaunchInput } from "../../contracts/generated/korrid"
-import { launch } from "../mgba/retroarch"
+import { handlers } from "../mgba/retroarch"
+
+// The test exercises the operation the host calls, through the same map.
+const launch = handlers["launch.prepare"]
 
 function input(overrides?: PluginLaunchInput["overrides"]): PluginLaunchInput {
   return {

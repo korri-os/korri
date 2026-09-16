@@ -22,7 +22,7 @@ fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPac
 }
 
 const CALLBACK: &str =
-    "export function launch() { throw new Error('admission must not call launch'); }";
+    "export const handlers = {'launch.prepare': function () { throw new Error('admission must not call launch'); }}";
 
 #[test]
 fn native_runner_owns_program_and_core_in_one_package() {
@@ -48,9 +48,14 @@ fn native_runner_owns_program_and_core_in_one_package() {
 }
 
 #[test]
-fn native_runners_require_a_callable_top_level_launch_without_invocation() {
+fn native_runners_require_a_callable_launch_prepare_handler_without_invocation() {
     let declaration = "export const runners = {main: {id:'@test:kind/main', program:'program'}};";
-    for callback in ["", "export const launch = 42;", CALLBACK] {
+    for callback in [
+        "",
+        "export const handlers = {};",
+        "export const handlers = {'launch.prepare': 42};",
+        CALLBACK,
+    ] {
         let root = tempfile::tempdir().unwrap();
         let runner = package(
             root.path(),

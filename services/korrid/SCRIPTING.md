@@ -209,11 +209,20 @@ External daemon packages instead carry a generated `manifest.json` with
 `publisher.namespace`. The host verifies the selected NAR against the device's
 bound full public key before using that claim. See `plugin-host/README.md`.
 
-An optional `launch` export must be a function. Evaluation checks but never
-calls it. `script::call_plugin_launch_ts(source, input)` invokes it in a fresh
-interpreter with bounded JSON input and output. Module evaluation and invocation
-share one deadline, memory limit, and output budget. Launch must return JSON
-synchronously; a promise, function, non-finite number, or undefined is rejected.
+An optional `handlers` export is a map of operation name to handler function.
+The host names the operation it wants; a plugin never chooses which of its
+handlers runs. Evaluation checks the shape — a plain object whose every value
+is callable — but never calls a handler. A plugin may carry a handler this host
+does not know: admission does not judge the names, and dispatch reports the
+unimplemented operation instead of returning an empty success.
+
+`script::call_plugin_operation_ts(source, operation, input)` invokes one handler
+in a fresh interpreter with bounded JSON input and output. `LAUNCH_PREPARE` is
+the operation that turns a selected runner and target into a launch plan; a
+native runner is admitted only when it carries that handler. Module evaluation
+and invocation share one deadline, memory limit, and output budget. A handler
+must return JSON synchronously; a promise, function, non-finite number, or
+undefined is rejected.
 The evaluator performs no effects. `launcher/plugin_launch.rs` defines the
 Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
 contains the selected full launcher/kind/runtime IDs, program and core file paths,
@@ -255,7 +264,7 @@ network or process access.
 
 ### In-process module preparation
 
-`eval_plugin_snapshot` and `call_plugin_launch_snapshot` prepare the same closed
+`eval_plugin_snapshot` and `call_plugin_operation_snapshot` prepare the same closed
 graph with Oxc before creating a fresh QuickJS runtime. The single-file helpers
 use that same path. Static relative imports and re-exports resolve only against
 retained snapshot identities. Explicit `.js` and `.ts` paths are exact. Existing
@@ -330,9 +339,9 @@ the explicitly accepted stall/crash risk.
 
 Module initialization must fulfill before output extraction. Promise jobs can
 complete it, but stalled or timer-dependent top-level await fails without
-invoking launch. Declaration output is captured before initialization jobs and
-timers drain. Initialization must finish before launch. A synchronous launch
-result is captured before its queued work drains. Later mutation cannot change
+invoking a handler. Declaration output is captured before initialization jobs
+and timers drain. Initialization must finish before any handler runs. A
+synchronous handler result is captured before its queued work drains. Later mutation cannot change
 the captured result, but a later error invalidates it. Returned promises remain
 unsupported.
 

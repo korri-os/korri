@@ -31,6 +31,10 @@ use std::{
 
 use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type, Value};
 
+/// The operation that turns a selected runner and target into a launch plan.
+/// A runner that korrid must start needs this handler and nothing else.
+pub const LAUNCH_PREPARE: &str = "launch.prepare";
+
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
     preparation::transpile(source, "plugin.ts")
@@ -47,29 +51,46 @@ pub fn eval_plugin(source: &str) -> Result<String, String> {
     )
 }
 
-/// Call the module's synchronous launch export with JSON input in a fresh,
-/// empty interpreter. Evaluation and invocation share the same resource budget.
-pub fn call_plugin_launch_ts(source: &str, input_json: &str) -> Result<String, String> {
-    call_plugin_launch_snapshot(&source::SourceSnapshot::plugin(source)?, input_json)
+/// One operation call: an operation name from the plugin operation contract
+/// and its JSON request. The host names the operation; a plugin never picks
+/// which of its handlers runs.
+#[derive(Clone, Copy)]
+pub struct Invocation<'a> {
+    pub operation: &'a str,
+    pub input: &'a str,
 }
 
-/// Prepare the retained graph, then invoke launch in a fresh interpreter.
-pub fn call_plugin_launch_snapshot(
+/// Call one operation handler with JSON input in a fresh, empty interpreter.
+/// Evaluation and invocation share the same resource budget.
+pub fn call_plugin_operation_ts(
+    source: &str,
+    operation: &str,
+    input_json: &str,
+) -> Result<String, String> {
+    call_plugin_operation_snapshot(&source::SourceSnapshot::plugin(source)?, operation, input_json)
+}
+
+/// Prepare the retained graph, then invoke one handler in a fresh interpreter.
+pub fn call_plugin_operation_snapshot(
     snapshot: &source::SourceSnapshot,
+    operation: &str,
     input_json: &str,
 ) -> Result<String, String> {
     if input_json.len() > 512 * 1024 {
-        return Err("plugin launch input exceeds 512 KiB".into());
+        return Err(format!("plugin {operation} input exceeds 512 KiB"));
     }
     evaluate_module(
         preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
-        Some(input_json),
+        Some(Invocation {
+            operation,
+            input: input_json,
+        }),
     )
 }
 
 fn evaluate_module(
     graph: preparation::PreparedGraph,
-    input: Option<&str>,
+    invocation: Option<Invocation<'_>>,
 ) -> Result<String, String> {
     let runtime = Runtime::new().map_err(|error| error.to_string())?;
     // External declarations run before permission approval. Resource limits
@@ -112,8 +133,8 @@ fn evaluate_module(
                 | "services" | "config" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
-                "launch" if value.is_function() => {}
-                "launch" => return Err("plugin export launch must be a function".into()),
+                // Handlers are callable operation code, never declaration data.
+                "handlers" => validate_handlers(&value)?,
                 _ => return Err(format!("unsupported plugin export: {name}")),
             }
         }
@@ -156,21 +177,21 @@ fn evaluate_module(
                 })
             })
         {
-            exports
-                .get::<_, Function>("launch")
-                .map_err(|_| "native runner kind has no callable launch export".to_owned())?;
+            handler(&exports, LAUNCH_PREPARE)
+                .map_err(|_| "native runner kind has no callable launch.prepare handler".to_owned())?;
         }
-        let result = if let Some(input) = input {
-            let launch: Function = exports
-                .get("launch")
-                .map_err(|_| "plugin has no callable launch export".to_owned())?;
-            let argument = ctx.json_parse(input).map_err(|error| error.to_string())?;
-            let value: Value = launch
+        let result = if let Some(invocation) = invocation {
+            let operation = invocation.operation;
+            let handler = handler(&exports, operation)?;
+            let argument = ctx
+                .json_parse(invocation.input)
+                .map_err(|error| error.to_string())?;
+            let value: Value = handler
                 .call((argument,))
-                .map_err(|error| format!("plugin launch failed: {error}"))?;
+                .map_err(|error| format!("plugin {operation} failed: {error}"))?;
             json_data_from_js(
                 &value,
-                "$.launch",
+                "$.result",
                 0,
                 &plain_object_prototype,
                 &object_to_string,
@@ -185,6 +206,36 @@ fn evaluate_module(
         completion.check_deadline()?;
         Ok(output)
     })
+}
+
+/// Every entry of the `handlers` export must be callable. Admission inspects
+/// the shape only: it never invokes a handler and never judges its name, so a
+/// plugin written for a newer host still loads and fails only when the host
+/// asks for an operation this plugin does not implement.
+fn validate_handlers(value: &Value<'_>) -> Result<(), String> {
+    // A function or an array is an object to the interpreter. The handlers
+    // export is a map of operation name to handler, and nothing else.
+    let handlers = match value.as_object() {
+        Some(handlers) if !value.is_function() && !handlers.is_array() => handlers,
+        _ => return Err("plugin export handlers must be an object".to_owned()),
+    };
+    for property in handlers.props::<String, Value>() {
+        let (name, handler) = property.map_err(|error| error.to_string())?;
+        if !handler.is_function() {
+            return Err(format!("plugin handler {name} must be a function"));
+        }
+    }
+    Ok(())
+}
+
+/// Resolve one operation handler. An operation the plugin does not implement
+/// is an explicit failure, never a successful empty result.
+fn handler<'js>(exports: &Object<'js>, operation: &str) -> Result<Function<'js>, String> {
+    exports
+        .get::<_, Object>("handlers")
+        .map_err(|_| format!("plugin has no handlers export, so it cannot run {operation}"))?
+        .get::<_, Function>(operation)
+        .map_err(|_| format!("plugin has no handler for {operation}"))
 }
 
 // QuickJS accounts for shared strings once. Rust's JSON tree copies them, so
@@ -384,7 +435,8 @@ mod tests {
             "export const namespace = '@impostor'; export const name = 'clock';",
             "export const name = 'clock'; export const contributes = {};",
             "export const name = 'clock'; export const unknown = {};",
-            "export const name = 'clock'; export const launch = {};",
+            "export const name = 'clock'; export const handlers = () => {};",
+            "export const name = 'clock'; export const handlers = {'launch.prepare': 42};",
             "export const name = 'clock'; export const discovery = () => ({});",
             "export const name = 'clock'; export const systems = {x: undefined};",
         ] {
@@ -455,16 +507,41 @@ mod tests {
     }
 
     #[test]
-    fn launch_is_deferred_callable_and_does_not_keep_state_between_calls() {
-        let source = "export const name = 'clock'; let calls = 0; export function launch(input) { calls++; return {args: [input.path], calls}; }";
+    fn an_operation_is_deferred_callable_and_does_not_keep_state_between_calls() {
+        let source = "export const name = 'clock'; let calls = 0; export const handlers = {'launch.prepare': function (input) { calls++; return {args: [input.path], calls}; }}";
         assert_eq!(eval_plugin_ts(source).unwrap(), "{\"name\":\"clock\"}");
         let input = r#"{"path":"/games/a.gba"}"#;
-        let first = call_plugin_launch_ts(source, input).unwrap();
+        let first = call_plugin_operation_ts(source, LAUNCH_PREPARE, input).unwrap();
         assert_eq!(first, "{\"args\":[\"/games/a.gba\"],\"calls\":1}");
-        assert_eq!(call_plugin_launch_ts(source, input).unwrap(), first);
-        assert!(call_plugin_launch_ts("export const name = 'clock'", input).is_err());
-        assert!(call_plugin_launch_ts(source, "invalid JSON").is_err());
-        assert!(call_plugin_launch_ts(source, &" ".repeat(512 * 1024 + 1)).is_err());
+        assert_eq!(
+            call_plugin_operation_ts(source, LAUNCH_PREPARE, input).unwrap(),
+            first
+        );
+        assert!(call_plugin_operation_ts("export const name = 'clock'", LAUNCH_PREPARE, input).is_err());
+        assert!(call_plugin_operation_ts(source, LAUNCH_PREPARE, "invalid JSON").is_err());
+        assert!(
+            call_plugin_operation_ts(source, LAUNCH_PREPARE, &" ".repeat(512 * 1024 + 1)).is_err()
+        );
+    }
+
+    #[test]
+    fn the_host_names_the_operation_and_an_unimplemented_one_fails_explicitly() {
+        let source = "export const name = 'clock'; export const handlers = {'launch.prepare': () => ({picked: 'launch.prepare'}), 'settings.describe': () => ({picked: 'settings.describe'})}";
+        assert_eq!(
+            call_plugin_operation_ts(source, "settings.describe", "null").unwrap(),
+            "{\"picked\":\"settings.describe\"}"
+        );
+        assert_eq!(
+            call_plugin_operation_ts(source, LAUNCH_PREPARE, "null").unwrap(),
+            "{\"picked\":\"launch.prepare\"}"
+        );
+        // An operation this plugin does not implement is reported, never
+        // answered with an empty success.
+        let error = call_plugin_operation_ts(source, "session.control", "null").unwrap_err();
+        assert!(error.contains("session.control"), "{error}");
+        let error = call_plugin_operation_ts("export const name = 'clock'", "job.status", "null")
+            .unwrap_err();
+        assert!(error.contains("job.status"), "{error}");
     }
 
     #[test]
@@ -480,10 +557,10 @@ mod tests {
             "return Array(1000).fill('x'.repeat(10000))",
         ] {
             let source =
-                format!("export const name = 'clock'; export function launch(input) {{ {body} }}");
+                format!("export const name = 'clock'; export const handlers = {{'launch.prepare': function (input) {{ {body} }}}}");
             assert!(eval_plugin_ts(&source).is_ok());
             assert!(
-                call_plugin_launch_ts(&source, "null").is_err(),
+                call_plugin_operation_ts(&source, "launch.prepare", "null").is_err(),
                 "accepted {body}"
             );
         }

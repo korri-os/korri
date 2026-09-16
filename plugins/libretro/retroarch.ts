@@ -34,7 +34,7 @@ function quoteSetting(key: string, value: string): string {
   throw new Error(`Unsupported RetroArch string setting: ${key}`)
 }
 
-export function launch(input: PluginLaunchInput): PluginLaunchOutput {
+function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   const root = input.accountRoot
   if (!input.corePath) throw new Error("RetroArch runner requires a core path")
   const corePath = input.corePath
@@ -143,4 +143,10 @@ video_driver = "gl"`
     env: {},
     envUnset: [],
   }
+}
+
+// The host names the operation it wants; every runner answers through the
+// same map, so a new operation adds a key rather than a new export contract.
+export const handlers = {
+  "launch.prepare": prepareLaunch,
 }

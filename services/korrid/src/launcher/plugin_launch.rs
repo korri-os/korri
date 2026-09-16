@@ -78,7 +78,11 @@ pub fn evaluate_snapshot(
     input: &PluginLaunchInput,
 ) -> Result<PluginLaunchOutput, String> {
     let input = serde_json::to_string(input).map_err(|e| e.to_string())?;
-    let result = crate::script::call_plugin_launch_snapshot(source, &input)?;
+    let result = crate::script::call_plugin_operation_snapshot(
+        source,
+        crate::script::LAUNCH_PREPARE,
+        &input,
+    )?;
     serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))
 }
 

@@ -24,11 +24,11 @@ fn limits() -> SnapshotLimits {
 #[test]
 fn a_cycle_back_into_the_entry_uses_its_native_binding() {
     let graph = snapshot(&[
-        ("plugin.ts", "import { read } from './helper.ts'; export const name = 'entry-cycle'; export function launch() { return {name: read()}; }"),
+        ("plugin.ts", "import { read } from './helper.ts'; export const name = 'entry-cycle'; export const handlers = {'launch.prepare': function () { return {name: read()}; }}"),
         ("helper.ts", "import { name } from './plugin.ts'; export function read() { return name; }"),
     ]);
     assert_eq!(
-        script::call_plugin_launch_snapshot(&graph, "null").unwrap(),
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").unwrap(),
         r#"{"name":"entry-cycle"}"#
     );
 }
@@ -40,11 +40,11 @@ fn imported_module_initialization_obeys_the_same_completion_rules() {
         "await new Promise(resolve => setTimeout(resolve, 0));",
     ] {
         let graph = snapshot(&[
-            ("plugin.ts", "import './helper.ts'; export const name = 'no'; export function launch() { return {}; }"),
+            ("plugin.ts", "import './helper.ts'; export const name = 'no'; export const handlers = {'launch.prepare': function () { return {}; }}"),
             ("helper.ts", source),
         ]);
         assert!(script::eval_plugin_snapshot(&graph).is_err());
-        assert!(script::call_plugin_launch_snapshot(&graph, "null").is_err());
+        assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").is_err());
     }
 }
 
@@ -68,7 +68,7 @@ fn native_cycles_reexports_and_live_bindings_are_preserved() {
         ("plugin.ts", "export { name } from './a.ts'; export * from './launch.ts';"),
         ("a.ts", "import { suffix } from './b.ts'; export const name = 'cycle' + suffix(); export let calls = 0; export function bump() { calls++; }"),
         ("b.ts", "import { calls } from './a.ts'; export function suffix() { return '-ok'; } export function count() { return calls; }"),
-        ("launch.ts", "import { bump } from './a.ts'; import { count } from './b.ts'; export function launch() { bump(); return { calls: count() }; }"),
+        ("launch.ts", "import { bump } from './a.ts'; import { count } from './b.ts'; export const handlers = {'launch.prepare': function () { bump(); return { calls: count() }; }}"),
     ]);
     assert_eq!(
         script::eval_plugin_snapshot(&graph).unwrap(),
@@ -76,7 +76,7 @@ fn native_cycles_reexports_and_live_bindings_are_preserved() {
     );
     for _ in 0..2 {
         assert_eq!(
-            script::call_plugin_launch_snapshot(&graph, "null").unwrap(),
+            script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").unwrap(),
             r#"{"calls":1}"#
         );
     }
@@ -85,7 +85,7 @@ fn native_cycles_reexports_and_live_bindings_are_preserved() {
 #[test]
 fn preparation_checks_static_dependencies_before_any_plugin_code_runs() {
     for dependency in [
-        "import { unused } from './missing.ts'; export function launch() { return unused; }",
+        "import { unused } from './missing.ts'; export const handlers = {'launch.prepare': function () { return unused; }}",
         "export * from './missing.ts';",
         "import './missing.ts';",
         "import {} from './missing.ts';",
@@ -100,7 +100,7 @@ fn preparation_checks_static_dependencies_before_any_plugin_code_runs() {
         )]);
         let error = script::eval_plugin_snapshot(&graph).unwrap_err();
         assert!(error.contains("not selected"), "{dependency}: {error}");
-        assert!(script::call_plugin_launch_snapshot(&graph, "null")
+        assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
             .unwrap_err()
             .contains("not selected"));
     }
@@ -175,7 +175,7 @@ fn dynamic_import_and_import_meta_are_rejected_even_in_deferred_code() {
         let graph = snapshot(&[
             (
                 "plugin.ts",
-                &format!("export const name = 'closed'; export function launch() {{ {body} }}"),
+                &format!("export const name = 'closed'; export const handlers = {{'launch.prepare': function () {{ {body} }}}}"),
             ),
             ("helper.ts", "export const value = 1;"),
         ]);
@@ -190,7 +190,7 @@ fn dynamic_import_and_import_meta_are_rejected_even_in_deferred_code() {
 fn frozen_filesystem_aliases_use_canonical_identity_and_canonical_parent() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("real")).unwrap();
-    fs::write(root.path().join("plugin.ts"), "import { value as a } from './alias.ts'; import { value as b } from './real/value.ts'; export const name = 'aliases'; export const config = { same: a === b, label: a.label }; export function launch() { return { same: a === b }; }").unwrap();
+    fs::write(root.path().join("plugin.ts"), "import { value as a } from './alias.ts'; import { value as b } from './real/value.ts'; export const name = 'aliases'; export const config = { same: a === b, label: a.label }; export const handlers = {'launch.prepare': function () { return { same: a === b }; }}").unwrap();
     fs::write(
         root.path().join("real/value.ts"),
         "import { label } from './label'; export const value = { label };",
@@ -214,7 +214,7 @@ fn frozen_filesystem_aliases_use_canonical_identity_and_canonical_parent() {
         r#"{"config":{"same":true,"label":"retained"},"name":"aliases"}"#
     );
     assert_eq!(
-        script::call_plugin_launch_snapshot(&graph, "null").unwrap(),
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").unwrap(),
         r#"{"same":true}"#
     );
 }
@@ -232,12 +232,12 @@ fn a_single_transformed_module_keeps_its_emitted_output_ceiling() {
         helper.len()
     );
     let graph = snapshot(&[
-        ("plugin.ts", "import './helper.ts'; export const name = 'bounded'; export function launch() { return {}; }"),
+        ("plugin.ts", "import './helper.ts'; export const name = 'bounded'; export const handlers = {'launch.prepare': function () { return {}; }}"),
         ("helper.ts", &helper),
     ]);
     for result in [
         script::eval_plugin_snapshot(&graph),
-        script::call_plugin_launch_snapshot(&graph, "null"),
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null"),
     ] {
         let error = result.expect_err("oversized emitted module must fail preparation");
         assert!(error.contains("JavaScript exceeds 512 KiB"), "{error}");
@@ -271,7 +271,7 @@ fn transformed_output_is_bounded_in_aggregate_before_evaluation() {
     .unwrap();
     let error = script::eval_plugin_snapshot(&graph).unwrap_err();
     assert!(error.contains("JavaScript graph exceeds 4 MiB"), "{error}");
-    assert!(script::call_plugin_launch_snapshot(&graph, "null")
+    assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
         .unwrap_err()
         .contains("JavaScript graph exceeds 4 MiB"));
 }
@@ -353,25 +353,24 @@ fn single_file_entrypoints_keep_their_existing_source_and_input_ceilings() {
         .contains("JavaScript exceeds 512 KiB"));
     let graph = snapshot(&[(
         "plugin.ts",
-        "export const name = 'ceiling'; export function launch() { return {}; }",
+        "export const name = 'ceiling'; export const handlers = {'launch.prepare': function () { return {}; }}",
     )]);
-    assert!(script::call_plugin_launch_snapshot(
-        &graph,
+    assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare",
         &format!("null{}", " ".repeat(512 * 1024 - 4))
     )
     .is_ok());
     assert!(
-        script::call_plugin_launch_snapshot(&graph, &" ".repeat(512 * 1024 + 1))
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", &" ".repeat(512 * 1024 + 1))
             .unwrap_err()
             .contains("input exceeds 512 KiB")
     );
     for source in [
-        "export const name = 'closed'; export function launch() { return import('./missing.ts'); }",
-        "export const name = 'closed'; export function launch() { return import.meta; }",
+        "export const name = 'closed'; export const handlers = {'launch.prepare': function () { return import('./missing.ts'); }}",
+        "export const name = 'closed'; export const handlers = {'launch.prepare': function () { return import.meta; }}",
     ] {
         assert!(script::eval_plugin(source).is_err());
         assert!(script::eval_plugin_ts(source).is_err());
-        assert!(script::call_plugin_launch_ts(source, "null").is_err());
+        assert!(script::call_plugin_operation_ts(source, "launch.prepare", "null").is_err());
     }
 }
 
@@ -388,16 +387,16 @@ fn dependencies_and_launch_share_vm_limits_without_host_capabilities() {
         let graph = snapshot(&[
             (
                 "plugin.ts",
-                "export const name = 'bounded'; export { launch } from './helper.ts';",
+                "export const name = 'bounded'; export { handlers } from './helper.ts';",
             ),
             (
                 "helper.ts",
-                &format!("export function launch() {{ {body} }}"),
+                &format!("export const handlers = {{'launch.prepare': function () {{ {body} }}}}"),
             ),
         ]);
         assert!(script::eval_plugin_snapshot(&graph).is_ok(), "{body}");
         assert!(
-            script::call_plugin_launch_snapshot(&graph, "null").is_err(),
+            script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null").is_err(),
             "{body}"
         );
     }

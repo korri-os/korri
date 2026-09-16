@@ -140,7 +140,7 @@ fn cross_package_executable_reference_has_no_contract_shape() {
         id: '@test:bad/main', program: 'program', core: 'core',
         launcher: '@other:frontend/main', systems: ['gba']
       }};
-      export function launch() { return {command:'/bin/false', args:[]}; }
+      export const handlers = {'launch.prepare': function () { return {command:'/bin/false', args:[]}; }}
     "#;
     assert!(korrid::plugin::load_plugin_source("@test", source).is_err());
 }

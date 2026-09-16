@@ -1,4 +1,4 @@
-use korrid::script::{call_plugin_launch_ts, eval_plugin_ts};
+use korrid::script::{call_plugin_operation_ts, eval_plugin_ts};
 
 #[test]
 fn private_queue_survives_indexed_prototype_poisoning() {
@@ -31,9 +31,9 @@ fn interruption_releases_a_queued_module_resolver_before_disposal() {
 #[test]
 fn positive_delay_uses_the_real_clock_and_finishes_before_launch() {
     let started = std::time::Instant::now();
-    let source = "export const name = 'clock'; let fired = false; setTimeout(() => fired = true, 20); export function launch() { return { fired }; }";
+    let source = "export const name = 'clock'; let fired = false; setTimeout(() => fired = true, 20); export const handlers = {'launch.prepare': function () { return { fired }; }}";
     assert_eq!(
-        call_plugin_launch_ts(source, "null").unwrap(),
+        call_plugin_operation_ts(source, "launch.prepare", "null").unwrap(),
         r#"{"fired":true}"#
     );
     assert!(started.elapsed() >= std::time::Duration::from_millis(20));
@@ -50,13 +50,13 @@ fn two_rejected_promises_with_one_reason_keep_distinct_identities() {
 
 #[test]
 fn every_evaluator_installs_the_same_function_only_timers() {
-    let source = "export const name = 'timers'; export const description = [typeof setTimeout, typeof clearTimeout, typeof setInterval, typeof process, typeof fetch].join('/'); export function launch() { return { timer: typeof setTimeout }; }";
+    let source = "export const name = 'timers'; export const description = [typeof setTimeout, typeof clearTimeout, typeof setInterval, typeof process, typeof fetch].join('/'); export const handlers = {'launch.prepare': function () { return { timer: typeof setTimeout }; }}";
     assert_eq!(
         eval_plugin_ts(source).unwrap(),
         r#"{"description":"function/function/undefined/undefined/undefined","name":"timers"}"#
     );
     assert_eq!(
-        call_plugin_launch_ts(source, "null").unwrap(),
+        call_plugin_operation_ts(source, "launch.prepare", "null").unwrap(),
         r#"{"timer":"function"}"#
     );
     assert!(eval_plugin_ts("export const name = 'timers'; setTimeout('1', 0);").is_err());
@@ -64,13 +64,13 @@ fn every_evaluator_installs_the_same_function_only_timers() {
 
 #[test]
 fn initialization_drains_before_launch_but_outputs_are_captured_before_queued_mutation() {
-    let source = "export const name = 'timers'; export const config = { phase: 'captured' }; let ready = false; setTimeout(() => { config.phase = 'mutated'; ready = true; }, 0); export function launch() { const output = { ready, phase: config.phase }; setTimeout(() => { output.phase = 'too late'; }, 0); return output; }";
+    let source = "export const name = 'timers'; export const config = { phase: 'captured' }; let ready = false; setTimeout(() => { config.phase = 'mutated'; ready = true; }, 0); export const handlers = {'launch.prepare': function () { const output = { ready, phase: config.phase }; setTimeout(() => { output.phase = 'too late'; }, 0); return output; }}";
     assert_eq!(
         eval_plugin_ts(source).unwrap(),
         r#"{"config":{"phase":"captured"},"name":"timers"}"#
     );
     let output: serde_json::Value =
-        serde_json::from_str(&call_plugin_launch_ts(source, "null").unwrap()).unwrap();
+        serde_json::from_str(&call_plugin_operation_ts(source, "launch.prepare", "null").unwrap()).unwrap();
     assert_eq!(output, serde_json::json!({"phase":"mutated","ready":true}));
 }
 
@@ -106,8 +106,8 @@ fn queued_errors_invalidate_captured_results_without_exposing_the_error_payload(
         let source = format!("export const name = 'timers'; {scheduled}");
         let error = eval_plugin_ts(&source).unwrap_err();
         assert!(!error.contains("SECRET_PAYLOAD"), "{error}");
-        let source = format!("export const name = 'timers'; export function launch() {{ {scheduled} return {{ok:true}}; }}");
-        assert!(call_plugin_launch_ts(&source, "null").is_err());
+        let source = format!("export const name = 'timers'; export const handlers = {{'launch.prepare': function () {{ {scheduled} return {{ok:true}}; }}}}");
+        assert!(call_plugin_operation_ts(&source, "launch.prepare", "null").is_err());
     }
 }
 
@@ -128,8 +128,8 @@ fn initialization_requires_fulfillment_without_timer_dependent_top_level_await()
         "await new Promise(resolve => setTimeout(resolve, 0)); export const name = 'no';",
     ] {
         assert!(eval_plugin_ts(source).is_err(), "accepted {source}");
-        let launch = format!("{source} export function launch() {{ return {{unexpected:true}}; }}");
-        assert!(call_plugin_launch_ts(&launch, "null").is_err());
+        let launch = format!("{source} export const handlers = {{'launch.prepare': function () {{ return {{unexpected:true}}; }}}}");
+        assert!(call_plugin_operation_ts(&launch, "launch.prepare", "null").is_err());
     }
 }
 
