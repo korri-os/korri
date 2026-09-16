@@ -22,3 +22,9 @@ clients/android/app/src/main/assets/portal/
 # Device secrets are supplied out of band (see nix/wifi.nix).
 *.wifi.env
 wifi.env
+
+# korrid writes its runtime state beside the binary when no state directory is
+# set, and that state holds the device private key. A test run in a checkout
+# must never be able to stage one.
+korri-state/
+*.key
