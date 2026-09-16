@@ -416,10 +416,13 @@ cannot prove the process on the other end speaks the protocol.
 
 The design in `docs/briefs/2026-09-15-plugin-model/OPERATIONS.md` answers this
 with two plugin operations, `session.describe` and `session.control`, which
-would let a runner advertise and serve its own controls. Neither is built. They
-stay unbuilt until a real second case needs them — a DIY runner with controls
-worth reaching — because the operation model they belong to does not exist yet
-and inventing it ahead of that case is what this repository's guard forbids.
+would let a runner advertise and serve its own controls. Neither is built. The
+call convention they need now exists — a plugin exports `handlers` and the host
+names the operation — so what remains is the part korrid performs: reaching a
+running process over a protocol the host does not know. They stay unbuilt until
+a real second case needs them, a DIY runner with controls worth reaching,
+because inventing that seam ahead of the case is what this repository's guard
+forbids.
 
 Until then, say it plainly: **session controls are a first-party integration.**
 Do not describe the current contract as equal capability for every plugin.
