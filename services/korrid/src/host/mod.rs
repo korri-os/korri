@@ -1047,7 +1047,7 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let rom = folder.path().join("wl4.gba");
         fs::write(&rom, b"rom").unwrap();
-        let report = crate::discovery::DiscoveryCoordinator::new(root.path(), private.path())
+        let report = crate::discovery::DiscoveryCoordinator::for_tests(root.path(), private.path())
             .add_location(
                 folder.path(),
                 &crate::discovery::DiscoveryOptions {

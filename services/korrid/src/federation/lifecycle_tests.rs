@@ -24,7 +24,7 @@ fn binding_refreshes_existing_clients_without_rotating_port_and_stop_joins_block
     fs::write(readable.path().join("upstreams.json"), serde_json::json!([{"kind":"native", "label":"Peer", "baseUrl":format!("http://{host_address}"), "devicePublicKey":peer.device_public_key(), "moonlightAddress":"peer:47989"}]).to_string()).unwrap();
     let relay_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     fs::write(readable.path().join("device.yaml"), format!("host:\n  relays:\n    - ws://{}\n", relay_listener.local_addr().unwrap())).unwrap();
-    let port = start_local_server_for_platform("https://portal.example", readable.path().to_str().unwrap(), private.path().to_str().unwrap(), NativePlatform::Standalone).unwrap();
+    let port = start_local_server_for_platform("https://portal.example", readable.path().to_str().unwrap(), private.path().to_str().unwrap(), plugin_policy::RegistrySource::Installed).unwrap();
     let _stop = Stop;
     let capability = local_server_capability().unwrap();
     let (credentials, registry) = {

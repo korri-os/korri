@@ -3,6 +3,44 @@
 use crate::{plugin::PluginRegistry, plugin_installation::EnabledPackage};
 use std::{collections::BTreeMap, fs, path::Path};
 
+/// A runner that claims `.gba` files and can build a launch plan. Discovery
+/// needs a claim to mint a game, and admission needs the handler, so this is
+/// the smallest declaration that satisfies both. It imports nothing, so it
+/// loads from source without a module graph.
+const GBA_CLAIM: &str = r#"
+export const name = "core";
+export const title = "GBA Core";
+export const systems = { gba: { id: "gba", title: "Game Boy Advance" } };
+export const runners = {
+  core: { id: "@korri:core/core", program: "retroarch", systems: ["gba"] },
+};
+export const discovery = {
+  fileReleases: {
+    gba: {
+      id: "@korri:core/gba",
+      title: "Game Boy Advance files",
+      extensions: ["gba"],
+      system: "gba",
+      runners: ["@korri:core/core"],
+    },
+  },
+};
+export const handlers = {
+  "launch.prepare": () => ({ command: "retroarch", args: [] }),
+};
+"#;
+
+/// One enabled plugin that claims `.gba` files and nothing else. Production
+/// reads the root-owned installation record instead, which a test root does
+/// not have.
+pub fn claims_only_registry() -> PluginRegistry {
+    PluginRegistry::new(
+        vec![crate::plugin::load_plugin_source("@korri", GBA_CLAIM).unwrap()],
+        vec!["@korri:core".into()],
+    )
+    .unwrap()
+}
+
 /// A game id that both fixture runners admit, so a caller can prove how the
 /// library treats one game reachable by more than one runner.
 pub const GBA_ID: &str = "01K4J6K8Y00000000000000002";

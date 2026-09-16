@@ -20,7 +20,7 @@ fn discovery_separates_catalog_facts_from_locations_and_launches_by_system() {
     let bytes = b"minimum config acceptance ROM";
     fs::write(roms.path().join("Wario Land 4.gba"), bytes).unwrap();
     let sha = format!("sha256:{}", hex::encode(Sha256::digest(bytes)));
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     let options = DiscoveryOptions {
         first_seen_at: "2026-09-06T00:00:00Z".into(),
         ..DiscoveryOptions::default()

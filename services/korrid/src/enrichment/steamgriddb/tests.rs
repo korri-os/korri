@@ -349,7 +349,7 @@ fn unauthorized_credential_stops_after_one_redacted_provider_error() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("one.gba"), b"one").unwrap();
     std::fs::write(root.path().join("two.gba"), b"two").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "secret-token-123").unwrap();
@@ -383,7 +383,7 @@ fn matching_assignment_repairs_missing_attempt_without_provider_call() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     let game = discovery::reconcile::owned_discovery_games(readable.path(), private.path())
@@ -423,7 +423,7 @@ fn unreadable_assignment_state_stops_before_provider_request() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     let assignment_dir = private.path().join("game-assets");
@@ -449,7 +449,7 @@ fn permanent_provider_failure_is_not_retried_until_provider_configuration_change
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "secret-token-123").unwrap();
@@ -487,7 +487,7 @@ fn changed_same_id_rom_ignores_stale_attempt_and_enriches_current_identity() {
     let root = tempfile::tempdir().unwrap();
     let rom = root.path().join("wl4.gba");
     std::fs::write(&rom, b"rom-one").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     discovery
         .add_location(root.path(), &discovery_options())
         .unwrap();
@@ -525,7 +525,7 @@ fn provider_success_updates_title_assigns_identity_bound_tile_and_records_attemp
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("Wario_Land_4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "secret-token-123").unwrap();
@@ -594,7 +594,7 @@ fn asset_redirect_is_rejected_after_exactly_one_asset_request() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("Wario_Land_4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "secret-token-123").unwrap();
@@ -631,7 +631,7 @@ fn concurrent_credential_change_prevents_stale_attempt_from_returning() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "old-token").unwrap();
@@ -676,7 +676,7 @@ fn finite_batch_attempts_no_matches_so_later_restart_resumes() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("one.gba"), b"one").unwrap();
     std::fs::write(root.path().join("two.gba"), b"two").unwrap();
-    DiscoveryCoordinator::new(readable.path(), private.path())
+    DiscoveryCoordinator::for_tests(readable.path(), private.path())
         .add_location(root.path(), &discovery_options())
         .unwrap();
     settings::set_steamgriddb_credential(private.path(), "secret-token-123").unwrap();

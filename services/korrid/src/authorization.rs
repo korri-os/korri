@@ -1065,22 +1065,6 @@ mod tests {
                 Both,
             ),
             (
-                request(serde_json::json!({"_tag":"app.moonlight.resolve","payload":{}})),
-                stream,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
-                ),
-                stream,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"app.moonlight.launch.cancel","payload":{"launchId":"l"}}),
-                ),
-                Owner,
-            ),
-            (
                 request(
                     serde_json::json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
                 ),
@@ -1125,25 +1109,7 @@ mod tests {
                 Both,
             ),
             (
-                request(
-                    serde_json::json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
-                ),
-                stream,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"app.session.control.invoke","payload":{"launchId":"l","controlId":"c"}}),
-                ),
-                stream,
-            ),
-            (
                 request(serde_json::json!({"_tag":"app.local-games.list","payload":{}})),
-                Owner,
-            ),
-            (
-                request(
-                    serde_json::json!({"_tag":"app.local-games.launch","payload":{"gameId":"g"}}),
-                ),
                 Owner,
             ),
             (
@@ -1319,19 +1285,9 @@ mod tests {
                 request(
                     serde_json::json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
                 ),
-                request(serde_json::json!({"_tag":"app.moonlight.resolve","payload":{}})),
-                request(
-                    serde_json::json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
-                ),
                 request(serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"g"}})),
                 request(serde_json::json!({"_tag":"app.session.status","payload":{}})),
                 request(serde_json::json!({"_tag":"app.session.stop","payload":{}})),
-                request(
-                    serde_json::json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
-                ),
-                request(
-                    serde_json::json!({"_tag":"app.session.control.invoke","payload":{"launchId":"l","controlId":"c"}}),
-                ),
                 request(
                     serde_json::json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
                 ),

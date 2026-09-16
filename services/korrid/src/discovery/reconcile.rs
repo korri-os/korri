@@ -102,6 +102,17 @@ impl DiscoveryCoordinator {
         Self::with_write_lock(readable_root, private_root, Arc::new(Mutex::new(())))
     }
 
+    /// Discovery reads file-release claims from enabled plugins. Production
+    /// reads the root-owned installation record, which a test root does not
+    /// have, so a test supplies one sample plugin instead.
+    pub fn for_tests(readable_root: impl AsRef<Path>, private_root: impl AsRef<Path>) -> Self {
+        Self::new(readable_root, private_root).with_registry_source(
+            plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
+                crate::plugin_test_fixtures::claims_only_registry(),
+            )),
+        )
+    }
+
     pub fn with_write_lock(
         readable_root: impl AsRef<Path>,
         private_root: impl AsRef<Path>,

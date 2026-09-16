@@ -294,7 +294,7 @@ fn lifecycle_recovers_pending_removal_after_config_first_remove_restart() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     let storage_id = discovery
         .add_location(root.path(), &options())
         .unwrap()
@@ -350,7 +350,7 @@ fn selected_locations_scan_into_launch_resolvable_library_records() {
     let second = tempfile::tempdir().unwrap();
     fs::write(first.path().join("Wario_Land_4 (USA).GBA"), b"wario").unwrap();
     fs::write(second.path().join("Pokémon - Emerald.gba"), b"emerald").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     discovery.add_location(first.path(), &options()).unwrap();
     let report = discovery.add_location(second.path(), &options()).unwrap();
@@ -372,7 +372,7 @@ fn repeated_rescan_is_additive_and_uses_private_hash_cache() {
     let root = tempfile::tempdir().unwrap();
     let rom = root.path().join("wl4.gba");
     fs::write(&rom, b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     discovery.add_location(root.path(), &options()).unwrap();
     let repeated = discovery.rescan(&options()).unwrap();
@@ -398,7 +398,7 @@ fn removing_location_deletes_only_owned_matching_payload_and_sweeps_remaining_ro
     let second = tempfile::tempdir().unwrap();
     fs::write(first.path().join("same.gba"), b"same").unwrap();
     fs::write(second.path().join("same.gba"), b"same").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     let first_report = discovery.add_location(first.path(), &options()).unwrap();
     let duplicate_report = discovery.add_location(second.path(), &options()).unwrap();
@@ -425,7 +425,7 @@ fn edited_generated_record_survives_location_removal() {
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     let added = discovery.add_location(root.path(), &options()).unwrap();
     let library = fs::read_to_string(readable.path().join("catalog/games.yaml"))
         .unwrap()
@@ -453,7 +453,7 @@ fn selecting_root_with_authored_storage_uses_separate_scanner_storage_and_preser
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
     authored(readable.path(), root.path(), "wl4.gba", b"rom");
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     let added = discovery.add_location(root.path(), &options()).unwrap();
     assert_ne!(added.storage_id.as_deref(), Some("authored"));
@@ -485,7 +485,7 @@ fn edited_generated_record_keeps_storage_so_route_stays_resolvable_after_removal
     let private = tempfile::tempdir().unwrap();
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     let added = discovery.add_location(root.path(), &options()).unwrap();
     let storage_id = added.storage_id.unwrap();
     let library = fs::read_to_string(readable.path().join("device.yaml"))
@@ -517,7 +517,7 @@ fn authored_same_content_later_path_beats_generated_candidate_before_hash_dedupe
     fs::write(generated_root.path().join("aaa.gba"), b"same").unwrap();
     fs::write(authored_root.path().join("zzz.gba"), b"same").unwrap();
     authored(readable.path(), authored_root.path(), "zzz.gba", b"same");
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     discovery
         .add_location(generated_root.path(), &options())
@@ -547,7 +547,7 @@ fn overlapping_roots_use_registration_order_not_storage_id_sort_order() {
     let child = parent.path().join("child");
     fs::create_dir(&child).unwrap();
     fs::write(child.join("same.gba"), b"same").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
 
     let first = discovery
         .add_location(&child, &options())
@@ -576,7 +576,7 @@ fn traversal_budget_exhaustion_reports_one_bounded_diagnostic() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("one.gba"), b"one").unwrap();
     fs::write(root.path().join("two.gba"), b"two").unwrap();
-    let discovery = DiscoveryCoordinator::new(readable.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(readable.path(), private.path());
     let mut limited = options();
     limited.max_entries = 1;
     limited.max_sortable_entries = 10;

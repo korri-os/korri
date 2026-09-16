@@ -25,7 +25,7 @@ impl DiscoveredGame {
         let folder = tempfile::tempdir().unwrap();
         // Use the same GBA input as the existing Linux RetroArch route tests.
         fs::write(folder.path().join("wl4.gba"), b"rom").unwrap();
-        let report = DiscoveryCoordinator::new(root.path(), private.path())
+        let report = DiscoveryCoordinator::for_tests(root.path(), private.path())
             .add_location(
                 folder.path(),
                 &DiscoveryOptions {

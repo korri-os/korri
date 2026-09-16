@@ -15,7 +15,7 @@ fn options() -> DiscoveryOptions {
 }
 
 fn coordinator(readable: &Path, private: &Path) -> DiscoveryCoordinator {
-    DiscoveryCoordinator::new(readable, private)
+    DiscoveryCoordinator::for_tests(readable, private)
 }
 
 fn read_library(root: &Path) -> String {

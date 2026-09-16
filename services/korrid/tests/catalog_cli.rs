@@ -74,7 +74,7 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
     let second = import(storage.path(), private.path(), selected.path()).unwrap();
     assert!(second.contains("Added games: 0"), "{second}");
     assert!(second.contains("Hashed bytes: 0"), "{second}");
-    let rescan = DiscoveryCoordinator::new(storage.path(), private.path())
+    let rescan = DiscoveryCoordinator::for_tests(storage.path(), private.path())
         .rescan(&DiscoveryOptions::default())
         .unwrap();
     assert_eq!(rescan.added_games, 0);

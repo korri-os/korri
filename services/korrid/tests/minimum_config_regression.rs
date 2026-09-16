@@ -35,7 +35,7 @@ fn all_copies_and_overlapping_roots_survive_restart_without_minting_new_games() 
     fs::create_dir(&child).unwrap();
     fs::write(child.join("one.gba"), b"same").unwrap();
     fs::write(child.join("two.gba"), b"same").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     let options = DiscoveryOptions::default();
     let first = discovery
         .add_location(&child, &options)
@@ -52,7 +52,7 @@ fn all_copies_and_overlapping_roots_survive_restart_without_minting_new_games() 
     assert_eq!(state.releases.len(), 1);
     assert_eq!(state.locations.values().next().unwrap().len(), 4);
     let before = documents(root.path());
-    let restarted = DiscoveryCoordinator::new(root.path(), private.path());
+    let restarted = DiscoveryCoordinator::for_tests(root.path(), private.path());
     restarted.rescan(&options).unwrap();
     assert_eq!(documents(root.path()), before);
     restarted.remove_location(&first, &options).unwrap();
@@ -84,7 +84,7 @@ fn same_release_copy_ownership_survives_rescan_and_cleanup() {
     for index in 0..256 {
         fs::write(roms.path().join(format!("copy-{index}.gba")), b"same ROM").unwrap();
     }
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     let options = DiscoveryOptions::default();
     let storage = discovery
         .add_location(roms.path(), &options)
@@ -110,7 +110,7 @@ fn byte_replacement_removes_only_the_owned_old_location_not_the_catalog() {
     let roms = tempfile::tempdir().unwrap();
     let path = roms.path().join("game.gba");
     fs::write(&path, b"old").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap();
@@ -131,7 +131,7 @@ fn catalog_title_edits_do_not_transfer_location_ownership() {
     let private = tempfile::tempdir().unwrap();
     let roms = tempfile::tempdir().unwrap();
     fs::write(roms.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     let storage = discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap()
@@ -157,7 +157,7 @@ fn authored_release_content_and_location_survive_rescan_and_storage_removal() {
     let private = tempfile::tempdir().unwrap();
     let roms = tempfile::tempdir().unwrap();
     fs::write(roms.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     let storage = discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap()
@@ -202,7 +202,7 @@ fn ten_thousand_existing_locations_rescan_without_rewriting_or_minting_games() {
         )
         .unwrap();
     }
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     let options = DiscoveryOptions::default();
     let first = discovery.add_location(roms.path(), &options).unwrap();
     assert_eq!(first.added_games, 10_000);
@@ -305,7 +305,7 @@ fn authored_physical_file_is_protected_across_storage_aliases_after_byte_change(
     let roms = tempfile::tempdir().unwrap();
     let path = roms.path().join("game.gba");
     fs::write(&path, b"old").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
     discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap();

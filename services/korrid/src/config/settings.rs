@@ -561,6 +561,17 @@ fn write_atomically(
 mod tests {
     use super::*;
 
+    /// Production reads the root-owned installation record. A test root has no
+    /// such record, so these tests supply one sample plugin instead.
+    fn read(root: &std::path::Path) -> Result<ReadableSettings, SettingsError> {
+        read_with_registry_source(
+            root,
+            &plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
+                crate::plugin_test_fixtures::claims_only_registry(),
+            )),
+        )
+    }
+
     fn root(config: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join(DEVICE_FILE_NAME), config).unwrap();

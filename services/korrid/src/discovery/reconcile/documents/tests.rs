@@ -23,7 +23,7 @@ fn production_commit_journals_before_publication_and_recovers_minted_ids_at_ever
         let root = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         let roms = tempfile::tempdir().unwrap();
-        let discovery = DiscoveryCoordinator::new(root.path(), private.path());
+        let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
         discovery
             .add_location(roms.path(), &DiscoveryOptions::default())
             .unwrap();
@@ -61,7 +61,7 @@ fn production_commit_journals_before_publication_and_recovers_minted_ids_at_ever
             .next()
             .unwrap()
             .clone();
-        let restarted = DiscoveryCoordinator::new(root.path(), private.path());
+        let restarted = DiscoveryCoordinator::for_tests(root.path(), private.path());
         restarted.rescan(&DiscoveryOptions::default()).unwrap();
         assert_eq!(Documents::read(root.path()).unwrap(), planned.candidate);
         assert!(Documents::read(root.path())
@@ -87,7 +87,7 @@ fn external_edit_between_publications_retains_journal_and_pending_ownership() {
     let root = tempfile::tempdir().unwrap();
     let private_root = tempfile::tempdir().unwrap();
     let roms = tempfile::tempdir().unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private_root.path());
+    let discovery = DiscoveryCoordinator::for_tests(root.path(), private_root.path());
     discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap();
@@ -234,7 +234,7 @@ fn restart_recovers_every_readable_rename_boundary_and_pending_ownership() {
         for (name, contents) in next.files().into_iter().take(renamed) {
             fs::write(root.path().join(name), contents).unwrap();
         }
-        let restarted = DiscoveryCoordinator::new(root.path(), private_root.path());
+        let restarted = DiscoveryCoordinator::for_tests(root.path(), private_root.path());
         assert!(restarted.has_recovery_work());
         restarted.rescan(&DiscoveryOptions::default()).unwrap();
         assert_eq!(Documents::read(root.path()).unwrap(), next);
@@ -294,7 +294,7 @@ fn recovery_never_overwrites_an_external_edit_after_a_partial_commit() {
     )
     .unwrap();
     let before = Documents::read(root.path()).unwrap();
-    let error = DiscoveryCoordinator::new(root.path(), private_root.path())
+    let error = DiscoveryCoordinator::for_tests(root.path(), private_root.path())
         .rescan(&DiscoveryOptions::default())
         .unwrap_err();
     assert!(matches!(error, DiscoveryError::Conflict));
@@ -306,7 +306,7 @@ fn recovery_never_overwrites_an_external_edit_after_a_partial_commit() {
         .is_some());
     // An explicit restoration to the expected bytes makes the same journal retryable.
     fs::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
-    DiscoveryCoordinator::new(root.path(), private_root.path())
+    DiscoveryCoordinator::for_tests(root.path(), private_root.path())
         .rescan(&DiscoveryOptions::default())
         .unwrap();
     assert_eq!(Documents::read(root.path()).unwrap(), next);

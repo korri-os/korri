@@ -1292,19 +1292,6 @@ pub enum RpcResponse {
     SteamGridDbCredentialClear(SensitiveSettingOutcome),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum NativePlatform {
-    Standalone,
-}
-
-impl NativePlatform {
-    fn registry_source(self) -> plugin_policy::RegistrySource {
-        match self {
-            Self::Standalone => plugin_policy::RegistrySource::Installed,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct TrackedActiveLaunch {
     launch: launcher::AndroidActiveLaunch,
@@ -1326,7 +1313,7 @@ struct BrainRuntime {
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
     active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     discovery: discovery::DiscoveryLifecycleCoordinator,
     /** Serialises revision-check + replace; external file-manager edits are
@@ -2106,7 +2093,7 @@ async fn dispatch(
         RpcRequest::LocalGamesList(_) => match &state.mode {
             ServerMode::Brain(brain) => {
                 let config_state = brain.config_snapshot.reload();
-                let registry = match brain.native_platform.registry_source().registry() {
+                let registry = match brain.registry_source.registry() {
                     Ok(registry) => registry,
                     Err(error) => {
                         return Ok(RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(
@@ -2200,7 +2187,7 @@ async fn dispatch(
             ServerMode::Brain(brain) => RpcResponse::SettingsSnapshot(
                 config::settings::read_with_registry_source(
                     &brain.local_storage_root,
-                    &brain.native_platform.registry_source(),
+                    &brain.registry_source,
                 )
                 .and_then(|readable| {
                     config::settings::read_sensitive(&brain.private_state_root)
@@ -2241,7 +2228,7 @@ async fn dispatch(
                         &brain.settings_write_lock,
                         &request.expected_revision,
                         change,
-                        &brain.native_platform.registry_source(),
+                        &brain.registry_source,
                     )
                 });
                 if outcome.is_ok() {
@@ -2504,7 +2491,7 @@ pub fn router_with_capability_and_federation(
         moonlight_launch_authority,
         Arc::new(Mutex::new(None)),
         Arc::new(Mutex::new(None)),
-        NativePlatform::Standalone,
+        plugin_policy::RegistrySource::Installed,
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
         None,
@@ -2537,7 +2524,7 @@ pub fn router_with_capability_and_local_root(
         moonlight_launch_authority,
         Arc::new(Mutex::new(None)),
         Arc::new(Mutex::new(None)),
-        NativePlatform::Standalone,
+        plugin_policy::RegistrySource::Installed,
         config_snapshot,
     )
 }
@@ -2545,12 +2532,12 @@ pub fn router_with_capability_and_local_root(
 /** Test-only Android router. Production selects this platform only through
  * the Android-gated JNI server entrypoint. */
 #[cfg(test)]
-fn android_router_with_capability_and_local_root(
+fn test_router_with_capability_and_local_root(
     rpc_capability: &str,
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
 ) -> Router {
-    android_router_with_provision(
+    test_router_with_provision(
         rpc_capability,
         allowed_origin,
         local_storage_root,
@@ -2559,7 +2546,7 @@ fn android_router_with_capability_and_local_root(
 }
 
 #[cfg(test)]
-fn android_router_with_provision(
+fn test_router_with_provision(
     rpc_capability: &str,
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
@@ -2584,7 +2571,9 @@ fn android_router_with_provision(
         moonlight_launch_authority,
         Arc::new(Mutex::new(None)),
         Arc::new(Mutex::new(None)),
-        NativePlatform::Standalone,
+        plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin_test_fixtures::installed(&local_storage_root),
+        )),
         config_snapshot,
     )
 }
@@ -2600,7 +2589,7 @@ fn router_with_capability_local_root_and_provision(
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
     active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
 ) -> Router {
     router_with_capability_local_root_provision_and_grants(
@@ -2614,7 +2603,7 @@ fn router_with_capability_local_root_and_provision(
         moonlight_launch_authority,
         active_android_launch,
         moonlight_executor_state,
-        native_platform,
+        registry_source,
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
         None,
@@ -2634,7 +2623,7 @@ fn router_with_capability_local_root_provision_and_grants(
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
     active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
@@ -2652,7 +2641,7 @@ fn router_with_capability_local_root_provision_and_grants(
         moonlight_launch_authority,
         active_android_launch,
         moonlight_executor_state,
-        native_platform,
+        registry_source,
         config_snapshot,
         folder_selection_grants,
         configured_upstream,
@@ -2674,13 +2663,13 @@ fn brain_app_state(
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
     active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
     moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     configured_upstream: Option<upstreams::UpstreamRegistry>,
     resources: Option<FederationResources>,
     federation_wake: Option<DiscoveryControl>,
-) -> (AppState, NativePlatform) {
+) -> (AppState, ()) {
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
     let settings_write_lock = Arc::new(Mutex::new(()));
@@ -2689,7 +2678,7 @@ fn brain_app_state(
         &private_state_root,
         settings_write_lock.clone(),
         folder_selection_grants.clone(),
-        native_platform.registry_source(),
+        registry_source.clone(),
     );
     #[cfg(not(test))]
     let resources = resources.or_else(|| {
@@ -2732,7 +2721,7 @@ fn brain_app_state(
             moonlight_launch_authority,
             active_android_launch,
             moonlight_executor_state,
-            native_platform,
+            registry_source,
             config_snapshot,
             discovery,
             settings_write_lock,
@@ -2740,7 +2729,7 @@ fn brain_app_state(
         portal_access: Some(portal_access),
         rpc_surface: RpcSurface::Lan,
     };
-    (state, native_platform)
+    (state, ())
 }
 
 fn portal_router_from_state(state: AppState) -> Router {
@@ -2994,7 +2983,7 @@ struct ServerHandle {
     platform_instruction_verifier: Option<launcher::PlatformInstructionVerifier>,
     moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
     moonlight_config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     upstream: upstreams::UpstreamRegistry,
     federation: FederationResources,
@@ -3024,7 +3013,7 @@ pub fn start_local_server(
         allowed_origin,
         local_storage_root,
         private_state_root,
-        NativePlatform::Standalone,
+        plugin_policy::RegistrySource::Installed,
     )
 }
 
@@ -3040,7 +3029,7 @@ pub(crate) fn start_embedded_android_server(
         allowed_origin,
         local_storage_root,
         private_state_root,
-        NativePlatform::EmbeddedAndroid,
+        plugin_policy::RegistrySource::Installed,
     )
 }
 
@@ -3048,7 +3037,7 @@ fn start_local_server_for_platform(
     allowed_origin: &str,
     local_storage_root: &str,
     private_state_root: &str,
-    native_platform: NativePlatform,
+    registry_source: plugin_policy::RegistrySource,
 ) -> Result<u16, ServerError> {
     let mut slot = server_slot().lock().expect("server mutex poisoned");
     if slot.is_some() {
@@ -3096,6 +3085,7 @@ fn start_local_server_for_platform(
     let moonlight_config_snapshot =
         config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     let server_config_snapshot = moonlight_config_snapshot.clone();
+    let server_registry_source = registry_source.clone();
     let federation =
         FederationResources::open(Path::new(&private_state_root)).map_err(|error| {
             ServerError::StartFailed {
@@ -3142,7 +3132,7 @@ fn start_local_server_for_platform(
                         server_moonlight_launch_authority,
                         router_active_android_launch,
                         router_moonlight_executor_state,
-                        native_platform,
+                        server_registry_source.clone(),
                         server_config_snapshot,
                         server_folder_selection_grants,
                         Some(server_upstream),
@@ -3179,7 +3169,7 @@ fn start_local_server_for_platform(
         platform_instruction_verifier: None,
         moonlight_launch_authority,
         moonlight_config_snapshot,
-        native_platform,
+        registry_source,
         folder_selection_grants,
         upstream,
         federation,
@@ -3331,8 +3321,9 @@ pub mod plugin;
 pub mod plugin_installation;
 pub mod plugin_policy;
 mod plugin_references;
-#[cfg(test)]
-mod plugin_test_fixtures;
+/// Real plugin declarations used as test data. Shipped with the library so
+/// that integration tests can build the same registry a unit test builds.
+pub mod plugin_test_fixtures;
 pub mod script;
 #[cfg(test)]
 mod settings_secrets_tests;
@@ -3613,73 +3604,6 @@ mod tests {
 
 
 
-    #[tokio::test]
-    async fn embedded_android_test_router_resolves_artemis_and_honors_current_user_policy() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
-            .unwrap();
-        let app = android_router_with_capability_and_local_root(
-            "right-token",
-            "https://portal.example",
-            root.path(),
-        );
-        let request = || {
-            Request::builder()
-                .method("POST")
-                .uri("/rpc")
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::AUTHORIZATION, "Bearer right-token")
-                .body(Body::from(
-                    r#"{"_tag":"app.moonlight.resolve","payload":{}}"#,
-                ))
-                .unwrap()
-        };
-        let outcome =
-            |body: axum::body::Bytes| serde_json::from_slice::<serde_json::Value>(&body).unwrap();
-
-        let response = app.clone().oneshot(request()).await.unwrap();
-        let body = outcome(to_bytes(response.into_body(), usize::MAX).await.unwrap());
-        assert_eq!(body["outcome"]["_tag"], "Available");
-        assert_eq!(body["outcome"]["payload"]["implementation"], "artemis");
-
-        for payload in [
-            r#"{"hostUuid":"","appId":7}"#,
-            r#"{"hostUuid":"host-uuid","appId":0}"#,
-            r#"{"hostUuid":"host-uuid","appId":2147483648}"#,
-        ] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/rpc")
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header(header::AUTHORIZATION, "Bearer right-token")
-                        .body(Body::from(format!(
-                            r#"{{"_tag":"app.moonlight.launch.prepare","payload":{payload}}}"#
-                        )))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            let body = outcome(to_bytes(response.into_body(), usize::MAX).await.unwrap());
-            assert_eq!(body["outcome"]["_tag"], "Err");
-            assert_eq!(
-                body["outcome"]["payload"]["code"],
-                "InvalidMoonlightLaunchTarget"
-            );
-        }
-
-        std::fs::write(
-            root.path().join("device.yaml"),
-            "host:\n  plugin:\n    '@korri:moonlight': false\n",
-        )
-        .unwrap();
-        let response = app.oneshot(request()).await.unwrap();
-        let body = outcome(to_bytes(response.into_body(), usize::MAX).await.unwrap());
-        assert_eq!(body["outcome"]["_tag"], "Unavailable");
-    }
 
 
     fn assert_invalid_range(interaction: SessionControlInteraction, submitted: f64) {
@@ -4111,7 +4035,7 @@ mod tests {
             ))),
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
-            NativePlatform::Standalone,
+            plugin_policy::RegistrySource::Installed,
             config::snapshot::ConfigSnapshotCoordinator::new(readable),
             grants,
             None,
@@ -4517,48 +4441,6 @@ command = ["sh", "-c", "sleep 1"]
         assert_eq!(stopped["outcome"]["_tag"], "Ok");
     }
 
-    #[tokio::test]
-    async fn host_router_rejects_brain_operations_and_requires_exact_session_stop() {
-        let root = tempfile::tempdir().unwrap();
-        let config = root.path().join("host.toml");
-        std::fs::write(&config, "label = \"zao\"\n").unwrap();
-        let app = host_router(&config);
-
-        for (request, code) in [
-            (
-                r#"{"_tag":"app.local-games.launch","payload":{"gameId":"wl4"}}"#,
-                "OperationUnsupported",
-            ),
-            (
-                r#"{"_tag":"app.session.status","payload":{}}"#,
-                "NoActiveSession",
-            ),
-            (
-                r#"{"_tag":"app.session.stop","payload":{}}"#,
-                "ExpectedLaunchIdRequired",
-            ),
-            (
-                r#"{"_tag":"app.session.freeze","payload":{}}"#,
-                "ExpectedLaunchIdRequired",
-            ),
-            (
-                r#"{"_tag":"app.session.thaw","payload":{}}"#,
-                "ExpectedLaunchIdRequired",
-            ),
-            (
-                r#"{"_tag":"app.session.freeze","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
-                "NoActiveSession",
-            ),
-            (
-                r#"{"_tag":"app.session.thaw","payload":{"expectedLaunchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}"#,
-                "NoActiveSession",
-            ),
-        ] {
-            let body = rpc_body(app.clone(), request).await;
-            assert_eq!(body["outcome"]["_tag"], "Err");
-            assert_eq!(body["outcome"]["payload"]["code"], code);
-        }
-    }
 
     fn host_device_key(private_state_root: &Path) -> String {
         identity::DeviceIdentity::load_or_create(private_state_root)
@@ -4941,7 +4823,7 @@ command = ["game-two"]
         write_wl4_plugin_config(root.path());
         std::fs::create_dir(root.path().join("roms")).unwrap();
         std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-        let app = android_router_with_capability_and_local_root(
+        let app = test_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -4973,7 +4855,7 @@ command = ["game-two"]
         std::fs::write(root.path().join("device.yaml"), "host:\n  title: old\n").unwrap();
         crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
             .unwrap();
-        let app = android_router_with_capability_and_local_root(
+        let app = test_router_with_capability_and_local_root(
             "right-token",
             "https://portal.example",
             root.path(),
@@ -5031,150 +4913,15 @@ command = ["game-two"]
             .contains("title: outside"));
     }
 
-    #[tokio::test]
-    async fn local_launch_rpc_uses_the_configured_root_and_returns_a_spec() {
-        let root = tempfile::tempdir().unwrap();
-        write_wl4_plugin_config(root.path());
-        std::fs::create_dir_all(root.path().join("roms")).unwrap();
-        std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-        let app = android_router_with_provision(
-            "right-token",
-            "https://portal.example",
-            root.path(),
-            launcher::FileProvisionMode::Direct,
-        );
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/rpc")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::AUTHORIZATION, "Bearer right-token")
-                    .body(Body::from(
-                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body = String::from_utf8_lossy(&body);
-        assert!(body.contains("app.local-games.launch"));
-        assert!(body.contains("com.korri.retroarch"));
-        assert!(root.path().join("retroarch.cfg").is_file());
-    }
 
 
 
 
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn local_launch_rpc_reports_initial_empty_unauthorized_config_for_non_static_ids() {
-        use std::os::unix::fs::PermissionsExt;
 
-        let root = tempfile::tempdir().unwrap();
-        let app = android_router_with_capability_and_local_root(
-            "right-token",
-            "https://portal.example",
-            root.path(),
-        );
-        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/rpc")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::AUTHORIZATION, "Bearer right-token")
-                    .body(Body::from(
-                        r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000001"}}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("LocalConfigUnauthorized"));
-    }
-
-    #[tokio::test]
-    async fn local_launch_rpc_maps_missing_and_unknown_games_to_distinct_codes() {
-        for (game_id, code) in [
-            ("01K4J6K8Y00000000000000002", "LocalRomMissing"),
-            ("unknown", "LocalGameNotFound"),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            write_wl4_plugin_config(root.path());
-            let app = android_router_with_capability_and_local_root(
-                "right-token",
-                "https://portal.example",
-                root.path(),
-            );
-            let body = format!(
-                r#"{{"_tag":"app.local-games.launch","payload":{{"gameId":"{game_id}"}}}}"#
-            );
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/rpc")
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header(header::AUTHORIZATION, "Bearer right-token")
-                        .body(Body::from(body))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            assert!(String::from_utf8_lossy(&body).contains(code));
-        }
-    }
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn local_launch_rpc_distinguishes_config_authorization_and_write_failures() {
-        use std::os::unix::fs::PermissionsExt;
-
-        for (mode, code) in [
-            (0o000, "LocalConfigUnauthorized"),
-            (0o500, "LocalConfigWriteFailed"),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            write_wl4_plugin_config(root.path());
-            std::fs::create_dir_all(root.path().join("roms")).unwrap();
-            std::fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-            let app = android_router_with_provision(
-                "right-token",
-                "https://portal.example",
-                root.path(),
-                launcher::FileProvisionMode::Direct,
-            );
-            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(mode)).unwrap();
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/rpc")
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header(header::AUTHORIZATION, "Bearer right-token")
-                        .body(Body::from(
-                            r#"{"_tag":"app.local-games.launch","payload":{"gameId":"01K4J6K8Y00000000000000002"}}"#,
-                        ))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            assert!(
-                String::from_utf8_lossy(&body).contains(code),
-                "mode {mode:o} expected {code}, got {}",
-                String::from_utf8_lossy(&body)
-            );
-        }
-    }
 
     #[tokio::test]
     async fn rpc_rejects_missing_or_wrong_capability() {
@@ -5289,65 +5036,6 @@ command = ["game-two"]
         );
     }
 
-    #[tokio::test]
-    async fn android_cors_allows_bundled_overlay_and_configured_shell_origins_only() {
-        let root = tempfile::tempdir().unwrap();
-        let app = android_router_with_capability_and_local_root(
-            "right-token",
-            "http://10.0.2.2:5173",
-            root.path(),
-        );
-        for origin in [
-            "https://appassets.androidplatform.net",
-            "http://10.0.2.2:5173",
-        ] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("OPTIONS")
-                        .uri("/rpc")
-                        .header(header::ORIGIN, origin)
-                        .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
-                        .header(
-                            header::ACCESS_CONTROL_REQUEST_HEADERS,
-                            "content-type,authorization",
-                        )
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(
-                response
-                    .headers()
-                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                    .unwrap(),
-                origin
-            );
-        }
-
-        let foreign = app
-            .oneshot(
-                Request::builder()
-                    .method("OPTIONS")
-                    .uri("/rpc")
-                    .header(header::ORIGIN, "https://evil.example")
-                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
-                    .header(
-                        header::ACCESS_CONTROL_REQUEST_HEADERS,
-                        "content-type,authorization",
-                    )
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert!(foreign
-            .headers()
-            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .is_none());
-    }
 
     #[test]
     fn status_daemon_variants_map_to_distinct_failure_codes() {

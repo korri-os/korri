@@ -29,7 +29,7 @@ fn local_router(readable: &std::path::Path, private: &std::path::Path) -> axum::
         ))),
         Arc::new(Mutex::new(None)),
         Arc::new(Mutex::new(None)),
-        korrid::NativePlatform::Standalone,
+        korrid::plugin_policy::RegistrySource::Installed,
         korrid::config::snapshot::ConfigSnapshotCoordinator::new(readable),
     )
 }
