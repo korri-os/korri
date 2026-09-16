@@ -562,18 +562,40 @@ fn is_strict_descendant(path: &Path, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        plugin::load_plugin_source,
-        plugin_policy::{
-            bundled_plugin_policy_layer, bundled_plugins, resolve_enabled_plugin_ids,
-            ANDROID_APP_PLUGIN_SOURCE, MGBA_PLUGIN_SOURCE, RETROARCH_PLUGIN_SOURCE,
-        },
-    };
+    use crate::plugin::load_plugin_source;
+
+    /// Discovery only reads file-release claims, so the fixture declares those
+    /// and nothing else. A single self-contained module keeps the scanner tests
+    /// independent of any real plugin's module graph.
+    const GBA_CLAIM: &str = r#"
+export const name = "core";
+export const title = "GBA Core";
+export const systems = { gba: { id: "gba", title: "Game Boy Advance" } };
+export const runners = {
+  core: { id: "@korri:core/core", program: "retroarch", systems: ["gba"] },
+};
+export const discovery = {
+  fileReleases: {
+    gba: {
+      id: "@korri:core/gba",
+      title: "Game Boy Advance files",
+      extensions: ["gba"],
+      system: "gba",
+      runners: ["@korri:core/core"],
+    },
+  },
+};
+// A runner that names a program must be able to build a launch plan, so the
+// fixture supplies the smallest honest one. Discovery never calls it.
+export const handlers = {
+  "launch.prepare": () => ({ command: "retroarch", args: [] }),
+};
+"#;
 
     fn registry() -> PluginRegistry {
         PluginRegistry::new(
-            bundled_plugins().unwrap(),
-            resolve_enabled_plugin_ids([bundled_plugin_policy_layer()]),
+            vec![load_plugin_source("@korri", GBA_CLAIM).unwrap()],
+            vec!["@korri:core".into()],
         )
         .unwrap()
     }
@@ -608,24 +630,17 @@ export const discovery = {
           id: "@test:conflict/gba",
           extensions: ["gba"],
           system: "gba",
-          runners: ["@korri:mgba/mgba"],
+          runners: ["@korri:core/core"],
         },
       },
     };
 "#;
         let registry = PluginRegistry::new(
             vec![
-                load_plugin_source("@korri", ANDROID_APP_PLUGIN_SOURCE).unwrap(),
-                load_plugin_source("@korri", MGBA_PLUGIN_SOURCE).unwrap(),
-                load_plugin_source("@korri", RETROARCH_PLUGIN_SOURCE).unwrap(),
+                load_plugin_source("@korri", GBA_CLAIM).unwrap(),
                 load_plugin_source("@test", conflict).unwrap(),
             ],
-            vec![
-                "@korri:android-app".into(),
-                "@korri:mgba".into(),
-                "@korri:retroarch".into(),
-                "@test:conflict".into(),
-            ],
+            vec!["@korri:core".into(), "@test:conflict".into()],
         )
         .unwrap();
         let root = tempfile::tempdir().unwrap();

@@ -64,7 +64,7 @@ fn discovery_separates_catalog_facts_from_locations_and_launches_by_system() {
 
     let loaded = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(loaded.diagnostic.is_none(), "{:?}", loaded.diagnostic);
-    let registry = plugin_policy::registry_for_snapshot(&loaded.snapshot).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     let route =
         resolver::resolve_route(readable.path(), &loaded.snapshot, &registry, [], game_id).unwrap();
     assert_eq!(route.runner_id, "@korri:mgba/mgba");

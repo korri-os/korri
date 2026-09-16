@@ -87,9 +87,7 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
-          # Required by the Android SDK composition in clients/android.
           config = {
-            android_sdk.accept_license = true;
             allowUnfree = true;
           };
         };
@@ -151,13 +149,11 @@
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
         };
-        devShells.android = import ./clients/android/devshell.nix { inherit pkgs; };
         devShells.portal = import ./clients/portal/devshell.nix { inherit pkgs; };
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
         devShells.inputd = import ./services/inputd/devshell.nix { inherit pkgs; };
         devShells.plugin-host = pluginHost.devShell;
         lib = pluginHost.lib;
-        devShells.retroarch = import ./plugins/retroarch/android/devshell.nix { inherit pkgs; };
         packages = {
           korrid = korridPackage;
           korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };

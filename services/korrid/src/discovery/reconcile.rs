@@ -112,7 +112,7 @@ impl DiscoveryCoordinator {
             private_root: private_root.as_ref().to_owned(),
             write_lock,
             scan_lock: Arc::new(Mutex::new(())),
-            registry_source: plugin_policy::RegistrySource::Android,
+            registry_source: plugin_policy::RegistrySource::Installed,
         }
     }
 
@@ -236,7 +236,7 @@ impl DiscoveryCoordinator {
             let snapshot = current.validate()?;
             let registry = self
                 .registry_source
-                .registry(&snapshot)
+                .registry()
                 .map_err(|error| DiscoveryError::Candidate(error.to_string()))?;
             let config_doc = parse_mapping(&current.device)?;
             (

@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     config::{
-        resolver::{resolve_launchable_routes_for_platform, RoutePlatform},
+        resolver::resolve_launchable_routes,
         snapshot::ConfigSnapshotCoordinator,
         ConfigSnapshot,
     },
@@ -39,12 +39,11 @@ impl DiscoveredGame {
         assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
         let snapshot = (*state.snapshot).clone();
         let registry = crate::plugin_test_fixtures::installed(root.path());
-        let mut catalog = resolve_launchable_routes_for_platform(
+        let mut catalog = resolve_launchable_routes(
             root.path(),
             &snapshot,
             &registry,
             std::iter::empty(),
-            RoutePlatform::Linux,
         );
         assert!(catalog.diagnostics.is_empty(), "{:?}", catalog.diagnostics);
         assert_eq!(catalog.routes.len(), 1);

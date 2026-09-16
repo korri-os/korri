@@ -229,7 +229,7 @@ impl DiscoveryLifecycleCoordinator {
             private_root,
             write_lock,
             grants,
-            crate::plugin_policy::RegistrySource::Android,
+            crate::plugin_policy::RegistrySource::Installed,
         )
     }
 

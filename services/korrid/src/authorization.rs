@@ -172,9 +172,6 @@ pub enum AuthorizationError {
 pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
     match request {
         RpcRequest::CatalogSnapshot(_) => PeerPolicy::CatalogOrStreamScope,
-        RpcRequest::MoonlightResolve(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::MoonlightLaunchPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::MoonlightLaunchCancel(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::MoonlightCertificateAttest(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::MoonlightCertificateProvision(_) => {
             PeerPolicy::ExplicitScope(Scope::StreamLaunch)
@@ -190,13 +187,10 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionThaw(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SourceStatus(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::PeerList(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::GameRoutes(_)
         | RpcRequest::GameRunnerSet(_)
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::LocalGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::DiscoverySnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::DiscoveryRegisterReceipt(_) => PeerPolicy::OwnerDeviceOnly,

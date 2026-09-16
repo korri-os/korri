@@ -11,7 +11,7 @@ mod systemd_unit;
 
 use crate::{
     config::{
-        resolver::{resolve_launchable_routes_for_platform, RoutePlatform},
+        resolver::resolve_launchable_routes,
         snapshot::{ConfigSnapshotCoordinator, SnapshotAuthorization},
     },
     identity::DeviceIdentity,
@@ -77,13 +77,7 @@ impl DynamicHostRuntime {
         if let Some(diagnostic) = state.diagnostic {
             return Err(dynamic_failure(diagnostic.message));
         }
-        let catalog = resolve_launchable_routes_for_platform(
-            root,
-            &state.snapshot,
-            registry,
-            std::iter::empty(),
-            RoutePlatform::Linux,
-        );
+        let catalog = resolve_launchable_routes(root, &state.snapshot, registry, std::iter::empty());
         if catalog.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == crate::config::resolver::RouteDiagnosticCode::LocalRouteCollision
         }) {

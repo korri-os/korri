@@ -70,7 +70,7 @@ pub enum SettingsError {
 }
 
 pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
-    read_with_registry_source(root, &plugin_policy::RegistrySource::Android)
+    read_with_registry_source(root, &plugin_policy::RegistrySource::Installed)
 }
 
 pub fn read_with_registry_source(
@@ -88,7 +88,7 @@ pub fn read_with_registry_source(
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
 
     let registry = source
-        .registry(&snapshot)
+        .registry()
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     let enabled = registry.enabled_plugin_ids();
     let plugins = registry
@@ -219,7 +219,7 @@ pub fn update(
         write_lock,
         expected_revision,
         change,
-        &plugin_policy::RegistrySource::Android,
+        &plugin_policy::RegistrySource::Installed,
     )
 }
 
@@ -231,9 +231,7 @@ pub fn update_with_registry_source(
     change: SettingChange,
     source: &plugin_policy::RegistrySource,
 ) -> Result<ReadableSettings, SettingsError> {
-    if !matches!(source, plugin_policy::RegistrySource::Android)
-        && matches!(change, SettingChange::PluginEnabled { .. })
-    {
+    if matches!(change, SettingChange::PluginEnabled { .. }) {
         return Err(SettingsError::Invalid(
             "installed plugin selections require local administrator approval".into(),
         ));
@@ -267,7 +265,7 @@ pub fn update_with_registry_source(
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     source
-        .registry(&snapshot)
+        .registry()
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
 
     write_atomically(
@@ -413,10 +411,11 @@ fn set_plugin_enabled(
     id: String,
     enabled: bool,
 ) -> Result<(), SettingsError> {
-    let known = plugin_policy::bundled_plugins()
+    let known = plugin_policy::installed_registry()
         .map_err(|error| SettingsError::Candidate(error.to_string()))?
-        .into_iter()
-        .any(|plugin| plugin.id() == id);
+        .registered_plugin_ids()
+        .iter()
+        .any(|plugin_id| plugin_id == &id);
     if !known {
         return Err(SettingsError::Invalid(format!("unknown plugin {id}")));
     }
@@ -609,35 +608,6 @@ mod tests {
         let saved = fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap();
         assert!(saved.contains("providers: {}"));
     }
-
-    #[test]
-    fn plugin_choice_changes_effective_policy() {
-        let root = root("{}\n");
-        let before = read(root.path()).unwrap();
-        assert!(before.plugins.iter().all(|plugin| plugin.enabled));
-
-        let after = update(
-            root.path(),
-            tempfile::tempdir().unwrap().path(),
-            &std::sync::Mutex::new(()),
-            &before.revision,
-            SettingChange::PluginEnabled {
-                id: plugin_policy::MGBA_PLUGIN_ID.into(),
-                enabled: false,
-            },
-        )
-        .unwrap();
-
-        assert!(
-            !after
-                .plugins
-                .iter()
-                .find(|plugin| plugin.id == plugin_policy::MGBA_PLUGIN_ID)
-                .unwrap()
-                .enabled
-        );
-    }
-
     #[test]
     fn rejects_an_external_edit_instead_of_overwriting_it() {
         let root = root("host:\n  title: first\n");

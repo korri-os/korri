@@ -12,11 +12,11 @@ use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 use tower::ServiceExt;
 
-fn android_router(readable: &std::path::Path, private: &std::path::Path) -> axum::Router {
+fn local_router(readable: &std::path::Path, private: &std::path::Path) -> axum::Router {
     use std::sync::{Arc, Mutex};
     korrid::router_with_capability_local_root_and_provision(
         "test-cap",
-        "https://appassets.androidplatform.net",
+        "http://127.0.0.1",
         readable,
         private,
         korrid::launcher::FileProvisionMode::Deferred,
@@ -29,8 +29,7 @@ fn android_router(readable: &std::path::Path, private: &std::path::Path) -> axum
         ))),
         Arc::new(Mutex::new(None)),
         Arc::new(Mutex::new(None)),
-        Arc::new(Mutex::new(None)),
-        korrid::NativePlatform::EmbeddedAndroid,
+        korrid::NativePlatform::Standalone,
         korrid::config::snapshot::ConfigSnapshotCoordinator::new(readable),
     )
 }
@@ -114,7 +113,7 @@ async fn sensitive_rpc_actions_never_return_or_write_the_token_to_readable_confi
     let readable = readable_root();
     let private = tempfile::tempdir().unwrap();
     std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let app = android_router(readable.path(), private.path());
+    let app = local_router(readable.path(), private.path());
 
     let set = rpc_body(
         app.clone(),
@@ -166,7 +165,7 @@ async fn sensitive_rpc_does_not_participate_in_revision_conflicts() {
     let readable = readable_root();
     let private = tempfile::tempdir().unwrap();
     std::fs::set_permissions(private.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let app = android_router(readable.path(), private.path());
+    let app = local_router(readable.path(), private.path());
 
     let before = rpc_body(
         app.clone(),

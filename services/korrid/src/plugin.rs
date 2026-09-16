@@ -169,180 +169,6 @@ pub enum SessionControlDeclarationInteraction {
     },
 }
 
-/// An effect names behaviour korrid implements, so it is scoped to the family
-/// that owns the behaviour, never to one plugin that happens to use it. Every
-/// runner in the RetroArch family reaches the same two controls; a control's
-/// own id stays plugin-scoped.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub enum SessionControlEffect {
-    #[serde(rename = "@korri:retroarch/open-menu")]
-    RetroarchOpenMenu,
-    #[serde(rename = "@korri:retroarch/quit")]
-    RetroarchQuit,
-    #[serde(rename = "@korri:moonlight/disconnect")]
-    MoonlightDisconnect,
-    #[serde(rename = "@korri:moonlight/quit-host")]
-    MoonlightQuitHost,
-    #[serde(rename = "@korri:moonlight/toggle-keyboard")]
-    MoonlightToggleKeyboard,
-    #[serde(rename = "@korri:moonlight/toggle-full-keyboard")]
-    MoonlightToggleFullKeyboard,
-    #[serde(rename = "@korri:moonlight/set-fill-mode")]
-    MoonlightSetFillMode,
-    #[serde(rename = "@korri:moonlight/set-zoom-mode")]
-    MoonlightSetZoomMode,
-    #[serde(rename = "@korri:moonlight/rotate-screen")]
-    MoonlightRotateScreen,
-    #[serde(rename = "@korri:moonlight/toggle-hud")]
-    MoonlightToggleHud,
-    #[serde(rename = "@korri:moonlight/toggle-floating-menu")]
-    MoonlightToggleFloatingMenu,
-    #[serde(rename = "@korri:moonlight/toggle-keyboard-controller")]
-    MoonlightToggleKeyboardController,
-    #[serde(rename = "@korri:moonlight/switch-touch-sensitivity")]
-    MoonlightSwitchTouchSensitivity,
-    #[serde(rename = "@korri:moonlight/set-mouse-mode")]
-    MoonlightSetMouseMode,
-    #[serde(rename = "@korri:moonlight/set-local-cursor")]
-    MoonlightSetLocalCursor,
-    #[serde(rename = "@korri:moonlight/set-sgsr-edge-threshold")]
-    MoonlightSetSgsrEdgeThreshold,
-    #[serde(rename = "@korri:moonlight/set-sgsr-sharpness")]
-    MoonlightSetSgsrSharpness,
-    #[serde(rename = "@korri:moonlight/set-face-button-flip")]
-    MoonlightSetFaceButtonFlip,
-    #[serde(rename = "@korri:moonlight/set-rumble")]
-    MoonlightSetRumble,
-    #[serde(rename = "@korri:moonlight/set-picture-in-picture")]
-    MoonlightSetPictureInPicture,
-    #[serde(rename = "@korri:moonlight/set-stream-bitrate-kbps")]
-    MoonlightSetStreamBitrateKbps,
-    #[serde(rename = "@korri:moonlight/restore-stream-bitrate")]
-    MoonlightRestoreStreamBitrate,
-    #[serde(rename = "@korri:moonlight/set-stream-fps")]
-    MoonlightSetStreamFps,
-    #[serde(rename = "@korri:moonlight/restore-stream-fps")]
-    MoonlightRestoreStreamFps,
-    #[serde(rename = "@korri:moonlight/set-stream-width")]
-    MoonlightSetStreamWidth,
-    #[serde(rename = "@korri:moonlight/restore-stream-resolution")]
-    MoonlightRestoreStreamResolution,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum SessionControlExecutor {
-    AndroidMoonlight,
-    RetroarchControl,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionControlPlatform {
-    Android,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SessionControlIntegration {
-    Moonlight,
-    Retroarch,
-}
-
-impl SessionControlEffect {
-    fn integration(self) -> SessionControlIntegration {
-        match self {
-            Self::RetroarchOpenMenu | Self::RetroarchQuit => SessionControlIntegration::Retroarch,
-            Self::MoonlightDisconnect
-            | Self::MoonlightQuitHost
-            | Self::MoonlightToggleKeyboard
-            | Self::MoonlightToggleFullKeyboard
-            | Self::MoonlightSetFillMode
-            | Self::MoonlightSetZoomMode
-            | Self::MoonlightRotateScreen
-            | Self::MoonlightToggleHud
-            | Self::MoonlightToggleFloatingMenu
-            | Self::MoonlightToggleKeyboardController
-            | Self::MoonlightSwitchTouchSensitivity
-            | Self::MoonlightSetMouseMode
-            | Self::MoonlightSetLocalCursor
-            | Self::MoonlightSetSgsrEdgeThreshold
-            | Self::MoonlightSetSgsrSharpness
-            | Self::MoonlightSetFaceButtonFlip
-            | Self::MoonlightSetRumble
-            | Self::MoonlightSetPictureInPicture
-            | Self::MoonlightSetStreamBitrateKbps
-            | Self::MoonlightRestoreStreamBitrate
-            | Self::MoonlightSetStreamFps
-            | Self::MoonlightRestoreStreamFps
-            | Self::MoonlightSetStreamWidth
-            | Self::MoonlightRestoreStreamResolution => SessionControlIntegration::Moonlight,
-        }
-    }
-
-    pub fn executor(self) -> SessionControlExecutor {
-        match self.integration() {
-            SessionControlIntegration::Moonlight => SessionControlExecutor::AndroidMoonlight,
-            SessionControlIntegration::Retroarch => SessionControlExecutor::RetroarchControl,
-        }
-    }
-
-    pub(crate) fn retroarch_control_command(
-        self,
-    ) -> Option<crate::launcher::retroarch_control::RetroarchControlCommand> {
-        use crate::launcher::retroarch_control::RetroarchControlCommand as Command;
-        match self {
-            Self::RetroarchOpenMenu => Some(Command::ShowMenu),
-            Self::RetroarchQuit => Some(Command::Quit),
-            _ => None,
-        }
-    }
-
-    pub fn android_moonlight_effect(self) -> Option<crate::launcher::AndroidMoonlightEffect> {
-        use crate::launcher::AndroidMoonlightEffect as Effect;
-        Some(match self {
-            Self::RetroarchOpenMenu | Self::RetroarchQuit => return None,
-            Self::MoonlightDisconnect => Effect::Disconnect,
-            Self::MoonlightQuitHost => Effect::QuitHost,
-            Self::MoonlightToggleKeyboard => Effect::ToggleKeyboard,
-            Self::MoonlightToggleFullKeyboard => Effect::ToggleFullKeyboard,
-            Self::MoonlightSetFillMode => Effect::SetFillMode,
-            Self::MoonlightSetZoomMode => Effect::SetZoomMode,
-            Self::MoonlightRotateScreen => Effect::RotateScreen,
-            Self::MoonlightToggleHud => Effect::ToggleHud,
-            Self::MoonlightToggleFloatingMenu => Effect::ToggleFloatingMenu,
-            Self::MoonlightToggleKeyboardController => Effect::ToggleKeyboardController,
-            Self::MoonlightSwitchTouchSensitivity => Effect::SwitchTouchSensitivity,
-            Self::MoonlightSetMouseMode => Effect::SetMouseMode,
-            Self::MoonlightSetLocalCursor => Effect::SetLocalCursor,
-            Self::MoonlightSetSgsrEdgeThreshold => Effect::SetSgsrEdgeThreshold,
-            Self::MoonlightSetSgsrSharpness => Effect::SetSgsrSharpness,
-            Self::MoonlightSetFaceButtonFlip => Effect::SetFaceButtonFlip,
-            Self::MoonlightSetRumble => Effect::SetRumble,
-            Self::MoonlightSetPictureInPicture => Effect::SetPictureInPicture,
-            Self::MoonlightSetStreamBitrateKbps => Effect::SetStreamBitrateKbps,
-            Self::MoonlightRestoreStreamBitrate => Effect::RestoreStreamBitrate,
-            Self::MoonlightSetStreamFps => Effect::SetStreamFps,
-            Self::MoonlightRestoreStreamFps => Effect::RestoreStreamFps,
-            Self::MoonlightSetStreamWidth => Effect::SetStreamWidth,
-            Self::MoonlightRestoreStreamResolution => Effect::RestoreStreamResolution,
-        })
-    }
-
-    pub fn platform(self) -> SessionControlPlatform {
-        match self.integration() {
-            SessionControlIntegration::Moonlight | SessionControlIntegration::Retroarch => {
-                SessionControlPlatform::Android
-            }
-        }
-    }
-
-    /// The family whose members may declare this effect. Membership, not a
-    /// plugin name, is what grants the right to use it.
-    fn family(self) -> &'static str {
-        match self.integration() {
-            SessionControlIntegration::Moonlight => "@korri:moonlight",
-            SessionControlIntegration::Retroarch => "@korri:retroarch",
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -358,7 +184,10 @@ pub struct SessionControlRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub description: Option<String>,
     pub interaction: SessionControlDeclarationInteraction,
-    pub effect: SessionControlEffect,
+    /// An opaque identifier owned by the declaring plugin. korrid stores it and
+    /// hands it back; it never parses it, and no identifier grants behaviour
+    /// korrid implements on a plugin's behalf.
+    pub effect: String,
     #[serde(default)]
     pub destructive: bool,
     #[serde(default)]
@@ -1073,27 +902,6 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 ),
             });
         }
-        // A runner earns an effect by joining the family that owns it. A
-        // transport has no family, so its own plugin must be that family.
-        let effect_family = control.effect.family();
-        let in_family = match control.owner.kind {
-            SessionControlOwnerKind::Runner => {
-                declaration
-                    .runners
-                    .values()
-                    .find(|runner| runner.id == control.owner.id)
-                    .and_then(|runner| runner.family.as_deref())
-                    == Some(effect_family)
-            }
-            SessionControlOwnerKind::Transport => id == effect_family,
-        };
-        if !in_family {
-            return Err(PluginError::InvalidContribution {
-                kind: "session control",
-                record_id: local_id.clone(),
-                reason: format!("effect requires membership of family {effect_family}"),
-            });
-        }
         validate_session_control(local_id, control)?;
         control.plugin_id = id.clone();
         control.local_id = local_id.clone();
@@ -1203,38 +1011,6 @@ enum SessionControlKind {
     Range,
 }
 
-impl SessionControlEffect {
-    fn control_kind(self) -> SessionControlKind {
-        match self {
-            Self::MoonlightSetFillMode
-            | Self::MoonlightSetZoomMode
-            | Self::MoonlightSetFaceButtonFlip
-            | Self::MoonlightSetRumble
-            | Self::MoonlightSetPictureInPicture => SessionControlKind::Toggle,
-            Self::MoonlightSetMouseMode => SessionControlKind::Choice,
-            Self::MoonlightSetSgsrEdgeThreshold
-            | Self::MoonlightSetSgsrSharpness
-            | Self::MoonlightSetStreamBitrateKbps
-            | Self::MoonlightSetStreamFps
-            | Self::MoonlightSetStreamWidth => SessionControlKind::Range,
-            Self::RetroarchOpenMenu
-            | Self::RetroarchQuit
-            | Self::MoonlightDisconnect
-            | Self::MoonlightQuitHost
-            | Self::MoonlightToggleKeyboard
-            | Self::MoonlightToggleFullKeyboard
-            | Self::MoonlightRotateScreen
-            | Self::MoonlightToggleHud
-            | Self::MoonlightToggleFloatingMenu
-            | Self::MoonlightToggleKeyboardController
-            | Self::MoonlightSwitchTouchSensitivity
-            | Self::MoonlightSetLocalCursor
-            | Self::MoonlightRestoreStreamBitrate
-            | Self::MoonlightRestoreStreamFps
-            | Self::MoonlightRestoreStreamResolution => SessionControlKind::Command,
-        }
-    }
-}
 
 fn validate_session_control(
     local_id: &str,
@@ -1298,10 +1074,9 @@ fn validate_session_control(
             SessionControlKind::Range
         }
     };
-    if declared_kind != control.effect.control_kind() {
-        return Err(invalid(
-            "control form does not match the allowlisted effect",
-        ));
+    let _ = declared_kind;
+    if control.effect.trim().is_empty() {
+        return Err(invalid("effect identifier is empty"));
     }
     Ok(())
 }

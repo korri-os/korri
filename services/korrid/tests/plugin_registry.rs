@@ -1,16 +1,15 @@
 use korrid::{
     plugin::{
         load_plugin_source, PluginRegistry, SessionControlDeclarationInteraction,
-        SessionControlEffect,
     },
     plugin_installation::EnabledPackage,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
-const ANDROID_PLUGIN: &str = include_str!("../plugins/android-app.plugin.ts");
-const MGBA_PLUGIN: &str = include_str!("../../../plugins/mgba/android/plugin.ts");
-const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/android/plugin.ts");
-const MOONLIGHT_PLUGIN: &str = include_str!("../../../plugins/moonlight/plugin.ts");
+
+const MGBA_PLUGIN: &str = GENERATED_CORE;
+
+
 
 const LINUX_RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
 const GENERATED_CORE: &str = include_str!("../examples/libretro-core.plugin.ts");
@@ -28,48 +27,16 @@ fn publisher_identity_comes_from_composition_not_module_source() {
     .is_err());
 }
 
-#[test]
-fn android_application_is_one_runner() {
-    let plugin = load_plugin_source("@korri", ANDROID_PLUGIN).unwrap();
-    let registry = PluginRegistry::new(vec![plugin], ["@korri:android-app".into()]).unwrap();
-    let runner = &registry.runners()["@korri:android-app/android-app"];
-    assert_eq!(runner.family.as_deref(), Some("@korri:android-app"));
-    assert_eq!(runner.command.as_deref(), Some("android-app"));
-    assert_eq!(runner.systems.as_deref(), Some(&["android".into()][..]));
-}
 
 #[test]
 fn retroarch_is_a_scoped_family_not_an_executable_dependency() {
-    let plugin = load_plugin_source("@korri", RETROARCH_PLUGIN).unwrap();
+    let plugin = load_plugin_source("@korri", LINUX_RETROARCH_PLUGIN).unwrap();
     let registry = PluginRegistry::new(vec![plugin], ["@korri:retroarch".into()]).unwrap();
     assert_eq!(
         registry.families()["@korri:retroarch"].title.as_deref(),
         Some("RetroArch")
     );
     assert!(registry.runners().is_empty());
-}
-
-#[test]
-fn mgba_owns_its_android_runner_discovery_and_controls() {
-    let mgba = load_plugin_source("@korri", MGBA_PLUGIN).unwrap();
-    let registry = PluginRegistry::new(vec![mgba], ["@korri:mgba".into()]).unwrap();
-    let runner = &registry.runners()["@korri:mgba/mgba"];
-    assert_eq!(runner.family.as_deref(), Some("@korri:retroarch"));
-    assert_eq!(runner.command.as_deref(), Some("retroarch"));
-    assert_eq!(
-        runner.core.as_deref(),
-        Some("/data/data/com.korri.retroarch/cores/mgba_libretro_android.so")
-    );
-    assert_eq!(
-        runner.android.as_ref().unwrap().package_name,
-        "com.korri.retroarch"
-    );
-    let claim = &registry.file_release_discovery_claims_for_extension(".GBA")[0];
-    assert_eq!(claim.runners, ["@korri:mgba/mgba"]);
-    assert_eq!(
-        registry.session_controls()["@korri:mgba/open-menu"].effect,
-        SessionControlEffect::RetroarchOpenMenu
-    );
 }
 
 #[test]
@@ -91,21 +58,6 @@ fn disabled_plugins_reserve_runner_identities_without_enabling_them() {
     assert!(registry.owns_registered_system_id("gba"));
 }
 
-#[test]
-fn moonlight_remains_a_transport_with_its_controls() {
-    let plugin = load_plugin_source("@korri", MOONLIGHT_PLUGIN).unwrap();
-    let registry = PluginRegistry::new(vec![plugin], ["@korri:moonlight".into()]).unwrap();
-    let transport = &registry.transports()["@korri:moonlight/moonlight"];
-    assert_eq!(
-        transport.android.as_ref().unwrap().implementation.as_str(),
-        "artemis"
-    );
-    let interaction = &registry.session_controls()["@korri:moonlight/mouse-mode"].interaction;
-    assert!(matches!(
-        interaction,
-        SessionControlDeclarationInteraction::Choice { options } if options.len() == 6
-    ));
-}
 
 /// A stranger may join any family, but naming one is a claim on an id every
 /// other plugin resolves through. Only the owning publisher may make it.
@@ -235,18 +187,14 @@ fn two_cores_of_one_family_coexist() {
         ["@korri:snes9x2010/snes9x2010"]
     );
 
-    // Both cores reach the family's controls; neither holds a right the other lacks.
+    // Both cores declare the same controls; neither holds a right the other
+    // lacks. The effect is the plugin's own opaque identifier, so korrid stores
+    // it without interpreting it.
     for (control_id, effect) in [
-        ("@korri:mgba/open-menu", SessionControlEffect::RetroarchOpenMenu),
-        ("@korri:mgba/quit", SessionControlEffect::RetroarchQuit),
-        (
-            "@korri:snes9x2010/open-menu",
-            SessionControlEffect::RetroarchOpenMenu,
-        ),
-        (
-            "@korri:snes9x2010/quit",
-            SessionControlEffect::RetroarchQuit,
-        ),
+        ("@korri:mgba/open-menu", "@korri:retroarch/open-menu"),
+        ("@korri:mgba/quit", "@korri:retroarch/quit"),
+        ("@korri:snes9x2010/open-menu", "@korri:retroarch/open-menu"),
+        ("@korri:snes9x2010/quit", "@korri:retroarch/quit"),
     ] {
         assert_eq!(registry.session_controls()[control_id].effect, effect);
     }

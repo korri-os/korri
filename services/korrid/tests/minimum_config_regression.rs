@@ -3,7 +3,7 @@ mod readable;
 use korrid::{
     config::{
         decode_config_documents,
-        resolver::{self, RoutePlatform},
+        resolver,
         snapshot::{ConfigSnapshotCoordinator, FILE_NAMES},
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
@@ -191,89 +191,6 @@ fn authored_release_content_and_location_survive_rescan_and_storage_removal() {
 }
 
 #[test]
-fn missing_implicit_copy_does_not_hide_an_existing_explicit_copy_from_launch_or_either_platform() {
-    let root = tempfile::tempdir().unwrap();
-    fs::create_dir(root.path().join("roms")).unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let first = tempfile::tempdir().unwrap();
-    let second = tempfile::tempdir().unwrap();
-    fs::write(first.path().join("game.gba"), b"rom").unwrap();
-    fs::write(second.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::new(root.path(), private.path());
-    discovery
-        .add_location(first.path(), &DiscoveryOptions::default())
-        .unwrap();
-    let second_id = discovery
-        .add_location(second.path(), &DiscoveryOptions::default())
-        .unwrap()
-        .storage_id
-        .unwrap();
-    fs::remove_file(first.path().join("game.gba")).unwrap();
-    let device_path = root.path().join("device.yaml");
-    let mut device: Value =
-        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
-    device["locations"]
-        .as_mapping_mut()
-        .unwrap()
-        .values_mut()
-        .next()
-        .unwrap()[0]["storage"] = "roms".into();
-    fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
-    let loaded = ConfigSnapshotCoordinator::new(root.path()).reload();
-    let state = &loaded.snapshot;
-    let registry = plugin_policy::registry_for_snapshot(state).unwrap();
-    let spec = korrid::launcher::launch_game(
-        root.path(),
-        state.games.keys().next().unwrap(),
-        korrid::launcher::FileProvisionMode::Deferred,
-        &loaded,
-        &registry,
-        50000,
-    )
-    .unwrap();
-    assert_eq!(
-        spec.extras["ROM"],
-        second.path().join("game.gba").display().to_string()
-    );
-    let native_registry = native_packages::installed(private.path());
-    for platform in [RoutePlatform::Android, RoutePlatform::Linux] {
-        let route = resolver::resolve_route_for_platform(
-            root.path(),
-            state,
-            if platform == RoutePlatform::Linux {
-                &native_registry
-            } else {
-                &registry
-            },
-            [],
-            state.games.keys().next().unwrap(),
-            platform,
-        )
-        .unwrap();
-        assert_eq!(route.file_target.unwrap().storage_id, second_id);
-    }
-    fs::remove_file(second.path().join("game.gba")).unwrap();
-    let error = korrid::launcher::launch_game(
-        root.path(),
-        state.games.keys().next().unwrap(),
-        korrid::launcher::FileProvisionMode::Deferred,
-        &loaded,
-        &registry,
-        50000,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, korrid::launcher::LaunchError::RomMissing(_)),
-        "{error:?}"
-    );
-    assert!(
-        korrid::launcher::local_games(root.path(), &loaded, &registry)
-            .games
-            .is_empty()
-    );
-}
-
-#[test]
 fn ten_thousand_existing_locations_rescan_without_rewriting_or_minting_games() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
@@ -318,7 +235,7 @@ fn any_complete_release_launches_in_catalog_order_without_a_preference_fold() {
         readable::gba_locations("roms", "game.gba", false)
     );
     let state = decode_config_documents(&device, &games, &releases).unwrap();
-    let registry = plugin_policy::registry_for_snapshot(&state).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     let route =
         resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap();
     assert_eq!(route.release_id, readable::GBA_RELEASE);
@@ -380,27 +297,6 @@ fn snapshot_probe_exercises_the_three_document_loader_and_retained_snapshot() {
 }
 
 #[test]
-fn route_probe_uses_the_catalog_game_id_in_enabled_and_disabled_reports() {
-    let root = tempfile::tempdir().unwrap();
-    readable::android(root.path());
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_plugin_route_probe"))
-        .arg(root.path())
-        .arg("--review")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains(readable::ANDROID_ID), "{stdout}");
-    assert!(
-        stdout.contains("@korri:android-app:com.playdigious.tmnt"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("LocalRouteUnavailable"), "{stdout}");
-}
 
 #[test]
 fn authored_physical_file_is_protected_across_storage_aliases_after_byte_change() {

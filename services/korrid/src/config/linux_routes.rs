@@ -99,7 +99,6 @@ pub fn linux_route_candidates(
                     family_id: runner.family.clone(),
                     integration_token: String::new(),
                     flattened_target: format!("{}:{}", storage.0, path.0),
-                    android_component: None,
                     linux_runner: Some(ResolvedLinuxRunner {
                         program: program.display().to_string(),
                     }),

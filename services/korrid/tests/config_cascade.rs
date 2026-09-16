@@ -60,7 +60,6 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         family_id: Some(family.into()),
         integration_token: String::new(),
         flattened_target: String::new(),
-        android_component: None,
         linux_runner: None,
         core_path: None,
         file_target: None,

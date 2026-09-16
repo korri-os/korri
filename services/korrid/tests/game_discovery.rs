@@ -359,7 +359,7 @@ fn selected_locations_scan_into_launch_resolvable_library_records() {
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
     assert_eq!(state.snapshot.games.len(), 2);
-    let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     for id in state.snapshot.games.keys() {
         resolver::resolve_route(readable.path(), &state.snapshot, &registry, [], id).unwrap();
     }
@@ -468,7 +468,7 @@ fn selecting_root_with_authored_storage_uses_separate_scanner_storage_and_preser
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.snapshot.storage.contains_key("authored"));
     assert_eq!(state.snapshot.games.len(), 1);
-    let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     resolver::resolve_route(
         readable.path(),
         &state.snapshot,
@@ -497,7 +497,7 @@ fn edited_generated_record_keeps_storage_so_route_stays_resolvable_after_removal
 
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.snapshot.storage.contains_key(&storage_id));
-    let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     resolver::resolve_route(
         readable.path(),
         &state.snapshot,

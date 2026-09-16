@@ -3,7 +3,7 @@ use std::{ffi::OsString, fs, path::Path, process::Command};
 use korrid::{
     catalog_cli,
     config::{
-        resolver::{resolve_launchable_routes_for_platform, RoutePlatform},
+        resolver::resolve_launchable_routes,
         snapshot::{ConfigSnapshotCoordinator, DEVICE_FILE_NAME},
         storage::resolve_file_target,
     },
@@ -45,12 +45,11 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
     assert_eq!(snapshot.snapshot.releases.len(), 1);
     assert_eq!(snapshot.snapshot.locations.len(), 1);
     let registry = native_packages::installed(&private.path().join("packages"));
-    let routes = resolve_launchable_routes_for_platform(
+    let routes = resolve_launchable_routes(
         storage.path(),
         &snapshot.snapshot,
         &registry,
         [],
-        RoutePlatform::Linux,
     );
     assert!(routes.diagnostics.is_empty(), "{:?}", routes.diagnostics);
     assert_eq!(routes.routes.len(), 1);

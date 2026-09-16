@@ -149,7 +149,7 @@ fn adds_two_folders_as_launchable_schema_valid_games_and_reuses_hashes() {
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
     assert_eq!(state.snapshot.games.len(), 2);
-    let registry = plugin_policy::registry_for_snapshot(&state.snapshot).unwrap();
+    let registry = plugin_policy::installed_registry().unwrap();
     for id in state.snapshot.games.keys() {
         resolver::resolve_route(readable.path(), &state.snapshot, &registry, [], id).unwrap();
     }
