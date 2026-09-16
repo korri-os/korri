@@ -8,6 +8,9 @@ result-*
 .env.local
 *.local.md
 local.env
+# Both spellings are in use: AGENTS.md tells a session to create its worktree
+# under .worktree/, and older sessions used the plural.
+.worktree/
 .worktrees/
 .fallow/
 .tmp/
