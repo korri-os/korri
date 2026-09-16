@@ -17,12 +17,12 @@ fn installed(root: &Path) -> PluginRegistry {
     fs::create_dir_all(&package).unwrap();
     fs::write(
         package.join("plugin.ts"),
-        include_str!("../../../plugins/mgba/plugin.ts"),
+        include_str!("../examples/libretro-core.plugin.ts"),
     )
     .unwrap();
     fs::write(
         package.join("retroarch.ts"),
-        include_str!("../../../plugins/mgba/retroarch.ts"),
+        include_str!("../../../plugins/libretro/retroarch.ts"),
     )
     .unwrap();
     PluginRegistry::from_installed(vec![EnabledPackage {

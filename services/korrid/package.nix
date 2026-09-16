@@ -42,9 +42,8 @@ let
     cp ${../../plugins/mgba/android/plugin.ts} "$out/plugins/mgba.plugin.ts"
     cp ${../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
     cp ${../../plugins/retroarch/android/plugin.ts} "$out/plugins/retroarch.plugin.ts"
-    rm -f "$out/examples/linux-retroarch.plugin.ts" "$out/examples/linux-mgba.plugin.ts"
+    rm -f "$out/examples/linux-retroarch.plugin.ts"
     cp ${../../plugins/retroarch/plugin.ts} "$out/examples/linux-retroarch.plugin.ts"
-    cp ${../../plugins/mgba/plugin.ts} "$out/examples/linux-mgba.plugin.ts"
   '';
   commonArgs = {
     inherit src;

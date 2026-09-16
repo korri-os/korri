@@ -20,7 +20,7 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
     let sources = if source.contains("./retroarch") {
         fs::write(
             package.join("retroarch.ts"),
-            include_str!("../../../plugins/mgba/retroarch.ts"),
+            include_str!("../../../plugins/libretro/retroarch.ts"),
         )
         .unwrap();
         vec!["plugin.ts".into(), "retroarch.ts".into()]
@@ -67,7 +67,7 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
 fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
     let source = format!(
         "export const name = 'fixture';\n{}",
-        include_str!("../../../plugins/mgba/retroarch.ts")
+        include_str!("../../../plugins/libretro/retroarch.ts")
     );
     let mut input = input(serde_json::json!({
         "video_vsync":false, "video_driver":"vulkan", "audio_volume":-3.5, "audio_device":"device\\path",
@@ -111,7 +111,7 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
 fn callback_rejects_strings_that_cannot_round_trip_through_native_cfg() {
     let source = format!(
         "export const name = 'fixture';\n{}",
-        include_str!("../../../plugins/mgba/retroarch.ts")
+        include_str!("../../../plugins/libretro/retroarch.ts")
     );
     for value in ["device \"quoted\"", "a\nb", "a\rb", "a\0b"] {
         let input = input(serde_json::json!({"audio_device":value}));
@@ -134,7 +134,7 @@ fn installed_runner_uses_its_own_evidence_and_exact_program() {
     let mut runner = package(
         root.path(),
         "mgba",
-        include_str!("../../../plugins/mgba/plugin.ts"),
+        include_str!("../examples/libretro-core.plugin.ts"),
     );
     runner
         .files

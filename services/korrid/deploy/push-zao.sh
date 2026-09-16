@@ -19,7 +19,7 @@ package_paths=(
   flake.nix
   flake.lock
   services/korrid
-  plugins/mgba/plugin.ts
+  plugins/libretro
   plugins/retroarch/plugin.ts
 )
 untracked_package="$(git -C "$root" ls-files --others --exclude-standard -- "${package_paths[@]}")"

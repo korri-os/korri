@@ -8,12 +8,12 @@ pub fn installed(root: &Path) -> PluginRegistry {
     fs::create_dir_all(&mgba).unwrap();
     fs::write(
         mgba.join("plugin.ts"),
-        include_str!("../examples/linux-mgba.plugin.ts"),
+        include_str!("../examples/libretro-core.plugin.ts"),
     )
     .unwrap();
     fs::write(
         mgba.join("retroarch.ts"),
-        include_str!("../../../plugins/mgba/retroarch.ts"),
+        include_str!("../../../plugins/libretro/retroarch.ts"),
     )
     .unwrap();
     PluginRegistry::from_installed(vec![EnabledPackage {

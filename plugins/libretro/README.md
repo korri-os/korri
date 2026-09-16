@@ -1,0 +1,59 @@
+# The libretro core catalogue
+
+One catalogue produces one plugin package per core. Installing mGBA does not
+install eight cores, and removing it does not disturb the others.
+
+| File | What it holds |
+|---|---|
+| `cores.nix` | The catalogue. One entry per core |
+| `core-plugin.nix` | Turns one entry into one plugin package |
+| `retroarch.ts` | The shared launch helper every generated core uses |
+| `example-check.nix` | Proves korrid's committed example still matches the generator |
+| `default.nix` | Maps the catalogue to `korri-plugin-<name>` packages |
+
+## Adding a core
+
+Add an entry to `cores.nix`:
+
+```nix
+gambatte = {
+  title = "Gambatte";
+  description = "Runs Game Boy and Game Boy Color content with the Gambatte libretro core.";
+  core = pkgs.libretro.gambatte;
+  coreFile = "${pkgs.libretro.gambatte}/lib/retroarch/cores/gambatte_libretro.so";
+  systems = {
+    gb = { title = "Game Boy"; extensions = [ "gb" ]; };
+    gbc = { title = "Game Boy Color"; extensions = [ "gbc" ]; };
+  };
+};
+```
+
+That is the whole change. The package `korri-plugin-gambatte` appears, with the
+plugin id `@korri:gambatte`, the runner `@korri:gambatte/gambatte`, its own
+session controls, and one discovery claim per system.
+
+Name the core file exactly. A file name is not derived from a package name,
+because the two disagree: `beetle-pce-fast` ships
+`mednafen_pce_fast_libretro.so`.
+
+Keep extensions conservative. An extension owned by several systems, such as
+`bin`, stays out until a real library needs it.
+
+## What a generated plugin is, and is not
+
+A generated plugin is an ordinary plugin. It is built by the same builder,
+admitted by the same rules, and has no interface a hand-written plugin lacks.
+
+Each core carries **its own RetroArch** inside its own closure. Two cores
+installed together share one store path, so the disk cost is paid once, but
+neither can break the other by being removed. `@korri:retroarch` names a
+settings family, not a package a core depends on.
+
+Two cores may claim one system. Genesis Plus GX and PicoDrive both claim Mega
+Drive. Discovery returns both claims and the player chooses the runner.
+
+## Adding behaviour to one core
+
+A per-core source file may sit beside the catalogue and export handlers the
+generated file does not supply. Nothing in the contract is reserved for
+generation: whatever a hand-written plugin may export, a generated one may too.

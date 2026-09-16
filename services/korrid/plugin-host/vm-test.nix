@@ -133,7 +133,9 @@ let
   # emulator is started by the plugin installer.
   gameRuntime = mkPlugin {
     publisher.namespace = "@korri";
-    source = ../../../plugins/mgba;
+    # The real generated mGBA source, so admission sees a shipped declaration.
+    source =
+      (import ../../../plugins/libretro { inherit pkgs mkPlugin; }).packages."korri-plugin-mgba".source;
     plugin = _: {
       files = {
         mgba = "${pkgs.coreutils}/bin/true";

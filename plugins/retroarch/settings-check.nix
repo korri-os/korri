@@ -21,7 +21,7 @@ program.overrideAttrs (old: {
     mkdir -p "$out"
     CC=${pkgs.buildPackages.stdenv.cc}/bin/cc bash ${./build-config-parser.sh} \
       "$PWD" ${./config-parser-probe.c} "$PWD/config-parser-probe"
-    cp ${../mgba/retroarch.ts} plugin.ts
+    cp ${../libretro/retroarch.ts} plugin.ts
     sed 's#../mgba/retroarch#./plugin#' ${./plugin.test.ts} > plugin.test.ts
     KORRI_TEST_RETROARCH_CONFIG_PARSER="$PWD/config-parser-probe" bun test ./plugin.test.ts
     cp ${./check-settings.py} check-settings.py
@@ -30,7 +30,7 @@ program.overrideAttrs (old: {
     python3 ${./check-settings.py} \
       --configuration configuration.c \
       --table ${./settings-types.json} \
-      --callback ${../mgba/retroarch.ts} \
+      --callback ${../libretro/retroarch.ts} \
       --program ${pkgs.lib.escapeShellArg "${program}/bin/retroarch"} \
       --version ${pkgs.lib.escapeShellArg program.version} \
       --output "$out/settings.json"
