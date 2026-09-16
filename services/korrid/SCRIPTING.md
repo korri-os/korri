@@ -357,25 +357,54 @@ plugin ID decide enablement. The built-in layer enables `@korri:android-app`,
 ID without changing registry code or adding an integration-specific switch. The
 user policy layer is intentionally empty for these slices.
 
-An enabled plugin can contribute provider, system, launcher, transport, runtime,
+An enabled plugin can contribute provider, system, family, runner, transport,
 file-release discovery, and contextual session-control records. Disabled plugins
 remain registered but contribute nothing while still reserving every declared
 identity, including control identities. Discovery records are data-only extension
-claims that name existing system, launcher, and runtime records. They never
+claims that name existing system and runner records. They never
 receive filesystem handles or executable callbacks; the scanner performs
 traversal and asks the enabled registry which normalized file extensions are
 claimed. Unsupported declaration fields and explicit `null` values fail rather
 than disappearing. As in legacy, contribution keys retain the contributing
 plugin's identity; records retain strict schema IDs for route resolution.
 
-Session controls are declaration-only and attach to one launcher, transport, or
-runtime contribution owned by the same plugin. Their strict record contains a
-stable ID, label and optional description, one of `command`, `toggle`, `choice`,
-or bounded `range`, presentation flags, and one opaque allowlisted effect ID.
-Choice options and range metadata are validated while the plugin is loaded. An
-effect is a closed identifier such as `@korri:retroarch/open-menu` or an existing
-Moonlight gameplay operation; it cannot contain a process, URL, Android intent,
-socket address, Java method, or other payload.
+Session controls are declaration-only and attach to one runner or transport
+contribution owned by the same plugin. Their strict record contains a stable ID,
+label and optional description, one of `command`, `toggle`, `choice`, or bounded
+`range`, presentation flags, and one opaque allowlisted effect ID. Choice options
+and range metadata are validated while the plugin is loaded. An effect is a
+closed identifier such as `@korri:retroarch/open-menu` or an existing Moonlight
+gameplay operation; it cannot contain a process, URL, Android intent, socket
+address, Java method, or other payload.
+
+### Effects are a closed first-party vocabulary
+
+This is a deliberate limit, not an oversight, and it is the one place where
+plugins are not yet equal.
+
+`SessionControlEffect` in `plugin.rs` is a closed Rust enum. Every effect name
+it accepts is behaviour korrid itself implements, for RetroArch or for Moonlight.
+A plugin declaring any other effect name fails to load. So a DIY runner — a
+hand-written PPSSPP plugin, say — can declare **no session controls at all**. It
+launches, it appears in discovery, it takes settings; it gets no in-game menu.
+
+The family check that guards these effects denies a name, not a capability. A
+runner earns an effect by declaring the family that owns it, and family
+membership is self-asserted: any runner may write `family: "@korri:retroarch"`
+and is then accepted with RetroArch effects, whatever program it actually runs.
+korrid will aim RetroArch commands at that process and the commands will go
+unanswered. The check stops a plugin from claiming a *foreign* effect id; it
+cannot prove the process on the other end speaks the protocol.
+
+The design in `docs/briefs/2026-09-15-plugin-model/OPERATIONS.md` answers this
+with two plugin operations, `session.describe` and `session.control`, which
+would let a runner advertise and serve its own controls. Neither is built. They
+stay unbuilt until a real second case needs them — a DIY runner with controls
+worth reaching — because the operation model they belong to does not exist yet
+and inventing it ahead of that case is what this repository's guard forbids.
+
+Until then, say it plainly: **session controls are a first-party integration.**
+Do not describe the current contract as equal capability for every plugin.
 
 Registration and enablement still do not prove that a control can run. korrid
 resolves enabled declarations only against the active route's ordered

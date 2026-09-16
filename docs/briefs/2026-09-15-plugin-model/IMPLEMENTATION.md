@@ -32,6 +32,17 @@ to be implemented by this folder.
    changing the runner's bundled defaults/code when another version is installed.
 8. Persistent-data mapping/migration and per-session generation retention.
 
+## Deliberately unbuilt after the clean cut
+
+- `session.describe` and `session.control` as plugin operations. korrid keeps a
+  closed first-party effect vocabulary instead, so a DIY runner declares no
+  session controls. This is a decision, not a gap left by accident: the
+  operation model these two belong to does not exist, and the repository guard
+  forbids inventing it before a real case needs it. The honest statement of the
+  limit lives in `services/korrid/SCRIPTING.md`, under "Effects are a closed
+  first-party vocabulary". Revisit when a DIY runner with controls worth
+  reaching arrives.
+
 ## Explicitly not part of this design
 
 - New runtime plugin-to-plugin requires/install cascades.
