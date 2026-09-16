@@ -31,6 +31,11 @@ clients/android/app/src/main/assets/portal/
 *.wifi.env
 wifi.env
 
+# The WiFi history-rewrite tool carries the literal SSID and key it exists to
+# scrub, so committing it would put the secret back into the history it cleans.
+# It is a one-off operational script: run it, then delete it.
+/nix/wifi-history-rewrite.sh
+
 # korrid writes its runtime state beside the binary when no state directory is
 # set, and that state holds the device private key. A test run in a checkout
 # must never be able to stage one.
