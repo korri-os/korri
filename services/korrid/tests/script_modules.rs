@@ -102,6 +102,7 @@ fn preparation_checks_static_dependencies_before_any_plugin_code_runs() {
         assert!(error.contains("not selected"), "{dependency}: {error}");
         assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
             .unwrap_err()
+            .to_string()
             .contains("not selected"));
     }
 }
@@ -237,7 +238,8 @@ fn a_single_transformed_module_keeps_its_emitted_output_ceiling() {
     ]);
     for result in [
         script::eval_plugin_snapshot(&graph),
-        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null"),
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
+            .map_err(|failure| failure.to_string()),
     ] {
         let error = result.expect_err("oversized emitted module must fail preparation");
         assert!(error.contains("JavaScript exceeds 512 KiB"), "{error}");
@@ -271,9 +273,12 @@ fn transformed_output_is_bounded_in_aggregate_before_evaluation() {
     .unwrap();
     let error = script::eval_plugin_snapshot(&graph).unwrap_err();
     assert!(error.contains("JavaScript graph exceeds 4 MiB"), "{error}");
-    assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
-        .unwrap_err()
-        .contains("JavaScript graph exceeds 4 MiB"));
+    assert!(
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
+            .unwrap_err()
+            .to_string()
+            .contains("JavaScript graph exceeds 4 MiB")
+    );
 }
 
 #[test]
@@ -350,20 +355,26 @@ fn single_file_entrypoints_keep_their_existing_source_and_input_ceilings() {
     assert!(script::eval_plugin(&js).is_ok());
     assert!(script::eval_plugin(&(js + " "))
         .unwrap_err()
+        .to_string()
         .contains("JavaScript exceeds 512 KiB"));
     let graph = snapshot(&[(
         "plugin.ts",
         "export const name = 'ceiling'; export const handlers = {'launch.prepare': function () { return {}; }}",
     )]);
-    assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare",
+    assert!(script::call_plugin_operation_snapshot(
+        &graph,
+        "launch.prepare",
         &format!("null{}", " ".repeat(512 * 1024 - 4))
     )
     .is_ok());
-    assert!(
-        script::call_plugin_operation_snapshot(&graph, "launch.prepare", &" ".repeat(512 * 1024 + 1))
-            .unwrap_err()
-            .contains("input exceeds 512 KiB")
-    );
+    assert!(script::call_plugin_operation_snapshot(
+        &graph,
+        "launch.prepare",
+        &" ".repeat(512 * 1024 + 1)
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("input exceeds 512 KiB"));
     for source in [
         "export const name = 'closed'; export const handlers = {'launch.prepare': function () { return import('./missing.ts'); }}",
         "export const name = 'closed'; export const handlers = {'launch.prepare': function () { return import.meta; }}",

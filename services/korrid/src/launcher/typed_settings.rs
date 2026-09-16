@@ -1,81 +1,17 @@
-//! Source-check output belongs to the launching instance, never its kind.
-use crate::{config::cascade::LaunchSettingValue, plugin_installation::EnabledPackage};
-use std::{collections::HashMap, fs::File, io::Read};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-pub enum SettingType {
-    Boolean,
-    Number,
-    String,
-}
-
-/// Ephemeral renderer-output evidence, not a persisted metadata format.
-/// Keys/types come from legacy policy.ts and launch-spec.ts's rendered cfg
-/// pairs, checked by the kind against this exact instance's pinned source.
-pub struct SourceCheckedSettings<'a> {
-    pub version: &'a str,
-    pub build: &'a str,
-    pub keys: &'a HashMap<String, SettingType>,
-}
-
-/// Derived artifact registered in the existing manifest files map as
-/// `<program file key>-settings`. `program` is PluginLaunchInput.program;
-/// version/keys are the existing SourceCheckedSettings evidence. Binding the
-/// enclosing installed package here avoids a self-referential Nix output.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PackagedSettings {
-    program: String,
-    version: String,
-    keys: HashMap<String, SettingType>,
-}
-
-impl PackagedSettings {
-    pub fn read(package: &EnabledPackage, program_key: &str) -> Result<Option<Self>, String> {
-        let Some(path) = package.files.get(&format!("{program_key}-settings")) else {
-            return Ok(None);
-        };
-        let mut bytes = Vec::new();
-        File::open(path)
-            .and_then(|file| file.take(1024 * 1024 + 1).read_to_end(&mut bytes))
-            .map_err(|error| format!("read source-checked settings {}: {error}", path.display()))?;
-        if bytes.len() > 1024 * 1024 {
-            return Err("source-checked settings exceed 1 MiB".into());
-        }
-        let evidence: Self = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("invalid source-checked settings: {error}"))?;
-        if evidence.version.is_empty() {
-            return Err("source-checked settings have no program version".into());
-        }
-        Ok(Some(evidence))
-    }
-
-    pub fn validate(
-        &self,
-        settings: HashMap<String, LaunchSettingValue>,
-        runner_id: &str,
-        build: &str,
-        program: &str,
-    ) -> (HashMap<String, LaunchSettingValue>, Vec<LaunchWarning>) {
-        let unverified = HashMap::new();
-        validate(
-            settings,
-            runner_id,
-            build,
-            Some(SourceCheckedSettings {
-                version: &self.version,
-                build,
-                // Preserve the display version in warnings, but accept no
-                // evidence for a different executable in this instance.
-                keys: if self.program == program {
-                    &self.keys
-                } else {
-                    &unverified
-                },
-            }),
-        )
-    }
-}
+//! Settings validation belongs to the runner, not to korrid.
+//!
+//! korrid used to read a `<program key>-settings` JSON file out of the
+//! installed package and compare every authored key and type against it. That
+//! made the host the owner of one emulator's option table: a runner could not
+//! change what it accepts without changing korrid, and a runner korrid had
+//! never heard of could say nothing about its own settings at all.
+//!
+//! Now korrid asks. `settings.validate` reports what this build cannot apply,
+//! and the runner keeps the schema that answers it. The host still owns the
+//! result: it surfaces the diagnostics as launch warnings and never rewrites
+//! or deletes what a person authored.
+use crate::{config::cascade::LaunchSettingValue, script};
+use std::collections::HashMap;
 
 #[typeshare::typeshare]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -87,39 +23,75 @@ pub struct LaunchWarning {
     pub message: String,
 }
 
+/// One reported problem. The runner names the setting through `path`; korrid
+/// adds the identity facts, which are its own and never the plugin's to claim.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsDiagnostic {
+    #[allow(dead_code)]
+    code: String,
+    severity: DiagnosticSeverity,
+    message: String,
+    #[serde(default)]
+    path: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsValidation {
+    #[allow(dead_code)]
+    valid: bool,
+    #[serde(default)]
+    diagnostics: Vec<SettingsDiagnostic>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidateInput<'a> {
+    runner_id: &'a str,
+    values: &'a HashMap<String, LaunchSettingValue>,
+}
+
+/// Ask the runner about the authored values. A runner that implements no
+/// `settings.validate` handler reports nothing, which is not an error: the
+/// values still reach `launch.prepare`, which is the operation that decides
+/// what it can render.
 pub fn validate(
-    settings: HashMap<String, LaunchSettingValue>,
+    snapshot: &script::source::SourceSnapshot,
+    settings: &HashMap<String, LaunchSettingValue>,
     runner_id: &str,
     build: &str,
-    source: Option<SourceCheckedSettings<'_>>,
-) -> (HashMap<String, LaunchSettingValue>, Vec<LaunchWarning>) {
-    let mut accepted = HashMap::new();
-    let mut warnings = Vec::new();
-    let mut settings: Vec<_> = settings.into_iter().collect();
-    settings.sort_by(|a, b| a.0.cmp(&b.0));
-    for (key, value) in settings {
-        let actual = match &value {
-            LaunchSettingValue::Boolean(_) => SettingType::Boolean,
-            LaunchSettingValue::Number(_) => SettingType::Number,
-            LaunchSettingValue::String(_) => SettingType::String,
+) -> Result<Vec<LaunchWarning>, String> {
+    let input = serde_json::to_string(&ValidateInput {
+        runner_id,
+        values: settings,
+    })
+    .map_err(|error| error.to_string())?;
+    let result =
+        match script::call_plugin_operation_snapshot(snapshot, script::SETTINGS_VALIDATE, &input) {
+            Ok(result) => result,
+            Err(failure) if failure.is_unimplemented() => return Ok(Vec::new()),
+            Err(failure) => return Err(failure.to_string()),
         };
-        if source
-            .as_ref()
-            .filter(|s| s.build == build)
-            .and_then(|s| s.keys.get(&key))
-            == Some(&actual)
-        {
-            accepted.insert(key, value);
-        } else {
-            let version = source
-                .as_ref()
-                .map(|s| s.version)
-                .unwrap_or("unavailable (source metadata absent)");
-            warnings.push(LaunchWarning {
-                message: format!("omitted setting {key} for runner {runner_id}, version {version}, build {build}: key/type not verified against this build's source"),
-                setting: key, runner_id: runner_id.into(), build: build.into(),
-            });
-        }
-    }
-    (accepted, warnings)
+    let validation: SettingsValidation = serde_json::from_str(&result)
+        .map_err(|error| format!("invalid settings.validate result: {error}"))?;
+    Ok(validation
+        .diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.severity != DiagnosticSeverity::Info)
+        .map(|diagnostic| LaunchWarning {
+            setting: diagnostic.path.first().cloned().unwrap_or_default(),
+            runner_id: runner_id.to_owned(),
+            build: build.to_owned(),
+            message: diagnostic.message,
+        })
+        .collect())
 }

@@ -85,38 +85,51 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
     assert_eq!(result.config.unwrap().append.as_deref(), Some("layer = 6"));
 }
 
+/// The runner decides what it cannot apply. korrid reports what the runner
+/// says and adds the identity facts that are its own.
 #[test]
-fn source_checked_types_omit_unsupported_settings_with_build_and_version() {
-    use korrid::launcher::typed_settings::*;
+fn the_runner_reports_unsupported_settings_and_korrid_names_the_build() {
+    use korrid::{launcher::typed_settings::validate, script::source::SourceSnapshot};
     let settings =
-        serde_json::from_value(serde_json::json!({"supported":true,"wrong":false,"absent":1}))
-            .unwrap();
-    let keys = std::collections::HashMap::from([
-        ("supported".into(), SettingType::Boolean),
-        ("wrong".into(), SettingType::String),
-    ]);
-    let (accepted, warnings) = validate(
-        settings,
+        serde_json::from_value(serde_json::json!({"supported":true,"wrong":false})).unwrap();
+    let source = "export const name = 'core'; export const handlers = {'settings.validate': (input) => ({valid: true, diagnostics: [{code: 'settings-revision', severity: 'info', message: 'chosen for another build'}, ...Object.keys(input.values).filter((key) => key !== 'supported').map((key) => ({code: 'setting-unverified', severity: 'warning', path: [key], message: `1.22.2 does not accept ${key}`}))]})}";
+    let warnings = validate(
+        &SourceSnapshot::plugin(source).unwrap(),
+        &settings,
         "@korri:mgba/mgba",
         "/nix/store/exact-build",
-        Some(SourceCheckedSettings {
-            version: "1.22.2",
-            build: "/nix/store/exact-build",
-            keys: &keys,
-        }),
-    );
-    assert_eq!(accepted.len(), 1);
-    let (accepted, mismatched) = validate(
-        accepted,
+    )
+    .unwrap();
+    // One warning, because the runner accepted the other key. The info-level
+    // diagnostic is not a warning and is not shown as one.
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].setting, "wrong");
+    assert_eq!(warnings[0].runner_id, "@korri:mgba/mgba");
+    assert_eq!(warnings[0].build, "/nix/store/exact-build");
+    assert!(warnings[0].message.contains("does not accept wrong"));
+
+    // A runner that does not implement the operation reports nothing. That is
+    // silence, not a failed launch.
+    let quiet = SourceSnapshot::plugin("export const name = 'core';").unwrap();
+    assert!(validate(
+        &quiet,
+        &settings,
         "@korri:mgba/mgba",
-        "/nix/store/other-build",
-        Some(SourceCheckedSettings {
-            version: "1.22.2",
-            build: "/nix/store/exact-build",
-            keys: &keys,
-        }),
-    );
-    assert!(accepted.is_empty());
-    assert_eq!(mismatched.len(), 1);
-    assert_eq!(warnings.len(), 2);
+        "/nix/store/exact-build"
+    )
+    .unwrap()
+    .is_empty());
+
+    // A handler that fails is an error, never a silent empty answer.
+    let broken = SourceSnapshot::plugin(
+        "export const name = 'core'; export const handlers = {'settings.validate': () => { throw new Error('boom'); }}",
+    )
+    .unwrap();
+    assert!(validate(
+        &broken,
+        &settings,
+        "@korri:mgba/mgba",
+        "/nix/store/exact-build"
+    )
+    .is_err());
 }

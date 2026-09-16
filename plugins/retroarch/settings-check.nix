@@ -21,9 +21,6 @@ program.overrideAttrs (old: {
     mkdir -p "$out"
     CC=${pkgs.buildPackages.stdenv.cc}/bin/cc bash ${./build-config-parser.sh} \
       "$PWD" ${./config-parser-probe.c} "$PWD/config-parser-probe"
-    cp ${../libretro/retroarch.ts} plugin.ts
-    sed 's#../mgba/retroarch#./plugin#' ${./plugin.test.ts} > plugin.test.ts
-    KORRI_TEST_RETROARCH_CONFIG_PARSER="$PWD/config-parser-probe" bun test ./plugin.test.ts
     cp ${./check-settings.py} check-settings.py
     cp ${./test_check_settings.py} test_check_settings.py
     python3 test_check_settings.py
@@ -33,6 +30,14 @@ program.overrideAttrs (old: {
       --callback ${../libretro/retroarch.ts} \
       --program ${pkgs.lib.escapeShellArg "${program}/bin/retroarch"} \
       --version ${pkgs.lib.escapeShellArg program.version} \
-      --output "$out/settings.json"
+      --output "$out/settings.json" \
+      --module "$out/settings.ts"
+    # The runner answers settings.describe and settings.validate from the
+    # module written above, so the test runs against this program's real
+    # checked schema rather than a second table written by hand.
+    cp ${../libretro/retroarch.ts} plugin.ts
+    cp "$out/settings.ts" settings.ts
+    sed 's#../mgba/retroarch#./plugin#' ${./plugin.test.ts} > plugin.test.ts
+    KORRI_TEST_RETROARCH_CONFIG_PARSER="$PWD/config-parser-probe" bun test ./plugin.test.ts
   '';
 })

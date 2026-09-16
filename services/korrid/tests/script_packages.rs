@@ -398,10 +398,12 @@ fn caught_esm_initialization_failure_still_fails_shared_completion() {
     ]);
     // This is an engine limitation, not successful validation of the error.
     // QuickJS rejects an internal promise as well as the returned eval promise.
-    assert!(script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
-        .unwrap_err()
-        .to_string()
-        .contains("unhandled promise rejection"));
+    assert!(
+        script::call_plugin_operation_snapshot(&graph, "launch.prepare", "null")
+            .unwrap_err()
+            .to_string()
+            .contains("unhandled promise rejection")
+    );
 }
 
 #[test]

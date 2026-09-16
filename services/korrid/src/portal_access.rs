@@ -272,12 +272,18 @@ mod tests {
         );
         let prepare = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(prepare["outcome"]["_tag"], "Err");
-        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false}}})).await;
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false,"absent_key":1}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
+        // The runner accepts video_vsync and reports the key it cannot apply.
+        // korrid carries that report to the portal without owning the table.
         assert_eq!(
             launch["outcome"]["payload"]["warnings"][0]["setting"],
-            "video_vsync"
+            "absent_key"
+        );
+        assert_eq!(
+            launch["outcome"]["payload"]["warnings"][1],
+            serde_json::Value::Null
         );
         let resumed = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(resumed["outcome"]["_tag"], "Ok", "{resumed}");

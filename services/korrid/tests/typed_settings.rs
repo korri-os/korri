@@ -1,3 +1,5 @@
+//! The runner owns its settings schema, so these tests run the real RetroArch
+//! helper against a generated schema module exactly as a device would.
 #[path = "fixtures/readable.rs"]
 mod readable;
 
@@ -5,13 +7,36 @@ use korrid::{
     config::{resolver::resolve_linux_route, snapshot::ConfigSnapshotCoordinator},
     launcher::{
         linux_plugin::launch_route,
-        plugin_launch::{evaluate, PluginLaunchInput, PluginLaunchOverrides},
-        typed_settings::PackagedSettings,
+        plugin_launch::{evaluate_snapshot, PluginLaunchInput, PluginLaunchOverrides},
+        typed_settings::validate,
     },
     plugin::PluginRegistry,
     plugin_installation::EnabledPackage,
+    script::source::SourceSnapshot,
 };
 use std::{collections::BTreeMap, fs, path::Path};
+
+/// The build-time generator writes this module from the pinned program's own
+/// source. The shape is reproduced here, never a second key table for korrid.
+fn settings_module(keys: serde_json::Value) -> String {
+    let entries: String = keys
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(key, kind)| format!("  {key}: {kind},\n"))
+        .collect();
+    format!("export const version = \"1.22.2\"\nexport const keys = {{\n{entries}}}\n")
+}
+
+fn checked_keys() -> serde_json::Value {
+    serde_json::json!({
+        "video_vsync": "Boolean",
+        "video_driver": "String",
+        "audio_volume": "Number",
+        "audio_device": "String",
+        "config_save_on_exit": "Boolean",
+    })
+}
 
 fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
     let package = root.join(name);
@@ -23,7 +48,12 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
             include_str!("../../../plugins/libretro/retroarch.ts"),
         )
         .unwrap();
-        vec!["plugin.ts".into(), "retroarch.ts".into()]
+        fs::write(package.join("settings.ts"), settings_module(checked_keys())).unwrap();
+        vec![
+            "plugin.ts".into(),
+            "retroarch.ts".into(),
+            "settings.ts".into(),
+        ]
     } else {
         vec!["plugin.ts".into()]
     };
@@ -36,17 +66,37 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
     }
 }
 
-fn evidence(package: &mut EnabledPackage, program: &str, version: &str, keys: serde_json::Value) {
-    let path = package.package.join("settings.json");
+/// One core plugin exactly as the catalogue generates it: an entry that
+/// re-exports the shared helper, the helper, and the checked schema beside it.
+fn core_snapshot(root: &Path, keys: serde_json::Value) -> SourceSnapshot {
     fs::write(
-        &path,
-        serde_json::to_vec(&serde_json::json!({
-            "program": program, "version": version, "keys": keys,
-        }))
-        .unwrap(),
+        root.join("plugin.ts"),
+        format!(
+            "export const name = 'fixture';\n{}",
+            include_str!("../examples/libretro-core.plugin.ts")
+                .lines()
+                .filter(|line| !line.starts_with("export const name"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ),
     )
     .unwrap();
-    package.files.insert("retroarch-settings".into(), path);
+    fs::write(
+        root.join("retroarch.ts"),
+        include_str!("../../../plugins/libretro/retroarch.ts"),
+    )
+    .unwrap();
+    fs::write(root.join("settings.ts"), settings_module(keys)).unwrap();
+    SourceSnapshot::package_plugin(
+        root,
+        "plugin.ts",
+        &[
+            "plugin.ts".to_owned(),
+            "retroarch.ts".to_owned(),
+            "settings.ts".to_owned(),
+        ],
+    )
+    .unwrap()
 }
 
 fn input(settings: serde_json::Value) -> PluginLaunchInput {
@@ -65,10 +115,8 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
 
 #[test]
 fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
-    let source = format!(
-        "export const name = 'fixture';\n{}",
-        include_str!("../../../plugins/libretro/retroarch.ts")
-    );
+    let root = tempfile::tempdir().unwrap();
+    let source = core_snapshot(root.path(), checked_keys());
     let mut input = input(serde_json::json!({
         "video_vsync":false, "video_driver":"vulkan", "audio_volume":-3.5, "audio_device":"device\\path",
     }));
@@ -78,7 +126,11 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
         }))
         .unwrap(),
     );
-    let content = evaluate(&source, &input).unwrap().files.remove(0).content;
+    let content = evaluate_snapshot(&source, &input)
+        .unwrap()
+        .files
+        .remove(0)
+        .content;
     assert!(content.contains("video_vsync = false\n"));
     assert_eq!(content.matches("video_vsync =").count(), 1);
     assert!(content.contains("video_driver = \"vulkan\"\n"));
@@ -92,10 +144,14 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
         "cheevos_token",
         "netplay_password",
     ] {
+        // A reserved key keeps its protection: the schema may name it, and the
+        // runner still refuses to take its value from authored settings.
         let mut typed = input.clone();
-        typed.overrides =
-            Some(serde_json::from_value(serde_json::json!({"settings":{key:false}})).unwrap());
-        assert!(evaluate(&source, &typed).is_err(), "typed {key}");
+        typed.overrides = Some(
+            serde_json::from_value(serde_json::json!({"settings":{key:"sentinel-value"}})).unwrap(),
+        );
+        let rendered = evaluate_snapshot(&source, &typed).unwrap().files.remove(0);
+        assert!(!rendered.content.contains("sentinel-value"), "typed {key}");
         let mut raw = input.clone();
         raw.overrides = Some(
             serde_json::from_value(
@@ -103,27 +159,82 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
             )
             .unwrap(),
         );
-        assert!(evaluate(&source, &raw).is_err(), "raw {key}");
+        assert!(evaluate_snapshot(&source, &raw).is_err(), "raw {key}");
     }
 }
 
 #[test]
 fn callback_rejects_strings_that_cannot_round_trip_through_native_cfg() {
-    let source = format!(
-        "export const name = 'fixture';\n{}",
-        include_str!("../../../plugins/libretro/retroarch.ts")
-    );
+    let root = tempfile::tempdir().unwrap();
+    let source = core_snapshot(root.path(), checked_keys());
     for value in ["device \"quoted\"", "a\nb", "a\rb", "a\0b"] {
         let input = input(serde_json::json!({"audio_device":value}));
-        assert!(evaluate(&source, &input).is_err(), "{value:?}");
+        assert!(evaluate_snapshot(&source, &input).is_err(), "{value:?}");
     }
     let input = input(serde_json::json!({"audio_device":"hw:\"quoted\""}));
-    let content = evaluate(&source, &input).unwrap().files.remove(0).content;
+    let content = evaluate_snapshot(&source, &input)
+        .unwrap()
+        .files
+        .remove(0)
+        .content;
     assert!(content.contains("audio_device = hw:\"quoted\"\n"));
 }
 
 #[test]
-fn installed_runner_uses_its_own_evidence_and_exact_program() {
+fn the_runner_describes_its_own_schema_and_validates_against_it() {
+    let root = tempfile::tempdir().unwrap();
+    let source = core_snapshot(root.path(), checked_keys());
+    let described: serde_json::Value = serde_json::from_str(
+        &korrid::script::call_plugin_operation_snapshot(
+            &source,
+            korrid::script::SETTINGS_DESCRIBE,
+            "{}",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    // The described schema is this build's own evidence, carrying the revision
+    // it is valid for, and it never offers a key korrid reserves.
+    assert_eq!(described["revision"], "1.22.2");
+    assert_eq!(
+        described["schema"]["properties"]["video_vsync"]["type"],
+        "boolean"
+    );
+    assert_eq!(
+        described["schema"]["properties"]["audio_volume"]["type"],
+        "number"
+    );
+    assert_eq!(described["schema"]["additionalProperties"], false);
+    assert!(described["schema"]["properties"]
+        .get("config_save_on_exit")
+        .is_none());
+
+    let settings = serde_json::from_value(serde_json::json!({
+        "video_vsync": false,
+        "video_driver": 7,
+        "absent_key": true,
+    }))
+    .unwrap();
+    let warnings = validate(
+        &source,
+        &settings,
+        "@korri:mgba/mgba",
+        "/nix/store/exact-build",
+    )
+    .unwrap();
+    let reported: Vec<&str> = warnings
+        .iter()
+        .map(|warning| warning.setting.as_str())
+        .collect();
+    assert_eq!(reported, vec!["absent_key", "video_driver"]);
+    assert!(warnings
+        .iter()
+        .all(|warning| warning.message.contains("1.22.2")
+            && warning.build == "/nix/store/exact-build"));
+}
+
+#[test]
+fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config() {
     let root = tempfile::tempdir().unwrap();
     readable::combined(root.path());
     fs::create_dir(root.path().join("roms")).unwrap();
@@ -147,61 +258,47 @@ fn installed_runner_uses_its_own_evidence_and_exact_program() {
         "settings":{"audio_volume":-3,"video_vsync":false,"absent_key":1}
     }))
     .unwrap();
-    for (program, accepted) in [("/exact-program", 1), ("/other-program", 0)] {
-        evidence(
-            &mut runner,
-            program,
-            "runner-version",
-            serde_json::json!({"audio_volume":"Number", "video_vsync":"Number"}),
-        );
-        let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
-        let route = resolve_linux_route(
-            root.path(),
-            &snapshot,
-            &registry,
-            readable::GBA_ID,
-            Some("@korri:mgba/mgba"),
-        )
-        .unwrap();
-        let spec = launch_route(
-            root.path(),
-            &snapshot,
-            &registry,
-            &route,
-            Some(overrides.clone()),
-        )
-        .unwrap();
-        let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
-        assert_eq!(input.overrides.as_ref().unwrap().settings.len(), accepted);
-        assert_eq!(spec.warnings.len(), 3 - accepted);
-        assert!(spec.warnings.iter().all(|warning| {
-            warning.runner_id == "@korri:mgba/mgba"
-                && warning.build == runner.package.display().to_string()
-                && warning.message.contains("runner-version")
-        }));
-    }
-}
+    let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
+    let route = resolve_linux_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        readable::GBA_ID,
+        Some("@korri:mgba/mgba"),
+    )
+    .unwrap();
+    let spec = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        Some(overrides.clone()),
+    )
+    .unwrap();
+    // korrid hands the runner exactly what the person authored, and reports
+    // the one key this build cannot apply.
+    let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
+    assert_eq!(input.overrides.as_ref().unwrap().settings.len(), 3);
+    assert_eq!(spec.warnings.len(), 1);
+    assert_eq!(spec.warnings[0].setting, "absent_key");
+    assert_eq!(spec.warnings[0].runner_id, "@korri:mgba/mgba");
+    assert_eq!(spec.warnings[0].build, runner.package.display().to_string());
 
-#[test]
-fn malformed_packaged_evidence_is_an_error_not_setting_authority() {
-    let root = tempfile::tempdir().unwrap();
-    let mut package = package(root.path(), "invalid", "export const name = 'invalid';");
-    let path = package.package.join("settings.json");
-    package
+    // The runner leaves it out of the native configuration it renders.
+    let source =
+        SourceSnapshot::package_plugin(&runner.package, &runner.entry, &runner.sources).unwrap();
+    let content = evaluate_snapshot(&source, &input)
+        .unwrap()
         .files
-        .insert("retroarch-settings".into(), path.clone());
-    for artifact in [
-        serde_json::json!({"program":"/program", "version":"1", "keys":{"video_vsync":"integer"}}),
-        serde_json::json!({"program":"/program", "version":"", "keys":{}}),
-        serde_json::json!({"program":"/program", "version":"1", "keys":{}, "since":"1"}),
-    ] {
-        fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
-        assert!(PackagedSettings::read(&package, "retroarch").is_err());
-    }
+        .remove(0)
+        .content;
+    assert!(content.contains("audio_volume = -3\n"));
+    assert!(content.contains("video_vsync = \"false\"\n"));
+    assert!(!content.contains("absent_key"));
 }
 
 #[test]
-#[ignore = "build .#korri-plugin-retroarch and set KORRI_TEST_RETROARCH_PACKAGE"]
+#[ignore = "build .#korri-plugin-mgba and set KORRI_TEST_RETROARCH_PACKAGE"]
 fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() {
     #[derive(serde::Deserialize)]
     struct Manifest {
@@ -215,7 +312,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     let manifest: Manifest =
         serde_json::from_slice(&fs::read(package.join("manifest.json")).unwrap()).unwrap();
     let package = EnabledPackage {
-        id: "@korri:retroarch".into(),
+        id: "@korri:mgba".into(),
         package,
         files: manifest.files,
         entry: manifest.entry,
@@ -223,19 +320,18 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     };
     let build = package.package.display().to_string();
     let program = package.files["retroarch"].display().to_string();
-    let evidence = PackagedSettings::read(&package, "retroarch")
-        .unwrap()
-        .unwrap();
+    let source =
+        SourceSnapshot::package_plugin(&package.package, &package.entry, &package.sources).unwrap();
     let mut input = input(
         serde_json::json!({"video_vsync":false,"audio_volume":-3.5,"audio_device":"device\\path","absent_key":true,"config_save_on_exit":true}),
     );
-    let (accepted, warnings) = evidence.validate(
-        input.overrides.take().unwrap().settings,
+    let warnings = validate(
+        &source,
+        &input.overrides.as_ref().unwrap().settings,
         &input.runner_id,
         &build,
-        &program,
-    );
-    assert_eq!(accepted.len(), 3);
+    )
+    .unwrap();
     assert_eq!(warnings.len(), 2);
     assert!(warnings
         .iter()
@@ -246,28 +342,14 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         .iter()
         .map(|(key, path)| (key.clone(), path.display().to_string()))
         .collect();
-    input.overrides = Some(PluginLaunchOverrides {
-        settings: accepted,
-        config: None,
-    });
-    let output = evaluate(
-        &fs::read_to_string(package.package.join("plugin.ts")).unwrap(),
-        &input,
-    )
-    .unwrap();
-    let bytes = output.files[0].content.as_bytes();
+    let output = evaluate_snapshot(&source, &input).unwrap();
     for line in [
         "video_vsync = \"false\"\n",
         "audio_volume = -3.5\n",
         "audio_device = \"device\\path\"\n",
         "config_save_on_exit = \"false\"\n",
     ] {
-        assert!(
-            bytes
-                .windows(line.len())
-                .any(|window| window == line.as_bytes()),
-            "{line}"
-        );
+        assert!(output.files[0].content.contains(line), "{line}");
     }
     assert!(!output.files[0].content.contains("absent_key"));
 }

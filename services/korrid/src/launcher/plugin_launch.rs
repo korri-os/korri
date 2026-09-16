@@ -82,7 +82,8 @@ pub fn evaluate_snapshot(
         source,
         crate::script::LAUNCH_PREPARE,
         &input,
-    )?;
+    )
+    .map_err(|failure| failure.to_string())?;
     serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))
 }
 

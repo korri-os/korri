@@ -141,7 +141,15 @@ fn install(root: &Path, id: &str, source: &str, files: &[&str]) -> EnabledPackag
     let mut sources = vec!["plugin.ts".to_owned()];
     if source.contains("./retroarch") {
         fs::write(package.join("retroarch.ts"), RETROARCH_HELPER).unwrap();
+        // The catalogue generates this module from the pinned program's own
+        // source; the helper answers settings.describe and validate from it.
+        fs::write(
+            package.join("settings.ts"),
+            "export const version = \"1.22.2\"\nexport const keys = {\n  video_vsync: \"Boolean\",\n}\n",
+        )
+        .unwrap();
         sources.push("retroarch.ts".to_owned());
+        sources.push("settings.ts".to_owned());
     }
     EnabledPackage {
         id: id.to_owned(),

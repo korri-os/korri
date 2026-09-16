@@ -52,6 +52,15 @@ settings family, not a package a core depends on.
 Two cores may claim one system. Genesis Plus GX and PicoDrive both claim Mega
 Drive. Discovery returns both claims and the player chooses the runner.
 
+## The runner owns its settings
+
+`settings.ts` is generated beside the plugin from the pinned RetroArch source:
+the keys that build actually reads, and their types. The runner answers
+`settings.describe` and `settings.validate` from it, and leaves out of the
+native configuration anything this build cannot apply. korrid holds no key
+table and reads no settings file; it reports what the runner says as launch
+warnings and never rewrites what a person authored.
+
 ## Adding behaviour to one core
 
 A per-core source file may sit beside the catalogue and export handlers the

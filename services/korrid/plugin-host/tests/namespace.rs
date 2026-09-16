@@ -77,7 +77,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     .unwrap();
     let source = "export const name = 'game';
         export const systems = {gba: {id: 'gba', title: 'Game Boy Advance'}};
-        export function launch(input) { return input; }";
+        export const handlers = {'launch.prepare': function (input) { return input; }}";
     fs::write(package.join("plugin.ts"), source).unwrap();
     // Unique contents prevent a signature from another test run masking the rejection.
     fs::write(package.join("test-run"), directory.path().to_str().unwrap()).unwrap();
@@ -163,7 +163,12 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     let approved_source = fs::read_to_string(Path::new(&path).join("plugin.ts")).unwrap();
     assert_eq!(approved_source, source);
     assert_eq!(
-        korri_plugin_host::script::call_plugin_launch_ts(&approved_source, "{}").unwrap(),
+        korri_plugin_host::script::call_plugin_operation_ts(
+            &approved_source,
+            "launch.prepare",
+            "{}"
+        )
+        .unwrap(),
         "{}"
     );
     assert!(verify_publisher(

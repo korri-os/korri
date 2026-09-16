@@ -86,11 +86,15 @@ let
   frontendKeys = lib.unique (lib.attrNames frontend.packages ++ lib.attrNames frontend.files);
 
   # Regular files, never symlinks: the builder refuses a symlinked source.
+  # settings.ts is the pinned program's own checked schema, carried as plugin
+  # source so the runner answers settings.describe and settings.validate
+  # itself. The host reads no settings metadata file.
   source = pkgs.runCommand "korri-core-source-${name}" { } ''
     mkdir -p "$out"
     cp ${./retroarch.ts} "$out/retroarch.ts"
+    cp ${frontend.packages.retroarch-settings}/settings.ts "$out/settings.ts"
     cp ${pluginSource} "$out/plugin.ts"
-    chmod u+w "$out/retroarch.ts" "$out/plugin.ts"
+    chmod u+w "$out/retroarch.ts" "$out/settings.ts" "$out/plugin.ts"
   '';
 in
 assert lib.assertMsg (!lib.elem name frontendKeys) (

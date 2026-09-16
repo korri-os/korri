@@ -230,6 +230,15 @@ content path, existing account root, and kind-owned manifest files. Output
 preserves legacy `command`, `args`, `env`, `envUnset`, and `cwd`, plus the
 existing directory and provisioned-file declarations.
 
+`settings.describe` returns the runner's own schema fragment and the revision
+it is valid for. `settings.validate` reports what this build cannot apply.
+`launcher/typed_settings.rs` calls the second one before a launch starts and
+turns its diagnostics into the existing `LaunchWarning` wire type, adding the
+runner id and build, which are korrid's facts and not the plugin's to claim.
+korrid keeps no key table and reads no settings metadata file: a runner that
+implements neither operation says nothing, which is silence and not an error,
+and authored values are never rewritten or deleted.
+
 `launcher/linux_plugin.rs` builds a `korrid plugin-launch SOURCE INPUT_JSON`
 command. The existing systemd game unit starts this command as the runtime
 user, with its existing sandbox. That process calls the callback, writes the

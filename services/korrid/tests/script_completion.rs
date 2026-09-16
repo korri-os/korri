@@ -70,7 +70,8 @@ fn initialization_drains_before_launch_but_outputs_are_captured_before_queued_mu
         r#"{"config":{"phase":"captured"},"name":"timers"}"#
     );
     let output: serde_json::Value =
-        serde_json::from_str(&call_plugin_operation_ts(source, "launch.prepare", "null").unwrap()).unwrap();
+        serde_json::from_str(&call_plugin_operation_ts(source, "launch.prepare", "null").unwrap())
+            .unwrap();
     assert_eq!(output, serde_json::json!({"phase":"mutated","ready":true}));
 }
 

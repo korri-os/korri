@@ -28,7 +28,8 @@ pub fn launch_route(
     overrides: Option<PluginLaunchOverrides>,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
-    let runner = registry
+    // The route must still name a native runner this registry admits.
+    registry
         .native_runner(&route.runner_id)
         .map_err(|cause| error(cause.to_string()))?;
     let package = registry
@@ -57,20 +58,18 @@ pub fn launch_route(
     });
     let folded = crate::config::cascade::resolve(snapshot, route, overrides.as_ref());
     let build = package.package.display().to_string();
-    let evidence = super::typed_settings::PackagedSettings::read(
-        package,
-        runner
-            .program
-            .as_deref()
-            .expect("native runner has a program"),
+    // Ask the runner what it cannot apply before starting anything. The values
+    // are still handed to launch.prepare exactly as they were authored.
+    let source = crate::script::source::SourceSnapshot::package_plugin(
+        &package.package,
+        &package.entry,
+        &package.sources,
     )
     .map_err(error)?;
-    let (settings, warnings) = match evidence {
-        Some(evidence) => {
-            evidence.validate(folded.settings, &route.runner_id, &build, &native.program)
-        }
-        None => super::typed_settings::validate(folded.settings, &route.runner_id, &build, None),
-    };
+    let warnings =
+        super::typed_settings::validate(&source, &folded.settings, &route.runner_id, &build)
+            .map_err(error)?;
+    let settings = folded.settings;
     let input = PluginLaunchInput {
         runner_id: route.runner_id.clone(),
         family_id: route.family_id.clone(),

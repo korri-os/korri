@@ -25,6 +25,12 @@ fn installed(root: &Path) -> PluginRegistry {
         include_str!("../../../plugins/libretro/retroarch.ts"),
     )
     .unwrap();
+    // The catalogue generates this module from the pinned program's source.
+    fs::write(
+        package.join("settings.ts"),
+        "export const version = \"1.22.2\"\nexport const keys = {\n  video_vsync: \"Boolean\",\n}\n",
+    )
+    .unwrap();
     PluginRegistry::from_installed(vec![EnabledPackage {
         id: "@korri:mgba".into(),
         package,
@@ -34,7 +40,11 @@ fn installed(root: &Path) -> PluginRegistry {
             ("autoconfig".into(), root.join("autoconfig")),
         ]),
         entry: "plugin.ts".into(),
-        sources: vec!["plugin.ts".into(), "retroarch.ts".into()],
+        sources: vec![
+            "plugin.ts".into(),
+            "retroarch.ts".into(),
+            "settings.ts".into(),
+        ],
     }])
     .unwrap()
 }

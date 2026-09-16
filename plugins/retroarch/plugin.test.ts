@@ -49,9 +49,15 @@ describe("RetroArch native configuration", () => {
     expect(cfg).not.toContain("# ignored")
   })
 
-  it("rejects every reserved key even when a later assignment would hide it", () => {
+  it("never takes a reserved key from authored settings or raw config", () => {
     for (const key of reserved) {
-      expect(() => content({ settings: { [key]: false } })).toThrow(key)
+      // A typed reserved key is left out and reported, not rendered.
+      expect(content({ settings: { [key]: "sentinel-value" } })).not.toContain("sentinel-value")
+      const reported = handlers["settings.validate"]({ values: { [key]: "sentinel-value" } })
+      expect(reported.diagnostics.map((diagnostic) => diagnostic.path?.[0])).toContain(key)
+      expect(JSON.stringify(reported)).not.toContain("sentinel-value")
+      // Raw native text is still refused outright: it is not a typed value the
+      // runner can leave behind, it is an assignment aimed at the emulator.
       for (const block of ["prepend", "append"] as const) {
         expect(() => content({ config: { [block]: `${key} = false\n${key} = true` } }))
           .toThrow(key)
@@ -61,16 +67,31 @@ describe("RetroArch native configuration", () => {
     }
   })
 
+  it("describes the schema this build checked, without the reserved keys", () => {
+    const described = handlers["settings.describe"]()
+    expect(described.revision).toMatch(/^\d+\.\d+/)
+    expect(described.schema.additionalProperties).toBe(false)
+    expect(described.schema.properties.audio_device).toEqual({ type: "string" })
+    for (const key of reserved) expect(described.schema.properties[key]).toBeUndefined()
+    // A key the program's source does not declare is not offered either.
+    expect(described.schema.properties["absent_key"]).toBeUndefined()
+    expect(handlers["settings.validate"]({ values: { absent_key: true } }).diagnostics)
+      .toHaveLength(1)
+  })
+
   it("retains raw comments, native values and config key validation rules", () => {
     expect(content({ config: { prepend: '\n #include "not-loaded.cfg"\n Future_key9 = "a#b" # comment\n' } }))
       .toContain('Future_key9 = "a#b" # comment\n')
     for (const line of ["missing", "= value", "bad-key = value", "a b = value", "#skip\n[section]"]) {
       expect(() => content({ config: { append: line } })).toThrow("Invalid RetroArch")
     }
-    expect(() => content({ settings: { "bad-key": true } })).toThrow("invalid")
+    // A key no checked schema declares cannot reach the file, whatever it is.
+    expect(content({ settings: { "bad-key": true } })).not.toContain("bad-key")
     expect(() => content({ config: { replace: "" } })).toThrow("replace")
     for (const value of [NaN, Infinity, -Infinity]) {
-      expect(() => content({ settings: { audio_volume: value } })).toThrow("audio_volume")
+      expect(content({ settings: { audio_volume: value } })).not.toContain("audio_volume = NaN")
+      expect(handlers["settings.validate"]({ values: { audio_volume: value } }).diagnostics)
+        .toHaveLength(1)
     }
   })
 

@@ -7,6 +7,20 @@ checker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(checker)
 
 
+class SettingsModuleTests(unittest.TestCase):
+    def test_module_carries_the_checked_keys_and_the_program_version(self):
+        module = checker.render_module("1.22.2", {"video_vsync": "Boolean", "audio_device": "String"})
+        self.assertIn('export const version = "1.22.2"', module)
+        self.assertIn('  video_vsync: "Boolean",', module)
+        self.assertIn('  audio_device: "String",', module)
+        # Sorted, so one pinned program always produces the same plugin source.
+        self.assertLess(module.index("audio_device"), module.index("video_vsync"))
+        self.assertEqual(
+            module,
+            checker.render_module("1.22.2", {"audio_device": "String", "video_vsync": "Boolean"}),
+        )
+
+
 class SourceSettingsTests(unittest.TestCase):
     def test_key_and_type_must_both_match(self):
         accepted, omitted = checker.check(

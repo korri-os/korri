@@ -35,6 +35,40 @@ use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type,
 /// A runner that korrid must start needs this handler and nothing else.
 pub const LAUNCH_PREPARE: &str = "launch.prepare";
 
+/// The runner's own settings schema, valid for the build that answered.
+pub const SETTINGS_DESCRIBE: &str = "settings.describe";
+
+/// What this build cannot apply from the authored values.
+pub const SETTINGS_VALIDATE: &str = "settings.validate";
+
+/// Why one operation call produced no result.
+///
+/// A caller that treats an operation as optional checks `Unimplemented`
+/// instead of matching on message text, so an unimplemented operation can
+/// never be mistaken for a successful empty answer.
+#[derive(Debug)]
+pub enum OperationFailure {
+    Unimplemented { operation: String },
+    Failed(String),
+}
+
+impl std::fmt::Display for OperationFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unimplemented { operation } => {
+                write!(formatter, "plugin does not implement {operation}")
+            }
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl OperationFailure {
+    pub fn is_unimplemented(&self) -> bool {
+        matches!(self, Self::Unimplemented { .. })
+    }
+}
+
 /// Transpile TypeScript to JavaScript, in-process, at load time.
 pub fn transpile_ts(source: &str) -> Result<String, String> {
     preparation::transpile(source, "plugin.ts")
@@ -66,8 +100,9 @@ pub fn call_plugin_operation_ts(
     source: &str,
     operation: &str,
     input_json: &str,
-) -> Result<String, String> {
-    call_plugin_operation_snapshot(&source::SourceSnapshot::plugin(source)?, operation, input_json)
+) -> Result<String, OperationFailure> {
+    let snapshot = source::SourceSnapshot::plugin(source).map_err(OperationFailure::Failed)?;
+    call_plugin_operation_snapshot(&snapshot, operation, input_json)
 }
 
 /// Prepare the retained graph, then invoke one handler in a fresh interpreter.
@@ -75,17 +110,30 @@ pub fn call_plugin_operation_snapshot(
     snapshot: &source::SourceSnapshot,
     operation: &str,
     input_json: &str,
-) -> Result<String, String> {
+) -> Result<String, OperationFailure> {
     if input_json.len() > 512 * 1024 {
-        return Err(format!("plugin {operation} input exceeds 512 KiB"));
+        return Err(OperationFailure::Failed(format!(
+            "plugin {operation} input exceeds 512 KiB"
+        )));
     }
+    let graph =
+        preparation::PreparedGraph::new(snapshot, "plugin.ts").map_err(OperationFailure::Failed)?;
     evaluate_module(
-        preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
+        graph,
         Some(Invocation {
             operation,
             input: input_json,
         }),
     )
+    .map_err(|error| {
+        if error == unimplemented_message(operation) {
+            OperationFailure::Unimplemented {
+                operation: operation.to_owned(),
+            }
+        } else {
+            OperationFailure::Failed(error)
+        }
+    })
 }
 
 fn evaluate_module(
@@ -177,8 +225,9 @@ fn evaluate_module(
                 })
             })
         {
-            handler(&exports, LAUNCH_PREPARE)
-                .map_err(|_| "native runner kind has no callable launch.prepare handler".to_owned())?;
+            handler(&exports, LAUNCH_PREPARE).map_err(|_| {
+                "native runner kind has no callable launch.prepare handler".to_owned()
+            })?;
         }
         let result = if let Some(invocation) = invocation {
             let operation = invocation.operation;
@@ -228,14 +277,18 @@ fn validate_handlers(value: &Value<'_>) -> Result<(), String> {
     Ok(())
 }
 
+fn unimplemented_message(operation: &str) -> String {
+    format!("plugin has no handler for {operation}")
+}
+
 /// Resolve one operation handler. An operation the plugin does not implement
 /// is an explicit failure, never a successful empty result.
 fn handler<'js>(exports: &Object<'js>, operation: &str) -> Result<Function<'js>, String> {
     exports
         .get::<_, Object>("handlers")
-        .map_err(|_| format!("plugin has no handlers export, so it cannot run {operation}"))?
+        .map_err(|_| unimplemented_message(operation))?
         .get::<_, Function>(operation)
-        .map_err(|_| format!("plugin has no handler for {operation}"))
+        .map_err(|_| unimplemented_message(operation))
 }
 
 // QuickJS accounts for shared strings once. Rust's JSON tree copies them, so
@@ -517,7 +570,9 @@ mod tests {
             call_plugin_operation_ts(source, LAUNCH_PREPARE, input).unwrap(),
             first
         );
-        assert!(call_plugin_operation_ts("export const name = 'clock'", LAUNCH_PREPARE, input).is_err());
+        assert!(
+            call_plugin_operation_ts("export const name = 'clock'", LAUNCH_PREPARE, input).is_err()
+        );
         assert!(call_plugin_operation_ts(source, LAUNCH_PREPARE, "invalid JSON").is_err());
         assert!(
             call_plugin_operation_ts(source, LAUNCH_PREPARE, &" ".repeat(512 * 1024 + 1)).is_err()
@@ -535,13 +590,22 @@ mod tests {
             call_plugin_operation_ts(source, LAUNCH_PREPARE, "null").unwrap(),
             "{\"picked\":\"launch.prepare\"}"
         );
-        // An operation this plugin does not implement is reported, never
-        // answered with an empty success.
-        let error = call_plugin_operation_ts(source, "session.control", "null").unwrap_err();
-        assert!(error.contains("session.control"), "{error}");
-        let error = call_plugin_operation_ts("export const name = 'clock'", "job.status", "null")
+        // An operation this plugin does not implement is reported as its own
+        // case, never answered with an empty success and never confused with a
+        // handler that ran and failed.
+        let failure = call_plugin_operation_ts(source, "session.control", "null").unwrap_err();
+        assert!(failure.is_unimplemented(), "{failure}");
+        assert!(failure.to_string().contains("session.control"), "{failure}");
+        let failure = call_plugin_operation_ts("export const name = 'clock'", "job.status", "null")
             .unwrap_err();
-        assert!(error.contains("job.status"), "{error}");
+        assert!(failure.is_unimplemented(), "{failure}");
+        let failure = call_plugin_operation_ts(
+            "export const name = 'clock'; export const handlers = {'job.status': () => { throw new Error('boom'); }}",
+            "job.status",
+            "null",
+        )
+        .unwrap_err();
+        assert!(!failure.is_unimplemented(), "{failure}");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use korri_plugin_host::{declaration::Declaration, script::call_plugin_launch_ts};
+use korri_plugin_host::{declaration::Declaration, script::call_plugin_operation_ts};
 
 #[test]
 fn game_packages_preserve_the_shipped_declaration_exports_without_a_service() {
@@ -37,7 +37,7 @@ fn native_runner_admission_requires_launch_but_does_not_call_it() {
     }
     Declaration::evaluate(
         "@example",
-        &format!("{declaration} export function launch() {{ throw new Error('must not run'); }}"),
+        &format!("{declaration} export const handlers = {{'launch.prepare': function () {{ throw new Error('must not run'); }}}}"),
     )
     .unwrap();
 }
@@ -83,15 +83,16 @@ fn host_admission_preserves_data_and_never_invokes_the_launch_callback() {
     let source = "export const name = 'game';
         export const config = {runners: {}};
         export const android = {packageName: 'org.example.game'};
-        export function launch(input) { return {command: input.program, args: [input.runtime.id]}; }";
+        export const handlers = {'launch.prepare': function (input) { return {command: input.program, args: [input.runtime.id]}; }}";
     let declaration = Declaration::evaluate("@example", source).unwrap();
     let data = serde_json::to_value(declaration).unwrap();
     assert_eq!(data["config"], serde_json::json!({"runners": {}}));
     assert_eq!(data["android"]["packageName"], "org.example.game");
-    assert!(data.get("launch").is_none());
+    assert!(data.get("handlers").is_none());
     let launch: serde_json::Value = serde_json::from_str(
-        &call_plugin_launch_ts(
+        &call_plugin_operation_ts(
             source,
+            "launch.prepare",
             r#"{"program":"/approved/program","runtime":{"id":"@example:game/core"}}"#,
         )
         .unwrap(),
@@ -101,6 +102,6 @@ fn host_admission_preserves_data_and_never_invokes_the_launch_callback() {
         launch,
         serde_json::json!({"command":"/approved/program", "args":["@example:game/core"]})
     );
-    let never_call = "export const name = 'game'; export function launch() { throw new Error('not during approval'); }";
+    let never_call = "export const name = 'game'; export const handlers = {'launch.prepare': function () { throw new Error('not during approval'); }}";
     assert!(Declaration::evaluate("@example", never_call).is_ok());
 }

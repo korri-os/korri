@@ -60,6 +60,27 @@ def check(table, source, reserved):
     return accepted, omitted
 
 
+def render_module(version, accepted):
+    """The same evidence as plugin source, so the runner owns its own schema.
+
+    korrid never parses this. The plugin imports it and answers
+    settings.describe and settings.validate from it, which is why the
+    generated text is a module and not another host-readable metadata file.
+    """
+    keys = "".join(
+        f"  {key}: {json.dumps(kind)},\n" for key, kind in sorted(accepted.items())
+    )
+    return (
+        "// Generated from the pinned RetroArch source at build time."
+        " Do not edit.\n"
+        "// The version is the revision a described schema is valid for.\n"
+        f"export const version = {json.dumps(version)}\n\n"
+        "export const keys: Record<string, \"Boolean\" | \"Number\" | \"String\"> = {\n"
+        f"{keys}"
+        "}\n"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--configuration", type=Path, required=True)
@@ -68,6 +89,7 @@ def main():
     parser.add_argument("--program", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--module", type=Path, required=True)
     args = parser.parse_args()
     # The callback is the existing owner of the security restriction. Never
     # maintain a second list in generated packaging metadata.
@@ -85,6 +107,7 @@ def main():
     args.output.write_text(json.dumps({
         "program": args.program, "version": args.version, "keys": accepted,
     }, sort_keys=True) + "\n")
+    args.module.write_text(render_module(args.version, accepted))
 
 
 if __name__ == "__main__":
