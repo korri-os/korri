@@ -57,7 +57,7 @@ let
         owner: { kind: "runner", id: ${json runnerId} },
         label: "Open RetroArch menu",
         interaction: { kind: "command" },
-        effect: ${json "${pluginId}/open-menu"},
+        effect: "@korri:retroarch/open-menu",
         dismissOnSuccess: true,
       },
       quit: {
@@ -66,7 +66,7 @@ let
         owner: { kind: "runner", id: ${json runnerId} },
         label: "Quit game",
         interaction: { kind: "command" },
-        effect: ${json "${pluginId}/quit"},
+        effect: "@korri:retroarch/quit",
         destructive: true,
         dismissOnSuccess: true,
       },

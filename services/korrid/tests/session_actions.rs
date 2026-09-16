@@ -89,7 +89,7 @@ export const sessionControls = {
     owner: { kind: "runner", id: "@korri:mgba/mgba" },
     label: "Open RetroArch menu",
     interaction: { kind: "command" },
-    effect: "@korri:mgba/open-menu",
+    effect: "@korri:retroarch/open-menu",
     dismissOnSuccess: true,
   },
 };

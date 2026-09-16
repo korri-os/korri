@@ -169,11 +169,15 @@ pub enum SessionControlDeclarationInteraction {
     },
 }
 
+/// An effect names behaviour korrid implements, so it is scoped to the family
+/// that owns the behaviour, never to one plugin that happens to use it. Every
+/// runner in the RetroArch family reaches the same two controls; a control's
+/// own id stays plugin-scoped.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum SessionControlEffect {
-    #[serde(rename = "@korri:mgba/open-menu")]
+    #[serde(rename = "@korri:retroarch/open-menu")]
     RetroarchOpenMenu,
-    #[serde(rename = "@korri:mgba/quit")]
+    #[serde(rename = "@korri:retroarch/quit")]
     RetroarchQuit,
     #[serde(rename = "@korri:moonlight/disconnect")]
     MoonlightDisconnect,
@@ -330,10 +334,12 @@ impl SessionControlEffect {
         }
     }
 
-    fn plugin_id(self) -> &'static str {
+    /// The family whose members may declare this effect. Membership, not a
+    /// plugin name, is what grants the right to use it.
+    fn family(self) -> &'static str {
         match self.integration() {
             SessionControlIntegration::Moonlight => "@korri:moonlight",
-            SessionControlIntegration::Retroarch => "@korri:mgba",
+            SessionControlIntegration::Retroarch => "@korri:retroarch",
         }
     }
 }
@@ -1052,11 +1058,25 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 ),
             });
         }
-        if control.effect.plugin_id() != id {
+        // A runner earns an effect by joining the family that owns it. A
+        // transport has no family, so its own plugin must be that family.
+        let effect_family = control.effect.family();
+        let in_family = match control.owner.kind {
+            SessionControlOwnerKind::Runner => {
+                declaration
+                    .runners
+                    .values()
+                    .find(|runner| runner.id == control.owner.id)
+                    .and_then(|runner| runner.family.as_deref())
+                    == Some(effect_family)
+            }
+            SessionControlOwnerKind::Transport => id == effect_family,
+        };
+        if !in_family {
             return Err(PluginError::InvalidContribution {
                 kind: "session control",
                 record_id: local_id.clone(),
-                reason: "effect belongs to another integration".to_owned(),
+                reason: format!("effect requires membership of family {effect_family}"),
             });
         }
         validate_session_control(local_id, control)?;

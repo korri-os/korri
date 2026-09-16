@@ -24,7 +24,7 @@ export const sessionControls = {
     owner: { kind: "runner", id: "@korri:mgba/mgba" },
     label: "Open RetroArch menu",
     interaction: { kind: "command" },
-    effect: "@korri:mgba/open-menu",
+    effect: "@korri:retroarch/open-menu",
     dismissOnSuccess: true,
   },
   quit: {
@@ -33,7 +33,7 @@ export const sessionControls = {
     owner: { kind: "runner", id: "@korri:mgba/mgba" },
     label: "Quit game",
     interaction: { kind: "command" },
-    effect: "@korri:mgba/quit",
+    effect: "@korri:retroarch/quit",
     destructive: true,
     dismissOnSuccess: true,
   },

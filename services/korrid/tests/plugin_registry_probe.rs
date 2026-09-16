@@ -74,6 +74,7 @@ export const name = "mgba";
 export const runners = {
   mgba: {
     id: "@korri:mgba/mgba",
+    family: "@korri:retroarch",
     command: "retroarch",
     systems: ["gba"],
     android: { packageName: "com.korri.retroarch", className: "com.retroarch.Main" },
@@ -86,7 +87,7 @@ export const sessionControls = {
     owner: { kind: "runner", id: "@korri:mgba/mgba" },
     label: "Open RetroArch menu",
     interaction: { kind: "command" },
-    effect: "@korri:mgba/open-menu",
+    effect: "@korri:retroarch/open-menu",
   },
 };
 "#;
