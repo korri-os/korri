@@ -10,7 +10,6 @@ use std::{
 };
 
 const RETROARCH_PROVIDER: &str = "@korri:retroarch";
-const MGBA_RUNNER: &str = "@korri:mgba/mgba";
 const RETROARCH_TOKEN: &str = "retroarch";
 fn config_content(root: &Path, libretro_directory: &Path, control_port: u16) -> String {
     format!(
@@ -94,9 +93,12 @@ fn write_atomically(path: &Path, content: &[u8]) -> std::io::Result<()> {
 }
 
 pub fn validate_route(route: &ResolvedRoute) -> Result<(), LaunchError> {
+    // Membership in the RetroArch family is what admits a route here, never the
+    // identity of one runner. Every core in the family reaches this path, so a
+    // second core is ordinary rather than a name korrid has to learn.
     if route.provider_id != RETROARCH_PROVIDER
         || route.family_id.as_deref() != Some(RETROARCH_PROVIDER)
-        || route.runner_id != MGBA_RUNNER
+        || route.runner_id.is_empty()
         || route.integration_token != RETROARCH_TOKEN
     {
         return Err(LaunchError::RouteUnavailable(format!(
@@ -247,6 +249,13 @@ mod tests {
     }
 
     fn route() -> ResolvedRoute {
+        core_route(
+            "@korri:mgba/mgba",
+            "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so",
+        )
+    }
+
+    fn core_route(runner_id: &str, core_path: &str) -> ResolvedRoute {
         ResolvedRoute {
             playable_id: "wl4".into(),
             title: Some("Wario Land 4".into()),
@@ -255,7 +264,7 @@ mod tests {
             provider_id: RETROARCH_PROVIDER.into(),
             system_id: "gba".into(),
             system_title: Some("Game Boy Advance".into()),
-            runner_id: MGBA_RUNNER.into(),
+            runner_id: runner_id.into(),
             family_id: Some(RETROARCH_PROVIDER.into()),
             integration_token: RETROARCH_TOKEN.into(),
             flattened_target: "roms:wl4.gba".into(),
@@ -264,12 +273,42 @@ mod tests {
                 class_name: "com.retroarch.browser.retroactivity.RetroActivityFuture".into(),
             }),
             linux_runner: None,
-            core_path: Some("/data/data/com.korri.retroarch/cores/mgba_libretro_android.so".into()),
+            core_path: Some(core_path.into()),
             file_target: Some(crate::config::resolver::ResolvedFileTarget {
                 storage_id: storage::IMPLICIT_ROMS_STORAGE_ID.into(),
                 path: "wl4.gba".into(),
             }),
         }
+    }
+
+    /// A second core of the RetroArch family must launch exactly like the first.
+    /// korrid once compared the runner id against `@korri:mgba/mgba`, so every
+    /// other generated core was rejected before it could be listed or launched.
+    #[test]
+    fn any_core_of_the_retroarch_family_validates() {
+        for runner_id in [
+            "@korri:mgba/mgba",
+            "@korri:snes9x2010/snes9x2010",
+            "@alice:ppsspp/ppsspp",
+        ] {
+            let route = core_route(
+                runner_id,
+                "/data/data/com.korri.retroarch/cores/any_libretro_android.so",
+            );
+            validate_route(&route)
+                .unwrap_or_else(|error| panic!("{runner_id} should validate: {error}"));
+        }
+    }
+
+    #[test]
+    fn a_route_outside_the_retroarch_family_is_refused() {
+        let mut foreign = route();
+        foreign.family_id = Some("@alice:ppsspp".into());
+        assert!(validate_route(&foreign).is_err());
+
+        let mut nameless = route();
+        nameless.runner_id = String::new();
+        assert!(validate_route(&nameless).is_err());
     }
 
     #[test]

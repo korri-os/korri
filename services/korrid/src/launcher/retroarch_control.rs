@@ -15,7 +15,6 @@ type HmacSha256 = Hmac<Sha256>;
 const CONTROL_TIMEOUT: Duration = Duration::from_millis(250);
 const KORRI_PACKAGE: &str = "com.korri.retroarch";
 const KORRI_ACTIVITY: &str = "com.retroarch.browser.retroactivity.RetroActivityFuture";
-const KORRI_RUNNER: &str = "@korri:mgba/mgba";
 const KORRI_EXECUTOR: &str = "retroarch-control";
 const PROTOCOL_VERSION: u8 = 1;
 const NONCE_LENGTH: usize = 32;
@@ -90,8 +89,12 @@ impl RetroarchControlAuthority {
         let trusted_shape = spec.runner_id == "retroarch"
             && spec.component.package_name == KORRI_PACKAGE
             && spec.component.class_name == KORRI_ACTIVITY
+            // Any named runner may hold this authority. The launch spec is
+            // HMAC-signed and its RetroArch component, program and executor are
+            // already checked, so pinning one runner id only excluded the other
+            // cores of the same family.
             && spec.context.contributors.iter().any(|contributor| {
-                contributor.kind == LaunchContributorKind::Runner && contributor.id == KORRI_RUNNER
+                contributor.kind == LaunchContributorKind::Runner && !contributor.id.is_empty()
             })
             && spec
                 .context
@@ -553,6 +556,10 @@ mod tests {
     }
 
     fn launch_spec() -> LaunchSpec {
+        spec_for_runner("@korri:mgba/mgba")
+    }
+
+    fn spec_for_runner(runner: &str) -> LaunchSpec {
         LaunchSpec {
             launch_id: "launch-1".into(),
             runner_id: "retroarch".into(),
@@ -563,7 +570,7 @@ mod tests {
                 content_crc32: Some("d6141609".into()),
                 contributors: vec![super::super::LaunchRouteContributor {
                     kind: LaunchContributorKind::Runner,
-                    id: KORRI_RUNNER.into(),
+                    id: runner.into(),
                 }],
                 executor: Some(super::super::LaunchExecutor {
                     id: KORRI_EXECUTOR.into(),
@@ -614,6 +621,38 @@ mod tests {
             40000
         )
         .is_err());
+    }
+
+    /// Session control follows the family, not one runner id. korrid once
+    /// required `@korri:mgba/mgba` here, so every other core of the RetroArch
+    /// family launched without an in-game menu or a quit control.
+    #[test]
+    fn any_named_runner_of_the_family_holds_the_control_authority() {
+        for runner in [
+            "@korri:mgba/mgba",
+            "@korri:snes9x2010/snes9x2010",
+            "@alice:ppsspp/ppsspp",
+        ] {
+            RetroarchControlAuthority::retain_from_verified_launch(
+                &spec_for_runner(runner),
+                TOKEN_TEXT,
+                50000,
+            )
+            .unwrap_or_else(|error| panic!("{runner} should hold authority: {error}"));
+        }
+    }
+
+    #[test]
+    fn a_launch_without_a_named_runner_holds_no_authority() {
+        assert_eq!(
+            RetroarchControlAuthority::retain_from_verified_launch(
+                &spec_for_runner(""),
+                TOKEN_TEXT,
+                50000
+            )
+            .unwrap_err(),
+            RetroarchControlError::InvalidAuthority
+        );
     }
 
     #[test]
