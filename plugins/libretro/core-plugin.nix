@@ -78,6 +78,13 @@ let
     }
   '';
 
+  # The generated runner names its program and core by key, and both keys land
+  # in one merged set. A catalogue entry that reuses a frontend key would
+  # replace the frontend entry with no message, and the runner would then point
+  # its program at a core library. That failure would first appear at launch on
+  # a device, so refuse it here instead.
+  frontendKeys = lib.unique (lib.attrNames frontend.packages ++ lib.attrNames frontend.files);
+
   # Regular files, never symlinks: the builder refuses a symlinked source.
   source = pkgs.runCommand "korri-core-source-${name}" { } ''
     mkdir -p "$out"
@@ -86,6 +93,11 @@ let
     chmod u+w "$out/retroarch.ts" "$out/plugin.ts"
   '';
 in
+assert lib.assertMsg (!lib.elem name frontendKeys) (
+  "libretro catalogue entry ${name} collides with the RetroArch frontend key "
+  + "${name}. Rename the catalogue entry; a core may not replace a frontend "
+  + "package or file."
+);
 # The package is what a device installs. The source is exposed beside it so
 # checks and fixtures can read the exact generated text.
 (mkPlugin {
