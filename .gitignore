@@ -14,6 +14,11 @@ local.env
 .worktrees/
 .fallow/
 .tmp/
+
+# Coding-agent session state: handoff documents, attachments, saved patches,
+# and one-off verification artifacts. Durable records belong in docs/.
+.forgerie/
+.pi-web/
 .resession.json
 /.nix-bin
 /.pi/git
