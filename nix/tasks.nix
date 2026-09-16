@@ -131,6 +131,41 @@ let
     };
 
   definitions = {
+    hooks-install = {
+      description = "Install the Git hook that refuses a commit which stages a secret.";
+      runtimeInputs = [
+        pkgs.lefthook
+        pkgs.nix
+      ];
+      script = ''
+        cd "$KORRI_ROOT"
+        lefthook install
+        # `lefthook install` writes the absolute store path of this lefthook
+        # into the generated hook. A garbage collection would delete that path,
+        # and the hook then reports a missing lefthook and lets the commit
+        # through. Root the build, so nothing can disarm the gate in silence.
+        git_dir="$(git rev-parse --git-common-dir)"
+        case "$git_dir" in
+          /*) ;;
+          *) git_dir="$KORRI_ROOT/$git_dir" ;;
+        esac
+        nix-store --realise --indirect \
+          --add-root "$git_dir/lefthook-gcroot" \
+          "$(dirname "$(dirname "$(command -v lefthook)")")" >/dev/null
+        echo "Installed. Git shares these hooks with every worktree of this repository."
+      '';
+    };
+    secret-scan-staged = {
+      description = "Scan the staged changes for secrets; the pre-commit hook runs this.";
+      runtimeInputs = [ pkgs.gitleaks ];
+      script = ''
+        cd "$KORRI_ROOT"
+        # --redact keeps the value out of the terminal and out of any log that
+        # captures it; --verbose is what names the offending file, which the
+        # committer needs in order to act.
+        exec gitleaks git --staged --redact --verbose --no-banner .
+      '';
+    };
     r36tmax-check = {
       description = "Check the R36T Max console and Korri configurations without deploying.";
       runtimeInputs = [ pkgs.nix ];

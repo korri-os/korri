@@ -129,6 +129,12 @@ permission expansion.
   toolchain composition lives in per-area Nix expressions; `devshell.nix`
   owns the interactive shell. No inline derivations or shells.
 - Project tasks are Nix apps; discover them with `nix run .#help`.
+- A pre-commit hook refuses a commit that stages a secret. Run
+  `nix run .#hooks-install` once per clone; Git shares the hook with every
+  worktree. `lefthook.yml` declares it and `.gitleaks.toml` holds the rules,
+  including the path rule for korrid device keys that no content rule can see.
+  Never commit with `LEFTHOOK=0` or `--no-verify` to get past a finding:
+  correct the staged change, or allow the value in `.gitleaks.toml` and say why.
 - Never compile software or dispatch builds from target devices. Follow
   `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
   Runtime TS/JS transpilation remains part of the plugin scripting contract.

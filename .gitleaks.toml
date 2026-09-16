@@ -1,0 +1,45 @@
+# Korri secret-scanning rules. `nix run .#secret-scan-staged` reads this file,
+# and the pre-commit hook declared in lefthook.yml runs that task.
+#
+# The default rule set is kept, because it carries the third-party token rules
+# nobody should rewrite by hand. Two things it gets wrong here:
+#
+#   1. It does not see a korrid device private key. The key is 64 hexadecimal
+#      characters alone in a file, with no keyword beside it and the same
+#      entropy as a SHA-256 digest, so no content rule can separate the two.
+#      The path is what identifies it, so the rule below matches on path.
+#   2. It reports Korri's device *public* keys as generic API keys. Those are
+#      published identifiers that appear in documents and tests by design, so
+#      they are allowed by value.
+#
+# A one-off false positive does not need a change here: put a `gitleaks:allow`
+# comment on the offending line.
+
+[extend]
+useDefault = true
+
+# korrid writes its runtime state beside the binary when no state directory is
+# set, and that state holds the device private key. Commit a2b07efd staged one
+# that way. No korrid runtime state belongs in the repository, so the whole
+# directory is refused, not only the key file.
+[[rules]]
+id = "korri-device-private-key"
+description = "korrid device identity private key or surrounding runtime state"
+path = '''(^|/)(korri-state/.*|identity/device\.key)$'''
+
+[allowlist]
+description = "Values and paths that carry no secret."
+regexes = [
+  # Zao's device public key, and the owner public key beside it. Both are
+  # published identifiers; korrid sends the device one as `devicePublicKey`.
+  '''7bb368b270acb72d81856b7b7010d919ec4882afe7c3aaa56b7b6839e46b47f6''',
+  '''f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9''',
+]
+paths = [
+  # Vendored kernel patches. Their `key-select` and `key-m1` button tables read
+  # as key assignments to the generic rule.
+  '''nix/devices/[^/]+/kernel/patches/''',
+  # Acceptance records cite Korri and upstream commits by hash next to the word
+  # they fixed, which the generic rule reads as a key.
+  '''docs/acceptance/''',
+]

@@ -1,0 +1,20 @@
+# Korri commit hooks. Install them once per clone with:
+#
+#     nix run .#hooks-install
+#
+# Git shares its hooks across every worktree of a repository, so one install
+# covers the primary checkout and all of .worktree/.
+#
+# The command below needs only `nix` on the committer's PATH, which this
+# repository already requires. It therefore behaves the same in a linked
+# worktree, where `.git` is a file and no path under it can be assumed, and it
+# rebuilds itself after a garbage collection instead of going quiet.
+#
+# The gate is secrets only. Korri has no repository-wide formatter task, so
+# this file stays at one command until one exists.
+
+pre-commit:
+  commands:
+    secrets:
+      run: nix run .#secret-scan-staged
+      fail_text: A staged change looks like a secret. Nothing was committed.
