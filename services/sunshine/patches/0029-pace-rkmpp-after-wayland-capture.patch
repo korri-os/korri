@@ -1,0 +1,61 @@
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -533,21 +533,24 @@
+   public:
+     platf::capture_e capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) override {
+       auto next_frame = std::chrono::steady_clock::now();
++      const bool compositor_paced = mem_type == platf::mem_type_e::rkmpp;
+ 
+       sleep_overshoot_logger.reset();
+ 
+       while (true) {
+-        auto now = std::chrono::steady_clock::now();
++        if (!compositor_paced) {
++          auto now = std::chrono::steady_clock::now();
+ 
+-        if (next_frame > now) {
+-          std::this_thread::sleep_for(next_frame - now);
+-          sleep_overshoot_logger.first_point(next_frame);
+-          sleep_overshoot_logger.second_point_now_and_log();
+-        }
++          if (next_frame > now) {
++            std::this_thread::sleep_for(next_frame - now);
++            sleep_overshoot_logger.first_point(next_frame);
++            sleep_overshoot_logger.second_point_now_and_log();
++          }
+ 
+-        next_frame += delay;
+-        if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
+-          next_frame = now + delay;
++          next_frame += delay;
++          if (next_frame < now) {  // some major slowdown happened; we couldn't keep up
++            next_frame = now + delay;
++          }
+         }
+ 
+         std::shared_ptr<platf::img_t> img_out;
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -3042,7 +3042,9 @@
+           if (ctx->runtime_fps == 0) {
+             ctx->runtime_fps = ctx->config.framerate;
+           }
+-          if (frame_captured && ctx->runtime_fps > 0 && ctx->runtime_fps < (std::uint32_t) ctx->config.framerate) {
++          const bool pace_rkmpp = encoder.name == "rkmpp";
++          if (frame_captured && ctx->runtime_fps > 0 &&
++              (pace_rkmpp || ctx->runtime_fps < (std::uint32_t) ctx->config.framerate)) {
+             auto now = std::chrono::steady_clock::now();
+             if (ctx->next_runtime_frame.time_since_epoch().count() == 0) {
+               ctx->next_runtime_frame = now;
+@@ -3051,7 +3053,10 @@
+               ++pos;
+               continue;
+             }
+-            ctx->next_runtime_frame = now + runtime_fps_interval(ctx->runtime_fps);
++            const auto interval = runtime_fps_interval(ctx->runtime_fps);
++            do {
++              ctx->next_runtime_frame += interval;
++            } while (ctx->next_runtime_frame <= now);
+           }
+ 
+           if (frame_captured && pos->session->convert(*img)) {

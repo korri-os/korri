@@ -1,0 +1,31 @@
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -2620,11 +2620,27 @@
+       const bool pace_rkmpp = encoder.name == "rkmpp";
+       if (!requested_idr_frame && runtime_fps > 0 &&
+           (pace_rkmpp || runtime_fps < (std::uint32_t) config.framerate)) {
++        const auto interval = runtime_fps_interval(runtime_fps);
+         auto now = std::chrono::steady_clock::now();
++        if (next_runtime_frame.time_since_epoch().count() == 0) {
++          next_runtime_frame = now;
++        }
+         if (now < next_runtime_frame) {
+           std::this_thread::sleep_until(next_runtime_frame);
+         }
+-        next_runtime_frame = std::chrono::steady_clock::now() + runtime_fps_interval(runtime_fps);
++
++        // Advance the schedule from the previous deadline rather than from the
++        // clock. Re-reading the clock here folds each sleep's overshoot into
++        // the next period, so the encoder drifts permanently below the
++        // negotiated rate instead of averaging out to it.
++        next_runtime_frame += interval;
++
++        // Only resynchronise after a real stall, so ordinary jitter does not
++        // reintroduce the drift this avoids.
++        auto after_sleep = std::chrono::steady_clock::now();
++        if (next_runtime_frame + interval < after_sleep) {
++          next_runtime_frame = after_sleep + interval;
++        }
+       }
+ 
+       // Encode at a minimum FPS to avoid image quality issues with static content

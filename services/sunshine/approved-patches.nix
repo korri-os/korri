@@ -171,14 +171,65 @@ rec {
     sha256 = "d501ea2c8db6ed4905794b036094796a82aa04d147e92f54b6f73feb35f443b5";
   };
 
+  # The compositor has already advertised the capture format before Sunshine
+  # creates this buffer. Use linux-dmabuf's immediate creation request to avoid
+  # waiting for an extra server callback on every frame.
+  rkmppWaylandImmediatePatch = {
+    name = "0028-create-wayland-dmabuf-immediately.patch";
+    path = ./patches/0028-create-wayland-dmabuf-immediately.patch;
+    sha256 = "0433b060174c0ea3bea40612558ec8a9da6d7e9ff6b72bd398fb752b0ecb1d82";
+  };
+
+  # Let Wayland capture follow the compositor, then enforce the negotiated
+  # frame rate at the async RKMPP encoder boundary with an absolute deadline.
+  # This permits capture headroom without sending more than the requested FPS.
+  rkmppWaylandPacingPatch = {
+    name = "0029-pace-rkmpp-after-wayland-capture.patch";
+    path = ./patches/0029-pace-rkmpp-after-wayland-capture.patch;
+    sha256 = "93a50aa9fef89644648e63cd2bbbffe22e262ce4410e28c9a1a87b072cf66c1d";
+  };
+
+  # Keep a bounded pool of linear GBM buffers instead of allocating and
+  # importing one on every screencopy. A busy token follows each captured image
+  # until the encoder releases it, preventing capture/encode reuse races.
+  rkmppWaylandBufferPoolPatch = {
+    name = "0030-reuse-wayland-capture-buffers.patch";
+    path = ./patches/0030-reuse-wayland-capture-buffers.patch;
+    sha256 = "194d34f3ba95aba3dd5a0011bca4f9bef1bd6436b8b3d7d43f9d3db15c3cc963";
+  };
+
+  # Issue the next screencopy request before handing the current frame to the
+  # encoder. Requesting only after the handoff means a request is outstanding
+  # for some vblanks but not others, which costs captured frames.
+  rkmppWaylandPipelinePatch = {
+    name = "0031-pipeline-wayland-capture-requests.patch";
+    path = ./patches/0031-pipeline-wayland-capture-requests.patch;
+    sha256 = "6d05d0d8f22ee61e7dc51d43080ba0ef7e2acf6786397fe13104146c5c3584cd";
+  };
+
+  # The async encode loop reset its deadline from the clock after sleeping,
+  # folding each sleep's overshoot into the next period. That drift held the
+  # encoder permanently below the negotiated rate. Advance from the previous
+  # deadline and resynchronise only after a real stall.
+  rkmppEncodeSchedulePatch = {
+    name = "0032-keep-an-absolute-rkmpp-encode-schedule.patch";
+    path = ./patches/0032-keep-an-absolute-rkmpp-encode-schedule.patch;
+    sha256 = "d1df5c2938b8fc2c2d550d294c7adadc7ec65e0d4706f1cbd1a1dfbe94de52e8";
+  };
+
   rkmppPatches = [
     rkmppPatch
     rkmppZeroCopyPatch
     stdinPinPatch
     rkmppWaylandPatch
+    rkmppWaylandImmediatePatch
+    rkmppWaylandPacingPatch
+    rkmppWaylandBufferPoolPatch
+    rkmppWaylandPipelinePatch
+    rkmppEncodeSchedulePatch
   ];
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "190c34524326292434c1c3c1a141f2453555850fa798256446f66933f93eff22";
+  rkmppPatchSetSha256 = "9831de83dc5ce51d70fcbc4fa6eb4d72e0566d0a04ecc76e9e987859fdea5a3e";
 }

@@ -1,0 +1,347 @@
+--- a/src/platform/linux/graphics.h
++++ b/src/platform/linux/graphics.h
+@@ -5,6 +5,8 @@
+ #pragma once
+ 
+ // standard includes
++#include <atomic>
++#include <memory>
+ #include <optional>
+ #include <string_view>
+ 
+@@ -235,6 +237,11 @@
+     std::uint64_t modifier;
+     std::uint32_t pitches[4];
+     std::uint32_t offsets[4];
++
++    // Wayland RKMPP capture buffers are pooled. The capture thread sets this
++    // token while a descriptor is queued for encoding; resetting the image
++    // releases the slot only after the encoder has finished consuming it.
++    std::shared_ptr<std::atomic_bool> capture_busy;
+   };
+ 
+   display_t make_display(std::variant<gbm::gbm_t::pointer, wl_display *, _XDisplay *> native_display);
+@@ -282,6 +289,10 @@
+     }
+ 
+     void reset() {
++      if (sd.capture_busy) {
++        sd.capture_busy->store(false, std::memory_order_release);
++        sd.capture_busy.reset();
++      }
+       for (auto x = 0; x < 4; ++x) {
+         if (sd.fds[x] >= 0) {
+           close(sd.fds[x]);
+--- a/src/platform/linux/wayland.h
++++ b/src/platform/linux/wayland.h
+@@ -5,9 +5,12 @@
+ #pragma once
+ 
+ // standard includes
++#include <array>
++#include <atomic>
+ #include <bitset>
+ #include <cstddef>
+ #include <cstdint>
++#include <memory>
+ 
+ #ifdef SUNSHINE_BUILD_WAYLAND
+   #include <linux-dmabuf-unstable-v1.h>
+@@ -79,9 +82,23 @@
+     bool require_linear {false};
+ 
+   private:
++    struct reusable_dmabuf_t {
++      struct gbm_bo *bo {nullptr};
++      struct wl_buffer *buffer {nullptr};
++      int fd {-1};
++      std::uint32_t format {};
++      std::uint32_t width {};
++      std::uint32_t height {};
++      std::uint32_t stride {};
++      std::uint64_t modifier {};
++      std::shared_ptr<std::atomic_bool> busy {std::make_shared<std::atomic_bool>(false)};
++    };
++
+     bool init_gbm();
+     void cleanup_gbm();
++    void cleanup_reusable_dmabufs();
+     void create_and_copy_dmabuf(zwlr_screencopy_frame_v1 *frame);
++    void create_and_copy_reusable_dmabuf(zwlr_screencopy_frame_v1 *frame);
+     void create_and_copy_shm(zwlr_screencopy_frame_v1 *frame);
+ 
+     zwp_linux_dmabuf_v1 *dmabuf_interface {nullptr};
+@@ -106,6 +123,8 @@
+     struct gbm_device *gbm_device {nullptr};
+     struct gbm_bo *current_bo {nullptr};
+     struct wl_buffer *current_wl_buffer {nullptr};
++    static constexpr std::size_t reusable_dmabuf_count = 12;
++    std::array<reusable_dmabuf_t, reusable_dmabuf_count> reusable_dmabufs;
+     bool y_invert {false};
+   };
+ 
+--- a/src/platform/linux/wayland.cpp
++++ b/src/platform/linux/wayland.cpp
+@@ -273,6 +273,24 @@
+     }
+   }
+ 
++  void dmabuf_t::cleanup_reusable_dmabufs() {
++    for (auto &slot : reusable_dmabufs) {
++      if (slot.buffer) {
++        wl_buffer_destroy(slot.buffer);
++        slot.buffer = nullptr;
++      }
++      if (slot.bo) {
++        gbm_bo_destroy(slot.bo);
++        slot.bo = nullptr;
++      }
++      if (slot.fd >= 0) {
++        close(slot.fd);
++        slot.fd = -1;
++      }
++      slot.busy->store(false, std::memory_order_release);
++    }
++  }
++
+   dmabuf_t::dmabuf_t():
+       status {READY},
+       frames {},
+@@ -322,10 +340,7 @@
+ 
+   dmabuf_t::~dmabuf_t() {
+     cleanup_gbm();
+-    if (current_wl_buffer) {
+-      wl_buffer_destroy(current_wl_buffer);
+-      current_wl_buffer = nullptr;
+-    }
++    cleanup_reusable_dmabufs();
+ 
+     for (auto &frame : frames) {
+       frame.destroy();
+@@ -376,8 +391,133 @@
+     BOOST_LOG(debug) << "Frame flags: "sv << flags << (y_invert ? " (y_invert)" : "");
+   }
+ 
++  void dmabuf_t::create_and_copy_reusable_dmabuf(zwlr_screencopy_frame_v1 *frame) {
++    if (!init_gbm()) {
++      BOOST_LOG(error) << "Failed to initialize GBM"sv;
++      zwlr_screencopy_frame_v1_destroy(frame);
++      status = REINIT;
++      return;
++    }
++
++    reusable_dmabuf_t *slot = nullptr;
++    for (auto &candidate : reusable_dmabufs) {
++      if (candidate.bo &&
++          candidate.format == dmabuf_info.format &&
++          candidate.width == dmabuf_info.width &&
++          candidate.height == dmabuf_info.height &&
++          !candidate.busy->load(std::memory_order_acquire)) {
++        slot = &candidate;
++        break;
++      }
++    }
++    if (!slot) {
++      for (auto &candidate : reusable_dmabufs) {
++        if (!candidate.bo) {
++          slot = &candidate;
++          break;
++        }
++      }
++    }
++    if (!slot) {
++      BOOST_LOG(error) << "All reusable Wayland capture buffers are still in use"sv;
++      zwlr_screencopy_frame_v1_destroy(frame);
++      status = REINIT;
++      return;
++    }
++
++    if (!slot->bo) {
++      slot->bo = gbm_bo_create(
++        gbm_device,
++        dmabuf_info.width,
++        dmabuf_info.height,
++        dmabuf_info.format,
++        GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR
++      );
++      if (!slot->bo) {
++        BOOST_LOG(error) << "Failed to create reusable GBM buffer"sv;
++        zwlr_screencopy_frame_v1_destroy(frame);
++        status = REINIT;
++        return;
++      }
++
++      slot->fd = gbm_bo_get_fd(slot->bo);
++      slot->stride = gbm_bo_get_stride(slot->bo);
++      slot->modifier = gbm_bo_get_modifier(slot->bo);
++      slot->format = dmabuf_info.format;
++      slot->width = dmabuf_info.width;
++      slot->height = dmabuf_info.height;
++      if (slot->fd < 0 ||
++          (slot->modifier != DRM_FORMAT_MOD_LINEAR && slot->modifier != DRM_FORMAT_MOD_INVALID)) {
++        BOOST_LOG(error) << "Failed to create a linear reusable Wayland capture buffer"sv;
++        if (slot->fd >= 0) {
++          close(slot->fd);
++          slot->fd = -1;
++        }
++        gbm_bo_destroy(slot->bo);
++        slot->bo = nullptr;
++        zwlr_screencopy_frame_v1_destroy(frame);
++        status = REINIT;
++        return;
++      }
++
++      auto params = zwp_linux_dmabuf_v1_create_params(dmabuf_interface);
++      zwp_linux_buffer_params_v1_add(
++        params,
++        slot->fd,
++        0,
++        0,
++        slot->stride,
++        slot->modifier >> 32,
++        slot->modifier & 0xffffffff
++      );
++      slot->buffer = zwp_linux_buffer_params_v1_create_immed(
++        params,
++        slot->width,
++        slot->height,
++        slot->format,
++        0
++      );
++      zwp_linux_buffer_params_v1_destroy(params);
++      if (!slot->buffer) {
++        BOOST_LOG(error) << "Failed to create reusable Wayland buffer"sv;
++        close(slot->fd);
++        slot->fd = -1;
++        gbm_bo_destroy(slot->bo);
++        slot->bo = nullptr;
++        zwlr_screencopy_frame_v1_destroy(frame);
++        status = REINIT;
++        return;
++      }
++    }
++
++    auto next_frame = get_next_frame();
++    next_frame->destroy();
++    next_frame->sd.fds[0] = dup(slot->fd);
++    if (next_frame->sd.fds[0] < 0) {
++      BOOST_LOG(error) << "Failed to duplicate reusable Wayland capture buffer"sv;
++      zwlr_screencopy_frame_v1_destroy(frame);
++      status = REINIT;
++      return;
++    }
++    next_frame->sd.width = slot->width;
++    next_frame->sd.height = slot->height;
++    next_frame->sd.fourcc = slot->format;
++    next_frame->sd.pitches[0] = slot->stride;
++    next_frame->sd.offsets[0] = 0;
++    next_frame->sd.modifier = slot->modifier;
++    next_frame->sd.capture_busy = slot->busy;
++    slot->busy->store(true, std::memory_order_release);
++
++    zwlr_screencopy_frame_v1_copy(frame, slot->buffer);
++  }
++
+   // DMA-BUF creation helper
+   void dmabuf_t::create_and_copy_dmabuf(zwlr_screencopy_frame_v1 *frame) {
++    if (require_linear) {
++      create_and_copy_reusable_dmabuf(frame);
++      return;
++    }
++
+     if (!init_gbm()) {
+       BOOST_LOG(error) << "Failed to initialize GBM"sv;
+       zwlr_screencopy_frame_v1_destroy(frame);
+@@ -575,14 +715,15 @@
+     current_frame->destroy();
+     current_frame = get_next_frame();
+ 
+-    // Keep the GBM buffer alive but destroy the Wayland objects
+-    if (current_wl_buffer) {
+-      wl_buffer_destroy(current_wl_buffer);
+-      current_wl_buffer = nullptr;
++    if (!require_linear) {
++      // Non-RKMPP paths allocate their GBM and Wayland objects per frame.
++      if (current_wl_buffer) {
++        wl_buffer_destroy(current_wl_buffer);
++        current_wl_buffer = nullptr;
++      }
++      cleanup_gbm();
+     }
+ 
+-    cleanup_gbm();
+-
+     zwlr_screencopy_frame_v1_destroy(frame);
+     status = READY;
+   }
+@@ -591,11 +732,14 @@
+   void dmabuf_t::failed(zwlr_screencopy_frame_v1 *frame) {
+     BOOST_LOG(error) << "Frame capture failed"sv;
+ 
+-    // Clean up resources
+-    cleanup_gbm();
+-    if (current_wl_buffer) {
+-      wl_buffer_destroy(current_wl_buffer);
+-      current_wl_buffer = nullptr;
++    // Clean up resources. Reusable RKMPP buffers stay allocated; destroying
++    // the pending frame releases only its busy token.
++    if (!require_linear) {
++      cleanup_gbm();
++      if (current_wl_buffer) {
++        wl_buffer_destroy(current_wl_buffer);
++        current_wl_buffer = nullptr;
++      }
+     }
+     auto next_frame = get_next_frame();
+     next_frame->destroy();
+@@ -613,6 +757,10 @@
+   ) {};
+ 
+   void frame_t::destroy() {
++    if (sd.capture_busy) {
++      sd.capture_busy->store(false, std::memory_order_release);
++      sd.capture_busy.reset();
++    }
+     if (shm_data) {
+       munmap(shm_data, shm_size);
+       shm_data = nullptr;
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -580,17 +580,20 @@
+     }
+ 
+     platf::capture_e snapshot(const pull_free_image_cb_t &pull_free_image_cb, std::shared_ptr<platf::img_t> &img_out, std::chrono::milliseconds timeout, bool cursor) {
+-      auto status = wlr_t::snapshot(pull_free_image_cb, img_out, timeout, cursor);
+-      if (status != platf::capture_e::ok) {
+-        return status;
+-      }
+-
++      // Release the buffer from this image before choosing the target for the
++      // next screencopy. This lets the capture pool reuse it without racing an
++      // image that is still queued for encoding.
+       if (!pull_free_image_cb(img_out)) {
+         return platf::capture_e::interrupted;
+       }
+       auto img = (egl::img_descriptor_t *) img_out.get();
+       img->reset();
+ 
++      auto status = wlr_t::snapshot(pull_free_image_cb, img_out, timeout, cursor);
++      if (status != platf::capture_e::ok) {
++        return status;
++      }
++
+       auto current_frame = dmabuf.current_frame;
+ 
+       ++sequence;
+@@ -598,8 +601,9 @@
+ 
+       img->sd = current_frame->sd;
+ 
+-      // Prevent dmabuf from closing the file descriptors.
++      // Transfer the descriptor and its capture-pool token to the image.
+       std::fill_n(current_frame->sd.fds, 4, -1);
++      current_frame->sd.capture_busy.reset();
+ 
+       return platf::capture_e::ok;
+     }
