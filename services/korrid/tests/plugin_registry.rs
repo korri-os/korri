@@ -98,6 +98,33 @@ fn moonlight_remains_a_transport_with_its_controls() {
     ));
 }
 
+/// A stranger may join any family, but naming one is a claim on an id every
+/// other plugin resolves through. Only the owning publisher may make it.
+#[test]
+fn only_the_owning_namespace_may_name_a_family() {
+    let declare = |family_id: &str| {
+        format!(
+            "export const name = 'ra'; \
+             export const families = {{ ra: {{ id: '{family_id}', title: 'Mine' }} }};"
+        )
+    };
+    assert!(load_plugin_source("@korri", &declare("@korri:retroarch")).is_ok());
+    assert!(load_plugin_source("@alice", &declare("@korri:retroarch")).is_err());
+    assert!(load_plugin_source("@alice", &declare("@alice:retroarch")).is_ok());
+
+    // Joining stays open: a stranger's runner still references @korri:retroarch.
+    let joiner = "export const name = 'ppsspp'; \
+         export const systems = { psp: { id: 'psp', title: 'PSP' } }; \
+         export const runners = { ppsspp: { id: '@alice:ppsspp/ppsspp', \
+             family: '@korri:retroarch', command: 'ppsspp', systems: ['psp'] } };";
+    let plugin = load_plugin_source("@alice", joiner).unwrap();
+    let registry = PluginRegistry::new(vec![plugin], ["@alice:ppsspp".into()]).unwrap();
+    assert_eq!(
+        registry.runners()["@alice:ppsspp/ppsspp"].family.as_deref(),
+        Some("@korri:retroarch")
+    );
+}
+
 #[test]
 fn malformed_runner_shapes_fail_without_legacy_fields() {
     for source in [

@@ -911,6 +911,11 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
+    // A family record enters the registry under its global id, so naming a
+    // family is a claim on an id every other plugin also resolves. Only the
+    // publisher who owns the namespace may make that claim. Joining a family
+    // stays open: a runner still references any family id it likes.
+    let namespace_prefix = format!("{}:", declaration.namespace);
     for (local_id, family) in &declaration.families {
         if local_id.is_empty() {
             return Err(PluginError::EmptyContributionId { kind: "family" });
@@ -920,6 +925,16 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 kind: "family",
                 record_id: local_id.clone(),
                 reason: format!("family id {} must be scoped", family.id),
+            });
+        }
+        if !family.id.starts_with(&namespace_prefix) {
+            return Err(PluginError::InvalidContribution {
+                kind: "family",
+                record_id: local_id.clone(),
+                reason: format!(
+                    "family id {} is outside the publisher namespace {}",
+                    family.id, declaration.namespace
+                ),
             });
         }
     }
