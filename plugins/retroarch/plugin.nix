@@ -1,13 +1,21 @@
-{ pkgs }:
+# `base` is the frontend build a core may choose: nixpkgs' RetroArch by
+# default, or a pinned fork or overrideAttrs derivation named by a catalogue
+# entry. It selects the build, never whether Korri's protections apply — the
+# read-only patch and its compiled source regression run against whatever is
+# chosen, and the settings evidence is derived from that exact binary.
+{
+  pkgs,
+  base ? pkgs.retroarch-bare,
+}:
 let
   retroarchReadOnlyPatch = ./patches/retroarch-udev-read-only.patch;
   retroarchUdevReadOnlyCheck =
     pkgs.buildPackages.callPackage ./patches/retroarch-udev-read-only-check.nix
       {
-        retroarchSource = pkgs.retroarch-bare.src;
+        retroarchSource = base.src;
         readOnlyPatch = retroarchReadOnlyPatch;
       };
-  retroarch = pkgs.retroarch-bare.overrideAttrs (old: {
+  retroarch = base.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ retroarchReadOnlyPatch ];
     # Keep the actual packaged emulator behind the compiled source regression.
     postPatch = (old.postPatch or "") + ''

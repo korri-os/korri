@@ -39,6 +39,11 @@ in
     korri-libretro-example = import ../../../plugins/libretro/example-check.nix {
       inherit pkgs mkPlugin;
     };
+    korri-libretro-frontend-override =
+      import ../../../plugins/libretro/frontend-override-check.nix
+        {
+          inherit pkgs mkPlugin;
+        };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs

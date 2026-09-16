@@ -8,7 +8,15 @@
 name: spec:
 let
   lib = pkgs.lib;
-  frontend = import ../retroarch/plugin.nix { inherit pkgs; };
+  # A catalogue entry may name its own frontend build. The field is `frontend`,
+  # matching the shape the design records in
+  # docs/briefs/2026-09-15-plugin-model/examples/frontend-override/flake.nix.
+  # Omitting it takes nixpkgs' RetroArch, which is what every entry does today.
+  # An override changes this core only: every other core keeps its own closure,
+  # and the settings evidence is re-derived from the selected binary.
+  frontend = import ../retroarch/plugin.nix (
+    { inherit pkgs; } // lib.optionalAttrs (spec ? frontend) { base = spec.frontend; }
+  );
 
   pluginId = "@korri:${name}";
   runnerId = "${pluginId}/${name}";
