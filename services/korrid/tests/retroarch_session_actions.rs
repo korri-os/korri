@@ -6,23 +6,23 @@ use korrid::plugin::{
     load_plugin_source, PluginRegistry, SessionControlExecutor, SessionControlOwnerKind,
 };
 
-const RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
+const MGBA_PLUGIN: &str = include_str!("../../../plugins/mgba/android/plugin.ts");
 
 fn controls(enabled: bool) -> Vec<korrid::plugin::SessionControlRecord> {
     let plugin =
-        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
+        load_plugin_source("@korri", MGBA_PLUGIN).expect("canonical mGBA runner declaration");
     let registry = PluginRegistry::new(
         vec![plugin],
-        enabled.then(|| "@korri:retroarch".to_owned()).into_iter(),
+        enabled.then(|| "@korri:mgba".to_owned()).into_iter(),
     )
-    .expect("RetroArch registry");
+    .expect("mGBA registry");
     resolve_session_controls(
         &registry,
         &ActiveRouteContext {
             platform: RoutePlatform::Android,
             contributors: vec![RouteContribution {
-                kind: SessionControlOwnerKind::Launcher,
-                id: "@korri:retroarch/retroarch".into(),
+                kind: SessionControlOwnerKind::Runner,
+                id: "@korri:mgba/mgba".into(),
             }],
             executor_availability: SessionExecutorAvailability::from_available([
                 SessionControlExecutor::RetroarchControl,
@@ -32,7 +32,7 @@ fn controls(enabled: bool) -> Vec<korrid::plugin::SessionControlRecord> {
 }
 
 #[test]
-fn canonical_retroarch_declares_ordered_menu_and_truthful_quit_controls() {
+fn canonical_mgba_runner_declares_ordered_menu_and_truthful_quit_controls() {
     let controls = controls(true);
     assert_eq!(
         controls
@@ -47,25 +47,25 @@ fn canonical_retroarch_declares_ordered_menu_and_truthful_quit_controls() {
             .collect::<Vec<_>>(),
         [
             (
-                "@korri:retroarch/open-menu",
+                "@korri:mgba/open-menu",
                 "Open RetroArch menu",
                 0,
                 false,
                 true,
             ),
-            ("@korri:retroarch/quit", "Quit game", 1, true, true,),
+            ("@korri:mgba/quit", "Quit game", 1, true, true,),
         ]
     );
 }
 
 #[test]
-fn retroarch_controls_require_enablement_route_ownership_and_live_executor() {
+fn runner_controls_require_enablement_route_ownership_and_live_executor() {
     assert!(controls(false).is_empty());
 
     let plugin =
-        load_plugin_source("@korri", RETROARCH_PLUGIN).expect("canonical RetroArch declaration");
-    let registry = PluginRegistry::new(vec![plugin], vec!["@korri:retroarch".to_owned()])
-        .expect("RetroArch registry");
+        load_plugin_source("@korri", MGBA_PLUGIN).expect("canonical mGBA runner declaration");
+    let registry =
+        PluginRegistry::new(vec![plugin], vec!["@korri:mgba".to_owned()]).expect("mGBA registry");
     for context in [
         ActiveRouteContext {
             platform: RoutePlatform::Android,
@@ -77,7 +77,7 @@ fn retroarch_controls_require_enablement_route_ownership_and_live_executor() {
         ActiveRouteContext {
             platform: RoutePlatform::Android,
             contributors: vec![RouteContribution {
-                kind: SessionControlOwnerKind::Launcher,
+                kind: SessionControlOwnerKind::Runner,
                 id: "@korri:android-app/android-app".into(),
             }],
             executor_availability: SessionExecutorAvailability::from_available([
@@ -97,8 +97,8 @@ fn retroarch_controls_require_enablement_route_ownership_and_live_executor() {
         ActiveRouteContext {
             platform: RoutePlatform::Android,
             contributors: vec![RouteContribution {
-                kind: SessionControlOwnerKind::Launcher,
-                id: "@korri:retroarch/retroarch".into(),
+                kind: SessionControlOwnerKind::Runner,
+                id: "@korri:mgba/mgba".into(),
             }],
             executor_availability: SessionExecutorAvailability::from_available([]),
         },

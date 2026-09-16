@@ -1,7 +1,7 @@
 use std::process::Command;
 
 const ANDROID_PLUGIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/android-app.plugin.ts");
-const MGBA_PLUGIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/mgba/plugin.ts");
+const MGBA_PLUGIN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/mgba.plugin.ts");
 const RETROARCH_PLUGIN: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../plugins/retroarch/plugin.ts"
@@ -18,9 +18,9 @@ const ENABLED_REPORT: &str = concat!(
     "registered-session-control: none\n",
     "provider: @korri:android-app\n",
     "system: android\n",
-    "launcher: @korri:android-app/android-app\n",
+    "family: none\n",
     "transport: none\n",
-    "runtime: none\n",
+    "runner: @korri:android-app/android-app\n",
     "discovery: none\n",
     "session-control: none\n",
 );
@@ -32,9 +32,9 @@ const DISABLED_REPORT: &str = concat!(
     "registered-session-control: none\n",
     "provider: none\n",
     "system: none\n",
-    "launcher: none\n",
+    "family: none\n",
     "transport: none\n",
-    "runtime: none\n",
+    "runner: none\n",
     "discovery: none\n",
     "session-control: none\n",
 );
@@ -43,53 +43,52 @@ const MGBA_ENABLED_REPORT: &str = concat!(
     "plugin: @korri:mgba\n",
     "registered: yes\n",
     "enabled: yes\n",
-    "registered-session-control: @korri:retroarch/open-menu\n",
-    "registered-session-control: @korri:retroarch/quit\n",
+    "registered-session-control: @korri:mgba/open-menu\n",
+    "registered-session-control: @korri:mgba/quit\n",
     "provider: @korri:mgba\n",
     "system: gba\n",
-    "launcher: none\n",
+    "family: none\n",
     "transport: none\n",
-    "runtime: @korri:mgba/mgba\n",
+    "runner: @korri:mgba/mgba\n",
     "discovery: @korri:mgba/gba-files\n",
-    "session-control: @korri:retroarch/open-menu\n",
-    "session-control: @korri:retroarch/quit\n",
+    "session-control: @korri:mgba/open-menu\n",
+    "session-control: @korri:mgba/quit\n",
 );
 
 const RETROARCH_ENABLED_REPORT: &str = concat!(
     "plugin: @korri:retroarch\n",
     "registered: yes\n",
     "enabled: yes\n",
-    "registered-session-control: @korri:retroarch/open-menu\n",
-    "registered-session-control: @korri:retroarch/quit\n",
+    "registered-session-control: none\n",
     "provider: @korri:retroarch\n",
     "system: none\n",
-    "launcher: @korri:retroarch/retroarch\n",
+    "family: @korri:retroarch\n",
     "transport: none\n",
-    "runtime: none\n",
+    "runner: none\n",
     "discovery: none\n",
-    "session-control: @korri:retroarch/open-menu\n",
-    "session-control: @korri:retroarch/quit\n",
+    "session-control: none\n",
 );
 
 const SESSION_CONTROL_PLUGIN: &str = r#"
-export const name = "retroarch";
-export const launchers = {
-        retroarch: {
-          id: "@korri:retroarch/retroarch",
-          plugin: "@korri:retroarch",
-          command: "retroarch",
-        },
-      };
+export const name = "mgba";
+export const runners = {
+  mgba: {
+    id: "@korri:mgba/mgba",
+    command: "retroarch",
+    systems: ["gba"],
+    android: { packageName: "com.korri.retroarch", className: "com.retroarch.Main" },
+  },
+};
 export const sessionControls = {
-      openMenu: {
-        order: 0,
-        id: "@korri:retroarch/open-menu",
-        owner: { kind: "launcher", id: "@korri:retroarch/retroarch" },
-        label: "Open RetroArch menu",
-        interaction: { kind: "command" },
-        effect: "@korri:retroarch/open-menu",
-      },
-    };
+  openMenu: {
+    order: 0,
+    id: "@korri:mgba/open-menu",
+    owner: { kind: "runner", id: "@korri:mgba/mgba" },
+    label: "Open RetroArch menu",
+    interaction: { kind: "command" },
+    effect: "@korri:mgba/open-menu",
+  },
+};
 "#;
 
 #[test]
@@ -113,16 +112,16 @@ fn review_probe_explains_enabled_and_disabled_announcements() {
 #[test]
 fn probe_distinguishes_registered_and_enabled_session_controls() {
     let root = tempfile::tempdir().expect("temporary plugin directory");
-    let path = root.path().join("retroarch.plugin.ts");
+    let path = root.path().join("mgba.plugin.ts");
     std::fs::write(&path, SESSION_CONTROL_PLUGIN).expect("write session-control plugin");
     let path = path.to_str().expect("UTF-8 fixture path");
 
     let enabled = run_probe(&[path]);
-    assert!(enabled.contains("registered-session-control: @korri:retroarch/open-menu\n"));
-    assert!(enabled.contains("session-control: @korri:retroarch/open-menu\n"));
+    assert!(enabled.contains("registered-session-control: @korri:mgba/open-menu\n"));
+    assert!(enabled.contains("session-control: @korri:mgba/open-menu\n"));
 
     let disabled = run_probe(&[path, "--disabled"]);
-    assert!(disabled.contains("registered-session-control: @korri:retroarch/open-menu\n"));
+    assert!(disabled.contains("registered-session-control: @korri:mgba/open-menu\n"));
     assert!(disabled.contains("session-control: none\n"));
 }
 

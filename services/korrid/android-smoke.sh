@@ -36,9 +36,9 @@ require_wl4_local_launch_response() {
     and (
       (
         .outcome._tag == "Ok"
-        and (.outcome.payload | exact_keys(["component", "context", "directories", "disposition", "extras", "files", "integrity", "launchId", "launcherId"]))
+        and (.outcome.payload | exact_keys(["component", "context", "directories", "disposition", "extras", "files", "integrity", "launchId", "runnerId"]))
         and (.outcome.payload.launchId | test("^[0-9a-f]{32}$"))
-        and .outcome.payload.launcherId == "retroarch"
+        and .outcome.payload.runnerId == "retroarch"
         and .outcome.payload.disposition == "fresh"
         and .outcome.payload.context.gameId == "01K4J6K8Y00000000000000002"
         and .outcome.payload.context.executor == {id: "retroarch-control", available: true}
@@ -80,7 +80,7 @@ require_android_app_launch_response() {
 
   if jq -e --arg android_app_package "$android_app_package" '
     .outcome._tag == "Ok"
-    and .outcome.payload.launcherId == "android-app"
+    and .outcome.payload.runnerId == "android-app"
     and .outcome.payload.component.packageName == $android_app_package
     and .outcome.payload.component.className == ""
     and .outcome.payload.extras == {}

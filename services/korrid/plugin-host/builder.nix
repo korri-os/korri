@@ -16,7 +16,6 @@ let
       packages ? { },
       files ? { },
       services ? { },
-      requires ? [ ],
       ports ? { },
     }:
     let
@@ -57,7 +56,6 @@ let
           inherit
             publisher
             files
-            requires
             ports
             ;
           packages = lib.mapAttrs (_: toString) packages;

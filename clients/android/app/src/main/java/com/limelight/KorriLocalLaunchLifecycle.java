@@ -15,16 +15,16 @@ final class KorriLocalLaunchLifecycle {
     private KorriLocalLaunchLifecycle() {}
 
     static String published(
-            String launchId, String gameId, String packageName, String launcherId) {
+            String launchId, String gameId, String packageName, String runnerId) {
         require(LAUNCH_ID, launchId, "launchId");
         require(GAME_ID, gameId, "gameId");
         require(PACKAGE, packageName, "package");
-        require(LAUNCHER, launcherId, "launcher");
+        require(LAUNCHER, runnerId, "launcher");
         return "launchId=" + launchId
                 + " event=published"
                 + " gameId=" + gameId
                 + " package=" + packageName
-                + " launcher=" + launcherId;
+                + " launcher=" + runnerId;
     }
 
     private static void require(Pattern pattern, String value, String field) {

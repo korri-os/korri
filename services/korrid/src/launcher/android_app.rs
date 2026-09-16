@@ -10,7 +10,7 @@ use crate::config::resolver::ResolvedRoute;
 use std::collections::HashMap;
 
 const ANDROID_APP_PROVIDER: &str = "@korri:android-app";
-const ANDROID_APP_LAUNCHER: &str = "@korri:android-app/android-app";
+const ANDROID_APP_RUNNER: &str = "@korri:android-app/android-app";
 const ANDROID_SYSTEM: &str = "android";
 const ANDROID_APP_TOKEN: &str = "android-app";
 const TARGET_PREFIX: &str = "@korri:android-app:";
@@ -22,15 +22,15 @@ pub enum AndroidAppRouteError {
         playable_id: String,
         provider_id: String,
     },
-    #[error("Android app route {playable_id} uses unsupported launcher {launcher_id}")]
-    Launcher {
+    #[error("Android app route {playable_id} uses unsupported runner {runner_id}")]
+    Runner {
         playable_id: String,
-        launcher_id: String,
+        runner_id: String,
     },
-    #[error("Android app route {playable_id} uses unsupported launcher kind {launcher_kind}")]
-    LauncherKind {
+    #[error("Android app route {playable_id} uses unsupported family {family_id:?}")]
+    Family {
         playable_id: String,
-        launcher_kind: String,
+        family_id: Option<String>,
     },
     #[error("Android app route {playable_id} uses unsupported system {system_id}")]
     System {
@@ -57,16 +57,16 @@ pub fn launch_route(route: &ResolvedRoute) -> Result<LaunchSpec, AndroidAppRoute
             provider_id: route.provider_id.clone(),
         });
     }
-    if route.launcher_id != ANDROID_APP_LAUNCHER {
-        return Err(AndroidAppRouteError::Launcher {
+    if route.runner_id != ANDROID_APP_RUNNER {
+        return Err(AndroidAppRouteError::Runner {
             playable_id: route.playable_id.clone(),
-            launcher_id: route.launcher_id.clone(),
+            runner_id: route.runner_id.clone(),
         });
     }
-    if route.launcher_kind != ANDROID_APP_PROVIDER {
-        return Err(AndroidAppRouteError::LauncherKind {
+    if route.family_id.as_deref() != Some(ANDROID_APP_PROVIDER) {
+        return Err(AndroidAppRouteError::Family {
             playable_id: route.playable_id.clone(),
-            launcher_kind: route.launcher_kind.clone(),
+            family_id: route.family_id.clone(),
         });
     }
     if route.system_id != ANDROID_SYSTEM {
@@ -100,7 +100,7 @@ pub fn launch_route(route: &ResolvedRoute) -> Result<LaunchSpec, AndroidAppRoute
     Ok(LaunchSpec {
         // The RPC preparation boundary replaces this before signing.
         launch_id: String::new(),
-        launcher_id: ANDROID_APP_TOKEN.into(),
+        runner_id: ANDROID_APP_TOKEN.into(),
         disposition: super::types::LaunchDisposition::Fresh,
         context: super::types::LaunchContext::unresolved(),
         component: AndroidComponent {
@@ -131,13 +131,13 @@ mod tests {
             provider_id: "@korri:android-app".into(),
             system_id: "android".into(),
             system_title: Some("Android".into()),
-            launcher_id: "@korri:android-app/android-app".into(),
-            launcher_kind: "@korri:android-app".into(),
+            runner_id: "@korri:android-app/android-app".into(),
+            family_id: Some("@korri:android-app".into()),
             integration_token: "android-app".into(),
             flattened_target: "@korri:android-app:org.example.game".into(),
             android_component: None,
-            linux_launcher: None,
-            runtime: None,
+            linux_runner: None,
+            core_path: None,
             file_target: None,
         }
     }
@@ -146,7 +146,7 @@ mod tests {
     fn maps_a_valid_resolved_route_to_the_existing_unsigned_android_shape() {
         let spec = launch_route(&route()).expect("Android route should map");
 
-        assert_eq!(spec.launcher_id, "android-app");
+        assert_eq!(spec.runner_id, "android-app");
         assert_eq!(spec.component.package_name, "org.example.game");
         assert!(spec.component.class_name.is_empty());
         assert!(spec.extras.is_empty());
@@ -180,12 +180,12 @@ mod tests {
                 Box::new(|route| route.provider_id = "@korri:other".into()),
             ),
             (
-                "launcher",
-                Box::new(|route| route.launcher_id = "@korri:android-app/other".into()),
+                "runner",
+                Box::new(|route| route.runner_id = "@korri:android-app/other".into()),
             ),
             (
-                "launcher kind",
-                Box::new(|route| route.launcher_kind = "@korri:other".into()),
+                "family",
+                Box::new(|route| route.family_id = Some("@korri:other".into())),
             ),
             (
                 "system",
@@ -198,8 +198,8 @@ mod tests {
             mutate(&mut candidate);
             match (label, launch_route(&candidate)) {
                 ("provider", Err(AndroidAppRouteError::Provider { .. })) => {}
-                ("launcher", Err(AndroidAppRouteError::Launcher { .. })) => {}
-                ("launcher kind", Err(AndroidAppRouteError::LauncherKind { .. })) => {}
+                ("runner", Err(AndroidAppRouteError::Runner { .. })) => {}
+                ("family", Err(AndroidAppRouteError::Family { .. })) => {}
                 ("system", Err(AndroidAppRouteError::System { .. })) => {}
                 (other, result) => panic!("{other} guard returned {result:?}"),
             }

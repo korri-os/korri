@@ -930,7 +930,7 @@ public class KorriShellActivity extends AppCompatActivity {
                                     active.launchId(),
                                     active.gameId(),
                                     spec.component.getPackageName(),
-                                    spec.launcherId));
+                                    spec.runnerId));
                 } catch (IllegalArgumentException metadataError) {
                     Log.e(KorriLocalLaunchLifecycle.TAG,
                             "local launch publication metadata was invalid");

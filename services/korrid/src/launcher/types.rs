@@ -67,9 +67,8 @@ pub struct ProvisionedFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LaunchContributorKind {
-    Launcher,
+    Runner,
     Transport,
-    Runtime,
 }
 
 #[typeshare]
@@ -188,7 +187,7 @@ pub enum LaunchDisposition {
 pub struct LaunchSpec {
     /** Identity created by korrid while preparing this exact launch. */
     pub launch_id: String,
-    pub launcher_id: String,
+    pub runner_id: String,
     pub disposition: LaunchDisposition,
     pub context: LaunchContext,
     pub component: AndroidComponent,
@@ -214,7 +213,7 @@ impl LaunchSpec {
 
         let mut bytes = Vec::new();
         push(&self.launch_id, &mut bytes);
-        push(&self.launcher_id, &mut bytes);
+        push(&self.runner_id, &mut bytes);
         push(
             match self.disposition {
                 LaunchDisposition::Fresh => "fresh",
@@ -267,7 +266,7 @@ impl LaunchSpec {
     }
 
     pub(crate) fn retroarch_control_token(&self, key: &[u8]) -> Option<String> {
-        if self.launcher_id != "retroarch" || self.launch_id.is_empty() {
+        if self.runner_id != "retroarch" || self.launch_id.is_empty() {
             return None;
         }
         let mut control_mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
@@ -277,7 +276,7 @@ impl LaunchSpec {
     }
 
     pub(crate) fn retroarch_control_port(&self, key: &[u8]) -> Option<u16> {
-        if self.launcher_id != "retroarch" || self.launch_id.is_empty() {
+        if self.runner_id != "retroarch" || self.launch_id.is_empty() {
             return None;
         }
         Some(derive_retroarch_control_port(key, &self.launch_id))
@@ -748,7 +747,7 @@ mod tests {
     fn spec() -> LaunchSpec {
         LaunchSpec {
             launch_id: "launch-1".into(),
-            launcher_id: "retroarch".into(),
+            runner_id: "retroarch".into(),
             disposition: LaunchDisposition::Fresh,
             context: LaunchContext::unresolved(),
             component: AndroidComponent {
@@ -981,7 +980,7 @@ mod tests {
                 title: Some("Game".into()),
                 content_crc32: Some("d6141609".into()),
                 contributors: vec![LaunchRouteContributor {
-                    kind: LaunchContributorKind::Launcher,
+                    kind: LaunchContributorKind::Runner,
                     id: "@korri:retroarch/retroarch".into(),
                 }],
                 executor: Some(LaunchExecutor {

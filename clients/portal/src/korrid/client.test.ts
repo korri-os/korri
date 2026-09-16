@@ -521,13 +521,13 @@ describe("local games", () => {
   it("returns caller-provided local launch instructions unchanged", async () => {
     const spec = {
       launchId: "fixture-launch",
-      launcherId: "fixture-launcher",
+      runnerId: "fixture-launcher",
       disposition: LaunchDisposition.Fresh,
       context: {
         gameId: "fixture",
         title: "Fixture",
         contributors: [
-          { kind: LaunchContributorKind.Launcher, id: "fixture-launcher" },
+          { kind: LaunchContributorKind.Runner, id: "fixture-launcher" },
         ],
         foreground: {
           kind: LaunchForegroundKind.Component,
@@ -587,7 +587,7 @@ describe("in-memory source status", () => {
   const remoteGame = {
     id: "neverball",
     title: "Neverball",
-    supportsRuntimeSelection: false,
+    supportsRunnerSelection: false,
     source: { devicePublicKey: peerKey, label: "zao", isLocal: false },
   }
 
@@ -612,7 +612,7 @@ describe("in-memory source status", () => {
         {
           id: "skate3",
           title: "Skate 3",
-          supportsRuntimeSelection: false,
+          supportsRunnerSelection: false,
           source: { devicePublicKey: peerKey, label: "browser", isLocal: true },
         },
       ],

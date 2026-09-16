@@ -103,9 +103,9 @@ pub struct Game {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<GameIdentity>,
     pub source: GameSource,
-    /// The host's dynamic catalog producer supports installed-runtime selection.
+    /// The host's dynamic catalog producer supports installed-runner selection.
     /// Static host.toml commands do not, even when source.isLocal is true.
-    pub supports_runtime_selection: bool,
+    pub supports_runner_selection: bool,
     /// Play statistics for the authenticated person who asked. A host
     /// derives them from its own play log; a brain forwards what the peer
     /// returned for the brain's own identity.
@@ -1189,8 +1189,8 @@ pub enum HealthOutcome {
 pub enum RpcRequest {
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesRequest),
-    #[serde(rename = "app.local-games.runtime.set")]
-    GameRuntimeSet(game_routes::GameRuntimeSetRequest),
+    #[serde(rename = "app.local-games.runner.set")]
+    GameRunnerSet(game_routes::GameRunnerSetRequest),
     #[serde(rename = "app.local-games.launch.selected")]
     SelectedGameLaunch(game_routes::SelectedGameLaunchRequest),
     #[serde(rename = "app.catalog.snapshot")]
@@ -1255,8 +1255,8 @@ pub enum RpcRequest {
 pub enum RpcResponse {
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesOutcome),
-    #[serde(rename = "app.local-games.runtime.set")]
-    GameRuntimeSet(game_routes::GameRuntimeSetOutcome),
+    #[serde(rename = "app.local-games.runner.set")]
+    GameRunnerSet(game_routes::GameRunnerSetOutcome),
     #[serde(rename = "app.local-games.launch.selected")]
     SelectedGameLaunch(game_routes::SelectedGameLaunchOutcome),
     #[serde(rename = "app.catalog.snapshot")]
@@ -1918,14 +1918,9 @@ fn materialize_session_controls_snapshot(
         .iter()
         .map(|contributor| config::resolver::RouteContribution {
             kind: match contributor.kind {
-                launcher::LaunchContributorKind::Launcher => {
-                    plugin::SessionControlOwnerKind::Launcher
-                }
+                launcher::LaunchContributorKind::Runner => plugin::SessionControlOwnerKind::Runner,
                 launcher::LaunchContributorKind::Transport => {
                     plugin::SessionControlOwnerKind::Transport
-                }
-                launcher::LaunchContributorKind::Runtime => {
-                    plugin::SessionControlOwnerKind::Runtime
                 }
             },
             id: contributor.id.clone(),
@@ -2390,14 +2385,14 @@ async fn dispatch(
                 game_routes::GameRoutesOutcome::Err(installed_routes_unsupported())
             }
         }),
-        RpcRequest::GameRuntimeSet(request) => RpcResponse::GameRuntimeSet(match &state.mode {
+        RpcRequest::GameRunnerSet(request) => RpcResponse::GameRunnerSet(match &state.mode {
             ServerMode::Host(host) => host
-                .set_game_runtime(request)
+                .set_game_runner(request)
                 .await
-                .map(game_routes::GameRuntimeSetOutcome::Ok)
-                .unwrap_or_else(game_routes::GameRuntimeSetOutcome::Err),
+                .map(game_routes::GameRunnerSetOutcome::Ok)
+                .unwrap_or_else(game_routes::GameRunnerSetOutcome::Err),
             ServerMode::Brain(_) => {
-                game_routes::GameRuntimeSetOutcome::Err(installed_routes_unsupported())
+                game_routes::GameRunnerSetOutcome::Err(installed_routes_unsupported())
             }
         }),
         RpcRequest::SelectedGameLaunch(request) => {
@@ -4834,7 +4829,7 @@ mod tests {
             title: Some("TMNT".into()),
             content_crc32: None,
             contributors: vec![launcher::LaunchRouteContributor {
-                kind: launcher::LaunchContributorKind::Launcher,
+                kind: launcher::LaunchContributorKind::Runner,
                 id: "@korri:android-app/android-app".into(),
             }],
             executor: None,
@@ -6824,16 +6819,10 @@ command = ["game-two"]
         assert_eq!(local.title.as_deref(), Some("Wario Land 4"));
         assert_eq!(
             local.contributors,
-            vec![
-                launcher::LaunchRouteContributor {
-                    kind: launcher::LaunchContributorKind::Launcher,
-                    id: "@korri:retroarch/retroarch".into(),
-                },
-                launcher::LaunchRouteContributor {
-                    kind: launcher::LaunchContributorKind::Runtime,
-                    id: "@korri:mgba/mgba".into(),
-                },
-            ]
+            vec![launcher::LaunchRouteContributor {
+                kind: launcher::LaunchContributorKind::Runner,
+                id: "@korri:mgba/mgba".into(),
+            }]
         );
         assert!(!clear_active_android_launch("late-older-launch"));
         assert_eq!(active_android_launch().unwrap().launch_id, local.launch_id);
@@ -6984,7 +6973,7 @@ command = ["game-two"]
         );
         assert_eq!(
             controls["outcome"]["payload"]["groups"][0]["id"],
-            "@korri:retroarch"
+            "@korri:mgba"
         );
         assert_eq!(
             controls["outcome"]["payload"]["groups"][0]["controls"]
@@ -6998,8 +6987,8 @@ command = ["game-two"]
                 ))
                 .collect::<Vec<_>>(),
             [
-                ("@korri:retroarch/open-menu", "Open RetroArch menu", false),
-                ("@korri:retroarch/quit", "Quit game", true),
+                ("@korri:mgba/open-menu", "Open RetroArch menu", false),
+                ("@korri:mgba/quit", "Quit game", true),
             ]
         );
 
@@ -7024,7 +7013,7 @@ command = ["game-two"]
         // package, core, content, and provisioning must remain exact.
         for field in [
             "launchId",
-            "launcherId",
+            "runnerId",
             "context",
             "component",
             "extras",
@@ -7177,7 +7166,7 @@ command = ["game-two"]
                 "_tag": "app.session.control.invoke",
                 "payload": {
                     "launchId": local.launch_id.clone(),
-                    "controlId": "@korri:retroarch/open-menu",
+                    "controlId": "@korri:mgba/open-menu",
                 }
             }))
             .send()
@@ -7207,7 +7196,7 @@ command = ["game-two"]
         }
         std::fs::write(
             root.path().join("device.yaml"),
-            "host:\n  plugin:\n    \"@korri:retroarch\": false\n",
+            "host:\n  plugin:\n    \"@korri:mgba\": false\n",
         )
         .unwrap();
         let disabled = client
@@ -7237,7 +7226,7 @@ command = ["game-two"]
                 "_tag": "app.session.control.invoke",
                 "payload": {
                     "launchId": local.launch_id.clone(),
-                    "controlId": "@korri:retroarch/quit",
+                    "controlId": "@korri:mgba/quit",
                 }
             }))
             .send()
@@ -7270,7 +7259,7 @@ command = ["game-two"]
             } else {
                 serde_json::json!({
                     "launchId": local.launch_id.clone(),
-                    "controlId": "@korri:retroarch/quit",
+                    "controlId": "@korri:mgba/quit",
                 })
             };
             let stale = client
@@ -7445,7 +7434,7 @@ command = ["game-two"]
                 "_tag": "app.session.control.invoke",
                 "payload": {
                     "launchId": local.launch_id.clone(),
-                    "controlId": "@korri:retroarch/quit",
+                    "controlId": "@korri:mgba/quit",
                 }
             }))
             .send()
@@ -7946,7 +7935,7 @@ command = ["game-two"]
         )
         .await;
         assert_eq!(launched["outcome"]["_tag"], "Ok");
-        assert_eq!(launched["outcome"]["payload"]["launcherId"], "android-app");
+        assert_eq!(launched["outcome"]["payload"]["runnerId"], "android-app");
 
         let before = rpc_body_authorized(
             app.clone(),
@@ -8053,10 +8042,7 @@ command = ["game-two"]
         )
         .await;
         assert_eq!(relaunched["outcome"]["_tag"], "Ok");
-        assert_eq!(
-            relaunched["outcome"]["payload"]["launcherId"],
-            "android-app"
-        );
+        assert_eq!(relaunched["outcome"]["payload"]["runnerId"], "android-app");
     }
 
     #[cfg(unix)]

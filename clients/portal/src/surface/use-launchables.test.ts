@@ -317,7 +317,7 @@ describe("useLaunchables discovery actions", () => {
           {
             id: "wl4",
             title: "Wario Land 4",
-            supportsRuntimeSelection: false,
+            supportsRunnerSelection: false,
             source: { label: "zao", isLocal: false },
           },
         ],
@@ -446,7 +446,7 @@ describe("useLaunchables discovery actions", () => {
           {
             id: "wl4",
             title: "Wario Land 4",
-            supportsRuntimeSelection: false,
+            supportsRunnerSelection: false,
             source: { label: "zao", isLocal: false },
           },
         ],

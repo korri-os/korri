@@ -192,7 +192,7 @@ parent `plugin.ts` files; no environment-based Linux implementation remains.
 JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
-`systems`, `launchers`, `transports`, `runtimes`, `sessionControls`, and
+`systems`, `families`, `runners`, `transports`, `sessionControls`, and
 `discovery`. Android record shapes are retained; native launcher/runtime fields
 follow the instance/kind model described below. Discovery remains the shipped
 `fileReleases` map, never a callback. `services` names native units packaged by

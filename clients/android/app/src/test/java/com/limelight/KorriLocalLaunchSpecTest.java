@@ -24,7 +24,7 @@ public class KorriLocalLaunchSpecTest {
 
     private static JSONObject validSpec() throws Exception {
         return new JSONObject()
-                .put("launcherId", "retroarch")
+                .put("runnerId", "retroarch")
                 .put("component", new JSONObject()
                         .put("packageName", "com.korri.retroarch")
                         .put("className",
@@ -49,7 +49,7 @@ public class KorriLocalLaunchSpecTest {
 
     private static JSONObject androidAppSpec() throws Exception {
         return new JSONObject()
-                .put("launcherId", "android-app")
+                .put("runnerId", "android-app")
                 .put("component", new JSONObject()
                         .put("packageName", "org.example.game")
                         .put("className", ""))
@@ -63,7 +63,7 @@ public class KorriLocalLaunchSpecTest {
     public void acceptsTheGeneratedLauncherTemplate() throws Exception {
         KorriLocalLaunchSpec.Parsed parsed =
                 KorriLocalLaunchSpec.parse(validSpec().toString(), ROOT);
-        assertEquals("retroarch", parsed.launcherId);
+        assertEquals("retroarch", parsed.runnerId);
         assertEquals("/storage/emulated/0/korri/roms/wl4.gba",
                 parsed.extras.get("ROM"));
         assertEquals(4, parsed.directories.size());
@@ -132,7 +132,7 @@ public class KorriLocalLaunchSpecTest {
 
     @Test
     public void rejectsUnknownLaunchersAndComponents() throws Exception {
-        JSONObject unknown = validSpec().put("launcherId", "other");
+        JSONObject unknown = validSpec().put("runnerId", "other");
         assertInvalid(unknown, "UnsupportedLauncher");
 
         JSONObject component = validSpec();

@@ -769,7 +769,7 @@ fi
 launch_response="$(rpc "launch discovered U9 First" "{\"_tag\":\"app.local-games.launch\",\"payload\":{\"gameId\":$(jq -n --arg id "$game_id" '$id')}}")"
 if ! jq -e '
   .outcome._tag == "Ok"
-  and .outcome.payload.launcherId == "retroarch"
+  and .outcome.payload.runnerId == "retroarch"
   and .outcome.payload.component.packageName == "com.korri.retroarch"
   and .outcome.payload.extras.LIBRETRO == "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so"
   and (.outcome.payload.extras.ROM | endswith("/U9 First.gba"))

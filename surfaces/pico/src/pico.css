@@ -20,7 +20,7 @@
 @import "../../../packages/intrinsic-design/recipe.css";
 @import "./pico-tokens.css";
 @import "./pico-motion.css";
-@import "./ui/organisms/PicoRuntimePicker.css";
+@import "./ui/organisms/PicoRunnerPicker.css";
 @import "./pages/PicoHome.css";
 @import "./ui/atoms/PicoBackdrop.css";
 @import "./ui/atoms/PicoButton.css";

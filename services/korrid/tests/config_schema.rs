@@ -23,20 +23,16 @@ fn empty_documents_decode_as_the_initial_snapshot() {
 }
 
 #[test]
-fn legacy_sections_except_superseded_executable_runtimes_remain_decodable() {
-    let legacy = include_str!("fixtures/legacy-readable/device-all-sections.yaml");
-    // Executable runtimes now come only from installed contributions. Do not
-    // carry an old runtime reader alongside the approved per-ID config blocks.
-    assert!(decode_config_documents(legacy, "{}", "{}").is_err());
-    let mut document: serde_yaml::Mapping = serde_yaml::from_str(legacy).unwrap();
-    document.remove(serde_yaml::Value::String("runtimes".into()));
-    let snapshot =
-        decode_config_documents(&serde_yaml::to_string(&document).unwrap(), "{}", "{}").unwrap();
+fn readable_sections_keep_non_executable_opinions_decodable() {
+    let readable = include_str!("fixtures/readable-sections/device-all-sections.yaml");
+    // Executable runners come only from installed contributions. These records
+    // are settings opinions and cannot redeclare commands or native files.
+    let snapshot = decode_config_documents(readable, "{}", "{}").unwrap();
     assert_eq!(snapshot.storage.len(), 2);
     assert_eq!(snapshot.providers.len(), 2);
     assert_eq!(snapshot.systems.len(), 2);
-    assert_eq!(snapshot.launchers.len(), 2);
-    assert!(snapshot.runtimes.is_empty());
+    assert_eq!(snapshot.families.len(), 1);
+    assert_eq!(snapshot.runners.len(), 1);
     assert_eq!(snapshot.profiles.len(), 1);
     assert_eq!(snapshot.hooks.len(), 1);
     assert!(classify_snapshot_support(&snapshot).is_err());
@@ -59,7 +55,7 @@ fn unknown_top_level_and_nested_fields_fail() {
         "launch: {}",
         "id: gba",
         "app: retroarch",
-        "runtime: mgba",
+        "runner: mgba",
     ] {
         let releases = format!("{}    {field}\n", gba_releases());
         assert!(

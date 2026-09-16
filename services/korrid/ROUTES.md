@@ -1,11 +1,11 @@
 # Installed Linux routes
 
 The approved cascade is implemented in `config/cascade.rs`. Its order is
-launcher → system → runtime → game → override. Each stored layer uses
-`launchers.<full-launcher-id>`. Kinds do not contribute configuration.
-Executable runtime records come only from installed plugin contributions.
-`device.yaml` runtime records now contain configuration only. Old executable
-runtime records require an explicit operational cutover, not a fallback reader.
+runner → system → runner → game → override. Each stored layer uses
+`families.<family-id> and runners.<full-runner-id>`. Kinds do not contribute configuration.
+Executable runner records come only from installed plugin contributions.
+`device.yaml` runner records now contain configuration only. Old executable
+runner records require an explicit operational cutover, not a fallback reader.
 
 ## Portal API
 
@@ -15,9 +15,9 @@ methods are unchanged. No surface or chooser UI is implemented here.
 
 | Method | Payload | Success |
 |---|---|---|
-| `app.local-games.routes` | `GameRoutesRequest { gameId }` | `GameRoutes`: full runtime/launcher/kind IDs, exact runtime/launcher package paths, program path, warnings, selection, stored game/system IDs and document revisions. |
-| `app.local-games.runtime.set` | `GameRuntimeSetRequest { scope, runtimeId?, expectedRevision }` | Updated `RuntimeChoiceRevisions`. Scope is `{ _tag: "Game" or "System", id }`. Omit `runtimeId` to clear that scope. Use `revisions.games` for a game and `revisions.device` for a system. |
-| `app.local-games.launch.selected` | `SelectedGameLaunchRequest { gameId, runtimeId, overrides? }` | `{ session: SessionPrepared, warnings: LaunchWarning[] }`. Uses the existing unprivileged session executor. Does not save a preference. |
+| `app.local-games.routes` | `GameRoutesRequest { gameId }` | `GameRoutes`: full runner/runner/kind IDs, exact runner/runner package paths, program path, warnings, selection, stored game/system IDs and document revisions. |
+| `app.local-games.runner.set` | `GameRunnerSetRequest { scope, runnerId?, expectedRevision }` | Updated `RunnerChoiceRevisions`. Scope is `{ _tag: "Game" or "System", id }`. Omit `runnerId` to clear that scope. Use `revisions.games` for a game and `revisions.device` for a system. |
+| `app.local-games.launch.selected` | `SelectedGameLaunchRequest { gameId, runnerId, overrides? }` | `{ session: SessionPrepared, warnings: LaunchWarning[] }`. Uses the existing unprivileged session executor. Does not save a preference. |
 
 Responses retain the existing `{ _tag: method, outcome: { _tag: "Ok" or
 "Err", payload } }` envelope. Write conflicts return `SettingsConflict`;
@@ -41,13 +41,13 @@ slice does not expand household/guest or read-only mutation permissions.
 
 Explicit selected launch returns `ActiveSessionConflict` if a session is
 already active, including the same game. The existing recovery record has no
-runtime identity, so reusing it could falsely report that the selected runtime
+runner identity, so reusing it could falsely report that the selected runner
 ran. Stop that exact session before switching routes. Ordinary
 `app.session.prepare` retains its existing same-game resume behavior.
 
 ## Source-checked rendered settings
 
-`launcher::typed_settings::validate(settings, launcher_id, build,
+`runner::typed_settings::validate(settings, runner_id, build,
 Option<SourceCheckedSettings>)` accepts only matching keys and scalar types.
 Its borrowed evidence uses the exact launching instance package path as
 `build`, the pinned program display `version`, and a `keys` map with
@@ -83,7 +83,7 @@ legacy boolean/number/string quoting. Nested policy persistence and entry into
 the host remain outside this seam; this change does not invent that contract.
 Dynamic per-port settings currently lack evidence and are omitted with warnings.
 
-Warnings name the setting, launcher, exact instance build, and pinned version
+Warnings name the setting, runner, exact instance build, and pinned version
 (or explicitly unavailable metadata). Route listing and selected launch expose
 `LaunchWarning[]`; the ordinary catalog uses `LaunchSettingUnsupported`.
 These are the existing UI warning seams; no UI or warning treaty changed.

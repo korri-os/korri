@@ -23,12 +23,12 @@ package check passed.
 Eight receipt/filesystem tests cover bounded history, exact provenance swaps,
 current desired state, failure before receipt commit, each root repair boundary,
 interrupted swaps, temporary roots, completed removal, and strict receipt reads.
-Dependency tests include rollback with enabled and disabled exact dependents,
-and launcher/kind removal or rename without manifest `requires`.
+Plugin lifecycle tests cover each receipt independently. Nix closure references
+remain package dependencies; the host has no plugin dependency graph.
 
 ## Final integrated gate remains unrun
 
-No VM was started. Added VM assertions cover dependency-safe rollback, offline
+No VM was started. Added VM assertions cover independent rollback, offline
 swaps, failed explicit restore, failed/interrupted update retention, revocation,
 and removal of previous roots. Existing admission-only game fixtures now name
 real prebuilt `true` files and avoid a duplicate `launch` export. These fixtures
@@ -36,8 +36,8 @@ do not prove emulator launch or gameplay.
 
 Deployment must explicitly cut over receipts to the required `previous` slot.
 There is no compatibility read or runtime migration. Boot and operator recovery
-use `restore-all`; `restore ID` swaps selections. Exact Nix requirements remain
-mandatory. Previous closure presence does not select or approve a dependency.
+use `restore-all`; `restore ID` swaps selections. Exact Nix closure verification remains mandatory. Closure presence does not
+install, approve, enable, or disable another plugin.
 
 ## Commit scope
 
@@ -52,7 +52,6 @@ standard `git add --` with explicit paths, then `git commit`. The path list is:
 - `services/korrid/plugin-host/src/lib.rs`
 - `services/korrid/plugin-host/src/main.rs`
 - `services/korrid/plugin-host/src/selection.rs`
-- `services/korrid/plugin-host/tests/dependencies.rs`
 - `services/korrid/plugin-host/tests/host_boundary.rs`
 - `services/korrid/plugin-host/tests/selection.rs`
 - `services/korrid/plugin-host/tests/fixtures/selection.json`

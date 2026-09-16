@@ -5,27 +5,27 @@ import { createSpatialFocusController } from "../../input/spatial-focus"
 import { createInMemoryKorridClient } from "../../korrid/client"
 import { SurfaceRoot } from "../SurfaceRoot"
 import { portalSurfaceFor } from "../surface-registry"
-import { runtimeRoutes } from "./runtime-routes"
+import { runnerRoutes } from "./runner-routes"
 import "../../index.css"
-import "./runtime-preview.css"
+import "./runner-preview.css"
 
 // A first-class fixture consumer of the production client seam. There are no
 // live RPC calls, request interceptions, or changes to global network APIs.
 const params = new URLSearchParams(location.search)
 const fixture = params.get("fixture")
-const routes = structuredClone(runtimeRoutes)
-if (fixture === "ready" || fixture === "warnings") delete routes.gameRuntime
+const routes = structuredClone(runnerRoutes)
+if (fixture === "ready" || fixture === "warnings") delete routes.gameRunner
 if (fixture === "warnings") {
   for (const route of routes.routes)
     route.warnings.push({
       setting: "video_driver",
-      launcherId: route.launcherId,
-      build: route.launcherBuild,
+      runnerId: route.runnerId,
+      build: route.runnerBuild,
       message: "Unsupported in pinned version 1.20; setting omitted",
     })
 }
 const korrid = createInMemoryKorridClient({
-  games: [{ id: "wl4", title: "Wario Land 4", supportsRuntimeSelection: true, source: { label: "This device", isLocal: true } }],
+  games: [{ id: "wl4", title: "Wario Land 4", supportsRunnerSelection: true, source: { label: "This device", isLocal: true } }],
   gameRoutes: fixture === "error" ? [] : [routes],
   routeDelayMs: fixture === "loading" ? 4000 : 0,
   routeMutationDelayMs: fixture === "busy" ? 4000 : 0,

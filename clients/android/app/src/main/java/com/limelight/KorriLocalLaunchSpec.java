@@ -45,7 +45,7 @@ final class KorriLocalLaunchSpec {
     }
 
     static final class Parsed {
-        final String launcherId;
+        final String runnerId;
         final boolean isAndroidApp;
         final ComponentName component;
         final Map<String, String> extras;
@@ -53,13 +53,13 @@ final class KorriLocalLaunchSpec {
         final List<FileSpec> files;
 
         Parsed(
-                String launcherId,
+                String runnerId,
                 boolean isAndroidApp,
                 ComponentName component,
                 Map<String, String> extras,
                 List<String> directories,
                 List<FileSpec> files) {
-            this.launcherId = launcherId;
+            this.runnerId = runnerId;
             this.isAndroidApp = isAndroidApp;
             this.component = component;
             this.extras = Collections.unmodifiableMap(extras);
@@ -118,12 +118,12 @@ final class KorriLocalLaunchSpec {
             VolumeContainment volumes) throws Invalid {
         try {
             JSONObject spec = new JSONObject(specJson);
-            String launcherId = spec.getString("launcherId");
-            boolean isRetroarch = RETROARCH.equals(launcherId);
-            boolean isAndroidApp = ANDROID_APP.equals(launcherId);
+            String runnerId = spec.getString("runnerId");
+            boolean isRetroarch = RETROARCH.equals(runnerId);
+            boolean isAndroidApp = ANDROID_APP.equals(runnerId);
             if (!isRetroarch && !isAndroidApp) {
                 throw new Invalid("UnsupportedLauncher",
-                        "unsupported local launcher: " + launcherId);
+                        "unsupported local runner: " + runnerId);
             }
 
             JSONObject componentJson = spec.getJSONObject("component");
@@ -136,7 +136,7 @@ final class KorriLocalLaunchSpec {
             // carry no extras and provision nothing.
             if (isRetroarch && !RETROARCH_COMPONENT.equals(component)) {
                 throw new Invalid("InvalidSpec",
-                        "component does not match launcher " + launcherId);
+                        "component does not match runner " + runnerId);
             }
 
             JSONObject extrasJson = spec.getJSONObject("extras");
@@ -200,7 +200,7 @@ final class KorriLocalLaunchSpec {
                         "android-app launches carry no extras and provision nothing");
             }
             return new Parsed(
-                    launcherId, isAndroidApp, component, extras, directories, files);
+                    runnerId, isAndroidApp, component, extras, directories, files);
         } catch (Invalid error) {
             throw error;
         } catch (Exception error) {

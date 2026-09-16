@@ -31,7 +31,6 @@ let
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'dependent-clock'; export const services = ['clock'];";
     plugin = _: {
-      requires = [ alternate ];
       services.clock.serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
@@ -130,30 +129,18 @@ let
         "Network daemon\n# hidden\r[Service]\rUser=root\rExecStartPre=+${pkgs.coreutils}/bin/touch /tmp/injected-command"
         "Network daemon\r[Service]\rUser=root\rExecStartPre=+${pkgs.coreutils}/bin/touch /tmp/injected-command"
       ];
-  # Admission exercises the actual shipped game declarations. No emulator is
-  # started by the plugin installer, and this fixture supplies no emulator.
-  gameLauncher = mkPlugin {
-    publisher.namespace = "@korri";
-    source = ../../../plugins/retroarch;
-    plugin = _: { files.retroarch = "${pkgs.coreutils}/bin/true"; };
-  };
+  # Admission exercises the actual self-contained game declaration. No
+  # emulator is started by the plugin installer.
   gameRuntime = mkPlugin {
     publisher.namespace = "@korri";
     source = ../../../plugins/mgba;
     plugin = _: {
-      files.mgba = "${pkgs.coreutils}/bin/true";
-      requires = [ gameLauncher ];
+      files = {
+        mgba = "${pkgs.coreutils}/bin/true";
+        retroarch = "${pkgs.coreutils}/bin/true";
+        autoconfig = "${pkgs.coreutils}/bin/true";
+      };
     };
-  };
-  changedLauncher = mkPlugin {
-    publisher.namespace = "@korri";
-    source = pkgs.writeTextDir "plugin.ts" ''
-      ${builtins.replaceStrings [ "export function launch(" ] [ "function originalLaunch(" ] (
-        builtins.readFile ../../../plugins/retroarch/plugin.ts
-      )}
-      export function launch(input) { throw new Error("never run during approval"); }
-    '';
-    plugin = _: { files.retroarch = "${pkgs.coreutils}/bin/true"; };
   };
   emptyClock = mkPlugin {
     publisher.namespace = "@example";
@@ -256,10 +243,8 @@ pkgs.testers.runNixOSTest {
           unclean
           empty
           emptyClock
-          gameLauncher
           gameRuntime
           dependentClock
-          changedLauncher
           credential
           forbidden
           sshPackage
@@ -542,71 +527,36 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin disable @example:empty")
     machine.succeed("korri-plugin remove @example:empty --purge")
 
-    # Closure approval: inspecting a dependent plugin imports its closure and
-    # discloses what it brings. Installing with that approval commits the whole
-    # closure atomically, and enabling the dependent activates its dependencies.
+    # A self-contained game plugin is one independently managed selection.
     game_runtime = inspect("${gameRuntime}")
-    assert len(game_runtime["brings"]) == 1
-    assert game_runtime["brings"][0]["id"] == "@korri:retroarch"
+    assert "requires" not in game_runtime
+    assert "brings" not in game_runtime
     install("${gameRuntime}")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
     machine.succeed("korri-plugin enable @korri:mgba")
     game_packages = json.loads(machine.succeed("korri-plugin enabled-packages"))
-    assert [p["id"] for p in game_packages] == ["@korri:mgba", "@korri:retroarch"]
-    assert game_packages[0]["requires"] == ["${gameLauncher}"]
-    assert game_packages[0]["declaration"]["runtimes"] == game_runtime["declaration"]["runtimes"]
-    assert game_packages[1]["declaration"]["sessionControls"] == game_launcher["declaration"]["sessionControls"]
-    assert all(p["native_unit"] is None for p in game_packages)
+    assert [p["id"] for p in game_packages] == ["@korri:mgba"]
+    assert game_packages[0]["declaration"]["runners"] == game_runtime["declaration"]["runners"]
+    assert game_packages[0]["native_unit"] is None
     cache.succeed("systemctl stop nix-serve.service")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
     cache.succeed("systemctl start nix-serve.service")
-    game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + game_launcher["unit"].removesuffix(".service")
-    machine.succeed("ln -s ${changedLauncher} " + game_root + "/pending")
+    game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + game_runtime["unit"].removesuffix(".service")
+    machine.succeed("ln -s ${alternate} " + game_root + "/pending")
     assert "unfinished selection" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("korri-plugin restore-all")
     machine.fail("test -L " + game_root + "/pending")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
-    machine.succeed("ln -sfn ${changedLauncher} " + game_root + "/active")
+    machine.succeed("ln -sfn ${alternate} " + game_root + "/active")
     assert "inconsistent active root" in machine.fail("korri-plugin enabled-packages 2>&1")
-    machine.succeed("ln -sfn ${gameLauncher} " + game_root + "/active")
-    game_receipt_path = "/var/lib/korri-plugin-host/" + game_launcher["unit"].removesuffix(".service") + "/selection.json"
+    machine.succeed("ln -sfn ${gameRuntime} " + game_root + "/active")
+    game_receipt_path = "/var/lib/korri-plugin-host/" + game_runtime["unit"].removesuffix(".service") + "/selection.json"
     game_receipt = json.loads(machine.succeed("cat " + game_receipt_path))
     machine.succeed("printf %s " + shlex.quote(json.dumps(dict(game_receipt, approval="0" * 64))) + " > " + game_receipt_path)
     assert "no longer matches its approval" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("printf %s " + shlex.quote(json.dumps(game_receipt)) + " > " + game_receipt_path)
-    for p in game_packages:
-        machine.fail("test -e /run/systemd/system/" + p["unit"])
-    machine.fail("korri-plugin disable @korri:retroarch")
-    machine.fail("korri-plugin remove @korri:retroarch")
-    changed_launcher = inspect("${changedLauncher}")
-    assert changed_launcher["approval"] != game_launcher["approval"]
-    machine.fail("korri-plugin update @korri:retroarch http://cache:5000 ${changedLauncher} " + game_launcher["approval"])
-    machine.fail("korri-plugin update @korri:retroarch http://cache:5000 ${changedLauncher} " + changed_launcher["approval"])
     machine.succeed("korri-plugin disable @korri:mgba")
-    machine.succeed("korri-plugin disable @korri:retroarch")
-    # Even a disabled core retains its exact dependency selection.
-    machine.fail("korri-plugin remove @korri:retroarch")
     machine.succeed("korri-plugin remove @korri:mgba --purge")
-    machine.succeed("korri-plugin update @korri:retroarch http://cache:5000 ${changedLauncher} " + changed_launcher["approval"])
-    # Rollback reuses exact approval, but it cannot strand even a disabled
-    # runtime on a different launcher build. Closure presence is not selection.
-    machine.succeed("korri-plugin restore @korri:retroarch")
-    rollback_launcher = json.loads(machine.succeed("korri-plugin status @korri:retroarch"))
-    assert rollback_launcher["package"] == game_launcher["package"]
-    assert rollback_launcher["previous"]["package"] == changed_launcher["package"]
-    assert rollback_launcher["desired"] == {"state": "Disabled"}
-    install("${gameRuntime}")
-    for enabled in [False, True]:
-        if enabled:
-            machine.succeed("korri-plugin enable @korri:retroarch; korri-plugin enable @korri:mgba")
-        before_swap = json.loads(machine.succeed("korri-plugin status @korri:retroarch"))
-        assert "@korri:mgba" in machine.fail("korri-plugin restore @korri:retroarch 2>&1")
-        assert json.loads(machine.succeed("korri-plugin status @korri:retroarch")) == before_swap
-    machine.succeed("korri-plugin disable @korri:mgba; korri-plugin remove @korri:mgba")
-    machine.succeed("korri-plugin disable @korri:retroarch; korri-plugin restore @korri:retroarch")
-    machine.succeed("korri-plugin enable @korri:retroarch")
-    assert len(json.loads(machine.succeed("korri-plugin enabled-packages"))) == 1
-    machine.succeed("korri-plugin remove @korri:retroarch --purge")
 
     # Load, but never start, the actual hostile bytes in systemd. Bare CR is a
     # directive boundary there, even after a comment or inside Description.
@@ -836,16 +786,16 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin enable @example:dependent-clock")
     dependent_pid = machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip()
     assert int(dependent_pid) > 0
-    # A corrupt unrelated receipt must not stop either dependency-free services
-    # or a healthy A -> B chain. Restore reports the bad receipt independently.
+    # A corrupt unrelated receipt must not stop independently managed services.
+    # Restore reports the bad receipt independently.
     corrupt = "/var/lib/korri-plugin-host/korri-plugin-" + "0" * 64
     machine.succeed("mkdir -m 700 " + corrupt + "; (umask 077; printf broken > " + corrupt + "/selection.json)")
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
     machine.succeed("systemctl is-active " + unit)
-    # Interrupt B's selection while A remains enabled. One restore must recover
-    # B before considering A; unrelated C must still be reported separately.
+    # Interrupt one selection while another remains enabled. One restore
+    # repairs that receipt; the unrelated corrupt receipt is still reported.
     clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + clock["unit"].removesuffix(".service")
     machine.succeed("ln -s ${alternate} " + clock_root + "/pending; systemctl stop " + clock["unit"])
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
@@ -855,13 +805,13 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
     machine.succeed("rm " + corrupt + "/selection.json; rmdir " + corrupt)
     assert dependent_clock["id"] in [p["id"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))]
-    # Corrupt required B instead: stop A, preserve its pins, and refuse registry
-    # authority. Repairing B permits both selections to recover in one pass.
+    # Corrupt one receipt. Its independently managed peer remains running.
+    # The all-or-error registry snapshot still refuses malformed authority.
     clock_receipt_path = "/var/lib/korri-plugin-host/" + clock["unit"].removesuffix(".service") + "/selection.json"
     clock_receipt = machine.succeed("cat " + clock_receipt_path)
     machine.succeed("printf broken > " + clock_receipt_path)
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
-    machine.fail("systemctl is-active " + dependent_clock["unit"])
+    machine.succeed("systemctl is-active " + dependent_clock["unit"])
     machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + dependent_clock["unit"].removesuffix(".service") + "/active")
     machine.fail("korri-plugin enabled-packages")
     machine.succeed("printf %s " + shlex.quote(clock_receipt) + " > " + clock_receipt_path)

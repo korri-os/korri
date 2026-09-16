@@ -141,11 +141,11 @@
 	--pico-space-3: var(--intrinsic-space-3);
 	--pico-space-4: var(--intrinsic-space-4);
 
-	/* Runtime identities are prose, not cartridge labels. Keep them readable
+	/* Runner identities are prose, not cartridge labels. Keep them readable
 	 * in narrow containers; scroll rather than shrinking text or tap targets. */
-	--pico-runtime-text: max(1rem, var(--pico-text));
-	--pico-runtime-label: max(0.625rem, var(--pico-text-xs));
-	--pico-runtime-target: max(3rem, var(--pico-space-4));
+	--pico-runner-text: max(1rem, var(--pico-text));
+	--pico-runner-label: max(0.625rem, var(--pico-text-xs));
+	--pico-runner-target: max(3rem, var(--pico-space-4));
 
 	/* Cartridge-label colours: the ten palette entries bright enough to carry a
 	 * label. Deliberately the raw palette rather than semantic roles — a label's

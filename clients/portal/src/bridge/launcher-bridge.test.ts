@@ -19,7 +19,7 @@ const localContext = {
   gameId: "game",
   title: "Game",
   contributors: [
-    { kind: LaunchContributorKind.Launcher, id: "@korri:retroarch/retroarch" },
+    { kind: LaunchContributorKind.Runner, id: "@korri:retroarch/retroarch" },
   ],
   foreground: {
     kind: LaunchForegroundKind.Component,
@@ -46,7 +46,7 @@ describe("createInMemoryLauncherBridge", () => {
     const bridge = createInMemoryLauncherBridge()
     const spec = {
       launchId: "launch-1",
-      launcherId: "retroarch",
+      runnerId: "retroarch",
       disposition: LaunchDisposition.Fresh,
       context: localContext,
       component: { packageName: "pkg", className: "Activity" },
@@ -81,7 +81,7 @@ describe("createInMemoryLauncherBridge", () => {
     const bridge = createInMemoryLauncherBridge({ behavior: "local-launch-fail" })
     const result = await bridge.launchLocal({
       launchId: "launch-2",
-      launcherId: "retroarch",
+      runnerId: "retroarch",
       disposition: LaunchDisposition.Fresh,
       context: localContext,
       component: { packageName: "pkg", className: "Activity" },
@@ -382,7 +382,7 @@ describe("createKorriNativeLauncherBridge", () => {
     expect((await bridge.startStream(nativeLaunchSpec))._tag).toBe("StreamFailed")
     expect(await bridge.launchLocal({
       launchId: "launch-1",
-      launcherId: "retroarch",
+      runnerId: "retroarch",
       disposition: LaunchDisposition.Fresh,
       context: localContext,
       component: { packageName: "pkg", className: "Activity" },
@@ -405,7 +405,7 @@ describe("createKorriNativeLauncherBridge", () => {
     )
     const spec = {
       launchId: "launch-3",
-      launcherId: "retroarch",
+      runnerId: "retroarch",
       disposition: LaunchDisposition.Fresh,
       context: localContext,
       component: { packageName: "pkg", className: "Activity" },
@@ -653,7 +653,7 @@ describe("createKorriNativeLauncherBridge", () => {
     expect(
       await bridge.launchLocal({
         launchId: "launch-4",
-        launcherId: "retroarch",
+        runnerId: "retroarch",
         disposition: LaunchDisposition.Fresh,
         context: localContext,
         component: { packageName: "pkg", className: "Activity" },

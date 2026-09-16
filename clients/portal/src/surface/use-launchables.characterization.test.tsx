@@ -72,7 +72,7 @@ const localLaunchSpec: LocalLaunchSpec = {
     contributors: [],
     foreground: { kind: LaunchForegroundKind.Component },
   },
-  launcherId: "fixture-local",
+  runnerId: "fixture-local",
   component: {
     packageName: "dev.fixture.runtime",
     className: "dev.fixture.runtime.MainActivity",
@@ -87,7 +87,7 @@ const remoteGame = (host = "zao"): Game => ({
   id: "wl4",
   title: "Wario Land 4",
   host,
-  supportsRuntimeSelection: false,
+  supportsRunnerSelection: false,
   source: { label: host, isLocal: false },
 })
 
@@ -347,7 +347,7 @@ describe("useLaunchables load and core effects", () => {
     const calls: string[] = []
     const bridge = buildBridge({
       async launchLocal(spec) {
-        calls.push(`bridge:${spec.launcherId}`)
+        calls.push(`bridge:${spec.runnerId}`)
         return { _tag: "Launched" }
       },
     })
@@ -682,7 +682,7 @@ describe("useLaunchables sequence guards", () => {
         {
           id: "new",
           title: "New Game",
-          supportsRuntimeSelection: false,
+          supportsRunnerSelection: false,
           source: { label: "zao", isLocal: false },
         },
       ]),
@@ -697,7 +697,7 @@ describe("useLaunchables sequence guards", () => {
         {
           id: "old",
           title: "Old Game",
-          supportsRuntimeSelection: false,
+          supportsRunnerSelection: false,
           source: { label: "zao", isLocal: false },
         },
       ]),

@@ -84,7 +84,7 @@ impl Drop for RunningPortal {
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_authenticates_the_same_health_request_in_both_runtimes() {
+async fn shared_portal_rpc_authenticates_the_same_health_request_in_both_runners() {
     for host in [false, true] {
         let portal = RunningPortal::start(host).await;
         for token in [None, Some("incorrect")] {
@@ -248,7 +248,7 @@ async fn shared_portal_rpc_local_sessions_still_require_credentials_and_the_exac
 }
 
 #[tokio::test]
-async fn shared_portal_rpc_full_permission_still_dispatches_commands_on_both_runtimes() {
+async fn shared_portal_rpc_full_permission_still_dispatches_commands_on_both_runners() {
     for host in [false, true] {
         let portal = RunningPortal::with_host_access(host, Some(PortalPermission::Full)).await;
         let response = portal

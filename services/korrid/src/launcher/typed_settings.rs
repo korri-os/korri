@@ -53,14 +53,14 @@ impl PackagedSettings {
     pub fn validate(
         &self,
         settings: HashMap<String, LaunchSettingValue>,
-        launcher_id: &str,
+        runner_id: &str,
         build: &str,
         program: &str,
     ) -> (HashMap<String, LaunchSettingValue>, Vec<LaunchWarning>) {
         let unverified = HashMap::new();
         validate(
             settings,
-            launcher_id,
+            runner_id,
             build,
             Some(SourceCheckedSettings {
                 version: &self.version,
@@ -82,14 +82,14 @@ impl PackagedSettings {
 #[serde(rename_all = "camelCase")]
 pub struct LaunchWarning {
     pub setting: String,
-    pub launcher_id: String,
+    pub runner_id: String,
     pub build: String,
     pub message: String,
 }
 
 pub fn validate(
     settings: HashMap<String, LaunchSettingValue>,
-    launcher_id: &str,
+    runner_id: &str,
     build: &str,
     source: Option<SourceCheckedSettings<'_>>,
 ) -> (HashMap<String, LaunchSettingValue>, Vec<LaunchWarning>) {
@@ -116,8 +116,8 @@ pub fn validate(
                 .map(|s| s.version)
                 .unwrap_or("unavailable (source metadata absent)");
             warnings.push(LaunchWarning {
-                message: format!("omitted setting {key} for launcher {launcher_id}, version {version}, build {build}: key/type not verified against this build's source"),
-                setting: key, launcher_id: launcher_id.into(), build: build.into(),
+                message: format!("omitted setting {key} for runner {runner_id}, version {version}, build {build}: key/type not verified against this build's source"),
+                setting: key, runner_id: runner_id.into(), build: build.into(),
             });
         }
     }

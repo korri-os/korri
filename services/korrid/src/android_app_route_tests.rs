@@ -133,7 +133,7 @@ async fn android_route_cases() {
     .await;
     assert_eq!(launched["outcome"]["_tag"], "Ok");
     let spec = &launched["outcome"]["payload"];
-    assert_eq!(spec["launcherId"], "android-app");
+    assert_eq!(spec["runnerId"], "android-app");
     assert_eq!(spec["component"]["packageName"], "com.playdigious.tmnt");
     assert_eq!(spec["component"]["className"], "");
     assert_eq!(spec["extras"], json!({}));

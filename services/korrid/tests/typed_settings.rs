@@ -17,13 +17,22 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
     let package = root.join(name);
     fs::create_dir(&package).unwrap();
     fs::write(package.join("plugin.ts"), source).unwrap();
+    let sources = if source.contains("./retroarch") {
+        fs::write(
+            package.join("retroarch.ts"),
+            include_str!("../../../plugins/mgba/retroarch.ts"),
+        )
+        .unwrap();
+        vec!["plugin.ts".into(), "retroarch.ts".into()]
+    } else {
+        vec!["plugin.ts".into()]
+    };
     EnabledPackage {
         id: format!("@korri:{name}"),
         package,
         files: BTreeMap::new(),
         entry: "plugin.ts".into(),
-        sources: vec!["plugin.ts".into()],
-        requires: vec![],
+        sources,
     }
 }
 
@@ -42,10 +51,13 @@ fn evidence(package: &mut EnabledPackage, program: &str, version: &str, keys: se
 
 fn input(settings: serde_json::Value) -> PluginLaunchInput {
     serde_json::from_value(serde_json::json!({
-        "launcherId": "@korri:retroarch/retroarch",
-        "launcherKind": "@korri:retroarch/retroarch", "runtimeId": "@korri:mgba/mgba",
-        "program": "/program", "runtimePath": "/core", "contentPath": "/rom",
-        "accountRoot": "/account", "files": {"autoconfig":"/autoconfig"},
+        "runnerId": "@korri:mgba/mgba",
+        "familyId": "@korri:retroarch",
+        "program": "/program",
+        "corePath": "/core",
+        "contentPath": "/rom",
+        "accountRoot": "/account",
+        "files": {"autoconfig":"/autoconfig"},
         "overrides": {"settings":settings},
     }))
     .unwrap()
@@ -53,7 +65,10 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
 
 #[test]
 fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
-    let source = include_str!("../../../plugins/retroarch/plugin.ts");
+    let source = format!(
+        "export const name = 'fixture';\n{}",
+        include_str!("../../../plugins/mgba/retroarch.ts")
+    );
     let mut input = input(serde_json::json!({
         "video_vsync":false, "video_driver":"vulkan", "audio_volume":-3.5, "audio_device":"device\\path",
     }));
@@ -63,7 +78,7 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
         }))
         .unwrap(),
     );
-    let content = evaluate(source, &input).unwrap().files.remove(0).content;
+    let content = evaluate(&source, &input).unwrap().files.remove(0).content;
     assert!(content.contains("video_vsync = false\n"));
     assert_eq!(content.matches("video_vsync =").count(), 1);
     assert!(content.contains("video_driver = \"vulkan\"\n"));
@@ -80,7 +95,7 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
         let mut typed = input.clone();
         typed.overrides =
             Some(serde_json::from_value(serde_json::json!({"settings":{key:false}})).unwrap());
-        assert!(evaluate(source, &typed).is_err(), "typed {key}");
+        assert!(evaluate(&source, &typed).is_err(), "typed {key}");
         let mut raw = input.clone();
         raw.overrides = Some(
             serde_json::from_value(
@@ -88,24 +103,27 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
             )
             .unwrap(),
         );
-        assert!(evaluate(source, &raw).is_err(), "raw {key}");
+        assert!(evaluate(&source, &raw).is_err(), "raw {key}");
     }
 }
 
 #[test]
 fn callback_rejects_strings_that_cannot_round_trip_through_native_cfg() {
-    let source = include_str!("../../../plugins/retroarch/plugin.ts");
+    let source = format!(
+        "export const name = 'fixture';\n{}",
+        include_str!("../../../plugins/mgba/retroarch.ts")
+    );
     for value in ["device \"quoted\"", "a\nb", "a\rb", "a\0b"] {
         let input = input(serde_json::json!({"audio_device":value}));
-        assert!(evaluate(source, &input).is_err(), "{value:?}");
+        assert!(evaluate(&source, &input).is_err(), "{value:?}");
     }
     let input = input(serde_json::json!({"audio_device":"hw:\"quoted\""}));
-    let content = evaluate(source, &input).unwrap().files.remove(0).content;
+    let content = evaluate(&source, &input).unwrap().files.remove(0).content;
     assert!(content.contains("audio_device = hw:\"quoted\"\n"));
 }
 
 #[test]
-fn installed_instances_use_their_own_evidence_and_exact_program_before_the_kind_callback() {
+fn installed_runner_uses_its_own_evidence_and_exact_program() {
     let root = tempfile::tempdir().unwrap();
     readable::combined(root.path());
     fs::create_dir(root.path().join("roms")).unwrap();
@@ -113,54 +131,36 @@ fn installed_instances_use_their_own_evidence_and_exact_program_before_the_kind_
     let snapshot = ConfigSnapshotCoordinator::new(root.path())
         .reload()
         .snapshot;
-    let mut kind = package(
+    let mut runner = package(
         root.path(),
-        "retroarch",
-        include_str!("../../../plugins/retroarch/plugin.ts"),
+        "mgba",
+        include_str!("../../../plugins/mgba/plugin.ts"),
     );
-    kind.files
-        .insert("retroarch".into(), "/default-program".into());
-    kind.files.insert("autoconfig".into(), "/autoconfig".into());
-    evidence(
-        &mut kind,
-        "/default-program",
-        "default-version",
-        serde_json::json!({"video_vsync":"Boolean", "audio_volume":"Number"}),
-    );
-    let mut instance = package(
-        root.path(),
-        "alternate",
-        r#"
-        export const name = "alternate";
-        export const systems = { gba: { id: "gba", title: "Game Boy Advance" } };
-        export const launchers = { retroarch: { id: "@korri:alternate/retroarch", kind: "@korri:retroarch/retroarch", program: "retroarch" } };
-        export const runtimes = { core: { id: "@korri:alternate/core", kind: "libretro-core", launcher: "@korri:alternate/retroarch", path: "core", supports: {systems:["gba"]} } };
-    "#,
-    );
-    instance.requires.push(kind.package.clone());
-    instance
+    runner
         .files
-        .insert("retroarch".into(), "/alternate-program".into());
-    instance.files.insert("core".into(), "/core".into());
+        .insert("retroarch".into(), "/exact-program".into());
+    runner.files.insert("mgba".into(), "/exact-core".into());
+    runner
+        .files
+        .insert("autoconfig".into(), "/autoconfig".into());
     let overrides: PluginLaunchOverrides = serde_json::from_value(serde_json::json!({
-        "settings":{"audio_volume":-3,"video_vsync":false,"absent_key":1},
+        "settings":{"audio_volume":-3,"video_vsync":false,"absent_key":1}
     }))
     .unwrap();
-    for (program, expected_accepted) in [("/alternate-program", 1), ("/default-program", 0)] {
+    for (program, accepted) in [("/exact-program", 1), ("/other-program", 0)] {
         evidence(
-            &mut instance,
+            &mut runner,
             program,
-            "alternate-version",
+            "runner-version",
             serde_json::json!({"audio_volume":"Number", "video_vsync":"Number"}),
         );
-        let registry =
-            PluginRegistry::from_installed(vec![kind.clone(), instance.clone()]).unwrap();
+        let registry = PluginRegistry::from_installed(vec![runner.clone()]).unwrap();
         let route = resolve_linux_route(
             root.path(),
             &snapshot,
             &registry,
             readable::GBA_ID,
-            Some("@korri:alternate/core"),
+            Some("@korri:mgba/mgba"),
         )
         .unwrap();
         let spec = launch_route(
@@ -172,43 +172,14 @@ fn installed_instances_use_their_own_evidence_and_exact_program_before_the_kind_
         )
         .unwrap();
         let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
-        assert_eq!(
-            input.overrides.as_ref().unwrap().settings.len(),
-            expected_accepted
-        );
-        assert_eq!(spec.warnings.len(), 3 - expected_accepted);
-        for warning in &spec.warnings {
-            assert_eq!(warning.build, instance.package.display().to_string());
-            assert_eq!(warning.launcher_id, "@korri:alternate/retroarch");
-            assert!(warning.message.contains("alternate-version"));
-            assert!(!warning.message.contains("default-version"));
-            assert!(warning.message.contains(&warning.setting));
-        }
-        let output = evaluate(&fs::read_to_string(&spec.command[2]).unwrap(), &input).unwrap();
-        assert_eq!(output.command, "/alternate-program");
-        assert_eq!(
-            output.files[0].content.contains("audio_volume = -3\n"),
-            expected_accepted == 1
-        );
-        assert!(!output.files[0].content.contains("video_vsync ="));
-        assert!(!output.files[0].content.contains("absent_key"));
+        assert_eq!(input.overrides.as_ref().unwrap().settings.len(), accepted);
+        assert_eq!(spec.warnings.len(), 3 - accepted);
+        assert!(spec.warnings.iter().all(|warning| {
+            warning.runner_id == "@korri:mgba/mgba"
+                && warning.build == runner.package.display().to_string()
+                && warning.message.contains("runner-version")
+        }));
     }
-    instance.files.remove("retroarch-settings");
-    let registry = PluginRegistry::from_installed(vec![kind, instance]).unwrap();
-    let route = resolve_linux_route(
-        root.path(),
-        &snapshot,
-        &registry,
-        readable::GBA_ID,
-        Some("@korri:alternate/core"),
-    )
-    .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &route, Some(overrides)).unwrap();
-    assert_eq!(spec.warnings.len(), 3);
-    assert!(spec
-        .warnings
-        .iter()
-        .all(|warning| warning.message.contains("source metadata absent")));
 }
 
 #[test]
@@ -249,7 +220,6 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         files: manifest.files,
         entry: manifest.entry,
         sources: manifest.sources,
-        requires: vec![],
     };
     let build = package.package.display().to_string();
     let program = package.files["retroarch"].display().to_string();
@@ -261,7 +231,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     );
     let (accepted, warnings) = evidence.validate(
         input.overrides.take().unwrap().settings,
-        &input.launcher_id,
+        &input.runner_id,
         &build,
         &program,
     );

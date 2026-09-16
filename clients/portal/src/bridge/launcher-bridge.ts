@@ -365,7 +365,7 @@ export function createInMemoryLauncherBridge(
         return {
           _tag: "LaunchFailed",
           reason: "NotInstalled",
-          message: `no local launcher ${spec.launcherId}`,
+          message: `no local launcher ${spec.runnerId}`,
         }
       }
       return { _tag: "Launched" }

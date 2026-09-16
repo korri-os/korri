@@ -60,7 +60,7 @@ public class KorriShellActivityLifecycleContractTest {
         assertTrue(launchLocal.contains("active.launchId()"));
         assertTrue(launchLocal.contains("active.gameId()"));
         assertTrue(launchLocal.contains("spec.component.getPackageName()"));
-        assertTrue(launchLocal.contains("spec.launcherId"));
+        assertTrue(launchLocal.contains("spec.runnerId"));
         assertFalse(launchLocal.contains("Log.i(KorriLocalLaunchLifecycle.TAG, specJson"));
 
         String eventSource = new String(Files.readAllBytes(

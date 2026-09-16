@@ -5,8 +5,8 @@ const { chromium } = createRequire(new URL("../../../surfaces/pico/package.json"
   "playwright",
 )
 
-const url = process.env.RUNTIME_PREVIEW_URL ?? "http://127.0.0.1:5197/test/runtime-preview.html"
-const output = process.env.RUNTIME_SCREENSHOTS ?? "/tmp/korri-runtime-screenshots"
+const url = process.env.RUNNER_PREVIEW_URL ?? "http://127.0.0.1:5197/test/runner-preview.html"
+const output = process.env.RUNNER_SCREENSHOTS ?? "/tmp/korri-runner-screenshots"
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM,
@@ -30,7 +30,7 @@ page.on("request", request => {
   )
   assert.notEqual(parsed.pathname, "/rpc")
 })
-const dialog = () => page.getByRole("dialog", { name: "Runtimes for Wario Land 4" })
+const dialog = () => page.getByRole("dialog", { name: "Runners for Wario Land 4" })
 async function load(surface, fixture = "stale") {
   await page.goto(`${url}?surface=${surface}&fixture=${fixture}`)
   await page
@@ -59,7 +59,7 @@ try {
       await dialog().getByRole("button", { name: "Launch once", exact: true }).count(),
       2,
     )
-    assert((await dialog().innerText()).includes("missing/runtime"))
+    assert((await dialog().innerText()).includes("missing/runner"))
     for (const [name, width, height] of [
       ["generous", 1280, 800],
       ["medium", 640, 480],
@@ -135,7 +135,7 @@ try {
       await page.getByRole("button", { name: "Wario Land 4", exact: true }).focus()
       await page.keyboard.press("o")
     }
-    await page.getByRole("button", { name: "Runtimes on this device", exact: true }).click()
+    await page.getByRole("button", { name: "Runners on this device", exact: true }).click()
     await dialog()
       .getByRole("button", { name: "Remember for this game", exact: true })
       .nth(1)
@@ -162,7 +162,7 @@ try {
     await dialog().getByRole("button", { name: "Stop active session", exact: true }).click()
     await dialog().getByRole("button", { name: "Launch once", exact: true }).first().waitFor()
     assert(
-      (await dialog().innerText()).includes("missing/runtime"),
+      (await dialog().innerText()).includes("missing/runner"),
       "stop returns to choice without launching or saving",
     )
     await dialog().getByRole("button", { name: "Launch once", exact: true }).nth(1).click()
@@ -180,13 +180,13 @@ try {
     await open(surface)
     await dialog().getByRole("button", { name: "Launch once", exact: true }).first().click()
     await dialog().getByText("Launching requires session access", { exact: true }).waitFor()
-    await dialog().getByRole("button", { name: "Reload runtimes", exact: true }).click()
+    await dialog().getByRole("button", { name: "Reload runners", exact: true }).click()
     await dialog()
       .getByRole("button", { name: "Remember for this game", exact: true })
       .first()
       .click()
     await dialog()
-      .getByText("Saving runtime choices requires Full access", { exact: true })
+      .getByText("Saving runner choices requires Full access", { exact: true })
       .waitFor()
     await page.keyboard.press("Escape")
 

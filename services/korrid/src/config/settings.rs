@@ -282,25 +282,25 @@ pub fn update_with_registry_source(
 #[typeshare::typeshare]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "_tag", content = "id")]
-pub enum RuntimeChoiceScope {
+pub enum RunnerChoiceScope {
     System(String),
     Game(String),
 }
 
 #[typeshare::typeshare]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct RuntimeChoiceRevisions {
+pub struct RunnerChoiceRevisions {
     pub device: String,
     pub games: String,
 }
 
-pub fn runtime_choice_revisions(root: &Path) -> Result<RuntimeChoiceRevisions, SettingsError> {
-    runtime_choice_snapshot(root).map(|(_, revisions)| revisions)
+pub fn runner_choice_revisions(root: &Path) -> Result<RunnerChoiceRevisions, SettingsError> {
+    runner_choice_snapshot(root).map(|(_, revisions)| revisions)
 }
 
-pub fn runtime_choice_snapshot(
+pub fn runner_choice_snapshot(
     root: &Path,
-) -> Result<(super::ConfigSnapshot, RuntimeChoiceRevisions), SettingsError> {
+) -> Result<(super::ConfigSnapshot, RunnerChoiceRevisions), SettingsError> {
     ensure_fixed_files(root)?;
     let device = read_fixed(root, DEVICE_FILE_NAME)?;
     let games = read_fixed(root, GAMES_FILE_NAME)?;
@@ -310,32 +310,32 @@ pub fn runtime_choice_snapshot(
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     Ok((
         snapshot,
-        RuntimeChoiceRevisions {
+        RunnerChoiceRevisions {
             device: revision(&device),
             games: revision(&games),
         },
     ))
 }
 
-pub fn set_runtime_choice(
+pub fn set_runner_choice(
     root: &Path,
     private_root: &Path,
     write_lock: &std::sync::Mutex<()>,
     expected_revision: &str,
-    scope: &RuntimeChoiceScope,
-    runtime_id: Option<&str>,
-) -> Result<RuntimeChoiceRevisions, SettingsError> {
-    if let Some(id) = runtime_id {
+    scope: &RunnerChoiceScope,
+    runner_id: Option<&str>,
+) -> Result<RunnerChoiceRevisions, SettingsError> {
+    if let Some(id) = runner_id {
         // The same fully-qualified contribution syntax as release provider refs.
         if !id.starts_with('@') || serde_json::from_value::<super::ReleaseKey>(id.into()).is_err() {
             return Err(SettingsError::Invalid(
-                "runtime must be a fully-qualified contribution ID".into(),
+                "runner must be a fully-qualified contribution ID".into(),
             ));
         }
     }
     let _guard = write_lock
         .lock()
-        .expect("runtime choice write lock poisoned");
+        .expect("runner choice write lock poisoned");
     crate::discovery::reconcile::reject_pending_publication(private_root).map_err(|error| {
         match error {
             crate::discovery::DiscoveryError::Conflict => SettingsError::Conflict,
@@ -348,7 +348,7 @@ pub fn set_runtime_choice(
     let current = decode_config_documents(&device, &games, &releases)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     let (file, section, id, text) = match scope {
-        RuntimeChoiceScope::System(id) => {
+        RunnerChoiceScope::System(id) => {
             // Installed systems need no local record until their first opinion.
             if !current
                 .releases
@@ -360,7 +360,7 @@ pub fn set_runtime_choice(
             }
             (DEVICE_FILE_NAME, "systems", id, &mut device)
         }
-        RuntimeChoiceScope::Game(id) => {
+        RunnerChoiceScope::Game(id) => {
             if !current.games.contains_key(id) {
                 return Err(SettingsError::Invalid(format!("unknown game {id}")));
             }
@@ -372,8 +372,8 @@ pub fn set_runtime_choice(
     }
     let mut document = parse_mapping(text)?;
     let record = mapping_at(mapping_at(&mut document, section)?, id)?;
-    let key = Value::String("runtime".into());
-    if let Some(id) = runtime_id {
+    let key = Value::String("runner".into());
+    if let Some(id) = runner_id {
         record.insert(key, Value::String(id.into()));
     } else {
         record.remove(&key);
@@ -387,7 +387,7 @@ pub fn set_runtime_choice(
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     write_atomically(&root.join(file), candidate.as_bytes(), expected_revision)?;
     // These are this commit's bytes, captured before another writer can enter.
-    Ok(RuntimeChoiceRevisions {
+    Ok(RunnerChoiceRevisions {
         device: revision(&device),
         games: revision(&games),
     })

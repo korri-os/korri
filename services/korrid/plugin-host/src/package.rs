@@ -20,18 +20,6 @@ pub const BASE_POLICY: &str = "policy-v2: validated native systemd unit; host ha
 
 pub const ROOT_POLICY: &str = "policy-root-v1: explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
 
-#[derive(Clone, Debug, Serialize)]
-pub struct DependencyReport {
-    pub id: String,
-    pub package: PathBuf,
-    pub declaration: Declaration,
-    pub native_unit: Option<crate::native_unit::NativeUnit>,
-    pub ports: crate::firewall::Ports,
-    pub files: BTreeMap<String, PathBuf>,
-    pub already_approved: bool,
-    pub approval: String,
-}
-
 #[derive(Serialize)]
 pub struct Report {
     pub id: String,
@@ -51,9 +39,6 @@ pub struct Report {
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
     pub sources: Vec<String>,
-    pub requires: Vec<PathBuf>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub brings: Vec<DependencyReport>,
 }
 
 pub fn validate_store_path(path: &Path) -> Result<(), String> {
@@ -203,8 +188,6 @@ struct Manifest {
     #[serde(default)]
     services: BTreeMap<String, PathBuf>,
     #[serde(default)]
-    requires: Vec<PathBuf>,
-    #[serde(default)]
     ports: crate::firewall::Ports,
 }
 
@@ -278,9 +261,6 @@ fn manifest(package: &Path) -> Result<Manifest, String> {
     }
     if manifest.sources.windows(2).any(|pair| pair[0] >= pair[1]) {
         return Err("plugin source inventory must be sorted and unique".into());
-    }
-    for path in &manifest.requires {
-        validate_store_path(path)?;
     }
     Ok(manifest)
 }
@@ -509,7 +489,7 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
     for path in &closure {
         validate_store_path(path)?;
     }
-    for path in manifest.packages.values().chain(&manifest.requires) {
+    for path in manifest.packages.values() {
         validate_store_path(path)?;
         if !closure.contains(path) || fs::canonicalize(path).map_err(|e| e.to_string())? != *path {
             return Err("package is outside the immutable closure".into());
@@ -556,25 +536,6 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
     } else {
         "This daemon has ordinary host-network access. It has no Linux capabilities."
     };
-    let mut brings = Vec::new();
-    for req_path in &manifest.requires {
-        let dep_report = load(nix, req_path, provenance.clone())?;
-        brings.push(DependencyReport {
-            id: dep_report.id,
-            package: dep_report.package,
-            declaration: dep_report.declaration,
-            native_unit: dep_report.native_unit,
-            ports: dep_report.ports,
-            files: dep_report.files,
-            already_approved: false,
-            approval: dep_report.approval,
-        });
-        for trans_dep in dep_report.brings {
-            if !brings.iter().any(|d| d.package == trans_dep.package) {
-                brings.push(trans_dep);
-            }
-        }
-    }
     let mut report = Report {
         id,
         package: package.into(),
@@ -607,8 +568,6 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         files: manifest.files,
         entry: manifest.entry,
         sources: manifest.sources,
-        requires: manifest.requires,
-        brings,
     };
     report.unit_configuration = crate::unit::render(&report)?;
     report.approval = approval_digest(
@@ -617,7 +576,6 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         &report.declaration,
         &report.unit_configuration,
         &source,
-        &report.brings,
     )?;
     Ok(report)
 }
@@ -628,14 +586,9 @@ fn approval_digest(
     declaration: &Declaration,
     unit: &str,
     source: &SourceSnapshot,
-    brings: &[DependencyReport],
 ) -> Result<String, String> {
     let sources = source.canonical_entries();
     let manifest = read_regular(&package.join("manifest.json"), MANIFEST_BYTES)?;
-    let dep_summaries: Vec<_> = brings
-        .iter()
-        .map(|dep| (&dep.id, &dep.package, &dep.approval))
-        .collect();
     let bytes = serde_json::to_vec(&(
         BASE_POLICY,
         package,
@@ -644,7 +597,6 @@ fn approval_digest(
         unit,
         sources,
         manifest,
-        dep_summaries,
     ))
     .map_err(|e| e.to_string())?;
     Ok(hex::encode(Sha256::digest(bytes)))
@@ -696,14 +648,7 @@ mod approval_tests {
         declaration: &Declaration,
         unit: &str,
     ) -> Result<String, String> {
-        super::approval_digest(
-            package,
-            provenance,
-            declaration,
-            unit,
-            &snapshot(package)?,
-            &[],
-        )
+        super::approval_digest(package, provenance, declaration, unit, &snapshot(package)?)
     }
 
     #[test]
@@ -718,7 +663,7 @@ mod approval_tests {
             cache_url: "file:///cache".into(),
         };
         let digest =
-            super::approval_digest(package, &origin, &declaration, "unit", &source, &[]).unwrap();
+            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap();
         // Snapshot ownership does not change the existing approval tuple or
         // the source's JSON byte-array representation.
         let approved = serde_json::to_vec(&(
@@ -729,14 +674,13 @@ mod approval_tests {
             "unit",
             source.canonical_entries(),
             fs::read(package.join("manifest.json")).unwrap(),
-            Vec::<(&String, &PathBuf, &String)>::new(),
         ))
         .unwrap();
         assert_eq!(digest, hex::encode(Sha256::digest(approved)));
         fs::remove_file(package.join("plugin.ts")).unwrap();
         assert_eq!(
             digest,
-            super::approval_digest(package, &origin, &declaration, "unit", &source, &[]).unwrap()
+            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap()
         );
         assert_eq!(
             Declaration::evaluate_snapshot("@test", &source)
@@ -781,7 +725,6 @@ mod approval_tests {
                 &["helper.ts".into(), "plugin.ts".into()],
             )
             .unwrap(),
-            &[],
         )
         .unwrap();
         fs::write(package.join("helper.ts"), "export const title = 'second';").unwrap();
@@ -796,7 +739,6 @@ mod approval_tests {
                 &["helper.ts".into(), "plugin.ts".into()],
             )
             .unwrap(),
-            &[],
         )
         .unwrap();
         assert_ne!(digest, changed);
@@ -871,63 +813,5 @@ mod approval_tests {
             )
             .unwrap()
         );
-    }
-
-    #[test]
-    fn approval_binds_dependencies_in_the_closure() {
-        let declaration = Declaration::evaluate(
-            "@test",
-            "export const name = 'plugin'; export const services = [];",
-        )
-        .unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        let package_path = directory.path().join("package");
-        fs::create_dir(&package_path).unwrap();
-        fs::write(package_path.join("plugin.ts"), "approved source").unwrap();
-        fs::write(package_path.join("manifest.json"), "approved manifest").unwrap();
-        let origin = Provenance::RawCache {
-            cache_url: "https://cache.example.test".into(),
-        };
-        let dep = DependencyReport {
-            id: "@test:dependency".into(),
-            package: PathBuf::from("/nix/store/00000000000000000000000000000000-dep"),
-            declaration: declaration.clone(),
-            native_unit: None,
-            ports: Default::default(),
-            files: BTreeMap::new(),
-            already_approved: false,
-            approval: "1".repeat(64),
-        };
-        let empty_deps = super::approval_digest(
-            &package_path,
-            &origin,
-            &declaration,
-            "unit",
-            &snapshot(&package_path).unwrap(),
-            &[],
-        )
-        .unwrap();
-        let with_deps = super::approval_digest(
-            &package_path,
-            &origin,
-            &declaration,
-            "unit",
-            &snapshot(&package_path).unwrap(),
-            std::slice::from_ref(&dep),
-        )
-        .unwrap();
-        assert_ne!(empty_deps, with_deps);
-        let mut changed_dep = dep;
-        changed_dep.approval = "2".repeat(64);
-        let with_changed_dep = super::approval_digest(
-            &package_path,
-            &origin,
-            &declaration,
-            "unit",
-            &snapshot(&package_path).unwrap(),
-            &[changed_dep],
-        )
-        .unwrap();
-        assert_ne!(with_deps, with_changed_dep);
     }
 }

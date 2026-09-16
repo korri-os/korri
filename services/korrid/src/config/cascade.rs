@@ -1,6 +1,6 @@
-//! The approved per-ID launcher → system → runtime → game → override cascade.
+//! The approved per-ID family → system → runner → game → override cascade.
 //! Settings are legacy LaunchSettings (shallow, per-key last wins). Raw config
-//! retains legacy LaunchOverrides.config prepend/append; kinds never participate.
+//! retains legacy LaunchOverrides.config prepend/append; family defaults participate before runner settings.
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -21,46 +21,50 @@ pub enum LaunchSettingValue {
 #[typeshare]
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct LauncherConfig {
+pub struct RunnerConfig {
     #[serde(default)]
     pub settings: HashMap<String, LaunchSettingValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<LaunchConfigOverrides>,
 }
 
-pub type LauncherConfigs = std::collections::BTreeMap<String, LauncherConfig>;
+pub type RunnerConfigs = std::collections::BTreeMap<String, RunnerConfig>;
 
 pub fn resolve(
     snapshot: &ConfigSnapshot,
     route: &ResolvedRoute,
-    overrides: Option<&LauncherConfig>,
-) -> LauncherConfig {
-    let id = &route.launcher_id;
-    let mut result = LauncherConfig::default();
-    for layer in [
-        snapshot.launchers.get(id).and_then(|v| v.launchers.get(id)),
+    overrides: Option<&RunnerConfig>,
+) -> RunnerConfig {
+    let id = &route.runner_id;
+    let family = route.family_id.as_deref();
+    let mut result = RunnerConfig::default();
+    let layers = [
+        family.and_then(|family| snapshot.families.get(family)),
+        family.and_then(|family| {
+            snapshot
+                .systems
+                .get(&route.system_id)
+                .and_then(|v| v.families.get(family))
+        }),
+        snapshot.runners.get(id),
         snapshot
             .systems
             .get(&route.system_id)
-            .and_then(|v| v.launchers.get(id)),
-        route
-            .runtime
-            .as_ref()
-            .and_then(|runtime| snapshot.runtimes.get(&runtime.id))
-            .and_then(|v| v.launchers.get(id)),
+            .and_then(|v| v.runners.get(id)),
         snapshot
             .games
             .get(&route.playable_id)
-            .and_then(|v| v.launchers.get(id)),
+            .and_then(|v| v.families.get(family.unwrap_or(""))),
+        snapshot
+            .games
+            .get(&route.playable_id)
+            .and_then(|v| v.runners.get(id)),
         overrides,
-    ]
-    .into_iter()
-    .flatten()
-    {
+    ];
+    for layer in layers.into_iter().flatten() {
         result.settings.extend(layer.settings.clone());
         if let Some(config) = &layer.config {
             let target = result.config.get_or_insert_with(Default::default);
-            // Legacy raw blocks are scalar overrides, not text concatenation.
             if config.prepend.is_some() {
                 target.prepend = config.prepend.clone();
             }

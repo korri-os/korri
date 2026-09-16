@@ -28,16 +28,17 @@ pub struct PluginLaunchOverrides {
     pub config: Option<LaunchConfigOverrides>,
 }
 
-/// The existing RetroArch launch facts, selected full IDs and manifest files.
+/// Selected runner facts and named files for launch preparation.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginLaunchInput {
-    pub launcher_id: String,
-    pub launcher_kind: String,
-    pub runtime_id: String,
+    pub runner_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_id: Option<String>,
     pub program: String,
-    pub runtime_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_path: Option<String>,
     pub content_path: String,
     pub account_root: String,
     pub files: HashMap<String, String>,
@@ -45,7 +46,7 @@ pub struct PluginLaunchInput {
     pub overrides: Option<PluginLaunchOverrides>,
 }
 
-/// Legacy launcher LaunchSpec plus the existing provisioned files/directories.
+/// Legacy launch plan plus the existing provisioned files/directories.
 /// Approval authorizes output; this treaty adds no path or argument policy.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -66,9 +67,25 @@ pub struct PluginLaunchOutput {
 }
 
 pub fn evaluate(source: &str, input: &PluginLaunchInput) -> Result<PluginLaunchOutput, String> {
+    evaluate_snapshot(
+        &crate::script::source::SourceSnapshot::plugin(source)?,
+        input,
+    )
+}
+
+pub fn evaluate_snapshot(
+    source: &crate::script::source::SourceSnapshot,
+    input: &PluginLaunchInput,
+) -> Result<PluginLaunchOutput, String> {
     let input = serde_json::to_string(input).map_err(|e| e.to_string())?;
-    let result = crate::script::call_plugin_launch_ts(source, &input)?;
+    let result = crate::script::call_plugin_launch_snapshot(source, &input)?;
     serde_json::from_str(&result).map_err(|e| format!("invalid launch result: {e}"))
+}
+
+#[derive(Deserialize)]
+struct LaunchManifest {
+    entry: String,
+    sources: Vec<String>,
 }
 
 /// CLI-only entrypoint. Refuse root even when invoked outside the unit.
@@ -77,8 +94,25 @@ pub fn execute(source: &Path, input: &str) -> Result<(), String> {
         return Err("plugin launch effects require an unprivileged runtime user".into());
     }
     let input: PluginLaunchInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
-    let source = fs::read_to_string(source).map_err(|e| e.to_string())?;
-    let output = evaluate(&source, &input)?;
+    let package = source
+        .parent()
+        .ok_or("plugin source has no package directory")?;
+    // The packaged manifest is the only source authority. There is no
+    // single-file fallback: an unpackaged path cannot name its module graph.
+    let manifest = fs::read(package.join("manifest.json")).map_err(|e| e.to_string())?;
+    if manifest.len() > 512 * 1024 {
+        return Err("plugin manifest exceeds 512 KiB".into());
+    }
+    let manifest: LaunchManifest = serde_json::from_slice(&manifest).map_err(|e| e.to_string())?;
+    if source.file_name().and_then(|name| name.to_str()) != Some(manifest.entry.as_str()) {
+        return Err("launch source is not the packaged plugin entry".into());
+    }
+    let snapshot = crate::script::source::SourceSnapshot::package_plugin(
+        package,
+        &manifest.entry,
+        &manifest.sources,
+    )?;
+    let output = evaluate_snapshot(&snapshot, &input)?;
     for directory in &output.directories {
         fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     }

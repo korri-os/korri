@@ -41,13 +41,13 @@ pub struct Declaration {
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub launchers: Option<BTreeMap<String, serde_json::Value>>,
+    pub families: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub runtimes: Option<BTreeMap<String, serde_json::Value>>,
+    pub runners: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
         deserialize_with = "optional_non_null",

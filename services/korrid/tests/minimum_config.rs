@@ -67,7 +67,7 @@ fn discovery_separates_catalog_facts_from_locations_and_launches_by_system() {
     let registry = plugin_policy::registry_for_snapshot(&loaded.snapshot).unwrap();
     let route =
         resolver::resolve_route(readable.path(), &loaded.snapshot, &registry, [], game_id).unwrap();
-    assert_eq!(route.launcher_id, "@korri:retroarch/retroarch");
+    assert_eq!(route.runner_id, "@korri:mgba/mgba");
 
     let before_games = fs::read(readable.path().join("catalog/games.yaml")).unwrap();
     let before_releases = fs::read(readable.path().join("catalog/releases.yaml")).unwrap();

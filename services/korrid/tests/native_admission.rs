@@ -1,7 +1,7 @@
 use korrid::{plugin::PluginRegistry, plugin_installation::EnabledPackage};
 use std::{collections::BTreeMap, fs, path::Path};
 
-fn package(root: &Path, name: &str, exports: &str) -> EnabledPackage {
+fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPackage {
     let package = root.join(name);
     fs::create_dir_all(&package).unwrap();
     fs::write(
@@ -11,69 +11,70 @@ fn package(root: &Path, name: &str, exports: &str) -> EnabledPackage {
     .unwrap();
     EnabledPackage {
         id: format!("@test:{name}"),
-        files: BTreeMap::from([("program".into(), package.join("program"))]),
+        files: files
+            .iter()
+            .map(|key| ((*key).into(), package.join(key)))
+            .collect::<BTreeMap<_, _>>(),
         package,
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
-        requires: vec![],
     }
 }
 
-const KIND: &str = "export const launchers = {main: {id:'@test:kind/main', kind:'@test:kind/main', program:'program'}};";
 const CALLBACK: &str =
     "export function launch() { throw new Error('admission must not call launch'); }";
 
 #[test]
-fn native_kind_references_require_the_referenced_packages_exact_selection() {
-    check_exact_selection("export const launchers = {main: {id:'@test:consumer/main', kind:'@test:kind/main', program:'program'}};");
+fn native_runner_owns_program_and_core_in_one_package() {
+    let root = tempfile::tempdir().unwrap();
+    let source = "export const runners = {main: {id:'@test:mgba/main', family:'@korri:retroarch', program:'program', core:'core', systems:['gba']}};";
+    let complete = package(
+        root.path(),
+        "mgba",
+        &format!("{source} {CALLBACK}"),
+        &["program", "core"],
+    );
+    PluginRegistry::from_installed(vec![complete]).unwrap();
+    let missing = package(
+        root.path(),
+        "mgba",
+        &format!("{source} {CALLBACK}"),
+        &["program"],
+    );
+    assert!(PluginRegistry::from_installed(vec![missing])
+        .unwrap_err()
+        .to_string()
+        .contains("core"));
 }
 
 #[test]
-fn native_runtime_references_require_the_referenced_packages_exact_selection() {
-    check_exact_selection("export const runtimes = {main: {id:'@test:consumer/main', kind:'emulator', launcher:'@test:kind/main', path:'program'}};");
-}
-
-fn check_exact_selection(exports: &str) {
-    for pin in [None, Some("unrelated"), Some("old-kind"), Some("kind")] {
-        let root = tempfile::tempdir().unwrap();
-        let kind = package(root.path(), "kind", &format!("{KIND} {CALLBACK}"));
-        let unrelated = package(root.path(), "unrelated", "");
-        let mut consumer = package(root.path(), "consumer", exports);
-        if let Some(pin) = pin {
-            consumer.requires.push(root.path().join(pin));
-        }
-        let result = PluginRegistry::from_installed(vec![kind, unrelated, consumer]);
-        if pin == Some("kind") {
-            assert!(result.is_ok(), "exact dependency: {result:?}");
-        } else {
-            let error = result.expect_err("unbound native reference must not be admitted");
-            assert!(error.to_string().contains("@test:consumer"), "{error}");
-        }
-    }
-}
-
-#[test]
-fn native_self_kinds_require_a_callable_top_level_launch_without_invocation() {
+fn native_runners_require_a_callable_top_level_launch_without_invocation() {
+    let declaration = "export const runners = {main: {id:'@test:kind/main', program:'program'}};";
     for callback in ["", "export const launch = 42;", CALLBACK] {
         let root = tempfile::tempdir().unwrap();
-        let kind = package(root.path(), "kind", &format!("{KIND} {callback}"));
-        let result = PluginRegistry::from_installed(vec![kind]);
+        let runner = package(
+            root.path(),
+            "kind",
+            &format!("{declaration} {callback}"),
+            &["program"],
+        );
+        let result = PluginRegistry::from_installed(vec![runner]);
         if callback == CALLBACK {
             assert!(result.is_ok(), "callback must not run: {result:?}");
         } else {
-            let error = result.expect_err("a native kind must export a callable launch");
-            assert!(error.to_string().contains("launch"), "{error}");
+            assert!(result.unwrap_err().to_string().contains("launch"));
         }
     }
 }
 
 #[test]
-fn android_launchers_do_not_require_a_native_launch_callback() {
+fn android_runners_do_not_require_a_native_launch_callback() {
     let root = tempfile::tempdir().unwrap();
     let android = package(
         root.path(),
         "android",
-        "export const launchers = {main: {id:'@test:android/main', command:'retroarch', android:{packageName:'com.korri.retroarch', className:'com.retroarch.browser.retroactivity.RetroActivityFuture'}}};",
+        "export const runners = {main: {id:'@test:android/main', command:'retroarch', systems:['gba'], android:{packageName:'com.korri.retroarch', className:'com.retroarch.browser.retroactivity.RetroActivityFuture'}}};",
+        &[],
     );
     PluginRegistry::from_installed(vec![android]).unwrap();
 }

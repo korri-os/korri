@@ -1,0 +1,51 @@
+# Grounded in legacy 0e4cec9d product/platform/library/config/fixtures/*.yaml
+# and records/*.test.ts conformance values.
+host:
+  title: Hooks fixture host
+
+storage:
+  "@korri:steam/steam":
+    root: /var/lib/korri/steam
+  roms:
+    root: /roms
+
+providers:
+  "@korri:steam":
+    title: steam
+  "@korri:roms":
+    title: roms
+
+systems:
+  steam:
+    name: Steam
+  gba:
+    name: Game Boy Advance
+
+families:
+  "@korri:retroarch":
+    settings:
+      video-integer-scale: true
+
+runners:
+  "@korri:mgba/mgba":
+    settings:
+      core-skip-bios: true
+
+profiles:
+  handheld:
+    title: Handheld
+    runner: "@korri:mgba/mgba"
+    env:
+      SCALE: profile
+
+hooks:
+  battery-saver:
+    before:
+      - name: cap-clocks
+        run: |
+          echo 1171200 | sudo -n tee /sys/devices/system/cpu/cpufreq/policy3/scaling_max_freq
+          echo 220000000 | sudo -n tee /sys/class/devfreq/gpu/max_freq
+        on-failure: warn
+    after:
+      - name: restore-clocks
+        run: echo 2803200 | sudo -n tee /sys/devices/system/cpu/cpufreq/policy3/scaling_max_freq

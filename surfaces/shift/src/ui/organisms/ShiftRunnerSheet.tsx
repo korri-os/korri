@@ -1,4 +1,4 @@
-import type { SurfaceRuntimeChoice } from "@contracts/surface/korri-surface"
+import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import { ShiftSheetAction } from "../molecules/ShiftSheetAction"
 import { ShiftSheetBody } from "./ShiftSheetBody"
@@ -8,12 +8,12 @@ import { ShiftSheetPanel } from "./ShiftSheetPanel"
 import { ShiftSheetRoot } from "./ShiftSheetRoot"
 import { ShiftSheetTitle } from "./ShiftSheetTitle"
 
-/** Shape: installed-runtime facts composed with Shift's existing sheet system. */
-export function ShiftRuntimeSheet({
+/** Shape: installed-runner facts composed with Shift's existing sheet system. */
+export function ShiftRunnerSheet({
   choice,
   onAction,
 }: {
-  readonly choice: Exclude<SurfaceRuntimeChoice, { _tag: "Closed" }>
+  readonly choice: Exclude<SurfaceRunnerChoice, { _tag: "Closed" }>
   readonly onAction: (id: string) => void
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -33,39 +33,35 @@ export function ShiftRuntimeSheet({
       ?.focus()
   }, [choice._tag])
   return (
-    <div ref={root} className="shift-runtime-sheet">
+    <div ref={root} className="shift-runner-sheet">
       <ShiftSheetRoot
         open
-        label={`Runtimes for ${choice.gameTitle}`}
-        onClose={() => onAction("runtime:cancel")}
+        label={`Runners for ${choice.gameTitle}`}
+        onClose={() => onAction("runner:cancel")}
       >
         <ShiftSheetPanel>
           <ShiftSheetHeader>
-            <ShiftSheetTitle>Runtimes · {choice.gameTitle}</ShiftSheetTitle>
+            <ShiftSheetTitle>Runners · {choice.gameTitle}</ShiftSheetTitle>
           </ShiftSheetHeader>
           <ShiftSheetBody>
             <p role="status">{choice.message}</p>
             {choice.saved.map(saved => (
               <p key={saved.label}>
-                {saved.label}: {saved.runtimeId}
+                {saved.label}: {saved.runnerId}
               </p>
             ))}
             {[...new Set(choice.warnings)].map(warning => (
               <p key={warning}>{warning}</p>
             ))}
             {choice.routes.map(route => (
-              <ShiftSheetGroup key={route.runtimeId} title={route.runtimeId}>
+              <ShiftSheetGroup key={route.runnerId} title={route.runnerId}>
                 <dl>
                   <dt>System</dt>
                   <dd>{route.systemId}</dd>
-                  <dt>Launcher</dt>
-                  <dd>{route.launcherId}</dd>
-                  <dt>Launcher kind</dt>
-                  <dd>{route.launcherKind}</dd>
-                  <dt>Runtime build</dt>
-                  <dd>{route.runtimeBuild}</dd>
-                  <dt>Launcher build</dt>
-                  <dd>{route.launcherBuild}</dd>
+                  <dt>Family</dt>
+                  <dd>{route.familyId ?? "None"}</dd>
+                  <dt>Runner build</dt>
+                  <dd>{route.runnerBuild}</dd>
                   <dt>Program</dt>
                   <dd>{route.program}</dd>
                 </dl>

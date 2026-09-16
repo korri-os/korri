@@ -6,7 +6,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
-import { PicoRuntimePicker } from "./ui/organisms/PicoRuntimePicker"
+import { PicoRunnerPicker } from "./ui/organisms/PicoRunnerPicker"
 import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
@@ -128,8 +128,8 @@ function PicoCatalogSurface({
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
 }) {
-  const runtime = model.runtimeChoice
-  const runtimeOpen = runtime !== undefined && runtime._tag !== "Closed"
+  const runner = model.runnerChoice
+  const runnerOpen = runner !== undefined && runner._tag !== "Closed"
   const [placing, setPlacing] = useState<PicoShelfGame | undefined>(undefined)
   /* The id of the game whose own screen is up, or nothing. An id rather than a
    * game, so a catalog Korri republishes while the screen is open is what the
@@ -199,7 +199,7 @@ function PicoCatalogSurface({
    * game, a launch, a failure, or a library Korri is still reading — those are
    * all screens the user is waiting on, and hiding one behind decoration would
    * lose the thing they are waiting for. */
-  const canAttract = !runtimeOpen && view._tag === "Shelf" && !settingsOpen && !finding
+  const canAttract = !runnerOpen && view._tag === "Shelf" && !settingsOpen && !finding
     && viewingId === undefined && placing === undefined
     && asking === undefined && askingAction === undefined
 
@@ -216,7 +216,7 @@ function PicoCatalogSurface({
     const offBack = host.input.on("back", () => {
       /* The visible status wins. Within browsing, Back withdraws the most
        * local question/page first. Leaving the surface is the host's decision. */
-      if (runtimeOpen) { host.runAction("runtime:cancel"); return }
+      if (runnerOpen) { host.runAction("runner:cancel"); return }
       if (wake()) return
       // Input follows the visible status, not the navigation hidden below it.
       if (model.status._tag === "Problem") { host.dismiss(); return }
@@ -230,15 +230,15 @@ function PicoCatalogSurface({
       if (finding) { setFinding(false); return }
     })
     const offSystem = host.input.on("system", () => {
-      if (runtimeOpen || wake()) return
+      if (runnerOpen || wake()) return
       setSettingsOpen((open) => !open)
     })
     const offOptions = host.input.on("options", () => {
-      if (runtimeOpen || wake()) return
+      if (runnerOpen || wake()) return
       setFinding((open) => !open)
     })
     const offMenu = host.input.on("menu", () => {
-      if (runtimeOpen || wake()) return
+      if (runnerOpen || wake()) return
       setMode((current) =>
         current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
       )
@@ -249,7 +249,7 @@ function PicoCatalogSurface({
       offOptions()
       offMenu()
     }
-  }, [host, model.status._tag, askingAction, asking, placing, settingsOpen, viewingId, finding, wake, runtimeOpen])
+  }, [host, model.status._tag, askingAction, asking, placing, settingsOpen, viewingId, finding, wake, runnerOpen])
 
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
@@ -288,8 +288,8 @@ function PicoCatalogSurface({
     <>
       <div
         className="pico-catalog-surface"
-        hidden={runtimeOpen}
-        inert={runtimeOpen}
+        hidden={runnerOpen}
+        inert={runnerOpen}
         onKeyDownCapture={(event) => {
           suppressWakeClick.current = false
           if (wake()) {
@@ -382,7 +382,7 @@ function PicoCatalogSurface({
         <PicoAttract games={view._tag === "Shelf" ? view.games : []} />
       ) : null}
       </div>
-      {runtimeOpen ? <PicoRuntimePicker choice={runtime} onAction={id => host.runAction(id)} /> : null}
+      {runnerOpen ? <PicoRunnerPicker choice={runner} onAction={id => host.runAction(id)} /> : null}
     </>
   )
 }

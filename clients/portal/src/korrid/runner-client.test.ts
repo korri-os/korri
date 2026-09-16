@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import type { RpcRequest } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient } from "./client"
-import { runtimeRoutes } from "../surface/fixtures/runtime-routes"
+import { runnerRoutes } from "../surface/fixtures/runner-routes"
 
-describe("runtime RPC over localhost", () => {
+describe("runner RPC over localhost", () => {
   it("uses exact tagged requests and revision checked clears without launch-time writes", async () => {
     const requests: RpcRequest[] = []
-    const implementation = createInMemoryKorridClient({ gameRoutes: [runtimeRoutes] })
+    const implementation = createInMemoryKorridClient({ gameRoutes: [runnerRoutes] })
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -21,17 +21,17 @@ describe("runtime RPC over localhost", () => {
               _tag: rpc._tag,
               outcome: await implementation.gameRoutes(rpc.payload.gameId),
             })
-          case "app.local-games.runtime.set":
+          case "app.local-games.runner.set":
             return Response.json({
               _tag: rpc._tag,
-              outcome: await implementation.setGameRuntime(rpc.payload),
+              outcome: await implementation.setGameRunner(rpc.payload),
             })
           case "app.local-games.launch.selected":
             return Response.json({
               _tag: rpc._tag,
               outcome: await implementation.launchSelectedGame(
                 rpc.payload.gameId,
-                rpc.payload.runtimeId,
+                rpc.payload.runnerId,
               ),
             })
           default:
@@ -44,7 +44,7 @@ describe("runtime RPC over localhost", () => {
       expect((await client.gameRoutes("wl4"))._tag).toBe("Ok")
       expect(
         (
-          await client.setGameRuntime({
+          await client.setGameRunner({
             scope: { _tag: "Game", id: "wl4" },
             expectedRevision: "g1",
           })
@@ -54,12 +54,12 @@ describe("runtime RPC over localhost", () => {
       expect(requests).toEqual([
         { _tag: "app.local-games.routes", payload: { gameId: "wl4" } },
         {
-          _tag: "app.local-games.runtime.set",
+          _tag: "app.local-games.runner.set",
           payload: { scope: { _tag: "Game", id: "wl4" }, expectedRevision: "g1" },
         },
         {
           _tag: "app.local-games.launch.selected",
-          payload: { gameId: "wl4", runtimeId: "retroarch/mgba" },
+          payload: { gameId: "wl4", runnerId: "retroarch/mgba" },
         },
       ])
     } finally {

@@ -20,56 +20,47 @@ pub fn linux_route_candidates(
         .games
         .get(game_id)
         .ok_or_else(|| failure(format!("game {game_id} is unavailable")))?;
-    let mut last_error = failure(format!("game {game_id} has no installed Linux route"));
+    let mut last_error = failure(format!("game {game_id} has no installed Linux runner"));
     let mut candidates = Vec::new();
     let mut emitted = BTreeSet::new();
     for key in &game.releases {
         let Some(release) = snapshot.releases.get(&key.0) else {
             continue;
         };
-        for runtime in registry.runtimes().values().filter(|runtime| {
-            runtime.launcher.is_some()
-                && runtime
-                    .supports
+        for runner in registry.runners().values().filter(|runner| {
+            runner.program.is_some()
+                && runner
+                    .systems
                     .as_ref()
-                    .and_then(|supports| supports.systems.as_ref())
                     .is_some_and(|systems| systems.contains(&release.system.0))
         }) {
-            if emitted.contains(&runtime.id) {
+            if !emitted.insert(runner.id.clone()) {
                 continue;
             }
-            let launcher_id = runtime.launcher.as_deref().expect("native runtime");
-            let (launcher, kind) = registry
-                .native_launcher(launcher_id)
-                .map_err(|e| failure(e.to_string()))?;
             let program = registry
                 .installed_file(
-                    launcher_id,
-                    launcher.program.as_deref().expect("validated program"),
+                    &runner.id,
+                    runner.program.as_deref().expect("filtered native runner"),
                 )
-                .map_err(|e| failure(e.to_string()))?;
-            let runtime_path = registry
-                .installed_file(&runtime.id, &runtime.path)
-                .map_err(|e| failure(e.to_string()))?;
-            let system = registry
+                .map_err(|error| failure(error.to_string()))?;
+            let core_path = runner
+                .core
+                .as_ref()
+                .map(|core| registry.installed_file(&runner.id, core))
+                .transpose()
+                .map_err(|error| failure(error.to_string()))?
+                .map(|path| path.display().to_string());
+            let system_title = registry
                 .systems()
                 .values()
                 .find(|system| system.id == release.system.0)
-                .ok_or_else(|| failure(format!("system {} is unavailable", release.system.0)))?;
-            let provider_id = launcher_id.split_once('/').expect("validated identity").0;
-            // Configuration blocks are opinions, not a second contribution.
-            if snapshot.launchers.get(launcher_id).is_some_and(|value| {
-                value.plugin.is_some() || value.command.is_some() || value.systems.is_some()
-            }) || snapshot.providers.contains_key(provider_id)
-            {
-                return Err(RouteDiagnostic {
-                    code: RouteDiagnosticCode::LocalRouteCollision,
-                    message: format!(
-                        "installed route {launcher_id} collides with device configuration"
-                    ),
-                    playable_id: Some(game_id.into()),
+                .and_then(|system| system.title.clone())
+                .or_else(|| {
+                    snapshot
+                        .systems
+                        .get(&release.system.0)
+                        .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
-            }
             for location in snapshot.locations.get(&key.0).into_iter().flatten() {
                 let Location::File { storage, path, .. } = location else {
                     continue;
@@ -92,30 +83,27 @@ pub fn linux_route_candidates(
                     };
                     continue;
                 }
-                emitted.insert(runtime.id.clone());
                 candidates.push(ResolvedRoute {
                     playable_id: game_id.into(),
                     title: Some(game.title.clone()),
                     release_id: key.0.clone(),
                     identity: (game.releases.len() == 1 && key.0.starts_with("sha256:"))
                         .then(|| crate::GameIdentity::Hash(key.0.clone())),
-                    provider_id: provider_id.into(),
-                    system_id: system.id.clone(),
-                    system_title: system.title.clone(),
-                    launcher_id: launcher_id.into(),
-                    launcher_kind: kind.id.clone(),
+                    provider_id: runner
+                        .family
+                        .clone()
+                        .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
+                    system_id: release.system.0.clone(),
+                    system_title,
+                    runner_id: runner.id.clone(),
+                    family_id: runner.family.clone(),
                     integration_token: String::new(),
                     flattened_target: format!("{}:{}", storage.0, path.0),
                     android_component: None,
-                    linux_launcher: Some(ResolvedLinuxLauncher {
+                    linux_runner: Some(ResolvedLinuxRunner {
                         program: program.display().to_string(),
                     }),
-                    runtime: Some(ResolvedRuntime {
-                        id: runtime.id.clone(),
-                        kind: runtime.kind.clone(),
-                        app: launcher_id.into(),
-                        path: runtime_path.display().to_string(),
-                    }),
+                    core_path: core_path.clone(),
                     file_target: Some(target),
                 });
                 break;
@@ -129,16 +117,16 @@ pub fn linux_route_candidates(
     }
 }
 
-pub fn stored_runtime<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {
+pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {
     snapshot
         .games
         .get(&route.playable_id)
-        .and_then(|game| game.runtime.as_ref())
+        .and_then(|game| game.runner.as_ref())
         .or_else(|| {
             snapshot
                 .systems
                 .get(&route.system_id)
-                .and_then(|system| system.runtime.as_ref())
+                .and_then(|system| system.runner.as_ref())
         })
         .map(|id| id.0.as_str())
 }
@@ -148,18 +136,15 @@ pub fn resolve_linux_route(
     snapshot: &ConfigSnapshot,
     registry: &PluginRegistry,
     game_id: &str,
-    chosen_runtime: Option<&str>,
+    chosen_runner: Option<&str>,
 ) -> Result<ResolvedRoute, RouteUnavailable> {
     let candidates = linux_route_candidates(root, snapshot, registry, game_id)?;
     let selected: Vec<_> = candidates
         .iter()
         .filter(|route| {
-            let choice = chosen_runtime.or_else(|| stored_runtime(snapshot, route));
+            let choice = chosen_runner.or_else(|| stored_runner(snapshot, route));
             match choice {
-                Some(id) => route
-                    .runtime
-                    .as_ref()
-                    .is_some_and(|runtime| runtime.id == id),
+                Some(id) => route.runner_id == id,
                 None => candidates.len() == 1,
             }
         })
@@ -170,10 +155,10 @@ pub fn resolve_linux_route(
     Err(RouteDiagnostic {
         code: RouteDiagnosticCode::LocalRouteUnavailable,
         message: format!(
-            "choose a runtime for game {game_id}: {}",
+            "choose a runner for game {game_id}: {}",
             candidates
                 .iter()
-                .filter_map(|route| route.runtime.as_ref().map(|runtime| runtime.id.as_str()))
+                .map(|route| route.runner_id.as_str())
                 .collect::<Vec<_>>()
                 .join(", ")
         ),

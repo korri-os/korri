@@ -13,9 +13,8 @@ export interface ActiveSession {
 }
 
 export enum LaunchContributorKind {
-	Launcher = "launcher",
+	Runner = "runner",
 	Transport = "transport",
-	Runtime = "runtime",
 }
 
 export interface LaunchRouteContributor {
@@ -91,10 +90,10 @@ export interface Game {
 	identity?: GameIdentity;
 	source: GameSource;
 	/**
-	 * The host's dynamic catalog producer supports installed-runtime selection.
+	 * The host's dynamic catalog producer supports installed-runner selection.
 	 * Static host.toml commands do not, even when source.isLocal is true.
 	 */
-	supportsRuntimeSelection: boolean;
+	supportsRunnerSelection: boolean;
 	/**
 	 * Play statistics for the authenticated person who asked. A host
 	 * derives them from its own play log; a brain forwards what the peer
@@ -160,27 +159,25 @@ export interface GameProviderIdentity {
 
 export interface LaunchWarning {
 	setting: string;
-	launcherId: string;
+	runnerId: string;
 	build: string;
 	message: string;
 }
 
 export interface GameRoute {
-	runtimeId: string;
-	launcherId: string;
-	launcherKind: string;
+	runnerId: string;
+	familyId?: string;
 	systemId: string;
-	runtimeBuild: string;
-	launcherBuild: string;
+	runnerBuild: string;
 	program: string;
 	warnings: LaunchWarning[];
 }
 
 export type GameRouteSelection =
-	| { _tag: "Selected", runtimeId: string }
-	| { _tag: "Choose", runtimeId?: undefined };
+	| { _tag: "Selected", runnerId: string }
+	| { _tag: "Choose", runnerId?: undefined };
 
-export interface RuntimeChoiceRevisions {
+export interface RunnerChoiceRevisions {
 	device: string;
 	games: string;
 }
@@ -189,9 +186,9 @@ export interface GameRoutes {
 	gameId: string;
 	routes: GameRoute[];
 	selection: GameRouteSelection;
-	gameRuntime?: string;
-	systemRuntimes: Record<string, string>;
-	revisions: RuntimeChoiceRevisions;
+	gameRunner?: string;
+	systemRunners: Record<string, string>;
+	revisions: RunnerChoiceRevisions;
 }
 
 export interface GameRoutesRequest {
@@ -199,13 +196,13 @@ export interface GameRoutesRequest {
 }
 
 /** Choices extend the approved system/game records, never a separate document. */
-export type RuntimeChoiceScope =
+export type RunnerChoiceScope =
 	| { _tag: "System", id: string }
 	| { _tag: "Game", id: string };
 
-export interface GameRuntimeSetRequest {
-	scope: RuntimeChoiceScope;
-	runtimeId?: string;
+export interface GameRunnerSetRequest {
+	scope: RunnerChoiceScope;
+	runnerId?: string;
 	expectedRevision: string;
 }
 
@@ -246,7 +243,7 @@ export interface ProvisionedFile {
 export interface LaunchSpec {
 	/** Identity created by korrid while preparing this exact launch. */
 	launchId: string;
-	launcherId: string;
+	runnerId: string;
 	disposition: LaunchDisposition;
 	context: LaunchContext;
 	component: AndroidComponent;
@@ -256,11 +253,6 @@ export interface LaunchSpec {
 	authorizedContentRoot?: string;
 	/** Per-server HMAC. The portal transports it opaquely; native verifies it. */
 	integrity: string;
-}
-
-export interface LauncherConfig {
-	settings?: Record<string, LaunchSettingValue>;
-	config?: LaunchConfigOverrides;
 }
 
 export interface LocalGame {
@@ -419,13 +411,12 @@ export interface PluginLaunchOverrides {
 	config?: LaunchConfigOverrides;
 }
 
-/** The existing RetroArch launch facts, selected full IDs and manifest files. */
+/** Selected runner facts and named files for launch preparation. */
 export interface PluginLaunchInput {
-	launcherId: string;
-	launcherKind: string;
-	runtimeId: string;
+	runnerId: string;
+	familyId?: string;
 	program: string;
-	runtimePath: string;
+	corePath?: string;
 	contentPath: string;
 	accountRoot: string;
 	files: Record<string, string>;
@@ -433,7 +424,7 @@ export interface PluginLaunchInput {
 }
 
 /**
- * Legacy launcher LaunchSpec plus the existing provisioned files/directories.
+ * Legacy launch plan plus the existing provisioned files/directories.
  * Approval authorizes output; this treaty adds no path or argument policy.
  */
 export interface PluginLaunchOutput {
@@ -465,6 +456,11 @@ export interface RetroarchSessionTelemetry {
 	menuSelection: number;
 }
 
+export interface RunnerConfig {
+	settings?: Record<string, LaunchSettingValue>;
+	config?: LaunchConfigOverrides;
+}
+
 export interface SessionPrepared {
 	gameId: string;
 	/** Identity created by korrid while preparing this exact launch. */
@@ -478,7 +474,7 @@ export interface SelectedGameLaunch {
 
 export interface SelectedGameLaunchRequest {
 	gameId: string;
-	runtimeId: string;
+	runnerId: string;
 	overrides?: PluginLaunchOverrides;
 }
 
@@ -701,8 +697,8 @@ export type GameRoutesOutcome =
 	| { _tag: "Ok", payload: GameRoutes }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type GameRuntimeSetOutcome =
-	| { _tag: "Ok", payload: RuntimeChoiceRevisions }
+export type GameRunnerSetOutcome =
+	| { _tag: "Ok", payload: RunnerChoiceRevisions }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type HealthOutcome =
@@ -747,7 +743,7 @@ export type PeerListOutcome =
 
 export type RpcRequest =
 	| { _tag: "app.local-games.routes", payload: GameRoutesRequest }
-	| { _tag: "app.local-games.runtime.set", payload: GameRuntimeSetRequest }
+	| { _tag: "app.local-games.runner.set", payload: GameRunnerSetRequest }
 	| { _tag: "app.local-games.launch.selected", payload: SelectedGameLaunchRequest }
 	| { _tag: "app.catalog.snapshot", payload: CatalogSnapshotRequest }
 	| { _tag: "app.moonlight.resolve", payload: MoonlightResolveRequest }
@@ -779,7 +775,7 @@ export type RpcRequest =
 
 export type RpcResponse =
 	| { _tag: "app.local-games.routes", outcome: GameRoutesOutcome }
-	| { _tag: "app.local-games.runtime.set", outcome: GameRuntimeSetOutcome }
+	| { _tag: "app.local-games.runner.set", outcome: GameRunnerSetOutcome }
 	| { _tag: "app.local-games.launch.selected", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.catalog.snapshot", outcome: CatalogSnapshotOutcome }
 	| { _tag: "app.moonlight.resolve", outcome: MoonlightResolveOutcome }

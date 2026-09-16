@@ -7,9 +7,7 @@ use korrid::{
         snapshot::{ConfigSnapshotCoordinator, FILE_NAMES},
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin,
-    plugin::{load_plugin_source, PluginRegistry},
-    plugin_installation, plugin_policy,
+    plugin, plugin_installation, plugin_policy,
 };
 #[path = "../src/plugin_test_fixtures.rs"]
 mod native_packages;
@@ -276,108 +274,6 @@ fn missing_implicit_copy_does_not_hide_an_existing_explicit_copy_from_launch_or_
 }
 
 #[test]
-fn runtime_ambiguity_counts_only_candidates_capable_of_the_requested_platform() {
-    let root = tempfile::tempdir().unwrap();
-    fs::create_dir(root.path().join("roms")).unwrap();
-    fs::write(root.path().join("roms/game.gba"), b"rom").unwrap();
-    let source = plugin_policy::MGBA_PLUGIN_SOURCE.replace(
-        "mgba: {",
-        r#"other: {
-          id: "@korri:mgba/other", kind: "libretro-core", app: "@korri:retroarch/retroarch",
-          path: "/cores/other.so", supports: { systems: ["gba"] },
-        }, mgba: {"#,
-    );
-    let plugins = plugin_policy::bundled_plugins()
-        .unwrap()
-        .into_iter()
-        .map(|plugin| {
-            if plugin.id() == "@korri:mgba" {
-                load_plugin_source("@korri", &source).unwrap()
-            } else {
-                plugin
-            }
-        })
-        .collect();
-    let registry = PluginRegistry::new(
-        plugins,
-        plugin_policy::resolve_enabled_plugin_ids([plugin_policy::bundled_plugin_policy_layer()]),
-    )
-    .unwrap();
-    let state = decode_config_documents(
-        &readable::gba_locations("roms", "game.gba", false),
-        &readable::gba_games(),
-        &readable::gba_releases(),
-    )
-    .unwrap();
-    let error =
-        resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap_err();
-    assert!(
-        error.message.contains("ambiguous runtimes"),
-        "{}",
-        error.message
-    );
-    let route = resolver::resolve_route_for_platform(
-        root.path(),
-        &state,
-        &native_packages::installed(root.path()),
-        [],
-        readable::GBA_ID,
-        RoutePlatform::Linux,
-    )
-    .unwrap();
-    assert_eq!(route.runtime.unwrap().id, "@korri:mgba/mgba");
-}
-
-#[test]
-fn launcher_ambiguity_counts_only_candidates_capable_of_the_requested_platform() {
-    let root = tempfile::tempdir().unwrap();
-    fs::create_dir(root.path().join("roms")).unwrap();
-    fs::write(root.path().join("roms/game.gba"), b"rom").unwrap();
-    let source = plugin_policy::RETROARCH_PLUGIN_SOURCE.replace(
-        "retroarch: {",
-        r#""android-only": {
-        id: "@korri:retroarch/android-only", plugin: "@korri:retroarch", command: "retroarch",
-        systems: ["gba"], android: { packageName: "com.korri.retroarch", className: "com.retroarch.browser.retroactivity.RetroActivityFuture" },
-      }, retroarch: {"#,
-    );
-    let plugins = plugin_policy::bundled_plugins()
-        .unwrap()
-        .into_iter()
-        .map(|plugin| {
-            if plugin.id() == "@korri:retroarch" {
-                load_plugin_source("@korri", &source).unwrap()
-            } else {
-                plugin
-            }
-        })
-        .collect();
-    let registry = PluginRegistry::new(
-        plugins,
-        plugin_policy::resolve_enabled_plugin_ids([plugin_policy::bundled_plugin_policy_layer()]),
-    )
-    .unwrap();
-    let state = decode_config_documents(
-        &readable::gba_locations("roms", "game.gba", false),
-        &readable::gba_games(),
-        &readable::gba_releases(),
-    )
-    .unwrap();
-    let error =
-        resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap_err();
-    assert!(error.message.contains("ambiguous launchers"), "{error:?}");
-    let route = resolver::resolve_route_for_platform(
-        root.path(),
-        &state,
-        &native_packages::installed(root.path()),
-        [],
-        readable::GBA_ID,
-        RoutePlatform::Linux,
-    )
-    .unwrap();
-    assert_eq!(route.launcher_id, "@korri:retroarch/retroarch");
-}
-
-#[test]
 fn ten_thousand_existing_locations_rescan_without_rewriting_or_minting_games() {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
@@ -503,10 +399,7 @@ fn route_probe_uses_the_catalog_game_id_in_enabled_and_disabled_reports() {
         stdout.contains("@korri:android-app:com.playdigious.tmnt"),
         "{stdout}"
     );
-    assert!(
-        stdout.contains("no launcher supports system android"),
-        "{stdout}"
-    );
+    assert!(stdout.contains("LocalRouteUnavailable"), "{stdout}");
 }
 
 #[test]

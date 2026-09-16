@@ -125,7 +125,6 @@ fn installed_registry_rejects_oversized_and_linked_source_at_admission() {
         files: Default::default(),
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
-        requires: vec![],
     };
     fs::write(
         root.path().join("plugin.ts"),
@@ -184,7 +183,6 @@ fn installed_registry_evaluates_manifest_selected_relative_and_package_imports()
             "plugin.ts".into(),
             "src/prefix.ts".into(),
         ],
-        requires: vec![],
     };
     let registry = korrid::plugin::PluginRegistry::from_installed(vec![selection]).unwrap();
     assert!(registry

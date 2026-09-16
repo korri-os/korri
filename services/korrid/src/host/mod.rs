@@ -195,7 +195,7 @@ pub struct HostRuntime {
     route_write_lock: Arc<std::sync::Mutex<()>>,
     // Tests can delay one response after the real setter releases its lock.
     #[cfg(test)]
-    after_runtime_choice_write: Option<Arc<dyn Fn() + Send + Sync>>,
+    after_runner_choice_write: Option<Arc<dyn Fn() + Send + Sync>>,
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<DynamicHostSource>,
@@ -230,7 +230,7 @@ impl HostRuntime {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
             #[cfg(test)]
-            after_runtime_choice_write: None,
+            after_runner_choice_write: None,
             config,
             launcher,
             dynamic,
@@ -260,7 +260,7 @@ impl HostRuntime {
         Self {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
-            after_runtime_choice_write: None,
+            after_runner_choice_write: None,
             config,
             launcher,
             dynamic,
@@ -342,7 +342,7 @@ impl HostRuntime {
                 host: Some(config.label.clone()),
                 identity: game.identity.clone(),
                 source: source.clone(),
-                supports_runtime_selection: false,
+                supports_runner_selection: false,
                 play_stats: stats_for(&game.id)?,
             });
         }
@@ -367,7 +367,7 @@ impl HostRuntime {
                     host: Some(config.label.clone()),
                     identity: game.identity.clone(),
                     source: source.clone(),
-                    supports_runtime_selection: true,
+                    supports_runner_selection: true,
                     play_stats: stats_for(&game.id)?,
                 });
             }
@@ -516,24 +516,24 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
-    pub async fn set_game_runtime(
+    pub async fn set_game_runner(
         &self,
-        request: crate::game_routes::GameRuntimeSetRequest,
-    ) -> Result<crate::config::settings::RuntimeChoiceRevisions, RpcFailure> {
+        request: crate::game_routes::GameRunnerSetRequest,
+    ) -> Result<crate::config::settings::RunnerChoiceRevisions, RpcFailure> {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
             let root = runtime.route_root()?;
-            let revisions = crate::config::settings::set_runtime_choice(
+            let revisions = crate::config::settings::set_runner_choice(
                 root,
                 &runtime.private_state_root,
                 &runtime.route_write_lock,
                 &request.expected_revision,
                 &request.scope,
-                request.runtime_id.as_deref(),
+                request.runner_id.as_deref(),
             )
             .map_err(crate::game_routes::settings_failure)?;
             #[cfg(test)]
-            if let Some(after_write) = &runtime.after_runtime_choice_write {
+            if let Some(after_write) = &runtime.after_runner_choice_write {
                 after_write();
             }
             Ok(revisions)
@@ -722,13 +722,13 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn concurrent_runtime_choice_responses_keep_their_own_committed_revisions() {
-        use crate::config::settings::{runtime_choice_revisions, RuntimeChoiceScope};
-        use crate::game_routes::GameRuntimeSetRequest;
+    async fn concurrent_runner_choice_responses_keep_their_own_committed_revisions() {
+        use crate::config::settings::{runner_choice_revisions, RunnerChoiceScope};
+        use crate::game_routes::GameRunnerSetRequest;
 
         for scope in [
-            RuntimeChoiceScope::System("gba".into()),
-            RuntimeChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into()),
+            RunnerChoiceScope::System("gba".into()),
+            RunnerChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into()),
         ] {
             let root = tempfile::tempdir().unwrap();
             crate::config::test_fixtures::gba(root.path());
@@ -740,23 +740,23 @@ mod tests {
                 root.path().join("private"),
                 Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default()),
             );
-            let expected =
-                |revisions: &crate::config::settings::RuntimeChoiceRevisions| match &scope {
-                    RuntimeChoiceScope::System(_) => revisions.device.clone(),
-                    RuntimeChoiceScope::Game(_) => revisions.games.clone(),
-                };
-            let request = |revision, runtime_id: &str| GameRuntimeSetRequest {
+            let expected = |revisions: &crate::config::settings::RunnerChoiceRevisions| match &scope
+            {
+                RunnerChoiceScope::System(_) => revisions.device.clone(),
+                RunnerChoiceScope::Game(_) => revisions.games.clone(),
+            };
+            let request = |revision, runner_id: &str| GameRunnerSetRequest {
                 scope: scope.clone(),
                 expected_revision: revision,
-                runtime_id: Some(runtime_id.into()),
+                runner_id: Some(runner_id.into()),
             };
-            let before = runtime_choice_revisions(root.path()).unwrap();
+            let before = runner_choice_revisions(root.path()).unwrap();
             let (entered, committed) = tokio::sync::oneshot::channel();
             let entered = Mutex::new(Some(entered));
             let (release, released) = std::sync::mpsc::channel();
             let released = Mutex::new(released);
             let mut delayed = runtime.clone();
-            delayed.after_runtime_choice_write = Some(Arc::new(move || {
+            delayed.after_runner_choice_write = Some(Arc::new(move || {
                 entered.lock().unwrap().take().unwrap().send(()).unwrap();
                 released
                     .lock()
@@ -765,35 +765,35 @@ mod tests {
                     .unwrap();
             }));
             let first_request = request(expected(&before), "@test:first/core");
-            let first = tokio::spawn(async move { delayed.set_game_runtime(first_request).await });
+            let first = tokio::spawn(async move { delayed.set_game_runner(first_request).await });
             tokio::time::timeout(Duration::from_secs(10), committed)
                 .await
                 .unwrap()
                 .unwrap();
             // Caller A has committed, but cannot deliver its response yet. Caller B
             // reads those bytes and commits a second real write through the host.
-            let first_bytes = runtime_choice_revisions(root.path()).unwrap();
+            let first_bytes = runner_choice_revisions(root.path()).unwrap();
             let second = runtime
-                .set_game_runtime(request(expected(&first_bytes), "@test:second/core"))
+                .set_game_runner(request(expected(&first_bytes), "@test:second/core"))
                 .await
                 .unwrap();
             // Also change the other document: the response must describe the pair
             // observed at A's commit, not a later mixed snapshot.
             let other_scope = match &scope {
-                RuntimeChoiceScope::System(_) => {
-                    RuntimeChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into())
+                RunnerChoiceScope::System(_) => {
+                    RunnerChoiceScope::Game(crate::config::test_fixtures::GBA_ID.into())
                 }
-                RuntimeChoiceScope::Game(_) => RuntimeChoiceScope::System("gba".into()),
+                RunnerChoiceScope::Game(_) => RunnerChoiceScope::System("gba".into()),
             };
             let other_revision = match &other_scope {
-                RuntimeChoiceScope::System(_) => second.device.clone(),
-                RuntimeChoiceScope::Game(_) => second.games.clone(),
+                RunnerChoiceScope::System(_) => second.device.clone(),
+                RunnerChoiceScope::Game(_) => second.games.clone(),
             };
             runtime
-                .set_game_runtime(GameRuntimeSetRequest {
+                .set_game_runner(GameRunnerSetRequest {
                     scope: other_scope,
                     expected_revision: other_revision,
-                    runtime_id: Some("@test:other/core".into()),
+                    runner_id: Some("@test:other/core".into()),
                 })
                 .await
                 .unwrap();
@@ -808,7 +808,7 @@ mod tests {
                 "{scope:?}: games revision belongs to caller A"
             );
             let conflict = runtime
-                .set_game_runtime(request(expected(&first), "@test:third/core"))
+                .set_game_runner(request(expected(&first), "@test:third/core"))
                 .await
                 .unwrap_err();
             assert_eq!(
@@ -1086,7 +1086,10 @@ mod tests {
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
         assert_eq!(input.program, executable.display().to_string());
-        assert_eq!(input.runtime_path, core.display().to_string());
+        assert_eq!(
+            input.core_path.as_deref(),
+            Some(core.display().to_string().as_str())
+        );
         assert_eq!(
             input.content_path,
             rom.canonicalize().unwrap().display().to_string()
@@ -1149,7 +1152,7 @@ mod tests {
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
-        assert_eq!(input.runtime_id, "@korri:mgba/mgba");
+        assert_eq!(input.runner_id, "@korri:mgba/mgba");
         let explicit = tempfile::tempdir().unwrap();
         fs::write(explicit.path().join("wl4.gba"), b"rom").unwrap();
         fs::remove_file(root.path().join("roms/wl4.gba")).unwrap();
@@ -1184,8 +1187,8 @@ mod tests {
         assert_eq!(catalog.games[0].id, "static");
         // Locality is shared; only the dynamic producer supports route selection.
         let wire = serde_json::to_value(&catalog).unwrap();
-        assert_eq!(wire["games"][0]["supportsRuntimeSelection"], false);
-        assert_eq!(wire["games"][1]["supportsRuntimeSelection"], true);
+        assert_eq!(wire["games"][0]["supportsRunnerSelection"], false);
+        assert_eq!(wire["games"][1]["supportsRunnerSelection"], true);
         assert!(catalog.games.iter().all(|game| game.source.is_local));
         let failures = catalog.failures.unwrap();
         assert_eq!(failures.len(), 1);
@@ -1211,10 +1214,10 @@ mod tests {
         )
         .unwrap();
         fs::remove_file(explicit.path().join("wl4.gba")).unwrap();
-        let collision = DynamicHostRuntime::from_root_with_registry(root.path(), &registry);
+        let missing_media = DynamicHostRuntime::from_root_with_registry(root.path(), &registry);
         assert!(
-            collision.is_err(),
-            "unavailable bytes must not hide declaration collisions"
+            missing_media.is_ok(),
+            "configuration opinions do not redeclare plugin runners"
         );
     }
 }

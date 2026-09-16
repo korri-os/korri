@@ -1,5 +1,5 @@
 # Device facts extracted from Zao's previous device/library fixture.
-# Launchers and runtimes come from the bundled RetroArch and mGBA plugins.
+# Runners and families come from the bundled RetroArch and mGBA plugins.
 host:
   title: zao
 locations:

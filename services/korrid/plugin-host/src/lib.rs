@@ -1,7 +1,6 @@
 pub mod archive;
 pub mod catalog;
 pub mod declaration;
-pub mod dependencies;
 pub mod firewall;
 pub mod host;
 mod https_url;

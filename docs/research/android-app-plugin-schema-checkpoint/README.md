@@ -7,7 +7,7 @@ The device gate now reads the minimum-config fixture:
 | `device.yaml` | Device title and the installed package location |
 | `catalog/games.yaml` | TMNT title, game ULID, and release reference |
 | `catalog/releases.yaml` | Provider release identity and Android system |
-| `android-app.plugin.ts` | Declaration-only provider, system, and launcher contribution |
+| `android-app.plugin.ts` | Retired record of the declaration-only provider, system, and launcher contribution |
 
 The game id is `01K4J6K8Y00000000000000001`. Its release is
 `@korri:android-app/com.playdigious.tmnt`. The package remains
@@ -15,20 +15,26 @@ The game id is `01K4J6K8Y00000000000000001`. Its release is
 `docs/briefs/2026-09-06-config-cascade-discussion.md`.
 
 These are device-gate inputs, not fresh-install defaults. The bundled plugin
-source remains `services/korrid/plugins/android-app.plugin.ts`. Both plugin
-copies must remain byte-for-byte identical.
+source remains `services/korrid/plugins/android-app.plugin.ts`.
+
+The checkpoint copy of the plugin is now a frozen record of the retired
+launcher/runtime contract. The runner cut removed that contract, so the two
+copies are deliberately different and the earlier byte-parity requirement no
+longer applies. `services/korrid/tests/plugin_policy.rs` asserts that the
+retired shape fails to load; nothing reads the checkpoint copy at runtime.
+The three fixture documents are still live gate inputs.
 
 ## Current route boundary
 
 The catalog owns game and release facts. `device.yaml: locations` owns the
-provider and package reference. The enabled plugin supplies the launcher.
+provider and package reference. The enabled plugin supplies the runner.
 The Rust route mapper selects the `@korri:android-app` integration and emits
-launcher `android-app`, the package name, an empty Activity class, extras `{}`,
+runner `android-app`, the package name, an empty Activity class, extras `{}`,
 directories `[]`, and files `[]`. The existing signer adds integrity. Android
 owns the installed-package and Activity checks.
 
 `command: android-app` is an integration token, not a generic executable.
-Disabling the plugin must remove the route's launcher contribution.
+Disabling the plugin must remove the route's runner contribution.
 
 The dedicated `services/korrid/android-app-route-check.sh` gate normally uses
 the two-game RetroArch checkpoint. To select this one-game checkpoint, supply
@@ -67,10 +73,10 @@ cascade resolver at legacy revision `0e4cec9d`, against main baseline
 not need a legacy schema extension. The current three-document fixture is the
 later approved minimum-config cut, not the original legacy input.
 
-`validate.sh` and `validate-legacy.ts` preserve that historical harness. They
-still expect the archived legacy inputs and must be run from their historical
-revision, not against the current fixture directory. They are not a current
-minimum-config acceptance command.
+That harness (`validate.sh` and `validate-legacy.ts`) was removed by the runner
+cut. It replayed the legacy `launchers` registry shape and asserted byte parity
+with the production plugin; neither holds now. Read it at its own revision if
+the historical result matters. It was never a minimum-config acceptance command.
 
 The historical exercise also found that legacy's implicit own-provider payload
 failed its later strict `ProviderRecord` decoder silently. The explicit provider

@@ -31,7 +31,7 @@ import { ShiftSettings } from "./pages/ShiftSettings"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
 import { ShiftGameplayOverlaySheet } from "./ui/organisms/ShiftGameplayOverlaySheet"
 import { ShiftLaunchLocationSheet } from "./ui/organisms/ShiftLaunchLocationSheet"
-import { ShiftRuntimeSheet } from "./ui/organisms/ShiftRuntimeSheet"
+import { ShiftRunnerSheet } from "./ui/organisms/ShiftRunnerSheet"
 
 export interface ShiftSurfaceProps {
   readonly model: SurfaceModel
@@ -174,8 +174,8 @@ const SETTINGS_AFFORDANCE: SurfaceAction = {
 }
 
 export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
-  const runtime = model.runtimeChoice
-  const runtimeOpen = runtime !== undefined && runtime._tag !== "Closed"
+  const runner = model.runnerChoice
+  const runnerOpen = runner !== undefined && runner._tag !== "Closed"
   const [sheetGameId, setSheetGameId] = useState<string | null>(null)
   const [launchGameId, setLaunchGameId] = useState<string | null>(null)
   const [detailGameId, setDetailGameId] = useState<string | null>(null)
@@ -283,7 +283,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         onPlay={() => requestLaunch(detailGame.id)}
         {...(host.gameActions(detailGame.id).length ? { onOptions: setSheetGameId } : {})}
         onBack={() => {
-          if (!runtimeOpen && !launchChooserOpen && sheetGameId === null) setScreen("home")
+          if (!runnerOpen && !launchChooserOpen && sheetGameId === null) setScreen("home")
         }}
       />
     ) : screen === "detail" ? (
@@ -344,8 +344,8 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         }
         className="shift-sheet-host intrinsic"
       >
-        <div className="shift-runtime-background" inert={runtimeOpen}>{body}</div>
-        {runtimeOpen ? <ShiftRuntimeSheet choice={runtime} onAction={id => host.runAction(id)} /> : null}
+        <div className="shift-runner-background" inert={runnerOpen}>{body}</div>
+        {runnerOpen ? <ShiftRunnerSheet choice={runner} onAction={id => host.runAction(id)} /> : null}
         {model.presentation.kind === "gameplay-overlay" ? (
           <ShiftGameplayOverlaySheet
             presentation={model.presentation}

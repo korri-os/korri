@@ -1,14 +1,14 @@
-import type { SurfaceRuntimeChoice } from "@contracts/surface/korri-surface"
+import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import { PicoButton } from "../atoms/PicoButton"
 import { PicoGameOverlay } from "../templates/PicoGameOverlay"
 
-/** Shape: runtime facts use Pico's scrollable panel and native buttons. */
-export function PicoRuntimePicker({
+/** Shape: runner facts use Pico's scrollable panel and native buttons. */
+export function PicoRunnerPicker({
   choice,
   onAction,
 }: {
-  readonly choice: Exclude<SurfaceRuntimeChoice, { _tag: "Closed" }>
+  readonly choice: Exclude<SurfaceRunnerChoice, { _tag: "Closed" }>
   readonly onAction: (id: string) => void
 }) {
   const root = useRef<HTMLDivElement>(null)
@@ -26,9 +26,9 @@ export function PicoRuntimePicker({
     root.current?.querySelector<HTMLButtonElement>("button")?.focus()
   }, [choice._tag])
   return (
-    <div className="pico-runtime-picker lrud-container" data-block-exit="true" ref={root}>
+    <div className="pico-runner-picker lrud-container" data-block-exit="true" ref={root}>
       <PicoGameOverlay
-        label={`Runtimes for ${choice.gameTitle}`}
+        label={`Runners for ${choice.gameTitle}`}
         hints={[
           { hintKey: "a", label: "SELECT" },
           { hintKey: "b", label: "CANCEL" },
@@ -38,26 +38,22 @@ export function PicoRuntimePicker({
         <p role="status">{choice.message}</p>
         {choice.saved.map(saved => (
           <p key={saved.label}>
-            {saved.label}: {saved.runtimeId}
+            {saved.label}: {saved.runnerId}
           </p>
         ))}
         {[...new Set(choice.warnings)].map(warning => (
           <p key={warning}>{warning}</p>
         ))}
         {choice.routes.map(route => (
-          <section className="pico-runtime-picker-route" key={route.runtimeId}>
-            <h2>{route.runtimeId}</h2>
+          <section className="pico-runner-picker-route" key={route.runnerId}>
+            <h2>{route.runnerId}</h2>
             <dl>
               <dt>System</dt>
               <dd>{route.systemId}</dd>
-              <dt>Launcher</dt>
-              <dd>{route.launcherId}</dd>
-              <dt>Launcher kind</dt>
-              <dd>{route.launcherKind}</dd>
-              <dt>Runtime build</dt>
-              <dd>{route.runtimeBuild}</dd>
-              <dt>Launcher build</dt>
-              <dd>{route.launcherBuild}</dd>
+              <dt>Family</dt>
+              <dd>{route.familyId ?? "None"}</dd>
+              <dt>Runner build</dt>
+              <dd>{route.runnerBuild}</dd>
               <dt>Program</dt>
               <dd>{route.program}</dd>
             </dl>

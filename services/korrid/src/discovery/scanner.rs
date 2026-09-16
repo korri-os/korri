@@ -608,8 +608,7 @@ export const discovery = {
           id: "@test:conflict/gba",
           extensions: ["gba"],
           system: "gba",
-          launcher: "@korri:retroarch/retroarch",
-          runtime: "@korri:mgba/mgba",
+          runners: ["@korri:mgba/mgba"],
         },
       },
     };

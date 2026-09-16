@@ -3,15 +3,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { PluginLaunchInput } from "../../contracts/generated/korrid"
-import { launch } from "./plugin"
+import { launch } from "../mgba/retroarch"
 
 function input(overrides?: PluginLaunchInput["overrides"]): PluginLaunchInput {
   return {
-    launcherId: "@korri:retroarch/retroarch",
-    launcherKind: "@korri:retroarch/retroarch",
-    runtimeId: "@korri:mgba/mgba",
+    runnerId: "@korri:mgba/mgba",
+    familyId: "@korri:retroarch",
     program: "/program",
-    runtimePath: "/core",
+    corePath: "/core",
     contentPath: "/rom",
     accountRoot: "/account",
     files: { autoconfig: "/autoconfig" },

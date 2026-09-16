@@ -193,7 +193,7 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SessionControls(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::GameRoutes(_)
-        | RpcRequest::GameRuntimeSet(_)
+        | RpcRequest::GameRunnerSet(_)
         | RpcRequest::SelectedGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::LocalGameLaunch(_) => PeerPolicy::OwnerDeviceOnly,
@@ -246,7 +246,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::DiscoveryRemoveLocation(_)
             | RpcRequest::DiscoveryRescan(_)
             | RpcRequest::SettingsUpdate(_)
-            | RpcRequest::GameRuntimeSet(_)
+            | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
     )

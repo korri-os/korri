@@ -113,7 +113,7 @@ KORRI_JQ_BIN="$(command -v jq)"
 export KORRI_JQ_BIN
 trusted='https://appassets.androidplatform.net/assets/portal/index.html'
 secret_capability='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-secret_spec='{"launchId":"launch-1","launcherId":"retroarch","integrity":"transport-secret","component":{"packageName":"com.korri.retroarch"}}'
+secret_spec='{"launchId":"launch-1","runnerId":"retroarch","integrity":"transport-secret","component":{"packageName":"com.korri.retroarch"}}'
 export FAKE_EXPECTED_CAPABILITY="$secret_capability"
 
 set_targets() {

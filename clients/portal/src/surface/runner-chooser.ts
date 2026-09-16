@@ -5,15 +5,15 @@ import type {
   RpcFailure,
   SessionPrepared,
 } from "@contracts/generated/korrid"
-import type { SurfaceAction, SurfaceRuntimeChoice } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import type { KorridClient } from "../korrid/client"
 import { isAuthoritativeSessionStatus } from "../launchables/state"
 
-const cancelAction: SurfaceAction = { id: "runtime:cancel", label: "Cancel", enabled: true }
+const cancelAction: SurfaceAction = { id: "runner:cancel", label: "Cancel", enabled: true }
 const warningText = (warning: LaunchWarning) =>
-  `${warning.setting} · ${warning.launcherId} · ${warning.build}: ${warning.message}`
+  `${warning.setting} · ${warning.runnerId} · ${warning.build}: ${warning.message}`
 
-export interface RuntimeLaunchIntegration {
+export interface RunnerLaunchIntegration {
   /** Capture the catalog source and launch ordering before the RPC starts. */
   beginLaunch(gameId: string): (session: SessionPrepared) => void
   reload(): void
@@ -22,12 +22,12 @@ export interface RuntimeLaunchIntegration {
 /** Host-owned interaction boundary. No DOM, hardware, or surface dependency.
  * Each read/write has one generation. Cancel withdraws UI intent, not an RPC
  * already sent. In particular, it cannot undo an acknowledged save or launch. */
-export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaunchIntegration) {
-  let state: SurfaceRuntimeChoice = { _tag: "Closed" }
+export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunchIntegration) {
+  let state: SurfaceRunnerChoice = { _tag: "Closed" }
   let generation = 0
   let disposed = false
   const action = (id: string, label: string): SurfaceAction => ({
-    id: `runtime:${generation}:${id}`,
+    id: `runner:${generation}:${id}`,
     label,
     enabled: true,
   })
@@ -36,7 +36,7 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
   let snapshot: GameRoutes | undefined
   let active: ActiveSession | undefined
   const listeners = new Set<() => void>()
-  const publish = (next: SurfaceRuntimeChoice) => {
+  const publish = (next: SurfaceRunnerChoice) => {
     if (disposed) return
     state = next
     for (const listener of listeners) listener()
@@ -58,29 +58,29 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
     publish({
       _tag: failure.code === "SettingsConflict" ? "Conflict" : "Error",
       ...blank(failure.message),
-      actions: [action("reload", "Reload runtimes"), cancelAction],
+      actions: [action("reload", "Reload runners"), cancelAction],
     })
   }
   const show = (record: GameRoutes) => {
     snapshot = record
     const saved = [
-      ...(record.gameRuntime === undefined
+      ...(record.gameRunner === undefined
         ? []
-        : [{ label: "This game", runtimeId: record.gameRuntime }]),
-      ...Object.entries(record.systemRuntimes).map(([systemId, runtimeId]) => ({
+        : [{ label: "This game", runnerId: record.gameRunner }]),
+      ...Object.entries(record.systemRunners).map(([systemId, runnerId]) => ({
         label: `System ${systemId}`,
-        runtimeId,
+        runnerId,
       })),
     ]
     const stale = saved.some(
-      choice => !record.routes.some(route => route.runtimeId === choice.runtimeId),
+      choice => !record.routes.some(route => route.runnerId === choice.runnerId),
     )
     publish({
       _tag: stale ? "Stale" : "Ready",
       gameTitle: title,
       message: stale
-        ? "A saved runtime is unavailable for this game. The choice is still saved. Choose another runtime or clear it."
-        : `${record.selection._tag === "Selected" ? `Current runtime: ${record.selection.runtimeId}. ` : "Choose a runtime on this device. "}Launch once does not change saved choices. A game choice overrides a system choice.`,
+        ? "A saved runner is unavailable for this game. The choice is still saved. Choose another runner or clear it."
+        : `${record.selection._tag === "Selected" ? `Current runner: ${record.selection.runnerId}. ` : "Choose a runner on this device. "}Launch once does not change saved choices. A game choice overrides a system choice.`,
       // GameRoutes does not advertise portal permissions. The server remains
       // authority; a denied write never falls back to a different operation.
       saved,
@@ -95,11 +95,11 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
         ],
       })),
       actions: [
-        ...(record.gameRuntime === undefined ? [] : [action("clear-game", "Clear game choice")]),
-        ...Object.keys(record.systemRuntimes).map((systemId, index) =>
+        ...(record.gameRunner === undefined ? [] : [action("clear-game", "Clear game choice")]),
+        ...Object.keys(record.systemRunners).map((systemId, index) =>
           action(`clear-system:${index}`, `Clear system ${systemId} choice`),
         ),
-        action("reload", "Reload runtimes"),
+        action("reload", "Reload runners"),
         cancelAction,
       ],
     })
@@ -116,24 +116,24 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
       _tag: "Conflict",
       ...blank(
         active
-          ? `Stop ${active.title ?? active.gameId ?? "the active session"} before switching runtimes. Nothing will launch automatically after stopping.`
-          : "The active session changed. Reload runtimes before launching.",
+          ? `Stop ${active.title ?? active.gameId ?? "the active session"} before switching runners. Nothing will launch automatically after stopping.`
+          : "The active session changed. Reload runners before launching.",
       ),
       actions: [
         ...(active ? [action("stop", "Stop active session")] : []),
-        action("reload", "Reload runtimes"),
+        action("reload", "Reload runners"),
         cancelAction,
       ],
     })
   }
-  const launch = async (runtimeId: string, operation: number) => {
+  const launch = async (runnerId: string, operation: number) => {
     publish({
       _tag: "Busy",
       ...blank("Launching… Cancel closes this panel; it cannot undo a launch already sent."),
     })
     const requestedGameId = gameId
     const acknowledge = launches.beginLaunch(requestedGameId)
-    const result = await korrid.launchSelectedGame(requestedGameId, runtimeId)
+    const result = await korrid.launchSelectedGame(requestedGameId, runnerId)
     // UI cancellation cannot discard a launch acknowledgement. Commit it with
     // its captured source before an observational read can fail or race it.
     if (result._tag === "Ok") acknowledge(result.payload.session)
@@ -159,7 +159,7 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
     title = gameTitle
     snapshot = undefined
     active = undefined
-    publish({ _tag: "Loading", ...blank("Reading installed runtimes…") })
+    publish({ _tag: "Loading", ...blank("Reading installed runners…") })
     if (intent === "launch") {
       const status = await korrid.sessionStatus(3000)
       if (!current(operation)) return
@@ -169,7 +169,7 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
       }
       if (status._tag === "Ok" && status.payload.active?.gameId === id) {
         // Ordinary prepare preserves same-game resume. Selected launch cannot:
-        // the existing recovery record has no runtime identity.
+        // the existing recovery record has no runner identity.
         publish({ _tag: "Busy", ...blank("Continuing the active game…") })
         const acknowledge = launches.beginLaunch(id)
         const resumed = await korrid.sessionPrepare(id)
@@ -188,7 +188,7 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
     }
     show(result.payload)
     if (intent === "launch" && result.payload.selection._tag === "Selected") {
-      await launch(result.payload.selection.runtimeId, operation)
+      await launch(result.payload.selection.runnerId, operation)
     }
   }
   const act = async (publishedId: string) => {
@@ -196,7 +196,7 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
     // Only published actions are authority. Reject stale handlers and same-frame
     // double confirms while Busy/Loading before issuing another mutation.
     const actions = [...state.actions, ...state.routes.flatMap(route => route.actions)]
-    if (!actions.some(action => action.id === `runtime:${publishedId}` && action.enabled)) return
+    if (!actions.some(action => action.id === `runner:${publishedId}` && action.enabled)) return
     if (publishedId === "cancel") {
       cancel()
       return
@@ -246,11 +246,11 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
     const [kind, index] = id.split(":")
     const route = record.routes[Number(index)]
     if (kind === "launch" && route) {
-      await launch(route.runtimeId, operation)
+      await launch(route.runnerId, operation)
       return
     }
     const systemId =
-      kind === "clear-system" ? Object.keys(record.systemRuntimes)[Number(index)] : route?.systemId
+      kind === "clear-system" ? Object.keys(record.systemRunners)[Number(index)] : route?.systemId
     const scope =
       kind === "game" || kind === "clear-game"
         ? { _tag: "Game" as const, id: record.gameId }
@@ -262,9 +262,9 @@ export function createRuntimeChooser(korrid: KorridClient, launches: RuntimeLaun
       _tag: "Busy",
       ...blank("Saving… Cancel closes this panel; it cannot undo a save already sent."),
     })
-    const result = await korrid.setGameRuntime({
+    const result = await korrid.setGameRunner({
       scope,
-      ...(id.startsWith("clear-") ? {} : { runtimeId: route?.runtimeId }),
+      ...(id.startsWith("clear-") ? {} : { runnerId: route?.runnerId }),
       expectedRevision: scope._tag === "Game" ? record.revisions.games : record.revisions.device,
     })
     if (!current(operation)) return

@@ -59,12 +59,10 @@ fn bundled_policy_enables_first_party_android_plugins_by_default() {
         .systems()
         .contains_key("@korri:android-app/android"));
     assert!(registry
-        .launchers()
+        .runners()
         .contains_key("@korri:android-app/android-app"));
-    assert!(registry
-        .launchers()
-        .contains_key("@korri:retroarch/retroarch"));
-    assert!(registry.runtimes().contains_key("@korri:mgba/mgba"));
+    assert!(registry.families().contains_key("@korri:retroarch"));
+    assert!(registry.runners().contains_key("@korri:mgba/mgba"));
     assert_eq!(
         registry
             .file_release_discovery_claims()
@@ -109,7 +107,7 @@ fn later_user_policy_layer_disables_bundled_moonlight_normally() {
 }
 
 #[test]
-fn disabling_mgba_withholds_its_discovery_claim_but_not_retroarch_launcher() {
+fn disabling_mgba_withholds_its_runner_and_discovery_but_not_the_family() {
     let plugins = bundled_plugins().expect("bundled plugins should load");
     let enabled_ids = resolve_enabled_plugin_ids([
         bundled_plugin_policy_layer(),
@@ -118,13 +116,12 @@ fn disabling_mgba_withholds_its_discovery_claim_but_not_retroarch_launcher() {
     let registry = PluginRegistry::new(plugins, enabled_ids)
         .expect("disabled mGBA plugin should remain registered");
 
-    assert!(registry
-        .launchers()
-        .contains_key("@korri:retroarch/retroarch"));
+    assert!(registry.families().contains_key("@korri:retroarch"));
+    assert!(!registry.runners().contains_key("@korri:mgba/mgba"));
     assert!(registry
         .file_release_discovery_claims_for_extension("gba")
         .is_empty());
-    assert!(registry.owns_registered_runtime_id("@korri:mgba/mgba"));
+    assert!(registry.owns_registered_runner_id("@korri:mgba/mgba"));
 }
 
 #[test]
@@ -147,14 +144,9 @@ fn unknown_enabled_policy_override_is_rejected_by_registry() {
 }
 
 #[test]
-fn production_android_plugin_matches_reviewed_checkpoint_bytes() {
-    assert_eq!(PRODUCTION_ANDROID_PLUGIN, CHECKPOINT_ANDROID_PLUGIN);
-
+fn retired_launcher_checkpoint_is_not_a_supported_plugin_contract() {
     let production = load_plugin_source("@korri", PRODUCTION_ANDROID_PLUGIN)
         .expect("production Android plugin should load");
-    let checkpoint = load_plugin_source("@korri", CHECKPOINT_ANDROID_PLUGIN)
-        .expect("checkpoint Android plugin should load");
-
-    assert_eq!(production.id(), checkpoint.id());
-    assert_eq!(production.title(), checkpoint.title());
+    assert_eq!(production.id(), "@korri:android-app");
+    assert!(load_plugin_source("@korri", CHECKPOINT_ANDROID_PLUGIN).is_err());
 }

@@ -153,8 +153,8 @@ fn print_route(route: &ResolvedRoute) {
     if let Some(system_title) = &route.system_title {
         println!("system title: {system_title}");
     }
-    println!("launcher: {}", route.launcher_id);
-    println!("launcher kind: {}", route.launcher_kind);
+    println!("runner: {}", route.runner_id);
+    println!("runner family: {:?}", route.family_id.as_deref());
     println!("integration token: {}", route.integration_token);
     println!("target: {}", route.flattened_target);
 }

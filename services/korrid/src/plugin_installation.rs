@@ -23,7 +23,6 @@ pub struct EnabledPackage {
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
     pub sources: Vec<String>,
-    pub requires: Vec<PathBuf>,
 }
 
 pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {

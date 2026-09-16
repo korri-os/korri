@@ -107,8 +107,8 @@ fn evaluate_module(
         for property in exports.props::<String, Value>() {
             let (name, value) = property.map_err(|error| error.to_string())?;
             match name.as_str() {
-                "name" | "title" | "description" | "providers" | "systems" | "launchers"
-                | "transports" | "runtimes" | "sessionControls" | "discovery" | "android"
+                "name" | "title" | "description" | "providers" | "systems" | "families"
+                | "runners" | "transports" | "sessionControls" | "discovery" | "android"
                 | "services" | "config" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
@@ -145,22 +145,20 @@ fn evaluate_module(
         // A native kind owns the module callback. Inspect the export only;
         // admission must never invoke it or impose policy on its output.
         if declaration
-            .get("launchers")
+            .get("runners")
             .and_then(serde_json::Value::as_object)
-            .is_some_and(|launchers| {
-                launchers.values().any(|launcher| {
-                    launcher
-                        .get("id")
+            .is_some_and(|runners| {
+                runners.values().any(|runner| {
+                    runner
+                        .get("program")
                         .and_then(serde_json::Value::as_str)
-                        .is_some_and(|id| {
-                            launcher.get("kind").and_then(serde_json::Value::as_str) == Some(id)
-                        })
+                        .is_some()
                 })
             })
         {
             exports
                 .get::<_, Function>("launch")
-                .map_err(|_| "native launcher kind has no callable launch export".to_owned())?;
+                .map_err(|_| "native runner kind has no callable launch export".to_owned())?;
         }
         let result = if let Some(input) = input {
             let launch: Function = exports

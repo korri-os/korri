@@ -27,9 +27,9 @@ fn game_packages_preserve_the_shipped_declaration_exports_without_a_service() {
 }
 
 #[test]
-fn native_kind_admission_requires_launch_but_does_not_call_it() {
+fn native_runner_admission_requires_launch_but_does_not_call_it() {
     let declaration = "export const name = 'game';
-        export const launchers = {game: {id:'@example:game/game', kind:'@example:game/game', program:'game'}};";
+        export const runners = {game: {id:'@example:game/game', program:'game'}};";
     for callback in ["", "export const launch = 42;"] {
         let error = Declaration::evaluate("@example", &format!("{declaration} {callback}"))
             .expect_err("native kind without a callable launch must fail admission");
@@ -47,8 +47,8 @@ fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
     for export in [
         "providers",
         "systems",
-        "launchers",
-        "runtimes",
+        "families",
+        "runners",
         "transports",
         "sessionControls",
         "discovery",
@@ -81,12 +81,12 @@ fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
 #[test]
 fn host_admission_preserves_data_and_never_invokes_the_launch_callback() {
     let source = "export const name = 'game';
-        export const config = {launchers: {}};
+        export const config = {runners: {}};
         export const android = {packageName: 'org.example.game'};
         export function launch(input) { return {command: input.program, args: [input.runtime.id]}; }";
     let declaration = Declaration::evaluate("@example", source).unwrap();
     let data = serde_json::to_value(declaration).unwrap();
-    assert_eq!(data["config"], serde_json::json!({"launchers": {}}));
+    assert_eq!(data["config"], serde_json::json!({"runners": {}}));
     assert_eq!(data["android"]["packageName"], "org.example.game");
     assert!(data.get("launch").is_none());
     let launch: serde_json::Value = serde_json::from_str(

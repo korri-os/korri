@@ -66,38 +66,40 @@ export const sessionControls = {
     };
 "#;
 
-const RETROARCH_PLUGIN: &str = r#"
-export const name = "retroarch";
-export const title = "RetroArch";
-export const launchers = {
-        retroarch: {
-          id: "@korri:retroarch/retroarch",
-          plugin: "@korri:retroarch",
-          command: "retroarch",
-          android: {
-            packageName: "com.korri.retroarch",
-            className: "com.retroarch.browser.retroactivity.RetroActivityFuture",
-          },
-        },
-      };
+const MGBA_PLUGIN: &str = r#"
+export const name = "mgba";
+export const title = "mGBA";
+export const runners = {
+  mgba: {
+    id: "@korri:mgba/mgba",
+    family: "@korri:retroarch",
+    command: "retroarch",
+    systems: ["gba"],
+    core: "/cores/mgba.so",
+    android: {
+      packageName: "com.korri.retroarch",
+      className: "com.retroarch.browser.retroactivity.RetroActivityFuture",
+    },
+  },
+};
 export const sessionControls = {
-      openMenu: {
-        order: 0,
-        id: "@korri:retroarch/open-menu",
-        owner: { kind: "launcher", id: "@korri:retroarch/retroarch" },
-        label: "Open RetroArch menu",
-        interaction: { kind: "command" },
-        effect: "@korri:retroarch/open-menu",
-        dismissOnSuccess: true,
-      },
-    };
+  openMenu: {
+    order: 0,
+    id: "@korri:mgba/open-menu",
+    owner: { kind: "runner", id: "@korri:mgba/mgba" },
+    label: "Open RetroArch menu",
+    interaction: { kind: "command" },
+    effect: "@korri:mgba/open-menu",
+    dismissOnSuccess: true,
+  },
+};
 "#;
 
 fn registry(enabled: &[&str]) -> PluginRegistry {
     PluginRegistry::new(
         vec![
             load_plugin_source("@korri", MOONLIGHT_PLUGIN).expect("Moonlight declaration"),
-            load_plugin_source("@korri", RETROARCH_PLUGIN).expect("RetroArch declaration"),
+            load_plugin_source("@korri", MGBA_PLUGIN).expect("mGBA declaration"),
         ],
         enabled.iter().map(|id| (*id).to_owned()),
     )
@@ -113,8 +115,8 @@ fn android_route(executors: &[SessionControlExecutor]) -> ActiveRouteContext {
                 id: "@korri:moonlight/moonlight".into(),
             },
             RouteContribution {
-                kind: SessionControlOwnerKind::Launcher,
-                id: "@korri:retroarch/retroarch".into(),
+                kind: SessionControlOwnerKind::Runner,
+                id: "@korri:mgba/mgba".into(),
             },
         ],
         executor_availability: SessionExecutorAvailability::from_available(
@@ -125,7 +127,7 @@ fn android_route(executors: &[SessionControlExecutor]) -> ActiveRouteContext {
 
 #[test]
 fn active_route_owns_the_only_controls_that_resolve_in_deterministic_order() {
-    let registry = registry(&["@korri:moonlight", "@korri:retroarch"]);
+    let registry = registry(&["@korri:moonlight", "@korri:mgba"]);
     let context = android_route(&[
         SessionControlExecutor::AndroidMoonlight,
         SessionControlExecutor::RetroarchControl,
@@ -142,11 +144,11 @@ fn active_route_owns_the_only_controls_that_resolve_in_deterministic_order() {
             "@korri:moonlight/fill",
             "@korri:moonlight/mouse-mode",
             "@korri:moonlight/sharpness",
-            "@korri:retroarch/open-menu",
+            "@korri:mgba/open-menu",
         ]
     );
     assert_eq!(controls[0].plugin_id, "@korri:moonlight");
-    assert_eq!(controls[4].plugin_id, "@korri:retroarch");
+    assert_eq!(controls[4].plugin_id, "@korri:mgba");
 
     let reversed_route = ActiveRouteContext {
         contributors: context.contributors.iter().cloned().rev().collect(),
@@ -158,7 +160,7 @@ fn active_route_owns_the_only_controls_that_resolve_in_deterministic_order() {
             .map(|control| control.id.as_str())
             .collect::<Vec<_>>(),
         [
-            "@korri:retroarch/open-menu",
+            "@korri:mgba/open-menu",
             "@korri:moonlight/disconnect",
             "@korri:moonlight/fill",
             "@korri:moonlight/mouse-mode",
@@ -166,19 +168,19 @@ fn active_route_owns_the_only_controls_that_resolve_in_deterministic_order() {
         ]
     );
 
-    let retroarch_only = ActiveRouteContext {
+    let mgba_only = ActiveRouteContext {
         contributors: vec![RouteContribution {
-            kind: SessionControlOwnerKind::Launcher,
-            id: "@korri:retroarch/retroarch".into(),
+            kind: SessionControlOwnerKind::Runner,
+            id: "@korri:mgba/mgba".into(),
         }],
         ..context
     };
     assert_eq!(
-        resolve_session_controls(&registry, &retroarch_only)
+        resolve_session_controls(&registry, &mgba_only)
             .iter()
             .map(|control| control.id.as_str())
             .collect::<Vec<_>>(),
-        ["@korri:retroarch/open-menu"]
+        ["@korri:mgba/open-menu"]
     );
 }
 
@@ -317,15 +319,15 @@ fn canonical_moonlight_resolves_typed_artemis_availability_only_when_enabled() {
 
 #[test]
 fn platform_and_live_executor_availability_are_both_required() {
-    let registry = registry(&["@korri:moonlight", "@korri:retroarch"]);
+    let registry = registry(&["@korri:moonlight", "@korri:mgba"]);
 
     assert!(resolve_session_controls(&registry, &android_route(&[])).is_empty());
 
     let linux = ActiveRouteContext {
         platform: RoutePlatform::Linux,
         contributors: vec![RouteContribution {
-            kind: SessionControlOwnerKind::Launcher,
-            id: "@korri:retroarch/retroarch".into(),
+            kind: SessionControlOwnerKind::Runner,
+            id: "@korri:mgba/mgba".into(),
         }],
         executor_availability: SessionExecutorAvailability::from_available([
             SessionControlExecutor::RetroarchControl,
@@ -349,7 +351,7 @@ async fn rpc_list_and_invoke_stay_unavailable_without_current_route_context() {
 
     for request in [
         r#"{"_tag":"app.session.controls","payload":{"launchId":"launch-1"}}"#,
-        r#"{"_tag":"app.session.control.invoke","payload":{"launchId":"launch-1","controlId":"@korri:retroarch/open-menu"}}"#,
+        r#"{"_tag":"app.session.control.invoke","payload":{"launchId":"launch-1","controlId":"@korri:mgba/open-menu"}}"#,
     ] {
         let response = app
             .clone()
@@ -458,7 +460,7 @@ async fn standalone_brain_refuses_to_prepare_moonlight_launches() {
 
 #[test]
 fn layered_disable_removes_controls_without_reassigning_reserved_identity() {
-    let disabled = registry(&["@korri:retroarch"]);
+    let disabled = registry(&["@korri:mgba"]);
     assert!(disabled.owns_registered_session_control_id("@korri:moonlight/disconnect"));
     assert!(!disabled
         .session_controls()
@@ -474,10 +476,10 @@ fn layered_disable_removes_controls_without_reassigning_reserved_identity() {
         .iter()
         .map(|control| control.id.as_str())
         .collect::<Vec<_>>(),
-        ["@korri:retroarch/open-menu"]
+        ["@korri:mgba/open-menu"]
     );
 
-    let enabled = registry(&["@korri:moonlight", "@korri:retroarch"]);
+    let enabled = registry(&["@korri:moonlight", "@korri:mgba"]);
     assert!(enabled
         .session_controls()
         .contains_key("@korri:moonlight/disconnect"));

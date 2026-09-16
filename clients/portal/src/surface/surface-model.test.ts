@@ -32,7 +32,7 @@ const hostGame: PortalEntry = {
     id: "neverball",
     title: "Neverball",
     host: "zao",
-    supportsRuntimeSelection: false,
+    supportsRunnerSelection: false,
     source: source("zao"),
   },
 }
@@ -112,7 +112,7 @@ describe("surfaceModelFrom", () => {
                 id: "wl4",
                 title: "Wario Land 4",
                 host: "zao",
-                supportsRuntimeSelection: false,
+                supportsRunnerSelection: false,
                 source: {
                   devicePublicKey: "zao-key",
                   label: "zao",
@@ -169,11 +169,11 @@ describe("surfaceModelFrom", () => {
           alternatives: [
             {
               kind: "remote",
-              game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRuntimeSelection: false, source: source("zao") },
+              game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: source("zao") },
             },
             {
               kind: "remote",
-              game: { id: "wl4-aka", title: "Wario Land 4", host: "aka", supportsRuntimeSelection: false, source: source("aka") },
+              game: { id: "wl4-aka", title: "Wario Land 4", host: "aka", supportsRunnerSelection: false, source: source("aka") },
             },
           ],
         },
@@ -196,7 +196,7 @@ describe("surfaceModelFrom", () => {
       alternatives: [
         {
           kind: "remote",
-          game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRuntimeSelection: false, source: source("zao") },
+          game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: source("zao") },
         },
       ],
     }
@@ -209,7 +209,7 @@ describe("surfaceModelFrom", () => {
 
     expect(entryForLaunchLocation(folded, zao.id)).toEqual({
       kind: "game",
-      game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRuntimeSelection: false, source: source("zao") },
+      game: { id: "wl4", title: "Wario Land 4", host: "zao", supportsRunnerSelection: false, source: source("zao") },
     })
   })
 

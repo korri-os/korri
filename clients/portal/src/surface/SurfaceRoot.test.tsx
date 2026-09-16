@@ -107,7 +107,7 @@ const remoteGame = (host: string, id = "wl4"): Game => ({
   title: "Wario Land 4",
   host,
   identity,
-  supportsRuntimeSelection: false,
+  supportsRunnerSelection: false,
   source: { label: host, isLocal: false },
 })
 
@@ -130,7 +130,7 @@ const localLaunchSpec: LocalLaunchSpec = {
     contributors: [],
     foreground: { kind: LaunchForegroundKind.Component },
   },
-  launcherId: "fixture-local",
+  runnerId: "fixture-local",
   component: {
     packageName: "dev.fixture.runtime",
     className: "dev.fixture.runtime.MainActivity",
@@ -552,7 +552,7 @@ describe("SurfaceRoot", () => {
   test("Pico returns from a Linux local catalog session to a usable library cart", async () => {
     const { PicoSurface } = await import("@korri/pico")
     const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const game = { ...remoteGame("device-label"), supportsRuntimeSelection: true, source: { label: "device-label", isLocal: true } }
+    const game = { ...remoteGame("device-label"), supportsRunnerSelection: true, source: { label: "device-label", isLocal: true } }
     const sources: Sources = { localGames: [], remoteGames: [game], streamHosts: [], streamAppsByHost: {} }
     const nativeLaunches: LocalLaunchSpec[] = []
     const bridge: LauncherBridge = {
@@ -571,8 +571,8 @@ describe("SurfaceRoot", () => {
     const korrid: KorridClient = {
       ...buildKorrid(sources, calls),
       ...createInMemoryKorridClient({ gameRoutes: [{
-        gameId: game.id, selection: { _tag: "Choose" }, systemRuntimes: {}, revisions: { games: "g1", device: "d1" },
-        routes: [{ runtimeId: "retroarch/mgba", launcherId: "retroarch/linux", launcherKind: "retroarch", systemId: "gba", runtimeBuild: "/nix/store/mgba", launcherBuild: "/nix/store/retroarch", program: "/nix/store/retroarch/bin/retroarch", warnings: [] }],
+        gameId: game.id, selection: { _tag: "Choose" }, systemRunners: {}, revisions: { games: "g1", device: "d1" },
+        routes: [{ runnerId: "retroarch/mgba", familyId: "@korri:retroarch", systemId: "gba", runnerBuild: "/nix/store/mgba", program: "/nix/store/retroarch/bin/retroarch", warnings: [] }],
       }] }),
       async catalogSnapshot() { return okCatalog(sources.remoteGames) },
       async launchSelectedGame(gameId) {

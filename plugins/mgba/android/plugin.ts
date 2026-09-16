@@ -1,23 +1,42 @@
-// Android platform declaration; the core remains packaged in RetroArch's APK.
 export const name = "mgba"
 export const title = "mGBA"
 export const description =
-  "Provides the mGBA libretro core for Game Boy Advance games."
+  "Runs Game Boy Advance content with the mGBA libretro core."
 export const systems = {
-  gba: {
-    id: "gba",
-    title: "Game Boy Advance",
-  },
+  gba: { id: "gba", title: "Game Boy Advance" },
 }
-export const runtimes = {
+export const runners = {
   mgba: {
     id: "@korri:mgba/mgba",
-    kind: "libretro-core",
-    app: "@korri:retroarch/retroarch",
-    path: "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so",
-    supports: {
-      systems: ["gba"],
+    family: "@korri:retroarch",
+    command: "retroarch",
+    systems: ["gba"],
+    core: "/data/data/com.korri.retroarch/cores/mgba_libretro_android.so",
+    android: {
+      packageName: "com.korri.retroarch",
+      className: "com.retroarch.browser.retroactivity.RetroActivityFuture",
     },
+  },
+}
+export const sessionControls = {
+  openMenu: {
+    order: 0,
+    id: "@korri:mgba/open-menu",
+    owner: { kind: "runner", id: "@korri:mgba/mgba" },
+    label: "Open RetroArch menu",
+    interaction: { kind: "command" },
+    effect: "@korri:mgba/open-menu",
+    dismissOnSuccess: true,
+  },
+  quit: {
+    order: 1,
+    id: "@korri:mgba/quit",
+    owner: { kind: "runner", id: "@korri:mgba/mgba" },
+    label: "Quit game",
+    interaction: { kind: "command" },
+    effect: "@korri:mgba/quit",
+    destructive: true,
+    dismissOnSuccess: true,
   },
 }
 export const discovery = {
@@ -27,8 +46,7 @@ export const discovery = {
       title: "Game Boy Advance ROM files",
       extensions: ["gba"],
       system: "gba",
-      launcher: "@korri:retroarch/retroarch",
-      runtime: "@korri:mgba/mgba",
+      runners: ["@korri:mgba/mgba"],
     },
   },
 }

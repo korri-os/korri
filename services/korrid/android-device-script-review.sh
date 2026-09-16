@@ -1750,7 +1750,7 @@ ALT_ANDROID_APP_RESPONSE="$(jq -n --arg package 'review.android.game' '{
   outcome: {
     _tag: "Ok",
     payload: {
-      launcherId: "android-app",
+      runnerId: "android-app",
       component: {
         packageName: $package,
         className: ""
@@ -1767,7 +1767,7 @@ CANONICAL_ANDROID_APP_RESPONSE="$(jq -n --arg package 'com.playdigious.tmnt' '{
   outcome: {
     _tag: "Ok",
     payload: {
-      launcherId: "android-app",
+      runnerId: "android-app",
       component: {
         packageName: $package,
         className: ""
@@ -1847,14 +1847,13 @@ SIGNED_WL4_RESPONSE="$(jq -n --arg root '/storage/emulated/0/korri' '{
     _tag: "Ok",
     payload: {
       launchId: "0123456789abcdef0123456789abcdef",
-      launcherId: "retroarch",
+      runnerId: "retroarch",
       disposition: "fresh",
       context: {
         gameId: "01K4J6K8Y00000000000000002",
         title: "Wario Land 4",
         contributors: [
-          {kind: "launcher", id: "@korri:retroarch/retroarch"},
-          {kind: "runtime", id: "@korri:mgba/mgba"}
+          {kind: "runner", id: "@korri:mgba/mgba"}
         ],
         executor: {id: "retroarch-control", available: true},
         foreground: {

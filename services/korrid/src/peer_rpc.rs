@@ -1238,14 +1238,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn game_runtime_set_nonce_survives_server_restart() {
+    async fn game_runner_set_nonce_survives_server_restart() {
         let (host_root, _client_root, credentials, host_key, config) = setup();
         let encoded = credentials
             .encode_request_with_tokens(
                 &host_key,
-                RpcRequest::GameRuntimeSet(crate::game_routes::GameRuntimeSetRequest {
-                    scope: crate::config::settings::RuntimeChoiceScope::Game("neverball".into()),
-                    runtime_id: None,
+                RpcRequest::GameRunnerSet(crate::game_routes::GameRunnerSetRequest {
+                    scope: crate::config::settings::RunnerChoiceScope::Game("neverball".into()),
+                    runner_id: None,
                     expected_revision: String::new(),
                 }),
                 NOW,

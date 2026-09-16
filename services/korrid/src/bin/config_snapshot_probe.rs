@@ -1,7 +1,7 @@
 //! Review the production fixed local configuration snapshot loader.
 //!
 //! The probe intentionally uses ConfigSnapshotCoordinator, the same coordinator
-//! wired into the brain runtime. It creates no watchers and performs no route
+//! wired into the brain runner. It creates no watchers and performs no route
 //! resolution or launch effects.
 
 use std::{env, fs, path::PathBuf, process};

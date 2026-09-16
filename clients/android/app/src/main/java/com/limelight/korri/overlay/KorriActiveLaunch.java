@@ -121,12 +121,12 @@ public final class KorriActiveLaunch {
             String gameId,
             String title,
             String packageName,
-            String launcherId) {
+            String runnerId) {
         return new KorriActiveLaunch(
                 launchId,
                 gameId,
                 title,
-                Collections.singletonList(new Contributor("launcher", launcherId)),
+                Collections.singletonList(new Contributor("runner", runnerId)),
                 null,
                 false,
                 "package",

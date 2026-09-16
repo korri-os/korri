@@ -15,7 +15,7 @@ type HmacSha256 = Hmac<Sha256>;
 const CONTROL_TIMEOUT: Duration = Duration::from_millis(250);
 const KORRI_PACKAGE: &str = "com.korri.retroarch";
 const KORRI_ACTIVITY: &str = "com.retroarch.browser.retroactivity.RetroActivityFuture";
-const KORRI_LAUNCHER: &str = "@korri:retroarch/retroarch";
+const KORRI_RUNNER: &str = "@korri:mgba/mgba";
 const KORRI_EXECUTOR: &str = "retroarch-control";
 const PROTOCOL_VERSION: u8 = 1;
 const NONCE_LENGTH: usize = 32;
@@ -87,12 +87,11 @@ impl RetroarchControlAuthority {
         token: &str,
         port: u16,
     ) -> Result<Self, RetroarchControlError> {
-        let trusted_shape = spec.launcher_id == "retroarch"
+        let trusted_shape = spec.runner_id == "retroarch"
             && spec.component.package_name == KORRI_PACKAGE
             && spec.component.class_name == KORRI_ACTIVITY
             && spec.context.contributors.iter().any(|contributor| {
-                contributor.kind == LaunchContributorKind::Launcher
-                    && contributor.id == KORRI_LAUNCHER
+                contributor.kind == LaunchContributorKind::Runner && contributor.id == KORRI_RUNNER
             })
             && spec
                 .context
@@ -556,15 +555,15 @@ mod tests {
     fn launch_spec() -> LaunchSpec {
         LaunchSpec {
             launch_id: "launch-1".into(),
-            launcher_id: "retroarch".into(),
+            runner_id: "retroarch".into(),
             disposition: super::super::LaunchDisposition::Fresh,
             context: super::super::LaunchContext {
                 game_id: Some("wl4".into()),
                 title: Some("Wario Land 4".into()),
                 content_crc32: Some("d6141609".into()),
                 contributors: vec![super::super::LaunchRouteContributor {
-                    kind: LaunchContributorKind::Launcher,
-                    id: KORRI_LAUNCHER.into(),
+                    kind: LaunchContributorKind::Runner,
+                    id: KORRI_RUNNER.into(),
                 }],
                 executor: Some(super::super::LaunchExecutor {
                     id: KORRI_EXECUTOR.into(),

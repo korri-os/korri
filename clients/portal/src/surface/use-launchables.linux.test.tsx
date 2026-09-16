@@ -37,7 +37,7 @@ function deferred<A>() {
 // LocalGame/LaunchSpec. There is deliberately no native or identity fixture.
 const game = {
   id: "neverball", title: "Neverball", host: "odin2portal",
-  supportsRuntimeSelection: false,
+  supportsRunnerSelection: false,
   source: { label: "odin2portal", isLocal: true },
 } satisfies Game
 const active: ActiveSession = {
@@ -83,7 +83,7 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     localGames: unavailable,
     localGameLaunch: unavailable,
     gameRoutes: unavailable,
-    setGameRuntime: unavailable,
+    setGameRunner: unavailable,
     launchSelectedGame: unavailable,
     sessionFreeze: unavailable,
     sessionThaw: unavailable,

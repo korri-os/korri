@@ -9,8 +9,8 @@ import type {
   ActiveSession,
   GameRoutes,
   GameRoutesOutcome,
-  GameRuntimeSetRequest,
-  GameRuntimeSetOutcome,
+  GameRunnerSetRequest,
+  GameRunnerSetOutcome,
   SelectedGameLaunchOutcome,
   CatalogSnapshotOutcome,
   DiscoverySnapshot,
@@ -87,8 +87,8 @@ export interface KorridClient {
   localGames(): Promise<LocalGamesListOutcome>
   localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
-  setGameRuntime(request: GameRuntimeSetRequest): Promise<GameRuntimeSetOutcome>
-  launchSelectedGame(gameId: string, runtimeId: string): Promise<SelectedGameLaunchOutcome>
+  setGameRunner(request: GameRunnerSetRequest): Promise<GameRunnerSetOutcome>
+  launchSelectedGame(gameId: string, runnerId: string): Promise<SelectedGameLaunchOutcome>
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
   /** Existing SessionStopRequest field; callers must name the displayed launch. */
@@ -448,17 +448,17 @@ export function createHttpKorridClient(
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
-    async setGameRuntime(payload) {
+    async setGameRunner(payload) {
       try {
         return (await callKorrid(baseUrl, capability, {
-          _tag: "app.local-games.runtime.set", payload,
+          _tag: "app.local-games.runner.set", payload,
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
-    async launchSelectedGame(gameId, runtimeId) {
+    async launchSelectedGame(gameId, runnerId) {
       try {
         return (await callKorrid(baseUrl, capability, {
-          _tag: "app.local-games.launch.selected", payload: { gameId, runtimeId },
+          _tag: "app.local-games.launch.selected", payload: { gameId, runnerId },
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
@@ -619,13 +619,13 @@ const sampleGames: readonly Game[] = [
   {
     id: "skate3",
     title: "Skate 3",
-    supportsRuntimeSelection: false,
+    supportsRunnerSelection: false,
     source: { label: "browser", isLocal: true },
   },
   {
     id: "neverball",
     title: "Neverball",
-    supportsRuntimeSelection: false,
+    supportsRunnerSelection: false,
     source: { label: "browser", isLocal: true },
   },
 ]
@@ -970,42 +970,42 @@ export function createInMemoryKorridClient(
       if (config.routeDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeDelayMs))
       const record = routeRecords.find(record => record.gameId === gameId)
       if (!record) return routeFailure("NoPlayableRoute", "No installed runtime is available")
-      const preferred = record.gameRuntime ?? record.systemRuntimes[record.routes[0]?.systemId ?? ""]
+      const preferred = record.gameRunner ?? record.systemRunners[record.routes[0]?.systemId ?? ""]
       const selected = preferred === undefined
-        ? (record.routes.length === 1 ? record.routes[0]?.runtimeId : undefined)
-        : record.routes.find(route => route.runtimeId === preferred)?.runtimeId
+        ? (record.routes.length === 1 ? record.routes[0]?.runnerId : undefined)
+        : record.routes.find(route => route.runnerId === preferred)?.runnerId
       return { _tag: "Ok", payload: structuredClone({ ...record,
-        selection: selected === undefined ? { _tag: "Choose" } : { _tag: "Selected", runtimeId: selected },
+        selection: selected === undefined ? { _tag: "Choose" } : { _tag: "Selected", runnerId: selected },
       }) }
     },
-    async setGameRuntime(request) {
+    async setGameRunner(request) {
       if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
-      if (routePermission !== "Full") return routeFailure("PermissionDenied", "Saving runtime choices requires Full access")
+      if (routePermission !== "Full") return routeFailure("PermissionDenied", "Saving runner choices requires Full access")
       const matching = routeRecords.filter(record => request.scope._tag === "Game"
         ? record.gameId === request.scope.id
         : record.routes.some(route => route.systemId === request.scope.id))
       const key = request.scope._tag === "Game" ? "games" : "device"
       const record = matching[0]
       if (!record) return routeFailure("GameNotFound", "Game or system is not available")
-      if (request.expectedRevision !== record.revisions[key]) return routeFailure("SettingsConflict", "Runtime choices changed. Reload before saving.")
-      if (request.runtimeId !== undefined && !record.routes.some(route => route.runtimeId === request.runtimeId)) return routeFailure("RuntimeUnavailable", "Runtime is no longer installed")
+      if (request.expectedRevision !== record.revisions[key]) return routeFailure("SettingsConflict", "Runner choices changed. Reload before saving.")
+      if (request.runnerId !== undefined && !record.routes.some(route => route.runnerId === request.runnerId)) return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
       for (const item of matching) {
         if (request.scope._tag === "Game") {
-          if (request.runtimeId === undefined) delete item.gameRuntime
-          else item.gameRuntime = request.runtimeId
-        } else if (request.runtimeId === undefined) delete item.systemRuntimes[request.scope.id]
-        else item.systemRuntimes[request.scope.id] = request.runtimeId
+          if (request.runnerId === undefined) delete item.gameRunner
+          else item.gameRunner = request.runnerId
+        } else if (request.runnerId === undefined) delete item.systemRunners[request.scope.id]
+        else item.systemRunners[request.scope.id] = request.runnerId
       }
       const revision = `route-${++routeRevision}`
       for (const item of routeRecords) item.revisions[key] = revision
       return { _tag: "Ok", payload: { ...record.revisions } }
     },
-    async launchSelectedGame(gameId, runtimeId) {
+    async launchSelectedGame(gameId, runnerId) {
       if (config.routeMutationDelayMs) await new Promise(resolve => setTimeout(resolve, config.routeMutationDelayMs))
       if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
-      if (activeSession) return routeFailure("ActiveSessionConflict", "Stop the active session before switching runtimes")
-      const route = routeRecords.find(record => record.gameId === gameId)?.routes.find(route => route.runtimeId === runtimeId)
-      if (!route) return routeFailure("RuntimeUnavailable", "Runtime is no longer installed")
+      if (activeSession) return routeFailure("ActiveSessionConflict", "Stop the active session before switching runners")
+      const route = routeRecords.find(record => record.gameId === gameId)?.routes.find(route => route.runnerId === runnerId)
+      if (!route) return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
       activeSession = { gameId, launchId: `selected:${gameId}` }
       return { _tag: "Ok", payload: { session: { gameId, launchId: activeSession.launchId }, warnings: [...route.warnings] } }
     },

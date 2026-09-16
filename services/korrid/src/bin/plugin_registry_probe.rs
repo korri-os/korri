@@ -113,12 +113,12 @@ fn print_report(plugin: Plugin, enabled: bool) -> Result<(), String> {
             .map(|(_, record)| record.id.as_str()),
     );
     print_records(
-        "launcher",
+        "family",
         registry
-            .launchers()
-            .iter()
-            .filter(|(id, _)| id.starts_with(&owned_prefix))
-            .map(|(_, record)| record.id.as_str()),
+            .families()
+            .values()
+            .filter(|record| record.id == plugin_id)
+            .map(|record| record.id.as_str()),
     );
     print_records(
         "transport",
@@ -128,9 +128,9 @@ fn print_report(plugin: Plugin, enabled: bool) -> Result<(), String> {
             .map(|record| record.id.as_str()),
     );
     print_records(
-        "runtime",
+        "runner",
         registry
-            .runtimes()
+            .runners()
             .iter()
             .filter(|(id, _)| id.starts_with(&owned_prefix))
             .map(|(_, record)| record.id.as_str()),

@@ -2,14 +2,11 @@
 //!
 //! This is the narrow legacy plugin seam exercised by the Android application
 //! checkpoint: a plugin identifies itself and contributes provider, system,
-//! launcher, transport, runtime, file-release discovery, and contextual session-control records. Plugins
+//! family, runner, transport, file-release discovery, and contextual session-control records. Plugins
 //! still perform no effects; this module only evaluates, validates, normalizes,
 //! and announces their declarations.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::{Component, Path},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Deserializer};
 use thiserror::Error;
@@ -43,48 +40,35 @@ pub struct SystemRecord {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AndroidLauncherRecord {
+pub struct AndroidRunnerRecord {
     pub package_name: String,
     pub class_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct LauncherRecord {
+pub struct FamilyRecord {
     pub id: String,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub plugin: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RunnerRecord {
+    pub id: String,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub family: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub command: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub systems: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub android: Option<AndroidLauncherRecord>,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub kind: Option<String>,
+    pub android: Option<AndroidRunnerRecord>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub program: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimeSupportsRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub systems: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimeRecord {
-    pub id: String,
-    pub kind: String,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub app: Option<String>,
-    pub path: String,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub launcher: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub supports: Option<RuntimeSupportsRecord>,
+    pub core: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,8 +77,7 @@ pub struct FileReleaseDiscoveryClaim {
     pub title: Option<String>,
     pub extensions: Vec<String>,
     pub system: String,
-    pub launcher: String,
-    pub runtime: Option<String>,
+    pub runners: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -105,9 +88,7 @@ struct FileReleaseDiscoveryContribution {
     pub title: Option<String>,
     pub extensions: Vec<String>,
     pub system: String,
-    pub launcher: String,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub runtime: Option<String>,
+    pub runners: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -142,9 +123,8 @@ pub struct TransportRecord {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionControlOwnerKind {
-    Launcher,
+    Runner,
     Transport,
-    Runtime,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -191,9 +171,9 @@ pub enum SessionControlDeclarationInteraction {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum SessionControlEffect {
-    #[serde(rename = "@korri:retroarch/open-menu")]
+    #[serde(rename = "@korri:mgba/open-menu")]
     RetroarchOpenMenu,
-    #[serde(rename = "@korri:retroarch/quit")]
+    #[serde(rename = "@korri:mgba/quit")]
     RetroarchQuit,
     #[serde(rename = "@korri:moonlight/disconnect")]
     MoonlightDisconnect,
@@ -353,7 +333,7 @@ impl SessionControlEffect {
     fn plugin_id(self) -> &'static str {
         match self.integration() {
             SessionControlIntegration::Moonlight => "@korri:moonlight",
-            SessionControlIntegration::Retroarch => "@korri:retroarch",
+            SessionControlIntegration::Retroarch => "@korri:mgba",
         }
     }
 }
@@ -388,9 +368,9 @@ pub struct Plugin {
     description: Option<String>,
     providers: BTreeMap<String, ProviderRecord>,
     systems: BTreeMap<String, SystemRecord>,
-    launchers: BTreeMap<String, LauncherRecord>,
+    families: BTreeMap<String, FamilyRecord>,
+    runners: BTreeMap<String, RunnerRecord>,
     transports: BTreeMap<String, TransportRecord>,
-    runtimes: BTreeMap<String, RuntimeRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
     file_release_discovery_claims: BTreeMap<String, FileReleaseDiscoveryClaim>,
 }
@@ -423,15 +403,15 @@ pub struct PluginRegistry {
     enabled_plugin_ids: BTreeSet<String>,
     registered_provider_ids: BTreeSet<String>,
     registered_system_ids: BTreeSet<String>,
-    registered_launcher_ids: BTreeSet<String>,
+    registered_family_ids: BTreeSet<String>,
+    registered_runner_ids: BTreeSet<String>,
     registered_transport_ids: BTreeSet<String>,
-    registered_runtime_ids: BTreeSet<String>,
     registered_session_controls: BTreeMap<String, SessionControlRecord>,
     providers: BTreeMap<String, ProviderRecord>,
     systems: BTreeMap<String, SystemRecord>,
-    launchers: BTreeMap<String, LauncherRecord>,
+    families: BTreeMap<String, FamilyRecord>,
+    runners: BTreeMap<String, RunnerRecord>,
     transports: BTreeMap<String, TransportRecord>,
-    runtimes: BTreeMap<String, RuntimeRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
     file_release_discovery_claims: BTreeMap<String, FileReleaseDiscoveryClaim>,
 }
@@ -454,15 +434,15 @@ impl PluginRegistry {
         let enabled_plugin_ids = requested_enabled;
         let mut registered_provider_ids = BTreeSet::new();
         let mut registered_system_ids = BTreeSet::new();
-        let mut registered_launcher_ids = BTreeSet::new();
+        let mut registered_family_ids = BTreeSet::new();
+        let mut registered_runner_ids = BTreeSet::new();
         let mut registered_transport_ids = BTreeSet::new();
-        let mut registered_runtime_ids = BTreeSet::new();
         let mut registered_session_controls = BTreeMap::new();
         let mut providers = BTreeMap::new();
         let mut systems = BTreeMap::new();
-        let mut launchers = BTreeMap::new();
+        let mut families = BTreeMap::new();
+        let mut runners = BTreeMap::new();
         let mut transports = BTreeMap::new();
-        let mut runtimes = BTreeMap::new();
         let mut session_controls = BTreeMap::new();
         let mut file_release_discovery_claims = BTreeMap::new();
 
@@ -470,11 +450,10 @@ impl PluginRegistry {
             registered_provider_ids
                 .extend(plugin.providers.values().map(|record| record.id.clone()));
             registered_system_ids.extend(plugin.systems.values().map(|record| record.id.clone()));
-            registered_launcher_ids
-                .extend(plugin.launchers.values().map(|record| record.id.clone()));
+            registered_family_ids.extend(plugin.families.values().map(|record| record.id.clone()));
+            registered_runner_ids.extend(plugin.runners.values().map(|record| record.id.clone()));
             registered_transport_ids
                 .extend(plugin.transports.values().map(|record| record.id.clone()));
-            registered_runtime_ids.extend(plugin.runtimes.values().map(|record| record.id.clone()));
             for record in plugin.session_controls.values() {
                 insert_unique(
                     &mut registered_session_controls,
@@ -499,12 +478,8 @@ impl PluginRegistry {
                     record.clone(),
                 )?;
             }
-            for (local_id, record) in &plugin.launchers {
-                insert_unique(
-                    &mut launchers,
-                    plugin_record_id(plugin_id, local_id),
-                    record.clone(),
-                )?;
+            for record in plugin.families.values() {
+                insert_unique(&mut families, record.id.clone(), record.clone())?;
             }
             for (local_id, record) in &plugin.transports {
                 insert_unique(
@@ -513,9 +488,9 @@ impl PluginRegistry {
                     record.clone(),
                 )?;
             }
-            for (local_id, record) in &plugin.runtimes {
+            for (local_id, record) in &plugin.runners {
                 insert_unique(
-                    &mut runtimes,
+                    &mut runners,
                     plugin_record_id(plugin_id, local_id),
                     record.clone(),
                 )?;
@@ -539,26 +514,25 @@ impl PluginRegistry {
                     &claim.system,
                 )?;
                 validate_discovery_reference(
-                    &registered_launcher_ids,
+                    &registered_runner_ids,
                     &claim.id,
-                    "launcher",
-                    &claim.launcher,
+                    "runner",
+                    claim.runners.first().expect("validated runner list"),
                 )?;
-                if let Some(runtime) = &claim.runtime {
+                for runner in &claim.runners[1..] {
                     validate_discovery_reference(
-                        &registered_runtime_ids,
+                        &registered_runner_ids,
                         &claim.id,
-                        "runtime",
-                        runtime,
+                        "runner",
+                        runner,
                     )?;
                 }
 
                 let references_enabled = enabled_system_ids.contains(&claim.system)
-                    && launchers.contains_key(&claim.launcher)
                     && claim
-                        .runtime
-                        .as_ref()
-                        .is_none_or(|runtime| runtimes.contains_key(runtime));
+                        .runners
+                        .iter()
+                        .any(|runner| runners.contains_key(runner));
                 if references_enabled {
                     insert_unique(
                         &mut file_release_discovery_claims,
@@ -575,15 +549,15 @@ impl PluginRegistry {
             enabled_plugin_ids,
             registered_provider_ids,
             registered_system_ids,
-            registered_launcher_ids,
+            registered_family_ids,
+            registered_runner_ids,
             registered_transport_ids,
-            registered_runtime_ids,
             registered_session_controls,
             providers,
             systems,
-            launchers,
+            families,
+            runners,
             transports,
-            runtimes,
             session_controls,
             file_release_discovery_claims,
         })
@@ -594,7 +568,6 @@ impl PluginRegistry {
     ) -> Result<Self, PluginError> {
         let mut plugins = Vec::new();
         let mut installed = BTreeMap::new();
-        let mut declarations = Vec::new();
         for package in packages {
             let (namespace, _) = package
                 .id
@@ -610,12 +583,6 @@ impl PluginRegistry {
             let declaration: serde_json::Value = serde_json::from_str(&json)?;
             crate::plugin_references::validate_files(declaration.clone(), &package.files)
                 .map_err(PluginError::Evaluation)?;
-            declarations.push(crate::plugin_references::PackageDeclaration {
-                id: package.id.clone(),
-                package: package.package.clone(),
-                requires: package.requires.clone(),
-                declaration,
-            });
             let plugin = decode_plugin_declaration(namespace, &json)?;
             if plugin.id != package.id {
                 return Err(PluginError::InvalidPluginId(package.id));
@@ -625,37 +592,17 @@ impl PluginRegistry {
             }
             plugins.push(plugin);
         }
-        crate::plugin_references::validate(declarations).map_err(PluginError::Evaluation)?;
-        for package in installed.values() {
-            for required in &package.requires {
-                if !installed
-                    .values()
-                    .any(|candidate| candidate.package == *required)
-                {
-                    return Err(PluginError::Evaluation(format!(
-                        "{} requires unavailable selection {}",
-                        package.id,
-                        required.display()
-                    )));
-                }
-            }
-        }
         let mut registry = Self::new(plugins, installed.keys().cloned())?;
         registry.installed = installed;
-        for launcher in registry
-            .launchers
-            .values()
-            .filter(|launcher| launcher.kind.is_some())
-        {
-            registry.native_launcher(&launcher.id)?;
-        }
-        for runtime in registry
-            .runtimes
-            .values()
-            .filter(|runtime| runtime.launcher.is_some())
-        {
-            registry.native_launcher(runtime.launcher.as_deref().unwrap())?;
-            registry.installed_file(&runtime.id, &runtime.path)?;
+        for runner in registry.runners.values() {
+            if let Some(program) = &runner.program {
+                registry.installed_file(&runner.id, program)?;
+            }
+            if runner.program.is_some() {
+                if let Some(core) = &runner.core {
+                    registry.installed_file(&runner.id, core)?;
+                }
+            }
         }
         Ok(registry)
     }
@@ -679,34 +626,20 @@ impl PluginRegistry {
             })
     }
 
-    pub fn native_launcher(
-        &self,
-        id: &str,
-    ) -> Result<(&LauncherRecord, &LauncherRecord), PluginError> {
-        let instance = self
-            .launchers
+    pub fn native_runner(&self, id: &str) -> Result<&RunnerRecord, PluginError> {
+        let runner = self
+            .runners
             .get(id)
-            .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} is unavailable")))?;
-        let kind_id = instance
-            .kind
-            .as_ref()
-            .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} has no native kind")))?;
-        let kind = self.launchers.get(kind_id).ok_or_else(|| {
-            PluginError::Evaluation(format!("launcher {id} requires missing kind {kind_id}"))
-        })?;
-        if kind.kind.as_deref() != Some(kind_id) {
-            return Err(PluginError::Evaluation(format!(
-                "launcher kind {kind_id} is not a kind's own instance"
-            )));
+            .ok_or_else(|| PluginError::Evaluation(format!("runner {id} is unavailable")))?;
+        let program = runner
+            .program
+            .as_deref()
+            .ok_or_else(|| PluginError::Evaluation(format!("runner {id} has no program")))?;
+        self.installed_file(id, program)?;
+        if let Some(core) = &runner.core {
+            self.installed_file(id, core)?;
         }
-        self.installed_file(
-            id,
-            instance
-                .program
-                .as_deref()
-                .ok_or_else(|| PluginError::Evaluation(format!("launcher {id} has no program")))?,
-        )?;
-        Ok((instance, kind))
+        Ok(runner)
     }
 
     pub fn installed_package(
@@ -741,16 +674,16 @@ impl PluginRegistry {
         self.registered_system_ids.contains(id)
     }
 
-    pub fn owns_registered_launcher_id(&self, id: &str) -> bool {
-        self.registered_launcher_ids.contains(id)
+    pub fn owns_registered_runner_id(&self, id: &str) -> bool {
+        self.registered_runner_ids.contains(id)
+    }
+
+    pub fn owns_registered_family_id(&self, id: &str) -> bool {
+        self.registered_family_ids.contains(id)
     }
 
     pub fn owns_registered_transport_id(&self, id: &str) -> bool {
         self.registered_transport_ids.contains(id)
-    }
-
-    pub fn owns_registered_runtime_id(&self, id: &str) -> bool {
-        self.registered_runtime_ids.contains(id)
     }
 
     pub fn owns_registered_session_control_id(&self, id: &str) -> bool {
@@ -769,16 +702,16 @@ impl PluginRegistry {
         &self.systems
     }
 
-    pub fn launchers(&self) -> &BTreeMap<String, LauncherRecord> {
-        &self.launchers
+    pub fn families(&self) -> &BTreeMap<String, FamilyRecord> {
+        &self.families
+    }
+
+    pub fn runners(&self) -> &BTreeMap<String, RunnerRecord> {
+        &self.runners
     }
 
     pub fn transports(&self) -> &BTreeMap<String, TransportRecord> {
         &self.transports
-    }
-
-    pub fn runtimes(&self) -> &BTreeMap<String, RuntimeRecord> {
-        &self.runtimes
     }
 
     pub fn session_controls(&self) -> &BTreeMap<String, SessionControlRecord> {
@@ -855,11 +788,11 @@ struct PluginDeclaration {
     #[serde(default)]
     systems: BTreeMap<String, SystemRecord>,
     #[serde(default)]
-    launchers: BTreeMap<String, LauncherRecord>,
+    families: BTreeMap<String, FamilyRecord>,
+    #[serde(default)]
+    runners: BTreeMap<String, RunnerRecord>,
     #[serde(default)]
     transports: BTreeMap<String, TransportRecord>,
-    #[serde(default)]
-    runtimes: BTreeMap<String, RuntimeRecord>,
     #[serde(default, rename = "sessionControls")]
     session_controls: BTreeMap<String, SessionControlRecord>,
     #[serde(default)]
@@ -972,51 +905,72 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, launcher) in &declaration.launchers {
+    for (local_id, family) in &declaration.families {
         if local_id.is_empty() {
-            return Err(PluginError::EmptyContributionId { kind: "launcher" });
+            return Err(PluginError::EmptyContributionId { kind: "family" });
+        }
+        if !is_provider_id(&family.id) {
+            return Err(PluginError::InvalidContribution {
+                kind: "family",
+                record_id: local_id.clone(),
+                reason: format!("family id {} must be scoped", family.id),
+            });
+        }
+    }
+
+    for (local_id, runner) in &declaration.runners {
+        if local_id.is_empty() {
+            return Err(PluginError::EmptyContributionId { kind: "runner" });
         }
         let expected_id = plugin_record_id(&id, local_id);
-        if launcher.id != expected_id {
+        if runner.id != expected_id {
             return Err(PluginError::InvalidContribution {
-                kind: "launcher",
+                kind: "runner",
                 record_id: local_id.clone(),
-                reason: format!("record id {} must be {expected_id}", launcher.id),
+                reason: format!("record id {} must be {expected_id}", runner.id),
             });
         }
-        if let Some(provider_id) = &launcher.plugin {
-            if !is_provider_id(provider_id) {
-                return Err(PluginError::InvalidPluginId(provider_id.clone()));
-            }
+        if runner
+            .family
+            .as_ref()
+            .is_some_and(|family| !is_provider_id(family))
+        {
+            return Err(PluginError::InvalidPluginId(runner.family.clone().unwrap()));
         }
-        if launcher.command.as_deref() == Some("") {
-            return Err(PluginError::EmptyContributionId {
-                kind: "launcher command",
+        if runner.command.as_deref() == Some("")
+            || runner.program.as_deref() == Some("")
+            || runner.core.as_deref() == Some("")
+        {
+            return Err(PluginError::InvalidContribution {
+                kind: "runner",
+                record_id: local_id.clone(),
+                reason: "command and named file keys must not be empty".to_owned(),
             });
         }
-        if let Some(android) = &launcher.android {
+        if let Some(android) = &runner.android {
             if !is_android_identifier(&android.package_name, false)
                 || !is_android_identifier(&android.class_name, true)
             {
                 return Err(PluginError::InvalidContribution {
-                    kind: "launcher",
+                    kind: "runner",
                     record_id: local_id.clone(),
                     reason: "Android package and class names must be fully qualified identifiers"
                         .to_owned(),
                 });
             }
         }
-        if launcher.kind.is_some() != launcher.program.is_some()
-            || (launcher.kind.is_some()
-                && (launcher.android.is_some()
-                    || launcher.command.is_some()
-                    || launcher.plugin.is_some()))
-            || launcher.program.as_deref() == Some("")
+        let native = runner.program.is_some();
+        let android = runner.command.is_some();
+        if native == android
+            || (native && runner.android.is_some())
+            || (runner.android.is_some() && !android)
         {
             return Err(PluginError::InvalidContribution {
-                kind: "launcher",
+                kind: "runner",
                 record_id: local_id.clone(),
-                reason: "native launchers require kind and program file key, without Android integration fields".to_owned(),
+                reason:
+                    "runner must declare exactly one native program or Android component/command"
+                        .to_owned(),
             });
         }
     }
@@ -1046,50 +1000,13 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         }
     }
 
-    for (local_id, runtime) in &declaration.runtimes {
-        if local_id.is_empty() {
-            return Err(PluginError::EmptyContributionId { kind: "runtime" });
-        }
-        let expected_id = plugin_record_id(&id, local_id);
-        if runtime.id != expected_id {
-            return Err(PluginError::InvalidContribution {
-                kind: "runtime",
-                record_id: local_id.clone(),
-                reason: format!("record id {} must be {expected_id}", runtime.id),
-            });
-        }
-        if runtime.kind.is_empty()
-            || match &runtime.launcher {
-                Some(launcher) => {
-                    launcher.is_empty() || runtime.app.is_some() || runtime.path.is_empty()
-                }
-                None => {
-                    runtime.app.as_deref().is_none_or(str::is_empty)
-                        || !is_safe_absolute_path(&runtime.path)
-                }
-            }
-        {
-            return Err(PluginError::InvalidContribution {
-                kind: "runtime",
-                record_id: local_id.clone(),
-                reason: "runtime requires a kind, and either Android app/absolute path or native launcher/file key"
-                    .to_owned(),
-            });
-        }
-    }
-
-    let owned_launchers: BTreeSet<String> = declaration
-        .launchers
+    let owned_runners: BTreeSet<String> = declaration
+        .runners
         .values()
         .map(|record| record.id.clone())
         .collect();
     let owned_transports: BTreeSet<String> = declaration
         .transports
-        .values()
-        .map(|record| record.id.clone())
-        .collect();
-    let owned_runtimes: BTreeSet<String> = declaration
-        .runtimes
         .values()
         .map(|record| record.id.clone())
         .collect();
@@ -1109,9 +1026,8 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
             });
         }
         let owns_context = match control.owner.kind {
-            SessionControlOwnerKind::Launcher => owned_launchers.contains(&control.owner.id),
+            SessionControlOwnerKind::Runner => owned_runners.contains(&control.owner.id),
             SessionControlOwnerKind::Transport => owned_transports.contains(&control.owner.id),
-            SessionControlOwnerKind::Runtime => owned_runtimes.contains(&control.owner.id),
         };
         if !owns_context {
             return Err(PluginError::InvalidContribution {
@@ -1164,13 +1080,13 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
             });
         }
         if claim.system.is_empty()
-            || claim.launcher.is_empty()
-            || claim.runtime.as_deref() == Some("")
+            || claim.runners.is_empty()
+            || claim.runners.iter().any(String::is_empty)
         {
             return Err(PluginError::InvalidContribution {
                 kind: "discovery file release",
                 record_id: claim.id,
-                reason: "system, launcher, and runtime references must be non-empty".to_owned(),
+                reason: "system and ordered runner references must be non-empty".to_owned(),
             });
         }
         let mut extensions = Vec::new();
@@ -1206,8 +1122,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 title: claim.title,
                 extensions,
                 system: claim.system,
-                launcher: claim.launcher,
-                runtime: claim.runtime,
+                runners: claim.runners,
             },
         );
     }
@@ -1220,9 +1135,9 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         description: declaration.description,
         providers,
         systems: declaration.systems,
-        launchers: declaration.launchers,
+        families: declaration.families,
+        runners: declaration.runners,
         transports: declaration.transports,
-        runtimes: declaration.runtimes,
         session_controls: declaration.session_controls,
         file_release_discovery_claims,
     })
@@ -1434,20 +1349,6 @@ fn is_android_identifier(value: &str, allow_dollar: bool) -> bool {
                     || (allow_dollar && character == '$')
             })
     }) && value.contains('.')
-}
-
-fn is_safe_absolute_path(value: &str) -> bool {
-    if value
-        .chars()
-        .any(|character| character.is_control() || matches!(character, '"' | '\\'))
-    {
-        return false;
-    }
-    let path = Path::new(value);
-    path.is_absolute()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::RootDir | Component::Normal(_)))
 }
 
 fn deserialize_optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>

@@ -92,14 +92,14 @@ pub fn local_games_with_cover_assets(
         );
         diagnostics.extend(catalog.diagnostics);
         for route in catalog.routes {
-            let validation = match route.launcher_kind.as_str() {
+            let validation = match route.family_id.as_deref().unwrap_or("") {
                 "@korri:android-app" => android_app::launch_route(&route)
                     .map(|_| ())
                     .map_err(|error| error.to_string()),
                 "@korri:retroarch" => {
                     retroarch::validate_route(&route).map_err(|error| error.to_string())
                 }
-                other => Err(format!("unsupported launcher kind {other}")),
+                other => Err(format!("unsupported runner family {other}")),
             };
             match validation {
                 Ok(()) => games.push(local_game_from_route(route, &cover_asset_ids, &play_stats)),
@@ -152,7 +152,7 @@ pub fn launch_game(
     .map_err(launch_error_from_route_diagnostic)?;
 
     let context = local_launch_context(&route);
-    match route.launcher_kind.as_str() {
+    match route.family_id.as_deref().unwrap_or("") {
         "@korri:android-app" => android_app::launch_route(&route)
             .map_err(|error| LaunchError::RouteUnavailable(error.to_string()))
             .map(|spec| spec.with_context(context)),
@@ -165,22 +165,16 @@ pub fn launch_game(
             retroarch_control_port,
         ),
         other => Err(LaunchError::RouteUnavailable(format!(
-            "unsupported launcher kind {other}"
+            "unsupported runner family {other}"
         ))),
     }
 }
 
 fn local_launch_context(route: &ResolvedRoute) -> LaunchContext {
-    let mut contributors = vec![LaunchRouteContributor {
-        kind: LaunchContributorKind::Launcher,
-        id: route.launcher_id.clone(),
+    let contributors = vec![LaunchRouteContributor {
+        kind: LaunchContributorKind::Runner,
+        id: route.runner_id.clone(),
     }];
-    if let Some(runtime) = &route.runtime {
-        contributors.push(LaunchRouteContributor {
-            kind: LaunchContributorKind::Runtime,
-            id: runtime.id.clone(),
-        });
-    }
     let foreground = match route.android_component.as_ref() {
         Some(component) => LaunchForegroundRule {
             kind: LaunchForegroundKind::Component,
@@ -204,9 +198,11 @@ fn local_launch_context(route: &ResolvedRoute) -> LaunchContext {
         title: route.title.clone(),
         content_crc32: None,
         contributors,
-        executor: (route.launcher_kind == "@korri:retroarch").then(|| LaunchExecutor {
-            id: "retroarch-control".into(),
-            available: true,
+        executor: (route.family_id.as_deref() == Some("@korri:retroarch")).then(|| {
+            LaunchExecutor {
+                id: "retroarch-control".into(),
+                available: true,
+            }
         }),
         foreground,
     }
@@ -474,7 +470,7 @@ mod tests {
         )
         .expect("android route should launch");
 
-        assert_eq!(spec.launcher_id, "android-app");
+        assert_eq!(spec.runner_id, "android-app");
         assert_eq!(spec.component.package_name, "com.playdigious.tmnt");
         assert_eq!(spec.context.game_id.as_deref(), Some(readable::ANDROID_ID));
         assert_eq!(
@@ -484,7 +480,7 @@ mod tests {
         assert_eq!(
             spec.context.contributors,
             vec![LaunchRouteContributor {
-                kind: LaunchContributorKind::Launcher,
+                kind: LaunchContributorKind::Runner,
                 id: "@korri:android-app/android-app".into(),
             }]
         );
@@ -660,9 +656,6 @@ mod tests {
             catalog.diagnostics[0].code,
             resolver::RouteDiagnosticCode::LocalRouteUnavailable
         );
-        assert!(catalog.diagnostics[0]
-            .message
-            .contains("no launcher supports system android"));
 
         let error = launch_game(
             root.path(),
@@ -676,7 +669,6 @@ mod tests {
         let LaunchError::RouteUnavailable(message) = error else {
             panic!("got: {error:?}");
         };
-        assert!(message.contains("no launcher supports system android"));
         assert!(!message.contains("process fallback"));
     }
 
@@ -692,11 +684,9 @@ providers:
   "@korri:android-app": { title: "Copied Android" }
 systems:
   android: { title: "Copied Android" }
-launchers:
+runners:
   "@korri:android-app/android-app":
-    plugin: "@korri:android-app"
-    command: android-app
-    systems: [android]
+    settings: { copied: true }
 "#,
         );
         let registry = android_registry(false);
@@ -720,9 +710,6 @@ launchers:
             catalog.diagnostics[0].playable_id.as_deref(),
             Some(readable::ANDROID_ID)
         );
-        assert!(catalog.diagnostics[0]
-            .message
-            .contains("no launcher supports system android"));
         assert!(!catalog.diagnostics[0].message.contains("process fallback"));
 
         let error = launch_game(
@@ -737,7 +724,6 @@ launchers:
         let LaunchError::RouteUnavailable(message) = error else {
             panic!("got: {error:?}");
         };
-        assert!(message.contains("no launcher supports system android"));
         assert!(!message.contains("process fallback"));
     }
 

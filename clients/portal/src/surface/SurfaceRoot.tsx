@@ -11,7 +11,7 @@ import type {
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { createRuntimeChooser } from "./runtime-chooser"
+import { createRunnerChooser } from "./runner-chooser"
 import type { PortalEntry } from "../launchables/state"
 import type { LauncherBridge } from "../bridge/launcher-bridge"
 import { createInputBus, type InputBus } from "../input/bus"
@@ -27,10 +27,10 @@ import {
 } from "./surface-model"
 import { useLaunchables } from "./use-launchables"
 
-function localRuntimeEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
-  if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRuntimeSelection) return entry
+function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
+  if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRunnerSelection) return entry
   if (entry?.kind !== "game" && entry?.kind !== "local-game") return undefined
-  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal && copy.game.supportsRuntimeSelection)
+  const copy = entry.alternatives?.find(copy => copy.kind === "remote" && copy.game.source.isLocal && copy.game.supportsRunnerSelection)
   return copy?.kind === "remote" ? { kind: "game", game: copy.game } : undefined
 }
 
@@ -68,22 +68,22 @@ export function SurfaceRoot({
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
-  const runtime = useMemo(() => createRuntimeChooser(korrid, {
+  const runner = useMemo(() => createRunnerChooser(korrid, {
     beginLaunch: id => launchablesRef.current.beginCatalogLaunch(id),
     reload: () => launchablesRef.current.reload(),
   }), [korrid])
-  const runtimeChoice = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot)
+  const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   const surfaceInput = useMemo(createInputBus, [])
   useEffect(() => bus.on(action => {
     // One dispatch decision, before subscriber fanout: cancelling a chooser
     // must not deliver the same Back to the page underneath it.
-    if (runtime.getSnapshot()._tag !== "Closed") {
-      if (action.type === "back") runtime.cancel()
+    if (runner.getSnapshot()._tag !== "Closed") {
+      if (action.type === "back") runner.cancel()
       return
     }
     surfaceInput.emit(action)
-  }), [bus, runtime, surfaceInput])
-  useEffect(() => () => runtime.cancel(), [runtime])
+  }), [bus, runner, surfaceInput])
+  useEffect(() => () => runner.cancel(), [runner])
   const {
     state,
     facts,
@@ -113,7 +113,7 @@ export function SurfaceRoot({
   )
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
-  const model = useMemo(() => ({ ...baseModel, runtimeChoice }), [baseModel, runtimeChoice])
+  const model = useMemo(() => ({ ...baseModel, runnerChoice }), [baseModel, runnerChoice])
 
   // The host object is stable: it reads the latest state through the closures
   // above rather than capturing a snapshot, so re-creating it on every model
@@ -125,12 +125,12 @@ export function SurfaceRoot({
           surfaceInput.onAction(action, handler),
       },
       launchGame: (id, launchLocationId) => {
-        if (runtime.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
+        if (runner.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
         const entry = entryForId(stateRef.current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
-          if (chosen.kind === "game" && chosen.game.source.isLocal && chosen.game.supportsRuntimeSelection) {
-            void runtime.open(chosen.game.id, chosen.game.title, "launch")
+          if (chosen.kind === "game" && chosen.game.source.isLocal && chosen.game.supportsRunnerSelection) {
+            void runner.open(chosen.game.id, chosen.game.title, "launch")
           } else confirmEntry(chosen)
         }
         const locations = launchLocationsForEntry(entry)
@@ -143,23 +143,23 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
-        if (id.startsWith("runtime:")) void runtime.act(id.slice("runtime:".length))
-        else if (runtime.getSnapshot()._tag === "Closed") runDeviceAction(id)
+        if (id.startsWith("runner:")) void runner.act(id.slice("runner:".length))
+        else if (runner.getSnapshot()._tag === "Closed") runDeviceAction(id)
       },
       changeSetting,
       dismissSettingsProblem,
       gameActions: id => {
         const entry = entryForId(stateRef.current, id)
-        return [...gameActionsForEntry(entry), ...(localRuntimeEntry(entry) ? [{
-          id: "runtimes", label: "Runtimes on this device", enabled: stateRef.current._tag === "Ready",
+        return [...gameActionsForEntry(entry), ...(localRunnerEntry(entry) ? [{
+          id: "runners", label: "Runners on this device", enabled: stateRef.current._tag === "Ready",
         }] : [])]
       },
       runGameAction: (gameId, actionId) => {
         const entry = entryForId(stateRef.current, gameId)
-        if (!entry || runtime.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
-        if (actionId === "runtimes") {
-          const local = localRuntimeEntry(entry)
-          if (local) void runtime.open(local.game.id, local.game.title, "inspect")
+        if (!entry || runner.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
+        if (actionId === "runners") {
+          const local = localRunnerEntry(entry)
+          if (local) void runner.open(local.game.id, local.game.title, "inspect")
           return
         }
         if (actionId === "stop") stopSession(entry)
@@ -177,7 +177,7 @@ export function SurfaceRoot({
     }),
     [
       surfaceInput,
-      runtime,
+      runner,
       changeSetting,
       confirmEntry,
       dismissNotice,

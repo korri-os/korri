@@ -1429,13 +1429,12 @@ assert_exact_wario_resume() {
     and .outcome.payload.disposition == "resume"
     and .outcome.payload.launchId == $launchId
     and (.outcome.payload.launchId | test("^[0-9a-f]{32}$"))
-    and .outcome.payload.launcherId == "retroarch"
+    and .outcome.payload.runnerId == "retroarch"
     and .outcome.payload.context.gameId == "01K4J6K8Y00000000000000002"
     and .outcome.payload.context.title == "Wario Land 4"
     and .outcome.payload.context.contentCrc32 == "d6141609"
     and .outcome.payload.context.contributors == [
-      {"kind":"launcher","id":"@korri:retroarch/retroarch"},
-      {"kind":"runtime","id":"@korri:mgba/mgba"}
+      {"kind":"runner","id":"@korri:mgba/mgba"}
     ]
     and .outcome.payload.context.executor == {"id":"retroarch-control","available":true}
     and .outcome.payload.context.foreground == {

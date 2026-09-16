@@ -23,7 +23,7 @@ impl PortalPermission {
             | RpcRequest::MoonlightResolve(_)
             | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_) => true,
-            RpcRequest::GameRuntimeSet(_)
+            RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::MoonlightLaunchPrepare(_)
             | RpcRequest::MoonlightLaunchCancel(_)
@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn installed_routes_persist_choices_and_launch_explicit_runtime_through_rpc() {
+    async fn installed_routes_persist_choices_and_launch_explicit_runner_through_rpc() {
         let root = tempfile::tempdir().unwrap();
         crate::config::test_fixtures::gba(root.path());
         std::fs::create_dir(root.path().join("roms")).unwrap();
@@ -255,27 +255,24 @@ mod tests {
         let listed = &list["outcome"]["payload"];
         assert_eq!(
             listed["selection"],
-            json!({"_tag":"Selected","runtimeId":"@korri:mgba/mgba"}),
+            json!({"_tag":"Selected","runnerId":"@korri:mgba/mgba"}),
             "{list}"
         );
-        assert_eq!(
-            listed["routes"][0]["launcherId"],
-            "@korri:retroarch/retroarch"
-        );
-        let set = json!({"scope":{"_tag":"Game","id":game_id},"runtimeId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
-        let saved = rpc(&app, "app.local-games.runtime.set", set.clone()).await;
+        assert_eq!(listed["routes"][0]["runnerId"], "@korri:mgba/mgba");
+        let set = json!({"scope":{"_tag":"Game","id":game_id},"runnerId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
+        let saved = rpc(&app, "app.local-games.runner.set", set.clone()).await;
         assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
-        let conflict = rpc(&app, "app.local-games.runtime.set", set).await;
+        let conflict = rpc(&app, "app.local-games.runner.set", set).await;
         assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
         assert_eq!(list["outcome"]["payload"]["selection"]["_tag"], "Choose");
         assert_eq!(
-            list["outcome"]["payload"]["gameRuntime"],
+            list["outcome"]["payload"]["gameRunner"],
             "@missing:build/core"
         );
         let prepare = rpc(&app, "app.session.prepare", json!({"gameId":game_id})).await;
         assert_eq!(prepare["outcome"]["_tag"], "Err");
-        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false}}})).await;
+        let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
         assert_eq!(
@@ -291,22 +288,22 @@ mod tests {
         let repeated = rpc(
             &app,
             "app.local-games.launch.selected",
-            json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba"}),
+            json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba"}),
         )
         .await;
         assert_eq!(
             repeated["outcome"]["payload"]["code"], "ActiveSessionConflict",
-            "explicit runtime launch must not claim it changed an already running route"
+            "explicit runner launch must not claim it changed an already running route"
         );
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
         assert_eq!(
-            list["outcome"]["payload"]["gameRuntime"], "@missing:build/core",
+            list["outcome"]["payload"]["gameRunner"], "@missing:build/core",
             "explicit launch must not rewrite preference"
         );
     }
 
     #[tokio::test]
-    async fn ordinary_prepare_resumes_explicit_runtime_despite_ambiguous_routes() {
+    async fn ordinary_prepare_resumes_explicit_runner_despite_ambiguous_routes() {
         let root = tempfile::tempdir().unwrap();
         crate::config::test_fixtures::gba(root.path());
         std::fs::create_dir(root.path().join("roms")).unwrap();
@@ -316,21 +313,14 @@ mod tests {
             .installed_package("@korri:mgba/mgba")
             .unwrap()
             .clone();
-        let retroarch = registry
-            .installed_package("@korri:retroarch/retroarch")
-            .unwrap()
-            .clone();
-        // A second runtime uses the same installed declaration and payload.
+        // A second runner uses the same installed declaration and payload.
         let source = std::fs::read_to_string(mgba.package.join("plugin.ts")).unwrap();
         std::fs::write(
             mgba.package.join("plugin.ts"),
-            format!(
-                "{source}\nruntimes.other = {{ ...runtimes.mgba, id: '@korri:mgba/other' }};\n"
-            ),
+            format!("{source}\nrunners.other = {{ ...runners.mgba, id: '@korri:mgba/other' }};\n"),
         )
         .unwrap();
-        let registry =
-            crate::plugin::PluginRegistry::from_installed(vec![retroarch, mgba]).unwrap();
+        let registry = crate::plugin::PluginRegistry::from_installed(vec![mgba]).unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
         let private = root.path().join("private");
@@ -361,7 +351,7 @@ mod tests {
         let launch = rpc(
             &app,
             "app.local-games.launch.selected",
-            json!({"gameId":game_id,"runtimeId":"@korri:mgba/mgba"}),
+            json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba"}),
         )
         .await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
@@ -374,7 +364,7 @@ mod tests {
         let switched = rpc(
             &app,
             "app.local-games.launch.selected",
-            json!({"gameId":game_id,"runtimeId":"@korri:mgba/other"}),
+            json!({"gameId":game_id,"runnerId":"@korri:mgba/other"}),
         )
         .await;
         assert_eq!(
@@ -391,11 +381,11 @@ mod tests {
         let list = request("app.local-games.routes", json!({"gameId":"game"}));
         let launch = request(
             "app.local-games.launch.selected",
-            json!({"gameId":"game","runtimeId":"@korri:mgba/mgba"}),
+            json!({"gameId":"game","runnerId":"@korri:mgba/mgba"}),
         );
         let set = request(
-            "app.local-games.runtime.set",
-            json!({"scope":{"_tag":"System","id":"gba"},"runtimeId":null,"expectedRevision":"r"}),
+            "app.local-games.runner.set",
+            json!({"scope":{"_tag":"System","id":"gba"},"runnerId":null,"expectedRevision":"r"}),
         );
         assert!(PortalPermission::ReadOnly.permits(&list));
         assert!(!PortalPermission::ReadOnly.permits(&launch));

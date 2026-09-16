@@ -40,8 +40,8 @@ const gamesOk: CatalogSnapshotOutcome = {
   _tag: "Ok",
   payload: {
     games: [
-      { id: "skate3", title: "Skate 3", supportsRuntimeSelection: false, source: source("aka") },
-      { id: "neverball", title: "Neverball", supportsRuntimeSelection: false, source: source("zao") },
+      { id: "skate3", title: "Skate 3", supportsRunnerSelection: false, source: source("aka") },
+      { id: "neverball", title: "Neverball", supportsRunnerSelection: false, source: source("zao") },
     ],
   },
 }
@@ -63,7 +63,7 @@ const ready = LaunchablesState.fromSources([officeApps], gamesOk)
 describe("catalog session locality", () => {
   const catalogGame = {
     id: "wl4", title: "Wario Land 4", host: "local-label",
-    supportsRuntimeSelection: false,
+    supportsRunnerSelection: false,
     source: { label: "local-label", isLocal: true },
   }
   const session = { launchId: "exact-launch", gameId: "wl4", host: "local-label" }
@@ -200,7 +200,7 @@ describe("LaunchablesState.fromSources", () => {
               title: "Wario Land 4",
               host: "zao",
               identity,
-              supportsRuntimeSelection: false,
+              supportsRunnerSelection: false,
               source: source("zao"),
             },
           ],
@@ -241,7 +241,7 @@ describe("LaunchablesState.fromSources", () => {
               title: "Wario Land 4",
               host: "zao",
               identity,
-              supportsRuntimeSelection: false,
+              supportsRunnerSelection: false,
               source: source("zao"),
             },
           },
@@ -345,7 +345,7 @@ describe("LaunchablesState.fromSources", () => {
             id: "legacy",
             title: "Legacy game",
             host: "aka",
-            supportsRuntimeSelection: false,
+            supportsRunnerSelection: false,
             source: source("aka"),
           },
         ],
@@ -407,7 +407,7 @@ describe("hosted game identity", () => {
             id: "shared",
             title: "Shared",
             host: "aka",
-            supportsRuntimeSelection: false,
+            supportsRunnerSelection: false,
             source: source("aka"),
           },
         }),
@@ -417,7 +417,7 @@ describe("hosted game identity", () => {
             id: "shared",
             title: "Shared",
             host: "zao",
-            supportsRuntimeSelection: false,
+            supportsRunnerSelection: false,
             source: source("zao"),
           },
         }),

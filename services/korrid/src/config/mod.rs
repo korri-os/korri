@@ -22,8 +22,8 @@ pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "storage",
     "providers",
     "systems",
-    "launchers",
-    "runtimes",
+    "families",
+    "runners",
     "profiles",
     "hooks",
     "locations",
@@ -51,8 +51,8 @@ pub struct ConfigSnapshot {
     pub storage: BTreeMap<String, StoragePayload>,
     pub providers: BTreeMap<String, ProviderPayload>,
     pub systems: BTreeMap<String, SystemPayload>,
-    pub launchers: BTreeMap<String, AppPayload>,
-    pub runtimes: BTreeMap<String, RuntimePayload>,
+    pub families: BTreeMap<String, FamilyPayload>,
+    pub runners: BTreeMap<String, RunnerPayload>,
     pub profiles: BTreeMap<String, ProfilePayload>,
     pub hooks: BTreeMap<String, HookProfilePayload>,
     pub games: BTreeMap<String, GamePayload>,
@@ -72,9 +72,9 @@ struct RawDocument {
     #[serde(default)]
     systems: SectionRecords<SystemPayload>,
     #[serde(default)]
-    launchers: SectionRecords<AppPayload>,
+    families: SectionRecords<FamilyPayload>,
     #[serde(default)]
-    runtimes: SectionRecords<RuntimePayload>,
+    runners: SectionRecords<RunnerPayload>,
     #[serde(default)]
     profiles: SectionRecords<ProfilePayload>,
     #[serde(default)]
@@ -186,8 +186,8 @@ pub fn decode_config_documents(
         storage: device.storage.records,
         providers: device.providers.records,
         systems: device.systems.records,
-        launchers: device.launchers.records,
-        runtimes: device.runtimes.records,
+        families: device.families.records,
+        runners: device.runners.records,
         profiles: device.profiles.records,
         hooks: device.hooks.records,
         locations: device.locations.records,
@@ -210,8 +210,8 @@ impl RawDocument {
             "storage" => self.storage.present,
             "providers" => self.providers.present,
             "systems" => self.systems.present,
-            "launchers" => self.launchers.present,
-            "runtimes" => self.runtimes.present,
+            "families" => self.families.present,
+            "runners" => self.runners.present,
             "profiles" => self.profiles.present,
             "hooks" => self.hooks.present,
             "games" => self.games.present,
@@ -235,11 +235,11 @@ fn validate_document_keys(
     for key in document.systems.keys() {
         validate_non_empty_key(file, "systems", key)?;
     }
-    for key in document.launchers.keys() {
-        validate_non_empty_key(file, "launchers", key)?;
+    for key in document.families.keys() {
+        validate_provider_id(&format!("{file}.families[{key}]"), key)?;
     }
-    for key in document.runtimes.keys() {
-        validate_non_empty_key(file, "runtimes", key)?;
+    for key in document.runners.keys() {
+        validate_non_empty_key(file, "runners", key)?;
     }
     for key in document.profiles.keys() {
         validate_non_empty_key(file, "profiles", key)?;
@@ -465,9 +465,11 @@ pub struct ProviderPayload {
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
     #[serde(default, deserialize_with = "optional_non_null")]
-    pub runtime: Option<NonEmptyString>,
+    pub runner: Option<NonEmptyString>,
     #[serde(default)]
-    pub launchers: cascade::LauncherConfigs,
+    pub families: cascade::RunnerConfigs,
+    #[serde(default)]
+    pub runners: cascade::RunnerConfigs,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "optional_non_null")]
@@ -480,67 +482,8 @@ pub struct SystemPayload {
     pub metadata: Option<BTreeMap<String, Value>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct AppPayload {
-    #[serde(default)]
-    pub launchers: cascade::LauncherConfigs,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub settings: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub plugin: Option<ProviderIdString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub command: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub runtime: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub args: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub systems: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub policy: Option<AppPolicy>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub inherit: Option<bool>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub presets: Option<BTreeMap<String, Value>>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct AppPolicy {
-    #[serde(
-        default,
-        rename = "allowedCommands",
-        deserialize_with = "optional_non_null"
-    )]
-    pub allowed_commands: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimePayload {
-    // User-approved runtimes[fullRuntimeId].launchers overrides. Executable
-    // identity comes only from installed plugin RuntimeRecord contributions.
-    #[serde(default)]
-    pub launchers: cascade::LauncherConfigs,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum RuntimeKind {
-    LibretroCore,
-    Tool,
-    Emulator,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimeSupportsPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub systems: Option<Vec<NonEmptyString>>,
-}
+pub type FamilyPayload = cascade::RunnerConfig;
+pub type RunnerPayload = cascade::RunnerConfig;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -548,9 +491,7 @@ pub struct ProfilePayload {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub title: Option<String>,
     #[serde(default, deserialize_with = "optional_non_null")]
-    pub app: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub runtime: Option<NonEmptyString>,
+    pub runner: Option<NonEmptyString>,
     #[serde(flatten)]
     pub inheritable: InheritableLayer,
 }
