@@ -24,6 +24,9 @@ in
     korri-plugin-host = hostPackage;
     korri-plugin-retroarch = firstPartyPlugin "retroarch";
     korri-plugin-ssh = firstPartyPlugin "ssh";
+    # Hand-written, no family and no shared helper. It is built by the same
+    # builder as a generated core and admitted by the same rules.
+    korri-plugin-ppsspp = firstPartyPlugin "ppsspp";
   }
   // libretro.packages;
   checks = {
