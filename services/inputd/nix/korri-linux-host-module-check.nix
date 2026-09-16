@@ -512,6 +512,10 @@ assert lib.hasInfix ".active == true" physicalSoftwareReadiness;
 assert lib.hasInfix ".current_mode.width == $width" physicalSoftwareReadiness;
 assert lib.hasInfix ".current_mode.height == $height" physicalSoftwareReadiness;
 assert builtins.elem "uinput" cfg.boot.kernelModules;
+assert builtins.elem "uhid" cfg.boot.kernelModules;
+assert lib.hasInfix ''KERNEL=="uhid", SUBSYSTEM=="misc"'' cfg.services.udev.extraRules;
+assert lib.hasInfix ''GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uhid"''
+  cfg.services.udev.extraRules;
 assert cfg.users.users.korri-inputd.uid == 977;
 assert cfg.users.groups.korri-control.gid == 977;
 assert cfg.users.users.korrid.uid == 976;

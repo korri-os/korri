@@ -261,6 +261,7 @@ assert legacyCompatibility.config.systemd.services ? korri-inputd;
 assert providerOnly.config.services.inputplumber.enable;
 assert providerOnly.config.services.inputplumber.package == inputplumberKorri;
 assert builtins.elem "uinput" providerOnly.config.boot.kernelModules;
+assert builtins.elem "uhid" providerOnly.config.boot.kernelModules;
 assert !(providerOnly.config.systemd.services ? korri-inputd);
 assert providerService.environment.XDG_DATA_DIRS == "${inputplumberKorri}/share";
 assert builtins.elem "systemd-tmpfiles-setup-dev.service"

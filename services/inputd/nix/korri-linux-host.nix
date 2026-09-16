@@ -1307,6 +1307,7 @@ in
     services.udev.extraRules = lib.mkAfter (
       ''
         KERNEL=="uinput", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uinput"
+        KERNEL=="uhid", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-uinput", MODE="0660", OPTIONS+="static_node=uhid"
       ''
       + lib.optionalString cfg.sunshine.inputSeats.enable ''
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="${cfg.runtimeGroup}", MODE="0660"

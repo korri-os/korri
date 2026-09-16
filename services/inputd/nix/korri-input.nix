@@ -224,7 +224,13 @@ in
           message = "InputPlumber moved-source hiding requires an asserted same-filesystem supported layout.";
         }
       ];
-      boot.kernelModules = [ "uinput" ];
+      # uinput backs the virtual mouse and keyboard; uhid backs Sunshine's
+      # emulated gamepad. Without uhid the pad is silently unavailable while
+      # pointer and keyboard still work.
+      boot.kernelModules = [
+        "uinput"
+        "uhid"
+      ];
       services.inputplumber = {
         enable = true;
         package = providerPackage;
