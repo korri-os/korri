@@ -49,6 +49,8 @@ pub struct Report {
     pub ports: crate::firewall::Ports,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,
+    pub entry: String,
+    pub sources: Vec<String>,
     pub requires: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub brings: Vec<DependencyReport>,
@@ -192,6 +194,8 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
 #[serde(deny_unknown_fields)]
 struct Manifest {
     publisher: Publisher,
+    entry: String,
+    sources: Vec<String>,
     #[serde(default)]
     packages: BTreeMap<String, PathBuf>,
     #[serde(default)]
@@ -253,15 +257,28 @@ fn read_regular(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+const MANIFEST_BYTES: u64 = 512 * 1024;
+
 fn manifest(package: &Path) -> Result<Manifest, String> {
-    let manifest: Manifest =
-        serde_json::from_slice(&read_regular(&package.join("manifest.json"), 64 * 1024)?)
-            .map_err(|error| format!("invalid plugin manifest: {error}"))?;
+    let manifest: Manifest = serde_json::from_slice(&read_regular(
+        &package.join("manifest.json"),
+        MANIFEST_BYTES,
+    )?)
+    .map_err(|error| format!("invalid plugin manifest: {error}"))?;
     crate::declaration::validate_id(&format!("{}:manifest", manifest.publisher.namespace))?;
     for names in [&manifest.packages, &manifest.files, &manifest.services] {
         crate::native_unit::validate_names(&names.keys().cloned().collect::<Vec<_>>())?;
     }
     manifest.ports.validate()?;
+    if manifest.entry != "plugin.ts" {
+        return Err("plugin manifest entry must be plugin.ts".into());
+    }
+    if manifest.sources.is_empty() || !manifest.sources.iter().any(|name| name == &manifest.entry) {
+        return Err("plugin source inventory must contain plugin.ts".into());
+    }
+    if manifest.sources.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("plugin source inventory must be sorted and unique".into());
+    }
     for path in &manifest.requires {
         validate_store_path(path)?;
     }
@@ -455,10 +472,10 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
     if fs::canonicalize(package).map_err(|e| e.to_string())? != package || !package.is_dir() {
         return Err("package must be an exact immutable directory".into());
     }
-    let source = SourceSnapshot::package_plugin(package)?;
-    let namespace = manifest_namespace(package)?;
-    let declaration = Declaration::evaluate_snapshot(&namespace, &source)?;
     let manifest = manifest(package)?;
+    let source = SourceSnapshot::package_plugin(package, &manifest.entry, &manifest.sources)?;
+    let namespace = manifest.publisher.namespace.clone();
+    let declaration = Declaration::evaluate_snapshot(&namespace, &source)?;
     crate::plugin_references::validate_files(
         serde_json::to_value(&declaration).map_err(|e| e.to_string())?,
         &manifest.files,
@@ -588,6 +605,8 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         ports: manifest.ports,
         packages: manifest.packages,
         files: manifest.files,
+        entry: manifest.entry,
+        sources: manifest.sources,
         requires: manifest.requires,
         brings,
     };
@@ -611,8 +630,8 @@ fn approval_digest(
     source: &SourceSnapshot,
     brings: &[DependencyReport],
 ) -> Result<String, String> {
-    let source = source.bytes("plugin.ts")?;
-    let manifest = read_regular(&package.join("manifest.json"), 64 * 1024)?;
+    let sources = source.canonical_entries();
+    let manifest = read_regular(&package.join("manifest.json"), MANIFEST_BYTES)?;
     let dep_summaries: Vec<_> = brings
         .iter()
         .map(|dep| (&dep.id, &dep.package, &dep.approval))
@@ -623,7 +642,7 @@ fn approval_digest(
         provenance,
         declaration,
         unit,
-        source,
+        sources,
         manifest,
         dep_summaries,
     ))
@@ -667,6 +686,10 @@ fn validate_artifact(
 mod approval_tests {
     use super::*;
 
+    fn snapshot(package: &Path) -> Result<SourceSnapshot, String> {
+        SourceSnapshot::package_plugin(package, "plugin.ts", &["plugin.ts".into()])
+    }
+
     fn approval_digest(
         package: &Path,
         provenance: &Provenance,
@@ -678,7 +701,7 @@ mod approval_tests {
             provenance,
             declaration,
             unit,
-            &SourceSnapshot::package_plugin(package)?,
+            &snapshot(package)?,
             &[],
         )
     }
@@ -689,7 +712,7 @@ mod approval_tests {
         let package = directory.path();
         fs::write(package.join("plugin.ts"), "export const name = 'snapshot';").unwrap();
         fs::write(package.join("manifest.json"), "approved manifest").unwrap();
-        let source = SourceSnapshot::package_plugin(package).unwrap();
+        let source = snapshot(package).unwrap();
         let declaration = Declaration::evaluate_snapshot("@test", &source).unwrap();
         let origin = Provenance::RawCache {
             cache_url: "file:///cache".into(),
@@ -704,7 +727,7 @@ mod approval_tests {
             &origin,
             &declaration,
             "unit",
-            fs::read(package.join("plugin.ts")).unwrap(),
+            source.canonical_entries(),
             fs::read(package.join("manifest.json")).unwrap(),
             Vec::<(&String, &PathBuf, &String)>::new(),
         ))
@@ -721,6 +744,62 @@ mod approval_tests {
                 .id(),
             "@test:snapshot"
         );
+    }
+
+    #[test]
+    fn approval_binds_every_selected_source_module() {
+        let directory = tempfile::tempdir().unwrap();
+        let package = directory.path();
+        fs::write(
+            package.join("plugin.ts"),
+            "import { title } from './helper.ts'; export const name = title;",
+        )
+        .unwrap();
+        fs::write(package.join("helper.ts"), "export const title = 'first';").unwrap();
+        fs::write(package.join("manifest.json"), "approved manifest").unwrap();
+        let declaration = Declaration::evaluate_snapshot(
+            "@test",
+            &SourceSnapshot::package_plugin(
+                package,
+                "plugin.ts",
+                &["helper.ts".into(), "plugin.ts".into()],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let origin = Provenance::RawCache {
+            cache_url: "file:///cache".into(),
+        };
+        let digest = super::approval_digest(
+            package,
+            &origin,
+            &declaration,
+            "unit",
+            &SourceSnapshot::package_plugin(
+                package,
+                "plugin.ts",
+                &["helper.ts".into(), "plugin.ts".into()],
+            )
+            .unwrap(),
+            &[],
+        )
+        .unwrap();
+        fs::write(package.join("helper.ts"), "export const title = 'second';").unwrap();
+        let changed = super::approval_digest(
+            package,
+            &origin,
+            &declaration,
+            "unit",
+            &SourceSnapshot::package_plugin(
+                package,
+                "plugin.ts",
+                &["helper.ts".into(), "plugin.ts".into()],
+            )
+            .unwrap(),
+            &[],
+        )
+        .unwrap();
+        assert_ne!(digest, changed);
     }
 
     #[test]
@@ -824,7 +903,7 @@ mod approval_tests {
             &origin,
             &declaration,
             "unit",
-            &SourceSnapshot::package_plugin(&package_path).unwrap(),
+            &snapshot(&package_path).unwrap(),
             &[],
         )
         .unwrap();
@@ -833,7 +912,7 @@ mod approval_tests {
             &origin,
             &declaration,
             "unit",
-            &SourceSnapshot::package_plugin(&package_path).unwrap(),
+            &snapshot(&package_path).unwrap(),
             std::slice::from_ref(&dep),
         )
         .unwrap();
@@ -845,7 +924,7 @@ mod approval_tests {
             &origin,
             &declaration,
             "unit",
-            &SourceSnapshot::package_plugin(&package_path).unwrap(),
+            &snapshot(&package_path).unwrap(),
             &[changed_dep],
         )
         .unwrap();

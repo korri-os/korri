@@ -50,7 +50,9 @@ let
         ) renderedServices;
       # Schema grounding: approved plugin.nix fields, publisher.namespace from
       # the existing signed manifest, and NixOS's firewall protocol lists.
-      manifest = pkgs.writeText "plugin-manifest.json" (
+      # The build copies a closed source root and adds entry/sources after it
+      # has inspected the exact files. Authors never maintain that inventory.
+      manifestBase = pkgs.writeText "plugin-manifest-base.json" (
         builtins.toJSON {
           inherit
             publisher
@@ -84,16 +86,19 @@ let
       builtins.attrNames packages ++ builtins.attrNames files ++ builtins.attrNames services
     );
     assert builtins.attrNames publisher == [ "namespace" ];
-    pkgs.runCommand "korri-plugin" { } ''
-      mkdir -p "$out"
-      cp ${source} "$out/plugin.ts"
-      cp ${manifest} "$out/manifest.json"
-      ${lib.concatMapStringsSep "\n" (path: "test -e ${lib.escapeShellArg (toString path)}") (
-        builtins.attrValues files
-      )}
-      ${lib.concatMapStringsSep "\n" (path: "test -f ${lib.escapeShellArg path}") (
-        builtins.attrValues units
-      )}
-    '';
+    pkgs.runCommand "korri-plugin"
+      {
+        nativeBuildInputs = [ pkgs.python3 ];
+        pluginSource = source;
+      }
+      ''
+        ${lib.concatMapStringsSep "\n" (path: "test -e ${lib.escapeShellArg (toString path)}") (
+          builtins.attrValues files
+        )}
+        ${lib.concatMapStringsSep "\n" (path: "test -f ${lib.escapeShellArg path}") (
+          builtins.attrValues units
+        )}
+        python3 ${./source-package.py} "$pluginSource" "$out" ${manifestBase}
+      '';
 in
 build definition

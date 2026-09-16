@@ -11,7 +11,7 @@ let
     name:
     mkPlugin {
       publisher.namespace = "@korri";
-      source = ../../../plugins/${name}/plugin.ts;
+      source = ../../../plugins/${name};
       plugin = ../../../plugins/${name}/plugin.nix;
     };
 in

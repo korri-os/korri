@@ -600,8 +600,12 @@ impl PluginRegistry {
                 .id
                 .split_once(':')
                 .ok_or_else(|| PluginError::InvalidPluginId(package.id.clone()))?;
-            let source = script::source::SourceSnapshot::package_plugin(&package.package)
-                .map_err(PluginError::Evaluation)?;
+            let source = script::source::SourceSnapshot::package_plugin(
+                &package.package,
+                &package.entry,
+                &package.sources,
+            )
+            .map_err(PluginError::Evaluation)?;
             let json = script::eval_plugin_snapshot(&source).map_err(PluginError::Evaluation)?;
             let declaration: serde_json::Value = serde_json::from_str(&json)?;
             crate::plugin_references::validate_files(declaration.clone(), &package.files)

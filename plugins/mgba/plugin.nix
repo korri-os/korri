@@ -3,7 +3,7 @@ let
   mkPlugin = import ../../services/korrid/plugin-host/builder.nix { inherit pkgs; };
   retroarch = mkPlugin {
     publisher.namespace = "@korri";
-    source = ../retroarch/plugin.ts;
+    source = ../retroarch;
     plugin = ../retroarch/plugin.nix;
   };
 in

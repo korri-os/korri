@@ -16,6 +16,8 @@ fn package(
         id: id.into(),
         package: path,
         files,
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
         requires: vec![],
     }
 }
@@ -277,6 +279,8 @@ fn built_plugin_nix_payload_resolves_its_exact_launcher_and_runs_the_packaged_pr
     #[derive(serde::Deserialize)]
     struct Manifest {
         files: BTreeMap<String, std::path::PathBuf>,
+        entry: String,
+        sources: Vec<String>,
         requires: Vec<std::path::PathBuf>,
         publisher: Publisher,
     }
@@ -293,6 +297,8 @@ fn built_plugin_nix_payload_resolves_its_exact_launcher_and_runs_the_packaged_pr
             id: plugin.id().into(),
             package: path,
             files: manifest.files,
+            entry: manifest.entry,
+            sources: manifest.sources,
             requires: manifest.requires,
         }
     }

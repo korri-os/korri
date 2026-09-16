@@ -21,6 +21,8 @@ pub struct EnabledPackage {
     pub id: String,
     pub package: PathBuf,
     pub files: BTreeMap<String, PathBuf>,
+    pub entry: String,
+    pub sources: Vec<String>,
     pub requires: Vec<PathBuf>,
 }
 

@@ -4,6 +4,14 @@ use korrid::script::{
 };
 use std::{fs, os::unix::fs::symlink};
 
+fn package(root: &std::path::Path, sources: &[&str]) -> SourceSnapshot {
+    let sources = sources
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect::<Vec<_>>();
+    SourceSnapshot::package_plugin(root, "plugin.ts", &sources).unwrap()
+}
+
 fn limits() -> SnapshotLimits {
     SnapshotLimits {
         bytes: 128 * 1024,
@@ -115,6 +123,8 @@ fn installed_registry_rejects_oversized_and_linked_source_at_admission() {
         id: "@test:entry".into(),
         package: root.path().into(),
         files: Default::default(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
         requires: vec![],
     };
     fs::write(
@@ -136,6 +146,75 @@ fn installed_registry_rejects_oversized_and_linked_source_at_admission() {
     fs::write(root.path().join("other.ts"), "export const name = 'entry';").unwrap();
     symlink("other.ts", root.path().join("plugin.ts")).unwrap();
     assert!(korrid::plugin::PluginRegistry::from_installed(vec![selection]).is_err());
+}
+
+#[test]
+fn installed_registry_evaluates_manifest_selected_relative_and_package_imports() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("src")).unwrap();
+    fs::create_dir_all(root.path().join("node_modules/@fixture/title")).unwrap();
+    fs::write(
+        root.path().join("plugin.ts"),
+        "import { prefix } from './src/prefix.ts'; import { title } from '@fixture/title'; export const name = prefix + title;",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("src/prefix.ts"),
+        "export const prefix = 'package-';",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("node_modules/@fixture/title/package.json"),
+        r#"{"type":"module","exports":"./index.ts"}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("node_modules/@fixture/title/index.ts"),
+        "export const title = 'graph';",
+    )
+    .unwrap();
+    let selection = korrid::plugin_installation::EnabledPackage {
+        id: "@test:package-graph".into(),
+        package: root.path().into(),
+        files: Default::default(),
+        entry: "plugin.ts".into(),
+        sources: vec![
+            "node_modules/@fixture/title/index.ts".into(),
+            "node_modules/@fixture/title/package.json".into(),
+            "plugin.ts".into(),
+            "src/prefix.ts".into(),
+        ],
+        requires: vec![],
+    };
+    let registry = korrid::plugin::PluginRegistry::from_installed(vec![selection]).unwrap();
+    assert!(registry
+        .enabled_plugin_ids()
+        .contains(&"@test:package-graph"));
+}
+
+#[test]
+fn package_inventory_requires_the_fixed_entry_and_sorted_unique_existing_sources() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("plugin.ts"),
+        "export const name = 'entry';",
+    )
+    .unwrap();
+    fs::write(root.path().join("helper.ts"), "export const value = 1;").unwrap();
+    for (entry, sources) in [
+        ("other.ts", vec!["plugin.ts".to_owned()]),
+        ("plugin.ts", vec![]),
+        ("plugin.ts", vec!["helper.ts".into()]),
+        ("plugin.ts", vec!["plugin.ts".into(), "helper.ts".into()]),
+        ("plugin.ts", vec!["plugin.ts".into(), "plugin.ts".into()]),
+        ("plugin.ts", vec!["../plugin.ts".into(), "plugin.ts".into()]),
+        ("plugin.ts", vec!["missing.ts".into(), "plugin.ts".into()]),
+    ] {
+        assert!(
+            SourceSnapshot::package_plugin(root.path(), entry, &sources).is_err(),
+            "accepted entry={entry} sources={sources:?}"
+        );
+    }
 }
 
 #[test]
@@ -321,7 +400,7 @@ fn the_existing_source_ceiling_is_exact_and_diagnostics_do_not_print_bytes() {
 }
 
 #[test]
-fn current_package_registration_never_grants_native_files_or_helpers() {
+fn package_registration_grants_only_the_manifest_selected_graph() {
     let root = tempfile::tempdir().unwrap();
     fs::write(
         root.path().join("plugin.ts"),
@@ -329,7 +408,7 @@ fn current_package_registration_never_grants_native_files_or_helpers() {
     )
     .unwrap();
     fs::write(root.path().join("native"), "not source").unwrap();
-    let snapshot = SourceSnapshot::package_plugin(root.path()).unwrap();
+    let snapshot = package(root.path(), &["plugin.ts"]);
     assert!(snapshot.bytes("native").is_err());
     fs::write(
         root.path().join("plugin.ts"),
@@ -337,15 +416,22 @@ fn current_package_registration_never_grants_native_files_or_helpers() {
     )
     .unwrap();
     fs::write(root.path().join("helper.ts"), "export const secret = 1").unwrap();
-    assert!(
-        script::eval_plugin_snapshot(&SourceSnapshot::package_plugin(root.path()).unwrap())
-            .is_err()
+    assert!(script::eval_plugin_snapshot(&package(root.path(), &["plugin.ts"])).is_err());
+    assert_eq!(
+        script::eval_plugin_snapshot(&package(root.path(), &["helper.ts", "plugin.ts"])).unwrap(),
+        r#"{"name":"entry"}"#
     );
     fs::File::create(root.path().join("plugin.ts"))
         .unwrap()
         .set_len(128 * 1024 + 1)
         .unwrap();
-    assert!(SourceSnapshot::package_plugin(root.path())
+    let oversized = SourceSnapshot::package_plugin(
+        root.path(),
+        "plugin.ts",
+        &["helper.ts".into(), "plugin.ts".into()],
+    )
+    .unwrap();
+    assert!(script::eval_plugin_snapshot(&oversized)
         .unwrap_err()
-        .contains("byte budget"));
+        .contains("source exceeds 128 KiB"));
 }

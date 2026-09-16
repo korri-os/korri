@@ -18,7 +18,7 @@
           default = plugin-lib.lib.mkPlugin {
             inherit pkgs;
             namespace = "@local";
-            source = ./plugin.ts;
+            source = ./.;
             files.program = "${pkgs.ppsspp-sdl}/bin/PPSSPPSDL";
           };
         }

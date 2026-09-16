@@ -798,6 +798,8 @@ impl Host {
                 id: report.id,
                 package: report.package,
                 files: report.files,
+                entry: report.entry,
+                sources: report.sources,
                 requires: report.requires,
             })
             .collect();

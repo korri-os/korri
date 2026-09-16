@@ -415,7 +415,7 @@ fn release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix() {
         fs::create_dir(&input).unwrap();
         fs::write(
             input.join("manifest.json"),
-            r#"{"publisher":{"namespace":"@example"}}"#,
+            r#"{"publisher":{"namespace":"@example"},"entry":"plugin.ts","sources":["plugin.ts"]}"#,
         )
         .unwrap();
         fs::write(

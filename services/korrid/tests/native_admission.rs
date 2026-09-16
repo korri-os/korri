@@ -13,6 +13,8 @@ fn package(root: &Path, name: &str, exports: &str) -> EnabledPackage {
         id: format!("@test:{name}"),
         files: BTreeMap::from([("program".into(), package.join("program"))]),
         package,
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
         requires: vec![],
     }
 }

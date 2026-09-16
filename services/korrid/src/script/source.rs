@@ -14,6 +14,8 @@ use std::{
 };
 
 pub const PLUGIN_SOURCE_BYTES: usize = 128 * 1024;
+pub const PLUGIN_GRAPH_SOURCE_BYTES: usize = 4 * 1024 * 1024;
+pub const PLUGIN_GRAPH_SOURCE_ENTRIES: usize = 512;
 
 /// In-memory admission limits, not plugin configuration or a persisted schema.
 /// Entry slots bound fixed host overhead; path_bytes bounds cumulative owned
@@ -30,11 +32,19 @@ impl SnapshotLimits {
     fn plugin() -> Self {
         Self {
             bytes: PLUGIN_SOURCE_BYTES,
-            // builder.nix currently registers exactly one file, not a graph.
             entries: 1,
             // Use the OS path ceiling, not a new graph retention allowance.
             path_bytes: libc::PATH_MAX as usize,
             steps: libc::PATH_MAX as usize,
+        }
+    }
+
+    fn package_graph() -> Self {
+        Self {
+            bytes: PLUGIN_GRAPH_SOURCE_BYTES,
+            entries: PLUGIN_GRAPH_SOURCE_ENTRIES,
+            path_bytes: 256 * 1024,
+            steps: 8192,
         }
     }
 }
@@ -79,10 +89,38 @@ impl SourceSnapshot {
         )
     }
 
-    /// Only the source registered by the actual file-copy package producer.
-    /// Signature/namespace/selection verification remains the caller's job.
-    pub fn package_plugin(package: &Path) -> Result<Self, String> {
-        Self::from_directory(package, &["plugin.ts"], SnapshotLimits::plugin())
+    /// Only sources named by the generated manifest are admitted. The caller
+    /// validates the manifest and publisher before supplying this selection.
+    pub fn package_plugin(package: &Path, entry: &str, sources: &[String]) -> Result<Self, String> {
+        if entry != "plugin.ts" {
+            return Err("plugin entry must be plugin.ts".into());
+        }
+        if sources.is_empty() || !sources.iter().any(|name| name == entry) {
+            return Err("plugin source inventory must contain plugin.ts".into());
+        }
+        if sources.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err("plugin source inventory must be sorted and unique".into());
+        }
+        let names: Vec<_> = sources.iter().map(String::as_str).collect();
+        Self::from_directory(package, &names, SnapshotLimits::package_graph())
+    }
+
+    /// Stable approval input for the complete retained graph. Names and
+    /// canonical identities are included because both affect module resolution.
+    pub fn canonical_entries(&self) -> Vec<(&str, &str, &[u8])> {
+        let mut entries: Vec<_> = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.name.as_str(),
+                    entry.identity.as_str(),
+                    entry.bytes.as_slice(),
+                )
+            })
+            .collect();
+        entries.sort_by_key(|(name, _, _)| *name);
+        entries
     }
 
     pub fn from_memory(sources: &[(&str, &[u8])], limits: SnapshotLimits) -> Result<Self, String> {

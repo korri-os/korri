@@ -26,12 +26,16 @@ pub fn installed(root: &Path) -> PluginRegistry {
                 ("retroarch".into(), root.join("retroarch")),
                 ("autoconfig".into(), root.join("autoconfig")),
             ]),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
             requires: vec![],
         },
         EnabledPackage {
             id: "@korri:mgba".into(),
             package: mgba,
             files: BTreeMap::from([("mgba".into(), root.join("mgba.so"))]),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
             requires: vec![retroarch],
         },
     ])

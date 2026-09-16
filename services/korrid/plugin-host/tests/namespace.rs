@@ -30,7 +30,7 @@ fn immutable_but_unreferenced_native_artifacts_are_not_package_authority() {
         "export const name='outside'; export const services=['daemon'];",
     )
     .unwrap();
-    fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher":{"namespace":"@example"},"services":{"daemon":format!("{native}/daemon.service")}})).unwrap()).unwrap();
+    fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher":{"namespace":"@example"},"entry":"plugin.ts","sources":["plugin.ts"],"services":{"daemon":format!("{native}/daemon.service")}})).unwrap()).unwrap();
     // add-path imports a source NAR with no declared references. Being present
     // in the global store does not put the named unit in this package closure.
     let path = nix(&["store", "add-path", package.to_str().unwrap()]);
@@ -72,7 +72,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     fs::create_dir(&package).unwrap();
     fs::write(
         package.join("manifest.json"),
-        r#"{"publisher":{"namespace":"@example"}}"#,
+        r#"{"publisher":{"namespace":"@example"},"entry":"plugin.ts","sources":["plugin.ts"]}"#,
     )
     .unwrap();
     let source = "export const name = 'game';
@@ -177,7 +177,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     assert!(verify_publisher(Path::new(&program), Path::new(&path), None, &unbound).is_err());
 
     // Even a signed package cannot introduce a second, self-declared key source.
-    fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher": {"namespace": "@example", "publicKey": to_public(&other)}})).unwrap()).unwrap();
+    fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher": {"namespace": "@example", "publicKey": to_public(&other)},"entry":"plugin.ts","sources":["plugin.ts"]})).unwrap()).unwrap();
     let self_declared = nix(&["store", "add-path", package.to_str().unwrap()]);
     nix(&[
         "store",

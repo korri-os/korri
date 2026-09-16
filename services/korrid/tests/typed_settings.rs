@@ -21,6 +21,8 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
         id: format!("@korri:{name}"),
         package,
         files: BTreeMap::new(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
         requires: vec![],
     }
 }
@@ -233,6 +235,8 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
     #[derive(serde::Deserialize)]
     struct Manifest {
         files: BTreeMap<String, std::path::PathBuf>,
+        entry: String,
+        sources: Vec<String>,
     }
     let package = std::path::PathBuf::from(
         std::env::var_os("KORRI_TEST_RETROARCH_PACKAGE").expect("built RetroArch package"),
@@ -243,6 +247,8 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         id: "@korri:retroarch".into(),
         package,
         files: manifest.files,
+        entry: manifest.entry,
+        sources: manifest.sources,
         requires: vec![],
     };
     let build = package.package.display().to_string();

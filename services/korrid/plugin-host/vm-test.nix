@@ -18,7 +18,7 @@ let
   mkPlugin = import ./builder.nix { inherit pkgs; };
   alternate = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "clock.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['clock'];";
     plugin = _: {
       services.clock.serviceConfig = {
         Type = "exec";
@@ -29,7 +29,7 @@ let
   };
   dependentClock = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "dependent-clock.ts" "export const name = 'dependent-clock'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'dependent-clock'; export const services = ['clock'];";
     plugin = _: {
       requires = [ alternate ];
       services.clock.serviceConfig = {
@@ -45,7 +45,7 @@ let
   '';
   broken = mkPlugin {
     publisher.namespace = "@korri";
-    source = pkgs.writeText "broken.ts" "export const name = 'tailscale'; export const title = 'Unhealthy candidate'; export const services = ['broken'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'tailscale'; export const title = 'Unhealthy candidate'; export const services = ['broken'];";
     plugin = _: {
       services.broken.serviceConfig = {
         Type = "exec";
@@ -56,7 +56,7 @@ let
   };
   interrupted = mkPlugin {
     publisher.namespace = "@korri";
-    source = pkgs.writeText "pending.ts" "export const name = 'tailscale'; export const title = 'Pending candidate'; export const services = ['pending'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'tailscale'; export const title = 'Pending candidate'; export const services = ['pending'];";
     plugin = _: {
       services.pending.serviceConfig = {
         Type = "notify";
@@ -67,7 +67,7 @@ let
   };
   unclean = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "unclean.ts" "export const name = 'unclean'; export const services = ['unclean'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'unclean'; export const services = ['unclean'];";
     plugin = _: {
       services.unclean.serviceConfig = {
         Type = "exec";
@@ -79,7 +79,7 @@ let
   };
   credential = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "credential.ts" "export const name = 'credential'; export const services = ['credential'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'credential'; export const services = ['credential'];";
     plugin = _: {
       services.credential.serviceConfig = {
         Type = "exec";
@@ -99,7 +99,7 @@ let
   };
   forbidden = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "forbidden.ts" "export const name = 'forbidden'; export const services = ['forbidden'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'forbidden'; export const services = ['forbidden'];";
     plugin = _: {
       services.forbidden.serviceConfig = {
         Type = "exec";
@@ -114,7 +114,7 @@ let
         description:
         mkPlugin {
           publisher.namespace = "@example";
-          source = pkgs.writeText "injection.ts" "export const name = 'injection'; export const services = ['injection'];";
+          source = pkgs.writeTextDir "plugin.ts" "export const name = 'injection'; export const services = ['injection'];";
           plugin = _: {
             services.injection = {
               unitConfig.Description = description;
@@ -134,12 +134,12 @@ let
   # started by the plugin installer, and this fixture supplies no emulator.
   gameLauncher = mkPlugin {
     publisher.namespace = "@korri";
-    source = ../../../plugins/retroarch/plugin.ts;
+    source = ../../../plugins/retroarch;
     plugin = _: { files.retroarch = "${pkgs.coreutils}/bin/true"; };
   };
   gameRuntime = mkPlugin {
     publisher.namespace = "@korri";
-    source = ../../../plugins/mgba/plugin.ts;
+    source = ../../../plugins/mgba;
     plugin = _: {
       files.mgba = "${pkgs.coreutils}/bin/true";
       requires = [ gameLauncher ];
@@ -147,7 +147,7 @@ let
   };
   changedLauncher = mkPlugin {
     publisher.namespace = "@korri";
-    source = pkgs.writeText "retroarch-callback.ts" ''
+    source = pkgs.writeTextDir "plugin.ts" ''
       ${builtins.replaceStrings [ "export function launch(" ] [ "function originalLaunch(" ] (
         builtins.readFile ../../../plugins/retroarch/plugin.ts
       )}
@@ -157,7 +157,7 @@ let
   };
   emptyClock = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "empty-clock.ts" "export const name = 'clock'; export const services = [];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const services = [];";
     plugin = _: { };
   };
   ipv6RejectAdds = pkgs.writeShellScriptBin "ip6tables" ''
@@ -168,7 +168,7 @@ let
   '';
   empty = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeText "empty.ts" "export const name = 'empty'; export const services = [];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'empty'; export const services = [];";
     plugin = _: { };
   };
   # Keep a real buildable deriver on the client, but not its output. A failed
@@ -193,7 +193,7 @@ let
   };
   splitPayload = mkPlugin {
     publisher.namespace = "@split";
-    source = pkgs.writeText "split.ts" "export const name = 'split-cache'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'split-cache'; export const services = ['clock'];";
     plugin = _: {
       services.clock.serviceConfig = {
         Type = "exec";
@@ -208,7 +208,7 @@ let
   '';
   impostor = mkPlugin {
     publisher.namespace = "@victim";
-    source = pkgs.writeText "impostor.ts" "export const name = 'clock'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const services = ['clock'];";
     plugin = _: {
       services.clock.serviceConfig = {
         Type = "exec";

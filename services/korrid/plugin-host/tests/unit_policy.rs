@@ -25,6 +25,8 @@ fn report(source: &str) -> package::Report {
         ports: Default::default(),
         packages: Default::default(),
         files: Default::default(),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
         requires: vec![],
         brings: vec![],
     }
