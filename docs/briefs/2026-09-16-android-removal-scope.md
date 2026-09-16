@@ -165,6 +165,58 @@ decision 1.
 6. Drop `cdylib` and `jni` from `services/korrid/Cargo.toml`.
 7. Re-run the matrix. `android-jvm-check` is expected to disappear, not pass.
 
+## Revival record
+
+The Android client is deleted, not abandoned. Everything needed to bring it back
+is recorded here so nobody has to reconstruct it from the tree.
+
+**Upstream provenance**, from the vendoring commit `7ec9f12f`
+("feat(android): vendor Artemis as the Korri client for Android", 2026-07-29):
+
+| Component | Upstream | Commit |
+|---|---|---|
+| Artemis (Moonlight/Apollo client fork) | `simonwjackson/artemis` | `cf12c432` |
+| `app/src/main/jni/moonlight-core/moonlight-common-c` | `ClassicOldSong/moonlight-common-c` | `c9994368` |
+| `.../moonlight-common-c/enet` | — | `115a10ba` |
+
+Submodules were dissolved into plain files at import. Full upstream history
+remains in the `simonwjackson/artemis` repository, so the fork is preserved
+outside this one.
+
+**Korri's delta on top of that import**, measured `7ec9f12f..HEAD`:
+
+| | Count |
+|---|---|
+| New Korri files | 198 |
+| Upstream files patched | 254 (+2,756 / −17,952) |
+| Korri-authored non-test Java/Kotlin | 47 files |
+| Total tracked files in `clients/android` | 644 |
+
+The patch count overstates the work. 69 of the 254 are deleted fastlane
+changelogs and most of the rest are icons, mipmaps and string resources from the
+rebrand. The code surface is roughly 59 files: 40 under
+`app/src/main/java/com`, 9 tests, 6 in the `moonlight-core` JNI layer, and 4
+under `app/src/root/java/com.limelight`.
+
+**Coupling to korrid** is one versioned treaty, `contracts/bridge/` — 570 lines
+across `korri-native-bridge.ts` (555) and `korri-rpc-bridge.ts` (15). That
+treaty stays in the tree after deletion because `clients/linux/` implements it
+too. A revival ports Korri's files against a treaty that never left.
+
+**Tag:** `android-final` marks the last commit containing the Android client.
+
+**What revival actually is:** re-fork Artemis at or after `cf12c432`, re-apply
+the Korri delta, and port the bridge implementation to whatever
+`contracts/bridge/` says at that time. It is a port, not a restore — korrid will
+have moved. That is tractable for 47 files against a 570-line treaty; it would
+not be if the coupling were diffuse.
+
+**What is not in the code:** the hardware-truth reasoning — key-code to semantic
+action mapping, decoder and codec quirks, pairing edge cases. That lives in the
+186 commits touching `clients/android` between 2026-07-29 and 2026-09-15. Read
+`git log --format='%B' 7ec9f12f..android-final -- clients/android` before
+re-deriving any of it.
+
 ## What remains as genuine vendor-name work afterwards
 
 Only SteamGridDB: 18 files including `enrichment/steamgriddb.rs`, its tests and
