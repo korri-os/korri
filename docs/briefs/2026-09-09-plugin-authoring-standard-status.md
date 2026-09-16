@@ -1,5 +1,24 @@
 # Plugin standard implementation status
 
+> **Superseded on 2026-09-16 by the plugin-model clean cut.** Read
+> [the September 15 briefing](2026-09-15-plugin-model-brief.md) and
+> [its implementation status](2026-09-15-plugin-model/IMPLEMENTATION.md) for
+> what the system does now. This file is kept for two reasons: the 2026-09-10
+> verification table is a dated record of what was actually proven, and
+> "Still unfinished" holds open work that has no other home.
+>
+> The clean cut deleted the machinery named below, so treat "Implemented
+> slices" as history, not as a description of the current contract:
+>
+> - Launcher kinds, launcher instances and runtime records are gone. One
+>   `runner` id now names what turns content into a process, and a plugin
+>   exports a `handlers` map rather than a bare `launch` callback.
+> - Korri-level plugin dependencies are gone, and with them dependency-first
+>   recovery, dependency-safe offline rollback and exact manifest dependency
+>   pins. Nix closures still carry every native dependency.
+> - The per-launcher cascade is now a family → system → runner → game →
+>   one-launch fold, and the surface choosers pick runners, not runtimes.
+
 This status accompanies `2026-09-09-plugin-authoring-standard-brief.md`.
 The brief records decisions, not completion. Verified local slices do not mean
 the end-to-end rollout is complete. No physical-device deployment or GitHub
