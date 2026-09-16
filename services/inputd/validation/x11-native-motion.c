@@ -267,6 +267,7 @@ int main(int argc, char **argv) {
   uint64_t frame = 0;
   uint64_t interval_frames = 0;
   double measured_rate = 0.0;
+  double drawn_rate = -1.0;
   struct timespec next;
   struct timespec interval_start;
   clock_gettime(CLOCK_MONOTONIC, &next);
@@ -334,6 +335,7 @@ int main(int argc, char **argv) {
       for (int index = 0; index < mover_count; ++index) {
         movers[index].previous_x = -1;
       }
+      drawn_rate = -1.0;
     } else if (previous_x >= 0) {
       XSetForeground(display, gc, 0x090b12);
       XFillRectangle(
@@ -347,8 +349,14 @@ int main(int argc, char **argv) {
       );
     }
 
+    int rate_box_damaged = 0;
     for (int index = 0; index < mover_count; ++index) {
       struct mover *mover = &movers[index];
+      /* A mover that crossed the readout repainted the background under it. */
+      if (show_rate && mover->previous_x >= 0 &&
+          mover->previous_x < rate_box_width && mover->previous_y < rate_box_height) {
+        rate_box_damaged = 1;
+      }
       if (mover->previous_x >= 0) {
         restore_background(
           display, window, gc, width,
@@ -398,7 +406,12 @@ int main(int argc, char **argv) {
       );
     }
 
-    if (show_rate) {
+    /*
+     * The readout changes once a second. Repainting its box every frame would
+     * rewrite a sixth of the window for nothing, which costs more compositing
+     * than the moving objects do and depresses the very rate being reported.
+     */
+    if (show_rate && (measured_rate != drawn_rate || rate_box_damaged)) {
       XSetForeground(display, gc, 0x000000);
       XFillRectangle(display, window, gc, 0, 0, (unsigned int) rate_box_width, (unsigned int) rate_box_height);
       XSetForeground(display, gc, 0x00ff88);
@@ -407,6 +420,7 @@ int main(int argc, char **argv) {
         rate_margin / 2, rate_margin / 2,
         rate_digit_width, rate_digit_height, rate_thickness
       );
+      drawn_rate = measured_rate;
     }
 
     XSync(display, False);
