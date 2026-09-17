@@ -87,6 +87,15 @@ pub fn launch_route(
             config: folded.config,
         }),
     };
+    // Ask the runner whether it can start this target. A runner whose runtime is
+    // its own package declares no runtime and proceeds. One that needs
+    // something else refuses here, before korrid spawns anything.
+    if let Some(refusal) = super::runtime::resolve(&source, &input)
+        .map_err(error)?
+        .refusal()
+    {
+        return Err(error(refusal));
+    }
     Ok(LinuxLaunchSpec {
         warnings,
         command: vec![

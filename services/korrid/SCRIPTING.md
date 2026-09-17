@@ -239,6 +239,14 @@ korrid keeps no key table and reads no settings metadata file: a runner that
 implements neither operation says nothing, which is silence and not an error,
 and authored values are never rewritten or deleted.
 
+`runtime.resolve` asks the runner whether it can start this target now, and what
+is missing if not. `launcher/runtime.rs` calls it before a launch starts, with
+the same `PluginLaunchInput` that `launch.prepare` receives, because both
+operations ask about the same runner and the same target. A runner whose runtime
+is its own package declares no handler and proceeds; a runner that needs
+something else refuses in its own words, and korrid spawns nothing. The refusal
+reaches the person through the existing `LocalRouteUnavailable` failure.
+
 `launcher/linux_plugin.rs` builds a `korrid plugin-launch SOURCE INPUT_JSON`
 command. The existing systemd game unit starts this command as the runtime
 user, with its existing sandbox. That process calls the callback, writes the

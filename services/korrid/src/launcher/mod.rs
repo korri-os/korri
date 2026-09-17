@@ -1,5 +1,6 @@
 pub mod linux_plugin;
 pub mod plugin_launch;
+pub mod runtime;
 pub mod typed_settings;
 mod types;
 

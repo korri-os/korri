@@ -41,6 +41,10 @@ pub const SETTINGS_DESCRIBE: &str = "settings.describe";
 /// What this build cannot apply from the authored values.
 pub const SETTINGS_VALIDATE: &str = "settings.validate";
 
+/// Whether the runner can start this target now, and what is missing if not.
+/// The runner owns its runtime, so only the runner can answer this.
+pub const RUNTIME_RESOLVE: &str = "runtime.resolve";
+
 /// Why one operation call produced no result.
 ///
 /// A caller that treats an operation as optional checks `Unimplemented`
