@@ -12,10 +12,10 @@ if [[ "${KORRI_SCRIPT_FIXTURES_IN_SHELL:-}" != "1" ]]; then
     bash "$ROOT/services/korrid/script-fixtures-setup.sh"
 fi
 
-# These two existing locks own the native source versions used by the public
+# These two core-owned locks own the native source versions used by the public
 # snapshot tests. Always check the locks; a warm node_modules is not evidence.
 for package in \
-  plugins/retroarch \
+  services/korrid/tests/fixtures/script-packages/retroarch \
   docs/research/retroarch-effect-quickjs-probe; do
   (
     cd "$ROOT/$package"

@@ -15,9 +15,6 @@ let
       source = ../../../plugins/${name};
       plugin = ../../../plugins/${name}/plugin.nix;
     };
-  # One catalogue, one package per libretro core. Each is a peer of the
-  # hand-written plugins beside it.
-  libretro = import ../../../plugins/libretro { inherit pkgs mkPlugin; };
 in
 {
   lib = {
@@ -25,28 +22,16 @@ in
   };
   packages = {
     korri-plugin-host = hostPackage;
-    korri-plugin-retroarch = firstPartyPlugin "retroarch";
     korri-plugin-ssh = firstPartyPlugin "ssh";
     # Hand-written, no family and no shared helper. It is built by the same
     # builder as a generated core and admitted by the same rules.
     korri-plugin-ppsspp = firstPartyPlugin "ppsspp";
-  }
-  // libretro.packages;
+  };
   checks = {
     korri-plugin-host = hostPackage;
     korri-ssh-upstream = (import ../../../plugins/ssh/upstream.nix { inherit pkgs; }).report;
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
-    korri-retroarch-settings =
-      (import ../../../plugins/retroarch/plugin.nix { inherit pkgs; }).packages.retroarch-settings;
     korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
-    korri-libretro-example = import ../../../plugins/libretro/example-check.nix {
-      inherit pkgs mkPlugin;
-    };
-    korri-libretro-frontend-override =
-      import ../../../plugins/libretro/frontend-override-check.nix
-        {
-          inherit pkgs mkPlugin;
-        };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs

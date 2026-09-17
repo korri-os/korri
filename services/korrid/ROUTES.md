@@ -53,8 +53,9 @@ Its borrowed evidence uses the exact launching instance package path as
 `build`, the pinned program display `version`, and a `keys` map with
 `SettingType::{Boolean, Number, String}`. There is no `since` table.
 
-RetroArch owns the producer in `plugins/retroarch/settings-check.nix` and
-`check-settings.py`. It checks the kind's `settings-types.json` against the
+The `korri-plugins` repository owns the producer in
+`plugins/retroarch/settings-check.nix` and `check-settings.py`. It checks the
+kind's `settings-types.json` against the
 supplied instance program's patched `configuration.c`. The shared builder and
 Rust core do not parse RetroArch source. Other instances call this check with
 their own program derivation, never with the kind's default program.
@@ -70,7 +71,8 @@ was added. Missing or mismatched evidence admits no settings; malformed
 artifacts fail the route rather than becoming authority.
 
 Grounding: `legacy:product/plugins/retroarch/src/policy.ts` owns the nested
-RetroArch policy. That schema is preserved in `plugins/retroarch/policy.ts`.
+RetroArch policy. The `korri-plugins` repository preserves that schema in
+`plugins/retroarch/policy.ts`.
 The pure `renderRetroArchSettings` code is extracted from legacy
 `launch-spec.ts` into `render-settings.ts`. Its scalar outputs define the
 kind's key/type table. A schema-driven test checks every fixed output against
@@ -90,8 +92,9 @@ These are the existing UI warning seams; no UI or warning treaty changed.
 
 The check proves source key/type recognition, not that every conditional
 upstream feature was compiled in. Unsupported or type-conflicting legacy keys
-are omitted, not renamed or coerced. See `plugins/retroarch/README.md` for the
-current source result and focused verification commands.
+are omitted, not renamed or coerced. See
+`korri-plugins/plugins/retroarch/README.md` for the current source result and
+focused verification commands.
 
 Raw `LaunchOverrides.config.prepend/append` retains the existing legacy
 contract: scalar fields merge last-wins, both render after Korri's lines, and

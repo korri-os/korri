@@ -45,7 +45,7 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
     let sources = if source.contains("./retroarch") {
         fs::write(
             package.join("retroarch.ts"),
-            include_str!("../../../plugins/libretro/retroarch.ts"),
+            include_str!("../examples/libretro-retroarch.ts"),
         )
         .unwrap();
         fs::write(package.join("settings.ts"), settings_module(checked_keys())).unwrap();
@@ -83,7 +83,7 @@ fn core_snapshot(root: &Path, keys: serde_json::Value) -> SourceSnapshot {
     .unwrap();
     fs::write(
         root.join("retroarch.ts"),
-        include_str!("../../../plugins/libretro/retroarch.ts"),
+        include_str!("../examples/libretro-retroarch.ts"),
     )
     .unwrap();
     fs::write(root.join("settings.ts"), settings_module(keys)).unwrap();
@@ -298,7 +298,7 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
 }
 
 #[test]
-#[ignore = "build .#korri-plugin-mgba and set KORRI_TEST_RETROARCH_PACKAGE"]
+#[ignore = "build korri-plugins#korri-plugin-mgba and set KORRI_TEST_RETROARCH_PACKAGE"]
 fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() {
     #[derive(serde::Deserialize)]
     struct Manifest {

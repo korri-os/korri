@@ -420,7 +420,7 @@ fn commonjs_cannot_create_a_global_require_or_reopen_dynamic_imports() {
     );
 }
 
-const RETROARCH: &str = "plugins/retroarch";
+const RETROARCH: &str = "services/korrid/tests/fixtures/script-packages/retroarch";
 const PROBE: &str = "docs/research/retroarch-effect-quickjs-probe";
 
 #[test]

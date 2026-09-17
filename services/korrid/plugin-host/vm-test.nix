@@ -5,6 +5,7 @@
   korridPackage,
   tailscalePackage,
   sshPackage,
+  gameRuntime ? null,
 }:
 let
   # The reviewed Linux route checkpoint, plus the ROM file its device location
@@ -142,19 +143,23 @@ let
       ];
   # Admission exercises the actual self-contained game declaration. No
   # emulator is started by the plugin installer.
-  gameRuntime = mkPlugin {
-    publisher.namespace = "@korri";
-    # The real generated mGBA source, so admission sees a shipped declaration.
-    source =
-      (import ../../../plugins/libretro { inherit pkgs mkPlugin; }).packages."korri-plugin-mgba".source;
-    plugin = _: {
-      files = {
-        mgba = "${pkgs.coreutils}/bin/true";
-        retroarch = "${pkgs.coreutils}/bin/true";
-        autoconfig = "${pkgs.coreutils}/bin/true";
+  gameRuntimePackage =
+    if gameRuntime != null then
+      gameRuntime
+    else
+      mkPlugin {
+        publisher.namespace = "@korri";
+        # A committed generated mGBA fixture keeps core's host tests independent
+        # from the repository that publishes game plugins.
+        source = ./tests/fixtures/mgba;
+        plugin = _: {
+          files = {
+            mgba = "${pkgs.coreutils}/bin/true";
+            retroarch = "${pkgs.coreutils}/bin/true";
+            autoconfig = "${pkgs.coreutils}/bin/true";
+          };
+        };
       };
-    };
-  };
   emptyClock = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const services = [];";
@@ -256,7 +261,7 @@ pkgs.testers.runNixOSTest {
           unclean
           empty
           emptyClock
-          gameRuntime
+          gameRuntimePackage
           dependentClock
           credential
           forbidden
@@ -549,10 +554,10 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin remove @example:empty --purge")
 
     # A self-contained game plugin is one independently managed selection.
-    game_runtime = inspect("${gameRuntime}")
+    game_runtime = inspect("${gameRuntimePackage}")
     assert "requires" not in game_runtime
     assert "brings" not in game_runtime
-    install("${gameRuntime}")
+    install("${gameRuntimePackage}")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
     machine.succeed("korri-plugin enable @korri:mgba")
     game_packages = json.loads(machine.succeed("korri-plugin enabled-packages"))
@@ -570,7 +575,7 @@ pkgs.testers.runNixOSTest {
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
     machine.succeed("ln -sfn ${alternate} " + game_root + "/active")
     assert "inconsistent active root" in machine.fail("korri-plugin enabled-packages 2>&1")
-    machine.succeed("ln -sfn ${gameRuntime} " + game_root + "/active")
+    machine.succeed("ln -sfn ${gameRuntimePackage} " + game_root + "/active")
     game_receipt_path = "/var/lib/korri-plugin-host/" + game_runtime["unit"].removesuffix(".service") + "/selection.json"
     game_receipt = json.loads(machine.succeed("cat " + game_receipt_path))
     machine.succeed("printf %s " + shlex.quote(json.dumps(dict(game_receipt, approval="0" * 64))) + " > " + game_receipt_path)

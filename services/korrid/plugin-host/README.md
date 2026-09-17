@@ -224,9 +224,9 @@ selection does not create or enforce cross-plugin dependencies.
 Build-side payload checks (no VM):
 
 ```sh
-nix build --no-link .#korri-plugin-mgba
-KORRI_TEST_GAME_PACKAGE="$(nix build --no-link --print-out-paths .#korri-plugin-mgba)" \
-  nix develop .#korrid --command cargo test \
+plugin_repo=../korri-plugins
+package="$(nix build --no-link --print-out-paths "$plugin_repo#korri-plugin-mgba")"
+KORRI_TEST_GAME_PACKAGE="$package" nix develop .#korrid --command cargo test \
   --manifest-path services/korrid/Cargo.toml --test installed_game_launch \
   built_plugin_nix_payload -- --ignored
 ```

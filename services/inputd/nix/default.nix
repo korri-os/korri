@@ -20,9 +20,6 @@ let
   };
   inputplumberData = import ./inputplumber-data.nix { inherit pkgs; };
   inputplumberKorri = inputplumberData.compose { inherit inputplumberRuntime; };
-  retroarchInputplumberAutoconfig =
-    pkgs.callPackage ../../../plugins/retroarch/retroarch-inputplumber-autoconfig.nix
-      { };
   sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
   sunshinePatchDefinitions =
     sunshineApprovedPatches.patches
@@ -80,7 +77,6 @@ in
   };
   packages = {
     inputplumber-korri = inputplumberKorri;
-    retroarch-inputplumber-autoconfig = retroarchInputplumberAutoconfig;
     korri-inputd = inputdPackage;
     korri-bundle = korriBundle;
     sunshine-korri = sunshinePackage;
@@ -213,7 +209,6 @@ in
         pkgs
         inputplumberRuntime
         inputplumberKorri
-        retroarchInputplumberAutoconfig
         ;
     };
     korri-input-seat-receiver = import ./korri-input-seat-receiver-check.nix {

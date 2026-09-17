@@ -1,1 +1,250 @@
-../../../plugins/libretro/retroarch.ts
+import type {
+  PluginLaunchInput,
+  PluginLaunchOutput,
+} from "../../contracts/generated/korrid"
+import { keys, version } from "./settings"
+
+type SettingValue = string | number | boolean
+
+interface Diagnostic {
+  code: string
+  severity: "error" | "warning" | "info"
+  message: string
+  path?: string[]
+}
+
+const jsonType = { Boolean: "boolean", Number: "number", String: "string" }
+
+function actualType(value: SettingValue): string {
+  return typeof value === "boolean"
+    ? "boolean"
+    : typeof value === "number"
+    ? "number"
+    : "string"
+}
+
+// One rule, used by every operation: a setting is renderable when this exact
+// program build declares the key and the authored value carries its type.
+function unsupported(key: string, value: SettingValue): Diagnostic | undefined {
+  const expected = keys[key]
+  if (expected === undefined || reservedKeys.includes(key)) {
+    return {
+      code: "setting-unverified",
+      severity: "warning",
+      path: [key],
+      message:
+        `RetroArch ${version} does not accept ${key} from Korri, so it is not applied`,
+    }
+  }
+  if (actualType(value) !== jsonType[expected]) {
+    return {
+      code: "setting-type",
+      severity: "warning",
+      path: [key],
+      message:
+        `RetroArch ${version} reads ${key} as ${jsonType[expected]}, not ${actualType(value)}`,
+    }
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return {
+      code: "setting-value",
+      severity: "warning",
+      path: [key],
+      message: `RetroArch ${version} cannot read a non-finite ${key}`,
+    }
+  }
+  return undefined
+}
+
+// Legacy setting-policy.ts credential keys plus the approved kiosk protections.
+const reservedKeys = [
+  "cheevos_password",
+  "cheevos_token",
+  "network_cmd_password",
+  "netplay_password",
+  "netplay_spectate_password",
+  "kiosk_mode_enable",
+  "config_save_on_exit",
+  "menu_driver",
+]
+
+// config_file_extract_value in the pinned libretro-common/file/config_file.c
+// stops at the next quote; it never decodes JSON escapes. Keep native bytes.
+function quoteSetting(key: string, value: string): string {
+  if (!/[\0\r\n\uD800-\uDFFF]/u.test(value)) {
+    if (!value.includes('"')) return `"${value}"`
+    // The native unquoted branch accepts printable ASCII up to whitespace.
+    // Its comment scanner protects '#' only inside the first quote pair.
+    const firstQuote = value.indexOf('"')
+    const nextQuote = value.indexOf('"', firstQuote + 1)
+    const comment = value.indexOf("#")
+    if (
+      firstQuote > 0 && /^[\x21-\x7e]+$/.test(value) &&
+      (comment < 0 || (firstQuote < comment && nextQuote > comment))
+    ) return value
+  }
+  // Never put a setting value (which may be private) in the diagnostic.
+  throw new Error(`Unsupported RetroArch string setting: ${key}`)
+}
+
+function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
+  const root = input.accountRoot
+  if (!input.corePath) throw new Error("RetroArch runner requires a core path")
+  const corePath = input.corePath
+  const states = `${root}/states/${input.runnerId}`
+  const configPath = `${root}/retroarch.cfg`
+  const config = input.overrides?.config
+  if (config?.replace !== undefined) {
+    throw new Error(
+      "RetroArch overrides.config does not support replace; use prepend/append",
+    )
+  }
+  // Preserve intended legacy precedence; native duplicate lookup is first-wins.
+  const raw = [config?.prepend, config?.append]
+    .filter((text) => text !== undefined)
+    .join("\n")
+  const lines: string[] = []
+  for (const rawLine of raw.split("\n")) {
+    const line = rawLine.trim()
+    if (line === "" || line.startsWith("#")) continue
+    const separator = line.indexOf("=")
+    const key = line.slice(0, separator).trim()
+    if (separator < 0 || !/^[A-Za-z0-9_]+$/.test(key)) {
+      throw new Error("Invalid RetroArch overrides.config assignment")
+    }
+    if (reservedKeys.includes(key))
+      throw new Error(`Reserved RetroArch overrides.config key: ${key}`)
+    // RetroArch requires whitespace before the separator even though this
+    // input contract accepts compact assignments. Preserve native value bytes.
+    lines.push(`${key} = ${line.slice(separator + 1).trimStart()}`)
+  }
+  // These are source-checked renderer outputs, not a flat policy schema.
+  // Booleans stay quoted and numbers bare; strings use native, not JSON, syntax.
+  // A key this build does not accept was already reported by settings.validate,
+  // so it is left out here rather than reported a second time.
+  const typed = Object.entries(input.overrides?.settings ?? {})
+    .filter(([key, value]) => unsupported(key, value) === undefined)
+    .map(([key, value]) => {
+      const serialized = typeof value === "number"
+        ? String(value)
+        : quoteSetting(key, String(value))
+      return `${key} = ${serialized}`
+    })
+  const baseline = `# generated by Korri
+system_directory = ${quoteSetting("system_directory", `${root}/system`)}
+savefile_directory = ${quoteSetting("savefile_directory", `${root}/saves`)}
+savestate_directory = ${quoteSetting("savestate_directory", states)}
+screenshot_directory = ${quoteSetting("screenshot_directory", `${root}/screenshots`)}
+
+input_driver = "udev"
+input_joypad_driver = "udev"
+joypad_autoconfig_dir = ${quoteSetting("joypad_autoconfig_dir", input.files.autoconfig)}
+input_autodetect_enable = "true"
+input_max_users = "4"
+input_player1_joypad_index = "0"
+input_player1_analog_dpad_mode = "1"
+# RetroArch value 2 is L3 + R3. Guide remains exclusive to Korri.
+input_menu_toggle_gamepad_combo = "2"
+# Select + Start exits to Korri (RetroArch 1.22.2 INPUT_COMBO_START_SELECT = 4).
+input_quit_gamepad_combo = "4"
+quit_press_twice = "false"
+
+kiosk_mode_enable = "true"
+menu_driver = "null"
+input_overlay_enable = "false"
+video_fullscreen = "true"
+quit_on_close_content = "true"
+config_save_on_exit = "false"
+pause_nonactive = "true"
+autosave_interval = "10"
+savestate_auto_save = "true"
+savestate_auto_load = "true"
+video_driver = "gl"`
+  // Emit exactly one assignment per key. Replacing its original slot keeps
+  // baseline comments intact without relying on native duplicate ordering.
+  const positions = new Map<string, number>()
+  const merged: string[] = []
+  for (const line of [...baseline.split("\n"), ...typed, ...lines]) {
+    if (line.trim() === "" || line.trimStart().startsWith("#")) {
+      merged.push(line)
+      continue
+    }
+    const key = line.slice(0, line.indexOf("=")).trim()
+    const position = positions.get(key)
+    if (position === undefined) {
+      positions.set(key, merged.length)
+      merged.push(line)
+    } else {
+      merged[position] = line
+    }
+  }
+  const content = `${merged.join("\n")}\n`
+  return {
+    command: input.program,
+    args: ["--config", configPath, "-L", corePath, input.contentPath],
+    directories: [
+      `${root}/system`,
+      `${root}/saves`,
+      states,
+      `${root}/screenshots`,
+    ],
+    files: [{ path: configPath, content }],
+    env: {},
+    envUnset: [],
+  }
+}
+
+// The schema is this build's own evidence, not a shape korrid keeps for it.
+// Local references only; the host validates values, it does not fetch schemas.
+function describeSettings() {
+  const properties: Record<string, { type: string }> = {}
+  for (const [key, kind] of Object.entries(keys)) {
+    if (!reservedKeys.includes(key)) properties[key] = { type: jsonType[kind] }
+  }
+  return {
+    schema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties,
+      additionalProperties: false,
+    },
+    // A described set of choices is only valid for the build that declared it.
+    revision: version,
+  }
+}
+
+// Report what this build cannot apply. Never rewrite an authored value: the
+// person keeps what they wrote, and sees why it does not reach the emulator.
+function validateSettings(input: {
+  values?: Record<string, SettingValue>
+  revision?: string
+}) {
+  const diagnostics: Diagnostic[] = []
+  if (input.revision !== undefined && input.revision !== version) {
+    diagnostics.push({
+      code: "settings-revision",
+      severity: "info",
+      message:
+        `These values were chosen for RetroArch ${input.revision}; this build is ${version}`,
+    })
+  }
+  // Sorted, so one set of values always reports in one order. The host hands
+  // these over as an unordered map and a person reads the result as a list.
+  const values = input.values ?? {}
+  for (const key of Object.keys(values).sort()) {
+    const diagnostic = unsupported(key, values[key])
+    if (diagnostic !== undefined) diagnostics.push(diagnostic)
+  }
+  return {
+    valid: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),
+    diagnostics,
+  }
+}
+
+// The host names the operation it wants; every runner answers through the
+// same map, so a new operation adds a key rather than a new export contract.
+export const handlers = {
+  "launch.prepare": prepareLaunch,
+  "settings.describe": describeSettings,
+  "settings.validate": validateSettings,
+}

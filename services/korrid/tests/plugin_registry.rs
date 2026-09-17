@@ -6,9 +6,9 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 const MGBA_PLUGIN: &str = GENERATED_CORE;
 
-const LINUX_RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
+const LINUX_RETROARCH_PLUGIN: &str = include_str!("../examples/retroarch.plugin.ts");
 const GENERATED_CORE: &str = include_str!("../examples/libretro-core.plugin.ts");
-const RETROARCH_HELPER: &str = include_str!("../../../plugins/libretro/retroarch.ts");
+const RETROARCH_HELPER: &str = include_str!("../examples/libretro-retroarch.ts");
 
 #[test]
 fn publisher_identity_comes_from_composition_not_module_source() {
@@ -118,9 +118,9 @@ fn install(root: &Path, id: &str, source: &str, files: &[&str]) -> EnabledPackag
     }
 }
 
-/// The generator emits one shape for every catalogue entry, and
-/// plugins/libretro/example-check.nix holds the committed mGBA example to that
-/// shape. Deriving the second core from it keeps one source of truth for what a
+/// The plugin repository's generator emits one shape for every catalogue
+/// entry. The committed mGBA fixture holds core's consumer tests to that shape.
+/// Deriving the second core from it keeps one source of truth for what a
 /// generated plugin looks like. The identifiers match the real snes9x2010
 /// catalogue entry.
 fn second_generated_core() -> String {

@@ -23,7 +23,6 @@ cargo fmt --check
 cargo check
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
-bash "$ROOT/plugins/retroarch/check.sh"
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
 "$CRATE/deploy/test-zao-remote.sh"
 typeshare . --lang=typescript --output-file="$GENERATED_TS"

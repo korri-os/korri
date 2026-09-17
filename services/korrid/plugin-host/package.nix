@@ -1,21 +1,19 @@
 { pkgs, crane }:
 let
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
-  # The shipped declarations are relative symlinks into the plugin packages, so
-  # the checkout keeps one copy of each. Nix cannot retain a symlink that
-  # escapes this source root; the source derivation below materializes them.
-  shippedDeclarations = [
-    "retroarch"
-    "ppsspp"
-  ];
+  # PPSSPP remains a relative symlink into its plugin package. Nix cannot
+  # retain a symlink that escapes this source root, so the source derivation
+  # below materializes it. RetroArch is now a core-owned test fixture.
+  linkedDeclarations = [ "ppsspp" ];
   clean = pkgs.lib.cleanSourceWith {
     src = ./.;
     filter =
       path: type:
       craneLib.filterCargoSources path type
       || path == toString ./tests/fixtures/selection.json
+      || path == toString ./tests/fixtures/retroarch.plugin.ts
       || builtins.elem path (
-        map (name: toString (./tests/fixtures + "/${name}.plugin.ts")) shippedDeclarations
+        map (name: toString (./tests/fixtures + "/${name}.plugin.ts")) linkedDeclarations
       );
   };
   vendor = craneLib.vendorCargoDeps { src = clean; };
@@ -27,8 +25,7 @@ let
   };
   artifacts = craneLib.buildDepsOnly (common // { src = clean; });
   # The separate CLI crate uses korrid's actual evaluator. Materialize that
-  # source, its example, and the shipped declarations used by admission tests.
-  # Tests must not substitute copies for the real plugin sources.
+  # source, its example, and the linked declaration used by admission tests.
   source = pkgs.runCommand "korri-plugin-host-source" { } ''
     mkdir -p "$out/src" "$out/examples"
     cp -R ${clean} "$out/plugin-host"
@@ -38,8 +35,7 @@ let
     cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
     cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
-    rm -f "$out/plugin-host/tests/fixtures/retroarch.plugin.ts" "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
-    cp ${../../../plugins/retroarch/plugin.ts} "$out/plugin-host/tests/fixtures/retroarch.plugin.ts"
+    rm -f "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
     cp ${../../../plugins/ppsspp/plugin.ts} "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
   '';
 in

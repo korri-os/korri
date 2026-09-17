@@ -22,7 +22,7 @@ fn installed(root: &Path) -> PluginRegistry {
     .unwrap();
     fs::write(
         package.join("retroarch.ts"),
-        include_str!("../../../plugins/libretro/retroarch.ts"),
+        include_str!("../examples/libretro-retroarch.ts"),
     )
     .unwrap();
     // The catalogue generates this module from the pinned program's source.

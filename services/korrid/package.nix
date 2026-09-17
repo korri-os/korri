@@ -20,17 +20,7 @@ let
       # The script unit tests include the checked-in example plugin source.
       || lib.hasPrefix "${sourceRootString}/examples/" (toString path);
   };
-  composedSource = proseqlSource.composeCargoSource cleanSource;
-  # korrid ships no plugins. The one plugin-owned file it still reads is the
-  # shared libretro helper, reached through a relative symlink so the checkout
-  # keeps a single copy beside the cores that import it. Nix sources cannot
-  # retain a symlink that escapes sourceRoot, so materialize it here.
-  src = pkgs.runCommand "korrid-source-with-materialized-examples" { } ''
-    mkdir -p "$out"
-    cp -R --no-preserve=mode,ownership ${composedSource}/. "$out/"
-    rm -f "$out/examples/libretro-retroarch.ts"
-    cp ${../../plugins/libretro/retroarch.ts} "$out/examples/libretro-retroarch.ts"
-  '';
+  src = proseqlSource.composeCargoSource cleanSource;
   commonArgs = {
     inherit src;
     # crane reads Cargo.lock and .cargo/config.toml during evaluation. Vendor
