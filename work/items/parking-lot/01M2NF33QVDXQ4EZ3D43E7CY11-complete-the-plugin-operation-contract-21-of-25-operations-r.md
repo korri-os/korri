@@ -1,7 +1,7 @@
 ---
 id: 01M2NF33QVDXQ4EZ3D43E7CY11
-slug: complete-the-plugin-operation-contract-22-of-25-operations-r
-title: "Complete the plugin operation contract: 22 of 25 operations remain"
+slug: complete-the-plugin-operation-contract-21-of-25-operations-r
+title: "Complete the plugin operation contract: 21 of 25 operations remain"
 origin: parked
 status: To Do
 priority: high
@@ -17,11 +17,11 @@ context:
   invoked_by: user
 ---
 
-# Complete the plugin operation contract: 22 of 25 operations remain
+# Complete the plugin operation contract: 21 of 25 operations remain
 
 ## Why it matters
 
-The operation inventory lives only in a design document and in one session transcript. The design lists 25 operations. Three exist: launch.prepare, settings.describe, settings.validate. The other 22 are the difference between a launcher for files that are already on the device and the system legacy had. A legacy audit at commit 0e4cec9d shows 21 of 50 legacy plugin folders declare at least one operation that does not exist today, across 129 declaration sites. Without one record of the list, the state, and the blocker for each operation, the next session must measure all of this again.
+The operation inventory lives only in a design document and in one session transcript. The design lists 25 operations. Four exist: launch.prepare, settings.describe, settings.validate, runtime.resolve. The other 21 are the difference between a launcher for files that are already on the device and the system legacy had. A legacy audit at commit 0e4cec9d shows 21 of 50 legacy plugin folders declare at least one operation that does not exist today, across 129 declaration sites. Without one record of the list, the state, and the blocker for each operation, the next session must measure all of this again.
 
 ## Acceptance Criteria
 
@@ -51,12 +51,19 @@ contract. See services/korrid/src/script.rs and SCRIPTING.md.
 
 === THE 25 OPERATIONS ===
 
-BUILT (3)
+BUILT (4)
   launch.prepare      Runner returns a launch plan. Proven by the libretro cores.
   settings.describe   Runner returns its own schema fragment plus a revision.
   settings.validate   Runner reports values this build cannot apply.
+  runtime.resolve     Runner reports whether it can start this target, and what is
+                      missing if not. launcher/linux_plugin.rs calls it before a
+                      launch starts; a refusal reaches the person as
+                      LocalRouteUnavailable. Six unit tests in launcher/runtime.rs
+                      and six integration tests in tests/runtime_resolve.rs.
+                      The result carries `ready` and `missing` only: the draft's
+                      `files` and `diagnostics` have no consumer yet.
 
-NOT BUILT (22), with the blocker for each:
+NOT BUILT (21), with the blocker for each:
 
 Settings group
   settings.options    No runner supplies options only at run time. No caller.
@@ -68,13 +75,6 @@ Settings group
                       same scope win over the translated preference (CASCADE.md
                       section 2). Report an unsupported preference; never invent
                       support and never drop it in silence.
-
-Preparation group
-  runtime.resolve     No blocker except sequence. HIGHEST VALUE: 10 legacy sites,
-                      in box64-runtime, fex-runtime, proton-runtime,
-                      proton-ge-runtime. Without it Korri cannot run x86 content
-                      on ARM, cannot run Windows content, and cannot say "not
-                      ready, and here is what is missing" before a launch.
 
 Modifier group
   launch.compose      No modifier plugin exists on main, so there is nothing to
@@ -141,8 +141,11 @@ Plugin-specific operation names were normal in legacy. PortMaster and GMLoader
 need more than a rename.
 
 === RECOMMENDED ORDER ===
-1. runtime.resolve, launch.compose, diagnostics.collect. These three cover 43 of
-   the 129 legacy declaration sites and need no new host storage or job service.
+1. launch.compose, diagnostics.collect. With runtime.resolve built, these two
+   cover the rest of the 43 legacy declaration sites and need no new host
+   storage or job service. Every legacy runtime plugin paired runtime.resolve
+   with launch.compose, and launch.compose is where legacy actually applied the
+   runtime environment.
 2. The session group, after the native control seam is decided.
 3. preferences.map, after the resolved preference path exists.
 4. The content group, after host storage, byte limits and jobs exist.
@@ -163,3 +166,25 @@ docs/briefs/2026-09-15-plugin-model/evidence/legacy-coverage.md  50 legacy folde
 Legacy commit 0e4cec9da3d77e6578b8a01a5d83420ba0d98e62, branch `legacy`.
 Count legacy use again with:
   git grep -h -oE 'operation: "[a-z.-]+"' legacy -- 'product/plugins/*' | sort | uniq -c | sort -rn
+
+=== runtime.resolve, MEASURED 2026-09-17 ===
+The operation is built. Two facts the next person should not remeasure:
+
+- Legacy declared it and never invoked it. `git grep -n 'runtime.resolve'
+  legacy` finds only the operation union in product/platform/plugin/index.ts,
+  the four plugin.ts handlers, their tests, and six game plugins' `requires`.
+  There is no caller: legacy has launch-prepare.ts and launch-companion.ts, and
+  no runtime-resolve.ts. The env the resolvers returned (BOX64_PREFER_EMULATED,
+  FEX_ROOTFS, VK_ICD_FILENAMES, the Proton paths) was also produced by
+  launch.compose, and that is the path legacy wired. So the "10 legacy sites"
+  are 4 provider declarations plus 6 test declarations, not 10 callers.
+- No producer exists on main. There is no box64, fex, or proton plugin in
+  services/, plugins/, or contracts/, and the new model has no `requires` or
+  capability declaration for content to demand one. The operation therefore has
+  a real caller (launcher/linux_plugin.rs) and a tested seam, but its first
+  first-party producer arrives with the runtime plugins. Port one runtime plugin
+  and prove it answers, rather than adding a handler that always says ready.
+
+The six legacy plugins that require the capability are the real demand:
+mega-man-arena, mega-man-maker, midas-machine, portmaster, psycho-waluigi,
+smb-wonderland-1987.
