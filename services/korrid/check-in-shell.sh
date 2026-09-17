@@ -63,11 +63,14 @@ export KORRID_ADDRESS="127.0.0.1:49117"
 export KORRID_SPIKE_URL="http://$KORRID_ADDRESS"
 local_storage_root="$(mktemp -d)"
 mkdir -p "$local_storage_root/catalog"
-# A provider app exercises brain-only catalog RPC without a private ROM dump.
-# The discovery and launch tests above supply real files for storage routes.
-cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/device.yaml" "$local_storage_root/device.yaml"
-cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml" "$local_storage_root/catalog/games.yaml"
-cp "$ROOT/docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml" "$local_storage_root/catalog/releases.yaml"
+# The reviewed checkpoint gives brain mode a real catalog to serve. It resolves
+# no route here, and it must not pretend to: standalone korrid takes its runners
+# from /run/korri-plugin-host/enabled-packages.json, which only the plugin host
+# writes as root. The listing proof lives in that host's VM test, where a plugin
+# is installed and enabled the way a device installs one.
+cp "$ROOT/docs/research/retroarch-plugin-route/device.yaml" "$local_storage_root/device.yaml"
+cp "$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml" "$local_storage_root/catalog/games.yaml"
+cp "$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml" "$local_storage_root/catalog/releases.yaml"
 export KORRI_LOCAL_STORAGE_ROOT="$local_storage_root"
 export KORRID_PRIVATE_STATE_ROOT="$local_storage_root/private"
 if (exec 9<>/dev/tcp/127.0.0.1/49117) 2>/dev/null; then
@@ -107,15 +110,8 @@ if [[ "$server_ready" != true ]]; then
   echo 'fresh korrid check server did not become ready' >&2
   exit 1
 fi
-local_games="$(curl --fail --silent "$KORRID_SPIKE_URL/rpc" \
-  -H 'content-type: application/json' \
-  -H "authorization: Bearer $KORRID_RPC_CAPABILITY" \
-  -d '{"_tag":"app.local-games.list","payload":{}}')"
-if [[ "$local_games" != *'"id":"01K4J6K8Y00000000000000001"'* ]]; then
-  echo "korrid smoke did not exercise brain-only local games" >&2
-  exit 1
-fi
 
+# The portal's own client speaks to that server: health, then the catalog.
 cd "$ROOT/clients/portal"
 bun src/korrid/smoke.ts
 

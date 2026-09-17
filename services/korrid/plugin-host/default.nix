@@ -2,6 +2,7 @@
   pkgs,
   crane,
   hostModule,
+  korridPackage,
 }:
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
@@ -49,6 +50,7 @@ in
         pkgs
         hostModule
         hostPackage
+        korridPackage
         tailscalePackage
         ;
       sshPackage = firstPartyPlugin "ssh";

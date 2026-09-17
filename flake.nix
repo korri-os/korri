@@ -92,7 +92,7 @@
           };
         };
         pluginHost = import ./services/korrid/plugin-host {
-          inherit pkgs crane;
+          inherit pkgs crane korridPackage;
           hostModule = nixosModules.korri-plugin-host;
         };
         korridPackage = import ./services/korrid/package.nix {

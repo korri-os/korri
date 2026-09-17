@@ -2,10 +2,21 @@
   pkgs,
   hostModule,
   hostPackage,
+  korridPackage,
   tailscalePackage,
   sshPackage,
 }:
 let
+  # The reviewed Linux route checkpoint, plus the ROM file its device location
+  # names. Wario Land 4 is the one release an installed libretro runner can
+  # admit; the provider release beside it has no runner on this platform.
+  smokeStorage = pkgs.runCommand "korri-brain-smoke-storage" { } ''
+    mkdir -p "$out/catalog" "$out/roms"
+    cp ${../../../docs/research/retroarch-plugin-route/device.yaml} "$out/device.yaml"
+    cp ${../../../docs/research/retroarch-plugin-route/catalog/games.yaml} "$out/catalog/games.yaml"
+    cp ${../../../docs/research/retroarch-plugin-route/catalog/releases.yaml} "$out/catalog/releases.yaml"
+    printf rom > "$out/roms/wl4.gba"
+  '';
   # Disposable local TLS, following nixpkgs nixos/tests/headscale.nix.
   certificate =
     pkgs.runCommand "plugin-tailnet-test-certificate" { nativeBuildInputs = [ pkgs.openssl ]; }
@@ -349,11 +360,19 @@ pkgs.testers.runNixOSTest {
           };
         };
         security.pki.certificateFiles = [ "${certificate}/cert.pem" ];
+        # korrid is the device's own brain, not a plugin. It reads the registry
+        # this host publishes, so the two belong on one machine to prove the
+        # seam between an approved selection and a listed game.
         environment.systemPackages = [
           pkgs.jq
           pkgs.iptables
+          pkgs.curl
+          korridPackage
         ];
-        virtualisation.additionalPaths = [ ipv6RejectAdds ];
+        virtualisation.additionalPaths = [
+          ipv6RejectAdds
+          smokeStorage
+        ];
         virtualisation.useNixStoreImage = true;
         virtualisation.writableStore = true;
         virtualisation.writableStoreUseTmpfs = false;
@@ -557,8 +576,66 @@ pkgs.testers.runNixOSTest {
     machine.succeed("printf %s " + shlex.quote(json.dumps(dict(game_receipt, approval="0" * 64))) + " > " + game_receipt_path)
     assert "no longer matches its approval" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("printf %s " + shlex.quote(json.dumps(game_receipt)) + " > " + game_receipt_path)
+
+    # korrid lists a game only when a route resolves, and a route resolves only
+    # against the registry this host publishes. The approved mgba selection is
+    # the machine's only runner, so listing Wario Land 4 proves the whole seam:
+    # approval, publication, admission, resolution. An ordinary development
+    # machine cannot prove it, because no unprivileged process can write the
+    # registry.
+    capability = "plugin-host-vm-capability"
+    published = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
+    assert [package["id"] for package in published] == ["@korri:mgba"], published
+    machine.succeed("mkdir -p /var/lib/korri-brain-smoke")
+    machine.succeed("cp -R --no-preserve=mode,ownership ${smokeStorage}/. /var/lib/korri-brain-smoke/")
+    # Federation storage requires exactly 0700 and korrid mints its device key there.
+    machine.succeed("install -d -m 0700 /var/lib/korri-brain-smoke-private")
+    machine.succeed(
+        "systemd-run --collect --unit=korrid-brain-smoke --service-type=exec"
+        " --setenv=KORRID_MODE=brain"
+        " --setenv=KORRID_ADDRESS=127.0.0.1:49117"
+        " --setenv=KORRID_RPC_CAPABILITY=" + capability
+        + " --setenv=KORRI_LOCAL_STORAGE_ROOT=/var/lib/korri-brain-smoke"
+        " --setenv=KORRID_PRIVATE_STATE_ROOT=/var/lib/korri-brain-smoke-private"
+        " korrid"
+    )
+
+    def brain_rpc(tag):
+        request = json.dumps({"_tag": tag, "payload": {}})
+        return json.loads(machine.succeed(
+            "curl --fail --silent http://127.0.0.1:49117/rpc"
+            " -H 'content-type: application/json'"
+            " -H " + shlex.quote("authorization: Bearer " + capability)
+            + " -d " + shlex.quote(request)
+        ))
+
+    machine.wait_for_open_port(49117)
+    assert brain_rpc("system.health")["outcome"]["_tag"] == "Ok"
+    listed = brain_rpc("app.local-games.list")["outcome"]
+    assert listed["_tag"] == "Ok", listed
+    # Wario Land 4 is the reviewed GBA release the installed runner admits. The
+    # provider release in the same catalog has no runner here and stays unlisted.
+    assert [game["id"] for game in listed["payload"]["games"]] == ["01K4J6K8Y00000000000000002"], listed
+    assert listed["payload"]["games"][0]["title"] == "Wario Land 4", listed
+    machine.succeed("systemctl stop korrid-brain-smoke.service")
+
     machine.succeed("korri-plugin disable @korri:mgba")
     machine.succeed("korri-plugin remove @korri:mgba --purge")
+    # Without an enabled runner the same catalog resolves no route at all.
+    machine.succeed(
+        "systemd-run --collect --unit=korrid-brain-smoke-empty --service-type=exec"
+        " --setenv=KORRID_MODE=brain"
+        " --setenv=KORRID_ADDRESS=127.0.0.1:49117"
+        " --setenv=KORRID_RPC_CAPABILITY=" + capability
+        + " --setenv=KORRI_LOCAL_STORAGE_ROOT=/var/lib/korri-brain-smoke"
+        " --setenv=KORRID_PRIVATE_STATE_ROOT=/var/lib/korri-brain-smoke-private"
+        " korrid"
+    )
+    machine.wait_for_open_port(49117)
+    empty = brain_rpc("app.local-games.list")["outcome"]
+    assert empty["payload"]["games"] == [], empty
+    machine.succeed("systemctl stop korrid-brain-smoke-empty.service")
+    machine.succeed("rm -rf /var/lib/korri-brain-smoke /var/lib/korri-brain-smoke-private")
 
     # Load, but never start, the actual hostile bytes in systemd. Bare CR is a
     # directive boundary there, even after a comment or inside Description.
