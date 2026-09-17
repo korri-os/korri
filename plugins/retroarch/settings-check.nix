@@ -37,7 +37,7 @@ program.overrideAttrs (old: {
     # checked schema rather than a second table written by hand.
     cp ${../libretro/retroarch.ts} plugin.ts
     cp "$out/settings.ts" settings.ts
-    sed 's#../mgba/retroarch#./plugin#' ${./plugin.test.ts} > plugin.test.ts
+    cp ${./plugin.sandbox-test.ts} plugin.test.ts
     KORRI_TEST_RETROARCH_CONFIG_PARSER="$PWD/config-parser-probe" bun test ./plugin.test.ts
   '';
 })

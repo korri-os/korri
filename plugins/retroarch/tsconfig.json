@@ -9,5 +9,7 @@
     "resolveJsonModule": true,
     "types": ["bun"]
   },
-  "include": ["*.ts"]
+  "include": ["*.ts"],
+  "_exclude": "plugin.sandbox-test.ts imports ./plugin and ./settings, which only settings-check.nix writes.",
+  "exclude": ["plugin.sandbox-test.ts"]
 }

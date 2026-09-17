@@ -1,9 +1,12 @@
+// Runs only inside settings-check.nix, which copies the RetroArch helper
+// here as ./plugin and writes the checked ./settings module beside it.
+// The local typecheck excludes this file for that reason.
 import { afterAll, describe, expect, it } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { PluginLaunchInput } from "../../contracts/generated/korrid"
-import { handlers } from "../mgba/retroarch"
+import { handlers } from "./plugin"
 
 // The test exercises the operation the host calls, through the same map.
 const launch = handlers["launch.prepare"]
