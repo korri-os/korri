@@ -20,7 +20,9 @@ let
   libretro = import ../../../plugins/libretro { inherit pkgs mkPlugin; };
 in
 {
-  lib.mkPlugin = import ./builder.nix { inherit pkgs; };
+  lib = {
+    inherit pkgs mkPlugin;
+  };
   packages = {
     korri-plugin-host = hostPackage;
     korri-plugin-retroarch = firstPartyPlugin "retroarch";
