@@ -3,55 +3,19 @@ import type {
   SurfaceSettingGroup,
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
-import type {
-  BackgroundNoticeResult,
-  OverlayPermissionResult,
-  OwnerBindingSnapshot,
-  StorageAccessResult,
-  StreamHost,
-  SystemInfoResult,
-} from "@contracts/bridge/korri-native-bridge"
 import {
   SecretSettingStatus,
   type DiscoverySnapshot,
   type SettingsSnapshot,
 } from "@contracts/generated/korrid"
 
+/* Every fact here comes from korrid. The permission, streaming-host, and
+ * system-information facts came from the shell, which no longer exists. */
 export interface DeviceFacts {
   readonly version?: string
   readonly settings?: SettingsSnapshot
-  readonly storage?: StorageAccessResult
-  readonly notice?: BackgroundNoticeResult
-  readonly overlay?: OverlayPermissionResult
-  readonly hosts?: readonly StreamHost[]
-  readonly systemInfo?: SystemInfoResult
-  readonly ownerBinding?: OwnerBindingSnapshot
   readonly localGameCount?: number
   readonly discovery?: DiscoverySnapshot
-}
-
-const storageValue = (result: StorageAccessResult): string => {
-  switch (result._tag) {
-    case "Granted":
-      return "Granted"
-    case "NotRequired":
-      return "Not needed"
-    case "Denied":
-      return "Not granted"
-    case "QueryFailed":
-      return "Unknown"
-  }
-}
-
-const overlayValue = (result: OverlayPermissionResult): string => {
-  switch (result._tag) {
-    case "Enabled":
-      return "Enabled"
-    case "Disabled":
-      return "Disabled"
-    case "RestrictedOrUnavailable":
-      return "Restricted or unavailable"
-  }
 }
 
 const countLabel = (count: number, noun: string): string =>
@@ -93,67 +57,8 @@ const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string =>
 
 export function settingsFrom(
   facts: DeviceFacts,
-  nativeActionsAvailable = true,
 ): readonly SurfaceSettingGroup[] {
-  const streamHosts = facts.hosts ?? []
-  const android =
-    facts.systemInfo?._tag === "SystemInfo"
-      ? facts.systemInfo.payload
-      : undefined
-
-  const owner = facts.ownerBinding
-  const ownerItems: readonly (SurfaceSettingItem | undefined)[] = owner === undefined
-    ? []
-    : [
-        owner.deviceFingerprint === undefined
-          ? undefined
-          : {
-              id: "device-fingerprint",
-              label: "Device fingerprint",
-              value: owner.deviceFingerprint,
-            },
-        owner.identity._tag === "Owned"
-          ? {
-              id: "owner-public-key",
-              label: "Owner public key",
-              value: owner.identity.ownerPublicKey,
-              description: "Verified signed owner binding",
-            }
-          : owner.identity._tag === "Unowned"
-            ? {
-                id: "owner-requested-action",
-                label: "Requested action",
-                value: owner.requestedAction,
-              }
-            : undefined,
-        owner.identity._tag === "Unowned" && owner.bindingUri !== undefined
-          ? {
-              id: "owner-binding-uri",
-              label: "Binding URI",
-              value: owner.bindingUri,
-              description: owner.signerRequirement,
-            }
-          : undefined,
-        owner.identity._tag === "Unowned"
-          ? {
-              id: "owner-binding",
-              label: "Set up owner",
-              value: owner.personSigner._tag,
-              description: owner.personSigner.message,
-              ...(owner.personSigner._tag === "Pending"
-                ? {}
-                : {
-                    interaction: {
-                      kind: "action" as const,
-                      actionId: "owner-binding",
-                    },
-                  }),
-            }
-          : undefined,
-      ]
-
   const groups = [
-    group("Owner", ownerItems),
     group("Device", [
       facts.settings === undefined
         ? undefined
@@ -214,15 +119,6 @@ export function settingsFrom(
               facts.discovery.diagnostics[0]?.message ??
               "Games appear as soon as scanning finds them",
           },
-      // The picker belongs to LauncherBridge.openGameFolderPicker, not korrid.
-      nativeActionsAvailable
-        ? {
-            id: "game-folder-add",
-            label: "Add game folder",
-            description: "Choose a folder on this Android device",
-            interaction: { kind: "action" as const, actionId: "game-folder-add" },
-          }
-        : undefined,
       facts.discovery === undefined
         ? undefined
         : {
@@ -251,82 +147,7 @@ export function settingsFrom(
         },
       })) ?? []),
     ]),
-    group("Streaming", [
-      facts.hosts === undefined
-        ? undefined
-        : {
-            id: "stream-devices",
-            label: "Streaming devices",
-            value:
-              streamHosts.length === 0
-                ? "None"
-                : countLabel(streamHosts.length, "device"),
-          },
-      ...streamHosts.map(host => ({
-        id: `host:${host.uuid}`,
-        label: host.name,
-        value: "Known",
-      })),
-    ]),
-    group("Permissions", [
-      facts.overlay === undefined
-        ? undefined
-        : {
-            id: "gameplay-overlay",
-            label: "Gameplay overlay",
-            value: overlayValue(facts.overlay),
-            description:
-              facts.overlay._tag === "RestrictedOrUnavailable"
-                ? "Android does not currently offer this grant"
-                : "Managed by Android",
-            interaction: {
-              kind: "action" as const,
-              actionId: "overlay-access",
-            },
-          },
-      facts.storage === undefined
-        ? undefined
-        : {
-            id: "file-access",
-            label: "File access",
-            value: storageValue(facts.storage),
-            description: "Managed by Android",
-            interaction: {
-              kind: "action" as const,
-              actionId: "storage-access",
-            },
-          },
-      facts.notice === undefined
-        ? undefined
-        : {
-            id: "background-notice",
-            label: "Background notice",
-            value: facts.notice._tag === "Visible" ? "Visible" : "Hidden",
-            description: "Managed by Android",
-            interaction: {
-              kind: "action" as const,
-              actionId: "background-notice",
-            },
-          },
-    ]),
     group("System information", [
-      android === undefined
-        ? undefined
-        : {
-            id: "device-model",
-            label: "Device",
-            value: `${android.manufacturer} ${android.device}`,
-          },
-      android === undefined
-        ? undefined
-        : {
-            id: "android-version",
-            label: "Android",
-            value: `${android.androidRelease} · SDK ${android.sdk}`,
-          },
-      android === undefined
-        ? undefined
-        : { id: "app-version", label: "Korri app", value: android.appVersion },
       facts.version === undefined
         ? undefined
         : { id: "korrid-version", label: "korrid", value: facts.version },

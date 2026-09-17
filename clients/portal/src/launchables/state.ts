@@ -1,18 +1,8 @@
 import type {
-  BackgroundNoticeResult,
-  LaunchLocalResult,
-  QueryStreamAppsResult,
-  StartStreamResult,
-  StorageAccessResult,
-  StreamHost,
-} from "@contracts/bridge/korri-native-bridge"
-import type {
   ActiveSession,
   CatalogSnapshotOutcome,
   Game,
-  LocalGameLaunchOutcome,
   LocalGamesListOutcome,
-  ResolvedMoonlight,
   SessionPrepareOutcome,
   SessionPrepared,
   SessionStatusOutcome,
@@ -21,27 +11,12 @@ import type {
 import { foldGameCopies, type PortalGameCopy, type PortalLocalGame } from "./fold-games"
 
 /**
- * Launchables screen state. Raw bridge results are converted into this ADT
- * at the seam; components never inspect bridge payloads directly.
+ * Launchables screen state. korrid outcomes are converted into this ADT at
+ * the seam; components never inspect an RPC payload directly.
  *
  * Playable entries come from korrid's catalog and local games on this device.
- * Sunshine's advertised app list is transport data: it may identify Korri's
- * streaming endpoint, but it is not Korri's game catalog.
  */
 export type PortalEntry =
-  /**
-   * Korri cannot reach its own settings, plugins, or local-game files until
-   * the user grants file access. This is an entry rather than a passive
-   * banner because the portal is controller-first: a message the user cannot
-   * focus and confirm would be unreachable without a touchscreen.
-   */
-  | { readonly kind: "storage-access" }
-  /**
-   * Whether the user can see Korri running in the background. A setting
-   * rather than a warning: the brain running on is what makes leaving a
-   * game safe, so this exists to be seen and switched, not fixed.
-   */
-  | { readonly kind: "background-notice"; readonly visible: boolean }
   | {
       readonly kind: "now-playing"
       readonly session: ActiveSession
@@ -126,12 +101,6 @@ export const isAuthoritativeSessionStatus = (status: SessionStatusOutcome): bool
   status.payload.code === "SessionCompleted" ||
   status.payload.code === "NoActiveSession"
 
-/** One provisioned host's app-query outcome, as gathered by the Root. */
-export interface StreamSource {
-  readonly host: StreamHost
-  readonly apps: QueryStreamAppsResult
-}
-
 /** The exact game an in-flight start belongs to, so a later failure keeps it. */
 export interface LaunchSubject {
   readonly id: string
@@ -204,10 +173,6 @@ const readyFrom = (
 
 export const entryKey = (entry: PortalEntry): string => {
   switch (entry.kind) {
-    case "background-notice":
-      return "background-notice"
-    case "storage-access":
-      return "storage-access"
     case "now-playing":
       return `now-playing:${entry.session.launchId}`
     case "local-game":
@@ -220,14 +185,7 @@ export const entryKey = (entry: PortalEntry): string => {
 }
 
 export const entryLabel = (entry: PortalEntry): string =>
-  entry.kind === "background-notice"
-    ? entry.visible
-      ? "Background notice: on — tap to hide it"
-      : "Background notice: off — tap to show it"
-    :
-  entry.kind === "storage-access"
-    ? "Korri needs file access — open settings"
-    : entry.kind === "now-playing"
+  entry.kind === "now-playing"
     ? (entry.session.title ?? entry.session.gameId ?? "Current session")
     : entry.game.title
 
@@ -240,24 +198,13 @@ export const LaunchablesState = {
    * become home-screen content.
    */
   fromSources: (
-    _streams: readonly StreamSource[],
     korrid: CatalogSnapshotOutcome,
-    _hostsError?: string,
     session?: SessionStatusOutcome,
     localGames?: LocalGamesListOutcome,
-    storage?: StorageAccessResult,
-    notice?: BackgroundNoticeResult,
     previousEntries: readonly PortalEntry[] = [],
   ): LaunchablesState => {
     const entries: PortalEntry[] = []
     const failures: string[] = []
-
-    // Denied file access comes first: without it Korri cannot read its own
-    // settings, so it outranks everything else on screen. An inconclusive
-    // query is not treated as denial — we do not nag on a failed check.
-    if (storage?._tag === "Denied") {
-      entries.push({ kind: "storage-access" })
-    }
 
     const localCatalog = localGames?._tag === "Ok" ? localGames.payload.games : []
     const remoteCatalog = korrid._tag === "Ok" ? korrid.payload.games : []
@@ -283,7 +230,7 @@ export const LaunchablesState = {
 
     // Source evidence can outlive a catalog read, but never restores its games.
     if (session?._tag === "Ok" && session.payload.active != null) {
-      entries.splice(storage?._tag === "Denied" ? 1 : 0, 0,
+      entries.splice(0, 0,
         sessionEntry(session.payload.active, entries, previousEntries))
     }
 
@@ -308,11 +255,6 @@ export const LaunchablesState = {
       failures.push(`games: ${korrid.payload.code}`)
     }
 
-    // Korri keeps its brain running after you leave, and the user is
-    // entitled to see that and switch it off. Always present, and last:
-    // it is a setting, not something to play.
-    entries.push({ kind: "background-notice", visible: notice?._tag === "Visible" })
-
     return {
       _tag: "Ready",
       entries,
@@ -326,31 +268,6 @@ export const LaunchablesState = {
     ...state,
     notice: { message },
   }),
-
-  /** Select the plugin-owned Sunshine app, constrained to a game's origin host. */
-  korriStreamTarget: (
-    moonlight: ResolvedMoonlight,
-    streams: readonly StreamSource[],
-    hostName?: string,
-  ): Maybe<StreamTarget> => {
-    const candidates =
-      hostName === undefined
-        ? streams
-        : streams.filter(source => source.host.name === hostName)
-    for (const source of candidates) {
-      if (source.apps._tag !== "StreamApps") continue
-      const app = source.apps.items.find(
-        app => app.name === moonlight.sunshineApp,
-      )
-      if (app !== undefined) {
-        return {
-          _tag: "Some",
-          value: { hostUuid: source.host.uuid, appId: app.id },
-        }
-      }
-    }
-    return { _tag: "None" }
-  },
 
   /** Confirm on a game: enter an input-locked case until activity swap. */
   beginPreparing: (
@@ -383,38 +300,6 @@ export const LaunchablesState = {
           notice: null,
         }
       : state,
-
-  withLocalLaunchOutcome: (
-    state: LaunchablesState,
-    outcome: LocalGameLaunchOutcome,
-  ): LaunchablesState => {
-    if (state._tag !== "Launching") return state
-    return outcome._tag === "Ok"
-      ? state
-      : readyFrom(
-          state,
-          `${outcome.payload.code}: ${outcome.payload.message}`,
-        )
-  },
-
-  withLocalLaunchResult: (
-    state: LaunchablesState,
-    result: LaunchLocalResult,
-  ): LaunchablesState => {
-    if (state._tag !== "Launching") return state
-    return result._tag === "Launched"
-      ? state
-      : readyFrom(state, `${result.reason}: ${result.message}`)
-  },
-
-  withStartStreamResult: (
-    state: LaunchablesState,
-    result: StartStreamResult,
-  ): LaunchablesState => {
-    if (state._tag !== "Launching" && state._tag !== "Preparing") return state
-    if (result._tag === "StreamStarted") return { ...state, notice: null }
-    return readyFrom(state, `${result.reason}: ${result.message}`)
-  },
 
   withPrepareOutcome: (
     state: LaunchablesState,

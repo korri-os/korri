@@ -1,10 +1,22 @@
 import type { SessionControls } from "@contracts/generated/korrid"
-import { createInMemoryKorridClient } from "../korrid/client"
-import {
-  createOverlayController,
-  type OverlayController,
-  type OverlayPlatform,
-} from "./overlay-controller"
+import type {
+  SurfaceGameplayControlValue,
+  SurfaceModel,
+} from "@contracts/surface/korri-surface"
+import { gameplayOverlayPresentationFrom } from "./overlay-model"
+
+/* A plugin declares its in-game controls, and korrid performs them on the
+ * device that runs the game. korrid performs none on Linux yet, so no
+ * controller reads a live session. This one serves the declared shape so the
+ * overlay surface stays buildable until that host exists. */
+export interface OverlayController {
+  model(): SurfaceModel
+  subscribe(listener: () => void): () => void
+  refresh(): Promise<void>
+  invoke(controlId: string, value?: SurfaceGameplayControlValue): Promise<void>
+  dismiss(): void
+  destroy(): void
+}
 
 export const IN_MEMORY_OVERLAY_LAUNCH_ID =
   "0123456789abcdef0123456789abcdef"
@@ -86,27 +98,21 @@ const fixtureControls: SessionControls = {
   ],
 }
 
-const browserPlatform: OverlayPlatform = {
-  dismiss() {},
-  requestAuthorityRefresh() {},
-  async executeProtectedInstruction() {
-    return {
-      _tag: "Unavailable",
-      message: "Platform execution is unavailable in the browser fixture.",
-    }
-  },
-}
-
-/** Real in-memory client/controller composition used by browser development. */
-export function createInMemoryOverlayController(
-  behavior: "ok" | "unavailable" | "invoke-fail" = "ok",
-): OverlayController {
-  return createOverlayController({
-    launchId: IN_MEMORY_OVERLAY_LAUNCH_ID,
-    korrid: createInMemoryKorridClient({
-      sessionControls: fixtureControls,
-      sessionControlBehavior: behavior,
-    }),
-    platform: browserPlatform,
-  })
+export function createInMemoryOverlayController(): OverlayController {
+  const model: SurfaceModel = {
+    presentation: gameplayOverlayPresentationFrom(fixtureControls),
+    catalog: { _tag: "Empty" },
+    status: { _tag: "Browsing" },
+    actions: [],
+    settings: [],
+    settingsStatus: { _tag: "Idle" },
+  }
+  return {
+    model: () => model,
+    subscribe: () => () => {},
+    refresh: async () => {},
+    invoke: async () => {},
+    dismiss: () => {},
+    destroy: () => {},
+  }
 }

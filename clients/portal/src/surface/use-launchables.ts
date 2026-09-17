@@ -8,12 +8,6 @@
  * decides what is focused and calls `confirmEntry` with the entry it means.
  * That is what lets Korri swap surfaces without moving this logic.
  */
-import {
-  OWNER_BINDING_CHANGED_EVENT,
-  SHELL_RESUMED_EVENT,
-  STREAM_APPS_CHANGED_EVENT,
-  type GameFolderPickerSnapshot,
-} from "@contracts/bridge/korri-native-bridge"
 import type { SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
 import type {
   DiscoverySnapshot,
@@ -24,22 +18,9 @@ import type {
 } from "@contracts/generated/korrid"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
-  discoverResolvedMoonlight,
-  reserveResolvedMoonlightLaunch,
-  type LauncherBridge,
-} from "../bridge/launcher-bridge"
-import type { MoonlightResolveOutcome } from "@contracts/generated/korrid"
-import {
   createDiscoverySnapshotPoller,
   type KorridClient,
 } from "../korrid/client"
-import {
-  completeFolderReceiptRegistration,
-  initialFolderReceiptState,
-  releaseUnknownFolderReceipt,
-  selectFolderReceipt,
-  type FolderReceiptRegistrationKind,
-} from "./folder-receipt-state"
 import type { DeviceFacts } from "./settings-model"
 import {
   entryKey,
@@ -48,7 +29,6 @@ import {
   isLocalCatalogSession,
   LaunchablesState,
   type PortalEntry,
-  type StreamSource,
 } from "../launchables/state"
 
 /**
@@ -98,32 +78,7 @@ export type LocalGamesListOutcomeWithCoverUrls =
     }
   | { readonly _tag: "Err"; readonly payload: RpcFailure }
 
-export async function resolveLocalGameCoverUrls(
-  bridge: Pick<LauncherBridge, "localGameAssetUrl">,
-  localGames: LocalGamesListOutcome,
-): Promise<LocalGamesListOutcomeWithCoverUrls> {
-  if (localGames._tag !== "Ok") return localGames
-  return {
-    ...localGames,
-    payload: {
-      ...localGames.payload,
-      games: await Promise.all(
-        localGames.payload.games.map(async game => {
-          if (game.coverAssetId === undefined) return game
-          const resolved = await bridge.localGameAssetUrl(game.coverAssetId)
-          return resolved._tag === "Resolved"
-            ? { ...game, coverArtUrl: resolved.url }
-            : game
-        }),
-      ),
-    },
-  }
-}
-
-export function useLaunchables(
-  bridge: LauncherBridge | undefined,
-  korrid: KorridClient,
-): Launchables {
+export function useLaunchables(korrid: KorridClient): Launchables {
   const [state, setState] = useState<LaunchablesState>(LaunchablesState.loading)
   // Device facts ride along with each load but are deliberately not part of
   // the launchables ADT: settings is not a thing you can play, and folding it
@@ -140,18 +95,7 @@ export function useLaunchables(
   const lastEntriesRef = useRef<readonly PortalEntry[]>([])
   const factsRef = useRef(facts)
   factsRef.current = facts
-  const streamsRef = useRef<readonly StreamSource[]>([])
-  const moonlightRef = useRef<MoonlightResolveOutcome>({
-    _tag: "Unavailable",
-    payload: {
-      code: "MoonlightUnavailable",
-      message: "Moonlight has not been resolved",
-    },
-  })
   const settingsBusyRef = useRef(false)
-  const folderAddOpeningRef = useRef(false)
-  const folderPickerSeq = useRef(0)
-  const folderReceipts = useRef(initialFolderReceiptState())
   const discoveryWasActive = useRef(false)
   const discoveryPoller = useRef(
     createDiscoverySnapshotPoller(korrid, snapshot => {
@@ -198,95 +142,6 @@ export function useLaunchables(
     [publishSettingsStatus],
   )
 
-  const acknowledgeFolderPicker = useCallback(
-    (generation: string) => {
-      void bridge?.acknowledgeGameFolderPicker(generation)
-    },
-    [bridge],
-  )
-
-  const processFolderPickerSnapshot = useCallback(
-    (snapshot: GameFolderPickerSnapshot) => {
-      switch (snapshot.state._tag) {
-        case "Idle":
-          return
-        case "Choosing":
-          publishSettingsStatus({ _tag: "Saving", settingId: "game-folder-add" })
-          return
-        case "Cancelled":
-          acknowledgeFolderPicker(snapshot.generation)
-          publishSettingsStatus({ _tag: "Idle" })
-          return
-        case "Problem":
-          acknowledgeFolderPicker(snapshot.generation)
-          settingsProblem("game-folder-add", snapshot.state.message)
-          return
-        case "Selected": {
-          const selected = selectFolderReceipt(
-            folderReceipts.current,
-            snapshot.generation,
-          )
-          folderReceipts.current = selected.state
-          switch (selected._tag) {
-            case "AcknowledgeCompleted":
-              acknowledgeFolderPicker(selected.generation)
-              return
-            case "ReportUnknown":
-              settingsProblem("game-folder-add", selected.message)
-              return
-            case "Ignore":
-              return
-            case "Submit":
-              break
-          }
-          publishSettingsStatus({ _tag: "Saving", settingId: "game-folder-add" })
-          void korrid.registerDiscoveryReceipt(snapshot.state.receipt).then(result => {
-            if (!mountedRef.current) return
-            const kind: FolderReceiptRegistrationKind =
-              result._tag === "Ok"
-                ? "Accepted"
-                : result.payload.code === "BrainUnreachable"
-                  ? "BrainUnreachable"
-                  : result.payload.code === "FolderSelectionReceiptUnknown"
-                    ? "ReceiptUnknown"
-                    : "Rejected"
-            const registered = completeFolderReceiptRegistration(
-              folderReceipts.current,
-              snapshot.generation,
-              kind,
-              result._tag === "Ok" ? "" : result.payload.message,
-            )
-            folderReceipts.current = registered.state
-            switch (registered._tag) {
-              case "Acknowledge":
-                acknowledgeFolderPicker(registered.generation)
-                if (result._tag === "Ok") {
-                  publishSettingsStatus({ _tag: "Idle" })
-                  setFacts(current => ({ ...current, discovery: result.payload }))
-                } else {
-                  settingsProblem("game-folder-add", result.payload.message)
-                }
-                return
-              case "ReportProblem":
-              case "ReportUnknown":
-                settingsProblem("game-folder-add", registered.message)
-                return
-            }
-          })
-        }
-      }
-    },
-    [acknowledgeFolderPicker, korrid, publishSettingsStatus, settingsProblem],
-  )
-
-  const checkFolderPicker = useCallback(async () => {
-    if (!bridge) return
-    const seq = ++folderPickerSeq.current
-    const snapshot = await bridge.gameFolderPickerSnapshot()
-    if (!mountedRef.current || seq !== folderPickerSeq.current) return
-    processFolderPickerSnapshot(snapshot)
-  }, [bridge, processFolderPickerSnapshot])
-
   const load = useCallback(async (preserveAction = false) => {
     if (!mountedRef.current) return
     const preservingStop = stateRef.current._tag === "Stopping"
@@ -300,77 +155,28 @@ export function useLaunchables(
     const action = actionSeq.current
     // Overlapping loads: only the latest invocation may write state.
     const seq = ++loadSeq.current
-    const [
-      games,
-      localGames,
-      moonlightDiscovery,
-      session,
-      storage,
-      notice,
-      overlay,
-      health,
-      settings,
-      systemInfo,
-      ownerBinding,
-      discovery,
-    ] = await Promise.all([
+    const [games, localGames, session, health, settings, discovery] =
+      await Promise.all([
         korrid.catalogSnapshot(),
-        // Rust's browser host dispatch uses catalog/session RPCs. Android
-        // LocalGame/LaunchSpec and Moonlight discovery are not Linux routes.
-        bridge ? korrid.localGames() : undefined,
-        bridge
-          ? korrid.moonlightResolve().then(resolution =>
-              discoverResolvedMoonlight(resolution, bridge))
-          : undefined,
+        korrid.localGames(),
         sessionStatusWithTimeout(),
-        // Re-read on every load so returning from system settings clears the
-        // prompt without the user restarting Korri.
-        bridge?.storageAccess(),
-        // Same reason: returning from the notification screen should be
-        // reflected without a restart.
-        bridge?.backgroundNotice(),
-        // The accessibility grant may be revoked while Korri is backgrounded.
-        bridge?.overlayPermission(),
         // Identity, not content: it names the software the user is running.
         korrid.health(),
         korrid.settingsSnapshot(),
-        bridge?.systemInfo(),
-        bridge?.ownerBindingSnapshot(),
-        bridge ? korrid.discoverySnapshot() : undefined,
+        korrid.discoverySnapshot(),
       ])
-    const localGamesWithCoverUrls = bridge && localGames
-      ? await resolveLocalGameCoverUrls(bridge, localGames)
-      : undefined
-    const streams: readonly StreamSource[] = moonlightDiscovery?.streams ?? []
-    const hostsResult = moonlightDiscovery?.hostsResult ?? {
-      _tag: "QueryFailed" as const,
-      message:
-        moonlightDiscovery?.resolution._tag === "Unavailable"
-          ? moonlightDiscovery.resolution.payload.message
-          : "Moonlight discovery unavailable",
-    }
     if (
       !mountedRef.current ||
       seq !== loadSeq.current ||
       action !== actionSeq.current
     ) return
-    streamsRef.current = streams
-    if (moonlightDiscovery) moonlightRef.current = moonlightDiscovery.resolution
     setFacts({
       ...(health._tag === "Ok" ? { version: health.payload.version } : {}),
       ...(settings._tag === "Ok" ? { settings: settings.payload } : {}),
-      ...(systemInfo ? { systemInfo } : {}),
-      ...(ownerBinding ? { ownerBinding } : {}),
-      ...(storage ? { storage } : {}),
-      ...(notice ? { notice } : {}),
-      ...(overlay ? { overlay } : {}),
-      ...(hostsResult._tag === "StreamHosts"
-        ? { hosts: hostsResult.items }
+      ...(localGames._tag === "Ok"
+        ? { localGameCount: localGames.payload.games.length }
         : {}),
-      ...(localGamesWithCoverUrls?._tag === "Ok"
-        ? { localGameCount: localGamesWithCoverUrls.payload.games.length }
-        : {}),
-      ...(discovery?._tag === "Ok" ? { discovery: discovery.payload } : {}),
+      ...(discovery._tag === "Ok" ? { discovery: discovery.payload } : {}),
     })
     const current = stateRef.current
     // Recovery reads must not replace a newer launch operation's visible lock.
@@ -385,16 +191,12 @@ export function useLaunchables(
       isLocalCatalogSession(entry.session, previousEntries),
     )
     const loaded = LaunchablesState.fromSources(
-      streams,
       games,
-      hostsResult._tag === "QueryFailed" ? hostsResult.message : undefined,
       // A failed refresh cannot prove that an acknowledged local launch ended.
       !isAuthoritativeSessionStatus(session) && knownLocalSession?.kind === "now-playing"
         ? { _tag: "Ok", payload: { active: knownLocalSession.session } }
         : session,
-      localGamesWithCoverUrls,
-      storage,
-      notice,
+      localGames,
       previousEntries,
     )
     if (current._tag === "Stopping") {
@@ -407,46 +209,21 @@ export function useLaunchables(
       actionSeq.current += 1
       stopPollSeq.current += 1
     }
-    // fromSources retains the native background-notice entry for Android/dev.
-    // No native executor means no Android permission prompt on this host.
-    publish(!bridge && loaded._tag === "Ready"
-      ? { ...loaded, entries: loaded.entries.filter(entry => entry.kind !== "background-notice") }
-      : loaded)
-  }, [bridge, korrid, publish, sessionStatusWithTimeout])
+    publish(loaded)
+  }, [korrid, publish, sessionStatusWithTimeout])
 
   useEffect(() => {
     mountedRef.current = true
     void load()
-    void checkFolderPicker()
     return () => {
       mountedRef.current = false
       actionSeq.current += 1
       stopPollSeq.current += 1
-      folderPickerSeq.current += 1
       discoveryPoller.current.dispose()
     }
-  }, [checkFolderPicker, load])
+  }, [load])
 
-  // Returning from a stream, Android picker, settings, or a completed
-  // background app-list repair means the launchable view may be stale.
-  useEffect(() => {
-    const onResumed = () => {
-      void load()
-      void checkFolderPicker()
-    }
-    const onStreamAppsChanged = () => void load()
-    const onOwnerBindingChanged = () => void load(true)
-    window.addEventListener(SHELL_RESUMED_EVENT, onResumed)
-    window.addEventListener(STREAM_APPS_CHANGED_EVENT, onStreamAppsChanged)
-    window.addEventListener(OWNER_BINDING_CHANGED_EVENT, onOwnerBindingChanged)
-    return () => {
-      window.removeEventListener(SHELL_RESUMED_EVENT, onResumed)
-      window.removeEventListener(STREAM_APPS_CHANGED_EVENT, onStreamAppsChanged)
-      window.removeEventListener(OWNER_BINDING_CHANGED_EVENT, onOwnerBindingChanged)
-    }
-  }, [checkFolderPicker, load])
-
-  // Linux has no native activity-resume event. Read on desktop return without
+  // Read on desktop return without
   // invalidating an in-flight prepare/stop, and keep the catalog mounted so the
   // surface can retain its selection and focus.
   useEffect(() => {
@@ -547,26 +324,6 @@ export function useLaunchables(
     return () => clearInterval(timer)
   }, [facts.discovery, load])
 
-  /** Locate the plugin-owned app, constrained to the prepared game's host. */
-  const findKorriStreamTarget = useCallback((hostName?: string) => {
-    const resolution = moonlightRef.current
-    return resolution._tag === "Available"
-      ? LaunchablesState.korriStreamTarget(
-          resolution.payload,
-          streamsRef.current,
-          hostName,
-        )
-      : { _tag: "None" as const }
-  }, [])
-
-  const moonlightTargetFailure = useCallback((hostName?: string) => {
-    const resolution = moonlightRef.current
-    if (resolution._tag === "Unavailable") return resolution.payload.message
-    return hostName === undefined
-      ? `no "${resolution.payload.sunshineApp}" app on a provisioned host`
-      : `no "${resolution.payload.sunshineApp}" app on provisioned host ${hostName}`
-  }, [])
-
   const noticeOnReady = useCallback(
     (operation: number, message: string) => {
       if (!mountedRef.current || operation !== actionSeq.current) return
@@ -579,117 +336,6 @@ export function useLaunchables(
 
   const runDeviceAction = useCallback(
     (actionId: string) => {
-      if (!bridge) {
-        settingsProblem(actionId, "This device action is not available")
-        return
-      }
-      if (actionId === "owner-binding") {
-        if (
-          settingsStatusRef.current._tag === "Saving" &&
-          settingsStatusRef.current.settingId === actionId
-        ) {
-          return
-        }
-        publishSettingsStatus({ _tag: "Saving", settingId: actionId })
-        void bridge.startOwnerBinding().then(snapshot => {
-          if (!mountedRef.current) return
-          setFacts(current => ({ ...current, ownerBinding: snapshot }))
-          switch (snapshot.personSigner._tag) {
-            case "Pending":
-              return
-            case "Approved":
-              publishSettingsStatus({ _tag: "Idle" })
-              return
-            case "Unavailable":
-            case "Denied":
-            case "InvalidResponse":
-            case "Defect":
-              settingsProblem(actionId, snapshot.personSigner.message)
-              return
-          }
-        })
-        return
-      }
-      if (actionId === "storage-access") {
-        void bridge.openStorageAccessSettings().then(result => {
-          if (result._tag === "Unavailable") {
-            settingsProblem(actionId, result.message)
-          }
-        })
-        return
-      }
-      if (actionId === "overlay-access") {
-        void bridge.openOverlaySettings().then(result => {
-          if (result._tag === "Unavailable") {
-            settingsProblem(actionId, result.message)
-          }
-        })
-        return
-      }
-      if (actionId === "game-folder-add") {
-        if (
-          folderAddOpeningRef.current ||
-          (settingsStatusRef.current._tag === "Saving" &&
-            settingsStatusRef.current.settingId === "game-folder-add")
-        ) {
-          return
-        }
-        folderAddOpeningRef.current = true
-        void (async () => {
-          const seq = ++folderPickerSeq.current
-          const snapshot = await bridge.gameFolderPickerSnapshot()
-          if (!mountedRef.current || seq !== folderPickerSeq.current) {
-            return { _tag: "Opened" as const }
-          }
-          if (snapshot.state._tag === "Choosing") {
-            processFolderPickerSnapshot(snapshot)
-            return { _tag: "Opened" as const }
-          }
-          if (snapshot.state._tag === "Selected") {
-            if (folderReceipts.current.unknown.has(snapshot.generation)) {
-              await bridge.acknowledgeGameFolderPicker(snapshot.generation)
-              if (!mountedRef.current || seq !== folderPickerSeq.current) {
-                return { _tag: "Opened" as const }
-              }
-              folderReceipts.current = releaseUnknownFolderReceipt(
-                folderReceipts.current,
-                snapshot.generation,
-              )
-            } else {
-              processFolderPickerSnapshot(snapshot)
-              return { _tag: "Opened" as const }
-            }
-          }
-          const storage = await bridge.storageAccess()
-          if (!mountedRef.current || seq !== folderPickerSeq.current) {
-            return { _tag: "Opened" as const }
-          }
-          if (storage._tag === "Denied") {
-            const opened = await bridge.openStorageAccessSettings()
-            return opened._tag === "Unavailable"
-              ? opened
-              : ({ _tag: "Opened" } as const)
-          }
-          if (storage._tag === "QueryFailed") {
-            return { _tag: "Unavailable" as const, message: storage.message }
-          }
-          publishSettingsStatus({ _tag: "Saving", settingId: actionId })
-          const opened = await bridge.openGameFolderPicker()
-          if (!mountedRef.current || seq !== folderPickerSeq.current) return opened
-          if (opened._tag === "Opened" || opened._tag === "Busy") {
-            publishSettingsStatus({ _tag: "Saving", settingId: actionId })
-            await checkFolderPicker()
-          }
-          return opened
-        })().then(result => {
-          folderAddOpeningRef.current = false
-          if (!mountedRef.current) return
-          if (result._tag === "Unavailable") {
-            settingsProblem(actionId, result.message)
-          }
-        })
-        return
-      }
       if (actionId === "game-folder-rescan") {
         if (
           discoveryActive(factsRef.current.discovery) ||
@@ -731,32 +377,9 @@ export function useLaunchables(
         })
         return
       }
-      if (actionId === "background-notice") {
-        void (async () => {
-          if (factsRef.current.notice?._tag === "Visible") {
-            return bridge.openNotificationSettings()
-          }
-          const result = await bridge.requestBackgroundNotice()
-          return result._tag === "Unprompted"
-            ? bridge.openNotificationSettings()
-            : { _tag: "Opened" as const }
-        })().then(result => {
-          if (result._tag === "Unavailable") {
-            settingsProblem(actionId, result.message)
-          }
-        })
-        return
-      }
       settingsProblem(actionId, "This setting is not available")
     },
-    [
-      bridge,
-      checkFolderPicker,
-      korrid,
-      processFolderPickerSnapshot,
-      publishSettingsStatus,
-      settingsProblem,
-    ],
+    [korrid, publishSettingsStatus, settingsProblem],
   )
 
   const changeSetting = useCallback(
@@ -832,320 +455,50 @@ export function useLaunchables(
               : { kind: "local-game", game: copy.game },
           ) === entryKey(entry))),
       )) return
-      // A catalog-local process is already running on this display. Neither
-      // its banner nor its catalog copy is an Android/Moonlight resume route.
-      // Linux resumes the exact session through korrid instead, so these
-      // guards protect only the native routes.
-      if (bridge !== undefined) {
-        if (
-          entry.kind === "now-playing" &&
-          isLocalCatalogSession(entry.session, current.entries)
-        ) return
-        if (
-          entry.kind === "game" &&
-          entry.game.source.isLocal &&
-          current.entries.some(candidate =>
-            candidate.kind === "now-playing" &&
-            isLocalCatalogSession(candidate.session, [entry]),
-          )
-        ) return
-      }
       const operation = ++actionSeq.current
 
-      if (!bridge) {
         if (entry.kind === "now-playing") {
-          // Thaw names the exact launch, so a session that ended or was
-          // replaced while the player was choosing is refused by korrid
-          // instead of resuming whatever runs now.
-          const resuming = LaunchablesState.beginLaunching(
-            current,
-            entryLabel(entry),
-            { id: entry.session.gameId ?? entry.session.launchId, title: entryLabel(entry) },
-          )
-          publish(resuming)
-          void korrid.sessionThaw(entry.session.launchId).then(outcome => {
-            if (!mountedRef.current || operation !== actionSeq.current) return
-            publish(
-              outcome._tag === "Ok"
-                ? { _tag: "Ready", entries: current.entries, notice: null }
-                : LaunchablesState.withLocalLaunchOutcome(resuming, outcome),
-            )
-          })
-          return
-        }
-        if (entry.kind !== "game") {
-          noticeOnReady(operation, "This action requires a native executor that is not available.")
-          return
-        }
-        const preparing = LaunchablesState.beginPreparing(
-          current,
-          entry.game.title,
-          { id: entry.game.id, title: entry.game.title },
-        )
-        // Same-device Linux execution is owned by Rust's browser host dispatch
-        // of SessionPrepareRequest, not Android LocalGame or Moonlight effects.
-        publish(preparing)
-        void korrid.sessionPrepare(entry.game.id, entry.game.host).then(outcome => {
-          if (!mountedRef.current || operation !== actionSeq.current) return
-          if (outcome._tag !== "Ok") {
-            publish(LaunchablesState.withPrepareOutcome(preparing, outcome))
-            return
-          }
-          // Preparation is not a native activity swap. Observe the real host
-          // session and return to browsing; do not synthesize a Launched result.
-          void load()
-        })
-        return
-      }
-
-      if (entry.kind === "background-notice") {
-        // Turning it on is a prompt Korri may show; turning it off is not
-        // Korri's to do — Android reserves hiding a background notice for
-        // the user — so that direction can only open settings. Either way
-        // the result is discovered on resume, not from the call.
-        void (
-          (async () => {
-            if (entry.visible) return bridge.openNotificationSettings()
-            const outcome = await bridge.requestBackgroundNotice()
-            return outcome._tag === "Unprompted"
-              ? bridge.openNotificationSettings()
-              : { _tag: "Opened" as const }
-          })()
-        ).then(result => {
-          if (result._tag === "Unavailable") {
-            noticeOnReady(
-              operation,
-              `cannot open notification settings: ${result.message}`,
-            )
-          }
-        })
-        return
-      }
-
-      if (entry.kind === "storage-access") {
-        // The shell can only take the user to the system screen; it cannot
-        // grant anything. Whether they said yes is discovered on resume,
-        // when the sources are re-read.
-        void bridge.openStorageAccessSettings().then(result => {
-          if (result._tag === "Unavailable") {
-            noticeOnReady(operation, `cannot open settings: ${result.message}`)
-          }
-        })
-        return
-      }
-
-      if (entry.kind === "now-playing") {
-        // Resume: the host session is already prepared — attach straight
-        // to the stable stream app without re-preparing.
-        const launching = LaunchablesState.beginLaunching(
+        // Thaw names the exact launch, so a session that ended or was
+        // replaced while the player was choosing is refused by korrid
+        // instead of resuming whatever runs now.
+        const resuming = LaunchablesState.beginLaunching(
           current,
           entryLabel(entry),
-          // A resume names its own session; Korri may not know the game id.
-          entry.session.gameId === undefined
-            ? undefined
-            : { id: entry.session.gameId, title: entryLabel(entry) },
+          { id: entry.session.gameId ?? entry.session.launchId, title: entryLabel(entry) },
         )
-        publish(launching)
-        const target = findKorriStreamTarget(entry.session.host)
-        if (target._tag === "None") {
-          publish(
-            LaunchablesState.withStartStreamResult(launching, {
-              _tag: "StreamFailed",
-              reason:
-                moonlightRef.current._tag === "Unavailable"
-                  ? "StartFailed"
-                  : "AppNotFound",
-              message: moonlightTargetFailure(entry.session.host),
-            }),
-          )
-          return
-        }
-        void (async () => {
-          const reservation = await reserveResolvedMoonlightLaunch(
-            moonlightRef.current,
-            korrid,
-            target.value.hostUuid,
-            target.value.appId,
-            entry.session.gameId,
-            entry.session.title,
-          )
-          if (reservation._tag !== "Ok") {
-            if (!mountedRef.current || operation !== actionSeq.current) return
-            publish(
-              LaunchablesState.withStartStreamResult(launching, {
-                _tag: "StreamFailed",
-                reason: "StartFailed",
-                message: reservation.payload.message,
-              }),
-            )
-            return
-          }
-          if (!mountedRef.current || operation !== actionSeq.current) {
-            await korrid.moonlightLaunchCancel(reservation.payload.launchId)
-            return
-          }
-          // This checkpoint is deliberately adjacent to the native call. No
-          // helper may hide an await between cancellation authority and start.
-          const result = await bridge.startStream(reservation.payload)
-          if (!mountedRef.current || operation !== actionSeq.current) {
-            if (mountedRef.current) void load(true)
-            return
-          }
-          publish(LaunchablesState.withStartStreamResult(launching, result))
-          if (result._tag === "StreamFailed") void load(true)
-        })()
-        return
-      }
-
-      if (entry.kind === "local-game") {
-        const launching = LaunchablesState.beginLaunching(
-          current,
-          entryLabel(entry),
-          { id: entry.game.id, title: entry.game.title },
-        )
-        publish(launching)
-        void korrid.localGameLaunch(entry.game.id).then(async outcome => {
+        publish(resuming)
+        void korrid.sessionThaw(entry.session.launchId).then(outcome => {
           if (!mountedRef.current || operation !== actionSeq.current) return
-          if (outcome._tag !== "Ok") {
-            publish(
-              LaunchablesState.withLocalLaunchOutcome(launching, outcome),
-            )
+          if (outcome._tag === "Ok") {
+            publish({ _tag: "Ready", entries: current.entries, notice: null })
             return
           }
-          const result = await bridge.launchLocal(outcome.payload)
-          if (!mountedRef.current || operation !== actionSeq.current) return
-          publish(LaunchablesState.withLocalLaunchResult(launching, result))
+          publish(LaunchablesState.withPrepareOutcome(resuming, outcome))
         })
         return
       }
-
-      if (entry.game.source.isLocal) {
-        const preparing = LaunchablesState.beginPreparing(
-          current,
-          entry.game.title,
-          { id: entry.game.id, title: entry.game.title },
-        )
-        publish(preparing)
-        // Catalog locality is the authority: this is korrid's Linux executor,
-        // not Android local inventory and not a remote stream reservation.
-        void korrid.sessionPrepare(entry.game.id).then(async outcome => {
-          if (!mountedRef.current) return
-          if (operation !== actionSeq.current) {
-            if (outcome._tag === "Ok") void load(true)
-            return
-          }
-          // Reads started before the ACK must not erase the newly known launch.
-          const loadOperation = ++loadSeq.current
-          publish(
-            LaunchablesState.withLocalCatalogPrepareOutcome(
-              preparing,
-              outcome,
-              entry.game,
-            ),
-          )
-          if (outcome._tag === "Err") {
-            // An older prepare may have succeeded while this command was
-            // locked. Recover its session without clearing this failure notice.
-            const status = await sessionStatusWithTimeout()
-            if (
-              !mountedRef.current ||
-              operation !== actionSeq.current ||
-              loadOperation !== loadSeq.current
-            ) return
-            publish(LaunchablesState.withSessionStatus(stateRef.current, status))
-          }
-        })
+      if (entry.kind !== "game") {
+        noticeOnReady(operation, "Korri cannot start this entry on this device.")
         return
       }
-
-      // Never arm a host unless the shell can attach to that exact host.
-      // Otherwise prepare would leave an unmanaged game running unseen.
-      const target = findKorriStreamTarget(entry.game.host)
       const preparing = LaunchablesState.beginPreparing(
         current,
         entry.game.title,
         { id: entry.game.id, title: entry.game.title },
       )
-      if (target._tag === "None") {
-        publish(
-          LaunchablesState.withPrepareOutcome(preparing, {
-            _tag: "Err",
-            payload: {
-              code: "NoStreamTarget",
-              message: moonlightTargetFailure(entry.game.host),
-            },
-          }),
-        )
-        return
-      }
-      // Reserve the signed one-use native launch before asking the host to
-      // prepare. A signing failure must not leave an unmanaged remote game.
-      // Preparing is visible immediately so there is no dead gap before swap.
       publish(preparing)
-      void (async () => {
-        const reservation = await reserveResolvedMoonlightLaunch(
-          moonlightRef.current,
-          korrid,
-          target.value.hostUuid,
-          target.value.appId,
-          entry.game.id,
-          entry.game.title,
-        )
-        if (reservation._tag !== "Ok") {
-          if (!mountedRef.current || operation !== actionSeq.current) return
-          publish(
-            LaunchablesState.withStartStreamResult(preparing, {
-              _tag: "StreamFailed",
-              reason: "StartFailed",
-              message: reservation.payload.message,
-            }),
-          )
+      void korrid.sessionPrepare(entry.game.id, entry.game.host).then(outcome => {
+        if (!mountedRef.current || operation !== actionSeq.current) return
+        if (outcome._tag !== "Ok") {
+          publish(LaunchablesState.withPrepareOutcome(preparing, outcome))
           return
         }
-        if (!mountedRef.current || operation !== actionSeq.current) {
-          await korrid.moonlightLaunchCancel(reservation.payload.launchId)
-          return
-        }
-
-        const prepared = await korrid.sessionPrepare(
-          entry.game.id,
-          entry.game.host,
-        )
-        if (prepared._tag !== "Ok") {
-          await korrid.moonlightLaunchCancel(reservation.payload.launchId)
-          if (!mountedRef.current || operation !== actionSeq.current) return
-          publish(LaunchablesState.withPrepareOutcome(preparing, prepared))
-          return
-        }
-        if (!mountedRef.current || operation !== actionSeq.current) {
-          await korrid.moonlightLaunchCancel(reservation.payload.launchId)
-          if (mountedRef.current) void load(true)
-          return
-        }
-
-        // Host preparation has completed, so cancellation authority is checked
-        // immediately before Artemis starts, with no hidden await in between.
-        const result = await bridge.startStream(reservation.payload)
-        if (!mountedRef.current || operation !== actionSeq.current) {
-          if (mountedRef.current) void load(true)
-          return
-        }
-        publish(LaunchablesState.withStartStreamResult(preparing, result))
-        // Native failure does not mean the host stopped. Re-read status so the
-        // prepared session is visible and resumable instead of being stranded.
-        if (result._tag === "StreamFailed") void load(true)
-      })()
+        // Preparation is not an activity swap. Observe the real host session
+        // and return to browsing; do not synthesize a launched result.
+        void load()
+      })
     },
-    [
-      bridge,
-      findKorriStreamTarget,
-      korrid,
-      load,
-      moonlightTargetFailure,
-      noticeOnReady,
-      publish,
-      sessionStatusWithTimeout,
-    ],
+    [korrid, load, noticeOnReady, publish],
   )
 
   const stopSession = useCallback(

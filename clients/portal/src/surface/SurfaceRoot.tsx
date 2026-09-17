@@ -13,7 +13,6 @@ import type {
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createRunnerChooser } from "./runner-chooser"
 import type { PortalEntry } from "../launchables/state"
-import type { LauncherBridge } from "../bridge/launcher-bridge"
 import { createInputBus, type InputBus } from "../input/bus"
 import type { KorridClient } from "../korrid/client"
 import { settingsFrom } from "./settings-model"
@@ -53,18 +52,16 @@ function formatClock(): string {
 
 export interface SurfaceRootProps {
   readonly bus: InputBus
-  readonly bridge?: LauncherBridge
   readonly korrid: KorridClient
   readonly surface: PortalSurface
 }
 
 export function SurfaceRoot({
   bus,
-  bridge,
   korrid,
   surface,
 }: SurfaceRootProps) {
-  const launchables = useLaunchables(bridge, korrid)
+  const launchables = useLaunchables(korrid)
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
@@ -103,8 +100,8 @@ export function SurfaceRoot({
   stateRef.current = state
 
   const settings = useMemo(
-    () => settingsFrom(facts, bridge !== undefined),
-    [facts, bridge],
+    () => settingsFrom(facts),
+    [facts],
   )
 
   const baseModel = useMemo(

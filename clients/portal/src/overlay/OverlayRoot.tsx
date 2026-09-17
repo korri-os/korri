@@ -5,7 +5,7 @@ import type {
 import { useEffect, useMemo, useSyncExternalStore } from "react"
 import type { InputBus } from "../input/bus"
 import type { PortalSurface } from "../surface/surface-registry"
-import type { OverlayController } from "./overlay-controller"
+import type { OverlayController } from "./in-memory-overlay-controller"
 
 export interface OverlayRootProps {
   readonly bus: InputBus

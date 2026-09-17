@@ -1,54 +1,31 @@
-import {
-  GAMEPLAY_OVERLAY_SCREEN_PARAM,
-  GAMEPLAY_OVERLAY_SCREEN_VALUE,
-  SESSION_SCREEN_PARAM,
-  SESSION_SCREEN_VALUE,
-  type KorriNativeBridgeSurface,
-  type KorriSessionBridgeSurface,
-} from "@contracts/bridge/korri-native-bridge"
-import type { KorriRpcBridgeSurface } from "@contracts/bridge/korri-rpc-bridge"
 import ReactDOM from "react-dom/client"
 import { createInputBus } from "./input/bus"
 import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
-import { createKorriNativeAdapter } from "./input/korri-native-adapter"
 import { createSpatialFocusController } from "./input/spatial-focus"
-import { createHttpKorridClient } from "./korrid/client"
-import { createPortalConnection } from "./korrid/portal-connection"
+import {
+  createHttpKorridClient,
+  createInMemoryKorridClient,
+} from "./korrid/client"
 import { createInMemoryOverlayController } from "./overlay/in-memory-overlay-controller"
-import { createOverlayController } from "./overlay/overlay-controller"
-import { createNativeOverlayHost } from "./overlay/overlay-host"
-import { createNativeOverlayConnection } from "./overlay/overlay-native"
 import { OverlayRoot } from "./overlay/OverlayRoot"
 import { loadLinuxRuntimeConfig } from "./runtime-config"
-import { createSessionLifecycleAdapter } from "./session/lifecycle-adapter"
-import {
-  createFixtureLifecycleAdapter,
-  SessionScreen,
-} from "./session/SessionScreen"
 import { resolveSurfacePreference } from "./surface/surface-preference"
 import { portalSurfaceFor } from "./surface/surface-registry"
 import { SurfaceRoot } from "./surface/SurfaceRoot"
 import "./index.css"
 
-declare global {
-  interface Window {
-    KorriNative?: KorriNativeBridgeSurface
-    KorriRpc?: KorriRpcBridgeSurface
-    KorriSession?: KorriSessionBridgeSurface
-  }
-}
+/* The session screen and the gameplay overlay are the same bundled app booted
+ * with a query param. Korri reaches them through a URL, so the names are part
+ * of how the portal is addressed and not an implementation detail. */
+const GAMEPLAY_OVERLAY_SCREEN_PARAM = "screen"
+const GAMEPLAY_OVERLAY_SCREEN_VALUE = "gameplay-overlay"
 
 const rootElement = document.getElementById("app")
 if (!rootElement) throw new Error("#app element not found")
 const root = ReactDOM.createRoot(rootElement)
 const query = new URLSearchParams(window.location.search)
 
-// The session screen is the same bundled app booted with a query param
-// (treaty: SESSION_SCREEN_PARAM). Inside the stream Activity's overlay the
-// shell injects KorriSession; in browser dev a fixture timeline plays.
-const isSessionScreen =
-  query.get(SESSION_SCREEN_PARAM) === SESSION_SCREEN_VALUE
 const isGameplayOverlay =
   query.get(GAMEPLAY_OVERLAY_SCREEN_PARAM) === GAMEPLAY_OVERLAY_SCREEN_VALUE
 /* The registry decides whether the chosen surface can serve a presentation.
@@ -63,58 +40,19 @@ if (isGameplayOverlay) {
   document.documentElement.dataset.korriGameplayOverlay = ""
 }
 
-if (isSessionScreen) {
-  const session = window.KorriSession
-  const adapter = session
-    ? createSessionLifecycleAdapter(session)
-    : createFixtureLifecycleAdapter()
-  const exit = () => {
-    if (session) session.exitToPortal()
-    else window.location.search = ""
-  }
-  root.render(<SessionScreen adapter={adapter} onExit={exit} />)
-} else if (isGameplayOverlay) {
+if (isGameplayOverlay) {
   const bus = createInputBus()
   createSpatialFocusController(bus)
-  if (window.KorriOverlay) {
-    const connection = createNativeOverlayConnection(window.KorriOverlay, bus)
-    createNativeOverlayHost({
-      connection,
-      page: window,
-      createController(config) {
-        const korrid = createHttpKorridClient(
-          `http://127.0.0.1:${config.korridPort}`,
-          config.korridCapability,
-        )
-        return createOverlayController({
-          launchId: config.launchId,
-          korrid,
-          platform: connection.platform,
-        })
-      },
-      mount(controller) {
-        root.render(
-          <OverlayRoot
-            bus={bus}
-            controller={controller}
-            surface={portalSurfaceFor("gameplay-overlay", preferredSurfaceId)}
-          />,
-        )
-      },
-      unmount() {
-        root.unmount()
-      },
-    })
-  } else {
-    bus.use(createKeyboardAdapter())
-    root.render(
-      <OverlayRoot
-        bus={bus}
-        controller={createInMemoryOverlayController()}
-        surface={portalSurfaceFor("gameplay-overlay", preferredSurfaceId)}
-      />,
-    )
-  }
+  bus.use(createKeyboardAdapter())
+  /* Same reason as the session screen: korrid performs no in-game control on
+   * Linux yet, so the overlay runs against its in-memory controller. */
+  root.render(
+    <OverlayRoot
+      bus={bus}
+      controller={createInMemoryOverlayController()}
+      surface={portalSurfaceFor("gameplay-overlay", preferredSurfaceId)}
+    />,
+  )
 } else {
   void mountCatalog().catch(error => {
     rootElement.textContent = "Korri could not connect to this device."
@@ -122,36 +60,27 @@ if (isSessionScreen) {
   })
 }
 
-// Composition root for Android, production Linux, and browser development.
+// Composition root for production Linux and for browser development.
 async function mountCatalog() {
-  // Production Linux has no shell at all. Its korrid credential arrives
-  // privately at runtime, so it must be read before anything mounts.
-  const linuxRuntime = !window.KorriNative && !window.KorriRpc && !import.meta.env.DEV
-    ? await loadLinuxRuntimeConfig()
-    : undefined
+  // korrid's credential arrives privately at runtime, so it must be read
+  // before anything mounts. Browser development has no such file.
+  const linuxRuntime = import.meta.env.DEV
+    ? undefined
+    : await loadLinuxRuntimeConfig()
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
-  // Android already translates hardware in Kotlin. Browser polling there
-  // would deliver each controller press twice.
-  bus.use(window.KorriNative ? createKorriNativeAdapter() : createGamepadAdapter())
+  bus.use(createGamepadAdapter())
   createSpatialFocusController(bus)
 
-  // The shell supplies RPC credentials independently of native hardware.
-  // Linux has no shell and no native launcher: korrid's browser host dispatch
-  // owns catalog execution there, so that path carries no bridge at all.
-  const { bridge, korrid } = linuxRuntime
-    ? {
-        bridge: undefined,
-        korrid: createHttpKorridClient(
-          `http://127.0.0.1:${linuxRuntime.korridPort}`,
-          linuxRuntime.korridCapability,
-        ),
-      }
-    : createPortalConnection(window.KorriRpc, window.KorriNative)
+  const korrid = linuxRuntime
+    ? createHttpKorridClient(
+        `http://127.0.0.1:${linuxRuntime.korridPort}`,
+        linuxRuntime.korridCapability,
+      )
+    : createInMemoryKorridClient()
 
   root.render(
     <SurfaceRoot
-      bridge={bridge}
       bus={bus}
       korrid={korrid}
       surface={portalSurfaceFor("catalog", resolveSurfacePreference(

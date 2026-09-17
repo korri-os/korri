@@ -30,33 +30,14 @@ import {
 const SECTION_CONTINUE = "Continue"
 const SECTION_THIS_DEVICE = "This device"
 
-/** Non-game entries become rail actions rather than games. */
-export function isActionEntry(entry: PortalEntry): boolean {
-  return entry.kind === "storage-access" || entry.kind === "background-notice"
+/* Every entry korrid publishes today is playable. The rail actions that used
+ * this seam were shell permission prompts, which no device asks for now. */
+export function isActionEntry(_entry: PortalEntry): boolean {
+  return false
 }
 
-function actionFromEntry(entry: PortalEntry): SurfaceAction | null {
-  switch (entry.kind) {
-    case "storage-access":
-      return {
-        id: entryKey(entry),
-        label: "Allow file access",
-        description:
-          "Korri keeps your settings and games in a folder you can open.",
-        enabled: true,
-      }
-    case "background-notice":
-      return {
-        id: entryKey(entry),
-        label: entry.visible ? "Hide background notice" : "Show Korri running",
-        description: entry.visible
-          ? "Stop showing the notice that Korri is running."
-          : "Show a notice while Korri keeps running in the background.",
-        enabled: true,
-      }
-    default:
-      return null
-  }
+function actionFromEntry(_entry: PortalEntry): SurfaceAction | null {
+  return null
 }
 
 function orderedCopiesForEntry(entry: PortalEntry): readonly PortalGameCopy[] {

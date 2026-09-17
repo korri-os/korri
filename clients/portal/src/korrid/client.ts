@@ -21,9 +21,6 @@ import type {
   LocalGame,
   LocalGameLaunchOutcome,
   LocalGamesListOutcome,
-  MoonlightLaunchCancelOutcome,
-  MoonlightLaunchPrepareOutcome,
-  MoonlightResolveOutcome,
   RpcRequest,
   RpcResponse,
   PlatformInstruction,
@@ -45,7 +42,6 @@ import type {
   PeerListOutcome,
 } from "@contracts/generated/korrid"
 import {
-  AndroidMoonlightEffect,
   LaunchContributorKind,
   LaunchForegroundKind,
   SecretSettingStatus,
@@ -76,14 +72,6 @@ export interface KorridClient {
   removeDiscoveryLocation(locationId: string): Promise<DiscoverySnapshotOutcome>
   rescanDiscovery(): Promise<DiscoverySnapshotOutcome>
   catalogSnapshot(): Promise<CatalogSnapshotOutcome>
-  moonlightResolve(): Promise<MoonlightResolveOutcome>
-  moonlightLaunchPrepare(
-    hostUuid: string,
-    appId: number,
-    gameId?: string,
-    title?: string,
-  ): Promise<MoonlightLaunchPrepareOutcome>
-  moonlightLaunchCancel(launchId: string): Promise<MoonlightLaunchCancelOutcome>
   localGames(): Promise<LocalGamesListOutcome>
   localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
@@ -100,12 +88,6 @@ export interface KorridClient {
   /** Readiness of exactly one native peer, selected by its device key. */
   sourceStatus(devicePublicKey: string): Promise<SourceStatusOutcome>
   peerList(): Promise<PeerListOutcome>
-  sessionControls(launchId: string): Promise<SessionControlsOutcome>
-  invokeSessionControl(
-    launchId: string,
-    controlId: string,
-    value?: SessionControlValue,
-  ): Promise<SessionControlInvokeOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
@@ -228,57 +210,6 @@ function isSessionControls(value: unknown): value is SessionControls {
       group.controls.every(isSessionControl))
 }
 
-function isPlatformInstruction(value: unknown): value is PlatformInstruction {
-  if (!isRecord(value) || typeof value.launchId !== "string" ||
-    typeof value.executorId !== "string" || typeof value.generation !== "string" ||
-    typeof value.actionId !== "string" ||
-    typeof value.dismissOnSuccess !== "boolean" || typeof value.nonce !== "string" ||
-    typeof value.integrity !== "string" || !isRecord(value.effect) ||
-    value.effect.kind !== "android-moonlight" ||
-    !Object.values(AndroidMoonlightEffect).includes(
-      value.effect.payload as AndroidMoonlightEffect,
-    )
-  ) return false
-  return value.value === undefined || isSessionControlValue(value.value)
-}
-
-function decodeSessionControlsResponse(value: unknown): SessionControlsOutcome | null {
-  if (!isRecord(value) || value._tag !== "app.session.controls" ||
-    !isRecord(value.outcome)) return null
-  const outcome = value.outcome
-  if (outcome._tag === "Ok" && isSessionControls(outcome.payload)) {
-    return { _tag: "Ok", payload: outcome.payload }
-  }
-  if (outcome._tag === "Err" && isSessionControlFailure(outcome.payload)) {
-    return { _tag: "Err", payload: outcome.payload }
-  }
-  return null
-}
-
-function decodeSessionControlInvokeResponse(
-  value: unknown,
-): SessionControlInvokeOutcome | null {
-  if (!isRecord(value) || value._tag !== "app.session.control.invoke" ||
-    !isRecord(value.outcome)) return null
-  const outcome = value.outcome
-  if (outcome._tag === "Err" && isSessionControlFailure(outcome.payload)) {
-    return { _tag: "Err", payload: outcome.payload }
-  }
-  if (outcome._tag !== "Ok" || !isRecord(outcome.payload)) return null
-  const result = outcome.payload
-  if (result._tag === "Completed" && isRecord(result.payload) &&
-    typeof result.payload.launchId === "string") {
-    return {
-      _tag: "Ok",
-      payload: { _tag: "Completed", payload: { launchId: result.payload.launchId } },
-    }
-  }
-  if (result._tag === "PlatformInstruction" && isPlatformInstruction(result.payload)) {
-    return { _tag: "Ok", payload: { _tag: "PlatformInstruction", payload: result.payload } }
-  }
-  return null
-}
-
 export function createHttpKorridClient(
   baseUrl: string,
   capability: string,
@@ -388,42 +319,6 @@ export function createHttpKorridClient(
         const response = await callKorrid(baseUrl, capability, {
           _tag: "app.catalog.snapshot",
           payload: {},
-        })
-        return response.outcome
-      } catch (error) {
-        return unreachable(error)
-      }
-    },
-    async moonlightResolve() {
-      try {
-        const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.moonlight.resolve",
-          payload: {},
-        })
-        return response.outcome
-      } catch (error) {
-        return {
-          _tag: "Unavailable",
-          payload: unreachable(error).payload,
-        }
-      }
-    },
-    async moonlightLaunchPrepare(hostUuid, appId, gameId, title) {
-      try {
-        const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.moonlight.launch.prepare",
-          payload: { hostUuid, appId, gameId, title },
-        })
-        return response.outcome
-      } catch (error) {
-        return unreachable(error)
-      }
-    },
-    async moonlightLaunchCancel(launchId) {
-      try {
-        const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.moonlight.launch.cancel",
-          payload: { launchId },
         })
         return response.outcome
       } catch (error) {
@@ -558,30 +453,6 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async sessionControls(launchId) {
-      try {
-        const response: unknown = await callKorrid(baseUrl, capability, {
-          _tag: "app.session.controls",
-          payload: { launchId },
-        })
-        return decodeSessionControlsResponse(response) ?? controlsUnavailable()
-      } catch {
-        return controlsUnavailable()
-      }
-    },
-    async invokeSessionControl(launchId, controlId, value) {
-      try {
-        const response: unknown = await callKorrid(baseUrl, capability, {
-          _tag: "app.session.control.invoke",
-          payload: value === undefined
-            ? { launchId, controlId }
-            : { launchId, controlId, value },
-        })
-        return decodeSessionControlInvokeResponse(response) ?? invocationUnavailable()
-      } catch {
-        return invocationUnavailable()
-      }
-    },
   }
 }
 
@@ -589,7 +460,6 @@ export interface InMemoryKorridClientConfig {
   readonly behavior?:
     | "ok"
     | "catalog-fail"
-    | "moonlight-unavailable"
     | "prepare-fail"
     | "local-list-fail"
     | "local-launch-fail"
@@ -600,7 +470,6 @@ export interface InMemoryKorridClientConfig {
   readonly routeDelayMs?: number
   readonly routeMutationDelayMs?: number
   readonly routePermission?: "Full" | "LocalSessions" | "ReadOnly"
-  readonly moonlight?: MoonlightResolveOutcome
   readonly localGames?: readonly LocalGame[]
   readonly localLaunchSpecs?: Readonly<Record<string, LaunchSpec>>
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
@@ -695,13 +564,6 @@ export function createInMemoryKorridClient(
     config.peerList ?? { _tag: "Ok", payload: { peers: [] } },
   )
   const games = config.games ?? sampleGames
-  const moonlight = config.moonlight ?? {
-    _tag: "Unavailable" as const,
-    payload: {
-      code: "MoonlightUnavailable",
-      message: "Moonlight is not configured in this browser fixture",
-    },
-  }
   const localGames = config.localGames ?? []
   const localLaunchSpecs = config.localLaunchSpecs ?? {}
   const localFailures = config.localFailures
@@ -746,30 +608,11 @@ export function createInMemoryKorridClient(
     deviceName: "Browser",
     steamGridDbCredential: SecretSettingStatus.NotConfigured,
     plugins: [
-      { id: "@korri:android-app", title: "Android", enabled: true },
       { id: "@korri:mgba", title: "mGBA", enabled: true },
-      { id: "@korri:moonlight", title: "Moonlight", enabled: true },
       { id: "@korri:retroarch", title: "RetroArch", enabled: true },
     ],
   }
   let settingsRevision = 0
-  let moonlightLaunchSequence = 0
-  let currentMoonlightLaunchId: string | undefined
-  const currentMoonlight = (): MoonlightResolveOutcome => {
-    const enabled = settings.plugins.some(
-      plugin => plugin.id === "@korri:moonlight" && plugin.enabled,
-    )
-    if (behavior === "moonlight-unavailable" || !enabled) {
-      return {
-        _tag: "Unavailable",
-        payload: {
-          code: "MoonlightUnavailable",
-          message: "Moonlight is disabled or Artemis is unavailable",
-        },
-      }
-    }
-    return moonlight
-  }
   let discovery: DiscoverySnapshot = config.discovery ?? {
     generation: "in-memory-0",
     state: { _tag: "Idle", payload: {} },
@@ -898,55 +741,6 @@ export function createInMemoryKorridClient(
         }
       }
       return { _tag: "Ok", payload: { games: [...games] } }
-    },
-    async moonlightResolve() {
-      return currentMoonlight()
-    },
-    async moonlightLaunchPrepare(hostUuid, appId, gameId, title) {
-      const resolved = currentMoonlight()
-      if (resolved._tag !== "Available") {
-        return { _tag: "Err", payload: resolved.payload }
-      }
-      moonlightLaunchSequence += 1
-      const launchId = `in-memory-moonlight-${moonlightLaunchSequence}`
-      currentMoonlightLaunchId = launchId
-      return {
-        _tag: "Ok",
-        payload: {
-          launchId,
-          transportId: resolved.payload.transportId,
-          context: {
-            gameId,
-            title,
-            contributors: [
-              {
-                kind: LaunchContributorKind.Transport,
-                id: resolved.payload.transportId,
-              },
-            ],
-            executor: { id: "android-moonlight", available: false },
-            foreground: { kind: LaunchForegroundKind.ArtemisGame },
-          },
-          implementation: resolved.payload.implementation,
-          sunshineApp: resolved.payload.sunshineApp,
-          hostUuid,
-          appId,
-          integrity: "in-memory-integrity",
-        },
-      }
-    },
-    async moonlightLaunchCancel(launchId) {
-      if (currentMoonlightLaunchId !== launchId) {
-        return {
-          _tag: "Err",
-          payload: {
-            code: "MoonlightLaunchReservationNotCurrent",
-            message: "Moonlight launch reservation is not current and unused",
-          },
-        }
-      }
-      currentMoonlightLaunchId = undefined
-      return { _tag: "Ok", payload: { launchId } }
     },
     async localGames() {
       if (behavior === "local-list-fail") {
@@ -1114,60 +908,6 @@ export function createInMemoryKorridClient(
               ? SourceCatalogState.Unavailable
               : SourceCatalogState.Available,
           streamControl: SourceStreamControlState.Enabled,
-        },
-      }
-    },
-    async sessionControls(launchId) {
-      if (
-        sessionControlBehavior === "unavailable" ||
-        overlayControls === undefined
-      ) {
-        return controlsUnavailable()
-      }
-      if (overlayControls.launchId !== launchId) {
-        return {
-          _tag: "Err",
-          payload: {
-            reason: SessionControlFailureReason.StaleSession,
-            message: "The gameplay session changed.",
-          },
-        }
-      }
-      return { _tag: "Ok", payload: overlayControls }
-    },
-    async invokeSessionControl(launchId, controlId, value) {
-      if (sessionControlBehavior === "invoke-fail") {
-        return invocationUnavailable()
-      }
-      if (overlayControls === undefined || overlayControls.launchId !== launchId) {
-        return {
-          _tag: "Err",
-          payload: {
-            reason: SessionControlFailureReason.StaleSession,
-            message: "The gameplay session changed.",
-          },
-        }
-      }
-      const selected = overlayControls.groups
-        .flatMap(group => group.controls)
-        .find(control => control.id === controlId)
-      if (!selected) {
-        return {
-          _tag: "Err",
-          payload: {
-            reason: SessionControlFailureReason.UnknownControl,
-            message: "That gameplay control is unavailable.",
-          },
-        }
-      }
-      if (value !== undefined) {
-        overlayControls = updateInMemoryControl(overlayControls, controlId, value)
-      }
-      return {
-        _tag: "Ok",
-        payload: {
-          _tag: "Completed",
-          payload: { launchId },
         },
       }
     },
