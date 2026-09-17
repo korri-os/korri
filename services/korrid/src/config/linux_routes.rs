@@ -34,7 +34,7 @@ pub fn linux_route_candidates(
                     .as_ref()
                     .is_some_and(|systems| systems.contains(&release.system.0))
         }) {
-            if !emitted.insert(runner.id.clone()) {
+            if emitted.contains(&runner.id) {
                 continue;
             }
             let program = registry
@@ -83,6 +83,7 @@ pub fn linux_route_candidates(
                     };
                     continue;
                 }
+                emitted.insert(runner.id.clone());
                 candidates.push(ResolvedRoute {
                     playable_id: game_id.into(),
                     title: Some(game.title.clone()),
