@@ -9,12 +9,6 @@ let
   proseqlSource = import ./proseql-source.nix { inherit pkgs proseql; };
   sourceRoot = ./.;
   sourceRootString = toString sourceRoot;
-  bundledPluginSources = [
-    "plugins/android-app.plugin.ts"
-    "plugins/mgba.plugin.ts"
-    "plugins/moonlight.plugin.ts"
-    "plugins/retroarch.plugin.ts"
-  ];
   relativeSourcePath = path: lib.removePrefix "${sourceRootString}/" (toString path);
   cleanSource = lib.cleanSourceWith {
     src = sourceRoot;
@@ -24,26 +18,18 @@ let
       # The shared scheduler is host runtime source included by completion.rs.
       || (type != "directory" && relativeSourcePath path == "src/script/completion.js")
       # The script unit tests include the checked-in example plugin source.
-      || lib.hasPrefix "${sourceRootString}/examples/" (toString path)
-      # The production plugin is bundled with include_str! and must survive the
-      # clean/composed cargo source, without pulling in arbitrary plugin source.
-      || (type == "directory" && (toString path) == "${sourceRootString}/plugins")
-      || (type != "directory" && builtins.elem (relativeSourcePath path) bundledPluginSources);
+      || lib.hasPrefix "${sourceRootString}/examples/" (toString path);
   };
   composedSource = proseqlSource.composeCargoSource cleanSource;
-  # The checkout uses a relative symlink so the plugin-owned declaration stays
-  # beside its Android acquisition/build package. Nix sources cannot retain a
-  # symlinks that escape sourceRoot, so materialize those canonical files in
-  # the hermetic crate source.
-  src = pkgs.runCommand "korrid-source-with-bundled-plugins" { } ''
+  # korrid ships no plugins. The one plugin-owned file it still reads is the
+  # shared libretro helper, reached through a relative symlink so the checkout
+  # keeps a single copy beside the cores that import it. Nix sources cannot
+  # retain a symlink that escapes sourceRoot, so materialize it here.
+  src = pkgs.runCommand "korrid-source-with-materialized-examples" { } ''
     mkdir -p "$out"
     cp -R --no-preserve=mode,ownership ${composedSource}/. "$out/"
-    rm -f "$out/plugins/mgba.plugin.ts" "$out/plugins/moonlight.plugin.ts" "$out/plugins/retroarch.plugin.ts"
-    cp ${../../plugins/mgba/android/plugin.ts} "$out/plugins/mgba.plugin.ts"
-    cp ${../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
-    cp ${../../plugins/retroarch/android/plugin.ts} "$out/plugins/retroarch.plugin.ts"
-    rm -f "$out/examples/linux-retroarch.plugin.ts"
-    cp ${../../plugins/retroarch/plugin.ts} "$out/examples/linux-retroarch.plugin.ts"
+    rm -f "$out/examples/libretro-retroarch.ts"
+    cp ${../../plugins/libretro/retroarch.ts} "$out/examples/libretro-retroarch.ts"
   '';
   commonArgs = {
     inherit src;
@@ -78,12 +64,11 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
+    # korrid bundles no plugin declarations. A plugin arrives through the
+    # plugin host's installed registry, never through this package.
     preConfigure = ''
-      plugin_sources="$(${pkgs.findutils}/bin/find plugins -type f -name '*.plugin.ts' -printf '%P\n' | sort)"
-      expected_plugin_sources=$'android-app.plugin.ts\nmgba.plugin.ts\nmoonlight.plugin.ts\nretroarch.plugin.ts'
-      if [[ "$plugin_sources" != "$expected_plugin_sources" ]]; then
-        echo "unexpected bundled plugin source set:" >&2
-        printf '%s\n' "$plugin_sources" >&2
+      if [[ -e plugins ]]; then
+        echo 'korrid source carries bundled plugins again' >&2
         exit 1
       fi
     '';

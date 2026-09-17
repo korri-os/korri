@@ -91,7 +91,7 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
     fs::write(package.join("plugin.ts"), source).unwrap();
     fs::write(
         package.join("retroarch.ts"),
-        include_str!("../../../plugins/libretro/retroarch.ts"),
+        include_str!("../examples/libretro-retroarch.ts"),
     )
     .unwrap();
     fs::write(package.join("settings.ts"), SETTINGS_MODULE).unwrap();
@@ -126,7 +126,7 @@ pub fn installed(root: &Path) -> PluginRegistry {
     .unwrap();
     fs::write(
         mgba.join("retroarch.ts"),
-        include_str!("../../../plugins/libretro/retroarch.ts"),
+        include_str!("../examples/libretro-retroarch.ts"),
     )
     .unwrap();
     // The catalogue writes this module from the pinned program's own source.
