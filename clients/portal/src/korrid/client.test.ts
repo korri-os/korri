@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { SecretSettingStatus } from "@contracts/generated/korrid"
 import {
   LaunchContributorKind,
-  LaunchDisposition,
-  LaunchForegroundKind,
   SessionControlFailureReason,
   SessionFreezerState,
   SourceCatalogState,
@@ -280,51 +278,6 @@ describe("callKorrid", () => {
 })
 
 describe("local games", () => {
-  it("does not manufacture plugin-owned local routes by default", async () => {
-    const client = createInMemoryKorridClient()
-    expect(await client.localGames()).toEqual({
-      _tag: "Ok",
-      payload: { games: [] },
-    })
-    expect(await client.localGameLaunch("wl4")).toMatchObject({
-      _tag: "Err",
-      payload: { code: "LocalRomMissing" },
-    })
-  })
-
-  it("returns caller-provided local launch instructions unchanged", async () => {
-    const spec = {
-      launchId: "fixture-launch",
-      runnerId: "fixture-launcher",
-      disposition: LaunchDisposition.Fresh,
-      context: {
-        gameId: "fixture",
-        title: "Fixture",
-        contributors: [
-          { kind: LaunchContributorKind.Runner, id: "fixture-launcher" },
-        ],
-        foreground: {
-          kind: LaunchForegroundKind.Component,
-          packageName: "dev.fixture.runtime",
-          className: "dev.fixture.Main",
-        },
-      },
-      component: { packageName: "dev.fixture.runtime", className: "dev.fixture.Main" },
-      extras: { CONTENT: "/fixture/game.bin" },
-      directories: [],
-      files: [],
-      integrity: "fixture-integrity",
-    }
-    const client = createInMemoryKorridClient({
-      localGames: [{ id: "fixture", title: "Fixture", system: "Test" }],
-      localLaunchSpecs: { fixture: spec },
-    })
-
-    expect(await client.localGameLaunch("fixture")).toEqual({
-      _tag: "Ok",
-      payload: spec,
-    })
-  })
 
   it("keeps healthy local games beside local configuration failures", async () => {
     const client = createInMemoryKorridClient({

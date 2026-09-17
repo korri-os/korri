@@ -45,12 +45,7 @@ fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
     assert_eq!(snapshot.snapshot.releases.len(), 1);
     assert_eq!(snapshot.snapshot.locations.len(), 1);
     let registry = native_packages::installed(&private.path().join("packages"));
-    let routes = resolve_launchable_routes(
-        storage.path(),
-        &snapshot.snapshot,
-        &registry,
-        [],
-    );
+    let routes = resolve_launchable_routes(storage.path(), &snapshot.snapshot, &registry, []);
     assert!(routes.diagnostics.is_empty(), "{:?}", routes.diagnostics);
     assert_eq!(routes.routes.len(), 1);
     let route = &routes.routes[0];

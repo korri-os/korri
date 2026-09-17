@@ -1,15 +1,10 @@
 use korrid::{
-    plugin::{
-        load_plugin_source, PluginRegistry, SessionControlDeclarationInteraction,
-    },
+    plugin::{load_plugin_source, PluginRegistry},
     plugin_installation::EnabledPackage,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
-
 const MGBA_PLUGIN: &str = GENERATED_CORE;
-
-
 
 const LINUX_RETROARCH_PLUGIN: &str = include_str!("../../../plugins/retroarch/plugin.ts");
 const GENERATED_CORE: &str = include_str!("../examples/libretro-core.plugin.ts");
@@ -26,7 +21,6 @@ fn publisher_identity_comes_from_composition_not_module_source() {
     )
     .is_err());
 }
-
 
 #[test]
 fn retroarch_is_a_scoped_family_not_an_executable_dependency() {
@@ -67,7 +61,6 @@ fn disabled_plugins_reserve_runner_identities_without_enabling_them() {
     assert!(registry.owns_registered_runner_id("@korri:mgba/mgba"));
     assert!(registry.owns_registered_system_id("gba"));
 }
-
 
 /// A stranger may join any family, but naming one is a claim on an id every
 /// other plugin resolves through. Only the owning publisher may make it.

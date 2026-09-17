@@ -17,16 +17,12 @@ import type {
   DiscoverySnapshotOutcome,
   Game,
   HealthOutcome,
-  LaunchSpec,
   LocalGame,
-  LocalGameLaunchOutcome,
   LocalGamesListOutcome,
   RpcRequest,
   RpcResponse,
-  PlatformInstruction,
   SessionControl,
   SessionControlFailure,
-  SessionControlInvokeOutcome,
   SessionControlValue,
   SessionControls,
   SessionControlsOutcome,
@@ -43,7 +39,6 @@ import type {
 } from "@contracts/generated/korrid"
 import {
   LaunchContributorKind,
-  LaunchForegroundKind,
   SecretSettingStatus,
   SessionControlFailureReason,
   SessionFreezerState,
@@ -73,7 +68,6 @@ export interface KorridClient {
   rescanDiscovery(): Promise<DiscoverySnapshotOutcome>
   catalogSnapshot(): Promise<CatalogSnapshotOutcome>
   localGames(): Promise<LocalGamesListOutcome>
-  localGameLaunch(gameId: string): Promise<LocalGameLaunchOutcome>
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
   setGameRunner(request: GameRunnerSetRequest): Promise<GameRunnerSetOutcome>
   launchSelectedGame(gameId: string, runnerId: string): Promise<SelectedGameLaunchOutcome>
@@ -145,14 +139,6 @@ const controlsUnavailable = (): SessionControlsOutcome => ({
   payload: {
     reason: SessionControlFailureReason.Unavailable,
     message: "Gameplay controls are unavailable right now.",
-  },
-})
-
-const invocationUnavailable = (): SessionControlInvokeOutcome => ({
-  _tag: "Err",
-  payload: {
-    reason: SessionControlFailureReason.Unavailable,
-    message: "That gameplay control is unavailable right now.",
   },
 })
 
@@ -357,17 +343,6 @@ export function createHttpKorridClient(
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
-    async localGameLaunch(gameId) {
-      try {
-        const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.local-games.launch",
-          payload: { gameId },
-        })
-        return response.outcome
-      } catch (error) {
-        return unreachable(error)
-      }
-    },
     async sessionPrepare(gameId, host) {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -471,7 +446,6 @@ export interface InMemoryKorridClientConfig {
   readonly routeMutationDelayMs?: number
   readonly routePermission?: "Full" | "LocalSessions" | "ReadOnly"
   readonly localGames?: readonly LocalGame[]
-  readonly localLaunchSpecs?: Readonly<Record<string, LaunchSpec>>
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
   readonly discovery?: DiscoverySnapshot
   /** Snapshot fixture only; catalog games do not imply peer liveness. */
@@ -565,7 +539,6 @@ export function createInMemoryKorridClient(
   )
   const games = config.games ?? sampleGames
   const localGames = config.localGames ?? []
-  const localLaunchSpecs = config.localLaunchSpecs ?? {}
   const localFailures = config.localFailures
   let activeSession = config.activeSession
   const routeRecords = structuredClone([...(config.gameRoutes ?? [])])
@@ -802,20 +775,6 @@ export function createInMemoryKorridClient(
       if (!route) return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
       activeSession = { gameId, launchId: `selected:${gameId}` }
       return { _tag: "Ok", payload: { session: { gameId, launchId: activeSession.launchId }, warnings: [...route.warnings] } }
-    },
-    async localGameLaunch(gameId) {
-      const spec = localLaunchSpecs[gameId]
-      if (
-        behavior === "local-launch-fail" ||
-        !localGames.some(game => game.id === gameId) ||
-        spec === undefined
-      ) {
-        return {
-          _tag: "Err",
-          payload: { code: "LocalRomMissing", message: `cannot launch ${gameId}` },
-        }
-      }
-      return { _tag: "Ok", payload: spec }
     },
     async sessionPrepare(gameId, host) {
       if (

@@ -81,13 +81,6 @@ impl PortalAccess {
         }
     }
 
-    pub(crate) fn allow_bundled_android_origin(&mut self) {
-        let origin = HeaderValue::from_static(crate::ANDROID_BUNDLED_PORTAL_ORIGIN);
-        if !self.allowed_origins.contains(&origin) {
-            self.allowed_origins.push(origin);
-        }
-    }
-
     pub(crate) fn allowed_origins(&self) -> &[HeaderValue] {
         &self.allowed_origins
     }

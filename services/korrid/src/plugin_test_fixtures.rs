@@ -56,9 +56,7 @@ pub fn write_gba_library(root: &Path) {
     };
     write(
         "device.yaml",
-        format!(
-            "locations:\n  '{GBA_RELEASE}':\n    - storage: roms\n      path: wl4.gba\n"
-        ),
+        format!("locations:\n  '{GBA_RELEASE}':\n    - storage: roms\n      path: wl4.gba\n"),
     );
     write(
         "catalog/games.yaml",
@@ -80,7 +78,9 @@ pub fn installed_pair(root: &Path) -> PluginRegistry {
     packages.push(core_package(
         root,
         "beetle-gba",
-        GENERATED_CORE.replace("mgba", "beetle-gba").replace("mGBA", "Beetle GBA"),
+        GENERATED_CORE
+            .replace("mgba", "beetle-gba")
+            .replace("mGBA", "Beetle GBA"),
     ));
     PluginRegistry::from_installed(packages).unwrap()
 }

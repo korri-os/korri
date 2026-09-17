@@ -127,7 +127,13 @@ fn settings_rejects_pending_publication_then_restart_recovers_and_save_succeeds(
     discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap();
-    let before = settings::read_with_registry_source(root.path(), &crate::plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::installed(root.path())))).unwrap();
+    let before = settings::read_with_registry_source(
+        root.path(),
+        &crate::plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin_test_fixtures::installed(root.path()),
+        )),
+    )
+    .unwrap();
     fs::write(roms.path().join("new.gba"), b"rom").unwrap();
     PUBLICATION_HOOK.set(Some(Box::new(|at, _, _| {
         if at == 2 {
@@ -154,7 +160,13 @@ fn settings_rejects_pending_publication_then_restart_recovers_and_save_succeeds(
     DiscoveryCoordinator::for_tests_with_write_lock(root.path(), private.path(), lock.clone())
         .rescan(&DiscoveryOptions::default())
         .unwrap();
-    let recovered = settings::read_with_registry_source(root.path(), &crate::plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::installed(root.path())))).unwrap();
+    let recovered = settings::read_with_registry_source(
+        root.path(),
+        &crate::plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin_test_fixtures::installed(root.path()),
+        )),
+    )
+    .unwrap();
     let saved = settings::update_with_registry_source(
         root.path(),
         private.path(),

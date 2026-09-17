@@ -14,15 +14,9 @@ use crate::{
 };
 use std::{collections::BTreeMap, path::Path};
 
-pub(crate) use types::derive_retroarch_control_port;
-
 pub use types::{
-    AndroidActiveLaunch, AndroidComponent, AndroidMoonlightEffect, FileProvisionMode,
-    LaunchContext, LaunchContributorKind, LaunchDisposition, LaunchExecutor, LaunchForegroundKind,
-    LaunchForegroundRule, LaunchPublicationReservationFailure, LaunchPublicationReservations,
-    LaunchRouteContributor, LaunchSpec, LocalGame, MoonlightLaunchAuthority, MoonlightLaunchSpec,
-    MoonlightLaunchVerificationFailure, PlatformEffect, PlatformInstruction,
-    PlatformInstructionVerificationFailure, PlatformInstructionVerifier, ProvisionedFile,
+    FileProvisionMode, LaunchContributorKind, LaunchExecutor, LaunchPublicationReservationFailure,
+    LaunchRouteContributor, LocalGame, ProvisionedFile,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -140,21 +134,6 @@ fn cover_asset_ids(readable_root: &Path, private_root: &Path) -> BTreeMap<String
         .collect();
     repo.matching_tile_asset_ids(&owners).unwrap_or_default()
 }
-
-fn launch_error_from_route_diagnostic(diagnostic: RouteDiagnostic) -> LaunchError {
-    match diagnostic.code {
-        resolver::RouteDiagnosticCode::LocalRomMissing => {
-            LaunchError::RomMissing(diagnostic.message)
-        }
-        resolver::RouteDiagnosticCode::LocalRouteUnavailable => {
-            LaunchError::RouteUnavailable(diagnostic.message)
-        }
-        resolver::RouteDiagnosticCode::LocalRouteCollision => {
-            LaunchError::RouteCollision(diagnostic.message)
-        }
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

@@ -3,7 +3,6 @@ use std::fs;
 use korrid::{
     config::{resolver, snapshot::ConfigSnapshotCoordinator},
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin_policy,
 };
 use serde_yaml::Value;
 use sha2::{Digest, Sha256};

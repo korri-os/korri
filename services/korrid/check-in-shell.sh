@@ -11,7 +11,6 @@ unset shellHook
 ROOT="${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
 CRATE="$ROOT/services/korrid"
 GENERATED_TS="$ROOT/contracts/generated/korrid.ts"
-ANDROID_LIBS="$ROOT/clients/android/app/src/main/jniLibs"
 
 cd "$CRATE"
 # Focused treaty regeneration uses the same Typeshare invocation as the full gate.
@@ -28,20 +27,6 @@ bash "$ROOT/plugins/retroarch/check.sh"
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
 KORRI_PLUGIN_REVIEW_IN_SHELL=1 "$CRATE/plugin-registry-review.sh"
 KORRI_PLUGIN_ROUTE_REVIEW_IN_SHELL=1 "$CRATE/plugin-route-review.sh"
-(
-  hostile_android_review_tmp="$(mktemp -d)"
-  trap 'rm -rf "$hostile_android_review_tmp"' EXIT
-  hostile_checkpoint_library="$hostile_android_review_tmp/ambient-games.yaml"
-  printf 'hostile ambient checkpoint library\n' >"$hostile_checkpoint_library"
-  KORRI_ANDROID_APP_PACKAGE=ambient.hostile.package \
-  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_DEVICE="$hostile_checkpoint_library" \
-  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_GAMES="$hostile_checkpoint_library" \
-  KORRI_ANDROID_APP_ROUTE_CHECKPOINT_RELEASES="$hostile_checkpoint_library" \
-  KORRI_DEVICE_SCRIPT_REVIEW_JOURNEY_START_MODE=always-fail \
-  KORRI_JOURNEY_EXPECTED_TITLE='Ambient Hostile Title' \
-    "$CRATE/android-device-script-review.sh"
-)
-"$CRATE/deploy/test-render-upstreams-android.sh"
 "$CRATE/deploy/test-zao-remote.sh"
 typeshare . --lang=typescript --output-file="$GENERATED_TS"
 # Typeshare 1.13 emits trailing spaces and an extra final blank line.
@@ -136,36 +121,10 @@ fi
 cd "$ROOT/clients/portal"
 bun src/korrid/smoke.ts
 
-# The installed proof is the whole app, not only its hidden RPC. Use the
-# canonical cross-area task so Gradle cannot silently package no portal.
+# The installed proof is the whole app, not only its hidden RPC.
 cd "$ROOT"
 if [[ -n "${KORRI_PORTAL_BUNDLE:-}" ]]; then
   "$KORRI_PORTAL_BUNDLE"
 else
   nix run "$ROOT#portal-bundle"
-fi
-test -f "$ROOT/clients/android/app/src/main/assets/portal/index.html"
-
-cd "$CRATE"
-cargo ndk -t arm64-v8a -o "$ANDROID_LIBS" build --release --lib
-
-cd "$ROOT"
-clients/android/test-sunshine-runtime-settings.sh
-
-cd "$ROOT/clients/android"
-./gradlew testDebugUnitTest
-./gradlew assembleDebug
-APK="$ROOT/clients/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk"
-# grep must drain the whole listing: with pipefail, `grep -q` exiting at
-# the first match SIGPIPEs unzip and fails the pipeline spuriously.
-unzip -l "$APK" | grep 'assets/portal/index.html' >/dev/null
-
-printf 'Rust cdylib: '
-du -h "$ANDROID_LIBS/arm64-v8a/libkorrid.so" | cut -f1
-printf 'APK: '
-du -h app/build/outputs/apk/debug/app-arm64-v8a-debug.apk | cut -f1
-
-if [[ "${1:-}" == "--device" ]]; then
-  shift
-  "$CRATE/android-smoke.sh" "${1:-${KORRI_ANDROID_DEVICE:-}}"
 fi

@@ -77,7 +77,8 @@ impl DynamicHostRuntime {
         if let Some(diagnostic) = state.diagnostic {
             return Err(dynamic_failure(diagnostic.message));
         }
-        let catalog = resolve_launchable_routes(root, &state.snapshot, registry, std::iter::empty());
+        let catalog =
+            resolve_launchable_routes(root, &state.snapshot, registry, std::iter::empty());
         if catalog.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == crate::config::resolver::RouteDiagnosticCode::LocalRouteCollision
         }) {

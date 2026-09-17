@@ -169,7 +169,6 @@ pub enum SessionControlDeclarationInteraction {
     },
 }
 
-
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionControlRecord {
@@ -1010,7 +1009,6 @@ enum SessionControlKind {
     Choice,
     Range,
 }
-
 
 fn validate_session_control(
     local_id: &str,

@@ -15,7 +15,6 @@ use korrid::{
         DiscoveryCoordinator, DiscoveryDiagnosticCode, DiscoveryLifecycleCoordinator,
         DiscoveryOptions, DiscoveryPhase, FolderSelectionGrantError, FolderSelectionGrantStore,
     },
-    plugin_policy,
 };
 
 fn options() -> DiscoveryOptions {

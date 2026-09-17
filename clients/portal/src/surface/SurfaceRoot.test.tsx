@@ -8,7 +8,6 @@ import type {
   Game,
   HealthOutcome,
   LocalGame,
-  LocalGameLaunchOutcome,
   LocalGamesListOutcome,
   SessionFreezeOutcome,
   SessionPrepareOutcome,
@@ -29,8 +28,6 @@ import { createInputBus, type InputBus } from "../input/bus"
 import { createSpatialFocusController } from "../input/spatial-focus"
 import {
   SessionControlFailureReason,
-  LaunchDisposition,
-  LaunchForegroundKind,
 } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"

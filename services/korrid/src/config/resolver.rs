@@ -5,9 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{plugin::PluginRegistry, GameIdentity};
 
 pub use super::linux_routes::{linux_route_candidates, resolve_linux_route, stored_runner};
-use super::{storage, ConfigSnapshot, GamePayload, Location};
-
-
+use super::ConfigSnapshot;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteCatalog {
@@ -103,29 +101,11 @@ pub fn resolve_route<'a>(
     resolve_linux_route(root, snapshot, registry, playable_id, None)
 }
 
-
-fn single_release_identity(item: &GamePayload) -> Option<GameIdentity> {
-    let [key] = item.releases.as_slice() else {
-        return None;
-    };
-    key.0
-        .starts_with("sha256:")
-        .then(|| GameIdentity::Hash(key.0.clone()))
-}
-
 fn static_playable_collision(playable_id: &str) -> RouteUnavailable {
     collision(
         Some(playable_id),
         format!("dynamic local route {playable_id} collides with an existing static local game"),
     )
-}
-
-fn unavailable(playable_id: Option<&str>, message: String) -> RouteUnavailable {
-    RouteUnavailable {
-        code: RouteDiagnosticCode::LocalRouteUnavailable,
-        message,
-        playable_id: playable_id.map(str::to_owned),
-    }
 }
 
 fn collision(playable_id: Option<&str>, message: String) -> RouteUnavailable {

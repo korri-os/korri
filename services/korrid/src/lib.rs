@@ -46,7 +46,6 @@ fn installed_routes_unsupported() -> RpcFailure {
 }
 
 pub const VERSION: &str = "korrid-v0";
-const ANDROID_BUNDLED_PORTAL_ORIGIN: &str = "https://appassets.androidplatform.net";
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -149,36 +148,6 @@ pub struct SessionPrepared {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MoonlightResolveRequest {}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoonlightLaunchPrepareRequest {
-    pub host_uuid: String,
-    pub app_id: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoonlightLaunchCancelRequest {
-    pub launch_id: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoonlightLaunchCancelled {
-    pub launch_id: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MoonlightCertificateAttestRequest {
     pub host_uuid: String,
@@ -271,46 +240,6 @@ pub enum MoonlightCertificateProvisionOutcome {
 #[serde(tag = "_tag", content = "payload")]
 pub enum MoonlightCertificateRevokeOutcome {
     Ok(MoonlightCertificateRevoked),
-    Err(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum MoonlightImplementation {
-    Artemis,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResolvedMoonlight {
-    pub transport_id: String,
-    pub implementation: MoonlightImplementation,
-    pub sunshine_app: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum MoonlightResolveOutcome {
-    Available(ResolvedMoonlight),
-    Unavailable(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum MoonlightLaunchPrepareOutcome {
-    Ok(launcher::MoonlightLaunchSpec),
-    Err(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum MoonlightLaunchCancelOutcome {
-    Ok(MoonlightLaunchCancelled),
     Err(RpcFailure),
 }
 
@@ -457,175 +386,9 @@ pub struct SessionControlCompleted {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
-pub enum SessionControlInvokeResult {
-    Completed(SessionControlCompleted),
-    PlatformInstruction(launcher::PlatformInstruction),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
 pub enum SessionControlInvokeOutcome {
-    Ok(SessionControlInvokeResult),
+    Ok(SessionControlCompleted),
     Err(SessionControlFailure),
-}
-
-/** Strict process-local publication from the live Artemis Game edge. */
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct MoonlightExecutorState {
-    pub launch_id: String,
-    pub executor_id: String,
-    pub generation: String,
-    pub effects: Vec<MoonlightExecutorEffectState>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct MoonlightExecutorEffectState {
-    pub effect: launcher::AndroidMoonlightEffect,
-    pub fulfillable: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<SessionControlValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub range: Option<MoonlightExecutorRangeState>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct MoonlightExecutorRangeState {
-    pub min: f64,
-    pub max: f64,
-    pub step: f64,
-}
-
-impl MoonlightExecutorState {
-    fn effect(
-        &self,
-        effect: launcher::AndroidMoonlightEffect,
-    ) -> Option<&MoonlightExecutorEffectState> {
-        self.effects.iter().find(|entry| entry.effect == effect)
-    }
-
-    fn is_strict(&self) -> bool {
-        use launcher::AndroidMoonlightEffect as Effect;
-        let expected = [
-            Effect::Disconnect,
-            Effect::QuitHost,
-            Effect::ToggleKeyboard,
-            Effect::ToggleFullKeyboard,
-            Effect::SetFillMode,
-            Effect::SetZoomMode,
-            Effect::RotateScreen,
-            Effect::ToggleHud,
-            Effect::ToggleFloatingMenu,
-            Effect::ToggleKeyboardController,
-            Effect::SwitchTouchSensitivity,
-            Effect::SetMouseMode,
-            Effect::SetLocalCursor,
-            Effect::SetSgsrEdgeThreshold,
-            Effect::SetSgsrSharpness,
-            Effect::SetFaceButtonFlip,
-            Effect::SetRumble,
-            Effect::SetPictureInPicture,
-            Effect::SetStreamBitrateKbps,
-            Effect::RestoreStreamBitrate,
-            Effect::SetStreamFps,
-            Effect::RestoreStreamFps,
-            Effect::SetStreamWidth,
-            Effect::RestoreStreamResolution,
-        ];
-        if self.effects.len() != expected.len() {
-            return false;
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        self.effects.iter().all(|entry| {
-            seen.insert(entry.effect)
-                && if !entry.fulfillable {
-                    entry.value.is_none() && entry.range.is_none()
-                } else {
-                    let needs_live_range = matches!(
-                        entry.effect,
-                        Effect::SetStreamBitrateKbps
-                            | Effect::SetStreamFps
-                            | Effect::SetStreamWidth
-                    );
-                    if entry.range.is_some() != needs_live_range {
-                        return false;
-                    }
-                    match (entry.effect, &entry.value) {
-                        (
-                            Effect::SetFillMode
-                            | Effect::SetZoomMode
-                            | Effect::SetFaceButtonFlip
-                            | Effect::SetRumble
-                            | Effect::SetPictureInPicture,
-                            Some(SessionControlValue::Toggle(_)),
-                        ) => true,
-                        (Effect::SetMouseMode, Some(SessionControlValue::Choice(value))) => {
-                            matches!(value.as_str(), "0" | "1" | "2" | "3" | "4" | "5")
-                        }
-                        (Effect::SetSgsrSharpness, Some(SessionControlValue::Range(value))) => {
-                            valid_range_value(*value, 0.0, 50.0, 1.0)
-                        }
-                        (Effect::SetSgsrEdgeThreshold, Some(SessionControlValue::Range(value))) => {
-                            valid_range_value(*value, 1.0, 32.0, 1.0)
-                        }
-                        (
-                            effect @ (Effect::SetStreamBitrateKbps
-                            | Effect::SetStreamFps
-                            | Effect::SetStreamWidth),
-                            Some(SessionControlValue::Range(value)),
-                        ) => {
-                            let Some(range) = &entry.range else {
-                                return false;
-                            };
-                            let outer = match effect {
-                                Effect::SetStreamBitrateKbps => (500.0, 150000.0, 1.0),
-                                Effect::SetStreamFps => (1.0, 240.0, 1.0),
-                                _ => (2.0, 8192.0, 2.0),
-                            };
-                            range.min >= outer.0
-                                && range.max <= outer.1
-                                && strict_dynamic_integer_range(
-                                    effect, *value, range.min, range.max, range.step,
-                                )
-                        }
-                        (
-                            Effect::Disconnect
-                            | Effect::QuitHost
-                            | Effect::ToggleKeyboard
-                            | Effect::ToggleFullKeyboard
-                            | Effect::RotateScreen
-                            | Effect::ToggleHud
-                            | Effect::ToggleFloatingMenu
-                            | Effect::ToggleKeyboardController
-                            | Effect::SwitchTouchSensitivity
-                            | Effect::SetLocalCursor
-                            | Effect::RestoreStreamBitrate
-                            | Effect::RestoreStreamFps
-                            | Effect::RestoreStreamResolution,
-                            None,
-                        ) => true,
-                        _ => false,
-                    }
-                }
-        }) && expected.iter().all(|effect| seen.contains(effect))
-            && [
-                (Effect::SetStreamBitrateKbps, Effect::RestoreStreamBitrate),
-                (Effect::SetStreamFps, Effect::RestoreStreamFps),
-                (Effect::SetStreamWidth, Effect::RestoreStreamResolution),
-            ]
-            .iter()
-            .all(|(set, restore)| {
-                self.effect(*set).is_some_and(|entry| {
-                    self.effect(*restore).is_some_and(|other| {
-                        entry.fulfillable == other.fulfillable
-                            && other.value.is_none()
-                            && other.range.is_none()
-                    })
-                })
-            })
-    }
 }
 
 fn ulp_at(value: f64) -> f64 {
@@ -635,37 +398,6 @@ fn ulp_at(value: f64) -> f64 {
     }
     let exponent = ((magnitude.to_bits() >> 52) & 0x7ff) as i32 - 1023;
     2.0_f64.powi(exponent - 52)
-}
-
-fn exact_integer(value: f64) -> bool {
-    value.is_finite() && value.fract() == 0.0
-}
-
-fn strict_dynamic_integer_range(
-    effect: launcher::AndroidMoonlightEffect,
-    value: f64,
-    min: f64,
-    max: f64,
-    step: f64,
-) -> bool {
-    use launcher::AndroidMoonlightEffect as Effect;
-    if !exact_integer(value) || !exact_integer(min) || !exact_integer(max) || !exact_integer(step) {
-        return false;
-    }
-    let expected_step = if effect == Effect::SetStreamWidth {
-        2.0
-    } else {
-        1.0
-    };
-    if step != expected_step {
-        return false;
-    }
-    if effect == Effect::SetStreamWidth
-        && (value % 2.0 != 0.0 || min % 2.0 != 0.0 || max % 2.0 != 0.0)
-    {
-        return false;
-    }
-    valid_range_value(value, min, max, step)
 }
 
 fn valid_range_value(value: f64, min: f64, max: f64, step: f64) -> bool {
@@ -937,24 +669,9 @@ pub struct LocalGames {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalGameLaunchRequest {
-    pub game_id: String,
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum LocalGamesListOutcome {
     Ok(LocalGames),
-    Err(RpcFailure),
-}
-
-#[typeshare]
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "_tag", content = "payload")]
-pub enum LocalGameLaunchOutcome {
-    Ok(launcher::LaunchSpec),
     Err(RpcFailure),
 }
 
@@ -1292,13 +1009,6 @@ pub enum RpcResponse {
     SteamGridDbCredentialClear(SensitiveSettingOutcome),
 }
 
-#[derive(Clone, Debug)]
-struct TrackedActiveLaunch {
-    launch: launcher::AndroidActiveLaunch,
-    started_at: std::time::Instant,
-    started_epoch_seconds: u64,
-}
-
 #[derive(Clone)]
 struct BrainRuntime {
     upstream: upstreams::UpstreamRegistry,
@@ -1307,12 +1017,6 @@ struct BrainRuntime {
     /// The verified owner of this brain device at construction. `None`
     /// while the device is unowned, revoked, or invalid.
     local_owner_public_key: Option<String>,
-    local_file_provision: launcher::FileProvisionMode,
-    local_launch_signing_key: Vec<u8>,
-    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
-    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     discovery: discovery::DiscoveryLifecycleCoordinator,
@@ -1359,30 +1063,6 @@ struct AppState {
     mode: ServerMode,
     portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
-}
-
-fn active_session_conflict() -> RpcFailure {
-    RpcFailure {
-        code: "ActiveSessionConflict".into(),
-        message: "An active RetroArch session must end before another local route can start."
-            .into(),
-    }
-}
-
-fn local_launch_failure(error: launcher::LaunchError) -> RpcFailure {
-    let code = match &error {
-        launcher::LaunchError::UnknownGame(_) => "LocalGameNotFound",
-        launcher::LaunchError::RomMissing(_) => "LocalRomMissing",
-        launcher::LaunchError::StorageAccess(_) => "LocalStorageUnavailable",
-        launcher::LaunchError::Config(_) => "LocalConfigWriteFailed",
-        launcher::LaunchError::ConfigUnauthorized(_) => "LocalConfigUnauthorized",
-        launcher::LaunchError::RouteUnavailable(_) => "LocalRouteUnavailable",
-        launcher::LaunchError::RouteCollision(_) => "LocalRouteCollision",
-    };
-    RpcFailure {
-        code: code.into(),
-        message: error.to_string(),
-    }
 }
 
 fn snapshot_diagnostic_failure(diagnostic: &config::snapshot::SnapshotDiagnostic) -> RpcFailure {
@@ -1669,7 +1349,6 @@ fn exact_host_launch_id(
             message: format!("expectedLaunchId is required for exact host {verb}"),
         })
 }
-
 
 /// Whether a brain caller acts for the brain's own owner. Local surfaces act
 /// for the device owner. A peer principal must present the same owner as
@@ -2473,24 +2152,12 @@ pub fn router_with_capability_and_federation(
     wake: Option<DiscoveryControl>,
 ) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
-    let signing_key = generate_launch_signing_key();
-    let local_launch_reservations =
-        Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new()));
-    let moonlight_launch_authority = Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
-        signing_key.clone(),
-    )));
     let config_snapshot = config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     router_with_capability_local_root_provision_and_grants(
         rpc_capability,
         allowed_origin,
         local_storage_root,
         private_state_root,
-        launcher::FileProvisionMode::Direct,
-        signing_key,
-        local_launch_reservations,
-        moonlight_launch_authority,
-        Arc::new(Mutex::new(None)),
-        Arc::new(Mutex::new(None)),
         plugin_policy::RegistrySource::Installed,
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
@@ -2506,24 +2173,12 @@ pub fn router_with_capability_and_local_root(
     local_storage_root: impl AsRef<Path>,
 ) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
-    let signing_key = generate_launch_signing_key();
-    let local_launch_reservations =
-        Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new()));
-    let moonlight_launch_authority = Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
-        signing_key.clone(),
-    )));
     let config_snapshot = config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     router_with_capability_local_root_and_provision(
         rpc_capability,
         allowed_origin,
         local_storage_root,
         default_private_state_root(),
-        launcher::FileProvisionMode::Direct,
-        signing_key,
-        local_launch_reservations,
-        moonlight_launch_authority,
-        Arc::new(Mutex::new(None)),
-        Arc::new(Mutex::new(None)),
         plugin_policy::RegistrySource::Installed,
         config_snapshot,
     )
@@ -2553,27 +2208,15 @@ fn test_router_with_provision(
     provision: launcher::FileProvisionMode,
 ) -> Router {
     let local_storage_root = local_storage_root.as_ref().to_owned();
-    let signing_key = generate_launch_signing_key();
-    let local_launch_reservations =
-        Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new()));
-    let moonlight_launch_authority = Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
-        signing_key.clone(),
-    )));
     let config_snapshot = config::snapshot::ConfigSnapshotCoordinator::new(&local_storage_root);
     router_with_capability_local_root_and_provision(
         rpc_capability,
         allowed_origin,
         local_storage_root.clone(),
         local_storage_root.join(".private-test"),
-        provision,
-        signing_key,
-        local_launch_reservations,
-        moonlight_launch_authority,
-        Arc::new(Mutex::new(None)),
-        Arc::new(Mutex::new(None)),
-        plugin_policy::RegistrySource::Selected(Arc::new(
-            crate::plugin_test_fixtures::installed(&local_storage_root),
-        )),
+        plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::installed(
+            &local_storage_root,
+        ))),
         config_snapshot,
     )
 }
@@ -2583,12 +2226,6 @@ fn router_with_capability_local_root_and_provision(
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
     private_state_root: impl AsRef<Path>,
-    local_file_provision: launcher::FileProvisionMode,
-    local_launch_signing_key: Vec<u8>,
-    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
-    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
 ) -> Router {
@@ -2597,12 +2234,6 @@ fn router_with_capability_local_root_and_provision(
         allowed_origin,
         local_storage_root,
         private_state_root,
-        local_file_provision,
-        local_launch_signing_key,
-        local_launch_reservations,
-        moonlight_launch_authority,
-        active_android_launch,
-        moonlight_executor_state,
         registry_source,
         config_snapshot,
         discovery::FolderSelectionGrantStore::default(),
@@ -2617,12 +2248,6 @@ fn router_with_capability_local_root_provision_and_grants(
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
     private_state_root: impl AsRef<Path>,
-    local_file_provision: launcher::FileProvisionMode,
-    local_launch_signing_key: Vec<u8>,
-    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
-    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
@@ -2635,12 +2260,6 @@ fn router_with_capability_local_root_provision_and_grants(
         allowed_origin,
         local_storage_root,
         private_state_root,
-        local_file_provision,
-        local_launch_signing_key,
-        local_launch_reservations,
-        moonlight_launch_authority,
-        active_android_launch,
-        moonlight_executor_state,
         registry_source,
         config_snapshot,
         folder_selection_grants,
@@ -2657,12 +2276,6 @@ fn brain_app_state(
     allowed_origin: &str,
     local_storage_root: impl AsRef<Path>,
     private_state_root: impl AsRef<Path>,
-    local_file_provision: launcher::FileProvisionMode,
-    local_launch_signing_key: Vec<u8>,
-    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
-    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
     registry_source: plugin_policy::RegistrySource,
     config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
@@ -2705,8 +2318,7 @@ fn brain_app_state(
         }
     });
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
-    let mut portal_access =
-        PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
+    let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
         federation: resources.map(|resources| resources.directory),
         federation_wake,
@@ -2715,12 +2327,6 @@ fn brain_app_state(
             local_storage_root,
             private_state_root,
             local_owner_public_key,
-            local_file_provision,
-            local_launch_signing_key,
-            local_launch_reservations,
-            moonlight_launch_authority,
-            active_android_launch,
-            moonlight_executor_state,
             registry_source,
             config_snapshot,
             discovery,
@@ -2957,11 +2563,6 @@ pub fn generate_launch_id() -> String {
     hex::encode(bytes)
 }
 
-fn generate_launch_signing_key() -> Vec<u8> {
-    let bytes: [u8; 32] = rand::random();
-    bytes.to_vec()
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
     #[error("korrid server is already running")]
@@ -2976,14 +2577,6 @@ struct ServerHandle {
     port: u16,
     rpc_capability: String,
     private_state_root: PathBuf,
-    launch_signing_key: Vec<u8>,
-    local_launch_reservations: Arc<Mutex<launcher::LaunchPublicationReservations>>,
-    active_android_launch: Arc<Mutex<Option<TrackedActiveLaunch>>>,
-    moonlight_executor_state: Arc<Mutex<Option<MoonlightExecutorState>>>,
-    platform_instruction_verifier: Option<launcher::PlatformInstructionVerifier>,
-    moonlight_launch_authority: Arc<Mutex<launcher::MoonlightLaunchAuthority>>,
-    moonlight_config_snapshot: config::snapshot::ConfigSnapshotCoordinator,
-    registry_source: plugin_policy::RegistrySource,
     folder_selection_grants: discovery::FolderSelectionGrantStore,
     upstream: upstreams::UpstreamRegistry,
     federation: FederationResources,
@@ -3063,19 +2656,6 @@ fn start_local_server_for_platform(
         .port();
     let rpc_capability = generate_rpc_capability();
     let server_capability = rpc_capability.clone();
-    let launch_signing_key = generate_launch_signing_key();
-    let server_signing_key = launch_signing_key.clone();
-    let local_launch_reservations =
-        Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new()));
-    let server_local_launch_reservations = Arc::clone(&local_launch_reservations);
-    let moonlight_launch_authority = Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
-        launch_signing_key.clone(),
-    )));
-    let server_moonlight_launch_authority = Arc::clone(&moonlight_launch_authority);
-    let active_android_launch = Arc::new(Mutex::new(None));
-    let router_active_android_launch = Arc::clone(&active_android_launch);
-    let moonlight_executor_state = Arc::new(Mutex::new(None));
-    let router_moonlight_executor_state = Arc::clone(&moonlight_executor_state);
     let folder_selection_grants = discovery::FolderSelectionGrantStore::default();
     let server_folder_selection_grants = folder_selection_grants.clone();
     let allowed_origin = allowed_origin.to_owned();
@@ -3126,12 +2706,6 @@ fn start_local_server_for_platform(
                         &allowed_origin,
                         &local_storage_root,
                         &private_state_root,
-                        launcher::FileProvisionMode::Deferred,
-                        server_signing_key,
-                        server_local_launch_reservations,
-                        server_moonlight_launch_authority,
-                        router_active_android_launch,
-                        router_moonlight_executor_state,
                         server_registry_source.clone(),
                         server_config_snapshot,
                         server_folder_selection_grants,
@@ -3162,14 +2736,6 @@ fn start_local_server_for_platform(
         port,
         rpc_capability,
         private_state_root: handle_private_state_root,
-        launch_signing_key,
-        local_launch_reservations,
-        active_android_launch,
-        moonlight_executor_state,
-        platform_instruction_verifier: None,
-        moonlight_launch_authority,
-        moonlight_config_snapshot,
-        registry_source,
         folder_selection_grants,
         upstream,
         federation,
@@ -3375,8 +2941,6 @@ mod tests {
         config::test_fixtures::android(root);
     }
 
-
-
     fn control(interaction: SessionControlInteraction) -> SessionControl {
         SessionControl {
             id: "control".into(),
@@ -3397,214 +2961,6 @@ mod tests {
             value,
         }
     }
-
-    fn moonlight_executor_state(launch_id: &str) -> MoonlightExecutorState {
-        use launcher::AndroidMoonlightEffect as Effect;
-        let value = |effect| match effect {
-            Effect::SetFillMode
-            | Effect::SetZoomMode
-            | Effect::SetFaceButtonFlip
-            | Effect::SetPictureInPicture => Some(SessionControlValue::Toggle(false)),
-            Effect::SetRumble => Some(SessionControlValue::Toggle(true)),
-            Effect::SetMouseMode => Some(SessionControlValue::Choice("0".into())),
-            Effect::SetSgsrSharpness => Some(SessionControlValue::Range(20.0)),
-            Effect::SetSgsrEdgeThreshold => Some(SessionControlValue::Range(8.0)),
-            Effect::SetStreamBitrateKbps => Some(SessionControlValue::Range(12345.0)),
-            Effect::SetStreamFps => Some(SessionControlValue::Range(60.0)),
-            Effect::SetStreamWidth => Some(SessionControlValue::Range(1920.0)),
-            _ => None,
-        };
-        let effects = [
-            Effect::Disconnect,
-            Effect::QuitHost,
-            Effect::ToggleKeyboard,
-            Effect::ToggleFullKeyboard,
-            Effect::SetFillMode,
-            Effect::SetZoomMode,
-            Effect::RotateScreen,
-            Effect::ToggleHud,
-            Effect::ToggleFloatingMenu,
-            Effect::ToggleKeyboardController,
-            Effect::SwitchTouchSensitivity,
-            Effect::SetMouseMode,
-            Effect::SetLocalCursor,
-            Effect::SetSgsrEdgeThreshold,
-            Effect::SetSgsrSharpness,
-            Effect::SetFaceButtonFlip,
-            Effect::SetRumble,
-            Effect::SetPictureInPicture,
-            Effect::SetStreamBitrateKbps,
-            Effect::RestoreStreamBitrate,
-            Effect::SetStreamFps,
-            Effect::RestoreStreamFps,
-            Effect::SetStreamWidth,
-            Effect::RestoreStreamResolution,
-        ]
-        .into_iter()
-        .map(|effect| MoonlightExecutorEffectState {
-            effect,
-            fulfillable: true,
-            value: value(effect),
-            range: match effect {
-                Effect::SetStreamBitrateKbps => Some(MoonlightExecutorRangeState {
-                    min: 500.0,
-                    max: 150000.0,
-                    step: 1.0,
-                }),
-                Effect::SetStreamFps => Some(MoonlightExecutorRangeState {
-                    min: 1.0,
-                    max: 120.0,
-                    step: 1.0,
-                }),
-                Effect::SetStreamWidth => Some(MoonlightExecutorRangeState {
-                    min: 2.0,
-                    max: 1920.0,
-                    step: 2.0,
-                }),
-                _ => None,
-            },
-        })
-        .collect();
-        MoonlightExecutorState {
-            launch_id: launch_id.into(),
-            executor_id: "android-moonlight".into(),
-            generation: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-            effects,
-        }
-    }
-
-    #[test]
-    fn moonlight_live_ranges_are_strict_and_unfulfillable_effects_have_no_payload() {
-        use launcher::AndroidMoonlightEffect as Effect;
-        let mut state = moonlight_executor_state("launch");
-        assert!(state.is_strict());
-        let bitrate = state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamBitrateKbps)
-            .unwrap();
-        bitrate.range.as_mut().unwrap().max = 150500.0;
-        assert!(!state.is_strict());
-        let mut state = moonlight_executor_state("launch");
-        let fps = state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamFps)
-            .unwrap();
-        fps.fulfillable = false;
-        fps.value = None;
-        fps.range = None;
-        assert!(!state.is_strict());
-        let restore = state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::RestoreStreamFps)
-            .unwrap();
-        restore.fulfillable = false;
-        assert!(state.is_strict());
-        for (set, restore) in [
-            (Effect::SetStreamBitrateKbps, Effect::RestoreStreamBitrate),
-            (Effect::SetStreamFps, Effect::RestoreStreamFps),
-            (Effect::SetStreamWidth, Effect::RestoreStreamResolution),
-        ] {
-            let mut state = moonlight_executor_state("launch");
-            let entry = state
-                .effects
-                .iter_mut()
-                .find(|entry| entry.effect == set)
-                .unwrap();
-            entry.fulfillable = false;
-            entry.value = None;
-            entry.range = None;
-            assert!(!state.is_strict());
-            let entry = state
-                .effects
-                .iter_mut()
-                .find(|entry| entry.effect == restore)
-                .unwrap();
-            entry.fulfillable = false;
-            assert!(state.is_strict());
-        }
-    }
-
-    #[test]
-    fn moonlight_dynamic_ranges_reject_fractional_and_odd_integer_facts() {
-        use launcher::AndroidMoonlightEffect as Effect;
-        let mut malformed = Vec::new();
-
-        let mut state = moonlight_executor_state("launch");
-        state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamBitrateKbps)
-            .unwrap()
-            .value = Some(SessionControlValue::Range(12345.5));
-        malformed.push(state);
-
-        let mut state = moonlight_executor_state("launch");
-        state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamBitrateKbps)
-            .unwrap()
-            .range
-            .as_mut()
-            .unwrap()
-            .min = 500.5;
-        malformed.push(state);
-
-        let mut state = moonlight_executor_state("launch");
-        state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamFps)
-            .unwrap()
-            .range
-            .as_mut()
-            .unwrap()
-            .max = 120.5;
-        malformed.push(state);
-
-        for odd in [
-            (Some(1919.0), None, None),
-            (None, Some(3.0), None),
-            (None, None, Some(1919.0)),
-        ] {
-            let mut state = moonlight_executor_state("launch");
-            let width = state
-                .effects
-                .iter_mut()
-                .find(|entry| entry.effect == Effect::SetStreamWidth)
-                .unwrap();
-            if let Some(value) = odd.0 {
-                width.value = Some(SessionControlValue::Range(value));
-            }
-            if let Some(min) = odd.1 {
-                width.range.as_mut().unwrap().min = min;
-            }
-            if let Some(max) = odd.2 {
-                width.range.as_mut().unwrap().max = max;
-            }
-            malformed.push(state);
-        }
-
-        let mut state = moonlight_executor_state("launch");
-        state
-            .effects
-            .iter_mut()
-            .find(|entry| entry.effect == Effect::SetStreamWidth)
-            .unwrap()
-            .value = Some(SessionControlValue::Range(1918.5));
-        malformed.push(state);
-
-        for state in malformed {
-            assert!(!state.is_strict());
-        }
-    }
-
-
-
-
 
     fn assert_invalid_range(interaction: SessionControlInteraction, submitted: f64) {
         assert_eq!(
@@ -4021,20 +3377,11 @@ mod tests {
         private: &Path,
         grants: discovery::FolderSelectionGrantStore,
     ) -> Router {
-        let signing_key = b"test signing key".to_vec();
         router_with_capability_local_root_provision_and_grants(
             "right-token",
             "https://portal.example",
             readable,
             private,
-            launcher::FileProvisionMode::Direct,
-            signing_key.clone(),
-            Arc::new(Mutex::new(launcher::LaunchPublicationReservations::new())),
-            Arc::new(Mutex::new(launcher::MoonlightLaunchAuthority::new(
-                signing_key,
-            ))),
-            Arc::new(Mutex::new(None)),
-            Arc::new(Mutex::new(None)),
             plugin_policy::RegistrySource::Selected(Arc::new(
                 crate::plugin_test_fixtures::installed(readable),
             )),
@@ -4442,7 +3789,6 @@ command = ["sh", "-c", "sleep 1"]
         .await;
         assert_eq!(stopped["outcome"]["_tag"], "Ok");
     }
-
 
     fn host_device_key(private_state_root: &Path) -> String {
         identity::DeviceIdentity::load_or_create(private_state_root)
@@ -4915,16 +4261,8 @@ command = ["game-two"]
             .contains("title: outside"));
     }
 
-
-
-
-
-
     #[cfg(unix)]
-
-
     #[cfg(unix)]
-
     #[tokio::test]
     async fn rpc_rejects_missing_or_wrong_capability() {
         let app = router_with_capability("right-token", "https://portal.example");
@@ -5037,7 +4375,6 @@ command = ["game-two"]
             Some("https://evil.example")
         );
     }
-
 
     #[test]
     fn status_daemon_variants_map_to_distinct_failure_codes() {

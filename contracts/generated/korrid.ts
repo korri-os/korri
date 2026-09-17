@@ -12,49 +12,6 @@ export interface ActiveSession {
 	phase?: string;
 }
 
-export enum LaunchContributorKind {
-	Runner = "runner",
-	Transport = "transport",
-}
-
-export interface LaunchRouteContributor {
-	kind: LaunchContributorKind;
-	id: string;
-}
-
-export interface LaunchExecutor {
-	id: string;
-	available: boolean;
-}
-
-export enum LaunchForegroundKind {
-	Component = "component",
-	Package = "package",
-	/** Java resolves this marker to its own package plus Game component. */
-	ArtemisGame = "artemis-game",
-}
-
-export interface LaunchForegroundRule {
-	kind: LaunchForegroundKind;
-	packageName?: string;
-	className?: string;
-}
-
-export interface AndroidActiveLaunch {
-	launchId: string;
-	gameId?: string;
-	title?: string;
-	contentCrc32?: string;
-	contributors: LaunchRouteContributor[];
-	executor?: LaunchExecutor;
-	foreground: LaunchForegroundRule;
-}
-
-export interface AndroidComponent {
-	packageName: string;
-	className: string;
-}
-
 export interface CatalogHostFailure {
 	host: string;
 	code: string;
@@ -220,39 +177,19 @@ export interface LaunchConfigOverrides {
 	replace?: string;
 }
 
-export interface LaunchContext {
-	gameId?: string;
-	title?: string;
-	/** CRC32 of the exact prepared content bytes; SHA identity remains separate. */
-	contentCrc32?: string;
-	contributors: LaunchRouteContributor[];
-	executor?: LaunchExecutor;
-	foreground: LaunchForegroundRule;
+export interface LaunchExecutor {
+	id: string;
+	available: boolean;
 }
 
-export enum LaunchDisposition {
-	Fresh = "fresh",
-	Resume = "resume",
+export enum LaunchContributorKind {
+	Runner = "runner",
+	Transport = "transport",
 }
 
-export interface ProvisionedFile {
-	path: string;
-	content: string;
-}
-
-export interface LaunchSpec {
-	/** Identity created by korrid while preparing this exact launch. */
-	launchId: string;
-	runnerId: string;
-	disposition: LaunchDisposition;
-	context: LaunchContext;
-	component: AndroidComponent;
-	extras: Record<string, string>;
-	directories: string[];
-	files: ProvisionedFile[];
-	authorizedContentRoot?: string;
-	/** Per-server HMAC. The portal transports it opaquely; native verifies it. */
-	integrity: string;
+export interface LaunchRouteContributor {
+	kind: LaunchContributorKind;
+	id: string;
 }
 
 export interface LocalGame {
@@ -262,10 +199,6 @@ export interface LocalGame {
 	identity?: GameIdentity;
 	coverAssetId?: string;
 	playStats?: PlayStats;
-}
-
-export interface LocalGameLaunchRequest {
-	gameId: string;
 }
 
 export interface RpcFailure {
@@ -307,41 +240,6 @@ export interface MoonlightCertificateRevoked {
 	removed: boolean;
 }
 
-export interface MoonlightLaunchCancelRequest {
-	launchId: string;
-}
-
-export interface MoonlightLaunchCancelled {
-	launchId: string;
-}
-
-export interface MoonlightLaunchPrepareRequest {
-	hostUuid: string;
-	appId: number;
-	gameId?: string;
-	title?: string;
-}
-
-export enum MoonlightImplementation {
-	Artemis = "artemis",
-}
-
-export interface MoonlightLaunchSpec {
-	/** Fresh identity created by korrid for this native stream startup. */
-	launchId: string;
-	transportId: string;
-	context: LaunchContext;
-	implementation: MoonlightImplementation;
-	sunshineApp: string;
-	hostUuid: string;
-	appId: number;
-	/** Per-server HMAC. The portal transports it opaquely; native consumes it once. */
-	integrity: string;
-}
-
-export interface MoonlightResolveRequest {
-}
-
 export enum PeerListState {
 	Loading = "loading",
 	Ready = "ready",
@@ -363,30 +261,6 @@ export interface PeerList {
 }
 
 export interface PeerListRequest {
-}
-
-export type SessionControlValue =
-	| { kind: "toggle", value: boolean }
-	| { kind: "choice", value: string }
-	| { kind: "range", value: number };
-
-/** Closed platform effect vocabulary. Plugins may refer only to integrations
- * represented here; no process, URL, intent, socket, or method name crosses. */
-export type PlatformEffect =
-	| { kind: "android-moonlight", payload: AndroidMoonlightEffect };
-
-export interface PlatformInstruction {
-	launchId: string;
-	executorId: string;
-	generation: string;
-	actionId: string;
-	dismissOnSuccess: boolean;
-	/** Cryptographically random, consumed once for the active launch. */
-	nonce: string;
-	value?: SessionControlValue;
-	effect: PlatformEffect;
-	/** Per-server HMAC verified at the native platform edge. */
-	integrity: string;
 }
 
 export interface PlayEntry {
@@ -423,6 +297,11 @@ export interface PluginLaunchInput {
 	overrides?: PluginLaunchOverrides;
 }
 
+export interface ProvisionedFile {
+	path: string;
+	content: string;
+}
+
 /**
  * Legacy launch plan plus the existing provisioned files/directories.
  * Approval authorizes output; this treaty adds no path or argument policy.
@@ -441,12 +320,6 @@ export interface PluginSetting {
 	id: string;
 	title: string;
 	enabled: boolean;
-}
-
-export interface ResolvedMoonlight {
-	transportId: string;
-	implementation: MoonlightImplementation;
-	sunshineApp: string;
 }
 
 export interface RetroarchSessionTelemetry {
@@ -543,6 +416,11 @@ export interface SessionControlGroup {
 	label: string;
 	controls: SessionControl[];
 }
+
+export type SessionControlValue =
+	| { kind: "toggle", value: boolean }
+	| { kind: "choice", value: string }
+	| { kind: "range", value: number };
 
 export interface SessionControlInvokeRequest {
 	launchId: string;
@@ -658,33 +536,6 @@ export interface SteamGridDbCredentialSetRequest {
 	token: string;
 }
 
-export enum AndroidMoonlightEffect {
-	Disconnect = "disconnect",
-	QuitHost = "quit-host",
-	ToggleKeyboard = "toggle-keyboard",
-	ToggleFullKeyboard = "toggle-full-keyboard",
-	SetFillMode = "set-fill-mode",
-	SetZoomMode = "set-zoom-mode",
-	RotateScreen = "rotate-screen",
-	ToggleHud = "toggle-hud",
-	ToggleFloatingMenu = "toggle-floating-menu",
-	ToggleKeyboardController = "toggle-keyboard-controller",
-	SwitchTouchSensitivity = "switch-touch-sensitivity",
-	SetMouseMode = "set-mouse-mode",
-	SetLocalCursor = "set-local-cursor",
-	SetSgsrEdgeThreshold = "set-sgsr-edge-threshold",
-	SetSgsrSharpness = "set-sgsr-sharpness",
-	SetFaceButtonFlip = "set-face-button-flip",
-	SetRumble = "set-rumble",
-	SetPictureInPicture = "set-picture-in-picture",
-	SetStreamBitrateKbps = "set-stream-bitrate-kbps",
-	RestoreStreamBitrate = "restore-stream-bitrate",
-	SetStreamFps = "set-stream-fps",
-	RestoreStreamFps = "restore-stream-fps",
-	SetStreamWidth = "set-stream-width",
-	RestoreStreamResolution = "restore-stream-resolution",
-}
-
 export type CatalogSnapshotOutcome =
 	| { _tag: "Ok", payload: CatalogSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
@@ -705,10 +556,6 @@ export type HealthOutcome =
 	| { _tag: "Ok", payload: Health }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type LocalGameLaunchOutcome =
-	| { _tag: "Ok", payload: LaunchSpec }
-	| { _tag: "Err", payload: RpcFailure };
-
 export type LocalGamesListOutcome =
 	| { _tag: "Ok", payload: LocalGames }
 	| { _tag: "Err", payload: RpcFailure };
@@ -725,18 +572,6 @@ export type MoonlightCertificateRevokeOutcome =
 	| { _tag: "Ok", payload: MoonlightCertificateRevoked }
 	| { _tag: "Err", payload: RpcFailure };
 
-export type MoonlightLaunchCancelOutcome =
-	| { _tag: "Ok", payload: MoonlightLaunchCancelled }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type MoonlightLaunchPrepareOutcome =
-	| { _tag: "Ok", payload: MoonlightLaunchSpec }
-	| { _tag: "Err", payload: RpcFailure };
-
-export type MoonlightResolveOutcome =
-	| { _tag: "Available", payload: ResolvedMoonlight }
-	| { _tag: "Unavailable", payload: RpcFailure };
-
 export type PeerListOutcome =
 	| { _tag: "Ok", payload: PeerList }
 	| { _tag: "Err", payload: RpcFailure };
@@ -746,9 +581,6 @@ export type RpcRequest =
 	| { _tag: "app.local-games.runner.set", payload: GameRunnerSetRequest }
 	| { _tag: "app.local-games.launch.selected", payload: SelectedGameLaunchRequest }
 	| { _tag: "app.catalog.snapshot", payload: CatalogSnapshotRequest }
-	| { _tag: "app.moonlight.resolve", payload: MoonlightResolveRequest }
-	| { _tag: "app.moonlight.launch.prepare", payload: MoonlightLaunchPrepareRequest }
-	| { _tag: "app.moonlight.launch.cancel", payload: MoonlightLaunchCancelRequest }
 	| { _tag: "app.moonlight.certificate.attest", payload: MoonlightCertificateAttestRequest }
 	| { _tag: "app.moonlight.certificate.provision", payload: MoonlightCertificateProvisionRequest }
 	| { _tag: "app.moonlight.certificate.revoke", payload: MoonlightCertificateRevokeRequest }
@@ -759,10 +591,7 @@ export type RpcRequest =
 	| { _tag: "app.session.thaw", payload: SessionThawRequest }
 	| { _tag: "app.source.status", payload: SourceStatusRequest }
 	| { _tag: "app.peer.list", payload: PeerListRequest }
-	| { _tag: "app.session.controls", payload: SessionControlsRequest }
-	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
-	| { _tag: "app.local-games.launch", payload: LocalGameLaunchRequest }
 	| { _tag: "system.health", payload: HealthRequest }
 	| { _tag: "app.discovery.snapshot", payload: DiscoverySnapshotRequest }
 	| { _tag: "app.discovery.registerReceipt", payload: DiscoveryRegisterReceiptRequest }
@@ -778,9 +607,6 @@ export type RpcResponse =
 	| { _tag: "app.local-games.runner.set", outcome: GameRunnerSetOutcome }
 	| { _tag: "app.local-games.launch.selected", outcome: SelectedGameLaunchOutcome }
 	| { _tag: "app.catalog.snapshot", outcome: CatalogSnapshotOutcome }
-	| { _tag: "app.moonlight.resolve", outcome: MoonlightResolveOutcome }
-	| { _tag: "app.moonlight.launch.prepare", outcome: MoonlightLaunchPrepareOutcome }
-	| { _tag: "app.moonlight.launch.cancel", outcome: MoonlightLaunchCancelOutcome }
 	| { _tag: "app.moonlight.certificate.attest", outcome: MoonlightCertificateAttestOutcome }
 	| { _tag: "app.moonlight.certificate.provision", outcome: MoonlightCertificateProvisionOutcome }
 	| { _tag: "app.moonlight.certificate.revoke", outcome: MoonlightCertificateRevokeOutcome }
@@ -791,10 +617,7 @@ export type RpcResponse =
 	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }
 	| { _tag: "app.source.status", outcome: SourceStatusOutcome }
 	| { _tag: "app.peer.list", outcome: PeerListOutcome }
-	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
-	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
-	| { _tag: "app.local-games.launch", outcome: LocalGameLaunchOutcome }
 	| { _tag: "system.health", outcome: HealthOutcome }
 	| { _tag: "app.discovery.snapshot", outcome: DiscoverySnapshotOutcome }
 	| { _tag: "app.discovery.registerReceipt", outcome: DiscoverySnapshotOutcome }
@@ -814,12 +637,8 @@ export type SensitiveSettingOutcome =
 	| { _tag: "Err", payload: RpcFailure };
 
 export type SessionControlInvokeOutcome =
-	| { _tag: "Ok", payload: SessionControlInvokeResult }
+	| { _tag: "Ok", payload: SessionControlCompleted }
 	| { _tag: "Err", payload: SessionControlFailure };
-
-export type SessionControlInvokeResult =
-	| { _tag: "Completed", payload: SessionControlCompleted }
-	| { _tag: "PlatformInstruction", payload: PlatformInstruction };
 
 export type SessionControlsOutcome =
 	| { _tag: "Ok", payload: SessionControls }

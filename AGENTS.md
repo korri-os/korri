@@ -14,30 +14,28 @@ the `legacy` branch apply here unless this file says so.
   fallback reads, dual writes, compatibility branches, or runtime migrations
   for superseded Korri behavior. Make one clean cut; preserve real user data
   with an explicit, one-off operational migration when the cut is deployed.
-- The first platform target is Android (Artemis-based shell).
+- The platform target is Linux. Android was dropped on 2026-09-16; the tag
+  `android-final` marks the last commit that carried it, and
+  `docs/briefs/2026-09-16-android-removal-scope.md` records what went.
 - Read before you touch. Do exactly what was asked. No bonus refactors.
 
 ## Map
 
 ```
-clients/android/   Kotlin/Java shell: Artemis streaming core, native pairing,
-                   WebView host, bridge implementation (all hardware truth)
-clients/portal/    TS host: talks to the korrid brain over localhost RPC and to
-                   the shell over the bridge, then publishes one surface model
-                   and mounts a surface; browser dev via in-memory bridge +
-                   keyboard input
+clients/portal/    TS host: talks to the korrid brain over localhost RPC, then
+                   publishes one surface model and mounts a surface; browser
+                   dev uses the same in-memory korrid client and keyboard input
 surfaces/          presentation surfaces. One per directory, each self-contained
                    and free to move to its own repository: a surface may import
                    contracts/surface/ (types only) and nothing else from Korri
 packages/          shared, product-agnostic packages consumable by surfaces
 contracts/         treaties between deployables; imports nothing outside
                    contracts/; when sides disagree, the contract file wins.
-                   contracts/bridge/ and contracts/surface/ are hand-written;
-                   contracts/generated/ is Typeshare output from Rust
-                   (read-only)
+                   contracts/surface/ is hand-written; contracts/generated/ is
+                   Typeshare output from Rust (read-only)
 services/korrid/   Rust brain, one per device. Ships as a standalone binary
-                   with a configured bind, and as a cdylib embedded in Android
-                   serving capability-bound RPC on localhost
+                   with a configured bind, serving capability-bound RPC on
+                   localhost
 ```
 
 One shared model of how Korri behaves; each platform meets it as well as it
@@ -120,11 +118,9 @@ permission expansion.
 
 ## Standing decisions
 
-- WebViews are hardware-blind: they receive semantic input actions
-  (`direction`, `confirm`, `back`, …) via the bridge, never key codes.
-  Kotlin owns all hardware translation.
-- The JS↔Kotlin bridge treaty lives in `contracts/bridge/`; the Kotlin
-  implementation mirrors it by hand and cites it.
+- The portal is hardware-blind: it receives semantic input actions
+  (`direction`, `confirm`, `back`, …), never key codes. `clients/portal/src/
+  input/` translates every device Korri supports.
 - `flake.nix` is an index: inputs + per-area composition only. Shared
   toolchain composition lives in per-area Nix expressions; `devshell.nix`
   owns the interactive shell. No inline derivations or shells.
@@ -138,9 +134,6 @@ permission expansion.
 - Never compile software or dispatch builds from target devices. Follow
   `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
   Runtime TS/JS transpilation remains part of the plugin scripting contract.
-- Android's user-visible Korri root is exactly
-  `/storage/emulated/0/korri`. Product code must not recognize older root
-  names; device cutovers are performed and verified outside the runtime.
 - Keep the AYN Odin 2 Portal bootloader unlocked for stock-based custom
   firmware. Installation and recovery tools must verify the unlocked state and
   stop if the device is locked. They must not contain or run a bootloader lock
@@ -165,7 +158,7 @@ permission expansion.
   regenerate them via `nix run .#korrid-check`, never edit by hand.
 - A surface is a deployable, not a theme. It receives one `SurfaceModel` and one
   `SurfaceHost` through `contracts/surface/` and may import nothing else from
-  Korri — no korrid client, no generated Rust types, no bridge, no host state.
+  Korri — no korrid client, no generated Rust types, no host state.
   The host owns facts, effects, and input delivery; the surface owns every
   pixel, including how it presents data Korri does not have. Keep the treaty
   small enough that a surface could ship from another repository unchanged.
@@ -174,8 +167,8 @@ permission expansion.
   host's job (`clients/portal/src/input/`), never the surface's.
 - The portal's brain is always the korrid on its own device at
   `http://127.0.0.1:<port>`; the portal never talks to another device's korrid
-  or any other backend directly. On Android the shell embeds korrid as a
-  cdylib and injects the port.
+  or any other backend directly. The port and capability arrive in
+  `/runtime.json`, which the portal reads before it mounts.
 - Plugins are TypeScript or JavaScript **source**, transpiled and evaluated by
   korrid at runtime — never compiled ahead of time, never shipped as native
   code. A plugin returns a declaration and performs no effects; korrid acts on

@@ -412,7 +412,8 @@ fn set_plugin_enabled(
     enabled: bool,
     registry_source: &plugin_policy::RegistrySource,
 ) -> Result<(), SettingsError> {
-    let known = registry_source.registry()
+    let known = registry_source
+        .registry()
         .map_err(|error| SettingsError::Candidate(error.to_string()))?
         .registered_plugin_ids()
         .iter()

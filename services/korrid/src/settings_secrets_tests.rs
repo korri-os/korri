@@ -13,22 +13,11 @@ use std::os::unix::fs::PermissionsExt;
 use tower::ServiceExt;
 
 fn local_router(readable: &std::path::Path, private: &std::path::Path) -> axum::Router {
-    use std::sync::{Arc, Mutex};
     korrid::router_with_capability_local_root_and_provision(
         "test-cap",
         "http://127.0.0.1",
         readable,
         private,
-        korrid::launcher::FileProvisionMode::Deferred,
-        b"test key".to_vec(),
-        Arc::new(Mutex::new(
-            korrid::launcher::LaunchPublicationReservations::new(),
-        )),
-        Arc::new(Mutex::new(korrid::launcher::MoonlightLaunchAuthority::new(
-            b"test key".to_vec(),
-        ))),
-        Arc::new(Mutex::new(None)),
-        Arc::new(Mutex::new(None)),
         korrid::plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
             korrid::plugin_test_fixtures::installed(readable),
         )),

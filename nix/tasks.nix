@@ -267,7 +267,7 @@ let
 
 
     korrid-check = {
-      description = "Run the full host, contracts, portal, and Android check.";
+      description = "Run the full host, contracts, and portal check.";
       needsProseql = true;
       runtimeInputs = [ pkgs.nix ];
       env = {
@@ -424,7 +424,7 @@ let
     };
 
     portal-bundle = {
-      description = "Build the portal into the Android app assets.";
+      description = "Build the portal and its surfaces into clients/portal/dist.";
       runtimeInputs = [
         pkgs.bun
         pkgs.coreutils
@@ -435,8 +435,7 @@ let
         cd "$KORRI_ROOT/clients/portal"
         bun install --frozen-lockfile --ignore-scripts
         bun run build
-        rm -rf "$KORRI_ROOT/clients/android/app/src/main/assets/portal"
-        cp -r dist "$KORRI_ROOT/clients/android/app/src/main/assets/portal"
+        test -f dist/index.html
       '';
     };
 

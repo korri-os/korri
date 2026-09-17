@@ -90,7 +90,6 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     registerDiscoveryReceipt: unavailable,
     removeDiscoveryLocation: unavailable,
     rescanDiscovery: unavailable,
-    localGameLaunch: unavailable,
     gameRoutes: unavailable,
     setGameRunner: unavailable,
     launchSelectedGame: unavailable,

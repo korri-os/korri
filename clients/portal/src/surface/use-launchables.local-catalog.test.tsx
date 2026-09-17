@@ -90,7 +90,6 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
       status = completed
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
     },
-    async localGameLaunch() { calls.native.push("local-launch"); throw new Error("must not request a legacy local launch") },
     ...overrides,
   }
   return { korrid, calls, setStatus(next: SessionStatusOutcome) { status = next } }

@@ -2,12 +2,11 @@
 mod readable;
 use korrid::{
     config::{
-        decode_config_documents,
-        resolver,
+        decode_config_documents, resolver,
         snapshot::{ConfigSnapshotCoordinator, FILE_NAMES},
     },
     discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin, plugin_installation, plugin_policy,
+    plugin, plugin_installation,
 };
 #[path = "../src/plugin_test_fixtures.rs"]
 mod native_packages;
@@ -295,8 +294,6 @@ fn snapshot_probe_exercises_the_three_document_loader_and_retained_snapshot() {
     assert!(stdout.contains("release records: 1"), "{stdout}");
     assert!(stdout.contains("LocalConfigReloadFailed"), "{stdout}");
 }
-
-#[test]
 
 #[test]
 fn authored_physical_file_is_protected_across_storage_aliases_after_byte_change() {
