@@ -33,6 +33,8 @@ in
         "mmc_block"
       ];
       kernelModules = [
+        "sunxi_mmc"
+        "mmc_block"
         "panfrost"
       ];
     };
