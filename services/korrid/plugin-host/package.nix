@@ -1,11 +1,22 @@
 { pkgs, crane }:
 let
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
+  # The shipped declarations are relative symlinks into the plugin packages, so
+  # the checkout keeps one copy of each. Nix cannot retain a symlink that
+  # escapes this source root; the source derivation below materializes them.
+  shippedDeclarations = [
+    "retroarch"
+    "ppsspp"
+  ];
   clean = pkgs.lib.cleanSourceWith {
     src = ./.;
     filter =
       path: type:
-      craneLib.filterCargoSources path type || path == toString ./tests/fixtures/selection.json;
+      craneLib.filterCargoSources path type
+      || path == toString ./tests/fixtures/selection.json
+      || builtins.elem path (
+        map (name: toString (./tests/fixtures + "/${name}.plugin.ts")) shippedDeclarations
+      );
   };
   vendor = craneLib.vendorCargoDeps { src = clean; };
   common = {
@@ -19,16 +30,17 @@ let
   # source, its example, and the shipped declarations used by admission tests.
   # Tests must not substitute copies for the real plugin sources.
   source = pkgs.runCommand "korri-plugin-host-source" { } ''
-    mkdir -p "$out/src" "$out/examples" "$out/plugins"
+    mkdir -p "$out/src" "$out/examples"
     cp -R ${clean} "$out/plugin-host"
+    chmod -R u+w "$out/plugin-host"
     cp ${../src/script.rs} "$out/src/script.rs"
     cp -R ${../src/script} "$out/src/script"
     cp ${../src/plugin_installation.rs} "$out/src/plugin_installation.rs"
     cp ${../src/plugin_references.rs} "$out/src/plugin_references.rs"
     cp ${../examples/catalog.plugin.ts} "$out/examples/catalog.plugin.ts"
-    cp ${../../../plugins/retroarch/android/plugin.ts} "$out/plugins/retroarch.plugin.ts"
-    cp ${../../../plugins/mgba/android/plugin.ts} "$out/plugins/mgba.plugin.ts"
-    cp ${../../../plugins/moonlight/plugin.ts} "$out/plugins/moonlight.plugin.ts"
+    rm -f "$out/plugin-host/tests/fixtures/retroarch.plugin.ts" "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
+    cp ${../../../plugins/retroarch/plugin.ts} "$out/plugin-host/tests/fixtures/retroarch.plugin.ts"
+    cp ${../../../plugins/ppsspp/plugin.ts} "$out/plugin-host/tests/fixtures/ppsspp.plugin.ts"
   '';
 in
 craneLib.buildPackage (

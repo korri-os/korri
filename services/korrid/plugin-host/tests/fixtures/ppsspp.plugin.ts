@@ -1,0 +1,1 @@
+../../../../../plugins/ppsspp/plugin.ts

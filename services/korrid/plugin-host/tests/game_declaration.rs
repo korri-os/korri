@@ -3,15 +3,8 @@ use korri_plugin_host::{declaration::Declaration, script::call_plugin_operation_
 #[test]
 fn game_packages_preserve_the_shipped_declaration_exports_without_a_service() {
     for (name, source) in [
-        (
-            "retroarch",
-            include_str!("../../plugins/retroarch.plugin.ts"),
-        ),
-        ("mgba", include_str!("../../plugins/mgba.plugin.ts")),
-        (
-            "moonlight",
-            include_str!("../../plugins/moonlight.plugin.ts"),
-        ),
+        ("retroarch", include_str!("fixtures/retroarch.plugin.ts")),
+        ("ppsspp", include_str!("fixtures/ppsspp.plugin.ts")),
     ] {
         let evaluated: serde_json::Value =
             serde_json::from_str(&korri_plugin_host::script::eval_plugin_ts(source).unwrap())
