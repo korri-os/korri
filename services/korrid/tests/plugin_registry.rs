@@ -39,9 +39,19 @@ fn retroarch_is_a_scoped_family_not_an_executable_dependency() {
     assert!(registry.runners().is_empty());
 }
 
+/// The generated core re-exports its handlers from a sibling module, so it only
+/// loads as part of a package. These two tests load one source on its own, so
+/// they drop the re-export and keep every declaration the assertions read.
+fn standalone_core() -> String {
+    MGBA_PLUGIN.replace(
+        "export { handlers } from \"./retroarch\"",
+        "export const handlers = { \"launch.prepare\": () => ({ command: \"retroarch\", args: [] }) }",
+    )
+}
+
 #[test]
 fn discovery_runner_order_is_explicit_and_unknown_ids_fail() {
-    let source = MGBA_PLUGIN.replace(
+    let source = standalone_core().replace(
         "runners: [\"@korri:mgba/mgba\"]",
         "runners: [\"@korri:missing/runner\", \"@korri:mgba/mgba\"]",
     );
@@ -51,7 +61,7 @@ fn discovery_runner_order_is_explicit_and_unknown_ids_fail() {
 
 #[test]
 fn disabled_plugins_reserve_runner_identities_without_enabling_them() {
-    let mgba = load_plugin_source("@korri", MGBA_PLUGIN).unwrap();
+    let mgba = load_plugin_source("@korri", &standalone_core()).unwrap();
     let registry = PluginRegistry::new(vec![mgba], Vec::new()).unwrap();
     assert!(registry.runners().is_empty());
     assert!(registry.owns_registered_runner_id("@korri:mgba/mgba"));

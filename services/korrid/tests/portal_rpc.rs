@@ -149,7 +149,6 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             "app.local-games.list",
             "system.settings.snapshot",
             "app.discovery.snapshot",
-            "app.moonlight.resolve",
             "app.session.status",
         ] {
             let response = portal.rpc(Some(TOKEN), Some(ORIGIN), method).await;
@@ -157,8 +156,6 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             assert_eq!(response.json::<Value>().await.unwrap()["_tag"], method);
         }
         for body in [
-            json!({"_tag":"app.moonlight.launch.prepare","payload":{"hostUuid":"h","appId":1}}),
-            json!({"_tag":"app.moonlight.launch.cancel","payload":{"launchId":"l"}}),
             json!({"_tag":"app.moonlight.certificate.attest","payload":{"hostUuid":"h"}}),
             json!({"_tag":"app.moonlight.certificate.provision","payload":{"hostUuid":"h","clientCertificate":"c"}}),
             json!({"_tag":"app.moonlight.certificate.revoke","payload":{"hostUuid":"h","clientCertificate":"c"}}),
@@ -170,9 +167,6 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             json!({"_tag":"app.session.freeze","payload":{}}),
             json!({"_tag":"app.session.thaw","payload":{}}),
             json!({"_tag":"app.source.status","payload":{"devicePublicKey":"k"}}),
-            json!({"_tag":"app.session.controls","payload":{"launchId":"l"}}),
-            json!({"_tag":"app.session.control.invoke","payload":{"launchId":"l","controlId":"c"}}),
-            json!({"_tag":"app.local-games.launch","payload":{"gameId":"g"}}),
             json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt":"r"}}),
             json!({"_tag":"app.discovery.removeLocation","payload":{"locationId":"l"}}),
             json!({"_tag":"app.discovery.rescan","payload":{}}),
@@ -256,7 +250,7 @@ async fn shared_portal_rpc_full_permission_still_dispatches_commands_on_both_run
                 Some(TOKEN),
                 Some(ORIGIN),
                 json!({
-                    "_tag":"app.local-games.launch", "payload":{"gameId":"not-configured"}
+                    "_tag":"app.local-games.launch.selected", "payload":{"gameId":"not-configured","runnerId":"@korri:mgba/mgba"}
                 }),
             )
             .await;

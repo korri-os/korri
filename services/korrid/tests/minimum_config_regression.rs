@@ -235,7 +235,7 @@ fn any_complete_release_launches_in_catalog_order_without_a_preference_fold() {
         readable::gba_locations("roms", "game.gba", false)
     );
     let state = decode_config_documents(&device, &games, &releases).unwrap();
-    let registry = plugin_policy::installed_registry().unwrap();
+    let registry = korrid::plugin_test_fixtures::installed(root.path());
     let route =
         resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap();
     assert_eq!(route.release_id, readable::GBA_RELEASE);
