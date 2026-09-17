@@ -259,10 +259,6 @@ legacy `overrides.config.prepend/append`, after Korri's lines; `replace` and
 the approved reserved keys fail. Typed configuration cascade, stored route
 choices, and chooser UI are not implemented by this slice.
 
-The read-only registry probe requires an explicit publisher namespace for an
-external source: `nix run .#korrid-plugin-review -- @publisher plugin.ts`.
-With no arguments, it reviews the trusted bundled Android source.
-
 ## The sandbox has no I/O
 
 A plugin gets only prepared source from its immutable snapshot, plus the
@@ -435,42 +431,10 @@ executor controls are omitted. The Android launch/session seam will publish that
 live context; until it does, the list and invoke RPCs return the tagged
 `Unavailable` outcome rather than inferring a route from titles or game IDs.
 
-Review that boundary without reading Rust:
-
-```sh
-nix run .#korrid-plugin-review
-```
-
-The report uses the bundled Android plugin source (kept byte-identical to the
-checkpoint copy) and shows both its enabled and disabled states. This registry
-is device-local only: it does not perform an Android launch or publish anything
-to federation peers.
-
-## Local route review
-
-The checkpoint readable configuration now resolves through the production
-snapshot loader, bundled policy, enabled registry, and narrow route resolver.
-That resolver selects the one launchable release, follows `launch.use`, resolves
-a `provider-ref` target into the legacy flattened target string, and joins the
-provider/system/launcher declarations that are present after policy.
-
-Review that boundary without Android effects:
-
-```sh
-nix run .#korrid-plugin-route-review
-```
-
-The enabled half reports the TMNT route owned by `@korri:android-app`; the
-disabled half reports the same route as unavailable instead of falling through
-to a process command or another launcher.
-
-The companion RetroArch checkpoint in
-`docs/research/retroarch-plugin-route/` resolves a file target through the
-plugin-provided `@korri:retroarch/retroarch` launcher and
-`@korri:mgba/mgba` runtime. `plugins/retroarch/android/` owns the launcher
-artifact while `plugins/mgba/android/` owns the core build. The launcher APK
-temporarily carries the core as an Android packaging bridge; plugin evaluation
-itself still performs no I/O.
+Both review commands that explained this boundary are gone. They read korrid's
+bundled plugin sources and the Android checkpoint route, and korrid now ships
+no plugin at all. Read the registry tests instead: `services/korrid/tests/`
+holds the registry, resolver and DIY-runner cases that cover the same ground.
 
 ## Earlier script evaluator measured on hardware
 
