@@ -3,17 +3,6 @@ import * as React from "react"
 import * as ReactJsxRuntime from "react/jsx-runtime"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { SHELL_RESUMED_EVENT } from "@contracts/bridge/korri-native-bridge"
-import type {
-  BackgroundNoticeResult,
-  LaunchLocalResult,
-  LocalLaunchSpec,
-  QueryStreamAppsResult,
-  QueryStreamHostsResult,
-  StartStreamResult,
-  StorageAccessResult,
-  StreamHost,
-} from "@contracts/bridge/korri-native-bridge"
 import type {
   CatalogSnapshotOutcome,
   Game,
@@ -38,12 +27,10 @@ import {
 } from "@contracts/generated/korrid"
 import { createInputBus, type InputBus } from "../input/bus"
 import { createSpatialFocusController } from "../input/spatial-focus"
-import type { LauncherBridge } from "../bridge/launcher-bridge"
 import {
   SessionControlFailureReason,
   LaunchDisposition,
   LaunchForegroundKind,
-  MoonlightImplementation,
 } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalSurface } from "./surface-registry"
@@ -111,36 +98,6 @@ const remoteGame = (host: string, id = "wl4"): Game => ({
   source: { label: host, isLocal: false },
 })
 
-const streamHost = (name: string, uuid = `${name}-uuid`): StreamHost => ({
-  uuid,
-  name,
-})
-
-const streamApps = (id: number): QueryStreamAppsResult => ({
-  _tag: "StreamApps",
-  items: [{ id, name: "Korri Stream" }],
-})
-
-const localLaunchSpec: LocalLaunchSpec = {
-  launchId: "surface-root-local",
-  disposition: LaunchDisposition.Fresh,
-  context: {
-    gameId: "wl4",
-    title: "Wario Land 4",
-    contributors: [],
-    foreground: { kind: LaunchForegroundKind.Component },
-  },
-  runnerId: "fixture-local",
-  component: {
-    packageName: "dev.fixture.runtime",
-    className: "dev.fixture.runtime.MainActivity",
-  },
-  extras: { CONTENT: "/fixture/wl4.gba" },
-  directories: [],
-  files: [],
-  integrity: "fixture-integrity",
-}
-
 interface Calls {
   localLaunches: string[]
   prepared: Array<{ gameId: string; host: string | undefined }>
@@ -150,8 +107,6 @@ interface Calls {
 interface Sources {
   localGames: readonly LocalGame[]
   remoteGames: readonly Game[]
-  streamHosts: readonly StreamHost[]
-  streamAppsByHost: Readonly<Record<string, QueryStreamAppsResult>>
 }
 
 function okCatalog(games: readonly Game[]): CatalogSnapshotOutcome {
@@ -169,7 +124,6 @@ function okSettings(): SettingsSnapshotOutcome {
       revision: "settings-0",
       deviceName: "Browser",
       plugins: [
-        { id: "@korri:android-app", title: "Android", enabled: true },
         { id: "@korri:mgba", title: "mGBA", enabled: true },
         { id: "@korri:retroarch", title: "RetroArch", enabled: true },
       ],
@@ -228,10 +182,6 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
     async localGames(): Promise<LocalGamesListOutcome> {
       return okLocalGames(sources.localGames)
     },
-    async localGameLaunch(gameId): Promise<LocalGameLaunchOutcome> {
-      calls.localLaunches.push(gameId)
-      return { _tag: "Ok", payload: localLaunchSpec }
-    },
     async sessionPrepare(gameId, host): Promise<SessionPrepareOutcome> {
       calls.prepared.push({ gameId, host })
       return {
@@ -277,138 +227,9 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
         },
       }
     },
-    // Sealed stream startup resolves the transport and signs each launch.
-    async moonlightResolve() {
-      return {
-        _tag: "Available" as const,
-        payload: {
-          transportId: "@korri:moonlight/moonlight",
-          implementation: MoonlightImplementation.Artemis,
-          sunshineApp: "Korri Stream",
-        },
-      }
-    },
-    async moonlightLaunchPrepare(hostUuid, appId, gameId, title) {
-      return {
-        _tag: "Ok" as const,
-        payload: {
-          launchId: `surface-root-${hostUuid}-${appId}`,
-          transportId: "@korri:moonlight/moonlight",
-          context: {
-            gameId,
-            title,
-            contributors: [],
-            foreground: { kind: LaunchForegroundKind.ArtemisGame },
-          },
-          implementation: MoonlightImplementation.Artemis,
-          sunshineApp: "Korri Stream",
-          hostUuid,
-          appId,
-          integrity: "surface-root-integrity",
-        },
-      }
-    },
-    async moonlightLaunchCancel(launchId) {
-      return { _tag: "Ok" as const, payload: { launchId } }
-    },
-    // Gameplay controls belong to the overlay journey, not this route fixture.
-    async sessionControls(launchId) {
-      return { _tag: "Ok" as const, payload: { launchId, groups: [] } }
-    },
-    async invokeSessionControl() {
-      return {
-        _tag: "Err" as const,
-        payload: {
-          reason: SessionControlFailureReason.Unavailable,
-          message: "no gameplay controls in this fixture",
-        },
-      }
-    },
   }
 }
 
-function buildBridge(sources: Sources, calls: Calls): LauncherBridge {
-  return {
-    async launchLocal(_spec): Promise<LaunchLocalResult> {
-      return { _tag: "Launched" }
-    },
-    async localGameAssetUrl() {
-      return { _tag: "Absent" as const }
-    },
-    async queryStreamHosts(): Promise<QueryStreamHostsResult> {
-      return { _tag: "StreamHosts", items: [...sources.streamHosts] }
-    },
-    async queryStreamApps(hostUuid): Promise<QueryStreamAppsResult> {
-      return sources.streamAppsByHost[hostUuid] ?? { _tag: "StreamApps", items: [] }
-    },
-    async startStream(spec): Promise<StartStreamResult> {
-      calls.streams.push({ hostUuid: spec.hostUuid, appId: spec.appId })
-      return { _tag: "StreamStarted" }
-    },
-    async storageAccess(): Promise<StorageAccessResult> {
-      return { _tag: "Granted" }
-    },
-    async openStorageAccessSettings() {
-      return { _tag: "Opened" as const }
-    },
-    // The gameplay overlay grant is Android-owned; this fixture only reports it.
-    async overlayPermission() {
-      return { _tag: "RestrictedOrUnavailable" as const }
-    },
-    async openOverlaySettings() {
-      return {
-        _tag: "Unavailable" as const,
-        message: "no overlay settings screen in this fixture",
-      }
-    },
-    async backgroundNotice(): Promise<BackgroundNoticeResult> {
-      return { _tag: "Hidden" }
-    },
-    async requestBackgroundNotice() {
-      return { _tag: "Unprompted" as const }
-    },
-    async openNotificationSettings() {
-      return { _tag: "Opened" as const }
-    },
-    async ownerBindingSnapshot() {
-      return {
-        identity: {
-          _tag: "Owned" as const,
-          devicePublicKey: "22".repeat(32),
-          ownerPublicKey: "11".repeat(32),
-          eventId: "33".repeat(32),
-          createdAt: 1,
-        },
-        personSigner: { _tag: "Approved" as const, message: "verified" },
-        requestedAction: "Bind this device to your person identity",
-      }
-    },
-    async startOwnerBinding() {
-      return this.ownerBindingSnapshot()
-    },
-    async openGameFolderPicker() {
-      return { _tag: "Unavailable" as const, message: "no picker in this fixture" }
-    },
-    async gameFolderPickerSnapshot() {
-      return { version: 1 as const, generation: "picker-0", state: { _tag: "Idle" as const } }
-    },
-    async acknowledgeGameFolderPicker(generation) {
-      return { _tag: "Acknowledged" as const, generation }
-    },
-    async systemInfo() {
-      return {
-        _tag: "SystemInfo" as const,
-        payload: {
-          device: "Browser",
-          manufacturer: "Korri",
-          androidRelease: "Not Android",
-          sdk: 0,
-          appVersion: "test",
-        },
-      }
-    },
-  }
-}
 
 interface SurfaceRootView {
   readonly container: HTMLElement
@@ -430,7 +251,6 @@ async function renderSurfaceRoot(
   options: {
     readonly surface?: PortalSurface
     readonly korrid?: KorridClient
-    readonly bridge?: LauncherBridge
   } = {},
 ): Promise<SurfaceRootView> {
   const container = document.createElement("div")
@@ -455,7 +275,6 @@ async function renderSurfaceRoot(
       root.render(
         <SurfaceRoot
           bus={bus}
-          bridge={options.bridge ?? buildBridge(sources, calls)}
           korrid={options.korrid ?? buildKorrid(sources, calls)}
           surface={surface}
         />,
@@ -549,213 +368,4 @@ async function openWarioDetail() {
 }
 
 describe("SurfaceRoot", () => {
-  test("Pico returns from a Linux local catalog session to a usable library cart", async () => {
-    const { PicoSurface } = await import("@korri/pico")
-    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const game = { ...remoteGame("device-label"), supportsRunnerSelection: true, source: { label: "device-label", isLocal: true } }
-    const sources: Sources = { localGames: [], remoteGames: [game], streamHosts: [], streamAppsByHost: {} }
-    const nativeLaunches: LocalLaunchSpec[] = []
-    const bridge: LauncherBridge = {
-      ...buildBridge(sources, calls),
-      async launchLocal(spec) {
-        nativeLaunches.push(spec)
-        return { _tag: "Launched" }
-      },
-    }
-    let status: SessionStatusOutcome = {
-      _tag: "Err",
-      payload: { code: "NoActiveSession", message: "no host launch is active" },
-    }
-    let complete!: (value: SessionPrepareOutcome) => void
-    const preparation = new Promise<SessionPrepareOutcome>(resolve => { complete = resolve })
-    const korrid: KorridClient = {
-      ...buildKorrid(sources, calls),
-      ...createInMemoryKorridClient({ gameRoutes: [{
-        gameId: game.id, selection: { _tag: "Choose" }, systemRunners: {}, revisions: { games: "g1", device: "d1" },
-        routes: [{ runnerId: "retroarch/mgba", familyId: "@korri:retroarch", systemId: "gba", runnerBuild: "/nix/store/mgba", program: "/nix/store/retroarch/bin/retroarch", warnings: [] }],
-      }] }),
-      async catalogSnapshot() { return okCatalog(sources.remoteGames) },
-      async launchSelectedGame(gameId) {
-        calls.prepared.push({ gameId, host: undefined })
-        const outcome = await preparation
-        return outcome._tag === "Err" ? outcome : { _tag: "Ok", payload: { session: outcome.payload, warnings: [] } }
-      },
-      async sessionStatus() { return status },
-    }
-    const view = await renderSurfaceRoot(sources, calls, {
-      korrid,
-      bridge,
-      surface: { id: "pico", title: "Pico", presentations: ["catalog"], render: props => <PicoSurface {...props} /> },
-    })
-    await waitFor(() => expect(buttonNamed("Wario Land 4, This device")).toBeDefined(), "local catalog cart")
-    expect(document.activeElement).toBe(document.body)
-    await confirm(view)
-    expect(buttonNamed("▶ PLAY")).toBeDefined()
-    expect(document.activeElement).toBe(document.body)
-    expect(calls.prepared).toEqual([])
-    await confirm(view)
-    expect(view.container.textContent).toContain("Launching…")
-    expect(calls.prepared).toEqual([{ gameId: game.id, host: undefined }])
-
-    await act(async () => {
-      // Linux session status omits host, even though the catalog has a device label.
-      status = { _tag: "Ok", payload: { active: { launchId: "local-1", gameId: game.id, title: game.title } } }
-      complete({ _tag: "Ok", payload: { gameId: game.id, launchId: "local-1" } })
-      await sleep()
-    })
-    await waitFor(() => expect(buttonNamed("▶ PLAY")).toBeDefined(), "selected detail after prepare")
-    await act(async () => {
-      status = {
-        _tag: "Err",
-        payload: { code: "SessionCompleted", message: "host launch local-1 completed" },
-      }
-      window.dispatchEvent(new Event("focus"))
-      await sleep()
-    })
-    await waitFor(() => {
-      expect(view.container.querySelector(".pico-cart-shelf")).not.toBeNull()
-      expect(buttonNamed("Wario Land 4, This device")).toBeDefined()
-    }, "library after local session completion")
-    expect(view.container.querySelector(".pico-game-detail")).toBeNull()
-    expect(view.container.querySelector(".pico-library-browser")).toBeNull()
-    expect(buttons(view.container).map(accessibleName)).not.toContain("▶ PLAY")
-    expect(view.container.textContent).not.toContain("Preparing Wario Land 4")
-
-    expect(document.activeElement).toBe(document.body)
-    expect(buttonNamed("Wario Land 4, This device").disabled).toBe(false)
-    await confirm(view)
-    await waitFor(() => expect(buttonNamed("▶ PLAY")).toBeDefined(), "semantic confirm reopens the library cart")
-    expect(view.container.querySelector('section[aria-label="Wario Land 4"]')).not.toBeNull()
-    expect(calls.prepared).toEqual([{ gameId: game.id, host: undefined }])
-    expect(calls.streams).toEqual([])
-    expect(calls.localLaunches).toEqual([])
-    expect(nativeLaunches).toEqual([])
-  })
-
-
-  test("Pico body-focus confirm wakes attract without opening or launching a cart", async () => {
-    const { PicoSurface } = await import("@korri/pico")
-    const { PICO_ATTRACT_AFTER_MS } = await import("../../../../surfaces/pico/src/pico-attract")
-    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const sources: Sources = { localGames: [localGame()], remoteGames: [], streamHosts: [], streamAppsByHost: {} }
-    jest.useFakeTimers()
-    const view = await renderSurfaceRoot(sources, calls, {
-      surface: { id: "pico", title: "Pico", presentations: ["catalog"], render: props => <PicoSurface {...props} /> },
-    })
-    await waitFor(() => expect(buttonNamed("Wario Land 4, Game Boy Advance")).toBeDefined(), "loaded cart")
-    act(() => { jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS + 1) })
-    expect(view.container.querySelector('[aria-label="Attract"]')).not.toBeNull()
-    expect(document.activeElement).toBe(document.body)
-
-    await confirm(view)
-    expect(view.container.querySelector('[aria-label="Attract"]')).toBeNull()
-    expect(view.container.querySelector(".pico-game-detail")).toBeNull()
-    expect(calls.localLaunches).toEqual([])
-    expect(calls.prepared).toEqual([])
-
-    await confirm(view)
-    expect(buttonNamed("▶ PLAY")).toBeDefined()
-    expect(calls.localLaunches).toEqual([])
-    expect(calls.prepared).toEqual([])
-    await act(async () => { view.bus.emit({ type: "back" }) })
-    expect(document.activeElement).toBe(document.body)
-    await confirm(view)
-    expect(buttonNamed("▶ PLAY")).toBeDefined()
-  })
-
-  test("selecting a folded remote location dispatches the exact non-default stream route", async () => {
-    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const sources: Sources = {
-      localGames: [localGame()],
-      remoteGames: [remoteGame("zao")],
-      streamHosts: [streamHost("zao", "zao-uuid")],
-      streamAppsByHost: { "zao-uuid": streamApps(77) },
-    }
-    await renderSurfaceRoot(sources, calls)
-
-    await waitFor(() => expect(buttonNamed("Library")).toBeDefined(), "expected loaded home")
-    await openWarioDetail()
-    await click(buttonNamed("▶ Play"))
-    const chooser = dialogNamed("Choose where to play Wario Land 4")
-    expect(buttons(chooser).map(accessibleName)).toContain("This device")
-
-    await click(buttonNamed("zao", chooser))
-
-    await waitFor(
-      () => {
-        expect(calls.prepared).toEqual([{ gameId: "wl4", host: "zao" }])
-        expect(calls.streams).toEqual([{ hostUuid: "zao-uuid", appId: 77 }])
-      },
-      "expected exact remote launch path",
-    )
-    expect(calls.localLaunches).toEqual([])
-  })
-
-  test("selecting the local location dispatches the exact local route", async () => {
-    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const sources: Sources = {
-      localGames: [localGame()],
-      remoteGames: [remoteGame("zao")],
-      streamHosts: [streamHost("zao", "zao-uuid")],
-      streamAppsByHost: { "zao-uuid": streamApps(77) },
-    }
-    await renderSurfaceRoot(sources, calls)
-
-    await waitFor(() => expect(buttonNamed("Library")).toBeDefined(), "expected loaded home")
-    await openWarioDetail()
-    await click(buttonNamed("▶ Play"))
-    const chooser = dialogNamed("Choose where to play Wario Land 4")
-    await click(buttonNamed("This device", chooser))
-
-    await waitFor(
-      () => expect(calls.localLaunches).toEqual(["wl4"]),
-      "expected exact local launch path",
-    )
-    expect(calls.prepared).toEqual([])
-    expect(calls.streams).toEqual([])
-  })
-
-  test("a shell-resume refresh lets the stable surface host act on the current route", async () => {
-    const calls: Calls = { localLaunches: [], prepared: [], streams: [] }
-    const sources: Sources = {
-      localGames: [localGame()],
-      remoteGames: [remoteGame("zao")],
-      streamHosts: [streamHost("zao", "zao-uuid")],
-      streamAppsByHost: { "zao-uuid": streamApps(77) },
-    }
-    await renderSurfaceRoot(sources, calls)
-
-    await waitFor(() => expect(buttonNamed("Library")).toBeDefined(), "expected loaded home")
-
-    sources.remoteGames = [remoteGame("aka")]
-    sources.streamHosts = [streamHost("aka", "aka-uuid")]
-    sources.streamAppsByHost = { "aka-uuid": streamApps(88) }
-    await act(async () => {
-      window.dispatchEvent(new Event(SHELL_RESUMED_EVENT))
-      await sleep()
-    })
-
-    await waitFor(
-      () => expect(document.body.textContent ?? "").toContain("Also on aka"),
-      "expected refreshed remote source",
-    )
-    expect(document.body.textContent ?? "").not.toContain("Also on zao")
-
-    await openWarioDetail()
-    await click(buttonNamed("▶ Play"))
-    const chooser = dialogNamed("Choose where to play Wario Land 4")
-    expect(buttons(chooser).map(accessibleName)).toContain("aka")
-    expect(buttons(chooser).map(accessibleName)).not.toContain("zao")
-
-    await click(buttonNamed("aka", chooser))
-
-    await waitFor(
-      () => {
-        expect(calls.prepared).toEqual([{ gameId: "wl4", host: "aka" }])
-        expect(calls.streams).toEqual([{ hostUuid: "aka-uuid", appId: 88 }])
-      },
-      "expected refreshed route launch path",
-    )
-    expect(calls.localLaunches).toEqual([])
-  })
 })

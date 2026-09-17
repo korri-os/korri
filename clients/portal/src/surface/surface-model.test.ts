@@ -149,7 +149,7 @@ describe("surfaceModelFrom", () => {
             title: "Wario Land 4",
             system: "GBA",
             coverArtUrl:
-              "https://appassets.androidplatform.net/game-assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+              "https://korri.invalid/game-assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
           },
         },
       ]),
@@ -157,7 +157,7 @@ describe("surfaceModelFrom", () => {
 
     if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
     expect(model.catalog.games[0]?.coverArtUrl).toBe(
-      "https://appassets.androidplatform.net/game-assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "https://korri.invalid/game-assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
     )
   })
 
@@ -223,22 +223,6 @@ describe("surfaceModelFrom", () => {
     })
   })
 
-  test("setup entries become rail actions, not games", () => {
-    const model = surfaceModelFrom(
-      ready([
-        { kind: "storage-access" },
-        { kind: "background-notice", visible: false },
-      ]),
-    )
-
-    expect(model.catalog._tag).toBe("Empty")
-    expect(model.actions.map(action => action.label)).toEqual([
-      "Allow file access",
-      "Show Korri running",
-    ])
-    expect(model.actions.every(action => action.enabled)).toBe(true)
-  })
-
   test("a notice becomes a problem the user acknowledges", () => {
     const model = surfaceModelFrom(ready([localGame], "local ROM is missing"))
 
@@ -266,27 +250,6 @@ describe("surfaceModelFrom", () => {
       gameId: "wl4",
       gameTitle: "Wario Land 4",
     })
-  })
-
-  test("a failed local start keeps its own game through the state change", () => {
-    const launching = LaunchablesState.beginLaunching(
-      ready([localGame]),
-      "Wario Land 4",
-      { id: "wl4", title: "Wario Land 4" },
-    )
-    const failed = LaunchablesState.withLocalLaunchOutcome(launching, {
-      _tag: "Err",
-      payload: {
-        code: "ActiveSessionConflict",
-        message: "An active RetroArch session must end",
-      },
-    })
-    const model = surfaceModelFrom(failed)
-
-    expect(model.status._tag).toBe("Problem")
-    if (model.status._tag !== "Problem") return
-    expect(model.status.gameId).toBe("wl4")
-    expect(model.status.kicker).toBe("Couldn't start Wario Land 4")
   })
 
   test("in-flight work is busy, never an error", () => {

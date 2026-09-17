@@ -455,6 +455,17 @@ export function useLaunchables(korrid: KorridClient): Launchables {
               : { kind: "local-game", game: copy.game },
           ) === entryKey(entry))),
       )) return
+      /* A catalog-local game that already runs on this display is resumed, not
+       * started again. Both its banner and its catalog copy name that session,
+       * so neither may ask korrid to prepare it a second time. */
+      if (
+        entry.kind === "game" &&
+        entry.game.source.isLocal &&
+        current.entries.some(candidate =>
+          candidate.kind === "now-playing" &&
+          isLocalCatalogSession(candidate.session, [entry]),
+        )
+      ) return
       const operation = ++actionSeq.current
 
         if (entry.kind === "now-playing") {
@@ -470,10 +481,12 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         void korrid.sessionThaw(entry.session.launchId).then(outcome => {
           if (!mountedRef.current || operation !== actionSeq.current) return
           if (outcome._tag === "Ok") {
-            publish({ _tag: "Ready", entries: current.entries, notice: null })
+            // A resume says nothing about an unrelated failure, such as a
+            // catalog read that could not reach the brain. Keep that notice.
+            publish({ _tag: "Ready", entries: current.entries, notice: current.notice })
             return
           }
-          publish(LaunchablesState.withPrepareOutcome(resuming, outcome))
+          publish(LaunchablesState.withResumeOutcome(resuming, outcome))
         })
         return
       }
@@ -487,18 +500,35 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         { id: entry.game.id, title: entry.game.title },
       )
       publish(preparing)
-      void korrid.sessionPrepare(entry.game.id, entry.game.host).then(outcome => {
-        if (!mountedRef.current || operation !== actionSeq.current) return
-        if (outcome._tag !== "Ok") {
-          publish(LaunchablesState.withPrepareOutcome(preparing, outcome))
+      void korrid.sessionPrepare(entry.game.id, entry.game.host).then(async outcome => {
+        if (!mountedRef.current) return
+        if (operation !== actionSeq.current) {
+          if (outcome._tag === "Ok") void load(true)
           return
         }
-        // Preparation is not an activity swap. Observe the real host session
-        // and return to browsing; do not synthesize a launched result.
-        void load()
+        // Reads started before the ACK must not erase the newly known launch.
+        const loadOperation = ++loadSeq.current
+        publish(
+          LaunchablesState.withLocalCatalogPrepareOutcome(
+            preparing,
+            outcome,
+            entry.game,
+          ),
+        )
+        if (outcome._tag === "Err") {
+          // An older prepare may have succeeded while this command was
+          // locked. Recover its session without clearing this failure notice.
+          const status = await sessionStatusWithTimeout()
+          if (
+            !mountedRef.current ||
+            operation !== actionSeq.current ||
+            loadOperation !== loadSeq.current
+          ) return
+          publish(LaunchablesState.withSessionStatus(stateRef.current, status))
+        }
       })
     },
-    [korrid, load, noticeOnReady, publish],
+    [korrid, load, noticeOnReady, publish, sessionStatusWithTimeout],
   )
 
   const stopSession = useCallback(

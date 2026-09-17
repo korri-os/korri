@@ -6,10 +6,8 @@ import type {
   SessionStopOutcome,
 } from "@contracts/generated/korrid"
 import {
-  MoonlightImplementation,
   SessionStopPhase,
 } from "@contracts/generated/korrid"
-import type { BackgroundNoticeResult } from "@contracts/bridge/korri-native-bridge"
 import { entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
 import type { LaunchablesState as State, PortalEntry } from "./state"
 
@@ -58,7 +56,7 @@ const localGamesOk: LocalGamesListOutcome = {
   },
 }
 
-const ready = LaunchablesState.fromSources([officeApps], gamesOk)
+const ready = LaunchablesState.fromSources(gamesOk)
 
 describe("catalog session locality", () => {
   const catalogGame = {
@@ -94,7 +92,7 @@ describe("catalog session locality", () => {
   it("finds a local catalog route folded under another primary copy", () => {
     expect(isLocalCatalogSession(session, [{
       kind: "local-game",
-      game: { id: "android-copy", title: "Wario Land 4", system: "GBA" },
+      game: { id: "peer-copy", title: "Wario Land 4", system: "GBA" },
       alternatives: [{ kind: "remote", game: catalogGame }],
     }])).toBe(true)
   })
@@ -122,12 +120,12 @@ describe("catalog session locality", () => {
     const completed: SessionStatusOutcome = {
       _tag: "Err", payload: { code, message: "no host launch is active" },
     }
-    const loaded = LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, running)
+    const loaded = LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [catalogGame] } }, running)
     const stopped = LaunchablesState.withSessionStatus(loaded, completed)
     expect(stopped).toMatchObject({ _tag: "Ready", notice: null })
     if (stopped._tag !== "Ready") throw new Error("not ready")
     expect(stopped.entries.some(entry => entry.kind === "now-playing")).toBe(false)
-    expect(LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, completed)).toEqual(stopped)
+    expect(LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [catalogGame] } }, completed)).toEqual(stopped)
     const stopping = LaunchablesState.beginStopping(loaded, nowPlayingEntry(loaded))
     expect(LaunchablesState.withStatusAfterStop(stopping, completed)).toEqual(stopped)
     expect(LaunchablesState.withSessionStatus(loaded, {
@@ -138,10 +136,10 @@ describe("catalog session locality", () => {
   it("retains source evidence only for the same launch without restoring stale catalog games", () => {
     const active = { launchId: session.launchId, gameId: catalogGame.id }
     const running: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
-    const loaded = LaunchablesState.fromSources([], { _tag: "Ok", payload: { games: [catalogGame] } }, undefined, running)
+    const loaded = LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [catalogGame] } }, running)
     if (loaded._tag !== "Ready") throw new Error("not ready")
     const failedCatalog = { _tag: "Err", payload: { code: "BrainUnreachable", message: "disconnected" } } as const
-    const refreshed = LaunchablesState.fromSources([], failedCatalog, undefined, running, undefined, undefined, undefined, loaded.entries)
+    const refreshed = LaunchablesState.fromSources(failedCatalog, running, undefined, loaded.entries)
     if (refreshed._tag !== "Ready") throw new Error("not ready")
     expect(refreshed.entries.some(entry => entry.kind === "game")).toBe(false)
     expect(isLocalCatalogSession(active, refreshed.entries)).toBe(true)
@@ -166,32 +164,10 @@ describe("catalog session locality", () => {
 })
 
 describe("LaunchablesState.fromSources", () => {
-  it("folds the local game beside Korri catalog entries", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      localGamesOk,
-    )
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.map(entry => entry.kind)).toEqual([
-      "local-game",
-      "game",
-      "game",
-      "background-notice",
-    ])
-    expect(state.entries[0]).toMatchObject({
-      kind: "local-game",
-      game: { id: "wl4", title: "Wario Land 4" },
-    })
-  })
 
   it("shows matching local and Zao copies as one local-first game", () => {
     const identity = { kind: "hash" as const, value: "sha256:wario" }
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      {
+    const state = LaunchablesState.fromSources({
         _tag: "Ok",
         payload: {
           games: [
@@ -205,10 +181,7 @@ describe("LaunchablesState.fromSources", () => {
             },
           ],
         },
-      },
-      undefined,
-      undefined,
-      {
+      }, undefined, {
         _tag: "Ok",
         payload: {
           games: [
@@ -220,8 +193,7 @@ describe("LaunchablesState.fromSources", () => {
             },
           ],
         },
-      },
-    )
+      })
 
     if (state._tag !== "Ready") throw new Error("unreachable")
     expect(state.entries.filter(entry => entry.kind.includes("game"))).toEqual([
@@ -250,46 +222,11 @@ describe("LaunchablesState.fromSources", () => {
     ])
   })
 
-  it("does not turn Sunshine's advertised apps into Korri games", () => {
-    expect(ready._tag).toBe("Ready")
-    if (ready._tag !== "Ready") throw new Error("unreachable")
-    expect(ready.entries.map(e => e.kind)).toEqual([
-      "game",
-      "game",
-      "background-notice",
-    ])
-    expect(ready.notice).toBeNull()
-  })
-
-  it("keeps an empty live catalog ready when local inventory is unsupported", () => {
-    const state = LaunchablesState.fromSources(
-      [],
-      { _tag: "Ok", payload: { games: [] } },
-      undefined,
-      undefined,
-      {
-        _tag: "Err",
-        payload: { code: "OperationUnsupported", message: "local inventory unavailable" },
-      },
-    )
-    expect(state).toEqual({
-      _tag: "Ready",
-      entries: [{ kind: "background-notice", visible: false }],
-      notice: null,
-    })
-  })
-
   it("degrades a failed local-game source to a notice while entries remain", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      {
+    const state = LaunchablesState.fromSources(gamesOk, undefined, {
         _tag: "Err",
         payload: { code: "LocalStorageUnavailable", message: "storage denied" },
-      },
-    )
+      })
     expect(state).toMatchObject({
       _tag: "Ready",
       notice: { message: "local games: LocalStorageUnavailable" },
@@ -297,12 +234,7 @@ describe("LaunchablesState.fromSources", () => {
   })
 
   it("surfaces local configuration failures while keeping healthy local games", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      {
+    const state = LaunchablesState.fromSources(gamesOk, undefined, {
         _tag: "Ok",
         payload: {
           games: [
@@ -315,8 +247,7 @@ describe("LaunchablesState.fromSources", () => {
             },
           ],
         },
-      },
-    )
+      })
     expect(state).toMatchObject({
       _tag: "Ready",
       notice: { message: "local games: LocalConfigReloadFailed" },
@@ -329,7 +260,7 @@ describe("LaunchablesState.fromSources", () => {
   })
 
   it("degrades a failed korrid catalog to a notice while entries remain", () => {
-    const state = LaunchablesState.fromSources([officeApps], gamesErr)
+    const state = LaunchablesState.fromSources(gamesErr)
     expect(state).toMatchObject({
       _tag: "Ready",
       notice: { message: "games: UpstreamUnreachable" },
@@ -337,7 +268,7 @@ describe("LaunchablesState.fromSources", () => {
   })
 
   it("surfaces partial host catalog failures while keeping healthy games", () => {
-    const state = LaunchablesState.fromSources([officeApps], {
+    const state = LaunchablesState.fromSources({
       _tag: "Ok",
       payload: {
         games: [
@@ -365,35 +296,13 @@ describe("LaunchablesState.fromSources", () => {
   })
 
   it("does not surface Sunshine app-query failures as catalog failures", () => {
-    const state = LaunchablesState.fromSources(
-      [{ host: officeHost, apps: { _tag: "QueryFailed", message: "no cache" } }],
-      gamesOk,
-    )
+    const state = LaunchablesState.fromSources(gamesOk)
     expect(state).toMatchObject({ _tag: "Ready", notice: null })
   })
 
   it("does not surface Sunshine host-query failures as catalog failures", () => {
-    const state = LaunchablesState.fromSources([], gamesOk, "db locked")
+    const state = LaunchablesState.fromSources(gamesOk)
     expect(state).toMatchObject({ _tag: "Ready", notice: null })
-  })
-
-  it("keeps the background setting reachable when every source failed", () => {
-    const state = LaunchablesState.fromSources(
-      [
-        {
-          host: officeHost,
-          apps: { _tag: "QueryFailed", message: "no cache" },
-        },
-      ],
-      gamesErr,
-    )
-    // A fresh install can fail every source. The list stays usable instead of
-    // collapsing into an error screen the user cannot act on.
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.map(entry => entry.kind)).toEqual([
-      "background-notice",
-    ])
-    expect(state.notice?.message).toBe("games: UpstreamUnreachable")
   })
 })
 
@@ -426,133 +335,8 @@ describe("hosted game identity", () => {
   })
 })
 
-describe("LaunchablesState stream targets", () => {
-  const resolvedMoonlight = {
-    transportId: "@korri:moonlight/moonlight",
-    implementation: MoonlightImplementation.Artemis,
-    sunshineApp: "Moonlight-owned Sunshine app",
-  }
-  const streamSources = [
-    {
-      host: { uuid: "aka-uuid", name: "aka" },
-      apps: {
-        _tag: "StreamApps" as const,
-        items: [{ id: 10, name: "Moonlight-owned Sunshine app" }],
-      },
-    },
-    {
-      host: { uuid: "zao-uuid", name: "zao" },
-      apps: {
-        _tag: "StreamApps" as const,
-        items: [{ id: 20, name: "Moonlight-owned Sunshine app" }],
-      },
-    },
-  ]
-
-  it("selects the provisioned stream host named by the game", () => {
-    expect(
-      LaunchablesState.korriStreamTarget(
-        resolvedMoonlight,
-        streamSources,
-        "zao",
-      ),
-    ).toEqual({
-      _tag: "Some",
-      value: { hostUuid: "zao-uuid", appId: 20 },
-    })
-  })
-
-  it("preserves first-match behavior for games without a host", () => {
-    expect(
-      LaunchablesState.korriStreamTarget(resolvedMoonlight, streamSources),
-    ).toEqual({
-      _tag: "Some",
-      value: { hostUuid: "aka-uuid", appId: 10 },
-    })
-  })
-
-  it("does not attach to another machine when the named host is absent", () => {
-    expect(
-      LaunchablesState.korriStreamTarget(
-        resolvedMoonlight,
-        streamSources,
-        "sobo",
-      ),
-    ).toEqual({
-      _tag: "None",
-    })
-  })
-})
 
 describe("LaunchablesState action results", () => {
-  it("surfaces local brain and native launch failures as notices", () => {
-    const launching = LaunchablesState.beginLaunching(ready, "Wario Land 4")
-    expect(
-      LaunchablesState.withLocalLaunchOutcome(launching, {
-        _tag: "Err",
-        payload: { code: "LocalRomMissing", message: "ROM absent" },
-      }),
-    ).toMatchObject({ _tag: "Ready", notice: { message: "LocalRomMissing: ROM absent" } })
-    expect(
-      LaunchablesState.withLocalLaunchResult(launching, {
-        _tag: "LaunchFailed",
-        reason: "NotInstalled",
-        message: "RetroArch absent",
-      }),
-    ).toMatchObject({
-      _tag: "Ready",
-      notice: { message: "NotInstalled: RetroArch absent" },
-    })
-  })
-
-  it("surfaces stream and prepare failures as notices", () => {
-    const streamFailed = LaunchablesState.withStartStreamResult(
-      LaunchablesState.beginLaunching(ready, "Desktop"),
-      {
-        _tag: "StreamFailed",
-        reason: "HostCertificateRejected",
-        message: "host rejected certificate",
-      },
-    )
-    expect(streamFailed).toMatchObject({
-      notice: { message: "HostCertificateRejected: host rejected certificate" },
-    })
-
-    const prepareFailed = LaunchablesState.withPrepareOutcome(
-      LaunchablesState.beginPreparing(ready, "Skate 3"),
-      {
-      _tag: "Err",
-      payload: { code: "UpstreamFailure", message: "no such game" },
-      },
-    )
-    expect(prepareFailed).toMatchObject({
-      notice: { message: "UpstreamFailure: no such game" },
-    })
-  })
-
-  it("clears notices on success and on movement", () => {
-    const failed = LaunchablesState.withStartStreamResult(
-      LaunchablesState.beginLaunching(ready, "Desktop"),
-      {
-      _tag: "StreamFailed",
-      reason: "HostUnreachable",
-      message: "offline",
-      },
-    )
-    const launching = LaunchablesState.beginLaunching(ready, "Desktop")
-    expect(
-      LaunchablesState.withStartStreamResult(launching, {
-        _tag: "StreamStarted",
-      }),
-    ).toMatchObject({ _tag: "Launching", notice: null })
-    const preparing = LaunchablesState.beginPreparing(ready, "Skate 3")
-    expect(
-      LaunchablesState.withPrepareOutcome(preparing, {
-        _tag: "Ok",
-        payload: { gameId: "skate3", launchId: "launch-1" },
-      }),
-    ).toMatchObject({ _tag: "Preparing", notice: null })
-  })
 })
 
 const sessionActive: SessionStatusOutcome = {
@@ -571,12 +355,7 @@ const sessionErr: SessionStatusOutcome = {
 
 describe("LaunchablesState now playing", () => {
   it("renders an active session as a selectable banner entry first", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      sessionActive,
-    )
+    const state = LaunchablesState.fromSources(gamesOk, sessionActive)
     if (state._tag !== "Ready") throw new Error("unreachable")
     expect(state.entries[0]).toEqual({
       kind: "now-playing",
@@ -590,35 +369,20 @@ describe("LaunchablesState now playing", () => {
   })
 
   it("shows no banner when nothing is playing", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      sessionIdle,
-    )
+    const state = LaunchablesState.fromSources(gamesOk, sessionIdle)
     if (state._tag !== "Ready") throw new Error("unreachable")
     expect(state.entries.every(entry => entry.kind !== "now-playing")).toBe(true)
   })
 
   it("degrades a status failure silently: no banner, no notice", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      sessionErr,
-    )
+    const state = LaunchablesState.fromSources(gamesOk, sessionErr)
     if (state._tag !== "Ready") throw new Error("unreachable")
     expect(state.entries.every(entry => entry.kind !== "now-playing")).toBe(true)
     expect(state.notice).toBeNull()
   })
 
   it("stop Ok enters an input-locked stopping case until status is idle", () => {
-    const withBanner = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      sessionActive,
-    )
+    const withBanner = LaunchablesState.fromSources(gamesOk, sessionActive)
     const ok: SessionStopOutcome = {
       _tag: "Ok",
       payload: { phase: SessionStopPhase.Stopped },
@@ -660,12 +424,7 @@ describe("LaunchablesState now playing", () => {
   })
 
   it("returns to the list with a truthful notice when pending stop times out", () => {
-    const withBanner = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      sessionActive,
-    )
+    const withBanner = LaunchablesState.fromSources(gamesOk, sessionActive)
     const stopping = LaunchablesState.withStopOutcome(
       LaunchablesState.beginStopping(withBanner, nowPlayingEntry(withBanner)),
       {
@@ -707,115 +466,9 @@ describe("LaunchablesState preparing", () => {
     if (prepared._tag !== "Preparing") throw new Error("unreachable")
     expect(prepared.title).toBe("Skate 3")
   })
-
-  it("a stream start failure clears preparing with a notice", () => {
-    const preparing = LaunchablesState.beginPreparing(ready, "Skate 3")
-    const failed = LaunchablesState.withStartStreamResult(preparing, {
-      _tag: "StreamFailed",
-      reason: "HostUnreachable",
-      message: "no route",
-    })
-    if (failed._tag !== "Ready") throw new Error("unreachable")
-    expect(failed.notice?.message).toBe("HostUnreachable: no route")
-  })
 })
 
 describe("storage access prompt", () => {
   const denied = { _tag: "Denied" } as const
-
-  it("puts a focusable prompt first when file access is denied", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      undefined,
-      denied,
-    )
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    // It leads the list so a surface cannot bury it below things to play.
-    expect(state.entries[0]).toEqual({ kind: "storage-access" })
-  })
-
-  it("shows nothing when access is granted", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      undefined,
-      { _tag: "Granted" },
-    )
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.some(entry => entry.kind === "storage-access")).toBe(false)
-  })
-
-  it("shows nothing on a platform where access is not a concept", () => {
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      undefined,
-      { _tag: "NotRequired" },
-    )
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.some(entry => entry.kind === "storage-access")).toBe(false)
-  })
-
-  it("does not nag when the check itself failed", () => {
-    // An inconclusive answer is not a denial: prompting on a failed query
-    // would badger users whose permission is actually fine.
-    const state = LaunchablesState.fromSources(
-      [officeApps],
-      gamesOk,
-      undefined,
-      undefined,
-      undefined,
-      { _tag: "QueryFailed", message: "boom" },
-    )
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.some(entry => entry.kind === "storage-access")).toBe(false)
-  })
-
-  it("keeps a stable key so the prompt does not remount on refresh", () => {
-    expect(entryKey({ kind: "storage-access" })).toBe("storage-access")
-  })
-})
-describe("background notice setting", () => {
-  const build = (notice?: BackgroundNoticeResult) =>
-    LaunchablesState.fromSources(
-      [],
-      { _tag: "Ok", payload: { games: [] } },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      notice,
-    )
-
-  it("is always offered, so the user can always find the switch", () => {
-    const state = build({ _tag: "Visible" })
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.map(e => e.kind)).toContain("background-notice")
-  })
-
-  it("says which way it is set rather than what to do about it", () => {
-    const on = build({ _tag: "Visible" })
-    const off = build({ _tag: "Hidden" })
-    if (on._tag !== "Ready" || off._tag !== "Ready") throw new Error("unreachable")
-    expect(entryLabel(on.entries.at(-1)!)).toContain("on")
-    expect(entryLabel(off.entries.at(-1)!)).toContain("off")
-  })
-
-  it("reads as off when the shell is too old to answer", () => {
-    // An unanswered question is not a promise that the user can see anything.
-    const state = build(undefined)
-    if (state._tag !== "Ready") throw new Error("unreachable")
-    expect(state.entries.at(-1)).toMatchObject({
-      kind: "background-notice",
-      visible: false,
-    })
-  })
 })
 

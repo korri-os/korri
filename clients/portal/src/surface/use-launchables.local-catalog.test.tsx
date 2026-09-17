@@ -2,8 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { ActiveSession, Game, SessionPrepareOutcome, SessionStatusOutcome } from "@contracts/generated/korrid"
-import { SessionStopPhase } from "@contracts/generated/korrid"
-import { createInMemoryLauncherBridge } from "../bridge/launcher-bridge"
+import { SessionFreezerState, SessionStopPhase } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalEntry } from "../launchables/state"
 import { surfaceModelFrom } from "./surface-model"
@@ -63,8 +62,9 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
     native: string[]
     statusReads: number
     catalogReads: number
+    resumes: string[]
   } = {
-    prepares: [], stops: [], native: [], statusReads: 0, catalogReads: 0,
+    prepares: [], stops: [], native: [], statusReads: 0, catalogReads: 0, resumes: [],
   }
   const base = createInMemoryKorridClient({ games: catalog })
   const korrid: KorridClient = {
@@ -78,27 +78,27 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
       status = running
       return prepared
     },
+    /* Confirming the banner resumes the exact launch through korrid. It does
+     * not prepare the game again, so it must not appear in calls.prepares. */
+    async sessionThaw(expectedLaunchId) {
+      calls.resumes.push(expectedLaunchId)
+      return { _tag: "Ok", payload: { launchId: expectedLaunchId, state: SessionFreezerState.Running, changed: true } }
+    },
     async sessionStatus() { calls.statusReads += 1; return status },
     async sessionStop(...args) {
       calls.stops.push(args)
       status = completed
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
     },
-    async moonlightLaunchPrepare() { calls.native.push("reserve"); throw new Error("must not reserve Moonlight") },
-    async localGameLaunch() { calls.native.push("android-prepare"); throw new Error("must not request Android launch") },
+    async localGameLaunch() { calls.native.push("local-launch"); throw new Error("must not request a legacy local launch") },
     ...overrides,
   }
-  const bridge = {
-    ...createInMemoryLauncherBridge(),
-    async startStream() { calls.native.push("stream"); throw new Error("must not start stream") },
-    async launchLocal() { calls.native.push("android-start"); throw new Error("must not start Android") },
-  }
-  return { korrid, bridge, calls, setStatus(next: SessionStatusOutcome) { status = next } }
+  return { korrid, calls, setStatus(next: SessionStatusOutcome) { status = next } }
 }
 
 async function mount(config: ReturnType<typeof fixture>) {
   let value!: Launchables
-  function Probe() { value = useLaunchables(config.bridge, config.korrid); return null }
+  function Probe() { value = useLaunchables(config.korrid); return null }
   const root = createRoot(document.createElement("div"))
   roots.push(root)
   await act(async () => root.render(<Probe />))
@@ -130,7 +130,7 @@ describe("source-local catalog orchestration", () => {
       harness.current().confirmEntry(entry)
     })
     await waitFor(() => harness.current().state._tag === "Ready" && hasSession(harness.current()))
-    expect(config.calls.prepares).toEqual([[game.id]])
+    expect(config.calls.prepares).toEqual([[game.id, game.host]])
     expect(config.calls.native).toEqual([])
     expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
     const model = surfaceModelFrom(harness.current().state)
@@ -150,14 +150,13 @@ describe("source-local catalog orchestration", () => {
     const config = fixture({}, { _tag: "Ok", payload: { active: { ...active, host: "peer" } } }, [peer, game])
     const harness = await mount(config)
     await invoke(() => harness.current().confirmEntry(harness.entry("now-playing")))
-    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "StartFailed: Moonlight is not configured in this browser fixture" } })
     const state = harness.current().state
     if (state._tag !== "Ready") throw new Error("not ready")
     const local = state.entries.find(entry => entry.kind === "game" && entry.game.source.isLocal)
     if (!local) throw new Error("missing local copy")
     await invoke(() => harness.current().confirmEntry(local))
     await waitFor(() => config.calls.statusReads > 1)
-    expect(config.calls.prepares).toEqual([[game.id]])
+    expect(config.calls.prepares).toEqual([[game.id, game.host]])
     expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
     await invoke(() => harness.current().confirmEntry(local))
     expect(config.calls.prepares).toHaveLength(1)
@@ -450,7 +449,7 @@ describe("source-local catalog orchestration", () => {
     expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
     await invoke(() => harness.current().confirmEntry(firstEntry))
     await invoke(() => harness.current().confirmEntry(harness.entry("now-playing")))
-    expect(config.calls.prepares).toEqual([[game.id], [otherGame.id]])
+    expect(config.calls.prepares).toEqual([[game.id, game.host], [otherGame.id, otherGame.host]])
     expect(config.calls.native).toEqual([])
     config.setStatus(completed)
     await waitFor(() => !hasSession(harness.current()))
@@ -483,7 +482,7 @@ describe("source-local catalog orchestration", () => {
     expect(harness.current().state._tag).toBe("Preparing")
     expect(hasSession(harness.current())).toBe(false)
     await invoke(() => harness.current().confirmEntry(entry))
-    expect(config.calls.prepares).toEqual([[game.id], [game.id]])
+    expect(config.calls.prepares).toEqual([[game.id, game.host], [game.id, game.host]])
     expect(config.calls.native).toEqual([])
   })
 
@@ -538,13 +537,5 @@ describe("source-local catalog orchestration", () => {
     await invoke(() => preparation.resolve(prepared))
     expect(config.calls.statusReads).toBe(reads)
     expect(config.calls.native).toEqual([])
-  })
-
-  test("does not infer locality from a device label or absent Moonlight target", async () => {
-    const config = fixture({}, idle, [{ ...game, source: { ...game.source, isLocal: false } }])
-    const harness = await mount(config)
-    await invoke(() => harness.current().confirmEntry(harness.entry("game")))
-    expect(config.calls.prepares).toEqual([])
-    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: expect.stringContaining("NoStreamTarget") } })
   })
 })

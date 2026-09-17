@@ -4,7 +4,6 @@ import {
   LaunchContributorKind,
   LaunchDisposition,
   LaunchForegroundKind,
-  MoonlightImplementation,
   SessionControlFailureReason,
   SessionFreezerState,
   SourceCatalogState,
@@ -117,113 +116,6 @@ describe("callKorrid", () => {
     expect(body).toEqual({
       _tag: "app.session.prepare",
       payload: { gameId: "neverball", host: "zao" },
-    })
-  })
-
-  it("requests typed Moonlight resolution from korrid", async () => {
-    let body: unknown
-    globalThis.fetch = (async (_input, init) => {
-      body = JSON.parse(String(init?.body))
-      return new Response(
-        JSON.stringify({
-          _tag: "app.moonlight.resolve",
-          outcome: {
-            _tag: "Available",
-            payload: {
-              transportId: "@korri:moonlight/moonlight",
-              implementation: "artemis",
-              sunshineApp: "Korri Stream",
-            },
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )
-    }) as typeof fetch
-
-    const outcome = await createHttpKorridClient(
-      "http://127.0.0.1:43117",
-      "capability",
-    ).moonlightResolve()
-
-    expect(body).toEqual({ _tag: "app.moonlight.resolve", payload: {} })
-    expect(outcome).toMatchObject({
-      _tag: "Available",
-      payload: { implementation: "artemis" },
-    })
-  })
-
-  it("requests a signed Moonlight launch handoff from korrid", async () => {
-    let body: unknown
-    globalThis.fetch = (async (_input, init) => {
-      body = JSON.parse(String(init?.body))
-      return new Response(
-        JSON.stringify({
-          _tag: "app.moonlight.launch.prepare",
-          outcome: {
-            _tag: "Ok",
-            payload: {
-              launchId: "0123456789abcdef0123456789abcdef",
-              transportId: "@korri:moonlight/moonlight",
-              implementation: "artemis",
-              sunshineApp: "Korri Stream",
-              hostUuid: "host-uuid",
-              appId: 7,
-              integrity: "opaque-integrity",
-            },
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )
-    }) as typeof fetch
-
-    const outcome = await createHttpKorridClient(
-      "http://127.0.0.1:43117",
-      "capability",
-    ).moonlightLaunchPrepare("host-uuid", 7, "skate3", "Skate 3")
-
-    expect(body).toEqual({
-      _tag: "app.moonlight.launch.prepare",
-      payload: {
-        hostUuid: "host-uuid",
-        appId: 7,
-        gameId: "skate3",
-        title: "Skate 3",
-      },
-    })
-    expect(outcome).toMatchObject({
-      _tag: "Ok",
-      payload: { launchId: "0123456789abcdef0123456789abcdef" },
-    })
-  })
-
-  it("cancels only the named Moonlight launch reservation", async () => {
-    let body: unknown
-    globalThis.fetch = (async (_input, init) => {
-      body = JSON.parse(String(init?.body))
-      return new Response(
-        JSON.stringify({
-          _tag: "app.moonlight.launch.cancel",
-          outcome: {
-            _tag: "Ok",
-            payload: { launchId: "0123456789abcdef0123456789abcdef" },
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )
-    }) as typeof fetch
-
-    const outcome = await createHttpKorridClient(
-      "http://127.0.0.1:43117",
-      "capability",
-    ).moonlightLaunchCancel("0123456789abcdef0123456789abcdef")
-
-    expect(body).toEqual({
-      _tag: "app.moonlight.launch.cancel",
-      payload: { launchId: "0123456789abcdef0123456789abcdef" },
-    })
-    expect(outcome).toEqual({
-      _tag: "Ok",
-      payload: { launchId: "0123456789abcdef0123456789abcdef" },
     })
   })
 
@@ -344,96 +236,6 @@ describe("callKorrid", () => {
     expect((await client.sourceStatus("ab".repeat(32)))._tag).toBe("Err")
   })
 
-  it("lists and invokes controls only for the supplied launch identity", async () => {
-    const bodies: unknown[] = []
-    globalThis.fetch = (async (_input, init) => {
-      const body = JSON.parse(String(init?.body))
-      bodies.push(body)
-      const listing = body._tag === "app.session.controls"
-      return new Response(
-        JSON.stringify(
-          listing
-            ? {
-                _tag: body._tag,
-                outcome: {
-                  _tag: "Ok",
-                  payload: { launchId: body.payload.launchId, groups: [] },
-                },
-              }
-            : {
-                _tag: body._tag,
-                outcome: {
-                  _tag: "Ok",
-                  payload: {
-                    _tag: "Completed",
-                    payload: { launchId: body.payload.launchId },
-                  },
-                },
-              },
-        ),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )
-    }) as typeof fetch
-    const client = createHttpKorridClient(
-      "http://127.0.0.1:43117",
-      "capability",
-    )
-
-    await client.sessionControls("launch-1")
-    await client.invokeSessionControl("launch-1", "fill", {
-      kind: "toggle",
-      value: true,
-    })
-
-    expect(bodies).toEqual([
-      {
-        _tag: "app.session.controls",
-        payload: { launchId: "launch-1" },
-      },
-      {
-        _tag: "app.session.control.invoke",
-        payload: {
-          launchId: "launch-1",
-          controlId: "fill",
-          value: { kind: "toggle", value: true },
-        },
-      },
-    ])
-  })
-
-  it("maps malformed successful control RPC payloads to calm unavailability", async () => {
-    const responses = [
-      { _tag: "wrong.tag", outcome: { _tag: "Ok", payload: { groups: [] } } },
-      { _tag: "app.session.control.invoke", outcome: {
-        _tag: "Ok",
-        payload: { _tag: "UnknownResult" },
-      } },
-    ]
-    globalThis.fetch = (async () => new Response(
-      JSON.stringify(responses.shift()),
-      { status: 200, headers: { "content-type": "application/json" } },
-    )) as unknown as typeof fetch
-    const client = createHttpKorridClient(
-      "http://127.0.0.1:43117",
-      "capability",
-    )
-
-    expect(await client.sessionControls("launch-1")).toEqual({
-      _tag: "Err",
-      payload: {
-        reason: SessionControlFailureReason.Unavailable,
-        message: "Gameplay controls are unavailable right now.",
-      },
-    })
-    expect(await client.invokeSessionControl("launch-1", "fill")).toEqual({
-      _tag: "Err",
-      payload: {
-        reason: SessionControlFailureReason.Unavailable,
-        message: "That gameplay control is unavailable right now.",
-      },
-    })
-  })
-
   it("aborts session status at its UI deadline", async () => {
     globalThis.fetch = ((_input, init) =>
       new Promise((_resolve, reject) => {
@@ -474,34 +276,6 @@ describe("callKorrid", () => {
 
     expect(error).toBeInstanceOf(DOMException)
     expect((error as DOMException).name).toBe("TimeoutError")
-  })
-})
-
-describe("in-memory Moonlight policy", () => {
-  it("keeps normal explicit user disable semantics", async () => {
-    const client = createInMemoryKorridClient({
-      moonlight: {
-        _tag: "Available",
-        payload: {
-          transportId: "@fixture:moonlight/transport",
-          implementation: MoonlightImplementation.Artemis,
-          sunshineApp: "Fixture stream",
-        },
-      },
-    })
-    const settings = await client.settingsSnapshot()
-    if (settings._tag !== "Ok") throw new Error("expected settings")
-
-    expect((await client.moonlightResolve())._tag).toBe("Available")
-    await client.updateSetting(
-      settings.payload.revision,
-      "@korri:moonlight",
-      "false",
-    )
-    expect(await client.moonlightResolve()).toMatchObject({
-      _tag: "Unavailable",
-      payload: { code: "MoonlightUnavailable" },
-    })
   })
 })
 

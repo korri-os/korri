@@ -301,6 +301,17 @@ export const LaunchablesState = {
         }
       : state,
 
+  /** Resume locks the list as Launching, so a refusal folds from that case. */
+  withResumeOutcome: (
+    state: LaunchablesState,
+    outcome: { readonly _tag: "Ok" } | { readonly _tag: "Err"; readonly payload: { readonly code: string; readonly message: string } },
+  ): LaunchablesState => {
+    if (state._tag !== "Launching") return state
+    return outcome._tag === "Ok"
+      ? state
+      : readyFrom(state, `${outcome.payload.code}: ${outcome.payload.message}`)
+  },
+
   withPrepareOutcome: (
     state: LaunchablesState,
     outcome: SessionPrepareOutcome,

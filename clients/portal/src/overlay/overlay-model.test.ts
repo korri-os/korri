@@ -7,7 +7,7 @@ const controls: SessionControls = {
   title: "Skate 3",
   groups: [
     {
-      id: "@korri:moonlight",
+      id: "@korri:runner",
       label: "Streaming",
       controls: [
         {

@@ -81,20 +81,6 @@ describe("OverlayRoot browser fixture", () => {
     stopFocus()
   })
 
-  test("renders an unreachable fixture while Resume remains usable", async () => {
-    render(
-      <OverlayRoot
-        bus={createInputBus()}
-        controller={createInMemoryOverlayController("unavailable")}
-        surface={overlaySurface}
-      />,
-    )
-
-    expect(await screen.findByText(
-      "Gameplay controls are unavailable right now. Resume still works.",
-    )).toBeDefined()
-    expect(screen.getByRole("button", { name: "Resume" })).toBeDefined()
-  })
 
   test("marks transparent gameplay mode before render without making the panel transparent", () => {
     const main = readFileSync("src/main.tsx", "utf8")

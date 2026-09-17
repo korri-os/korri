@@ -33,7 +33,7 @@ function deferred<A>() {
   return { promise, resolve }
 }
 
-// Catalog/session shapes come from the generated Rust treaty, not Android's
+// Catalog and session shapes come from the generated Rust treaty, not from a
 // LocalGame/LaunchSpec. There is deliberately no native or identity fixture.
 const game = {
   id: "neverball", title: "Neverball", host: "odin2portal",
@@ -70,17 +70,26 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     async sessionStatus() { return idle },
     async sessionPrepare() { return prepared },
     async sessionStop() { return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
+    /* korrid serves local games and folder discovery on Linux, so a load
+     * reads both. Neither has content in this fixture. */
+    async localGames() { return { _tag: "Ok", payload: { games: [] } } },
+    async discoverySnapshot() {
+      return {
+        _tag: "Ok",
+        payload: {
+          generation: "d1",
+          state: { _tag: "Idle", payload: {} },
+          locations: [],
+          diagnostics: [],
+        },
+      }
+    },
     updateSetting: unavailable,
     setSteamGridDbCredential: unavailable,
     clearSteamGridDbCredential: unavailable,
-    discoverySnapshot: unavailable,
     registerDiscoveryReceipt: unavailable,
     removeDiscoveryLocation: unavailable,
     rescanDiscovery: unavailable,
-    moonlightResolve: unavailable,
-    moonlightLaunchPrepare: unavailable,
-    moonlightLaunchCancel: unavailable,
-    localGames: unavailable,
     localGameLaunch: unavailable,
     gameRoutes: unavailable,
     setGameRunner: unavailable,
@@ -88,8 +97,6 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     sessionFreeze: unavailable,
     sessionThaw: unavailable,
     sourceStatus: unavailable,
-    sessionControls: unavailable,
-    invokeSessionControl: unavailable,
     peerList: unavailable,
     ...overrides,
   }
@@ -98,7 +105,7 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
 async function mount(korrid: KorridClient) {
   let value: ReturnType<typeof useLaunchables> | undefined
   function Probe() {
-    value = useLaunchables(undefined, korrid)
+    value = useLaunchables(korrid)
     return null
   }
   const root = createRoot(document.createElement("div"))
@@ -126,7 +133,7 @@ function entry(hook: ReturnType<typeof useLaunchables>, kind: PortalEntry["kind"
 const invoke = async (action: () => void) => { await act(async () => action()) }
 
 describe("Linux catalog execution without a native bridge", () => {
-  it("loads only real catalog/device facts and omits Android settings and prompts", async () => {
+  it("loads only the facts korrid reports and omits shell settings and prompts", async () => {
     const harness = await mount(linuxClient())
     expect(harness.current().state).toEqual({
       _tag: "Ready", entries: [{ kind: "game", game }], notice: null,
@@ -137,10 +144,18 @@ describe("Linux catalog execution without a native bridge", () => {
         revision: "r1", deviceName: "odin2portal", plugins: [],
         steamGridDbCredential: SecretSettingStatus.NotConfigured,
       },
+      localGameCount: 0,
+      discovery: {
+        generation: "d1",
+        state: { _tag: "Idle", payload: {} },
+        locations: [],
+        diagnostics: [],
+      },
     })
-    expect(settingsFrom(harness.current().facts, false).flatMap(group => group.items)
+    expect(settingsFrom(harness.current().facts).flatMap(group => group.items)
       .map(item => item.id)).toEqual([
-      "device-name", "steamgriddb-credential", "korrid-version",
+      "device-name", "steamgriddb-credential", "local-games",
+      "game-discovery-status", "game-folder-rescan", "korrid-version",
     ])
   })
 
@@ -167,7 +182,9 @@ describe("Linux catalog execution without a native bridge", () => {
     expect(calls).toEqual([[game.id, host]])
     status = { _tag: "Ok", payload: { active } }
     await invoke(() => pending.resolve(prepared))
-    expect(entry(harness.current(), "now-playing")).toEqual({ kind: "now-playing", session: active })
+    expect(entry(harness.current(), "now-playing")).toMatchObject({
+      kind: "now-playing", session: active,
+    })
   })
 
   it("reports prepare failure for the selected game without claiming launch", async () => {
