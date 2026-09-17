@@ -102,7 +102,7 @@ fn scan_does_not_hold_yaml_write_lock_while_hashing() {
     fs::write(&rom, vec![7u8; 32 * 1024 * 1024]).unwrap();
     let lock = Arc::new(Mutex::new(()));
     let discovery =
-        DiscoveryCoordinator::with_write_lock(readable.path(), private.path(), lock.clone());
+        DiscoveryCoordinator::for_tests_with_write_lock(readable.path(), private.path(), lock.clone());
     discovery.add_location(root.path(), &options()).unwrap();
     fs::write(&rom, vec![8u8; 32 * 1024 * 1024]).unwrap();
     let worker = {
@@ -149,7 +149,7 @@ fn adds_two_folders_as_launchable_schema_valid_games_and_reuses_hashes() {
     let state = ConfigSnapshotCoordinator::new(readable.path()).reload();
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
     assert_eq!(state.snapshot.games.len(), 2);
-    let registry = plugin_policy::installed_registry().unwrap();
+    let registry = crate::plugin_test_fixtures::installed(readable.path());
     for id in state.snapshot.games.keys() {
         resolver::resolve_route(readable.path(), &state.snapshot, &registry, [], id).unwrap();
     }
@@ -237,7 +237,7 @@ fn edited_generated_record_is_not_current_for_enrichment_assignment() {
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
     let lock = Arc::new(Mutex::new(()));
     let discovery =
-        DiscoveryCoordinator::with_write_lock(readable.path(), private.path(), lock.clone());
+        DiscoveryCoordinator::for_tests_with_write_lock(readable.path(), private.path(), lock.clone());
     discovery.add_location(root.path(), &options()).unwrap();
     let game = owned_discovery_games(readable.path(), private.path())
         .unwrap()
@@ -271,7 +271,7 @@ fn enriched_owned_title_updates_fingerprint_and_survives_rescan_until_removal() 
     fs::write(root.path().join("wl4.gba"), b"rom").unwrap();
     let lock = Arc::new(Mutex::new(()));
     let discovery =
-        DiscoveryCoordinator::with_write_lock(readable.path(), private.path(), lock.clone());
+        DiscoveryCoordinator::for_tests_with_write_lock(readable.path(), private.path(), lock.clone());
     let add = discovery.add_location(root.path(), &options()).unwrap();
 
     let game = owned_discovery_games(readable.path(), private.path())

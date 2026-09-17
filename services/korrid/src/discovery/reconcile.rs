@@ -106,7 +106,16 @@ impl DiscoveryCoordinator {
     /// reads the root-owned installation record, which a test root does not
     /// have, so a test supplies one sample plugin instead.
     pub fn for_tests(readable_root: impl AsRef<Path>, private_root: impl AsRef<Path>) -> Self {
-        Self::new(readable_root, private_root).with_registry_source(
+        Self::for_tests_with_write_lock(readable_root, private_root, Arc::new(Mutex::new(())))
+    }
+
+    /// Same fixture as [`Self::for_tests`], for a test that shares a write lock.
+    pub fn for_tests_with_write_lock(
+        readable_root: impl AsRef<Path>,
+        private_root: impl AsRef<Path>,
+        write_lock: Arc<Mutex<()>>,
+    ) -> Self {
+        Self::with_write_lock(readable_root, private_root, write_lock).with_registry_source(
             plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
                 crate::plugin_test_fixtures::claims_only_registry(),
             )),

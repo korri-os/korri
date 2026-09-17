@@ -253,7 +253,7 @@ pub fn update_with_registry_source(
     match change {
         SettingChange::DeviceName(value) => set_device_name(&mut document, value)?,
         SettingChange::PluginEnabled { id, enabled } => {
-            set_plugin_enabled(&mut document, id, enabled)?
+            set_plugin_enabled(&mut document, id, enabled, source)?
         }
     }
 
@@ -410,8 +410,9 @@ fn set_plugin_enabled(
     document: &mut Mapping,
     id: String,
     enabled: bool,
+    registry_source: &plugin_policy::RegistrySource,
 ) -> Result<(), SettingsError> {
-    let known = plugin_policy::installed_registry()
+    let known = registry_source.registry()
         .map_err(|error| SettingsError::Candidate(error.to_string()))?
         .registered_plugin_ids()
         .iter()
@@ -566,6 +567,25 @@ mod tests {
     fn read(root: &std::path::Path) -> Result<ReadableSettings, SettingsError> {
         read_with_registry_source(
             root,
+            &plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
+                crate::plugin_test_fixtures::claims_only_registry(),
+            )),
+        )
+    }
+
+    fn update(
+        root: &Path,
+        private_root: &Path,
+        write_lock: &std::sync::Mutex<()>,
+        expected_revision: &str,
+        change: SettingChange,
+    ) -> Result<ReadableSettings, SettingsError> {
+        update_with_registry_source(
+            root,
+            private_root,
+            write_lock,
+            expected_revision,
+            change,
             &plugin_policy::RegistrySource::Selected(std::sync::Arc::new(
                 crate::plugin_test_fixtures::claims_only_registry(),
             )),

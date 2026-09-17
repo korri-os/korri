@@ -737,11 +737,14 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         fs::write(folder.path().join("game.gba"), b"rom").unwrap();
         let grants = FolderSelectionGrantStore::default();
-        let lifecycle = DiscoveryLifecycleCoordinator::new(
+        let lifecycle = DiscoveryLifecycleCoordinator::new_with_registry_source(
             readable.path(),
             private.path(),
             Arc::new(Mutex::new(())),
             grants.clone(),
+            crate::plugin_policy::RegistrySource::Selected(Arc::new(
+                crate::plugin_test_fixtures::installed(readable.path()),
+            )),
         );
         let receipt = grants.issue_approved_path(folder.path()).unwrap().token;
 

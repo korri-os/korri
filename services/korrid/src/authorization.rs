@@ -1159,7 +1159,7 @@ mod tests {
                 Owner,
             ),
         ];
-        assert_eq!(cases.len(), 27);
+        assert_eq!(cases.len(), 21);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }

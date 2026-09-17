@@ -4035,7 +4035,9 @@ mod tests {
             ))),
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(None)),
-            plugin_policy::RegistrySource::Installed,
+            plugin_policy::RegistrySource::Selected(Arc::new(
+                crate::plugin_test_fixtures::installed(readable),
+            )),
             config::snapshot::ConfigSnapshotCoordinator::new(readable),
             grants,
             None,
@@ -4873,7 +4875,7 @@ command = ["game-two"]
                 .as_array()
                 .unwrap()
                 .len(),
-            4
+            1
         );
         let revision = before["outcome"]["payload"]["revision"].as_str().unwrap();
         let request = serde_json::json!({

@@ -123,11 +123,11 @@ fn settings_rejects_pending_publication_then_restart_recovers_and_save_succeeds(
     let roms = tempfile::tempdir().unwrap();
     let lock = Arc::new(Mutex::new(()));
     let discovery =
-        DiscoveryCoordinator::with_write_lock(root.path(), private.path(), lock.clone());
+        DiscoveryCoordinator::for_tests_with_write_lock(root.path(), private.path(), lock.clone());
     discovery
         .add_location(roms.path(), &DiscoveryOptions::default())
         .unwrap();
-    let before = settings::read(root.path()).unwrap();
+    let before = settings::read_with_registry_source(root.path(), &crate::plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::installed(root.path())))).unwrap();
     fs::write(roms.path().join("new.gba"), b"rom").unwrap();
     PUBLICATION_HOOK.set(Some(Box::new(|at, _, _| {
         if at == 2 {
@@ -151,16 +151,19 @@ fn settings_rejects_pending_publication_then_restart_recovers_and_save_succeeds(
     );
     assert!(matches!(result, Err(SettingsError::Conflict)), "{result:?}");
     assert_eq!(Documents::read(root.path()).unwrap(), pending);
-    DiscoveryCoordinator::with_write_lock(root.path(), private.path(), lock.clone())
+    DiscoveryCoordinator::for_tests_with_write_lock(root.path(), private.path(), lock.clone())
         .rescan(&DiscoveryOptions::default())
         .unwrap();
-    let recovered = settings::read(root.path()).unwrap();
-    let saved = settings::update(
+    let recovered = settings::read_with_registry_source(root.path(), &crate::plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::installed(root.path())))).unwrap();
+    let saved = settings::update_with_registry_source(
         root.path(),
         private.path(),
         &lock,
         &recovered.revision,
         SettingChange::DeviceName("saved name".into()),
+        &crate::plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin_test_fixtures::installed(root.path()),
+        )),
     )
     .unwrap();
     assert_eq!(saved.device_name.as_deref(), Some("saved name"));
