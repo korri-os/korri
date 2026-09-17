@@ -50,6 +50,10 @@
         inherit nixpkgs;
         korri = self;
       };
+      rg35xxsp = import ./nix/devices/rg35xxsp {
+        inherit nixpkgs;
+        korri = self;
+      };
       nixosModules = {
         korri-device-cache = import ./nix/device-cache/nixos-module.nix;
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
@@ -79,6 +83,7 @@
         r36tmax = r36tmax.configuration;
         r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
+        rg35xxsp = rg35xxsp.configuration;
       };
     }
     // flake-utils.lib.eachDefaultSystem (
@@ -201,6 +206,9 @@
           odin2portal-mangohud = odin2portal.rocknix.mangohud;
           odin2portal-alsa-lib = odin2portal.rocknix.alsaLib;
           odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
+          rg35xxsp-sd-image = rg35xxsp.sdImage;
+          rg35xxsp-kernel = rg35xxsp.kernel;
+          rg35xxsp-uboot = rg35xxsp.uboot;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
@@ -213,6 +221,8 @@
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
+          rg35xxsp-uboot = rg35xxsp.ubootCross;
+          rg35xxsp-kernel = rg35xxsp.kernelCross;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
@@ -244,6 +254,7 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
+            rg35xxsp = rg35xxsp.moduleCheck pkgs;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
