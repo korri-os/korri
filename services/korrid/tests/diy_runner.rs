@@ -62,9 +62,10 @@ fn the_hand_written_runner_prepares_its_own_launch() {
         "files": { "ppsspp": "/nix/store/exact-ppsspp/bin/ppsspp" },
     })
     .to_string();
-    let plan: serde_json::Value =
-        serde_json::from_str(&call_plugin_operation_ts(PPSSPP_PLUGIN, LAUNCH_PREPARE, &input).unwrap())
-            .unwrap();
+    let plan: serde_json::Value = serde_json::from_str(
+        &call_plugin_operation_ts(PPSSPP_PLUGIN, LAUNCH_PREPARE, &input).unwrap(),
+    )
+    .unwrap();
 
     assert_eq!(plan["command"], "/nix/store/exact-ppsspp/bin/ppsspp");
     assert_eq!(
@@ -103,7 +104,8 @@ fn the_hand_written_runner_refuses_what_it_has_not_implemented() {
     let mut with_settings = base.clone();
     with_settings["overrides"] = serde_json::json!({ "settings": { "video_vsync": true } });
     assert!(
-        call_plugin_operation_ts(PPSSPP_PLUGIN, LAUNCH_PREPARE, &with_settings.to_string()).is_err()
+        call_plugin_operation_ts(PPSSPP_PLUGIN, LAUNCH_PREPARE, &with_settings.to_string())
+            .is_err()
     );
 
     // Raw RetroArch-style config has no meaning here either.
