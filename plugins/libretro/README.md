@@ -1,7 +1,7 @@
 # The libretro core catalogue
 
 One catalogue produces one plugin package per core. Installing mGBA does not
-install eight cores, and removing it does not disturb the others.
+install every core, and removing it does not disturb the others.
 
 | File | What it holds |
 |---|---|

@@ -52,7 +52,7 @@ contract. See services/korrid/src/script.rs and SCRIPTING.md.
 === THE 25 OPERATIONS ===
 
 BUILT (3)
-  launch.prepare      Runner returns a launch plan. Proven by eight libretro cores.
+  launch.prepare      Runner returns a launch plan. Proven by the libretro cores.
   settings.describe   Runner returns its own schema fragment plus a revision.
   settings.validate   Runner reports values this build cannot apply.
 

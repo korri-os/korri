@@ -139,4 +139,105 @@
       extensions = [ "a26" ];
     };
   };
+
+  fuse = {
+    title = "Fuse";
+    description = "Runs ZX Spectrum content with the Fuse libretro core.";
+    core = pkgs.libretro.fuse;
+    coreFile = "${pkgs.libretro.fuse}/lib/retroarch/cores/fuse_libretro.so";
+    systems.zxspectrum = {
+      title = "ZX Spectrum";
+      extensions = [
+        "z80"
+        "sna"
+        "tap"
+        "tzx"
+        "szx"
+      ];
+    };
+  };
+
+  mupen64plus = {
+    title = "Mupen64Plus-Next";
+    description = "Runs Nintendo 64 content with the Mupen64Plus-Next libretro core.";
+    core = pkgs.libretro.mupen64plus;
+    coreFile = "${pkgs.libretro.mupen64plus}/lib/retroarch/cores/mupen64plus_next_libretro.so";
+    systems.n64 = {
+      title = "Nintendo 64";
+      extensions = [
+        "z64"
+        "n64"
+        "v64"
+      ];
+    };
+  };
+
+  # Mesen overlaps FCEUmm on purpose, the same way PicoDrive overlaps Genesis
+  # Plus GX: two cores may claim one system, and the player chooses a runner.
+  mesen = {
+    title = "Mesen";
+    description = "Runs Nintendo Entertainment System content with the Mesen libretro core.";
+    core = pkgs.libretro.mesen;
+    coreFile = "${pkgs.libretro.mesen}/lib/retroarch/cores/mesen_libretro.so";
+    systems.nes = {
+      title = "Nintendo Entertainment System";
+      extensions = [
+        "nes"
+        "fds"
+      ];
+    };
+  };
+
+  np2kai = {
+    title = "Neko Project II Kai";
+    description = "Runs PC-98 content with the Neko Project II Kai libretro core.";
+    core = pkgs.libretro.np2kai;
+    coreFile = "${pkgs.libretro.np2kai}/lib/retroarch/cores/np2kai_libretro.so";
+    systems.pc98 = {
+      title = "PC-98";
+      extensions = [
+        "d88"
+        "fdi"
+        "hdi"
+        "hdm"
+        "nhd"
+        "xdf"
+      ];
+    };
+  };
+
+  pcsx-rearmed = {
+    title = "PCSX-ReARMed";
+    description = "Runs PlayStation content with the PCSX-ReARMed libretro core.";
+    core = pkgs.libretro.pcsx-rearmed;
+    coreFile = "${pkgs.libretro.pcsx-rearmed}/lib/retroarch/cores/pcsx_rearmed_libretro.so";
+    systems.psx = {
+      title = "PlayStation";
+      extensions = [
+        "cue"
+        "chd"
+        "m3u"
+        "pbp"
+        "ccd"
+        "toc"
+      ];
+    };
+  };
+
+  # bsnes overlaps Snes9x 2010 on purpose, the same way PicoDrive overlaps
+  # Genesis Plus GX: two cores may claim one system, and the player chooses a
+  # runner.
+  bsnes = {
+    title = "bsnes";
+    description = "Runs Super Nintendo content with the bsnes libretro core.";
+    core = pkgs.libretro.bsnes;
+    coreFile = "${pkgs.libretro.bsnes}/lib/retroarch/cores/bsnes_libretro.so";
+    systems.snes = {
+      title = "Super Nintendo";
+      extensions = [
+        "sfc"
+        "smc"
+      ];
+    };
+  };
 }
