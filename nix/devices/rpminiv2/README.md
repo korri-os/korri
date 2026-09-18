@@ -1,17 +1,19 @@
 # Retroid Pocket Mini V2 first-boot candidate
 
 This is a native NixOS SD image for the Retroid Pocket Mini V2, not a finished
-Korri release. Hardware is not available yet. A successful build and image
-check do not establish that the device boots.
+Korri release. A first hardware boot reached NixOS from the SD and provided a
+root shell over USB serial. Built-in display acceptance remains pending.
 
-The image starts a Linux console. It includes prebuilt korrid and diagnostic
-programs, but does not start korrid, a compositor, a plugin host, or SSH.
+The image targets one result: a Linux TTY on the built-in panel. It does not
+start korrid, a compositor, a plugin host, or SSH. Its retained kernel config
+omits Wi-Fi, Bluetooth, sound, media, touch, game controls and unrelated
+filesystems. Add those only after the first boot establishes the display path.
 The panel is the primary emergency console. Debug-priority kernel messages
 remain visible because the vendor patch reports initrd failures at that level;
-this makes boot noisier and can slow console output.
+this makes boot noisier and can slow console output. The framebuffer console
+blanks after one idle minute to protect the OLED. Keyboard input wakes it.
 Physical consoles grant passwordless root access. Do not use this candidate
-where other people have untrusted physical access. BlueZ supplies Bluetooth
-diagnostics but does not automatically power on the controller.
+where other people have untrusted physical access.
 
 The [boot audit](BOOT.md) verifies Retroid's published EFI loader source and
 the Imager's GRUB-entry workaround. It does not identify your unit's shipped
@@ -101,11 +103,31 @@ ARM build host assembled the complete image. Neither was the handheld.
 | Firmware | All 25 configured paths were read from the actual gzip/newc initrd and compared byte-for-byte with the firmware package. All matched. |
 | Modules | The strict module/firmware closure check passed, including USB serial and its selected dependencies. |
 | Image | The complete GPT/FAT/ext4 image passed the same verifier exposed by `rpminiv2-image-check`, before compression. |
-| Regression tests | All 27 real-image CLI tests passed, including malformed compatible-string boundaries and isolated missing/empty payload checks. Shared layout and distribution checks also passed. |
+| Regression tests | All 27 real-image CLI tests passed, including malformed compatible-string boundaries and isolated missing/empty payload checks. The shared layout check remains blocked by an existing graphics-seat assertion that includes another first-boot target. |
 | Emergency console | The actual pinned stage-1 console parser selected `tty0` from the candidate parameters. This does not prove the panel or keyboard works. |
 | Static checks | Nixfmt and Ruff passed on authored files. Vendor patches and device trees retain source bytes, including source whitespace. |
 
-No boot, device activation, firmware write, or hardware test occurred.
+No boot, device activation, firmware write, or hardware test occurred before
+arrival.
+
+## First hardware boot
+
+On 2026-09-18, the shipped Retroid loader selected the SD at `mmc0`. Linux 7.2
+identified the board as `Retroid Pocket Mini V2`, mounted root from
+`/dev/mmcblk0p2`, and mounted the ESP from `/dev/mmcblk0p1`. The host enumerated
+USB `0525:a4a7` as `Gadget Serial v2.4`, made it available as `/dev/ttyACM0`,
+and received a root shell.
+
+The first trimmed kernel left the panel black because it omitted
+`CONFIG_DRM_MSM_DP` while the SM8250 device tree kept the DisplayPort component
+enabled. DSI, its PHY and DPU bound, but the missing DisplayPort component kept
+the MSM DRM master from binding. The replacement kernel retains that component.
+Its final image passed the image and initrd checks. Display verification still
+requires the replacement-kernel boot.
+
+No internal partition, loader or Android file was changed. The replacement
+kernel was copied only to the SD ESP after a SHA-256 check. The previous SD
+kernel and boot entry remain beside it as `.before-dp` rollback files.
 
 ## Arrival checks
 
@@ -125,14 +147,12 @@ opening the case.
    A black screen is a failed acceptance gate, not permission to change
    internal firmware.
 5. Check the physical console. A USB keyboard can provide input if the panel
-   works. The candidate also requests a USB serial gadget; cable role and
-   enumeration remain unverified. The Linux gadget starts after root mounts;
-   it is not an early-kernel console. If a serial port appears on the computer,
-   confirm its identity before connecting to it.
-6. Run the read-only checks below and save their output. Collect logs before
-   testing suspend or making configuration changes.
+   works. The Linux serial gadget starts after root mounts; it is not an
+   early-kernel console. The first unit enumerated it as USB `0525:a4a7` and
+   `/dev/ttyACM0`. Confirm that identity before connecting to it.
+6. Run the read-only checks below and save their output.
 7. Confirm that removing the SD and selecting Android returns to the original
-   installation. Do this before treating the candidate as a usable device.
+   installation. Do this before treating the candidate as a usable TTY image.
 
 Commands on the candidate's physical console:
 
@@ -144,29 +164,17 @@ findmnt /boot
 lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS
 systemctl --failed
 journalctl -b -p warning --no-pager
-ls -l /dev/dri /dev/input /sys/class/udc
+ls -l /dev/dri /sys/class/udc
 modetest -M msm -c
-cat /proc/bus/input/devices
-nmcli device status
-rfkill list
-bluetoothctl show
-aplay -l
-cat /sys/power/mem_sleep
 ```
 
 | Gate | Required hardware observation |
 |---|---|
 | Boot and storage | NixOS reaches a console, root and ESP are on the SD, and Android remains unchanged. |
-| Display and touch | Correct V2 geometry and orientation, working brightness, and touch coordinates that match the panel. |
+| Display | The TTY uses the correct V2 geometry and orientation, and text remains readable during boot. |
 | USB console | The computer detects the gadget and receives the root console; unplug and reconnect do not lose access permanently. |
-| Controls | Every button and both sticks emit the correct events without stuck or duplicated input. |
-| Graphics | The msm render node works with hardware rendering, not only a visible software framebuffer. |
-| Networking | Wi-Fi association and traffic work; Bluetooth pairing and reconnect work. |
-| Audio | Speaker and headphone routes work. Suspend or reconnect does not leave audio broken. |
-| Power and thermal | Battery reporting, charging, fan control, and temperatures remain safe under a bounded load. |
-| Suspend | Repeated suspend/resume preserves display, input, audio, and networking; measure actual battery drain. |
 | Shutdown and recovery | Shutdown completes and the factory path back to Android remains available. |
 
-Video decoding, streaming performance, automatic Korri presentation, and
-plugin installation are separate acceptance work. Do not infer them from
-kernel configuration or the existence of a driver node.
+Touch, controls, hardware rendering, networking, Bluetooth, audio, media,
+suspend and Korri are outside this first-boot cut. Their kernel support must be
+added and accepted separately after the TTY milestone.

@@ -5,20 +5,70 @@ let
   inherit (pkgs) lib;
   c = configuration.config;
   packageNames = map lib.getName c.environment.systemPackages;
+  kernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config);
+  kernelModules = builtins.filter (lib.hasSuffix "=m") kernelConfigLines;
+  hasKernelConfig = setting: builtins.elem setting kernelConfigLines;
+  requiredKernelConfig = [
+    "CONFIG_ARCH_QCOM=y"
+    "CONFIG_AUTOFS_FS=y"
+    "CONFIG_BLK_DEV_INITRD=y"
+    "CONFIG_DEVTMPFS=y"
+    "CONFIG_DRM_MSM=y"
+    "CONFIG_DRM_MSM_DPU=y"
+    "CONFIG_DRM_MSM_DP=y"
+    "CONFIG_DRM_MSM_DSI=y"
+    "CONFIG_DRM_MSM_DSI_7NM_PHY=y"
+    "CONFIG_DRM_PANEL_DDIC_CH13726A=y"
+    "CONFIG_EFI_STUB=y"
+    "CONFIG_EXT4_FS=y"
+    "CONFIG_FRAMEBUFFER_CONSOLE=y"
+    "CONFIG_MMC_SDHCI_MSM=y"
+    "CONFIG_MODULES=y"
+    "CONFIG_RD_GZIP=y"
+    "CONFIG_SERIAL_MSM_CONSOLE=y"
+    "CONFIG_USB_G_SERIAL=m"
+    "CONFIG_USB_HID=y"
+    "CONFIG_VFAT_FS=y"
+  ];
+  disabledKernelConfig = [
+    "ACPI"
+    "BTRFS_FS"
+    "BT"
+    "F2FS_FS"
+    "INPUT_JOYSTICK"
+    "INPUT_TOUCHSCREEN"
+    "MEDIA_SUPPORT"
+    "NETFILTER"
+    "NETWORK_FILESYSTEMS"
+    "PERF_EVENTS"
+    "SOUND"
+    "VIRTUALIZATION"
+    "WIRELESS"
+  ];
 in
+assert lib.all hasKernelConfig requiredKernelConfig;
+assert lib.all (setting: hasKernelConfig "# CONFIG_${setting} is not set") disabledKernelConfig;
+assert
+  kernelModules == [
+    "CONFIG_USB_F_ACM=m"
+    "CONFIG_USB_U_SERIAL=m"
+    "CONFIG_USB_F_SERIAL=m"
+    "CONFIG_USB_F_OBEX=m"
+    "CONFIG_USB_G_SERIAL=m"
+  ];
 assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
 assert c.networking.hostName == "rpminiv2";
 assert c.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb";
 assert c.hardware.deviceTree.overlays == [ ];
 assert !c.hardware.enableAllHardware;
-assert c.hardware.graphics.enable;
-assert c.hardware.bluetooth.enable;
-assert !c.hardware.bluetooth.powerOnBoot;
-assert lib.elem "bluez" packageNames;
-assert lib.elem "bluetooth.target" c.systemd.services.bluetooth.wantedBy;
+assert !c.hardware.graphics.enable;
+assert !c.hardware.bluetooth.enable;
+assert !(lib.elem "bluez" packageNames);
+assert !(c.systemd.services ? bluetooth);
 assert c.hardware.firmwareCompression == "none";
 assert c.boot.consoleLogLevel == 8;
 assert lib.last (lib.filter (lib.hasPrefix "console=") c.boot.kernelParams) == "console=tty0";
+assert lib.elem "consoleblank=60" c.boot.kernelParams;
 assert c.boot.initrd.compressor == "gzip";
 assert !c.boot.initrd.allowMissingModules;
 assert !c.boot.initrd.includeDefaultModules;
@@ -53,12 +103,18 @@ assert !(c.systemd.services ? korrid);
 assert !c.system.tools.nixos-install.enable;
 assert !c.services.xserver.enable;
 assert !c.services.greetd.enable;
-assert lib.elem "korrid" packageNames;
+assert lib.elem "libdrm" packageNames;
 assert lib.all (name: !(lib.elem name packageNames)) [
+  "alsa-utils"
   "android-tools"
+  "dtc"
+  "evtest"
   "flashrom"
-  "rocknix-abl"
+  "korrid"
   "nixos-install"
+  "pciutils"
+  "rocknix-abl"
+  "usbutils"
 ];
 assert c.sdImage.firmwarePartitionOffset == 8;
 assert c.sdImage.firmwarePartitionName == "RPMINIV2";

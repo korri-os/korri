@@ -1,6 +1,6 @@
 # Retroid Pocket Mini V2 first-boot candidate. The device identity and DTB
 # name come from ROCKNIX's sm8250-retroidpocket-rpminiv2.dts.
-{ nixpkgs, korri }:
+{ nixpkgs, ... }:
 let
   mkPkgs =
     system:
@@ -17,7 +17,6 @@ let
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = {
-      inherit korri;
       # Follow the Odin packaging: build the kernel on x86, assemble the
       # native ARM system on a builder, and never compile on the handheld.
       rpminiKernel = kernelCross;

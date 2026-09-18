@@ -5,7 +5,6 @@
   config,
   lib,
   pkgs,
-  korri,
   rpminiKernel,
   rpminiFirmware,
   ...
@@ -30,6 +29,8 @@
       # Stage 1 uses the last console for its emergency shell. Keep the
       # documented panel/USB keyboard primary, not the board UART.
       "console=tty0"
+      # Blank the framebuffer console after one idle minute to protect the OLED.
+      "consoleblank=60"
       # Preserve ROCKNIX's efifb setting. This does not repair a faulty
       # loader GOP or disable the separate DT simple-framebuffer node.
       "video=efifb:off"
@@ -76,25 +77,15 @@
     # subset. Do not add a second, older, machine-wide firmware collection.
     enableRedistributableFirmware = false;
     firmwareCompression = "none";
-    graphics.enable = true;
-    # Supply the CLI and daemon for arrival tests without starting the radio.
-    bluetooth = {
-      enable = true;
-      powerOnBoot = false;
-    };
+    # The first milestone is fbcon, not accelerated rendering. The kernel's
+    # DRM client owns the console without a Mesa userspace stack.
+    graphics.enable = lib.mkForce false;
   };
 
-  # Keep the candidate at a console. These programs permit hardware checks
-  # without starting a compositor, korrid, SSH, or a plugin host.
-  environment.systemPackages = [
-    korri.packages.aarch64-linux.korrid
-    pkgs.evtest
-    pkgs.libdrm
-    pkgs.alsa-utils
-    pkgs.pciutils
-    pkgs.usbutils
-    pkgs.dtc
-  ];
+  # Keep one read-only DRM probe for the first panel boot. Everything else
+  # waits until the TTY milestone is accepted, so image assembly does not
+  # compile korrid or unrelated hardware tools.
+  environment.systemPackages = [ pkgs.libdrm ];
 
   image.baseName = "nixos-rpminiv2";
   sdImage = {

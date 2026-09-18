@@ -67,10 +67,10 @@ assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert lib.all noBenchmarksIn (lib.attrValues korri.nixosConfigurations);
 # Product sessions keep their DRM seat. Recovery and first-boot candidates
-# do not start a compositor. Mini V2 retains Mesa for later hardware checks.
+# do not start a compositor or carry a Mesa userspace stack.
 assert !korri.nixosConfigurations.r36tmax-recovery.config.hardware.graphics.enable;
 assert !korri.nixosConfigurations.r36tmax-recovery.config.services.seatd.enable;
-assert korri.nixosConfigurations.rpminiv2.config.hardware.graphics.enable;
+assert !korri.nixosConfigurations.rpminiv2.config.hardware.graphics.enable;
 assert !korri.nixosConfigurations.rpminiv2.config.services.seatd.enable;
 assert lib.all
   (

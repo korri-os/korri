@@ -1,6 +1,6 @@
 # ROCKNIX distribution e81d1fc943458fb13cffe1646761e9452b29ddc1:
 # projects/ROCKNIX/packages/linux/package.mk selects Linux 7.2 for SM8250.
-# See README.md for the source paths, patch order and NixOS config cut.
+# See README.md for the source paths, patch order and TTY-only config cut.
 {
   lib,
   fetchurl,
@@ -31,7 +31,7 @@ let
     configfile = ./config;
     allowImportFromDerivation = true;
     extraMeta = {
-      description = "Linux ${version} with the ROCKNIX SM8250 patch queue for Retroid Pocket Mini V2";
+      description = "TTY-only Linux ${version} with the ROCKNIX SM8250 patch queue for Retroid Pocket Mini V2";
       platforms = [ "aarch64-linux" ];
       license = lib.licenses.gpl2Only;
     };
