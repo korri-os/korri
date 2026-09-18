@@ -212,6 +212,7 @@
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
+          rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;
           rpminiv2-firmware = rpminiv2.firmwareCross;
           rpminiv2-rocknix-baseline = rpminiv2.rocknixBaseline;
           rgds-kernel = rgds.kernelCross;

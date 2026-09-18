@@ -29,7 +29,6 @@ pkgs.runCommand "rpminiv2-rocknix-20260901-baseline"
 
     mkdir -p "$out"
     export MTOOLSRC=/dev/null
-    mcopy -i "$image@@16777216" ::/KERNEL "$out/KERNEL"
     mcopy -i "$image@@16777216" ::/EFI/BOOT/bootaa64.efi "$out/bootaa64.efi"
     mcopy -i "$image@@16777216" ::/boot/grub/dejavu-mono.pf2 "$out/dejavu-mono.pf2"
     mcopy -i "$image@@16777216" ::/boot/grub/grub.cfg "$out/rocknix-grub.cfg"
@@ -38,7 +37,6 @@ pkgs.runCommand "rpminiv2-rocknix-20260901-baseline"
       "$out/sm8250-retroidpocket-rpminiv2.dtb"
 
     cat > checksums <<'EOF'
-    758d4a9e31ebdfe125369f82158f038521eee5e4e5d7b7e5b2da0dddee499ea4  KERNEL
     39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b  bootaa64.efi
     734f45a5b8c134b5cc161d02a9650fa7cf939abbab1a32f254bab8da201c9385  dejavu-mono.pf2
     efa07a2c290a2ae82ededc3ed226be27b96b010187e4d16f6306fb757effba88  rocknix-grub.cfg

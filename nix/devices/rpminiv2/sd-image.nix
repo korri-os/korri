@@ -45,9 +45,8 @@
       compressor = "gzip";
       includeDefaultModules = false;
       availableKernelModules = [ ];
-      # Match ROCKNIX by embedding its early GPU/DSP subset in the kernel.
-      # Also expose the complete board subset here, including aliases and
-      # service manifests, so stage 1 never depends on the root filesystem.
+      # Expose the complete board subset here, including aliases and service
+      # manifests, so stage 1 never depends on the root filesystem.
       extraFirmwarePaths = rpminiFirmware.firmwarePaths;
     };
     # A physical USB serial console is independent of panel visibility.

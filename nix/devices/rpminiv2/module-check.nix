@@ -5,7 +5,7 @@ let
   inherit (pkgs) lib;
   c = configuration.config;
   packageNames = map lib.getName c.environment.systemPackages;
-  kernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config);
+  kernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config-tty-trim);
   hasKernelConfig = setting: builtins.elem setting kernelConfigLines;
   requiredKernelConfig = [
     "CONFIG_ARCH_QCOM=y"
@@ -22,15 +22,10 @@ let
     "CONFIG_DRM_PANEL_DDIC_CH13726A=y"
     "CONFIG_EFI_STUB=y"
     "CONFIG_EXT4_FS=y"
-    ''CONFIG_EXTRA_FIRMWARE="qcom/a650_gmu.bin qcom/a650_sqe.fw qcom/sm8250/a650_zap.mbn qcom/sm8250/adsp.mbn qcom/sm8250/cdsp.mbn qcom/sm8250/slpi.mbn regulatory.db regulatory.db.p7s"''
-    ''CONFIG_EXTRA_FIRMWARE_DIR="external-firmware"''
     "CONFIG_FRAMEBUFFER_CONSOLE=y"
     "CONFIG_MMC_SDHCI_MSM=y"
     "CONFIG_MODULES=y"
-    "CONFIG_QCOM_Q6V5_COMMON=y"
-    "CONFIG_QCOM_Q6V5_PAS=y"
     "CONFIG_RD_GZIP=y"
-    "CONFIG_REMOTEPROC=y"
     "CONFIG_SERIAL_MSM_CONSOLE=y"
     "CONFIG_USB_G_SERIAL=m"
     "CONFIG_USB_HID=y"
@@ -49,10 +44,9 @@ assert lib.all hasKernelConfig requiredRecoveryModules;
 assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
 assert c.networking.hostName == "rpminiv2";
 assert c.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb";
-assert c.boot.kernelPackages.kernel.usesRocknixBootImage;
-assert lib.hasInfix "rpminiv2-rocknix-20260901-baseline" (
-  toString c.boot.kernelPackages.kernel.rocknixBaseline
-);
+assert lib.hasSuffix "/config-tty-trim" (toString c.boot.kernelPackages.kernel.kernelConfig);
+assert lib.versionAtLeast c.boot.kernelPackages.kernel.compilerVersion "15";
+assert lib.versionOlder c.boot.kernelPackages.kernel.compilerVersion "16";
 assert c.hardware.deviceTree.overlays == [ ];
 assert !c.hardware.enableAllHardware;
 assert !c.hardware.graphics.enable;
@@ -69,6 +63,7 @@ assert lib.elem "gpt" c.boot.kernelParams;
 assert c.boot.initrd.compressor == "gzip";
 assert !c.boot.initrd.allowMissingModules;
 assert !c.boot.initrd.includeDefaultModules;
+assert !(lib.elem "g_serial" c.boot.initrd.availableKernelModules);
 assert lib.elem "qcom/sm8250/slpi.mbn" c.boot.initrd.extraFirmwarePaths;
 assert lib.elem "regulatory.db.p7s" c.boot.initrd.extraFirmwarePaths;
 assert !c.boot.loader.systemd-boot.enable;

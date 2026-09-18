@@ -4,11 +4,10 @@ This is the SM8250 kernel from ROCKNIX distribution commit
 `e81d1fc943458fb13cffe1646761e9452b29ddc1`. The producer selects **Linux 7.2**
 with archive SHA-256
 `f9fef3d14c0df53819026f4be74459835c2a0b0dcbf5b5bbd9ea19f0829402b3`.
-The module build configuration is anchored to a working Mini V2 boot of
-official ROCKNIX release `20260901`, rather than the earlier speculative
-TTY-only cut. The boot `Image` and DTB are now exact files from that release's
-hardware-proven image; the source build remains responsible for compatible
-modules while its binary delta is investigated.
+The configuration is anchored to a working Mini V2 boot of official ROCKNIX
+release `20260901`. The primary boot `Image`, DTB and modules all build from the
+vendored source with GCC 15.2 and Binutils 2.44. No prebuilt kernel substitution
+remains.
 
 ## Vendored sources
 
@@ -24,6 +23,7 @@ the Git blob IDs in the pinned recursive Git tree before vendoring. The stable
 | Remaining `patches/*` | `projects/ROCKNIX/devices/SM8250/patches/linux/*` |
 | `dts/sm8250-retroidpocket-common.dtsi` and board DTS files | `projects/ROCKNIX/devices/SM8250/linux/dts/qcom/*` |
 | `config` baseline | `/proc/config.gz` from official ROCKNIX `20260901` running on the target Mini V2 |
+| `config-tty-trim` | Hardware-proven TTY trim derived from that full baseline |
 
 `projects/ROCKNIX/packages/linux/package.mk` and `scripts/unpack` define the
 order: four mainline patches, three version patches, then 30 SM8250 patches,
@@ -43,39 +43,37 @@ SM8250 and PM8150 family files.
 
 ## NixOS differences
 
-The checked-in config starts from the complete configuration exported by the
-working ROCKNIX `20260901` kernel. That boot bound DSI, DisplayPort and the
-Adreno GPU before registering DRM and `fb0`. It also showed the same initial
+The full `config` is the configuration exported by the working ROCKNIX
+`20260901` kernel. That boot bound DSI, DisplayPort and the Adreno GPU before
+registering DRM and `fb0`. It also showed the same initial
 `DSI PLL(0) lock failed` warning as the failed NixOS image, proving that warning
 is recoverable and is not by itself the display failure.
 
-The Nix source build changes `CONFIG_DEFAULT_HOSTNAME`, uses an external initrd,
-and builds `CONFIG_USB_G_SERIAL=m` plus its four selected function modules for
-the recovery console. Toolchain-generated values also differ: the accepted
-ROCKNIX binary reports GCC 15.2 and Binutils 2.47, while the failed Nix binary
-used GCC 14.3 and Binutils 2.44. Hardware testing showed that restoring the full
-config, embedded firmware and byte-identical DTB was insufficient: the
-source-built binary remained black under the same GRUB handoff.
+The first Nix source build used GCC 14.3 and Binutils 2.44. It stayed black even
+with the full configuration, embedded firmware, exact GRUB handoff and a
+byte-identical DTB. Rebuilding the same source with GCC 15.2 and Binutils 2.44
+produced a working DSI display, DRM framebuffer, VT1 and USB serial console.
+Matching ROCKNIX's Binutils 2.47 was therefore unnecessary.
 
-Booting the exact ROCKNIX `KERNEL` with the unchanged NixOS initrd/root produced
-a working native TTY, DRM and `fb0`. The Nix-built modules loaded cleanly under
-it, including `g_serial`, with matching `7.2.0` vermagic and no unknown-symbol
-errors. `default.nix` therefore replaces only the installed boot `Image` and
-DTB with checksum-verified release artifacts while retaining the audited source
-build for modules. `module-check.nix` holds that temporary boundary while the
-binary/toolchain delta is investigated.
+`config-tty-trim` removes 727 enabled feature symbols from that proven compiler
+baseline while retaining MSM DRM/DPU/DSI, the CH13726A panel, framebuffer
+console, SD root, VFAT boot, AUTOFS, the SM8250 combo and high-speed USB PHY
+drivers, and modular USB serial. The
+hardware-proven output has these properties:
 
-This full baseline temporarily restores hardware unrelated to the final TTY
-scope. That is deliberate: first establish parity with the working display,
-then remove feature groups in measured, hardware-tested steps. The kernel's
-normal `oldconfig` step still resolves toolchain-dependent values.
+- `Image`: 18,383,360 bytes, SHA-256
+  `cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b`
+- Mini V2 DTB: SHA-256
+  `f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`
+- module closure: 444 KB containing `g_serial` and its four selected function
+  modules
 
-Like ROCKNIX's `pre_make_target`, this package exposes the pinned firmware
-subset as `external-firmware` so the configured GPU and DSP blobs plus signed
-regulatory data are embedded in the kernel. The companion firmware is also
-available to the separate NixOS initrd and root system for symlinks, service
-manifests and module-time requests.
+The matching gadget module loads from the root system. The companion firmware
+remains available to the initrd and root system for aliases, service manifests
+and module-time requests.
 
-The companion `rocknix-baseline` package also extracts the exact GRUB EFI
-binary and font used by the accepted handoff. It includes no device-writing
-tooling and does not modify the installed Retroid loader or internal storage.
+The companion `rocknix-baseline` package extracts the exact GRUB EFI binary and
+font used by the accepted handoff. It retains checksum-pinned ROCKNIX GRUB and
+DTB controls, but no longer extracts or installs the ROCKNIX `KERNEL`. It
+includes no device-writing tooling and does not modify the installed Retroid
+loader or internal storage.

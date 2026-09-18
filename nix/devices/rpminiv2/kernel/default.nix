@@ -6,8 +6,8 @@
   fetchurl,
   linuxManualConfig,
   rpminiFirmware,
-  rpminiRocknixBaseline,
   stdenv,
+  kernelConfig ? ./config-tty-trim,
   # linuxPackagesFor supplies features when it re-invokes this function.
   features ? { },
   ...
@@ -30,7 +30,7 @@ let
       inherit name;
       patch = patchDir + "/${name}";
     }) patchNames;
-    configfile = ./config;
+    configfile = kernelConfig;
     allowImportFromDerivation = true;
     extraMeta = {
       description = "Linux ${version} with the ROCKNIX SM8250 baseline for Retroid Pocket Mini V2";
@@ -49,20 +49,8 @@ kernel.overrideAttrs (previous: {
     echo 'dtb-$(CONFIG_ARCH_QCOM) += ${dtbName}.dtb' >> arch/arm64/boot/dts/qcom/Makefile
     ln -s ${rpminiFirmware}/lib/firmware external-firmware
   '';
-  # Hardware testing isolated the remaining display failure to the Nix-built
-  # kernel binary. Keep building modules from the audited source/config, but
-  # boot the exact ROCKNIX 20260901 Image and DTB that produced a native TTY on
-  # this Mini V2 with those modules and the NixOS userspace.
-  postInstall = (previous.postInstall or "") + ''
-    rm -f "$out/Image" "$out/dtbs/qcom/${dtbName}.dtb"
-    install -m 0444 ${rpminiRocknixBaseline}/KERNEL "$out/Image"
-    install -m 0444 \
-      ${rpminiRocknixBaseline}/${dtbName}.dtb \
-      "$out/dtbs/qcom/${dtbName}.dtb"
-  '';
   passthru = (previous.passthru or { }) // {
-    inherit dtbName;
-    rocknixBaseline = rpminiRocknixBaseline;
-    usesRocknixBootImage = true;
+    inherit dtbName kernelConfig;
+    compilerVersion = stdenv.cc.cc.version;
   };
 })

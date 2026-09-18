@@ -16,11 +16,18 @@ let
   firmwareCross = crossPkgs.callPackage ./firmware { };
   kernel = pkgs.callPackage ./kernel {
     rpminiFirmware = firmware;
-    rpminiRocknixBaseline = rocknixBaseline;
+    stdenv = pkgs.gcc15Stdenv;
   };
   kernelCross = crossPkgs.callPackage ./kernel {
     rpminiFirmware = firmwareCross;
-    rpminiRocknixBaseline = rocknixBaseline;
+    stdenv = crossPkgs.gcc15Stdenv;
+  };
+  # Retain the full ROCKNIX configuration as a diagnostic output. The primary
+  # image uses the hardware-proven TTY trim above.
+  kernelSourceGcc15 = crossPkgs.callPackage ./kernel {
+    rpminiFirmware = firmwareCross;
+    stdenv = crossPkgs.gcc15Stdenv;
+    kernelConfig = ./kernel/config;
   };
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
@@ -39,6 +46,7 @@ in
     configuration
     kernel
     kernelCross
+    kernelSourceGcc15
     firmware
     firmwareCross
     rocknixBaseline

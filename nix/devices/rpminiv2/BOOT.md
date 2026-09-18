@@ -5,7 +5,8 @@
 Use a device-specific EFI SD image and do not replace internal firmware. The
 installed Retroid U-Boot has now booted both official ROCKNIX and the NixOS SD
 on the target Mini V2. The accepted NixOS handoff uses the exact ROCKNIX GRUB
-EFI binary, kernel and DTB while keeping Android and the installed loader intact.
+EFI binary with a hardware-proven GCC 15.2 source kernel and byte-identical V2
+DTB, while keeping Android and the installed loader intact.
 
 ## Verified source evidence
 
@@ -65,9 +66,11 @@ not every possible simple-framebuffer driver.
 
 ### Only the proven removable-media handoff is copied
 
-The NixOS image extracts the checksum-pinned `KERNEL`, Mini V2 DTB,
-`EFI/BOOT/bootaa64.efi` and GRUB font from official ROCKNIX `20260901`. It does
-not copy `rocknix_abl`, first-boot scripts, `SYSTEM`, an internal installer or
+The NixOS image extracts the checksum-pinned `EFI/BOOT/bootaa64.efi` and GRUB
+font from official ROCKNIX `20260901`. Its DTB and GRUB configuration are also
+retained as checksum-pinned controls, but the boot kernel and DTB are built from
+the vendored Linux source, patch queue and board files. It does not copy
+`rocknix_abl`, first-boot scripts, `SYSTEM`, an internal installer or
 firmware-flashing tools. The GRUB configuration is generated locally with one
 NixOS entry and a separate NixOS initrd/root. This reproduces the accepted SD
 handoff without replacing the device's installed loader.
@@ -83,7 +86,9 @@ expansion changes only the disk backing that root.
 Hardware testing established that the installed loader reaches
 `EFI/BOOT/BOOTAA64.EFI`, GRUB initializes the correct rotated GOP mode, the
 separate NixOS initrd mounts the SD root, native MSM DRM enables DSI at 1080 by
-1240, and USB `0525:a4a7` provides `ttyGS0`. A visible GRUB menu alone was not
+1240, and USB `0525:a4a7` provides `ttyGS0`. The source kernel requires GCC 15.2;
+the otherwise matching GCC 14.3 build failed display takeover. Binutils 2.44 is
+hardware-proven and does not need to match ROCKNIX's 2.47. A visible GRUB menu alone was not
 accepted as display proof; the native framebuffer was unblanked and VT1 text
 was observed directly. The factory route back to Android must remain part of
 release acceptance after any future SD-image change.

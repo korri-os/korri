@@ -52,7 +52,7 @@ GRUB_GLOBALS = [
 ]
 PROVEN_HASHES = {
     "loader": "39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b",
-    "kernel": "758d4a9e31ebdfe125369f82158f038521eee5e4e5d7b7e5b2da0dddee499ea4",
+    "kernel": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
     "dtb": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
     "font": "734f45a5b8c134b5cc161d02a9650fa7cf939abbab1a32f254bab8da201c9385",
 }
@@ -455,7 +455,7 @@ def boot_files(fat, root, directory, fat_bytes, expected_hashes):
     )
     require(
         file_sha256(directory / "linux") == expected_hashes["kernel"],
-        "kernel differs from the hardware-proven ROCKNIX artifact",
+        "kernel differs from the hardware-proven GCC 15 source build",
     )
     require(
         file_sha256(directory / "devicetree") == expected_hashes["dtb"],

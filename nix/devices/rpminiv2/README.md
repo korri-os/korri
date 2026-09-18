@@ -6,14 +6,13 @@ a root shell over USB serial while preserving Android and the installed loader.
 
 The image targets one result: a Linux TTY on the built-in panel. It does not
 start korrid, a compositor, a plugin host, or SSH. Userspace remains minimal.
-The boot kernel and DTB are exact files extracted from the hardware-proven
-official ROCKNIX `20260901` image. Kernel modules still build from the audited
-Linux 7.2 source, patch queue and full ROCKNIX configuration; those modules,
-including `g_serial`, loaded under the exact kernel without ABI errors. This is
-the reproducible control baseline, not the final source-built kernel. Resolve
-the remaining compiler/build delta before retrimming feature groups. The panel
-is the primary emergency console. USB serial remains the recovery shell after
-root mounts. The framebuffer console blanks after one idle minute to protect
+The kernel and DTB build from the audited Linux 7.2 source and ROCKNIX patch
+queue. Hardware testing isolated the earlier black-screen build to GCC 14.3;
+the GCC 15.2 source build works with Binutils 2.44. The primary configuration is
+the hardware-proven TTY trim: an 18.4 MB kernel plus five USB serial modules.
+The panel is the primary emergency console. USB serial becomes the recovery
+shell after root mounts. The framebuffer console blanks
+after one idle minute to protect
 the OLED; keyboard input wakes it. Physical consoles grant passwordless root
 access. Do not use this candidate where other people have untrusted physical
 access.
@@ -36,8 +35,8 @@ are recorded next to their packages in `kernel/` and `firmware/`.
 
 The image format follows `../odin2portal/sd-image.nix`: GPT, a FAT EFI System
 Partition, and an ext4 NixOS root. The ARM64 removable-media path contains the
-exact ROCKNIX GRUB/GOP loader. Its one active entry loads the proven kernel, the
-explicit V2 device tree and the separate NixOS initrd. Inactive systemd-boot and
+exact ROCKNIX GRUB/GOP loader. Its one active entry loads the source-built
+kernel, the explicit V2 device tree and the separate NixOS initrd. Inactive systemd-boot and
 Boot Loader Specification files remain available for offline inspection.
 The filesystem labels are `RPMINIV2` and `NIXOS_RPMINIV2`. The board identity
 fits the FAT label limit; these labels are selected explicitly, not inferred
@@ -68,9 +67,10 @@ nix run .#rpminiv2-initrd-check
 nix build --no-link .#packages.aarch64-linux.rpminiv2-sd-image
 ```
 
-The full image uses x86-built modules and firmware, plus kernel/GRUB artifacts
-extracted from the pinned 1.4 GB official ROCKNIX image. On an ARM-only build
-machine, provide those exact prebuilt outputs or an x86 builder. These commands
+The full image uses an x86-cross-built kernel, modules and firmware. The GRUB
+EFI binary and font come from the pinned 1.4 GB official ROCKNIX image; its DTB
+and GRUB configuration remain checksum-pinned controls. On an ARM-only build
+machine, provide those exact baseline outputs or an x86 builder. These commands
 do not flash media or activate a device. The extracted third-party image files
 are kept local until their redistribution terms have been reviewed.
 
@@ -94,7 +94,7 @@ nix run .#rpminiv2-image-check -- /path/to/nixos-rpminiv2.img
 ```
 
 The verifier checks the GPT table, partition bounds, filesystem labels, exact
-hardware-proven loader/kernel/DTB/font hashes, the ordered GRUB/GOP setup, the
+hardware-proven loader/font and source-built kernel/DTB hashes, the ordered GRUB/GOP setup, the
 active menu's agreement with retained boot metadata, the initrd, and the
 referenced NixOS init file in the ext4 root. Its tests use real temporary
 filesystems with deliberate corruption. This is stored-file verification, not
@@ -111,7 +111,7 @@ ARM build host assembled the complete image. Neither was the handheld.
 | Firmware | All 25 configured paths were read from the actual gzip/newc initrd and compared byte-for-byte with the firmware package. All matched. |
 | Modules | The strict module/firmware closure check passed, including USB serial and its selected dependencies. |
 | Image | The complete GPT/FAT/ext4 image passed the same verifier exposed by `rpminiv2-image-check`, before compression. |
-| Regression tests | All 27 real-image CLI tests passed, including malformed compatible-string boundaries and isolated missing/empty payload checks. The shared layout check remains blocked by an existing graphics-seat assertion that includes another first-boot target. |
+| Regression tests | All 31 real-image CLI tests passed, including malformed compatible-string boundaries and isolated missing/empty payload checks. The shared layout check remains blocked by an existing graphics-seat assertion that includes another first-boot target. |
 | Emergency console | The actual pinned stage-1 console parser selected `tty0` from the candidate parameters. This does not prove the panel or keyboard works. |
 | Static checks | Nixfmt and Ruff passed on authored files. Vendor patches and device trees retain source bytes, including source whitespace. |
 
@@ -145,8 +145,12 @@ DRM bound DSI, DisplayPort and Adreno; DSI was connected and enabled at 1080 by
 apparent black state after one minute was the intentional `consoleblank=60`
 timeout. Forcing `fb0` awake displayed the VT1 message on the OLED. Nix-built
 modules, including `g_serial`, loaded under that exact kernel without version or
-symbol errors. This isolates the unresolved failure to the Nix-built kernel
-binary rather than the DTB, loader, command line, external initrd or userspace.
+symbol errors. A full source rebuild with GCC 15.2 and Binutils 2.44 then reached
+the same working DSI mode, DRM framebuffer, VT1 and USB serial state. This
+isolated GCC 14.3 as the failing build delta; matching ROCKNIX's Binutils 2.47
+was unnecessary. The aggressively trimmed GCC 15.2 kernel subsequently booted
+to a visible built-in bash prompt. Its earlier apparent black state was the
+intentional `consoleblank=60` timeout.
 
 No internal partition, loader or Android file was changed. The existing U-Boot
 correctly identified the Mini V2 and GRUB saved the `rpminiv2` entry. All image
@@ -171,8 +175,8 @@ opening the case.
    idle blanking deadline is a failed acceptance gate, not permission to change
    internal firmware.
 5. Check the physical console. A USB keyboard can provide input if the panel
-   works. The Linux serial gadget starts after root mounts; it is not an
-   early-kernel console. The first unit enumerated it as USB `0525:a4a7` and
+   works. The Linux serial gadget and its getty start after root mounts. The
+   first unit enumerated it as USB `0525:a4a7` and
    `/dev/ttyACM0`. Confirm that identity before connecting to it.
 6. Run the read-only checks below and save their output.
 7. Confirm that removing the SD and selecting Android returns to the original
