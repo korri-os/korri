@@ -147,9 +147,7 @@
         };
       in
       {
-        apps =
-          tasks
-          // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
+        apps = tasks // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (inputplumber.apps // pluginHost.apps);
         devShells.default = import ./devshell.nix {
           inherit pkgs;
           hooksInstall = tasks.hooks-install.program;
@@ -215,6 +213,7 @@
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-firmware = rpminiv2.firmwareCross;
+          rpminiv2-rocknix-baseline = rpminiv2.rocknixBaseline;
           rgds-kernel = rgds.kernelCross;
           r36tmax-kernel = r36tmax.kernelCross;
           rgds-uboot = rgds.ubootCross;

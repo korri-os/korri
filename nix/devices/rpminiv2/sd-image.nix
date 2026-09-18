@@ -7,6 +7,7 @@
   pkgs,
   rpminiKernel,
   rpminiFirmware,
+  rpminiRocknixBaseline,
   ...
 }:
 {
@@ -21,19 +22,20 @@
 
   boot = {
     kernelPackages = pkgs.linuxPackagesFor rpminiKernel;
-    # The preserved vendor patch reports initrd unpack failures at KERN_DEBUG.
-    # Level 8 exposes them; this candidate trades quieter boot for diagnostics.
-    consoleLogLevel = 8;
+    # Match the working ROCKNIX console level and avoid changing display probe
+    # timing with the unused Qualcomm UART console. USB g_serial remains the
+    # recovery shell after root mounts.
+    consoleLogLevel = 4;
     kernelParams = [
-      "console=ttyMSM0,115200n8"
-      # Stage 1 uses the last console for its emergency shell. Keep the
-      # documented panel/USB keyboard primary, not the board UART.
+      "quiet"
+      "rootwait"
       "console=tty0"
       # Blank the framebuffer console after one idle minute to protect the OLED.
       "consoleblank=60"
       # Preserve ROCKNIX's efifb setting. This does not repair a faulty
       # loader GOP or disable the separate DT simple-framebuffer node.
       "video=efifb:off"
+      "gpt"
       # Root is selected by NixOS's explicit SD label, not GPT discovery of
       # another disk. Do not let systemd mount internal Android partitions.
       "systemd.gpt_auto=0"
@@ -43,9 +45,9 @@
       compressor = "gzip";
       includeDefaultModules = false;
       availableKernelModules = [ ];
-      # ROCKNIX embeds early GPU/DSP firmware in its kernel. Include the
-      # complete board subset here, with its aliases and service manifests,
-      # so stage 1 does not depend on the root filesystem for firmware.
+      # Match ROCKNIX by embedding its early GPU/DSP subset in the kernel.
+      # Also expose the complete board subset here, including aliases and
+      # service manifests, so stage 1 never depends on the root filesystem.
       extraFirmwarePaths = rpminiFirmware.firmwarePaths;
     };
     # A physical USB serial console is independent of panel visibility.
@@ -56,11 +58,9 @@
       grub.enable = false;
       timeout = 0;
       efi.canTouchEfiVariables = false;
-      systemd-boot = {
-        enable = true;
-        configurationLimit = 3;
-        graceful = true;
-      };
+      # The image populates the hardware-proven GRUB removable-media path
+      # directly. Do not let bootctl replace it during later activations.
+      systemd-boot.enable = false;
     };
   };
   services.udev.extraRules = ''
@@ -118,14 +118,48 @@
           options ${params}
           devicetree /EFI/nixos/${dtbName}
         '';
+        grubCfg = pkgs.writeText "grub.cfg" ''
+          insmod part_gpt
+          insmod part_msdos
+          set timeout=2
+          set default=0
+          set timeout_style=menu
+          set lang=en_US
+          loadfont /boot/grub/dejavu-mono.pf2
+          set rotation=270
+          set gfxmode=auto
+          insmod efi_gop
+          insmod gfxterm
+          terminal_output gfxterm
+          set menu_color_normal=cyan/blue
+          set menu_color_highlight=white/blue
+
+          menuentry 'NixOS Retroid Pocket Mini V2' {
+                  search --set -f /EFI/nixos/${kernelName}
+                  linux /EFI/nixos/${kernelName} ${params}
+                  initrd /EFI/nixos/${initrdName}
+                  devicetree /EFI/nixos/${dtbName}
+          }
+        '';
       in
       ''
-        mkdir -p ./firmware/EFI/BOOT ./firmware/EFI/systemd ./firmware/EFI/nixos ./firmware/loader/entries
-        cp ${pkgs.systemd}/lib/systemd/boot/efi/systemd-bootaa64.efi ./firmware/EFI/BOOT/BOOTAA64.EFI
+        mkdir -p \
+          ./firmware/EFI/BOOT \
+          ./firmware/EFI/systemd \
+          ./firmware/EFI/nixos \
+          ./firmware/boot/grub \
+          ./firmware/loader/entries
+        # This is the exact GRUB/GOP handoff that remained visible and booted
+        # the accepted NixOS TTY. Keep systemd-boot only as an inactive backup.
+        cp ${rpminiRocknixBaseline}/bootaa64.efi ./firmware/EFI/BOOT/BOOTAA64.EFI
         cp ${pkgs.systemd}/lib/systemd/boot/efi/systemd-bootaa64.efi ./firmware/EFI/systemd/systemd-bootaa64.efi
+        cp ${rpminiRocknixBaseline}/dejavu-mono.pf2 ./firmware/boot/grub/dejavu-mono.pf2
+        cp ${grubCfg} ./firmware/boot/grub/grub.cfg
         cp ${kernel} ./firmware/EFI/nixos/${kernelName}
         cp ${initrd} ./firmware/EFI/nixos/${initrdName}
         cp ${dtb} ./firmware/EFI/nixos/${dtbName}
+        # Retain BLS metadata for offline inspection and rollback tooling. GRUB
+        # is the active removable-media loader.
         cp ${loaderConf} ./firmware/loader/loader.conf
         cp ${entry} ./firmware/loader/entries/nixos-generation-1.conf
       '';

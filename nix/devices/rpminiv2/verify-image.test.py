@@ -22,12 +22,36 @@ KERNEL = f"/EFI/nixos/{HASH}-linux-Image"
 INITRD = f"/EFI/nixos/{HASH}-initrd-initrd"
 DTB = f"/EFI/nixos/{HASH}-linux-sm8250-retroidpocket-rpminiv2.dtb"
 ENTRY_PATH = "/loader/entries/nixos-generation-1.conf"
+GRUB_PATH = "/boot/grub/grub.cfg"
+GRUB_FONT = "/boot/grub/dejavu-mono.pf2"
+PAYLOAD = b"nonempty storage fixture"
 ENTRY = f"""title NixOS
 version Generation 1 test
 linux {KERNEL}
 initrd {INITRD}
 options init={INIT} console=tty0
 devicetree {DTB}
+"""
+GRUB = f"""insmod part_gpt
+insmod part_msdos
+set timeout=2
+set default=0
+set timeout_style=menu
+set lang=en_US
+loadfont {GRUB_FONT}
+set rotation=270
+set gfxmode=auto
+insmod efi_gop
+insmod gfxterm
+terminal_output gfxterm
+set menu_color_normal=cyan/blue
+set menu_color_highlight=white/blue
+menuentry 'NixOS Retroid Pocket Mini V2' {{
+  search --set -f {KERNEL}
+  linux {KERNEL} init={INIT} console=tty0
+  initrd {INITRD}
+  devicetree {DTB}
+}}
 """
 
 
@@ -66,18 +90,28 @@ class ImageAcceptance(unittest.TestCase):
         with self.fat.open("wb") as stream:
             stream.truncate(FAT_SIZE)
         run("mkfs.vfat", "--invariant", "-F", "32", "-n", "RPMINIV2", str(self.fat))
-        for path in ("/EFI", "/EFI/BOOT", "/EFI/nixos", "/loader", "/loader/entries"):
+        for path in (
+            "/EFI",
+            "/EFI/BOOT",
+            "/EFI/nixos",
+            "/boot",
+            "/boot/grub",
+            "/loader",
+            "/loader/entries",
+        ):
             run("mmd", "-i", str(self.fat), "::" + path)
         # Boot payload bytes only exercise storage, not executable validity.
-        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD):
-            self.put(path, "nonempty storage fixture", assemble=False)
+        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD, GRUB_FONT):
+            self.put(path, PAYLOAD, assemble=False)
         self.put(
             "/loader/loader.conf",
             "timeout 3\ndefault nixos-generation-1.conf\nconsole-mode keep\n",
             assemble=False,
         )
         self.put(ENTRY_PATH, ENTRY, assemble=False)
+        self.put(GRUB_PATH, GRUB, assemble=False)
         self.put_dtb(assemble=False)
+        self.expected_dtb_hash = digest(self.directory / "board.dtb")
         with self.image.open("wb") as stream:
             stream.truncate(ROOT_START + ROOT_SIZE + MIB)
         run(
@@ -117,19 +151,33 @@ class ImageAcceptance(unittest.TestCase):
         self,
         model="Retroid Pocket Mini V2",
         compatible='"retroidpocket,rpminiv2", "qcom,sm8250"',
+        extra="",
         assemble=True,
     ):
         source = self.directory / "board.dts"
         target = self.directory / "board.dtb"
         source.write_text(
-            f'/dts-v1/; / {{ model = "{model}"; compatible = {compatible}; }};\n'
+            f'/dts-v1/; / {{ model = "{model}"; compatible = {compatible}; {extra} }};\n'
         )
         run("dtc", "-I", "dts", "-O", "dtb", "-o", str(target), str(source))
         self.put(DTB, target.read_bytes(), assemble=assemble)
 
     def verify(self, path=None):
+        payload_hash = hashlib.sha256(PAYLOAD).hexdigest()
         return subprocess.run(
-            [sys.executable, str(VERIFY), str(path or self.image)],
+            [
+                sys.executable,
+                str(VERIFY),
+                "--expected-loader-sha256",
+                payload_hash,
+                "--expected-kernel-sha256",
+                payload_hash,
+                "--expected-dtb-sha256",
+                self.expected_dtb_hash,
+                "--expected-font-sha256",
+                payload_hash,
+                str(path or self.image),
+            ],
             text=True,
             capture_output=True,
             timeout=30,
@@ -193,19 +241,19 @@ class ImageAcceptance(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_empty_boot_files(self):
-        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD, DTB):
+        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD, DTB, GRUB_FONT):
             with self.subTest(path=path):
                 self.put(path, b"")
                 self.reject()
                 if path == DTB:
                     self.put_dtb()
                 else:
-                    self.put(path, "storage fixture")
+                    self.put(path, PAYLOAD)
                 result = self.verify()
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_boot_files(self):
-        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD, DTB):
+        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, INITRD, DTB, GRUB_FONT):
             with self.subTest(path=path):
                 result = self.verify()
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -215,7 +263,17 @@ class ImageAcceptance(unittest.TestCase):
                 if path == DTB:
                     self.put_dtb()
                 else:
-                    self.put(path, "storage fixture")
+                    self.put(path, PAYLOAD)
+
+    def test_nonempty_wrong_provenance_bytes(self):
+        for path in ("/EFI/BOOT/BOOTAA64.EFI", KERNEL, GRUB_FONT):
+            with self.subTest(path=path):
+                self.put(path, PAYLOAD + b" changed")
+                self.reject()
+                self.put(path, PAYLOAD)
+        self.put_dtb(extra="test-marker;")
+        self.reject()
+        self.put_dtb()
 
     def test_bad_entry_references(self):
         variants = [
@@ -240,6 +298,56 @@ class ImageAcceptance(unittest.TestCase):
             with self.subTest(entry=entry):
                 self.put(ENTRY_PATH, entry)
                 self.reject()
+
+    def test_active_grub_requires_exact_gop_setup(self):
+        directives = [
+            "insmod part_gpt",
+            "insmod part_msdos",
+            "set timeout=2",
+            "set default=0",
+            "set timeout_style=menu",
+            "set lang=en_US",
+            f"loadfont {GRUB_FONT}",
+            "set rotation=270",
+            "set gfxmode=auto",
+            "insmod efi_gop",
+            "insmod gfxterm",
+            "terminal_output gfxterm",
+            "set menu_color_normal=cyan/blue",
+            "set menu_color_highlight=white/blue",
+        ]
+        for directive in directives:
+            with self.subTest(directive=directive):
+                self.assertIn(directive + "\n", GRUB)
+                self.put(GRUB_PATH, GRUB.replace(directive + "\n", "", 1))
+                self.reject()
+
+    def test_active_grub_must_match_metadata(self):
+        variants = [
+            GRUB.replace(f"  linux {KERNEL} init={INIT} console=tty0\n", ""),
+            GRUB + f"menuentry 'Other' {{\n  linux {KERNEL} x\n}}\n",
+            GRUB.replace(
+                f"  initrd {INITRD}\n", f"  initrd {INITRD}\n  initrd {INITRD}\n"
+            ),
+            GRUB.replace(KERNEL, "/EFI/nixos/missing-Image", 1),
+            GRUB.replace("console=tty0", "console=ttyMSM0"),
+            GRUB.replace(
+                "  devicetree", "  chainloader /EFI/BOOT/BOOTAA64.EFI\n  devicetree"
+            ),
+            GRUB.removesuffix("}\n"),
+        ]
+        for grub in variants:
+            with self.subTest(grub=grub):
+                self.put(GRUB_PATH, grub)
+                self.reject()
+
+    def test_missing_or_empty_grub_config(self):
+        self.put(GRUB_PATH, b"")
+        self.reject()
+        self.put(GRUB_PATH, GRUB)
+        run("mdel", "-i", str(self.fat), "::" + GRUB_PATH)
+        copy_partition(self.fat, self.image, FAT_START)
+        self.reject()
 
     def test_bad_loader_selection(self):
         for content in (

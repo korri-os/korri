@@ -1,19 +1,22 @@
 # Retroid Pocket Mini V2 first-boot candidate
 
 This is a native NixOS SD image for the Retroid Pocket Mini V2, not a finished
-Korri release. A first hardware boot reached NixOS from the SD and provided a
-root shell over USB serial. Built-in display acceptance remains pending.
+Korri release. Hardware testing reached a working 1080 by 1240 built-in TTY and
+a root shell over USB serial while preserving Android and the installed loader.
 
 The image targets one result: a Linux TTY on the built-in panel. It does not
-start korrid, a compositor, a plugin host, or SSH. Its retained kernel config
-omits Wi-Fi, Bluetooth, sound, media, touch, game controls and unrelated
-filesystems. Add those only after the first boot establishes the display path.
-The panel is the primary emergency console. Debug-priority kernel messages
-remain visible because the vendor patch reports initrd failures at that level;
-this makes boot noisier and can slow console output. The framebuffer console
-blanks after one idle minute to protect the OLED. Keyboard input wakes it.
-Physical consoles grant passwordless root access. Do not use this candidate
-where other people have untrusted physical access.
+start korrid, a compositor, a plugin host, or SSH. Userspace remains minimal.
+The boot kernel and DTB are exact files extracted from the hardware-proven
+official ROCKNIX `20260901` image. Kernel modules still build from the audited
+Linux 7.2 source, patch queue and full ROCKNIX configuration; those modules,
+including `g_serial`, loaded under the exact kernel without ABI errors. This is
+the reproducible control baseline, not the final source-built kernel. Resolve
+the remaining compiler/build delta before retrimming feature groups. The panel
+is the primary emergency console. USB serial remains the recovery shell after
+root mounts. The framebuffer console blanks after one idle minute to protect
+the OLED; keyboard input wakes it. Physical consoles grant passwordless root
+access. Do not use this candidate where other people have untrusted physical
+access.
 
 The [boot audit](BOOT.md) verifies Retroid's published EFI loader source and
 the Imager's GRUB-entry workaround. It does not identify your unit's shipped
@@ -32,8 +35,10 @@ Kernel source, patch order, configuration changes, and firmware provenance
 are recorded next to their packages in `kernel/` and `firmware/`.
 
 The image format follows `../odin2portal/sd-image.nix`: GPT, a FAT EFI System
-Partition, an ext4 NixOS root, systemd-boot at the ARM64 removable-media path,
-and an EFI-stub kernel with an explicit device tree and separate initrd.
+Partition, and an ext4 NixOS root. The ARM64 removable-media path contains the
+exact ROCKNIX GRUB/GOP loader. Its one active entry loads the proven kernel, the
+explicit V2 device tree and the separate NixOS initrd. Inactive systemd-boot and
+Boot Loader Specification files remain available for offline inspection.
 The filesystem labels are `RPMINIV2` and `NIXOS_RPMINIV2`. The board identity
 fits the FAT label limit; these labels are selected explicitly, not inferred
 from internal disk numbering. Do not attach another disk with either label.
@@ -63,9 +68,11 @@ nix run .#rpminiv2-initrd-check
 nix build --no-link .#packages.aarch64-linux.rpminiv2-sd-image
 ```
 
-The full image uses the x86-built kernel and firmware, as the Odin image does.
-On an ARM-only build machine, provide those exact prebuilt outputs or an x86
-builder. These commands do not flash media or activate a device.
+The full image uses x86-built modules and firmware, plus kernel/GRUB artifacts
+extracted from the pinned 1.4 GB official ROCKNIX image. On an ARM-only build
+machine, provide those exact prebuilt outputs or an x86 builder. These commands
+do not flash media or activate a device. The extracted third-party image files
+are kept local until their redistribution terms have been reviewed.
 
 Inputs are pinned, but the inherited GPT conversion generates fresh disk and
 partition GUIDs. Clean image rebuilds are not byte-identical. Use the checksum
@@ -86,11 +93,12 @@ of the uncompressed image without mounting it:
 nix run .#rpminiv2-image-check -- /path/to/nixos-rpminiv2.img
 ```
 
-The verifier checks the GPT table, partition bounds, filesystem labels,
-selected EFI boot entry, nonempty kernel/initrd/loader files, actual V2 DTB
-identity, and the referenced NixOS init file in the ext4 root. Its tests use
-real temporary filesystems with deliberate corruption. This is stored-file
-verification, not execution of the boot chain or proof of firmware loading.
+The verifier checks the GPT table, partition bounds, filesystem labels, exact
+hardware-proven loader/kernel/DTB/font hashes, the ordered GRUB/GOP setup, the
+active menu's agreement with retained boot metadata, the initrd, and the
+referenced NixOS init file in the ext4 root. Its tests use real temporary
+filesystems with deliberate corruption. This is stored-file verification, not
+execution of the boot chain or proof of firmware loading.
 
 ## Verified before arrival
 
@@ -118,16 +126,31 @@ identified the board as `Retroid Pocket Mini V2`, mounted root from
 USB `0525:a4a7` as `Gadget Serial v2.4`, made it available as `/dev/ttyACM0`,
 and received a root shell.
 
-The first trimmed kernel left the panel black because it omitted
-`CONFIG_DRM_MSM_DP` while the SM8250 device tree kept the DisplayPort component
-enabled. DSI, its PHY and DPU bound, but the missing DisplayPort component kept
-the MSM DRM master from binding. The replacement kernel retains that component.
-Its final image passed the image and initrd checks. Display verification still
-requires the replacement-kernel boot.
+The first trimmed kernel left the panel black and never registered DRM or a
+framebuffer. A DisplayPort-enabled follow-up and a DSI-only device-tree
+experiment also stayed black; neither produced a usable USB diagnostic session.
+A later Nix-built kernel restored the complete runtime configuration, embedded
+firmware and byte-identical DTB, but remained black under both systemd-boot and
+the working ROCKNIX GRUB handoff.
 
-No internal partition, loader or Android file was changed. The replacement
-kernel was copied only to the SD ESP after a SHA-256 check. The previous SD
-kernel and boot entry remain beside it as `.before-dp` rollback files.
+Official ROCKNIX `20260901` was then booted on the same unit. It selected
+`Retroid Pocket Mini V2`, used the unmodified vendor DTB, and registered DSI,
+DisplayPort, the Adreno GPU, DRM and `fb0`. Its log contains the same initial
+`DSI PLL(0) lock failed` and clock warnings as NixOS, but recovers about 230 ms
+later and creates the framebuffer. The warning is therefore not a sufficient
+failure diagnosis. A GRUB matrix then booted the exact ROCKNIX `KERNEL` with the unchanged NixOS
+initrd and root. NixOS reached multi-user userspace and USB serial. Native MSM
+DRM bound DSI, DisplayPort and Adreno; DSI was connected and enabled at 1080 by
+1240, and `/dev/dri/card0` plus `msmdrmfb` `/dev/fb0` appeared. The panel's
+apparent black state after one minute was the intentional `consoleblank=60`
+timeout. Forcing `fb0` awake displayed the VT1 message on the OLED. Nix-built
+modules, including `g_serial`, loaded under that exact kernel without version or
+symbol errors. This isolates the unresolved failure to the Nix-built kernel
+binary rather than the DTB, loader, command line, external initrd or userspace.
+
+No internal partition, loader or Android file was changed. The existing U-Boot
+correctly identified the Mini V2 and GRUB saved the `rpminiv2` entry. All image
+writes targeted only the removable SD.
 
 ## Arrival checks
 
@@ -143,8 +166,9 @@ opening the case.
    Writing the image destroys the previous contents of that SD.
 3. Establish the factory procedure for entering Loader mode and returning to
    Android. Use the existing loader; do not follow a loader-flashing guide.
-4. Boot the candidate SD. It selects the V2 entry without a boot-menu choice.
-   A black screen is a failed acceptance gate, not permission to change
+4. Boot the candidate SD. ROCKNIX GRUB displays its single NixOS entry for two
+   seconds, then boots it automatically. A black screen before the 60-second
+   idle blanking deadline is a failed acceptance gate, not permission to change
    internal firmware.
 5. Check the physical console. A USB keyboard can provide input if the panel
    works. The Linux serial gadget starts after root mounts; it is not an

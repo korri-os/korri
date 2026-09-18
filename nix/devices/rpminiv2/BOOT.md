@@ -2,9 +2,10 @@
 
 ## Decision
 
-Prepare a device-specific EFI SD image. Do not replace firmware. The evidence
-supports a first-boot candidate, not a claim that the arriving unit's loader
-will boot it. If boot fails, stop and preserve Android.
+Use a device-specific EFI SD image and do not replace internal firmware. The
+installed Retroid U-Boot has now booted both official ROCKNIX and the NixOS SD
+on the target Mini V2. The accepted NixOS handoff uses the exact ROCKNIX GRUB
+EFI binary, kernel and DTB while keeping Android and the installed loader intact.
 
 ## Verified source evidence
 
@@ -62,34 +63,30 @@ native DRM takeover recovers a faulty firmware display state.
 `video=efifb:off` is retained from ROCKNIX's SM8250 options. It disables efifb,
 not every possible simple-framebuffer driver.
 
-### Current ROCKNIX boot packaging is not copied wholesale
+### Only the proven removable-media handoff is copied
 
-The pinned distribution's `projects/ROCKNIX/config.xml` selects the `abl`
-image action for SM8250. `projects/ROCKNIX/bootloader/mkimage` implements it by
-copying a `rocknix_abl` payload onto the image. Our NixOS image does not contain
-that payload or ROCKNIX's first-boot scripts. Kernel support and boot packaging
-are separate choices. The local Odin EFI producer is the format reference.
+The NixOS image extracts the checksum-pinned `KERNEL`, Mini V2 DTB,
+`EFI/BOOT/bootaa64.efi` and GRUB font from official ROCKNIX `20260901`. It does
+not copy `rocknix_abl`, first-boot scripts, `SYSTEM`, an internal installer or
+firmware-flashing tools. The GRUB configuration is generated locally with one
+NixOS entry and a separate NixOS initrd/root. This reproduces the accepted SD
+handoff without replacing the device's installed loader.
 
-## Safety boundary and unresolved tests
+## Safety boundary and hardware evidence
 
-Korri configures no internal block-device writes. Bootloader installation
-and updates use bootctl's `--no-variables` option. That setting does not
-disable systemd-boot's runtime EFI-variable operations. Their persistence
-depends on the shipped firmware and remains unverified.
-The native NixOS installer is disabled, and no Retroid flashing tools or
-firmware payloads are included. SD root selection is explicit. The normal
-first-boot expansion changes only the disk backing that root.
+Korri configures no internal block-device writes. GRUB starts only from the
+SD's removable-media EFI path and does not update EFI variables. The native
+NixOS installer is disabled, and no Retroid flashing tools or internal firmware
+payloads are included. SD root selection is explicit. The normal first-boot
+expansion changes only the disk backing that root.
 
-The following still need the actual unit:
-
-- Establish its Android build and loader version before changing anything.
-- Confirm that its existing loader reaches the SD's `EFI/BOOT/BOOTAA64.EFI`.
-- Confirm that systemd-boot can pass the V2 DTB and separate initrd to Linux.
-- Observe firmware graphics, Linux early framebuffer, and native DRM takeover
-  separately. A visible boot menu is not proof of a working native display.
-- Check USB role switching and the Linux serial gadget independently of the
-  panel. The optional loader USB console is also unverified on this unit.
-- Confirm the factory route back to Android before further hardware tests.
+Hardware testing established that the installed loader reaches
+`EFI/BOOT/BOOTAA64.EFI`, GRUB initializes the correct rotated GOP mode, the
+separate NixOS initrd mounts the SD root, native MSM DRM enables DSI at 1080 by
+1240, and USB `0525:a4a7` provides `ttyGS0`. A visible GRUB menu alone was not
+accepted as display proof; the native framebuffer was unblanked and VT1 text
+was observed directly. The factory route back to Android must remain part of
+release acceptance after any future SD-image change.
 
 The [ROCKNIX wiki](https://rocknix.org/devices/retroid/retroid-pocket-mini/)
 documents a loader replacement for affected V2 units. That is an internal

@@ -2,14 +2,15 @@
 #! nix-shell -i python3 -p python3 util-linux e2fsprogs mtools dtc
 """Read-only acceptance for an uncompressed Retroid Pocket Mini V2 SD image.
 
-Layout follows the Odin sd-image.nix systemd-boot producer, the NixOS SD
-installer's 8 MiB offset, and Boot Loader Specification Type #1 entries.
+Layout follows the NixOS SD installer's 8 MiB offset. The active ROCKNIX GRUB
+configuration is checked against retained Boot Loader Specification metadata.
 Checks stored layout and references, not executable validity or hardware boot.
 No mounts, device access, alternate DTBs, or filesystem fallback searches.
 """
 
 import argparse
 from contextlib import contextmanager
+import hashlib
 import os
 from pathlib import Path
 import posixpath
@@ -31,6 +32,30 @@ OUTPUT_LIMIT = 1024 * 1024
 ESP_GUID = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
 ROOT_GUID = "b921b045-1df0-41c3-af44-4c6f280d3fae"
 ENTRY = "nixos-generation-1.conf"
+GRUB_CONFIG = "/boot/grub/grub.cfg"
+GRUB_FONT = "/boot/grub/dejavu-mono.pf2"
+GRUB_GLOBALS = [
+    ("insmod", "part_gpt"),
+    ("insmod", "part_msdos"),
+    ("set", "timeout=2"),
+    ("set", "default=0"),
+    ("set", "timeout_style=menu"),
+    ("set", "lang=en_US"),
+    ("loadfont", GRUB_FONT),
+    ("set", "rotation=270"),
+    ("set", "gfxmode=auto"),
+    ("insmod", "efi_gop"),
+    ("insmod", "gfxterm"),
+    ("terminal_output", "gfxterm"),
+    ("set", "menu_color_normal=cyan/blue"),
+    ("set", "menu_color_highlight=white/blue"),
+]
+PROVEN_HASHES = {
+    "loader": "39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b",
+    "kernel": "758d4a9e31ebdfe125369f82158f038521eee5e4e5d7b7e5b2da0dddee499ea4",
+    "dtb": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
+    "font": "734f45a5b8c134b5cc161d02a9650fa7cf939abbab1a32f254bab8da201c9385",
+}
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 
 
@@ -278,6 +303,63 @@ def config(fat, path, allowed):
     return fields
 
 
+def grub_config(fat):
+    text = command("mtype", "-i", str(fat), "::" + GRUB_CONFIG)
+    require(len(text.encode()) <= CONFIG_LIMIT, "GRUB config exceeds size limit")
+    outside = {"insmod", "set", "loadfont", "terminal_output"}
+    inside = {"search", "linux", "initrd", "devicetree"}
+    globals_seen = []
+    fields = {}
+    menu_count = 0
+    in_menu = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("menuentry "):
+            require(
+                not in_menu and line == "menuentry 'NixOS Retroid Pocket Mini V2' {",
+                "malformed or unexpected GRUB menuentry",
+            )
+            menu_count += 1
+            in_menu = True
+            continue
+        if line == "}":
+            require(in_menu, "unexpected GRUB closing brace")
+            in_menu = False
+            continue
+        words = line.split(None, 1)
+        key = words[0]
+        if not in_menu:
+            require(
+                key in outside and len(words) == 2 and words[1].strip(),
+                f"unexpected GRUB directive: {key}",
+            )
+            globals_seen.append((key, words[1].strip()))
+            continue
+        require(
+            key in inside
+            and key not in fields
+            and len(words) == 2
+            and words[1].strip(),
+            f"missing, duplicate, or unexpected GRUB menu directive: {key}",
+        )
+        fields[key] = words[1].strip()
+    require(
+        not in_menu and menu_count == 1, "expected exactly one closed GRUB menuentry"
+    )
+    require(
+        globals_seen == GRUB_GLOBALS, "GRUB/GOP setup differs from the proven handoff"
+    )
+    require(set(fields) == inside, "GRUB menuentry is incomplete")
+    return fields
+
+
+def file_sha256(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def fat_file(fat, path, target, partition_bytes):
     command("mcopy", "-i", str(fat), "::" + path, str(target))
     require(
@@ -326,7 +408,7 @@ def init_file(root, path):
     raise ValueError("init symlink chain exceeds limit")
 
 
-def boot_files(fat, root, directory, fat_bytes):
+def boot_files(fat, root, directory, fat_bytes, expected_hashes):
     loader = config(fat, "/loader/loader.conf", {"default", "timeout", "console-mode"})
     require(
         loader.get("default") == ENTRY,
@@ -337,7 +419,27 @@ def boot_files(fat, root, directory, fat_bytes):
         "/loader/entries/" + ENTRY,
         {"title", "version", "linux", "initrd", "devicetree", "options"},
     )
+    active = grub_config(fat)
     fat_file(fat, "/EFI/BOOT/BOOTAA64.EFI", directory / "boot.efi", fat_bytes)
+    fat_file(fat, GRUB_FONT, directory / "grub-font", fat_bytes)
+    require(
+        file_sha256(directory / "boot.efi") == expected_hashes["loader"],
+        "EFI loader differs from the proven ROCKNIX artifact",
+    )
+    require(
+        file_sha256(directory / "grub-font") == expected_hashes["font"],
+        "GRUB font differs from the proven ROCKNIX artifact",
+    )
+    linux = active["linux"].split(None, 1)
+    require(len(linux) == 2, "GRUB linux directive must include options")
+    require(
+        active["search"] == f"--set -f {entry.get('linux', '')}"
+        and linux[0] == entry.get("linux")
+        and linux[1] == entry.get("options")
+        and active["initrd"] == entry.get("initrd")
+        and active["devicetree"] == entry.get("devicetree"),
+        "active GRUB menu must match the retained NixOS boot metadata",
+    )
     for key in ("linux", "initrd", "devicetree"):
         path = entry.get(key, "")
         # The producer flattens store basenames below /EFI/nixos. Exclude FAT
@@ -350,6 +452,14 @@ def boot_files(fat, root, directory, fat_bytes):
     require(
         len({entry[key] for key in ("linux", "initrd", "devicetree")}) == 3,
         "boot references must be distinct",
+    )
+    require(
+        file_sha256(directory / "linux") == expected_hashes["kernel"],
+        "kernel differs from the hardware-proven ROCKNIX artifact",
+    )
+    require(
+        file_sha256(directory / "devicetree") == expected_hashes["dtb"],
+        "DTB differs from the hardware-proven ROCKNIX artifact",
     )
     dtb = str(directory / "devicetree")
     require(
@@ -383,10 +493,26 @@ def boot_files(fat, root, directory, fat_bytes):
     init_file(root, init[0])
 
 
+def expected_hash(value):
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise argparse.ArgumentTypeError("expected a lowercase SHA-256 hex digest")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path, help="uncompressed SD image regular file")
+    for name, digest in PROVEN_HASHES.items():
+        parser.add_argument(
+            f"--expected-{name}-sha256",
+            type=expected_hash,
+            default=digest,
+            help=argparse.SUPPRESS,
+        )
     args = parser.parse_args()
+    expected_hashes = {
+        name: getattr(args, f"expected_{name}_sha256") for name in PROVEN_HASHES
+    }
     try:
         with regular_file(args.image) as image:
             fat_part, root_part = partitions(image)
@@ -398,7 +524,7 @@ def main():
                 extract_partition(image, fat_part, fat)
                 extract_partition(image, root_part, root)
                 ext4_geometry(root, root_part[1])
-                boot_files(fat, root, directory, fat_part[1])
+                boot_files(fat, root, directory, fat_part[1], expected_hashes)
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"Retroid Pocket Mini V2 image rejected: {error}", file=sys.stderr)
         return 1

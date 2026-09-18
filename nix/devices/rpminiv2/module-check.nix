@@ -6,59 +6,53 @@ let
   c = configuration.config;
   packageNames = map lib.getName c.environment.systemPackages;
   kernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config);
-  kernelModules = builtins.filter (lib.hasSuffix "=m") kernelConfigLines;
   hasKernelConfig = setting: builtins.elem setting kernelConfigLines;
   requiredKernelConfig = [
     "CONFIG_ARCH_QCOM=y"
     "CONFIG_AUTOFS_FS=y"
     "CONFIG_BLK_DEV_INITRD=y"
     "CONFIG_DEVTMPFS=y"
+    "CONFIG_DRM_FBDEV_EMULATION=y"
     "CONFIG_DRM_MSM=y"
     "CONFIG_DRM_MSM_DPU=y"
     "CONFIG_DRM_MSM_DP=y"
     "CONFIG_DRM_MSM_DSI=y"
     "CONFIG_DRM_MSM_DSI_7NM_PHY=y"
+    "CONFIG_DRM_MSM_KMS_FBDEV=y"
     "CONFIG_DRM_PANEL_DDIC_CH13726A=y"
     "CONFIG_EFI_STUB=y"
     "CONFIG_EXT4_FS=y"
+    ''CONFIG_EXTRA_FIRMWARE="qcom/a650_gmu.bin qcom/a650_sqe.fw qcom/sm8250/a650_zap.mbn qcom/sm8250/adsp.mbn qcom/sm8250/cdsp.mbn qcom/sm8250/slpi.mbn regulatory.db regulatory.db.p7s"''
+    ''CONFIG_EXTRA_FIRMWARE_DIR="external-firmware"''
     "CONFIG_FRAMEBUFFER_CONSOLE=y"
     "CONFIG_MMC_SDHCI_MSM=y"
     "CONFIG_MODULES=y"
+    "CONFIG_QCOM_Q6V5_COMMON=y"
+    "CONFIG_QCOM_Q6V5_PAS=y"
     "CONFIG_RD_GZIP=y"
+    "CONFIG_REMOTEPROC=y"
     "CONFIG_SERIAL_MSM_CONSOLE=y"
     "CONFIG_USB_G_SERIAL=m"
     "CONFIG_USB_HID=y"
     "CONFIG_VFAT_FS=y"
   ];
-  disabledKernelConfig = [
-    "ACPI"
-    "BTRFS_FS"
-    "BT"
-    "F2FS_FS"
-    "INPUT_JOYSTICK"
-    "INPUT_TOUCHSCREEN"
-    "MEDIA_SUPPORT"
-    "NETFILTER"
-    "NETWORK_FILESYSTEMS"
-    "PERF_EVENTS"
-    "SOUND"
-    "VIRTUALIZATION"
-    "WIRELESS"
-  ];
-in
-assert lib.all hasKernelConfig requiredKernelConfig;
-assert lib.all (setting: hasKernelConfig "# CONFIG_${setting} is not set") disabledKernelConfig;
-assert
-  kernelModules == [
+  requiredRecoveryModules = [
     "CONFIG_USB_F_ACM=m"
     "CONFIG_USB_U_SERIAL=m"
     "CONFIG_USB_F_SERIAL=m"
     "CONFIG_USB_F_OBEX=m"
     "CONFIG_USB_G_SERIAL=m"
   ];
+in
+assert lib.all hasKernelConfig requiredKernelConfig;
+assert lib.all hasKernelConfig requiredRecoveryModules;
 assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
 assert c.networking.hostName == "rpminiv2";
 assert c.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb";
+assert c.boot.kernelPackages.kernel.usesRocknixBootImage;
+assert lib.hasInfix "rpminiv2-rocknix-20260901-baseline" (
+  toString c.boot.kernelPackages.kernel.rocknixBaseline
+);
 assert c.hardware.deviceTree.overlays == [ ];
 assert !c.hardware.enableAllHardware;
 assert !c.hardware.graphics.enable;
@@ -66,15 +60,18 @@ assert !c.hardware.bluetooth.enable;
 assert !(lib.elem "bluez" packageNames);
 assert !(c.systemd.services ? bluetooth);
 assert c.hardware.firmwareCompression == "none";
-assert c.boot.consoleLogLevel == 8;
-assert lib.last (lib.filter (lib.hasPrefix "console=") c.boot.kernelParams) == "console=tty0";
+assert c.boot.consoleLogLevel == 4;
+assert lib.filter (lib.hasPrefix "console=") c.boot.kernelParams == [ "console=tty0" ];
+assert lib.elem "quiet" c.boot.kernelParams;
+assert lib.elem "rootwait" c.boot.kernelParams;
 assert lib.elem "consoleblank=60" c.boot.kernelParams;
+assert lib.elem "gpt" c.boot.kernelParams;
 assert c.boot.initrd.compressor == "gzip";
 assert !c.boot.initrd.allowMissingModules;
 assert !c.boot.initrd.includeDefaultModules;
 assert lib.elem "qcom/sm8250/slpi.mbn" c.boot.initrd.extraFirmwarePaths;
 assert lib.elem "regulatory.db.p7s" c.boot.initrd.extraFirmwarePaths;
-assert c.boot.loader.systemd-boot.enable;
+assert !c.boot.loader.systemd-boot.enable;
 assert !c.boot.loader.grub.enable;
 assert !c.boot.loader.generic-extlinux-compatible.enable;
 assert !c.boot.loader.efi.canTouchEfiVariables;

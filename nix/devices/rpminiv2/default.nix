@@ -9,11 +9,19 @@ let
       config.allowUnfree = true;
     };
   pkgs = mkPkgs "aarch64-linux";
-  crossPkgs = (mkPkgs "x86_64-linux").pkgsCross.aarch64-multiplatform;
-  kernel = pkgs.callPackage ./kernel { };
-  kernelCross = crossPkgs.callPackage ./kernel { };
+  buildPkgs = mkPkgs "x86_64-linux";
+  crossPkgs = buildPkgs.pkgsCross.aarch64-multiplatform;
+  rocknixBaseline = buildPkgs.callPackage ./rocknix-baseline { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
+  kernel = pkgs.callPackage ./kernel {
+    rpminiFirmware = firmware;
+    rpminiRocknixBaseline = rocknixBaseline;
+  };
+  kernelCross = crossPkgs.callPackage ./kernel {
+    rpminiFirmware = firmwareCross;
+    rpminiRocknixBaseline = rocknixBaseline;
+  };
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = {
@@ -21,6 +29,7 @@ let
       # native ARM system on a builder, and never compile on the handheld.
       rpminiKernel = kernelCross;
       rpminiFirmware = firmwareCross;
+      rpminiRocknixBaseline = rocknixBaseline;
     };
     modules = [ ./sd-image.nix ];
   };
@@ -32,6 +41,7 @@ in
     kernelCross
     firmware
     firmwareCross
+    rocknixBaseline
     ;
   sdImage = configuration.config.system.build.sdImage;
   moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
