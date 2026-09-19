@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by:
 
 ## Question
@@ -46,4 +46,20 @@ Simon accepted working core session controls plus supported plugin actions in th
 
 Simon subsequently deferred automatic restoration of the exact game state after shutdown. Normal game saving is sufficient for the current effort. Supported plugin save-state controls remain in scope; their availability is not a promise of automatic restoration after power-off.
 
-These are confirmed scope decisions. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
+## Answer
+
+Simon explicitly approved the consolidated behavior scope and closing this ticket. The detailed agreements above remain the source for setup, acquisition, identity, session controls, and deferred saved-progress features.
+
+The approved scope also retains local and streamed play through available routes, consistent with the repository's federation direction. Browsing and choosing content must lead to real playable routes, not only a successful preparation call. Devices do not acquire fixed roles.
+
+Plugin management includes independent installation, updates, removal, and rollback. Removal reclaims storage that nothing else needs, subject to shared dependencies and retained rollback versions. The plugin-lifecycle ticket must reconcile the existing current-plus-previous rollback agreement with removable image bundles.
+
+| Classification | Approved scope |
+|---|---|
+| Required now | Self-service setup and routine management; real Nostr identity without mandatory sign-in and an explicit later switch; browsing supplied and plugin-acquired content; local and streamed play through available routes; working core session and supported plugin controls; independent plugin lifecycle. |
+| Optional selection | Individual acquisition providers, runners, and other plugins. Additional session actions depend on the active plugin's support. This is not permission for each device to silently omit the product integrations. |
+| Deferred | Cross-device game-save synchronization and automatic restoration of the exact game state after shutdown. Normal saving and supported plugin save-state controls remain in scope. |
+
+The accepted cost is implementing or porting missing behavior; sharing device configuration alone cannot meet the scope. Approval establishes intent, not current feature completeness or verified device support. Existing user data remains protected by repository policy.
+
+Hardware limits and product acceptance, default plugins, image variants, bundled-plugin removal, identity security, and shared integration remain the map's separate open decisions. The now-specific question of live pause/input/return behavior is captured in [Decide what happens when leaving and returning to a game](09-decide-live-session-behavior.md). This resolution approves no new schema, key-custody exception, device write, or deployment.

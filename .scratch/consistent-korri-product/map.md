@@ -33,17 +33,18 @@ For device composition, read the six directories under `nix/devices/` and the sh
 
 ## Decisions so far
 
-<!-- Add one named link and a short gist for each resolved child ticket. The starting brief above predates this map; no child ticket has been resolved. -->
+- [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope, optional plugin choices, and deferred saved-progress features.
 
 ## Not yet specified
 
-- The missing-feature investigations that follow from agreeing the intended product. Their scope depends on which behavior Simon retains, adds, or rules out.
+- Further product gaps exposed by the selected hardware and plugins. Their exact cases depend on the hardware-support and default-plugin decisions.
 - The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions.
 - The operational transition from current device-specific installations to the selected product composition, including preservation of real user data. Its steps depend on the boundary chosen later in this map.
 - Concrete acceptance scenarios and test fixtures for the final product contract. Do not substitute configuration equality for working behavior.
 
 ## Out of scope
 
+- Cross-device game-save synchronization and automatic restoration after shutdown are deferred beyond this effort. See [Define the intended Korri product](issues/01-define-intended-product.md#answer) for the approved boundary; ordinary saving and supported plugin save-state controls remain in scope.
 - Implementing the product, fixing drivers, deploying software, or flashing devices during charting. Host-side measurement work is permitted only through the dedicated measurement ticket.
 - Restoring Android, merging legacy wholesale, or inventing a speculative capability or configuration schema.
 - Treating the source-review findings about Odin's older kiosk or the portal deploy signature bypass as authorization to patch or deploy either one. They remain evidence of drift for the product-boundary decision.
