@@ -127,6 +127,10 @@ pkgs.stdenvNoCC.mkDerivation {
     css=("$out"/assets/*.css)
     test -s "''${js[0]}"
     test -s "''${css[0]}"
+    grep -Fq 'KorriRpc' "''${js[@]}"
+    grep -Fq 'korridPort' "''${js[@]}"
+    grep -Fq 'korridCapability' "''${js[@]}"
+    ! grep -Fq '/runtime.json' "''${js[@]}"
     # Both source-built surfaces must ship, not just an empty Vite shell.
     grep -Fq 'pico-screen' "''${css[@]}"
     grep -Fq 'data-shift-surface' "''${css[@]}"
