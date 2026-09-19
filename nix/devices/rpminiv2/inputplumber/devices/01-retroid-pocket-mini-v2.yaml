@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
+version: 1
+kind: CompositeDevice
+name: Retroid Pocket Mini V2 Layout
+
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Retroid Pocket Mini V2
+
+maximum_sources: 1
+
+source_devices:
+  - group: gamepad
+    evdev:
+      name: Retroid Pocket Gamepad
+      phys_path: retroid-pocket-gamepad/input0
+      handler: event*
+    capability_map_id: retroid_pocket_mini_v2
+
+options:
+  auto_manage: true
+
+target_devices:
+  - xb360

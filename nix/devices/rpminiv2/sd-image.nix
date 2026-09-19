@@ -69,7 +69,9 @@
     enableAllHardware = lib.mkForce false;
     deviceTree = {
       enable = true;
-      name = "qcom/${rpminiKernel.dtbName}.dtb";
+      # Extended product configurations may select a featureful sibling of the
+      # recovery kernel. Always follow the configuration's active kernel.
+      name = "qcom/${config.boot.kernelPackages.kernel.dtbName}.dtb";
     };
     firmware = lib.mkBefore [ rpminiFirmware ];
     # The package contains the producer's full board/accessory firmware
@@ -81,9 +83,9 @@
     graphics.enable = lib.mkForce false;
   };
 
-  # Keep one read-only DRM probe for the first panel boot. Everything else
-  # waits until the TTY milestone is accepted, so image assembly does not
-  # compile korrid or unrelated hardware tools.
+  # Keep one read-only DRM probe in both profiles. The recovery image remains
+  # minimal; portal.nix adds the bounded product services without adding broad
+  # hardware diagnostics.
   environment.systemPackages = [ pkgs.libdrm ];
 
   image.baseName = "nixos-rpminiv2";
@@ -95,22 +97,33 @@
     firmwareSize = 512;
     populateFirmwareCommands =
       let
+        activeKernel = config.boot.kernelPackages.kernel;
         toplevel = config.system.build.toplevel;
-        kernel = "${rpminiKernel}/${config.system.boot.loader.kernelFile}";
+        kernel = "${activeKernel}/${config.system.boot.loader.kernelFile}";
         initrd = "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
         dtb = "${config.hardware.deviceTree.package}/${config.hardware.deviceTree.name}";
-        kernelName = "${baseNameOf rpminiKernel}-${config.system.boot.loader.kernelFile}";
+        kernelName = "${baseNameOf activeKernel}-${config.system.boot.loader.kernelFile}";
         initrdName = "${baseNameOf config.system.build.initialRamdisk}-${config.system.boot.loader.initrdFile}";
         # deviceTree.package ends in /dtbs, not at the owning store path.
-        dtbName = "${baseNameOf rpminiKernel}-${baseNameOf config.hardware.deviceTree.name}";
+        dtbName = "${baseNameOf activeKernel}-${baseNameOf config.hardware.deviceTree.name}";
         params = lib.concatStringsSep " " ([ "init=${toplevel}/init" ] ++ config.boot.kernelParams);
+        loaderEntryTitle =
+          if config.image.baseName == "nixos-rpminiv2-korri" then
+            "NixOS Retroid Pocket Mini V2 Korri"
+          else
+            "NixOS Retroid Pocket Mini V2 candidate";
+        grubEntryTitle =
+          if config.image.baseName == "nixos-rpminiv2-korri" then
+            "NixOS Retroid Pocket Mini V2 Korri"
+          else
+            "NixOS Retroid Pocket Mini V2";
         loaderConf = pkgs.writeText "loader.conf" ''
           timeout 0
           default nixos-generation-1.conf
           console-mode keep
         '';
         entry = pkgs.writeText "nixos-generation-1.conf" ''
-          title NixOS Retroid Pocket Mini V2 candidate
+          title ${loaderEntryTitle}
           version Generation 1 ${config.system.nixos.label}
           linux /EFI/nixos/${kernelName}
           initrd /EFI/nixos/${initrdName}
@@ -133,7 +146,7 @@
           set menu_color_normal=cyan/blue
           set menu_color_highlight=white/blue
 
-          menuentry 'NixOS Retroid Pocket Mini V2' {
+          menuentry '${grubEntryTitle}' {
                   search --set -f /EFI/nixos/${kernelName}
                   linux /EFI/nixos/${kernelName} ${params}
                   initrd /EFI/nixos/${initrdName}
@@ -180,7 +193,9 @@
           pkgs.gptfdisk
         ]
       }:$PATH
-      ${pkgs.python3}/bin/python3 ${./verify-image.py} "$img"
+      ${pkgs.python3}/bin/python3 ${./verify-image.py} "$img" --profile ${
+        if config.image.baseName == "nixos-rpminiv2-korri" then "korri" else "recovery"
+      }
     '';
   };
   fileSystems."/boot" = {

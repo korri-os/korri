@@ -5,6 +5,7 @@
 import hashlib
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -71,6 +72,16 @@ def copy_partition(source, destination, offset):
 def digest(path):
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+class ProfileContract(unittest.TestCase):
+    def test_recovery_and_korri_pin_distinct_kernel_hashes(self):
+        module = runpy.run_path(VERIFY)
+        hashes = module["KERNEL_HASHES"]
+        self.assertEqual(set(hashes), {"recovery", "korri"})
+        self.assertNotEqual(hashes["recovery"], hashes["korri"])
+        for value in hashes.values():
+            self.assertRegex(value, r"^[0-9a-f]{64}$")
 
 
 class ImageAcceptance(unittest.TestCase):
@@ -162,22 +173,23 @@ class ImageAcceptance(unittest.TestCase):
         run("dtc", "-I", "dts", "-O", "dtb", "-o", str(target), str(source))
         self.put(DTB, target.read_bytes(), assemble=assemble)
 
-    def verify(self, path=None):
+    def verify(self, path=None, profile="recovery", use_profile_kernel=False):
         payload_hash = hashlib.sha256(PAYLOAD).hexdigest()
+        command = [
+            sys.executable,
+            str(VERIFY),
+            "--expected-loader-sha256",
+            payload_hash,
+            "--expected-dtb-sha256",
+            self.expected_dtb_hash,
+            "--expected-font-sha256",
+            payload_hash,
+        ]
+        if not use_profile_kernel:
+            command.extend(["--expected-kernel-sha256", payload_hash])
+        command.extend(["--profile", profile, str(path or self.image)])
         return subprocess.run(
-            [
-                sys.executable,
-                str(VERIFY),
-                "--expected-loader-sha256",
-                payload_hash,
-                "--expected-kernel-sha256",
-                payload_hash,
-                "--expected-dtb-sha256",
-                self.expected_dtb_hash,
-                "--expected-font-sha256",
-                payload_hash,
-                str(path or self.image),
-            ],
+            command,
             text=True,
             capture_output=True,
             timeout=30,
@@ -188,6 +200,36 @@ class ImageAcceptance(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("image rejected:", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_korri_profile_accepts_product_menu_title(self):
+        product_grub = GRUB.replace(
+            "menuentry 'NixOS Retroid Pocket Mini V2' {",
+            "menuentry 'NixOS Retroid Pocket Mini V2 Korri' {",
+        )
+        self.put(GRUB_PATH, product_grub)
+        result = self.verify(profile="korri")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("image verified:", result.stdout)
+
+    def test_korri_profile_selects_pinned_product_kernel(self):
+        product_kernel = Path(os.environ["RP_MINIV2_KORRI_KERNEL"])
+        self.put(KERNEL, product_kernel.read_bytes())
+        self.put(
+            GRUB_PATH,
+            GRUB.replace(
+                "menuentry 'NixOS Retroid Pocket Mini V2' {",
+                "menuentry 'NixOS Retroid Pocket Mini V2 Korri' {",
+            ),
+        )
+        result = self.verify(profile="korri", use_profile_kernel=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.put(GRUB_PATH, GRUB)
+        result = self.verify(profile="recovery", use_profile_kernel=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            "kernel differs from the selected RP Mini V2 profile", result.stderr
+        )
 
     def test_valid_image_is_read_only(self):
         self.image.chmod(0o444)

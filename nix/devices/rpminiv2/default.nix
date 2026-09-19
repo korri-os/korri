@@ -1,6 +1,6 @@
-# Retroid Pocket Mini V2 first-boot candidate. The device identity and DTB
-# name come from ROCKNIX's sm8250-retroidpocket-rpminiv2.dts.
-{ nixpkgs, ... }:
+# Retroid Pocket Mini V2 systems. The console system remains the verified
+# recovery baseline; the default configuration adds the Korri product session.
+{ nixpkgs, korri, ... }:
 let
   mkPkgs =
     system:
@@ -14,45 +14,72 @@ let
   rocknixBaseline = buildPkgs.callPackage ./rocknix-baseline { };
   firmware = pkgs.callPackage ./firmware { };
   firmwareCross = crossPkgs.callPackage ./firmware { };
+  recoveryKernel = pkgs.callPackage ./kernel {
+    rpminiFirmware = firmware;
+    stdenv = pkgs.gcc15Stdenv;
+  };
+  recoveryKernelCross = crossPkgs.callPackage ./kernel {
+    rpminiFirmware = firmwareCross;
+    stdenv = crossPkgs.gcc15Stdenv;
+  };
   kernel = pkgs.callPackage ./kernel {
     rpminiFirmware = firmware;
     stdenv = pkgs.gcc15Stdenv;
+    kernelConfig = ./kernel/config-korri;
   };
   kernelCross = crossPkgs.callPackage ./kernel {
     rpminiFirmware = firmwareCross;
     stdenv = crossPkgs.gcc15Stdenv;
+    kernelConfig = ./kernel/config-korri;
   };
-  # Retain the full ROCKNIX configuration as a diagnostic output. The primary
-  # image uses the hardware-proven TTY trim above.
+  # Retain the full ROCKNIX configuration as a diagnostic output. The recovery
+  # and product images use the two bounded profiles above.
   kernelSourceGcc15 = crossPkgs.callPackage ./kernel {
     rpminiFirmware = firmwareCross;
     stdenv = crossPkgs.gcc15Stdenv;
     kernelConfig = ./kernel/config;
   };
-  configuration = nixpkgs.lib.nixosSystem {
+  consoleConfiguration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = {
-      # Follow the Odin packaging: build the kernel on x86, assemble the
-      # native ARM system on a builder, and never compile on the handheld.
-      rpminiKernel = kernelCross;
+      inherit korri;
+      # Build kernels on development machines. Never compile on the handheld.
+      rpminiKernel = recoveryKernelCross;
+      rpminiKorriKernel = kernelCross;
       rpminiFirmware = firmwareCross;
       rpminiRocknixBaseline = rocknixBaseline;
     };
     modules = [ ./sd-image.nix ];
   };
+  configuration = consoleConfiguration.extendModules {
+    modules = [
+      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      ./portal.nix
+    ];
+  };
 in
 {
   inherit
     configuration
+    consoleConfiguration
     kernel
     kernelCross
+    recoveryKernel
+    recoveryKernelCross
     kernelSourceGcc15
     firmware
     firmwareCross
     rocknixBaseline
     ;
   sdImage = configuration.config.system.build.sdImage;
-  moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
+  consoleSdImage = consoleConfiguration.config.system.build.sdImage;
+  inputplumberData =
+    pkgs: inputplumber: import ./inputplumber-data.nix { inherit pkgs inputplumber; };
+  moduleCheck =
+    pkgs:
+    import ./module-check.nix {
+      inherit pkgs configuration consoleConfiguration;
+    };
   initrdModulesCheck =
     pkgs:
     pkgs.makeModulesClosure {
@@ -63,6 +90,18 @@ in
         configuration.config.boot.initrd.availableKernelModules
         ++ configuration.config.boot.initrd.kernelModules
         ++ configuration.config.boot.kernelModules;
+      allowMissing = false;
+    };
+  recoveryInitrdModulesCheck =
+    pkgs:
+    pkgs.makeModulesClosure {
+      kernel = recoveryKernelCross.modules;
+      firmware = [ firmwareCross ];
+      extraFirmwarePaths = consoleConfiguration.config.boot.initrd.extraFirmwarePaths;
+      rootModules =
+        consoleConfiguration.config.boot.initrd.availableKernelModules
+        ++ consoleConfiguration.config.boot.initrd.kernelModules
+        ++ consoleConfiguration.config.boot.kernelModules;
       allowMissing = false;
     };
 }

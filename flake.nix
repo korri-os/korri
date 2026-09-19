@@ -80,6 +80,7 @@
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
         rpminiv2 = rpminiv2.configuration;
+        rpminiv2-recovery = rpminiv2.consoleConfiguration;
         r36tmax = r36tmax.configuration;
         r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
@@ -168,6 +169,7 @@
           // {
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-kiosk = import ./services/kiosk/package.nix { inherit pkgs crane; };
@@ -187,7 +189,9 @@
           rgds-kernel = rgds.kernel;
           rgds-uboot = rgds.uboot;
           rpminiv2-sd-image = rpminiv2.sdImage;
+          rpminiv2-recovery-sd-image = rpminiv2.consoleSdImage;
           rpminiv2-kernel = rpminiv2.kernel;
+          rpminiv2-recovery-kernel = rpminiv2.recoveryKernel;
           rpminiv2-firmware = rpminiv2.firmware;
           r36tmax-sd-image = r36tmax.sdImage;
           r36tmax-rk-mpp-service-module = r36tmax.rkMppServiceModule;
@@ -212,6 +216,7 @@
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
+          rpminiv2-recovery-kernel = rpminiv2.recoveryKernelCross;
           rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;
           rpminiv2-firmware = rpminiv2.firmwareCross;
           rpminiv2-rocknix-baseline = rpminiv2.rocknixBaseline;
@@ -256,7 +261,9 @@
             rgds = rgds.moduleCheck pkgs;
             rg35xxsp = rg35xxsp.moduleCheck pkgs;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
+            rpminiv2-inputplumber = self.packages.${system}.rpminiv2-inputplumber-data;
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
+            rpminiv2-recovery-initrd-modules = rpminiv2.recoveryInitrdModulesCheck pkgs;
             r36tmax = r36tmax.moduleCheck pkgs;
             r36tmax-registry = r36tmax.registryCheck pkgs;
             r36tmax-mpp-binding = r36tmax.mppBindingCheck pkgs;

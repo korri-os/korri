@@ -24,6 +24,7 @@ the Git blob IDs in the pinned recursive Git tree before vendoring. The stable
 | `dts/sm8250-retroidpocket-common.dtsi` and board DTS files | `projects/ROCKNIX/devices/SM8250/linux/dts/qcom/*` |
 | `config` baseline | `/proc/config.gz` from official ROCKNIX `20260901` running on the target Mini V2 |
 | `config-tty-trim` | Hardware-proven TTY trim derived from that full baseline |
+| `config-korri` | Product delta restoring the Retroid gamepad, uinput, and its direct Qualcomm haptics link dependency |
 
 `projects/ROCKNIX/packages/linux/package.mk` and `scripts/unpack` define the
 order: four mainline patches, three version patches, then 30 SM8250 patches,
@@ -68,9 +69,28 @@ hardware-proven output has these properties:
 - module closure: 444 KB containing `g_serial` and its four selected function
   modules
 
-The matching gadget module loads from the root system. The companion firmware
-remains available to the initrd and root system for aliases, service manifests
-and module-time requests.
+`config-korri` starts from that exact trim and restores
+`CONFIG_INPUT_JOYSTICK`, modular `CONFIG_JOYSTICK_RETROID`,
+`CONFIG_INPUT_MISC`, `CONFIG_INPUT_UINPUT`, and
+`CONFIG_INPUT_QCOM_SPMI_HAPTICS`. The last symbol is not broad feature creep:
+the patched Retroid module directly references `qcom_spmi_haptics_rumble`, and
+modpost rejects the module without its provider. The product module check
+therefore requires the provider whenever the Retroid driver is selected.
+Namespace, cgroup and seccomp features needed by sandboxed Chromium were already
+present in the TTY trim.
+No touchscreen, Wi-Fi, audio, Bluetooth, media, UFS, or extra display driver is
+restored for the first portal milestone. Its statically verified output is:
+
+- `Image`: 18,448,896 bytes, SHA-256
+  `cce753a8d3e93d9b90aadb6c85c1d58aef6bc28b17e2c3c65acee81c8d3a38a8`
+- Mini V2 DTB: the same hardware-proven
+  `f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`
+- module closure: 476 KB containing `g_serial`, `retroid`, and the USB gadget
+  dependencies
+
+The matching gadget and Retroid modules load from the root system. The companion
+firmware remains available to the initrd and root system for aliases, service
+manifests and module-time requests, including the three Adreno A650 blobs.
 
 The companion `rocknix-baseline` package extracts the exact GRUB EFI binary and
 font used by the accepted handoff. It retains checksum-pinned ROCKNIX GRUB and

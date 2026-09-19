@@ -52,9 +52,12 @@ GRUB_GLOBALS = [
 ]
 PROVEN_HASHES = {
     "loader": "39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b",
-    "kernel": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
     "dtb": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
     "font": "734f45a5b8c134b5cc161d02a9650fa7cf939abbab1a32f254bab8da201c9385",
+}
+KERNEL_HASHES = {
+    "recovery": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
+    "korri": "cce753a8d3e93d9b90aadb6c85c1d58aef6bc28b17e2c3c65acee81c8d3a38a8",
 }
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 
@@ -303,7 +306,7 @@ def config(fat, path, allowed):
     return fields
 
 
-def grub_config(fat):
+def grub_config(fat, profile):
     text = command("mtype", "-i", str(fat), "::" + GRUB_CONFIG)
     require(len(text.encode()) <= CONFIG_LIMIT, "GRUB config exceeds size limit")
     outside = {"insmod", "set", "loadfont", "terminal_output"}
@@ -312,13 +315,17 @@ def grub_config(fat):
     fields = {}
     menu_count = 0
     in_menu = False
+    expected_title = {
+        "recovery": "NixOS Retroid Pocket Mini V2",
+        "korri": "NixOS Retroid Pocket Mini V2 Korri",
+    }[profile]
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("menuentry "):
             require(
-                not in_menu and line == "menuentry 'NixOS Retroid Pocket Mini V2' {",
+                not in_menu and line == f"menuentry '{expected_title}' {{",
                 "malformed or unexpected GRUB menuentry",
             )
             menu_count += 1
@@ -408,7 +415,7 @@ def init_file(root, path):
     raise ValueError("init symlink chain exceeds limit")
 
 
-def boot_files(fat, root, directory, fat_bytes, expected_hashes):
+def boot_files(fat, root, directory, fat_bytes, expected_hashes, profile):
     loader = config(fat, "/loader/loader.conf", {"default", "timeout", "console-mode"})
     require(
         loader.get("default") == ENTRY,
@@ -419,7 +426,7 @@ def boot_files(fat, root, directory, fat_bytes, expected_hashes):
         "/loader/entries/" + ENTRY,
         {"title", "version", "linux", "initrd", "devicetree", "options"},
     )
-    active = grub_config(fat)
+    active = grub_config(fat, profile)
     fat_file(fat, "/EFI/BOOT/BOOTAA64.EFI", directory / "boot.efi", fat_bytes)
     fat_file(fat, GRUB_FONT, directory / "grub-font", fat_bytes)
     require(
@@ -455,7 +462,7 @@ def boot_files(fat, root, directory, fat_bytes, expected_hashes):
     )
     require(
         file_sha256(directory / "linux") == expected_hashes["kernel"],
-        "kernel differs from the hardware-proven GCC 15 source build",
+        "kernel differs from the selected RP Mini V2 profile",
     )
     require(
         file_sha256(directory / "devicetree") == expected_hashes["dtb"],
@@ -502,7 +509,13 @@ def expected_hash(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path, help="uncompressed SD image regular file")
-    for name, digest in PROVEN_HASHES.items():
+    parser.add_argument(
+        "--profile",
+        choices=sorted(KERNEL_HASHES),
+        default="recovery",
+        help="kernel profile stored in the image (default: recovery)",
+    )
+    for name, digest in {**PROVEN_HASHES, "kernel": None}.items():
         parser.add_argument(
             f"--expected-{name}-sha256",
             type=expected_hash,
@@ -513,6 +526,9 @@ def main():
     expected_hashes = {
         name: getattr(args, f"expected_{name}_sha256") for name in PROVEN_HASHES
     }
+    expected_hashes["kernel"] = (
+        args.expected_kernel_sha256 or KERNEL_HASHES[args.profile]
+    )
     try:
         with regular_file(args.image) as image:
             fat_part, root_part = partitions(image)
@@ -524,7 +540,14 @@ def main():
                 extract_partition(image, fat_part, fat)
                 extract_partition(image, root_part, root)
                 ext4_geometry(root, root_part[1])
-                boot_files(fat, root, directory, fat_part[1], expected_hashes)
+                boot_files(
+                    fat,
+                    root,
+                    directory,
+                    fat_part[1],
+                    expected_hashes,
+                    args.profile,
+                )
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"Retroid Pocket Mini V2 image rejected: {error}", file=sys.stderr)
         return 1

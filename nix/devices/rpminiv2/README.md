@@ -1,21 +1,32 @@
-# Retroid Pocket Mini V2 first-boot candidate
+# Retroid Pocket Mini V2 recovery and Korri candidate
 
-This is a native NixOS SD image for the Retroid Pocket Mini V2, not a finished
-Korri release. Hardware testing reached a working 1080 by 1240 built-in TTY and
-a root shell over USB serial while preserving Android and the installed loader.
+This directory builds two native NixOS SD systems for the Retroid Pocket Mini
+V2:
 
-The image targets one result: a Linux TTY on the built-in panel. It does not
-start korrid, a compositor, a plugin host, or SSH. Userspace remains minimal.
-The kernel and DTB build from the audited Linux 7.2 source and ROCKNIX patch
-queue. Hardware testing isolated the earlier black-screen build to GCC 14.3;
-the GCC 15.2 source build works with Binutils 2.44. The primary configuration is
-the hardware-proven TTY trim: an 18.4 MB kernel plus five USB serial modules.
-The panel is the primary emergency console. USB serial becomes the recovery
-shell after root mounts. The framebuffer console blanks
-after one idle minute to protect
-the OLED; keyboard input wakes it. Physical consoles grant passwordless root
-access. Do not use this candidate where other people have untrusted physical
-access.
+- `rpminiv2-recovery` preserves the hardware-proven 1080 by 1240 TTY and USB
+  serial recovery system.
+- `rpminiv2` extends that same SD-only baseline with the current Korri Linux
+  host, Sway DRM compositor, credential-backed Pico portal, sandboxed Chromium,
+  and a device-specific InputPlumber profile.
+
+The recovery system is hardware-verified. The Korri system is statically
+verified but still requires a coordinated physical display and controller
+acceptance pass. Neither configuration starts SSH, writes internal storage, or
+includes a loader, Android, or firmware flashing path.
+
+Both kernels and their DTB build from the audited Linux 7.2 source and ROCKNIX
+patch queue. Hardware testing isolated the earlier black-screen build to GCC
+14.3; GCC 15.2 with Binutils 2.44 works. Recovery uses the 18.4 MB TTY trim. The
+product profile adds only the Retroid gamepad, `/dev/uinput`, and the direct
+Qualcomm haptics symbol dependency required by the patched gamepad module. The
+existing DRM/MSM, namespace, seccomp, firmware, SD-root, VFAT, and USB serial
+features remain unchanged.
+
+The panel remains the emergency console and USB serial becomes the recovery
+shell after root mounts in both systems. `consoleblank=60` protects the TTY; the
+Korri system also powers `DSI-1` off after five graphical idle minutes.
+Physical consoles grant passwordless root access. Do not use either candidate where other people
+have untrusted physical access.
 
 The [boot audit](BOOT.md) verifies Retroid's published EFI loader source and
 the Imager's GRUB-entry workaround. It does not identify your unit's shipped
@@ -61,13 +72,17 @@ ARM code. Full image assembly also needs an ARM builder; the handheld must
 never build software or dispatch builds.
 
 ```sh
-nix run .#rpminiv2-check
-nix build --no-link .#rpminiv2-kernel
-nix run .#rpminiv2-initrd-check
+nix build --no-link .#checks.x86_64-linux.rpminiv2
+nix build --no-link .#checks.x86_64-linux.rpminiv2-inputplumber
+nix build --no-link .#checks.x86_64-linux.rpminiv2-initrd-modules
+nix build --no-link .#checks.x86_64-linux.rpminiv2-recovery-initrd-modules
+nix build --no-link .#packages.x86_64-linux.rpminiv2-kernel
+nix build --no-link .#packages.x86_64-linux.rpminiv2-recovery-kernel
 nix build --no-link .#packages.aarch64-linux.rpminiv2-sd-image
+nix build --no-link .#packages.aarch64-linux.rpminiv2-recovery-sd-image
 ```
 
-The full image uses an x86-cross-built kernel, modules and firmware. The GRUB
+The full images use x86-cross-built kernels, modules and firmware. The GRUB
 EFI binary and font come from the pinned 1.4 GB official ROCKNIX image; its DTB
 and GRUB configuration remain checksum-pinned controls. On an ARM-only build
 machine, provide those exact baseline outputs or an x86 builder. These commands
@@ -90,12 +105,16 @@ Image assembly runs `verify-image.py` before compression. To inspect a copy
 of the uncompressed image without mounting it:
 
 ```sh
+# Product image
+nix run .#rpminiv2-image-check -- /path/to/nixos-rpminiv2-korri.img --profile korri
+# Recovery image (the verifier's default profile)
 nix run .#rpminiv2-image-check -- /path/to/nixos-rpminiv2.img
 ```
 
 The verifier checks the GPT table, partition bounds, filesystem labels, exact
-hardware-proven loader/font and source-built kernel/DTB hashes, the ordered GRUB/GOP setup, the
-active menu's agreement with retained boot metadata, the initrd, and the
+hardware-proven loader/font and profile-selected source-built kernel/DTB hashes,
+the ordered GRUB/GOP setup, the active menu's agreement with retained boot
+metadata, the initrd, and the
 referenced NixOS init file in the ext4 root. Its tests use real temporary
 filesystems with deliberate corruption. This is stored-file verification, not
 execution of the boot chain or proof of firmware loading.
@@ -111,7 +130,7 @@ ARM build host assembled the complete image. Neither was the handheld.
 | Firmware | All 25 configured paths were read from the actual gzip/newc initrd and compared byte-for-byte with the firmware package. All matched. |
 | Modules | The strict module/firmware closure check passed, including USB serial and its selected dependencies. |
 | Image | The complete GPT/FAT/ext4 image passed the same verifier exposed by `rpminiv2-image-check`, before compression. |
-| Regression tests | All 31 real-image CLI tests passed, including malformed compatible-string boundaries and isolated missing/empty payload checks. The shared layout check remains blocked by an existing graphics-seat assertion that includes another first-boot target. |
+| Regression tests | All 34 tests passed: 33 CLI tests against assembled GPT/FAT/ext4 images plus one static profile-contract test. Coverage includes a real product kernel accepted only by the Korri profile, both menu profiles, malformed compatible-string boundaries, and isolated missing/empty payload checks. The shared base policy check remains blocked by the existing first-boot graphics-seat assertion tracked in backlog item `01M2SGDH97XZVJX1ESEV302J3N`. |
 | Emergency console | The actual pinned stage-1 console parser selected `tty0` from the candidate parameters. This does not prove the panel or keyboard works. |
 | Static checks | Nixfmt and Ruff passed on authored files. Vendor patches and device trees retain source bytes, including source whitespace. |
 
@@ -155,6 +174,93 @@ intentional `consoleblank=60` timeout.
 No internal partition, loader or Android file was changed. The existing U-Boot
 correctly identified the Mini V2 and GRUB saved the `rpminiv2` entry. All image
 writes targeted only the removable SD.
+
+## Korri product candidate
+
+The product configuration is an extension of the recovery system rather than a
+replacement for it. Its current first milestone is deliberately local:
+
+- Sway uses MSM DRM on `/dev/dri/card0`, Adreno rendering on
+  `/dev/dri/renderD128`, native `1080x1240@60Hz`, and the hardware-proven
+  270-degree panel transform.
+- Chromium uses software drawing for the first pass while remaining sandboxed.
+  Sway itself still requires accelerated GLES2 rendering.
+- The portal and korrid communicate over loopback. NetworkManager and Avahi are
+  disabled, and Sunshine cannot start in this milestone. No Wi-Fi, firewall,
+  audio, Bluetooth, streaming acceptance, media decode, or internal-storage
+  support is claimed.
+- InputPlumber matches DT model `Retroid Pocket Mini V2` and the kernel's exact
+  `Retroid Pocket Gamepad` / `retroid-pocket-gamepad/input0` source. It emits a
+  normalized Xbox 360 target for the browser Gamepad API.
+- The map follows ROCKNIX's Retroid MCU evidence: analog triggers are
+  `ABS_HAT2X` and `ABS_HAT2Y`, and the legacy `BTN_NORTH`/`BTN_WEST` source
+  codes are swapped to preserve physical X/West and Y/North.
+- `g_serial` remains loaded from the matching root system and the product adds
+  the modular `retroid` gamepad driver after root mounts.
+
+Physical acceptance must verify the DRM/render node identities, compositor
+startup, orientation, five-minute OLED idle and wake behavior, ABXY semantics,
+D-pad, Start, sticks, triggers, and the portal's confirm/back/options/menu
+actions. A failure does not authorize changing the installed loader or any
+internal partition.
+
+### Guarded Korri acceptance
+
+Run this only with the user present and after explicit approval for an SD-card
+swap. Keep the verified recovery SD unchanged. Before any product-image write,
+re-identify the removable target by transport, model, serial and capacity; make
+sure none of its partitions are mounted; and compare that identity with the
+write helper's expected target. Never infer the target from a previous
+`/dev/sdX` name. Stop if the target could be internal or ambiguous.
+
+After the product card boots, establish USB serial first and save the output of
+these read-only checks:
+
+```sh
+uname -a
+tr -d '\0' </proc/device-tree/model
+findmnt /
+findmnt /boot
+lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS
+ls -l /dev/dri /sys/class/udc
+cat /sys/class/drm/card0-DSI-1/status
+cat /sys/class/drm/card0-DSI-1/modes
+lsmod | grep -E '^(g_serial|retroid) '
+systemctl is-active inputplumber korri-inputd korrid korri-compositor nginx \
+  korri-chromium-kiosk rpminiv2-display-idle
+systemctl --failed
+systemctl is-active sunshine || true
+systemctl is-enabled NetworkManager avahi-daemon || true
+ss -ltnp
+journalctl -b -u inputplumber -u korri-inputd -u korrid \
+  -u korri-compositor -u korri-chromium-kiosk --no-pager
+```
+
+Require all listed product services to be active, no failed unit, `DSI-1`
+connected at 1080 by 1240, both root-time modules loaded, NetworkManager and
+Avahi disabled, Sunshine inactive, and application listeners bound only to
+loopback. Then verify on the device:
+
+1. The portal fills the landscape panel after the 270-degree transform with no
+   clipped edge, upside-down content or software-composited Sway fallback.
+2. D-pad and both sticks navigate predictably. Physical A confirms, B returns,
+   X and Y retain their printed positions, Y opens options, and Start opens the
+   menu. Select, Guide, and the vendor `BTN_BACK` control are deliberately
+   unbound in this first milestone; they must not produce a Chromium keyboard
+   shortcut or a second controller. Exercise both analog triggers through their
+   full travel.
+3. Chromium remains sandboxed. The kiosk command line must not contain
+   `--no-sandbox`; renderer processes should report seccomp filtering in
+   `/proc/<pid>/status`.
+4. Leave the device untouched for five minutes. The OLED must power off. Wake it
+   with an accepted local control and confirm the portal returns without
+   restarting the compositor or losing USB serial.
+5. Unplug and reconnect USB serial once, shut down cleanly, remove the product
+   SD, and confirm the unchanged Android installation still boots.
+
+On any failure, collect the journal and serial log, power down, and return to the
+verified recovery card. Do not modify the loader, firmware or internal storage
+to make a failed gate pass.
 
 ## Arrival checks
 
@@ -203,6 +309,8 @@ modetest -M msm -c
 | USB console | The computer detects the gadget and receives the root console; unplug and reconnect do not lose access permanently. |
 | Shutdown and recovery | Shutdown completes and the factory path back to Android remains available. |
 
-Touch, controls, hardware rendering, networking, Bluetooth, audio, media,
-suspend and Korri are outside this first-boot cut. Their kernel support must be
-added and accepted separately after the TTY milestone.
+The recovery cut still claims only TTY and USB serial. The product candidate
+adds portal display, Adreno compositor rendering, and built-in controller
+routing, but those additions remain hardware-unaccepted. Touch, physical
+networking, Bluetooth, audio, media decode, gameplay, suspend, and updates stay
+outside this milestone.

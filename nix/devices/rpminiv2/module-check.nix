@@ -1,12 +1,19 @@
-# Assertions read the exported NixOS configuration. The CLI tests exercise
-# actual GPT/FAT/ext4 files, not another model of the NixOS image.
-{ pkgs, configuration }:
+# Assertions read both exported systems. The recovery configuration must remain
+# the hardware-proven TTY baseline while the default gains the Korri session.
+{
+  pkgs,
+  configuration,
+  consoleConfiguration,
+}:
 let
   inherit (pkgs) lib;
   c = configuration.config;
-  packageNames = map lib.getName c.environment.systemPackages;
-  kernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config-tty-trim);
-  hasKernelConfig = setting: builtins.elem setting kernelConfigLines;
+  recovery = consoleConfiguration.config;
+  packageNames = config: map lib.getName config.environment.systemPackages;
+  productKernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config-korri);
+  recoveryKernelConfigLines = lib.splitString "\n" (builtins.readFile ./kernel/config-tty-trim);
+  hasProductKernelConfig = setting: builtins.elem setting productKernelConfigLines;
+  hasRecoveryKernelConfig = setting: builtins.elem setting recoveryKernelConfigLines;
   requiredKernelConfig = [
     "CONFIG_ARCH_QCOM=y"
     "CONFIG_AUTOFS_FS=y"
@@ -38,65 +45,181 @@ let
     "CONFIG_USB_F_OBEX=m"
     "CONFIG_USB_G_SERIAL=m"
   ];
+  requiredProductKernelConfig = [
+    "CONFIG_CGROUPS=y"
+    "CONFIG_INPUT_EVDEV=y"
+    "CONFIG_INPUT_JOYSTICK=y"
+    "CONFIG_INPUT_MISC=y"
+    "CONFIG_INPUT_UINPUT=y"
+    "CONFIG_INPUT_QCOM_SPMI_HAPTICS=y"
+    "CONFIG_JOYSTICK_RETROID=m"
+    "CONFIG_PID_NS=y"
+    "CONFIG_SECCOMP=y"
+    "CONFIG_SECCOMP_FILTER=y"
+    "CONFIG_USER_NS=y"
+  ];
+  common =
+    config:
+    config.nixpkgs.hostPlatform.system == "aarch64-linux"
+    && config.networking.hostName == "rpminiv2"
+    && config.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb"
+    && config.hardware.deviceTree.overlays == [ ]
+    && !config.hardware.enableAllHardware
+    && !config.hardware.bluetooth.enable
+    && !(lib.elem "bluez" (packageNames config))
+    && !(config.systemd.services ? bluetooth)
+    && config.hardware.firmwareCompression == "none"
+    && config.boot.consoleLogLevel == 4
+    && lib.filter (lib.hasPrefix "console=") config.boot.kernelParams == [ "console=tty0" ]
+    && lib.elem "quiet" config.boot.kernelParams
+    && lib.elem "rootwait" config.boot.kernelParams
+    && lib.elem "consoleblank=60" config.boot.kernelParams
+    && lib.elem "gpt" config.boot.kernelParams
+    && config.boot.initrd.compressor == "gzip"
+    && !config.boot.initrd.allowMissingModules
+    && !config.boot.initrd.includeDefaultModules
+    && !(lib.elem "g_serial" config.boot.initrd.availableKernelModules)
+    && lib.elem "qcom/a650_gmu.bin" config.boot.initrd.extraFirmwarePaths
+    && lib.elem "qcom/a650_sqe.fw" config.boot.initrd.extraFirmwarePaths
+    && lib.elem "qcom/sm8250/a650_zap.mbn" config.boot.initrd.extraFirmwarePaths
+    && lib.elem "qcom/sm8250/slpi.mbn" config.boot.initrd.extraFirmwarePaths
+    && lib.elem "regulatory.db.p7s" config.boot.initrd.extraFirmwarePaths
+    && !config.boot.loader.systemd-boot.enable
+    && !config.boot.loader.grub.enable
+    && !config.boot.loader.generic-extlinux-compatible.enable
+    && !config.boot.loader.efi.canTouchEfiVariables
+    && config.boot.loader.timeout == 0
+    && config.fileSystems."/".device == "/dev/disk/by-label/NIXOS_RPMINIV2"
+    && config.fileSystems."/boot".device == "/dev/disk/by-label/RPMINIV2"
+    && lib.all (fs: !(lib.hasPrefix "/dev/mmcblk" fs.device) && !(lib.hasPrefix "/dev/sd" fs.device)) (
+      lib.attrValues config.fileSystems
+    )
+    && config.swapDevices == [ ]
+    && lib.elem "systemd.gpt_auto=0" config.boot.kernelParams
+    && lib.elem "rd.systemd.gpt_auto=0" config.boot.kernelParams
+    && lib.elem "g_serial" config.boot.kernelModules
+    && !(config.systemd.units ? "serial-getty@ttyGS0.service")
+    && lib.hasInfix "serial-getty@ttyGS0.service" config.services.udev.extraRules
+    && config.services.getty.autologinUser == "root"
+    && !config.services.openssh.enable
+    && !config.services.openssh.openFirewall
+    && config.users.users.root.openssh.authorizedKeys.keys == [ ]
+    && config.nix.settings.max-jobs == 0
+    && config.nix.settings.builders == ""
+    && !config.nix.distributedBuilds
+    && !config.nix.settings.fallback
+    && config.nix.settings.require-sigs
+    && !config.system.tools.nixos-install.enable
+    && !config.services.xserver.enable
+    && !config.services.greetd.enable
+    && config.sdImage.firmwarePartitionOffset == 8
+    && config.sdImage.firmwarePartitionName == "RPMINIV2"
+    && config.sdImage.rootVolumeLabel == "NIXOS_RPMINIV2";
+  credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
+  kiosk = c.systemd.services.korri-chromium-kiosk;
+  idle = c.systemd.services.rpminiv2-display-idle;
+  sunshine = c.systemd.services.sunshine;
+  certificateSocket = c.systemd.sockets.korri-certificate-control;
 in
-assert lib.all hasKernelConfig requiredKernelConfig;
-assert lib.all hasKernelConfig requiredRecoveryModules;
-assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
-assert c.networking.hostName == "rpminiv2";
-assert c.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb";
-assert lib.hasSuffix "/config-tty-trim" (toString c.boot.kernelPackages.kernel.kernelConfig);
+assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
+assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
+assert lib.all hasProductKernelConfig (requiredKernelConfig ++ requiredRecoveryModules);
+assert lib.all hasProductKernelConfig requiredProductKernelConfig;
+assert common c;
+assert common recovery;
+assert lib.all (a: a.assertion) c.assertions;
+assert lib.all (a: a.assertion) recovery.assertions;
+assert lib.hasSuffix "/config-korri" (toString c.boot.kernelPackages.kernel.kernelConfig);
+assert lib.hasSuffix "/config-tty-trim" (toString recovery.boot.kernelPackages.kernel.kernelConfig);
 assert lib.versionAtLeast c.boot.kernelPackages.kernel.compilerVersion "15";
 assert lib.versionOlder c.boot.kernelPackages.kernel.compilerVersion "16";
-assert c.hardware.deviceTree.overlays == [ ];
-assert !c.hardware.enableAllHardware;
-assert !c.hardware.graphics.enable;
-assert !c.hardware.bluetooth.enable;
-assert !(lib.elem "bluez" packageNames);
-assert !(c.systemd.services ? bluetooth);
-assert c.hardware.firmwareCompression == "none";
-assert c.boot.consoleLogLevel == 4;
-assert lib.filter (lib.hasPrefix "console=") c.boot.kernelParams == [ "console=tty0" ];
-assert lib.elem "quiet" c.boot.kernelParams;
-assert lib.elem "rootwait" c.boot.kernelParams;
-assert lib.elem "consoleblank=60" c.boot.kernelParams;
-assert lib.elem "gpt" c.boot.kernelParams;
-assert c.boot.initrd.compressor == "gzip";
-assert !c.boot.initrd.allowMissingModules;
-assert !c.boot.initrd.includeDefaultModules;
-assert !(lib.elem "g_serial" c.boot.initrd.availableKernelModules);
-assert lib.elem "qcom/sm8250/slpi.mbn" c.boot.initrd.extraFirmwarePaths;
-assert lib.elem "regulatory.db.p7s" c.boot.initrd.extraFirmwarePaths;
-assert !c.boot.loader.systemd-boot.enable;
-assert !c.boot.loader.grub.enable;
-assert !c.boot.loader.generic-extlinux-compatible.enable;
-assert !c.boot.loader.efi.canTouchEfiVariables;
-assert c.boot.loader.timeout == 0;
-assert c.fileSystems."/".device == "/dev/disk/by-label/NIXOS_RPMINIV2";
-assert c.fileSystems."/boot".device == "/dev/disk/by-label/RPMINIV2";
+assert lib.versionAtLeast recovery.boot.kernelPackages.kernel.compilerVersion "15";
+assert lib.versionOlder recovery.boot.kernelPackages.kernel.compilerVersion "16";
+assert c.boot.kernelPackages.kernel.drvPath != recovery.boot.kernelPackages.kernel.drvPath;
+assert c.image.baseName == "nixos-rpminiv2-korri";
+assert recovery.image.baseName == "nixos-rpminiv2";
+assert
+  c.boot.kernelModules == [
+    "g_serial"
+    "retroid"
+  ];
+assert !(lib.elem "retroid" recovery.boot.kernelModules);
+assert c.hardware.graphics.enable;
+assert c.services.seatd.enable;
+assert c.security.polkit.enable;
+assert c.security.allowUserNamespaces;
+assert !recovery.hardware.graphics.enable;
+assert !recovery.services.seatd.enable;
+assert !(recovery.systemd.services ? korrid);
+assert !(recovery.systemd.services ? korri-compositor);
+assert !(recovery.systemd.services ? korri-chromium-kiosk);
+assert c.services.korriLinuxHost.enable;
+assert c.services.korridLinuxDevice.enable;
+assert c.services.korridLinuxDevice.address == "127.0.0.1:39217";
+assert c.services.korriLinuxInput.provider.enable;
+assert c.services.korriLinuxInput.inputd.enable;
+assert c.services.korri.webSurfaceHost.enable;
+assert c.services.korri.webSurfaceHost.surfaceId == "pico";
+assert c.services.korri.compositor.kiosk.enable;
+assert !c.services.korridLinuxDevice.browser.enable;
+assert c.services.korriLinuxHost.runtimeUser == "gameplay";
+assert c.services.korriLinuxHost.runtimeUid == 1001;
+assert c.services.korriLinuxHost.runtimeGroup == "games";
+assert c.services.korriLinuxHost.runtimeGid == 1001;
+assert c.services.korriLinuxHost.relays == [ "ws://127.0.0.1:9" ];
+assert !c.services.korriLinuxHost.validation.enable;
+assert !c.services.korriLinuxHost.audio.enable;
+assert !c.services.pipewire.enable;
+assert !c.security.rtkit.enable;
+assert !c.services.korriLinuxHost.compositor.remoteInput.enable;
+assert c.services.korriLinuxHost.compositor.localInput.enable;
+assert c.services.korriLinuxHost.compositor.backend == "drm";
+assert c.services.korriLinuxHost.compositor.drmDevice == "/dev/dri/card0";
+assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
+assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
+assert c.services.korriLinuxHost.compositor.mode == "1080x1240@60Hz";
+assert c.services.korriLinuxHost.compositor.renderer == "gles2";
+assert lib.hasInfix "output DSI-1 transform 270 scale 1"
+  c.services.korriLinuxHost.compositor.extraConfig;
+assert !c.services.korriLinuxHost.sunshine.openFirewall;
+assert !sunshine.enable;
+assert sunshine.wantedBy == [ ];
+assert !certificateSocket.enable;
+assert certificateSocket.wantedBy == [ ];
+assert !(lib.elem "sunshine.service" c.systemd.services.korri-compositor.wants);
+assert lib.elem "korrid.service" c.systemd.services.korri-compositor.wants;
+assert c.services.korriLinuxHost.firewallInterfaces == [ ];
+assert !c.networking.firewall.enable;
+assert !c.networking.networkmanager.enable;
+assert !c.networking.useDHCP;
+assert !c.services.avahi.enable;
+assert c.services.nginx.enable;
+assert builtins.length c.services.nginx.virtualHosts.korri-portal.listen == 1;
 assert lib.all (
-  fs: !(lib.hasPrefix "/dev/mmcblk" fs.device) && !(lib.hasPrefix "/dev/sd" fs.device)
-) (lib.attrValues c.fileSystems);
-assert c.swapDevices == [ ];
-assert lib.elem "systemd.gpt_auto=0" c.boot.kernelParams;
-assert lib.elem "rd.systemd.gpt_auto=0" c.boot.kernelParams;
-assert lib.elem "g_serial" c.boot.kernelModules;
-assert !(c.systemd.units ? "serial-getty@ttyGS0.service");
-assert lib.hasInfix "serial-getty@ttyGS0.service" c.services.udev.extraRules;
-assert c.services.getty.autologinUser == "root";
-assert !c.services.openssh.enable && !c.services.openssh.openFirewall;
-assert c.users.users.root.openssh.authorizedKeys.keys == [ ];
-assert c.networking.firewall.allowedTCPPorts == [ ];
-assert c.nix.settings.max-jobs == 0;
-assert c.nix.settings.builders == "";
-assert !c.nix.distributedBuilds;
-assert !c.nix.settings.fallback;
-assert c.nix.settings.require-sigs;
-assert !(c.systemd.services ? korrid);
-assert !c.system.tools.nixos-install.enable;
-assert !c.services.xserver.enable;
-assert !c.services.greetd.enable;
-assert lib.elem "libdrm" packageNames;
-assert lib.all (name: !(lib.elem name packageNames)) [
+  listener: listener.addr == "127.0.0.1" && listener.port == 8099
+) c.services.nginx.virtualHosts.korri-portal.listen;
+assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
+assert kiosk.serviceConfig.LoadCredential == [ credential ];
+assert lib.elem "korri-portal-credentials.service" c.systemd.services.korrid.requires;
+assert lib.elem "korri-portal-credentials.service" kiosk.requires;
+assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
+assert kiosk.serviceConfig.User != "root";
+assert kiosk.serviceConfig.NoNewPrivileges;
+assert kiosk.serviceConfig.PrivateTmp;
+assert kiosk.serviceConfig.ProtectSystem == "strict";
+assert !(lib.hasInfix "--no-sandbox" kiosk.serviceConfig.ExecStart);
+assert lib.elem "korrid.service" kiosk.requires;
+assert lib.elem "korri-compositor.service" kiosk.after;
+assert idle.serviceConfig.User == "gameplay";
+assert idle.serviceConfig.Group == "games";
+assert idle.serviceConfig.NoNewPrivileges;
+assert idle.serviceConfig.ProtectSystem == "strict";
+assert idle.environment.WAYLAND_DISPLAY == "korri-wayland";
+assert idle.environment.SWAYSOCK == "/run/korri-compositor/sway-ipc.sock";
+assert lib.elem "korri-compositor.service" idle.requires;
+assert lib.elem "korri-compositor.service" idle.after;
+assert lib.elem "libdrm" (packageNames recovery);
+assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
   "android-tools"
   "dtc"
@@ -108,9 +231,12 @@ assert lib.all (name: !(lib.elem name packageNames)) [
   "rocknix-abl"
   "usbutils"
 ];
-assert c.sdImage.firmwarePartitionOffset == 8;
-assert c.sdImage.firmwarePartitionName == "RPMINIV2";
-assert c.sdImage.rootVolumeLabel == "NIXOS_RPMINIV2";
+assert lib.hasInfix (builtins.unsafeDiscardStringContext (
+  toString c.boot.kernelPackages.kernel
+)) c.sdImage.populateFirmwareCommands;
+assert lib.hasInfix (builtins.unsafeDiscardStringContext (
+  toString recovery.boot.kernelPackages.kernel
+)) recovery.sdImage.populateFirmwareCommands;
 pkgs.runCommand "rpminiv2-module-check"
   {
     nativeBuildInputs = [
@@ -124,8 +250,12 @@ pkgs.runCommand "rpminiv2-module-check"
     ];
   }
   ''
+    grep -F 'timeout 300' ${idle.serviceConfig.ExecStart}
+    test -f ${c.services.korriLinuxInput.provider.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
+    test -f ${c.services.korriLinuxInput.provider.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
     cp ${./verify-image.py} verify-image.py
     cp ${./verify-image.test.py} verify-image.test.py
+    export RP_MINIV2_KORRI_KERNEL=${c.system.build.kernel}/${c.system.boot.loader.kernelFile}
     python3 verify-image.test.py
     touch "$out"
   ''

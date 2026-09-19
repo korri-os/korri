@@ -68,7 +68,7 @@ let
       '';
     };
     rpminiv2-check = {
-      description = "Check the Retroid Pocket Mini V2 console configuration and offline image verifier.";
+      description = "Check the Retroid Pocket Mini V2 Korri and recovery configurations and offline image verifier.";
       runtimeInputs = [ pkgs.nix ];
       script = ''
         cd "$KORRI_ROOT"
@@ -76,7 +76,7 @@ let
       '';
     };
     rpminiv2-initrd-check = {
-      description = "Build the Mini V2 early module closure and USB serial module; cross-build on x86_64.";
+      description = "Build the Mini V2 Korri early module closure and root-time modules; cross-build on x86_64.";
       runtimeInputs = [ pkgs.nix ];
       script = ''
         cd "$KORRI_ROOT"
@@ -84,8 +84,8 @@ let
       '';
     };
     rpminiv2-image-check = {
-      description = "Inspect a Mini V2 GPT SD image, EFI boot references, root and device tree without mounting media.";
-      usageSuffix = " -- <image.img>";
+      description = "Inspect an uncompressed RP Mini V2 recovery or Korri image without mounting or writing media.";
+      usageSuffix = " -- <image.img> [--profile recovery|korri]";
       runtimeInputs = [
         pkgs.python3
         pkgs.util-linux

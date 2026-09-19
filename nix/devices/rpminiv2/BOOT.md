@@ -8,6 +8,13 @@ on the target Mini V2. The accepted NixOS handoff uses the exact ROCKNIX GRUB
 EFI binary with a hardware-proven GCC 15.2 source kernel and byte-identical V2
 DTB, while keeping Android and the installed loader intact.
 
+`rpminiv2-recovery` retains that exact TTY-first system. `rpminiv2` uses the
+same removable-media handoff with a small sibling kernel profile and the Korri
+portal userspace. The product extension changes no loader, partition labels,
+root-selection policy, internal-storage policy, or USB serial recovery path.
+Its graphical and controller behavior still requires separate physical
+acceptance.
+
 ## Verified source evidence
 
 ### Retroid's published loader
