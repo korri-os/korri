@@ -15,3 +15,13 @@ Use the intended-product decision and real cases. The charting review found a co
 Read [repository federation rules](../../../AGENTS.md), [RG35XXSP composition](../../../nix/devices/rg35xxsp/default.nix), [RP Mini V2 composition](../../../nix/devices/rpminiv2/portal.nix), and the hardware evidence for the behaviors under discussion. Existing federation rules allow another device to fulfill content requirements; they do not prove a working route exists.
 
 Resolve with Simon what stays consistent, what can vary, how limitations must be communicated, and which failures block claiming product support. Define observable acceptance obligations, not a new capability schema or a visual design.
+
+## Comments
+
+[Hardware limits and acceptance evidence](../evidence/hardware-acceptance.md) records the source and historical-test review. No current device behavior was verified.
+
+### Supported versus development images
+
+Simon selected development-until-complete. An image with missing applicable required product behavior remains a development image; documenting the gap does not make it a supported product image. Development and recovery images remain useful, but do not count as complete Korri installations. Genuine hardware limits are a separate decision, not an explanation to apply to unfinished drivers or integration by default.
+
+The remaining questions concern allowed hardware variation, communication of limitations, and observable acceptance. This ticket stays claimed, not resolved.
