@@ -102,10 +102,10 @@ in
       renderer = "gles2";
       localInput.enable = true;
       remoteInput.enable = false;
-      # ROCKNIX's hardware-proven GRUB profile rotates this portrait-native
-      # 1080x1240 panel by 270 degrees for the handheld's 1240x1080 layout.
+      # Hardware-verified rotation for this portrait-native 1080x1240 panel
+      # produces the handheld's 1240x1080 upright landscape layout.
       extraConfig = ''
-        output DSI-1 transform 270 scale 1
+        output DSI-1 transform 90 scale 1
       '';
     };
     sunshine.openFirewall = false;

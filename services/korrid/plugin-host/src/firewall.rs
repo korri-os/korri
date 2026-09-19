@@ -49,6 +49,9 @@ pub struct Firewall {
 impl Firewall {
     pub fn apply(&self, id: &str, ports: &Ports) -> Result<(), String> {
         ports.validate()?;
+        if ports.is_empty() {
+            return self.remove(id);
+        }
         let result = (|| {
             for tool in [&self.ipv4, &self.ipv6] {
                 self.prepare(tool)?;
@@ -93,7 +96,9 @@ impl Firewall {
         let mut errors = Vec::new();
         for tool in [&self.ipv4, &self.ipv6] {
             if let Err(error) = self.remove_from(tool, id) {
-                errors.push(error);
+                if !is_unsupported(&error) {
+                    errors.push(error);
+                }
             }
         }
         if errors.is_empty() {
@@ -120,7 +125,11 @@ impl Firewall {
     }
 
     fn remove_from(&self, tool: &Path, id: &str) -> Result<(), String> {
-        let rules = checked(tool, &["-S"])?;
+        let rules = match checked(tool, &["-S"]) {
+            Ok(rules) => rules,
+            Err(error) if is_unsupported(&error) => return Ok(()),
+            Err(error) => return Err(error),
+        };
         let marker = package::unit_name(id);
         let indices: Vec<_> = rules
             .lines()
@@ -156,6 +165,12 @@ fn checked(tool: &Path, args: &[&str]) -> Result<String, String> {
     )
 }
 
+fn is_unsupported(error: &str) -> bool {
+    error.contains("Protocol not supported")
+        || error.contains("Failed to initialize nft")
+        || error.contains("Table does not exist")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +195,24 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<Ports>(value).is_err());
         }
+    }
+
+    #[test]
+    fn unsupported_netfilter_errors_are_detected() {
+        assert!(is_unsupported(
+            "iptables: Failed to initialize nft: Protocol not supported"
+        ));
+        assert!(is_unsupported(
+            "ip6tables: Failed to initialize nft: Protocol not supported"
+        ));
+        assert!(is_unsupported(
+            "iptables v1.8.11: can't initialize iptables 'filter': Table does not exist"
+        ));
+        assert!(!is_unsupported(
+            "iptables: Resource temporarily unavailable"
+        ));
+        assert!(!is_unsupported(
+            "iptables: Bad rule (does a matching rule exist in that chain?)"
+        ));
     }
 }
