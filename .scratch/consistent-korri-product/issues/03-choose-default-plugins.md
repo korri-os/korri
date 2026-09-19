@@ -18,6 +18,8 @@ Resolve a concrete proposed bundle with Simon, including any deliberate hardware
 
 ## Comments
 
+[Plugin-selection evidence](../evidence/plugin-selection.md) distinguishes source declarations, missing ports, architecture restrictions, and unverified publication/installation. The PPSSPP source/identity conflict must be resolved if PSP is selected. No device builds or physical acceptance were performed for this inventory.
+
 ### Curated emulator defaults
 
 Simon selected curated defaults: bundle a recommended emulator selection with a preferred runner for each included system. Users can install and select alternatives later, rather than receiving multiple alternatives for every system by default. This keeps initial choices bounded, at the cost of some games needing a different runner.
