@@ -40,4 +40,8 @@ Simon approved the direction of automatically creating a real Nostr user identit
 
 This is product direction, not approval of a key-storage or ownership-transfer design. The accepted identity protocol keeps the person's private key outside Korri. Current general owner replacement is refused; the existing offline exception only retires a test owner. Resolve signer custody, backup/recovery, data transfer, and old-access retirement in [Decide automatic Nostr identity and later replacement](08-decide-user-identity-lifecycle.md).
 
+### Live game controls
+
+Simon accepted working core session controls plus supported plugin actions in the current scope. Every installation must let the user return to Korri, return to the running game, and end the session. Korri must expose additional working actions supplied by the active plugin, such as save/load state or fast-forward when supported. This does not require identical features from every emulator or runner. Automatic pausing when opening Korri and restoration after power-off were not decided by this answer. It does not change the deferral of cross-device save synchronization.
+
 These are confirmed scope decisions. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
