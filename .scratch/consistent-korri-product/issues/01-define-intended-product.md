@@ -26,4 +26,8 @@ Source inventory is available in [Product behavior inventory](../evidence/produc
 
 Simon selected self-service: after flashing, users must complete routine setup and management through Korri without SSH or configuration-file edits. The accepted option includes network setup, choosing content locations, managing plugins, and normal updates. This adds working product controls where an operator currently fills gaps. Advanced configuration and emergency repair are separate from this routine-use requirement.
 
-This is one confirmed part of the intended product. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
+### Content acquisition
+
+Simon confirmed both user-supplied content and finding/acquiring content through optional plugins. This retains intended behavior from legacy that has not yet been ported, rather than adding a new product direction. Specific providers and default plugin selection remain separate decisions. Use legacy implementations as the source for the port, subject to current repository boundaries.
+
+These are confirmed parts of the intended product. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
