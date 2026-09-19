@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 01
 
 ## Question
@@ -34,4 +34,14 @@ Simon selected change-based retesting. The first supported image for each device
 
 This reduces repeated device testing at the cost of possible gaps if change impact is assessed incorrectly. A successful build or configuration assertion alone is not physical acceptance. This decision grants no permission for a device write or owner-assisted test; existing approval and readiness rules still apply.
 
-The support rules await final confirmation as a whole. This ticket stays claimed, not resolved.
+## Answer
+
+Simon explicitly approved the complete support rules and closing this ticket. The agreements under [Supported versus development images](#supported-versus-development-images), [Required hardware features](#required-hardware-features), and [Release verification](#release-verification) are the binding policy.
+
+Hardware variation can change available content routes. It cannot silently remove shared required Korri behavior. Missing drivers, unfinished integration, and unverified operation are not proof of a physical limit. A documented limitation in an extra hardware feature is allowed; a documented missing product requirement still leaves the image in development.
+
+Support claims must match the evidence for the actual image and affected device model. The first full acceptance uses normal Korri setup without manual fixes. Later change-based verification retains relevant evidence for unchanged behavior while testing boot, play, and affected behavior on hardware. Detailed cases and any measured performance targets remain part of [Decide the shared product and hardware boundary](07-decide-product-device-boundary.md); no numeric targets or speculative capability schema were selected here.
+
+The cost is fewer supported devices until their applicable requirements work, plus responsibility for correctly identifying regression risk on later releases. No current image or device was certified by this planning decision. Publication rights, device-write approval, and owner readiness for physical tests remain separate.
+
+[The glossary](../../../CONTEXT.md) records the agreed meanings of supported image and development image.

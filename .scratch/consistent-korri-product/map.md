@@ -19,7 +19,7 @@ Settle the decisions needed for a buildable specification of the intended Korri 
 
 ### How to work this map
 
-This is planning. Resolve decisions, not implementation tickets. Use `/grilling` and `/domain-modeling` for each grilling ticket. Follow repository engineering and writing instructions. At completion, use `/to-spec`, then `/to-tickets`; do not treat these decision tickets as build slices.
+This is planning. Resolve decisions, not implementation tickets. Use `/grilling` and `/domain-modeling` for each grilling ticket. Use the [product glossary](../../CONTEXT.md) when discussing supported and development images. Follow repository engineering and writing instructions. At completion, use `/to-spec`, then `/to-tickets`; do not treat these decision tickets as build slices.
 
 Use the local Markdown tracker fallback from `/setup-matt-pocock-skills/issue-tracker-local.md`. No repository-specific skill tracker configuration was found when charting. Tickets live in `issues/`; their `Blocked by` lines define dependencies. Pick the first open, unblocked, unclaimed ticket by filename order. Claim before work. Append its resolution under `## Answer`, mark it resolved, and add a named link below. Resolve at most one non-research ticket per session. Do not duplicate the open-ticket list here.
 
@@ -34,10 +34,11 @@ For device composition, read the six directories under `nix/devices/` and the sh
 ## Decisions so far
 
 - [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope, optional plugin choices, and deferred saved-progress features.
+- [Define hardware limits and product acceptance](issues/02-define-device-support.md#answer): required behavior gates supported status; optional hardware limits remain explicit; later releases use change-based physical retesting.
 
 ## Not yet specified
 
-- Further product gaps exposed by the selected hardware and plugins. Their exact cases depend on the hardware-support and default-plugin decisions.
+- Further product gaps exposed by the selected hardware and plugins. Assess them against the agreed support policy as the default-plugin selection becomes concrete.
 - The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions.
 - The operational transition from current device-specific installations to the selected product composition, including preservation of real user data. Its steps depend on the boundary chosen later in this map.
 - Concrete acceptance scenarios and test fixtures for the final product contract. Do not substitute configuration equality for working behavior.
