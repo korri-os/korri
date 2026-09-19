@@ -167,8 +167,11 @@ permission expansion.
   host's job (`clients/portal/src/input/`), never the surface's.
 - The portal's brain is always the korrid on its own device at
   `http://127.0.0.1:<port>`; the portal never talks to another device's korrid
-  or any other backend directly. The port and capability arrive in
-  `/runtime.json`, which the portal reads before it mounts.
+  or any other backend directly. The Linux host injects the port and capability
+  through the private `window.KorriRpc` binding before navigation. The
+  production portal must call both binding methods before it mounts; the host
+  reports ready only after both calls. Never serve or persist these values in
+  `/runtime.json`, a URL, browser storage, logs, or static assets.
 - Plugins are TypeScript or JavaScript **source**, transpiled and evaluated by
   korrid at runtime — never compiled ahead of time, never shipped as native
   code. A plugin returns a declaration and performs no effects; korrid acts on

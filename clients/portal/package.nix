@@ -102,6 +102,10 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstallCheck
     cmp public/kiosk-blank.html "$out/kiosk-blank.html"
     test ! -e "$out/runtime.json"
+    ${pkgs.gnugrep}/bin/grep -R -F -q 'KorriRpc' "$out/assets"
+    ${pkgs.gnugrep}/bin/grep -R -F -q 'korridPort' "$out/assets"
+    ${pkgs.gnugrep}/bin/grep -R -F -q 'korridCapability' "$out/assets"
+    ! ${pkgs.gnugrep}/bin/grep -R -F -q '/runtime.json' "$out/assets"
     runHook postInstallCheck
   '';
   meta.platforms = [ "x86_64-linux" ];

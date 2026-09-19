@@ -1,3 +1,4 @@
+import type { KorriRpcBridgeSurface } from "@contracts/bridge/korri-rpc-bridge"
 import ReactDOM from "react-dom/client"
 import { createInputBus } from "./input/bus"
 import { createGamepadAdapter } from "./input/gamepad-adapter"
@@ -9,11 +10,17 @@ import {
 } from "./korrid/client"
 import { createInMemoryOverlayController } from "./overlay/in-memory-overlay-controller"
 import { OverlayRoot } from "./overlay/OverlayRoot"
-import { loadLinuxRuntimeConfig } from "./runtime-config"
+import { readLinuxRuntimeConfig } from "./runtime-config"
 import { resolveSurfacePreference } from "./surface/surface-preference"
 import { portalSurfaceFor } from "./surface/surface-registry"
 import { SurfaceRoot } from "./surface/SurfaceRoot"
 import "./index.css"
+
+declare global {
+  interface Window {
+    KorriRpc?: KorriRpcBridgeSurface
+  }
+}
 
 /* The session screen and the gameplay overlay are the same bundled app booted
  * with a query param. Korri reaches them through a URL, so the names are part
@@ -62,11 +69,11 @@ if (isGameplayOverlay) {
 
 // Composition root for production Linux and for browser development.
 async function mountCatalog() {
-  // korrid's credential arrives privately at runtime, so it must be read
-  // before anything mounts. Browser development has no such file.
+  // The Linux host injects korrid's credential before the trusted page loads.
+  // Reading both methods also tells the host that the portal is ready.
   const linuxRuntime = import.meta.env.DEV
     ? undefined
-    : await loadLinuxRuntimeConfig()
+    : readLinuxRuntimeConfig(window.KorriRpc)
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
   bus.use(createGamepadAdapter())
@@ -86,7 +93,6 @@ async function mountCatalog() {
       surface={portalSurfaceFor("catalog", resolveSurfacePreference(
         window.location,
         window.localStorage,
-        linuxRuntime?.surfaceId,
       ))}
     />,
   )

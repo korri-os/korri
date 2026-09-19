@@ -1,50 +1,42 @@
 import { describe, expect, test } from "bun:test"
-import { loadLinuxRuntimeConfig } from "./runtime-config"
+import { readLinuxRuntimeConfig } from "./runtime-config"
 
 const capability = "ab".repeat(32)
 
-describe("loadLinuxRuntimeConfig", () => {
-  test("loads the capability-bound local korrid endpoint and selected surface", async () => {
-    let input: RequestInfo | URL | undefined
-    let init: RequestInit | undefined
-    const fetcher = async (nextInput: string, nextInit: RequestInit) => {
-      input = nextInput
-      init = nextInit
-      return new Response(JSON.stringify({
-        korridPort: 45231,
-        korridCapability: capability,
-        surfaceId: "pico",
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-    }
+describe("readLinuxRuntimeConfig", () => {
+  test("consumes both values from the private Linux RPC binding", () => {
+    let portReads = 0
+    let capabilityReads = 0
 
-    await expect(loadLinuxRuntimeConfig(fetcher)).resolves.toEqual({
+    expect(readLinuxRuntimeConfig({
+      korridPort() {
+        portReads += 1
+        return 45231
+      },
+      korridCapability() {
+        capabilityReads += 1
+        return capability
+      },
+    })).toEqual({
       korridPort: 45231,
       korridCapability: capability,
-      surfaceId: "pico",
     })
-    expect(input).toBe("/runtime.json")
-    expect(init).toMatchObject({ cache: "no-store", credentials: "same-origin" })
+    expect(portReads).toBe(1)
+    expect(capabilityReads).toBe(1)
   })
 
-  test("fails closed when the endpoint or payload is invalid", async () => {
-    const unavailable = async () => new Response("no", { status: 503 })
-    await expect(loadLinuxRuntimeConfig(unavailable)).rejects.toThrow("503")
+  test("fails closed when the binding is absent or invalid", () => {
+    expect(() => readLinuxRuntimeConfig(undefined)).toThrow(
+      "Linux did not provide a valid korrid connection.",
+    )
 
-    for (const payload of [
-      {},
-      { korridPort: 0, korridCapability: capability },
-      { korridPort: 45231, korridCapability: "short" },
-      { korridPort: 45231, korridCapability: capability, surfaceId: "" },
+    for (const binding of [
+      { korridPort: () => 0, korridCapability: () => capability },
+      { korridPort: () => 45231, korridCapability: () => "short" },
+      { korridPort: () => { throw new Error("secret") }, korridCapability: () => capability },
     ]) {
-      const malformed = async () => new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })
-      await expect(loadLinuxRuntimeConfig(malformed)).rejects.toThrow(
-        "invalid Linux runtime configuration",
+      expect(() => readLinuxRuntimeConfig(binding)).toThrow(
+        "Linux did not provide a valid korrid connection.",
       )
     }
   })
