@@ -24,6 +24,7 @@ let
 in
 {
   imports = [
+    ./game-plugins.nix
     (import ../../../clients/portal/nix/nixos-module.nix {
       inherit korri;
       chromiumArgs = [
