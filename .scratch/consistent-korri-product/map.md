@@ -1,0 +1,49 @@
+# One Korri product across devices
+
+Label: wayfinder:map
+
+## Destination
+
+Settle the decisions needed for a buildable specification of the intended Korri product on every supported Linux device, including missing features. Define allowed hardware differences and the evidence that proves a fresh installation delivers that product.
+
+## Notes
+
+### Starting brief agreed with Simon
+
+- "When I flash or add a new device it should always have the same product on it regardless of hardware quirks."
+- RG353M has received the most attention, but is not a complete product specification. Use it as evidence, not the feature ceiling.
+- Include intended features that current installations lack. This map is not limited to parity between existing implementations.
+- Image count remains undecided. Simon can offer minimal and opinionated images if the size difference warrants it. If the difference is trivial, an opinionated image alone can suffice. Measure before choosing; no size threshold or default plugin set has been selected.
+- Users can add or remove plugins during onboarding in the proposed opinionated image. Offline readiness is not settled by this preference.
+- Removing a bundled plugin means uninstalling it and reclaiming unused storage, not merely disabling it. Shared dependencies and retained rollback versions can still occupy space. The exact retention and reclamation behavior remains to be decided.
+
+### How to work this map
+
+This is planning. Resolve decisions, not implementation tickets. Use `/grilling` and `/domain-modeling` for each grilling ticket. Follow repository engineering and writing instructions. At completion, use `/to-spec`, then `/to-tickets`; do not treat these decision tickets as build slices.
+
+Use the local Markdown tracker fallback from `/setup-matt-pocock-skills/issue-tracker-local.md`. No repository-specific skill tracker configuration was found when charting. Tickets live in `issues/`; their `Blocked by` lines define dependencies. Pick the first open, unblocked, unclaimed ticket by filename order. Claim before work. Append its resolution under `## Answer`, mark it resolved, and add a named link below. Resolve at most one non-research ticket per session. Do not duplicate the open-ticket list here.
+
+Existing [repository rules](../../AGENTS.md) remain authoritative: Linux only, capability-based federation without fixed device roles, no builds on devices, and schema grounded in real producers or explicit user choices. Legacy is a read-only behavioral reference, not an automatic restoration list.
+
+### Evidence boundaries
+
+The initial review inspected source at `41af6030` and documents, not running devices. It did not run builds or hardware acceptance tests. Recheck source and deployment state before turning observations into claims about an installed device.
+
+For device composition, read the six directories under `nix/devices/` and the shared modules they actually import. For plugin intent, start with the [September 15 brief](../../docs/briefs/2026-09-15-plugin-model-brief.md), which distinguishes agreed direction from unresolved recommendations. For delivery, inspect the [image workflow](../../.github/workflows/device-images.yml), [cache workflow](../../.github/workflows/nix-cache.yml), and [device build policy](../../nix/device-cache/README.md).
+
+## Decisions so far
+
+<!-- Add one named link and a short gist for each resolved child ticket. The starting brief above predates this map; no child ticket has been resolved. -->
+
+## Not yet specified
+
+- The missing-feature investigations that follow from agreeing the intended product. Their scope depends on which behavior Simon retains, adds, or rules out.
+- The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions.
+- The operational transition from current device-specific installations to the selected product composition, including preservation of real user data. Its steps depend on the boundary chosen later in this map.
+- Concrete acceptance scenarios and test fixtures for the final product contract. Do not substitute configuration equality for working behavior.
+
+## Out of scope
+
+- Implementing the product, fixing drivers, deploying software, or flashing devices during charting. Host-side measurement work is permitted only through the dedicated measurement ticket.
+- Restoring Android, merging legacy wholesale, or inventing a speculative capability or configuration schema.
+- Treating the source-review findings about Odin's older kiosk or the portal deploy signature bypass as authorization to patch or deploy either one. They remain evidence of drift for the product-boundary decision.
