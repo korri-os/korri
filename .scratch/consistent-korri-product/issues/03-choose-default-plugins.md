@@ -30,6 +30,10 @@ Simon clarified that each supported device model has its own default emulator li
 
 Specifications guide candidate selection, while the approved support policy still requires verified applicable behavior. Do not label missing drivers or an unfinished port as a hardware limit. This decision chooses neither an automatic selection mechanism nor a new device/configuration schema.
 
+### Emulator selection quality
+
+Simon selected dependable defaults. Validate representative games on the target device before including a runner in its default list; borderline or inconsistent options remain optional additions. This is not a guarantee that every game in an emulated system's library works. Candidate lists can be proposed during planning, but specifications and package declarations alone do not establish dependable performance.
+
 ### Remote-access plugins
 
 Simon selected neither SSH nor Tailscale for default preinstallation. Offer both as optional additions where supported. This is a package-selection decision; enabling remote access, granting permissions, and joining a tailnet remain explicit owner actions. It does not remove separate recovery access or change the self-service product requirement.
