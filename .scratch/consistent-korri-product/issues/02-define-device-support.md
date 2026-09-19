@@ -24,4 +24,8 @@ Resolve with Simon what stays consistent, what can vary, how limitations must be
 
 Simon selected development-until-complete. An image with missing applicable required product behavior remains a development image; documenting the gap does not make it a supported product image. Development and recovery images remain useful, but do not count as complete Korri installations. Genuine hardware limits are a separate decision, not an explanation to apply to unfinished drivers or integration by default.
 
+### Required hardware features
+
+Simon selected product-required hardware, not every built-in hardware feature. Hardware features needed for the agreed product must work. Other hardware features can remain unsupported if the limitation is explicit. An optional feature cannot be used as an excuse for missing required behavior; if a required content route depends on it, that route needs working support or a genuinely available alternative consistent with the existing federation rules.
+
 The remaining questions concern allowed hardware variation, communication of limitations, and observable acceptance. This ticket stays claimed, not resolved.
