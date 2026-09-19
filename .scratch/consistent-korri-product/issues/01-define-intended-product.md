@@ -42,6 +42,8 @@ This is product direction, not approval of a key-storage or ownership-transfer d
 
 ### Live game controls
 
-Simon accepted working core session controls plus supported plugin actions in the current scope. Every installation must let the user return to Korri, return to the running game, and end the session. Korri must expose additional working actions supplied by the active plugin, such as save/load state or fast-forward when supported. This does not require identical features from every emulator or runner. Automatic pausing when opening Korri and restoration after power-off were not decided by this answer. It does not change the deferral of cross-device save synchronization.
+Simon accepted working core session controls plus supported plugin actions in the current scope. Every installation must let the user return to Korri, return to the running game, and end the session. Korri must expose additional working actions supplied by the active plugin, such as save/load state or fast-forward when supported. This does not require identical features from every emulator or runner. Automatic pausing when opening Korri was not decided by this answer. It does not change the deferral of cross-device save synchronization.
+
+Simon subsequently deferred automatic restoration of the exact game state after shutdown. Normal game saving is sufficient for the current effort. Supported plugin save-state controls remain in scope; their availability is not a promise of automatic restoration after power-off.
 
 These are confirmed scope decisions. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
