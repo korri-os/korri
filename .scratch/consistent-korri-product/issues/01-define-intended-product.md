@@ -17,3 +17,9 @@ Review the whole experience, including first use, content discovery and play, fe
 Start from [device compositions](../../../nix/devices/), [surface contracts](../../../contracts/surface/korri-surface.ts), the [plugin-model brief](../../../docs/briefs/2026-09-15-plugin-model-brief.md), and its precise legacy references. Check other product decisions when the observed behavior points to them. Treat stale READMEs and historical work items as historical evidence, not current requirements.
 
 Resolve through a live exchange with Simon. Record the agreed behavior inventory, source pointers, and known gaps. Distinguish required behavior from the plugins proposed to provide it. Create further decision tickets for newly exposed uncertainties rather than selecting schemas or architecture to make the inventory concrete.
+
+## Comments
+
+Source inventory is available in [Product behavior inventory](../evidence/product-inventory.md). It separates current consumers, legacy implementations, placeholders, and recorded intent. No device behavior was verified, and no product classification has been approved from this inventory.
+
+The first live question asks whether routine setup and management must work through Korri without SSH or configuration-file edits. The answer is pending. This ticket remains claimed, not resolved.
