@@ -34,4 +34,10 @@ Simon confirmed both user-supplied content and finding/acquiring content through
 
 Simon wants normal game-save synchronization eventually, but not today. Retain it as future product intent, not a requirement for the current consistent-installation effort. Do not make this effort wait for save synchronization. No synchronization mechanism, conflict policy, or save identity was selected. Emulator savestates and live-session transfer were not decided by this answer.
 
+### User identity
+
+Simon approved the direction of automatically creating a real Nostr user identity without mandatory sign-in, with an explicit option to switch to another Nostr identity later. It is not a temporary Korri account that must later be converted. Creation alone does not authorize publishing a profile or joining a federation. A switch should offer a choice to transfer local library choices, saves, and preferences without reinstalling; the identities and their signed histories remain distinct.
+
+This is product direction, not approval of a key-storage or ownership-transfer design. The accepted identity protocol keeps the person's private key outside Korri. Current general owner replacement is refused; the existing offline exception only retires a test owner. Resolve signer custody, backup/recovery, data transfer, and old-access retirement in [Decide automatic Nostr identity and later replacement](08-decide-user-identity-lifecycle.md).
+
 These are confirmed scope decisions. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
