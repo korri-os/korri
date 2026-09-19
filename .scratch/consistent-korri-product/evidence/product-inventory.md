@@ -48,7 +48,7 @@ These references can be read with `git show 0e4cec9:<path>`. Exact historical sc
 
 ## Questions for the live discussion
 
-The active question is whether routine setup and management must work through Korri without SSH or configuration-file edits. No answer has been recorded yet.
+Confirmed scope from the live discussion is recorded in the [intended-product ticket](../issues/01-define-intended-product.md#comments). Keep decisions there rather than treating this source inventory as the product specification.
 
 The remaining inventory needs Simon's decisions about which behaviors are required, optional, or excluded. In particular, existing evidence does not settle acquisition scope, the required live-session experience, or the extent of user/content portability. Ask one decision at a time. Existing product agreements are inputs, not questions to repeat without new evidence.
 

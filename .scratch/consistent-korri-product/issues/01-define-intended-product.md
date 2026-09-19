@@ -20,6 +20,10 @@ Resolve through a live exchange with Simon. Record the agreed behavior inventory
 
 ## Comments
 
-Source inventory is available in [Product behavior inventory](../evidence/product-inventory.md). It separates current consumers, legacy implementations, placeholders, and recorded intent. No device behavior was verified, and no product classification has been approved from this inventory.
+Source inventory is available in [Product behavior inventory](../evidence/product-inventory.md). It separates current consumers, legacy implementations, placeholders, and recorded intent. No device behavior was verified. The inventory itself is evidence, not an approved product classification.
 
-The first live question asks whether routine setup and management must work through Korri without SSH or configuration-file edits. The answer is pending. This ticket remains claimed, not resolved.
+### Routine setup and management
+
+Simon selected self-service: after flashing, users must complete routine setup and management through Korri without SSH or configuration-file edits. The accepted option includes network setup, choosing content locations, managing plugins, and normal updates. This adds working product controls where an operator currently fills gaps. Advanced configuration and emergency repair are separate from this routine-use requirement.
+
+This is one confirmed part of the intended product. The full behavior inventory remains under discussion, so this ticket stays claimed, not resolved.
