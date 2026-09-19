@@ -5,7 +5,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Read,
     os::{
@@ -469,11 +469,21 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
 }
 
 pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report, String> {
-    let (declaration, source) = load_declaration_snapshot(package)?;
-    let id = declaration.id();
-    provenance.validate(&id)?;
-    let unit = unit_name(&id);
-    let manifest = manifest(package)?;
+    let closure = closure_of(nix, package)?;
+    build_report(package, provenance, Some(&closure))
+}
+
+/// Digest-only report for image-time seeding.
+///
+/// The runtime `load` re-derives this report with the full closure check
+/// before any receipt is trusted, so a seeded receipt can never authorize a
+/// package the device would refuse to load. An image build has no nix, which
+/// is the only reason this entry point exists.
+pub fn load_for_seed(package: &Path, provenance: Provenance) -> Result<Report, String> {
+    build_report(package, provenance, None)
+}
+
+fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
     let closure = process::checked(
         nix,
         [
@@ -485,18 +495,35 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
         ],
         Duration::from_secs(30),
     )?;
-    let closure: std::collections::BTreeSet<PathBuf> = closure.lines().map(PathBuf::from).collect();
+    let closure: BTreeSet<PathBuf> = closure.lines().map(PathBuf::from).collect();
     for path in &closure {
         validate_store_path(path)?;
     }
-    for path in manifest.packages.values() {
-        validate_store_path(path)?;
-        if !closure.contains(path) || fs::canonicalize(path).map_err(|e| e.to_string())? != *path {
-            return Err("package is outside the immutable closure".into());
+    Ok(closure)
+}
+
+fn build_report(
+    package: &Path,
+    provenance: Provenance,
+    closure: Option<&BTreeSet<PathBuf>>,
+) -> Result<Report, String> {
+    let (declaration, source) = load_declaration_snapshot(package)?;
+    let id = declaration.id();
+    provenance.validate(&id)?;
+    let unit = unit_name(&id);
+    let manifest = manifest(package)?;
+    if let Some(closure) = closure {
+        for path in manifest.packages.values() {
+            validate_store_path(path)?;
+            if !closure.contains(path)
+                || fs::canonicalize(path).map_err(|e| e.to_string())? != *path
+            {
+                return Err("package is outside the immutable closure".into());
+            }
         }
-    }
-    for path in manifest.files.values().chain(manifest.services.values()) {
-        validate_artifact(path, &closure, false)?;
+        for path in manifest.files.values().chain(manifest.services.values()) {
+            validate_artifact(path, closure, false)?;
+        }
     }
     let native_unit = declaration
         .services
@@ -509,8 +536,10 @@ pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report
             let unit = crate::native_unit::NativeUnit::parse(
                 std::str::from_utf8(&bytes).map_err(|_| "native unit is not UTF-8")?,
             )?;
-            for executable in &unit.executables {
-                validate_artifact(Path::new(executable), &closure, true)?;
+            if let Some(closure) = closure {
+                for executable in &unit.executables {
+                    validate_artifact(Path::new(executable), closure, true)?;
+                }
             }
             Ok::<_, String>(unit)
         })

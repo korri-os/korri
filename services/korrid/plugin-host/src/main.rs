@@ -1,24 +1,63 @@
 use korri_plugin_host::{
     host::Host,
     package,
-    provenance::SelectionIntent,
+    provenance::{Provenance, SelectionIntent},
     repository::{Configuration, SourceUrl},
+    selection::{Desired, Receipt},
     source_store,
 };
 use std::{env, path::Path, process::ExitCode};
 
 fn main() -> ExitCode {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    // Image-time seeding computes the approval digest for a package that is
+    // already in the store. It reads no host state and changes nothing, so it
+    // needs neither administrator access nor nix. The device re-derives the
+    // same report with the full closure check before it trusts the receipt.
+    if let ["seed", package, cache_url] = args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        return match seed_receipt(package, cache_url) {
+            Ok(receipt) => {
+                println!("{receipt}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("korri-plugin: {}", error.escape_default());
+                ExitCode::FAILURE
+            }
+        };
+    }
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("korri-plugin: administrator access is required");
         return ExitCode::FAILURE;
     }
-    match run(env::args().skip(1).collect()) {
+    match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("korri-plugin: {}", error.escape_default());
             ExitCode::FAILURE
         }
     }
+}
+
+fn seed_receipt(package: &str, cache_url: &str) -> Result<String, String> {
+    let provenance = Provenance::RawCache {
+        cache_url: cache_url.into(),
+    };
+    let report = package::load_for_seed(Path::new(package), provenance.clone())?;
+    let receipt = Receipt {
+        id: report.id.clone(),
+        package: report.package.clone(),
+        provenance,
+        approval: report.approval.clone(),
+        desired: Desired::Enabled,
+        previous: None,
+    };
+    serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
@@ -87,7 +126,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
+        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
     }
 }
 
