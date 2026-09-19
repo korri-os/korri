@@ -30,4 +30,8 @@ Simon clarified that each supported device model has its own default emulator li
 
 Specifications guide candidate selection, while the approved support policy still requires verified applicable behavior. Do not label missing drivers or an unfinished port as a hardware limit. This decision chooses neither an automatic selection mechanism nor a new device/configuration schema.
 
-No exact per-device system list, runner list, additional plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.
+### Remote-access plugins
+
+Simon selected neither SSH nor Tailscale for default preinstallation. Offer both as optional additions where supported. This is a package-selection decision; enabling remote access, granting permissions, and joining a tailnet remain explicit owner actions. It does not remove separate recovery access or change the self-service product requirement.
+
+No exact per-device system list, runner list, remaining plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.
