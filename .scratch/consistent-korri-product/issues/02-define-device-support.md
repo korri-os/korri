@@ -28,4 +28,10 @@ Simon selected development-until-complete. An image with missing applicable requ
 
 Simon selected product-required hardware, not every built-in hardware feature. Hardware features needed for the agreed product must work. Other hardware features can remain unsupported if the limitation is explicit. An optional feature cannot be used as an excuse for missing required behavior; if a required content route depends on it, that route needs working support or a genuinely available alternative consistent with the existing federation rules.
 
-The remaining questions concern allowed hardware variation, communication of limitations, and observable acceptance. This ticket stays claimed, not resolved.
+### Release verification
+
+Simon selected change-based retesting. The first supported image for each device model needs full physical acceptance using normal Korri setup without manual fixes. Later supported image releases need a boot-and-play check plus physical tests of affected behavior on the affected device models. Relevant earlier evidence can carry forward for unchanged behavior; identifying the impact of each change is part of the release work.
+
+This reduces repeated device testing at the cost of possible gaps if change impact is assessed incorrectly. A successful build or configuration assertion alone is not physical acceptance. This decision grants no permission for a device write or owner-assisted test; existing approval and readiness rules still apply.
+
+The support rules await final confirmation as a whole. This ticket stays claimed, not resolved.
