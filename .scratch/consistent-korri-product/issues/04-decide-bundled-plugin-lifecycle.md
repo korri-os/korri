@@ -56,8 +56,14 @@ Respect existing removal and disablement choices for optional plugins. This rule
 
 The accepted cost is an extra installation step for existing owners who want a newly recommended optional plugin. An updated default list is not permission to add it automatically.
 
+### Interrupted uninstall
+
+Simon selected **resume automatically at the next startup**. After power loss during uninstall, Korri continues the same requested removal at startup. It preserves the original removal request and user data. Interruption must not silently re-enable the plugin. Report any remaining failure; uninstall stays incomplete until storage cleanup succeeds.
+
+The accepted cost is that recovery can add work to startup. Resumption does not expand deletion to user data, retained system versions, or files still needed by other plugins.
+
 ### Remaining discussion
 
-System-image references and interruption/retry behavior remain to be settled. The next question is whether an interrupted uninstall resumes automatically at the next startup or waits for an explicit retry through Korri. Automatic recovery of the same requested removal is the recommendation, not an approved rule. It must not expand deletion to user data or silently re-enable the plugin.
+System-image references remain to be settled. The next question is whether removable bundled plugins must be owned only by plugin selections rather than by the system image itself, so uninstall can release them without a system update. Plugin ownership is the recommendation, not an approved rule.
 
 The ticket remains claimed; no implementation or device operation is authorized.

@@ -49,9 +49,8 @@ The [existing lifecycle validation record](../../../services/korrid/plugin-host/
 
 ## Decisions still needed
 
-The ticket records [required-plugin updates](../issues/04-decide-bundled-plugin-lifecycle.md#required-plugins-during-updates), [refusal of removal while required](../issues/04-decide-bundled-plugin-lifecycle.md#removal-of-required-plugins), and [new optional defaults](../issues/04-decide-bundled-plugin-lifecycle.md#new-optional-defaults-on-existing-devices). No new selection schema is authorized.
+The ticket records [required-plugin updates](../issues/04-decide-bundled-plugin-lifecycle.md#required-plugins-during-updates), [refusal of removal while required](../issues/04-decide-bundled-plugin-lifecycle.md#removal-of-required-plugins), [new optional defaults](../issues/04-decide-bundled-plugin-lifecycle.md#new-optional-defaults-on-existing-devices), and [interrupted uninstall](../issues/04-decide-bundled-plugin-lifecycle.md#interrupted-uninstall). No new selection schema is authorized.
 
-- Set the image/reference ownership needed to meet the chosen reclamation rule. Do not silently discard system recovery to free storage.
-- Set interruption/retry behavior without undoing the approved data-preservation and failure-reporting rules. Package rollback is not application-data recovery.
+- Set the image/reference ownership needed to meet the chosen reclamation rule. Do not silently discard system recovery to free storage. Package rollback is not application-data recovery.
 
 The ticket remains claimed. No new product choice, schema, installer change, deployment, or deletion is authorized by this inventory.
