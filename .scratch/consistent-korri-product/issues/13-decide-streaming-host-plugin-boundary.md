@@ -42,9 +42,20 @@ Sunshine patch `0020` consumes one root-created `SOCK_SEQPACKET` socket. It veri
 
 ### Which devices could select it
 
-Only RG353M is a configured streaming host: `kms` capture, `rkmpp` encoder, and per-interface firewall ports 47984, 47989 and 48010 TCP with 5353, 47998, 47999, 48000, 48002 and 48010 UDP. Its administrative port 47990 is deliberately closed (`nix/devices/rg353m/sunshine-host.nix:83-127`). Odin composes the generic `sunshine-korri` package with `auto` capture and encoder (`nix/devices/odin2portal/web-session.nix:52-53`) and leaves `openFirewall` at its default `true` (`korri-linux-host.nix:620-623`). R36TMAX, RGDS and RP Mini V2 set `openFirewall = false` and assert it. R36TMAX has no H.264 encoder: "Mainline exposes no H.264 encoder for this variant" (`nix/devices/r36tmax/CODEC-PATH.md:102,109`). RP Mini V2 also force-disables both the Sunshine service and the certificate socket (`nix/devices/rpminiv2/portal.nix:111-133`).
+| Device | Sunshine unit | Capture | Encoder | `openFirewall` | Recorded encoder evidence |
+|---|---|---|---|---|---|
+| RG353M | runs | `kms` | `rkmpp` | `false`, with six TCP and six UDP ports opened per interface | RKVENC hardware H.264. Software x264 used 170 to 180 percent CPU and reached 72 C at 640x480@30 |
+| Odin | runs | `kms` | `software` | `false` | none |
+| R36TMAX | runs | default `auto` | default `auto` | `false` | no H.264 encoder exists |
+| RGDS | runs | default `auto` | default `auto` | `false` | none |
+| RP Mini V2 | force-disabled | not applicable | not applicable | `false` | none |
+| RG35XXSP | no host module | not applicable | not applicable | not applicable | none |
 
-RG353M is the only device with recorded encoder evidence. Its comment records software x264 at 170 to 180 percent CPU and 72 C at 640x480@30, which is why it uses RKMPP.
+Sources: `nix/devices/rg353m/sunshine-host.nix:83-127`, `nix/devices/odin2portal/web-session.nix:52-57`, `nix/devices/r36tmax/portal.nix:68`, `nix/devices/rgds/portal.nix:92`, `nix/devices/rpminiv2/portal.nix:111-133`, `nix/devices/r36tmax/CODEC-PATH.md:102,109`.
+
+Only RG353M opens stream ports. It opens 47984, 47989 and 48010 TCP with 5353, 47998, 47999, 48000, 48002 and 48010 UDP on `enu1` and `wlan0`, and keeps the administrative port 47990 closed. Every other device runs the Sunshine unit with no open ports, so nothing on the LAN can reach it. Ticket 07's phrase "on by default in most devices" does not describe the tree today.
+
+A sixth consumer exists outside the device set. An x86 host imports `korri-linux-host` and selects `sunshine.encoder = "nvenc"` (`docs/acceptance/sunshine-korri-headless-real-consumer-2026-09-01.md:22`). It is not one of the six devices and ticket 07 does not cover it.
 
 ### Plugin host coverage is partial
 
