@@ -46,7 +46,7 @@ Resolved 2026-09-20. All choices are Simon's, selected through the ask tool.
 
 The product module owns every required part: base policy, Linux host, portal browser, plugin host, device cache policy, and the runtime account. A device module supplies hardware facts and recorded limits only. It may not add, remove, or swap a product service. Hand-disabling a systemd unit, as RP Mini V2 does today, is not an allowed variation.
 
-The portal module with the private `window.KorriRpc` binding is the product browser path. Odin converges to it. The kiosk crate is retired or becomes an internal adapter behind the same module; it is not a second product path.
+The portal module with the private `window.KorriRpc` binding is the product browser path. Odin converges to it. [Ticket 12](12-decide-odin-browser-convergence.md#answer) subsequently selected retirement of the old kiosk launcher rather than an internal adapter, while preserving the separate Chromium transparency work.
 
 The product owns the runtime account: one name and one uid on every device. [Ticket 11](11-decide-odin-runtime-account-cutover.md#answer) subsequently selected Odin's existing `korri` declaration and excluded account migration for alpha installations. That decision supersedes this ticket's original assumption that Odin needed a migration.
 

@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 07
 
 ## Question
@@ -30,4 +30,38 @@ History separates three concerns. `4b221691` introduced the private-response web
 
 ## Answer
 
-Pending Simon's decisions.
+Resolved 2026-09-20. Simon selected retirement through `ask_user`, confirmed the existing hardware/product boundary in chat, and approved the acceptance requirements and ticket closure through `ask_user`.
+
+### Launcher
+
+Retire the old kiosk launcher crate and its separate NixOS module. Odin uses the shared portal module and `clients/linux` shell with `window.KorriRpc`. Do not retain an internal adapter, `/runtime.json` fallback, or a second credential-delivery implementation.
+
+Move required Odin integration into the shared product path. Preserve the independent Chromium transparency patch and native pixel tests; retiring the launcher does not delete or certify that work. Remove the retired launcher's package/module/check registrations and obsolete references when implementing the cut. Keep relevant behavioral coverage in the shared path instead of retaining checks for the removed implementation.
+
+The shared portal's separate `korri-portal` service identity remains distinct from the `korri` runtime account chosen in ticket 11. No account migration, device write, or implementation is authorized by this planning decision.
+
+Cost: the shared path must reproduce required Odin rendering, input, and game-return behavior. Its current X11 and headless tests do not establish native Wayland operation on Odin.
+
+### Hardware and product responsibilities
+
+Simon confirmed the application of ticket 07: Odin describes its screen, GPU, and controls; the shared product owns browser startup, security, and game-return behavior. This is the existing product boundary, not a new choice between browser implementations.
+
+Ground the device inputs in `nix/devices/odin2portal/web-session.nix`: DRM and render nodes, output and mode, rotation, renderer, and touch mapping. The existing shared host options already express these needs, including native Sway configuration for rotation and touch mapping. Extract the final product options during `/to-spec`; this decision introduces no option names or schema.
+
+The shared product translates hardware needs into browser flags and compositor rules. It owns the browser window identity and game-return exclusion together. Determine the new shell's actual Wayland app id rather than retaining the old bootstrap URL's id. Preserve required behavior, not every historical flag without evidence.
+
+The portal must obtain its Wayland connection from the compositor, not depend on an installed streaming host. Its current read of Sunshine's environment is an integration dependency to remove under the already-decided removable-plugin boundary. Sunshine capture and encoding contributions remain ticket 13's work. This ticket does not choose a plugin schema or change streaming defaults.
+
+### Convergence acceptance
+
+Implementation must pass shared browser security tests and recorded physical checks on Odin. Configuration evaluation or a successful build alone does not complete the change.
+
+- Shared browser tests verify private credential delivery and refusal to start without consumption of both binding methods. Keep the binding's existing isolation and non-disclosure requirements.
+- On Odin, normal boot reaches the portal with correct rendering and touch/controller input. The portal completes an authenticated RPC call to its local korrid; binding consumption alone does not prove that connection works.
+- Launch, leave, return, and end work under ticket 09's contract. Returning raises the exact game's window, never the portal or another launch.
+- The portal recovers after browser, compositor, and korrid restarts. Restart verification must exercise the converged service wiring, not only a standalone headless browser.
+- The portal remains usable with the streaming host removed. Removing Sunshine must not remove the browser's Wayland connection or other required product behavior.
+
+These are acceptance requirements for browser convergence, not evidence that they passed. No numeric performance target or new transparency requirement is added. Full supported-image acceptance and delivery remain governed by tickets 02 and 07.
+
+Cost: physical Odin access and regression testing are required after implementation. The current source tests and historical transparency results cannot replace them. This planning session ran no browser tests, built no runtime artifacts, and made no device changes. It authorizes no deployment or flashing.
