@@ -42,4 +42,10 @@ Simon selected neither SSH nor Tailscale for default preinstallation. Offer both
 
 Simon is not ready to port itch.io, Community Game Catalog, or PortMaster from legacy. None was selected for the current default bundle. Simon then explicitly deferred content acquisition from this effort while retaining it as future product intent. The [product scope](01-define-intended-product.md#content-acquisition) records that amendment. These provider ports do not block the current bundle decision. Plugin installation and updates remain in scope; acquiring game content is a separate behavior.
 
+### Streaming client
+
+Simon selected Moonlight preinstalled as a plugin for the current effort, where streamed playback is supported, with opt-in installation intended soon afterward. It remains a removable plugin now. Keep the client as a plugin in both stages; the later change is its default selection, not a second integration. No date or release boundary for that default change was selected.
+
+This is an intended bundle decision, not a claim that the current image already contains a working Moonlight plugin. Complete and verify the missing Linux integration before claiming supported streamed play. Preinstallation does not authorize an automatic connection or grant access to another device. Streamed play remains in the current product scope.
+
 No exact per-device system list, runner list, remaining plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.
