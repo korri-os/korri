@@ -49,3 +49,23 @@ RG353M is the only device with recorded encoder evidence. Its comment records so
 ### Plugin host coverage is partial
 
 Only RG353M, RGDS and RP Mini V2 import the plugin host module (`nix/devices/rg353m/plugin-host.nix`, `nix/devices/rgds/default.nix:8`, `nix/devices/rpminiv2/game-plugins.nix:39`). Odin, R36TMAX and RG35XXSP do not. Ticket 07 puts the plugin host in the product module, so that gap closes there, not here.
+
+## Answer
+
+Resolved 2026-09-20. All choices are Simon's, selected through `ask_user`.
+
+### Which side moves
+
+The plugin host widens what it admits in a native unit, until the streaming host can ship as a plugin with its real systemd unit. korrid does not take the privileged parts and hand them back as a grant.
+
+Simon selected this over the korrid-mediated alternative, with the cost stated before the choice. The narrow allowlist is the plugin host's security boundary today, so this is a security change and not a packaging change. It needs its own implementation and verification. Neither this ticket nor ticket 07 authorizes the wider admission by itself.
+
+### How far the admission widens
+
+The approval binds the reach. Each plugin's approval names the exact units, directives, devices, and capabilities that this plugin requested. The host refuses anything the approval did not name. One plugin can ship more than one unit when its approval names them; the streaming host needs three today.
+
+This extends the existing native-request behavior rather than adding a second mechanism. `services/korrid/plugin-host/README.md:151` already lets a native `User=root` request select a different policy, names that authority in the report before approval, and puts the policy version in the effective unit and the approval digest. Widened admission follows the same path: the native request asks, the report names the authority, and the administrator approves the exact build.
+
+Approving the streaming host therefore grants `CAP_SYS_ADMIN` and device access to that exact build. It grants nothing to any other plugin.
+
+Cost: approval reports grow, and the administrator carries more judgement at approval time. A longer report is harder to read, and an approval that is hard to read is easier to approve without reading.
