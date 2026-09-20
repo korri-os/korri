@@ -92,3 +92,24 @@ Three consequences follow, and none of them is settled by this line alone.
 - RP Mini V2 stops force-disabling the Sunshine service and the certificate socket (`nix/devices/rpminiv2/portal.nix:125-133`). Its comment records a milestone, not a hardware limit. Ticket 07 already refused the hand-disable, so the plugin selection replaces it.
 - RG35XXSP is in the list, and it has no host module today. Its adoption belongs to [Decide RG35XXSP product adoption](14-decide-rg35xxsp-product-adoption.md). Default selection here states intent for that device; it does not complete its adoption.
 - Odin selects the software encoder today, and RGDS selects `auto`. Selecting the plugin by default on those devices ships software encoding until each device proves a hardware encoder. RG353M measured software x264 at 170 to 180 percent CPU and 72 C at 640x480@30. Expect heat and CPU cost on any device that falls back to software.
+
+### Port exposure
+
+The plugin declares its TCP and UDP ports. The plugin host opens exactly those ports through its own `korri-plugins` chain, on every interface. Disable, removal, failed enable, and rollback withdraw the rules (`services/korrid/plugin-host/README.md:157`).
+
+Sunshine's administrative port 47990 is not declared, so it stays closed. Open ports do not grant a stream. A client must still pair, and korrid owns certificate provisioning through the socket that Sunshine patch `0020` consumes.
+
+Cost: RG353M loses its narrowing to `enu1` and `wlan0` (`nix/devices/rg353m/sunshine-host.nix:104-127`). Stream ports then also appear on its USB gadget link and on any interface added later.
+
+### Which Sunshine build a device gets
+
+korrid stays agnostic to the plugins it hosts. Simon stated the constraint directly: korrid must not hold Sunshine specifics. korrid therefore performs no encoder match and reads no encoder fact.
+
+One streaming plugin release for each Nix system carries every encoder that the architecture supports. Sunshine selects its encoder when it starts, through its existing automatic selection. The encoder option in `korri-linux-host.nix:634-644` already defaults to `auto`. The per-device values exist because each approved build profile carries a different encoder, not because a person chooses one.
+
+Costs:
+
+- Each device stores encoder support that it never runs. Image size was never measured, because [Measure minimal and opinionated image sizes](05-measure-image-size.md) was skipped. The storage cost is unknown.
+- Each encoder profile is a separate approved package today, with its own patch set and build profile (`services/sunshine/approved-patches.nix`, assertions at `korri-linux-host.nix:707-760`). One combined build changes that provenance contract.
+- The evaluation-time assertions that bind the exact approved package disappear with the product-module composition. Install-time approval of the exact build replaces them.
+- Automatic selection can choose a working but slow encoder. Nothing in this decision proves which encoder each device selects. Each device must record that result during acceptance.
