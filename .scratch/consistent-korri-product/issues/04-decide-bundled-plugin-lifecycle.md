@@ -26,4 +26,16 @@ Simon selected **release both versions on uninstall**. Retain current-plus-previ
 
 The accepted cost is that reinstallation can require a download. There is no guaranteed offline undo after uninstall. This choice does not bypass failed native cleanup or authorize deletion of another consumer's files.
 
-Only software retention is settled. Reclamation timing, system-image references, future default-bundle updates, and failure handling remain open. The next proposed decision is to reclaim eligible space before reporting uninstall complete, rather than queueing automatic background cleanup. That timing recommendation is not approved. The ticket remains claimed; no implementation or device operation is authorized.
+### Storage reclamation timing
+
+Simon selected **reclaim eligible space before uninstall finishes**. Korri must automatically complete storage cleanup before reporting uninstall complete. Releasing software references alone is not completion. Report cleanup failures rather than claiming space was freed.
+
+Only unused software is eligible. Preserve user data and files still needed by other plugins or retained system versions. This decision does not authorize deleting system rollback versions. The accepted cost is that uninstall can take longer and can remain incomplete if cleanup fails.
+
+This is a product requirement, not verified runtime behavior. The inspected removal path does not yet perform storage reclamation.
+
+### Remaining discussion
+
+System-image references, future default-bundle updates, and interruption/retry behavior remain to be settled. The next question concerns newly added defaults on existing installations. The recommendation is to keep the owner's plugin selection unchanged and offer new defaults as optional installations. That update-policy recommendation is not approved.
+
+The ticket remains claimed; no implementation or device operation is authorized.

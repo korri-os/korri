@@ -22,7 +22,7 @@ These are verified source facts. No test suite, VM, or physical-device operation
 | Explicit purge | `--purge` additionally requests systemd deletion of the plugin's state directory. This is not general deletion of game saves or credentials stored elsewhere. | [CLI](../../../services/korrid/plugin-host/src/main.rs), lines 118–119; [unit cleanup](../../../services/korrid/plugin-host/src/unit.rs), lines 156–191. |
 | Rollback limits | Rollback does not import a package or consult a repository catalog. It still checks exact approvals and publisher authority. It does not restore a snapshot of mutable application data. | [Host rollback](../../../services/korrid/plugin-host/src/host.rs), lines 285–296; [selection](../../../services/korrid/plugin-host/src/selection.rs), lines 21–28 and 68–77. |
 
-The implementation already releases both software selections on successful removal. Simon subsequently [settled software retention on uninstall](../issues/04-decide-bundled-plugin-lifecycle.md#software-retention-on-uninstall). The ticket holds that decision. Retention after uninstall is distinct from the approved rollback policy for installed plugins.
+The implementation already releases both software selections on successful removal. Simon subsequently settled [software retention on uninstall](../issues/04-decide-bundled-plugin-lifecycle.md#software-retention-on-uninstall) and [storage reclamation timing](../issues/04-decide-bundled-plugin-lifecycle.md#storage-reclamation-timing). The ticket holds those decisions. Retention after uninstall is distinct from the approved rollback policy for installed plugins.
 
 ## Image and startup boundaries
 
@@ -49,8 +49,8 @@ The [existing lifecycle validation record](../../../services/korrid/plugin-host/
 
 ## Decisions still needed
 
-- Select the observable reclamation timing and treatment of references retained for system rollback. Do not silently discard system recovery to free storage.
+- Set the image/reference ownership needed to meet the chosen reclamation rule. Do not silently discard system recovery to free storage.
 - Set how future bundled defaults interact with existing owner selections during system updates. Do not invent selection records or a new configuration schema to answer it.
-- Define the user-data boundary and failure result. Preserve data unless the owner separately authorizes its deletion. Package rollback is not application-data recovery.
+- Set interruption/retry behavior without undoing the approved data-preservation and failure-reporting rules. Package rollback is not application-data recovery.
 
 The ticket remains claimed. No new product choice, schema, installer change, deployment, or deletion is authorized by this inventory.
