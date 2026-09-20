@@ -80,3 +80,15 @@ This extends the existing native-request behavior rather than adding a second me
 Approving the streaming host therefore grants `CAP_SYS_ADMIN` and device access to that exact build. It grants nothing to any other plugin.
 
 Cost: approval reports grow, and the administrator carries more judgement at approval time. A longer report is harder to read, and an approval that is hard to read is easier to approve without reading.
+
+### Default selection
+
+The streaming host is in the default plugin selection of every device in the current list except R36TMAX. Simon selected this in his own words: "only disaled by default on R36TMAX. for the rest of the current device list its enabled by default."
+
+R36TMAX omits it because mainline exposes no H.264 encoder for that variant (`nix/devices/r36tmax/CODEC-PATH.md:102,109`). That is a recorded limit under ticket 07, not a disabled unit. R36TMAX must not keep a hand-disabled service.
+
+Three consequences follow, and none of them is settled by this line alone.
+
+- RP Mini V2 stops force-disabling the Sunshine service and the certificate socket (`nix/devices/rpminiv2/portal.nix:125-133`). Its comment records a milestone, not a hardware limit. Ticket 07 already refused the hand-disable, so the plugin selection replaces it.
+- RG35XXSP is in the list, and it has no host module today. Its adoption belongs to [Decide RG35XXSP product adoption](14-decide-rg35xxsp-product-adoption.md). Default selection here states intent for that device; it does not complete its adoption.
+- Odin selects the software encoder today, and RGDS selects `auto`. Selecting the plugin by default on those devices ships software encoding until each device proves a hardware encoder. RG353M measured software x264 at 170 to 180 percent CPU and 72 C at 640x480@30. Expect heat and CPU cost on any device that falls back to software.
