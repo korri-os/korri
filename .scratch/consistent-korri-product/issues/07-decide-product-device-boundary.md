@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 02, 04, 08, 09, 10
 
 ## Question
