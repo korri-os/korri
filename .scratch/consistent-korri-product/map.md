@@ -38,11 +38,12 @@ For device composition, read the six directories under `nix/devices/` and the sh
 - [Define hardware limits and product acceptance](issues/02-define-device-support.md#answer): required behavior gates supported status; optional hardware limits remain explicit; later releases use change-based physical retesting.
 - [Choose the opinionated plugin selection](issues/03-choose-default-plugins.md#answer): bundle policy approved; per-device defaults use ROCKNIX guidance, without image sizing as a prerequisite.
 - [Choose per-device emulator defaults from ROCKNIX](issues/10-validate-device-emulator-defaults.md#answer): selected six device lists from pinned platform tables, with explicit alternatives, inferred family mappings, and package gaps.
+- [Decide how bundled plugins remain removable](issues/04-decide-bundled-plugin-lifecycle.md#answer): plugin selections own bundled plugins; uninstall releases both versions, reclaims storage before completion, resumes after power loss, and preserves user data; required plugins install with updates and cannot be removed while required.
 
 ## Not yet specified
 
 - Further implementation gaps exposed by the chosen emulators and hardware. Assess them against the agreed support policy; upstream selection is not local runtime verification.
-- The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions.
+- The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions. The image-delivery producer for bundled plugins and their approval records is still missing; its shape must come from the existing plugin host receipts, not a new schema.
 - The operational transition from current device-specific installations to the selected product composition, including preservation of real user data. Its steps depend on the boundary chosen later in this map.
 - Concrete acceptance scenarios and test fixtures for the final product contract. Do not substitute configuration equality for working behavior.
 

@@ -1,6 +1,6 @@
 # Bundled plugin removal: source evidence
 
-Supports [Decide how bundled plugins remain removable](../issues/04-decide-bundled-plugin-lifecycle.md). Inspected on 2026-09-20 against source at `39328978`; the subsequent claim commit changes only the ticket status. This is evidence for a live decision, not its resolution.
+Supports [Decide how bundled plugins remain removable](../issues/04-decide-bundled-plugin-lifecycle.md). Inspected on 2026-09-20 against source at `39328978`; later commits change only planning documents. The decisions live in the ticket; this file is the source inventory behind them.
 
 ## Existing agreements
 
@@ -47,10 +47,8 @@ The [credential VM case](../../../services/korrid/plugin-host/vm-test.nix), line
 
 The [existing lifecycle validation record](../../../services/korrid/plugin-host/LIFECYCLE-VALIDATION.md) reports receipt/filesystem checks, while explicitly leaving the integrated current/previous VM gate unrun in that record. The current [VM test source](../../../services/korrid/plugin-host/vm-test.nix) includes offline rollback, removal/data retention, purge, and failed-cleanup cases. Reading those cases is not executing them.
 
-## Decisions still needed
+## Decisions recorded in the ticket
 
-The ticket records [required-plugin updates](../issues/04-decide-bundled-plugin-lifecycle.md#required-plugins-during-updates), [refusal of removal while required](../issues/04-decide-bundled-plugin-lifecycle.md#removal-of-required-plugins), [new optional defaults](../issues/04-decide-bundled-plugin-lifecycle.md#new-optional-defaults-on-existing-devices), and [interrupted uninstall](../issues/04-decide-bundled-plugin-lifecycle.md#interrupted-uninstall). No new selection schema is authorized.
+The ticket records [required-plugin updates](../issues/04-decide-bundled-plugin-lifecycle.md#required-plugins-during-updates), [refusal of removal while required](../issues/04-decide-bundled-plugin-lifecycle.md#removal-of-required-plugins), [new optional defaults](../issues/04-decide-bundled-plugin-lifecycle.md#new-optional-defaults-on-existing-devices), [interrupted uninstall](../issues/04-decide-bundled-plugin-lifecycle.md#interrupted-uninstall), and [ownership of bundled plugins](../issues/04-decide-bundled-plugin-lifecycle.md#ownership-of-bundled-plugins).
 
-- Set the image/reference ownership needed to meet the chosen reclamation rule. Do not silently discard system recovery to free storage. Package rollback is not application-data recovery.
-
-The ticket remains claimed. No new product choice, schema, installer change, deployment, or deletion is authorized by this inventory.
+The implementation gaps stay explicit: no image seeder writes receipts or plugin packages, and the removal path does not reclaim storage. Package rollback is not application-data recovery. No schema, installer change, deployment, or deletion is authorized by this inventory.

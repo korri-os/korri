@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## Question
@@ -62,8 +62,18 @@ Simon selected **resume automatically at the next startup**. After power loss du
 
 The accepted cost is that recovery can add work to startup. Resumption does not expand deletion to user data, retained system versions, or files still needed by other plugins.
 
-### Remaining discussion
+### Ownership of bundled plugins
 
-System-image references remain to be settled. The next question is whether removable bundled plugins must be owned only by plugin selections rather than by the system image itself, so uninstall can release them without a system update. Plugin ownership is the recommendation, not an approved rule.
+Simon selected **plugin selections only**. The image delivers the initial plugins and their approval records. After installation, the plugin host owns them like any installed plugin. The system image must not keep a removable bundled plugin alive; otherwise uninstall could not free its storage until a later system update.
 
-The ticket remains claimed; no implementation or device operation is authorized.
+The accepted cost is that the missing image-delivery producer must be built. The [source evidence](../evidence/plugin-removal.md) found no producer that writes seeded receipts or plugin packages into an image. Existing publisher trust and package approval checks remain mandatory. This decision selects ownership, not a receipt format, seeding mechanism, or image layout.
+
+## Answer
+
+Simon resolved the lifecycle through the seven agreements above. Bundled plugins are owned by plugin selections, not by the system image. Uninstall releases both retained software versions, reclaims eligible storage before reporting completion, resumes automatically after power loss, and preserves saves, settings, credentials, and identity. Required plugins install as part of update approval and cannot be removed while required. New optional defaults need separate installation on existing devices.
+
+Current-plus-previous rollback for installed plugins is unchanged. Uninstall of a plugin does not delete retained system versions, shared files still needed elsewhere, or user data. Failed cleanup is reported, not hidden.
+
+The accepted costs are longer uninstalls, no offline undo after uninstall, blocked upgrades when a required plugin is refused, extra installation steps for new optional plugins, startup recovery work, and the image-delivery producer still to be built.
+
+These are product decisions grounded in the existing plugin host. They are not verified runtime behavior. The inspected removal path releases references but does not reclaim storage, and no image seeder exists. No receipt format, dependency schema, requiredness flag, implementation, publication, or device operation is authorized by this resolution.
