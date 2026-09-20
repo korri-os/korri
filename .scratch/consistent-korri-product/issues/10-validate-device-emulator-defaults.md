@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:task
 Type: task
-Status: open
+Status: claimed
 Blocked by: 03
 
 ## Question
