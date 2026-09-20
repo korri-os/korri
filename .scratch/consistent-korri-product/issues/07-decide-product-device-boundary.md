@@ -48,7 +48,7 @@ The product module owns every required part: base policy, Linux host, portal bro
 
 The portal module with the private `window.KorriRpc` binding is the product browser path. Odin converges to it. The kiosk crate is retired or becomes an internal adapter behind the same module; it is not a second product path.
 
-The product owns the runtime account: one name and one uid on every device. Odin's `korri` account is an existing install that needs an explicit one-off migration, decided in a child ticket.
+The product owns the runtime account: one name and one uid on every device. [Ticket 11](11-decide-odin-runtime-account-cutover.md#answer) subsequently selected Odin's existing `korri` declaration and excluded account migration for alpha installations. That decision supersedes this ticket's original assumption that Odin needed a migration.
 
 RG35XXSP is in the device set. Its console-only composition is a debugging state, not a hardware limit; it will import the product module like the rest.
 
