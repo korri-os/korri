@@ -42,9 +42,15 @@ Disclose the required additions and their permissions before update approval. Th
 
 The accepted cost is that refusing a required plugin blocks the upgrade. This does not promise application-data rollback after arbitrary native effects. It selects update behavior, not a new requiredness flag, plugin dependency graph, or configuration schema. No particular existing plugin is declared required by this decision.
 
+### Removal of required plugins
+
+Simon selected **refuse removal while required**. Normal plugin management must refuse removal when it would break required Korri behavior on that device. Explain which required behavior depends on the plugin. Permit removal once that requirement no longer depends on this plugin.
+
+The accepted cost is that some bundled plugins cannot be removed while still required. Bundle membership alone does not justify refusal. The approved software-retention and storage-cleanup rules apply whenever removal is permitted. This does not classify a particular existing plugin as required or select a dependency-tracking schema.
+
 ### Remaining discussion
 
-Optional additions and required-plugin removal remain undecided. The earlier separate-opt-in recommendation was not approved. The next question is whether normal plugin management must refuse removal when it would break required Korri behavior, or allow it after an explicit warning. Refusing removal while the plugin is required is the recommendation, not an approved rule.
+Optional additions remain undecided. The earlier separate-opt-in recommendation was not approved because Simon raised the required-plugin case. That case is now settled separately. The next question concerns only newly recommended plugins that are not required, not updates to already installed plugins. Offering them for separate installation remains an unapproved recommendation.
 
 System-image references and interruption/retry behavior also remain to be settled.
 
