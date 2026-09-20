@@ -40,6 +40,6 @@ Simon selected neither SSH nor Tailscale for default preinstallation. Offer both
 
 ### Legacy content providers
 
-Simon is not ready to port itch.io, Community Game Catalog, or PortMaster from legacy. None was selected for the current default bundle. Do not assume approval for these ports from the earlier decision to retain acquisition in the intended product. Whether acquisition itself moves out of the current required scope still needs clarification; the resolved product scope has not been changed by this comment.
+Simon is not ready to port itch.io, Community Game Catalog, or PortMaster from legacy. None was selected for the current default bundle. Simon then explicitly deferred content acquisition from this effort while retaining it as future product intent. The [product scope](01-define-intended-product.md#content-acquisition) records that amendment. These provider ports do not block the current bundle decision. Plugin installation and updates remain in scope; acquiring game content is a separate behavior.
 
 No exact per-device system list, runner list, remaining plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.

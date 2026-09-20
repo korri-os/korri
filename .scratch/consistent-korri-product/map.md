@@ -33,7 +33,7 @@ For device composition, read the six directories under `nix/devices/` and the sh
 
 ## Decisions so far
 
-- [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope, optional plugin choices, and deferred saved-progress features.
+- [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope and optional plugin choices; acquisition and saved-progress features are deferred.
 - [Define hardware limits and product acceptance](issues/02-define-device-support.md#answer): required behavior gates supported status; optional hardware limits remain explicit; later releases use change-based physical retesting.
 
 ## Not yet specified
@@ -45,7 +45,7 @@ For device composition, read the six directories under `nix/devices/` and the sh
 
 ## Out of scope
 
-- Cross-device game-save synchronization and automatic restoration after shutdown are deferred beyond this effort. See [Define the intended Korri product](issues/01-define-intended-product.md#answer) for the approved boundary; ordinary saving and supported plugin save-state controls remain in scope.
+- Content acquisition and legacy acquisition-provider ports, cross-device game-save synchronization, and automatic restoration after shutdown are deferred beyond this effort. See [Define the intended Korri product](issues/01-define-intended-product.md#answer) for the approved boundary; ordinary saving and supported plugin save-state controls remain in scope.
 - Implementing the product, fixing drivers, deploying software, or flashing devices during charting. Host-side measurement work is permitted only through the dedicated measurement ticket.
 - Restoring Android, merging legacy wholesale, or inventing a speculative capability or configuration schema.
 - Treating the source-review findings about Odin's older kiosk or the portal deploy signature bypass as authorization to patch or deploy either one. They remain evidence of drift for the product-boundary decision.
