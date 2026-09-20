@@ -20,4 +20,10 @@ Resolve the ownership and lifecycle decision with Simon, including the observabl
 
 [Bundled plugin removal: source evidence](../evidence/plugin-removal.md) records the current lifecycle, image-composition gaps, and verification limits. Current-plus-previous rollback already exists in code. Successful removal releases both selections after cleanup, but does not itself collect unreferenced Nix-store files. Source inspection is not a live storage-reclamation test.
 
-The first pending owner choice is whether uninstall retains any software copy for offline reinstallation. The recommendation is to retain current and previous only while installed, then release both on uninstall while preserving user data. This recommendation is not approved. Reclamation timing, system-image references, and future default-bundle updates remain to be settled. No resolution has been recorded.
+### Software retention on uninstall
+
+Simon selected **release both versions on uninstall**. Retain current-plus-previous rollback for installed plugins. Successful uninstall releases the plugin's current and previous software selections, without reserving either copy for offline reinstallation. Shared files still needed elsewhere remain. Saves, settings, credentials, and identity are not deleted by this choice.
+
+The accepted cost is that reinstallation can require a download. There is no guaranteed offline undo after uninstall. This choice does not bypass failed native cleanup or authorize deletion of another consumer's files.
+
+Only software retention is settled. Reclamation timing, system-image references, future default-bundle updates, and failure handling remain open. The next proposed decision is to reclaim eligible space before reporting uninstall complete, rather than queueing automatic background cleanup. That timing recommendation is not approved. The ticket remains claimed; no implementation or device operation is authorized.
