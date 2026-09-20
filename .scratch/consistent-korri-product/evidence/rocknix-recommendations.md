@@ -82,6 +82,12 @@ Required BIOS and game data remain user-supplied. Commercial native [PICO-8](htt
 
 The website's device pages contain installation and bootloader procedures outside this task. None were executed or adopted. In particular, the Pocket Mini page carries a Mini V2 OTA/bootloader warning; it is not a diagnosis of the user's current device. Korri's firmware-write prohibitions and recovery rules remain authoritative.
 
+## Korri-side evidence status
+
+A separate read-only review of Korri's own records found named emulator/game observations for **one** device only. [RG353M GBA launch](../../../docs/acceptance/rg353m-gba-launch-2026-09-07.md), lines 105-115, reports a real RetroArch/mGBA service, Wario running over 20 minutes near 57°C at a 1.104 GHz ceiling, Donkey Kong near 56°C with controller input, and an earlier 68.125°C cutoff. The other five devices have hardware, display, or bring-up records, not gameplay records.
+
+This does not weaken the selections above, which Simon scoped to documented upstream choice rather than local testing. It does say where the later acceptance work starts: five of six models must still demonstrate a selected runner at all.
+
 **Cost:** these choices avoid a benchmarking detour but retain package/port work and performance uncertainty. The separately agreed hardware acceptance gates still apply before calling any Korri image supported. No image sizing, image-variant choice, or first-use readiness promise was made.
 
 [rk3566]: https://github.com/ROCKNIX/distribution/blob/7f1b3abece2c7d263cebd16b5a2ba4268d6ddaa5/documentation/PER_DEVICE_DOCUMENTATION/RK3566/SUPPORTED_EMULATORS_AND_CORES.md
