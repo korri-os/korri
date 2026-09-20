@@ -52,9 +52,11 @@ requires signatures, and refuses local or remote builds. The separate catalog
 installer explicitly verifies and stages its archive before using the same
 importer; it is not an automatic fallback for a failed raw-cache download.
 
-Plugin publication does not make `korrid`, `korri-bundle`, Sunshine, or other
-core binaries into plugins. Only an output with an actual plugin declaration
-is eligible. Core's Tailscale fixture remains test-only; first-party game and
+Plugin publication does not make `korrid`, `korri-bundle`, or other core
+binaries into plugins. Only an output with an actual plugin declaration is
+eligible. The streaming host is no longer named here as a core binary: it is
+planned as a bundled, removable plugin. Publication still does not make it one.
+It becomes eligible when it ships a plugin declaration. Core's Tailscale fixture remains test-only; first-party game and
 SSH outputs can be re-exported by the plugin repository without copying their
 sources. Device-generation delivery still requires its own verified prebuilt
 route.
