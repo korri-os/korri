@@ -73,6 +73,14 @@ _Avoid_: module check, lint
 A published installation image and its complete signed-cache closure from the same commit. A supported image needs both.
 _Avoid_: release, artifact
 
-**Sleep tier**:
-The level of device sleep a device model can provide, from none to hibernation. Each device sits in exactly one tier.
-_Avoid_: suspend support, power mode
+**Sleep state**:
+One kind of device sleep a device model can provide: light sleep, deep sleep, or hibernation. A device declares every state it has, and declares none when it has no sleep.
+_Avoid_: sleep tier, suspend support, power mode
+
+**Light sleep**:
+The screen is off, the live session is frozen, and the device stays awake. A fixed delay then shuts the device down cleanly.
+_Avoid_: standby, fake suspend, idle
+
+**Deep sleep**:
+Suspend to RAM. The frozen live session returns on wake, with no time limit.
+_Avoid_: S3, mem, real suspend
