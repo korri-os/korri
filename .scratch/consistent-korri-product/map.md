@@ -32,6 +32,13 @@ The initial review inspected source at `41af6030` and documents, not running dev
 
 For device composition, read the six directories under `nix/devices/` and the shared modules they actually import. For plugin intent, start with the [September 15 brief](../../docs/briefs/2026-09-15-plugin-model-brief.md), which distinguishes agreed direction from unresolved recommendations. For delivery, inspect the [image workflow](../../.github/workflows/device-images.yml), [cache workflow](../../.github/workflows/nix-cache.yml), and [device build policy](../../nix/device-cache/README.md).
 
+## Outcome
+
+Every decision ticket is resolved. The map collapsed into [the product spec](spec.md)
+on 2026-09-20. Take the spec to `/to-tickets`; do not build from these decision
+tickets directly. The spec names five questions it deliberately leaves open, each
+to be settled with Simon when the work reaches it.
+
 ## Decisions so far
 
 - [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope and optional plugin choices; acquisition and saved-progress features are deferred.
