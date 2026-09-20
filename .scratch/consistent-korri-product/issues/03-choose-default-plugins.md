@@ -8,13 +8,13 @@ Blocked by: 01, 02
 
 ## Question
 
-What default-bundle policy should each device model's opinionated image use, with exact emulator lists validated separately?
+What default-bundle policy should each device model's opinionated image use, with exact emulator lists selected separately from ROCKNIX guidance?
 
 Use the intended-product decision and the hardware-limit decision. Inventory existing plugins and their actual behavior before presenting a proposed selection. Include the independently released plugin repository where needed, but do not equate every legacy plugin with a required default.
 
 Read the [plugin-model brief](../../../docs/briefs/2026-09-15-plugin-model-brief.md), the existing [plugin installation decisions](../../../docs/briefs/2026-09-08-linux-plugin-installation-brief.md), [current plugin sources](../../../plugins/), and [RP Mini V2 game integration](../../../nix/devices/rpminiv2/game-plugins.nix). Distinguish source code, published packages, installed receipts, and verified running behavior.
 
-Simon approved narrowing this ticket to bundle policy. Resolve that policy here; exact per-device emulator lists belong to [Validate per-device emulator defaults](10-validate-device-emulator-defaults.md). Keep owner choices and missing integrations explicit. Preserve plugins as removable plugins; including one in an image does not silently make it a core service. Record unavailable or unfinished packages explicitly. Image count and offline readiness remain decisions to settle using the later size evidence.
+Simon approved narrowing this ticket to bundle policy. Exact per-device emulator lists now belong to [Choose per-device emulator defaults from ROCKNIX](10-validate-device-emulator-defaults.md). Keep owner choices and missing integrations explicit. Preserve plugins as removable plugins; including one in an image does not silently make it a core service. Record unavailable or unfinished packages explicitly. Image measurement and variant/first-use readiness planning were subsequently skipped; they are not prerequisites for completing this effort.
 
 ## Comments
 
@@ -32,7 +32,7 @@ Specifications guide candidate selection, while the approved support policy stil
 
 ### Emulator selection quality
 
-Simon selected dependable defaults. Validate representative games on the target device before including a runner in its default list; borderline or inconsistent options remain optional additions. This is not a guarantee that every game in an emulated system's library works. Candidate lists can be proposed during planning, but specifications and package declarations alone do not establish dependable performance.
+Simon selected dependable defaults, with borderline or inconsistent options remaining optional additions. He subsequently chose ROCKNIX's published wiki/website lists as the basis for selecting obvious per-device defaults, instead of benchmarking as a planning prerequisite. Representative gameplay and the approved supported-image tests still belong to implementation/release acceptance, not this selection task. Neither the selected list nor an upstream recommendation guarantees that every game works in Korri.
 
 ### Remote-access plugins
 
@@ -50,10 +50,10 @@ This is an intended bundle decision, not a claim that the current image already 
 
 ## Answer
 
-Simon explicitly approved closing this ticket as the bundle-policy decision and tracking exact per-device emulator lists in a separate validation task. The agreements above define the policy: curated, dependable defaults per device; Moonlight preinstalled as a removable plugin for now; SSH and Tailscale optional rather than preinstalled; game-content acquisition deferred.
+Simon explicitly approved closing this ticket as the bundle-policy decision, then replaced the separate physical-validation selection task with ROCKNIX-based default selection. The agreements above define the policy: curated, dependable defaults per device; Moonlight preinstalled as a removable plugin for now; SSH and Tailscale optional rather than preinstalled; game-content acquisition deferred.
 
 The later move to optional Moonlight installation changes its default selection, not its plugin boundary. No release date was selected. A missing port is still missing work, not a completed plugin merely because this policy selects it.
 
-[Validate per-device emulator defaults](10-validate-device-emulator-defaults.md) owns the exact package lists and their evidence. [Measure minimal and opinionated image sizes](05-measure-image-size.md) must wait for those lists and the removable-plugin packaging decision before claiming final comparisons. No universal system list, complete per-device bundle, image size, or supported device has been certified here.
+[Choose per-device emulator defaults from ROCKNIX](10-validate-device-emulator-defaults.md) owns the selected emulators, upstream citations, and local package gaps. Image sizing and variant/first-use readiness planning were explicitly removed from the effort. No image-size result, release variant count, offline-readiness promise, or supported device has been certified here.
 
-The cost of this split is that final size comparisons remain pending. It lets the shared bundle/lifecycle design proceed without presenting hardware guesses as verified defaults. This resolution does not authorize a new configuration schema, implementation, publication, or device change.
+The accepted shortcut removes local performance comparison from planning. It lets the shared bundle/lifecycle design proceed using documented defaults, while retaining the distinction between selection and verified Korri support. This resolution does not authorize a new configuration schema, implementation, publication, or device change.

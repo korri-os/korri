@@ -1,38 +1,39 @@
-# Validate per-device emulator defaults
+# Choose per-device emulator defaults from ROCKNIX
 
 Parent: [One Korri product across devices](../map.md)
-Label: wayfinder:task
-Type: task
-Status: claimed
+Label: wayfinder:research
+Type: research
+Status: resolved
 Blocked by: 03
 
 ## Question
 
-What exact emulator package list meets the approved default-selection policy for each selected device model?
+Which obvious emulator defaults should each current Korri device model use, based on ROCKNIX's official wiki and website?
 
-Simon explicitly separated this validation task from [Choose the opinionated plugin selection](03-choose-default-plugins.md#answer). It supplies the concrete lists required for final image-size comparisons. The policy is already chosen: curated, dependable defaults per device, with alternatives available as optional additions. This task does not choose a universal emulated-system list.
+### Scope amendment
 
-### Evidence and scope
+Simon replaced the previous hardware-validation prerequisite with documented selection: choose obvious defaults using ROCKNIX's published lists. Image-size measurement and image-variant/first-use readiness planning were also explicitly skipped. Do not require benchmarks, test games, image builds, or installed-device inspection to resolve this selection.
 
-Start with [plugin-selection evidence](../evidence/plugin-selection.md), [hardware acceptance evidence](../evidence/hardware-acceptance.md), and the actual device and plugin producers. The current repository has six board compositions; their existence does not certify any of them as supported. State which models the validation covers and keep untested models explicit rather than silently inheriting another model's list.
+Use the existing six board compositions as the target set: RG353M, Odin 2 Portal, RG DS, R36T Max, RP Mini V2, and RG35XXSP. Preserve the approved policy of curated defaults per device rather than bundling every alternative. This is delegated selection judgment, not certification of a supported image.
 
-[RG353M GBA acceptance](../../../docs/acceptance/rg353m-gba-launch-2026-09-07.md) provides historical mGBA gameplay evidence and its limits. [RP Mini V2 library access](../../../nix/devices/rpminiv2/game-plugins.nix) names content directories, not an installed or validated runner list. These are different kinds of evidence.
+### Sources and selection
 
-The independently released plugin catalogue identifies candidate packages and architecture exclusions. Check the current source revision before using it. Resolve the standalone-versus-libretro PPSSPP source choice if PSP is selected; their current shared identity does not make their behavior or settings interchangeable. Preserve legitimate package/platform exclusions.
+Read primary ROCKNIX system/emulator lists and device-family documentation. Distinguish explicit upstream defaults from supported alternatives and Korri's own selections. A first-listed emulator is not automatically a documented default. Where the exact model has no official page, state the gap and label any use of a related SoC family or conservative common set as an inference.
 
-### Validation work
+Map selected names to real Korri plugin producers where they exist. Keep standalone and libretro implementations distinct, especially the current PPSSPP identity conflict. List missing packages or integration as implementation gaps; do not silently replace the selected emulator, waive architecture restrictions, or invent new plugin identities/configuration schema.
 
-1. Derive a bounded candidate list from each device's documented specifications, real package availability, and existing observed routes. Label hypotheses separately from measured behavior.
-2. Use exact prebuilt packages on the target architecture. Record producer revision and output identity so the later size comparison measures the selected software.
-3. Validate representative owner-supplied games, actual input, audio, saving, session return/end, and sustained play under relevant power and thermal conditions. Use existing criteria where available; seek an explicit judgment where dependable performance cannot be established. Do not invent a universal frame-rate or temperature threshold.
-4. Record the selected preferred runners and the tested conditions. State the evidence for exclusions, alternatives, and remaining gaps. Selecting a runner does not claim every game for its emulated system works.
-
-Read-only inspection can run AFK. Any owner-assisted or timed physical test is HITL and requires fresh explicit readiness. Installation, state changes, or media writes need their existing separate approval. Never build or dispatch builds from a device, bypass signatures, or alter protected firmware. Preserve real user data and a working recovery route.
-
-If testing requires missing product integration, a driver fix, or an unavailable delivery path, record the prerequisite and stop that part. This task does not authorize implementing missing ports to force validation to pass. Do not substitute catalogue declarations, inferred specifications, or source-only reports for physical acceptance.
+The [existing plugin inventory](../evidence/plugin-selection.md) and [hardware evidence](../evidence/hardware-acceptance.md) provide local context. ROCKNIX's published guidance is the selection basis. This task does not import ROCKNIX installation procedures, firmware operations, recovery policy, or performance promises into Korri.
 
 ### Completion
 
-Record the exact per-device lists and their validation evidence under `## Answer`, linking larger reports rather than pasting them. Obtain Simon's choice for any remaining preference-dependent runner trade-off. Unvalidated or partially available sets must remain identified as such and cannot supply a final whole-image comparison by implication.
+Record the chosen per-device defaults with source links and explicit qualifications. Link larger research and selection tables as assets. No physical test or package publication is claimed by this answer. The separately approved supported-image acceptance rules still apply when implementing and releasing Korri.
 
-This task verifies emulator selection, not the entire supported-image product. Missing Moonlight integration or other image components remain separate requirements under the approved scope. Publishing images, choosing image variants, and declaring a complete supported release are outside this task.
+## Answer
+
+Used Simon's delegated judgment to select the defaults in [ROCKNIX-based emulator defaults](../evidence/rocknix-recommendations.md). The record contains the exact six device lists, their common retro set, standalone-versus-libretro choices, local producer names where available, and missing native-package/integration work.
+
+The parent fetched the full official device pages and their linked generated platform tables, pinned to ROCKNIX distribution `7f1b3abece2c7d263cebd16b5a2ba4268d6ddaa5`. Explicit upstream `(default)` markers are distinguished from Korri's selected alternatives. RG DS uses the RK3566 table as an explicitly labeled analogy; R36T Max uses the documented RK3326 family, not an assertion that it is an R36S.
+
+The selection is complete for planning. It is not an installed package manifest, a supported-device certification, a redistribution license, or a performance result. Existing plugin producers are identified without inventing new identities for missing wrappers. Standalone PPSSPP is selected rather than also bundling the generated libretro plugin with the same identity.
+
+Image measurement and image-variant/first-use readiness planning remain skipped. No benchmarking or physical-device operation was required to resolve this choice. The accepted cost is uncertainty about Korri integration and performance until later implementation/release acceptance.

@@ -3,8 +3,12 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:task
 Type: task
-Status: open
-Blocked by: 03, 04, 10
+Status: resolved
+Blocked by:
+
+## Scope disposition
+
+Closed out of scope at Simon's explicit request. Do not build or measure images to resolve this map. No size result was produced, and this closure does not establish that any size difference is trivial. The original question below is retained as history, not executable work.
 
 ## Question
 

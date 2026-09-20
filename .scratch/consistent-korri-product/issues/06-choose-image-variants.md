@@ -3,8 +3,12 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: open
-Blocked by: 05
+Status: resolved
+Blocked by:
+
+## Scope disposition
+
+Closed out of scope at Simon's explicit request. Do not select image variants or settle first-use readiness as a prerequisite for this map. No single-image, dual-image, or offline-readiness promise was approved by skipping this question. Self-service setup remains part of the agreed product scope. The original question below is retained as history, not executable work.
 
 ## Question
 
