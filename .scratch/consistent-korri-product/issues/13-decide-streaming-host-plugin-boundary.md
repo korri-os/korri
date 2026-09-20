@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 07
 
 ## Question
@@ -113,3 +113,23 @@ Costs:
 - Each encoder profile is a separate approved package today, with its own patch set and build profile (`services/sunshine/approved-patches.nix`, assertions at `korri-linux-host.nix:707-760`). One combined build changes that provenance contract.
 - The evaluation-time assertions that bind the exact approved package disappear with the product-module composition. Install-time approval of the exact build replaces them.
 - Automatic selection can choose a working but slow encoder. Nothing in this decision proves which encoder each device selects. Each device must record that result during acceptance.
+
+### Acceptance
+
+Simon approved these requirements through `ask_user`. They are requirements, not results. No check below has run.
+
+- The product check passes on a device with the streaming plugin removed. That device boots to the portal, accepts input, and completes an authenticated RPC call to its local korrid.
+- Removal leaves no Sunshine unit, no certificate socket, no seat service, no group, and no udev rule. It reclaims the storage, as [Decide how bundled plugins remain removable](04-decide-bundled-plugin-lifecycle.md#answer) requires.
+- The approval report names the widened authority before an administrator approves it. The host refuses any directive that the approval did not name, and refuses it by name.
+- On a device with the plugin enabled, a client pairs and streams. Disabling withdraws the firewall rules. Removal withdraws them and stops the daemon.
+- Each device records which encoder Sunshine selected at start, with the CPU load and the temperature. Correct automatic selection is not assumed.
+- R36TMAX carries a recorded limit for its missing H.264 encoder, and no disabled unit.
+- RP Mini V2 carries no hand-disabled Sunshine service and no hand-disabled certificate socket.
+
+Cost: every device needs physical retesting after the cut. The widened admission is a change to the plugin host's security boundary and needs its own review and tests in `services/korrid/plugin-host`. This planning session ran no build, no test, and no device command.
+
+### Unresolved
+
+korrid must stay agnostic to plugins, and today it is not. `korri-certificate-control` is named for the streaming host, and korrid speaks the protocol that Sunshine patch `0020` implements (`services/sunshine/README.md:143-155`). Moving Sunshine into a plugin does not by itself remove that Sunshine-specific knowledge from korrid. This ticket did not settle how the certificate effect stays generic. Settle it before the cut is implemented.
+
+The input-seat lease has the same shape. `korri-input-seat-receiver.service` and the `korri-sunshine-input-seat` group are named for Sunshine and composed by the shared host (`korri-linux-host.nix:961-1012`). Whether the plugin ships them under its own approval, or korrid offers a generic seat, is undecided.

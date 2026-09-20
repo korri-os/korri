@@ -54,7 +54,7 @@ RG35XXSP is in the device set. Its console-only composition is a debugging state
 
 ### Streaming host
 
-Hosting a stream is not a product part. It is a bundled plugin, on by default in most devices' plugin selection, removable through the plugin lifecycle from [Decide how bundled plugins remain removable](04-decide-bundled-plugin-lifecycle.md#answer). A device with no usable encoder omits it from its default selection instead of disabling units. This revises the `nix/device-cache/README.md` sentence that excludes Sunshine from plugins. Playing a stream stays a required behavior through available routes. The plugin's declaration, the certificate socket, and the seat wiring are decided in a child ticket.
+Hosting a stream is not a product part. It is a bundled plugin, on by default in most devices' plugin selection, removable through the plugin lifecycle from [Decide how bundled plugins remain removable](04-decide-bundled-plugin-lifecycle.md#answer). A device with no usable encoder omits it from its default selection instead of disabling units. This revises the `nix/device-cache/README.md` sentence that excludes Sunshine from plugins; [ticket 13](13-decide-streaming-host-plugin-boundary.md#answer) landed that rewording. Playing a stream stays a required behavior through available routes. Ticket 13 subsequently widened the plugin host's unit admission instead of moving the privileged parts behind korrid, bound each plugin's reach to its own approval, and put the streaming host in every current device's default selection except R36TMAX. It left korrid's Sunshine-specific certificate socket and seat wiring unresolved.
 
 ### Delivery obligation
 
