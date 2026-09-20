@@ -3,18 +3,18 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 01, 02
 
 ## Question
 
-Which plugins should each device model's opinionated image include by default, and which choices must users make during onboarding?
+What default-bundle policy should each device model's opinionated image use, with exact emulator lists validated separately?
 
 Use the intended-product decision and the hardware-limit decision. Inventory existing plugins and their actual behavior before presenting a proposed selection. Include the independently released plugin repository where needed, but do not equate every legacy plugin with a required default.
 
 Read the [plugin-model brief](../../../docs/briefs/2026-09-15-plugin-model-brief.md), the existing [plugin installation decisions](../../../docs/briefs/2026-09-08-linux-plugin-installation-brief.md), [current plugin sources](../../../plugins/), and [RP Mini V2 game integration](../../../nix/devices/rpminiv2/game-plugins.nix). Distinguish source code, published packages, installed receipts, and verified running behavior.
 
-Resolve concrete per-device proposed bundles with Simon, grounded in device specifications and supported behavior, including the owner choices that prevent first use. Preserve plugins as removable plugins; including one in an image does not silently make it a core service. Record unavailable or unfinished packages explicitly. Image count and offline readiness remain decisions to settle using the later size evidence.
+Simon approved narrowing this ticket to bundle policy. Resolve that policy here; exact per-device emulator lists belong to [Validate per-device emulator defaults](10-validate-device-emulator-defaults.md). Keep owner choices and missing integrations explicit. Preserve plugins as removable plugins; including one in an image does not silently make it a core service. Record unavailable or unfinished packages explicitly. Image count and offline readiness remain decisions to settle using the later size evidence.
 
 ## Comments
 
@@ -48,4 +48,12 @@ Simon selected Moonlight preinstalled as a plugin for the current effort, where 
 
 This is an intended bundle decision, not a claim that the current image already contains a working Moonlight plugin. Complete and verify the missing Linux integration before claiming supported streamed play. Preinstallation does not authorize an automatic connection or grant access to another device. Streamed play remains in the current product scope.
 
-No exact per-device system list, runner list, remaining plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.
+## Answer
+
+Simon explicitly approved closing this ticket as the bundle-policy decision and tracking exact per-device emulator lists in a separate validation task. The agreements above define the policy: curated, dependable defaults per device; Moonlight preinstalled as a removable plugin for now; SSH and Tailscale optional rather than preinstalled; game-content acquisition deferred.
+
+The later move to optional Moonlight installation changes its default selection, not its plugin boundary. No release date was selected. A missing port is still missing work, not a completed plugin merely because this policy selects it.
+
+[Validate per-device emulator defaults](10-validate-device-emulator-defaults.md) owns the exact package lists and their evidence. [Measure minimal and opinionated image sizes](05-measure-image-size.md) must wait for those lists and the removable-plugin packaging decision before claiming final comparisons. No universal system list, complete per-device bundle, image size, or supported device has been certified here.
+
+The cost of this split is that final size comparisons remain pending. It lets the shared bundle/lifecycle design proceed without presenting hardware guesses as verified defaults. This resolution does not authorize a new configuration schema, implementation, publication, or device change.

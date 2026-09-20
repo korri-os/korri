@@ -35,10 +35,11 @@ For device composition, read the six directories under `nix/devices/` and the sh
 
 - [Define the intended Korri product](issues/01-define-intended-product.md#answer): approved the shared behavior scope and optional plugin choices; acquisition and saved-progress features are deferred.
 - [Define hardware limits and product acceptance](issues/02-define-device-support.md#answer): required behavior gates supported status; optional hardware limits remain explicit; later releases use change-based physical retesting.
+- [Choose the opinionated plugin selection](issues/03-choose-default-plugins.md#answer): bundle policy approved; exact per-device emulator lists move to validation before final size comparisons.
 
 ## Not yet specified
 
-- Further product gaps exposed by the selected hardware and plugins. Assess them against the agreed support policy as the default-plugin selection becomes concrete.
+- Further product gaps exposed by per-device validation. Assess them against the agreed support policy; exact emulator-list validation already has its own task.
 - The detailed setup and recovery behavior needed for the selected plugins and real hardware limits. Existing identity, permission, and data contracts must ground those discussions.
 - The operational transition from current device-specific installations to the selected product composition, including preservation of real user data. Its steps depend on the boundary chosen later in this map.
 - Concrete acceptance scenarios and test fixtures for the final product contract. Do not substitute configuration equality for working behavior.
@@ -46,6 +47,6 @@ For device composition, read the six directories under `nix/devices/` and the sh
 ## Out of scope
 
 - Content acquisition and legacy acquisition-provider ports, cross-device game-save synchronization, and automatic restoration after shutdown are deferred beyond this effort. See [Define the intended Korri product](issues/01-define-intended-product.md#answer) for the approved boundary; ordinary saving and supported plugin save-state controls remain in scope.
-- Implementing the product, fixing drivers, deploying software, or flashing devices during charting. Host-side measurement work is permitted only through the dedicated measurement ticket.
+- Implementing the product, fixing drivers, deploying software, or flashing devices during charting. Measurement and validation work run only through their dedicated task tickets, with separate device-change approvals and owner readiness where required. These tasks do not authorize implementing missing ports to force a result.
 - Restoring Android, merging legacy wholesale, or inventing a speculative capability or configuration schema.
 - Treating the source-review findings about Odin's older kiosk or the portal deploy signature bypass as authorization to patch or deploy either one. They remain evidence of drift for the product-boundary decision.
