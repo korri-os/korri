@@ -53,3 +53,13 @@ An unlanded answer to that gap already exists in the working tree at `.worktree/
 ### What stays unknown
 
 No RG35XXSP behavior has ever been observed by this project: no boot, no panel output, no input mapping, no Wi-Fi association, no audio, no battery reading, no lid event, no thermal or memory measurement. Whether the H700 has any hardware H.264 encoder is unresolved here; [ticket 13](13-decide-streaming-host-plugin-boundary.md#answer) already requires a recorded encoder result for each device, and R36T Max is the precedent for a device that records the absence as a limit.
+
+### Round 1 with Simon, 2026-09-20
+
+Three choices, made through `ask_user`.
+
+**Kernel.** Simon selected the ROCKNIX-derived Linux 7.2 kernel as the kernel RG35XXSP supplies. A device-specific patched kernel is the existing house pattern: RP Mini V2 carries 37 patches, and Odin and R36T Max carry their own patches, configuration seed and board DTS. Mainline remains the preferred destination, but waiting for it does not gate adoption. The accepted cost is a 29-patch out-of-tree stack and an 8128-line configuration to re-base on every kernel bump, none of it verified on hardware. This records the choice only; landing the kernel is separate implementation work, and the unlanded `.worktree/rg35xxsp-display` tree is its starting point, not an approved change.
+
+**Memory and panel size.** Neither the 1 GB of RAM nor the 640x480 panel is a recorded limit. Both are ordinary hardware facts. The panel size is a compositor mode, and RG DS already runs the product session at `640x480@60Hz`. The memory cost is measured during first physical acceptance, not declared in advance. The accepted cost is that a session which does not fit in 1 GB is discovered late, after the port.
+
+**Delivery.** The `device-images.yml` and `nix-cache.yml` entries land with the implementation that makes RG35XXSP import the product module, not with this decision. Until then the device has no published image and no signed closure, so it cannot be a supported image, and all bring-up builds are local and off-device.
