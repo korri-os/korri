@@ -52,3 +52,27 @@ _Avoid_: quit, kill, close
 **Gameplay overlay**:
 The screen Korri shows over a live session. It offers return, end, the full Korri screen, and the actions the active plugin supports.
 _Avoid_: pause menu, system panel
+
+**Product module**:
+The one shared composition of every required Korri part. Every device installs it whole.
+_Avoid_: base, shared config, host module
+
+**Hardware fact**:
+A value only a device can supply, such as its display, kernel, or input map. It changes how the product runs, never what the product contains.
+_Avoid_: device override, device setting
+
+**Recorded limit**:
+An explicit statement that an optional hardware feature is absent or unverified on one device. It is the only allowed omission from the product.
+_Avoid_: disabled feature, workaround
+
+**Product check**:
+The single evaluation-time check that every device configuration contains every required part. Passing it allows a build, not a support claim.
+_Avoid_: module check, lint
+
+**Delivery**:
+A published installation image and its complete signed-cache closure from the same commit. A supported image needs both.
+_Avoid_: release, artifact
+
+**Sleep tier**:
+The level of device sleep a device model can provide, from none to hibernation. Each device sits in exactly one tier.
+_Avoid_: suspend support, power mode
