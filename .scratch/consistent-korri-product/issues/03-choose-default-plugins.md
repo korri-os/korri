@@ -38,4 +38,8 @@ Simon selected dependable defaults. Validate representative games on the target 
 
 Simon selected neither SSH nor Tailscale for default preinstallation. Offer both as optional additions where supported. This is a package-selection decision; enabling remote access, granting permissions, and joining a tailnet remain explicit owner actions. It does not remove separate recovery access or change the self-service product requirement.
 
+### Legacy content providers
+
+Simon is not ready to port itch.io, Community Game Catalog, or PortMaster from legacy. None was selected for the current default bundle. Do not assume approval for these ports from the earlier decision to retain acquisition in the intended product. Whether acquisition itself moves out of the current required scope still needs clarification; the resolved product scope has not been changed by this comment.
+
 No exact per-device system list, runner list, remaining plugin selection, or image size has been approved yet. This ticket remains claimed, not resolved.
