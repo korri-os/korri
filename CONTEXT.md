@@ -32,3 +32,23 @@ _Avoid_: guest account, default user
 **Identity switch**:
 The explicit, consented replacement of a device owner by a different person key. It is the only way device authority moves.
 _Avoid_: login, account transfer, sign in
+
+**Live session**:
+The one exact game launch a device holds as active. Every session control names it and is refused for any other launch.
+_Avoid_: current game, running process
+
+**Leave**:
+Moving away from a live session without ending it. The session is frozen and Korri owns input until the user returns.
+_Avoid_: pause, minimise, background
+
+**Return**:
+Coming back to a live session. Korri thaws it, raises its window, and gives it live input.
+_Avoid_: resume, unpause
+
+**End**:
+Destroying a live session on purpose. Unsaved progress is lost.
+_Avoid_: quit, kill, close
+
+**Gameplay overlay**:
+The screen Korri shows over a live session. It offers return, end, the full Korri screen, and the actions the active plugin supports.
+_Avoid_: pause menu, system panel
