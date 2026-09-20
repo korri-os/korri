@@ -50,7 +50,7 @@ The [existing lifecycle validation record](../../../services/korrid/plugin-host/
 ## Decisions still needed
 
 - Set the image/reference ownership needed to meet the chosen reclamation rule. Do not silently discard system recovery to free storage.
-- Set how future bundled defaults interact with existing owner selections during system updates. Do not invent selection records or a new configuration schema to answer it.
+- Set the remaining policy for optional additions and removal of required plugins. The [required-plugin update decision](../issues/04-decide-bundled-plugin-lifecycle.md#required-plugins-during-updates) is recorded in the ticket. Do not invent selection records or a new configuration schema.
 - Set interruption/retry behavior without undoing the approved data-preservation and failure-reporting rules. Package rollback is not application-data recovery.
 
 The ticket remains claimed. No new product choice, schema, installer change, deployment, or deletion is authorized by this inventory.

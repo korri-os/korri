@@ -34,8 +34,18 @@ Only unused software is eligible. Preserve user data and files still needed by o
 
 This is a product requirement, not verified runtime behavior. The inspected removal path does not yet perform storage reclamation.
 
+### Required plugins during updates
+
+Simon challenged the assumption that every newly bundled plugin is optional: "It might be a required plugin tho". He then selected **include required plugins in the update**. A required plugin supports an agreed required Korri behavior on that device; default-bundle membership alone is not enough. The [glossary](../../../CONTEXT.md) records that distinction.
+
+Disclose the required additions and their permissions before update approval. The update includes their installation. If the owner declines them or installation fails, do not activate the new release. Keep the current release selected. Existing package approval and publisher-trust checks remain mandatory.
+
+The accepted cost is that refusing a required plugin blocks the upgrade. This does not promise application-data rollback after arbitrary native effects. It selects update behavior, not a new requiredness flag, plugin dependency graph, or configuration schema. No particular existing plugin is declared required by this decision.
+
 ### Remaining discussion
 
-System-image references, future default-bundle updates, and interruption/retry behavior remain to be settled. The next question concerns newly added defaults on existing installations. The recommendation is to keep the owner's plugin selection unchanged and offer new defaults as optional installations. That update-policy recommendation is not approved.
+Optional additions and required-plugin removal remain undecided. The earlier separate-opt-in recommendation was not approved. The next question is whether normal plugin management must refuse removal when it would break required Korri behavior, or allow it after an explicit warning. Refusing removal while the plugin is required is the recommendation, not an approved rule.
+
+System-image references and interruption/retry behavior also remain to be settled.
 
 The ticket remains claimed; no implementation or device operation is authorized.

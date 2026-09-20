@@ -9,3 +9,6 @@ A Korri installation image verified to meet all agreed product requirements that
 
 **Development image**:
 A Korri installation image that has not qualified as a supported image. It can boot and provide some features without meeting all applicable product requirements.
+
+**Required plugin**:
+A plugin needed for a Korri release to provide an agreed required behavior on a device. Inclusion in a default bundle alone does not make it required.
