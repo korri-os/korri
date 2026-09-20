@@ -48,10 +48,16 @@ Simon selected **refuse removal while required**. Normal plugin management must 
 
 The accepted cost is that some bundled plugins cannot be removed while still required. Bundle membership alone does not justify refusal. The approved software-retention and storage-cleanup rules apply whenever removal is permitted. This does not classify a particular existing plugin as required or select a dependency-tracking schema.
 
+### New optional defaults on existing devices
+
+Simon selected **separate installation for new optional defaults**. Existing owners choose these additions through plugin management. System updates do not propose adding them. Fresh installations still receive the selected default bundle.
+
+Respect existing removal and disablement choices for optional plugins. This rule concerns newly recommended plugins, not updates to already installed plugins. Genuinely required changes remain subject to the separate required-plugin update approval rule.
+
+The accepted cost is an extra installation step for existing owners who want a newly recommended optional plugin. An updated default list is not permission to add it automatically.
+
 ### Remaining discussion
 
-Optional additions remain undecided. The earlier separate-opt-in recommendation was not approved because Simon raised the required-plugin case. That case is now settled separately. The next question concerns only newly recommended plugins that are not required, not updates to already installed plugins. Offering them for separate installation remains an unapproved recommendation.
-
-System-image references and interruption/retry behavior also remain to be settled.
+System-image references and interruption/retry behavior remain to be settled. The next question is whether an interrupted uninstall resumes automatically at the next startup or waits for an explicit retry through Korri. Automatic recovery of the same requested removal is the recommendation, not an approved rule. It must not expand deletion to user data or silently re-enable the plugin.
 
 The ticket remains claimed; no implementation or device operation is authorized.
