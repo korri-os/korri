@@ -3,7 +3,7 @@
 Parent: [One Korri product across devices](../map.md)
 Label: wayfinder:grilling
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: 07
 
 ## Question
@@ -63,3 +63,46 @@ Three choices, made through `ask_user`.
 **Memory and panel size.** Neither the 1 GB of RAM nor the 640x480 panel is a recorded limit. Both are ordinary hardware facts. The panel size is a compositor mode, and RG DS already runs the product session at `640x480@60Hz`. The memory cost is measured during first physical acceptance, not declared in advance. The accepted cost is that a session which does not fit in 1 GB is discovered late, after the port.
 
 **Delivery.** The `device-images.yml` and `nix-cache.yml` entries land with the implementation that makes RG35XXSP import the product module, not with this decision. Until then the device has no published image and no signed closure, so it cannot be a supported image, and all bring-up builds are local and off-device.
+
+### Round 2 with Simon, 2026-09-20
+
+The first form asked Simon to sort hardware features into categories without saying what each category costs him. He answered that he did not know how to answer it. The second form named the consequence of each side and described the device in use. He selected the recommended list.
+
+## Answer
+
+Resolved 2026-09-20. All choices are Simon's, selected through `ask_user`.
+
+### RG35XXSP is adopted
+
+RG35XXSP is a product device. It imports the product module when that module exists, and supplies hardware facts and recorded limits only, under [Decide the shared product and hardware boundary](07-decide-product-device-boundary.md#ownership). Its console-only composition ends. Automatic root login on the serial and virtual consoles is a bring-up state, not a product part.
+
+The facts it must supply are the kind the integrated devices supply today: the kernel and device tree, the compositor's DRM device named by hardware path, the connector name, the mode, the render device, the renderer, and the local input profile, beside the session label and the surface choice (`nix/devices/rgds/portal.nix`, `nix/devices/r36tmax/portal.nix`). Every one of those values is unknown for this board until it boots. The option list itself is extracted from the existing host and portal modules during `/to-spec`; this ticket invents none of it. The runtime account is not a device fact: [ticket 11](11-decide-odin-runtime-account-cutover.md#answer) gives every device `korri` uid and gid 1000.
+
+### Kernel
+
+RG35XXSP supplies a ROCKNIX-derived Linux 7.2 kernel. Mainline has no display engine, no TCON and no panel for H616 or H700 in 6.12 or 7.2, so the pinned 6.12.63 kernel produces no picture. A device-specific patched kernel is the existing house pattern for RP Mini V2, Odin and R36T Max. Mainline stays the preferred destination, and waiting for it does not gate adoption. Panfrost, mainline U-Boot v2025.10 with `anbernic_rg35xx_h700_defconfig`, the AXP717 and the RTL8821CS all stay; they are hardware facts, not debugging scaffolding.
+
+### What must work, and what may be written off
+
+RG35XXSP is finished when the screen, the buttons, Wi-Fi and audio work. A silent games handheld is not a finished product.
+
+Bluetooth, the battery percentage, the real-time clock, and USB host mode for external controllers may each be a recorded limit: one explicit sentence in the device module that says the feature is absent or unverified. A recorded limit does not block a supported image.
+
+Two features are settled elsewhere and were not reopened. The hardware video encoder follows [ticket 13](13-decide-streaming-host-plugin-boundary.md#answer): record the encoder result, and drop the streaming host from this device's default selection if there is no usable encoder, as R36T Max does. The lid switch and sleep follow [Decide device sleep tiers](15-decide-device-sleep-tiers.md).
+
+Neither the 1 GB of RAM nor the 640x480 panel is a recorded limit or a blocker. Both are ordinary hardware facts.
+
+### Delivery
+
+RG35XXSP has no delivery route today and gets one with the implementation, not with this decision. The `device-images.yml` and `nix-cache.yml` entries land in the same change that makes the device import the product module. Until they do, RG35XXSP cannot be a supported image, because [ticket 07](07-decide-product-device-boundary.md#delivery-obligation) requires a published SD image and its complete closure in the signed cache from one commit.
+
+### Costs and limits
+
+- The out-of-tree kernel is 29 patches and an 8128-line configuration, re-based by hand on every bump, and tracking ROCKNIX rather than upstream.
+- Nothing in the unlanded `.worktree/rg35xxsp-display` tree has been verified on hardware. It is a starting point for the port, not an approved change.
+- Requiring audio can stall adoption. Mainline 7.2 describes the H700 codec, but no one here has heard sound from this board. R36T Max and RG DS both run with audio disabled today, so this device is held to a higher bar than its neighbours.
+- Deciding the memory question at physical acceptance means a session that does not fit in 1 GB is discovered after the port, not before it.
+- Wi-Fi is required, and it is the riskiest required part. RG353M carries the same RTL8821CS and still logs SDIO timeouts from `rtw88_8821cs`.
+- The device keeps failing the shared base check until the port lands, because it enables graphics with no seat (`nix/base/module-check.nix:82-97`). That check must be corrected by the implementation, not by widening the exclusion list.
+
+This answer authorizes no kernel landing, no workflow change, no device write, no deployment, and no configuration schema.
