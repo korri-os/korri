@@ -12,6 +12,7 @@ pub enum Component {
     Inputd,
     InputSeatReceiver,
     Korrid,
+    LocalSigner,
 }
 
 impl Component {
@@ -21,8 +22,9 @@ impl Component {
             "inputd" => Ok(Self::Inputd),
             "input-seat-receiver" => Ok(Self::InputSeatReceiver),
             "korrid" => Ok(Self::Korrid),
+            "local-signer" => Ok(Self::LocalSigner),
             other => Err(format!(
-                "component must be inputplumber, inputd, input-seat-receiver, or korrid, got {other:?}"
+                "component must be inputplumber, inputd, input-seat-receiver, korrid, or local-signer, got {other:?}"
             )),
         }
     }
@@ -33,6 +35,7 @@ impl Component {
             Self::Inputd => "bin/korri-inputd",
             Self::InputSeatReceiver => "bin/korri-input-seat-receiver",
             Self::Korrid => "bin/korrid",
+            Self::LocalSigner => "bin/korri-local-signer",
         }
     }
 }
@@ -51,6 +54,7 @@ pub fn resolve_bundle(selector: &Path, store_root: &Path) -> Result<PathBuf, Str
         Component::Inputd,
         Component::InputSeatReceiver,
         Component::Korrid,
+        Component::LocalSigner,
     ] {
         resolve_component_in_bundle(&bundle, component, store_root)?;
     }
@@ -179,6 +183,7 @@ mod tests {
             "korri-inputd",
             "korri-input-seat-receiver",
             "korrid",
+            "korri-local-signer",
         ] {
             let executable = package.join("bin").join(name);
             std::fs::write(&executable, b"fixture").unwrap();

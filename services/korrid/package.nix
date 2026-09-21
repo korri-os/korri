@@ -65,7 +65,7 @@ craneLib.buildPackage (
     # Probe binaries and most tests include review fixtures outside this crate
     # package. The flake package ships the runtime binary plus embedded library;
     # the full repository gate remains `nix run .#korrid-check`.
-    cargoBuildExtraArgs = "--bin korrid --lib";
+    cargoBuildExtraArgs = "--bin korrid --bin korri-local-signer --lib";
     # The Nix builder rejects ACL mutation. The exact ACL policy test still
     # runs here; korrid-check runs all real-filesystem cases outside the sandbox.
     cargoTestExtraArgs = "--bin korrid -- --skip credential_accepts_systemd_acl --skip credential_rejects_other_users_groups_and_world_access --skip host_portal_reads_acl_credentials_and_rejects_symlinks_and_fifos";
@@ -76,9 +76,13 @@ craneLib.buildPackage (
       fi
       ${pkgs.bash}/bin/bash ${./package-runtime-check.sh} \
         "$out/bin/korrid" \
+        "$out/bin/korri-local-signer" \
+        ${pkgs.systemd}/bin/systemd-socket-activate \
         ${pkgs.bash}/bin/bash \
         ${pkgs.curl}/bin/curl \
-        ${pkgs.coreutils}/bin
+        ${pkgs.coreutils}/bin \
+        ${pkgs.socat}/bin/socat \
+        ${pkgs.jq}/bin/jq
     '';
   }
 )

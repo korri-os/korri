@@ -61,6 +61,8 @@ let
           runtimeGid = 1000;
           inputdUid = 977;
           controlGid = 977;
+          localSignerUid = 978;
+          localSignerGid = 978;
           inherit deviceConfig;
           sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
         };
@@ -71,10 +73,12 @@ let
   provider = evaluated.config.systemd.services.inputplumber;
   inputd = evaluated.config.systemd.services.korri-inputd;
   korrid = evaluated.config.systemd.services.korrid;
+  signer = evaluated.config.systemd.services.korri-local-signer;
 in
 assert provider.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputplumber";
 assert inputd.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputd";
 assert korrid.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch korrid";
+assert signer.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch local-signer";
 assert builtins.elem "korri-bundle-selector.service" provider.requires;
 assert builtins.elem "korri-bundle-selector.service" inputd.requires;
 assert builtins.elem "korri-bundle-selector.service" korrid.requires;

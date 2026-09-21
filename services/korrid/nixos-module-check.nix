@@ -33,6 +33,8 @@ let
       runtimeGid = 1000;
       inputdUid = 977;
       controlGid = 977;
+      localSignerUid = 978;
+      localSignerGid = 978;
       inherit deviceConfig;
       sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
       relays = [ "wss://relay.example.com/" ];
@@ -280,6 +282,10 @@ let
     system: !(builtins.tryEval system.config.system.build.toplevel.drvPath).success;
   service = enabled.config.systemd.services.korrid;
   identityService = enabled.config.systemd.services.korrid-identity;
+  signerService = enabled.config.systemd.services.korri-local-signer;
+  signerCredentialService =
+    enabled.config.systemd.services.korri-local-signer-device-credential;
+  signerSocket = enabled.config.systemd.sockets.korri-local-signer;
   socket = enabled.config.systemd.sockets.korrid-control;
   polkit = enabled.config.security.polkit.extraConfig;
   tmpfiles = enabled.config.systemd.tmpfiles.rules;
@@ -287,6 +293,7 @@ let
   customSocket = customPaths.config.systemd.sockets.korrid-control;
   customTmpfiles = customPaths.config.systemd.tmpfiles.rules;
   bundledService = bundled.config.systemd.services.korrid;
+  bundledSignerService = bundled.config.systemd.services.korri-local-signer;
 in
 assert allAssertionsPass enabled;
 assert allAssertionsPass advertised;
@@ -317,6 +324,8 @@ assert
     KORRID_HOST_CONFIG = toString deviceConfig;
     KORRID_MODE = "host";
     KORRID_PRIVATE_STATE_ROOT = "/var/lib/korrid";
+    KORRID_LOCAL_SIGNER_SOCKET = "/run/korri-local-signer/signer.sock";
+    KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = "/run/korri-local-signer/public/person.pub";
     KORRID_RELAYS = ''["wss://relay.example.com"]'';
     KORRID_STORAGE_ROOT = "/var/lib/korri";
     KORRID_SUNSHINE_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
@@ -332,6 +341,8 @@ assert service.environment.KORRID_SYSTEMD_RUN == "${pkgs.systemd}/bin/systemd-ru
 assert service.environment.KORRID_SYSTEMCTL == "${pkgs.systemd}/bin/systemctl";
 assert service.environment.KORRID_ADDRESS == "127.0.0.1:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
+assert service.environment.KORRID_LOCAL_SIGNER_SOCKET == "/run/korri-local-signer/signer.sock";
+assert service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
 assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
@@ -384,6 +395,37 @@ assert builtins.elem "/dev/uinput" identityService.serviceConfig.InaccessiblePat
 assert builtins.elem "korrid-control.socket" service.requires;
 assert builtins.elem "korrid-identity.service" service.requires;
 assert builtins.elem "korrid-identity.service" service.after;
+assert builtins.elem "korri-local-signer.service" service.requires;
+assert builtins.elem "korri-local-signer.service" service.after;
+assert signerService.serviceConfig.User == "korri-local-signer";
+assert signerService.serviceConfig.Group == "korri-local-signer";
+assert signerService.environment.KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT == "/var/lib/korri-local-signer";
+assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_UID == "976";
+assert signerService.environment.KORRI_LOCAL_SIGNER_PEER_GID == "976";
+assert signerService.environment.KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
+assert builtins.elem "korri-local-signer-device-credential.service" signerService.requires;
+assert builtins.elem "korri-local-signer-device-credential.service" signerService.after;
+assert signerService.serviceConfig.LoadCredential == "expected-device-public-key:/run/korri-local-signer/expected-device-public-key";
+assert signerService.serviceConfig.ExecStart == "${korridPackage}/bin/korri-local-signer";
+assert signerService.serviceConfig.StateDirectory == "korri-local-signer";
+assert signerService.serviceConfig.StateDirectoryMode == "0700";
+assert signerService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
+assert signerService.serviceConfig.PrivateNetwork;
+assert signerService.serviceConfig.ReadWritePaths == [
+  "/var/lib/korri-local-signer"
+  "/run/korri-local-signer/public"
+];
+assert signerCredentialService.serviceConfig.User == "root";
+assert signerCredentialService.serviceConfig.ReadOnlyPaths == [ "/var/lib/korrid" ];
+assert signerCredentialService.serviceConfig.ReadWritePaths == [ "/run/korri-local-signer" ];
+assert builtins.elem "/var/lib/korri-local-signer" signerCredentialService.serviceConfig.InaccessiblePaths;
+assert builtins.elem "/var/lib/korrid" signerService.serviceConfig.InaccessiblePaths;
+assert builtins.elem "/var/lib/korri-local-signer" service.serviceConfig.InaccessiblePaths;
+assert signerSocket.socketConfig.ListenStream == "/run/korri-local-signer/signer.sock";
+assert signerSocket.socketConfig.SocketUser == "korri-local-signer";
+assert signerSocket.socketConfig.SocketGroup == "korrid";
+assert signerSocket.socketConfig.SocketMode == "0660";
+assert signerSocket.socketConfig.Service == "korri-local-signer.service";
 assert socket.socketConfig.ListenStream == "/run/korrid-control/control.sock";
 assert socket.socketConfig.SocketUser == "root";
 assert socket.socketConfig.SocketGroup == "korri-control";
@@ -393,8 +435,12 @@ assert builtins.elem "systemd-tmpfiles-setup.service" socket.requires;
 assert builtins.elem "systemd-tmpfiles-setup.service" socket.after;
 assert builtins.elem "systemd-tmpfiles-resetup.service" socket.after;
 assert builtins.elem "d /run/korrid-control 0750 root korri-control -" tmpfiles;
+assert builtins.elem "d /run/korri-local-signer/public 2750 korri-local-signer korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid/identity 0700 korrid korrid -" tmpfiles;
+assert builtins.elem "d /run/korri-local-signer 0751 root korrid -" tmpfiles;
+assert builtins.elem "d /var/lib/korri-local-signer 0700 korri-local-signer korri-local-signer -" tmpfiles;
+assert builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles;
 assert builtins.elem "d /dev/inputplumber 0700 root root -" tmpfiles;
 assert builtins.elem "d /dev/inputplumber/sources 0700 root root -" tmpfiles;
 assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
@@ -427,6 +473,11 @@ assert
   == "/nix/var/nix/gcroots/korri-bundle/active";
 assert bundledService.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch korrid";
 assert
+  bundledSignerService.serviceConfig.ExecStart
+  == "${inputdPackage}/bin/korri-bundle-launch local-signer";
+assert builtins.elem "korri-bundle-selector.service" bundledSignerService.requires;
+assert bundledSignerService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
+assert
   bundled.config.systemd.services.korrid-identity.serviceConfig.ExecStart
   == "${inputdPackage}/bin/korri-bundle-launch korrid identity import --file ${ownerBindingStoreFile}";
 assert allAssertionsPass customPaths;
@@ -441,11 +492,11 @@ assert
   customService.environment.KORRID_CERTIFICATE_CONTROL_DIRECTORY
   == "/run/korri-test/certificate-control";
 assert builtins.elem "d /run/korri-test/control 0750 root korri-control -" customTmpfiles;
-assert hasFailedAssertion "service UID must differ" sameUid;
+assert hasFailedAssertion "service UIDs must be distinct" sameUid;
 assert hasFailedAssertion "runtime user must not hold raw input" broadRuntime;
-assert hasFailedAssertion "korrid service groups" certificateControlRuntime;
+assert hasFailedAssertion "korrid, or local-signer service groups" certificateControlRuntime;
 assert hasFailedAssertion
-  "privateStateRoot and sunshinePrivateStateRoot must be normalized absolute paths"
+  "korrid, local-signer, and sunshine private state roots must be normalized absolute paths"
   invalidPrivatePath;
 assert hasFailedAssertion "controlSocket and its directory must be normalized absolute paths"
   invalidControlPath;

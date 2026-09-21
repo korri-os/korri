@@ -270,9 +270,14 @@ in
       test -x ${devApp}/bin/korri-dev
       grep -F 'KORRI_INPUTD_PROFILE=development' ${devApp}/bin/korri-dev >/dev/null
       grep -F 'KORRI_INPUTD_SOURCE="$physical_input"' ${devApp}/bin/korri-dev >/dev/null
+      grep -F '${korridPackage}/bin/korri-local-signer' ${devApp}/bin/korri-dev >/dev/null
+      grep -F 'CREDENTIALS_DIRECTORY=$signer_credential_root' ${devApp}/bin/korri-dev >/dev/null
+      grep -F 'KORRID_LOCAL_SIGNER_SOCKET="$signer_socket"' ${devApp}/bin/korri-dev >/dev/null
+      grep -F 'KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$signer_public_key"' ${devApp}/bin/korri-dev >/dev/null
       test "$(readlink -f ${korriBundle}/bin/inputplumber)" = ${inputplumberKorri}/bin/inputplumber
       test "$(readlink -f ${korriBundle}/bin/korri-inputd)" = ${inputdPackage}/bin/korri-inputd
       test "$(readlink -f ${korriBundle}/bin/korrid)" = ${korridPackage}/bin/korrid
+      test "$(readlink -f ${korriBundle}/bin/korri-local-signer)" = ${korridPackage}/bin/korri-local-signer
       test "$(readlink -f ${korriBundle}/share/inputplumber)" = ${inputplumberKorri}/share/inputplumber
       test "$(readlink -f ${korriBundle}/share/korri-input-profile)" = \
         ${inputplumberKorri}/share/inputplumber/profiles/${inputplumberData.resolvedProfile}

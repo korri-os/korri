@@ -24,7 +24,6 @@ cargo check
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
-"$CRATE/deploy/test-zao-remote.sh"
 typeshare . --lang=typescript --output-file="$GENERATED_TS"
 # Typeshare 1.13 emits trailing spaces and an extra final blank line.
 sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
@@ -55,7 +54,7 @@ bun run typecheck
 bun test
 
 cd "$CRATE"
-cargo build --release --bin korrid
+cargo build --release --bin korrid --bin korri-local-signer
 export KORRID_MODE="brain"
 export KORRID_RPC_CAPABILITY="check-capability"
 export KORRID_ADDRESS="127.0.0.1:49117"
@@ -72,14 +71,40 @@ cp "$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml" "$local_stora
 cp "$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml" "$local_storage_root/catalog/releases.yaml"
 export KORRI_LOCAL_STORAGE_ROOT="$local_storage_root"
 export KORRID_PRIVATE_STATE_ROOT="$local_storage_root/private"
+export KORRID_LOCAL_SIGNER_SOCKET="$local_storage_root/signer.sock"
+export KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$local_storage_root/signer-public/person.pub"
 if (exec 9<>/dev/tcp/127.0.0.1/49117) 2>/dev/null; then
   echo 'korrid check port 49117 is already occupied' >&2
   exit 1
 fi
+mkdir -m 0700 "$KORRID_PRIVATE_STATE_ROOT" "$local_storage_root/signer-private" "$local_storage_root/signer-credentials"
+mkdir -m 0750 "$local_storage_root/signer-public"
+"$CARGO_TARGET_DIR/release/korrid" identity status \
+  | jq -er 'select(._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked") | .devicePublicKey | select(test("^[0-9a-f]{64}$"))' \
+  > "$local_storage_root/signer-credentials/expected-device-public-key"
+chmod 0400 "$local_storage_root/signer-credentials/expected-device-public-key"
+systemd-socket-activate --now \
+  -E "CREDENTIALS_DIRECTORY=$local_storage_root/signer-credentials" \
+  -E "KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT=$local_storage_root/signer-private" \
+  -E "KORRI_LOCAL_SIGNER_PEER_UID=$(id -u)" \
+  -E "KORRI_LOCAL_SIGNER_PEER_GID=$(id -g)" \
+  -E "KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE=$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" \
+  -l "$KORRID_LOCAL_SIGNER_SOCKET" \
+  "$CARGO_TARGET_DIR/release/korri-local-signer" &
+signer_pid=$!
+for _ in $(seq 1 100); do
+  [[ -f "$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" ]] && break
+  kill -0 "$signer_pid" 2>/dev/null || break
+  sleep 0.01
+done
+[[ -f "$KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE" ]]
 "$CARGO_TARGET_DIR/release/korrid" &
 server_pid=$!
 cleanup_server() {
   kill "$server_pid" 2>/dev/null || true
+  kill "$signer_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+  wait "$signer_pid" 2>/dev/null || true
   rm -rf "$local_storage_root"
 }
 trap cleanup_server EXIT

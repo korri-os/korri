@@ -305,9 +305,20 @@ fn private_state_root() -> PathBuf {
     )
 }
 
+fn owner_uses_local_signer(
+    state: &korrid::identity::IdentityState,
+    signer_public_key: &str,
+) -> bool {
+    matches!(
+        state,
+        korrid::identity::IdentityState::Owned { owner_public_key, .. }
+            if owner_public_key == signer_public_key
+    )
+}
+
 fn brain_router(
     resources: korrid::federation::coordinator::FederationResources,
-    wake: korrid::federation::coordinator::DiscoveryControl,
+    wake: Option<korrid::federation::coordinator::DiscoveryControl>,
 ) -> Router {
     let capability = std::env::var("KORRID_RPC_CAPABILITY")
         .expect("KORRID_RPC_CAPABILITY must be set for the brain server");
@@ -321,7 +332,7 @@ fn brain_router(
             .unwrap_or_else(|| std::env::temp_dir().join("korri")),
         private_state_root(),
         Some(resources),
-        Some(wake),
+        wake,
     )
 }
 
@@ -508,32 +519,32 @@ async fn main() {
         }
         return;
     }
+    let private_state_root = private_state_root();
+    let signer_socket = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
+        .map(PathBuf::from)
+        .expect("KORRID_LOCAL_SIGNER_SOCKET must be set");
+    let signer = korrid::local_signer::UnixPersonSigner::new(signer_socket);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let identity_state = korrid::identity::bind_automatic_owner(&private_state_root, &signer, now)
+        .await
+        .unwrap_or_else(|error| panic!("bind automatic identity: {error}"));
+    let signer_public_key_path = std::env::var_os("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE")
+        .map(PathBuf::from)
+        .expect("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
+    let signer_public_key =
+        korrid::local_signer::read_published_public_key(&signer_public_key_path)
+            .unwrap_or_else(|error| panic!("read local signer public key: {error}"));
+    let local_only_owner = owner_uses_local_signer(&identity_state, &signer_public_key);
+
     use korrid::federation::coordinator::{
         Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources,
     };
     use std::sync::Arc;
-    let relays = korrid::relay::RelayList::from_linux_environment(
-        std::env::var("KORRID_RELAYS").ok().as_deref(),
-    )
-    .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
-    let advertised_endpoints = std::env::var("KORRID_ADVERTISED_ENDPOINTS")
-        .ok()
-        .map(|json| {
-            serde_json::from_str::<Vec<String>>(&json)
-                .expect("KORRID_ADVERTISED_ENDPOINTS must be a JSON array")
-        })
-        .unwrap_or_default();
-    let initial_inputs = DiscoveryInputs {
-        relays,
-        advertised_endpoints,
-        label: std::env::var("HOSTNAME").ok(),
-        moonlight_address: std::env::var("KORRID_MOONLIGHT_ADDRESS").ok(),
-    };
-    initial_inputs
-        .validate()
-        .expect("valid advertised endpoints and metadata");
     let resources =
-        FederationResources::open(&private_state_root()).expect("open federation authority");
+        FederationResources::open(&private_state_root).expect("open federation authority");
     let mode_value = std::env::var("KORRID_MODE").ok();
     let mode = Mode::parse(mode_value.as_deref()).unwrap_or_else(|error| panic!("{error}"));
     let config_root = match mode {
@@ -542,23 +553,50 @@ async fn main() {
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::temp_dir().join("korri")),
     };
-    let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
-    let (wake, discovery) = Discovery::new(
-        resources.directory.clone(),
-        resources.credentials.clone(),
-        Arc::new(move || DiscoveryInputs::linux(&config, &initial_inputs)),
-        Arc::new(korrid::relay::WebSocketRelayTransport::new()),
-        DiscoveryTiming::default(),
-        Arc::new(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-        }),
-    )
-    .start();
+    let discovery = if local_only_owner {
+        None
+    } else {
+        let relays = korrid::relay::RelayList::from_linux_environment(
+            std::env::var("KORRID_RELAYS").ok().as_deref(),
+        )
+        .unwrap_or_else(|error| panic!("invalid relay configuration: {error}"));
+        let advertised_endpoints = std::env::var("KORRID_ADVERTISED_ENDPOINTS")
+            .ok()
+            .map(|json| {
+                serde_json::from_str::<Vec<String>>(&json)
+                    .expect("KORRID_ADVERTISED_ENDPOINTS must be a JSON array")
+            })
+            .unwrap_or_default();
+        let initial_inputs = DiscoveryInputs {
+            relays,
+            advertised_endpoints,
+            label: std::env::var("HOSTNAME").ok(),
+            moonlight_address: std::env::var("KORRID_MOONLIGHT_ADDRESS").ok(),
+        };
+        initial_inputs
+            .validate()
+            .expect("valid advertised endpoints and metadata");
+        let config = korrid::config::snapshot::ConfigSnapshotCoordinator::new(config_root);
+        Some(
+            Discovery::new(
+                resources.directory.clone(),
+                resources.credentials.clone(),
+                Arc::new(move || DiscoveryInputs::linux(&config, &initial_inputs)),
+                Arc::new(korrid::relay::WebSocketRelayTransport::new()),
+                DiscoveryTiming::default(),
+                Arc::new(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                }),
+            )
+            .start(),
+        )
+    };
+    let wake = discovery.as_ref().map(|(control, _)| control.clone());
     let (lan_router, local_control_router) = match mode {
-        Mode::Brain => (brain_router(resources, wake.clone()), None),
+        Mode::Brain => (brain_router(resources, wake), None),
         Mode::Host => {
             let origin = std::env::var("KORRID_PORTAL_ORIGIN").ok();
             let credentials = std::env::var_os("CREDENTIALS_DIRECTORY").map(PathBuf::from);
@@ -567,7 +605,7 @@ async fn main() {
             let (lan, local) = korrid::host_routers_with_federation(
                 host_config_path(),
                 Some(host_storage_root()),
-                private_state_root(),
+                private_state_root.clone(),
                 resources,
                 portal,
             );
@@ -612,7 +650,14 @@ async fn main() {
             _ = interrupt.recv() => {},
         }
     };
-    let result = serve_with_discovery(serving, shutdown, wake, discovery).await;
+    let result = if let Some((wake, discovery)) = discovery {
+        serve_with_discovery(serving, shutdown, wake, discovery).await
+    } else {
+        tokio::select! {
+            _ = shutdown => None,
+            result = serving => Some(result),
+        }
+    };
     if let Some((name, result)) = result {
         result.unwrap_or_else(|error| panic!("serve {name} korrid: {error}"));
         panic!("{name} korrid server exited unexpectedly");
@@ -811,6 +856,24 @@ mod tests {
             // A detached directory owner would keep the private-root writer lease.
             FederationResources::open(root.path()).unwrap();
         }
+    }
+
+    #[test]
+    fn only_the_runtime_local_signer_owner_is_local_only() {
+        let state = korrid::identity::IdentityState::Owned {
+            device_public_key: "device".into(),
+            owner_public_key: "local".into(),
+            event_id: "event".into(),
+            created_at: 1,
+        };
+        assert!(owner_uses_local_signer(&state, "local"));
+        assert!(!owner_uses_local_signer(&state, "another-owner"));
+        assert!(!owner_uses_local_signer(
+            &korrid::identity::IdentityState::Unowned {
+                device_public_key: "device".into(),
+            },
+            "local",
+        ));
     }
 
     #[test]

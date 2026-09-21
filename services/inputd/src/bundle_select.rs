@@ -18,9 +18,10 @@ const STORE_ROOT: &str = "/nix/store";
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_POLL: Duration = Duration::from_millis(250);
-const UNITS: [&str; 3] = [
+const UNITS: [&str; 4] = [
     "inputplumber.service",
     "korri-inputd.service",
+    "korri-local-signer.service",
     "korrid.service",
 ];
 const OPTIONAL_INPUT_SEAT_UNIT: &str = "korri-input-seat-receiver.service";
@@ -54,8 +55,11 @@ async fn run(arguments: Vec<OsString>) -> Result<String, String> {
         if arguments.len() != 5 || arguments[4] != "--acknowledge-exclusive-quiescence" {
             return Err(usage());
         }
-        return offline::select(&path_argument(&arguments, 2)?, &path_argument(&arguments, 3)?)
-            .map_err(|error| format!("{error}; keep consumers stopped; no rollback attempted"));
+        return offline::select(
+            &path_argument(&arguments, 2)?,
+            &path_argument(&arguments, 3)?,
+        )
+        .map_err(|error| format!("{error}; keep consumers stopped; no rollback attempted"));
     }
     let state_root = Path::new(STATE_ROOT);
     let store_root = Path::new(STORE_ROOT);
@@ -360,6 +364,7 @@ mod tests {
             "korri-inputd",
             "korri-input-seat-receiver",
             "korrid",
+            "korri-local-signer",
         ] {
             let executable = package.join("bin").join(component);
             fs::write(&executable, b"fixture").unwrap();

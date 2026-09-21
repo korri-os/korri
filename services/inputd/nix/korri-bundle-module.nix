@@ -41,6 +41,7 @@ in
         "inputplumber.service"
         "korri-inputd.service"
         "korri-input-seat-receiver.service"
+        "korri-local-signer.service"
         "korrid.service"
       ];
       serviceConfig = {

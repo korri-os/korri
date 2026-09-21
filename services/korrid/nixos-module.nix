@@ -16,8 +16,14 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   serviceUser = "korrid";
   serviceGroup = "korrid";
+  signerUser = "korri-local-signer";
+  signerGroup = "korri-local-signer";
   controlGroup = "korri-control";
   controlDirectory = builtins.dirOf cfg.controlSocket;
+  signerSocketDirectory = builtins.dirOf cfg.localSignerSocket;
+  signerPublicDirectory = "${signerSocketDirectory}/public";
+  signerPublicKeyFile = "${signerPublicDirectory}/person.pub";
+  signerExpectedDeviceFile = "${signerSocketDirectory}/expected-device-public-key";
   normalizeRelayUrl =
     value:
     let
@@ -98,6 +104,32 @@ let
       "${bundleCfg.launcherPackage}/bin/korri-bundle-launch korrid"
     else
       lib.getExe cfg.package;
+  localSignerExecutable =
+    if bundleCfg.enable then
+      "${bundleCfg.launcherPackage}/bin/korri-bundle-launch local-signer"
+    else
+      "${cfg.package}/bin/korri-local-signer";
+  signerDeviceCredentialHelper = pkgs.writeShellScript "korri-local-signer-device-credential" ''
+    set -eu
+    umask 077
+    status="$(${identityExecutable} identity status)"
+    key="$(printf '%s' "$status" | ${pkgs.jq}/bin/jq -er '
+      if ((._tag == "Unowned" or ._tag == "Owned" or ._tag == "Revoked")
+          and (.devicePublicKey | type == "string")
+          and (.devicePublicKey | test("^[0-9a-f]{64}$")))
+      then .devicePublicKey
+      else error("identity status has no valid device public key")
+      end
+    ')"
+    temporary="$(${pkgs.coreutils}/bin/mktemp ${lib.escapeShellArg signerSocketDirectory}/.expected-device-public-key.XXXXXX)"
+    trap '${pkgs.coreutils}/bin/rm -f "$temporary"' EXIT
+    printf '%s\n' "$key" > "$temporary"
+    ${pkgs.coreutils}/bin/chmod 0400 "$temporary"
+    ${pkgs.coreutils}/bin/chown root:root "$temporary"
+    ${pkgs.coreutils}/bin/mv -T "$temporary" ${lib.escapeShellArg signerExpectedDeviceFile}
+    ${pkgs.coreutils}/bin/sync -f ${lib.escapeShellArg signerSocketDirectory}
+    trap - EXIT
+  '';
   ownerBindingRead =
     if cfg.ownerBindingFile == null then
       {
@@ -181,6 +213,8 @@ in
     runtimeGid = lib.mkOption { type = lib.types.ints.positive; };
     inputdUid = lib.mkOption { type = lib.types.ints.positive; };
     controlGid = lib.mkOption { type = lib.types.ints.positive; };
+    localSignerUid = lib.mkOption { type = lib.types.ints.positive; };
+    localSignerGid = lib.mkOption { type = lib.types.ints.positive; };
     address = lib.mkOption {
       type = lib.types.str;
       default = "127.0.0.1:43117";
@@ -214,6 +248,14 @@ in
     privateStateRoot = lib.mkOption {
       type = lib.types.str;
       default = "/var/lib/korrid";
+    };
+    localSignerPrivateStateRoot = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/korri-local-signer";
+    };
+    localSignerSocket = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/korri-local-signer/signer.sock";
     };
     sunshinePrivateStateRoot = lib.mkOption {
       type = lib.types.str;
@@ -288,8 +330,12 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = cfg.uid != cfg.runtimeUid;
-        message = "korrid's service UID must differ from the untrusted runtime UID.";
+        assertion =
+          cfg.uid != cfg.runtimeUid
+          && cfg.localSignerUid != cfg.runtimeUid
+          && cfg.localSignerUid != cfg.uid
+          && cfg.localSignerUid != cfg.inputdUid;
+        message = "korrid and local-signer service UIDs must be distinct from each other and the untrusted runtime UID.";
       }
       {
         assertion =
@@ -301,8 +347,13 @@ in
         message = "the configured runtime UID and GID must match the runtime user's primary identity exactly.";
       }
       {
-        assertion = cfg.gid != cfg.runtimeGid && cfg.controlGid != cfg.runtimeGid;
-        message = "korrid and local-control GIDs must differ from the runtime GID.";
+        assertion =
+          cfg.gid != cfg.runtimeGid
+          && cfg.controlGid != cfg.runtimeGid
+          && cfg.localSignerGid != cfg.runtimeGid
+          && cfg.localSignerGid != cfg.gid
+          && cfg.localSignerGid != cfg.controlGid;
+        message = "korrid, local-signer, and local-control GIDs must remain distinct from the runtime GID and each other.";
       }
       {
         assertion =
@@ -368,8 +419,22 @@ in
       }
       {
         assertion =
-          validAbsolutePath cfg.privateStateRoot && validAbsolutePath cfg.sunshinePrivateStateRoot;
-        message = "korrid privateStateRoot and sunshinePrivateStateRoot must be normalized absolute paths.";
+          validAbsolutePath cfg.privateStateRoot
+          && validAbsolutePath cfg.localSignerPrivateStateRoot
+          && validAbsolutePath cfg.sunshinePrivateStateRoot;
+        message = "korrid, local-signer, and sunshine private state roots must be normalized absolute paths.";
+      }
+      {
+        assertion =
+          validAbsolutePath cfg.localSignerSocket && validAbsolutePath signerSocketDirectory;
+        message = "local signer socket and its directory must be normalized absolute paths.";
+      }
+      {
+        assertion =
+          cfg.privateStateRoot != cfg.localSignerPrivateStateRoot
+          && !lib.hasPrefix "${cfg.privateStateRoot}/" cfg.localSignerPrivateStateRoot
+          && !lib.hasPrefix "${cfg.localSignerPrivateStateRoot}/" cfg.privateStateRoot;
+        message = "korrid and local-signer private state roots must not overlap.";
       }
       {
         assertion = validAbsolutePath cfg.controlSocket && validAbsolutePath controlDirectory;
@@ -419,16 +484,23 @@ in
           !(builtins.elem "input" (user.extraGroups or [ ]))
           && !(builtins.elem "uinput" (user.extraGroups or [ ]))
           && !(builtins.elem controlGroup (user.extraGroups or [ ]))
-          && !(builtins.elem serviceGroup (user.extraGroups or [ ]));
-        message = "the runtime user must not hold raw input, uinput, local-control, or korrid service groups.";
+          && !(builtins.elem serviceGroup (user.extraGroups or [ ]))
+          && !(builtins.elem signerGroup (user.extraGroups or [ ]));
+        message = "the runtime user must not hold raw input, uinput, local-control, korrid, or local-signer service groups.";
       }
     ];
 
     users.groups.${serviceGroup}.gid = cfg.gid;
+    users.groups.${signerGroup}.gid = cfg.localSignerGid;
     users.groups.${controlGroup}.gid = cfg.controlGid;
     users.users.${serviceUser} = {
       uid = cfg.uid;
       group = serviceGroup;
+      isSystemUser = true;
+    };
+    users.users.${signerUser} = {
+      uid = cfg.localSignerUid;
+      group = signerGroup;
       isSystemUser = true;
     };
 
@@ -436,8 +508,12 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${controlDirectory} 0750 root ${controlGroup} -"
+      "d ${signerSocketDirectory} 0751 root ${serviceGroup} -"
+      "d ${signerPublicDirectory} 2750 ${signerUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot} 0700 ${serviceUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot}/identity 0700 ${serviceUser} ${serviceGroup} -"
+      "d ${cfg.localSignerPrivateStateRoot} 0700 ${signerUser} ${signerGroup} -"
+      "d ${cfg.localSignerPrivateStateRoot}/identity 0700 ${signerUser} ${signerGroup} -"
       "d /dev/inputplumber 0700 root root -"
       "d /dev/inputplumber/sources 0700 root root -"
       # These parents must exist before any game namespace is created and
@@ -466,6 +542,149 @@ in
         DirectoryMode = "0750";
         RemoveOnStop = true;
         Service = "korrid.service";
+      };
+    };
+
+    systemd.sockets.korri-local-signer = {
+      description = "Private Korri local person signer socket";
+      wantedBy = [ "sockets.target" ];
+      before = [ "korri-local-signer.service" ];
+      requires = [ "systemd-tmpfiles-setup.service" ];
+      after = [
+        "systemd-tmpfiles-setup.service"
+        "systemd-tmpfiles-resetup.service"
+      ];
+      socketConfig = {
+        ListenStream = cfg.localSignerSocket;
+        SocketUser = signerUser;
+        SocketGroup = serviceGroup;
+        SocketMode = "0660";
+        DirectoryMode = "0751";
+        RemoveOnStop = true;
+        Service = "korri-local-signer.service";
+      };
+    };
+
+    systemd.services.korri-local-signer-device-credential = {
+      description = "Bind the local signer to the existing korrid device identity";
+      before = [ "korri-local-signer.service" ];
+      requiredBy = [ "korri-local-signer.service" ];
+      requires = [ "korrid-identity.service" ];
+      after = [
+        "korrid-identity.service"
+        "systemd-tmpfiles-setup.service"
+        "systemd-tmpfiles-resetup.service"
+      ];
+      environment = {
+        KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
+      }
+      // lib.optionalAttrs bundleCfg.enable {
+        KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
+      };
+      serviceConfig = {
+        Type = "oneshot";
+        User = "root";
+        Group = "root";
+        UMask = "0077";
+        ExecStart = signerDeviceCredentialHelper;
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = [ ];
+        AmbientCapabilities = [ ];
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        PrivateNetwork = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = false;
+        SystemCallArchitectures = "native";
+        ReadOnlyPaths = [ cfg.privateStateRoot ];
+        ReadWritePaths = [ signerSocketDirectory ];
+        InaccessiblePaths = [
+          cfg.localSignerPrivateStateRoot
+          cfg.storageRoot
+          "-${cfg.sunshinePrivateStateRoot}"
+          "-${cfg.compositorControlDirectory}"
+          "-${cfg.certificateControlDirectory}"
+          "-/dev/inputplumber/sources"
+          "/dev/uinput"
+        ];
+      };
+    };
+
+    systemd.services.korri-local-signer = {
+      description = "Korri local person signer";
+      wantedBy = [ "multi-user.target" ];
+      requires = [
+        "korri-local-signer.socket"
+        "korri-local-signer-device-credential.service"
+      ]
+      ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
+      after = [
+        "korri-local-signer.socket"
+        "korri-local-signer-device-credential.service"
+        "systemd-tmpfiles-setup.service"
+        "systemd-tmpfiles-resetup.service"
+      ]
+      ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
+      before = [ "korrid.service" ];
+      environment = {
+        KORRI_LOCAL_SIGNER_PRIVATE_STATE_ROOT = cfg.localSignerPrivateStateRoot;
+        KORRI_LOCAL_SIGNER_PEER_UID = toString cfg.uid;
+        KORRI_LOCAL_SIGNER_PEER_GID = toString cfg.gid;
+        KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
+      }
+      // lib.optionalAttrs bundleCfg.enable {
+        KORRI_BUNDLE_ACTIVE = bundleCfg.activePath;
+      };
+      serviceConfig = {
+        ExecStart = localSignerExecutable;
+        User = signerUser;
+        Group = signerGroup;
+        StateDirectory = "korri-local-signer";
+        StateDirectoryMode = "0700";
+        Restart = "on-failure";
+        RestartSec = 1;
+        UMask = "0027";
+        LoadCredential = "expected-device-public-key:${signerExpectedDeviceFile}";
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = [ ];
+        AmbientCapabilities = [ ];
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        PrivateNetwork = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = false;
+        SystemCallArchitectures = "native";
+        ReadWritePaths = [
+          cfg.localSignerPrivateStateRoot
+          signerPublicDirectory
+        ];
+        InaccessiblePaths = [
+          cfg.privateStateRoot
+          cfg.storageRoot
+          "-${cfg.sunshinePrivateStateRoot}"
+          "-${cfg.compositorControlDirectory}"
+          "-${cfg.certificateControlDirectory}"
+          "-/dev/inputplumber/sources"
+          "/dev/uinput"
+        ];
       };
     };
 
@@ -515,6 +734,7 @@ in
         # path unless it is marked optional, so hide these only when present.
         InaccessiblePaths = [
           cfg.storageRoot
+          cfg.localSignerPrivateStateRoot
           "-${cfg.sunshinePrivateStateRoot}"
           "-${cfg.compositorControlDirectory}"
           "-${cfg.certificateControlDirectory}"
@@ -530,12 +750,14 @@ in
       requires = [
         "korrid-control.socket"
         "korrid-identity.service"
+        "korri-local-signer.service"
       ]
       ++ lib.optional bundleCfg.enable "korri-bundle-selector.service";
       after = [
         "network.target"
         "korrid-control.socket"
         "korrid-identity.service"
+        "korri-local-signer.service"
         "korri-input-source-guard.service"
         "systemd-tmpfiles-setup-dev.service"
         "systemd-tmpfiles-resetup.service"
@@ -549,6 +771,8 @@ in
         KORRID_HOST_CONFIG = toString cfg.deviceConfig;
         KORRID_STORAGE_ROOT = cfg.storageRoot;
         KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
+        KORRID_LOCAL_SIGNER_SOCKET = cfg.localSignerSocket;
+        KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
         KORRID_SUNSHINE_PRIVATE_STATE_ROOT = cfg.sunshinePrivateStateRoot;
         KORRID_CONTROL_SOCKET = cfg.controlSocket;
         KORRID_CONTROL_DIRECTORY = controlDirectory;
@@ -634,6 +858,7 @@ in
           "/dev/uinput"
           "-/dev/inputplumber/sources"
           cfg.sunshinePrivateStateRoot
+          cfg.localSignerPrivateStateRoot
         ];
       };
     };

@@ -160,6 +160,7 @@ let
     ln -s ${inputplumberKorri}/bin/inputplumber "$out/bin/inputplumber"
     ln -s ${inputdPackage}/bin/korri-inputd "$out/bin/korri-inputd"
     ln -s ${pkgs.coreutils}/bin/true "$out/bin/korrid"
+    ln -s ${pkgs.coreutils}/bin/true "$out/bin/korri-local-signer"
     ln -s ${inputplumberKorri}/share/inputplumber "$out/share/inputplumber"
     ln -s ${inputplumberKorri}/share/inputplumber/profiles/korri-60-xbox_one_gamepad.yaml \
       "$out/share/korri-input-profile"

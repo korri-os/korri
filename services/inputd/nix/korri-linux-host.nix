@@ -587,6 +587,14 @@ in
         type = lib.types.ints.positive;
         default = 976;
       };
+      localSignerUid = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 978;
+      };
+      localSignerGid = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 978;
+      };
       sunshineGid = lib.mkOption {
         type = lib.types.ints.positive;
         default = 979;
@@ -684,6 +692,8 @@ in
           cfg.serviceIdentities.controlGid
           cfg.serviceIdentities.korridUid
           cfg.serviceIdentities.korridGid
+          cfg.serviceIdentities.localSignerUid
+          cfg.serviceIdentities.localSignerGid
           cfg.serviceIdentities.sunshineGid
           cfg.serviceIdentities.inputSeatGid
         ];
@@ -692,9 +702,14 @@ in
       {
         assertion =
           cfg.serviceIdentities.inputdUid != cfg.serviceIdentities.korridUid
+          && cfg.serviceIdentities.inputdUid != cfg.serviceIdentities.localSignerUid
           && cfg.serviceIdentities.controlGid != cfg.serviceIdentities.korridGid
+          && cfg.serviceIdentities.controlGid != cfg.serviceIdentities.localSignerGid
           && cfg.serviceIdentities.controlGid != cfg.serviceIdentities.sunshineGid
+          && cfg.serviceIdentities.korridUid != cfg.serviceIdentities.localSignerUid
+          && cfg.serviceIdentities.korridGid != cfg.serviceIdentities.localSignerGid
           && cfg.serviceIdentities.korridGid != cfg.serviceIdentities.sunshineGid
+          && cfg.serviceIdentities.localSignerGid != cfg.serviceIdentities.sunshineGid
           && cfg.serviceIdentities.inputSeatGid != cfg.serviceIdentities.inputdUid
           && cfg.serviceIdentities.inputSeatGid != cfg.serviceIdentities.controlGid
           && cfg.serviceIdentities.inputSeatGid != cfg.serviceIdentities.korridUid
@@ -849,6 +864,8 @@ in
       runtimeGid = cfg.runtimeGid;
       inputdUid = cfg.serviceIdentities.inputdUid;
       controlGid = cfg.serviceIdentities.controlGid;
+      localSignerUid = cfg.serviceIdentities.localSignerUid;
+      localSignerGid = cfg.serviceIdentities.localSignerGid;
       inherit deviceConfig;
       address = "0.0.0.0:${toString cfg.apiPort}";
       storageRoot = cfg.storageRoot;

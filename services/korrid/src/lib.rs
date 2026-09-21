@@ -29,6 +29,7 @@ mod game_assets;
 pub mod game_routes;
 pub mod identity;
 pub mod identity_cli;
+pub mod local_signer;
 mod peer_rpc;
 pub mod play_log;
 pub mod portal_access;

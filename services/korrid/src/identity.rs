@@ -4,6 +4,7 @@
 //! NIP-01 supplies event signatures. NIP-44 v2 supplies encrypted payloads.
 //! NIP-78 supplies the addressable event shape for owner state.
 
+use crate::remote_signer::{PersonSigner, PersonSignerRequest, PersonSignerState};
 use nostr::{
     event::{Event, EventBuilder, FinalizeEvent, FinalizeUnsignedEvent, Kind, Tag},
     key::{Keys, PublicKey},
@@ -23,6 +24,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+#[cfg(test)]
+mod automatic_tests;
 pub(crate) mod offline;
 
 const IDENTITY_DIRECTORY: &str = "identity";
@@ -116,6 +119,8 @@ pub enum IdentityError {
     Decryption,
     #[error("device has no usable key")]
     NoDeviceKey,
+    #[error("person signer did not approve the owner binding")]
+    Signer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -347,17 +352,8 @@ impl DeviceIdentity {
             ));
         }
         let expected_owner = parse_public_key(expected_owner_public_key)?;
-        let supplied_template: OwnerStatementTemplate =
-            serde_json::from_str(unsigned_template_json).map_err(|_| {
-                IdentityError::InvalidEvent("owner template JSON is malformed".into())
-            })?;
-        let expected_template = OwnerStatementTemplate {
-            kind: OWNER_EVENT_KIND,
-            created_at: supplied_template.created_at,
-            tags: owner_tags(device_public_key, OwnerStatementStatus::Owned),
-            content: String::new(),
-        };
-        if supplied_template != expected_template {
+        let supplied_template = validate_owned_statement_template(unsigned_template_json)?;
+        if supplied_template.device_public_key != device_public_key {
             return Err(IdentityError::InvalidEvent(
                 "owner template does not request this device binding".into(),
             ));
@@ -378,7 +374,7 @@ impl DeviceIdentity {
             .map(|tag| tag.as_slice().to_vec())
             .collect();
         if signed.pubkey != expected_owner
-            || signed.kind.as_u16() != supplied_template.kind
+            || signed.kind != Kind::Custom(OWNER_EVENT_KIND)
             || signed.created_at.as_secs() != supplied_template.created_at
             || signed_tags != supplied_template.tags
             || signed.content != supplied_template.content
@@ -700,6 +696,49 @@ impl DeviceIdentity {
     }
 }
 
+/// Bind the first automatic person identity through the existing external-signer path.
+///
+/// An existing owned identity is returned unchanged. Any signer or verification
+/// failure leaves the persisted device identity unowned.
+pub async fn bind_automatic_owner<S>(
+    private_state_root: &Path,
+    signer: &S,
+    created_at: u64,
+) -> Result<IdentityState, IdentityError>
+where
+    S: PersonSigner + ?Sized,
+{
+    let mut identity = DeviceIdentity::load_or_create(private_state_root)?;
+    match identity.state() {
+        IdentityState::Owned { .. } => return Ok(identity.state().clone()),
+        IdentityState::Unowned { .. } => {}
+        IdentityState::Revoked { .. } | IdentityState::Invalid { .. } => {
+            return Err(IdentityError::Invalid(
+                "the current identity state cannot accept an automatic owner".into(),
+            ))
+        }
+    }
+    let template = identity.owner_statement_template(OwnerStatementStatus::Owned, created_at)?;
+    let state = signer
+        .request(PersonSignerRequest {
+            unsigned_event_template: template.clone(),
+        })
+        .await;
+    let PersonSignerState::Approved {
+        owner_public_key,
+        unsigned_event_template,
+        signed_event_json,
+    } = state
+    else {
+        return Err(IdentityError::Signer);
+    };
+    if unsigned_event_template != template {
+        return Err(IdentityError::Signer);
+    }
+    identity.apply_signed_owner_binding(&template, &owner_public_key, &signed_event_json)?;
+    Ok(identity.state().clone())
+}
+
 impl Nip46ConnectionIdentity {
     pub fn load_or_create(private_state_root: &Path) -> Result<Self, IdentityError> {
         let _storage = IDENTITY_STORAGE
@@ -786,6 +825,58 @@ struct OwnerStatementTemplate {
     created_at: u64,
     tags: Vec<Vec<String>>,
     content: String,
+}
+
+pub(crate) struct ValidatedOwnerBindingTemplate {
+    pub created_at: u64,
+    pub tags: Vec<Vec<String>>,
+    pub content: String,
+    pub device_public_key: String,
+}
+
+/// Validate the complete canonical shape accepted by the owner-binding consumer.
+///
+/// This proves an owned statement for one syntactically valid device key. The
+/// existing `PersonSignerRequest` does not carry an independently trusted device
+/// identity, so this function cannot prove that the named device is the caller.
+pub(crate) fn validate_owned_statement_template(
+    unsigned_template_json: &str,
+) -> Result<ValidatedOwnerBindingTemplate, IdentityError> {
+    if unsigned_template_json.len() > MAX_EVENT_BYTES {
+        return Err(IdentityError::InvalidEvent(
+            "owner template is too large".into(),
+        ));
+    }
+    let supplied: OwnerStatementTemplate = serde_json::from_str(unsigned_template_json)
+        .map_err(|_| IdentityError::InvalidEvent("owner template JSON is malformed".into()))?;
+    let device_public_key = match supplied.tags.get(1).map(Vec::as_slice) {
+        Some([name, device]) if name == "device" => device.clone(),
+        _ => {
+            return Err(IdentityError::InvalidEvent(
+                "owner template device tag is malformed".into(),
+            ))
+        }
+    };
+    parse_public_key(&device_public_key)?
+        .xonly()
+        .map_err(|_| IdentityError::InvalidEvent("public key is invalid".into()))?;
+    let expected = OwnerStatementTemplate {
+        kind: OWNER_EVENT_KIND,
+        created_at: supplied.created_at,
+        tags: owner_tags(&device_public_key, OwnerStatementStatus::Owned),
+        content: String::new(),
+    };
+    if supplied != expected {
+        return Err(IdentityError::InvalidEvent(
+            "owner template has the wrong owned-statement shape".into(),
+        ));
+    }
+    Ok(ValidatedOwnerBindingTemplate {
+        created_at: supplied.created_at,
+        tags: supplied.tags,
+        content: supplied.content,
+        device_public_key,
+    })
 }
 
 struct ParsedOwnerStatement {

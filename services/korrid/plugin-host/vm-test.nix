@@ -19,6 +19,26 @@ let
     cp ${../../../docs/research/retroarch-plugin-route/catalog/releases.yaml} "$out/catalog/releases.yaml"
     printf rom > "$out/roms/wl4.gba"
   '';
+  productDeviceConfig = pkgs.writeText "korri-product-vm-host.toml" ''
+    label = "product-vm"
+  '';
+  relayTripwire = pkgs.writeText "relay-tripwire.py" ''
+    import os
+    import socket
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 49000))
+    listener.listen()
+    notify = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    notify.connect(os.environ["NOTIFY_SOCKET"])
+    notify.sendall(b"READY=1")
+    while True:
+        connection, _ = listener.accept()
+        connection.close()
+        with open("/run/korri-relay-tripwire-connections", "ab") as marker:
+            marker.write(b"connection\n")
+  '';
   # Disposable local TLS, following nixpkgs nixos/tests/headscale.nix.
   certificate =
     pkgs.runCommand "plugin-tailnet-test-certificate" { nativeBuildInputs = [ pkgs.openssl ]; }
@@ -435,12 +455,63 @@ pkgs.testers.runNixOSTest {
     machine =
       { lib, ... }:
       {
-        imports = [ hostModule ];
+        imports = [
+          hostModule
+          (import ../nixos-module.nix {
+            korri.packages.${pkgs.stdenv.hostPlatform.system}.korrid = korridPackage;
+          })
+        ];
         services.korri.pluginHost.enable = true;
         services.korri.pluginHost.package = vmHostPackage;
         services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
-        users.users.plugin-user.isNormalUser = true;
-        users.users.plugin-user.hashedPassword = "!";
+        users.users.plugin-user = {
+          isNormalUser = true;
+          uid = 1000;
+          group = "users";
+          hashedPassword = "!";
+        };
+        services.korridLinuxDevice = {
+          enable = true;
+          package = korridPackage;
+          uid = 976;
+          gid = 976;
+          runtimeUser = "plugin-user";
+          runtimeUid = 1000;
+          runtimeGid = 100;
+          inputdUid = 977;
+          controlGid = 977;
+          localSignerUid = 978;
+          localSignerGid = 978;
+          deviceConfig = productDeviceConfig;
+          storageRoot = "/var/lib/korri-brain-smoke";
+          sunshinePrivateStateRoot = "/var/lib/korri-sunshine-private";
+          relays = [ "ws://127.0.0.1:49000" ];
+        };
+        systemd.tmpfiles.rules = [
+          "d /var/lib/korri-sunshine-private 0700 root root -"
+        ];
+        systemd.services.korri-relay-tripwire = {
+          description = "Fail-closed relay side-effect tripwire";
+          wantedBy = [ "multi-user.target" ];
+          before = [ "korrid.service" ];
+          requiredBy = [ "korrid.service" ];
+          serviceConfig = {
+            Type = "notify";
+            NotifyAccess = "all";
+            ExecStart = "${pkgs.python3}/bin/python ${relayTripwire}";
+            Restart = "on-failure";
+          };
+        };
+        systemd.services.korrid.environment = {
+          KORRID_MODE = lib.mkForce "brain";
+          KORRID_ADDRESS = lib.mkForce "127.0.0.1:49117";
+          KORRID_RPC_CAPABILITY = "plugin-host-vm-capability";
+          KORRI_LOCAL_STORAGE_ROOT = "/var/lib/korri-brain-smoke";
+        };
+        system.activationScripts.korriProductVmStorage.text = ''
+          install -d -m 0755 /var/lib/korri-brain-smoke
+          cp -R --no-preserve=mode,ownership ${smokeStorage}/. /var/lib/korri-brain-smoke/
+        '';
         # Exercise configured substitution without contacting public caches
         # from the isolated VM. The production module keeps NixOS's stock cache.
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
@@ -477,7 +548,6 @@ pkgs.testers.runNixOSTest {
         ];
         virtualisation.additionalPaths = [
           ipv6RejectAdds
-          smokeStorage
         ];
         # These are driver fixtures, not removable plugin selections. Keep them
         # across the plugin host's deliberate Nix store cleanup.
@@ -500,6 +570,55 @@ pkgs.testers.runNixOSTest {
     cache.wait_for_unit("nix-serve.service")
     cache.wait_for_open_port(5000)
     machine.wait_for_unit("korri-plugin-host.service")
+    machine.wait_for_unit("korri-local-signer.service")
+    machine.wait_for_unit("korrid.service")
+    machine.wait_for_open_port(49117)
+
+    # Real first boot: the automatic owner is local, silent, and held by a
+    # distinct service identity. No relay connection means there was no owner
+    # publication, roster import, endpoint read, or federation join.
+    assert machine.succeed("id -u korrid").strip() == "976"
+    assert machine.succeed("id -u korri-local-signer").strip() == "978"
+    assert machine.succeed("id -u plugin-user").strip() == "1000"
+    signer_pid = machine.succeed("systemctl show korri-local-signer.service -p MainPID --value").strip()
+    korrid_pid = machine.succeed("systemctl show korrid.service -p MainPID --value").strip()
+    machine.succeed("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-local-signer/identity/person.key")
+    machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korrid/identity/device.key")
+    machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-brain-smoke/device.yaml")
+    machine.succeed("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korrid/identity/device.key")
+    machine.fail("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korri-local-signer/identity/person.key")
+    machine.fail("runuser -u plugin-user -- test -r /var/lib/korri-local-signer/identity/person.key")
+    socket_denial = machine.fail(
+        "runuser -u plugin-user -- ${pkgs.python3}/bin/python -c "
+        + shlex.quote("import socket; socket.socket(socket.AF_UNIX).connect('/run/korri-local-signer/signer.sock')")
+        + " 2>&1"
+    )
+    assert "Permission denied" in socket_denial, socket_denial
+    after = machine.succeed("systemctl show korrid.service -p After --value").split()
+    requires = machine.succeed("systemctl show korrid.service -p Requires --value").split()
+    assert "korri-local-signer.service" in after, after
+    assert "korri-local-signer.service" in requires, requires
+    owner_before = json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status"))
+    assert owner_before["_tag"] == "Owned", owner_before
+    assert machine.succeed("cat /run/korri-local-signer/public/person.pub").strip() == owner_before["ownerPublicKey"]
+    assert machine.succeed("cat /run/korri-local-signer/expected-device-public-key").strip() == owner_before["devicePublicKey"]
+    assert machine.succeed("stat -c '%U:%G:%a' /var/lib/korri-local-signer/identity /var/lib/korri-local-signer/identity/person.key").splitlines() == ["korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:600"]
+    assert machine.succeed("stat -c '%U:%G:%a' /run/korri-local-signer/expected-device-public-key /run/korri-local-signer/public/person.pub").splitlines() == ["root:root:400", "korri-local-signer:korrid:640"]
+    machine.fail("test -e /var/lib/korrid/identity/nip46-client.key")
+    machine.fail("test -e /var/lib/korrid/identity/nip46.connection.json")
+    person_before = machine.succeed("sha256sum /var/lib/korri-local-signer/identity/person.key").split()[0]
+    binding_before = machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0]
+    machine.succeed("systemctl restart korri-local-signer.service")
+    machine.wait_for_unit("korri-local-signer.service")
+    machine.succeed("systemctl restart korrid.service")
+    machine.wait_for_unit("korrid.service")
+    machine.wait_for_open_port(49117)
+    assert machine.succeed("sha256sum /var/lib/korri-local-signer/identity/person.key").split()[0] == person_before
+    assert machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0] == binding_before
+    assert json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status")) == owner_before
+    machine.succeed("sleep 1")
+    machine.fail("test -e /run/korri-relay-tripwire-connections")
+
     generation = machine.succeed("readlink -f /run/current-system").strip()
     assert machine.succeed("nix config show max-jobs").strip() == "0"
     machine.fail("test -e ${tailscalePackage}")
@@ -742,20 +861,6 @@ pkgs.testers.runNixOSTest {
     capability = "plugin-host-vm-capability"
     published = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
     assert [package["id"] for package in published] == ["@korri:mgba"], published
-    machine.succeed("mkdir -p /var/lib/korri-brain-smoke")
-    machine.succeed("cp -R --no-preserve=mode,ownership ${smokeStorage}/. /var/lib/korri-brain-smoke/")
-    # Federation storage requires exactly 0700 and korrid mints its device key there.
-    machine.succeed("install -d -m 0700 /var/lib/korri-brain-smoke-private")
-    machine.succeed(
-        "systemd-run --collect --unit=korrid-brain-smoke --service-type=exec"
-        " --setenv=KORRID_MODE=brain"
-        " --setenv=KORRID_ADDRESS=127.0.0.1:49117"
-        " --setenv=KORRID_RPC_CAPABILITY=" + capability
-        + " --setenv=KORRI_LOCAL_STORAGE_ROOT=/var/lib/korri-brain-smoke"
-        " --setenv=KORRID_PRIVATE_STATE_ROOT=/var/lib/korri-brain-smoke-private"
-        " korrid"
-    )
-
     def brain_rpc(tag):
         request = json.dumps({"_tag": tag, "payload": {}})
         return json.loads(machine.succeed(
@@ -773,25 +878,11 @@ pkgs.testers.runNixOSTest {
     # provider release in the same catalog has no runner here and stays unlisted.
     assert [game["id"] for game in listed["payload"]["games"]] == ["01K4J6K8Y00000000000000002"], listed
     assert listed["payload"]["games"][0]["title"] == "Wario Land 4", listed
-    machine.succeed("systemctl stop korrid-brain-smoke.service")
-
     machine.succeed("korri-plugin disable @korri:mgba")
     machine.succeed("korri-plugin remove @korri:mgba --purge")
     # Without an enabled runner the same catalog resolves no route at all.
-    machine.succeed(
-        "systemd-run --collect --unit=korrid-brain-smoke-empty --service-type=exec"
-        " --setenv=KORRID_MODE=brain"
-        " --setenv=KORRID_ADDRESS=127.0.0.1:49117"
-        " --setenv=KORRID_RPC_CAPABILITY=" + capability
-        + " --setenv=KORRI_LOCAL_STORAGE_ROOT=/var/lib/korri-brain-smoke"
-        " --setenv=KORRID_PRIVATE_STATE_ROOT=/var/lib/korri-brain-smoke-private"
-        " korrid"
-    )
-    machine.wait_for_open_port(49117)
     empty = brain_rpc("app.local-games.list")["outcome"]
     assert empty["payload"]["games"] == [], empty
-    machine.succeed("systemctl stop korrid-brain-smoke-empty.service")
-    machine.succeed("rm -rf /var/lib/korri-brain-smoke /var/lib/korri-brain-smoke-private")
 
     # Load, but never start, the actual hostile bytes in systemd. Bare CR is a
     # directive boundary there, even after a comment or inside Description.

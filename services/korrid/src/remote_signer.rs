@@ -22,7 +22,13 @@ const POLL_DELAY: Duration = Duration::from_millis(50);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_CONNECTION_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum PersonSignerState {
     Unavailable {
         message: String,
@@ -46,7 +52,8 @@ pub enum PersonSignerState {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersonSignerRequest {
     pub unsigned_event_template: String,
 }

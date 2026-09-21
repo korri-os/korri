@@ -18,6 +18,7 @@ pkgs.mkShell {
     git
     jq
     openssh
+    systemd
     unzip
   ];
 
