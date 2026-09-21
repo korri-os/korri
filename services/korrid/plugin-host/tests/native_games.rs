@@ -12,7 +12,7 @@ fn real_game_payloads_pass_the_host_package_boundary_before_approval() {
     };
     let game = package::load(&nix, &selected, provenance).unwrap();
     assert_eq!(game.id, "@korri:mgba");
-    assert!(game.native_unit.is_none());
+    assert!(game.native_units.is_empty());
     assert!(game.files["mgba"].is_file());
     assert!(game.files["retroarch"].is_file());
     assert!(game.files["autoconfig"].is_dir());

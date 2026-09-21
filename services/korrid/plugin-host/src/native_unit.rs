@@ -4,6 +4,22 @@
 use serde::Serialize;
 use std::collections::BTreeSet;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DevicePolicy {
+    Auto,
+    Closed,
+}
+
+impl DevicePolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Closed => "closed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeUnit {
     pub source: String,
@@ -11,6 +27,11 @@ pub struct NativeUnit {
     pub capabilities: Vec<String>,
     pub devices: Vec<String>,
     pub credentials: Vec<String>,
+    pub address_families: Option<Vec<String>>,
+    pub runtime_directory: Option<String>,
+    pub runtime_directory_mode: Option<String>,
+    pub device_policy: Option<DevicePolicy>,
+    pub privileged_directives: Vec<String>,
     pub executables: Vec<String>,
 }
 
@@ -45,6 +66,11 @@ impl NativeUnit {
             capabilities: vec![],
             devices: vec![],
             credentials: vec![],
+            address_families: None,
+            runtime_directory: None,
+            runtime_directory_mode: None,
+            device_policy: None,
+            privileged_directives: vec![],
             executables: vec![],
         };
         let mut section = "".to_owned();
@@ -53,6 +79,10 @@ impl NativeUnit {
         let mut prepare = Vec::new();
         let mut cleanup = Vec::new();
         let mut service_type = None;
+        let mut saw_service = false;
+        let mut saw_socket = false;
+        let mut socket_listener = false;
+        let mut socket_service = false;
         for line in source.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -72,10 +102,12 @@ impl NativeUnit {
             logical.push_str(line);
             let line = logical.trim();
             if line.starts_with('[') {
-                if !matches!(line, "[Unit]" | "[Service]") {
+                if !matches!(line, "[Unit]" | "[Service]" | "[Socket]" | "[Install]") {
                     return Err(format!("unsupported unit section: {line}"));
                 }
                 section = line.to_owned();
+                saw_service |= line == "[Service]";
+                saw_socket |= line == "[Socket]";
             } else {
                 let (key, value) = line
                     .split_once('=')
@@ -85,7 +117,13 @@ impl NativeUnit {
                 let invalid = || format!("unsupported {key} value: {value}");
                 match (section.as_str(), key) {
                     ("[Unit]", "Description") if !value.contains('%') => {}
-                    ("[Service]", "Type") if matches!(value, "notify" | "exec") => {
+                    ("[Unit]", "Before" | "After" | "Wants" | "Requires" | "BindsTo")
+                        if valid_unit_list(value) =>
+                    {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "Type") if matches!(value, "notify" | "exec" | "simple") => {
+                        saw_service = true;
                         service_type = Some(value.to_owned())
                     }
                     ("[Service]", "ExecStart") => {
@@ -94,24 +132,144 @@ impl NativeUnit {
                         } else if start.is_some() {
                             return Err("ExecStart must name exactly one command".into());
                         } else {
-                            start = Some(command(value).map_err(|e| format!("ExecStart: {e}"))?);
+                            let executable =
+                                command(value, false).map_err(|e| format!("ExecStart: {e}"))?;
+                            if is_host_wrapper(&executable) {
+                                unit.privileged_directives
+                                    .push(format!("ExecStart={value}"));
+                            }
+                            start = Some(executable);
                         }
                     }
-                    ("[Service]", "User") if matches!(value, "" | "root") => {
+                    ("[Service]", "User")
+                        if value.is_empty() || crate::declaration::valid_name(value) =>
+                    {
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("User="));
                         unit.user = (!value.is_empty()).then(|| value.to_owned());
+                        if !value.is_empty() {
+                            unit.privileged_directives.push(format!("User={value}"));
+                        }
                     }
                     ("[Service]", "ExecStartPre") => {
                         if value.is_empty() {
                             prepare.clear();
                         } else {
-                            prepare.push(command(value).map_err(|e| format!("ExecStartPre: {e}"))?);
+                            prepare.push(
+                                command(value, true).map_err(|e| format!("ExecStartPre: {e}"))?,
+                            );
+                            if has_privileged_prefix(value) {
+                                unit.privileged_directives
+                                    .push(format!("ExecStartPre={value}"));
+                            }
                         }
                     }
                     ("[Service]", "ExecStopPost") => {
                         if value.is_empty() {
                             cleanup.clear();
                         } else {
-                            cleanup.push(command(value).map_err(|e| format!("ExecStopPost: {e}"))?);
+                            cleanup.push(
+                                command(value, false).map_err(|e| format!("ExecStopPost: {e}"))?,
+                            );
+                        }
+                    }
+                    ("[Service]", "Group") if crate::declaration::valid_name(value) => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "SupplementaryGroups") if valid_name_list(value) => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "WorkingDirectory") if valid_absolute_path(value) => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "Environment") if valid_environment(value) => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "Sockets") if valid_unit_list_for(value, ".socket") => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "ExecCondition") => {
+                        let executable =
+                            command(value, true).map_err(|e| format!("ExecCondition: {e}"))?;
+                        prepare.push(executable);
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "ReadWritePaths" | "InaccessiblePaths")
+                        if valid_path_list(value) =>
+                    {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "RuntimeDirectory") if value == "korri-input-seat" => {
+                        if unit.runtime_directory.is_some() {
+                            return Err("RuntimeDirectory must name exactly one directory".into());
+                        }
+                        unit.runtime_directory = Some(value.into());
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "RuntimeDirectoryMode") if valid_mode(value) => {
+                        unit.runtime_directory_mode = Some(value.into());
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("RuntimeDirectoryMode="));
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "UMask") if valid_mode(value) => {
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "Restart") if value == "on-failure" => {}
+                    ("[Service]", "RestartSec") if valid_unsigned(value) => {}
+                    ("[Service]", "RestrictAddressFamilies") if valid_address_families(value) => {
+                        let families = unit.address_families.get_or_insert_with(Vec::new);
+                        for family in value.split_ascii_whitespace() {
+                            if !families.iter().any(|current| current == family) {
+                                families.push(family.into());
+                            }
+                        }
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "DevicePolicy") if matches!(value, "auto" | "closed") => {
+                        unit.device_policy = Some(if value == "auto" {
+                            DevicePolicy::Auto
+                        } else {
+                            DevicePolicy::Closed
+                        });
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("DevicePolicy="));
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Service]", "ProtectSystem") if value == "strict" => {}
+                    ("[Service]", "ProtectProc") if value == "invisible" => {}
+                    ("[Service]", "ProcSubset") if value == "pid" => {}
+                    ("[Service]", "SystemCallArchitectures") if value == "native" => {}
+                    (
+                        "[Service]",
+                        "LockPersonality"
+                        | "MemoryDenyWriteExecute"
+                        | "ProtectClock"
+                        | "ProtectControlGroups"
+                        | "ProtectHostname"
+                        | "ProtectKernelLogs"
+                        | "ProtectKernelModules"
+                        | "ProtectKernelTunables"
+                        | "RestrictSUIDSGID",
+                    ) if matches!(value, "true" | "false") => {
+                        if value == "false" {
+                            unit.privileged_directives.push(format!("{key}={value}"));
+                        }
+                    }
+                    ("[Service]", "PrivateTmp") if matches!(value, "true" | "false") => {
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("PrivateTmp="));
+                        if value == "false" {
+                            unit.privileged_directives.push(format!("{key}={value}"));
+                        }
+                    }
+                    ("[Service]", "ProtectHome")
+                        if matches!(value, "true" | "false" | "yes" | "no" | "read-only") =>
+                    {
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with("ProtectHome="));
+                        if matches!(value, "false" | "no" | "read-only") {
+                            unit.privileged_directives.push(format!("{key}={value}"));
                         }
                     }
                     ("[Service]", "CapabilityBoundingSet") => {
@@ -123,7 +281,14 @@ impl NativeUnit {
                             unit.capabilities.clear();
                         }
                         for capability in words {
-                            if !matches!(capability, "CAP_NET_ADMIN" | "CAP_NET_RAW") {
+                            if !matches!(
+                                capability,
+                                "CAP_CHOWN"
+                                    | "CAP_NET_ADMIN"
+                                    | "CAP_NET_RAW"
+                                    | "CAP_SETPCAP"
+                                    | "CAP_SYS_ADMIN"
+                            ) {
                                 return Err(invalid());
                             }
                             if !unit.capabilities.iter().any(|c| c == capability) {
@@ -134,16 +299,61 @@ impl NativeUnit {
                     ("[Service]", "DeviceAllow") => {
                         if value.is_empty() {
                             unit.devices.clear();
-                        } else if value.split_ascii_whitespace().collect::<Vec<_>>()
-                            == ["/dev/net/tun", "rw"]
-                        {
-                            if unit.devices.is_empty() {
-                                unit.devices.push("/dev/net/tun rw".into());
-                            }
                         } else {
-                            return Err(invalid());
+                            let request = value.split_ascii_whitespace().collect::<Vec<_>>();
+                            if request.len() != 2 || request[1] != "rw" || !valid_device(request[0])
+                            {
+                                return Err(invalid());
+                            }
+                            if !unit.devices.iter().any(|device| device == value) {
+                                unit.devices.push(value.into());
+                            }
                         }
                     }
+                    ("[Service]", "NoNewPrivileges" | "PrivatePIDs" | "PrivateDevices")
+                        if matches!(value, "true" | "false") =>
+                    {
+                        let request = format!("{key}={value}");
+                        unit.privileged_directives
+                            .retain(|directive| !directive.starts_with(&format!("{key}=")));
+                        if value == "false" {
+                            unit.privileged_directives.push(request);
+                        }
+                    }
+                    ("[Service]", "AmbientCapabilities") if value.is_empty() => {}
+                    ("[Socket]", "Accept" | "RemoveOnStop" | "NonBlocking")
+                        if matches!(value, "true" | "false") =>
+                    {
+                        saw_socket = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "ListenSequentialPacket") if valid_runtime_path(value) => {
+                        saw_socket = true;
+                        socket_listener = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "FileDescriptorName") if crate::declaration::valid_name(value) => {
+                        saw_socket = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "SocketUser") if value == "root" => {
+                        saw_socket = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "SocketGroup") if crate::declaration::valid_name(value) => {
+                        saw_socket = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "SocketMode" | "DirectoryMode") if valid_mode(value) => {
+                        saw_socket = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Socket]", "Service") if valid_unit_name(value, ".service") => {
+                        saw_socket = true;
+                        socket_service = true;
+                        unit.privileged_directives.push(format!("{key}={value}"));
+                    }
+                    ("[Install]", "WantedBy") if valid_unit_list(value) => {}
                     ("[Service]", "LoadCredential") => {
                         if value.is_empty() {
                             unit.credentials.clear();
@@ -168,22 +378,165 @@ impl NativeUnit {
         if !logical.is_empty() {
             return Err("unterminated unit continuation".into());
         }
-        if service_type.is_none() {
-            return Err("Type must be exec or notify".into());
+        if unit.runtime_directory_mode.is_some() && unit.runtime_directory.is_none() {
+            return Err("RuntimeDirectoryMode requires an approved RuntimeDirectory".into());
         }
-        unit.executables.push(start.ok_or("ExecStart is required")?);
-        unit.executables.extend(prepare);
-        unit.executables.extend(cleanup);
+        if saw_service && saw_socket {
+            return Err("one native unit cannot mix [Service] and [Socket]".into());
+        }
+        if saw_socket {
+            if !socket_listener || !socket_service {
+                return Err("socket unit requires ListenSequentialPacket and Service".into());
+            }
+        } else {
+            if service_type.is_none() {
+                return Err("Type must be simple, exec or notify".into());
+            }
+            unit.executables.push(start.ok_or("ExecStart is required")?);
+            unit.executables.extend(prepare);
+            unit.executables.extend(cleanup);
+        }
         Ok(unit)
+    }
+
+    pub fn effective_device_policy(&self) -> DevicePolicy {
+        self.device_policy.unwrap_or_else(|| {
+            if self.devices.is_empty()
+                && self
+                    .privileged_directives
+                    .iter()
+                    .any(|directive| directive == "PrivateDevices=false")
+            {
+                DevicePolicy::Auto
+            } else {
+                DevicePolicy::Closed
+            }
+        })
     }
 }
 
-fn command(value: &str) -> Result<String, String> {
+fn valid_device(value: &str) -> bool {
+    matches!(value, "/dev/net/tun" | "/dev/uinput" | "/dev/uhid")
+        || value.strip_prefix("/dev/dri/card").is_some_and(|minor| {
+            !minor.is_empty() && minor.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        || value.strip_prefix("/dev/dri/renderD").is_some_and(|minor| {
+            !minor.is_empty() && minor.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn valid_name_list(value: &str) -> bool {
+    let names = value.split_ascii_whitespace().collect::<Vec<_>>();
+    !names.is_empty()
+        && names
+            .iter()
+            .all(|name| crate::declaration::valid_name(name))
+}
+
+fn valid_unit_list_for(value: &str, suffix: &str) -> bool {
+    let names = value.split_ascii_whitespace().collect::<Vec<_>>();
+    !names.is_empty() && names.iter().all(|name| valid_unit_name(name, suffix))
+}
+
+fn valid_unit_list(value: &str) -> bool {
+    let names = value.split_ascii_whitespace().collect::<Vec<_>>();
+    !names.is_empty()
+        && names.iter().all(|name| {
+            [".service", ".socket", ".target"]
+                .iter()
+                .any(|suffix| valid_unit_name(name, suffix))
+        })
+}
+
+fn valid_unit_name(value: &str, suffix: &str) -> bool {
+    value
+        .strip_suffix(suffix)
+        .is_some_and(crate::declaration::valid_name)
+}
+
+fn valid_environment(value: &str) -> bool {
+    words(value).is_ok_and(|assignments| {
+        !assignments.is_empty()
+            && assignments.iter().all(|assignment| {
+                let Some((name, value)) = assignment.split_once('=') else {
+                    return false;
+                };
+                !name.is_empty()
+                    && !name.as_bytes()[0].is_ascii_digit()
+                    && name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    && !value.contains(['%', '$'])
+                    && !value.chars().any(char::is_control)
+            })
+    })
+}
+
+fn valid_path_list(value: &str) -> bool {
+    words(value)
+        .is_ok_and(|paths| !paths.is_empty() && paths.iter().all(|path| valid_absolute_path(path)))
+}
+
+fn valid_absolute_path(value: &str) -> bool {
+    value.starts_with('/')
+        && value.len() <= 4096
+        && !value.contains(['%', '$'])
+        && !value.chars().any(char::is_control)
+        && !value
+            .trim_start_matches('/')
+            .split('/')
+            .any(|part| matches!(part, "" | "." | ".."))
+}
+
+fn valid_runtime_path(value: &str) -> bool {
+    value.starts_with("/run/")
+        && value.len() <= 4096
+        && !value.contains(['%', '$'])
+        && !value.chars().any(char::is_control)
+        && !value
+            .trim_start_matches('/')
+            .split('/')
+            .any(|part| matches!(part, "" | "." | ".."))
+}
+
+fn valid_unsigned(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn valid_address_families(value: &str) -> bool {
+    let families = value.split_ascii_whitespace().collect::<Vec<_>>();
+    !families.is_empty()
+        && families
+            .iter()
+            .all(|family| matches!(*family, "AF_UNIX" | "AF_INET" | "AF_INET6" | "AF_NETLINK"))
+}
+
+fn valid_mode(value: &str) -> bool {
+    value.len() == 4
+        && value.starts_with('0')
+        && value.bytes().all(|byte| matches!(byte, b'0'..=b'7'))
+}
+
+fn has_privileged_prefix(value: &str) -> bool {
+    words(value).is_ok_and(|args| args.first().is_some_and(|program| program.starts_with('+')))
+}
+
+fn command(value: &str, allow_privileged: bool) -> Result<String, String> {
     let args = words(value)?;
     if args.is_empty() || args.len() > 32 {
         return Err("command must contain 1 to 32 arguments".into());
     }
-    immutable_path(&args[0])?;
+    let program = if allow_privileged {
+        args[0].strip_prefix('+').unwrap_or(&args[0])
+    } else {
+        &args[0]
+    };
+    if args[0].starts_with('+') && !allow_privileged {
+        return Err("privileged execution prefix is not admitted here".into());
+    }
+    if !is_host_wrapper(program) {
+        immutable_path(program)?;
+    }
     for arg in &args {
         let rest = arg
             .replace("${STATE_DIRECTORY}", "")
@@ -197,7 +550,13 @@ fn command(value: &str) -> Result<String, String> {
             return Err("unsupported command argument or expansion".into());
         }
     }
-    Ok(args[0].clone())
+    Ok(program.to_owned())
+}
+
+pub fn is_host_wrapper(value: &str) -> bool {
+    value
+        .strip_prefix("/run/wrappers/bin/")
+        .is_some_and(crate::declaration::valid_name)
 }
 
 pub fn immutable_path(value: &str) -> Result<&std::path::Path, String> {
@@ -207,12 +566,13 @@ pub fn immutable_path(value: &str) -> Result<&std::path::Path, String> {
         .ok_or("command and artifact paths must be immutable store paths")?;
     let (output, inside) = rest
         .split_once('/')
-        .ok_or("store artifact must name a file")?;
+        .map_or((rest, None), |(output, inside)| (output, Some(inside)));
     crate::package::validate_store_path(std::path::Path::new(&format!("/nix/store/{output}")))?;
-    if inside
-        .split('/')
-        .any(|s| s.is_empty() || s == "." || s == "..")
-    {
+    if inside.is_some_and(|inside| {
+        inside
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    }) {
         return Err("store artifact has path traversal".into());
     }
     Ok(path)
@@ -297,6 +657,20 @@ fn words(value: &str) -> Result<Vec<String>, String> {
         result.push(word);
     }
     Ok(result)
+}
+
+pub fn validate_unit_selection(requested: &[String], packaged: &[String]) -> Result<(), String> {
+    let requested = requested.iter().collect::<BTreeSet<_>>();
+    let packaged = packaged.iter().collect::<BTreeSet<_>>();
+    if let Some(name) = requested.difference(&packaged).next() {
+        return Err(format!("requested unit {name} has no packaged native unit"));
+    }
+    if let Some(name) = packaged.difference(&requested).next() {
+        return Err(format!(
+            "packaged unit {name} was not requested by the plugin declaration"
+        ));
+    }
+    Ok(())
 }
 
 pub fn validate_names(names: &[String]) -> Result<(), String> {

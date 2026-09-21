@@ -2,14 +2,11 @@ use crate::{
     package::{self, Report},
     process, storage,
 };
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{fs, path::PathBuf, time::Duration};
 
 pub struct Units {
     pub systemctl: PathBuf,
+    pub unit_directory: PathBuf,
     pub firewall: crate::firewall::Firewall,
 }
 
@@ -18,9 +15,10 @@ type ExecStatus = (String, Vec<String>, bool, u64, u64, u64, u64, u32, i32, i32)
 
 impl Units {
     pub fn start(&self, report: &Report) -> Result<(), String> {
-        if report.native_unit.is_none() {
+        if report.native_units.is_empty() {
             return Ok(());
         }
+        single_native_unit(report)?;
         match self.start_service(report) {
             Ok(()) => Ok(()),
             Err(error) => match self.stop(&report.id, false) {
@@ -45,17 +43,21 @@ impl Units {
             "org.freedesktop.systemd1.Manager",
         )
         .map_err(|e| e.to_string())?;
+        let managed_unit = report
+            .unit
+            .as_deref()
+            .ok_or("multiple native unit lifecycle is not available")?;
         let _: zbus::zvariant::OwnedObjectPath = manager
-            .call("LoadUnit", &report.unit)
+            .call("LoadUnit", &managed_unit)
             .map_err(|e| e.to_string())?;
         manager
-            .call::<_, _, ()>("RefUnit", &report.unit)
+            .call::<_, _, ()>("RefUnit", &managed_unit)
             .map_err(|e| e.to_string())?;
         manager
-            .call::<_, _, ()>("ResetFailedUnit", &report.unit)
+            .call::<_, _, ()>("ResetFailedUnit", &managed_unit)
             .map_err(|e| e.to_string())?;
-        self.checked(["start", &report.unit])?;
-        self.checked(["is-active", "--quiet", &report.unit])?;
+        self.checked(["start", managed_unit])?;
+        self.checked(["is-active", "--quiet", managed_unit])?;
         // Do not expose a competing listener while activation is pending.
         // Tailscale and SSH announce readiness without an inbound connection.
         // A network-administration daemon can also add INPUT jumps during
@@ -65,7 +67,7 @@ impl Units {
     }
 
     pub fn matches_running(&self, report: &Report) -> Result<bool, String> {
-        let Some(native) = &report.native_unit else {
+        let Some((_, native)) = single_native_unit(report)? else {
             return Ok(true);
         };
         match fs::read_to_string(self.path(&report.id)) {
@@ -81,7 +83,11 @@ impl Units {
         }
         Ok(process::run(
             &self.systemctl,
-            ["is-active", "--quiet", &report.unit],
+            [
+                "is-active",
+                "--quiet",
+                report.unit.as_deref().ok_or("missing managed unit")?,
+            ],
             Duration::from_secs(10),
         )?
         .success)
@@ -184,7 +190,8 @@ impl Units {
         self.remove_drop_in(&report.id)?;
         storage::write_atomic(&self.path(&report.id), cleanup.as_bytes())?;
         self.checked(["daemon-reload"])?;
-        self.checked(["clean", "--what=state", &report.unit])?;
+        let cleanup_unit = purge_unit_name(report);
+        self.checked(["clean", "--what=state", &cleanup_unit])?;
         storage::remove(&self.path(&report.id))?;
         self.remove_drop_in(&report.id)?;
         self.checked(["daemon-reload"])?;
@@ -192,7 +199,7 @@ impl Units {
     }
 
     fn write(&self, report: &Report) -> Result<(), String> {
-        let native = report.native_unit.as_ref().ok_or("no native service")?;
+        let (_, native) = single_native_unit(report)?.ok_or("no native service")?;
         let drop_in = self.drop_in(&report.id);
         storage::directory(drop_in.parent().ok_or("invalid drop-in path")?)?;
         // The host writes the policy before exposing the native unit. Plugin
@@ -218,7 +225,8 @@ impl Units {
     }
 
     pub fn path(&self, id: &str) -> PathBuf {
-        Path::new("/run/systemd/system").join(format!("{}.service", package::unit_name(id)))
+        self.unit_directory
+            .join(format!("{}.service", package::unit_name(id)))
     }
 
     fn checked<I, S>(&self, args: I) -> Result<String, String>
@@ -230,31 +238,102 @@ impl Units {
     }
 }
 
+pub fn purge_unit_name(report: &Report) -> String {
+    format!("{}.service", package::unit_name(&report.id))
+}
+
+fn single_native_unit(
+    report: &Report,
+) -> Result<Option<(&str, &crate::native_unit::NativeUnit)>, String> {
+    match report.native_units.len() {
+        0 => Ok(None),
+        1 => Ok(report
+            .native_units
+            .iter()
+            .next()
+            .map(|(name, unit)| (name.as_str(), unit))),
+        _ => Err("multiple native unit lifecycle is not available".into()),
+    }
+}
+
 pub fn render(report: &Report) -> Result<String, String> {
     Ok(report
-        .native_unit
-        .as_ref()
-        .map(|unit| format!("{}\n{}", unit.source, hardening(report)))
-        .unwrap_or_default())
+        .native_units
+        .iter()
+        .map(|(unit_name, unit)| {
+            format!(
+                "# native unit: {unit_name}\n{}\n{}",
+                unit.source,
+                hardening_for(&report.id, unit)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
 }
 
 pub fn hardening(report: &Report) -> String {
-    let Some(native) = &report.native_unit else {
-        return String::new();
-    };
-    let name = package::unit_name(&report.id);
+    report
+        .native_units
+        .values()
+        .next()
+        .map(|native| hardening_for(&report.id, native))
+        .unwrap_or_default()
+}
+
+fn hardening_for(id: &str, native: &crate::native_unit::NativeUnit) -> String {
+    if native.executables.is_empty() {
+        return format!("# {}\n", package::BASE_POLICY);
+    }
+    let name = package::unit_name(id);
+    let (runtime_directory, runtime_directory_mode) = runtime_directory_policy(&name, native);
     if native.user.as_deref() == Some("root") {
         // User=root requests device-wide authority, not another sandbox profile.
         // Administrative login sessions must retain account switching, writable
         // homes, PTYs and normal device access. Never grant this by plugin ID.
         let policy = package::ROOT_POLICY;
-        return format!("# {policy}\n[Unit]\nAfter=network.target\n\n[Service]\nUser=root\nDynamicUser=no\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={name}\nRuntimeDirectoryMode=0700\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\n");
+        return format!("# {policy}\n[Unit]\nAfter=network.target\n\n[Service]\nUser=root\nDynamicUser=no\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={runtime_directory}\nRuntimeDirectoryMode={runtime_directory_mode}\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\n");
     }
     let capabilities = native.capabilities.join(" ");
+    let address_families = native
+        .address_families
+        .as_ref()
+        .map(|families| families.join(" "))
+        .unwrap_or_else(|| "AF_UNIX AF_INET AF_INET6 AF_NETLINK".into());
+    let (user_policy, dynamic_user) = match native.user.as_deref() {
+        Some(user) => (format!("User=\nUser={user}\n"), "no"),
+        None => ("User=\n".into(), "yes"),
+    };
+    let no_new_privileges = if native
+        .privileged_directives
+        .iter()
+        .any(|directive| directive == "NoNewPrivileges=false")
+    {
+        "no"
+    } else {
+        "yes"
+    };
+    let private_tmp = if native
+        .privileged_directives
+        .iter()
+        .any(|directive| directive == "PrivateTmp=false")
+    {
+        "no"
+    } else {
+        "yes"
+    };
+    let protect_home = native
+        .privileged_directives
+        .iter()
+        .find_map(|directive| directive.strip_prefix("ProtectHome="))
+        .unwrap_or("yes");
+    let device_policy = native.effective_device_policy().as_str();
     // List directives merge across fragments. Reset them explicitly before
     // installing the approved request. The native unit owns commands; the
     // host owns execution policy and never translates service templates.
-    let mut policy = format!("[Unit]\nAfter=network.target\n\n[Service]\nUser=\nDynamicUser=yes\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={name}\nRuntimeDirectoryMode=0700\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\nDevicePolicy=closed\nDeviceAllow=\nCapabilityBoundingSet=\nCapabilityBoundingSet={capabilities}\nAmbientCapabilities=\nAmbientCapabilities={capabilities}\nLoadCredential=\n");
+    let mut policy = format!(
+        "# {}\n[Unit]\nAfter=network.target\n\n[Service]\n{user_policy}DynamicUser={dynamic_user}\nStateDirectory=\nStateDirectory={name}\nStateDirectoryMode=0700\nRuntimeDirectory=\nRuntimeDirectory={runtime_directory}\nRuntimeDirectoryMode={runtime_directory_mode}\nUMask=0077\nRestart=on-failure\nRestartSec=1\nTimeoutStartSec=30\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges={no_new_privileges}\nProtectSystem=strict\nProtectHome={protect_home}\nPrivateTmp={private_tmp}\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nProtectProc=invisible\nRestrictSUIDSGID=yes\nRestrictRealtime=yes\nRestrictNamespaces=yes\nLockPersonality=yes\nRestrictAddressFamilies=\nRestrictAddressFamilies={address_families}\nDevicePolicy={device_policy}\nDeviceAllow=\nCapabilityBoundingSet=\nCapabilityBoundingSet={capabilities}\nAmbientCapabilities=\nAmbientCapabilities={capabilities}\nLoadCredential=\n",
+        package::BASE_POLICY
+    );
     for device in &native.devices {
         policy.push_str(&format!("DeviceAllow={device}\n"));
     }
@@ -262,4 +341,20 @@ pub fn hardening(report: &Report) -> String {
         policy.push_str(&format!("LoadCredential={credential}\n"));
     }
     policy
+}
+
+fn runtime_directory_policy(
+    host_name: &str,
+    native: &crate::native_unit::NativeUnit,
+) -> (String, String) {
+    match native.runtime_directory.as_deref() {
+        Some(directory) => (
+            directory.into(),
+            native
+                .runtime_directory_mode
+                .clone()
+                .unwrap_or_else(|| "0755".into()),
+        ),
+        None => (host_name.into(), "0700".into()),
+    }
 }

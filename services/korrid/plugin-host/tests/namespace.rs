@@ -154,7 +154,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
     )
     .unwrap();
     assert_eq!(report.id, "@example:game");
-    assert!(report.native_unit.is_none());
+    assert!(report.native_units.is_empty());
     assert_eq!(
         report.declaration.systems.as_ref().unwrap()["gba"]["title"],
         "Game Boy Advance"

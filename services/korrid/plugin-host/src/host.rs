@@ -49,6 +49,7 @@ impl Host {
             publishers,
             units: Units {
                 systemctl,
+                unit_directory: "/run/systemd/system".into(),
                 firewall: crate::firewall::Firewall {
                     ipv4: package::tools(iptables)?,
                     ipv6: package::tools(ip6tables)?,

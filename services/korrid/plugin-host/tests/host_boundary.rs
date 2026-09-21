@@ -1,4 +1,4 @@
-use korri_plugin_host::{package, process, storage};
+use korri_plugin_host::{native_unit, package, process, storage};
 use std::{
     ffi::CString,
     fs,
@@ -6,6 +6,27 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
+
+#[test]
+fn packaged_native_units_are_confined_to_the_requesting_plugin_declaration() {
+    native_unit::validate_unit_selection(
+        &["streaming".into(), "control.socket".into()],
+        &["control.socket".into(), "streaming".into()],
+    )
+    .unwrap();
+    let error = native_unit::validate_unit_selection(
+        &["streaming".into()],
+        &["streaming".into(), "other.socket".into()],
+    )
+    .unwrap_err();
+    assert!(error.contains("other.socket"), "{error}");
+    let error = native_unit::validate_unit_selection(
+        &["streaming".into(), "missing.socket".into()],
+        &["streaming".into()],
+    )
+    .unwrap_err();
+    assert!(error.contains("missing.socket"), "{error}");
+}
 
 #[test]
 fn old_source_less_receipts_fail_without_mutation() {

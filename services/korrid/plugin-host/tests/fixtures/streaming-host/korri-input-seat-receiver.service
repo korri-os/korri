@@ -1,0 +1,45 @@
+[Unit]
+After=systemd-tmpfiles-setup-dev.service systemd-tmpfiles-resetup.service korri-bundle-selector.service
+Before=korrid.service sunshine.service
+Description=Protected Korri Sunshine input-seat receiver
+Requires=korri-bundle-selector.service
+
+[Service]
+Environment="LOCALE_ARCHIVE=/nix/store/fxcf3lz7hwyz5z2r25bkhs3mg1pl3si6-glibc-locales-2.40-66/lib/locale/locale-archive"
+Environment="PATH=/nix/store/d9jxdwalyr5qzmyz9m5avmzn7w40h7iy-coreutils-9.8/bin:/nix/store/cy7aqw5j5rjk2pza5p2j2jcdm3vjy12q-findutils-4.10.0/bin:/nix/store/5728bdap49nsnk1c8zq96fqsm4b7ihj6-gnugrep-3.12/bin:/nix/store/xcjag3jcsfdmixjcm3xckkrkcl5r48b6-gnused-4.9/bin:/nix/store/xn64fgz1z7jz4nnhln9nkdkd4p1bparg-systemd-258.2/bin:/nix/store/d9jxdwalyr5qzmyz9m5avmzn7w40h7iy-coreutils-9.8/sbin:/nix/store/cy7aqw5j5rjk2pza5p2j2jcdm3vjy12q-findutils-4.10.0/sbin:/nix/store/5728bdap49nsnk1c8zq96fqsm4b7ihj6-gnugrep-3.12/sbin:/nix/store/xcjag3jcsfdmixjcm3xckkrkcl5r48b6-gnused-4.9/sbin:/nix/store/xn64fgz1z7jz4nnhln9nkdkd4p1bparg-systemd-258.2/sbin"
+Environment="TZDIR=/nix/store/qzx55k27rdhpg9f792fg7dwcbwz78mc8-tzdata-2025b/share/zoneinfo"
+CapabilityBoundingSet=CAP_CHOWN
+DeviceAllow=/dev/uinput rw
+DevicePolicy=closed
+ExecStart=/nix/store/l7pqmw4h6rkqclkhf4a55sh8fgvqa2rw-korri-inputd-0.0.0/bin/korri-bundle-launch input-seat-receiver --runtime-dir /run/korri-input-seat --control-uid 976 --control-gid 976 --sunshine-uid 1001 --sunshine-gid 980 --event-gid 1001
+Group=root
+LockPersonality=true
+MemoryDenyWriteExecute=true
+NoNewPrivileges=true
+PrivateDevices=false
+PrivatePIDs=true
+PrivateTmp=true
+ProcSubset=pid
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+ReadWritePaths=/run/korri-input-seat
+Restart=on-failure
+RestartSec=1
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+RuntimeDirectory=korri-input-seat
+RuntimeDirectoryMode=0711
+SystemCallArchitectures=native
+Type=simple
+UMask=0077
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -17,12 +17,15 @@ fn packaged_native_ssh_requests_root_authority_before_any_service_effect() {
     .unwrap();
     assert_eq!(report.id, "@korri:ssh");
     assert_eq!(report.policy, package::ROOT_POLICY);
-    assert!(report.warning.starts_with("DEVICE-WIDE ROOT AUTHORITY:"));
-    assert!(report.warning.contains("every service command as root"));
-    assert!(report.warning.contains("only to this exact plugin build"));
+    assert!(report.warning.starts_with("NATIVE AUTHORITY REQUEST:"));
+    assert!(report.warning.contains("DEVICE-WIDE ROOT AUTHORITY:"));
+    assert!(report.warning.contains("User=root"));
+    assert!(report
+        .warning
+        .contains("limited to this exact plugin build"));
     assert_eq!(report.ports.allowed_tcp_ports, [2222]);
     assert!(report.ports.allowed_udp_ports.is_empty());
-    let native = report.native_unit.unwrap();
+    let native = &report.native_units["sshd"];
     assert_eq!(native.user.as_deref(), Some("root"));
     assert_eq!(native.executables.len(), 2);
     assert!(native

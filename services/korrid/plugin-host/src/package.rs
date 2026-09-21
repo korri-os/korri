@@ -16,9 +16,9 @@ use std::{
     time::Duration,
 };
 
-pub const BASE_POLICY: &str = "policy-v2: validated native systemd unit; host hardening drop-in; dynamic unprivileged user; read-only system; private state; private temporary files; no privilege escalation; at most one managed service; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
+pub const BASE_POLICY: &str = "policy-v3: exact named native units; validated systemd directives; approved capabilities and device access; host hardening drop-ins; dynamic unprivileged services by default; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
 
-pub const ROOT_POLICY: &str = "policy-root-v1: explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
+pub const ROOT_POLICY: &str = "policy-root-v2: exact named native units; explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
 
 #[derive(Serialize)]
 pub struct Report {
@@ -28,12 +28,12 @@ pub struct Report {
     pub approval: String,
     pub policy: &'static str,
     pub warning: String,
-    pub unit: String,
+    pub unit: Option<String>,
     pub state_directory: String,
     pub runtime_directory: String,
     pub unit_configuration: String,
     pub declaration: Declaration,
-    pub native_unit: Option<crate::native_unit::NativeUnit>,
+    pub native_units: BTreeMap<String, crate::native_unit::NativeUnit>,
     pub ports: crate::firewall::Ports,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,
@@ -460,11 +460,10 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
         serde_json::to_value(&declaration).map_err(|e| e.to_string())?,
         &manifest.files,
     )?;
-    for name in &declaration.services {
-        if !manifest.services.contains_key(name) {
-            return Err(format!("service {name} has no packaged native unit"));
-        }
-    }
+    crate::native_unit::validate_unit_selection(
+        &declaration.services,
+        &manifest.services.keys().cloned().collect::<Vec<_>>(),
+    )?;
     Ok((declaration, source))
 }
 
@@ -502,6 +501,52 @@ fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
     Ok(closure)
 }
 
+pub fn authority_warning(
+    native_units: &BTreeMap<String, crate::native_unit::NativeUnit>,
+) -> String {
+    if native_units.is_empty() {
+        return "No native service is activated by this package. Approval covers the exact declaration and launch callback source. Game launch effects can access the runtime user's files and display; they must run in the existing runtime-user systemd sandbox, never as the administrator.".into();
+    }
+
+    let mut report =
+        String::from("NATIVE AUTHORITY REQUEST: approval is limited to this exact plugin build.");
+    if native_units
+        .values()
+        .any(|unit| unit.user.as_deref() == Some("root"))
+    {
+        report.push_str(" DEVICE-WIDE ROOT AUTHORITY: User=root can change device files, accounts, credentials, devices and network policy.");
+    }
+    for (name, unit) in native_units {
+        report.push_str(&format!(" unit {name}:"));
+        if unit.privileged_directives.is_empty() {
+            report.push_str(" privileged directives [none];");
+        } else {
+            report.push_str(&format!(
+                " privileged directives [{}];",
+                unit.privileged_directives.join(", ")
+            ));
+        }
+        if unit.capabilities.is_empty() {
+            report.push_str(" capabilities [none];");
+        } else {
+            report.push_str(&format!(
+                " capabilities [{}];",
+                unit.capabilities.join(", ")
+            ));
+        }
+        if unit.devices.is_empty()
+            && unit.effective_device_policy() == crate::native_unit::DevicePolicy::Auto
+        {
+            report.push_str(" devices [all host devices (PrivateDevices=false)].");
+        } else if unit.devices.is_empty() {
+            report.push_str(" devices [none].");
+        } else {
+            report.push_str(&format!(" devices [{}].", unit.devices.join(", ")));
+        }
+    }
+    report
+}
+
 fn build_report(
     package: &Path,
     provenance: Provenance,
@@ -525,73 +570,51 @@ fn build_report(
             validate_artifact(path, closure, false)?;
         }
     }
-    let native_unit = declaration
-        .services
-        .first()
-        .map(|name| {
-            let bytes = read_regular(
-                &fs::canonicalize(&manifest.services[name]).map_err(|e| e.to_string())?,
-                128 * 1024,
-            )?;
-            let unit = crate::native_unit::NativeUnit::parse(
-                std::str::from_utf8(&bytes).map_err(|_| "native unit is not UTF-8")?,
-            )?;
-            if let Some(closure) = closure {
-                for executable in &unit.executables {
+    let mut native_units = BTreeMap::new();
+    for name in &declaration.services {
+        let bytes = read_regular(
+            &fs::canonicalize(&manifest.services[name]).map_err(|e| e.to_string())?,
+            128 * 1024,
+        )?;
+        let unit = crate::native_unit::NativeUnit::parse(
+            std::str::from_utf8(&bytes).map_err(|_| "native unit is not UTF-8")?,
+        )?;
+        if let Some(closure) = closure {
+            for executable in &unit.executables {
+                if !crate::native_unit::is_host_wrapper(executable) {
                     validate_artifact(Path::new(executable), closure, true)?;
                 }
             }
-            Ok::<_, String>(unit)
-        })
-        .transpose()?;
-    if native_unit.is_none() && !manifest.ports.is_empty() {
+        }
+        native_units.insert(name.clone(), unit);
+    }
+    if native_units.is_empty() && !manifest.ports.is_empty() {
         return Err("ports require an active service contribution".into());
     }
-    let capabilities = native_unit
-        .as_ref()
-        .map(|u| u.capabilities.as_slice())
-        .unwrap_or_default();
-    let warning = if native_unit.is_none() {
-        "No native service is activated by this package. Approval covers the exact declaration and launch callback source. Game launch effects can access the runtime user's files and display; they must run in the existing runtime-user systemd sandbox, never as the administrator."
-    } else if native_unit
-        .as_ref()
-        .is_some_and(|u| u.user.as_deref() == Some("root"))
-    {
-        "DEVICE-WIDE ROOT AUTHORITY: User=root runs every service command as root. This plugin can read or change all device files, accounts, credentials, devices and network policy, and start administrative sessions. It is NOT confined by the default dynamic-user sandbox. Approval grants this authority only to this exact plugin build."
-    } else if capabilities.iter().any(|c| c == "CAP_NET_ADMIN") {
-        "HOST NETWORK ADMINISTRATION: this daemon can change host routes, interfaces and firewall rules. It can interrupt connectivity or redirect traffic. This access is not confined to its own interface."
-    } else if capabilities.iter().any(|c| c == "CAP_NET_RAW") {
-        "RAW HOST NETWORK: this daemon can create raw sockets and observe or forge IP traffic."
-    } else {
-        "This daemon has ordinary host-network access. It has no Linux capabilities."
-    };
+    let has_root = native_units
+        .values()
+        .any(|unit| unit.user.as_deref() == Some("root"));
+    let warning = authority_warning(&native_units);
     let mut report = Report {
         id,
         package: package.into(),
         provenance,
         approval: String::new(),
-        policy: if native_unit
-            .as_ref()
-            .is_some_and(|u| u.user.as_deref() == Some("root"))
-        {
-            ROOT_POLICY
-        } else {
-            BASE_POLICY
-        },
-        warning: if native_unit
-            .as_ref()
-            .is_some_and(|u| !u.credentials.is_empty())
+        policy: if has_root { ROOT_POLICY } else { BASE_POLICY },
+        warning: if native_units
+            .values()
+            .any(|unit| !unit.credentials.is_empty())
         {
             format!("{warning} NATIVE CREDENTIAL LOOKUP: systemd searches its inherited credentials and credstore for tailscale-authkey. A missing named credential is non-fatal in systemd. Korri supplies no secret and performs no login; Tailscale still needs an explicit operator tailscale up.")
         } else {
-            warning.into()
+            warning
         },
         state_directory: format!("/var/lib/{unit}"),
         runtime_directory: format!("/run/{unit}"),
-        unit: format!("{unit}.service"),
+        unit: (native_units.len() == 1).then(|| format!("{unit}.service")),
         unit_configuration: String::new(),
         declaration,
-        native_unit,
+        native_units,
         ports: manifest.ports,
         packages: manifest.packages,
         files: manifest.files,
@@ -603,6 +626,7 @@ fn build_report(
         &report.package,
         &report.provenance,
         &report.declaration,
+        report.policy,
         &report.unit_configuration,
         &source,
     )?;
@@ -613,13 +637,14 @@ fn approval_digest(
     package: &Path,
     provenance: &Provenance,
     declaration: &Declaration,
+    policy: &str,
     unit: &str,
     source: &SourceSnapshot,
 ) -> Result<String, String> {
     let sources = source.canonical_entries();
     let manifest = read_regular(&package.join("manifest.json"), MANIFEST_BYTES)?;
     let bytes = serde_json::to_vec(&(
-        BASE_POLICY,
+        policy,
         package,
         provenance,
         declaration,
@@ -677,7 +702,14 @@ mod approval_tests {
         declaration: &Declaration,
         unit: &str,
     ) -> Result<String, String> {
-        super::approval_digest(package, provenance, declaration, unit, &snapshot(package)?)
+        super::approval_digest(
+            package,
+            provenance,
+            declaration,
+            BASE_POLICY,
+            unit,
+            &snapshot(package)?,
+        )
     }
 
     #[test]
@@ -692,7 +724,8 @@ mod approval_tests {
             cache_url: "file:///cache".into(),
         };
         let digest =
-            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap();
+            super::approval_digest(package, &origin, &declaration, BASE_POLICY, "unit", &source)
+                .unwrap();
         // Snapshot ownership does not change the existing approval tuple or
         // the source's JSON byte-array representation.
         let approved = serde_json::to_vec(&(
@@ -709,7 +742,8 @@ mod approval_tests {
         fs::remove_file(package.join("plugin.ts")).unwrap();
         assert_eq!(
             digest,
-            super::approval_digest(package, &origin, &declaration, "unit", &source).unwrap()
+            super::approval_digest(package, &origin, &declaration, BASE_POLICY, "unit", &source,)
+                .unwrap()
         );
         assert_eq!(
             Declaration::evaluate_snapshot("@test", &source)
@@ -747,6 +781,7 @@ mod approval_tests {
             package,
             &origin,
             &declaration,
+            BASE_POLICY,
             "unit",
             &SourceSnapshot::package_plugin(
                 package,
@@ -761,6 +796,7 @@ mod approval_tests {
             package,
             &origin,
             &declaration,
+            BASE_POLICY,
             "unit",
             &SourceSnapshot::package_plugin(
                 package,
@@ -774,7 +810,8 @@ mod approval_tests {
     }
 
     #[test]
-    fn approval_binds_source_release_archive_package_and_effective_policy_not_staging() {
+    fn approval_binds_source_release_archive_plugin_identity_authority_and_policy_version_not_staging(
+    ) {
         let declaration = Declaration::evaluate(
             "@test",
             "export const name = 'plugin'; export const services = [];",
@@ -826,9 +863,55 @@ mod approval_tests {
             digest,
             approval_digest(&other_package, &origin, &declaration, "effective unit").unwrap()
         );
+        for changed_authority in [
+            "# native unit: other.service\neffective unit",
+            "effective unit\nEnvironmentFile=/etc/environment",
+            "effective unit\nDeviceAllow=/dev/sda rw",
+            "effective unit\nDevicePolicy=closed",
+            "effective unit\nDevicePolicy=auto",
+            "effective unit\nCapabilityBoundingSet=CAP_SYS_BOOT",
+        ] {
+            assert_ne!(
+                digest,
+                approval_digest(package, &origin, &declaration, changed_authority).unwrap(),
+                "{changed_authority}"
+            );
+        }
+        let closed_devices = approval_digest(
+            package,
+            &origin,
+            &declaration,
+            "PrivateDevices=false\nDevicePolicy=closed",
+        )
+        .unwrap();
+        let automatic_devices = approval_digest(
+            package,
+            &origin,
+            &declaration,
+            "PrivateDevices=false\nDevicePolicy=auto",
+        )
+        .unwrap();
+        assert_ne!(closed_devices, automatic_devices);
         assert_ne!(
             digest,
-            approval_digest(package, &origin, &declaration, "new policy").unwrap()
+            super::approval_digest(
+                package,
+                &origin,
+                &declaration,
+                "policy-v999",
+                "effective unit",
+                &snapshot(package).unwrap(),
+            )
+            .unwrap()
+        );
+        let other_plugin = Declaration::evaluate(
+            "@other",
+            "export const name = 'plugin'; export const services = [];",
+        )
+        .unwrap();
+        assert_ne!(
+            digest,
+            approval_digest(package, &origin, &other_plugin, "effective unit").unwrap()
         );
         assert_ne!(
             digest,

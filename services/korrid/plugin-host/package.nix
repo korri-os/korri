@@ -12,6 +12,8 @@ let
       craneLib.filterCargoSources path type
       || path == toString ./tests/fixtures/selection.json
       || path == toString ./tests/fixtures/retroarch.plugin.ts
+      || path == toString ./tests/fixtures/streaming-host
+      || pkgs.lib.hasPrefix "${toString ./tests/fixtures/streaming-host}/" path
       || builtins.elem path (
         map (name: toString (./tests/fixtures + "/${name}.plugin.ts")) linkedDeclarations
       );

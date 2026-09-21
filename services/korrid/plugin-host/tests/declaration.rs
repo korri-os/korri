@@ -3,10 +3,29 @@ use korri_plugin_host::declaration::Declaration;
 const PLUGIN: &str = "export const name = 'network'; export const title = 'Network'; export const services = ['daemon'];";
 
 #[test]
-fn unknown_plugin_identity_selects_a_named_native_service() {
-    let declaration = Declaration::evaluate("@example", PLUGIN).unwrap();
+fn unknown_plugin_identity_selects_its_named_native_units() {
+    let declaration = Declaration::evaluate(
+        "@example",
+        &PLUGIN.replace("['daemon']", "['daemon', 'control.socket', 'seat']"),
+    )
+    .unwrap();
     assert_eq!(declaration.id(), "@example:network");
-    assert_eq!(declaration.services, ["daemon"]);
+    assert_eq!(declaration.services, ["daemon", "control.socket", "seat"]);
+}
+
+#[test]
+fn native_unit_requests_are_bounded_to_the_three_unit_streaming_case() {
+    assert!(Declaration::evaluate(
+        "@example",
+        "export const name = 'three'; export const services = ['one', 'two', 'three'];"
+    )
+    .is_ok());
+    let error = Declaration::evaluate(
+        "@example",
+        "export const name = 'four'; export const services = ['one', 'two', 'three', 'four'];",
+    )
+    .unwrap_err();
+    assert!(error.contains("at most three native units"), "{error}");
 }
 
 #[test]

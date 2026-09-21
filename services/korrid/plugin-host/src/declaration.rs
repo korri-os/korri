@@ -139,8 +139,8 @@ impl Declaration {
             );
         }
         crate::native_unit::validate_names(&self.services)?;
-        if self.services.len() > 1 {
-            return Err("this host supports at most one active service per plugin".into());
+        if self.services.len() > 3 {
+            return Err("a plugin may request at most three native units".into());
         }
         Ok(())
     }

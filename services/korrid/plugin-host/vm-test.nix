@@ -108,14 +108,16 @@ let
       };
     };
   };
-  forbidden = mkPlugin {
+  namedUser = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeTextDir "plugin.ts" "export const name = 'forbidden'; export const services = ['forbidden'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'named-user'; export const services = ['named-user'];";
     plugin = _: {
-      services.forbidden.serviceConfig = {
+      services."named-user".serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
         User = "nobody";
+        DevicePolicy = "closed";
+        PrivateDevices = false;
       };
     };
   };
@@ -175,6 +177,34 @@ let
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'empty'; export const services = [];";
     plugin = _: { };
+  };
+  multiple = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'multiple'; export const services = ['first', 'second'];";
+    plugin = _: {
+      services.first.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+      services.second.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+    };
+  };
+  runtimeSeat = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'runtime-seat'; export const services = ['seat'];";
+    plugin = _: {
+      services.seat.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+        User = "root";
+        RuntimeDirectory = "korri-input-seat";
+        RuntimeDirectoryMode = "0711";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+      };
+    };
   };
   # Keep a real buildable deriver on the client, but not its output. A failed
   # substitution must not run this canary, even with permissive ambient options.
@@ -260,11 +290,13 @@ pkgs.testers.runNixOSTest {
           interrupted
           unclean
           empty
+          multiple
+          runtimeSeat
           emptyClock
           gameRuntimePackage
           dependentClock
           credential
-          forbidden
+          namedUser
           sshPackage
           splitPlugin
           impostor
@@ -416,6 +448,9 @@ pkgs.testers.runNixOSTest {
         manifest = json.loads(machine.succeed("cat " + report["package"] + "/manifest.json"))
         return manifest["files"][name]
 
+    def managed_name(report):
+        return report["state_directory"].rsplit("/", 1)[-1]
+
     def assert_ports(report, enabled):
         marker = report["unit"].removesuffix(".service")
         expected = []
@@ -445,9 +480,10 @@ pkgs.testers.runNixOSTest {
     machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /etc/ssh/authorized_keys.d/root")
     machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /home/plugin-user/.ssh/authorized_keys; chown -R plugin-user:users /home/plugin-user/.ssh; chmod 600 /home/plugin-user/.ssh/authorized_keys")
     ssh = inspect("${sshPackage}")
-    assert ssh["policy"].startswith("policy-root-v1:")
+    assert ssh["policy"].startswith("policy-root-v2:")
     assert "DEVICE-WIDE ROOT AUTHORITY" in ssh["warning"]
-    assert ssh["native_unit"]["user"] == "root"
+    assert len(ssh["native_units"]) == 1
+    assert next(iter(ssh["native_units"].values()))["user"] == "root"
     assert "DynamicUser=no" in ssh["unit_configuration"]
     assert ssh["ports"] == {"allowedTCPPorts": [2222], "allowedUDPPorts": []}
     machine.fail("korri-plugin install http://cache:5000 ${sshPackage} " + "0" * 64)
@@ -547,11 +583,36 @@ pkgs.testers.runNixOSTest {
     cache.fail("iptables -w -S korri-plugins | grep -- --dport")
 
     empty = install("${empty}")
+    assert empty["unit"] is None
+    assert empty["native_units"] == {}
     machine.succeed("korri-plugin enable @example:empty")
     machine.succeed("korri-plugin restore-all")
-    machine.fail("test -e /run/systemd/system/" + empty["unit"])
+    machine.fail("test -e /run/systemd/system/" + managed_name(empty) + ".service")
     machine.succeed("korri-plugin disable @example:empty")
+    machine.succeed("mkdir -p " + empty["state_directory"] + "; touch " + empty["state_directory"] + "/retained-data")
     machine.succeed("korri-plugin remove @example:empty --purge")
+    machine.fail("test -e " + empty["state_directory"])
+
+    multiple = install("${multiple}")
+    assert multiple["unit"] is None
+    assert sorted(multiple["native_units"]) == ["first", "second"]
+    machine.succeed("mkdir -p " + multiple["state_directory"] + "; touch " + multiple["state_directory"] + "/retained-data")
+    machine.succeed("korri-plugin remove @example:multiple --purge")
+    machine.fail("test -e " + multiple["state_directory"])
+    machine.fail("test -e /run/systemd/system/" + managed_name(multiple) + ".service")
+
+    runtime_seat = install("${runtimeSeat}")
+    seat_unit = next(iter(runtime_seat["native_units"].values()))
+    assert seat_unit["runtime_directory"] == "korri-input-seat"
+    assert seat_unit["runtime_directory_mode"] == "0711"
+    assert seat_unit["address_families"] == ["AF_UNIX"]
+    machine.succeed("korri-plugin enable @example:runtime-seat")
+    machine.wait_for_unit(runtime_seat["unit"])
+    assert machine.succeed("systemctl show " + runtime_seat["unit"] + " --property=RestrictAddressFamilies --value").strip() == "AF_UNIX"
+    assert machine.succeed("systemctl show " + runtime_seat["unit"] + " --property=RuntimeDirectoryMode --value").strip() == "0711"
+    assert machine.succeed("stat -c %a /run/korri-input-seat").strip() == "711"
+    machine.succeed("korri-plugin disable @example:runtime-seat; korri-plugin remove @example:runtime-seat --purge")
+    machine.fail("test -e /run/korri-input-seat")
 
     # A self-contained game plugin is one independently managed selection.
     game_runtime = inspect("${gameRuntimePackage}")
@@ -563,11 +624,11 @@ pkgs.testers.runNixOSTest {
     game_packages = json.loads(machine.succeed("korri-plugin enabled-packages"))
     assert [p["id"] for p in game_packages] == ["@korri:mgba"]
     assert game_packages[0]["declaration"]["runners"] == game_runtime["declaration"]["runners"]
-    assert game_packages[0]["native_unit"] is None
+    assert game_packages[0]["native_units"] == {}
     cache.succeed("systemctl stop nix-serve.service")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
     cache.succeed("systemctl start nix-serve.service")
-    game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + game_runtime["unit"].removesuffix(".service")
+    game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(game_runtime)
     machine.succeed("ln -s ${alternate} " + game_root + "/pending")
     assert "unfinished selection" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("korri-plugin restore-all")
@@ -576,7 +637,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("ln -sfn ${alternate} " + game_root + "/active")
     assert "inconsistent active root" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("ln -sfn ${gameRuntimePackage} " + game_root + "/active")
-    game_receipt_path = "/var/lib/korri-plugin-host/" + game_runtime["unit"].removesuffix(".service") + "/selection.json"
+    game_receipt_path = "/var/lib/korri-plugin-host/" + managed_name(game_runtime) + "/selection.json"
     game_receipt = json.loads(machine.succeed("cat " + game_receipt_path))
     machine.succeed("printf %s " + shlex.quote(json.dumps(dict(game_receipt, approval="0" * 64))) + " > " + game_receipt_path)
     assert "no longer matches its approval" in machine.fail("korri-plugin enabled-packages 2>&1")
@@ -655,8 +716,19 @@ pkgs.testers.runNixOSTest {
         machine.fail("korri-plugin status @example:injection")
         machine.fail("test -e /tmp/injected-command")
 
-    assert "User" in machine.fail("korri-plugin inspect http://cache:5000 ${forbidden} 2>&1")
-    machine.fail("korri-plugin status @example:forbidden")
+    named_user = install("${namedUser}")
+    named_user_unit = next(iter(named_user["native_units"].values()))
+    assert named_user_unit["user"] == "nobody"
+    assert named_user_unit["device_policy"] == "closed"
+    assert "DevicePolicy=closed" in named_user["warning"]
+    assert "PrivateDevices=false" in named_user["warning"]
+    assert "all host devices" not in named_user["warning"]
+    assert "User=\nUser=nobody\nDynamicUser=no" in named_user["unit_configuration"]
+    machine.succeed("korri-plugin enable @example:named-user")
+    machine.wait_for_unit(named_user["unit"])
+    assert machine.succeed("systemctl show " + named_user["unit"] + " --property=PrivateDevices --value").strip() == "no"
+    assert machine.succeed("systemctl show " + named_user["unit"] + " --property=DevicePolicy --value").strip() == "closed"
+    machine.succeed("korri-plugin disable @example:named-user; korri-plugin remove @example:named-user --purge")
     credential = install("${credential}")
     assert "missing named credential is non-fatal" in credential["warning"]
     machine.succeed("korri-plugin enable @example:credential")
@@ -804,7 +876,8 @@ pkgs.testers.runNixOSTest {
     alternative = repository_inspect(source_b, "v1")
     assert report["package"] == alternative["package"]
     assert report["approval"] != alternative["approval"]
-    assert "HOST NETWORK ADMINISTRATION" in report["warning"]
+    assert "CAP_NET_ADMIN" in report["warning"]
+    assert "/dev/net/tun rw" in report["warning"]
     machine.fail("korri-plugin repository install " + source_a + " @korri:tailscale v1 wrong-approval")
     machine.fail("korri-plugin repository install " + source_b + " @korri:tailscale v1 " + report["approval"])
     machine.fail("korri-plugin status @korri:tailscale")
@@ -831,7 +904,8 @@ pkgs.testers.runNixOSTest {
     machine.succeed("test -S " + report["runtime_directory"] + "/tailscaled.sock")
     assert machine.succeed("systemctl show " + unit + " --property=DynamicUser --value").strip() == "yes"
     assert machine.succeed(plugin_file(report, "tailscale") + " --socket=" + report["runtime_directory"] + "/tailscaled.sock status --json | ${pkgs.jq}/bin/jq -r .BackendState").strip() == "NeedsLogin"
-    assert machine.succeed("cat /run/systemd/system/" + unit) == report["native_unit"]["source"]
+    assert len(report["native_units"]) == 1
+    assert machine.succeed("cat /run/systemd/system/" + unit) == next(iter(report["native_units"].values()))["source"]
     for property, expected in [("NoNewPrivileges", "yes"), ("ProtectSystem", "strict"), ("DevicePolicy", "closed"), ("CapabilityBoundingSet", "cap_net_admin cap_net_raw"), ("AmbientCapabilities", "cap_net_admin cap_net_raw")]:
         assert machine.succeed("systemctl show " + unit + " --property=" + property + " --value").strip() == expected
     machine.succeed("systemctl cat " + unit + " | grep -Fx 'DeviceAllow='")
