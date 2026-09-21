@@ -1,5 +1,15 @@
 { nixpkgs, korri }:
 let
+  mkPkgs =
+    system:
+    import nixpkgs {
+      inherit system;
+      config.allowUnfree = true;
+    };
+  pkgs = mkPkgs "aarch64-linux";
+  crossPkgs = (mkPkgs "x86_64-linux").pkgsCross.aarch64-multiplatform;
+  kernel = pkgs.callPackage ./kernel { };
+  kernelCross = crossPkgs.callPackage ./kernel { };
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = { inherit korri; };
@@ -7,9 +17,6 @@ let
       ./sd-image.nix
     ];
   };
-  crossPkgs = (import nixpkgs { system = "x86_64-linux"; }).pkgsCross.aarch64-multiplatform;
-  kernel = configuration.config.boot.kernelPackages.kernel;
-  kernelCross = crossPkgs.callPackage ./kernel.nix { };
   uboot = configuration.pkgs.callPackage ./uboot.nix { };
   ubootCross = crossPkgs.callPackage ./uboot.nix { };
 in

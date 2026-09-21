@@ -16,7 +16,7 @@ assert c.sdImage.firmwarePartitionOffset == 16;
 assert lib.hasInfix ''of="$img" bs=512'' rawWrite;
 assert lib.hasInfix "seek=16 conv=notrunc" rawWrite;
 assert lib.hasInfix "U-Boot exceeds the raw area" rawWrite;
-assert lib.elem "sunxi_mmc" c.boot.initrd.kernelModules;
-assert lib.elem "mmc_block" c.boot.initrd.kernelModules;
-assert lib.elem "panfrost" c.boot.initrd.kernelModules;
+assert !c.boot.initrd.includeDefaultModules;
+assert c.boot.initrd.availableKernelModules == [ ];
+assert c.boot.initrd.kernelModules == [ ];
 pkgs.runCommand "rg35xxsp-module-check" { } "touch $out"

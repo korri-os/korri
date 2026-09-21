@@ -9,6 +9,7 @@ let
   firmwarePartitionOffsetMiB = 16;
   # Allwinner BROM searches for SPL starting at sector 16 (8 KiB offset).
   ubootStartSector = 16;
+  kernel = pkgs.callPackage ./kernel { };
 in
 {
   imports = [
@@ -21,22 +22,16 @@ in
   networking.hostName = "rg35xxsp";
 
   boot = {
-    kernelPackages = pkgs.linuxPackages;
+    kernelPackages = pkgs.linuxPackagesFor kernel;
     consoleLogLevel = 7;
     kernelParams = [
       "console=ttyS0,115200n8"
       "console=tty0"
     ];
     initrd = {
-      availableKernelModules = [
-        "sunxi_mmc"
-        "mmc_block"
-      ];
-      kernelModules = [
-        "sunxi_mmc"
-        "mmc_block"
-        "panfrost"
-      ];
+      includeDefaultModules = false;
+      availableKernelModules = lib.mkForce [ ];
+      kernelModules = lib.mkForce [ ];
     };
     loader = {
       grub.enable = false;
@@ -48,6 +43,30 @@ in
     };
   };
 
+  # systemd requires DMIID unconditionally, which arm64 without EFI/ACPI lacks.
+  # Restate the required kernel config options without DMIID.
+  system.requiredKernelConfig = lib.mkForce (
+    map config.lib.kernelConfig.isEnabled [
+      "DEVTMPFS"
+      "CGROUPS"
+      "INOTIFY_USER"
+      "SIGNALFD"
+      "TIMERFD"
+      "EPOLL"
+      "NET"
+      "SYSFS"
+      "PROC_FS"
+      "FHANDLE"
+      "CRYPTO_USER_API_HASH"
+      "CRYPTO_HMAC"
+      "CRYPTO_SHA256"
+      "AUTOFS_FS"
+      "TMPFS_POSIX_ACL"
+      "TMPFS_XATTR"
+      "SECCOMP"
+    ]
+  );
+
   hardware = {
     enableAllHardware = lib.mkForce false;
     deviceTree = {
@@ -58,6 +77,11 @@ in
     graphics.enable = true;
     enableRedistributableFirmware = true;
   };
+
+  # Preserve the shared DRM-seat policy for the display bring-up image.
+  # No compositor or controller mapping is selected before hardware probing.
+  services.seatd.enable = true;
+  security.polkit.enable = true;
 
   # Autologin root on serial and console for first-boot diagnostic verification.
   services.getty.autologinUser = "root";
