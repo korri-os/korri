@@ -20,7 +20,7 @@ pub const BASE_POLICY: &str = "policy-v3: exact named native units; validated sy
 
 pub const ROOT_POLICY: &str = "policy-root-v2: exact named native units; explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Report {
     pub id: String,
     pub package: PathBuf,

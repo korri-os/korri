@@ -4,6 +4,9 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[features]
+vm-lifecycle-policy = []
+
 [dependencies]
 base64 = "0.22"
 ring = "0.17"

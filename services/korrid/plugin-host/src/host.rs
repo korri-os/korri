@@ -1,25 +1,58 @@
 use crate::{
     archive,
     declaration::validate_id,
+    lifecycle::{LifecyclePolicy, ReleaseUpdateReview},
     package::{self, Report},
     provenance::{current_platform, Provenance, SelectionIntent},
     repository::{self, Configuration, SourceUrl},
     selection::{Desired, Receipt, SelectionStore},
+    software_cleanup::SoftwareCleanup,
     source_store,
     storage::{self, State, ROOTS, STATE_ROOT},
     unit::Units,
 };
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::Duration,
 };
+
+#[derive(Clone)]
+struct HostPaths {
+    roots: PathBuf,
+    registry_directory: PathBuf,
+    registry_path: PathBuf,
+}
+
+impl HostPaths {
+    fn production() -> Self {
+        Self {
+            roots: PathBuf::from(ROOTS),
+            registry_directory: PathBuf::from(crate::plugin_installation::REGISTRY_DIRECTORY),
+            registry_path: PathBuf::from(crate::plugin_installation::REGISTRY_PATH),
+        }
+    }
+}
 
 pub struct Host {
     nix: PathBuf,
     publishers: package::PublisherBindings,
     units: Units,
     state: State,
+    paths: HostPaths,
+    lifecycle: LifecyclePolicy,
+    owner_uid: u32,
+    #[cfg(test)]
+    test_runtime: Option<TestRuntime>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Default)]
+struct TestRuntime {
+    reports: std::rc::Rc<std::cell::RefCell<BTreeMap<PathBuf, Report>>>,
+    events: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    fail_stop: std::rc::Rc<std::cell::RefCell<Option<String>>>,
 }
 
 impl Drop for Host {
@@ -35,11 +68,13 @@ impl Host {
         systemctl: &Path,
         iptables: &Path,
         ip6tables: &Path,
+        lifecycle: LifecyclePolicy,
     ) -> Result<Self, String> {
+        let paths = HostPaths::production();
         let nix = package::tools(nix)?;
         let systemctl = package::tools(systemctl)?;
         let state = State::open(Path::new(STATE_ROOT))?;
-        storage::directory(Path::new(ROOTS))?;
+        storage::directory(&paths.roots)?;
         let publishers = package::publisher_bindings(
             &fs::canonicalize("/etc/korri-plugin-host/publishers.json")
                 .map_err(|error| format!("publisher bindings are unavailable: {error}"))?,
@@ -56,12 +91,51 @@ impl Host {
                 },
             },
             state,
+            paths,
+            lifecycle,
+            owner_uid: 0,
+            #[cfg(test)]
+            test_runtime: None,
+        })
+    }
+
+    #[cfg(test)]
+    fn for_test(
+        root: &Path,
+        nix: PathBuf,
+        lifecycle: LifecyclePolicy,
+        runtime: TestRuntime,
+    ) -> Result<Self, String> {
+        let state_root = root.join("state");
+        let paths = HostPaths {
+            roots: root.join("roots"),
+            registry_directory: root.join("registry"),
+            registry_path: root.join("registry/enabled-packages.json"),
+        };
+        let state = State::open(&state_root)?;
+        storage::directory(&paths.roots)?;
+        Ok(Self {
+            nix,
+            publishers: BTreeMap::new(),
+            units: Units {
+                systemctl: PathBuf::from("/unavailable-systemctl"),
+                unit_directory: root.join("units"),
+                firewall: crate::firewall::Firewall {
+                    ipv4: PathBuf::from("/unavailable-iptables"),
+                    ipv6: PathBuf::from("/unavailable-ip6tables"),
+                },
+            },
+            state,
+            paths,
+            lifecycle,
+            owner_uid: unsafe { libc::geteuid() },
+            test_runtime: Some(runtime),
         })
     }
 
     pub fn inspect(&self, source: &str, package: &Path) -> Result<Report, String> {
         package::validate_store_path(package)?;
-        let download = Path::new(ROOTS).join("download");
+        let download = self.paths.roots.join("download");
         storage::root_link(&download, package)?;
         package::import(&self.nix, source, package)?;
         self.load(
@@ -192,7 +266,7 @@ impl Host {
             archive::MAX_NAR_BYTES,
         )?;
         let package = Path::new(&record.store_path);
-        storage::root_link(&Path::new(ROOTS).join("download"), package)?;
+        storage::root_link(&self.paths.roots.join("download"), package)?;
         package::import(&self.nix, &archive::path_to_file_uri(&cache)?, package)?;
         let provenance = Provenance::Repository {
             source_url: source.to_string(),
@@ -210,6 +284,11 @@ impl Host {
     }
 
     fn verify_publisher(&self, selected: &Path, provenance: &Provenance) -> Result<(), String> {
+        #[cfg(test)]
+        if self.test_runtime.is_some() {
+            let _ = (selected, provenance);
+            return Ok(());
+        }
         let cache = match provenance {
             Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
             Provenance::Repository { .. } => None,
@@ -219,7 +298,140 @@ impl Host {
     }
 
     pub fn release_download(&self) -> Result<(), String> {
-        storage::remove(&Path::new(ROOTS).join("download"))
+        for name in ["download", "download.new"] {
+            storage::remove(&self.paths.roots.join(name))?;
+        }
+        Ok(())
+    }
+
+    /// Build the complete approval surface before changing any plugin
+    /// selection. Optional recommendations are recorded only for the caller's
+    /// UI; this transaction never installs them on an existing device.
+    pub fn review_release_update(
+        &self,
+        required: Vec<Report>,
+        optional: Vec<Report>,
+    ) -> Result<ReleaseUpdateReview, String> {
+        crate::lifecycle::review_release_update(required, optional)
+    }
+
+    /// Install every newly required plugin before the caller selects its new
+    /// release. Approval refusal, an installation failure, or a release-select
+    /// failure leaves the caller's current release selected. New selections
+    /// made by this transaction are removed on failure; pre-existing enabled,
+    /// disabled, and selected plugins are not changed.
+    pub fn apply_release_update<F>(
+        &self,
+        review: ReleaseUpdateReview,
+        approvals: &BTreeMap<String, String>,
+        select_release: F,
+    ) -> Result<(), String>
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        let (required, _optional_ids) = review.into_parts();
+        let mut additions = Vec::new();
+        for report in &required {
+            let approval = approvals
+                .get(&report.id)
+                .ok_or_else(|| format!("required plugin {} was not approved", report.id))?;
+            if approval != &report.approval {
+                return Err(format!(
+                    "approval for required plugin {} does not match its disclosed permissions",
+                    report.id
+                ));
+            }
+            report.provenance.validate(&report.id)?;
+            match self.receipt(&report.id)? {
+                Some(receipt) if matches!(receipt.desired, Desired::Removed { .. }) => {
+                    return Err(format!("plugin {} removal is unfinished", report.id));
+                }
+                Some(receipt) => {
+                    self.approved(&receipt)?;
+                }
+                None => additions.push(report.id.clone()),
+            }
+        }
+
+        // Pin every approved addition before the first receipt changes. This
+        // uses the existing per-selection pending roots, not a release manifest
+        // or second transaction format.
+        for report in &required {
+            if additions.contains(&report.id) {
+                if let Err(error) = self
+                    .prepare(&report.id)
+                    .and_then(|_| self.selection(&report.id).stage(&report.package))
+                {
+                    return self.rollback_release_additions(
+                        &additions,
+                        format!("required plugin staging failed: {error}"),
+                    );
+                }
+            }
+        }
+        for report in required {
+            if !additions.contains(&report.id) {
+                continue;
+            }
+            let candidate = Receipt {
+                id: report.id.clone(),
+                package: report.package.clone(),
+                provenance: report.provenance.clone(),
+                approval: report.approval.clone(),
+                desired: Desired::Disabled,
+                previous: None,
+            };
+            if let Err(error) = self.apply(candidate) {
+                return self.rollback_release_additions(
+                    &additions,
+                    format!("required plugin installation failed: {error}"),
+                );
+            }
+        }
+        if let Err(error) = self.release_download() {
+            return self.rollback_release_additions(
+                &additions,
+                format!("required plugin acquisition cleanup failed: {error}"),
+            );
+        }
+
+        if let Err(error) = select_release() {
+            return self.rollback_release_additions(
+                &additions,
+                format!("release selection failed: {error}"),
+            );
+        }
+        Ok(())
+    }
+
+    fn rollback_release_additions(
+        &self,
+        additions: &[String],
+        operation_error: String,
+    ) -> Result<(), String> {
+        let mut rollback_errors = Vec::new();
+        if let Err(error) = self.release_download() {
+            rollback_errors.push(error);
+        }
+        if let Err(error) = self.invalidate_registry() {
+            rollback_errors.push(error);
+        }
+        for id in additions.iter().rev() {
+            if let Err(error) = self.selection(id).remove() {
+                rollback_errors.push(format!("{id}: {error}"));
+            }
+        }
+        if let Err(error) = self.publish_registry() {
+            rollback_errors.push(error);
+        }
+        if rollback_errors.is_empty() {
+            Err(operation_error)
+        } else {
+            Err(format!(
+                "{operation_error}; required-plugin rollback failed: {}",
+                rollback_errors.join("; ")
+            ))
+        }
     }
 
     pub fn install(
@@ -311,7 +523,7 @@ impl Host {
     }
 
     pub fn remove(&self, id: &str, purge: bool) -> Result<(), String> {
-        validate_id(id)?;
+        self.lifecycle.check_removal(id)?;
         self.prepare(id)?;
         self.deactivate(id, Desired::Removed { purge })
     }
@@ -319,9 +531,10 @@ impl Host {
     fn deactivate(&self, id: &str, desired: Desired) -> Result<(), String> {
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
         if matches!(receipt.desired, Desired::Removed { .. }) {
-            // A prior removal keeps its original purge choice.
+            // A prior removal keeps its original purge choice. Retrying the
+            // command resumes that request instead of replacing it.
             self.restore_one(id)?;
-            return Err("plugin is not installed".into());
+            return self.publish_registry();
         }
         // Do not restore a pending enabled selection before stopping it. The
         // immutable approval still authorizes cleanup, not a new daemon start.
@@ -409,7 +622,8 @@ impl Host {
         if let Err(error) = self.state.cleanup_staging() {
             errors.push(error);
         }
-        for entry in fs::read_dir(STATE_ROOT).map_err(|e| e.to_string())? {
+        self.release_download()?;
+        for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
                 continue;
@@ -425,7 +639,6 @@ impl Host {
                 errors.push(error);
             }
         }
-        self.release_download()?;
         if errors.is_empty() {
             self.publish_registry()
         } else {
@@ -448,9 +661,9 @@ impl Host {
                     .is_ok()
                     && fs::read_link(self.root(&receipt.id, "active"))
                         .is_ok_and(|path| path == receipt.package)
-                    && self.units.matches_running(&report)?
+                    && self.units_matches_running(&report)?
                 {
-                    self.units.firewall.apply(&report.id, &report.ports)?;
+                    self.firewall_apply(&report)?;
                     self.selection(&receipt.id).settle(&receipt)?;
                     return Ok(());
                 }
@@ -470,7 +683,7 @@ impl Host {
             {
                 return Err("unexpected entry in plugin state directory".into());
             }
-            let roots = Path::new(ROOTS).join(name);
+            let roots = self.paths.roots.join(name);
             storage::directory(&roots)?;
             SelectionStore::new(path.join("selection.json"), roots).remove()?;
         }
@@ -483,9 +696,9 @@ impl Host {
         self.verify_publisher(&candidate.package, &candidate.provenance)?;
         self.invalidate_registry()?;
         self.selection(id).stage(&candidate.package)?;
-        let result = self.units.stop(id, false).and_then(|_| {
+        let result = self.units_stop(id, false).and_then(|_| {
             if matches!(candidate.desired, Desired::Enabled) {
-                self.units.start(&report)
+                self.units_start(&report)
             } else {
                 Ok(())
             }
@@ -502,17 +715,20 @@ impl Host {
 
     fn invalidate_registry(&self) -> Result<(), String> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let directory = Path::new(crate::plugin_installation::REGISTRY_DIRECTORY);
+        let directory = &self.paths.registry_directory;
         if !directory.exists() {
             fs::create_dir(directory).map_err(|e| e.to_string())?;
             fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
                 .map_err(|e| e.to_string())?;
         }
         let metadata = fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
-        if !metadata.is_dir() || metadata.uid() != 0 || metadata.permissions().mode() & 0o022 != 0 {
+        if !metadata.is_dir()
+            || metadata.uid() != self.owner_uid
+            || metadata.permissions().mode() & 0o022 != 0
+        {
             return Err("plugin registry directory must be protected by root".into());
         }
-        storage::remove(Path::new(crate::plugin_installation::REGISTRY_PATH))
+        storage::remove(&self.paths.registry_path)
     }
 
     fn publish_registry(&self) -> Result<(), String> {
@@ -528,14 +744,74 @@ impl Host {
             })
             .collect();
         storage::write_atomic_mode(
-            Path::new(crate::plugin_installation::REGISTRY_PATH),
+            &self.paths.registry_path,
             &crate::plugin_installation::encode(&selections)?,
             0o644,
         )
     }
 
+    fn reclaim_software(&self) -> Result<(), String> {
+        SoftwareCleanup::new(self.nix.clone()).reclaim()
+    }
+
+    fn units_stop(&self, id: &str, purge: bool) -> Result<(), String> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            runtime
+                .events
+                .borrow_mut()
+                .push(format!("stop:{id}:{purge}"));
+            if runtime.fail_stop.borrow().as_deref() == Some(id) {
+                return Err(format!("injected stop failure for {id}"));
+            }
+            return Ok(());
+        }
+        self.units.stop(id, purge)
+    }
+
+    fn units_start(&self, report: &Report) -> Result<(), String> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            runtime
+                .events
+                .borrow_mut()
+                .push(format!("start:{}", report.id));
+            return Ok(());
+        }
+        self.units.start(report)
+    }
+
+    fn units_matches_running(&self, report: &Report) -> Result<bool, String> {
+        #[cfg(test)]
+        if self.test_runtime.is_some() {
+            let _ = report;
+            return Ok(false);
+        }
+        self.units.matches_running(report)
+    }
+
+    fn firewall_apply(&self, report: &Report) -> Result<(), String> {
+        #[cfg(test)]
+        if self.test_runtime.is_some() {
+            return Ok(());
+        }
+        self.units.firewall.apply(&report.id, &report.ports)
+    }
+
     fn approved(&self, receipt: &Receipt) -> Result<Report, String> {
         validate_id(&receipt.id)?;
+        #[cfg(test)]
+        let report = if let Some(runtime) = &self.test_runtime {
+            runtime
+                .reports
+                .borrow()
+                .get(&receipt.package)
+                .cloned()
+                .ok_or_else(|| format!("missing test report for {}", receipt.package.display()))?
+        } else {
+            package::load(&self.nix, &receipt.package, receipt.provenance.clone())?
+        };
+        #[cfg(not(test))]
         let report = package::load(&self.nix, &receipt.package, receipt.provenance.clone())?;
         if report.id != receipt.id || report.approval != receipt.approval {
             return Err("installed package or host policy no longer matches its approval".into());
@@ -558,27 +834,40 @@ impl Host {
         let receipt = self.receipt(id)?;
         match receipt {
             Some(receipt) => {
-                let report = self.approved(&receipt)?;
+                let selection = self.selection(id);
                 if let Desired::Removed { purge } = receipt.desired {
-                    if purge && !self.units.path(id).exists() {
-                        self.units.purge_inactive(&report)?;
-                    } else {
-                        self.units.stop(id, purge)?;
+                    if !selection.software_released()? {
+                        let report = self.approved(&receipt)?;
+                        if purge && !self.units.path(id).exists() {
+                            self.units.purge_inactive(&report)?;
+                        } else {
+                            self.units_stop(id, purge)?;
+                        }
+                        // Keep the receipt as the durable removal request while
+                        // both retained selections are released. Root removal
+                        // is not completion until Nix confirms cleanup.
+                        selection.release_software()?;
                     }
-                    self.selection(id).remove()?;
+                    // Inspection roots are acquisition authority only. Neither
+                    // their committed nor interrupted name may retain removed
+                    // software while cleanup reports success.
+                    self.release_download()?;
+                    self.reclaim_software()?;
+                    selection.finish_removal()?;
                 } else {
-                    self.units.stop(id, false)?;
+                    let report = self.approved(&receipt)?;
+                    self.units_stop(id, false)?;
                     if matches!(receipt.desired, Desired::Enabled) {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
                         self.verify_publisher(&receipt.package, &receipt.provenance)?;
-                        self.units.start(&report)?;
+                        self.units_start(&report)?;
                     }
-                    self.selection(id).settle(&receipt)?;
+                    selection.settle(&receipt)?;
                 }
             }
             None => {
-                self.units.stop(id, false)?;
+                self.units_stop(id, false)?;
                 self.selection(id).remove()?;
             }
         }
@@ -588,13 +877,13 @@ impl Host {
     fn prepare(&self, id: &str) -> Result<(), String> {
         validate_id(id)?;
         storage::directory(&self.directory(id))?;
-        storage::directory(&Path::new(ROOTS).join(package::unit_name(id)))
+        storage::directory(&self.paths.roots.join(package::unit_name(id)))
     }
     fn directory(&self, id: &str) -> PathBuf {
-        Path::new(STATE_ROOT).join(package::unit_name(id))
+        self.state.root().join(package::unit_name(id))
     }
     fn root(&self, id: &str, name: &str) -> PathBuf {
-        Path::new(ROOTS).join(package::unit_name(id)).join(name)
+        self.paths.roots.join(package::unit_name(id)).join(name)
     }
     fn receipt_path(&self, id: &str) -> PathBuf {
         self.directory(id).join("selection.json")
@@ -602,10 +891,375 @@ impl Host {
     fn selection(&self, id: &str) -> SelectionStore {
         SelectionStore::new(
             self.receipt_path(id),
-            Path::new(ROOTS).join(package::unit_name(id)),
+            self.paths.roots.join(package::unit_name(id)),
         )
     }
     fn receipt(&self, id: &str) -> Result<Option<Receipt>, String> {
         self.selection(id).read()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        declaration::Declaration,
+        firewall::Ports,
+        lifecycle::RequiredPlugin,
+        package::{Report, BASE_POLICY},
+    };
+    use std::{
+        collections::BTreeMap,
+        os::unix::fs::{symlink, PermissionsExt},
+        process::{Command, Stdio},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        thread,
+        time::{Duration, Instant},
+    };
+
+    fn report(id: &str, suffix: &str) -> Report {
+        let (namespace, name) = id.split_once(':').unwrap();
+        let package = PathBuf::from(format!(
+            "/nix/store/00000000000000000000000000000000-{suffix}"
+        ));
+        let provenance = Provenance::RawCache {
+            cache_url: "https://cache.example".into(),
+        };
+        Report {
+            id: id.into(),
+            package,
+            provenance,
+            approval: format!("{suffix}-approval"),
+            policy: BASE_POLICY,
+            warning: String::new(),
+            unit: None,
+            state_directory: format!("/var/lib/private/{}", package::unit_name(id)),
+            runtime_directory: format!("/run/{}", package::unit_name(id)),
+            unit_configuration: String::new(),
+            declaration: Declaration::evaluate(
+                namespace,
+                &format!("export const name = {name:?}; export const services = [];"),
+            )
+            .unwrap(),
+            native_units: BTreeMap::new(),
+            ports: Ports::default(),
+            packages: BTreeMap::new(),
+            files: BTreeMap::new(),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+        }
+    }
+
+    fn permitted_policy() -> LifecyclePolicy {
+        LifecyclePolicy::new(Vec::new()).unwrap()
+    }
+
+    fn runtime(reports: &[Report]) -> TestRuntime {
+        let runtime = TestRuntime::default();
+        for report in reports {
+            runtime
+                .reports
+                .borrow_mut()
+                .insert(report.package.clone(), report.clone());
+        }
+        runtime
+    }
+
+    fn cleanup_program(root: &Path, body: &str) -> PathBuf {
+        let path = root.join("nix");
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        path
+    }
+
+    fn install(host: &Host, report: Report) {
+        let approval = report.approval.clone();
+        host.install(report, &approval, SelectionIntent::Install)
+            .unwrap();
+    }
+
+    #[test]
+    fn host_retains_two_selections_then_reclaims_only_after_releasing_all_roots() {
+        let root = tempfile::tempdir().unwrap();
+        let calls = root.path().join("gc-calls");
+        let nix = cleanup_program(
+            root.path(),
+            &format!("printf '%s\\n' \"$*\" >> {}", calls.display()),
+        );
+        let first = report("@test:clock", "clock-v1");
+        let second = report("@test:clock", "clock-v2");
+        let runtime = runtime(&[first.clone(), second.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        install(&host, first.clone());
+        host.install(
+            second.clone(),
+            &second.approval,
+            SelectionIntent::Update { id: &second.id },
+        )
+        .unwrap();
+        let selected = host.status(&second.id).unwrap().unwrap();
+        assert_eq!(selected.package, second.package);
+        assert_eq!(selected.previous.unwrap().package, first.package);
+        let user_data = root.path().join("user-data");
+        fs::write(&user_data, "keep").unwrap();
+        symlink(&second.package, host.paths.roots.join("download")).unwrap();
+        symlink(&first.package, host.paths.roots.join("download.new")).unwrap();
+
+        host.remove(&second.id, false).unwrap();
+
+        assert!(host.status(&second.id).unwrap().is_none());
+        for name in ["download", "download.new"] {
+            assert!(!host.paths.roots.join(name).exists());
+        }
+        assert_eq!(fs::read_to_string(user_data).unwrap(), "keep");
+        assert!(fs::read_to_string(calls).unwrap().contains("store gc"));
+    }
+
+    #[test]
+    fn host_cleanup_failure_is_visible_and_keeps_removal_incomplete() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "echo cleanup-failed >&2; exit 42");
+        let selected = report("@test:clock", "clock-failure");
+        let host = Host::for_test(
+            root.path(),
+            nix,
+            permitted_policy(),
+            runtime(std::slice::from_ref(&selected)),
+        )
+        .unwrap();
+        install(&host, selected.clone());
+        symlink(&selected.package, host.paths.roots.join("download")).unwrap();
+        symlink(&selected.package, host.paths.roots.join("download.new")).unwrap();
+        let user_data = root.path().join("user-data");
+        fs::write(&user_data, "keep").unwrap();
+
+        let error = host.remove(&selected.id, false).unwrap_err();
+
+        assert!(error.contains("storage cleanup failed"), "{error}");
+        assert!(matches!(
+            host.status(&selected.id).unwrap().unwrap().desired,
+            Desired::Removed { purge: false }
+        ));
+        assert!(host.selection(&selected.id).software_released().unwrap());
+        assert!(!host.paths.roots.join("download").exists());
+        assert!(!host.paths.roots.join("download.new").exists());
+        assert_eq!(fs::read_to_string(user_data).unwrap(), "keep");
+    }
+
+    #[test]
+    fn ordinary_host_removal_uses_its_required_behavior_policy() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let selected = report("@test:clock", "clock-required");
+        let lifecycle = LifecyclePolicy::new(vec![RequiredPlugin::new(
+            &selected.id,
+            "portal accepts local input",
+        )
+        .unwrap()])
+        .unwrap();
+        let host = Host::for_test(
+            root.path(),
+            nix,
+            lifecycle,
+            runtime(std::slice::from_ref(&selected)),
+        )
+        .unwrap();
+        install(&host, selected.clone());
+        let before = host.status(&selected.id).unwrap();
+
+        let error = host.remove(&selected.id, false).unwrap_err();
+
+        assert!(error.contains("portal accepts local input"), "{error}");
+        assert_eq!(host.status(&selected.id).unwrap(), before);
+    }
+
+    #[test]
+    fn release_update_reviews_every_required_report_and_is_atomic_at_the_host_boundary() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let required_a = report("@test:required-a", "required-a");
+        let required_b = report("@test:required-b", "required-b");
+        let optional = report("@test:optional", "optional");
+        let runtime = runtime(&[required_a.clone(), required_b.clone(), optional.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        let review = host
+            .review_release_update(
+                vec![required_a.clone(), required_b.clone()],
+                vec![optional.clone()],
+            )
+            .unwrap();
+        assert_eq!(
+            review
+                .required_reports()
+                .iter()
+                .map(|report| report.id.as_str())
+                .collect::<Vec<_>>(),
+            ["@test:required-a", "@test:required-b"]
+        );
+        assert_eq!(review.optional_ids(), ["@test:optional"]);
+        let selected = Arc::new(AtomicBool::new(false));
+        let selected_for_call = selected.clone();
+        let refusal = host
+            .apply_release_update(review, &BTreeMap::new(), move || {
+                selected_for_call.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(refusal.contains("was not approved"), "{refusal}");
+        assert!(!selected.load(Ordering::SeqCst));
+        assert!(host.status(&required_a.id).unwrap().is_none());
+        assert!(host.status(&required_b.id).unwrap().is_none());
+        assert!(host.status(&optional.id).unwrap().is_none());
+
+        runtime.fail_stop.replace(Some(required_b.id.clone()));
+        let review = host
+            .review_release_update(
+                vec![required_a.clone(), required_b.clone()],
+                vec![optional.clone()],
+            )
+            .unwrap();
+        let approvals = BTreeMap::from([
+            (required_a.id.clone(), required_a.approval.clone()),
+            (required_b.id.clone(), required_b.approval.clone()),
+        ]);
+        let failure = host
+            .apply_release_update(review, &approvals, || Ok(()))
+            .unwrap_err();
+        assert!(failure.contains("installation failed"), "{failure}");
+        assert!(host.status(&required_a.id).unwrap().is_none());
+        assert!(host.status(&required_b.id).unwrap().is_none());
+        assert!(host.status(&optional.id).unwrap().is_none());
+        runtime.fail_stop.replace(None);
+
+        let review = host
+            .review_release_update(
+                vec![required_a.clone(), required_b.clone()],
+                vec![optional.clone()],
+            )
+            .unwrap();
+        host.apply_release_update(review, &approvals, || {
+            selected.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        assert!(selected.load(Ordering::SeqCst));
+        assert!(host.status(&required_a.id).unwrap().is_some());
+        assert!(host.status(&required_b.id).unwrap().is_some());
+        assert!(host.status(&optional.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn optional_recommendations_preserve_disable_and_removal_choices() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let optional = report("@test:optional", "optional-choice");
+        let host = Host::for_test(
+            root.path(),
+            nix,
+            permitted_policy(),
+            runtime(std::slice::from_ref(&optional)),
+        )
+        .unwrap();
+        install(&host, optional.clone());
+        let disabled = host.status(&optional.id).unwrap();
+        let review = host
+            .review_release_update(Vec::new(), vec![optional.clone()])
+            .unwrap();
+        host.apply_release_update(review, &BTreeMap::new(), || Ok(()))
+            .unwrap();
+        assert_eq!(host.status(&optional.id).unwrap(), disabled);
+
+        host.remove(&optional.id, false).unwrap();
+        let review = host
+            .review_release_update(Vec::new(), vec![optional.clone()])
+            .unwrap();
+        host.apply_release_update(review, &BTreeMap::new(), || Ok(()))
+            .unwrap();
+        assert!(host.status(&optional.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn interrupted_removal_child() {
+        let Some(root) = std::env::var_os("KORRI_HOST_INTERRUPTION_CHILD") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let selected = report("@test:clock", "clock-interrupted");
+        let host = Host::for_test(
+            &root,
+            root.join("nix"),
+            permitted_policy(),
+            runtime(std::slice::from_ref(&selected)),
+        )
+        .unwrap();
+        let _ = host.remove(&selected.id, false);
+    }
+
+    #[test]
+    fn host_recovers_a_sigkilled_removal_from_the_durable_original_request() {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("gc-blocked");
+        let nix = cleanup_program(
+            root.path(),
+            &format!("touch {}; while :; do sleep 1; done", marker.display()),
+        );
+        let selected = report("@test:clock", "clock-interrupted");
+        let runtime = runtime(std::slice::from_ref(&selected));
+        let host = Host::for_test(
+            root.path(),
+            nix.clone(),
+            permitted_policy(),
+            runtime.clone(),
+        )
+        .unwrap();
+        install(&host, selected.clone());
+        symlink(&selected.package, host.paths.roots.join("download")).unwrap();
+        symlink(&selected.package, host.paths.roots.join("download.new")).unwrap();
+        drop(host);
+
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "host::tests::interrupted_removal_child",
+                "--nocapture",
+            ])
+            .env("KORRI_HOST_INTERRUPTION_CHILD", root.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(marker.exists(), "child did not reach store cleanup");
+        let receipt_path = root
+            .path()
+            .join("state")
+            .join(package::unit_name(&selected.id))
+            .join("selection.json");
+        let receipt: Receipt = storage::read_json(&receipt_path).unwrap().unwrap();
+        assert!(matches!(receipt.desired, Desired::Removed { purge: false }));
+        for name in ["download", "download.new"] {
+            assert!(!root.path().join("roots").join(name).exists());
+        }
+        unsafe {
+            libc::kill(child.id() as i32, libc::SIGKILL);
+        }
+        child.wait().unwrap();
+        cleanup_program(root.path(), "exit 0");
+
+        let recovered =
+            Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        recovered.restore_all().unwrap();
+        assert!(recovered.status(&selected.id).unwrap().is_none());
+        assert!(!runtime
+            .events
+            .borrow()
+            .iter()
+            .any(|event| event.starts_with("start:")));
     }
 }

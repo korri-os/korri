@@ -1,4 +1,8 @@
-{ pkgs, crane }:
+{
+  pkgs,
+  crane,
+  cargoFeatures ? [ ],
+}:
 let
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
   # PPSSPP remains a relative symlink into its plugin package. Nix cannot
@@ -24,6 +28,9 @@ let
     version = "0.0.0";
     strictDeps = true;
     cargoVendorDir = vendor;
+    cargoExtraArgs = pkgs.lib.optionalString (
+      cargoFeatures != [ ]
+    ) "--features ${pkgs.lib.concatStringsSep "," cargoFeatures}";
   };
   artifacts = craneLib.buildDepsOnly (common // { src = clean; });
   # The separate CLI crate uses korrid's actual evaluator. Materialize that

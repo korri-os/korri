@@ -2,6 +2,7 @@
   pkgs,
   hostModule,
   hostPackage,
+  vmHostPackage,
   korridPackage,
   tailscalePackage,
   sshPackage,
@@ -173,9 +174,36 @@ let
     done
     exec ${pkgs.iptables}/bin/ip6tables "$@"
   '';
+  gcReject = pkgs.writeShellScriptBin "gc-reject" ''
+    if [ "$*" = "--extra-experimental-features nix-command store gc" ]; then
+      echo 'injected Nix store cleanup failure' >&2
+      exit 42
+    fi
+    exec ${pkgs.nix}/bin/nix "$@"
+  '';
+  gcBlock = pkgs.writeShellScriptBin "gc-block" ''
+    if [ "$*" = "--extra-experimental-features nix-command store gc" ]; then
+      ${pkgs.coreutils}/bin/touch /run/korri-plugin-gc-blocked
+      exec ${pkgs.coreutils}/bin/sleep infinity
+    fi
+    exec ${pkgs.nix}/bin/nix "$@"
+  '';
+  interruptedRemove = pkgs.writeShellScriptBin "interrupt-plugin-removal" ''
+    ${pkgs.coreutils}/bin/touch /run/korri-plugin-removal-started
+    export KORRI_PLUGIN_NIX=${gcBlock}/bin/gc-block
+    export KORRI_PLUGIN_SYSTEMCTL=${pkgs.systemd}/bin/systemctl
+    export KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables
+    export KORRI_PLUGIN_IP6TABLES=${pkgs.iptables}/bin/ip6tables
+    exec ${vmHostPackage}/bin/.korri-plugin-wrapped remove @korri:tailscale
+  '';
   empty = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'empty'; export const services = [];";
+    plugin = _: { };
+  };
+  requiredLifecycle = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'required-lifecycle'; export const services = [];";
     plugin = _: { };
   };
   multiple = mkPlugin {
@@ -251,6 +279,39 @@ let
       };
     };
   };
+  # The cache node exercises plugin removal too. Keep its publication inputs in
+  # the system closure so that its own store cleanup cannot erase later test
+  # releases before the cold client downloads them.
+  cacheFixtureRoots = pkgs.linkFarm "plugin-cache-fixture-roots" (
+    pkgs.lib.imap0
+      (index: path: {
+        name = "share/plugin-cache-fixtures/${toString index}";
+        inherit path;
+      })
+      (
+        [
+          tailscalePackage
+          alternate
+          updated
+          broken
+          interrupted
+          unclean
+          empty
+          requiredLifecycle
+          multiple
+          runtimeSeat
+          emptyClock
+          gameRuntimePackage
+          dependentClock
+          credential
+          namedUser
+          sshPackage
+          splitPlugin
+          impostor
+        ]
+        ++ injections
+      )
+  );
   # A test-only signing identity. This key grants no authority outside this VM.
   key = pkgs.writeText "plugin-test-cache-key" "korri-plugin-test:XMn+6POJ5fj568Beg6v8OLo4wMcNKehDPxH+7bUrt0Svsk3i8ixelBTno9/D1z0UPghq8N+uzEcf+5dLDFa9JQ==";
   publicKey = "korri-plugin-test:r7JN4vIsXpQU56Pfw9c9FD4IavDfrsxHH/uXSwxWvSU=";
@@ -270,7 +331,7 @@ pkgs.testers.runNixOSTest {
         nix.settings.substituters = lib.mkForce [ "http://cache:5000" ];
         services.korri.pluginHost = {
           enable = true;
-          package = hostPackage;
+          package = vmHostPackage;
           publishers."@korri" = {
             inherit publicKey;
             cacheUrl = "http://cache:5000";
@@ -290,6 +351,7 @@ pkgs.testers.runNixOSTest {
           interrupted
           unclean
           empty
+          requiredLifecycle
           multiple
           runtimeSeat
           emptyClock
@@ -351,7 +413,11 @@ pkgs.testers.runNixOSTest {
         # machine only downloads; neither VM evaluates flakes or compiles.
         environment.systemPackages = [
           pkgs.headscale
-          hostPackage
+          vmHostPackage
+        ];
+        system.extraDependencies = [
+          cacheFixtureRoots
+          splitDependency.drvPath
         ];
         virtualisation.writableStore = true;
         virtualisation.writableStoreUseTmpfs = false;
@@ -371,7 +437,7 @@ pkgs.testers.runNixOSTest {
       {
         imports = [ hostModule ];
         services.korri.pluginHost.enable = true;
-        services.korri.pluginHost.package = hostPackage;
+        services.korri.pluginHost.package = vmHostPackage;
         services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
         users.users.plugin-user.isNormalUser = true;
         users.users.plugin-user.hashedPassword = "!";
@@ -404,11 +470,21 @@ pkgs.testers.runNixOSTest {
           pkgs.jq
           pkgs.iptables
           pkgs.curl
+          gcBlock
+          gcReject
+          interruptedRemove
           korridPackage
         ];
         virtualisation.additionalPaths = [
           ipv6RejectAdds
           smokeStorage
+        ];
+        # These are driver fixtures, not removable plugin selections. Keep them
+        # across the plugin host's deliberate Nix store cleanup.
+        system.extraDependencies = [
+          ipv6RejectAdds
+          smokeStorage
+          hostPackage
         ];
         virtualisation.useNixStoreImage = true;
         virtualisation.writableStore = true;
@@ -422,6 +498,7 @@ pkgs.testers.runNixOSTest {
     import shlex
     start_all()
     cache.wait_for_unit("nix-serve.service")
+    cache.wait_for_open_port(5000)
     machine.wait_for_unit("korri-plugin-host.service")
     generation = machine.succeed("readlink -f /run/current-system").strip()
     assert machine.succeed("nix config show max-jobs").strip() == "0"
@@ -581,6 +658,19 @@ pkgs.testers.runNixOSTest {
         assert cache.succeed(recovery_client).strip() == "0"
         assert cache.succeed("sha256sum /etc/ssh/sshd_config /etc/ssh/ssh_host_* /etc/pam.d/sshd; systemctl show sshd -p MainPID; readlink -f /run/current-system") == recovery_before
     cache.fail("iptables -w -S korri-plugins | grep -- --dport")
+
+    # The generic production CLI has no authoritative product requiredness
+    # view, so its removal boundary fails closed. This VM's explicit product
+    # caller then proves behavior-specific refusal through the same Host path.
+    required_lifecycle = install("${requiredLifecycle}")
+    generic_refusal = machine.fail("${hostPackage}/bin/korri-plugin remove @example:required-lifecycle 2>&1")
+    assert "no authoritative lifecycle policy" in generic_refusal, generic_refusal
+    required_refusal = machine.fail("korri-plugin remove @example:required-lifecycle 2>&1")
+    assert "portal accepts local input" in required_refusal, required_refusal
+    assert "@example:required-lifecycle" in required_refusal, required_refusal
+    required_status = json.loads(machine.succeed("korri-plugin status @example:required-lifecycle"))
+    assert required_status["package"] == required_lifecycle["package"]
+    assert required_status["desired"] == {"state": "Disabled"}
 
     empty = install("${empty}")
     assert empty["unit"] is None
@@ -931,7 +1021,7 @@ pkgs.testers.runNixOSTest {
     clock = install("${alternate}")
     # A real IPv6 helper fails only rule insertion, after IPv4 succeeded.
     # The failed enable must remove both families and leave the receipt disabled.
-    failing_command = "env KORRI_PLUGIN_NIX=${pkgs.nix}/bin/nix KORRI_PLUGIN_SYSTEMCTL=${pkgs.systemd}/bin/systemctl KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables KORRI_PLUGIN_IP6TABLES=${ipv6RejectAdds}/bin/ip6tables ${hostPackage}/bin/.korri-plugin-wrapped enable @example:clock"
+    failing_command = "env KORRI_PLUGIN_NIX=${pkgs.nix}/bin/nix KORRI_PLUGIN_SYSTEMCTL=${pkgs.systemd}/bin/systemctl KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables KORRI_PLUGIN_IP6TABLES=${ipv6RejectAdds}/bin/ip6tables ${vmHostPackage}/bin/.korri-plugin-wrapped enable @example:clock"
     machine.fail(failing_command)
     assert_ports(clock, False)
     assert_ports(report, True)
@@ -1085,7 +1175,48 @@ pkgs.testers.runNixOSTest {
     machine.succeed("touch /var/lib/korri-plugin-host/staging/download-12345678/partial")
     machine.succeed("korri-plugin restore-all")
     machine.fail("test -e /var/lib/korri-plugin-host/staging/download-12345678")
-    machine.succeed("korri-plugin remove @korri:tailscale")
+    # Interrupt an ordinary removal only after its Removed receipt is durable
+    # and both selection and acquisition roots are gone. Startup must resume
+    # that exact request without starting the daemon again.
+    before_remove = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
+    removed_packages = [before_remove["package"], before_remove["previous"]["package"]]
+    for package in removed_packages:
+        machine.succeed("test -e " + package)
+    machine.succeed("rm -f /nix/var/nix/gcroots/korri-plugin-host/download /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    machine.succeed("ln -s " + removed_packages[0] + " /nix/var/nix/gcroots/korri-plugin-host/download")
+    machine.succeed("ln -s " + removed_packages[1] + " /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    machine.succeed("rm -f /run/korri-plugin-removal-started /run/korri-plugin-gc-blocked; systemd-run --unit=interrupted-plugin-removal --service-type=exec ${interruptedRemove}/bin/interrupt-plugin-removal")
+    machine.wait_until_succeeds("test -e /run/korri-plugin-removal-started", timeout=10)
+    machine.wait_until_succeeds("test -e /run/korri-plugin-gc-blocked", timeout=30)
+    removal_receipt_path = "/var/lib/korri-plugin-host/" + unit.removesuffix(".service") + "/selection.json"
+    incomplete = json.loads(machine.succeed("cat " + removal_receipt_path))
+    assert incomplete["desired"] == {"state": "Removed", "purge": False}
+    machine.succeed("test $(find " + lifecycle_root + " -type l | wc -l) = 0")
+    machine.fail("test -e /nix/var/nix/gcroots/korri-plugin-host/download")
+    machine.fail("test -e /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    machine.succeed("systemctl kill --kill-who=all --signal=SIGKILL interrupted-plugin-removal.service")
+    machine.wait_until_fails("systemctl is-active interrupted-plugin-removal.service")
+    machine.succeed("systemctl restart korri-plugin-host.service")
+    machine.wait_for_unit("korri-plugin-host.service")
+    machine.fail("korri-plugin status @korri:tailscale")
+    machine.fail("systemctl is-active " + unit)
+    for package in removed_packages:
+        machine.fail("test -e " + package)
+    machine.succeed("test -e " + report["state_directory"] + "/retained-data")
+
+    # A cleanup failure stays visible and incomplete. A later startup retries
+    # it, with neither acquisition-root spelling allowed to retain the package.
+    report = install("${tailscalePackage}")
+    machine.succeed("rm -f /nix/var/nix/gcroots/korri-plugin-host/download /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    machine.succeed("ln -s " + report["package"] + " /nix/var/nix/gcroots/korri-plugin-host/download")
+    machine.succeed("ln -s " + report["package"] + " /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    cleanup_failure = machine.fail("env KORRI_PLUGIN_NIX=${gcReject}/bin/gc-reject KORRI_PLUGIN_SYSTEMCTL=${pkgs.systemd}/bin/systemctl KORRI_PLUGIN_IPTABLES=${pkgs.iptables}/bin/iptables KORRI_PLUGIN_IP6TABLES=${pkgs.iptables}/bin/ip6tables ${vmHostPackage}/bin/.korri-plugin-wrapped remove @korri:tailscale 2>&1")
+    assert "storage cleanup failed" in cleanup_failure, cleanup_failure
+    assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Removed", "purge": False}
+    machine.fail("test -e /nix/var/nix/gcroots/korri-plugin-host/download")
+    machine.fail("test -e /nix/var/nix/gcroots/korri-plugin-host/download.new")
+    machine.succeed("systemctl restart korri-plugin-host.service")
+    machine.wait_for_unit("korri-plugin-host.service")
     machine.fail("korri-plugin status @korri:tailscale")
     machine.succeed("test -e " + report["state_directory"] + "/retained-data")
     report = install("${tailscalePackage}")

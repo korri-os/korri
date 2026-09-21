@@ -6,6 +6,10 @@
 }:
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
+  vmHostPackage = import ./package.nix {
+    inherit pkgs crane;
+    cargoFeatures = [ "vm-lifecycle-policy" ];
+  };
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
   mkPlugin = import ./builder.nix { inherit pkgs; };
   firstPartyPlugin =
@@ -37,6 +41,7 @@ in
         pkgs
         hostModule
         hostPackage
+        vmHostPackage
         korridPackage
         tailscalePackage
         ;

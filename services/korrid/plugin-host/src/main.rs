@@ -1,5 +1,6 @@
 use korri_plugin_host::{
     host::Host,
+    lifecycle::LifecyclePolicy,
     package,
     provenance::{Provenance, SelectionIntent},
     repository::{Configuration, SourceUrl},
@@ -68,6 +69,26 @@ fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(feature = "vm-lifecycle-policy"))]
+fn lifecycle_policy() -> Result<LifecyclePolicy, String> {
+    // The generic operator CLI has no product or release authority from which
+    // to classify required behavior. Keep every removal unavailable rather
+    // than silently treating that missing authority as an empty policy.
+    Ok(LifecyclePolicy::removal_unavailable())
+}
+
+#[cfg(feature = "vm-lifecycle-policy")]
+fn lifecycle_policy() -> Result<LifecyclePolicy, String> {
+    use korri_plugin_host::lifecycle::RequiredPlugin;
+
+    // Private VM fixture: this compiles an explicit product caller around the
+    // same production Host boundary. The normal package never enables it.
+    LifecyclePolicy::new(vec![RequiredPlugin::new(
+        "@example:required-lifecycle",
+        "portal accepts local input",
+    )?])
+}
+
 fn run(args: Vec<String>) -> Result<(), String> {
     let nix =
         env::var("KORRI_PLUGIN_NIX").map_err(|_| "host package must supply KORRI_PLUGIN_NIX")?;
@@ -82,6 +103,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         Path::new(&systemctl),
         Path::new(&iptables),
         Path::new(&ip6tables),
+        lifecycle_policy()?,
     )?;
     let words = args.iter().map(String::as_str).collect::<Vec<_>>();
     match words.as_slice() {

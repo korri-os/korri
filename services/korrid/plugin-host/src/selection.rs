@@ -118,12 +118,40 @@ impl SelectionStore {
         self.remove_temporaries()
     }
 
-    pub fn remove(&self) -> Result<(), String> {
-        storage::remove(&self.receipt)?;
-        for name in ["active", "previous", "pending"] {
+    /// Release both committed selections and any interrupted candidate. The
+    /// active root is removed last: once it is absent, the remaining receipt is
+    /// the durable marker that native cleanup completed and store cleanup must
+    /// resume without loading or starting the plugin again.
+    pub fn release_software(&self) -> Result<(), String> {
+        for name in ["previous", "pending"] {
             storage::remove(&self.roots.join(name))?;
         }
-        self.remove_temporaries()
+        self.remove_temporaries()?;
+        storage::remove(&self.roots.join("active"))
+    }
+
+    pub fn software_released(&self) -> Result<bool, String> {
+        for name in ["active", "previous", "pending"] {
+            match std::fs::symlink_metadata(self.roots.join(name)) {
+                Ok(_) => return Ok(false),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn finish_removal(&self) -> Result<(), String> {
+        if !self.software_released()? {
+            return Err("plugin software selections have not been released".into());
+        }
+        self.remove_temporaries()?;
+        storage::remove(&self.receipt)
+    }
+
+    pub fn remove(&self) -> Result<(), String> {
+        self.release_software()?;
+        self.finish_removal()
     }
 
     fn remove_temporaries(&self) -> Result<(), String> {
