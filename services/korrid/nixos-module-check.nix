@@ -37,6 +37,7 @@ let
       localSignerGid = 978;
       inherit deviceConfig;
       sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
+      certificateControlDirectory = lib.mkDefault "/run/korri-certificate-control";
       relays = [ "wss://relay.example.com/" ];
       nativePeers = [
         {
@@ -69,6 +70,14 @@ let
       ];
     };
   enabled = evaluate { services.korridLinuxDevice.enable = true; };
+  pluginFree = evaluate {
+    services.korridLinuxDevice = {
+      enable = true;
+      sunshinePrivateStateRoot = lib.mkForce null;
+      certificateControlDirectory = lib.mkForce null;
+    };
+  };
+  pluginFreeService = pluginFree.config.systemd.services.korrid;
   advertised = evaluate {
     services.korridLinuxDevice = {
       enable = true;
@@ -296,6 +305,11 @@ let
   bundledSignerService = bundled.config.systemd.services.korri-local-signer;
 in
 assert allAssertionsPass enabled;
+assert allAssertionsPass pluginFree;
+assert !(pluginFreeService.environment ? KORRID_SUNSHINE_PRIVATE_STATE_ROOT);
+assert !(pluginFreeService.environment ? KORRID_CERTIFICATE_CONTROL_DIRECTORY);
+assert
+  !(builtins.elem "/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
 assert allAssertionsPass advertised;
 assert
   advertised.config.systemd.services.korrid.environment.KORRID_ADVERTISED_ENDPOINTS
@@ -496,13 +510,13 @@ assert hasFailedAssertion "service UIDs must be distinct" sameUid;
 assert hasFailedAssertion "runtime user must not hold raw input" broadRuntime;
 assert hasFailedAssertion "korrid, or local-signer service groups" certificateControlRuntime;
 assert hasFailedAssertion
-  "korrid, local-signer, and sunshine private state roots must be normalized absolute paths"
+  "korrid and local-signer private state roots and optional sunshine private state root must be normalized absolute paths"
   invalidPrivatePath;
 assert hasFailedAssertion "controlSocket and its directory must be normalized absolute paths"
   invalidControlPath;
 assert hasFailedAssertion "compositorControlDirectory must be a normalized absolute path"
   invalidCompositorControlPath;
-assert hasFailedAssertion "certificateControlDirectory must be a normalized absolute path"
+assert hasFailedAssertion "certificateControlDirectory must be null or a normalized absolute path"
   invalidCertificateControlPath;
 assert hasFailedAssertion "one to eight unique normalized" emptyRelays;
 assert hasFailedAssertion "one to eight unique normalized" tooManyRelays;

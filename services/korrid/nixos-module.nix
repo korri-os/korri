@@ -258,8 +258,9 @@ in
       default = "/run/korri-local-signer/signer.sock";
     };
     sunshinePrivateStateRoot = lib.mkOption {
-      type = lib.types.str;
-      description = "Exact Sunshine private configuration directory hidden from every game unit.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional streaming-plugin private state directory hidden from every game unit.";
     };
     compositorControlDirectory = lib.mkOption {
       type = lib.types.str;
@@ -284,9 +285,9 @@ in
       '';
     };
     certificateControlDirectory = lib.mkOption {
-      type = lib.types.str;
-      default = "/run/korri-certificate-control";
-      description = "Exact Sunshine certificate-control directory hidden from every game unit.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Optional streaming-plugin certificate-control directory hidden from every game unit.";
     };
     controlSocket = lib.mkOption {
       type = lib.types.str;
@@ -421,8 +422,8 @@ in
         assertion =
           validAbsolutePath cfg.privateStateRoot
           && validAbsolutePath cfg.localSignerPrivateStateRoot
-          && validAbsolutePath cfg.sunshinePrivateStateRoot;
-        message = "korrid, local-signer, and sunshine private state roots must be normalized absolute paths.";
+          && (cfg.sunshinePrivateStateRoot == null || validAbsolutePath cfg.sunshinePrivateStateRoot);
+        message = "korrid and local-signer private state roots and optional sunshine private state root must be normalized absolute paths.";
       }
       {
         assertion =
@@ -445,8 +446,9 @@ in
         message = "korrid compositorControlDirectory must be a normalized absolute path.";
       }
       {
-        assertion = validAbsolutePath cfg.certificateControlDirectory;
-        message = "korrid certificateControlDirectory must be a normalized absolute path.";
+        assertion =
+          cfg.certificateControlDirectory == null || validAbsolutePath cfg.certificateControlDirectory;
+        message = "korrid certificateControlDirectory must be null or a normalized absolute path.";
       }
       {
         assertion = cfg.compositorControlSocket == null || validAbsolutePath cfg.compositorControlSocket;
@@ -735,12 +737,12 @@ in
         InaccessiblePaths = [
           cfg.storageRoot
           cfg.localSignerPrivateStateRoot
-          "-${cfg.sunshinePrivateStateRoot}"
           "-${cfg.compositorControlDirectory}"
-          "-${cfg.certificateControlDirectory}"
           "-/dev/inputplumber/sources"
           "/dev/uinput"
-        ];
+        ]
+        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
 
@@ -773,11 +775,9 @@ in
         KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
         KORRID_LOCAL_SIGNER_SOCKET = cfg.localSignerSocket;
         KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = signerPublicKeyFile;
-        KORRID_SUNSHINE_PRIVATE_STATE_ROOT = cfg.sunshinePrivateStateRoot;
         KORRID_CONTROL_SOCKET = cfg.controlSocket;
         KORRID_CONTROL_DIRECTORY = controlDirectory;
         KORRID_COMPOSITOR_CONTROL_DIRECTORY = cfg.compositorControlDirectory;
-        KORRID_CERTIFICATE_CONTROL_DIRECTORY = cfg.certificateControlDirectory;
         KORRID_CONTROL_PEER_UID = toString cfg.inputdUid;
         KORRID_CONTROL_PEER_GID = toString cfg.controlGid;
         KORRID_RUNTIME_UID = toString cfg.runtimeUid;
@@ -786,6 +786,12 @@ in
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs (cfg.sunshinePrivateStateRoot != null) {
+        KORRID_SUNSHINE_PRIVATE_STATE_ROOT = cfg.sunshinePrivateStateRoot;
+      }
+      // lib.optionalAttrs (cfg.certificateControlDirectory != null) {
+        KORRID_CERTIFICATE_CONTROL_DIRECTORY = cfg.certificateControlDirectory;
       }
       // lib.optionalAttrs (cfg.moonlightAddress != null) {
         KORRID_MOONLIGHT_ADDRESS = cfg.moonlightAddress;
@@ -857,9 +863,9 @@ in
         InaccessiblePaths = [
           "/dev/uinput"
           "-/dev/inputplumber/sources"
-          cfg.sunshinePrivateStateRoot
           cfg.localSignerPrivateStateRoot
-        ];
+        ]
+        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) cfg.sunshinePrivateStateRoot;
       };
     };
 

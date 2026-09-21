@@ -242,8 +242,10 @@ frontend, core, configuration evidence, and source graph. It is one independentl
 managed plugin with one publisher-bound signature and explicit approval. An empty
 but initialized host publishes `[]`; a missing snapshot is an authority error,
 not a request to use bundled games. `korri-plugin restore-all` rebuilds the view.
-The runtime user needs the existing account-directory and ROM access described
-in `nix/rg353m/gba-library-access.nix`. This cut does not migrate user files.
+The plugin host grants no account-directory or ROM access. The old RG353M-only
+ACL module was retired by the shared product-module cut; integrated
+plugin/default-selection work must provide and verify the required paths. No
+user files are migrated and no compatibility ACL is installed.
 
 The focused package test resolves the real self-contained build, discovers a ROM,
 checks callback config/argv, and executes that package's `retroarch --version`.

@@ -2,61 +2,82 @@
 
 | Directory | Owns |
 | --- | --- |
-| `base/` | Shared recovery access, NetworkManager policy, optional governor and fan modules, and InputPlumber data packaging. |
-| `formats/` | SD image assembly, optional WiFi file staging, and first-boot expansion. |
-| `devices/` | Each board's kernel, firmware, boot chain, radio settings, input maps, and service composition. |
+| `product/` | The complete shared Korri product composition, its fixed account and constants, and the evaluation gate every exported device must pass. |
+| `base/` | Product-wide recovery access, NetworkManager policy, and optional governor and fan modules. It chooses neither a board nor an image format. |
+| `device-cache/` | The no-local-build device substitution policy composed by the product. |
+| `formats/` | Image assembly, optional WiFi file staging, and first-boot storage expansion. |
+| `devices/` | Board hardware facts, boot chain, firmware, input maps, and explicit hardware limits only. |
 
-`base/default.nix` is the shared configuration entrypoint. It imports no device
-or image format. Governor and fan modules remain opt-in. Services keep their
-Nix modules beside their implementations under `services/` and `clients/`.
-`flake.nix` composes them and retains the existing public output names.
-Historical work and acceptance records still name `nix/rg353m/` and
-`nix/odin2portal/`. Board files now live under `devices/`; their shared
-`expand-root.nix` lives under `formats/`.
+A normal device imports `product/nixos-module.nix` once and then adds one image
+format and its hardware module. Device modules do not assemble, remove, swap, or
+force-disable product services. The product currently composes the Linux host,
+local portal and browser, plugin host, cache policy, and fixed `korri` runtime
+account. Product constants such as relays, surface selection, and korrid's bind
+address live with that composition rather than in a board module.
 
-Both device configurations import the base and the SD format. The format's
-`gpt` argument preserves the existing MBR path on RG353M and GPT repair on Odin.
-First-boot expansion belongs to the format, not the base. Do not run GPT repair
-on an MBR card based on the result of one test image.
+Services keep their Nix modules beside their implementations under `services/`
+and `clients/`. The product composes the shared streaming-free
+`services/inputd/nix/korri-linux-host-core.nix`; the temporary native streaming
+host composes the same substrate with its separate Sunshine integration. Both
+consume the one product-agnostic compositor socket and readiness contract beside
+the host implementation. A streaming host, its certificate socket, firewall
+rules, encoders, and capture packages are plugin concerns. Native units emitted
+by product modules remain implementation details: for each target system, the
+gate derives required units, exact product executable identities, emission
+strategies, suppression state, and required `systemd.packages` contributions
+from the delta between a bare NixOS reference and the real product composition.
+Device-specific package additions remain allowed; there is no copied manifest
+of NetworkManager, nginx, PipeWire, or other native units.
 
-Device modules use existing NixOS options. They add radio settings through
-`networking.networkmanager.ensureProfiles.profiles.korri.wifi` and boot files
-through `sdImage.populateRootCommands`. That option merges shell fragments;
-there is no separate Korri boot-population option.
+`base/default.nix` remains independently evaluable and imports no device or
+image format. Governor and fan modules remain opt-in. `flake.nix` composes the
+exported configurations and retains their public output names. Historical work
+and acceptance records may still name old paths such as `nix/rg353m/`; current
+board files live under `devices/`, and shared image behavior lives under
+`formats/`.
 
-## What does not change
+## Hardware limits
 
-Bootloaders, partition labels, image compression, console order, runtime users,
-and hardware settings remain device-specific and unchanged. InputPlumber data
-keeps its bytes; both packages now use the same installed-schema check. RG353M
-also keeps its physical-button assertions.
+A board module may record a limit only where observed hardware requires it. For
+example, RG353M carries its thermal CPU ceiling and the unaccepted Chromium GPU
+path locally; `--disable-gpu` is not universal product policy. Such limits must
+not turn into alternate product composition.
 
-SSH is disabled in the base and no operator SSH key is included. Physical
+Bootloaders, partition labels, image compression, console order, kernel and
+device-tree choices, radio settings, and physical input data remain device
+facts. The runtime account and product services do not. InputPlumber data keeps
+its bytes and uses the shared installed-schema validation.
+
+SSH is disabled by product policy and no operator SSH key is included. Physical
 recovery consoles, including RG353M USB serial, remain enabled and grant root.
-First-boot setup and plugin support remain separate work. A future SSH plugin
-requires explicit owner approval and compatible plugin-host support.
+Owner-controlled SSH is a plugin concern and requires explicit approval.
 
 See [device image builds](formats/IMAGE-BUILDS.md) for the manual GitHub Actions
-workflow and its optional, explicitly unverified prereleases.
-
-## Future output formats
-
-No x86 target or ISO builder is added here. Hardware architecture and media
-format remain separate choices. Legacy reference files are
-`product/systems/nixos/images/platforms/x86.nix` and
-`product/systems/nixos/images/live-usb.nix` on `legacy`. The latter builds a live
-USB/ISO appliance, not an installer that writes an internal disk. Reuse only the
-parts required by the first real x86 case.
+workflow and its optional, explicitly unverified prereleases. No x86 target or
+ISO builder is added here; hardware architecture and media format remain
+separate choices.
 
 ## Checks
 
-Run `nix run .#nixos-layout-check` on a Linux build machine. It evaluates the
-base independently of any format, checks both SD expansion paths, validates
-both devices' input data, tests invalid data rejection, and runs the USB gadget
-and WiFi checks. It does not deploy or write to devices.
+`checks.<system>.korri-product-module` evaluates the product independently,
+forces each contractual setting and every derived system or user unit away from
+its required final value in a real extended NixOS configuration, and verifies
+the complete exact gate failure set. Unit cases cover disablement, activation
+links, conditions and assertions, socket listeners, drop-in strategy, package
+contributions, generated-hook identity, and the complete exact systemd
+`serviceConfig` authority/runtime/sandbox contract. Hardware paths and other
+device facts remain service environment or data values, outside executable and
+authority identity. The internal product marker improves diagnostics only: Nix
+evaluation metadata can
+be forged, so the non-security guarantee is the complete resulting behavioral
+contract. A marker-only lookalike fails that contract; reproducing the entire
+contract is behaviorally equivalent. `checks.<system>.korri-product` enumerates every exported
+`nixosConfiguration`; there is no per-device opt-out list. During the staged
+migration it intentionally remains red for devices that have not adopted the
+product module. A passing evaluation gate records composition, not hardware
+support.
 
-WiFi continues to use `/etc/korri/wifi.env` with `WIFI_SSID` and `WIFI_PSK`.
-`KORRI_WIFI_ENV=/absolute/path/to/test.env nix run .#nixos-layout-check` also
-supplies a specific fixture for the staging check. Without that variable, the
-task creates and removes a temporary fixture. Use test values, not a real
-network credential.
+Image and hardware checks remain focused under their device and format outputs.
+They evaluate only; no check deploys, flashes, or writes to a device. WiFi
+staging continues to use `/etc/korri/wifi.env` with `WIFI_SSID` and `WIFI_PSK`.
+Use test values, never a real network credential, in fixtures.

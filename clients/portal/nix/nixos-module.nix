@@ -18,7 +18,7 @@ let
   group = user;
   home = "/var/lib/${user}";
   runtimeDir = "/run/${user}";
-  display = config.systemd.services.sunshine.environment.WAYLAND_DISPLAY;
+  display = config.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
   profile = "${home}${policy.chromiumProfileSuffix}";
   origin = "http://${cfg.host}:${toString cfg.port}";
   # The surface resolver reads ?surface= first and remembers it, so a device
@@ -44,9 +44,18 @@ let
   credential = "KORRID_RPC_CAPABILITY:/run/${credentialDirectory}/KORRID_RPC_CAPABILITY";
   selector = import ./select-package.nix { inherit pkgs url; };
   shell = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-portal-shell;
+  chromiumArgsFile = pkgs.writeText "korri-chromium-args.json" (
+    builtins.toJSON (chromiumArgs ++ kiosk.extraChromiumArgs)
+  );
+  # Keep the executable implementation independent of device-specific browser
+  # limits. The exact data file path belongs in the service environment.
   chromium = pkgs.writeShellApplication {
     name = "korri-chromium-kiosk";
     text = ''
+      extra_args=()
+      while IFS= read -r encoded; do
+        extra_args+=("$(printf '%s' "$encoded" | ${pkgs.coreutils}/bin/base64 --decode)")
+      done < <(${pkgs.jq}/bin/jq -r '.[] | @base64' "$KORRI_CHROMIUM_ARGS_FILE")
       exec ${lib.getExe shell} ${pkgs.chromium}/bin/chromium \
         --ozone-platform=wayland \
         --kiosk \
@@ -54,7 +63,7 @@ let
         --no-first-run --no-default-browser-check \
         --disable-background-networking --disable-extensions --disable-sync \
         --disable-session-crashed-bubble \
-        ${lib.escapeShellArgs chromiumArgs} \
+        "''${extra_args[@]}" \
         "$@"
     '';
   };
@@ -93,6 +102,7 @@ let
     "KORRI_ASSET_ROOT"
     "KORRI_WEB_SURFACE_URL"
     "KORRI_CHROMIUM_USER_DATA_DIR"
+    "KORRI_CHROMIUM_ARGS_FILE"
   ];
 in
 {
@@ -124,7 +134,14 @@ in
         default = { };
       };
     };
-    compositor.kiosk.enable = lib.mkEnableOption "the Korri Chromium kiosk";
+    compositor.kiosk = {
+      enable = lib.mkEnableOption "the Korri Chromium kiosk";
+      extraChromiumArgs = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = "Device-specific Chromium arguments required by recorded hardware limits.";
+      };
+    };
   };
 
   config = lib.mkMerge [
@@ -249,6 +266,7 @@ in
           KORRI_ASSET_ROOT = policy.assetRoot;
           KORRI_WEB_SURFACE_URL = url;
           KORRI_CHROMIUM_USER_DATA_DIR = profile;
+          KORRI_CHROMIUM_ARGS_FILE = chromiumArgsFile;
           KORRID_ADDRESS = address;
           KORRID_PORTAL_ORIGIN = origin;
         };

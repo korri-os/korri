@@ -1,9 +1,9 @@
 # GPU and media userspace for the RG353M.
 #
 # The SoC carries a Mali-G52 MP1 (one shader core, 200-800 MHz) driven by
-# Panfrost, plus three separate fixed-function blocks that matter more than 3D
-# for streaming work: the Hantro decoder on /dev/video1, the Hantro encoder on
-# /dev/video2, and the RGA 2D scaler/rotator on /dev/video0.
+# Panfrost, plus three fixed-function media blocks exposed by the board: the
+# Hantro decoder on /dev/video1, the Hantro encoder on /dev/video2, and the RGA
+# 2D scaler/rotator on /dev/video0.
 #
 # Without hardware.graphics the image ships no DRI driver at all, so nothing
 # can render. That is the first and largest win; clock tuning is worth far

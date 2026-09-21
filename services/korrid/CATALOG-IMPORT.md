@@ -54,16 +54,15 @@ Import runs as the catalog owner; it does not automatically make ROMs readable
 by the gameplay identity. Validate traversal, ROM reads and writable save paths
 separately. Keep configuration and private state inaccessible to games.
 
-The RG353M composition explicitly imports `nix/devices/rg353m/gba-gameplay.nix`. Its
-access module grants named traversal/read ACLs and account save access, denies
-gameplay reads of the existing root YAML documents and the `catalog/`
-directory by name, and adds a default deny for new private descendants. Default ACLs do not retroactively protect existing
-trees; inspect those before deployment. Existing copied ROM files require
-explicit read ACLs; the default applies only to subsequent files.
+The shared product-module cut removes the old RG353M-only gameplay and ACL
+composition. Catalog import therefore grants no runtime access by itself. The
+integrated plugin/default-selection work must provide and verify traversal, ROM
+reads, and writable save paths before claiming local gameplay. Default ACLs do
+not retroactively protect existing trees; inspect those before deployment.
+Existing copied ROM files require explicit read ACLs.
 
-The generated Linux RetroArch configuration uses **Select+Start to exit** and
-save automatically. Guide remains reserved for Korri. The board profile keeps
-schedutil and limits the CPU ceiling to the device-tested 1.104 GHz.
+The RG353M hardware profile keeps schedutil and limits the CPU ceiling to the
+device-tested 1.104 GHz. No account migration or compatibility ACL is supplied.
 
 The command opens no HTTP listener, starts no daemon, and grants no browser
 folder-selection authority. Restart the daemon after reviewing the report. On

@@ -241,9 +241,11 @@ let
   highRefreshDeviceConfig = highRefresh.config.services.korridLinuxDevice.deviceConfig;
   pixmanDeviceConfig = pixman.config.services.korridLinuxDevice.deviceConfig;
   sunshineExec = pkgs.writeText "korri-linux-host-sunshine-exec" sunshine.serviceConfig.ExecStart;
-  compositorExec = pkgs.writeText "korri-linux-host-compositor-exec" compositor.serviceConfig.ExecStart;
-  remoteInputCompositorExec = pkgs.writeText "korri-linux-host-remote-input-exec" remoteInputPhysical.config.systemd.services.korri-compositor.serviceConfig.ExecStart;
-  highRefreshCompositorExec = pkgs.writeText "korri-linux-host-high-refresh-compositor-exec" highRefresh.config.systemd.services.korri-compositor.serviceConfig.ExecStart;
+  compositorConfig = compositor.environment.KORRI_SWAY_CONFIG;
+  remoteInputCompositor = remoteInputPhysical.config.systemd.services.korri-compositor;
+  remoteInputCompositorConfig = remoteInputCompositor.environment.KORRI_SWAY_CONFIG;
+  highRefreshCompositor = highRefresh.config.systemd.services.korri-compositor;
+  highRefreshCompositorConfig = highRefreshCompositor.environment.KORRI_SWAY_CONFIG;
   highRefreshPerformance =
     if isX86_64 then highRefresh.config.systemd.services.korri-streaming-performance-profile else null;
   highRefreshPerformanceExec = pkgs.writeText "korri-linux-host-high-refresh-performance-exec" (
@@ -507,7 +509,10 @@ assert !(builtins.hasAttr "SUNSHINE_STRICT_ENCODER" physicalSoftwareSunshine.env
 assert
   physicalSoftwareSunshine.serviceConfig.ExecStart
   == "/run/wrappers/bin/sunshine /home/korri/.config/sunshine/sunshine.conf log_path=/dev/null capture=kms encoder=software";
-assert lib.hasInfix "DSI-1" physicalSoftwareReadiness;
+assert physicalSoftwareCompositor.environment.KORRI_COMPOSITOR_OUTPUT_NAME == "DSI-1";
+assert physicalSoftwareCompositor.environment.KORRI_COMPOSITOR_OUTPUT_WIDTH == "640";
+assert physicalSoftwareCompositor.environment.KORRI_COMPOSITOR_OUTPUT_HEIGHT == "480";
+assert lib.hasInfix "KORRI_COMPOSITOR_OUTPUT_NAME" physicalSoftwareReadiness;
 assert lib.hasInfix ".active == true" physicalSoftwareReadiness;
 assert lib.hasInfix ".current_mode.width == $width" physicalSoftwareReadiness;
 assert lib.hasInfix ".current_mode.height == $height" physicalSoftwareReadiness;
@@ -677,18 +682,18 @@ assert evaluationRejected wrongCertificateSocketGroup;
 pkgs.runCommand "korri-linux-host-module-check" { passthru = { inherit tmpfilesCheck; }; } ''
     test -e ${tmpfilesCheck}
     grep -F 'id = "inputd-gate"' ${deviceConfig} >/dev/null
-    grep -F 'title = "Streaming gate"' ${deviceConfig} >/dev/null
+    grep -F 'title = "Input validation gate"' ${deviceConfig} >/dev/null
     grep -F '/bin/tini' ${deviceConfig} >/dev/null
     grep -F '/bin/timeout' ${deviceConfig} >/dev/null
     grep -F -- '--kill-after=5s' ${deviceConfig} >/dev/null
-    grep -F '/bin/korri-streaming-validation-motion' ${deviceConfig} >/dev/null
-    grep -F '/bin/korri-streaming-validation-motion' ${highRefreshDeviceConfig} >/dev/null
-    grep -F '/bin/korri-streaming-validation-motion' ${pixmanDeviceConfig} >/dev/null
+    grep -F '/bin/korri-validation-motion' ${deviceConfig} >/dev/null
+    grep -F '/bin/korri-validation-motion' ${highRefreshDeviceConfig} >/dev/null
+    grep -F '/bin/korri-validation-motion' ${pixmanDeviceConfig} >/dev/null
     ! grep -F '/bin/mpv' ${deviceConfig} >/dev/null
     ! grep -F -- '--loop-file=inf' ${highRefreshDeviceConfig} >/dev/null
     ! grep -F 'LD_LIBRARY_PATH=/run/opengl-driver/lib' ${nvencDeviceConfig} >/dev/null
-    validation_motion="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^\"]+/bin/korri-streaming-validation-motion' ${deviceConfig} | head -n1)"
-    high_refresh_validation_motion="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^\"]+/bin/korri-streaming-validation-motion' ${highRefreshDeviceConfig} | head -n1)"
+    validation_motion="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^\"]+/bin/korri-validation-motion' ${deviceConfig} | head -n1)"
+    high_refresh_validation_motion="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^\"]+/bin/korri-validation-motion' ${highRefreshDeviceConfig} | head -n1)"
     test -x "$validation_motion"
     test "$validation_motion" = "$high_refresh_validation_motion"
     ${pkgs.gnugrep}/bin/grep -A4 -F "$validation_motion" ${deviceConfig} | ${pkgs.gnugrep}/bin/grep -F '"60"' >/dev/null
@@ -701,14 +706,14 @@ pkgs.runCommand "korri-linux-host-module-check" { passthru = { inherit tmpfilesC
     ! grep -F 'WAYLAND_DISPLAY' ${deviceConfig} >/dev/null
     ! grep -F 'XDG_RUNTIME_DIR' ${deviceConfig} >/dev/null
     ! grep -F 'SWAYSOCK' ${deviceConfig} >/dev/null
-    grep -F -- '--config /nix/store/' ${compositorExec} >/dev/null
-    remote_input_config="$(grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${remoteInputCompositorExec} | head -n1)"
-    grep -F 'input "*" events disabled' "$remote_input_config" >/dev/null
+    test -x ${lib.escapeShellArg compositor.serviceConfig.ExecStart}
+    test ${lib.escapeShellArg compositor.serviceConfig.ExecStart} = ${lib.escapeShellArg remoteInputCompositor.serviceConfig.ExecStart}
+    test ${lib.escapeShellArg compositor.serviceConfig.ExecStart} = ${lib.escapeShellArg highRefreshCompositor.serviceConfig.ExecStart}
+    grep -F 'input "*" events disabled' ${remoteInputCompositorConfig} >/dev/null
     for identifier in Mouse_passthrough 'Mouse_passthrough_(absolute)' Keyboard_passthrough Touch_passthrough Pen_passthrough; do
-      grep -F "input \"48879:57005:$identifier\" events enabled" "$remote_input_config" >/dev/null
+      grep -F "input \"48879:57005:$identifier\" events enabled" ${remoteInputCompositorConfig} >/dev/null
     done
-    high_refresh_compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${highRefreshCompositorExec} | head -n1)"
-    grep -F 'output HEADLESS-1 mode 1920x1080@120Hz' "$high_refresh_compositor_config" >/dev/null
+    grep -F 'output HEADLESS-1 mode 1920x1080@120Hz' ${highRefreshCompositorConfig} >/dev/null
     ${lib.optionalString isX86_64 ''
       performance_script="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-streaming-performance-profile' ${highRefreshPerformanceExec} | head -n1)"
       test -x "$performance_script"
@@ -768,7 +773,7 @@ pkgs.runCommand "korri-linux-host-module-check" { passthru = { inherit tmpfilesC
     grep -F 'GROUP="korri"' ${inputSeatUdevRules} >/dev/null
     grep -F 'MODE="0660"' ${inputSeatUdevRules} >/dev/null
 
-    compositor_config="$(${pkgs.gnugrep}/bin/grep -oE '/nix/store/[^ ]+-korri-sway\.conf' ${compositorExec} | head -n1)"
+    compositor_config=${lib.escapeShellArg compositorConfig}
     test -f "$compositor_config"
     ${pkgs.gnugrep}/bin/grep -F '# module-check-extra-config' "$compositor_config" >/dev/null
     ! ${pkgs.gnugrep}/bin/grep -F 'exec_always' "$compositor_config" >/dev/null

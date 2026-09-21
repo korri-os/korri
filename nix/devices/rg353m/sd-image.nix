@@ -11,17 +11,12 @@ let
 in
 {
   imports = [
-    ../../base
     (import ../../formats/sd-card.nix { gpt = false; })
     ../../../brand/plymouth/nixos-module.nix
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
-    ./plugin-host.nix
-    ./rk-mpp-service.nix
-    ./sunshine-host.nix
     ./usb-gadget.nix
-    ./wifi.nix
     ./firmware.nix
     ./nixpkgs-registry.nix
   ];

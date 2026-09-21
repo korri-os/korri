@@ -222,15 +222,12 @@ module takes them over:
   unfinished integration. Each device either enables the behavior or records a
   limit.
 
-Three values are unclassified, and the implementation must classify each one
-with the user rather than guess:
-
-- `relays`. Five devices set a different value, and two set an inert loopback
-  endpoint. This is neither a hardware fact nor clearly a product constant.
-- `services.korri.webSurfaceHost.surfaceId`. Four devices select `pico`. No
-  ticket decided whether the surface choice belongs to the product, the device,
-  or the owner.
-- `services.korridLinuxDevice.address`. One device forces a non-default port.
+The product-module implementation classifies three further values as product
+constants on 2026-09-20: relays are `wss://relay.nostr.band` and
+`wss://relay.primal.net`, the default surface is `shift`, and korrid binds
+`127.0.0.1:39217`. Devices do not override them. Configuring product relays does
+not revise the identity rule: the automatic first-boot identity publishes
+nothing and joins no federation.
 
 ### Sleep declarations
 
@@ -654,7 +651,7 @@ behavior. No infrastructure supports it today.
 
 ### Open decisions to settle during implementation
 
-Five questions are open. Each one must be settled with the user at the point the
+Four questions are open. Each one must be settled with the user at the point the
 work reaches it, not filled in by an agent.
 
 | Open question | Owner |
@@ -662,7 +659,6 @@ work reaches it, not filled in by an agent.
 | How korrid stays agnostic to the streaming host: the certificate socket and the input-seat group are both named for Sunshine | The streaming-host cut, before it is implemented (ticket 13) |
 | The fixed delay that ends light sleep | The sleep implementation (ticket 15) |
 | The Nix option name and place for sleep-state declarations | The product-module implementation (ticket 15) |
-| Whether `relays`, `surfaceId` and the korrid bind address are hardware facts or product constants | The product-module implementation |
 | The PPSSPP standalone/libretro identity conflict, if PSP stays in a default selection | The plugin-selection implementation (ticket 10) |
 
 ### Costs this spec accepts

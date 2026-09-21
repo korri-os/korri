@@ -12,10 +12,7 @@ let
         korri.nixosModules.korri-input
         (import ./nixos-module.nix {
           inherit korri;
-          chromiumArgs = [
-            "--force-prefers-reduced-motion"
-            "--disable-gpu"
-          ];
+          chromiumArgs = [ "--force-prefers-reduced-motion" ];
         })
         {
           system.stateVersion = "25.11";
@@ -44,9 +41,9 @@ let
             environment = {
               XDG_RUNTIME_DIR = "/run/user/1001";
               DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/1001/bus";
+              KORRI_WAYLAND_DISPLAY = "korri-wayland";
             };
           };
-          systemd.services.sunshine.environment.WAYLAND_DISPLAY = "korri-wayland";
         }
         extra
       ];
@@ -55,7 +52,10 @@ let
   enabled =
     (evaluate {
       services.korri.webSurfaceHost.enable = true;
-      services.korri.compositor.kiosk.enable = true;
+      services.korri.compositor.kiosk = {
+        enable = true;
+        extraChromiumArgs = [ "--disable-gpu" ];
+      };
     }).config;
   serverOnly =
     (evaluate {
@@ -83,6 +83,7 @@ let
       services.korri.compositor.kiosk.enable = true;
     }).config;
   service = enabled.systemd.services.korri-chromium-kiosk;
+  chromiumArgs = builtins.fromJSON (builtins.readFile service.environment.KORRI_CHROMIUM_ARGS_FILE);
   daemon = enabled.systemd.services.korrid;
   credentialService = "korri-portal-credentials.service";
   credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
@@ -170,6 +171,13 @@ assert service.environment.KORRI_ASSET_ROOT == profile;
 assert
   service.environment.KORRI_CHROMIUM_USER_DATA_DIR
   == "/var/lib/korri-portal/.local/state/korri/chromium/profile";
+assert chromiumArgs == [
+  "--force-prefers-reduced-motion"
+  "--disable-gpu"
+];
+assert
+  service.serviceConfig.ExecStart
+  == alternate.systemd.services.korri-chromium-kiosk.serviceConfig.ExecStart;
 assert nginx.root == profile;
 assert builtins.elem "d /var/lib/korri-portal 0700 korri-portal korri-portal -"
   enabled.systemd.tmpfiles.rules;
@@ -214,8 +222,8 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F -- 'korri-portal-shell' ${service.serviceConfig.ExecStart}
   grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
   grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
-  grep -F -- '--force-prefers-reduced-motion' ${service.serviceConfig.ExecStart}
-  grep -F -- '--disable-gpu' ${service.serviceConfig.ExecStart}
+  grep -F -- '--force-prefers-reduced-motion' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
+  grep -F -- '--disable-gpu' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
   if grep -E -- '--app|--no-sandbox|--remote-debugging|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi
   export RUNTIME_DIRECTORY="$TMPDIR/credentials"
   mkdir -m 700 "$RUNTIME_DIRECTORY"

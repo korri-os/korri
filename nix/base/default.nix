@@ -1,5 +1,5 @@
-# Shared policy for the RG353M and Odin 2 Portal configurations.
-# This module chooses neither a board nor an image format.
+# Shared Korri product policy. This module chooses neither a board nor an
+# image format and is composed by nix/product/nixos-module.nix.
 { pkgs, ... }:
 let
   korriCache = import ../cache/identity.nix;

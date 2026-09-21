@@ -55,6 +55,7 @@
         korri = self;
       };
       nixosModules = {
+        korri-product = import ./nix/product/nixos-module.nix { korri = self; };
         korri-device-cache = import ./nix/device-cache/nixos-module.nix;
         korri-bundle = import ./services/inputd/nix/korri-bundle-module.nix { korri = self; };
         korri-input = import ./services/inputd/nix/korri-input.nix { korri = self; };
@@ -73,10 +74,8 @@
       nixosConfigurations = {
         # nixos-rebuild resolves nixosConfigurations.<hostname> when no target is
         # named, and the host is rg353m. This name therefore has to mean the
-        # device as it ships. The base configuration below it carries the
-        # hardware but enables no surface, so a system built from it boots to a
-        # blank screen; it stays an internal layer and gets no public name.
-        rg353m = rg353m.portalPreviewConfiguration;
+        # device as it ships with the complete shared product.
+        rg353m = rg353m.configuration;
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
         rpminiv2 = rpminiv2.configuration;
@@ -84,7 +83,8 @@
         r36tmax = r36tmax.configuration;
         r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
-        rg35xxsp = rg35xxsp.configuration;
+        # RG35XXSP remains a product device. It returns here after its product
+        # composition and delivery land; its packages stay available for bring-up.
       };
     }
     // flake-utils.lib.eachDefaultSystem (
@@ -117,9 +117,6 @@
             }
           else
             null;
-        # The RG353M composes its own RKMPP Sunshine because the encoder needs
-        # Rockchip MPP and the device kernel service, not just an FFmpeg bundle.
-        sunshineRkmppPackage = if system == "aarch64-linux" then rg353m.sunshineRkmpp else null;
         inputplumber = import ./services/inputd/nix {
           inherit
             pkgs
@@ -128,7 +125,6 @@
             korridPackage
             sunshinePackage
             sunshineV4l2m2mPackage
-            sunshineRkmppPackage
             ;
           inputplumberNixpkgs = inputplumber-nixpkgs;
           korriBundleModule = nixosModules.korri-bundle;
@@ -177,11 +173,6 @@
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
-          rg353m-rk-mpp-service-module = rg353m.rkMppServiceModule;
-          rg353m-rockchip-mpp = rg353m.rockchipMpp;
-          rg353m-ffmpeg-rockchip = rg353m.ffmpegRockchip;
-          rg353m-sunshine-ffmpeg-rkmpp = rg353m.sunshineFfmpegRkmpp;
-          rg353m-sunshine-rkmpp = rg353m.sunshineRkmpp;
           rg353m-sd-image = rg353m.sdImage;
           rg353m-rescue-sd-image = rg353m.rescueSdImage;
           rg353m-uboot = rg353m.uboot;
@@ -233,6 +224,17 @@
           inputplumber.checks
           // pluginHost.checks
           // {
+            korri-product = import ./nix/product/check.nix {
+              inherit pkgs nixpkgs;
+              korri = self;
+              productModule = nixosModules.korri-product;
+              configurations = self.nixosConfigurations;
+            };
+            korri-product-module = import ./nix/product/module-check.nix {
+              inherit pkgs nixpkgs;
+              korri = self;
+              productModule = nixosModules.korri-product;
+            };
             korri-device-cache = import ./nix/device-cache/module-check.nix {
               inherit pkgs;
               cacheModule = nixosModules.korri-device-cache;
@@ -253,7 +255,6 @@
             rg353m-diagnostics = rg353m.diagnosticsCheck pkgs;
             rg353m-registry = rg353m.registryCheck pkgs;
             rg353m-bluetooth = rg353m.bluetoothCheck pkgs;
-            rg353m-plugin-host = rg353m.pluginHostCheck pkgs;
             rg353m-firmware = import ./nix/devices/rg353m/firmware-check.nix {
               inherit pkgs;
               korri = self;
