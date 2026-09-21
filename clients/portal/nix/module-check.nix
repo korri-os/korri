@@ -156,6 +156,12 @@ assert
   enabled.systemd.sockets.korrid-control.socketConfig
   == disabled.systemd.sockets.korrid-control.socketConfig;
 assert service.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/";
+assert enabled.services.korriLinuxInput.inputd.actions.system-panel.command == [
+  "${pkgs.sway-unwrapped}/bin/swaymsg"
+  "-s"
+  "/run/korri-compositor/sway-ipc.sock"
+  ''[app_id="korri-portal"] focus''
+];
 # A device that names a surface opens it through the portal's own preference
 # seam; the served origin and asset root stay identical either way.
 assert
@@ -222,6 +228,7 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F 'Restart=on-failure' ${pkgs.writeText "portal-kiosk.service" unit}
   grep -F -- 'korri-portal-shell' ${service.serviceConfig.ExecStart}
   grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
+  grep -F -- '--class=korri-portal' ${service.serviceConfig.ExecStart}
   grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
   # Chromium maps this desktop WM class to the native Wayland app_id. Keep the
   # product's game-return exclusion tied to the package the portal launches.

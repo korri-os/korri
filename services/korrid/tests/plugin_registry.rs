@@ -1,5 +1,5 @@
 use korrid::{
-    plugin::{load_plugin_source, PluginRegistry},
+    plugin::{load_plugin_source, PluginRegistry, SessionControlEffect},
     plugin_installation::EnabledPackage,
 };
 use std::{collections::BTreeMap, fs, path::Path};
@@ -190,14 +190,22 @@ fn two_cores_of_one_family_coexist() {
         ["@korri:snes9x2010/snes9x2010"]
     );
 
-    // Both cores declare the same controls; neither holds a right the other
-    // lacks. The effect is the plugin's own opaque identifier, so korrid stores
-    // it without interpreting it.
+    // Both cores declare the same closed RetroArch effects; neither can
+    // supply an arbitrary command through the declaration.
     for (control_id, effect) in [
-        ("@korri:mgba/open-menu", "@korri:retroarch/open-menu"),
-        ("@korri:mgba/quit", "@korri:retroarch/quit"),
-        ("@korri:snes9x2010/open-menu", "@korri:retroarch/open-menu"),
-        ("@korri:snes9x2010/quit", "@korri:retroarch/quit"),
+        (
+            "@korri:mgba/open-menu",
+            SessionControlEffect::RetroarchOpenMenu,
+        ),
+        ("@korri:mgba/quit", SessionControlEffect::RetroarchQuit),
+        (
+            "@korri:snes9x2010/open-menu",
+            SessionControlEffect::RetroarchOpenMenu,
+        ),
+        (
+            "@korri:snes9x2010/quit",
+            SessionControlEffect::RetroarchQuit,
+        ),
     ] {
         assert_eq!(registry.session_controls()[control_id].effect, effect);
     }

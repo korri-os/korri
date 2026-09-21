@@ -68,6 +68,26 @@ describe("callKorrid", () => {
     expect(await client.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
   })
 
+  it("correlates in-memory overlay handoff to the exact frozen launch and clears it on return", async () => {
+    const active = { launchId: "launch-1", gameId: "one", phase: "running" }
+    const client = createInMemoryKorridClient({ activeSession: active })
+
+    expect(await client.sessionFreeze("launch-1")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionStatus()).toEqual({
+      _tag: "Ok",
+      payload: {
+        active: { ...active, phase: "frozen" },
+        overlay: { ...active, phase: "frozen" },
+      },
+    })
+
+    expect(await client.sessionThaw("launch-1")).toMatchObject({ _tag: "Ok" })
+    expect(await client.sessionStatus()).toEqual({
+      _tag: "Ok",
+      payload: { active },
+    })
+  })
+
   it("sends the per-server capability as a bearer token", async () => {
     let authorization: string | null = null
     globalThis.fetch = (async (_input, init) => {
@@ -183,6 +203,38 @@ describe("callKorrid", () => {
         changed: true,
       },
     })
+  })
+
+  it("lists and invokes gameplay controls with the same exact launch id", async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body))
+      bodies.push(body)
+      return new Response(JSON.stringify(body._tag === "app.session.controls"
+        ? {
+            _tag: body._tag,
+            outcome: { _tag: "Ok", payload: { launchId: "launch-1", groups: [] } },
+          }
+        : {
+            _tag: body._tag,
+            outcome: { _tag: "Ok", payload: { launchId: "launch-1" } },
+          }), { status: 200, headers: { "content-type": "application/json" } })
+    }) as typeof fetch
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+
+    expect((await client.sessionControls("launch-1"))._tag).toBe("Ok")
+    expect((await client.invokeSessionControl(
+      "launch-1",
+      "@korri:mgba/open-menu",
+    ))._tag).toBe("Ok")
+
+    expect(bodies).toEqual([
+      { _tag: "app.session.controls", payload: { launchId: "launch-1" } },
+      {
+        _tag: "app.session.control.invoke",
+        payload: { launchId: "launch-1", controlId: "@korri:mgba/open-menu" },
+      },
+    ])
   })
 
   it("reports an unreachable brain for freeze and thaw", async () => {

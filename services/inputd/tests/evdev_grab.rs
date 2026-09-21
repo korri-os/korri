@@ -84,6 +84,7 @@ async fn authenticated_dbus_shortcut_survives_an_exclusive_evdev_grab() -> io::R
         opened: Some(OpenedTarget {
             descriptor,
             events: Box::pin(event_stream),
+            router: Box::new(korri_inputd::virtual_targets::DisabledTargetRouter::default()),
         }),
     };
     let mut runtime = Runtime::default();

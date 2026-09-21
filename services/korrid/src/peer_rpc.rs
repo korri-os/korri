@@ -963,9 +963,12 @@ mod tests {
             token(15),
             token(16),
         );
-        let thawed = thaw_client.session_thaw(&prepared.launch_id).await.unwrap();
-        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
-        assert!(thawed.changed);
+        assert!(matches!(
+            thaw_client.session_thaw(&prepared.launch_id).await,
+            Err(crate::upstreams::UpstreamError::Tagged { code, message })
+                if code == "HostFocusFailed"
+                    && message == "compositor focus authority is not configured"
+        ));
         let stale_stop_client = crate::upstream_native::NativeClient::new_secure_at(
             base.clone(),
             host_key.clone(),

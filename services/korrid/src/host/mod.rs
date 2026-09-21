@@ -6,9 +6,13 @@ mod input_seat;
 pub(crate) mod moonlight_certificate;
 pub(crate) mod play_log;
 mod prepare;
+pub(crate) mod retroarch_control;
 mod session_state;
 mod systemd_unit;
 
+use crate::plugin::{
+    SessionControlDeclarationInteraction, SessionControlEffect, SessionControlOwnerKind,
+};
 use crate::{
     config::{
         resolver::resolve_launchable_routes,
@@ -16,14 +20,19 @@ use crate::{
     },
     identity::DeviceIdentity,
     launcher::linux_plugin,
-    plugin_policy, CatalogSnapshot, Game, GameIdentity, GameSource, RpcFailure, SessionPrepared,
-    SourceCatalogState, SourceStatus, SourceStreamControlState,
+    plugin_policy, CatalogSnapshot, Game, GameIdentity, GameSource, RpcFailure, SessionControl,
+    SessionControlCompleted, SessionControlFailure, SessionControlFailureReason,
+    SessionControlGroup, SessionControlInteraction, SessionControlInvokeOutcome,
+    SessionControlInvokeRequest, SessionControls, SessionPrepared, SourceCatalogState,
+    SourceStatus, SourceStreamControlState,
 };
 use config::{HostConfig, HostConfigError};
 use moonlight_certificate::MoonlightCertificateAdapter;
 use prepare::HostLauncher;
+use retroarch_control::{NetworkRetroarchControl, RetroarchControlExecutor};
 use session_state::{
-    HostSessionControl, HostSessionFreezeChange, HostSessionStatus, HostSessionStop,
+    HostSessionControl, HostSessionEffectFailure, HostSessionFreezeChange, HostSessionStatus,
+    HostSessionStop,
 };
 use std::{
     path::{Path, PathBuf},
@@ -198,6 +207,7 @@ pub struct HostRuntime {
     owner_public_key: Option<String>,
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
+    retroarch_control: Arc<dyn RetroarchControlExecutor>,
 }
 
 impl HostRuntime {
@@ -235,6 +245,7 @@ impl HostRuntime {
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
             )),
+            retroarch_control: Arc::new(NetworkRetroarchControl::default()),
         }
     }
 
@@ -265,6 +276,7 @@ impl HostRuntime {
             moonlight_certificate_permits: Arc::new(tokio::sync::Semaphore::new(
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
             )),
+            retroarch_control: Arc::new(NetworkRetroarchControl::default()),
         }
     }
 
@@ -481,6 +493,12 @@ impl HostRuntime {
     }
 
     #[cfg(test)]
+    pub(crate) fn with_retroarch_control_port(mut self, port: u16) -> Self {
+        self.retroarch_control = Arc::new(NetworkRetroarchControl::new(port));
+        self
+    }
+
+    #[cfg(test)]
     pub(crate) fn with_route_registry(
         mut self,
         root: PathBuf,
@@ -556,8 +574,9 @@ impl HostRuntime {
                 .launcher
                 .as_ref()
                 .expect("valid host config")
-                .prepare_fresh_command(
+                .prepare_fresh_route(
                     &request.game_id,
+                    &request.runner_id,
                     person_public_key.as_deref(),
                     &launch.command,
                 )?;
@@ -582,6 +601,17 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || Ok(runtime.control()?.status()))
             .await
             .map_err(host_worker_failure)?
+    }
+
+    pub async fn session_status_with_recovered_overlay_intent(
+        &self,
+    ) -> Result<(HostSessionStatus, Option<String>), RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            Ok(runtime.control()?.status_with_recovered_overlay_intent())
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
     pub async fn session_stop(
@@ -615,6 +645,207 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || Ok(runtime.control()?.thaw(&expected_launch_id)))
             .await
             .map_err(host_worker_failure)?
+    }
+
+    pub async fn session_controls(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<SessionControls, SessionControlFailure> {
+        let (launch_id, game_id) =
+            exact_live_session(self.session_status().await, expected_launch_id)?;
+        let runtime = self.clone();
+        let materialized = tokio::task::spawn_blocking(move || {
+            runtime.materialize_plugin_controls(&launch_id, game_id.as_deref())
+        })
+        .await
+        .map_err(|_| unavailable_controls("Gameplay control resolution failed."))??;
+        exact_live_session(self.session_status().await, expected_launch_id)?;
+        Ok(materialized)
+    }
+
+    pub async fn invoke_session_control(
+        &self,
+        request: SessionControlInvokeRequest,
+    ) -> SessionControlInvokeOutcome {
+        let controls = match self.session_controls(&request.launch_id).await {
+            Ok(controls) => controls,
+            Err(failure) => return SessionControlInvokeOutcome::Err(failure),
+        };
+        let Some(control) = controls
+            .groups
+            .iter()
+            .flat_map(|group| group.controls.iter())
+            .find(|control| control.id == request.control_id)
+        else {
+            return SessionControlInvokeOutcome::Err(SessionControlFailure {
+                reason: SessionControlFailureReason::UnknownControl,
+                message: "That gameplay control is not declared for this exact launch.".into(),
+            });
+        };
+        if let Err(failure) =
+            crate::validate_session_control_invocation(&controls.launch_id, &request, control)
+        {
+            return SessionControlInvokeOutcome::Err(failure);
+        }
+        let record = match self.plugin_control_record(&request.launch_id, &request.control_id) {
+            Ok(record) => record,
+            Err(failure) => return SessionControlInvokeOutcome::Err(failure),
+        };
+        let command = record.effect.retroarch_command();
+        let focus_after = record.effect == SessionControlEffect::RetroarchOpenMenu;
+        let wait_for_completion = record.effect == SessionControlEffect::RetroarchQuit;
+        let runtime = self.clone();
+        let launch_id = request.launch_id.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            let executor = Arc::clone(&runtime.retroarch_control);
+            // Runner availability and command preflight happen while the exact
+            // live session is still frozen. Only an executable declaration may
+            // cross the one-way effect boundary and temporarily thaw it.
+            let prepared = executor
+                .prepare(command)
+                .map_err(HostSessionEffectFailure::Unavailable)?;
+            runtime
+                .control()
+                .map_err(|failure| HostSessionEffectFailure::Unavailable(failure.message))?
+                .invoke_running_effect(&launch_id, focus_after, wait_for_completion, || {
+                    executor.invoke(prepared)
+                })
+        })
+        .await;
+        match outcome {
+            Ok(Ok(())) => SessionControlInvokeOutcome::Ok(SessionControlCompleted {
+                launch_id: request.launch_id,
+            }),
+            Ok(Err(
+                HostSessionEffectFailure::NoActive | HostSessionEffectFailure::StaleIdentity,
+            )) => SessionControlInvokeOutcome::Err(stale_controls()),
+            Ok(Err(HostSessionEffectFailure::Stopping)) => {
+                SessionControlInvokeOutcome::Err(unavailable_controls("The game is stopping."))
+            }
+            Ok(Err(HostSessionEffectFailure::RecoveryBlocked)) => {
+                SessionControlInvokeOutcome::Err(unavailable_controls(
+                    "Gameplay control is blocked until session recovery is resolved.",
+                ))
+            }
+            Ok(Err(HostSessionEffectFailure::FocusFailed(message)))
+            | Ok(Err(HostSessionEffectFailure::Unavailable(message))) => {
+                SessionControlInvokeOutcome::Err(unavailable_controls(&message))
+            }
+            Err(_) => SessionControlInvokeOutcome::Err(unavailable_controls(
+                "Gameplay control execution failed.",
+            )),
+        }
+    }
+
+    fn plugin_control_record(
+        &self,
+        launch_id: &str,
+        control_id: &str,
+    ) -> Result<crate::plugin::SessionControlRecord, SessionControlFailure> {
+        let runner_id = self
+            .control()
+            .map_err(|failure| unavailable_controls(&failure.message))?
+            .active_runner_id(launch_id)
+            .map_err(|message| unavailable_controls(&message))?
+            .ok_or_else(stale_controls)?;
+        self.route_registry()
+            .map_err(|failure| unavailable_controls(&failure.message))?
+            .session_controls()
+            .values()
+            .find(|record| {
+                record.id == control_id
+                    && record.owner.kind == SessionControlOwnerKind::Runner
+                    && record.owner.id == runner_id
+            })
+            .cloned()
+            .ok_or_else(|| SessionControlFailure {
+                reason: SessionControlFailureReason::UnknownControl,
+                message: "That gameplay control is not declared for this exact launch.".into(),
+            })
+    }
+
+    fn materialize_plugin_controls(
+        &self,
+        launch_id: &str,
+        game_id: Option<&str>,
+    ) -> Result<SessionControls, SessionControlFailure> {
+        let runner_id = self
+            .control()
+            .map_err(|failure| unavailable_controls(&failure.message))?
+            .active_runner_id(launch_id)
+            .map_err(|message| unavailable_controls(&message))?;
+        let Some(runner_id) = runner_id else {
+            return Ok(SessionControls {
+                launch_id: launch_id.to_owned(),
+                title: game_id.map(str::to_owned),
+                groups: Vec::new(),
+                retroarch_telemetry: None,
+            });
+        };
+        let registry = self
+            .route_registry()
+            .map_err(|failure| unavailable_controls(&failure.message))?;
+        let mut records = registry
+            .session_controls()
+            .values()
+            .filter(|record| {
+                record.owner.kind == SessionControlOwnerKind::Runner && record.owner.id == runner_id
+            })
+            .filter_map(|record| match record.interaction {
+                SessionControlDeclarationInteraction::Command => Some(record.clone()),
+                // Stateful forms need live executor values. Omit them instead
+                // of inventing defaults or showing disabled controls.
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            left.order
+                .cmp(&right.order)
+                .then_with(|| left.local_id.cmp(&right.local_id))
+        });
+        let mut groups: Vec<SessionControlGroup> = Vec::new();
+        for record in records {
+            let control = SessionControl {
+                id: record.id,
+                label: record.label,
+                description: record.description,
+                enabled: true,
+                disabled_reason: None,
+                destructive: record.destructive,
+                dismiss_on_success: record.dismiss_on_success,
+                interaction: SessionControlInteraction::Command,
+            };
+            if let Some(group) = groups.iter_mut().find(|group| group.id == record.plugin_id) {
+                group.controls.push(control);
+            } else {
+                groups.push(SessionControlGroup {
+                    id: record.plugin_id.clone(),
+                    label: registry
+                        .plugin_title(&record.plugin_id)
+                        .unwrap_or(&record.plugin_id)
+                        .to_owned(),
+                    controls: vec![control],
+                });
+            }
+        }
+        let title = game_id.and_then(|game_id| {
+            self.dynamic
+                .as_ref()
+                .and_then(|dynamic| dynamic.load().ok())
+                .and_then(|dynamic| {
+                    dynamic
+                        .games
+                        .into_iter()
+                        .find(|game| game.id == game_id)
+                        .map(|game| game.title)
+                })
+        });
+        Ok(SessionControls {
+            launch_id: launch_id.to_owned(),
+            title: title.or_else(|| game_id.map(str::to_owned)),
+            groups,
+            retroarch_telemetry: None,
+        })
     }
 
     fn certificate_control_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, RpcFailure> {
@@ -670,6 +901,48 @@ impl HostRuntime {
         })
         .await
         .map_err(certificate_worker_failure)?
+    }
+}
+
+fn unavailable_controls(message: &str) -> SessionControlFailure {
+    SessionControlFailure {
+        reason: SessionControlFailureReason::Unavailable,
+        message: message.to_owned(),
+    }
+}
+
+fn stale_controls() -> SessionControlFailure {
+    SessionControlFailure {
+        reason: SessionControlFailureReason::StaleSession,
+        message: "That game is no longer running. Reload the session before acting.".into(),
+    }
+}
+
+fn exact_live_session(
+    status: Result<HostSessionStatus, RpcFailure>,
+    expected_launch_id: &str,
+) -> Result<(String, Option<String>), SessionControlFailure> {
+    match status {
+        Ok(HostSessionStatus::Running { launch_id, game_id })
+        | Ok(HostSessionStatus::Frozen { launch_id, game_id })
+        | Ok(HostSessionStatus::FocusFailed { launch_id, game_id })
+            if launch_id == expected_launch_id =>
+        {
+            Ok((launch_id, game_id))
+        }
+        Ok(HostSessionStatus::Stopping { launch_id, .. }) if launch_id == expected_launch_id => {
+            Err(unavailable_controls("The game is stopping."))
+        }
+        Ok(HostSessionStatus::Running { .. })
+        | Ok(HostSessionStatus::Frozen { .. })
+        | Ok(HostSessionStatus::FocusFailed { .. })
+        | Ok(HostSessionStatus::Stopping { .. })
+        | Ok(HostSessionStatus::Completed { .. })
+        | Ok(HostSessionStatus::NoActive) => Err(stale_controls()),
+        Ok(HostSessionStatus::RecoveryBlocked) => Err(unavailable_controls(
+            "Host recovery identity requires administrator resolution.",
+        )),
+        Err(failure) => Err(unavailable_controls(&failure.message)),
     }
 }
 

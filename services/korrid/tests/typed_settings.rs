@@ -141,6 +141,8 @@ fn callback_collapses_native_assignments_without_relaxing_reserved_keys() {
         "config_save_on_exit",
         "kiosk_mode_enable",
         "menu_driver",
+        "network_cmd_enable",
+        "network_cmd_port",
         "cheevos_token",
         "netplay_password",
     ] {

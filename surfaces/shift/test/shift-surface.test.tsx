@@ -468,8 +468,8 @@ describe("Shift gameplay overlay", () => {
     title: "Skate 3",
     controls: [
       {
-        id: "overlay:resume",
-        label: "Resume",
+        id: "overlay:return",
+        label: "Return",
         enabled: true,
         destructive: false,
         dismissOnSuccess: true,
@@ -574,7 +574,7 @@ describe("Shift gameplay overlay", () => {
       ...overrides,
     })
 
-  test("renders the exact sheet composition, ordering, groups, and initial Resume focus", () => {
+  test("renders the exact sheet composition, ordering, groups, and initial Return focus", () => {
     render(<ShiftSurface model={overlayModel()} host={createFixtureHost()} />)
 
     const dialog = screen.getByRole("dialog", { name: "Gameplay controls for Skate 3" })
@@ -591,7 +591,7 @@ describe("Shift gameplay overlay", () => {
         row.querySelector(".shift-sheet-action-label")?.textContent,
       ),
     ).toEqual([
-      "Resume",
+      "Return",
       "Keyboard",
       "Fill screen",
       "Mouse mode",
@@ -600,7 +600,7 @@ describe("Shift gameplay overlay", () => {
       "Open RetroArch menu",
     ])
     expect(document.activeElement).toBe(
-      within(dialog).getByRole("button", { name: "Resume" }),
+      within(dialog).getByRole("button", { name: "Return" }),
     )
     expect(
       within(dialog).getByRole("button", { name: "Quit host game" }).getAttribute("data-tone"),
@@ -610,6 +610,48 @@ describe("Shift gameplay overlay", () => {
         "aria-disabled",
       ),
     ).toBe("true")
+  })
+
+  test("asks once before invoking a destructive gameplay command", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface model={overlayModel()} host={host} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Quit host game" }))
+
+    expect(host.calls).toEqual([])
+    const confirmation = screen.getByRole("dialog", { name: "Confirm Quit host game" })
+    expect(within(confirmation).getByText("This cannot be undone.")).toBeDefined()
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Quit host game" }))
+    expect(host.calls).toEqual(["gameplay-control:quit"])
+  })
+
+  test("confirmation replaces the outer modal and Back only cancels it", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface model={overlayModel()} host={host} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Quit host game" }))
+    expect(screen.getAllByRole("dialog")).toHaveLength(1)
+    expect(screen.getByRole("dialog").getAttribute("aria-label"))
+      .toBe("Confirm Quit host game")
+
+    act(() => host.press("back"))
+
+    expect(host.calls).toEqual([])
+    expect(screen.getAllByRole("dialog")).toHaveLength(1)
+    expect(screen.getByRole("dialog").getAttribute("aria-label"))
+      .toBe("Gameplay controls for Skate 3")
+  })
+
+  test("Cancel closes only confirmation and does not request a thaw", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface model={overlayModel()} host={host} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Quit host game" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+
+    expect(host.calls).toEqual([])
+    expect(screen.getByRole("dialog").getAttribute("aria-label"))
+      .toBe("Gameplay controls for Skate 3")
   })
 
   test("uses dedicated controls for toggle, choice, and range with touch and ARIA values", () => {
@@ -1050,23 +1092,27 @@ describe("Shift gameplay overlay", () => {
     )
   })
 
-  test("Resume, Back, Guide, Start, and scrim dismiss locally", () => {
-    for (const dismiss of ["resume", "back", "system", "menu", "scrim"] as const) {
+  test("Return invokes the exact host control while Back, Guide, Start, and scrim request return", () => {
+    for (const dismiss of ["return", "back", "system", "menu", "scrim"] as const) {
       const host = createFixtureHost()
       const rendered = render(<ShiftSurface model={overlayModel()} host={host} />)
-      if (dismiss === "resume") {
-        fireEvent.click(screen.getByRole("button", { name: "Resume" }))
+      if (dismiss === "return") {
+        fireEvent.click(screen.getByRole("button", { name: "Return" }))
       } else if (dismiss === "scrim") {
         fireEvent.pointerDown(rendered.container.querySelector(".shift-sheet-scrim")!)
       } else {
         act(() => host.press(dismiss))
       }
-      expect(host.calls).toEqual(["gameplay-overlay-dismiss"])
+      expect(host.calls).toEqual([
+        dismiss === "return"
+          ? "gameplay-control:overlay:return"
+          : "gameplay-overlay-dismiss",
+      ])
       rendered.unmount()
     }
   })
 
-  test("keeps Resume available while presenting a calm gameplay-control failure", () => {
+  test("keeps Return available while presenting a calm gameplay-control failure", () => {
     const host = createFixtureHost()
     render(
       <ShiftSurface
@@ -1074,7 +1120,7 @@ describe("Shift gameplay overlay", () => {
           status: {
             _tag: "Problem",
             kicker: "Controls unavailable",
-            reason: "Gameplay controls could not be refreshed. Resume is still available.",
+            reason: "Gameplay controls could not be refreshed. Return is still available.",
             canRetry: true,
           },
         })}
@@ -1082,10 +1128,10 @@ describe("Shift gameplay overlay", () => {
       />,
     )
 
-    expect(screen.getByText("Gameplay controls could not be refreshed. Resume is still available."))
+    expect(screen.getByText("Gameplay controls could not be refreshed. Return is still available."))
       .toBeDefined()
-    fireEvent.click(screen.getByRole("button", { name: "Resume" }))
-    expect(host.calls).toEqual(["gameplay-overlay-dismiss"])
+    fireEvent.click(screen.getByRole("button", { name: "Return" }))
+    expect(host.calls).toEqual(["gameplay-control:overlay:return"])
   })
 })
 

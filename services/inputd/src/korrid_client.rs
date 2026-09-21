@@ -1,9 +1,12 @@
-use std::{fmt, io, path::PathBuf, time::Duration};
+use std::{fmt, io, path::PathBuf, sync::Arc, time::Duration};
 
 use serde::Deserialize;
+
+use crate::virtual_targets::InputOwner;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
+    sync::Mutex,
 };
 
 const STATUS_REQUEST: &[u8] = br#"{"_tag":"app.session.status","payload":{}}"#;
@@ -32,6 +35,7 @@ impl Default for LocalControlLimits {
 pub struct KorridClient {
     socket_path: PathBuf,
     limits: LocalControlLimits,
+    panel_guard: Arc<Mutex<()>>,
 }
 
 impl KorridClient {
@@ -39,6 +43,7 @@ impl KorridClient {
         Self {
             socket_path: socket_path.into(),
             limits: LocalControlLimits::default(),
+            panel_guard: Arc::new(Mutex::new(())),
         }
     }
 
@@ -46,6 +51,7 @@ impl KorridClient {
         Self {
             socket_path: socket_path.into(),
             limits,
+            panel_guard: Arc::new(Mutex::new(())),
         }
     }
 
@@ -63,9 +69,85 @@ impl KorridClient {
         unreachable!("status always returns from a positive attempt count")
     }
 
+    pub async fn toggle_panel_exact(&self) -> Result<ExactPanelOutcome, LocalControlError> {
+        self.toggle_panel_exact_with(|| async { true }).await
+    }
+
+    /// Runs one complete Home transaction. The guard covers the status read,
+    /// exact freezer mutation, Portal ownership, and portal focus. Leave must
+    /// freeze the observed launch before it enters Portal. A failed Portal
+    /// transition thaws and refocuses that same launch before Game ownership
+    /// is restored.
+    pub async fn toggle_panel_exact_with<F, Fut>(
+        &self,
+        enter_portal: F,
+    ) -> Result<ExactPanelOutcome, LocalControlError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        let _panel_guard = self.panel_guard.lock().await;
+        match self.status().await? {
+            SessionStatus::Running { launch_id } | SessionStatus::FocusFailed { launch_id } => {
+                match self
+                    .change_freezer(&launch_id, "app.session.freeze", "freeze")
+                    .await?
+                {
+                    ExactPanelOutcome::Opened => {}
+                    // The observed launch ended or was replaced before its
+                    // exact freeze. Do not enter Portal or retarget the new
+                    // launch. Reconciliation will observe the current state.
+                    ExactPanelOutcome::NoActive | ExactPanelOutcome::AlreadyStopping => {
+                        return Ok(ExactPanelOutcome::LeaveRefused);
+                    }
+                    other => return Ok(other),
+                }
+                if !enter_portal().await {
+                    // Portal routing or focus can fail after a partial effect.
+                    // Thaw and refocus the exact frozen launch before the caller
+                    // restores Game ownership.
+                    return match self
+                        .change_freezer(&launch_id, "app.session.thaw", "thaw")
+                        .await?
+                    {
+                        ExactPanelOutcome::Returned => Ok(ExactPanelOutcome::LeaveRefused),
+                        other => Ok(other),
+                    };
+                }
+                Ok(ExactPanelOutcome::Opened)
+            }
+            SessionStatus::Frozen { launch_id } => {
+                self.change_freezer(&launch_id, "app.session.thaw", "thaw")
+                    .await
+            }
+            SessionStatus::Stopping { .. } => Ok(ExactPanelOutcome::AlreadyStopping),
+            SessionStatus::NoActive | SessionStatus::Completed => Ok(ExactPanelOutcome::NoActive),
+            SessionStatus::RecoveryBlocked => Ok(ExactPanelOutcome::RecoveryBlocked),
+        }
+    }
+
+    async fn change_freezer(
+        &self,
+        launch_id: &str,
+        expected_tag: &str,
+        operation: &str,
+    ) -> Result<ExactPanelOutcome, LocalControlError> {
+        validate_launch_id(launch_id)?;
+        let request = serde_json::json!({
+            "_tag": expected_tag,
+            "payload": { "expectedLaunchId": launch_id }
+        });
+        // Like exact stop, a freezer mutation is attempted once. A transport
+        // failure cannot prove korrid did not receive it.
+        let response = self.request(request.to_string().as_bytes()).await?;
+        parse_panel_change(&response, expected_tag, operation)
+    }
+
     pub async fn stop_active_exact(&self) -> Result<ExactStopOutcome, LocalControlError> {
         let launch_id = match self.status().await? {
-            SessionStatus::Running { launch_id } => launch_id,
+            SessionStatus::Running { launch_id }
+            | SessionStatus::Frozen { launch_id }
+            | SessionStatus::FocusFailed { launch_id } => launch_id,
             SessionStatus::Stopping { .. } => return Ok(ExactStopOutcome::AlreadyStopping),
             SessionStatus::NoActive => return Ok(ExactStopOutcome::NoActive),
             SessionStatus::Completed => return Ok(ExactStopOutcome::Completed),
@@ -128,9 +210,36 @@ impl KorridClient {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SessionStatus {
     Running { launch_id: String },
+    Frozen { launch_id: String },
+    FocusFailed { launch_id: String },
     Stopping { launch_id: String },
     NoActive,
     Completed,
+    RecoveryBlocked,
+}
+
+impl SessionStatus {
+    pub fn input_owner(&self) -> InputOwner {
+        match self {
+            Self::Running { .. } => InputOwner::Game,
+            Self::Frozen { .. }
+            | Self::FocusFailed { .. }
+            | Self::Stopping { .. }
+            | Self::NoActive
+            | Self::Completed
+            | Self::RecoveryBlocked => InputOwner::Portal,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExactPanelOutcome {
+    Opened,
+    Returned,
+    FocusFailed,
+    LeaveRefused,
+    NoActive,
+    AlreadyStopping,
     RecoveryBlocked,
 }
 
@@ -288,6 +397,13 @@ struct StopPayload {
     phase: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FreezePayload {
+    launch_id: String,
+    state: String,
+}
+
 fn parse_status(body: &[u8]) -> Result<SessionStatus, LocalControlError> {
     let response = parse_envelope(body, "app.session.status")?;
     match response {
@@ -302,6 +418,12 @@ fn parse_status(body: &[u8]) -> Result<SessionStatus, LocalControlError> {
                 Some("running") => Ok(SessionStatus::Running {
                     launch_id: active.launch_id,
                 }),
+                Some("frozen") => Ok(SessionStatus::Frozen {
+                    launch_id: active.launch_id,
+                }),
+                Some("focus-failed") => Ok(SessionStatus::FocusFailed {
+                    launch_id: active.launch_id,
+                }),
                 Some("stopping") => Ok(SessionStatus::Stopping {
                     launch_id: active.launch_id,
                 }),
@@ -311,9 +433,47 @@ fn parse_status(body: &[u8]) -> Result<SessionStatus, LocalControlError> {
             }
         }
         Outcome::Err(failure) => match failure.code.as_str() {
-            "NoActiveSession" => Ok(SessionStatus::NoActive),
+            "NoActiveSession" | "StaleLaunchIdentity" | "SelectedRemoteSessionReplaced" => {
+                Ok(SessionStatus::NoActive)
+            }
             "SessionCompleted" => Ok(SessionStatus::Completed),
             "HostRecoveryBlocked" => Ok(SessionStatus::RecoveryBlocked),
+            _ => Err(LocalControlError::Rejected {
+                code: failure.code,
+                message: failure.message,
+            }),
+        },
+    }
+}
+
+fn parse_panel_change(
+    body: &[u8],
+    expected_tag: &str,
+    operation: &str,
+) -> Result<ExactPanelOutcome, LocalControlError> {
+    let response = parse_envelope(body, expected_tag)?;
+    match response {
+        Outcome::Ok(payload) => {
+            let payload: FreezePayload = serde_json::from_value(payload)
+                .map_err(|error| LocalControlError::InvalidTreaty(error.to_string()))?;
+            validate_launch_id(&payload.launch_id)?;
+            match (operation, payload.state.as_str()) {
+                ("freeze", "frozen") => Ok(ExactPanelOutcome::Opened),
+                ("thaw", "running") => Ok(ExactPanelOutcome::Returned),
+                _ => Err(LocalControlError::InvalidTreaty(format!(
+                    "{operation} returned freezer state {:?}",
+                    payload.state
+                ))),
+            }
+        }
+        Outcome::Err(failure) => match failure.code.as_str() {
+            "HostFocusFailed" if operation == "thaw" => Ok(ExactPanelOutcome::FocusFailed),
+            "NoActiveSession"
+            | "SessionCompleted"
+            | "StaleLaunchIdentity"
+            | "SelectedRemoteSessionReplaced" => Ok(ExactPanelOutcome::NoActive),
+            "SessionStopping" => Ok(ExactPanelOutcome::AlreadyStopping),
+            "HostRecoveryBlocked" => Ok(ExactPanelOutcome::RecoveryBlocked),
             _ => Err(LocalControlError::Rejected {
                 code: failure.code,
                 message: failure.message,
@@ -338,7 +498,9 @@ fn parse_stop(body: &[u8]) -> Result<ExactStopOutcome, LocalControlError> {
         }
         Outcome::Err(failure) => match failure.code.as_str() {
             "NoActiveSession" => Ok(ExactStopOutcome::NoActive),
-            "StaleLaunchIdentity" => Ok(ExactStopOutcome::StaleIdentity),
+            "StaleLaunchIdentity" | "SelectedRemoteSessionReplaced" => {
+                Ok(ExactStopOutcome::StaleIdentity)
+            }
             "HostRecoveryBlocked" => Ok(ExactStopOutcome::RecoveryBlocked),
             "SessionCompleted" => Ok(ExactStopOutcome::Completed),
             _ => Err(LocalControlError::Rejected {

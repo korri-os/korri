@@ -21,13 +21,15 @@ impl PortalPermission {
             | RpcRequest::SettingsSnapshot(_)
             | RpcRequest::DiscoverySnapshot(_)
             | RpcRequest::PeerList(_)
-            | RpcRequest::SessionStatus(_) => true,
+            | RpcRequest::SessionStatus(_)
+            | RpcRequest::SessionControls(_) => true,
             RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::MoonlightCertificateAttest(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
             | RpcRequest::SessionPrepare(_)
+            | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionStop(_)
             | RpcRequest::SessionFreeze(_)
             | RpcRequest::SessionThaw(_)
@@ -48,7 +50,11 @@ impl PortalPermission {
                         RpcRequest::SessionPrepare(request) => request.host.is_none(),
                         // The existing stop contract has no peer selector. The host
                         // executor enforces expectedLaunchId before changing a session.
-                        RpcRequest::SessionStop(_) | RpcRequest::SelectedGameLaunch(_) => true,
+                        RpcRequest::SessionStop(_)
+                        | RpcRequest::SessionFreeze(_)
+                        | RpcRequest::SessionThaw(_)
+                        | RpcRequest::SessionControlInvoke(_)
+                        | RpcRequest::SelectedGameLaunch(_) => true,
                         _ => false,
                     }
             }
@@ -121,14 +127,19 @@ mod tests {
         Router,
     };
     use serde_json::{json, Value};
-    use std::sync::Arc;
+    use std::{
+        net::UdpSocket,
+        sync::{Arc, Mutex},
+        thread,
+        time::Duration,
+    };
     use tower::ServiceExt;
 
     const TOKEN: &str = "portal-test-token";
     const ORIGIN: &str = "http://127.0.0.1:8099";
 
     #[test]
-    fn local_sessions_allow_only_prepare_without_a_host_selector() {
+    fn local_sessions_allow_only_local_prepare_and_exact_session_controls() {
         for host in [None, Some("peer"), Some("rg353m"), Some("")] {
             let request = RpcRequest::SessionPrepare(crate::SessionPrepareRequest {
                 game_id: "neverball".into(),
@@ -149,6 +160,24 @@ mod tests {
         assert!(PortalPermission::LocalSessions.permits(&stop));
         assert!(!PortalPermission::ReadOnly.permits(&stop));
         assert!(PortalPermission::Full.permits(&stop));
+
+        for request in [
+            RpcRequest::SessionFreeze(crate::SessionFreezeRequest {
+                expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+            }),
+            RpcRequest::SessionThaw(crate::SessionThawRequest {
+                expected_launch_id: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+            }),
+            RpcRequest::SessionControlInvoke(crate::SessionControlInvokeRequest {
+                launch_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                control_id: "@korri:mgba/open-menu".into(),
+                value: None,
+            }),
+        ] {
+            assert!(PortalPermission::LocalSessions.permits(&request));
+            assert!(!PortalPermission::ReadOnly.permits(&request));
+            assert!(PortalPermission::Full.permits(&request));
+        }
     }
 
     #[test]
@@ -225,13 +254,53 @@ mod tests {
         let config = root.path().join("host.toml");
         std::fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
         let private = root.path().join("private");
+        let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let control_port = socket.local_addr().unwrap().port();
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let observed_commands = Arc::clone(&commands);
+        let control_backend = Arc::clone(&backend);
+        let control_server = thread::spawn(move || {
+            let mut quit_count = 0;
+            for reply in [
+                Some("GET_STATUS PLAYING gba,wl4.gba,crc32=1a2b3c4d\n"),
+                None,
+                Some("GET_STATUS PAUSED gba,wl4.gba,crc32=1a2b3c4d\n"),
+                None,
+                None,
+            ] {
+                let mut request = [0_u8; 128];
+                let (length, peer) = socket.recv_from(&mut request).unwrap();
+                let command = std::str::from_utf8(&request[..length])
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                observed_commands
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}:{command}", control_backend.thaw_count()));
+                if command == "QUIT" {
+                    quit_count += 1;
+                    if quit_count == 2 {
+                        control_backend.complete_live();
+                    }
+                }
+                if let Some(reply) = reply {
+                    socket.send_to(reply.as_bytes(), peer).unwrap();
+                }
+            }
+        });
         let runtime = crate::host::HostRuntime::from_paths_with_backend(
             &config,
             Some(root.path().into()),
             private.clone(),
-            Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+            backend.clone(),
         )
-        .with_route_registry(root.path().into(), registry);
+        .with_route_registry(root.path().into(), registry.clone())
+        .with_retroarch_control_port(control_port);
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
@@ -262,6 +331,116 @@ mod tests {
         let launch = rpc(&app, "app.local-games.launch.selected", json!({"gameId":game_id,"runnerId":"@korri:mgba/mgba","overrides":{"settings":{"video_vsync":false,"absent_key":1}}})).await;
         assert_eq!(launch["outcome"]["_tag"], "Ok", "{launch}");
         assert_eq!(launch["outcome"]["payload"]["session"]["gameId"], game_id);
+        let launch_id = launch["outcome"]["payload"]["session"]["launchId"]
+            .as_str()
+            .unwrap();
+        let controls = rpc(&app, "app.session.controls", json!({"launchId":launch_id})).await;
+        assert_eq!(controls["outcome"]["_tag"], "Ok", "{controls}");
+        assert_eq!(controls["outcome"]["payload"]["launchId"], launch_id);
+        assert_eq!(
+            controls["outcome"]["payload"]["groups"][0]["id"],
+            "@korri:mgba"
+        );
+        assert_eq!(
+            controls["outcome"]["payload"]["groups"][0]["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|control| control["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["@korri:mgba/open-menu", "@korri:mgba/quit"]
+        );
+        let frozen = rpc(
+            &app,
+            "app.session.freeze",
+            json!({"expectedLaunchId":launch_id}),
+        )
+        .await;
+        assert_eq!(frozen["outcome"]["_tag"], "Ok", "{frozen}");
+        assert_eq!(backend.thaw_count(), 0);
+        let invoked = rpc(
+            &app,
+            "app.session.control.invoke",
+            json!({"launchId":launch_id,"controlId":"@korri:mgba/open-menu"}),
+        )
+        .await;
+        assert_eq!(invoked["outcome"]["_tag"], "Ok", "{invoked}");
+        assert_eq!(invoked["outcome"]["payload"]["launchId"], launch_id);
+        assert_eq!(backend.thaw_count(), 1);
+        let open_menu_still_frozen = rpc(&app, "app.session.status", json!({})).await;
+        assert_eq!(
+            open_menu_still_frozen["outcome"]["payload"]["active"],
+            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen"}),
+            "a control executed after thaw must restore the exact frozen state"
+        );
+        let ignored_quit = rpc(
+            &app,
+            "app.session.control.invoke",
+            json!({"launchId":launch_id,"controlId":"@korri:mgba/quit"}),
+        )
+        .await;
+        assert_eq!(
+            ignored_quit["outcome"]["payload"]["reason"], "Unavailable",
+            "{ignored_quit}"
+        );
+        assert_eq!(
+            backend.thaw_count(),
+            2,
+            "the unanswered one-way execution crossed the thaw boundary exactly once"
+        );
+        let still_frozen = rpc(&app, "app.session.status", json!({})).await;
+        assert_eq!(
+            still_frozen["outcome"]["payload"]["active"],
+            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen"})
+        );
+        let unknown = rpc(
+            &app,
+            "app.session.control.invoke",
+            json!({"launchId":launch_id,"controlId":"@korri:mgba/not-declared"}),
+        )
+        .await;
+        assert_eq!(unknown["outcome"]["payload"]["reason"], "UnknownControl");
+        let stale = rpc(
+            &app,
+            "app.session.control.invoke",
+            json!({"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","controlId":"@korri:mgba/open-menu"}),
+        )
+        .await;
+        assert_eq!(stale["outcome"]["payload"]["reason"], "StaleSession");
+        // A fresh korrid recovers the route from the live transient unit's
+        // authoritative launch metadata, not from the durable session schema
+        // or process-local bookkeeping.
+        drop(app);
+        let recovered = crate::host::HostRuntime::from_paths_with_backend(
+            &config,
+            Some(root.path().into()),
+            private.clone(),
+            backend,
+        )
+        .with_route_registry(root.path().into(), registry)
+        .with_retroarch_control_port(control_port);
+        let (app, _) = crate::secure_host_routers(
+            recovered,
+            &private,
+            Some(PortalAccess::new(TOKEN, ORIGIN, PortalPermission::Full)),
+        );
+        let recovered_controls =
+            rpc(&app, "app.session.controls", json!({"launchId":launch_id})).await;
+        assert_eq!(
+            recovered_controls["outcome"]["_tag"], "Ok",
+            "{recovered_controls}"
+        );
+        assert_eq!(
+            recovered_controls["outcome"]["payload"]["groups"][0]["controls"][0]["id"],
+            "@korri:mgba/open-menu"
+        );
+        let returned = rpc(
+            &app,
+            "app.session.thaw",
+            json!({"expectedLaunchId":launch_id}),
+        )
+        .await;
+        assert_eq!(returned["outcome"]["_tag"], "Ok", "{returned}");
         // The runner accepts video_vsync and reports the key it cannot apply.
         // korrid carries that report to the portal without owning the table.
         assert_eq!(
@@ -293,6 +472,27 @@ mod tests {
             list["outcome"]["payload"]["gameRunner"], "@missing:build/core",
             "explicit launch must not rewrite preference"
         );
+
+        let quit = rpc(
+            &app,
+            "app.session.control.invoke",
+            json!({"launchId":launch_id,"controlId":"@korri:mgba/quit"}),
+        )
+        .await;
+        assert_eq!(quit["outcome"]["_tag"], "Ok", "{quit}");
+        control_server.join().unwrap();
+        assert_eq!(
+            *commands.lock().unwrap(),
+            [
+                "1:GET_STATUS",
+                "1:MENU_TOGGLE",
+                "1:GET_STATUS",
+                "2:QUIT",
+                "3:QUIT"
+            ]
+        );
+        let status = rpc(&app, "app.session.status", json!({})).await;
+        assert_eq!(status["outcome"]["payload"]["code"], "SessionCompleted");
     }
 
     #[tokio::test]
@@ -416,6 +616,10 @@ mod tests {
         assert_eq!(launch_id.len(), 32);
         let repeated = rpc(&app, "app.session.prepare", json!({"gameId":"neverball"})).await;
         assert_eq!(repeated, prepared);
+        let controls = rpc(&app, "app.session.controls", json!({"launchId":launch_id})).await;
+        assert_eq!(controls["outcome"]["_tag"], "Ok", "{controls}");
+        assert_eq!(controls["outcome"]["payload"]["launchId"], launch_id);
+        assert_eq!(controls["outcome"]["payload"]["groups"], json!([]));
         for (payload, code) in [
             (json!({}), "ExpectedLaunchIdRequired"),
             (

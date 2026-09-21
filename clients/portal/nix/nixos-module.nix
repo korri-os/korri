@@ -18,8 +18,10 @@ let
   group = user;
   home = "/var/lib/${user}";
   runtimeDir = "/run/${user}";
+  compositorControlSocket = "/run/korri-compositor/sway-ipc.sock";
   display = config.systemd.services.korri-compositor.environment.KORRI_WAYLAND_DISPLAY;
   profile = "${home}${policy.chromiumProfileSuffix}";
+  portalAppId = "chromium-browser";
   origin = "http://${cfg.host}:${toString cfg.port}";
   # The surface resolver reads ?surface= first and remembers it, so a device
   # that can only open one fixed URL still picks its surface. This path serves
@@ -210,7 +212,18 @@ in
       };
     })
     (lib.mkIf kiosk.enable {
-      # Chromium reads only the validated virtual target, never raw sources.
+      # In the acknowledged Leave transaction, inputd first freezes the exact
+      # launch, then routes input to Portal and runs this command to focus the
+      # one portal window. A failed Portal transition thaws and refocuses that
+      # exact launch. Return also thaws and focuses the exact game.
+      services.korriLinuxInput.inputd.actions.system-panel.command = lib.mkDefault [
+        "${pkgs.sway-unwrapped}/bin/swaymsg"
+        "-s"
+        compositorControlSocket
+        ''[app_id="${portalAppId}"] focus''
+      ];
+      # Chromium reads only inputd's portal-facing virtual target, never the
+      # normalized source, game route, or raw sources.
       services.korriLinuxInput.inputd.extraActionUsers = [ user ];
       users.groups.${group} = { };
       users.users.${user} = {

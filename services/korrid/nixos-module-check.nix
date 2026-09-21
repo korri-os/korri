@@ -361,8 +361,8 @@ assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.c
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
 assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
-# Focus is off unless a socket is configured, and korrid then stays out of the
-# runtime user's group.
+# Without a socket, runtime Return and running-session restart recovery fail
+# closed to Portal ownership. Korrid also stays out of the runtime user's group.
 assert !(service.environment ? KORRID_COMPOSITOR_CONTROL_SOCKET);
 assert !(service.environment ? KORRID_SWAYMSG);
 assert service.serviceConfig.SupplementaryGroups == [ ];

@@ -13,6 +13,7 @@ export interface OverlayController {
   model(): SurfaceModel
   subscribe(listener: () => void): () => void
   refresh(): Promise<void>
+  retry(): Promise<void>
   invoke(controlId: string, value?: SurfaceGameplayControlValue): Promise<void>
   dismiss(): void
   destroy(): void
@@ -111,6 +112,7 @@ export function createInMemoryOverlayController(): OverlayController {
     model: () => model,
     subscribe: () => () => {},
     refresh: async () => {},
+    retry: async () => {},
     invoke: async () => {},
     dismiss: () => {},
     destroy: () => {},

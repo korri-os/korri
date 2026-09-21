@@ -163,6 +163,8 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"peer"}}),
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":"rg353m"}}),
             json!({"_tag":"app.session.prepare","payload":{"gameId":"g","host":""}}),
+            json!({"_tag":"app.session.controls","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
+            json!({"_tag":"app.session.control.invoke","payload":{"launchId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","controlId":"@korri:mgba/open-menu"}}),
             json!({"_tag":"app.session.stop","payload":{}}),
             json!({"_tag":"app.session.freeze","payload":{}}),
             json!({"_tag":"app.session.thaw","payload":{}}),
@@ -175,10 +177,17 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
             json!({"_tag":"system.settings.steamgriddbCredential.clear","payload":{}}),
         ] {
             let method = body["_tag"].as_str().unwrap().to_owned();
+            let read = method == "app.session.controls";
             let local_session = (method == "app.session.prepare"
                 && body["payload"].get("host").is_none())
-                || method == "app.session.stop";
-            let allowed = permission == PortalPermission::LocalSessions && local_session;
+                || matches!(
+                    method.as_str(),
+                    "app.session.control.invoke"
+                        | "app.session.stop"
+                        | "app.session.freeze"
+                        | "app.session.thaw"
+                );
+            let allowed = read || (permission == PortalPermission::LocalSessions && local_session);
             let response = portal.request(Some(TOKEN), Some(ORIGIN), body).await;
             assert_eq!(
                 response.status(),
@@ -194,14 +203,19 @@ async fn shared_portal_rpc_scoped_permissions_allow_only_initial_reads_and_local
                 let body = response.json::<Value>().await.unwrap();
                 assert_eq!(body["_tag"], method);
                 assert_eq!(body["outcome"]["_tag"], "Err");
-                assert_eq!(
-                    body["outcome"]["payload"]["code"],
-                    if method == "app.session.prepare" {
-                        "HostGameNotFound"
-                    } else {
+                if method == "app.session.prepare" {
+                    assert_eq!(body["outcome"]["payload"]["code"], "HostGameNotFound");
+                } else if matches!(
+                    method.as_str(),
+                    "app.session.stop" | "app.session.freeze" | "app.session.thaw"
+                ) {
+                    assert_eq!(
+                        body["outcome"]["payload"]["code"],
                         "ExpectedLaunchIdRequired"
-                    }
-                );
+                    );
+                } else {
+                    assert_eq!(body["outcome"]["payload"]["reason"], "Unavailable");
+                }
             }
         }
     }

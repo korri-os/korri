@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { readFileSync } from "node:fs"
 import { ShiftSurface } from "@korri/shift"
 import { createInputBus } from "../input/bus"
@@ -21,7 +21,7 @@ const overlaySurface: PortalSurface = {
 }
 
 describe("OverlayRoot browser fixture", () => {
-  test("mounts normal ShiftSurface and renders every materialized form", async () => {
+  test("mounts normal ShiftSurface and renders every supported materialized form", async () => {
     render(
       <OverlayRoot
         bus={createInputBus()}
@@ -37,7 +37,7 @@ describe("OverlayRoot browser fixture", () => {
     expect(screen.getByRole("switch", { name: "Fill screen" })).toBeDefined()
     expect(screen.getByRole("combobox", { name: "Mouse mode" })).toBeDefined()
     expect(screen.getByRole("slider", { name: "Sharpness" })).toBeDefined()
-    expect(screen.getByRole("button", { name: "Unavailable control" })).toBeDefined()
+    expect(screen.queryByRole("button", { name: "Unavailable control" })).toBeNull()
     expect(
       screen.getByRole("button", { name: "Quit fixture" }).getAttribute("data-tone"),
     ).toBe("danger")
@@ -81,6 +81,36 @@ describe("OverlayRoot browser fixture", () => {
     stopFocus()
   })
 
+
+  test("surface Retry repeats the controller operation instead of refreshing", async () => {
+    const base = createInMemoryOverlayController()
+    let refreshes = 0
+    let retries = 0
+    const controller = {
+      ...base,
+      refresh: async () => { refreshes += 1 },
+      retry: async () => { retries += 1 },
+    }
+    const retrySurface: PortalSurface = {
+      id: "retry-test",
+      title: "Retry test",
+      presentations: ["gameplay-overlay"],
+      render: ({ host }) => <button onClick={() => host.retry()}>Retry operation</button>,
+    }
+    render(
+      <OverlayRoot
+        bus={createInputBus()}
+        controller={controller}
+        surface={retrySurface}
+      />,
+    )
+    await waitFor(() => expect(refreshes).toBe(1))
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry operation" }))
+
+    expect(retries).toBe(1)
+    expect(refreshes).toBe(1)
+  })
 
   test("marks transparent gameplay mode before render without making the panel transparent", () => {
     const main = readFileSync("src/main.tsx", "utf8")

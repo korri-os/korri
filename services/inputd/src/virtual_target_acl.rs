@@ -11,8 +11,9 @@ use std::{
 };
 
 use evdev::raw_stream::RawDevice;
-
-const TARGET_NAME: &str = "Microsoft X-Box 360 pad";
+use korri_inputd::devices::{
+    GAME_TARGET_NAME, GAME_TARGET_PHYS, PORTAL_TARGET_NAME, PORTAL_TARGET_PHYS, XB360_TARGET_NAME,
+};
 const TARGET_KEYS: [u16; 15] = [
     0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x13a, 0x13b, 0x13c, 0x13d, 0x13e, 0x2c0, 0x2c1,
     0x2c2, 0x2c3,
@@ -23,7 +24,7 @@ const TARGET_ABS: [u16; 8] = [0, 1, 2, 3, 4, 5, 0x10, 0x11];
 struct Facts {
     character: bool,
     virtual_sysfs: bool,
-    empty_phys: bool,
+    physical_path: String,
     empty_uniq: bool,
     name: String,
     bus: u16,
@@ -35,18 +36,35 @@ struct Facts {
     force_feedback: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetKind {
+    Source,
+    Game,
+    Portal,
+}
+
 impl Facts {
-    fn validated(&self) -> bool {
-        self.character
-            && self.virtual_sysfs
-            && self.empty_phys
-            && self.empty_uniq
-            && self.name == TARGET_NAME
-            && (self.bus, self.vendor, self.product, self.version)
-                == (0x0003, 0x045e, 0x028e, 0x0001)
-            && self.keys == TARGET_KEYS
-            && self.abs == TARGET_ABS
-            && self.force_feedback
+    fn kind(&self) -> Option<TargetKind> {
+        if !self.character
+            || !self.virtual_sysfs
+            || !self.empty_uniq
+            || (self.bus, self.vendor, self.product, self.version)
+                != (0x0003, 0x045e, 0x028e, 0x0001)
+            || self.keys != TARGET_KEYS
+            || self.abs != TARGET_ABS
+        {
+            return None;
+        }
+        match (
+            self.name.as_str(),
+            self.physical_path.as_str(),
+            self.force_feedback,
+        ) {
+            (XB360_TARGET_NAME, "", true) => Some(TargetKind::Source),
+            (GAME_TARGET_NAME, GAME_TARGET_PHYS, false) => Some(TargetKind::Game),
+            (PORTAL_TARGET_NAME, PORTAL_TARGET_PHYS, false) => Some(TargetKind::Portal),
+            _ => None,
+        }
     }
 }
 
@@ -62,6 +80,7 @@ struct HeldTarget {
     requested: PathBuf,
     binding: Binding,
     sysfs: PathBuf,
+    kind: TargetKind,
 }
 
 impl Drop for HeldTarget {
@@ -107,24 +126,47 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
         .ok_or("operation is missing")?;
     match operation {
         "grant" if args.len() == 4 => {
-            let users = grant_ids(&args[1], &args[2], &action_users)?;
+            let kind = target_kind(&args[1])?;
+            let users = match kind {
+                TargetKind::Source | TargetKind::Game => vec![numeric_id(&args[2])?],
+                TargetKind::Portal => return Err("portal grant has no numeric identity".into()),
+            };
             mutate_one(
                 &args[3],
                 &device_root,
                 &sys_root,
                 &setfacl,
+                kind,
+                Some(&users),
+            )
+        }
+        "grant" if args.len() == 3 && args[1] == "portal" => {
+            let users = action_user_ids(&action_users)?;
+            mutate_one(
+                &args[2],
+                &device_root,
+                &sys_root,
+                &setfacl,
+                TargetKind::Portal,
                 Some(&users),
             )
         }
         "reapply" if args.len() == 3 => {
-            let users = grant_ids(&args[1], &args[2], &action_users)?;
+            let inputd = numeric_id(&args[1])?;
+            let game = numeric_id(&args[2])?;
+            let portal = action_user_ids(&action_users)?;
             for entry in fs::read_dir(&device_root).map_err(generic)? {
                 let entry = entry.map_err(generic)?;
                 if !event_name(&entry.file_name()) {
                     continue;
                 }
                 if let Ok(held) = open_requested(&entry.path(), &device_root, &sys_root) {
-                    mutate_held(&held, &sys_root, &setfacl, Some(&users))?;
+                    let users: &[u32] = match held.kind {
+                        TargetKind::Source => std::slice::from_ref(&inputd),
+                        TargetKind::Game => std::slice::from_ref(&game),
+                        TargetKind::Portal => &portal,
+                    };
+                    mutate_held(&held, &sys_root, &setfacl, Some(users))?;
                 }
             }
             Ok(())
@@ -142,15 +184,24 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
             Ok(())
         }
         _ => Err(
-            "usage: [--action-user NAME]... {grant INPUTD_UID ACTION_UID DEVICE|reapply INPUTD_UID ACTION_UID|revoke}"
+            "usage: [--action-user NAME]... {grant source UID DEVICE|grant game UID DEVICE|grant portal DEVICE|reapply INPUTD_UID GAME_UID|revoke}"
                 .into(),
         ),
     }
 }
 
-fn grant_ids(inputd: &OsStr, action: &OsStr, extra: &[OsString]) -> Result<Vec<u32>, String> {
-    let mut users = vec![numeric_id(inputd)?, numeric_id(action)?];
-    for name in extra {
+fn target_kind(value: &OsStr) -> Result<TargetKind, String> {
+    match value.to_str() {
+        Some("source") => Ok(TargetKind::Source),
+        Some("game") => Ok(TargetKind::Game),
+        Some("portal") => Ok(TargetKind::Portal),
+        _ => Err("target kind is invalid".into()),
+    }
+}
+
+fn action_user_ids(names: &[OsString]) -> Result<Vec<u32>, String> {
+    let mut users = Vec::new();
+    for name in names {
         let uid = action_user_id(name)?;
         if !users.contains(&uid) {
             users.push(uid);
@@ -218,10 +269,14 @@ fn mutate_one(
     device_root: &Path,
     sys_root: &Path,
     setfacl: &Path,
+    expected_kind: TargetKind,
     grant: Option<&[u32]>,
 ) -> Result<(), String> {
     let requested = PathBuf::from(requested);
     let held = open_requested(&requested, device_root, sys_root)?;
+    if held.kind != expected_kind {
+        return Err("target kind does not match the requested grant".into());
+    }
     mutate_held(&held, sys_root, setfacl, grant)
 }
 
@@ -248,7 +303,7 @@ fn mutate_held(
         setfacl,
         [OsStr::new("-b"), OsStr::new("--"), procfd.as_os_str()],
     )?;
-    if let Some(users) = grant {
+    if let Some(users) = grant.filter(|users| !users.is_empty()) {
         rebind(held, sys_root)?;
         let mut acl = users
             .iter()
@@ -297,7 +352,7 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
     let facts = Facts {
         character: (stat.st_mode & libc::S_IFMT) == libc::S_IFCHR,
         virtual_sysfs: sysfs.starts_with(&virtual_root),
-        empty_phys: device.physical_path().unwrap_or("").is_empty(),
+        physical_path: device.physical_path().unwrap_or("").to_owned(),
         empty_uniq: device.unique_name().unwrap_or("").is_empty(),
         name: device.name().unwrap_or("").to_owned(),
         bus: id.bus_type().0,
@@ -316,15 +371,16 @@ fn open_and_validate(requested: &Path, sys_root: &Path) -> Result<HeldTarget, St
             .supported_events()
             .contains(evdev::EventType::FORCEFEEDBACK),
     };
-    if !facts.validated() {
+    let Some(kind) = facts.kind() else {
         unsafe { libc::close(fd) };
-        return Err("target is not the exact InputPlumber virtual Xbox device".into());
-    }
+        return Err("target is not an exact Korri input route device".into());
+    };
     Ok(HeldTarget {
         fd,
         requested: requested.to_owned(),
         binding,
         sysfs,
+        kind,
     })
 }
 
@@ -368,9 +424,9 @@ mod tests {
         Facts {
             character: true,
             virtual_sysfs: true,
-            empty_phys: true,
+            physical_path: String::new(),
             empty_uniq: true,
-            name: TARGET_NAME.into(),
+            name: XB360_TARGET_NAME.into(),
             bus: 3,
             vendor: 0x045e,
             product: 0x028e,
@@ -383,20 +439,38 @@ mod tests {
     #[test]
     fn physical_xbox_lookalike_is_rejected() {
         let mut f = valid();
+        assert_eq!(f.kind(), Some(TargetKind::Source));
         f.virtual_sysfs = false;
-        assert!(!f.validated());
+        assert_eq!(f.kind(), None);
         f.virtual_sysfs = true;
-        f.empty_phys = false;
-        assert!(!f.validated());
+        f.physical_path = "physical/source".into();
+        assert_eq!(f.kind(), None);
     }
+    #[test]
+    fn routed_targets_require_their_exact_names_and_physical_paths() {
+        let mut game = valid();
+        game.name = GAME_TARGET_NAME.into();
+        game.physical_path = GAME_TARGET_PHYS.into();
+        game.force_feedback = false;
+        assert_eq!(game.kind(), Some(TargetKind::Game));
+
+        let mut portal = game.clone();
+        portal.name = PORTAL_TARGET_NAME.into();
+        portal.physical_path = PORTAL_TARGET_PHYS.into();
+        assert_eq!(portal.kind(), Some(TargetKind::Portal));
+
+        portal.physical_path = GAME_TARGET_PHYS.into();
+        assert_eq!(portal.kind(), None);
+    }
+
     #[test]
     fn exact_capabilities_are_required() {
         let mut f = valid();
         f.keys.pop();
-        assert!(!f.validated());
+        assert_eq!(f.kind(), None);
         let mut f = valid();
         f.force_feedback = false;
-        assert!(!f.validated());
+        assert_eq!(f.kind(), None);
     }
     #[test]
     fn event_replacement_binding_is_detected() {
@@ -440,18 +514,9 @@ mod tests {
             .to_str()
             .unwrap();
         assert_eq!(action_user_id(OsStr::new(name)).unwrap(), uid);
-        let mut expected = vec![977, 1001];
-        if !expected.contains(&uid) {
-            expected.push(uid);
-        }
         assert_eq!(
-            grant_ids(
-                OsStr::new("977"),
-                OsStr::new("1001"),
-                &[name.into(), name.into()]
-            )
-            .unwrap(),
-            expected
+            action_user_ids(&[name.into(), name.into()]).unwrap(),
+            vec![uid]
         );
         run(vec![
             "--action-user".into(),
@@ -517,6 +582,7 @@ mod tests {
                 rdev: metadata.rdev(),
             },
             sysfs,
+            kind: TargetKind::Source,
         };
         assert!(held.fd >= 0);
         let log = root.path().join("calls");

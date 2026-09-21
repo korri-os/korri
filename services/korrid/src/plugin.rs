@@ -169,6 +169,31 @@ pub enum SessionControlDeclarationInteraction {
     },
 }
 
+/// Closed first-party effects that korrid has a concrete host executor for.
+/// A surface submits only the control ID; it never supplies this value.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+pub enum SessionControlEffect {
+    #[serde(rename = "@korri:retroarch/open-menu")]
+    RetroarchOpenMenu,
+    #[serde(rename = "@korri:retroarch/quit")]
+    RetroarchQuit,
+}
+
+impl SessionControlEffect {
+    fn family(self) -> &'static str {
+        match self {
+            Self::RetroarchOpenMenu | Self::RetroarchQuit => "@korri:retroarch",
+        }
+    }
+
+    pub(crate) fn retroarch_command(self) -> crate::host::retroarch_control::RetroarchCommand {
+        match self {
+            Self::RetroarchOpenMenu => crate::host::retroarch_control::RetroarchCommand::OpenMenu,
+            Self::RetroarchQuit => crate::host::retroarch_control::RetroarchCommand::Quit,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionControlRecord {
@@ -183,10 +208,7 @@ pub struct SessionControlRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub description: Option<String>,
     pub interaction: SessionControlDeclarationInteraction,
-    /// An opaque identifier owned by the declaring plugin. korrid stores it and
-    /// hands it back; it never parses it, and no identifier grants behaviour
-    /// korrid implements on a plugin's behalf.
-    pub effect: String,
+    pub effect: SessionControlEffect,
     #[serde(default)]
     pub destructive: bool,
     #[serde(default)]
@@ -901,6 +923,25 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 ),
             });
         }
+        let effect_family = control.effect.family();
+        let in_family = match control.owner.kind {
+            SessionControlOwnerKind::Runner => {
+                declaration
+                    .runners
+                    .values()
+                    .find(|runner| runner.id == control.owner.id)
+                    .and_then(|runner| runner.family.as_deref())
+                    == Some(effect_family)
+            }
+            SessionControlOwnerKind::Transport => id == effect_family,
+        };
+        if !in_family {
+            return Err(PluginError::InvalidContribution {
+                kind: "session control",
+                record_id: local_id.clone(),
+                reason: format!("effect requires membership of family {effect_family}"),
+            });
+        }
         validate_session_control(local_id, control)?;
         control.plugin_id = id.clone();
         control.local_id = local_id.clone();
@@ -1072,9 +1113,10 @@ fn validate_session_control(
             SessionControlKind::Range
         }
     };
-    let _ = declared_kind;
-    if control.effect.trim().is_empty() {
-        return Err(invalid("effect identifier is empty"));
+    if declared_kind != SessionControlKind::Command {
+        return Err(invalid(
+            "control form does not match the allowlisted effect",
+        ));
     }
     Ok(())
 }

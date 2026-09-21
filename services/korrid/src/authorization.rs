@@ -178,7 +178,10 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         }
         RpcRequest::MoonlightCertificateRevoke(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SessionPrepare(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
-        RpcRequest::SessionStatus(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
+        RpcRequest::SessionStatus(_) | RpcRequest::SessionControls(_) => {
+            PeerPolicy::ExplicitScope(Scope::StreamLaunch)
+        }
+        RpcRequest::SessionControlInvoke(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::SessionStop(request) if request.force.unwrap_or(false) => {
             PeerPolicy::OwnerDeviceOnly
         }
@@ -232,6 +235,7 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
     matches!(
         request,
         RpcRequest::SessionStop(_)
+            | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionFreeze(_)
             | RpcRequest::SessionThaw(_)
             | RpcRequest::MoonlightCertificateProvision(_)

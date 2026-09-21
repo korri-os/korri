@@ -19,6 +19,10 @@ GATE_LOCK='/run/lock/korri-device-gate.lock'
 ATTEMPT_MARKER='/var/lib/korri-device-gate/attempt'
 ATTEMPT_UNIT='korri-device-gate-attempt.service'
 NORMALIZED_NAME='Microsoft X-Box 360 pad'
+GAME_TARGET_NAME='Microsoft X-Box 360 pad (Korri game)'
+PORTAL_TARGET_NAME='Microsoft X-Box 360 pad (Korri portal)'
+GAME_TARGET_PHYS='korri/inputd/game'
+PORTAL_TARGET_PHYS='korri/inputd/portal'
 SUPPORTED_PRODUCTION_PROFILE='korri-60-xbox_one_gamepad.yaml'
 OLD_USER_UNITS=(korrid.service sunshine.service x11-headless.service)
 PREDICATE_SYSTEM_UNITS=(korrid.service sunshine.service x11-headless.service korri-compositor.service)
@@ -555,6 +559,34 @@ remote_normalized_fingerprint() {
   [[ "$count" -eq 1 ]]
 }
 
+remote_routed_target_node() {
+  local expected_name="$1" expected_phys="$2" event node name phys uniq identity sysfs keys axes count=0
+  shopt -s nullglob
+  for event in /sys/class/input/event*; do
+    [[ -r "$event/device/name" ]] || continue
+    name="$(<"$event/device/name")"
+    [[ "$name" == "$expected_name" ]] || continue
+    node="/dev/input/${event##*/}"
+    phys="$(cat "$event/device/phys" 2>/dev/null || true)"
+    uniq="$(cat "$event/device/uniq" 2>/dev/null || true)"
+    identity="$(cat "$event/device/id/bustype" 2>/dev/null || true):$(cat "$event/device/id/vendor" 2>/dev/null || true):$(cat "$event/device/id/product" 2>/dev/null || true):$(cat "$event/device/id/version" 2>/dev/null || true)"
+    sysfs="$(realpath -e -- "$event" 2>/dev/null || true)"
+    keys="$(remote_bitmap_codes "$event/device/capabilities/key" | paste -sd, -)"
+    axes="$(remote_bitmap_codes "$event/device/capabilities/abs" | paste -sd, -)"
+    [[ "$phys" == "$expected_phys" && -z "$uniq" ]] || continue
+    [[ "$identity" == '0003:045e:028e:0001' ]] || continue
+    [[ "$sysfs" == /sys/devices/virtual/input/input*/event* ]] || continue
+    [[ "$keys" == "$EXPECTED_KEYS" && "$axes" == "$EXPECTED_ABS" ]] || continue
+    printf '%s\n' "$node"
+    count=$((count + 1))
+  done
+  [[ "$count" -eq 1 ]]
+}
+
+remote_managed_virtual_name() {
+  [[ "$1" == "$NORMALIZED_NAME" || "$1" == "$GAME_TARGET_NAME" || "$1" == "$PORTAL_TARGET_NAME" ]]
+}
+
 remote_controller_candidates() {
   local event node name identity properties sysfs dev_sys dev_stat
   shopt -s nullglob
@@ -562,7 +594,7 @@ remote_controller_candidates() {
     node="/dev/input/${event##*/}"
     [[ -r "$event/device/name" && -e "$node" ]] || continue
     name="$(<"$event/device/name")"
-    [[ "$name" != "$NORMALIZED_NAME" && "$name" != 'Korri U7 Synthetic Controller' ]] || continue
+    ! remote_managed_virtual_name "$name" && [[ "$name" != 'Korri U7 Synthetic Controller' ]] || continue
     properties="$(udevadm info --query=property --name="$node" 2>/dev/null || true)"
     grep -Fx 'ID_INPUT_JOYSTICK=1' <<<"$properties" >/dev/null || continue
     sysfs="$(realpath -e -- "$event" 2>/dev/null || true)"
@@ -628,7 +660,7 @@ remote_physical_controller_evidence() {
   for event in /sys/class/input/event*; do
     [[ -r "$event/device/name" ]] || continue
     name="$(<"$event/device/name")"
-    [[ "$name" != "$NORMALIZED_NAME" && "$name" != 'Korri U7 Synthetic Controller' ]] || continue
+    ! remote_managed_virtual_name "$name" && [[ "$name" != 'Korri U7 Synthetic Controller' ]] || continue
     identity="$(cat "$event/device/id/bustype" 2>/dev/null || true):$(cat "$event/device/id/vendor" 2>/dev/null || true):$(cat "$event/device/id/product" 2>/dev/null || true):$(cat "$event/device/id/version" 2>/dev/null || true)"
     [[ "${identity,,}" == "$expected_identity" ]] || continue
     sysfs="$(realpath -e -- "$event" 2>/dev/null || true)"
@@ -1295,7 +1327,7 @@ remote_raw_joystick_events() {
     node="/dev/input/${event##*/}"
     [[ -r "$event/device/name" ]] || continue
     name="$(<"$event/device/name")"
-    [[ "$name" != "$NORMALIZED_NAME" ]] || continue
+    ! remote_managed_virtual_name "$name" || continue
     props="$(udevadm info --query=property --name="$node" 2>/dev/null || true)"
     grep -Fx 'ID_INPUT_JOYSTICK=1' <<<"$props" >/dev/null || continue
     printf '%s\n' "$event"
@@ -1356,7 +1388,7 @@ remote_topology_digest() {
       if [[ "$kind" == target ]]; then
         [[ "$name" == "$NORMALIZED_NAME" ]] || continue
       else
-        [[ "$name" != "$NORMALIZED_NAME" ]] || continue
+        ! remote_managed_virtual_name "$name" || continue
       fi
       phys="$(cat "$event/device/phys" 2>/dev/null || true)"
       uniq="$(cat "$event/device/uniq" 2>/dev/null || true)"
@@ -1628,7 +1660,7 @@ remote_acceptance_fingerprint() {
 
 remote_automated_gates() {
   local runtime_user="$1" expected_identity="$2" profile="$3" require_physical="$4"
-  local fingerprint current_fingerprint controller_evidence acceptance delegate delegate_controllers node event event_node unit active enabled readable_raw=0
+  local fingerprint controller_evidence acceptance delegate delegate_controllers node game_node portal_node event event_node event_name unit active enabled readable_raw=0
   remote_wait_unit inputplumber.service
   remote_wait_unit korri-inputd.service Ready
   remote_wait_unit korrid.service
@@ -1660,14 +1692,21 @@ remote_automated_gates() {
   fi
   node="${fingerprint#node=}"
   node="${node%% *}"
-  sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user cannot read normalized target'
+  game_node="$(remote_routed_target_node "$GAME_TARGET_NAME" "$GAME_TARGET_PHYS")" \
+    || fail 'game-facing routed target is missing or invalid'
+  portal_node="$(remote_routed_target_node "$PORTAL_TARGET_NAME" "$PORTAL_TARGET_PHYS")" \
+    || fail 'portal-facing routed target is missing or invalid'
+  ! sudo -n -u "$runtime_user" test -r "$node" \
+    || fail 'runtime user can still read the normalized source target'
+  sudo -n -u "$runtime_user" test -r "$game_node" \
+    || fail 'runtime user cannot read the game-facing routed target'
+  ! sudo -n -u "$runtime_user" test -r "$portal_node" \
+    || fail 'runtime user can read the portal-facing routed target'
   shopt -s nullglob
   for event in /sys/class/input/event*; do
     event_node="/dev/input/${event##*/}"
-    if [[ "$event_node" == "$node" ]]; then
-      current_fingerprint="$(remote_normalized_fingerprint)" || current_fingerprint=''
-      [[ "$current_fingerprint" != "$fingerprint" ]] || continue
-    fi
+    event_name="$(cat "$event/device/name" 2>/dev/null || true)"
+    remote_managed_virtual_name "$event_name" && continue
     if udevadm info --query=property --name="$event_node" 2>/dev/null | grep -Fx 'ID_INPUT_JOYSTICK=1' >/dev/null \
       && sudo -n -u "$runtime_user" test -r "$event_node"; then
       readable_raw=$((readable_raw + 1))
@@ -1686,7 +1725,7 @@ remote_automated_gates() {
   [[ "$(remote_catalog_health)" == Ok ]] || fail 'korrid catalog is unhealthy'
   acceptance="$(remote_acceptance_fingerprint "$runtime_user" "$expected_identity" "$profile" "$require_physical")" \
     || fail 'acceptance fingerprint could not be captured'
-  printf 'automated-gates=pass raw-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
+  printf 'automated-gates=pass raw-readable=0 source-readable=0 game-route-readable=1 portal-route-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
   printf '%s\n' "$sunshine_provenance"
   printf 'sunshine-private-state=protected digest=%s\n' "$sunshine_private_state"
   printf 'normalized-fingerprint=%s\n' "$fingerprint"

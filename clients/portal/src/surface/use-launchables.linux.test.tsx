@@ -95,6 +95,8 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     launchSelectedGame: unavailable,
     sessionFreeze: unavailable,
     sessionThaw: unavailable,
+    sessionControls: unavailable,
+    invokeSessionControl: unavailable,
     sourceStatus: unavailable,
     peerList: unavailable,
     ...overrides,

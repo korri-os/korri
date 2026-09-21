@@ -181,9 +181,9 @@ in
         type = lib.types.listOf lib.types.str;
         default = [ ];
         description = ''
-          Additional trusted local users that may read only the validated
-          InputPlumber virtual Xbox target. Extends actionUser's target ACL,
-          not physical-source access, action execution, or group membership.
+          Trusted local users that may read only inputd's portal-facing
+          virtual Xbox target. The game user reads a distinct game-facing
+          target, and only inputd reads InputPlumber's normalized source.
           The ACL helper resolves names at runtime so system UIDs may be unset.
         '';
       };
@@ -261,7 +261,9 @@ in
       ];
       services.udev.extraRules = ''
         # InputPlumber is root. Sunshine receives uinput only through its own service group.
-        KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="root", GROUP="${
+        KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${
+          if cfg.inputd.enable then inputdUser else "root"
+        }", GROUP="${
           if cfg.provider.sunshine.enableUinputAccess then sunshineGroup else "root"
         }", MODE="${
           if cfg.provider.sunshine.enableUinputAccess then "0660" else "0600"
@@ -349,6 +351,7 @@ in
           message = "the action user must not belong to input or uinput groups.";
         }
       ];
+      boot.kernelModules = [ "uinput" ];
       users.groups.${controlGroup}.gid = cfg.inputd.controlGid;
       users.users.${inputdUser} = {
         uid = cfg.inputd.uid;
@@ -356,10 +359,14 @@ in
         isSystemUser = true;
       };
       environment.systemPackages = [ cfg.inputd.package ];
-      # The helper repeats this complete match before changing an ACL. The udev
-      # match limits hotplug invocation and sets a closed base mode first.
+      # The helper repeats each complete identity and capability match before
+      # changing an ACL. Only inputd reads the InputPlumber source. Consumers
+      # read distinct routed targets and cannot observe the inactive route.
       services.udev.extraRules = ''
-        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant ${toString cfg.inputd.uid} ${toString cfg.inputd.actionUid} $env{DEVNAME}"
+        ${lib.optionalString (!cfg.provider.enable) ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="root", MODE="0600", OPTIONS+="static_node=uinput"''}
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant source ${toString cfg.inputd.uid} $env{DEVNAME}"
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri game)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/game", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant game ${toString cfg.inputd.actionUid} $env{DEVNAME}"
+        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri portal)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/portal", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant portal $env{DEVNAME}"
       '';
       services.dbus.packages = [ providerDbusPolicy ];
       security.polkit.enable = true;
@@ -448,7 +455,6 @@ in
           RuntimeDirectoryMode = "0700";
           ReadWritePaths = [ "/run/korri-inputd" ];
           InaccessiblePaths = [
-            "/dev/uinput"
             "-/run/korri-input-seat"
             "/dev/inputplumber/sources"
             "/var/lib/korrid"

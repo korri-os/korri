@@ -332,7 +332,8 @@ export interface SurfaceHost {
     controlId: string,
     value?: SurfaceGameplayControlValue,
   ): void
-  /** Close the gameplay overlay locally; no brain call is required. */
+  /** Ask to return from the gameplay overlay. The host binds this to the
+   * exact live launch; the surface never closes or thaws a session itself. */
   dismissGameplayOverlay(): void
   /** Try the failed thing again. Only meaningful while `Problem.canRetry`. */
   retry(): void

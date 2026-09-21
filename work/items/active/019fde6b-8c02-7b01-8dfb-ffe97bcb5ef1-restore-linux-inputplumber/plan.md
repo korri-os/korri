@@ -27,7 +27,7 @@ Capability acknowledgements remain on Sunshine's serialized control thread. One 
 
 Device retries proved that full NixOS activation also reloads Home Manager and unrelated user services. The implementation therefore uses two modes only:
 
-- `korri-dev` runs isolated korrid and inputd processes without root, physical input, actions, systemd mutation, X11 management, or Sunshine management. `--physical` opts in only to an existing validated normalized InputPlumber target; actions remain disabled.
+- `korri-dev` runs isolated korrid and inputd processes without root, physical input, actions, systemd mutation, X11 management, or Sunshine management. `--physical` only asks development inputd to open an already-running normalized InputPlumber source; actions remain disabled. The app does not install the provider, grant source or `/dev/uinput` access, or apply ACLs to its two routed targets. It therefore reaches `Ready` only when those permissions and the provider already exist outside `korri-dev`; it is not a self-contained physical-input path.
 - The optional hardened host layer installs stable service identities, permissions, and units once. Those units launch fixed components from the active Nix GC root. The active and previous bundle selectors both keep their exact store closures available for rollback. A bounded selector changes one immutable bundle, restarts only InputPlumber, inputd, and korrid, and restores the previous selector on failed health.
 
 The full generation gate remains a maintenance and persistence check. It is not the normal development or candidate-deployment path.
@@ -45,15 +45,15 @@ Zao already runs stock InputPlumber 0.75.2 as an active NixOS system service, bu
 ## Requirements
 
 - R1. Korri provides a reproducible Linux package built from an exact upstream InputPlumber release plus Korri-owned profile composition; the upstream Rust source remains unmodified.
-- R2. Supported Linux device profiles emit one canonical Xbox 360-compatible virtual gamepad and a persistent DBus shortcut target while preserving ordinary gameplay buttons.
+- R2. Supported Linux device profiles expose one validated normalized Xbox 360-compatible source and a persistent DBus shortcut target. Inputd exclusively grabs that source and emits each event to exactly one of two owner-specific Xbox 360-compatible virtual targets: Game or Portal.
 - R3. A separate Rust `korri-inputd` service consumes InputPlumber output and contains no browser, WebSocket, or surface dependency.
 - R4. Platform-neutral chord, tap, hold, and action-policy behavior is isolated from Linux I/O so it can be reused and compiled independently of the Linux backend.
 - R5. Missing, unreadable, stale, or ambiguous normalized controllers fail closed: `inputd` never falls back to a raw physical gamepad and clears held state when a source disappears.
 - R6. Global shortcuts continue through InputPlumber's DBus target when a foreground process exclusively grabs the virtual evdev gamepad; duplicate copies dispatch an action at most once within one logical chord lifecycle.
-- R7. Destructive actions require an exact chord, a deliberate hold, and an exact active Korri launch identity. They must not restore the legacy process-name or `killall` fallback.
+- R7. The exact kill chord stops the exact active Korri launch immediately on its activation edge, once per press, with repeats suppressed until release. It has no confirmation or hold and must not restore the legacy process-name or `killall` fallback.
 - R8. NixOS integration owns service ordering, package/profile selection, `uinput` availability, narrow virtual-device read permissions, lifecycle persistence, and explicit platform data composition without granting games broad raw-input access.
 - R9. Linux RetroArch launches use the normalized udev/Xbox contract and reserve Guide/Home for Korri rather than emulator menu capture.
-- R10. Zao proves the complete path through a reversible rollout: package identity, service health, hotplug recovery, one normalized target, gameplay input, grab-resistant shortcuts, exact hold-to-stop, Sunshine regression, rollback, and reboot persistence.
+- R10. Zao proves the complete path through a reversible rollout: package identity, service health, hotplug recovery, one normalized source, two exclusive routed targets, gameplay input, grab-resistant shortcuts, immediate exact chord stop, Sunshine regression, rollback, and reboot persistence.
 - R11. Android behavior and treaties remain unchanged. The portable core is prepared for later reuse but no Android input backend or JNI integration is added.
 - R12. Linux trust boundaries treat launched games as untrusted: games cannot spoof DBus shortcuts, invoke local session stop, open raw physical controllers, or inherit general `/dev/uinput` authority.
 
@@ -62,10 +62,10 @@ Zao already runs stock InputPlumber 0.75.2 as an active NixOS system service, bu
 ## Security Invariants
 
 - Root-owned Nix configuration, the pinned InputPlumber service, `korrid`, and `korri-inputd` are trusted components. Launched games and other processes running in the gameplay session are untrusted.
-- Possession of a controller authorizes configured input actions. A deliberate hold prevents accidental destructive input; it is not user authentication.
+- Possession of a controller authorizes configured input actions. The exact kill chord is immediate and has no confirmation or hold; it is not user authentication.
 - The LAN-bound korrid RPC remains unable to stop a Zao host launch. Exact status/stop is available only through a systemd-owned local Unix socket whose peer identity excludes the game runtime.
-- `korri-inputd` runs under a dedicated service identity. It has read access to validated normalized targets and the authenticated InputPlumber DBus source, but no raw physical-controller access and no `/dev/uinput` write access.
-- Sunshine receives any required `/dev/uinput` authority only in its own service credentials. The account that runs games is not broadly enrolled in `input`, `uinput`, or an equivalent device-owning group.
+- `korri-inputd` runs under a dedicated service identity. It has exclusive read access to the validated normalized source, access to the authenticated InputPlumber DBus target, and `/dev/uinput` write access only to create the exact Game and Portal targets. It has no raw physical-controller access.
+- Sunshine and inputd receive separate service-specific `/dev/uinput` authority. The account that runs games is not broadly enrolled in `input`, `uinput`, or an equivalent device-owning group and can read only the Game target.
 - Configured action commands come only from root-owned Nix configuration, use immutable absolute executables with explicit argv and an allowlisted environment, and are bounded in concurrency, runtime, and captured output.
 - Destructive chords are accepted only from the authenticated InputPlumber DBus owner and target. Daemon/provider restart requires a complete control release before destructive input can arm again.
 
@@ -111,8 +111,8 @@ Zao already runs stock InputPlumber 0.75.2 as an active NixOS system service, bu
 
 ### Institutional Learnings
 
-- InputPlumber owns hardware normalization; `inputd` owns product shortcut policy. Gameplay reads the virtual target directly rather than being forwarded through `inputd`.
-- Fix virtual device identity at InputPlumber rather than accumulating downstream per-device SDL mappings. The intended stable target is Xbox 360-compatible.
+- InputPlumber owns hardware normalization. Inputd exclusively grabs its normalized source, owns product shortcut policy, and forwards each event only to the current owner-specific Game or Portal virtual target.
+- Keep InputPlumber's normalized source identity Xbox 360-compatible. Inputd gives both routed targets fixed Xbox 360-compatible names and physical paths rather than accumulating per-device SDL mappings.
 - Zao keeps physical source nodes in `/dev/input` so InputPlumber 0.75.2 receives upstream add and remove events. InputPlumber removes `uaccess` and sets source mode `000`; service namespaces and the device gate prove that games cannot open the raw node. Moved-source hiding remains available in the lower-level module but is not the Zao host policy.
 - Never grant blanket access to every `/dev/input/event*`. Irrelevant unreadable devices should be ignored; inability to consume the required normalized target is actionable.
 - Destructive chords need exact matching, one-shot-until-release behavior, and a launch-identity race guard.
@@ -135,7 +135,7 @@ Zao already runs stock InputPlumber 0.75.2 as an active NixOS system service, bu
 |---|---|---|
 | Runtime boundary | Separate Rust service with a small portable core crate | Keeps Linux evdev/DBus dependencies out of Android `korrid`, preserves process isolation, and still permits later core reuse. |
 | InputPlumber ownership | Pin exact upstream source and compose Korri data around it | Restores reproducibility without carrying an upstream source fork. |
-| Device contract | Canonical Xbox 360 target; no raw fallback | One stable identity works across SDL, RetroArch, and other Linux consumers and prevents duplicate players. |
+| Device contract | One canonical normalized Xbox 360 source plus exact Game and Portal routed targets; no raw fallback | Inputd can enforce exclusive owner delivery while each consumer sees one stable SDL-compatible identity. |
 | Shortcut source | Native `zbus` subscription to InputPlumber's system-bus target | Preserves grab immunity while removing the legacy `gdbus` subprocess and its line-buffering failure mode. |
 | Gameplay event source | Rust `evdev` synchronized async stream with bounded reconciliation | Uses kernel state resynchronization after dropped events and preserves the proven finite-poll hotplug posture. |
 | Destructive action | Exact launch-aware control over a systemd-owned private Unix socket | Keeps stop unavailable on Zao's unauthenticated LAN RPC, excludes game processes, avoids process-name killing, and refuses replacement-launch races. |
@@ -145,10 +145,10 @@ Zao already runs stock InputPlumber 0.75.2 as an active NixOS system service, bu
 
 Additional decisions:
 
-- The daemon consumes InputPlumber's normalized virtual controller and DBus shortcut lane only. It does not create virtual devices itself in this slice.
+- The daemon exclusively grabs InputPlumber's normalized virtual controller, consumes the DBus shortcut lane, and creates the exact Game and Portal uinput targets itself.
 - The legacy action identifiers and configuration vocabulary are the schema baseline. Unsupported or unconfigured actions log and do nothing; there is no implicit shell or compatibility fallback.
 - Exact destructive chords are DBus-authoritative and must be assembled by one authenticated InputPlumber target. Intentional mixed-device non-destructive chords may be supported only where a platform profile declares both controls as one InputPlumber composite.
-- A quick release or partial hold of the destructive chord has no UI effect because the decision overlay is outside scope; only the completed hold dispatches. Startup, reconnect, and resynchronization begin disarmed until every destructive control has been observed released.
+- The exact kill chord dispatches immediately on its activation edge and cannot repeat until release. Startup, reconnect, and resynchronization begin disarmed until every destructive control has been observed released.
 - InputPlumber's well-known DBus name is not sufficient evidence by itself: inputd binds the current unique owner and allowlists the object path, interface, signal member, and `ui_*` capabilities, clearing state on owner change.
 - InputPlumber profile composition produces one resolved data root. Do not rely on ambiguous `XDG_DATA_DIRS` shadowing when a device profile must be transformed deterministically.
 - Host mode exposes one active launch globally because the current session status treaty is singular. Each launch is owned by a non-reusable systemd scope/cgroup identity, and owner restart cannot leave an untracked game behind.
@@ -224,27 +224,33 @@ flowchart TB
     Physical[Physical controller sources]
     IP[InputPlumber system service]
     Raw[Hidden raw source nodes]
-    Pad[Canonical virtual Xbox 360 target]
+    Source[Normalized Xbox 360 source]
     DBus[Persistent DBus shortcut target]
-    Game[Linux game or emulator]
     Inputd[Rust korri-inputd system service]
+    GamePad[Korri Game virtual target]
+    PortalPad[Korri Portal virtual target]
+    Game[Linux game or emulator]
+    Portal[Portal]
     Core[Portable input policy core]
     Korrid[Local korrid session RPC]
     Actions[Configured non-destructive actions]
 
     Physical --> IP
     IP --> Raw
-    IP --> Pad
+    IP --> Source
     IP --> DBus
-    Pad --> Game
-    Pad --> Inputd
+    Source -->|exclusive grab| Inputd
     DBus --> Inputd
+    Inputd --> GamePad
+    Inputd --> PortalPad
+    GamePad --> Game
+    PortalPad --> Portal
     Inputd --> Core
     Core --> Actions
     Core -->|private local control socket| Korrid
 ```
 
-The provider is the only hardware-normalization owner. Games receive gameplay events directly from its virtual target. `korri-inputd` observes the normalized target and grab-immune DBus copy only to evaluate product shortcuts; it does not sit in the gameplay data path.
+InputPlumber is the hardware-normalization owner. Inputd is in the gameplay data path: it exclusively grabs the normalized source and emits each event only to the current owner-specific Game or Portal target. It also consumes the grab-immune DBus copy for product shortcuts.
 
 The runtime reconciles these states:
 
@@ -376,7 +382,7 @@ flowchart TB
 
 ### U3. Implement the Rust Linux evdev and InputPlumber DBus runtime
 
-**Goal:** Add a Linux daemon that discovers exactly one normalized target, reads synchronized events, consumes the persistent DBus shortcut target, and recovers safely across topology changes.
+**Goal:** Add a Linux daemon that discovers and exclusively grabs exactly one normalized source, reads synchronized events, routes them to two owner-specific virtual targets, consumes the persistent DBus shortcut target, and recovers safely across topology changes.
 
 **Requirements:** R2, R3, R5, R6
 
@@ -410,10 +416,10 @@ flowchart TB
 - Current `services/korrid/src/main.rs` logging and shutdown posture.
 
 **Test scenarios:**
-- Happy path: one virtual Xbox 360 target is selected and its controls reach the portable core.
+- Happy path: one normalized Xbox 360 source is selected, and inputd routes its controls to the current Game or Portal target and the portable core.
 - Happy path: supported `ui_*` DBus signals map to the intended semantic controls; unknown capabilities are ignored.
-- Edge case: raw gamepads exist but no virtual target exists; runtime remains `Missing` and dispatches nothing.
-- Edge case: two matching virtual targets exist; runtime becomes `Ambiguous`, closes the old stream, clears held state, and dispatches nothing.
+- Edge case: raw gamepads exist but no validated normalized source exists; runtime remains `Missing` and dispatches nothing.
+- Edge case: two matching normalized sources exist; runtime becomes `Ambiguous`, closes the old stream and routed targets, clears held state, and dispatches nothing.
 - Edge case: an event node is renumbered while preserving device identity; reconciliation reopens the new path without carrying held controls.
 - Failure path: InputPlumber or DBus disappears and returns; the daemon clears state, requires a full destructive-control release, retries with bounded cadence, and resumes without restart.
 - Failure path: the selected target is unreadable; logs identify the required target while unrelated unreadable devices do not flood errors.
@@ -428,7 +434,7 @@ flowchart TB
 
 ### U4. Add explicit action dispatch and exact host-session stopping
 
-**Goal:** Restore non-UI system actions and safe hold-to-stop by extending the current host launcher into an exact launch-aware control surface.
+**Goal:** Restore non-UI system actions and immediate exact-chord stop by extending the current host launcher into an exact launch-aware control surface.
 
 **Requirements:** R3, R6, R7
 
@@ -447,7 +453,7 @@ flowchart TB
 
 **Approach:**
 - Preserve the legacy action vocabulary and environment/config names where they still describe non-UI Linux actions. Missing commands warn and no-op; configured commands execute as an argv vector without an implicit shell.
-- Keep quick-tap, progress, and cancel hold outcomes internal because no overlay is restored. Only the completed destructive hold requests session termination.
+- Keep the generic quick-tap, progress, and cancel hold policy internal for other consumers. The exact kill chord bypasses that hold and requests session termination once on its activation edge.
 - Make host mode singular: one active or stopping launch globally, matching the existing singular session status treaty.
 - Bind each launch ID to a dedicated systemd scope/cgroup identity. Transition atomically from running to stopping, reject a new prepare while stopping, and report completion only after the scope is empty and the child is reaped.
 - Define owner-crash behavior: korrid either recovers the same trusted scope identity or terminates it before accepting another launch; no orphaned untracked game may survive restart.
@@ -468,14 +474,14 @@ flowchart TB
 - Edge case: an unconfigured action logs a bounded warning and leaves the daemon healthy.
 - Failure path: a configured command exits unsuccessfully; failure is reported without crashing or automatic retry.
 - Happy path: private host status identifies the live launch and exact stop empties its launch scope, reaps the child, and clears status.
-- Edge case: no active launch exists when the hold fires; inputd reports no action and does not kill unrelated processes.
+- Edge case: no active launch exists when the exact kill chord activates; inputd reports no action and does not kill unrelated processes.
 - Race path: status returns launch A, launch A exits, and launch B starts before stop; stop conditioned on A refuses to terminate B.
 - Concurrency path: prepare during stopping is rejected; repeated stop reports the existing stopping/completed outcome and cannot target a later launch.
 - Process path: descendants that create another process group or session remain inside the launch scope and are terminated; PID reuse cannot retarget stop.
 - Crash path: restarting korrid during a launch leaves no untracked process and does not permit a duplicate prepare.
 - Authorization path: LAN callers, ordinary loopback callers, and launched games cannot read private status or request stop; only the inputd service peer can.
 - Failure path: local control is unavailable or rejects stop; inputd reports failure and performs no fallback mutation.
-- Contract: public generated TypeScript remains unchanged because host stop stays unsupported on the public RPC; the private local treaty is covered by Rust integration tests.
+- Contract: generated TypeScript includes the read-only exact overlay correlation used by the portal. Exact host stop authority remains capability-bound, and the private local treaty is covered by Rust integration tests.
 
 **Verification:**
 - Every destructive dispatch is bound to one observed launch ID, and tests prove a replacement process cannot be stopped accidentally.
@@ -507,7 +513,7 @@ flowchart TB
 - Preserve independent `provider` and `inputd` enablement. Enabling both orders the inputd system service after the provider service starts but does not conflate their responsibilities.
 - Graduate Linux korrid hosting from the ad-hoc user unit into a repository-owned system unit running under the configured gameplay UID. A root-owned socket unit passes the private control listener to korrid while restricting connection rights to the distinct inputd service identity.
 - Run InputPlumber, korrid host control/socket activation, and `korri-inputd` as ordered system units. Use distinct service identities and explicit runtime directories; do not depend on cross-manager ordering, login, or linger.
-- Load `uinput` for the provider. Give inputd read access only to recognized virtual targets through a dedicated ACL and no uinput authority. Give Sunshine service-specific uinput access without granting that authority to the gameplay account.
+- Load `uinput` for the provider, inputd, and Sunshine. Give inputd exclusive read access only to the recognized normalized source and service-specific `/dev/uinput` access for its two routed targets. Give the game and portal identities read access only to their respective target and no uinput authority.
 - Source non-destructive action commands from root-owned Nix configuration only. Restrict executable paths, argv, environment, concurrency, runtime, and output, and ensure command children do not inherit local-stop credentials.
 - Restrict ownership of InputPlumber's well-known DBus name and access to any provider methods that can produce shortcut signals so the game identity cannot turn InputPlumber into a signal proxy.
 - Enable moved-source hiding for profiles validated to support it, with required same-filesystem setup and evaluation assertions. Deny game access to raw nodes from initial creation through provider restart; moved-source hiding is an additional boundary rather than the only boundary.
@@ -527,7 +533,7 @@ flowchart TB
 - Edge case: additional platform data composes before service startup and is visible in the resolved package root.
 - Error path: inputd is configured to require InputPlumber but the provider is absent; Nix evaluation rejects the contradictory configuration.
 - Error path: broad raw-input group access or unsafe source-hide mount layout is requested without explicit support; evaluation rejects it.
-- Security: generated service has no network listener, no uinput write requirement for inputd, bounded writable paths, and only the system bus/address families it needs.
+- Security: generated service has no network listener, has only service-specific uinput authority for the exact Game and Portal targets, has bounded writable paths, and uses only the system bus/address families it needs.
 - Security: an untrusted system-bus client cannot own InputPlumber's well-known name or invoke a provider method that produces an authenticated shortcut signal.
 - Security: the game service cannot open physical event nodes, `/dev/uinput`, or the local stop socket; Sunshine and inputd receive only their service-specific device/socket authority.
 - Security: a configured action helper cannot open the local stop socket or reuse inputd's peer authority.
@@ -554,7 +560,7 @@ flowchart TB
 **Approach:**
 - Restore the legacy RetroArch udev/joypad baseline in the generated Linux configuration: udev input, autodetection, bounded users, and an explicit non-Guide menu combination.
 - Package an Xbox 360 autoconfig derived from the installed baseline with Guide/Home menu capture removed.
-- Rely on provider-side raw-source hiding and narrow ACLs so RetroArch sees the normalized target as the sole controller, rather than adding per-launch device-node heuristics.
+- Rely on source isolation and narrow ACLs so RetroArch sees only inputd's Game target as its controller, rather than adding per-launch device-node heuristics.
 - Keep the policy Linux-only; Android RetroArch configuration and launch integrity remain unchanged.
 
 **Patterns to follow:**
@@ -592,10 +598,10 @@ flowchart TB
 - Build the candidate generation from repository exports and apply it first as a temporary/test generation. Require an explicit device serial/host and operator confirmation before switching persistent system state.
 - Preserve the prior generation and stock service definition. Exercise rollback after the first successful candidate smoke rather than treating rollback as documentation-only.
 - Use a temporary synthetic source/profile only as preflight evidence for generic routing, DBus owner validation, and cleanup. Persistent switch and reboot gates require a real supported controller and production physical profile.
-- Prove normal gameplay before shortcut mutation: exactly one normalized Xbox target, no raw duplicate visible to the game user, Neverball or RetroArch receives controls, and Sunshine remains connected. Verify open attempts with fresh service/game credentials rather than trusting group declarations alone.
+- Prove normal gameplay before shortcut mutation: exactly one normalized Xbox source plus inputd's distinct Game and Portal targets, no raw duplicate visible to the game user, Neverball or RetroArch receives controls through the Game target, and Sunshine remains connected. Verify open attempts with fresh service/game credentials rather than trusting group declarations alone.
 - Prove fail-closed recovery by temporarily removing/recreating the source and by introducing an explicitly bounded ambiguous test target; inputd must clear state, dispatch nothing while unsafe, and recover.
 - Prove grab immunity with a bounded test helper that exclusively grabs the normalized evdev node while the authenticated DBus shortcut copy remains observable. Prove another system-bus client cannot spoof the allowlisted signal source.
-- Launch a Korri-owned test game, record its launch ID, fire the exact hold chord, and verify only that launch's cgroup stops. Then create replacement-session, owner-restart, and held-during-provider-restart races and verify none can trigger stale termination.
+- Launch a Korri-owned test game, record its launch ID, activate the exact kill chord, and verify only that launch's cgroup stops immediately and once until release. Then create replacement-session, owner-restart, and chord-held-during-provider-restart races and verify none can trigger stale termination.
 - Inject a provider-health failure after candidate activation and require automatic restoration of the prior generation. Reboot the restored generation and repeat raw-input and Sunshine checks before persistent candidate switch.
 - Switch persistently only after all candidate gates pass with real hardware, reboot Zao, and repeat service, topology, gamepad, shortcut, Sunshine, and catalog checks.
 - Keep secrets, Sunshine pairing material, and private game content out of scripts, logs, repository files, and summaries.
@@ -609,11 +615,11 @@ flowchart TB
 
 **Test scenarios:**
 - Baseline: the script refuses an omitted or mismatched host and performs no mutation during its inspection mode.
-- Happy path: temporary generation reports the pinned InputPlumber package, healthy provider/inputd units, one normalized target, and working gameplay.
+- Happy path: temporary generation reports the pinned InputPlumber package, healthy provider/inputd units, one normalized source, exact Game and Portal targets, exclusive owner routing, and working gameplay.
 - Edge case: no compatible physical controller is present; the temporary synthetic gate may prove preflight behavior and cleanup, but the persistent switch remains blocked.
 - Failure path: normalized target is missing, unreadable, has untrusted provenance, is replaced between enumeration and open, or is ambiguous; inputd dispatches nothing and the gate fails with actionable evidence.
 - Integration: an exclusive evdev grab blocks the raw observer but not the DBus shortcut action.
-- Integration: exact hold stops the recorded active launch and cannot stop a replacement launch.
+- Integration: exact kill-chord activation immediately stops the recorded active launch once and cannot stop a replacement launch.
 - Regression: Sunshine preserves pairing and video; remote and local controller input work through disconnect/reconnect and Sunshine restart; repeated reconnects do not create a second normalized target or virtual-device feedback loop.
 - Rollback: an injected candidate failure automatically restores the prior generation, mutable unit state, device ACLs, moved sources, and fresh process credentials; rebooted rollback returns topology and Sunshine to baseline.
 - Persistence: after candidate switch and reboot, the same package identity, units, permissions, normalized target behavior, authenticated DBus source, local-control authorization, and Sunshine regression remain green.
@@ -645,10 +651,10 @@ flowchart TB
     Android -. unchanged treaty .-> Session
 ```
 
-- **Interaction graph:** NixOS owns the provider and daemon lifecycle; InputPlumber emits gameplay and shortcut targets; inputd evaluates policy; local korrid owns exact process termination; launchers consume only normalized gameplay input.
+- **Interaction graph:** NixOS owns the provider and daemon lifecycle; InputPlumber emits one normalized source plus the shortcut signal lane; inputd exclusively grabs that source, evaluates policy, and forwards each event to exactly one of its Game or Portal virtual targets; local korrid owns exact process termination; launchers consume only inputd's Game target.
 - **Error propagation:** Provider absence, target ambiguity, ACL denial, DBus loss, and local RPC failure become structured logs and an inert inputd state. None authorizes raw fallback or process-name killing.
 - **State lifecycle risks:** Held controls must be cleared on source loss; duplicate DBus/evdev copies must not double-dispatch; child exit versus stop races must be launch-ID guarded; temporary device profiles must not survive rollout validation.
-- **API surface parity:** Public host session status/stop remains unsupported and generated TypeScript is unchanged. Exact launch control is a private, local Rust integration over a systemd-owned socket.
+- **API surface parity:** Generated TypeScript carries the public read-only exact overlay correlation. Exact host session mutations remain capability-bound, and local inputd control uses the systemd-owned private socket.
 - **Integration coverage:** Unit tests cannot prove InputPlumber data discovery, udev permissions, evdev grabbing, DBus owner authentication, launch-scope termination, NixOS boot ordering, or Sunshine survival; U7 owns those cross-layer gates.
 - **Unchanged invariants:** Android remains hardware-owner for Android input; surfaces stay hardware-blind; inputd opens no network listener; plugins remain effect-free declarations; InputPlumber remains the only Linux hardware normalizer.
 
@@ -701,7 +707,7 @@ flowchart TB
 ## Documentation / Operational Notes
 
 - Document package provenance, transformed profile names, action configuration, service lifecycle states, and expected logs under `services/inputd/README.md` or the nearest service-local documentation chosen during implementation.
-- Document the difference between InputPlumber gameplay normalization and inputd policy handling; inputd is not a gameplay forwarding service.
+- Document the runtime boundary: InputPlumber normalizes hardware into one source, while inputd exclusively grabs that source and owns gameplay forwarding through its separate Game and Portal virtual targets.
 - Record the exact Zao NixOS consumer change, baseline generation, rollback generation, and final package identities in the work ledger without recording private content or pairing material.
 - Keep the device gate read-only by default and require explicit targeting and confirmation for temporary or persistent changes.
 - Update `nix run .#help` so the Linux input verification task is discoverable.
@@ -714,7 +720,7 @@ flowchart TB
 - The integrated input gate proves the portable core, Linux runtime, package content, module shape, and non-Linux core build.
 - Zao presents exactly one supported normalized gamepad to the game user, and no raw duplicate.
 - A foreground exclusive grab does not suppress a configured DBus-backed shortcut.
-- A destructive hold accepted only from the authenticated DBus target stops exactly the launch scope observed before the request and refuses replacement, restart, and PID-reuse races.
+- The exact kill chord accepted only from the authenticated DBus target stops exactly the launch scope observed before the request, once per press, and refuses replacement, restart, and PID-reuse races.
 - Zao passes gameplay and Sunshine regressions after candidate rollout, exercised rollback, persistent switch, and reboot.
 - Android builds and behavior remain unchanged.
 

@@ -338,6 +338,17 @@ mod tests {
     }
 
     #[test]
+    fn running_record_keeps_the_established_schema_without_runner_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("host-session");
+        persist_active(&state, &record()).unwrap();
+
+        let text = fs::read_to_string(state.join(ACTIVE_FILE)).unwrap();
+        assert!(!text.contains("runnerId"));
+        assert_eq!(read_active(&state).unwrap().unwrap().launch_id(), LAUNCH);
+    }
+
+    #[test]
     fn persists_reads_and_consumes_one_private_record() {
         let root = tempfile::tempdir().unwrap();
         let state = root.path().join("host-session");
@@ -425,16 +436,21 @@ mod tests {
             read_active(&state).unwrap_err(),
             "host recovery person identity is invalid"
         );
-        write(
-            format!(
-                "{{\"phase\":\"running\",\"launchId\":\"{LAUNCH}\",\"gameId\":\"wario\",\"startedAt\":1,\"extra\":true}}"
-            )
-            .as_bytes(),
-        );
-        assert_eq!(
-            read_active(&state).unwrap_err(),
-            "host recovery record is malformed"
-        );
+        for extra in [
+            "\"extra\":true".to_owned(),
+            "\"runnerId\":\"@korri:mgba/mgba\"".to_owned(),
+        ] {
+            write(
+                format!(
+                    "{{\"phase\":\"running\",\"launchId\":\"{LAUNCH}\",\"gameId\":\"wario\",\"startedAt\":1,{extra}}}"
+                )
+                .as_bytes(),
+            );
+            assert_eq!(
+                read_active(&state).unwrap_err(),
+                "host recovery record is malformed"
+            );
+        }
         write(&vec![b' '; MAX_ACTIVE_BYTES + 1]);
         assert_eq!(
             read_active(&state).unwrap_err(),

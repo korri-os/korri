@@ -11,7 +11,9 @@ use super::identity::{ACTIVE_FILE, TEMP_ACTIVE_PREFIX};
 #[cfg(test)]
 use std::fs;
 
-use super::compositor_focus::{focus_launch_window, CompositorControl, FocusOutcome};
+use super::compositor_focus::{
+    focus_launch_window, focused_ownership, CompositorControl, FocusOutcome, FocusOwnership,
+};
 use super::identity::{
     clear_active, clear_crash_temporary_active, consume_active, persist_active, read_active,
     replace_active, ActiveSession,
@@ -24,7 +26,7 @@ use super::play_log::{PlayHistoryKey, PlayLogStore};
 use super::systemd_unit::{
     read_unit_pids, LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUnitBackend,
 };
-use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState};
+use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState, RUNNER_ID_ENV};
 
 /// Wall-clock seam. Production reads the system clock; tests supply
 /// deterministic instants so recorded durations are exact.
@@ -53,6 +55,10 @@ pub enum HostSessionStatus {
         launch_id: String,
         game_id: Option<String>,
     },
+    FocusFailed {
+        launch_id: String,
+        game_id: Option<String>,
+    },
     Stopping {
         launch_id: String,
         game_id: Option<String>,
@@ -71,6 +77,16 @@ pub enum HostSessionStop {
     StaleIdentity { active_launch_id: Option<String> },
     AlreadyStopping { launch_id: String },
     RecoveryBlocked,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HostSessionEffectFailure {
+    NoActive,
+    StaleIdentity,
+    Stopping,
+    RecoveryBlocked,
+    FocusFailed(String),
+    Unavailable(String),
 }
 
 /// Outcome of an exact-identity freeze or thaw.
@@ -92,8 +108,7 @@ pub enum HostSessionFreezeChange {
     Stopping {
         launch_id: String,
     },
-    /// The unit runs again, but its window could not be raised. The session is
-    /// exact and running; only the return to the game is incomplete.
+    /// The exact unit is running, but its window could not be raised.
     FocusFailed {
         launch_id: String,
         message: String,
@@ -123,6 +138,10 @@ enum ActiveState {
         launch_id: String,
         game_id: Option<String>,
     },
+    FocusFailed {
+        launch_id: String,
+        game_id: Option<String>,
+    },
     Stopping {
         launch_id: String,
         game_id: Option<String>,
@@ -144,7 +163,11 @@ pub struct HostSessionControl {
     clock: Arc<dyn WallClock>,
     state: Arc<Mutex<ActiveState>>,
     seat_lease: Arc<Mutex<Option<(String, Box<dyn InputSeatLease>)>>>,
-    /// Absent when no compositor is configured, as on a headless host.
+    /// One startup-only exact handoff reconstructed from live compositor facts.
+    /// Browser status consumes it into the server's process-local overlay intent.
+    recovered_overlay_intent: Arc<Mutex<Option<String>>>,
+    /// Required to prove that an exact launch owns focus before Game input can
+    /// return. Absence is a product-path focus failure, never implicit success.
     compositor: Option<Arc<dyn CompositorControl>>,
     /// Surfaces that must never be focused as a game, such as the kiosk hub.
     never_focus: Vec<String>,
@@ -184,13 +207,14 @@ impl HostSessionControl {
             clock,
             state: Arc::new(Mutex::new(ActiveState::RecoveryPending)),
             seat_lease: Arc::new(Mutex::new(None)),
+            recovered_overlay_intent: Arc::new(Mutex::new(None)),
             compositor: None,
             never_focus: Vec::new(),
         }
     }
 
-    /// Give this session control a compositor so a resumed game returns to the
-    /// front. Without it, thaw still runs the game, but nothing is raised.
+    /// Give this session control the authority needed to prove that a resumed
+    /// game returned to the front.
     pub(crate) fn with_compositor(
         mut self,
         compositor: Arc<dyn CompositorControl>,
@@ -201,21 +225,123 @@ impl HostSessionControl {
         self
     }
 
-    /// Raise the window of the exact launch that was just resumed.
-    fn focus_launch(&self, launch_id: &str) -> FocusOutcome {
-        let Some(compositor) = self.compositor.as_ref() else {
-            return FocusOutcome::NothingToFocus;
+    fn current_focus_ownership(&self, launch_id: &str) -> Result<FocusOwnership, String> {
+        let compositor = self
+            .compositor
+            .as_ref()
+            .ok_or("compositor focus authority is not configured")?;
+        let pids = self
+            .backend
+            .window_pids(launch_id)
+            .map_err(|error| error.message)?;
+        let tree = compositor.tree()?;
+        let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
+        focused_ownership(&tree, &pids, &excluded)
+    }
+
+    fn recovered_running_state(&self, launch_id: String, game_id: Option<String>) -> ActiveState {
+        let ownership = self.current_focus_ownership(&launch_id);
+        let mut recovered_intent = self
+            .recovered_overlay_intent
+            .lock()
+            .expect("recovered overlay intent mutex poisoned");
+        match ownership {
+            Ok(FocusOwnership::Launch) => {
+                recovered_intent.take();
+                ActiveState::Running { launch_id, game_id }
+            }
+            // Only an excluded Korri surface proves a restart interrupted an
+            // overlay handoff. Reconstruct that exact intent in memory.
+            Ok(FocusOwnership::Excluded) => {
+                *recovered_intent = Some(launch_id.clone());
+                ActiveState::FocusFailed { launch_id, game_id }
+            }
+            // Ambiguous, missing, unreadable, or unrelated focus still fails
+            // closed to Portal but cannot manufacture an overlay intent.
+            Ok(FocusOwnership::Other) | Err(_) => {
+                recovered_intent.take();
+                ActiveState::FocusFailed { launch_id, game_id }
+            }
+        }
+    }
+
+    pub(crate) fn status_with_recovered_overlay_intent(
+        &self,
+    ) -> (HostSessionStatus, Option<String>) {
+        let status = self.status();
+        let expected = match &status {
+            HostSessionStatus::FocusFailed { launch_id, .. } => Some(launch_id.as_str()),
+            _ => None,
         };
+        let mut recovered_intent = self
+            .recovered_overlay_intent
+            .lock()
+            .expect("recovered overlay intent mutex poisoned");
+        let Some(expected) = expected else {
+            recovered_intent.take();
+            return (status, None);
+        };
+        if recovered_intent.as_deref() != Some(expected) {
+            return (status, None);
+        }
+        let recovered = matches!(
+            self.current_focus_ownership(expected),
+            Ok(FocusOwnership::Excluded)
+        )
+        .then(|| expected.to_owned());
+        recovered_intent.take();
+        (status, recovered)
+    }
+
+    /// Raise the window of the exact launch that was just resumed. A missing
+    /// compositor is distinct from a successful focus and fails closed.
+    fn focus_launch(&self, launch_id: &str) -> Option<FocusOutcome> {
+        let compositor = self.compositor.as_ref()?;
         let pids = match self.backend.window_pids(launch_id) {
             Ok(pids) => pids,
-            Err(error) => return FocusOutcome::Failed(error.message),
+            Err(error) => return Some(FocusOutcome::Failed(error.message)),
         };
         let excluded: Vec<&str> = self.never_focus.iter().map(String::as_str).collect();
-        focus_launch_window(compositor.as_ref(), &pids, &excluded)
+        Some(focus_launch_window(compositor.as_ref(), &pids, &excluded))
+    }
+
+    fn focus_failure(outcome: Option<FocusOutcome>) -> Option<String> {
+        match outcome {
+            None => Some("compositor focus authority is not configured".into()),
+            Some(FocusOutcome::Focused(_)) => None,
+            Some(FocusOutcome::NothingToFocus) => {
+                Some("no unique exact-launch window could be focused".into())
+            }
+            Some(FocusOutcome::Failed(message)) => Some(message),
+        }
     }
 
     pub(crate) fn play_log(&self) -> &PlayLogStore {
         &self.play_log
+    }
+
+    pub(crate) fn active_runner_id(
+        &self,
+        expected_launch_id: &str,
+    ) -> Result<Option<String>, String> {
+        let mut state = self.state.lock().expect("host session mutex poisoned");
+        self.refresh_recovery(&mut state);
+        let active_launch_id = match &*state {
+            ActiveState::Running { launch_id, .. }
+            | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. } => launch_id,
+            _ => return Ok(None),
+        };
+        if active_launch_id != expected_launch_id {
+            return Ok(None);
+        }
+        let record = read_active(&self.identity_root)?;
+        if !record.is_some_and(|record| record.launch_id() == expected_launch_id) {
+            return Ok(None);
+        }
+        self.backend
+            .runner_id(expected_launch_id)
+            .map_err(|error| error.message)
     }
 
     /// Moves a proven completion through a durable two-phase journal.
@@ -238,6 +364,7 @@ impl HostSessionControl {
                 game_id,
                 person_public_key: Some(person),
                 started_at,
+                ..
             } => {
                 let key = PlayHistoryKey {
                     user_id: person.clone(),
@@ -309,6 +436,31 @@ impl HostSessionControl {
         }
     }
 
+    fn record_focus_failure(
+        &self,
+        state: &mut ActiveState,
+        launch_id: String,
+        game_id: Option<String>,
+    ) -> Result<(), ()> {
+        // The game keeps running after a compositor refusal. Revoke only the
+        // launch-scoped streamed input seat; never use the unit freezer as an
+        // input-ownership mechanism.
+        if self.stop_seats(&launch_id).is_err() {
+            *state = ActiveState::RecoveryBlocked;
+            return Err(());
+        }
+        *state = ActiveState::FocusFailed { launch_id, game_id };
+        Ok(())
+    }
+
+    fn seats_are_live_for(&self, launch_id: &str) -> bool {
+        self.seat_lease
+            .lock()
+            .expect("input-seat mutex poisoned")
+            .as_ref()
+            .is_some_and(|(active, lease)| active == launch_id && lease.alive())
+    }
+
     fn stop_game_after_seat_failure(&self, state: &mut ActiveState, launch_id: &str) {
         let _ = self.stop_seats(launch_id);
         if self.backend.stop(launch_id).is_err()
@@ -372,15 +524,17 @@ impl HostSessionControl {
             configured_command,
             environment,
             true,
+            None,
         )
     }
 
-    /// An explicit route must start fresh: a recovered session has no runtime
-    /// identity with which to prove it matches the requested route. Check under
-    /// the same lock as launch, rather than a racy status preflight.
-    pub fn prepare_fresh(
+    /// An explicit route must start fresh. Its runner identity is attached to
+    /// the live transient unit for runtime discovery; the durable session
+    /// journal keeps its established schema.
+    pub fn prepare_fresh_route(
         &self,
         game_id: &str,
+        runner_id: &str,
         person_public_key: Option<&str>,
         configured_command: &[String],
         environment: &BTreeMap<String, String>,
@@ -391,6 +545,7 @@ impl HostSessionControl {
             Ok(configured_command),
             environment,
             false,
+            Some(runner_id),
         )
     }
 
@@ -401,6 +556,7 @@ impl HostSessionControl {
         configured_command: Result<&[String], RpcFailure>,
         environment: &BTreeMap<String, String>,
         resume_same_game: bool,
+        runner_id: Option<&str>,
     ) -> Result<SessionPrepared, RpcFailure> {
         let mut state = self.state.lock().expect("host session mutex poisoned");
         self.refresh_recovery(&mut state);
@@ -424,6 +580,7 @@ impl HostSessionControl {
             }
             ActiveState::Running { .. }
             | ActiveState::Frozen { .. }
+            | ActiveState::FocusFailed { .. }
             | ActiveState::Stopping { .. } => {
                 return Err(failure(
                     "ActiveSessionConflict",
@@ -459,16 +616,13 @@ impl HostSessionControl {
         }
 
         let launch_id = crate::generate_launch_id();
-        persist_active(
-            &self.identity_root,
-            &ActiveSession::running(
-                launch_id.clone(),
-                game_id.into(),
-                person_public_key.map(str::to_owned),
-                self.clock.now_epoch_seconds(),
-            ),
-        )
-        .map_err(|message| {
+        let active = ActiveSession::running(
+            launch_id.clone(),
+            game_id.into(),
+            person_public_key.map(str::to_owned),
+            self.clock.now_epoch_seconds(),
+        );
+        persist_active(&self.identity_root, &active).map_err(|message| {
             *state = ActiveState::RecoveryBlocked;
             failure("HostRecoveryBlocked", message)
         })?;
@@ -481,9 +635,13 @@ impl HostSessionControl {
                 return Err(failure("InputSeatUnavailable", message));
             }
         };
+        let mut launch_environment = environment.clone();
+        if let Some(runner_id) = runner_id {
+            launch_environment.insert(RUNNER_ID_ENV.into(), runner_id.into());
+        }
         if let Err(error) = self
             .backend
-            .launch(&launch_id, configured_command, environment)
+            .launch(&launch_id, configured_command, &launch_environment)
         {
             let _ = seat_lease.stop(&launch_id);
             match self.backend.live_launch_ids() {
@@ -549,6 +707,7 @@ impl HostSessionControl {
         let tracked = match &*state {
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. }
             | ActiveState::Stopping { launch_id, .. } => Some(launch_id.clone()),
             ActiveState::Completed { .. }
             | ActiveState::NoActive
@@ -562,7 +721,13 @@ impl HostSessionControl {
                     | LaunchUnitState::Frozen
                     | LaunchUnitState::FreezerTransition),
                 ) => {
-                    if self.ensure_seats(&launch_id).is_err() {
+                    if matches!(&*state, ActiveState::FocusFailed { .. })
+                        && observed == LaunchUnitState::Running
+                    {
+                        // Preserve the compositor failure and keep the streamed
+                        // seat revoked. Status observation never freezes or thaws
+                        // a focus-failed game.
+                    } else if self.ensure_seats(&launch_id).is_err() {
                         self.stop_game_after_seat_failure(&mut state, &launch_id);
                     } else if !matches!(&*state, ActiveState::Stopping { .. }) {
                         // An in-flight exact stop owns the Stopping state;
@@ -608,10 +773,213 @@ impl HostSessionControl {
         self.set_freezer(expected_launch_id, FreezerTarget::Running)
     }
 
+    pub(crate) fn invoke_running_effect<F>(
+        &self,
+        expected_launch_id: &str,
+        focus_after: bool,
+        wait_for_completion: bool,
+        effect: F,
+    ) -> Result<(), HostSessionEffectFailure>
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        let mut state = self.state.lock().expect("host session mutex poisoned");
+        self.refresh_recovery(&mut state);
+        let (launch_id, game_id, recorded_frozen, portal_owned) = match &*state {
+            ActiveState::Running { launch_id, game_id } if launch_id == expected_launch_id => {
+                (launch_id.clone(), game_id.clone(), false, false)
+            }
+            ActiveState::Frozen { launch_id, game_id } if launch_id == expected_launch_id => {
+                (launch_id.clone(), game_id.clone(), true, false)
+            }
+            ActiveState::FocusFailed { launch_id, game_id } if launch_id == expected_launch_id => {
+                (launch_id.clone(), game_id.clone(), false, true)
+            }
+            ActiveState::Running { .. }
+            | ActiveState::Frozen { .. }
+            | ActiveState::FocusFailed { .. } => {
+                return Err(HostSessionEffectFailure::StaleIdentity)
+            }
+            ActiveState::Stopping { launch_id, .. } if launch_id == expected_launch_id => {
+                return Err(HostSessionEffectFailure::Stopping)
+            }
+            ActiveState::Stopping { .. } => return Err(HostSessionEffectFailure::StaleIdentity),
+            ActiveState::Completed { .. } | ActiveState::NoActive => {
+                return Err(HostSessionEffectFailure::NoActive)
+            }
+            ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
+                return Err(HostSessionEffectFailure::RecoveryBlocked)
+            }
+        };
+        let observed = self
+            .backend
+            .state(&launch_id)
+            .map_err(|_| HostSessionEffectFailure::RecoveryBlocked)?;
+        let observed_frozen = matches!(
+            observed,
+            LaunchUnitState::Frozen | LaunchUnitState::FreezerTransition
+        );
+        match observed {
+            LaunchUnitState::Running
+            | LaunchUnitState::Frozen
+            | LaunchUnitState::FreezerTransition => {}
+            LaunchUnitState::Stopping => {
+                *state = ActiveState::Stopping { launch_id, game_id };
+                return Err(HostSessionEffectFailure::Stopping);
+            }
+            LaunchUnitState::Completed => {
+                let _ = self.stop_seats(&launch_id);
+                let _ = self.complete_active();
+                *state = ActiveState::Completed { launch_id };
+                return Err(HostSessionEffectFailure::NoActive);
+            }
+        }
+        let restore_frozen = recorded_frozen || observed_frozen;
+        if observed_frozen {
+            self.backend
+                .thaw(&launch_id)
+                .map_err(|error| HostSessionEffectFailure::Unavailable(error.message))?;
+        }
+        *state = ActiveState::Running {
+            launch_id: launch_id.clone(),
+            game_id: game_id.clone(),
+        };
+        let seats_were_live = self.seats_are_live_for(&launch_id);
+        if let Err(message) = self.ensure_seats(&launch_id) {
+            if portal_owned {
+                let _ = self.stop_seats(&launch_id);
+                *state = ActiveState::FocusFailed { launch_id, game_id };
+            } else if restore_frozen && self.backend.freeze(&launch_id).is_ok() {
+                *state = ActiveState::Frozen { launch_id, game_id };
+            }
+            return Err(HostSessionEffectFailure::Unavailable(message));
+        }
+        if let Err(message) = effect() {
+            if !seats_were_live || portal_owned {
+                let _ = self.stop_seats(&launch_id);
+            }
+            if portal_owned {
+                *state = ActiveState::FocusFailed { launch_id, game_id };
+            } else if restore_frozen {
+                if self.backend.freeze(&launch_id).is_err() {
+                    *state = ActiveState::RecoveryBlocked;
+                    return Err(HostSessionEffectFailure::RecoveryBlocked);
+                }
+                *state = ActiveState::Frozen { launch_id, game_id };
+            }
+            return Err(HostSessionEffectFailure::Unavailable(message));
+        }
+        if wait_for_completion {
+            return self.wait_for_effect_completion(
+                &mut state,
+                launch_id,
+                game_id,
+                restore_frozen,
+                portal_owned,
+                seats_were_live,
+            );
+        }
+        if restore_frozen {
+            if self.backend.freeze(&launch_id).is_err() {
+                *state = ActiveState::RecoveryBlocked;
+                return Err(HostSessionEffectFailure::RecoveryBlocked);
+            }
+            *state = ActiveState::Frozen { launch_id, game_id };
+            return Ok(());
+        }
+        if focus_after {
+            if let Some(message) = Self::focus_failure(self.focus_launch(&launch_id)) {
+                if self
+                    .record_focus_failure(&mut state, launch_id, game_id)
+                    .is_err()
+                {
+                    return Err(HostSessionEffectFailure::RecoveryBlocked);
+                }
+                return Err(HostSessionEffectFailure::FocusFailed(message));
+            }
+        }
+        Ok(())
+    }
+
+    fn wait_for_effect_completion(
+        &self,
+        state: &mut ActiveState,
+        launch_id: String,
+        game_id: Option<String>,
+        restore_frozen: bool,
+        portal_owned: bool,
+        seats_were_live: bool,
+    ) -> Result<(), HostSessionEffectFailure> {
+        const ATTEMPTS: usize = 40;
+        const INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+
+        for attempt in 0..ATTEMPTS {
+            match self.backend.state(&launch_id) {
+                Ok(LaunchUnitState::Completed) => {
+                    if self.stop_seats(&launch_id).is_err() || self.complete_active().is_err() {
+                        *state = ActiveState::RecoveryBlocked;
+                        return Err(HostSessionEffectFailure::RecoveryBlocked);
+                    }
+                    *state = ActiveState::Completed { launch_id };
+                    return Ok(());
+                }
+                Ok(LaunchUnitState::Stopping) => {
+                    if self.stop_seats(&launch_id).is_err() {
+                        *state = ActiveState::RecoveryBlocked;
+                        return Err(HostSessionEffectFailure::RecoveryBlocked);
+                    }
+                    *state = ActiveState::Stopping {
+                        launch_id: launch_id.clone(),
+                        game_id: game_id.clone(),
+                    };
+                }
+                Ok(
+                    LaunchUnitState::Running
+                    | LaunchUnitState::Frozen
+                    | LaunchUnitState::FreezerTransition,
+                ) => {}
+                Err(_) => {
+                    *state = ActiveState::RecoveryBlocked;
+                    return Err(HostSessionEffectFailure::RecoveryBlocked);
+                }
+            }
+            if attempt + 1 < ATTEMPTS {
+                std::thread::sleep(INTERVAL);
+            }
+        }
+
+        if matches!(&*state, ActiveState::Stopping { .. }) {
+            return Err(HostSessionEffectFailure::Unavailable(
+                "The game did not finish stopping.".into(),
+            ));
+        }
+        if portal_owned {
+            if self.stop_seats(&launch_id).is_err() {
+                *state = ActiveState::RecoveryBlocked;
+                return Err(HostSessionEffectFailure::RecoveryBlocked);
+            }
+            *state = ActiveState::FocusFailed { launch_id, game_id };
+        } else if restore_frozen {
+            if self.backend.freeze(&launch_id).is_err()
+                || (!seats_were_live && self.stop_seats(&launch_id).is_err())
+            {
+                *state = ActiveState::RecoveryBlocked;
+                return Err(HostSessionEffectFailure::RecoveryBlocked);
+            }
+            *state = ActiveState::Frozen { launch_id, game_id };
+        } else {
+            *state = ActiveState::Running { launch_id, game_id };
+        }
+        Err(HostSessionEffectFailure::Unavailable(
+            "RetroArch did not complete the quit request.".into(),
+        ))
+    }
+
     /// Moves the exact active launch to the requested freezer state. The
     /// session mutex is held across the helper call so an exact stop cannot
-    /// interleave with a freezer change. Input-seat leases are kept alive
-    /// while frozen so a thaw resumes the same seats.
+    /// interleave with a freezer change. Ordinary freezes keep input-seat
+    /// leases alive. A focus failure leaves the unit running and revokes only
+    /// its streamed input-seat lease.
     fn set_freezer(
         &self,
         expected_launch_id: &str,
@@ -622,12 +990,14 @@ impl HostSessionControl {
         let (launch_id, game_id) = match &*state {
             ActiveState::Running { launch_id, game_id }
             | ActiveState::Frozen { launch_id, game_id }
+            | ActiveState::FocusFailed { launch_id, game_id }
                 if launch_id == expected_launch_id =>
             {
                 (launch_id.clone(), game_id.clone())
             }
             ActiveState::Running { launch_id, .. }
             | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. }
             | ActiveState::Stopping { launch_id, .. }
                 if launch_id != expected_launch_id =>
             {
@@ -646,7 +1016,9 @@ impl HostSessionControl {
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
                 return HostSessionFreezeChange::RecoveryBlocked;
             }
-            ActiveState::Running { .. } | ActiveState::Frozen { .. } => unreachable!(),
+            ActiveState::Running { .. }
+            | ActiveState::Frozen { .. }
+            | ActiveState::FocusFailed { .. } => unreachable!(),
         };
 
         // Query the unit so a change made outside korrid is observed first.
@@ -731,18 +1103,35 @@ impl HostSessionControl {
         *state = match target {
             FreezerTarget::Frozen => ActiveState::Frozen {
                 launch_id: launch_id.clone(),
-                game_id,
+                game_id: game_id.clone(),
             },
             FreezerTarget::Running => ActiveState::Running {
                 launch_id: launch_id.clone(),
-                game_id,
+                game_id: game_id.clone(),
             },
         };
-        // Returning to a game means the player can see it again, so a resume
-        // raises its window. A game that has not mapped a window yet is normal;
-        // only a compositor that answered and then refused is a real failure.
+        // Returning to a game restores the exact launch's streamed input-seat
+        // lease before the game can take focus.
         if target == FreezerTarget::Running {
-            if let FocusOutcome::Failed(message) = self.focus_launch(&launch_id) {
+            if let Err(message) = self.ensure_seats(&launch_id) {
+                if self
+                    .record_focus_failure(&mut state, launch_id.clone(), game_id.clone())
+                    .is_err()
+                {
+                    return HostSessionFreezeChange::RecoveryBlocked;
+                }
+                return HostSessionFreezeChange::FocusFailed {
+                    launch_id,
+                    message: format!("input seats could not return to the game: {message}"),
+                };
+            }
+            if let Some(message) = Self::focus_failure(self.focus_launch(&launch_id)) {
+                if self
+                    .record_focus_failure(&mut state, launch_id.clone(), game_id)
+                    .is_err()
+                {
+                    return HostSessionFreezeChange::RecoveryBlocked;
+                }
                 return HostSessionFreezeChange::FocusFailed { launch_id, message };
             }
         }
@@ -760,6 +1149,7 @@ impl HostSessionControl {
             match &*state {
                 ActiveState::Running { launch_id, game_id }
                 | ActiveState::Frozen { launch_id, game_id }
+                | ActiveState::FocusFailed { launch_id, game_id }
                     if launch_id == expected_launch_id =>
                 {
                     let launch_id = launch_id.clone();
@@ -769,7 +1159,9 @@ impl HostSessionControl {
                     };
                     launch_id
                 }
-                ActiveState::Running { launch_id, .. } | ActiveState::Frozen { launch_id, .. } => {
+                ActiveState::Running { launch_id, .. }
+                | ActiveState::Frozen { launch_id, .. }
+                | ActiveState::FocusFailed { launch_id, .. } => {
                     return HostSessionStop::StaleIdentity {
                         active_launch_id: Some(launch_id.clone()),
                     };
@@ -860,6 +1252,7 @@ fn tracked_game_id(state: &ActiveState) -> Option<String> {
     match state {
         ActiveState::Running { game_id, .. }
         | ActiveState::Frozen { game_id, .. }
+        | ActiveState::FocusFailed { game_id, .. }
         | ActiveState::Stopping { game_id, .. } => game_id.clone(),
         _ => None,
     }
@@ -872,6 +1265,10 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
             game_id: game_id.clone(),
         },
         ActiveState::Frozen { launch_id, game_id } => HostSessionStatus::Frozen {
+            launch_id: launch_id.clone(),
+            game_id: game_id.clone(),
+        },
+        ActiveState::FocusFailed { launch_id, game_id } => HostSessionStatus::FocusFailed {
             launch_id: launch_id.clone(),
             game_id: game_id.clone(),
         },
@@ -934,10 +1331,12 @@ impl HostSessionControl {
                     && live.first().map(String::as_str) == Some(record.launch_id()) =>
             {
                 match backend.state(record.launch_id()) {
+                    Ok(LaunchUnitState::Running) => self.recovered_running_state(
+                        record.launch_id().to_owned(),
+                        Some(record.game_id().to_owned()),
+                    ),
                     Ok(
-                        observed @ (LaunchUnitState::Running
-                        | LaunchUnitState::Frozen
-                        | LaunchUnitState::FreezerTransition),
+                        observed @ (LaunchUnitState::Frozen | LaunchUnitState::FreezerTransition),
                     ) => active_from_observed(
                         observed,
                         record.launch_id().to_owned(),
@@ -1018,6 +1417,7 @@ mod tests {
         freezer_fails: bool,
         window_pids: BTreeMap<String, BTreeSet<i32>>,
         window_pids_fail: bool,
+        runners: BTreeMap<String, String>,
     }
 
     #[derive(Default)]
@@ -1066,7 +1466,7 @@ mod tests {
             &self,
             launch_id: &str,
             _command: &[String],
-            _environment: &BTreeMap<String, String>,
+            environment: &BTreeMap<String, String>,
         ) -> Result<(), LaunchUnitError> {
             if self.state.lock().unwrap().launch_rejected {
                 return Err(LaunchUnitError::new(
@@ -1075,6 +1475,13 @@ mod tests {
                 ));
             }
             self.insert(launch_id, LaunchUnitState::Running);
+            if let Some(runner_id) = environment.get(RUNNER_ID_ENV) {
+                self.state
+                    .lock()
+                    .unwrap()
+                    .runners
+                    .insert(launch_id.into(), runner_id.clone());
+            }
             if self.state.lock().unwrap().launch_error_after_start {
                 Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::Failed,
@@ -1200,6 +1607,10 @@ mod tests {
             }
         }
 
+        fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
+            Ok(self.state.lock().unwrap().runners.get(launch_id).cloned())
+        }
+
         fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
             let state = self.state.lock().unwrap();
             if state.enumeration_unavailable {
@@ -1313,7 +1724,7 @@ mod tests {
     }
 
     #[test]
-    fn restart_reattaches_only_one_exact_persisted_and_live_unit() {
+    fn restart_without_compositor_authority_reattaches_fail_closed_to_portal() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let first = control(root.path(), backend.clone());
@@ -1321,13 +1732,15 @@ mod tests {
         drop(first);
 
         let recovered = control(root.path(), backend);
+        let (status, overlay_intent) = recovered.status_with_recovered_overlay_intent();
         assert_eq!(
-            recovered.status(),
-            HostSessionStatus::Running {
+            status,
+            HostSessionStatus::FocusFailed {
                 launch_id: prepared.launch_id,
                 game_id: Some("one".into()),
             }
         );
+        assert_eq!(overlay_intent, None);
         assert_eq!(
             recovered
                 .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
@@ -1401,7 +1814,7 @@ mod tests {
         );
         assert!(matches!(
             control.status(),
-            HostSessionStatus::Running { .. }
+            HostSessionStatus::FocusFailed { .. }
         ));
         assert!(backend.state.lock().unwrap().stopped.is_empty());
         assert_eq!(
@@ -1894,6 +2307,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn systemd_runner_identity_query_reads_live_unit_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let log = root.path().join("calls.log");
+        fs::write(
+            &helper,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nprintf 'Environment=KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba\\n'\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let backend = SystemdLaunchUnitBackend::with_timeout(
+            helper.clone(),
+            helper,
+            1000,
+            1000,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+
+        assert_eq!(
+            backend.runner_id(id).unwrap(),
+            Some("@korri:mgba/mgba".into())
+        );
+        assert_eq!(
+            fs::read_to_string(log).unwrap(),
+            format!(
+                "--system --no-ask-password show korri-game-{id}.service --property=Environment\n"
+            )
+        );
+    }
+
     /// The production reader must name windows from the kernel's own view of
     /// the exact unit, and must not treat a finished unit as a failure.
     #[test]
@@ -1929,7 +2378,7 @@ mod tests {
     struct RecordingCompositor {
         tree: Mutex<String>,
         focused: Mutex<Vec<i64>>,
-        focus_fails: bool,
+        focus_fails: AtomicBool,
     }
 
     impl CompositorControl for RecordingCompositor {
@@ -1939,7 +2388,7 @@ mod tests {
 
         fn focus(&self, node_id: i64) -> Result<(), String> {
             self.focused.lock().unwrap().push(node_id);
-            if self.focus_fails {
+            if self.focus_fails.load(Ordering::SeqCst) {
                 return Err("compositor refused focus".into());
             }
             Ok(())
@@ -1949,13 +2398,19 @@ mod tests {
     const PORTAL_APP_ID: &str = "chromium-browser";
 
     fn compositor_tree(game_pid: i32) -> String {
+        compositor_tree_with_focus(game_pid, 3)
+    }
+
+    fn compositor_tree_with_focus(game_pid: i32, focused_id: i64) -> String {
         format!(
             r#"{{"id": 1, "nodes": [
                  {{"id": 2, "pid": 4100, "app_id": "{PORTAL_APP_ID}",
-                  "nodes": [], "floating_nodes": []}},
+                  "focused": {}, "nodes": [], "floating_nodes": []}},
                  {{"id": 3, "pid": {game_pid}, "app_id": null,
-                  "nodes": [], "floating_nodes": []}}
-               ], "floating_nodes": []}}"#
+                  "focused": {}, "nodes": [], "floating_nodes": []}}
+               ], "floating_nodes": []}}"#,
+            focused_id == 2,
+            focused_id == 3,
         )
     }
 
@@ -1966,6 +2421,73 @@ mod tests {
     ) -> HostSessionControl {
         HostSessionControl::new(root, backend)
             .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()])
+    }
+
+    #[test]
+    fn restart_recovers_portal_ownership_when_the_live_game_is_behind_korri() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+        drop(control);
+
+        let recovered = resuming_control(root.path(), backend, compositor);
+        let (status, overlay_intent) = recovered.status_with_recovered_overlay_intent();
+        assert_eq!(
+            status,
+            HostSessionStatus::FocusFailed {
+                launch_id: id.clone(),
+                game_id: Some("one".into()),
+            }
+        );
+        assert_eq!(overlay_intent.as_deref(), Some(id.as_str()));
+        assert_eq!(
+            recovered.status_with_recovered_overlay_intent().1,
+            None,
+            "startup overlay intent is consumed once into server memory"
+        );
+    }
+
+    #[test]
+    fn restart_with_game_focus_recovers_running_without_overlay_intent() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 3);
+        drop(control);
+
+        let recovered = resuming_control(root.path(), backend, compositor);
+        let (status, overlay_intent) = recovered.status_with_recovered_overlay_intent();
+        assert!(matches!(status, HostSessionStatus::Running { .. }));
+        assert_eq!(overlay_intent, None);
+    }
+
+    #[test]
+    fn restart_with_ambiguous_launch_windows_never_recovers_overlay_intent() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = r#"{"id":1,"nodes":[
+            {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+            {"id":3,"pid":9100,"focused":false},
+            {"id":4,"pid":9100,"focused":false}
+        ]}"#
+            .into();
+        drop(control);
+
+        let recovered = resuming_control(root.path(), backend, compositor);
+        let (status, overlay_intent) = recovered.status_with_recovered_overlay_intent();
+        assert!(matches!(status, HostSessionStatus::FocusFailed { .. }));
+        assert_eq!(overlay_intent, None);
     }
 
     #[test]
@@ -1995,7 +2517,7 @@ mod tests {
     }
 
     #[test]
-    fn resuming_never_raises_the_portal_window_and_still_reports_the_session() {
+    fn resuming_without_one_exact_game_window_fails_closed_to_portal() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
@@ -2013,11 +2535,51 @@ mod tests {
         );
         assert_eq!(
             control.thaw(&id),
-            HostSessionFreezeChange::Changed {
-                launch_id: id.clone()
+            HostSessionFreezeChange::FocusFailed {
+                launch_id: id.clone(),
+                message: "no unique exact-launch window could be focused".into(),
             }
         );
         assert!(compositor.focused.lock().unwrap().is_empty());
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id,
+                game_id: Some("one".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn resuming_with_ambiguous_exact_game_windows_fails_closed_to_portal() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = r#"{"id":1,"nodes":[
+                {"id":3,"pid":9100,"nodes":[],"floating_nodes":[]},
+                {"id":4,"pid":9100,"nodes":[],"floating_nodes":[]}
+            ],"floating_nodes":[]}"#
+            .into();
+        control.freeze(&id);
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed {
+                launch_id: id.clone(),
+                message: "no unique exact-launch window could be focused".into(),
+            }
+        );
+        assert!(compositor.focused.lock().unwrap().is_empty());
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id,
+                game_id: Some("one".into()),
+            }
+        );
     }
 
     #[test]
@@ -2025,10 +2587,17 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor {
-            focus_fails: true,
+            focus_fails: AtomicBool::new(true),
             ..RecordingCompositor::default()
         });
-        let control = resuming_control(root.path(), backend.clone(), compositor.clone());
+        let alive = Arc::new(AtomicBool::new(false));
+        let manager = Arc::new(TestSeatManager {
+            starts: AtomicUsize::new(0),
+            alive: alive.clone(),
+        });
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -2041,12 +2610,42 @@ mod tests {
                 message: "compositor refused focus".into()
             }
         );
-        // The unit itself is running again, so the session stays exact.
+        // Focus refusal never pauses the game. The streamed seat is revoked,
+        // and repeated status reads do not continuously enforce freezer state.
         assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id.clone(),
+                game_id: Some("one".into()),
+            }
+        );
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id.clone(),
+                game_id: Some("one".into()),
+            }
+        );
+        assert_eq!(backend.state.lock().unwrap().frozen, vec![id.clone()]);
+        assert!(!alive.load(Ordering::SeqCst));
+        assert!(!control.seats_are_live_for(&id));
+
+        // A successful exact return reacquires only this launch's route.
+        compositor.focus_fails.store(false, Ordering::SeqCst);
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Unchanged {
+                launch_id: id.clone()
+            }
+        );
+        assert!(alive.load(Ordering::SeqCst));
+        assert!(control.seats_are_live_for(&id));
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 2);
     }
 
     #[test]
-    fn an_unreadable_control_group_does_not_silently_resume_without_the_game() {
+    fn an_unreadable_control_group_reports_focus_failure_without_refreezing() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
@@ -2058,6 +2657,14 @@ mod tests {
         assert!(matches!(
             control.thaw(&id),
             HostSessionFreezeChange::FocusFailed { .. }
+        ));
+        // This control uses DisabledInputSeats, the production local-game
+        // shape. A compositor failure must still leave the game running.
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        assert_eq!(backend.state.lock().unwrap().frozen, vec![id.clone()]);
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::FocusFailed { launch_id, .. } if launch_id == id
         ));
     }
 
@@ -2077,18 +2684,26 @@ mod tests {
     }
 
     #[test]
-    fn a_host_without_a_compositor_still_resumes_the_game() {
+    fn a_host_without_compositor_authority_fails_return_closed_to_portal() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let control = HostSessionControl::new(root.path(), backend.clone());
         let id = prepare(&control, "one").launch_id;
-        backend.set_pids(&id, &[9100]);
         control.freeze(&id);
 
         assert_eq!(
             control.thaw(&id),
-            HostSessionFreezeChange::Changed {
-                launch_id: id.clone()
+            HostSessionFreezeChange::FocusFailed {
+                launch_id: id.clone(),
+                message: "compositor focus authority is not configured".into(),
+            }
+        );
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id,
+                game_id: Some("one".into()),
             }
         );
     }
@@ -2102,10 +2717,14 @@ mod tests {
             starts: AtomicUsize::new(0),
             alive: alive.clone(),
         });
+        let compositor = Arc::new(RecordingCompositor::default());
         let control =
-            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
         let prepared = prepare(&control, "one");
         let id = prepared.launch_id.clone();
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
         assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
 
         assert_eq!(
@@ -2387,9 +3006,12 @@ mod tests {
     fn transitional_freezer_state_always_issues_the_verb() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
-        let session = control(root.path(), backend.clone());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let session = resuming_control(root.path(), backend.clone(), compositor.clone());
         let prepared = prepare(&session, "one");
         let id = prepared.launch_id.clone();
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
 
         // systemd reports `thawing` at the moment of a freeze request. The
         // settled state is unknown, so korrid must not report Unchanged.
@@ -2469,6 +3091,9 @@ mod tests {
             fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
                 self.0.live_launch_ids()
             }
+            fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+                self.0.window_pids(launch_id)
+            }
         }
 
         let root = tempfile::tempdir().unwrap();
@@ -2478,8 +3103,10 @@ mod tests {
             starts: AtomicUsize::new(0),
             alive: alive.clone(),
         });
+        let compositor = Arc::new(RecordingCompositor::default());
         let session =
-            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
 
         // An operator froze the slice before prepare observed the unit. The
         // launch is real: it is recorded as frozen, seats are kept, and
@@ -2487,6 +3114,8 @@ mod tests {
         let prepared = session
             .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
             .unwrap();
+        backend.0.set_pids(&prepared.launch_id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
         assert_eq!(
             session.status(),
             HostSessionStatus::Frozen {
@@ -2798,12 +3427,16 @@ mod tests {
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Running);
+        backend.set_pids(id, &[9100]);
         let alive = Arc::new(AtomicBool::new(true));
         let manager = Arc::new(TestSeatManager {
             starts: AtomicUsize::new(0),
             alive: alive.clone(),
         });
-        let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone());
+        let compositor = Arc::new(RecordingCompositor::default());
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone())
+            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
         assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
         assert_eq!(
             control.status(),
@@ -2830,11 +3463,15 @@ mod tests {
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         persist_test_record(root.path(), id);
         backend.insert(id, LaunchUnitState::Running);
+        backend.set_pids(id, &[9100]);
+        let compositor = Arc::new(RecordingCompositor::default());
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
         let control = HostSessionControl::with_input_seats(
             root.path(),
             backend.clone(),
             Arc::new(FailingSeatManager),
-        );
+        )
+        .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
 
         assert_eq!(
             control.status(),

@@ -33,8 +33,7 @@ const controls: SessionControls = {
         {
           id: "mouse-mode",
           label: "Mouse mode",
-          enabled: false,
-          disabledReason: "A mouse is not connected.",
+          enabled: true,
           destructive: false,
           dismissOnSuccess: false,
           interaction: {
@@ -76,7 +75,9 @@ describe("gameplayOverlayPresentationFrom", () => {
     expect(presentation.kind).toBe("gameplay-overlay")
     expect(presentation.title).toBe("Skate 3")
     expect(presentation.controls.map(control => control.id)).toEqual([
-      "overlay:resume",
+      "overlay:return",
+      "overlay:end",
+      "overlay:open-korri",
     ])
     expect(presentation.groups.map(group => group.label)).toEqual(["Streaming"])
     expect(
@@ -120,8 +121,8 @@ describe("gameplayOverlayPresentationFrom", () => {
         id: "mouse-mode",
         label: "Mouse mode",
         description: undefined,
-        enabled: false,
-        disabledReason: "A mouse is not connected.",
+        enabled: true,
+        disabledReason: undefined,
         destructive: false,
         dismissOnSuccess: false,
         interaction: {
@@ -152,11 +153,24 @@ describe("gameplayOverlayPresentationFrom", () => {
     ])
   })
 
-  test("keeps an overlay with only Resume valid and omits empty plugin groups", () => {
+  test("keeps the three core controls available and removes empty or unsupported plugin groups", () => {
     const presentation = gameplayOverlayPresentationFrom({
       launchId: "launch-2",
       groups: [
         { id: "empty", label: "Empty plugin", controls: [] },
+        {
+          id: "unsupported",
+          label: "Unsupported plugin",
+          controls: [{
+            id: "not-live",
+            label: "Not live",
+            enabled: false,
+            disabledReason: "No executor is available.",
+            destructive: false,
+            dismissOnSuccess: false,
+            interaction: { kind: "command" },
+          }],
+        },
       ],
     })
 
@@ -164,8 +178,25 @@ describe("gameplayOverlayPresentationFrom", () => {
       kind: "gameplay-overlay",
       controls: [
         {
-          id: "overlay:resume",
-          label: "Resume",
+          id: "overlay:return",
+          label: "Return",
+          enabled: true,
+          destructive: false,
+          dismissOnSuccess: true,
+          interaction: { kind: "command" },
+        },
+        {
+          id: "overlay:end",
+          label: "End game",
+          description: "Unsaved progress will be lost.",
+          enabled: true,
+          destructive: true,
+          dismissOnSuccess: true,
+          interaction: { kind: "command" },
+        },
+        {
+          id: "overlay:open-korri",
+          label: "Open Korri",
           enabled: true,
           destructive: false,
           dismissOnSuccess: true,

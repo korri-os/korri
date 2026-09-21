@@ -4,6 +4,7 @@ import type {
   SurfaceGameplayOverlayPresentation,
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
+import { useState } from "react"
 import { useSurfaceAction, useSurfaceHost } from "../../host/surface-host"
 import { ShiftSheetAction } from "../molecules/ShiftSheetAction"
 import { ShiftSheetChoice } from "../molecules/ShiftSheetChoice"
@@ -21,7 +22,13 @@ export interface ShiftGameplayOverlaySheetProps {
   readonly status: SurfaceStatus
 }
 
-function GameplayControl({ control }: { readonly control: SurfaceGameplayControl }) {
+function GameplayControl({
+  control,
+  onConfirm,
+}: {
+  readonly control: SurfaceGameplayControl
+  readonly onConfirm: (control: SurfaceGameplayControl) => void
+}) {
   const host = useSurfaceHost()
   const invoke = (value?: SurfaceGameplayControlValue) =>
     host.invokeGameplayControl(control.id, value)
@@ -36,7 +43,10 @@ function GameplayControl({ control }: { readonly control: SurfaceGameplayControl
           disabled={!control.enabled}
           disabledReason={control.disabledReason}
           tone={control.destructive ? "danger" : "default"}
-          onSelect={() => invoke()}
+          onSelect={() => {
+            if (control.destructive) onConfirm(control)
+            else invoke()
+          }}
         />
       )
     case "toggle":
@@ -69,52 +79,83 @@ export function ShiftGameplayOverlaySheet({
   status,
 }: ShiftGameplayOverlaySheetProps) {
   const host = useSurfaceHost()
+  const [confirming, setConfirming] = useState<SurfaceGameplayControl | undefined>()
   const dismiss = () => host.dismissGameplayOverlay()
-  useSurfaceAction("system", dismiss)
-  useSurfaceAction("menu", dismiss)
+  const cancelConfirmation = () => setConfirming(undefined)
+  const close = confirming === undefined ? dismiss : cancelConfirmation
+  useSurfaceAction("system", close)
+  useSurfaceAction("menu", close)
 
   const title = presentation.title ?? "Gameplay"
+  const confirmingTitle = confirming?.label
   return (
     <ShiftSheetRoot
       open
-      onClose={dismiss}
-      label={`Gameplay controls for ${title}`}
+      onClose={close}
+      label={confirmingTitle === undefined
+        ? `Gameplay controls for ${title}`
+        : `Confirm ${confirmingTitle}`}
     >
       <ShiftSheetPanel>
-        <ShiftSheetHeader>
-          <ShiftSheetTitle>{title}</ShiftSheetTitle>
-        </ShiftSheetHeader>
-        <ShiftSheetBody>
-          <ShiftSheetGroup title="Gameplay">
-            {presentation.controls.map(control => (
-              <ShiftSheetAction
-                key={control.id}
-                label={control.label}
-                controlId={control.id}
-                description={control.description}
-                disabled={!control.enabled}
-                disabledReason={control.disabledReason}
-                tone={control.destructive ? "danger" : "default"}
-                onSelect={dismiss}
-              />
-            ))}
-          </ShiftSheetGroup>
-          {presentation.groups.map(group => (
-            <ShiftSheetGroup key={group.id} title={group.label}>
-              {group.controls.map(control => (
-                <GameplayControl key={control.id} control={control} />
+        {confirming === undefined ? (
+          <>
+            <ShiftSheetHeader>
+              <ShiftSheetTitle>{title}</ShiftSheetTitle>
+            </ShiftSheetHeader>
+            <ShiftSheetBody>
+              <ShiftSheetGroup title="Gameplay">
+                {presentation.controls.map(control => (
+                  <GameplayControl
+                    key={control.id}
+                    control={control}
+                    onConfirm={setConfirming}
+                  />
+                ))}
+              </ShiftSheetGroup>
+              {presentation.groups.map(group => (
+                <ShiftSheetGroup key={group.id} title={group.label}>
+                  {group.controls.map(control => (
+                    <GameplayControl
+                      key={control.id}
+                      control={control}
+                      onConfirm={setConfirming}
+                    />
+                  ))}
+                </ShiftSheetGroup>
               ))}
-            </ShiftSheetGroup>
-          ))}
-          {status._tag === "Problem" ? (
-            <ShiftSheetGroup title={status.kicker}>
-              <p className="shift-gameplay-overlay-problem">{status.reason}</p>
-              {status.canRetry ? (
-                <ShiftSheetAction label="Retry" onSelect={() => host.retry()} />
+              {status._tag === "Problem" ? (
+                <ShiftSheetGroup title={status.kicker}>
+                  <p className="shift-gameplay-overlay-problem">{status.reason}</p>
+                  {status.canRetry ? (
+                    <ShiftSheetAction label="Retry" onSelect={() => host.retry()} />
+                  ) : null}
+                </ShiftSheetGroup>
               ) : null}
-            </ShiftSheetGroup>
-          ) : null}
-        </ShiftSheetBody>
+            </ShiftSheetBody>
+          </>
+        ) : (
+          <>
+            <ShiftSheetHeader>
+              <ShiftSheetTitle>{confirming.label}?</ShiftSheetTitle>
+            </ShiftSheetHeader>
+            <ShiftSheetBody>
+              <ShiftSheetGroup title="Confirm">
+                <p className="shift-gameplay-overlay-problem">
+                  {confirming.description ?? "This cannot be undone."}
+                </p>
+                <ShiftSheetAction
+                  label={confirming.label}
+                  tone="danger"
+                  onSelect={() => {
+                    host.invokeGameplayControl(confirming.id)
+                    setConfirming(undefined)
+                  }}
+                />
+                <ShiftSheetAction label="Cancel" onSelect={cancelConfirmation} />
+              </ShiftSheetGroup>
+            </ShiftSheetBody>
+          </>
+        )}
       </ShiftSheetPanel>
     </ShiftSheetRoot>
   )

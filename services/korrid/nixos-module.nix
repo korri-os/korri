@@ -271,8 +271,9 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        Exact Sway control socket korrid uses to bring a resumed game back to
-        the front. Null leaves resume without compositor focus.
+        Exact Sway control socket korrid uses to prove a resumed game returned
+        to the front. Null makes portal Return and running-session restart
+        reconciliation fail closed to Portal ownership.
       '';
     };
     neverFocusAppIds = lib.mkOption {

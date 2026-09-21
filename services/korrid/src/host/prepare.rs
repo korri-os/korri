@@ -16,8 +16,9 @@ use std::{
 /// How long korrid waits for one compositor answer while resuming a game.
 const COMPOSITOR_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Read the compositor korrid may use to bring a resumed game forward. A host
-/// without both settings keeps working; it simply raises no window.
+/// Read the compositor authority korrid uses to prove an exact game returned
+/// to the front. A missing setting remains missing authority and Return fails
+/// closed in `HostSessionControl`.
 fn configured_compositor() -> Option<(Arc<dyn CompositorControl>, Vec<String>)> {
     let program = PathBuf::from(std::env::var_os("KORRID_SWAYMSG")?);
     let socket = PathBuf::from(std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?);
@@ -120,14 +121,16 @@ impl HostLauncher {
         )
     }
 
-    pub fn prepare_fresh_command(
+    pub fn prepare_fresh_route(
         &self,
         game_id: &str,
+        runner_id: &str,
         person_public_key: Option<&str>,
         configured_command: &[String],
     ) -> Result<SessionPrepared, RpcFailure> {
-        self.control.prepare_fresh(
+        self.control.prepare_fresh_route(
             game_id,
+            runner_id,
             person_public_key,
             configured_command,
             &self.environment,

@@ -841,7 +841,7 @@ command = ["neverball"]
     }
 
     #[tokio::test]
-    async fn native_client_freeze_and_thaw_require_exact_tags() {
+    async fn native_client_freeze_requires_exact_tags_and_thaw_needs_focus_authority() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(
@@ -858,9 +858,12 @@ command = ["neverball"]
         assert!(frozen.changed);
         let again = client.session_freeze(&prepared.launch_id).await.unwrap();
         assert!(!again.changed);
-        let thawed = client.session_thaw(&prepared.launch_id).await.unwrap();
-        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
-        assert!(thawed.changed);
+        assert!(matches!(
+            client.session_thaw(&prepared.launch_id).await,
+            Err(UpstreamError::Tagged { code, message })
+                if code == "HostFocusFailed"
+                    && message == "compositor focus authority is not configured"
+        ));
         assert!(matches!(
             client.session_freeze("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").await,
             Err(UpstreamError::Tagged { code, .. }) if code == "StaleLaunchIdentity"
@@ -888,6 +891,19 @@ command = ["neverball"]
         assert!(matches!(
             wrong.session_thaw(&prepared.launch_id).await,
             Err(UpstreamError::Wire(_))
+        ));
+
+        let replaced = NativeClient::new(
+            serve_response(
+                axum::http::StatusCode::OK,
+                r#"{"_tag":"app.session.thaw","outcome":{"_tag":"Err","payload":{"code":"SelectedRemoteSessionReplaced","message":"replacement"}}}"#,
+            )
+            .await,
+        );
+        assert!(matches!(
+            replaced.session_thaw(&prepared.launch_id).await,
+            Err(UpstreamError::Tagged { code, .. })
+                if code == "SelectedRemoteSessionReplaced"
         ));
     }
 

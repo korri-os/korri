@@ -124,6 +124,8 @@ struct TreeNode {
     #[serde(default)]
     window_properties: Option<WindowProperties>,
     #[serde(default)]
+    focused: bool,
+    #[serde(default)]
     nodes: Vec<TreeNode>,
     #[serde(default)]
     floating_nodes: Vec<TreeNode>,
@@ -140,6 +142,13 @@ struct WindowProperties {
 pub(crate) struct FocusCandidate {
     pub(crate) node_id: i64,
     pub(crate) pid: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusOwnership {
+    Launch,
+    Excluded,
+    Other,
 }
 
 /// What korrid may do with the compositor for one exact launch.
@@ -168,11 +177,19 @@ pub(crate) fn select_focus_target(
         Ok(root) => root,
         Err(error) => return FocusTarget::Unreadable(error.to_string()),
     };
+    select_focus_target_from_root(&root, launch_pids, excluded_ids)
+}
+
+fn select_focus_target_from_root(
+    root: &TreeNode,
+    launch_pids: &BTreeSet<i32>,
+    excluded_ids: &[&str],
+) -> FocusTarget {
     if launch_pids.is_empty() {
         return FocusTarget::NoWindow;
     }
     let mut candidates = Vec::new();
-    collect(&root, launch_pids, excluded_ids, &mut candidates);
+    collect(root, launch_pids, excluded_ids, &mut candidates);
     candidates.sort_by_key(|candidate| candidate.node_id);
     match candidates.len() {
         0 => FocusTarget::NoWindow,
@@ -202,6 +219,46 @@ fn collect(
     }
 }
 
+/// Classify restart ownership only after the same unique exact-launch window
+/// selection used by Return succeeds. Focus facts never loosen that rule.
+pub(crate) fn focused_ownership(
+    tree: &str,
+    launch_pids: &BTreeSet<i32>,
+    excluded_ids: &[&str],
+) -> Result<FocusOwnership, String> {
+    let root: TreeNode = serde_json::from_str(tree).map_err(|error| error.to_string())?;
+    let candidate = match select_focus_target_from_root(&root, launch_pids, excluded_ids) {
+        FocusTarget::Window(candidate) => candidate,
+        FocusTarget::NoWindow => return Err("exact launch has no compositor window".into()),
+        FocusTarget::Ambiguous(_) => {
+            return Err("exact launch has multiple compositor windows".into());
+        }
+        FocusTarget::Unreadable(error) => return Err(error),
+    };
+    let mut focused = Vec::new();
+    collect_focused(&root, &mut focused);
+    if focused.len() != 1 {
+        return Err("compositor tree does not identify one focused node".into());
+    }
+    let focused = focused[0];
+    if focused.id == candidate.node_id && focused.pid == Some(candidate.pid) {
+        Ok(FocusOwnership::Launch)
+    } else if is_excluded(focused, excluded_ids) {
+        Ok(FocusOwnership::Excluded)
+    } else {
+        Ok(FocusOwnership::Other)
+    }
+}
+
+fn collect_focused<'a>(node: &'a TreeNode, found: &mut Vec<&'a TreeNode>) {
+    if node.focused {
+        found.push(node);
+    }
+    for child in node.nodes.iter().chain(node.floating_nodes.iter()) {
+        collect_focused(child, found);
+    }
+}
+
 fn is_excluded(node: &TreeNode, excluded_ids: &[&str]) -> bool {
     let class = node
         .window_properties
@@ -216,14 +273,15 @@ fn is_excluded(node: &TreeNode, excluded_ids: &[&str]) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FocusOutcome {
     Focused(i64),
-    /// The launch owns no window, or korrid refused to choose one. Resuming a
-    /// game that has not mapped its window yet is normal, not a failure.
+    /// The launch owns no window, or several windows made the exact target
+    /// ambiguous. A configured compositor cannot prove game focus.
     NothingToFocus,
     /// The compositor was reachable but the focus attempt itself failed.
     Failed(String),
 }
 
-/// Bring the window of one exact launch to the front, or do nothing.
+/// Bring the unique window of one exact launch to the front, or report that
+/// no unique target could be proven.
 pub(crate) fn focus_launch_window(
     control: &dyn CompositorControl,
     launch_pids: &BTreeSet<i32>,
@@ -276,6 +334,52 @@ mod tests {
                 None => Ok(()),
             }
         }
+    }
+
+    #[test]
+    fn reads_exact_launch_and_excluded_portal_focus_from_the_tree() {
+        let launch = pids(&[9100]);
+        let game_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":false},{"id":3,"pid":9100,"focused":true}]}"#;
+        let portal_focused = r#"{"id":1,"nodes":[{"id":2,"pid":4100,"app_id":"korri-portal","focused":true},{"id":3,"pid":9100,"focused":false}]}"#;
+        assert_eq!(
+            focused_ownership(game_focused, &launch, &["korri-portal"]).unwrap(),
+            FocusOwnership::Launch
+        );
+        assert_eq!(
+            focused_ownership(portal_focused, &launch, &["korri-portal"]).unwrap(),
+            FocusOwnership::Excluded
+        );
+    }
+
+    #[test]
+    fn restart_ownership_rejects_ambiguous_launch_windows_and_focus_facts() {
+        let launch = pids(&[9100, 9101]);
+        let ambiguous_launch = r#"{"id":1,"nodes":[
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":3,"pid":9100,"focused":false},
+            {"id":4,"pid":9101,"focused":false}
+        ]}"#;
+        assert!(focused_ownership(ambiguous_launch, &launch, &["korri-portal"]).is_err());
+
+        let multiple_focused_launch_nodes = r#"{"id":1,"nodes":[
+            {"id":3,"pid":9100,"focused":true},
+            {"id":4,"pid":9101,"focused":true}
+        ]}"#;
+        assert!(
+            focused_ownership(multiple_focused_launch_nodes, &launch, &["korri-portal"]).is_err()
+        );
+
+        let several_focused = r#"{"id":1,"nodes":[
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":3,"pid":9100,"focused":true}
+        ]}"#;
+        assert!(focused_ownership(several_focused, &pids(&[9100]), &["korri-portal"]).is_err());
+
+        let mismatched_pid = r#"{"id":1,"nodes":[
+            {"id":2,"pid":4100,"app_id":"korri-portal","focused":true},
+            {"id":3,"pid":9200,"focused":false}
+        ]}"#;
+        assert!(focused_ownership(mismatched_pid, &pids(&[9100]), &["korri-portal"]).is_err());
     }
 
     #[test]

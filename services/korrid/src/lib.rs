@@ -525,6 +525,9 @@ pub struct ActiveSession {
 pub struct SessionStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<ActiveSession>,
+    /** Ephemeral exact launch authorized for browser overlay handoff. */
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay: Option<ActiveSession>,
 }
 
 #[typeshare]
@@ -923,6 +926,10 @@ pub enum RpcRequest {
     SessionPrepare(SessionPrepareRequest),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusRequest),
+    #[serde(rename = "app.session.controls")]
+    SessionControls(SessionControlsRequest),
+    #[serde(rename = "app.session.control.invoke")]
+    SessionControlInvoke(SessionControlInvokeRequest),
     #[serde(rename = "app.session.stop")]
     SessionStop(SessionStopRequest),
     #[serde(rename = "app.session.freeze")]
@@ -978,6 +985,10 @@ pub enum RpcResponse {
     SessionPrepare(SessionPrepareOutcome),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusOutcome),
+    #[serde(rename = "app.session.controls")]
+    SessionControls(SessionControlsOutcome),
+    #[serde(rename = "app.session.control.invoke")]
+    SessionControlInvoke(SessionControlInvokeOutcome),
     #[serde(rename = "app.session.stop")]
     SessionStop(SessionStopOutcome),
     #[serde(rename = "app.session.freeze")]
@@ -1064,6 +1075,145 @@ struct AppState {
     mode: ServerMode,
     portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
+    /// Exact Home freeze waiting for the browser handoff. This is deliberately
+    /// process-local and is never written to the active-session journal.
+    overlay_intent: Arc<Mutex<Option<String>>>,
+}
+
+impl AppState {
+    fn record_overlay_intent(&self, outcome: &SessionFreezeOutcome) {
+        if let SessionFreezeOutcome::Ok(result) = outcome {
+            *self
+                .overlay_intent
+                .lock()
+                .expect("overlay intent mutex poisoned") = Some(result.launch_id.clone());
+        }
+    }
+
+    fn clear_overlay_intent(&self, expected_launch_id: Option<&str>) {
+        let mut intent = self
+            .overlay_intent
+            .lock()
+            .expect("overlay intent mutex poisoned");
+        if expected_launch_id.is_none() || intent.as_deref() == expected_launch_id {
+            intent.take();
+        }
+    }
+
+    fn record_recovered_overlay_intent(&self, recovered: Option<String>) {
+        restore_recovered_overlay_intent(&self.overlay_intent, recovered);
+    }
+
+    fn correlate_overlay_status(&self, outcome: SessionStatusOutcome) -> SessionStatusOutcome {
+        correlate_overlay_status(&self.overlay_intent, outcome)
+    }
+}
+
+fn restore_recovered_overlay_intent(
+    overlay_intent: &Mutex<Option<String>>,
+    recovered: Option<String>,
+) {
+    let Some(recovered) = recovered else {
+        return;
+    };
+    let mut intent = overlay_intent
+        .lock()
+        .expect("overlay intent mutex poisoned");
+    if intent.is_none() {
+        *intent = Some(recovered);
+    }
+}
+
+fn is_terminal_session_identity_code(code: &str) -> bool {
+    matches!(
+        code,
+        "NoActiveSession"
+            | "SessionCompleted"
+            | "StaleLaunchIdentity"
+            | "SelectedRemoteSessionReplaced"
+    )
+}
+
+fn thaw_invalidates_overlay_intent(outcome: &SessionFreezeOutcome) -> bool {
+    matches!(outcome, SessionFreezeOutcome::Ok(_))
+        || matches!(
+            outcome,
+            SessionFreezeOutcome::Err(failure)
+                if is_terminal_session_identity_code(&failure.code)
+        )
+}
+
+fn stop_invalidates_overlay_intent(outcome: &SessionStopOutcome) -> bool {
+    matches!(
+        outcome,
+        SessionStopOutcome::Ok(SessionStopResult {
+            phase: SessionStopPhase::Stopped
+        })
+    ) || matches!(
+        outcome,
+        SessionStopOutcome::Err(failure)
+            if is_terminal_session_identity_code(&failure.code)
+    )
+}
+
+fn reconcile_stop_overlay_intent(
+    overlay_intent: &Mutex<Option<String>>,
+    expected_launch_id: Option<&str>,
+    outcome: &SessionStopOutcome,
+) {
+    if !stop_invalidates_overlay_intent(outcome) {
+        return;
+    }
+    let mut intent = overlay_intent
+        .lock()
+        .expect("overlay intent mutex poisoned");
+    if expected_launch_id.is_some() && intent.as_deref() == expected_launch_id {
+        intent.take();
+    }
+}
+
+fn correlate_overlay_status(
+    overlay_intent: &Mutex<Option<String>>,
+    mut outcome: SessionStatusOutcome,
+) -> SessionStatusOutcome {
+    let mut intent = overlay_intent
+        .lock()
+        .expect("overlay intent mutex poisoned");
+    match &mut outcome {
+        SessionStatusOutcome::Ok(status) => {
+            status.overlay = None;
+            if let Some(expected) = intent.clone() {
+                match status.active.as_ref() {
+                    Some(active)
+                        if active.launch_id == expected
+                            && matches!(
+                                active.phase.as_deref(),
+                                Some("frozen" | "focus-failed")
+                            ) =>
+                    {
+                        status.overlay = Some(active.clone());
+                    }
+                    // A confirmed pending stop is still bound to this exact
+                    // launch. Hide it from new overlay mounts, but retain the
+                    // intent until completion or authoritative absence.
+                    Some(active)
+                        if active.launch_id == expected
+                            && active.phase.as_deref() == Some("stopping") => {}
+                    // Running proves Return completed. A different launch, a
+                    // phase-less legacy session, or no active session
+                    // invalidates this exact Home handoff.
+                    Some(_) | None => {
+                        intent.take();
+                    }
+                }
+            }
+        }
+        SessionStatusOutcome::Err(failure) if is_terminal_session_identity_code(&failure.code) => {
+            intent.take();
+        }
+        SessionStatusOutcome::Err(_) => {}
+    }
+    outcome
 }
 
 fn snapshot_diagnostic_failure(diagnostic: &config::snapshot::SnapshotDiagnostic) -> RpcFailure {
@@ -1123,6 +1273,7 @@ fn session_status_outcome(
                     title: active.title,
                     phase: active.phase,
                 }),
+                overlay: None,
             })
         }
         Ok(upstream::UpstreamSessionStatus::SessiondNotConfigured {}) => {
@@ -1197,6 +1348,7 @@ fn host_session_status_outcome(
                     title: None,
                     phase: Some("running".into()),
                 }),
+                overlay: None,
             })
         }
         Ok(HostSessionStatus::Frozen { launch_id, game_id }) => {
@@ -1208,6 +1360,19 @@ fn host_session_status_outcome(
                     title: None,
                     phase: Some("frozen".into()),
                 }),
+                overlay: None,
+            })
+        }
+        Ok(HostSessionStatus::FocusFailed { launch_id, game_id }) => {
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id,
+                    host: None,
+                    game_id,
+                    title: None,
+                    phase: Some("focus-failed".into()),
+                }),
+                overlay: None,
             })
         }
         Ok(HostSessionStatus::Stopping { launch_id, game_id }) => {
@@ -1219,6 +1384,7 @@ fn host_session_status_outcome(
                     title: None,
                     phase: Some("stopping".into()),
                 }),
+                overlay: None,
             })
         }
         Ok(HostSessionStatus::Completed { launch_id }) => SessionStatusOutcome::Err(RpcFailure {
@@ -1234,6 +1400,47 @@ fn host_session_status_outcome(
             message: "host recovery identity requires administrator resolution".into(),
         }),
         Err(failure) => SessionStatusOutcome::Err(failure),
+    }
+}
+
+fn unavailable_remote_session_controls(
+    status: SessionStatusOutcome,
+    expected_launch_id: &str,
+) -> SessionControlsOutcome {
+    match status {
+        SessionStatusOutcome::Ok(SessionStatus {
+            active: Some(active),
+            ..
+        }) if active.launch_id == expected_launch_id => {
+            SessionControlsOutcome::Err(SessionControlFailure {
+                reason: SessionControlFailureReason::Unavailable,
+                message: "The selected peer does not expose live gameplay controls.".into(),
+            })
+        }
+        SessionStatusOutcome::Ok(_) => SessionControlsOutcome::Err(SessionControlFailure {
+            reason: SessionControlFailureReason::StaleSession,
+            message: "That game is no longer running. Reload the session before acting.".into(),
+        }),
+        SessionStatusOutcome::Err(failure) if is_terminal_session_identity_code(&failure.code) => {
+            SessionControlsOutcome::Err(SessionControlFailure {
+                reason: SessionControlFailureReason::StaleSession,
+                message: "That game is no longer running. Reload the session before acting.".into(),
+            })
+        }
+        SessionStatusOutcome::Err(failure) => SessionControlsOutcome::Err(SessionControlFailure {
+            reason: SessionControlFailureReason::Unavailable,
+            message: failure.message,
+        }),
+    }
+}
+
+fn unavailable_remote_session_control(
+    status: SessionStatusOutcome,
+    request: &SessionControlInvokeRequest,
+) -> SessionControlInvokeOutcome {
+    match unavailable_remote_session_controls(status, &request.launch_id) {
+        SessionControlsOutcome::Err(failure) => SessionControlInvokeOutcome::Err(failure),
+        SessionControlsOutcome::Ok(_) => unreachable!("remote controls never materialize locally"),
     }
 }
 
@@ -1298,9 +1505,8 @@ fn host_session_freeze_outcome(
             code: "SessionStopping".into(),
             message: "the host launch is stopping".into(),
         }),
-        // The game is running again; only its window stayed behind. A separate
-        // code stops a caller from retrying a freezer change that already
-        // succeeded, and lets a surface say what actually failed.
+        // The game is running but could not come forward. A separate code lets
+        // the portal show the exact focus failure and offer Return again.
         Ok(HostSessionFreezeChange::FocusFailed { message, .. }) => {
             SessionFreezeOutcome::Err(RpcFailure {
                 code: "HostFocusFailed".into(),
@@ -1642,26 +1848,57 @@ async fn dispatch(
                     })
                 }
             };
+            if matches!(&outcome, SessionPrepareOutcome::Ok(_)) {
+                state.clear_overlay_intent(None);
+            }
             RpcResponse::SessionPrepare(outcome)
         }
-        RpcRequest::SessionStatus(_) => match (&state.mode, state.rpc_surface) {
-            (ServerMode::Brain(brain), RpcSurface::Lan) => RpcResponse::SessionStatus(
+        RpcRequest::SessionStatus(_) => {
+            let (outcome, recovered_overlay_intent) = match (&state.mode, state.rpc_surface) {
+                (ServerMode::Brain(brain), RpcSurface::Lan) => (
+                    session_status_outcome(brain.upstream.session_status().await),
+                    None,
+                ),
+                (ServerMode::Host(host), RpcSurface::Lan)
+                | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    match host.session_status_with_recovered_overlay_intent().await {
+                        Ok((status, recovered)) => {
+                            (host_session_status_outcome(Ok(status)), recovered)
+                        }
+                        Err(failure) => (host_session_status_outcome(Err(failure)), None),
+                    }
+                }
+                (ServerMode::Brain(brain), RpcSurface::LocalControl) => (
+                    session_status_outcome(brain.upstream.session_status().await),
+                    None,
+                ),
+            };
+            state.record_recovered_overlay_intent(recovered_overlay_intent);
+            RpcResponse::SessionStatus(state.correlate_overlay_status(outcome))
+        }
+        RpcRequest::SessionControls(request) => RpcResponse::SessionControls(match &state.mode {
+            ServerMode::Host(host) => host
+                .session_controls(&request.launch_id)
+                .await
+                .map(SessionControlsOutcome::Ok)
+                .unwrap_or_else(SessionControlsOutcome::Err),
+            ServerMode::Brain(brain) => unavailable_remote_session_controls(
                 session_status_outcome(brain.upstream.session_status().await),
+                &request.launch_id,
             ),
-            (ServerMode::Host(host), RpcSurface::Lan)
-            | (ServerMode::Host(host), RpcSurface::LocalControl) => {
-                RpcResponse::SessionStatus(host_session_status_outcome(host.session_status().await))
-            }
-            (ServerMode::Brain(_), RpcSurface::LocalControl) => {
-                RpcResponse::SessionStatus(SessionStatusOutcome::Err(RpcFailure {
-                    code: "SessionStatusUnsupported".into(),
-                    message: "session status is unavailable on this listener".into(),
-                }))
-            }
-        },
-        RpcRequest::SessionStop(request) => match (&state.mode, state.rpc_surface) {
-            (ServerMode::Brain(brain), RpcSurface::Lan) => {
-                RpcResponse::SessionStop(session_stop_outcome(
+        }),
+        RpcRequest::SessionControlInvoke(request) => {
+            RpcResponse::SessionControlInvoke(match &state.mode {
+                ServerMode::Host(host) => host.invoke_session_control(request).await,
+                ServerMode::Brain(brain) => unavailable_remote_session_control(
+                    session_status_outcome(brain.upstream.session_status().await),
+                    &request,
+                ),
+            })
+        }
+        RpcRequest::SessionStop(request) => {
+            let outcome = match (&state.mode, state.rpc_surface) {
+                (ServerMode::Brain(brain), RpcSurface::Lan) => session_stop_outcome(
                     brain
                         .upstream
                         .session_stop(
@@ -1669,31 +1906,40 @@ async fn dispatch(
                             request.force.unwrap_or(false),
                         )
                         .await,
-                ))
-            }
-            (ServerMode::Host(host), RpcSurface::Lan)
-            | (ServerMode::Host(host), RpcSurface::LocalControl) => {
-                let outcome = request
-                    .expected_launch_id
-                    .as_deref()
-                    .ok_or_else(|| RpcFailure {
-                        code: "ExpectedLaunchIdRequired".into(),
-                        message: "expectedLaunchId is required for exact host stop".into(),
-                    })
-                    .map(|expected| expected.to_owned());
-                let outcome = match outcome {
-                    Ok(expected) => host.session_stop(&expected).await,
-                    Err(failure) => Err(failure),
-                };
-                RpcResponse::SessionStop(host_session_stop_outcome(outcome))
-            }
-            (ServerMode::Brain(_), RpcSurface::LocalControl) => {
-                RpcResponse::SessionStop(SessionStopOutcome::Err(RpcFailure {
-                    code: "SessionStopUnsupported".into(),
-                    message: "session stop is unavailable on this listener".into(),
-                }))
-            }
-        },
+                ),
+                (ServerMode::Host(host), RpcSurface::Lan)
+                | (ServerMode::Host(host), RpcSurface::LocalControl) => {
+                    let outcome = request
+                        .expected_launch_id
+                        .as_deref()
+                        .ok_or_else(|| RpcFailure {
+                            code: "ExpectedLaunchIdRequired".into(),
+                            message: "expectedLaunchId is required for exact host stop".into(),
+                        })
+                        .map(|expected| expected.to_owned());
+                    let outcome = match outcome {
+                        Ok(expected) => host.session_stop(&expected).await,
+                        Err(failure) => Err(failure),
+                    };
+                    host_session_stop_outcome(outcome)
+                }
+                (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_stop_outcome(
+                    brain
+                        .upstream
+                        .session_stop(
+                            request.expected_launch_id.as_deref(),
+                            request.force.unwrap_or(false),
+                        )
+                        .await,
+                ),
+            };
+            reconcile_stop_overlay_intent(
+                &state.overlay_intent,
+                request.expected_launch_id.as_deref(),
+                &outcome,
+            );
+            RpcResponse::SessionStop(outcome)
+        }
         RpcRequest::SessionFreeze(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => session_freeze_outcome(
@@ -1712,13 +1958,26 @@ async fn dispatch(
                         };
                     host_session_freeze_outcome(outcome, SessionFreezerState::Frozen)
                 }
-                (ServerMode::Brain(_), RpcSurface::LocalControl) => {
-                    SessionFreezeOutcome::Err(RpcFailure {
-                        code: "SessionFreezeUnsupported".into(),
-                        message: "session freeze is unavailable on this listener".into(),
-                    })
-                }
+                (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
+                    brain
+                        .upstream
+                        .session_freeze(request.expected_launch_id.as_deref())
+                        .await,
+                ),
             };
+            match &outcome {
+                SessionFreezeOutcome::Ok(_) if state.rpc_surface == RpcSurface::LocalControl => {
+                    state.record_overlay_intent(&outcome);
+                }
+                SessionFreezeOutcome::Err(failure)
+                    if is_terminal_session_identity_code(&failure.code) =>
+                {
+                    if let Some(expected) = request.expected_launch_id.as_deref() {
+                        state.clear_overlay_intent(Some(expected));
+                    }
+                }
+                SessionFreezeOutcome::Ok(_) | SessionFreezeOutcome::Err(_) => {}
+            }
             RpcResponse::SessionFreeze(outcome)
         }
         RpcRequest::SessionThaw(request) => {
@@ -1738,13 +1997,18 @@ async fn dispatch(
                         };
                     host_session_freeze_outcome(outcome, SessionFreezerState::Running)
                 }
-                (ServerMode::Brain(_), RpcSurface::LocalControl) => {
-                    SessionFreezeOutcome::Err(RpcFailure {
-                        code: "SessionThawUnsupported".into(),
-                        message: "session thaw is unavailable on this listener".into(),
-                    })
-                }
+                (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
+                    brain
+                        .upstream
+                        .session_thaw(request.expected_launch_id.as_deref())
+                        .await,
+                ),
             };
+            if thaw_invalidates_overlay_intent(&outcome) {
+                if let Some(expected) = request.expected_launch_id.as_deref() {
+                    state.clear_overlay_intent(Some(expected));
+                }
+            }
             RpcResponse::SessionThaw(outcome)
         }
         RpcRequest::SourceStatus(request) => {
@@ -2335,6 +2599,7 @@ fn brain_app_state(
         }),
         portal_access: Some(portal_access),
         rpc_surface: RpcSurface::Lan,
+        overlay_intent: Arc::new(Mutex::new(None)),
     };
     (state, ())
 }
@@ -2472,12 +2737,14 @@ fn secure_host_router_with_in_memory_units_at(
 }
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
+    let overlay_intent = Arc::new(Mutex::new(None));
     let lan = AppState {
         federation: None,
         federation_wake: None,
         mode: ServerMode::Host(runtime.clone()),
         portal_access: None,
         rpc_surface: RpcSurface::Lan,
+        overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
         federation: None,
@@ -2485,6 +2752,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         mode: ServerMode::Host(runtime),
         portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
+        overlay_intent,
     };
     (lan, local)
 }
@@ -3271,20 +3539,319 @@ mod tests {
     }
 
     #[test]
+    fn host_focus_failure_publishes_the_retained_portal_phase() {
+        let outcome =
+            host_session_status_outcome(Ok(host::control::HostSessionStatus::FocusFailed {
+                launch_id: "launch-a".into(),
+                game_id: Some("wario".into()),
+            }));
+        let SessionStatusOutcome::Ok(status) = outcome else {
+            panic!("expected Ok");
+        };
+        let active = status.active.expect("active session");
+        assert_eq!(active.launch_id, "launch-a");
+        assert_eq!(active.phase.as_deref(), Some("focus-failed"));
+    }
+
+    #[test]
+    fn restart_portal_focus_reconstructs_exact_intent_for_browser_poll() {
+        let intent = Mutex::new(None);
+        restore_recovered_overlay_intent(&intent, Some("a".into()));
+        let outcome = correlate_overlay_status(
+            &intent,
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id: "a".into(),
+                    host: None,
+                    game_id: Some("one".into()),
+                    title: None,
+                    phase: Some("focus-failed".into()),
+                }),
+                overlay: None,
+            }),
+        );
+        let SessionStatusOutcome::Ok(status) = outcome else {
+            panic!("expected status");
+        };
+        assert_eq!(status.overlay.expect("recovered overlay").launch_id, "a");
+
+        let existing = Mutex::new(Some("a".into()));
+        restore_recovered_overlay_intent(&existing, Some("b".into()));
+        assert_eq!(existing.lock().unwrap().as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn overlay_intent_never_retargets_after_a_exits_or_is_replaced_by_b() {
+        let session = |launch_id: &str| ActiveSession {
+            launch_id: launch_id.into(),
+            host: None,
+            game_id: Some(launch_id.into()),
+            title: None,
+            phase: Some("frozen".into()),
+        };
+
+        let replaced_intent = Mutex::new(Some("a".into()));
+        let replaced = correlate_overlay_status(
+            &replaced_intent,
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(session("b")),
+                overlay: None,
+            }),
+        );
+        let SessionStatusOutcome::Ok(replaced) = replaced else {
+            panic!("expected status");
+        };
+        assert!(replaced.overlay.is_none());
+        assert_eq!(*replaced_intent.lock().unwrap(), None);
+
+        let exited_intent = Mutex::new(Some("a".into()));
+        let exited = correlate_overlay_status(
+            &exited_intent,
+            SessionStatusOutcome::Err(RpcFailure {
+                code: "SessionCompleted".into(),
+                message: "a exited".into(),
+            }),
+        );
+        assert!(matches!(exited, SessionStatusOutcome::Err(_)));
+        assert_eq!(*exited_intent.lock().unwrap(), None);
+
+        let remote_replaced_intent = Mutex::new(Some("a".into()));
+        let remote_replaced = correlate_overlay_status(
+            &remote_replaced_intent,
+            session_status_outcome(Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced)),
+        );
+        assert!(matches!(remote_replaced, SessionStatusOutcome::Err(_)));
+        assert_eq!(*remote_replaced_intent.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn host_and_brain_stop_keep_overlay_intent_until_exact_completion_is_authoritative() {
+        let host_pending =
+            host_session_stop_outcome(Ok(host::control::HostSessionStop::AlreadyStopping {
+                launch_id: "a".into(),
+            }));
+        let host_unavailable = host_session_stop_outcome(Err(RpcFailure {
+            code: "HostUnavailable".into(),
+            message: "host is unavailable".into(),
+        }));
+        let brain_pending = session_stop_outcome(Ok(upstream::UpstreamSessionStop::StopPending {
+            launch_id: Some("a".into()),
+        }));
+        let brain_confirmation =
+            session_stop_outcome(Ok(upstream::UpstreamSessionStop::ConfirmationRequired {
+                action: Some("stop-session".into()),
+            }));
+        let brain_unavailable =
+            session_stop_outcome(Ok(upstream::UpstreamSessionStop::HostUnavailable {}));
+
+        for retryable_or_refused in [
+            host_pending,
+            host_unavailable,
+            brain_pending,
+            brain_confirmation,
+            brain_unavailable,
+        ] {
+            let intent = Mutex::new(Some("a".into()));
+            reconcile_stop_overlay_intent(&intent, Some("a"), &retryable_or_refused);
+            assert_eq!(intent.lock().unwrap().as_deref(), Some("a"));
+        }
+
+        for stopped_or_absent in [
+            host_session_stop_outcome(Ok(host::control::HostSessionStop::Completed {
+                launch_id: "a".into(),
+            })),
+            host_session_stop_outcome(Ok(host::control::HostSessionStop::NoActive)),
+            session_stop_outcome(Ok(upstream::UpstreamSessionStop::NothingToStop {})),
+            session_stop_outcome(Err(upstreams::UpstreamError::StaleLaunchIdentity)),
+            session_stop_outcome(Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced)),
+        ] {
+            let intent = Mutex::new(Some("a".into()));
+            reconcile_stop_overlay_intent(&intent, Some("a"), &stopped_or_absent);
+            assert_eq!(*intent.lock().unwrap(), None);
+        }
+
+        let unrelated = Mutex::new(Some("a".into()));
+        reconcile_stop_overlay_intent(
+            &unrelated,
+            Some("b"),
+            &SessionStopOutcome::Ok(SessionStopResult {
+                phase: SessionStopPhase::Stopped,
+            }),
+        );
+        assert_eq!(unrelated.lock().unwrap().as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn pending_exact_stop_hides_the_overlay_without_discarding_its_intent() {
+        let intent = Mutex::new(Some("a".into()));
+        let stopping = correlate_overlay_status(
+            &intent,
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id: "a".into(),
+                    host: None,
+                    game_id: Some("one".into()),
+                    title: None,
+                    phase: Some("stopping".into()),
+                }),
+                overlay: None,
+            }),
+        );
+        let SessionStatusOutcome::Ok(stopping) = stopping else {
+            panic!("expected status");
+        };
+        assert!(stopping.overlay.is_none());
+        assert_eq!(intent.lock().unwrap().as_deref(), Some("a"));
+
+        let frozen_again = correlate_overlay_status(
+            &intent,
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id: "a".into(),
+                    host: None,
+                    game_id: Some("one".into()),
+                    title: None,
+                    phase: Some("frozen".into()),
+                }),
+                overlay: None,
+            }),
+        );
+        let SessionStatusOutcome::Ok(frozen_again) = frozen_again else {
+            panic!("expected status");
+        };
+        assert_eq!(
+            frozen_again
+                .overlay
+                .expect("retained exact overlay")
+                .launch_id,
+            "a"
+        );
+    }
+
+    #[test]
+    fn failed_exact_focus_keeps_overlay_intent_but_successful_return_clears_it() {
+        assert!(!thaw_invalidates_overlay_intent(
+            &SessionFreezeOutcome::Err(RpcFailure {
+                code: "HostFocusFailed".into(),
+                message: "no unique exact-launch window could be focused".into(),
+            },)
+        ));
+        assert!(!thaw_invalidates_overlay_intent(
+            &SessionFreezeOutcome::Err(RpcFailure {
+                code: "HostFreezerFailed".into(),
+                message: "thaw refused".into(),
+            },)
+        ));
+        assert!(thaw_invalidates_overlay_intent(&session_freeze_outcome(
+            Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced,)
+        )));
+        assert!(thaw_invalidates_overlay_intent(&SessionFreezeOutcome::Ok(
+            SessionFreezeResult {
+                launch_id: "a".into(),
+                state: SessionFreezerState::Running,
+                changed: true,
+            },
+        )));
+    }
+
+    #[test]
+    fn overlay_intent_publishes_only_the_same_frozen_or_focus_failed_launch() {
+        for phase in ["frozen", "focus-failed"] {
+            let intent = Mutex::new(Some("a".into()));
+            let active = ActiveSession {
+                launch_id: "a".into(),
+                host: None,
+                game_id: Some("one".into()),
+                title: None,
+                phase: Some(phase.into()),
+            };
+            let outcome = correlate_overlay_status(
+                &intent,
+                SessionStatusOutcome::Ok(SessionStatus {
+                    active: Some(active.clone()),
+                    overlay: None,
+                }),
+            );
+            let SessionStatusOutcome::Ok(status) = outcome else {
+                panic!("expected status");
+            };
+            let overlay = status.overlay.expect("matching overlay");
+            assert_eq!(overlay.launch_id, active.launch_id);
+            assert_eq!(overlay.phase, active.phase);
+            assert_eq!(intent.lock().unwrap().as_deref(), Some("a"));
+        }
+    }
+
+    #[test]
+    fn remote_gameplay_controls_refuse_stale_identity_before_unavailable_routing() {
+        let exact = unavailable_remote_session_controls(
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: Some(ActiveSession {
+                    launch_id: "launch-a".into(),
+                    host: Some("peer".into()),
+                    game_id: Some("wario".into()),
+                    title: Some("Wario Land 4".into()),
+                    phase: Some("frozen".into()),
+                }),
+                overlay: None,
+            }),
+            "launch-a",
+        );
+        assert!(matches!(
+            exact,
+            SessionControlsOutcome::Err(SessionControlFailure {
+                reason: SessionControlFailureReason::Unavailable,
+                ..
+            })
+        ));
+        for stale in [
+            unavailable_remote_session_controls(
+                SessionStatusOutcome::Ok(SessionStatus {
+                    active: None,
+                    overlay: None,
+                }),
+                "launch-a",
+            ),
+            unavailable_remote_session_controls(
+                SessionStatusOutcome::Err(RpcFailure {
+                    code: "NoActiveSession".into(),
+                    message: "none".into(),
+                }),
+                "launch-a",
+            ),
+        ] {
+            assert!(matches!(
+                stale,
+                SessionControlsOutcome::Err(SessionControlFailure {
+                    reason: SessionControlFailureReason::StaleSession,
+                    ..
+                })
+            ));
+        }
+    }
+
+    #[test]
     fn status_without_active_session_maps_to_nothing_playing() {
         let outcome = session_status_outcome(Ok(upstream::UpstreamSessionStatus::SessionStatus {
             active: None,
         }));
         assert!(matches!(
             outcome,
-            SessionStatusOutcome::Ok(SessionStatus { active: None })
+            SessionStatusOutcome::Ok(SessionStatus {
+                active: None,
+                overlay: None
+            })
         ));
     }
 
     #[test]
     fn absent_optional_fields_are_omitted_from_the_wire() {
         assert_eq!(
-            serde_json::to_value(SessionStatus { active: None }).unwrap(),
+            serde_json::to_value(SessionStatus {
+                active: None,
+                overlay: None,
+            })
+            .unwrap(),
             serde_json::json!({})
         );
         assert_eq!(
@@ -3916,7 +4483,88 @@ command = ["sh", "-c", "sleep 1"]
     }
 
     #[tokio::test]
-    async fn host_freeze_and_thaw_require_exact_identity_and_report_state() {
+    async fn home_overlay_intent_for_a_cannot_retarget_frozen_replacement_b() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(
+            &config,
+            r#"
+label = "zao"
+[[games]]
+id = "one"
+title = "One"
+command = ["game-one"]
+[[games]]
+id = "two"
+title = "Two"
+command = ["game-two"]
+"#,
+        )
+        .unwrap();
+        let (lan, local) = host_routers_with_in_memory_units(&config);
+        let prepared_a = rpc_body(
+            lan.clone(),
+            &serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"one"}})
+                .to_string(),
+        )
+        .await;
+        let launch_a = prepared_a["outcome"]["payload"]["launchId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let frozen_a = rpc_body(
+            local.clone(),
+            &serde_json::json!({
+                "_tag":"app.session.freeze",
+                "payload":{"expectedLaunchId":launch_a.clone()}
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(frozen_a["outcome"]["_tag"], "Ok");
+        let stopped_a = rpc_body(
+            local,
+            &serde_json::json!({
+                "_tag":"app.session.stop",
+                "payload":{"expectedLaunchId":launch_a}
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(stopped_a["outcome"]["payload"]["phase"], "stopped");
+
+        let prepared_b = rpc_body(
+            lan.clone(),
+            &serde_json::json!({"_tag":"app.session.prepare","payload":{"gameId":"two"}})
+                .to_string(),
+        )
+        .await;
+        let launch_b = prepared_b["outcome"]["payload"]["launchId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let frozen_b = rpc_body(
+            lan.clone(),
+            &serde_json::json!({
+                "_tag":"app.session.freeze",
+                "payload":{"expectedLaunchId":launch_b.clone()}
+            })
+            .to_string(),
+        )
+        .await;
+        assert_eq!(frozen_b["outcome"]["_tag"], "Ok");
+        let status = rpc_body(
+            lan,
+            &serde_json::json!({"_tag":"app.session.status","payload":{}}).to_string(),
+        )
+        .await;
+        assert_eq!(status["outcome"]["payload"]["active"]["launchId"], launch_b);
+        assert_eq!(status["outcome"]["payload"]["active"]["phase"], "frozen");
+        assert!(status["outcome"]["payload"].get("overlay").is_none());
+    }
+
+    #[tokio::test]
+    async fn host_return_without_compositor_authority_fails_closed_and_keeps_handoff() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
         std::fs::write(
@@ -3979,6 +4627,7 @@ command = ["game-one"]
             status["outcome"]["payload"]["active"]["launchId"],
             launch_id
         );
+        assert!(status["outcome"]["payload"].get("overlay").is_none());
 
         let again = unix_rpc_body(
             socket_path.clone(),
@@ -3991,6 +4640,16 @@ command = ["game-one"]
         .await;
         assert_eq!(again["outcome"]["payload"]["changed"], false);
         assert_eq!(again["outcome"]["payload"]["state"], "frozen");
+        let handed_off =
+            tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.status","payload":{}}"#).await;
+        assert_eq!(
+            handed_off["outcome"]["payload"]["overlay"]["launchId"],
+            launch_id
+        );
+        assert_eq!(
+            handed_off["outcome"]["payload"]["overlay"]["phase"],
+            "frozen"
+        );
 
         let thawed = unix_rpc_body(
             socket_path.clone(),
@@ -4002,11 +4661,22 @@ command = ["game-one"]
         )
         .await;
         assert_eq!(thawed["_tag"], "app.session.thaw");
-        assert_eq!(thawed["outcome"]["payload"]["state"], "running");
-        assert_eq!(thawed["outcome"]["payload"]["changed"], true);
-        let running =
+        assert_eq!(thawed["outcome"]["_tag"], "Err");
+        assert_eq!(thawed["outcome"]["payload"]["code"], "HostFocusFailed");
+        assert_eq!(
+            thawed["outcome"]["payload"]["message"],
+            "compositor focus authority is not configured"
+        );
+        let focus_failed =
             tcp_rpc_body(tcp_address, r#"{"_tag":"app.session.status","payload":{}}"#).await;
-        assert_eq!(running["outcome"]["payload"]["active"]["phase"], "running");
+        assert_eq!(
+            focus_failed["outcome"]["payload"]["active"]["phase"],
+            "focus-failed"
+        );
+        assert_eq!(
+            focus_failed["outcome"]["payload"]["overlay"]["launchId"],
+            launch_id
+        );
 
         // Stop works from the frozen state and does not need a thaw first.
         let refrozen = tcp_rpc_body(
@@ -4393,6 +5063,13 @@ command = ["game-two"]
             panic!("expected Err");
         };
         assert_eq!(failure.code, "HostUnavailable");
+
+        let replaced =
+            session_status_outcome(Err(upstreams::UpstreamError::SelectedRemoteSessionReplaced));
+        let SessionStatusOutcome::Err(failure) = replaced else {
+            panic!("expected Err");
+        };
+        assert_eq!(failure.code, "SelectedRemoteSessionReplaced");
     }
 
     #[test]

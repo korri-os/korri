@@ -140,6 +140,13 @@ fn runner_callback_preserves_raw_native_override_semantics() {
         ]
     );
     assert!(output.files[0].content.contains("video_vsync = true"));
+    assert!(output.files[0]
+        .content
+        .contains("network_cmd_enable = \"true\""));
+    assert!(output.files[0]
+        .content
+        .contains("network_cmd_port = \"55355\""));
+    assert!(output.files[0].content.contains("menu_driver = \"rgui\""));
 }
 
 #[test]

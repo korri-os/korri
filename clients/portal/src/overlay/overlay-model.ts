@@ -6,14 +6,37 @@ import type {
   SurfaceGameplayOverlayPresentation,
 } from "@contracts/surface/korri-surface"
 
-const RESUME_CONTROL: SurfaceGameplayControl = {
-  id: "overlay:resume",
-  label: "Resume",
-  enabled: true,
-  destructive: false,
-  dismissOnSuccess: true,
-  interaction: { kind: "command" },
-}
+export const OVERLAY_RETURN_CONTROL_ID = "overlay:return"
+export const OVERLAY_END_CONTROL_ID = "overlay:end"
+export const OVERLAY_OPEN_KORRI_CONTROL_ID = "overlay:open-korri"
+
+const CORE_CONTROLS: readonly SurfaceGameplayControl[] = [
+  {
+    id: OVERLAY_RETURN_CONTROL_ID,
+    label: "Return",
+    enabled: true,
+    destructive: false,
+    dismissOnSuccess: true,
+    interaction: { kind: "command" },
+  },
+  {
+    id: OVERLAY_END_CONTROL_ID,
+    label: "End game",
+    description: "Unsaved progress will be lost.",
+    enabled: true,
+    destructive: true,
+    dismissOnSuccess: true,
+    interaction: { kind: "command" },
+  },
+  {
+    id: OVERLAY_OPEN_KORRI_CONTROL_ID,
+    label: "Open Korri",
+    enabled: true,
+    destructive: false,
+    dismissOnSuccess: true,
+    interaction: { kind: "command" },
+  },
+]
 
 function presentationInteraction(
   interaction: SessionControls["groups"][number]["controls"][number]["interaction"],
@@ -61,11 +84,14 @@ function presentationControl(
 function presentationGroup(
   group: SessionControls["groups"][number],
 ): SurfaceGameplayControlGroup | undefined {
-  if (group.controls.length === 0) return undefined
+  const controls = group.controls
+    .filter(control => control.enabled)
+    .map(presentationControl)
+  if (controls.length === 0) return undefined
   return {
     id: group.id,
     label: group.label,
-    controls: group.controls.map(presentationControl),
+    controls,
   }
 }
 
@@ -81,7 +107,7 @@ export function gameplayOverlayPresentationFrom(
   return {
     kind: "gameplay-overlay",
     ...(controls.title === undefined ? {} : { title: controls.title }),
-    controls: [RESUME_CONTROL],
+    controls: CORE_CONTROLS,
     groups,
   }
 }

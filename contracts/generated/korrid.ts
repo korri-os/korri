@@ -464,6 +464,8 @@ export interface SessionPrepareRequest {
 
 export interface SessionStatus {
 	active?: ActiveSession;
+	/** Ephemeral exact launch authorized for browser overlay handoff. */
+	overlay?: ActiveSession;
 }
 
 export interface SessionStatusRequest {
@@ -586,6 +588,8 @@ export type RpcRequest =
 	| { _tag: "app.moonlight.certificate.revoke", payload: MoonlightCertificateRevokeRequest }
 	| { _tag: "app.session.prepare", payload: SessionPrepareRequest }
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
+	| { _tag: "app.session.controls", payload: SessionControlsRequest }
+	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
 	| { _tag: "app.session.stop", payload: SessionStopRequest }
 	| { _tag: "app.session.freeze", payload: SessionFreezeRequest }
 	| { _tag: "app.session.thaw", payload: SessionThawRequest }
@@ -612,6 +616,8 @@ export type RpcResponse =
 	| { _tag: "app.moonlight.certificate.revoke", outcome: MoonlightCertificateRevokeOutcome }
 	| { _tag: "app.session.prepare", outcome: SessionPrepareOutcome }
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
+	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
+	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
 	| { _tag: "app.session.stop", outcome: SessionStopOutcome }
 	| { _tag: "app.session.freeze", outcome: SessionFreezeOutcome }
 	| { _tag: "app.session.thaw", outcome: SessionFreezeOutcome }

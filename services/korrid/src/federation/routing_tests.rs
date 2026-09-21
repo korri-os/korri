@@ -131,10 +131,11 @@ async fn roster_catalog_source_session_and_optional_moonlight_survive_rebuild_an
         .session_freeze(Some(&prepared.launch_id))
         .await
         .is_ok());
-    assert!(registry
-        .session_thaw(Some(&prepared.launch_id))
-        .await
-        .is_ok());
+    assert!(matches!(
+        registry.session_thaw(Some(&prepared.launch_id)).await,
+        Err(crate::upstreams::UpstreamError::Tagged { code, .. })
+            if code == "HostFocusFailed"
+    ));
     assert!(registry
         .session_stop(Some(&prepared.launch_id), false)
         .await

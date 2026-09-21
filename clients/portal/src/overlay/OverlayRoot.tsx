@@ -28,7 +28,13 @@ export function OverlayRoot({
 
   useEffect(() => {
     void controller.refresh()
-    return () => controller.destroy()
+    const poll = window.setInterval(() => {
+      void controller.refresh()
+    }, 1_000)
+    return () => {
+      window.clearInterval(poll)
+      controller.destroy()
+    }
   }, [controller])
 
   const host = useMemo<SurfaceHost>(
@@ -48,7 +54,7 @@ export function OverlayRoot({
       },
       dismissGameplayOverlay: controller.dismiss,
       retry: () => {
-        void controller.refresh()
+        void controller.retry()
       },
       dismiss: controller.dismiss,
       reload: () => {

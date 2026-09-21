@@ -908,6 +908,7 @@ impl UpstreamRegistry {
                         return if active.launch_id == selected.launch_id {
                             Err(UpstreamError::ActiveRemoteSessionConflict)
                         } else {
+                            self.clear_selected_if(&selected);
                             Err(UpstreamError::SelectedRemoteSessionReplaced)
                         }
                     }
@@ -957,6 +958,7 @@ impl UpstreamRegistry {
                     active: Some(active),
                 } => {
                     if active.launch_id != selected.launch_id {
+                        self.clear_selected_if(&selected);
                         return Err(UpstreamError::SelectedRemoteSessionReplaced);
                     }
                     return Ok(status);
@@ -1123,7 +1125,17 @@ impl UpstreamRegistry {
                 self.clear_selected_if(&selected);
                 Err(UpstreamError::NoActiveSession)
             }
-            Err(UpstreamError::Tagged { code, .. }) if code == "StaleLaunchIdentity" => {
+            Err(UpstreamError::Tagged { code, .. })
+                if matches!(
+                    code.as_str(),
+                    "StaleLaunchIdentity" | "SelectedRemoteSessionReplaced"
+                ) =>
+            {
+                self.clear_selected_if(&selected);
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            Err(UpstreamError::SelectedRemoteSessionReplaced) => {
+                self.clear_selected_if(&selected);
                 Err(UpstreamError::SelectedRemoteSessionReplaced)
             }
             Err(error) => Err(error),
@@ -1137,7 +1149,7 @@ impl UpstreamRegistry {
         if self.retire_selected_if_revoked(selected)? {
             return Err(UpstreamError::SourcePeerNotFound);
         }
-        match &selected.route {
+        let result = match &selected.route {
             SelectedRemoteRoute::Native { device_public_key } => {
                 let host = self
                     .native_host_by_route_key(device_public_key)
@@ -1169,6 +1181,22 @@ impl UpstreamRegistry {
                         }
                     })
             }
+        };
+        match result {
+            Err(UpstreamError::Tagged { code, .. })
+                if matches!(
+                    code.as_str(),
+                    "StaleLaunchIdentity" | "SelectedRemoteSessionReplaced"
+                ) =>
+            {
+                self.clear_selected_if(selected);
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            Err(UpstreamError::SelectedRemoteSessionReplaced) => {
+                self.clear_selected_if(selected);
+                Err(UpstreamError::SelectedRemoteSessionReplaced)
+            }
+            other => other,
         }
     }
 
@@ -1250,13 +1278,30 @@ impl UpstreamRegistry {
                 let status = self.selected_status(selected).await?;
                 if let Some(active) = active_session(&status) {
                     if active.launch_id != selected.launch_id {
+                        self.clear_selected_if(selected);
                         return Err(UpstreamError::SelectedRemoteSessionReplaced);
                     }
                 } else {
                     self.clear_selected_if(selected);
                     return Ok(UpstreamSessionStop::NothingToStop {});
                 }
-                client.session_stop(&selected.launch_id, force).await?
+                match client.session_stop(&selected.launch_id, force).await {
+                    Ok(outcome) => outcome,
+                    Err(UpstreamError::Tagged { code, .. })
+                        if matches!(
+                            code.as_str(),
+                            "StaleLaunchIdentity" | "SelectedRemoteSessionReplaced"
+                        ) =>
+                    {
+                        self.clear_selected_if(selected);
+                        return Err(UpstreamError::SelectedRemoteSessionReplaced);
+                    }
+                    Err(UpstreamError::SelectedRemoteSessionReplaced) => {
+                        self.clear_selected_if(selected);
+                        return Err(UpstreamError::SelectedRemoteSessionReplaced);
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             SelectedRemoteRoute::Legacy { label } => {
                 let host = self.legacy_host_by_label(label).ok_or_else(|| {
@@ -1271,7 +1316,8 @@ impl UpstreamRegistry {
                             active: Some(active),
                         } if active.launch_id == selected.launch_id => {}
                         UpstreamSessionStatus::SessionStatus { active: Some(_) } => {
-                            return Err(UpstreamError::SelectedRemoteSessionReplaced)
+                            self.clear_selected_if(selected);
+                            return Err(UpstreamError::SelectedRemoteSessionReplaced);
                         }
                         UpstreamSessionStatus::SessionStatus { active: None } => {
                             self.clear_selected_if(selected);
@@ -2285,7 +2331,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn freeze_and_thaw_follow_the_selected_native_route() {
+    async fn freeze_follows_the_selected_native_route_and_thaw_needs_focus_authority() {
         let native_url = native_server("zao", "neverball").await;
         let registry =
             UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url.clone())]);
@@ -2316,15 +2362,17 @@ command = ["native-game"]
 
         // A fresh registry with no cached route recovers the frozen session.
         let recovered = UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url)]);
-        let thawed = recovered
-            .session_thaw(Some(&prepared.launch_id))
-            .await
-            .unwrap();
-        assert_eq!(thawed.state, crate::SessionFreezerState::Running);
-        assert!(thawed.changed);
+        assert!(matches!(
+            recovered.session_thaw(Some(&prepared.launch_id)).await,
+            Err(UpstreamError::Tagged { code, message })
+                if code == "HostFocusFailed"
+                    && message == "compositor focus authority is not configured"
+        ));
         assert_eq!(recovered.selected().unwrap().launch_id, prepared.launch_id);
-        let again = recovered.session_thaw(None).await.unwrap();
-        assert!(!again.changed);
+        assert!(matches!(
+            recovered.session_thaw(None).await,
+            Err(UpstreamError::Tagged { code, .. }) if code == "HostFocusFailed"
+        ));
 
         assert!(matches!(
             registry
@@ -2343,7 +2391,7 @@ command = ["native-game"]
     }
 
     #[tokio::test]
-    async fn peer_reported_stale_identity_surfaces_as_a_replaced_route() {
+    async fn peer_reported_replacement_is_terminal_and_clears_the_stale_route() {
         let native_url = native_server("zao", "neverball").await;
         let first =
             UpstreamRegistry::new(vec![UpstreamHostConfig::native("zao", native_url.clone())]);
@@ -2362,18 +2410,14 @@ command = ["native-game"]
         let replacement = second.prepare_stream("neverball", None).await.unwrap();
         assert_ne!(replacement.launch_id, prepared.launch_id);
 
-        // The peer reports StaleLaunchIdentity for the old launch. The
-        // first brain maps that to SelectedRemoteSessionReplaced and keeps
-        // the stale route so the caller can re-read status and re-select.
+        // The peer reports StaleLaunchIdentity for the old launch. The first
+        // brain maps that to terminal SelectedRemoteSessionReplaced and drops
+        // the stale selection instead of leaving a retry path to launch A.
         assert!(matches!(
             first.session_freeze(None).await,
             Err(UpstreamError::SelectedRemoteSessionReplaced)
         ));
-        assert!(matches!(
-            first.session_thaw(Some(&prepared.launch_id)).await,
-            Err(UpstreamError::SelectedRemoteSessionReplaced)
-        ));
-        assert_eq!(first.selected().unwrap().launch_id, prepared.launch_id);
+        assert!(first.selected().is_none());
         // The replacement launch was not frozen by the stale request.
         let UpstreamSessionStatus::SessionStatus {
             active: Some(active),
@@ -2649,16 +2693,7 @@ command = ["native-game"]
             registry.session_status().await,
             Err(UpstreamError::SelectedRemoteSessionReplaced)
         ));
-        assert_eq!(
-            registry
-                .selected_remote_session
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .launch_id,
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
+        assert!(registry.selected().is_none());
     }
 
     #[tokio::test]

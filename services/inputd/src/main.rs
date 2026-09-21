@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, process::ExitCode, time::Duration};
+use std::{
+    collections::BTreeMap, ffi::OsString, path::PathBuf, process::ExitCode, sync::Arc,
+    time::Duration,
+};
 
 use korri_inputd::{
     actions::{
@@ -9,14 +12,19 @@ use korri_inputd::{
     dbus::{DbusSignalSource, ProfileStatus},
     devices::EvdevProvider,
     health::{systemd::SystemdHealthPublisher, HealthPublisher, RuntimeHealth},
-    korrid_client::{ExactStopOutcome, KorridClient},
+    korrid_client::{ExactPanelOutcome, ExactStopOutcome, KorridClient},
     runtime::{Runtime, RuntimeAction, RECONCILE_INTERVAL},
+    virtual_targets::InputOwner,
 };
-use tokio::time::MissedTickBehavior;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::MissedTickBehavior,
+};
 use tracing_subscriber::EnvFilter;
 
 const DBUS_RETRY_INTERVAL: Duration = RECONCILE_INTERVAL;
 const HOLD_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const OWNER_RECONCILE_INTERVAL: Duration = Duration::from_millis(100);
 const STORE_ROOT: &str = "/nix/store";
 const SUPPORTED_PROFILE_NAME: &str = "korri-60-xbox_one_gamepad.yaml";
 
@@ -67,6 +75,15 @@ fn initialize_health(health: &mut impl HealthPublisher) -> std::io::Result<()> {
 
 async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
     let mut runtime = Runtime::with_action_routes(services.routes);
+    let (input_owner_tx, mut input_owner_rx) = mpsc::channel(8);
+    let input_owner_transaction = Arc::new(tokio::sync::Mutex::new(()));
+    if let Some(client) = services.korrid.clone() {
+        tokio::spawn(reconcile_input_owner(
+            client,
+            input_owner_tx.clone(),
+            Arc::clone(&input_owner_transaction),
+        ));
+    }
     let mut provider = EvdevProvider::default();
     let mut dbus = None;
     let mut dbus_failure_logged = false;
@@ -85,7 +102,17 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                 return;
             }
             _ = hold_poll.tick() => {
-                dispatch_actions(runtime.advance_actions(), &services);
+                dispatch_actions(
+                    runtime.advance_actions(),
+                    &services,
+                    &input_owner_tx,
+                    &input_owner_transaction,
+                );
+            }
+            command = input_owner_rx.recv() => {
+                if let Some(command) = command {
+                    apply_owner_command(&mut runtime, command);
+                }
             }
             _ = reconcile.tick(), if services.physical_input => {
                 if dbus.is_none() {
@@ -145,7 +172,12 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                     Ok(Some(message)) => {
                         if refresh_owner(&mut runtime, &mut dbus).await {
                             dbus_failure_logged = false;
-                            dispatch_actions(runtime.handle_dbus_message(&message), &services);
+                            dispatch_actions(
+                                runtime.handle_dbus_message(&message),
+                                &services,
+                                &input_owner_tx,
+                                &input_owner_transaction,
+                            );
                         } else {
                             dbus_failure_logged = true;
                         }
@@ -170,7 +202,14 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
             }
             result = runtime.next_evdev_actions(), if has_evdev => {
                 match result {
-                    Ok(Some(matched)) => dispatch_actions(matched, &services),
+                    Ok(Some(matched)) => {
+                        dispatch_actions(
+                            matched,
+                            &services,
+                            &input_owner_tx,
+                            &input_owner_transaction,
+                        )
+                    }
                     Ok(None) => tracing::warn!(
                         event = "inputd_evdev_stream_ended",
                         "normalized target event stream ended"
@@ -299,7 +338,59 @@ async fn refresh_owner(runtime: &mut Runtime, source: &mut Option<DbusSignalSour
     }
 }
 
-fn dispatch_actions(matched: Vec<RuntimeAction>, services: &ConfiguredServices) {
+struct InputOwnerCommand {
+    owner: InputOwner,
+    applied: Option<oneshot::Sender<()>>,
+}
+
+fn apply_owner_command(runtime: &mut Runtime, command: InputOwnerCommand) {
+    runtime.set_input_owner(command.owner);
+    if let Some(applied) = command.applied {
+        let _ = applied.send(());
+    }
+}
+
+async fn apply_input_owner(commands: &mpsc::Sender<InputOwnerCommand>, owner: InputOwner) -> bool {
+    let (applied, wait) = oneshot::channel();
+    commands
+        .send(InputOwnerCommand {
+            owner,
+            applied: Some(applied),
+        })
+        .await
+        .is_ok()
+        && wait.await.is_ok()
+}
+
+async fn reconcile_input_owner(
+    client: KorridClient,
+    commands: mpsc::Sender<InputOwnerCommand>,
+    transaction: Arc<tokio::sync::Mutex<()>>,
+) {
+    loop {
+        {
+            // A status observation and its owner update are one transaction.
+            // Home holds the same guard from exact freeze through Portal focus
+            // or exact rollback, so reconciliation cannot overwrite ownership
+            // while Leave is in flight.
+            let _transaction = transaction.lock().await;
+            let next = client
+                .status()
+                .await
+                .map(|status| status.input_owner())
+                .unwrap_or(InputOwner::Portal);
+            apply_input_owner(&commands, next).await;
+        }
+        tokio::time::sleep(OWNER_RECONCILE_INTERVAL).await;
+    }
+}
+
+fn dispatch_actions(
+    matched: Vec<RuntimeAction>,
+    services: &ConfiguredServices,
+    input_owner: &mpsc::Sender<InputOwnerCommand>,
+    input_owner_transaction: &Arc<tokio::sync::Mutex<()>>,
+) {
     for action in matched {
         tracing::info!(
             event = "inputd_policy_match",
@@ -333,60 +424,128 @@ fn dispatch_actions(matched: Vec<RuntimeAction>, services: &ConfiguredServices) 
             });
             continue;
         }
+        if action.dispatch_mode == DispatchMode::ExactPanel {
+            let client = services
+                .korrid
+                .as_ref()
+                .expect("hardened actions always configure exact local control")
+                .clone();
+            let dispatcher = dispatcher.clone();
+            let input_owner = input_owner.clone();
+            let transaction = Arc::clone(input_owner_transaction);
+            tokio::spawn(async move {
+                let _transaction = transaction.lock().await;
+                let outcome = client
+                    .toggle_panel_exact_with(|| async {
+                        if !apply_input_owner(&input_owner, InputOwner::Portal).await {
+                            tracing::warn!(
+                                event = "inputd_portal_owner_failed",
+                                "could not route input to Portal after exact freeze"
+                            );
+                            return false;
+                        }
+                        let focus = dispatcher.dispatch(action.id).await;
+                        let succeeded = portal_focus_succeeded(&focus);
+                        log_action_outcome(action.id, focus);
+                        succeeded
+                    })
+                    .await;
+                match outcome {
+                    Ok(outcome) => {
+                        apply_input_owner(&input_owner, input_owner_after_panel(outcome)).await;
+                        log_panel_outcome(outcome);
+                    }
+                    Err(error) => {
+                        // The exact session result is unknown. Keep routing
+                        // fail-closed to Portal rather than guess Game.
+                        apply_input_owner(&input_owner, InputOwner::Portal).await;
+                        tracing::warn!(
+                            event = "inputd_exact_panel_failed",
+                            error = %error,
+                            "exact gameplay overlay toggle failed without fallback"
+                        )
+                    }
+                }
+            });
+            continue;
+        }
 
         let dispatcher = dispatcher.clone();
         tokio::spawn(async move {
             let action_id = action.id;
-            match dispatcher.dispatch(action_id).await {
-                ActionOutcome::Unconfigured => tracing::warn!(
-                    event = "inputd_action_unconfigured",
-                    action = %action_id,
-                    "input action has no configured command"
-                ),
-                ActionOutcome::ConcurrencyLimited => tracing::warn!(
-                    event = "inputd_action_concurrency_limited",
-                    action = %action_id,
-                    "input action was rejected at the concurrency limit"
-                ),
-                ActionOutcome::Completed(output) => tracing::info!(
-                    event = "inputd_action_completed",
-                    action = %action_id,
-                    stdout_bytes = output.stdout.len(),
-                    stderr_bytes = output.stderr.len(),
-                    stdout_truncated = output.stdout_truncated,
-                    stderr_truncated = output.stderr_truncated,
-                    "input action completed"
-                ),
-                ActionOutcome::Failed(output) => tracing::warn!(
-                    event = "inputd_action_failed",
-                    action = %action_id,
-                    status = ?output.status,
-                    stdout_bytes = output.stdout.len(),
-                    stderr_bytes = output.stderr.len(),
-                    "input action failed without retry"
-                ),
-                ActionOutcome::TimedOut(output) => tracing::warn!(
-                    event = "inputd_action_timed_out",
-                    action = %action_id,
-                    stdout_bytes = output.stdout.len(),
-                    stderr_bytes = output.stderr.len(),
-                    "input action exceeded its runtime limit"
-                ),
-                ActionOutcome::SpawnFailed(error) => tracing::warn!(
-                    event = "inputd_action_spawn_failed",
-                    action = %action_id,
-                    error,
-                    "input action child was rejected"
-                ),
-                ActionOutcome::ContainmentFailed(error) => tracing::error!(
-                    event = "inputd_action_containment_failed",
-                    action = %action_id,
-                    error,
-                    "input action containment failed closed"
-                ),
-            }
+            log_action_outcome(action_id, dispatcher.dispatch(action_id).await);
         });
     }
+}
+
+fn log_action_outcome(action_id: korri_inputd::actions::ActionId, outcome: ActionOutcome) {
+    match outcome {
+        ActionOutcome::Unconfigured => tracing::warn!(
+            event = "inputd_action_unconfigured", action = %action_id,
+            "input action has no configured command"
+        ),
+        ActionOutcome::ConcurrencyLimited => tracing::warn!(
+            event = "inputd_action_concurrency_limited", action = %action_id,
+            "input action was rejected at the concurrency limit"
+        ),
+        ActionOutcome::Completed(output) => tracing::info!(
+            event = "inputd_action_completed", action = %action_id,
+            stdout_bytes = output.stdout.len(), stderr_bytes = output.stderr.len(),
+            stdout_truncated = output.stdout_truncated,
+            stderr_truncated = output.stderr_truncated,
+            "input action completed"
+        ),
+        ActionOutcome::Failed(output) => tracing::warn!(
+            event = "inputd_action_failed", action = %action_id,
+            status = ?output.status, stdout_bytes = output.stdout.len(),
+            stderr_bytes = output.stderr.len(), "input action failed without retry"
+        ),
+        ActionOutcome::TimedOut(output) => tracing::warn!(
+            event = "inputd_action_timed_out", action = %action_id,
+            stdout_bytes = output.stdout.len(), stderr_bytes = output.stderr.len(),
+            "input action exceeded its runtime limit"
+        ),
+        ActionOutcome::SpawnFailed(error) => tracing::warn!(
+            event = "inputd_action_spawn_failed", action = %action_id, error,
+            "input action child was rejected"
+        ),
+        ActionOutcome::ContainmentFailed(error) => tracing::error!(
+            event = "inputd_action_containment_failed", action = %action_id, error,
+            "input action containment failed closed"
+        ),
+    }
+}
+
+fn portal_focus_succeeded(outcome: &ActionOutcome) -> bool {
+    matches!(outcome, ActionOutcome::Completed(_))
+}
+
+fn input_owner_after_panel(outcome: ExactPanelOutcome) -> InputOwner {
+    if matches!(
+        outcome,
+        ExactPanelOutcome::Returned | ExactPanelOutcome::LeaveRefused
+    ) {
+        InputOwner::Game
+    } else {
+        InputOwner::Portal
+    }
+}
+
+fn log_panel_outcome(outcome: ExactPanelOutcome) {
+    let outcome = match outcome {
+        ExactPanelOutcome::Opened => "opened",
+        ExactPanelOutcome::Returned => "returned",
+        ExactPanelOutcome::FocusFailed => "focus-failed",
+        ExactPanelOutcome::LeaveRefused => "leave-refused",
+        ExactPanelOutcome::NoActive => "no-active",
+        ExactPanelOutcome::AlreadyStopping => "already-stopping",
+        ExactPanelOutcome::RecoveryBlocked => "recovery-blocked",
+    };
+    tracing::info!(
+        event = "inputd_exact_panel_outcome",
+        outcome,
+        "exact gameplay overlay toggle completed"
+    );
 }
 
 fn log_stop_outcome(outcome: ExactStopOutcome) {
@@ -580,6 +739,80 @@ mod tests {
         fn publish(&mut self, _health: RuntimeHealth) -> std::io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn leave_never_routes_to_game_and_refused_leave_restores_the_prior_owner() {
+        for outcome in [
+            ExactPanelOutcome::Opened,
+            ExactPanelOutcome::FocusFailed,
+            ExactPanelOutcome::NoActive,
+            ExactPanelOutcome::AlreadyStopping,
+            ExactPanelOutcome::RecoveryBlocked,
+        ] {
+            assert_eq!(input_owner_after_panel(outcome), InputOwner::Portal);
+        }
+        for outcome in [ExactPanelOutcome::Returned, ExactPanelOutcome::LeaveRefused] {
+            assert_eq!(input_owner_after_panel(outcome), InputOwner::Game);
+        }
+    }
+
+    #[test]
+    fn only_a_completed_portal_action_allows_a_frozen_leave_to_remain_in_portal() {
+        use korri_inputd::actions::ActionOutput;
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = |raw| ActionOutput {
+            status: Some(std::process::ExitStatus::from_raw(raw)),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+        };
+        assert!(portal_focus_succeeded(&ActionOutcome::Completed(output(0))));
+        for outcome in [
+            ActionOutcome::Unconfigured,
+            ActionOutcome::Failed(output(256)),
+            ActionOutcome::TimedOut(output(256)),
+            ActionOutcome::SpawnFailed("spawn refused".into()),
+        ] {
+            assert!(!portal_focus_succeeded(&outcome));
+        }
+    }
+
+    #[tokio::test]
+    async fn reconciliation_cannot_apply_a_running_owner_during_home_transaction() {
+        let transaction = Arc::new(tokio::sync::Mutex::new(()));
+        let home = transaction.lock().await;
+        let observed = Arc::clone(&transaction);
+        let (applied, mut receiver) = mpsc::channel(1);
+        let reconciliation = tokio::spawn(async move {
+            let _observation = observed.lock().await;
+            applied.send(InputOwner::Game).await.unwrap();
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), receiver.recv())
+                .await
+                .is_err(),
+            "a pre-Leave Running observation escaped the Home transaction"
+        );
+        drop(home);
+        assert_eq!(receiver.recv().await, Some(InputOwner::Game));
+        reconciliation.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn acknowledged_owner_change_waits_until_runtime_applies_it() {
+        let (commands, mut receiver) = mpsc::channel(1);
+        let applying =
+            tokio::spawn(async move { apply_input_owner(&commands, InputOwner::Portal).await });
+
+        let command = receiver.recv().await.unwrap();
+        assert_eq!(command.owner, InputOwner::Portal);
+        assert!(!applying.is_finished());
+        command.applied.unwrap().send(()).unwrap();
+        assert!(applying.await.unwrap());
     }
 
     #[test]

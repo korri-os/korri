@@ -77,6 +77,7 @@ impl TryFrom<&str> for ActionId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DispatchMode {
     Direct,
+    ExactPanel,
     ExactStop,
 }
 
@@ -180,7 +181,7 @@ pub const ACTION_CATALOG: &[ActionCatalogEntry] = &[
         ActionId::SystemPanel,
         "KORRI_INPUTD_SYSTEM_PANEL",
         Trigger::Tap(Control::Home),
-        DispatchMode::Direct,
+        DispatchMode::ExactPanel,
     ),
     entry(
         ActionId::KillCurrentGame,

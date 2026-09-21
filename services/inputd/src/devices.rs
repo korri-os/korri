@@ -8,7 +8,13 @@ use std::{
 use evdev::{raw_stream::RawDevice, InputEvent, InputId};
 use futures_util::Stream;
 
+use crate::virtual_targets::{TargetRouter, UinputTargetRouter};
+
 pub const XB360_TARGET_NAME: &str = "Microsoft X-Box 360 pad";
+pub const GAME_TARGET_NAME: &str = "Microsoft X-Box 360 pad (Korri game)";
+pub const PORTAL_TARGET_NAME: &str = "Microsoft X-Box 360 pad (Korri portal)";
+pub const GAME_TARGET_PHYS: &str = "korri/inputd/game";
+pub const PORTAL_TARGET_PHYS: &str = "korri/inputd/portal";
 
 // InputPlumber 0.75.2 src/input/target/xpad.rs builds `xb360` with these
 // identity and capability fields. It does not set uinput phys or uniq fields.
@@ -166,6 +172,7 @@ pub enum ProvenanceError {
 pub struct OpenedTarget {
     pub descriptor: DeviceDescriptor,
     pub events: InputEventStream,
+    pub router: Box<dyn TargetRouter>,
 }
 
 pub trait TargetProvider {
@@ -205,15 +212,20 @@ impl TargetProvider for EvdevProvider {
     fn open(&mut self, expected: &DeviceDescriptor) -> io::Result<OpenedTarget> {
         // RawDevice exposes SYN_DROPPED. Runtime handles it by closing this
         // stream and reconciling instead of retaining potentially stale state.
-        let device = RawDevice::open(&expected.path)?;
+        let mut device = RawDevice::open(&expected.path)?;
         let device_number = fstat_device_number(&device)?;
         let sysfs_path = sysfs_path_for_device_number(device_number, Path::new("/sys"));
         let descriptor =
             descriptor_from_opened_device(expected, &device, device_number, sysfs_path);
+        let router = Box::new(UinputTargetRouter::from_source(&device)?);
+        // Inputd is the only reader of the normalized source. Consumers read
+        // one of the two routed targets instead.
+        device.grab()?;
         let events = device.into_event_stream()?;
         Ok(OpenedTarget {
             descriptor,
             events: Box::pin(events),
+            router,
         })
     }
 }

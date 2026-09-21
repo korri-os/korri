@@ -7,18 +7,18 @@ use std::{
 use futures_util::StreamExt;
 use korri_input_core::{
     controls::{Control, ControlEvent, ControlTransition, DpadAxis},
-    hold::{HoldConfig, HoldPhase, HoldPolicy},
     shortcuts::{ShortcutDefinition, ShortcutPolicy, TapDefinition},
 };
 
 use crate::{
-    action_catalog::{ActionId, ActionRoutes, DispatchMode, Trigger, ACTION_CATALOG},
+    action_catalog::{action_entry, ActionId, ActionRoutes, DispatchMode, Trigger, ACTION_CATALOG},
     dbus::{authenticated_message, DbusAuthenticator, SemanticInput, Signal},
     devices::{
         resolve_target, validate_opened_descriptor, DeviceDescriptor, OpenedTarget, TargetIdentity,
         TargetProvider, TargetResolution,
     },
     health::RuntimeHealth,
+    virtual_targets::InputOwner,
 };
 
 pub const RECONCILE_INTERVAL: Duration = Duration::from_secs(1);
@@ -47,6 +47,7 @@ pub enum RecoveryReason {
     RequiredTargetUnreadable,
     DescriptorChangedAfterOpen,
     EventStreamLost,
+    TargetRoutingFailed,
     SourceTopologyAmbiguous,
 }
 
@@ -71,7 +72,6 @@ struct Policies {
     non_destructive: ShortcutPolicy,
     destructive: ShortcutPolicy,
     direct_presses: std::collections::BTreeMap<Control, ActionId>,
-    destructive_hold: HoldPolicy,
 }
 
 impl Policies {
@@ -112,15 +112,12 @@ impl Policies {
             non_destructive: ShortcutPolicy::new(shortcuts, taps),
             destructive: ShortcutPolicy::new(destructive, vec![]),
             direct_presses,
-            destructive_hold: HoldPolicy::new(HoldConfig::default())
-                .expect("default destructive hold duration is valid"),
         }
     }
 
     fn reset(&mut self) {
         self.non_destructive.reset();
         self.destructive.reset();
-        self.destructive_hold.reset();
     }
 
     fn clear_evdev(&mut self) {
@@ -131,7 +128,7 @@ impl Policies {
         &mut self,
         source: InputSource,
         input: SemanticInput,
-        now_ms: u64,
+        _now_ms: u64,
     ) -> Vec<RuntimeAction> {
         let source_name = match source {
             InputSource::Evdev => EVDEV_SOURCE,
@@ -139,10 +136,13 @@ impl Policies {
         };
         let mut actions = handle_policy(&mut self.non_destructive, source_name, input)
             .into_iter()
-            .map(|id| RuntimeAction {
-                id: ActionId::try_from(id.as_str())
-                    .expect("shortcut ids come from the action catalog"),
-                dispatch_mode: DispatchMode::Direct,
+            .map(|id| {
+                let id = ActionId::try_from(id.as_str())
+                    .expect("shortcut ids come from the action catalog");
+                RuntimeAction {
+                    id,
+                    dispatch_mode: action_entry(id).dispatch_mode,
+                }
             })
             .collect::<Vec<_>>();
         if actions.is_empty() {
@@ -150,37 +150,27 @@ impl Policies {
                 if let Some(id) = self.direct_presses.get(&control).copied() {
                     actions.push(RuntimeAction {
                         id,
-                        dispatch_mode: DispatchMode::Direct,
+                        dispatch_mode: action_entry(id).dispatch_mode,
                     });
                 }
             }
         }
         if source == InputSource::AuthenticatedDbus {
-            for id in handle_policy(&mut self.destructive, source_name, input) {
-                self.destructive_hold.engage(id, now_ms);
-            }
-            if !self
-                .destructive
-                .is_action_active(ActionId::KillCurrentGame.as_str())
-            {
-                self.destructive_hold
-                    .release(ActionId::KillCurrentGame.as_str(), now_ms);
-            }
+            actions.extend(
+                handle_policy(&mut self.destructive, source_name, input)
+                    .into_iter()
+                    .map(|id| RuntimeAction {
+                        id: ActionId::try_from(id.as_str())
+                            .expect("exact stop ids come from the action catalog"),
+                        dispatch_mode: DispatchMode::ExactStop,
+                    }),
+            );
         }
         actions
     }
 
-    fn advance(&mut self, now_ms: u64) -> Vec<RuntimeAction> {
-        self.destructive_hold
-            .advance(now_ms)
-            .into_iter()
-            .filter(|update| update.phase == HoldPhase::Fired)
-            .map(|update| RuntimeAction {
-                id: ActionId::try_from(update.id.as_str())
-                    .expect("hold ids come from the action catalog"),
-                dispatch_mode: DispatchMode::ExactStop,
-            })
-            .collect()
+    fn advance(&mut self, _now_ms: u64) -> Vec<RuntimeAction> {
+        Vec::new()
     }
 }
 
@@ -208,6 +198,7 @@ pub struct Runtime {
     opened: Option<OpenedTarget>,
     policies: Policies,
     dbus: DbusAuthenticator,
+    input_owner: InputOwner,
     started_at: Instant,
 }
 
@@ -220,6 +211,7 @@ impl Default for Runtime {
             opened: None,
             policies: Policies::new(ActionRoutes::default()),
             dbus: DbusAuthenticator::default(),
+            input_owner: InputOwner::Portal,
             started_at: Instant::now(),
         }
     }
@@ -243,6 +235,17 @@ impl Runtime {
 
     pub fn has_open_target(&self) -> bool {
         self.opened.is_some()
+    }
+
+    pub fn input_owner(&self) -> InputOwner {
+        self.input_owner
+    }
+
+    pub fn set_input_owner(&mut self, owner: InputOwner) {
+        self.input_owner = owner;
+        if let Some(opened) = self.opened.as_mut() {
+            opened.router.set_owner(owner);
+        }
     }
 
     pub fn set_dbus_owner(&mut self, owner: Option<&str>) {
@@ -355,6 +358,8 @@ impl Runtime {
                     return;
                 }
                 let ready = ready_target(&opened.descriptor);
+                let mut opened = opened;
+                opened.router.set_owner(self.input_owner);
                 self.opened = Some(opened);
                 if self.dbus.owner().is_some() {
                     self.transition(RuntimeState::Ready { target: ready });
@@ -434,11 +439,27 @@ impl Runtime {
             None => return Ok(None),
         };
         match event {
-            Some(Ok(event)) => Ok(Some(self.handle_evdev(
-                event.event_type().0,
-                event.code(),
-                event.value(),
-            ))),
+            Some(Ok(event)) => {
+                if self
+                    .opened
+                    .as_mut()
+                    .expect("event came from an open target")
+                    .router
+                    .route(event)
+                    .is_err()
+                {
+                    self.close_target();
+                    self.transition(RuntimeState::Recovering {
+                        reason: RecoveryReason::TargetRoutingFailed,
+                    });
+                    return Err(io::Error::other("virtual target routing failed"));
+                }
+                Ok(Some(self.handle_evdev(
+                    event.event_type().0,
+                    event.code(),
+                    event.value(),
+                )))
+            }
             Some(Err(error)) => {
                 self.event_stream_lost();
                 Err(error)

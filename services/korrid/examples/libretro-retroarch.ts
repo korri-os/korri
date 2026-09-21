@@ -61,6 +61,8 @@ const reservedKeys = [
   "cheevos_password",
   "cheevos_token",
   "network_cmd_password",
+  "network_cmd_enable",
+  "network_cmd_port",
   "netplay_password",
   "netplay_spectate_password",
   "kiosk_mode_enable",
@@ -150,7 +152,9 @@ input_quit_gamepad_combo = "4"
 quit_press_twice = "false"
 
 kiosk_mode_enable = "true"
-menu_driver = "null"
+menu_driver = "rgui"
+network_cmd_enable = "true"
+network_cmd_port = "55355"
 input_overlay_enable = "false"
 video_fullscreen = "true"
 quit_on_close_content = "true"

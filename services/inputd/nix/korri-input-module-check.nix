@@ -307,13 +307,15 @@ assert
     "CAP_SETUID"
     "CAP_SETGID"
   ];
-assert builtins.elem "/dev/uinput" inputdService.serviceConfig.InaccessiblePaths;
+assert !(builtins.elem "/dev/uinput" inputdService.serviceConfig.InaccessiblePaths);
 assert inputdOnly.config.systemd.services ? korri-input-source-guard;
 assert builtins.elem "korri-input-source-guard.service" inputdService.requires;
 assert builtins.elem "korri-input-source-guard.service" inputdService.after;
 assert lib.hasInfix "Microsoft X-Box 360 pad" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdOnlyRules;
-assert lib.hasInfix " grant 977 1000 $env{DEVNAME}" inputdOnlyRules;
+assert lib.hasInfix " grant source 977 $env{DEVNAME}" inputdOnlyRules;
+assert lib.hasInfix " grant game 1000 $env{DEVNAME}" inputdOnlyRules;
+assert lib.hasInfix " grant portal $env{DEVNAME}" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdService.serviceConfig.ExecStartPre;
 assert lib.hasSuffix " reapply 977 1000" inputdService.serviceConfig.ExecStartPre;
 assert lib.hasSuffix " revoke" inputdService.serviceConfig.ExecStopPost;
@@ -323,7 +325,7 @@ assert extraReader.config.users.users.korri-portal.uid == null;
 assert extraReader.config.users.users.korri-portal.extraGroups == [ ];
 assert inputdOnly.config.services.korriLinuxInput.inputd.extraActionUsers == [ ];
 assert lib.hasInfix
-  (builtins.unsafeDiscardStringContext "${lib.getExe extraReaderAcl} grant 977 1000 $env{DEVNAME}")
+  (builtins.unsafeDiscardStringContext "${lib.getExe extraReaderAcl} grant portal $env{DEVNAME}")
   extraReader.config.services.udev.extraRules;
 assert
   extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStartPre
@@ -359,6 +361,7 @@ assert
 assert lib.hasInfix "Microsoft X-Box 360 pad" combinedRules;
 assert lib.hasInfix "045e" combinedRules;
 assert lib.hasInfix "028e" combinedRules;
+assert lib.hasInfix ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="korri-inputd"'' combinedRules;
 assert !(lib.hasInfix "SUBSYSTEM==\"input\", KERNEL==\"event*\", MODE" combinedRules);
 assert lib.any (path: lib.hasInfix "korri-inputplumber-dbus-policy" path) dbusPackages;
 assert allAssertionsPass bundled;

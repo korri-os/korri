@@ -1,4 +1,9 @@
-use std::{collections::VecDeque, io, path::PathBuf};
+use std::{
+    collections::VecDeque,
+    io,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use evdev::{EventType, InputEvent, SynchronizationCode};
 use futures_util::stream;
@@ -12,13 +17,46 @@ use korri_inputd::{
         XB360_TARGET_NAME,
     },
     runtime::{RecoveryReason, Runtime, RuntimeState},
+    virtual_targets::{InputOwner, TargetRouter},
 };
+
+#[derive(Default)]
+struct RoutedEvents {
+    game: Vec<InputEvent>,
+    portal: Vec<InputEvent>,
+}
+
+struct SharedRouter {
+    owner: InputOwner,
+    routed: Arc<Mutex<RoutedEvents>>,
+}
+
+impl TargetRouter for SharedRouter {
+    fn set_owner(&mut self, owner: InputOwner) {
+        self.owner = owner;
+    }
+
+    fn owner(&self) -> InputOwner {
+        self.owner
+    }
+
+    fn route(&mut self, event: InputEvent) -> io::Result<()> {
+        let mut routed = self.routed.lock().unwrap();
+        match self.owner {
+            InputOwner::Game => routed.game.push(event),
+            InputOwner::Portal => routed.portal.push(event),
+        }
+        Ok(())
+    }
+}
 
 struct InMemoryTargetProvider {
     devices: Vec<DeviceDescriptor>,
     opened: VecDeque<io::Result<DeviceDescriptor>>,
     end_stream_on_open: bool,
     drop_sync_on_open: bool,
+    events_on_open: Vec<io::Result<InputEvent>>,
+    routed: Arc<Mutex<RoutedEvents>>,
     enumerate_calls: usize,
     open_calls: usize,
 }
@@ -30,6 +68,8 @@ impl InMemoryTargetProvider {
             opened: VecDeque::new(),
             end_stream_on_open: false,
             drop_sync_on_open: false,
+            events_on_open: Vec::new(),
+            routed: Arc::new(Mutex::new(RoutedEvents::default())),
             enumerate_calls: 0,
             open_calls: 0,
         }
@@ -45,6 +85,10 @@ impl InMemoryTargetProvider {
 
     fn drop_sync_on_open(&mut self) {
         self.drop_sync_on_open = true;
+    }
+
+    fn route_on_open(&mut self, events: impl IntoIterator<Item = InputEvent>) {
+        self.events_on_open = events.into_iter().map(Ok).collect();
     }
 }
 
@@ -70,10 +114,20 @@ impl TargetProvider for InMemoryTargetProvider {
                 SynchronizationCode::SYN_DROPPED.0,
                 0,
             ))])) as korri_inputd::devices::InputEventStream
+        } else if !self.events_on_open.is_empty() {
+            Box::pin(stream::iter(std::mem::take(&mut self.events_on_open)))
+                as korri_inputd::devices::InputEventStream
         } else {
             Box::pin(stream::pending()) as korri_inputd::devices::InputEventStream
         };
-        Ok(OpenedTarget { descriptor, events })
+        Ok(OpenedTarget {
+            descriptor,
+            events,
+            router: Box::new(SharedRouter {
+                owner: InputOwner::Portal,
+                routed: Arc::clone(&self.routed),
+            }),
+        })
     }
 }
 
@@ -169,6 +223,61 @@ fn release_destructive(runtime: &mut Runtime) {
     for control in [Control::L1, Control::R1, Control::Start, Control::Select] {
         assert!(send_dbus(runtime, control, ControlTransition::Released).is_empty());
     }
+}
+
+#[tokio::test]
+async fn normalized_events_route_only_to_the_current_owner() {
+    let mut provider = InMemoryTargetProvider::with(vec![target("event7")]);
+    provider.route_on_open([
+        InputEvent::new(EventType::KEY.0, 0x130, 1),
+        InputEvent::new(EventType::KEY.0, 0x130, 0),
+    ]);
+    let routed = Arc::clone(&provider.routed);
+    let mut runtime = ready_runtime(&mut provider);
+
+    assert_eq!(runtime.input_owner(), InputOwner::Portal);
+    runtime.next_evdev_actions().await.unwrap();
+    runtime.set_input_owner(InputOwner::Game);
+    runtime.next_evdev_actions().await.unwrap();
+
+    let routed = routed.lock().unwrap();
+    assert_eq!(routed.portal.len(), 1);
+    assert_eq!(routed.portal[0].value(), 1);
+    assert_eq!(routed.game.len(), 1);
+    assert_eq!(routed.game[0].value(), 0);
+}
+
+#[tokio::test]
+async fn selected_owner_survives_source_reopen_without_persisted_state() {
+    let mut provider = InMemoryTargetProvider::with(vec![target("event7")]);
+    let routed = Arc::clone(&provider.routed);
+    let mut runtime = ready_runtime(&mut provider);
+    runtime.set_input_owner(InputOwner::Game);
+
+    provider.devices = vec![target("event8")];
+    provider.route_on_open([InputEvent::new(EventType::KEY.0, 0x130, 1)]);
+    runtime.reconcile(&mut provider);
+    runtime.next_evdev_actions().await.unwrap();
+
+    let routed = routed.lock().unwrap();
+    assert_eq!(routed.game.len(), 1);
+    assert!(routed.portal.is_empty());
+}
+
+#[tokio::test]
+async fn ownership_switch_does_not_replay_inactive_target_events() {
+    let mut provider = InMemoryTargetProvider::with(vec![target("event7")]);
+    provider.route_on_open([InputEvent::new(EventType::KEY.0, 0x130, 1)]);
+    let routed = Arc::clone(&provider.routed);
+    let mut runtime = ready_runtime(&mut provider);
+
+    runtime.set_input_owner(InputOwner::Game);
+    runtime.set_input_owner(InputOwner::Portal);
+    runtime.next_evdev_actions().await.unwrap();
+
+    let routed = routed.lock().unwrap();
+    assert!(routed.game.is_empty());
+    assert_eq!(routed.portal.len(), 1);
 }
 
 #[test]
@@ -311,7 +420,6 @@ fn legacy_controller_action_matrix_is_reachable_and_catalog_typed() {
                             0,
                         ));
                     }
-                    emitted.extend(runtime.advance_actions_at(3_000));
                 } else {
                     for control in chord.controls {
                         emitted.extend(press_control(&mut runtime, *control));
@@ -332,9 +440,11 @@ fn legacy_controller_action_matrix_is_reachable_and_catalog_typed() {
             "catalog route was unreachable: {}",
             entry.id
         );
-        assert!(emitted
-            .iter()
-            .all(|action| ACTION_CATALOG.iter().any(|known| known.id == action.id)));
+        assert!(emitted.iter().all(|action| {
+            ACTION_CATALOG
+                .iter()
+                .any(|known| known.id == action.id && known.dispatch_mode == action.dispatch_mode)
+        }));
     }
 }
 
@@ -500,42 +610,56 @@ async fn stream_loss_clears_state_and_requires_reconciliation_and_release_before
     for control in [Control::L1, Control::R1, Control::Start] {
         send_dbus(&mut runtime, control, ControlTransition::Pressed);
     }
-    assert!(send_dbus_at(
+    let actions = send_dbus_at(
         &mut runtime,
         Control::Select,
         ControlTransition::Pressed,
         1_000,
-    )
-    .is_empty());
-    assert!(runtime.advance_actions_at(2_999).is_empty());
-    let actions = runtime.advance_actions_at(3_000);
+    );
     assert_eq!(actions.len(), 1);
     assert_eq!(actions[0].dispatch_mode, DispatchMode::ExactStop);
 }
 
 #[test]
-fn destructive_chord_release_before_hold_threshold_dispatches_nothing() {
+fn exact_stop_fires_on_activation_once_and_suppresses_repeats_until_release() {
     let mut provider = InMemoryTargetProvider::with(vec![target("event10")]);
     let mut runtime = ready_runtime(&mut provider);
     release_destructive(&mut runtime);
     for control in [Control::L1, Control::R1, Control::Start] {
-        assert!(send_dbus_at(&mut runtime, control, ControlTransition::Pressed, 1_000,).is_empty());
+        assert!(send_dbus_at(&mut runtime, control, ControlTransition::Pressed, 1_000).is_empty());
     }
-    assert!(send_dbus_at(
+    let first = send_dbus_at(
         &mut runtime,
         Control::Select,
         ControlTransition::Pressed,
         1_000,
+    );
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].id, ActionId::KillCurrentGame);
+    assert_eq!(first[0].dispatch_mode, DispatchMode::ExactStop);
+    assert!(send_dbus_at(
+        &mut runtime,
+        Control::Select,
+        ControlTransition::Pressed,
+        1_001,
     )
     .is_empty());
+    assert!(runtime.advance_actions_at(4_000).is_empty());
     assert!(send_dbus_at(
         &mut runtime,
         Control::Select,
         ControlTransition::Released,
-        2_000,
+        4_001,
     )
     .is_empty());
-    assert!(runtime.advance_actions_at(4_000).is_empty());
+    let second = send_dbus_at(
+        &mut runtime,
+        Control::Select,
+        ControlTransition::Pressed,
+        4_002,
+    );
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].id, ActionId::KillCurrentGame);
 }
 
 #[test]
@@ -560,6 +684,13 @@ fn provider_owner_change_closes_target_and_requires_reconciliation() {
     for control in [Control::L1, Control::R1, Control::Start, Control::Select] {
         assert!(send_dbus(&mut runtime, control, ControlTransition::Pressed).is_empty());
     }
+    release_destructive(&mut runtime);
+    for control in [Control::L1, Control::R1, Control::Start] {
+        assert!(send_dbus(&mut runtime, control, ControlTransition::Pressed).is_empty());
+    }
+    let actions = send_dbus(&mut runtime, Control::Select, ControlTransition::Pressed);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].dispatch_mode, DispatchMode::ExactStop);
 }
 
 #[test]

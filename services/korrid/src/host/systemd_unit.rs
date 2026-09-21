@@ -72,6 +72,8 @@ impl LaunchUnitError {
     }
 }
 
+pub(super) const RUNNER_ID_ENV: &str = "KORRI_LIVE_RUNNER_ID";
+
 pub trait LaunchUnitBackend: Send + Sync {
     fn launch(
         &self,
@@ -87,6 +89,11 @@ pub trait LaunchUnitBackend: Send + Sync {
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError>;
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError>;
+    /// Runner identity retained by the live transient unit. This is runtime
+    /// discovery, not part of the durable active-session journal.
+    fn runner_id(&self, _launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
+        Ok(None)
+    }
     /// Processes of this launch, used to recognize its compositor windows.
     /// A backend that cannot see processes reports none, which makes korrid
     /// focus nothing rather than guess at another program's window.
@@ -152,6 +159,25 @@ impl Default for SystemdLaunchUnitBackend {
 #[derive(Default)]
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
+    runners: Mutex<BTreeMap<String, String>>,
+    thawed: Mutex<Vec<String>>,
+}
+
+#[cfg(test)]
+impl InMemoryLaunchUnitBackend {
+    pub(crate) fn complete_live(&self) {
+        let mut units = self.units.lock().unwrap();
+        let launch_id = units
+            .iter()
+            .find(|(_, state)| **state != LaunchUnitState::Completed)
+            .map(|(launch_id, _)| launch_id.clone())
+            .expect("one live test launch");
+        units.insert(launch_id, LaunchUnitState::Completed);
+    }
+
+    pub(crate) fn thaw_count(&self) -> usize {
+        self.thawed.lock().unwrap().len()
+    }
 }
 
 #[cfg(test)]
@@ -160,12 +186,18 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         &self,
         launch_id: &str,
         _command: &[String],
-        _environment: &BTreeMap<String, String>,
+        environment: &BTreeMap<String, String>,
     ) -> Result<(), LaunchUnitError> {
         self.units
             .lock()
             .unwrap()
             .insert(launch_id.into(), LaunchUnitState::Running);
+        if let Some(runner_id) = environment.get(RUNNER_ID_ENV) {
+            self.runners
+                .lock()
+                .unwrap()
+                .insert(launch_id.into(), runner_id.clone());
+        }
         Ok(())
     }
 
@@ -212,6 +244,7 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
     }
 
     fn thaw(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
+        self.thawed.lock().unwrap().push(launch_id.into());
         let mut units = self.units.lock().unwrap();
         match units.get(launch_id).copied() {
             Some(
@@ -227,6 +260,10 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
                 "unit is not active",
             )),
         }
+    }
+
+    fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
+        Ok(self.runners.lock().unwrap().get(launch_id).cloned())
     }
 
     fn live_launch_ids(&self) -> Result<Vec<String>, LaunchUnitError> {
@@ -776,6 +813,188 @@ impl SystemdLaunchUnitBackend {
         ])
     }
 
+    pub(super) fn runner_id_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Ok(vec![
+            "--system".into(),
+            "--no-ask-password".into(),
+            "show".into(),
+            Self::unit_name(launch_id)?,
+            "--property=Environment".into(),
+        ])
+    }
+
+    pub(super) fn parse_runner_id(environment: &str) -> Result<Option<String>, LaunchUnitError> {
+        let malformed = || {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "live unit has malformed runner identity metadata",
+            )
+        };
+        let serialized = environment
+            .strip_prefix("Environment=")
+            .ok_or_else(malformed)?;
+        let assignments = Self::parse_systemd_environment(serialized)?;
+        let mut names = BTreeSet::new();
+        let mut runner_id = None;
+        for assignment in assignments {
+            let (name, value) = assignment.split_once('=').ok_or_else(malformed)?;
+            if !Self::valid_environment_name(name) || !names.insert(name.to_owned()) {
+                return Err(malformed());
+            }
+            if name != RUNNER_ID_ENV {
+                continue;
+            }
+            if runner_id.is_some() || value.is_empty() {
+                return Err(malformed());
+            }
+            let parsed = serde_json::from_value::<crate::config::ReleaseKey>(value.into())
+                .map_err(|_| malformed())?;
+            runner_id = Some(parsed.0);
+        }
+        Ok(runner_id)
+    }
+
+    fn valid_environment_name(name: &str) -> bool {
+        let mut characters = name.chars();
+        characters
+            .next()
+            .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+            && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    }
+
+    fn parse_systemd_environment(serialized: &str) -> Result<Vec<String>, LaunchUnitError> {
+        let malformed = || {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "systemctl returned malformed Environment serialization",
+            )
+        };
+        if serialized.contains(['\n', '\r']) {
+            return Err(malformed());
+        }
+        let chars = serialized.chars().collect::<Vec<_>>();
+        let mut offset = 0;
+        let mut words = Vec::new();
+        while offset < chars.len() {
+            while chars
+                .get(offset)
+                .is_some_and(|character| character.is_ascii_whitespace())
+            {
+                offset += 1;
+            }
+            if offset == chars.len() {
+                break;
+            }
+            let quoted = chars[offset] == '"';
+            if quoted {
+                offset += 1;
+            }
+            let mut word = String::new();
+            loop {
+                let Some(character) = chars.get(offset).copied() else {
+                    if quoted {
+                        return Err(malformed());
+                    }
+                    break;
+                };
+                if quoted && character == '"' {
+                    offset += 1;
+                    if chars
+                        .get(offset)
+                        .is_some_and(|next| !next.is_ascii_whitespace())
+                    {
+                        return Err(malformed());
+                    }
+                    break;
+                }
+                if !quoted && character.is_ascii_whitespace() {
+                    break;
+                }
+                if !quoted && character == '"' {
+                    return Err(malformed());
+                }
+                if character == '\\' {
+                    offset += 1;
+                    word.push(Self::decode_systemd_escape(&chars, &mut offset)?);
+                } else {
+                    if character == '\0' {
+                        return Err(malformed());
+                    }
+                    word.push(character);
+                    offset += 1;
+                }
+            }
+            if word.is_empty() {
+                return Err(malformed());
+            }
+            words.push(word);
+        }
+        Ok(words)
+    }
+
+    fn decode_systemd_escape(chars: &[char], offset: &mut usize) -> Result<char, LaunchUnitError> {
+        let malformed = || {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "systemctl returned malformed Environment escape",
+            )
+        };
+        let escaped = chars.get(*offset).copied().ok_or_else(malformed)?;
+        *offset += 1;
+        let decoded = match escaped {
+            '\\' | '"' | '\'' => escaped,
+            'a' => '\u{0007}',
+            'b' => '\u{0008}',
+            'f' => '\u{000c}',
+            'n' => '\n',
+            'r' => '\r',
+            's' => ' ',
+            't' => '\t',
+            'v' => '\u{000b}',
+            'x' => Self::decode_systemd_digits(chars, offset, 2, 16)?,
+            'u' => Self::decode_systemd_digits(chars, offset, 4, 16)?,
+            'U' => Self::decode_systemd_digits(chars, offset, 8, 16)?,
+            '0'..='7' => {
+                *offset -= 1;
+                Self::decode_systemd_digits(chars, offset, 3, 8)?
+            }
+            _ => return Err(malformed()),
+        };
+        if decoded == '\0' {
+            return Err(malformed());
+        }
+        Ok(decoded)
+    }
+
+    fn decode_systemd_digits(
+        chars: &[char],
+        offset: &mut usize,
+        count: usize,
+        radix: u32,
+    ) -> Result<char, LaunchUnitError> {
+        let malformed = || {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                "systemctl returned malformed Environment escape",
+            )
+        };
+        let end = offset.checked_add(count).ok_or_else(malformed)?;
+        let digits = chars.get(*offset..end).ok_or_else(malformed)?;
+        let mut value = 0_u32;
+        for digit in digits {
+            value = value
+                .checked_mul(radix)
+                .and_then(|current| {
+                    digit
+                        .to_digit(radix)
+                        .and_then(|digit| current.checked_add(digit))
+                })
+                .ok_or_else(malformed)?;
+        }
+        *offset = end;
+        char::from_u32(value).ok_or_else(malformed)
+    }
+
     /// Parses `systemctl show` output. `FreezerState` is consulted only for
     /// active units. Zao's systemd 259 reports `running`, `freezing`,
     /// `frozen`, and `thawing`. Only the two settled values map to
@@ -874,6 +1093,18 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             ));
         }
         Self::parse_unit_state(&values)
+    }
+
+    fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
+        let arguments = Self::runner_id_arguments(launch_id)?;
+        let output = self.require_success(&self.systemctl, &arguments)?;
+        let stdout = std::str::from_utf8(&output.stdout).map_err(|error| {
+            LaunchUnitError::new(
+                LaunchUnitErrorKind::Protocol,
+                format!("systemctl returned non-UTF-8 environment metadata: {error}"),
+            )
+        })?;
+        Self::parse_runner_id(stdout.trim())
     }
 
     /// Stops the unit. systemd 259 refuses `stop` on a frozen unit
@@ -1001,6 +1232,46 @@ mod tests {
             2002,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn runner_identity_decodes_strict_systemd_environment_serialization() {
+        for serialized in [
+            "Environment=DISPLAY=:0 KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba HOME=/home/korri",
+            "Environment=\"DISPLAY=hello world\" \"KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba\" OTHER=a\\\\b",
+            "Environment=KORRI_LIVE_RUNNER_ID=@korri:mgba\\x2fmgba",
+            "Environment=KORRI_LIVE_RUNNER_ID_SUFFIX=@korri:other/value OTHER=KORRI_LIVE_RUNNER_ID=@korri:also/valid KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+        ] {
+            assert_eq!(
+                SystemdLaunchUnitBackend::parse_runner_id(serialized).unwrap(),
+                Some("@korri:mgba/mgba".into())
+            );
+        }
+        assert_eq!(
+            SystemdLaunchUnitBackend::parse_runner_id("Environment=DISPLAY=:0").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn runner_identity_rejects_ambiguous_or_malformed_systemd_metadata() {
+        for serialized in [
+            "Environment=KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba KORRI_LIVE_RUNNER_ID=@korri:mgba/other",
+            "Environment=\"KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+            "Environment=BROKEN KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+            "Environment=9BROKEN=value KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+            "Environment=DISPLAY=:0 DISPLAY=:1 KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+            "Environment=KORRI_LIVE_RUNNER_ID=",
+            "Environment=KORRI_LIVE_RUNNER_ID=mgba",
+            "Environment=KORRI_LIVE_RUNNER_ID=@korri:mgba",
+            "Environment=KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba\\q",
+            "KORRI_LIVE_RUNNER_ID=@korri:mgba/mgba",
+        ] {
+            assert!(
+                SystemdLaunchUnitBackend::parse_runner_id(serialized).is_err(),
+                "accepted {serialized:?}"
+            );
+        }
     }
 
     #[test]
