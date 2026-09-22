@@ -102,6 +102,12 @@ fn exact_start_mirror_and_stop_lifecycle() {
     ) + "\n";
     send(mirror.as_raw_fd(), frame.as_bytes());
 
+    send(control.as_raw_fd(), &request(3, OTHER));
+    assert_eq!(receive(control.as_raw_fd(), 3), [1, 1, 5]);
+    assert!(receiver.path("sunshine-active-launch.json").exists());
+    send(control.as_raw_fd(), &request(3, LAUNCH));
+    assert_eq!(receive(control.as_raw_fd(), 3), [1, 0, 0]);
+
     let extra = connect(&receiver.path("control.sock"));
     send(extra.as_raw_fd(), &request(1, OTHER));
     assert_eq!(receive(extra.as_raw_fd(), 3), [1, 1, 3]);

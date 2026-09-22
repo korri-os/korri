@@ -68,6 +68,13 @@ pub enum MirrorOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SeatResetOutcome {
+    Accepted,
+    StaleLaunch,
+    BackendFailed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SourceState {
     Connected,
     Reserved,
@@ -80,6 +87,7 @@ struct SourceBinding {
     window_start_ms: u64,
     events_in_window: u16,
     last_event_ms: u64,
+    requires_neutral: bool,
 }
 
 pub struct SeatRuntime<B: SeatBackend> {
@@ -175,6 +183,12 @@ impl<B: SeatBackend> SeatRuntime<B> {
                     right_stick_x: frame.right_stick_x,
                     right_stick_y: invert_sunshine_axis(frame.right_stick_y),
                 };
+                if binding.requires_neutral {
+                    if next == GamepadState::neutral() {
+                        binding.requires_neutral = false;
+                    }
+                    return MirrorOutcome::Accepted { slot };
+                }
                 if self.last_state[(slot - 1) as usize] != next {
                     let Some(backend) = self.backend.as_mut() else {
                         return MirrorOutcome::BackendFailed;
@@ -188,6 +202,34 @@ impl<B: SeatBackend> SeatRuntime<B> {
             }
             _ => MirrorOutcome::Invalid,
         }
+    }
+
+    pub fn reset(&mut self, launch_id: &str) -> SeatResetOutcome {
+        if launch_id != self.launch_id {
+            return SeatResetOutcome::StaleLaunch;
+        }
+        let active: Vec<_> = self
+            .sources
+            .iter()
+            .filter_map(|(controller, binding)| {
+                (binding.state == SourceState::Connected).then_some((*controller, binding.slot))
+            })
+            .collect();
+        for (controller, _) in &active {
+            if let Some(binding) = self.sources.get_mut(controller) {
+                binding.requires_neutral = true;
+            }
+        }
+        let Some(backend) = self.backend.as_mut() else {
+            return SeatResetOutcome::BackendFailed;
+        };
+        for (_, slot) in active {
+            if backend.write_state(slot, GamepadState::neutral()).is_err() {
+                return SeatResetOutcome::BackendFailed;
+            }
+            self.last_state[(slot - 1) as usize] = GamepadState::neutral();
+        }
+        SeatResetOutcome::Accepted
     }
 
     pub fn expire_stale(&mut self, now_ms: u64) -> Result<usize, String> {
@@ -249,6 +291,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 window_start_ms: 0,
                 events_in_window: 0,
                 last_event_ms: 0,
+                requires_neutral: false,
             },
         );
         MirrorOutcome::Accepted { slot }

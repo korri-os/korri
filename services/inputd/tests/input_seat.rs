@@ -1,5 +1,6 @@
 use korri_inputd::input_seat::{
-    invert_sunshine_axis, GamepadState, MirrorOutcome, SeatBackend, SeatRuntime, SeatSpec,
+    invert_sunshine_axis, GamepadState, MirrorOutcome, SeatBackend, SeatResetOutcome, SeatRuntime,
+    SeatSpec,
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -68,6 +69,12 @@ fn connected(controller: u8) -> String {
 fn state(controller: u8, buttons: u32, left_y: i16, right_y: i16) -> String {
     format!(
         r#"{{"kind":"source-state","launchId":"{LAUNCH}","controllerNumber":{controller},"buttons":{buttons},"leftTrigger":3,"rightTrigger":4,"leftStickX":5,"leftStickY":{left_y},"rightStickX":6,"rightStickY":{right_y}}}"#
+    )
+}
+
+fn neutral_state(controller: u8) -> String {
+    format!(
+        r#"{{"kind":"source-state","launchId":"{LAUNCH}","controllerNumber":{controller},"buttons":0,"leftTrigger":0,"rightTrigger":0,"leftStickX":0,"leftStickY":0,"rightStickX":0,"rightStickY":0}}"#
     )
 }
 
@@ -188,6 +195,125 @@ fn stale_source_timeout_releases_held_state() {
         runtime.accept(&envelope(&state(0, 0, 0, 0), TOKEN), 511),
         MirrorOutcome::Accepted { slot: 1 }
     );
+}
+
+#[test]
+fn reset_neutralizes_active_seats_and_discards_held_state_until_a_neutral_frame() {
+    let backend = RecordingSeatBackend::default();
+    let probe = backend.clone();
+    let mut runtime = SeatRuntime::start(LAUNCH, TOKEN, backend).unwrap();
+    runtime.accept(&envelope(&state(0, 0x1000, 0, 0), TOKEN), 1);
+    runtime.accept(&envelope(&state(1, 0x2000, 0, 0), TOKEN), 1);
+
+    assert_eq!(runtime.reset(LAUNCH), SeatResetOutcome::Accepted);
+    assert_eq!(probe.states(1).last(), Some(&GamepadState::neutral()));
+    assert_eq!(probe.states(2).last(), Some(&GamepadState::neutral()));
+    assert!(probe.states(3).is_empty());
+
+    let seat_one_writes = probe.states(1).len();
+    assert_eq!(
+        runtime.accept(&envelope(&state(0, 0x1000, 0, 0), TOKEN), 2),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(probe.states(1).len(), seat_one_writes);
+
+    assert_eq!(
+        runtime.accept(&envelope(&neutral_state(0), TOKEN), 3),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(probe.states(1).len(), seat_one_writes);
+    assert_eq!(
+        runtime.accept(&envelope(&state(0, 0x1000, 0, 0), TOKEN), 4),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(probe.states(1).len(), seat_one_writes + 1);
+}
+
+#[test]
+fn reset_refuses_a_stale_launch_without_touching_seats() {
+    let backend = RecordingSeatBackend::default();
+    let probe = backend.clone();
+    let mut runtime = SeatRuntime::start(LAUNCH, TOKEN, backend).unwrap();
+    runtime.accept(&envelope(&state(0, 0x1000, 0, 0), TOKEN), 1);
+    let writes = probe.states(1).len();
+
+    assert_eq!(
+        runtime.reset("fedcba9876543210fedcba9876543210"),
+        SeatResetOutcome::StaleLaunch
+    );
+    assert_eq!(probe.states(1).len(), writes);
+}
+
+#[test]
+fn partial_reset_failure_gates_every_active_source_until_post_reset_neutral() {
+    struct FailingWriteBackend {
+        probe: RecordingSeatBackend,
+        fail_slot: Arc<Mutex<Option<u8>>>,
+    }
+    impl SeatBackend for FailingWriteBackend {
+        fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
+            self.probe.create(spec)
+        }
+        fn write_state(&mut self, slot: u8, state: GamepadState) -> Result<(), String> {
+            let mut fail_slot = self.fail_slot.lock().unwrap();
+            if *fail_slot == Some(slot) {
+                *fail_slot = None;
+                Err("write failed".into())
+            } else {
+                drop(fail_slot);
+                self.probe.write_state(slot, state)
+            }
+        }
+        fn destroy(&mut self, slot: u8) -> Result<(), String> {
+            self.probe.destroy(slot)
+        }
+    }
+    let probe = RecordingSeatBackend::default();
+    let fail_slot = Arc::new(Mutex::new(None));
+    let mut runtime = SeatRuntime::start(
+        LAUNCH,
+        TOKEN,
+        FailingWriteBackend {
+            probe: probe.clone(),
+            fail_slot: fail_slot.clone(),
+        },
+    )
+    .unwrap();
+    runtime.accept(&envelope(&state(0, 0x1000, 0, 0), TOKEN), 1);
+    runtime.accept(&envelope(&state(1, 0x2000, 0, 0), TOKEN), 1);
+
+    *fail_slot.lock().unwrap() = Some(2);
+    assert_eq!(runtime.reset(LAUNCH), SeatResetOutcome::BackendFailed);
+    assert_eq!(probe.states(1).last(), Some(&GamepadState::neutral()));
+    assert_eq!(probe.states(2).last().unwrap().buttons, 0x2000);
+
+    let seat_one_writes = probe.states(1).len();
+    let seat_two_writes = probe.states(2).len();
+    assert_eq!(
+        runtime.accept(&envelope(&state(0, 0x4000, 0, 0), TOKEN), 2),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(
+        runtime.accept(&envelope(&state(1, 0x4000, 0, 0), TOKEN), 2),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert_eq!(probe.states(1).len(), seat_one_writes);
+    assert_eq!(probe.states(2).len(), seat_two_writes);
+
+    assert_eq!(runtime.reset(LAUNCH), SeatResetOutcome::Accepted);
+    let seat_one_writes = probe.states(1).len();
+    let seat_two_writes = probe.states(2).len();
+    runtime.accept(&envelope(&state(0, 0x4000, 0, 0), TOKEN), 3);
+    runtime.accept(&envelope(&state(1, 0x4000, 0, 0), TOKEN), 3);
+    assert_eq!(probe.states(1).len(), seat_one_writes);
+    assert_eq!(probe.states(2).len(), seat_two_writes);
+
+    runtime.accept(&envelope(&neutral_state(0), TOKEN), 4);
+    runtime.accept(&envelope(&neutral_state(1), TOKEN), 4);
+    runtime.accept(&envelope(&state(0, 0x4000, 0, 0), TOKEN), 5);
+    runtime.accept(&envelope(&state(1, 0x4000, 0, 0), TOKEN), 5);
+    assert_eq!(probe.states(1).last().unwrap().buttons, 0x4000);
+    assert_eq!(probe.states(2).last().unwrap().buttons, 0x4000);
 }
 
 #[test]

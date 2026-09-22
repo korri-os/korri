@@ -1,6 +1,6 @@
 use korri_inputd::input_seat::{
-    validate_launch_id, GamepadState, MirrorOutcome, SeatBackend, SeatRuntime, SeatSpec,
-    MAX_MIRROR_FRAME_BYTES,
+    validate_launch_id, GamepadState, MirrorOutcome, SeatBackend, SeatResetOutcome, SeatRuntime,
+    SeatSpec, MAX_MIRROR_FRAME_BYTES,
 };
 use korri_inputd::input_seat_uinput::UinputSeatBackend;
 use serde::Serialize;
@@ -23,12 +23,14 @@ use std::{
 const CONTROL_VERSION: u8 = 1;
 const CONTROL_START: u8 = 1;
 const CONTROL_STOP: u8 = 2;
+const CONTROL_RESET: u8 = 3;
 const CONTROL_BYTES: usize = 34;
 const REPLY_BYTES: usize = 3;
 const REASON_NONE: u8 = 0;
 const REASON_INVALID: u8 = 1;
 const REASON_PEER: u8 = 2;
 const REASON_ACTIVE: u8 = 3;
+const REASON_BACKEND: u8 = 4;
 const REASON_STALE: u8 = 5;
 const CONTROL_IO_TIMEOUT_MS: i32 = 2_000;
 const ACTIVE_CONTROL_IO_TIMEOUT_MS: i32 = 50;
@@ -351,6 +353,15 @@ fn serve_active_launch(
             };
             if request.operation == CONTROL_STOP && request.launch_id == launch_id {
                 return Ok(LaunchExit::StopRequested);
+            }
+            if request.operation == CONTROL_RESET {
+                let (status, reason) = match runtime.reset(&request.launch_id) {
+                    SeatResetOutcome::Accepted => (0, REASON_NONE),
+                    SeatResetOutcome::StaleLaunch => (1, REASON_STALE),
+                    SeatResetOutcome::BackendFailed => (1, REASON_BACKEND),
+                };
+                let _ = send_reply(lease.as_raw_fd(), status, reason);
+                continue;
             }
             let reason = if request.operation == CONTROL_STOP {
                 REASON_STALE
