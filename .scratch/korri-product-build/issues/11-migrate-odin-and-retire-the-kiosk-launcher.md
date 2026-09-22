@@ -1,6 +1,6 @@
 # Migrate Odin and retire the kiosk launcher
 
-Status: ready-for-agent
+Status: in-progress
 Blocked by: 01
 
 ## What to build

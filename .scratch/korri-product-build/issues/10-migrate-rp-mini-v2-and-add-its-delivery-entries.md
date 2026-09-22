@@ -1,6 +1,6 @@
 # Migrate RP Mini V2 and add its delivery entries
 
-Status: ready-for-agent
+Status: in-progress
 Blocked by: 01
 
 ## What to build

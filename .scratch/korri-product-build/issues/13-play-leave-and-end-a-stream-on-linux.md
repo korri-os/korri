@@ -1,6 +1,6 @@
 # Play, leave, and end a stream on Linux
 
-Status: ready-for-agent
+Status: in-progress
 Blocked by: 04
 
 ## What to build
