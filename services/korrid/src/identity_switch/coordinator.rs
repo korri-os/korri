@@ -3,13 +3,14 @@ use super::{
 };
 use crate::{
     authorization::Authorization,
-    federation::{FederationDirectory, FederationResources},
+    federation::FederationDirectory,
     host::play_log::PlayLogStore,
     identity::{DeviceIdentity, IdentityState, OwnerStatementStatus, VerifiedOwnerStatement},
     local_signer::{UnixLocalSignerAdmin, UnixPersonSigner},
     peer_rpc::unix_time,
     relay::{CoordinatedRelays, RelayCoordinator, RelayList, WebSocketRelayTransport},
     remote_signer::{Nip46PersonSigner, PersonSigner, PersonSignerRequest, PersonSignerState},
+    FederationResources,
 };
 use std::{
     path::{Path, PathBuf},
@@ -103,7 +104,7 @@ impl IdentitySwitchCoordinator {
         let old_owner_event = old_identity
             .owner_statement_json()
             .ok_or_else(|| "The current device has no owner statement".to_owned())?;
-        let old_owner_was_published = owner_was_published(&old_identity, &old_statement).await?;
+        let old_owner_was_published = owner_was_published(&old_identity, &old_owner_event).await?;
         let staged_root = storage
             .prepare_staging_root()
             .map_err(|error| error.to_string())?;
@@ -478,13 +479,13 @@ fn verify_revocation(
 
 async fn owner_was_published(
     identity: &DeviceIdentity,
-    statement: &VerifiedOwnerStatement,
+    event_json: &str,
 ) -> Result<bool, String> {
     let Some(relays) = relays_for(identity)? else {
         return Ok(false);
     };
     relays
-        .owner_statement_was_published(statement)
+        .owner_statement_was_published(event_json)
         .await
         .map_err(|error| error.to_string())
 }

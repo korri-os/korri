@@ -170,7 +170,9 @@ impl LocalSignerKeyring {
             Ok(LocalPersonSigner {
                 keys,
                 expected_device_public_key,
-                state: Mutex::new(PersonSignerState::Available),
+                state: Mutex::new(PersonSignerState::Unavailable {
+                    message: "Local signer is ready".into(),
+                }),
             })
         })
     }
