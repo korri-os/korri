@@ -292,9 +292,13 @@ let
     case:
     let
       device = forceAt case.path case.forcedValue;
+      failures = check.validate case.name device;
     in
     valueAt case.path device.config == case.forcedValue
-    && check.validate case.name device == [ case.expectedFailure ];
+    # A hostile unit mutation can also change a dependent unit's generated
+    # helper derivation. The gate must report the targeted unit; coupled
+    # failures are additional valid evidence rather than a stale-test failure.
+    && builtins.elem case.expectedFailure failures;
   failedUnitCases = map (case: case.name) (
     builtins.filter (case: !(unitCasePasses case)) (
       disabledUnitCases

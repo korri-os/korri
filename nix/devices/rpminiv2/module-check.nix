@@ -218,8 +218,8 @@ pkgs.runCommand "rpminiv2-module-check"
   }
   ''
     grep -F 'timeout 300' ${idle.serviceConfig.ExecStart}
-    test -f ${c.services.korriLinuxInput.provider.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
-    test -f ${c.services.korriLinuxInput.provider.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
+    test -f ${c.services.inputplumber.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
+    test -f ${c.services.inputplumber.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
     cp ${./verify-image.py} verify-image.py
     cp ${./verify-image.test.py} verify-image.test.py
     export RP_MINIV2_KORRI_KERNEL=${c.system.build.kernel}/${c.system.boot.loader.kernelFile}

@@ -1,6 +1,5 @@
 # Evaluate the real base without any device or image module, then check that
-# every exported device keeps the shared access contract. The explicitly
-# loopback-only RP Mini V2 product is the sole NetworkManager exception.
+# every exported device keeps the shared access contract.
 {
   pkgs,
   nixpkgs,
@@ -33,7 +32,6 @@ let
   profile = base.config.networking.networkmanager.ensureProfiles;
   rescue = korri.nixosConfigurations.rg353m-rescue.config;
   normal = korri.nixosConfigurations.rg353m.config;
-  rpminiv2 = korri.nixosConfigurations.rpminiv2;
   # Production device package selections must not install bring-up benchmarks.
   benchmarkPackageNames = [
     "glmark2"
@@ -60,12 +58,7 @@ assert !(base.options ? sdImage);
 assert !(base.options ? isoImage);
 assert base.config.boot.postBootCommands == "";
 assert base.config.fileSystems == { };
-assert lib.all samePolicy (
-  lib.attrValues (builtins.removeAttrs korri.nixosConfigurations [ "rpminiv2" ])
-);
-# The first RP Mini V2 product milestone is deliberately loopback-only. Keep
-# every other shared access policy while explicitly disabling NetworkManager.
-assert shared rpminiv2.config == (shared base.config // { networkmanager = false; });
+assert lib.all samePolicy (lib.attrValues korri.nixosConfigurations);
 assert profile.profiles.korri.wifi.ssid == "$WIFI_SSID";
 assert profile.profiles.korri.wifi-security.psk == "$WIFI_PSK";
 assert profile.environmentFiles == [ "/etc/korri/wifi.env" ];
@@ -73,12 +66,8 @@ assert !base.config.services.openssh.enable;
 assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
 assert lib.all noBenchmarksIn (lib.attrValues korri.nixosConfigurations);
-# Product sessions keep their DRM seat. Recovery and first-boot candidates
-# do not start a compositor or carry a Mesa userspace stack.
-assert !korri.nixosConfigurations.r36tmax-recovery.config.hardware.graphics.enable;
-assert !korri.nixosConfigurations.r36tmax-recovery.config.services.seatd.enable;
-assert !korri.nixosConfigurations.rpminiv2-recovery.config.hardware.graphics.enable;
-assert !korri.nixosConfigurations.rpminiv2-recovery.config.services.seatd.enable;
+# Every exported NixOS configuration is a product session. Recovery and
+# first-boot candidates are packages with their own focused checks.
 assert lib.all
   (
     device:
@@ -86,14 +75,7 @@ assert lib.all
     && device.config.services.seatd.enable
     && device.config.security.polkit.enable
   )
-  (
-    lib.attrValues (
-      builtins.removeAttrs korri.nixosConfigurations [
-        "r36tmax-recovery"
-        "rpminiv2-recovery"
-      ]
-    )
-  );
+  (lib.attrValues korri.nixosConfigurations);
 assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
 assert !(korri.nixosConfigurations.odin2portal.options.services ? korriKiosk);
 pkgs.runCommand "korri-base-module-check" { } ''
