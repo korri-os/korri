@@ -423,6 +423,18 @@ impl HostSessionControl {
         Ok(())
     }
 
+    fn reset_seats(&self, launch_id: &str) -> Result<(), String> {
+        let current = self.seat_lease.lock().expect("input-seat mutex poisoned");
+        match current.as_ref() {
+            Some((active, lease)) if active == launch_id && lease.alive() => lease.reset(launch_id),
+            Some((active, _lease)) if active != launch_id => {
+                Err("input-seat lease belongs to a different launch".into())
+            }
+            Some((_active, _lease)) => Err("input-seat lease is not live".into()),
+            None => Err("input-seat lease is missing".into()),
+        }
+    }
+
     fn stop_seats(&self, launch_id: &str) -> Result<(), String> {
         let lease = self
             .seat_lease
@@ -1125,6 +1137,18 @@ impl HostSessionControl {
                     message: format!("input seats could not return to the game: {message}"),
                 };
             }
+            if let Err(message) = self.reset_seats(&launch_id) {
+                if self
+                    .record_focus_failure(&mut state, launch_id.clone(), game_id.clone())
+                    .is_err()
+                {
+                    return HostSessionFreezeChange::RecoveryBlocked;
+                }
+                return HostSessionFreezeChange::FocusFailed {
+                    launch_id,
+                    message: format!("input seats could not reset for the game: {message}"),
+                };
+            }
             if let Some(message) = Self::focus_failure(self.focus_launch(&launch_id)) {
                 if self
                     .record_focus_failure(&mut state, launch_id.clone(), game_id)
@@ -1418,6 +1442,7 @@ mod tests {
         window_pids: BTreeMap<String, BTreeSet<i32>>,
         window_pids_fail: bool,
         runners: BTreeMap<String, String>,
+        return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
     }
 
     #[derive(Default)]
@@ -1598,6 +1623,9 @@ mod tests {
                     state
                         .units
                         .insert(launch_id.into(), LaunchUnitState::Running);
+                    if let Some(events) = &state.return_events {
+                        events.lock().unwrap().push("thaw");
+                    }
                     Ok(())
                 }
                 _ => Err(LaunchUnitError::new(
@@ -1711,8 +1739,67 @@ mod tests {
         fn alive(&self) -> bool {
             self.alive.load(Ordering::SeqCst)
         }
+        fn reset(&self, _launch_id: &str) -> Result<(), String> {
+            Ok(())
+        }
         fn stop(self: Box<Self>, _launch_id: &str) -> Result<(), String> {
             self.alive.store(false, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct ResetSeatState {
+        starts: Vec<String>,
+        resets: Vec<String>,
+        stops: Vec<String>,
+        reset_fails: bool,
+    }
+
+    #[derive(Clone, Default)]
+    struct ResetSeatManager {
+        state: Arc<Mutex<ResetSeatState>>,
+        return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
+    }
+
+    struct ResetSeatLease {
+        state: Arc<Mutex<ResetSeatState>>,
+        return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
+        alive: AtomicBool,
+    }
+
+    impl InputSeatManager for ResetSeatManager {
+        fn start(&self, launch_id: &str) -> Result<Box<dyn InputSeatLease>, String> {
+            self.state.lock().unwrap().starts.push(launch_id.into());
+            Ok(Box::new(ResetSeatLease {
+                state: self.state.clone(),
+                return_events: self.return_events.clone(),
+                alive: AtomicBool::new(true),
+            }))
+        }
+    }
+
+    impl InputSeatLease for ResetSeatLease {
+        fn alive(&self) -> bool {
+            self.alive.load(Ordering::SeqCst)
+        }
+
+        fn reset(&self, launch_id: &str) -> Result<(), String> {
+            let mut state = self.state.lock().unwrap();
+            state.resets.push(launch_id.into());
+            if let Some(events) = &self.return_events {
+                events.lock().unwrap().push("reset");
+            }
+            if state.reset_fails {
+                Err("seat reset refused".into())
+            } else {
+                Ok(())
+            }
+        }
+
+        fn stop(self: Box<Self>, launch_id: &str) -> Result<(), String> {
+            self.alive.store(false, Ordering::SeqCst);
+            self.state.lock().unwrap().stops.push(launch_id.into());
             Ok(())
         }
     }
@@ -2379,6 +2466,7 @@ mod tests {
         tree: Mutex<String>,
         focused: Mutex<Vec<i64>>,
         focus_fails: AtomicBool,
+        return_events: Option<Arc<Mutex<Vec<&'static str>>>>,
     }
 
     impl CompositorControl for RecordingCompositor {
@@ -2388,6 +2476,9 @@ mod tests {
 
         fn focus(&self, node_id: i64) -> Result<(), String> {
             self.focused.lock().unwrap().push(node_id);
+            if let Some(events) = &self.return_events {
+                events.lock().unwrap().push("focus");
+            }
             if self.focus_fails.load(Ordering::SeqCst) {
                 return Err("compositor refused focus".into());
             }
@@ -2514,6 +2605,160 @@ mod tests {
             }
         );
         assert_eq!(*compositor.focused.lock().unwrap(), vec![3]);
+    }
+
+    #[test]
+    fn exact_return_orders_thaw_then_seat_reset_then_focus_before_success() {
+        let root = tempfile::tempdir().unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().return_events = Some(events.clone());
+        let manager = Arc::new(ResetSeatManager {
+            return_events: Some(events.clone()),
+            ..ResetSeatManager::default()
+        });
+        let compositor = Arc::new(RecordingCompositor {
+            return_events: Some(events.clone()),
+            ..RecordingCompositor::default()
+        });
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.freeze(&id);
+        events.lock().unwrap().clear();
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        events.lock().unwrap().push("success");
+
+        assert_eq!(
+            *events.lock().unwrap(),
+            ["thaw", "reset", "focus", "success"]
+        );
+        assert_eq!(manager.state.lock().unwrap().resets, [id]);
+    }
+
+    #[test]
+    fn stale_return_never_resets_the_replacement_launch_lease() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let manager = Arc::new(ResetSeatManager::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+        let first = prepare(&control, "one");
+        backend.insert(&first.launch_id, LaunchUnitState::Completed);
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Completed { .. }
+        ));
+        let second = prepare(&control, "two");
+
+        assert_eq!(
+            control.thaw(&first.launch_id),
+            HostSessionFreezeChange::StaleIdentity {
+                active_launch_id: Some(second.launch_id.clone())
+            }
+        );
+        let seats = manager.state.lock().unwrap();
+        assert!(seats.resets.is_empty());
+        assert_eq!(seats.starts.last(), Some(&second.launch_id));
+    }
+
+    #[test]
+    fn reset_failure_revokes_the_exact_lease_and_reports_focus_failed() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let manager = Arc::new(ResetSeatManager::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.freeze(&id);
+        manager.state.lock().unwrap().reset_fails = true;
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed {
+                launch_id: id.clone(),
+                message: "input seats could not reset for the game: seat reset refused".into(),
+            }
+        );
+        assert!(compositor.focused.lock().unwrap().is_empty());
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        assert_eq!(
+            control.status(),
+            HostSessionStatus::FocusFailed {
+                launch_id: id.clone(),
+                game_id: Some("one".into()),
+            }
+        );
+        let seats = manager.state.lock().unwrap();
+        assert_eq!(seats.resets, [id.as_str()]);
+        assert_eq!(seats.stops, [id.as_str()]);
+    }
+
+    #[test]
+    fn each_exact_unchanged_return_resets_before_refocusing() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let manager = Arc::new(ResetSeatManager::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+
+        for _ in 0..2 {
+            assert_eq!(
+                control.thaw(&id),
+                HostSessionFreezeChange::Unchanged {
+                    launch_id: id.clone()
+                }
+            );
+        }
+
+        assert_eq!(
+            manager.state.lock().unwrap().resets,
+            [id.as_str(), id.as_str()]
+        );
+        assert_eq!(*compositor.focused.lock().unwrap(), [3, 3]);
+    }
+
+    #[test]
+    fn thaw_resets_a_restart_recovered_exact_lease() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        backend.insert(id, LaunchUnitState::Frozen);
+        backend.set_pids(id, &[9100]);
+        let manager = Arc::new(ResetSeatManager::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone())
+            .with_compositor(compositor, vec![KIOSK_APP_ID.to_string()]);
+
+        assert!(matches!(control.status(), HostSessionStatus::Frozen { .. }));
+        assert_eq!(manager.state.lock().unwrap().starts, [id]);
+        assert_eq!(
+            control.thaw(id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.into()
+            }
+        );
+        assert_eq!(manager.state.lock().unwrap().resets, [id]);
     }
 
     #[test]

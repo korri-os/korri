@@ -9,10 +9,14 @@ use std::{
 const VERSION: u8 = 1;
 const START: u8 = 1;
 const STOP: u8 = 2;
+const RESET: u8 = 3;
 const IO_TIMEOUT_MS: i32 = 2_000;
 
 pub trait InputSeatLease: Send {
     fn alive(&self) -> bool;
+    fn reset(&self, _launch_id: &str) -> Result<(), String> {
+        Err("input-seat reset is unsupported".into())
+    }
     fn stop(self: Box<Self>, launch_id: &str) -> Result<(), String>;
 }
 
@@ -30,6 +34,9 @@ impl InputSeatManager for DisabledInputSeats {
 impl InputSeatLease for DisabledLease {
     fn alive(&self) -> bool {
         true
+    }
+    fn reset(&self, _launch_id: &str) -> Result<(), String> {
+        Ok(())
     }
     fn stop(self: Box<Self>, _launch_id: &str) -> Result<(), String> {
         Ok(())
@@ -68,6 +75,10 @@ impl InputSeatLease for UnixInputSeatLease {
         };
         (unsafe { libc::poll(&mut pollfd, 1, 0) }) >= 0
             && pollfd.revents & (libc::POLLHUP | libc::POLLERR) == 0
+    }
+    fn reset(&self, launch_id: &str) -> Result<(), String> {
+        send_request(self.fd.as_raw_fd(), RESET, launch_id)?;
+        receive_success(self.fd.as_raw_fd())
     }
     fn stop(self: Box<Self>, launch_id: &str) -> Result<(), String> {
         send_request(self.fd.as_raw_fd(), STOP, launch_id)?;
@@ -235,4 +246,115 @@ fn last(operation: &str) -> String {
         "input-seat {operation} failed: {}",
         std::io::Error::last_os_error()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    const LAUNCH_ID: &str = "0123456789abcdef0123456789abcdef";
+
+    fn socket_pair() -> (OwnedFd, OwnedFd) {
+        let mut fds = [-1; 2];
+        assert_eq!(
+            unsafe {
+                libc::socketpair(
+                    libc::AF_UNIX,
+                    libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC,
+                    0,
+                    fds.as_mut_ptr(),
+                )
+            },
+            0
+        );
+        unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) }
+    }
+
+    #[test]
+    fn reset_uses_the_version_one_exact_launch_request_on_the_live_lease_socket() {
+        let (client, server) = socket_pair();
+        let receiver = thread::spawn(move || {
+            let mut descriptor = libc::pollfd {
+                fd: server.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            assert_eq!(unsafe { libc::poll(&mut descriptor, 1, 500) }, 1);
+            let mut request = [0u8; 34];
+            assert_eq!(
+                unsafe {
+                    libc::recv(
+                        server.as_raw_fd(),
+                        request.as_mut_ptr().cast(),
+                        request.len(),
+                        0,
+                    )
+                },
+                request.len() as isize
+            );
+            assert_eq!(&request[..2], &[VERSION, RESET]);
+            assert_eq!(&request[2..], LAUNCH_ID.as_bytes());
+            let reply = [VERSION, 0, 0];
+            assert_eq!(
+                unsafe {
+                    libc::send(
+                        server.as_raw_fd(),
+                        reply.as_ptr().cast(),
+                        reply.len(),
+                        libc::MSG_NOSIGNAL,
+                    )
+                },
+                reply.len() as isize
+            );
+        });
+        let lease = UnixInputSeatLease { fd: client };
+
+        lease.reset(LAUNCH_ID).unwrap();
+        receiver.join().unwrap();
+    }
+
+    #[test]
+    fn reset_receiver_refusal_is_visible() {
+        let (client, server) = socket_pair();
+        let receiver = thread::spawn(move || {
+            let mut descriptor = libc::pollfd {
+                fd: server.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            assert_eq!(unsafe { libc::poll(&mut descriptor, 1, 500) }, 1);
+            let mut request = [0u8; 34];
+            assert_eq!(
+                unsafe {
+                    libc::recv(
+                        server.as_raw_fd(),
+                        request.as_mut_ptr().cast(),
+                        request.len(),
+                        0,
+                    )
+                },
+                request.len() as isize
+            );
+            let reply = [VERSION, 1, 5];
+            assert_eq!(
+                unsafe {
+                    libc::send(
+                        server.as_raw_fd(),
+                        reply.as_ptr().cast(),
+                        reply.len(),
+                        libc::MSG_NOSIGNAL,
+                    )
+                },
+                reply.len() as isize
+            );
+        });
+        let lease = UnixInputSeatLease { fd: client };
+
+        assert_eq!(
+            lease.reset(LAUNCH_ID).unwrap_err(),
+            "input-seat receiver rejected the request"
+        );
+        receiver.join().unwrap();
+    }
 }
