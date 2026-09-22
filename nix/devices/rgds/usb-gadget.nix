@@ -22,7 +22,7 @@ in
 {
   # libcomposite replaces g_serial: the legacy module owns the controller
   # exclusively and cannot add a network function beside the console.
-  boot.kernelModules = lib.mkForce [
+  boot.kernelModules = [
     "libcomposite"
     "usb_f_ncm"
     "usb_f_acm"

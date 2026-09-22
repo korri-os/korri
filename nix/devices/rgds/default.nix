@@ -4,8 +4,7 @@ let
     system = "aarch64-linux";
     specialArgs = { inherit korri; };
     modules = [
-      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
-      korri.nixosModules.korri-plugin-host
+      (import ../../product/nixos-module.nix { inherit korri; })
       ./sd-image.nix
       ./portal.nix
     ];

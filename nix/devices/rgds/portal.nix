@@ -1,4 +1,4 @@
-# Korri session for the RG DS: compositor, korrid, and the portal kiosk.
+# RG DS hardware facts and recorded hardware limits.
 #
 # Connector and device names come from the running candidate, not assumption:
 # /dev/dri/by-path/platform-display-subsystem-card resolves to card1
@@ -13,73 +13,16 @@
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  inputplumberData = import ../../../services/inputd/nix/inputplumber-data.nix { inherit pkgs; };
-  # InputPlumber found this board's buttons but had no profile for them, so it
-  # never built a controller target and only the touchscreens worked.
-  inputplumber = inputplumberData.composeResolved {
-    inputplumberKorri = korri.packages.${system}.inputplumber-korri;
-    additionalDataPackages = [
-      (import ./inputplumber-data.nix {
-        inherit pkgs;
-        inputplumber = korri.packages.${system}.inputplumber-korri;
-      })
-    ];
-  };
 in
 {
-  imports = [
-    ./gba-gameplay.nix
-    (import ../../../clients/portal/nix/nixos-module.nix {
-      inherit korri;
-      # The RG353M's Chromium hits a GPU-process seccomp fault on this same
-      # pinned browser. Keep software drawing for this first RG DS session and
-      # retest hardware rendering on the device before removing the flag.
-      chromiumArgs = [
-        "--force-prefers-reduced-motion"
-        "--disable-gpu"
-      ];
-    })
+  # This package contains the controller profile observed for this board. The
+  # product module owns InputPlumber and inputd themselves.
+  services.korriLinuxInput.provider.extraDataPackages = [
+    korri.packages.${system}.rgds-inputplumber-data
   ];
 
-  users.groups.games.gid = 1001;
-  users.users.gameplay = {
-    isNormalUser = true;
-    uid = 1001;
-    group = "games";
-    home = "/home/gameplay";
-    createHome = true;
-  };
-
-  services.korriBundle.initialPackage = import ../../../services/inputd/nix/korri-bundle.nix {
-    inherit pkgs;
-    inputdPackage = korri.packages.${system}.korri-inputd;
-    inputplumberKorri = inputplumber;
-    korridPackage = korri.packages.${system}.korrid;
-  };
-  services.korriBundle.launcherPackage = korri.packages.${system}.korri-inputd;
-  services.korriLinuxInput = {
-    provider.package = inputplumber;
-    inputd.package = korri.packages.${system}.korri-inputd;
-  };
-  services.korridLinuxDevice.package = korri.packages.${system}.korrid;
-
   services.korriLinuxHost = {
-    enable = true;
     label = "rgds";
-    runtimeUser = "gameplay";
-    runtimeUid = 1001;
-    runtimeGroup = "games";
-    runtimeGid = 1001;
-    # The relays the other Korri devices already publish to. Peers are matched
-    # by owner, so discovery still needs an owner binding on this device.
-    relays = [
-      "wss://relay.nostr.band"
-      "wss://relay.primal.net"
-    ];
-    # The existing validation gate is NVIDIA-specific; audio routing on this
-    # board is unverified. Both stay off until tested on the device.
-    validation.enable = false;
-    audio.enable = false;
     compositor = {
       backend = "drm";
       localInput.enable = true;
@@ -89,16 +32,11 @@ in
       mode = "640x480@60Hz";
       renderer = "gles2";
     };
-    sunshine.openFirewall = false;
   };
 
-  services.korri.webSurfaceHost = {
-    enable = true;
-    # Pico is the surface this handheld opens with. The portal still resolves
-    # ?surface= and a stored choice first, so switching remains possible.
-    surfaceId = "pico";
-  };
-  services.korri.compositor.kiosk.enable = true;
+  # Recorded limit: Chromium's GPU path has not been accepted on the RG DS.
+  # Keep software rendering local to this device rather than product policy.
+  services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
 
   assertions = [
     {

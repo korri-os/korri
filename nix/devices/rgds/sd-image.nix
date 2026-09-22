@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  korri,
   ...
 }:
 let
@@ -12,8 +11,6 @@ let
 in
 {
   imports = [
-    ../../base
-    ../../device-cache/nixos-module.nix
     (import ../../formats/sd-card.nix { gpt = false; })
     ./usb-gadget.nix
   ];
@@ -70,13 +67,7 @@ in
     graphics.enable = true;
     enableRedistributableFirmware = true;
   };
-  # Preserve the shared DRM-seat policy for the later device-backed kiosk.
-  # No compositor or controller mapping is selected before connector probing.
-  services.seatd.enable = true;
-  security.polkit.enable = true;
   environment.systemPackages = [
-    korri.packages.aarch64-linux.korrid
-    pkgs.networkmanager
     pkgs.evtest
     pkgs.libdrm
     pkgs.usbutils

@@ -47,23 +47,26 @@ assert (c.networking.firewall.interfaces.usb0.allowedTCPPorts or [ ]) == [ ];
 assert lib.hasInfix "no USB device controller appeared" gadgetText;
 assert !(lib.hasInfix ''test -n "$udc"'' gadgetText);
 assert !(c.systemd.units ? "serial-getty@ttyGS0.service");
-assert c.services.getty.autologinUser == "root";
-assert !c.services.openssh.enable && !c.services.openssh.openFirewall;
-assert c.users.users.root.openssh.authorizedKeys.keys == [ ];
-assert c.nix.settings.max-jobs == 0;
-assert c.nix.settings.require-sigs;
-assert c.services.korriLinuxHost.enable;
-# The plugin host is present so RetroArch and mGBA can be installed; it names
-# and approves no plugin by itself.
-assert c.services.korri.pluginHost.enable;
-assert c.nix.settings.max-jobs == 0;
-assert c.services.korri.webSurfaceHost.enable;
-assert c.services.korri.compositor.kiosk.enable;
+# The removed device-owned runtime account must not return. The shared product
+# check owns the current product account policy.
+assert !(c.users.users ? gameplay);
+assert !(c.users.groups ? games);
+assert c.services.korriLinuxHost.label == "rgds";
+assert c.services.korriLinuxHost.compositor.backend == "drm";
+assert c.services.korriLinuxHost.compositor.localInput.enable;
+assert
+  c.services.korriLinuxHost.compositor.drmDevice
+  == "/dev/dri/by-path/platform-display-subsystem-card";
+assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128";
 assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
+assert c.services.korriLinuxHost.compositor.mode == "640x480@60Hz";
+assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert builtins.match "/dev/dri/card[0-9]+" c.services.korriLinuxHost.compositor.drmDevice == null;
-# The streaming host ships with this session, but no stream port is exposed.
-assert !c.services.korriLinuxHost.sunshine.openFirewall;
-assert lib.elem "korrid" (map lib.getName c.environment.systemPackages);
+assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
+assert
+  map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
+    "rgds-inputplumber-data"
+  ];
 pkgs.runCommand "rgds-module-check"
   {
     nativeBuildInputs = [
