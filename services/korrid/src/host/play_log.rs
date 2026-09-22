@@ -33,7 +33,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, DirBuilder, File, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    },
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
@@ -204,6 +207,262 @@ impl PlayLogStore {
     pub fn stats(&self, key: &PlayHistoryKey) -> Result<PlayStats, PlayLogError> {
         derive_play_stats(&self.load(key)?.entries)
     }
+
+    /// Moves every local play-log record from one person to another. The
+    /// complete merged destination is staged before one directory-level
+    /// publication. Existing destination games are preserved; a game-name
+    /// collision fails without changing either owner.
+    pub fn transfer_person_records(
+        &self,
+        old_user_id: &str,
+        new_user_id: &str,
+    ) -> Result<(), PlayLogError> {
+        validate_person_id(old_user_id)?;
+        validate_person_id(new_user_id)?;
+        if old_user_id == new_user_id {
+            return Err(PlayLogError::Storage);
+        }
+
+        let _storage = storage_lock();
+        if !existing_private_directory(&self.root)? {
+            return Ok(());
+        }
+        clean_staged_directories(&self.root)?;
+        let old_directory = self.person_directory(old_user_id);
+        let new_directory = self.person_directory(new_user_id);
+        let old_records = read_person_records(&old_directory, old_user_id)?;
+        let new_records = read_person_records(&new_directory, new_user_id)?;
+        let Some(mut old_records) = old_records else {
+            return Ok(());
+        };
+        for record in &mut old_records {
+            record.log.user_id = new_user_id.to_owned();
+            record.bytes = serialize_log(&record.log)?;
+        }
+
+        let existing_by_name: std::collections::BTreeMap<_, _> = new_records
+            .iter()
+            .flatten()
+            .map(|record| (record.file_name.as_str(), record.bytes.as_slice()))
+            .collect();
+        let mut records_to_publish = Vec::new();
+        for record in &old_records {
+            match existing_by_name.get(record.file_name.as_str()) {
+                Some(bytes) if *bytes == record.bytes => {}
+                Some(_) => return Err(PlayLogError::Storage),
+                None => records_to_publish.push(record),
+            }
+        }
+        if records_to_publish.is_empty() {
+            fs::remove_dir_all(&old_directory).map_err(|_| PlayLogError::Storage)?;
+            return sync_directory(&self.root);
+        }
+
+        let staged = create_staged_directory(&self.root)?;
+        let result = (|| {
+            if let Some(records) = &new_records {
+                for record in records {
+                    write_private_new(&staged.join(&record.file_name), &record.bytes)?;
+                }
+            }
+            for record in records_to_publish {
+                write_private_new(&staged.join(&record.file_name), &record.bytes)?;
+            }
+            sync_directory(&staged)?;
+
+            if new_records.is_some() {
+                exchange_paths(&staged, &new_directory)?;
+            } else {
+                fs::rename(&staged, &new_directory).map_err(|_| PlayLogError::Storage)?;
+            }
+            sync_directory(&self.root)?;
+
+            fs::remove_dir_all(&old_directory).map_err(|_| PlayLogError::Storage)?;
+            sync_directory(&self.root)?;
+            if staged.exists() {
+                fs::remove_dir_all(&staged).map_err(|_| PlayLogError::Storage)?;
+                sync_directory(&self.root)?;
+            }
+            Ok(())
+        })();
+        if result.is_err() && staged.exists() {
+            let _ = fs::remove_dir_all(&staged);
+            let _ = sync_directory(&self.root);
+        }
+        result
+    }
+
+    /// Deletes every local play-log record for one person. Missing records are
+    /// an idempotent success. The directory is validated in full before any
+    /// record is removed.
+    pub fn delete_person_records(&self, user_id: &str) -> Result<(), PlayLogError> {
+        validate_person_id(user_id)?;
+        let _storage = storage_lock();
+        if !existing_private_directory(&self.root)? {
+            return Ok(());
+        }
+        let directory = self.person_directory(user_id);
+        if read_person_records(&directory, user_id)?.is_none() {
+            return Ok(());
+        }
+        fs::remove_dir_all(&directory).map_err(|_| PlayLogError::Storage)?;
+        sync_directory(&self.root)
+    }
+
+    fn person_directory(&self, user_id: &str) -> PathBuf {
+        self.root.join(encode_uri_component(user_id))
+    }
+}
+
+#[derive(Debug)]
+struct StoredPlayLog {
+    file_name: String,
+    bytes: Vec<u8>,
+    log: PlayLog,
+}
+
+fn read_person_records(
+    directory: &Path,
+    user_id: &str,
+) -> Result<Option<Vec<StoredPlayLog>>, PlayLogError> {
+    if !existing_private_directory(directory)? {
+        return Ok(None);
+    }
+    let mut records = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|_| PlayLogError::Storage)? {
+        let entry = entry.map_err(|_| PlayLogError::Storage)?;
+        let file_name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| PlayLogError::Storage)?;
+        let bytes = read_bounded_private(&entry.path(), MAX_PLAY_LOG_BYTES)?
+            .ok_or(PlayLogError::Storage)?;
+        let log: PlayLog = serde_json::from_slice(&bytes).map_err(|_| PlayLogError::Storage)?;
+        let key = PlayHistoryKey {
+            user_id: user_id.to_owned(),
+            game_id: log.game_id.clone(),
+        };
+        validate_history_key(&key)?;
+        if !valid_log(&log, &key)
+            || file_name != format!("{}.json", encode_uri_component(&log.game_id))
+        {
+            return Err(PlayLogError::Storage);
+        }
+        records.push(StoredPlayLog {
+            file_name,
+            bytes,
+            log,
+        });
+    }
+    records.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+    Ok(Some(records))
+}
+
+fn serialize_log(log: &PlayLog) -> Result<Vec<u8>, PlayLogError> {
+    let mut bytes = serde_json::to_vec_pretty(log).map_err(|_| PlayLogError::Storage)?;
+    bytes.push(b'\n');
+    if bytes.len() > MAX_PLAY_LOG_BYTES {
+        return Err(PlayLogError::Storage);
+    }
+    Ok(bytes)
+}
+
+fn clean_staged_directories(root: &Path) -> Result<(), PlayLogError> {
+    let mut staged = Vec::new();
+    for entry in fs::read_dir(root).map_err(|_| PlayLogError::Storage)? {
+        let entry = entry.map_err(|_| PlayLogError::Storage)?;
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !is_staged_directory_name(&file_name) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|_| PlayLogError::Storage)?;
+        if !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || metadata.permissions().mode() & 0o077 != 0
+        {
+            return Err(PlayLogError::Storage);
+        }
+        for child in fs::read_dir(&path).map_err(|_| PlayLogError::Storage)? {
+            let child = child.map_err(|_| PlayLogError::Storage)?;
+            let metadata = fs::symlink_metadata(child.path()).map_err(|_| PlayLogError::Storage)?;
+            if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || metadata.permissions().mode() & 0o077 != 0
+                || metadata.len() > MAX_PLAY_LOG_BYTES as u64
+            {
+                return Err(PlayLogError::Storage);
+            }
+        }
+        staged.push(path);
+    }
+    if staged.is_empty() {
+        return Ok(());
+    }
+    for path in staged {
+        fs::remove_dir_all(path).map_err(|_| PlayLogError::Storage)?;
+    }
+    sync_directory(root)
+}
+
+fn is_staged_directory_name(file_name: &str) -> bool {
+    file_name
+        .strip_prefix(".transfer.")
+        .and_then(|name| name.strip_suffix(".tmp"))
+        .is_some_and(|nonce| {
+            nonce.len() == 16
+                && nonce
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
+fn create_staged_directory(root: &Path) -> Result<PathBuf, PlayLogError> {
+    for _ in 0..16 {
+        let path = root.join(format!(".transfer.{:016x}.tmp", rand::random::<u64>()));
+        match DirBuilder::new().mode(0o700).create(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(PlayLogError::Storage),
+        }
+    }
+    Err(PlayLogError::Storage)
+}
+
+fn write_private_new(path: &Path, content: &[u8]) -> Result<(), PlayLogError> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|_| PlayLogError::Storage)?;
+    file.write_all(content).map_err(|_| PlayLogError::Storage)?;
+    file.sync_all().map_err(|_| PlayLogError::Storage)
+}
+
+fn exchange_paths(left: &Path, right: &Path) -> Result<(), PlayLogError> {
+    let left =
+        std::ffi::CString::new(left.as_os_str().as_bytes()).map_err(|_| PlayLogError::Storage)?;
+    let right =
+        std::ffi::CString::new(right.as_os_str().as_bytes()).map_err(|_| PlayLogError::Storage)?;
+    // SAFETY: both C strings live through the call and contain no interior
+    // NUL. renameat2 does not retain either pointer.
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            left.as_ptr(),
+            libc::AT_FDCWD,
+            right.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(PlayLogError::Storage)
+    }
 }
 
 fn storage_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -298,11 +557,17 @@ pub(super) fn validate_entry(entry: &PlayEntry) -> Result<(), PlayLogError> {
     Ok(())
 }
 
+fn validate_person_id(user_id: &str) -> Result<(), PlayLogError> {
+    let encoded = encode_uri_component(user_id);
+    if user_id.is_empty() || encoded == "." || encoded == ".." || encoded.len() > NAME_MAX {
+        return Err(PlayLogError::Storage);
+    }
+    Ok(())
+}
+
 fn validate_history_key(key: &PlayHistoryKey) -> Result<(), PlayLogError> {
-    if key.user_id.is_empty()
-        || key.game_id.is_empty()
-        || encode_uri_component(&key.user_id).len() > NAME_MAX
-        || encode_uri_component(&key.game_id).len() + ".json".len() > NAME_MAX
+    validate_person_id(&key.user_id)?;
+    if key.game_id.is_empty() || encode_uri_component(&key.game_id).len() + ".json".len() > NAME_MAX
     {
         return Err(PlayLogError::Storage);
     }
@@ -466,6 +731,7 @@ mod tests {
     use std::os::unix::fs::symlink;
 
     const PERSON: &str = "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9";
+    const NEW_PERSON: &str = "42b4505d5a2643d8fbb74649efc53412fe401429b8b53c73943b7a2211c5c35a";
 
     fn key(game: &str) -> PlayHistoryKey {
         PlayHistoryKey {
@@ -480,6 +746,310 @@ mod tests {
             duration_seconds: duration,
             release_id: None,
         }
+    }
+
+    fn person_key(person: &str, game: &str) -> PlayHistoryKey {
+        PlayHistoryKey {
+            user_id: person.into(),
+            game_id: game.into(),
+        }
+    }
+
+    #[test]
+    fn transfer_moves_all_records_rekeys_only_the_owner_and_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_wario = person_key(PERSON, "wario");
+        let old_steam = person_key(PERSON, "steam/1029210");
+        let new_existing = person_key(NEW_PERSON, "existing");
+        store
+            .record(
+                &old_wario,
+                PlayEntry {
+                    occurred_at: "2026-09-04T10:00:00.000Z".into(),
+                    duration_seconds: 10.25,
+                    release_id: Some("release-wario".into()),
+                },
+            )
+            .unwrap();
+        store
+            .record(&old_steam, entry("2026-09-05T11:00:00.000Z", 20.0))
+            .unwrap();
+        store
+            .record(&new_existing, entry("2026-09-06T12:00:00.000Z", 30.0))
+            .unwrap();
+        let old_wario_log = store.load(&old_wario).unwrap();
+        let old_steam_log = store.load(&old_steam).unwrap();
+        let existing_log = store.load(&new_existing).unwrap();
+        let old_directory = store.user_directory(&old_wario);
+        let new_directory = store.user_directory(&new_existing);
+
+        store.transfer_person_records(PERSON, NEW_PERSON).unwrap();
+
+        assert!(!old_directory.exists());
+        assert!(new_directory.is_dir());
+        let mut expected_wario = old_wario_log;
+        expected_wario.user_id = NEW_PERSON.into();
+        let mut expected_steam = old_steam_log;
+        expected_steam.user_id = NEW_PERSON.into();
+        assert_eq!(
+            store.load(&person_key(NEW_PERSON, "wario")).unwrap(),
+            expected_wario
+        );
+        assert_eq!(
+            store
+                .load(&person_key(NEW_PERSON, "steam/1029210"))
+                .unwrap(),
+            expected_steam
+        );
+        assert_eq!(store.load(&new_existing).unwrap(), existing_log);
+        let names: Vec<_> = fs::read_dir(&store.root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, [encode_uri_component(NEW_PERSON)]);
+
+        store.transfer_person_records(PERSON, NEW_PERSON).unwrap();
+        assert!(!old_directory.exists());
+        assert_eq!(
+            store.load(&person_key(NEW_PERSON, "wario")).unwrap(),
+            expected_wario
+        );
+    }
+
+    #[test]
+    fn decline_deletes_all_person_records_and_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        for game in ["wario", "steam/1029210"] {
+            store
+                .record(
+                    &person_key(PERSON, game),
+                    entry("2026-09-04T10:00:00.000Z", 10.0),
+                )
+                .unwrap();
+        }
+        let old_directory = store.user_directory(&key("wario"));
+
+        store.delete_person_records(PERSON).unwrap();
+        assert!(!old_directory.exists());
+        store.delete_person_records(PERSON).unwrap();
+        assert!(!old_directory.exists());
+    }
+
+    #[test]
+    fn transfer_retry_after_destination_publication_finishes_without_orphans() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_wario = person_key(PERSON, "wario");
+        let old_steam = person_key(PERSON, "steam/1029210");
+        let new_existing = person_key(NEW_PERSON, "existing");
+        store
+            .record(&old_wario, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        store
+            .record(&old_steam, entry("2026-09-05T10:00:00.000Z", 20.0))
+            .unwrap();
+        store
+            .record(&new_existing, entry("2026-09-06T10:00:00.000Z", 30.0))
+            .unwrap();
+
+        let old_directory = store.user_directory(&old_wario);
+        let new_directory = store.user_directory(&new_existing);
+        let stale = store.root.join(".transfer.0123456789abcdef.tmp");
+        fs::create_dir(&stale).unwrap();
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::copy(store.path_for(&new_existing), stale.join("existing.json")).unwrap();
+        fs::set_permissions(
+            stale.join("existing.json"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+
+        let mut expected_wario = store.load(&old_wario).unwrap();
+        expected_wario.user_id = NEW_PERSON.into();
+        let expected_wario_bytes = serialize_log(&expected_wario).unwrap();
+        let mut expected_steam = store.load(&old_steam).unwrap();
+        expected_steam.user_id = NEW_PERSON.into();
+        let expected_steam_bytes = serialize_log(&expected_steam).unwrap();
+        write_private_new(&new_directory.join("wario.json"), &expected_wario_bytes).unwrap();
+        write_private_new(
+            &new_directory.join("steam%2F1029210.json"),
+            &expected_steam_bytes,
+        )
+        .unwrap();
+
+        store.transfer_person_records(PERSON, NEW_PERSON).unwrap();
+
+        assert!(!old_directory.exists());
+        assert!(!stale.exists());
+        assert_eq!(
+            fs::read(new_directory.join("wario.json")).unwrap(),
+            expected_wario_bytes
+        );
+        assert_eq!(
+            fs::read(new_directory.join("steam%2F1029210.json")).unwrap(),
+            expected_steam_bytes
+        );
+        assert_eq!(store.load(&new_existing).unwrap().entries.len(), 1);
+        let names: Vec<_> = fs::read_dir(&store.root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, [encode_uri_component(NEW_PERSON)]);
+    }
+
+    #[test]
+    fn byte_different_rekeyed_destination_is_still_a_collision() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_key = person_key(PERSON, "wario");
+        let new_key = person_key(NEW_PERSON, "wario");
+        store
+            .record(&old_key, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        let old_before = fs::read(store.path_for(&old_key)).unwrap();
+        let mut rekeyed = store.load(&old_key).unwrap();
+        rekeyed.user_id = NEW_PERSON.into();
+        let mut compact = serde_json::to_vec(&rekeyed).unwrap();
+        compact.push(b'\n');
+        ensure_private_directory(&store.user_directory(&new_key)).unwrap();
+        write_private_new(&store.path_for(&new_key), &compact).unwrap();
+
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), old_before);
+        assert_eq!(fs::read(store.path_for(&new_key)).unwrap(), compact);
+    }
+
+    #[test]
+    fn unsafe_stale_transfer_directory_is_rejected_without_being_followed() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_key = person_key(PERSON, "wario");
+        store
+            .record(&old_key, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        let old_before = fs::read(store.path_for(&old_key)).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let marker = outside.path().join("keep");
+        fs::write(&marker, b"keep").unwrap();
+        let stale = store.root.join(".transfer.fedcba9876543210.tmp");
+        symlink(outside.path(), &stale).unwrap();
+
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), old_before);
+        assert!(fs::symlink_metadata(stale)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read(marker).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn transfer_collision_fails_without_changing_either_owner() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_key = person_key(PERSON, "wario");
+        let new_key = person_key(NEW_PERSON, "wario");
+        store
+            .record(&old_key, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        store
+            .record(&new_key, entry("2026-09-05T10:00:00.000Z", 20.0))
+            .unwrap();
+        let old_before = fs::read(store.path_for(&old_key)).unwrap();
+        let new_before = fs::read(store.path_for(&new_key)).unwrap();
+
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), old_before);
+        assert_eq!(fs::read(store.path_for(&new_key)).unwrap(), new_before);
+        assert_eq!(fs::read_dir(&store.root).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn malformed_or_unsafe_records_fail_closed_for_transfer_and_delete() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_key = person_key(PERSON, "wario");
+        let new_key = person_key(NEW_PERSON, "existing");
+        store
+            .record(&old_key, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        store
+            .record(&new_key, entry("2026-09-05T10:00:00.000Z", 20.0))
+            .unwrap();
+        let malformed = b"{not json";
+        fs::write(store.path_for(&old_key), malformed).unwrap();
+
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), malformed);
+        assert_eq!(store.load(&new_key).unwrap().entries.len(), 1);
+        assert_eq!(
+            store.delete_person_records(PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert!(store.user_directory(&old_key).is_dir());
+
+        fs::remove_dir_all(store.user_directory(&old_key)).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_record = outside.path().join("outside.json");
+        fs::write(&outside_record, b"keep").unwrap();
+        symlink(outside.path(), store.user_directory(&old_key)).unwrap();
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(
+            store.delete_person_records(PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(outside_record).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn malformed_destination_and_unsafe_person_paths_fail_before_publication() {
+        let root = tempfile::tempdir().unwrap();
+        let store = PlayLogStore::new(root.path());
+        let old_key = person_key(PERSON, "wario");
+        let new_key = person_key(NEW_PERSON, "existing");
+        store
+            .record(&old_key, entry("2026-09-04T10:00:00.000Z", 10.0))
+            .unwrap();
+        store
+            .record(&new_key, entry("2026-09-05T10:00:00.000Z", 20.0))
+            .unwrap();
+        let old_before = fs::read(store.path_for(&old_key)).unwrap();
+        fs::write(store.path_for(&new_key), b"{not json").unwrap();
+
+        assert_eq!(
+            store.transfer_person_records(PERSON, NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), old_before);
+        assert_eq!(fs::read(store.path_for(&new_key)).unwrap(), b"{not json");
+        assert_eq!(fs::read_dir(&store.root).unwrap().count(), 2);
+
+        assert_eq!(
+            store.transfer_person_records("..", NEW_PERSON),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(
+            store.delete_person_records(".."),
+            Err(PlayLogError::Storage)
+        );
+        assert_eq!(fs::read(store.path_for(&old_key)).unwrap(), old_before);
     }
 
     #[test]
