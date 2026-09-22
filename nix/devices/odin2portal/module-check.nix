@@ -60,7 +60,7 @@ assert c.services.korri.webSurfaceHost.enable;
 assert c.services.korri.webSurfaceHost.surfaceId == "shift";
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korri.pluginHost.enable;
-assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ ];
+assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "chromium-browser" ];
 assert !(lib.hasInfix oldBootstrapAppId c.services.korriLinuxHost.compositor.extraConfig);
 assert !(configuration.options.services ? korriKiosk);
 assert !(c.systemd.services ? korri-kiosk);

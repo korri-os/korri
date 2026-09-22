@@ -16,7 +16,9 @@ let
       "wss://relay.nostr.band"
       "wss://relay.primal.net"
     ];
-    browserNeverFocusAppIds = [ ];
+    # Chromium's native Wayland app_id is its desktop-file WM class. The
+    # portal module check binds this value to the packaged Chromium desktop file.
+    browserNeverFocusAppIds = [ "chromium-browser" ];
     surfaceId = "shift";
     korridAddress = "127.0.0.1:39217";
     publishers = {

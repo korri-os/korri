@@ -171,10 +171,11 @@ assert service.environment.KORRI_ASSET_ROOT == profile;
 assert
   service.environment.KORRI_CHROMIUM_USER_DATA_DIR
   == "/var/lib/korri-portal/.local/state/korri/chromium/profile";
-assert chromiumArgs == [
-  "--force-prefers-reduced-motion"
-  "--disable-gpu"
-];
+assert
+  chromiumArgs == [
+    "--force-prefers-reduced-motion"
+    "--disable-gpu"
+  ];
 assert
   service.serviceConfig.ExecStart
   == alternate.systemd.services.korri-chromium-kiosk.serviceConfig.ExecStart;
@@ -222,6 +223,9 @@ pkgs.runCommand "korri-portal-module-check" { } ''
   grep -F -- 'korri-portal-shell' ${service.serviceConfig.ExecStart}
   grep -F -- '--ozone-platform=wayland' ${service.serviceConfig.ExecStart}
   grep -F -- '--kiosk' ${service.serviceConfig.ExecStart}
+  # Chromium maps this desktop WM class to the native Wayland app_id. Keep the
+  # product's game-return exclusion tied to the package the portal launches.
+  grep -Fx 'StartupWMClass=chromium-browser' ${pkgs.chromium}/share/applications/chromium-browser.desktop
   grep -F -- '--force-prefers-reduced-motion' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
   grep -F -- '--disable-gpu' ${service.environment.KORRI_CHROMIUM_ARGS_FILE}
   if grep -E -- '--app|--no-sandbox|--remote-debugging|DBUS_SESSION_BUS_ADDRESS' ${service.serviceConfig.ExecStart}; then exit 1; fi
