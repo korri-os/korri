@@ -1,7 +1,9 @@
 # Assertions read both exported systems. The recovery configuration must remain
-# the hardware-proven TTY baseline while the default gains the Korri session.
+# the hardware-proven TTY baseline while the default inherits the shared product.
 {
   pkgs,
+  nixpkgs,
+  korri,
   configuration,
   consoleConfiguration,
 }:
@@ -100,26 +102,28 @@ let
     && lib.elem "g_serial" config.boot.kernelModules
     && !(config.systemd.units ? "serial-getty@ttyGS0.service")
     && lib.hasInfix "serial-getty@ttyGS0.service" config.services.udev.extraRules
-    && config.services.getty.autologinUser == "root"
-    && !config.services.openssh.enable
-    && !config.services.openssh.openFirewall
-    && config.users.users.root.openssh.authorizedKeys.keys == [ ]
-    && config.nix.settings.max-jobs == 0
-    && config.nix.settings.builders == ""
-    && !config.nix.distributedBuilds
-    && !config.nix.settings.fallback
-    && config.nix.settings.require-sigs
     && !config.system.tools.nixos-install.enable
-    && !config.services.xserver.enable
-    && !config.services.greetd.enable
     && config.sdImage.firmwarePartitionOffset == 8
     && config.sdImage.firmwarePartitionName == "RPMINIV2"
     && config.sdImage.rootVolumeLabel == "NIXOS_RPMINIV2";
-  credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
-  kiosk = c.systemd.services.korri-chromium-kiosk;
+  productModule = import ../../product/nixos-module.nix { inherit korri; };
+  productCheck = import ../../product/check-lib.nix {
+    inherit korri;
+    inherit (pkgs) lib;
+    defaultSystem = pkgs.stdenv.hostPlatform.system;
+    referenceForSystem =
+      system:
+      import ../../product/reference.nix {
+        inherit
+          nixpkgs
+          korri
+          productModule
+          system
+          ;
+      };
+  };
+  productFailures = productCheck.validate "rpminiv2" configuration;
   idle = c.systemd.services.rpminiv2-display-idle;
-  sunshine = c.systemd.services.sunshine;
-  certificateSocket = c.systemd.sockets.korri-certificate-control;
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -127,6 +131,8 @@ assert lib.all hasProductKernelConfig (requiredKernelConfig ++ requiredRecoveryM
 assert lib.all hasProductKernelConfig requiredProductKernelConfig;
 assert common c;
 assert common recovery;
+# Use the shared product validator instead of duplicating its policy here.
+assert productFailures == [ ];
 assert lib.all (a: a.assertion) c.assertions;
 assert lib.all (a: a.assertion) recovery.assertions;
 assert lib.hasSuffix "/config-korri" (toString c.boot.kernelPackages.kernel.kernelConfig);
@@ -146,32 +152,13 @@ assert
 assert !(lib.elem "retroid" recovery.boot.kernelModules);
 assert c.hardware.graphics.enable;
 assert c.services.seatd.enable;
-assert c.security.polkit.enable;
-assert c.security.allowUserNamespaces;
 assert !recovery.hardware.graphics.enable;
 assert !recovery.services.seatd.enable;
 assert !(recovery.systemd.services ? korrid);
 assert !(recovery.systemd.services ? korri-compositor);
 assert !(recovery.systemd.services ? korri-chromium-kiosk);
-assert c.services.korriLinuxHost.enable;
-assert c.services.korridLinuxDevice.enable;
-assert c.services.korridLinuxDevice.address == "127.0.0.1:39217";
-assert c.services.korriLinuxInput.provider.enable;
-assert c.services.korriLinuxInput.inputd.enable;
-assert c.services.korri.webSurfaceHost.enable;
-assert c.services.korri.webSurfaceHost.surfaceId == "pico";
-assert c.services.korri.compositor.kiosk.enable;
-assert !c.services.korridLinuxDevice.browser.enable;
-assert c.services.korriLinuxHost.runtimeUser == "gameplay";
-assert c.services.korriLinuxHost.runtimeUid == 1001;
-assert c.services.korriLinuxHost.runtimeGroup == "games";
-assert c.services.korriLinuxHost.runtimeGid == 1001;
-assert c.services.korriLinuxHost.relays == [ "ws://127.0.0.1:9" ];
-assert !c.services.korriLinuxHost.validation.enable;
-assert !c.services.korriLinuxHost.audio.enable;
-assert !c.services.pipewire.enable;
-assert !c.security.rtkit.enable;
-assert !c.services.korriLinuxHost.compositor.remoteInput.enable;
+assert !(c.users.users ? gameplay);
+assert !(c.users.groups ? games);
 assert c.services.korriLinuxHost.compositor.localInput.enable;
 assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert c.services.korriLinuxHost.compositor.drmDevice == "/dev/dri/card0";
@@ -179,39 +166,19 @@ assert c.services.korriLinuxHost.compositor.renderDevice == "/dev/dri/renderD128
 assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
 assert c.services.korriLinuxHost.compositor.mode == "1080x1240@60Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
-assert lib.hasInfix "output DSI-1 transform 270 scale 1"
+assert lib.hasInfix "output DSI-1 transform 90 scale 1"
   c.services.korriLinuxHost.compositor.extraConfig;
-assert !c.services.korriLinuxHost.sunshine.openFirewall;
-assert !sunshine.enable;
-assert sunshine.wantedBy == [ ];
-assert !certificateSocket.enable;
-assert certificateSocket.wantedBy == [ ];
-assert !(lib.elem "sunshine.service" c.systemd.services.korri-compositor.wants);
-assert lib.elem "korrid.service" c.systemd.services.korri-compositor.wants;
-assert c.services.korriLinuxHost.firewallInterfaces == [ ];
-assert !c.networking.firewall.enable;
-assert !c.networking.networkmanager.enable;
-assert !c.networking.useDHCP;
-assert !c.services.avahi.enable;
-assert c.services.nginx.enable;
-assert builtins.length c.services.nginx.virtualHosts.korri-portal.listen == 1;
-assert lib.all (
-  listener: listener.addr == "127.0.0.1" && listener.port == 8099
-) c.services.nginx.virtualHosts.korri-portal.listen;
-assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
-assert kiosk.serviceConfig.LoadCredential == [ credential ];
-assert lib.elem "korri-portal-credentials.service" c.systemd.services.korrid.requires;
-assert lib.elem "korri-portal-credentials.service" kiosk.requires;
-assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
-assert kiosk.serviceConfig.User != "root";
-assert kiosk.serviceConfig.NoNewPrivileges;
-assert kiosk.serviceConfig.PrivateTmp;
-assert kiosk.serviceConfig.ProtectSystem == "strict";
-assert !(lib.hasInfix "--no-sandbox" kiosk.serviceConfig.ExecStart);
-assert lib.elem "korrid.service" kiosk.requires;
-assert lib.elem "korri-compositor.service" kiosk.after;
-assert idle.serviceConfig.User == "gameplay";
-assert idle.serviceConfig.Group == "games";
+assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
+assert
+  map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
+    "rpminiv2-inputplumber-data"
+  ];
+assert !(c.systemd.services ? sunshine);
+assert !(c.systemd.sockets ? korri-certificate-control);
+assert idle.serviceConfig.User == c.services.korriLinuxHost.runtimeUser;
+assert idle.serviceConfig.Group == c.services.korriLinuxHost.runtimeGroup;
+assert
+  idle.environment.XDG_RUNTIME_DIR == "/run/user/${toString c.services.korriLinuxHost.runtimeUid}";
 assert idle.serviceConfig.NoNewPrivileges;
 assert idle.serviceConfig.ProtectSystem == "strict";
 assert idle.environment.WAYLAND_DISPLAY == "korri-wayland";

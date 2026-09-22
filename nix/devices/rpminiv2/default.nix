@@ -53,7 +53,7 @@ let
   };
   configuration = consoleConfiguration.extendModules {
     modules = [
-      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
+      (import ../../product/nixos-module.nix { inherit korri; })
       ./portal.nix
     ];
   };
@@ -78,7 +78,13 @@ in
   moduleCheck =
     pkgs:
     import ./module-check.nix {
-      inherit pkgs configuration consoleConfiguration;
+      inherit
+        pkgs
+        nixpkgs
+        korri
+        configuration
+        consoleConfiguration
+        ;
     };
   initrdModulesCheck =
     pkgs:

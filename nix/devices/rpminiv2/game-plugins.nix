@@ -7,7 +7,6 @@
 # re-verifies each one against the bound key before it starts anything.
 {
   config,
-  korri,
   lib,
   ...
 }:
@@ -35,29 +34,6 @@ let
   ];
 in
 {
-  imports = [
-    (import ../../../services/korrid/plugin-host/nixos-module.nix { inherit korri; })
-  ];
-
-  services.korri.pluginHost = {
-    enable = true;
-    # The publisher key already used by the other Korri devices. The cache URL
-    # is the published release; it is only a fallback, because the image store
-    # carries the signed metadata the host verifies first.
-    publishers."@korri" = {
-      publicKey = "korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=";
-      cacheUrl = "https://github.com/korri-os/plugins/releases/download/cache/";
-    };
-  };
-
-  # The bounded product kernel has no TUN. Game plugins open no tunnel, so the
-  # host's Tailscale-era module request is dropped here and the two real
-  # root-time modules stay.
-  boot.kernelModules = lib.mkForce [
-    "g_serial"
-    "retroid"
-  ];
-
   # Catalog documents and private daemon state stay private. The launched game
   # runs as the existing untrusted runtime identity.
   systemd.tmpfiles.rules = [
