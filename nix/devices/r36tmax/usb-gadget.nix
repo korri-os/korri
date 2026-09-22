@@ -31,7 +31,7 @@ in
   # libcomposite rather than the legacy g_serial: that module owns the
   # controller exclusively and cannot add a network function beside the
   # console.
-  boot.kernelModules = lib.mkForce [
+  boot.kernelModules = [
     "libcomposite"
     "usb_f_ncm"
     "usb_f_acm"

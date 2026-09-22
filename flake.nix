@@ -79,9 +79,7 @@
         rg353m-rescue = rg353m.rescueConfiguration;
         rgds = rgds.configuration;
         rpminiv2 = rpminiv2.configuration;
-        rpminiv2-recovery = rpminiv2.consoleConfiguration;
         r36tmax = r36tmax.configuration;
-        r36tmax-recovery = r36tmax.consoleConfiguration;
         odin2portal = odin2portal.configuration;
         # RG35XXSP remains a product device. It returns here after its product
         # composition and delivery land; its packages stay available for bring-up.
@@ -262,6 +260,7 @@
             rgds = rgds.moduleCheck pkgs;
             rg35xxsp = rg35xxsp.moduleCheck pkgs;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
+            rpminiv2-delivery = import ./nix/devices/rpminiv2/delivery-check.nix { inherit pkgs; };
             rpminiv2-inputplumber = self.packages.${system}.rpminiv2-inputplumber-data;
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
             rpminiv2-recovery-initrd-modules = rpminiv2.recoveryInitrdModulesCheck pkgs;
@@ -273,6 +272,7 @@
             rgds-inputplumber = self.packages.${system}.rgds-inputplumber-data;
             rgds-initrd-modules = rgds.initrdModulesCheck pkgs;
             rg353m-inputplumber = self.packages.${system}.rg353m-inputplumber-data;
+            odin2portal = odin2portal.moduleCheck pkgs;
             odin2portal-inputplumber = odin2portal.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-module = import ./clients/portal/nix/module-check.nix {
               inherit pkgs nixpkgs;

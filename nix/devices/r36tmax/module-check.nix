@@ -38,6 +38,10 @@ let
     && lib.all (fs: !(lib.hasPrefix "/dev/mmcblk" fs.device)) (lib.attrValues config.fileSystems)
     && config.swapDevices == [ ]
     && config.sdImage.firmwarePartitionOffset == 16
+    && config.networking.networkmanager.ensureProfiles.profiles.korri.wifi.ssid == "$WIFI_SSID"
+    && config.networking.networkmanager.ensureProfiles.profiles.korri.wifi-security.psk == "$WIFI_PSK"
+    && config.networking.firewall.interfaces.usb0.allowedUDPPorts == [ 67 ]
+    && (config.networking.firewall.interfaces.usb0.allowedTCPPorts or [ ]) == [ ]
     && lib.elem "libcomposite" config.boot.kernelModules
     && lib.elem "usb_f_acm" config.boot.kernelModules
     && lib.elem "usb_f_ncm" config.boot.kernelModules
@@ -57,9 +61,16 @@ assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelCo
   "NFT_LIMIT"
   "NFT_REJECT"
   "NETFILTER_XT_MATCH_PKTTYPE"
+  "TLS"
 ];
 assert hardwareFacts c;
 assert hardwareFacts console;
+assert lib.all (name: lib.elem name c.boot.kernelModules) [
+  "tls"
+  "tun"
+  "uhid"
+  "uinput"
+];
 assert lib.all (a: a.assertion) diagnosticConfiguration.config.assertions;
 assert lib.all (a: a.assertion) mainlineConfiguration.config.assertions;
 assert diagnosticConfiguration.config.services.openssh.enable;

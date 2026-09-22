@@ -1,14 +1,12 @@
 # R36T Max hardware facts and recorded hardware limits.
-{ lib, ... }:
+{ ... }:
 {
   # Recorded limit: the normal image has no integrated H.264 encoder. The
   # separately tested out-of-tree VEPU2 path is not part of this image.
 
   # The saved console survey has no GPU driver bound. The retained kernel builds
   # Panfrost as a module and the DTS enables ff400000.gpu. Load it explicitly.
-  # The hardware forces its USB module list; same-priority lists merge, retaining
-  # those recovery modules rather than replacing them.
-  boot.kernelModules = lib.mkForce [ "panfrost" ];
+  boot.kernelModules = [ "panfrost" ];
 
   services.korriLinuxHost = {
     label = "r36tmax";

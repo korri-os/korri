@@ -87,6 +87,7 @@ jobs:
             --package packages.x86_64-linux.odin2portal-firmware \
             --package packages.x86_64-linux.rpminiv2-kernel \
             --package packages.x86_64-linux.rpminiv2-firmware \
+            --package packages.x86_64-linux.rpminiv2-rocknix-baseline \
             --package packages.x86_64-linux.korri-portal
 
   # One device per runner. Signing a closure means writing a second, compressed
