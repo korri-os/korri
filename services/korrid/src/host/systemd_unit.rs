@@ -715,7 +715,7 @@ impl SystemdLaunchUnitBackend {
             "--property=ProtectProc=invisible".into(),
             "--property=ProcSubset=pid".into(),
             format!(
-                "--property=InaccessiblePaths={} /run/korrid {} /run/korri-kiosk {} {} {} {} {} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources",
+                "--property=InaccessiblePaths={} /run/korrid {} {} {} {} {} {} /run/user/{} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources",
                 self.private_state_root.display(),
                 DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
@@ -1036,7 +1036,7 @@ mod tests {
             );
             assert_eq!(launch, expected);
             assert!(launch.contains(&format!(
-                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korri-kiosk /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
+                "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/{uid} -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources"
             )));
         }
     }

@@ -285,7 +285,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[KIOSK]),
+            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
             FocusOutcome::Focused(4)
         );
         assert_eq!(*compositor.focused.lock().unwrap(), vec![4]);
@@ -298,7 +298,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[7777]), &[KIOSK]),
+            focus_launch_window(&compositor, &pids(&[7777]), &[PORTAL]),
             FocusOutcome::NothingToFocus
         );
         assert!(compositor.focused.lock().unwrap().is_empty());
@@ -311,7 +311,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[]), &[KIOSK]),
+            focus_launch_window(&compositor, &pids(&[]), &[PORTAL]),
             FocusOutcome::NothingToFocus
         );
     }
@@ -323,7 +323,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[KIOSK]),
+            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
             FocusOutcome::Failed("socket missing".into())
         );
         assert!(compositor.focused.lock().unwrap().is_empty());
@@ -337,7 +337,7 @@ mod tests {
             ..ScriptedCompositor::default()
         };
         assert_eq!(
-            focus_launch_window(&compositor, &pids(&[9100]), &[KIOSK]),
+            focus_launch_window(&compositor, &pids(&[9100]), &[PORTAL]),
             FocusOutcome::Failed("swaymsg failed".into())
         );
     }
@@ -364,13 +364,13 @@ mod tests {
         .is_none());
     }
 
-    /// Two windows of one Sway workspace: the kiosk browser and a game.
+    /// Two windows of one Sway workspace: the portal browser and a game.
     fn tree(game_pid: i32) -> String {
         format!(
             r#"{{
               "id": 1, "nodes": [
                 {{"id": 2, "nodes": [
-                  {{"id": 3, "pid": 4100, "app_id": "chrome-127.0.0.1__kiosk-blank.html-Default",
+                  {{"id": 3, "pid": 4100, "app_id": "chromium-browser",
                     "nodes": [], "floating_nodes": []}},
                   {{"id": 4, "pid": {game_pid}, "app_id": null,
                     "window_properties": {{"class": "Neverball"}},
@@ -381,7 +381,7 @@ mod tests {
         )
     }
 
-    const KIOSK: &str = "chrome-127.0.0.1__kiosk-blank.html-Default";
+    const PORTAL: &str = "chromium-browser";
 
     fn pids(values: &[i32]) -> BTreeSet<i32> {
         values.iter().copied().collect()
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn selects_the_window_owned_by_the_exact_launch() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[9100, 9101]), &[KIOSK]),
+            select_focus_target(&tree(9100), &pids(&[9100, 9101]), &[PORTAL]),
             FocusTarget::Window(FocusCandidate {
                 node_id: 4,
                 pid: 9100
@@ -401,17 +401,17 @@ mod tests {
     #[test]
     fn refuses_a_launch_that_owns_no_window() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[7777]), &[KIOSK]),
+            select_focus_target(&tree(9100), &pids(&[7777]), &[PORTAL]),
             FocusTarget::NoWindow
         );
     }
 
     #[test]
-    fn never_focuses_the_kiosk_browser_even_when_it_shares_the_launch() {
+    fn never_focuses_the_portal_browser_even_when_it_shares_the_launch() {
         // A shared-UID host means the browser can appear among launch
         // processes. Focusing it would hide the game behind the hub.
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[4100]), &[KIOSK]),
+            select_focus_target(&tree(9100), &pids(&[4100]), &[PORTAL]),
             FocusTarget::NoWindow
         );
     }
@@ -424,7 +424,7 @@ mod tests {
              "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(imposter, &pids(&[9100]), &[KIOSK]),
+            select_focus_target(imposter, &pids(&[9100]), &[PORTAL]),
             FocusTarget::NoWindow
         );
     }
@@ -436,7 +436,7 @@ mod tests {
             {"id": 6, "pid": 9101, "app_id": null, "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(two, &pids(&[9100, 9101]), &[KIOSK]),
+            select_focus_target(two, &pids(&[9100, 9101]), &[PORTAL]),
             FocusTarget::Ambiguous(vec![
                 FocusCandidate {
                     node_id: 6,
@@ -456,7 +456,7 @@ mod tests {
             {"id": 8, "pid": 9100, "app_id": null, "nodes": [], "floating_nodes": []}
           ]}"#;
         assert_eq!(
-            select_focus_target(floating, &pids(&[9100]), &[KIOSK]),
+            select_focus_target(floating, &pids(&[9100]), &[PORTAL]),
             FocusTarget::Window(FocusCandidate {
                 node_id: 8,
                 pid: 9100
@@ -471,7 +471,7 @@ mod tests {
              "nodes": [], "floating_nodes": []}
           ], "floating_nodes": []}"#;
         assert_eq!(
-            select_focus_target(extended, &pids(&[9100]), &[KIOSK]),
+            select_focus_target(extended, &pids(&[9100]), &[PORTAL]),
             FocusTarget::Window(FocusCandidate {
                 node_id: 9,
                 pid: 9100
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn reports_an_unreadable_compositor_reply_instead_of_focusing() {
         assert!(matches!(
-            select_focus_target("not json", &pids(&[9100]), &[KIOSK]),
+            select_focus_target("not json", &pids(&[9100]), &[PORTAL]),
             FocusTarget::Unreadable(_)
         ));
     }
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn refuses_focus_for_a_launch_with_no_processes() {
         assert_eq!(
-            select_focus_target(&tree(9100), &pids(&[]), &[KIOSK]),
+            select_focus_target(&tree(9100), &pids(&[]), &[PORTAL]),
             FocusTarget::NoWindow
         );
     }

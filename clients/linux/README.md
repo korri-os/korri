@@ -105,3 +105,9 @@ deadline. They reject an old fixture page, partial binding consumption, and
 readiness callbacks from a child frame or an untrusted origin. Browser tests
 require an explicit Chromium executable and are ignored during the default test
 run. A default unit test verifies abstract Unix readiness notification.
+
+## Chromium transparency experiment
+
+[`chromium/`](chromium/) owns the independent native app-window transparency
+patch, patched browser packages, and compositor pixel test. The experiment does
+not change this shell's credential contract or certify the Odin GPU.

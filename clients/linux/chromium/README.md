@@ -2,8 +2,8 @@
 
 Status: native transparency verified locally on x86_64; not deployed on Odin.
 The user explicitly chose to pursue transparency after clarifying that opaque
-overlays are also useful. Stock Chromium remains the production kiosk package
-until launcher integration and ARM/device verification pass.
+overlays are also useful. Stock Chromium remains the production portal browser
+until shell integration and ARM/device verification pass.
 
 ## Scope
 
@@ -65,7 +65,7 @@ opacity from the color passed to `SetColor`.
 
 ## Evidence before the patch
 
-`../tests/native-alpha.mjs` runs a native Wayland Chromium app above a magenta
+`native-alpha.mjs` runs a native Wayland Chromium app above a magenta
 Sway background. It captures the compositor with `grim`, not the renderer with
 `Page.captureScreenshot`. The transparent test fails on stock Chromium: the
 center pixel is white instead of magenta. Its opaque control passes, including
@@ -80,9 +80,9 @@ separate acceptance gates.
 
 ```sh
 nix build .#korri-chromium --no-link --print-out-paths --cores 4 --max-jobs 1
-services/kiosk/tests/native-alpha.mjs /absolute/patched-chromium/bin/chromium
-services/kiosk/tests/native-alpha.mjs /absolute/patched-chromium/bin/chromium --opaque-control
-KORRI_ALPHA_NEVERBALL=/absolute/neverball/bin/neverball services/kiosk/tests/native-alpha.mjs /absolute/patched-chromium/bin/chromium
+clients/linux/chromium/native-alpha.mjs /absolute/patched-chromium/bin/chromium
+clients/linux/chromium/native-alpha.mjs /absolute/patched-chromium/bin/chromium --opaque-control
+KORRI_ALPHA_NEVERBALL=/absolute/neverball/bin/neverball clients/linux/chromium/native-alpha.mjs /absolute/patched-chromium/bin/chromium
 ```
 
 The build retains nixpkgs' official release configuration, dependency set and

@@ -95,7 +95,7 @@ assert lib.all
     )
   );
 assert korri.nixosConfigurations.rg353m.config.services.korri.compositor.kiosk.enable;
-assert korri.nixosConfigurations.odin2portal.config.services.korriKiosk.enable;
+assert !(korri.nixosConfigurations.odin2portal.options.services ? korriKiosk);
 pkgs.runCommand "korri-base-module-check" { } ''
   touch "$out"
 ''

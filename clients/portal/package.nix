@@ -100,7 +100,7 @@ pkgs.stdenvNoCC.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    cmp public/kiosk-blank.html "$out/kiosk-blank.html"
+    test ! -e "$out/kiosk-blank.html"
     test ! -e "$out/runtime.json"
     ${pkgs.gnugrep}/bin/grep -R -F -q 'KorriRpc' "$out/assets"
     ${pkgs.gnugrep}/bin/grep -R -F -q 'korridPort' "$out/assets"

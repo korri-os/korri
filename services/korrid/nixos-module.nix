@@ -524,7 +524,6 @@ in
       "d /run/korrid-browser 2750 ${serviceUser} ${
         if cfg.browser.enable then cfg.browser.readGroup else serviceGroup
       } -"
-      "d /run/korri-kiosk 0700 ${cfg.runtimeUser} ${config.users.users.${cfg.runtimeUser}.group} -"
     ];
 
     systemd.sockets.korrid-control = {

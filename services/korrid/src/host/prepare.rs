@@ -22,7 +22,7 @@ fn configured_compositor() -> Option<(Arc<dyn CompositorControl>, Vec<String>)> 
     let program = PathBuf::from(std::env::var_os("KORRID_SWAYMSG")?);
     let socket = PathBuf::from(std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?);
     let control = SwaymsgCompositorControl::new(program, socket, COMPOSITOR_TIMEOUT)?;
-    // The kiosk hub is the surface the player leaves, never a game to return to.
+    // The portal is the surface the player leaves, never a game to return to.
     let never_focus = std::env::var("KORRID_NEVER_FOCUS_APP_IDS")
         .unwrap_or_default()
         .split(',')

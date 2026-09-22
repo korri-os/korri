@@ -1636,7 +1636,7 @@ mod tests {
             "--property=ProtectKernelTunables=yes".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
-            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korri-kiosk /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into(),
+            "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control /home/korri/.config/sunshine /run/korri-compositor /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into(),
             "--property=RestrictSUIDSGID=yes".into(),
         ] {
             assert!(
@@ -1946,12 +1946,12 @@ mod tests {
         }
     }
 
-    const KIOSK_APP_ID: &str = "chrome-127.0.0.1__kiosk-blank.html-Default";
+    const PORTAL_APP_ID: &str = "chromium-browser";
 
     fn compositor_tree(game_pid: i32) -> String {
         format!(
             r#"{{"id": 1, "nodes": [
-                 {{"id": 2, "pid": 4100, "app_id": "{KIOSK_APP_ID}",
+                 {{"id": 2, "pid": 4100, "app_id": "{PORTAL_APP_ID}",
                   "nodes": [], "floating_nodes": []}},
                  {{"id": 3, "pid": {game_pid}, "app_id": null,
                   "nodes": [], "floating_nodes": []}}
@@ -1965,7 +1965,7 @@ mod tests {
         compositor: Arc<RecordingCompositor>,
     ) -> HostSessionControl {
         HostSessionControl::new(root, backend)
-            .with_compositor(compositor, vec![KIOSK_APP_ID.to_string()])
+            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()])
     }
 
     #[test]
@@ -1995,7 +1995,7 @@ mod tests {
     }
 
     #[test]
-    fn resuming_never_raises_the_kiosk_window_and_still_reports_the_session() {
+    fn resuming_never_raises_the_portal_window_and_still_reports_the_session() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let compositor = Arc::new(RecordingCompositor::default());
@@ -2632,7 +2632,7 @@ mod tests {
             )
             .unwrap();
         assert!(launch.contains(
-            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korrid-browser /run/korri-kiosk /run/korri-test/control/device.sock /run/korri-test/control /home/gameplay/.config/sunshine /run/korri-test/compositor-control /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into()
+            &"--property=InaccessiblePaths=/srv/korri-test/private-recovery /run/korrid /run/korrid-browser /run/korri-test/control/device.sock /run/korri-test/control /home/gameplay/.config/sunshine /run/korri-test/compositor-control /run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into()
         ));
     }
 

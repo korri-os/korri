@@ -318,7 +318,6 @@ assert builtins.elem "0020-add-korrid-certificate-control.patch" sunshinePackage
 assert cfg.services.korriLinuxHost.sunshine.runtimeSettings.enable;
 assert !cfg.services.korriLinuxHost.sunshine.inputSeats.enable;
 assert builtins.elem "d /run/korrid-browser 2750 korrid korrid -" cfg.systemd.tmpfiles.rules;
-assert builtins.elem "d /run/korri-kiosk 0700 korri korri -" cfg.systemd.tmpfiles.rules;
 assert allAssertionsPass browserPortal;
 assert browserKorrid.environment.KORRID_BROWSER_ADDRESS == "127.0.0.1:0";
 assert browserKorrid.environment.KORRID_BROWSER_ORIGIN == "http://127.0.0.1:8099";

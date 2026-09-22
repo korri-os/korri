@@ -63,7 +63,6 @@
         korri-linux-host = import ./services/inputd/nix/korri-linux-host.nix { korri = self; };
         korri-portal = import ./clients/portal/nix/nixos-module.nix { korri = self; };
         korri-plugin-host = import ./services/korrid/plugin-host/nixos-module.nix { korri = self; };
-        korri-kiosk = import ./services/kiosk/nixos-module.nix { korri = self; };
       };
     in
     {
@@ -166,8 +165,7 @@
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
-            korri-kiosk = import ./services/kiosk/package.nix { inherit pkgs crane; };
-            korri-chromium = import ./services/kiosk/chromium/package.nix { inherit pkgs; };
+            korri-chromium = import ./clients/linux/chromium/package.nix { inherit pkgs; };
           }
         )
         // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
@@ -203,7 +201,7 @@
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
-          korri-chromium-aarch64 = import ./services/kiosk/chromium/cross.nix { inherit pkgs; };
+          korri-chromium-aarch64 = import ./clients/linux/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernelCross;
           rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;
@@ -280,10 +278,6 @@
             };
             korri-boot-splash = import ./brand/plymouth/module-check.nix {
               inherit pkgs nixpkgs;
-            };
-            korri-kiosk-module = import ./services/kiosk/module-check.nix {
-              inherit pkgs;
-              korri = self;
             };
           }
           // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
