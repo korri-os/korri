@@ -1,6 +1,6 @@
 # Migrate RP Mini V2 and add its delivery entries
 
-Status: in-progress
+Status: resolved
 Blocked by: 01
 
 ## What to build
