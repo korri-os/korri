@@ -2623,7 +2623,7 @@ mod tests {
         });
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -2679,7 +2679,7 @@ mod tests {
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -2715,7 +2715,7 @@ mod tests {
         let compositor = Arc::new(RecordingCompositor::default());
         let control =
             HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
-                .with_compositor(compositor.clone(), vec![KIOSK_APP_ID.to_string()]);
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.to_string()]);
         let id = prepare(&control, "one").launch_id;
         backend.set_pids(&id, &[9100]);
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
@@ -2748,7 +2748,7 @@ mod tests {
         let compositor = Arc::new(RecordingCompositor::default());
         *compositor.tree.lock().unwrap() = compositor_tree(9100);
         let control = HostSessionControl::with_input_seats(root.path(), backend, manager.clone())
-            .with_compositor(compositor, vec![KIOSK_APP_ID.to_string()]);
+            .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
 
         assert!(matches!(control.status(), HostSessionStatus::Frozen { .. }));
         assert_eq!(manager.state.lock().unwrap().starts, [id]);
