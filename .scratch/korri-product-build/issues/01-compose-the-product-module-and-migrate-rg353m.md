@@ -1,6 +1,6 @@
 # Compose the product module and migrate RG353M
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## What to build

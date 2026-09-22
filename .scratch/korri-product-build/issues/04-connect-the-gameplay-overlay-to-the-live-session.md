@@ -1,6 +1,6 @@
 # Connect the gameplay overlay to the live session
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## What to build

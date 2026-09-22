@@ -1,6 +1,6 @@
 # Widen plugin-host unit admission, bound by approval
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## What to build

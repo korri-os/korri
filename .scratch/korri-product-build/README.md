@@ -2,10 +2,15 @@
 
 The canonical requirements are in [the product spec](../consistent-korri-product/spec.md). The glossary in [`CONTEXT.md`](../../CONTEXT.md) defines the product terms used by these tickets.
 
-Work proceeds in three phases:
+Work uses a continuous dependency queue. Start a ticket when its direct blockers have a stable integration commit. Do not wait for unrelated tickets.
 
-1. **Phase 1:** build the independent product foundations and settle the remaining streaming-host boundary decision.
-2. **Phase 2:** migrate the remaining current devices and complete the independent session and identity slices.
-3. **Phase 3:** make plugins, power behavior, defaults, and RG35XXSP delivery complete on the shared product.
+The conductor owns integration branches, shared files, ticket state, reviews, and broad validation. Workers own one observable behavior, an explicit file set, one focused verification command, and one commit boundary.
 
-The **Phase 2 gate** closes when tickets 01 through 14 are complete. Tickets 15 through 18 may then start according to their `Blocked by` lines.
+Two changes require clean-cut integration branches:
+
+- Tickets 01 and 08 through 11 form the product-module cut. Keep them off `main` until every exported device passes the product check without exceptions.
+- Ticket 15 forms the streaming-host plugin cut. Land the plugin and deletion of the shared host composition together.
+
+Tickets 12, 13, and 14 run from their direct Phase 1 foundations. They do not wait for the product-module cut. Tickets 16 through 18 start when their own `Blocked by` lines permit.
+
+Workers run focused checks. The conductor runs affected suites on integrated checkpoints and the full required validation before each clean cut lands. Hardware checks block only behavior that software cannot observe.

@@ -1,6 +1,6 @@
 # Create the local signer and bind an automatic identity
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## What to build

@@ -1,6 +1,6 @@
 # Bring up the RG35XXSP display kernel
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## What to build
