@@ -344,6 +344,13 @@ pub trait RelayTransport: Send + Sync {
 pub trait RelayCoordinator: Send + Sync {
     fn publish_owner_statement(&self) -> BoxFuture<'_, Result<PublishState, RelayError>>;
 
+    /// Observe whether the exact current owned statement exists on at least one
+    /// configured relay. This is prepare-time evidence, not persisted relay state.
+    fn owner_statement_was_published<'a>(
+        &'a self,
+        event_json: &'a str,
+    ) -> BoxFuture<'a, Result<bool, RelayError>>;
+
     /// A bounded observation, never an authoritative list of absent/revoked devices.
     fn read_owner_roster(&self) -> BoxFuture<'_, Result<Vec<OwnerRosterEntry>, RelayError>>;
 
@@ -520,6 +527,106 @@ where
                 .ok_or(RelayError::Identity)?;
             // EVENT remains person-authored; publish_json supplies device NIP-42 auth.
             Ok(self.publish_json(&event_json).await)
+        })
+    }
+
+    fn owner_statement_was_published<'a>(
+        &'a self,
+        event_json: &'a str,
+    ) -> BoxFuture<'a, Result<bool, RelayError>> {
+        Box::pin(async move {
+            let (device, owner, event_id, created_at) = match self.identity.state() {
+                IdentityState::Owned {
+                    device_public_key,
+                    owner_public_key,
+                    event_id,
+                    created_at,
+                } => (
+                    device_public_key.clone(),
+                    owner_public_key.clone(),
+                    event_id.clone(),
+                    *created_at,
+                ),
+                _ => return Err(RelayError::Identity),
+            };
+            let current_json = self
+                .identity
+                .owner_statement_json()
+                .ok_or(RelayError::Identity)?;
+            let current_statement = DeviceIdentity::verify_owner_statement(&current_json, &device)
+                .map_err(|_| RelayError::Identity)?;
+            let current_event =
+                DeviceIdentity::verify_event(&current_json).map_err(|_| RelayError::Identity)?;
+            let current_signed: serde_json::Value =
+                serde_json::from_str(&current_json).map_err(|_| RelayError::Identity)?;
+            if current_statement.status != OwnerStatementStatus::Owned
+                || current_statement.owner_public_key != owner
+                || current_statement.event_id != event_id
+                || current_statement.created_at != created_at
+            {
+                return Err(RelayError::Identity);
+            }
+
+            let supplied_statement = DeviceIdentity::verify_owner_statement(event_json, &device)
+                .map_err(|_| {
+                    RelayError::InvalidEvent(
+                        "owner publication evidence is not a valid current statement".into(),
+                    )
+                })?;
+            let supplied_event = DeviceIdentity::verify_event(event_json).map_err(|_| {
+                RelayError::InvalidEvent(
+                    "owner publication evidence is not a valid current statement".into(),
+                )
+            })?;
+            let supplied_signed: serde_json::Value =
+                serde_json::from_str(event_json).map_err(|_| {
+                    RelayError::InvalidEvent(
+                        "owner publication evidence is not a valid current statement".into(),
+                    )
+                })?;
+            if supplied_statement != current_statement
+                || supplied_event != current_event
+                || supplied_signed != current_signed
+            {
+                return Err(RelayError::InvalidEvent(
+                    "owner publication evidence is not the current owned statement".into(),
+                ));
+            }
+
+            let filter = RelayFilter {
+                kinds: vec![OWNER_EVENT_KIND],
+                recipient_public_key: None,
+                author_public_key: Some(owner),
+                since: Some(created_at),
+                limit: MAX_READ_EVENTS,
+            };
+            let (events, failures) = self.read_all(&filter).await;
+            if failures == self.relays.as_slice().len() {
+                return Err(RelayError::Unavailable(
+                    "all owner publication evidence reads failed".into(),
+                ));
+            }
+            for delivered in events {
+                let Ok(statement) =
+                    DeviceIdentity::verify_owner_statement(&delivered.event_json, &device)
+                else {
+                    continue;
+                };
+                let Ok(event) = DeviceIdentity::verify_event(&delivered.event_json) else {
+                    continue;
+                };
+                let Ok(signed) = serde_json::from_str::<serde_json::Value>(&delivered.event_json)
+                else {
+                    continue;
+                };
+                if statement == supplied_statement
+                    && event == supplied_event
+                    && signed == supplied_signed
+                {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         })
     }
 
@@ -1687,6 +1794,76 @@ mod tests {
         (relays, network, first, second, owner)
     }
 
+    #[derive(Clone)]
+    enum ProbeResponse {
+        Events(Vec<String>),
+        Failed,
+    }
+
+    #[derive(Clone, Default)]
+    struct ProbeTransport {
+        responses: Arc<Mutex<BTreeMap<String, ProbeResponse>>>,
+        filters: Arc<Mutex<Vec<(String, RelayFilter)>>>,
+    }
+
+    impl ProbeTransport {
+        fn respond(&self, relay: &str, response: ProbeResponse) {
+            self.responses
+                .lock()
+                .unwrap()
+                .insert(relay.into(), response);
+        }
+
+        fn filters(&self) -> Vec<(String, RelayFilter)> {
+            self.filters.lock().unwrap().clone()
+        }
+    }
+
+    impl RelayTransport for ProbeTransport {
+        fn publish<'a>(
+            &'a self,
+            _relay: &'a str,
+            _event_json: &'a str,
+            _auth: Arc<dyn RelayAuthSigner>,
+        ) -> BoxFuture<'a, Result<(), RelayError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn read<'a>(
+            &'a self,
+            relay: &'a str,
+            filter: &'a RelayFilter,
+            _auth: Arc<dyn RelayAuthSigner>,
+        ) -> BoxFuture<'a, Result<Vec<RelayEvent>, RelayError>> {
+            Box::pin(async move {
+                self.filters
+                    .lock()
+                    .unwrap()
+                    .push((relay.into(), filter.clone()));
+                match self.responses.lock().unwrap().get(relay).cloned() {
+                    Some(ProbeResponse::Events(events)) => Ok(events
+                        .into_iter()
+                        .map(|event_json| RelayEvent {
+                            relay: relay.into(),
+                            event_json,
+                        })
+                        .collect()),
+                    Some(ProbeResponse::Failed) | None => {
+                        Err(RelayError::Unavailable(relay.into()))
+                    }
+                }
+            })
+        }
+    }
+
+    fn probe(
+        relays: &RelayList,
+        identity: DeviceIdentity,
+        transport: ProbeTransport,
+    ) -> CoordinatedRelays<ProbeTransport> {
+        CoordinatedRelays::new(relays.clone(), identity, Arc::new(transport)).unwrap()
+    }
+
     fn endpoint(
         identity: &DeviceIdentity,
         owner: &Keys,
@@ -1719,6 +1896,137 @@ mod tests {
             .finalize(owner)
             .unwrap()
             .as_json()
+    }
+
+    #[tokio::test]
+    async fn publication_probe_finds_the_exact_current_owner_statement_with_a_bounded_filter() {
+        let (relays, _, identity, _, owner) = setup();
+        let current = identity.owner_statement_json().unwrap();
+        let transport = ProbeTransport::default();
+        transport.respond(
+            &relays.as_slice()[0],
+            ProbeResponse::Events(vec![current.clone()]),
+        );
+        transport.respond(&relays.as_slice()[1], ProbeResponse::Events(Vec::new()));
+        let reader = probe(&relays, identity, transport.clone());
+
+        assert!(reader
+            .owner_statement_was_published(&current)
+            .await
+            .unwrap());
+        let filters = transport.filters();
+        assert_eq!(filters.len(), 2);
+        assert!(filters.iter().all(|(_, filter)| {
+            filter.kinds == [OWNER_EVENT_KIND]
+                && filter.recipient_public_key.is_none()
+                && filter.author_public_key.as_deref() == Some(&owner.public_key().to_hex())
+                && filter.since == Some(10)
+                && filter.limit == MAX_READ_EVENTS
+        }));
+    }
+
+    #[tokio::test]
+    async fn publication_probe_distinguishes_successful_absence_and_total_outage() {
+        let (relays, _, identity, _, _) = setup();
+        let current = identity.owner_statement_json().unwrap();
+        let transport = ProbeTransport::default();
+        transport.respond(&relays.as_slice()[0], ProbeResponse::Events(Vec::new()));
+        transport.respond(&relays.as_slice()[1], ProbeResponse::Events(Vec::new()));
+        let reader = probe(&relays, identity.clone(), transport.clone());
+        assert!(!reader
+            .owner_statement_was_published(&current)
+            .await
+            .unwrap());
+
+        transport.respond(&relays.as_slice()[0], ProbeResponse::Failed);
+        transport.respond(&relays.as_slice()[1], ProbeResponse::Failed);
+        let reader = probe(&relays, identity, transport);
+        assert!(matches!(
+            reader.owner_statement_was_published(&current).await,
+            Err(RelayError::Unavailable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn publication_probe_uses_successful_partial_observations() {
+        let (relays, _, identity, _, _) = setup();
+        let current = identity.owner_statement_json().unwrap();
+        let present = ProbeTransport::default();
+        present.respond(&relays.as_slice()[0], ProbeResponse::Failed);
+        present.respond(
+            &relays.as_slice()[1],
+            ProbeResponse::Events(vec![current.clone()]),
+        );
+        assert!(probe(&relays, identity.clone(), present)
+            .owner_statement_was_published(&current)
+            .await
+            .unwrap());
+
+        let absent = ProbeTransport::default();
+        absent.respond(&relays.as_slice()[0], ProbeResponse::Failed);
+        absent.respond(&relays.as_slice()[1], ProbeResponse::Events(Vec::new()));
+        assert!(!probe(&relays, identity, absent)
+            .owner_statement_was_published(&current)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn publication_probe_refuses_non_current_or_invalid_input_without_reading_relays() {
+        let (relays, _, identity, _, owner) = setup();
+        let device = identity.device_public_key().unwrap();
+        let different_device = Keys::generate().public_key().to_hex();
+        let different_owner = Keys::generate();
+        let invalid = [
+            "not-json".into(),
+            roster_statement(&owner, device, "owned", 9),
+            roster_statement(&owner, device, "revoked", 20),
+            roster_statement(&owner, &different_device, "owned", 10),
+            roster_statement(&different_owner, device, "owned", 10),
+        ];
+        let transport = ProbeTransport::default();
+        let reader = probe(&relays, identity, transport.clone());
+
+        for statement in invalid {
+            assert!(matches!(
+                reader.owner_statement_was_published(&statement).await,
+                Err(RelayError::InvalidEvent(_))
+            ));
+        }
+        assert!(transport.filters().is_empty());
+    }
+
+    #[tokio::test]
+    async fn publication_probe_ignores_forged_and_unrelated_relay_events() {
+        let (relays, _, identity, second, owner) = setup();
+        let current = identity.owner_statement_json().unwrap();
+        let mut forged: serde_json::Value = serde_json::from_str(&current).unwrap();
+        forged["content"] = "forged".into();
+        let unrelated_device = second.owner_statement_json().unwrap();
+        let unrelated_owner = roster_statement(
+            &Keys::generate(),
+            identity.device_public_key().unwrap(),
+            "owned",
+            20,
+        );
+        let revoked =
+            roster_statement(&owner, identity.device_public_key().unwrap(), "revoked", 20);
+        let transport = ProbeTransport::default();
+        transport.respond(
+            &relays.as_slice()[0],
+            ProbeResponse::Events(vec![
+                serde_json::to_string(&forged).unwrap(),
+                unrelated_device,
+                unrelated_owner,
+                revoked,
+            ]),
+        );
+        transport.respond(&relays.as_slice()[1], ProbeResponse::Events(Vec::new()));
+
+        assert!(!probe(&relays, identity, transport)
+            .owner_statement_was_published(&current)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
