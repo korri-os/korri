@@ -16,7 +16,8 @@
     "caliper:verify": "node caliper/verify-browser.mjs"
   },
   "dependencies": {
-    "@korri/intrinsic-design": "file:../../packages/intrinsic-design"
+    "@korri/intrinsic-design": "file:../../packages/intrinsic-design",
+    "qrcode": "^1.5.4"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -26,6 +27,7 @@
     "@happy-dom/global-registrator": "^18.0.0",
     "@testing-library/react": "^16.3.0",
     "@types/bun": "^1.2.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",

@@ -12,6 +12,7 @@ import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
+import { PicoIdentityDialog } from "./pages/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
 import {
@@ -136,6 +137,7 @@ function PicoCatalogSurface({
    * screen shows — a copy taken on open would show the game as it was. */
   const [viewingId, setViewingId] = useState<string | undefined>(initialView?._tag === "Detail" ? initialView.gameId : undefined)
   const [settingsOpen, setSettingsOpen] = useState(initialView?._tag === "Settings")
+  const [identityAction, setIdentityAction] = useState<string | null>(null)
   /* Finding a game: what has been typed and which collection is chosen. Both
    * live here so Back can close the whole screen in one press rather than
    * unwinding a query letter by letter. */
@@ -201,7 +203,7 @@ function PicoCatalogSurface({
    * lose the thing they are waiting for. */
   const canAttract = !runnerOpen && view._tag === "Shelf" && !settingsOpen && !finding
     && viewingId === undefined && placing === undefined
-    && asking === undefined && askingAction === undefined
+    && asking === undefined && askingAction === undefined && identityAction === null
 
   useEffect(() => {
     if (!canAttract) {
@@ -221,6 +223,7 @@ function PicoCatalogSurface({
       // Input follows the visible status, not the navigation hidden below it.
       if (model.status._tag === "Problem") { host.dismiss(); return }
       if (model.status._tag !== "Browsing") return
+      if (identityAction !== null) { setIdentityAction(null); return }
       if (askingAction !== undefined) { setAskingAction(undefined); return }
       if (asking !== undefined) { setAsking(undefined); return }
       if (placing !== undefined) { setPlacing(undefined); return }
@@ -249,7 +252,7 @@ function PicoCatalogSurface({
       offOptions()
       offMenu()
     }
-  }, [host, model.status._tag, askingAction, asking, placing, settingsOpen, viewingId, finding, wake, runnerOpen])
+  }, [host, model.status._tag, identityAction, askingAction, asking, placing, settingsOpen, viewingId, finding, wake, runnerOpen])
 
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
@@ -329,7 +332,10 @@ function PicoCatalogSurface({
             setAsking(undefined)
           }}
           onDismissProblem={() => host.dismissSettingsProblem()}
-          onRun={(actionId) => host.runAction(actionId)}
+          onRun={(actionId) => {
+            if (actionId.startsWith("identity:")) setIdentityAction(actionId)
+            else host.runAction(actionId)
+          }}
           settings={picoSettingsViewFromModel(model)}
         />
       ) : finding && quiet && viewing === undefined ? (
@@ -381,6 +387,18 @@ function PicoCatalogSurface({
       {attracting ? (
         <PicoAttract games={view._tag === "Shelf" ? view.games : []} />
       ) : null}
+      <PicoIdentityDialog
+        action={identityAction}
+        identity={model.identityManagement}
+        onClose={() => setIdentityAction(null)}
+        onExport={(password, retiredPublicKey) => host.exportIdentityBackup(password, retiredPublicKey)}
+        onSwitchLocal={(encryptedSecret, password, disposition, confirmed) =>
+          host.switchIdentityFromBackup(encryptedSecret, password, disposition, confirmed)}
+        onSwitchNip46={(bunkerUri, disposition, confirmed) =>
+          host.switchIdentityToNip46(bunkerUri, disposition, confirmed)}
+        onDeleteRetired={(publicKey, confirmed) => host.deleteRetiredIdentity(publicKey, confirmed)}
+        onDismissStatus={() => host.dismissIdentityStatus()}
+      />
       </div>
       {runnerOpen ? <PicoRunnerPicker choice={runner} onAction={id => host.runAction(id)} /> : null}
     </>

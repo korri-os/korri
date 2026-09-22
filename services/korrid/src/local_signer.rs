@@ -1,7 +1,7 @@
 //! Local person signer and its Unix-socket `PersonSigner` adapter.
 
 use crate::{
-    identity::validate_owned_statement_template,
+    identity::validate_signable_owner_statement_template,
     remote_signer::{PersonSigner, PersonSignerRequest, PersonSignerState},
 };
 use futures::future::BoxFuture;
@@ -154,6 +154,24 @@ impl LocalSignerKeyring {
             keyring.validate_complete_layout()?;
             keyring.verify_retired_key(&public_key)?;
             Ok(public_key)
+        })
+    }
+
+    pub fn inactive_signer(
+        &self,
+        public_key: &str,
+        expected_device_public_key: &str,
+    ) -> Result<LocalPersonSigner, LocalSignerError> {
+        let public_key = parse_public_key_text(public_key)?;
+        let expected_device_public_key = parse_public_key_text(expected_device_public_key)?;
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            let keys = keyring.read_retired_keys(&public_key)?;
+            Ok(LocalPersonSigner {
+                keys,
+                expected_device_public_key,
+                state: Mutex::new(PersonSignerState::Available),
+            })
         })
     }
 
@@ -557,7 +575,7 @@ impl LocalPersonSigner {
         if template.len() > MAX_MESSAGE_BYTES {
             return Err(());
         }
-        let template = validate_owned_statement_template(template).map_err(|_| ())?;
+        let template = validate_signable_owner_statement_template(template).map_err(|_| ())?;
         if template.device_public_key != self.expected_device_public_key {
             return Err(());
         }
@@ -607,6 +625,62 @@ impl PersonSigner for LocalPersonSigner {
     }
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "_tag", content = "payload", deny_unknown_fields)]
+pub enum LocalSignerWireRequest {
+    Sign(PersonSignerRequest),
+    ExportActive {
+        password: String,
+    },
+    StageImport {
+        encrypted_secret: String,
+        password: String,
+        expected_device_public_key: String,
+    },
+    SignInactive {
+        public_key: String,
+        expected_device_public_key: String,
+        request: PersonSignerRequest,
+    },
+    Activate {
+        expected_active_public_key: Option<String>,
+        replacement_public_key: Option<String>,
+        new_device_public_key: String,
+        new_owner_event_json: String,
+    },
+    ExportRetired {
+        public_key: String,
+        password: String,
+    },
+    DeleteRetired {
+        public_key: String,
+    },
+    RollbackInactive {
+        public_key: String,
+    },
+    Status,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "_tag", content = "payload", deny_unknown_fields)]
+pub enum LocalSignerWireResponse {
+    Sign(PersonSignerState),
+    Exported {
+        encrypted_secret: String,
+    },
+    Staged {
+        public_key: String,
+    },
+    Status {
+        active_public_key: Option<String>,
+        retired_public_keys: Vec<String>,
+    },
+    Ok,
+    Error {
+        message: String,
+    },
+}
+
 pub struct UnixPersonSigner {
     socket: PathBuf,
     state: Mutex<PersonSignerState>,
@@ -636,45 +710,346 @@ impl PersonSigner for UnixPersonSigner {
             *self.state.lock().expect("local signer state poisoned") = PersonSignerState::Pending {
                 message: "Waiting for the local signer".into(),
             };
-            let next = request_over_unix(&self.socket, &request)
+            let next = match request_over_unix(&self.socket, &LocalSignerWireRequest::Sign(request))
                 .await
-                .unwrap_or_else(|message| PersonSignerState::Defect { message });
+            {
+                Ok(LocalSignerWireResponse::Sign(state)) => state,
+                Ok(LocalSignerWireResponse::Error { message }) | Err(message) => {
+                    PersonSignerState::Defect { message }
+                }
+                Ok(_) => PersonSignerState::InvalidResponse {
+                    message: "Local signer returned the wrong response".into(),
+                },
+            };
             *self.state.lock().expect("local signer state poisoned") = next.clone();
             next
         })
     }
 }
 
+#[derive(Clone)]
+pub struct UnixLocalSignerAdmin {
+    socket: PathBuf,
+}
+
+impl UnixLocalSignerAdmin {
+    pub fn new(socket: PathBuf) -> Self {
+        Self { socket }
+    }
+
+    pub async fn export_active(&self, password: String) -> Result<String, String> {
+        match request_over_unix(
+            &self.socket,
+            &LocalSignerWireRequest::ExportActive { password },
+        )
+        .await?
+        {
+            LocalSignerWireResponse::Exported { encrypted_secret } => Ok(encrypted_secret),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+
+    pub async fn stage_import(
+        &self,
+        encrypted_secret: String,
+        password: String,
+        expected_device_public_key: String,
+    ) -> Result<String, String> {
+        match request_over_unix(
+            &self.socket,
+            &LocalSignerWireRequest::StageImport {
+                encrypted_secret,
+                password,
+                expected_device_public_key,
+            },
+        )
+        .await?
+        {
+            LocalSignerWireResponse::Staged { public_key } => Ok(public_key),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+
+    pub async fn sign_inactive(
+        &self,
+        public_key: String,
+        expected_device_public_key: String,
+        request: PersonSignerRequest,
+    ) -> Result<PersonSignerState, String> {
+        match request_over_unix(
+            &self.socket,
+            &LocalSignerWireRequest::SignInactive {
+                public_key,
+                expected_device_public_key,
+                request,
+            },
+        )
+        .await?
+        {
+            LocalSignerWireResponse::Sign(state) => Ok(state),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+
+    pub async fn activate(
+        &self,
+        expected_active_public_key: Option<String>,
+        replacement_public_key: Option<String>,
+        new_device_public_key: String,
+        new_owner_event_json: String,
+    ) -> Result<(), String> {
+        self.expect_ok(LocalSignerWireRequest::Activate {
+            expected_active_public_key,
+            replacement_public_key,
+            new_device_public_key,
+            new_owner_event_json,
+        })
+        .await
+    }
+
+    pub async fn export_retired(
+        &self,
+        public_key: String,
+        password: String,
+    ) -> Result<String, String> {
+        match request_over_unix(
+            &self.socket,
+            &LocalSignerWireRequest::ExportRetired {
+                public_key,
+                password,
+            },
+        )
+        .await?
+        {
+            LocalSignerWireResponse::Exported { encrypted_secret } => Ok(encrypted_secret),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+
+    pub async fn delete_retired(&self, public_key: String) -> Result<(), String> {
+        self.expect_ok(LocalSignerWireRequest::DeleteRetired { public_key })
+            .await
+    }
+
+    pub async fn rollback_inactive(&self, public_key: String) -> Result<(), String> {
+        self.expect_ok(LocalSignerWireRequest::RollbackInactive { public_key })
+            .await
+    }
+
+    pub async fn status(&self) -> Result<(Option<String>, Vec<String>), String> {
+        match request_over_unix(&self.socket, &LocalSignerWireRequest::Status).await? {
+            LocalSignerWireResponse::Status {
+                active_public_key,
+                retired_public_keys,
+            } => Ok((active_public_key, retired_public_keys)),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+
+    async fn expect_ok(&self, request: LocalSignerWireRequest) -> Result<(), String> {
+        match request_over_unix(&self.socket, &request).await? {
+            LocalSignerWireResponse::Ok => Ok(()),
+            LocalSignerWireResponse::Error { message } => Err(message),
+            _ => Err("Local signer returned the wrong response".into()),
+        }
+    }
+}
+
 pub async fn serve_connection(
     mut stream: tokio::net::UnixStream,
-    signer: Arc<LocalPersonSigner>,
+    private_state_root: PathBuf,
+    expected_device_public_key: Arc<Mutex<String>>,
+    public_key_path: PathBuf,
 ) -> Result<(), std::io::Error> {
     let mut bytes = Vec::new();
     (&mut stream)
         .take((MAX_MESSAGE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .await?;
-    let state = if bytes.len() > MAX_MESSAGE_BYTES {
-        PersonSignerState::InvalidResponse {
+    let response = if bytes.len() > MAX_MESSAGE_BYTES {
+        LocalSignerWireResponse::Error {
             message: "Local signer request is too large".into(),
         }
     } else {
-        match serde_json::from_slice::<PersonSignerRequest>(&bytes) {
-            Ok(request) => signer.request(request).await,
-            Err(_) => PersonSignerState::InvalidResponse {
+        match serde_json::from_slice::<LocalSignerWireRequest>(&bytes) {
+            Ok(request) => {
+                handle_wire_request(
+                    &private_state_root,
+                    &expected_device_public_key,
+                    &public_key_path,
+                    request,
+                )
+                .await
+            }
+            Err(_) => LocalSignerWireResponse::Error {
                 message: "Local signer request is invalid".into(),
             },
         }
     };
-    let response = serde_json::to_vec(&state).map_err(std::io::Error::other)?;
+    let response = serde_json::to_vec(&response).map_err(std::io::Error::other)?;
     stream.write_all(&response).await?;
     stream.shutdown().await
 }
 
+async fn handle_wire_request(
+    private_state_root: &Path,
+    expected_device_public_key: &Arc<Mutex<String>>,
+    public_key_path: &Path,
+    request: LocalSignerWireRequest,
+) -> LocalSignerWireResponse {
+    let result: Result<LocalSignerWireResponse, String> = async {
+        let keyring = LocalSignerKeyring::open_or_initialize(private_state_root)
+            .map_err(|error| error.to_string())?;
+        match request {
+            LocalSignerWireRequest::Sign(request) => {
+                let expected = expected_device_public_key
+                    .lock()
+                    .map_err(|_| "Local signer state is unavailable".to_owned())?
+                    .clone();
+                let signer = LocalPersonSigner::load_or_create(private_state_root, &expected)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Sign(signer.request(request).await))
+            }
+            LocalSignerWireRequest::ExportActive { password } => {
+                let expected = expected_device_public_key
+                    .lock()
+                    .map_err(|_| "Local signer state is unavailable".to_owned())?
+                    .clone();
+                let signer = LocalPersonSigner::load_or_create(private_state_root, &expected)
+                    .map_err(|error| error.to_string())?;
+                let encrypted_secret = signer
+                    .export_nip49(&password)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Exported { encrypted_secret })
+            }
+            LocalSignerWireRequest::StageImport {
+                encrypted_secret,
+                password,
+                expected_device_public_key,
+            } => {
+                let signer = LocalPersonSigner::import_nip49(
+                    &encrypted_secret,
+                    &password,
+                    &expected_device_public_key,
+                )
+                .map_err(|error| error.to_string())?;
+                let public_key = keyring
+                    .persist_inactive(&signer)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Staged { public_key })
+            }
+            LocalSignerWireRequest::SignInactive {
+                public_key,
+                expected_device_public_key,
+                request,
+            } => {
+                let signer = keyring
+                    .inactive_signer(&public_key, &expected_device_public_key)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Sign(signer.request(request).await))
+            }
+            LocalSignerWireRequest::Activate {
+                expected_active_public_key,
+                replacement_public_key,
+                new_device_public_key,
+                new_owner_event_json,
+            } => {
+                let statement = crate::identity::DeviceIdentity::verify_owner_statement(
+                    &new_owner_event_json,
+                    &new_device_public_key,
+                )
+                .map_err(|error| error.to_string())?;
+                if statement.status != crate::identity::OwnerStatementStatus::Owned
+                    || replacement_public_key
+                        .as_deref()
+                        .is_some_and(|key| key != statement.owner_public_key)
+                {
+                    return Err("Replacement owner evidence does not match the signer".into());
+                }
+                if let Some(expected_active_public_key) = expected_active_public_key {
+                    keyring
+                        .retire_active(
+                            &expected_active_public_key,
+                            replacement_public_key.as_deref(),
+                        )
+                        .map_err(|error| error.to_string())?;
+                } else {
+                    match (
+                        keyring.status().map_err(|error| error.to_string())?,
+                        replacement_public_key.as_deref(),
+                    ) {
+                        (LocalSignerKeyringStatus::Remote, Some(replacement)) => keyring
+                            .promote_retired(replacement)
+                            .map_err(|error| error.to_string())?,
+                        (LocalSignerKeyringStatus::Remote, None) => {}
+                        (LocalSignerKeyringStatus::Active { public_key }, Some(replacement))
+                            if public_key == replacement => {}
+                        _ => {
+                            return Err(
+                                "Local signer state does not match the identity switch".into()
+                            )
+                        }
+                    }
+                }
+                *expected_device_public_key
+                    .lock()
+                    .map_err(|_| "Local signer state is unavailable".to_owned())? =
+                    new_device_public_key;
+                if let Some(public_key) = replacement_public_key {
+                    publish_public_key(public_key_path, &public_key)
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok(LocalSignerWireResponse::Ok)
+            }
+            LocalSignerWireRequest::ExportRetired {
+                public_key,
+                password,
+            } => {
+                let encrypted_secret = keyring
+                    .export_retired_nip49(&public_key, &password)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Exported { encrypted_secret })
+            }
+            LocalSignerWireRequest::DeleteRetired { public_key } => {
+                keyring
+                    .delete_retired(&public_key)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Ok)
+            }
+            LocalSignerWireRequest::RollbackInactive { public_key } => {
+                keyring
+                    .rollback_inactive(&public_key)
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Ok)
+            }
+            LocalSignerWireRequest::Status => {
+                let active_public_key = match keyring.status().map_err(|error| error.to_string())? {
+                    LocalSignerKeyringStatus::Active { public_key } => Some(public_key),
+                    LocalSignerKeyringStatus::Remote => None,
+                };
+                let retired_public_keys = keyring
+                    .retired_public_keys()
+                    .map_err(|error| error.to_string())?;
+                Ok(LocalSignerWireResponse::Status {
+                    active_public_key,
+                    retired_public_keys,
+                })
+            }
+        }
+    }
+    .await;
+    result.unwrap_or_else(|message| LocalSignerWireResponse::Error { message })
+}
+
 async fn request_over_unix(
     socket: &Path,
-    request: &PersonSignerRequest,
-) -> Result<PersonSignerState, String> {
+    request: &LocalSignerWireRequest,
+) -> Result<LocalSignerWireResponse, String> {
     let bytes =
         serde_json::to_vec(request).map_err(|_| "local signer request failed".to_owned())?;
     if bytes.len() > MAX_MESSAGE_BYTES {
@@ -756,6 +1131,16 @@ pub fn publish_public_key(path: &Path, public_key: &str) -> Result<(), LocalSign
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+pub fn read_published_public_key_if_present(
+    path: &Path,
+) -> Result<Option<String>, LocalSignerError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => read_published_public_key(path).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(LocalSignerError::Storage),
+    }
 }
 
 pub fn read_published_public_key(path: &Path) -> Result<String, LocalSignerError> {
@@ -1817,18 +2202,20 @@ mod tests {
         let socket_root = tempfile::tempdir().unwrap();
         let socket = socket_root.path().join("signer.sock");
         let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let signer = Arc::new(
-            LocalPersonSigner::load_or_create(
-                signer_root.path(),
-                &device_public_key(device_root.path()),
-            )
-            .unwrap(),
-        );
+        LocalPersonSigner::load_or_create(
+            signer_root.path(),
+            &device_public_key(device_root.path()),
+        )
+        .unwrap();
         let server = {
-            let signer = signer.clone();
+            let root = signer_root.path().to_owned();
+            let expected = Arc::new(Mutex::new(device_public_key(device_root.path())));
+            let public_key_path = socket_root.path().join("person.pub");
             tokio::spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
-                super::serve_connection(stream, signer).await.unwrap();
+                super::serve_connection(stream, root, expected, public_key_path)
+                    .await
+                    .unwrap();
             })
         };
         let client = UnixPersonSigner::new(socket);

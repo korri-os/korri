@@ -33,6 +33,11 @@ export function createPreviewSession(publish: (model: SurfaceModel) => void, sou
     dismissSettingsProblem() {
       recorded.dismissSettingsProblem(); update({ ...model, settingsStatus: { _tag: "Idle" } })
     },
+    exportIdentityBackup() {},
+    switchIdentityFromBackup() {},
+    switchIdentityToNip46() {},
+    deleteRetiredIdentity() {},
+    dismissIdentityStatus() {},
     invokeGameplayControl(id, value) {
       recorded.invokeGameplayControl(id, value)
       if (model.presentation.kind !== "gameplay-overlay") return

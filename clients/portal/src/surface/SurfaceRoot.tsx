@@ -85,8 +85,14 @@ export function SurfaceRoot({
     state,
     facts,
     settingsStatus,
+    identityManagement,
     changeSetting,
     dismissSettingsProblem,
+    exportIdentityBackup,
+    switchIdentityFromBackup,
+    switchIdentityToNip46,
+    deleteRetiredIdentity,
+    dismissIdentityStatus,
     runDeviceAction,
     confirmEntry,
     stopSession,
@@ -105,8 +111,13 @@ export function SurfaceRoot({
   )
 
   const baseModel = useMemo(
-    () => surfaceModelFrom(state, { clockLabel, settings, settingsStatus }),
-    [state, clockLabel, settings, settingsStatus],
+    () => surfaceModelFrom(state, {
+      clockLabel,
+      settings,
+      settingsStatus,
+      ...(identityManagement === undefined ? {} : { identityManagement }),
+    }),
+    [state, clockLabel, settings, settingsStatus, identityManagement],
   )
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
@@ -145,6 +156,11 @@ export function SurfaceRoot({
       },
       changeSetting,
       dismissSettingsProblem,
+      exportIdentityBackup,
+      switchIdentityFromBackup,
+      switchIdentityToNip46,
+      deleteRetiredIdentity,
+      dismissIdentityStatus,
       gameActions: id => {
         const entry = entryForId(stateRef.current, id)
         return [...gameActionsForEntry(entry), ...(localRunnerEntry(entry) ? [{
@@ -179,6 +195,11 @@ export function SurfaceRoot({
       confirmEntry,
       dismissNotice,
       dismissSettingsProblem,
+      exportIdentityBackup,
+      switchIdentityFromBackup,
+      switchIdentityToNip46,
+      deleteRetiredIdentity,
+      dismissIdentityStatus,
       reload,
       runDeviceAction,
       stopSession,

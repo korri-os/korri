@@ -40,17 +40,62 @@ export interface PicoSettingsGroupView {
   readonly rows: readonly PicoSettingRowView[]
 }
 
+export const PICO_IDENTITY_BACKUP_ACTION = "identity:backup"
+export const PICO_IDENTITY_SWITCH_LOCAL_ACTION = "identity:switch:local"
+export const PICO_IDENTITY_SWITCH_NIP46_ACTION = "identity:switch:nip46"
+export const picoIdentityRetiredExportAction = (key: string) => `identity:retired:export:${key}`
+export const picoIdentityRetiredDeleteAction = (key: string) => `identity:retired:delete:${key}`
+
 export interface PicoSettingsView {
   readonly groups: readonly PicoSettingsGroupView[]
   readonly buildLabel?: string
 }
 
 export function picoSettingsViewFromModel(model: SurfaceModel): PicoSettingsView {
+  const identity = model.identityManagement
+  const identityRows: PicoSettingRowView[] = identity ? [
+    ...(identity.localBackupAvailable ? [{
+      id: PICO_IDENTITY_BACKUP_ACTION,
+      label: "Back up current identity",
+      description: "Encrypted NIP-49 text and QR code",
+      control: { kind: "action" as const, actionId: PICO_IDENTITY_BACKUP_ACTION, destructive: false },
+      state: "idle" as const,
+    }] : []),
+    {
+      id: PICO_IDENTITY_SWITCH_LOCAL_ACTION,
+      label: "Switch from backup",
+      control: { kind: "action" as const, actionId: PICO_IDENTITY_SWITCH_LOCAL_ACTION, destructive: true },
+      state: "idle" as const,
+    },
+    {
+      id: PICO_IDENTITY_SWITCH_NIP46_ACTION,
+      label: "Switch to NIP-46",
+      control: { kind: "action" as const, actionId: PICO_IDENTITY_SWITCH_NIP46_ACTION, destructive: true },
+      state: "idle" as const,
+    },
+    ...identity.retiredPublicKeys.flatMap(publicKey => {
+      const short = `${publicKey.slice(0, 8)}…${publicKey.slice(-8)}`
+      return [{
+        id: picoIdentityRetiredExportAction(publicKey),
+        label: `Back up retired ${short}`,
+        control: { kind: "action" as const, actionId: picoIdentityRetiredExportAction(publicKey), destructive: false },
+        state: "idle" as const,
+      }, {
+        id: picoIdentityRetiredDeleteAction(publicKey),
+        label: `Delete retired ${short}`,
+        control: { kind: "action" as const, actionId: picoIdentityRetiredDeleteAction(publicKey), destructive: true },
+        state: "idle" as const,
+      }]
+    }),
+  ] : []
   return {
-    groups: model.settings.map((group) => ({
-      title: group.title.toUpperCase(),
-      rows: group.items.map((item) => rowFor(item, model)),
-    })),
+    groups: [
+      ...model.settings.map((group) => ({
+        title: group.title.toUpperCase(),
+        rows: group.items.map((item) => rowFor(item, model)),
+      })),
+      ...(identityRows.length ? [{ title: "IDENTITY", rows: identityRows }] : []),
+    ],
     ...(model.buildLabel === undefined ? {} : { buildLabel: model.buildLabel }),
   }
 }

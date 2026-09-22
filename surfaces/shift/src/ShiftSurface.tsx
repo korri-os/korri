@@ -12,6 +12,7 @@ import type {
   SurfaceGame,
   SurfaceHost,
   SurfaceModel,
+  SurfaceSettingGroup,
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { SurfaceHostProvider } from "./host/surface-host"
@@ -30,6 +31,14 @@ import type { ShiftGameDetailView } from "./pages/shift-game-detail-view"
 import { ShiftSettings } from "./pages/ShiftSettings"
 import { ShiftGameActionsSheet } from "./ui/organisms/ShiftGameActionsSheet"
 import { ShiftGameplayOverlaySheet } from "./ui/organisms/ShiftGameplayOverlaySheet"
+import {
+  IDENTITY_BACKUP_ACTION,
+  IDENTITY_SWITCH_LOCAL_ACTION,
+  IDENTITY_SWITCH_NIP46_ACTION,
+  identityRetiredDeleteAction,
+  identityRetiredExportAction,
+  ShiftIdentitySheet,
+} from "./ui/organisms/ShiftIdentitySheet"
 import { ShiftLaunchLocationSheet } from "./ui/organisms/ShiftLaunchLocationSheet"
 import { ShiftRunnerSheet } from "./ui/organisms/ShiftRunnerSheet"
 
@@ -179,6 +188,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
   const [sheetGameId, setSheetGameId] = useState<string | null>(null)
   const [launchGameId, setLaunchGameId] = useState<string | null>(null)
   const [detailGameId, setDetailGameId] = useState<string | null>(null)
+  const [identityAction, setIdentityAction] = useState<string | null>(null)
   const [screen, setScreen] = useState<
     "home" | "library" | "detail" | "settings"
   >("home")
@@ -218,9 +228,54 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
 
   // Library is Shift's dedicated destination. Generic rail actions are reserved
   // for newer host-backed destinations such as Settings.
+  const identityGroup = useMemo<SurfaceSettingGroup | undefined>(() => {
+    const identity = model.identityManagement
+    if (!identity) return undefined
+    return {
+      title: "Identity",
+      items: [
+        ...(identity.localBackupAvailable ? [{
+          id: IDENTITY_BACKUP_ACTION,
+          label: "Back up current identity",
+          description: "Create a password-encrypted NIP-49 recovery secret and QR code.",
+          interaction: { kind: "action" as const, actionId: IDENTITY_BACKUP_ACTION },
+        }] : []),
+        {
+          id: IDENTITY_SWITCH_LOCAL_ACTION,
+          label: "Switch from encrypted backup",
+          description: "Replace this device identity with a NIP-49 recovery secret.",
+          interaction: { kind: "action" as const, actionId: IDENTITY_SWITCH_LOCAL_ACTION, destructive: true },
+        },
+        {
+          id: IDENTITY_SWITCH_NIP46_ACTION,
+          label: "Switch to remote signer",
+          description: "Replace this device identity through a NIP-46 bunker connection.",
+          interaction: { kind: "action" as const, actionId: IDENTITY_SWITCH_NIP46_ACTION, destructive: true },
+        },
+        ...identity.retiredPublicKeys.flatMap(publicKey => {
+          const short = `${publicKey.slice(0, 8)}…${publicKey.slice(-8)}`
+          return [{
+            id: identityRetiredExportAction(publicKey),
+            label: `Back up retired key ${short}`,
+            interaction: { kind: "action" as const, actionId: identityRetiredExportAction(publicKey) },
+          }, {
+            id: identityRetiredDeleteAction(publicKey),
+            label: `Delete retired key ${short}`,
+            description: "Permanent. Export a recovery backup first.",
+            interaction: { kind: "action" as const, actionId: identityRetiredDeleteAction(publicKey), destructive: true },
+          }]
+        }),
+      ],
+    }
+  }, [model.identityManagement])
+  const settingsGroups = useMemo(
+    () => identityGroup ? [...model.settings, identityGroup] : model.settings,
+    [identityGroup, model.settings],
+  )
+
   const railActions = useMemo<readonly SurfaceAction[]>(
-    () => (model.settings.length > 0 ? [SETTINGS_AFFORDANCE] : []),
-    [model.settings],
+    () => (settingsGroups.length > 0 ? [SETTINGS_AFFORDANCE] : []),
+    [settingsGroups],
   )
 
   const runRailAction = useCallback((actionId: string) => {
@@ -251,10 +306,13 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     model.presentation.kind === "gameplay-overlay" ? null
     : screen === "settings" ? (
       <ShiftSettings
-        groups={model.settings}
+        groups={settingsGroups}
         status={model.settingsStatus}
         onChange={(settingId, value) => host.changeSetting(settingId, value)}
-        onAction={actionId => host.runAction(actionId)}
+        onAction={actionId => {
+          if (actionId.startsWith("identity:")) setIdentityAction(actionId)
+          else host.runAction(actionId)
+        }}
         onDismissProblem={() => host.dismissSettingsProblem()}
         {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
         onClose={() => setScreen("home")}
@@ -364,6 +422,18 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
             onClose={closeSheet}
           />
         ) : null}
+        <ShiftIdentitySheet
+          action={identityAction}
+          identity={model.identityManagement}
+          onClose={() => setIdentityAction(null)}
+          onExport={(password, retiredPublicKey) => host.exportIdentityBackup(password, retiredPublicKey)}
+          onSwitchLocal={(encryptedSecret, password, disposition, confirmed) =>
+            host.switchIdentityFromBackup(encryptedSecret, password, disposition, confirmed)}
+          onSwitchNip46={(bunkerUri, disposition, confirmed) =>
+            host.switchIdentityToNip46(bunkerUri, disposition, confirmed)}
+          onDeleteRetired={(publicKey, confirmed) => host.deleteRetiredIdentity(publicKey, confirmed)}
+          onDismissStatus={() => host.dismissIdentityStatus()}
+        />
         {launchChooserOpen && launchSurfaceGame?.launchLocations ? (
           <ShiftLaunchLocationSheet
             open

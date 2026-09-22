@@ -19,6 +19,7 @@ impl PortalPermission {
             | RpcRequest::Health(_)
             | RpcRequest::LocalGamesList(_)
             | RpcRequest::SettingsSnapshot(_)
+            | RpcRequest::IdentityStatus(_)
             | RpcRequest::DiscoverySnapshot(_)
             | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_)
@@ -39,7 +40,12 @@ impl PortalPermission {
             | RpcRequest::DiscoveryRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
-            | RpcRequest::SteamGridDbCredentialClear(_) => false,
+            | RpcRequest::SteamGridDbCredentialClear(_)
+            | RpcRequest::IdentityBackupExport(_)
+            | RpcRequest::IdentityLocalSwitch(_)
+            | RpcRequest::IdentityNip46Switch(_)
+            | RpcRequest::IdentityRetiredExport(_)
+            | RpcRequest::IdentityRetiredDelete(_) => false,
         };
         match self {
             Self::Full => true,

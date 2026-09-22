@@ -17,6 +17,11 @@ import type {
   DiscoverySnapshotOutcome,
   Game,
   HealthOutcome,
+  IdentityBackupOutcome,
+  IdentityDataDisposition,
+  IdentityRetiredDeleteOutcome,
+  IdentityStatusOutcome,
+  IdentitySwitchOutcome,
   LocalGame,
   LocalGamesListOutcome,
   RpcRequest,
@@ -63,6 +68,20 @@ export interface KorridClient {
   ): Promise<SettingsUpdateOutcome>
   setSteamGridDbCredential(token: string): Promise<SensitiveSettingOutcome>
   clearSteamGridDbCredential(): Promise<SensitiveSettingOutcome>
+  identityStatus(): Promise<IdentityStatusOutcome>
+  exportIdentityBackup(password: string, retiredPublicKey?: string): Promise<IdentityBackupOutcome>
+  switchIdentityFromBackup(
+    encryptedSecret: string,
+    password: string,
+    dataDisposition: IdentityDataDisposition,
+    trustLossConfirmed: boolean,
+  ): Promise<IdentitySwitchOutcome>
+  switchIdentityToNip46(
+    bunkerUri: string,
+    dataDisposition: IdentityDataDisposition,
+    trustLossConfirmed: boolean,
+  ): Promise<IdentitySwitchOutcome>
+  deleteRetiredIdentity(publicKey: string, backupConfirmed: boolean): Promise<IdentityRetiredDeleteOutcome>
   discoverySnapshot(): Promise<DiscoverySnapshotOutcome>
   registerDiscoveryReceipt(receipt: string): Promise<DiscoverySnapshotOutcome>
   removeDiscoveryLocation(locationId: string): Promise<DiscoverySnapshotOutcome>
@@ -94,6 +113,7 @@ export interface KorridClient {
 }
 
 const RPC_TIMEOUT_MS = 25_000
+const IDENTITY_SWITCH_TIMEOUT_MS = 180_000
 
 class KorridHttpError extends Error {
   constructor(readonly status: number) {
@@ -271,6 +291,66 @@ export function createHttpKorridClient(
         return response.outcome
       } catch (error) {
         return unreachable(error)
+      }
+    },
+    async identityStatus() {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.status",
+          payload: {},
+        })
+        return response.outcome
+      } catch (error) {
+        return routeUnavailable(error)
+      }
+    },
+    async exportIdentityBackup(password, retiredPublicKey) {
+      try {
+        const response = await callKorrid(baseUrl, capability, retiredPublicKey === undefined
+          ? {
+              _tag: "system.identity.backup.export",
+              payload: { password },
+            }
+          : {
+              _tag: "system.identity.retired.export",
+              payload: { publicKey: retiredPublicKey, password },
+            })
+        return response.outcome
+      } catch (error) {
+        return routeUnavailable(error)
+      }
+    },
+    async switchIdentityFromBackup(encryptedSecret, password, dataDisposition, trustLossConfirmed) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.switch.local",
+          payload: { encryptedSecret, password, dataDisposition, trustLossConfirmed },
+        }, IDENTITY_SWITCH_TIMEOUT_MS)
+        return response.outcome
+      } catch (error) {
+        return routeUnavailable(error)
+      }
+    },
+    async switchIdentityToNip46(bunkerUri, dataDisposition, trustLossConfirmed) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.switch.nip46",
+          payload: { bunkerUri, dataDisposition, trustLossConfirmed },
+        }, IDENTITY_SWITCH_TIMEOUT_MS)
+        return response.outcome
+      } catch (error) {
+        return routeUnavailable(error)
+      }
+    },
+    async deleteRetiredIdentity(publicKey, backupConfirmed) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "system.identity.retired.delete",
+          payload: { publicKey, backupConfirmed },
+        })
+        return response.outcome
+      } catch (error) {
+        return routeUnavailable(error)
       }
     },
     async discoverySnapshot() {
@@ -719,6 +799,36 @@ export function createInMemoryKorridClient(
       return {
         _tag: "Ok",
         payload: { status: SecretSettingStatus.NotConfigured },
+      }
+    },
+    async identityStatus() {
+      return {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
+      }
+    },
+    async exportIdentityBackup() {
+      return {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
+      }
+    },
+    async switchIdentityFromBackup() {
+      return {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
+      }
+    },
+    async switchIdentityToNip46() {
+      return {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
+      }
+    },
+    async deleteRetiredIdentity() {
+      return {
+        _tag: "Err",
+        payload: { code: "OperationUnsupported", message: "Identity management is unavailable in browser preview." },
       }
     },
     async discoverySnapshot() {

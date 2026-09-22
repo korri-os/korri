@@ -54,6 +54,11 @@ export function createFixtureHost(): FixtureHost {
     dismissSettingsProblem() {
       calls.push("dismissSettingsProblem")
     },
+    exportIdentityBackup() {},
+    switchIdentityFromBackup() {},
+    switchIdentityToNip46() {},
+    deleteRetiredIdentity() {},
+    dismissIdentityStatus() {},
     /* Korri publishes actions per game, and only for some games. Hollow Knight
      * carries one of each shape the treaty allows: plain, destructive, and
      * present-but-inert. A game action has no disabledReason — that field is

@@ -152,6 +152,29 @@ pub struct FederationDirectory {
 }
 
 impl FederationDirectory {
+    pub fn reset_persisted_after_identity_switch(root: &Path) -> Result<(), FederationError> {
+        let identity =
+            DeviceIdentity::load_or_create(root).map_err(|_| FederationError::Identity)?;
+        let device = identity
+            .device_public_key()
+            .ok_or(FederationError::Identity)?;
+        if matches!(
+            identity.state(),
+            IdentityState::Invalid { .. } | IdentityState::Revoked { .. }
+        ) {
+            return Err(FederationError::Identity);
+        }
+        store::validate_ancestors(root)?;
+        store::private_directory(root)?;
+        let mut store = Store::open(root)?;
+        store.save(encode(&Memory {
+            local_device_public_key: device.into(),
+            owner_public_key: owner_key(&identity).map(str::to_owned),
+            publication: None,
+            peers: BTreeMap::new(),
+        })?)
+    }
+
     pub fn open(
         root: &Path,
         credentials: PeerCredentials,

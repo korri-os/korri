@@ -158,6 +158,21 @@ export type SurfaceSettingsStatus =
       readonly message: string
     }
 
+export type SurfaceIdentityDisposition = "transfer" | "delete"
+
+export type SurfaceIdentityStatus =
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Working"; readonly operation: string }
+  | { readonly _tag: "BackupReady"; readonly encryptedSecret: string }
+  | { readonly _tag: "Problem"; readonly message: string }
+  | { readonly _tag: "Switched"; readonly ownerPublicKey: string }
+
+export interface SurfaceIdentityManagement {
+  readonly localBackupAvailable: boolean
+  readonly retiredPublicKeys: readonly string[]
+  readonly status: SurfaceIdentityStatus
+}
+
 /** What Korri currently knows about the things that can be played. */
 export type SurfaceCatalog =
   | { readonly _tag: "Loading" }
@@ -305,6 +320,8 @@ export interface SurfaceModel {
   /** Device facts and settings, grouped. Empty when Korri can state nothing. */
   readonly settings: readonly SurfaceSettingGroup[]
   readonly settingsStatus: SurfaceSettingsStatus
+  /** Present only when this device can manage its person identity locally. */
+  readonly identityManagement?: SurfaceIdentityManagement
   /** Free-form build/identity stamp a surface may display. */
   readonly buildLabel?: string
 }
@@ -323,6 +340,20 @@ export interface SurfaceHost {
   changeSetting(settingId: string, value: string): void
   /** Dismiss the current settings failure without changing its value. */
   dismissSettingsProblem(): void
+  exportIdentityBackup(password: string, retiredPublicKey?: string): void
+  switchIdentityFromBackup(
+    encryptedSecret: string,
+    password: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ): void
+  switchIdentityToNip46(
+    bunkerUri: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ): void
+  deleteRetiredIdentity(publicKey: string, backupConfirmed: boolean): void
+  dismissIdentityStatus(): void
   /** Actions available for one game. Empty when Korri supports none yet. */
   gameActions(gameId: string): readonly SurfaceAction[]
   runGameAction(gameId: string, actionId: string): void

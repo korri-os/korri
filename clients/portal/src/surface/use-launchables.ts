@@ -8,9 +8,14 @@
  * decides what is focused and calls `confirmEntry` with the entry it means.
  * That is what lets Korri swap surfaces without moving this logic.
  */
-import type { SurfaceSettingsStatus } from "@contracts/surface/korri-surface"
+import type {
+  SurfaceIdentityDisposition,
+  SurfaceIdentityManagement,
+  SurfaceSettingsStatus,
+} from "@contracts/surface/korri-surface"
 import type {
   DiscoverySnapshot,
+  IdentityDataDisposition,
   LocalGame,
   LocalGamesListOutcome,
   RpcFailure,
@@ -53,8 +58,23 @@ export interface Launchables {
   /** What Korri knows about the device itself, as opposed to what it can play. */
   readonly facts: DeviceFacts
   readonly settingsStatus: SurfaceSettingsStatus
+  readonly identityManagement?: SurfaceIdentityManagement
   changeSetting(settingId: string, value: string): void
   dismissSettingsProblem(): void
+  exportIdentityBackup(password: string, retiredPublicKey?: string): void
+  switchIdentityFromBackup(
+    encryptedSecret: string,
+    password: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ): void
+  switchIdentityToNip46(
+    bunkerUri: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ): void
+  deleteRetiredIdentity(publicKey: string, backupConfirmed: boolean): void
+  dismissIdentityStatus(): void
   runDeviceAction(actionId: string): void
   /** Act on one entry: launch, resume, pair, or open a system screen. */
   confirmEntry(entry: PortalEntry): void
@@ -87,6 +107,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   const [settingsStatus, setSettingsStatus] = useState<SurfaceSettingsStatus>({
     _tag: "Idle",
   })
+  const [identityManagement, setIdentityManagement] = useState<SurfaceIdentityManagement>()
   const settingsStatusRef = useRef(settingsStatus)
   settingsStatusRef.current = settingsStatus
   const stateRef = useRef(state)
@@ -155,7 +176,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     const action = actionSeq.current
     // Overlapping loads: only the latest invocation may write state.
     const seq = ++loadSeq.current
-    const [games, localGames, session, health, settings, discovery] =
+    const [games, localGames, session, health, settings, discovery, identity] =
       await Promise.all([
         korrid.catalogSnapshot(),
         korrid.localGames(),
@@ -164,12 +185,22 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         korrid.health(),
         korrid.settingsSnapshot(),
         korrid.discoverySnapshot(),
+        korrid.identityStatus(),
       ])
     if (
       !mountedRef.current ||
       seq !== loadSeq.current ||
       action !== actionSeq.current
     ) return
+    if (identity._tag === "Ok") {
+      setIdentityManagement(current => ({
+        localBackupAvailable: identity.payload.localBackupAvailable,
+        retiredPublicKeys: identity.payload.retiredPublicKeys,
+        status: current?.status ?? { _tag: "Idle" },
+      }))
+    } else if (identity.payload.code === "OperationUnsupported" || identity.payload.code === "PermissionDenied") {
+      setIdentityManagement(undefined)
+    }
     setFacts({
       ...(health._tag === "Ok" ? { version: health.payload.version } : {}),
       ...(settings._tag === "Ok" ? { settings: settings.payload } : {}),
@@ -439,6 +470,108 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     [publishSettingsStatus],
   )
 
+  const identityProblem = useCallback((message: string) => {
+    setIdentityManagement(current => current && ({
+      ...current,
+      status: { _tag: "Problem", message },
+    }))
+  }, [])
+
+  const exportIdentityBackup = useCallback((password: string, retiredPublicKey?: string) => {
+    setIdentityManagement(current => current && ({
+      ...current,
+      status: { _tag: "Working", operation: "Encrypting backup" },
+    }))
+    void korrid.exportIdentityBackup(password, retiredPublicKey).then(result => {
+      if (!mountedRef.current) return
+      if (result._tag === "Err") {
+        identityProblem(result.payload.message)
+        return
+      }
+      setIdentityManagement(current => current && ({
+        ...current,
+        status: { _tag: "BackupReady", encryptedSecret: result.payload.encryptedSecret },
+      }))
+    })
+  }, [identityProblem, korrid])
+
+  const switchIdentityFromBackup = useCallback((
+    encryptedSecret: string,
+    password: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ) => {
+    setIdentityManagement(current => current && ({
+      ...current,
+      status: { _tag: "Working", operation: "Switching identity" },
+    }))
+    void korrid.switchIdentityFromBackup(
+      encryptedSecret,
+      password,
+      disposition as IdentityDataDisposition,
+      trustLossConfirmed,
+    ).then(result => {
+      if (!mountedRef.current) return
+      if (result._tag === "Err") {
+        identityProblem(result.payload.message)
+        return
+      }
+      setIdentityManagement(current => current && ({
+        ...current,
+        status: { _tag: "Switched", ownerPublicKey: result.payload.ownerPublicKey },
+      }))
+    })
+  }, [identityProblem, korrid])
+
+  const switchIdentityToNip46 = useCallback((
+    bunkerUri: string,
+    disposition: SurfaceIdentityDisposition,
+    trustLossConfirmed: boolean,
+  ) => {
+    setIdentityManagement(current => current && ({
+      ...current,
+      status: { _tag: "Working", operation: "Connecting signer" },
+    }))
+    void korrid.switchIdentityToNip46(
+      bunkerUri,
+      disposition as IdentityDataDisposition,
+      trustLossConfirmed,
+    ).then(result => {
+      if (!mountedRef.current) return
+      if (result._tag === "Err") {
+        identityProblem(result.payload.message)
+        return
+      }
+      setIdentityManagement(current => current && ({
+        ...current,
+        status: { _tag: "Switched", ownerPublicKey: result.payload.ownerPublicKey },
+      }))
+    })
+  }, [identityProblem, korrid])
+
+  const deleteRetiredIdentity = useCallback((publicKey: string, backupConfirmed: boolean) => {
+    setIdentityManagement(current => current && ({
+      ...current,
+      status: { _tag: "Working", operation: "Deleting retired key" },
+    }))
+    void korrid.deleteRetiredIdentity(publicKey, backupConfirmed).then(result => {
+      if (!mountedRef.current) return
+      if (result._tag === "Err") {
+        identityProblem(result.payload.message)
+        return
+      }
+      setIdentityManagement({
+        localBackupAvailable: result.payload.localBackupAvailable,
+        retiredPublicKeys: result.payload.retiredPublicKeys,
+        status: { _tag: "Idle" },
+      })
+    })
+  }, [identityProblem, korrid])
+
+  const dismissIdentityStatus = useCallback(() => {
+    setIdentityManagement(current => current && ({ ...current, status: { _tag: "Idle" } }))
+  }, [])
+
   const confirmEntry = useCallback(
     (entry: PortalEntry) => {
       const current = stateRef.current
@@ -661,8 +794,14 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     state,
     facts,
     settingsStatus,
+    ...(identityManagement === undefined ? {} : { identityManagement }),
     changeSetting,
     dismissSettingsProblem,
+    exportIdentityBackup,
+    switchIdentityFromBackup,
+    switchIdentityToNip46,
+    deleteRetiredIdentity,
+    dismissIdentityStatus,
     runDeviceAction,
     confirmEntry,
     beginCatalogLaunch,

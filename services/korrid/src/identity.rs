@@ -842,6 +842,39 @@ pub(crate) struct ValidatedOwnerBindingTemplate {
 pub(crate) fn validate_owned_statement_template(
     unsigned_template_json: &str,
 ) -> Result<ValidatedOwnerBindingTemplate, IdentityError> {
+    validate_owner_statement_template(unsigned_template_json, OwnerStatementStatus::Owned)
+}
+
+pub(crate) fn validate_signable_owner_statement_template(
+    unsigned_template_json: &str,
+) -> Result<ValidatedOwnerBindingTemplate, IdentityError> {
+    if unsigned_template_json.len() > MAX_EVENT_BYTES {
+        return Err(IdentityError::InvalidEvent(
+            "owner template is too large".into(),
+        ));
+    }
+    let supplied: OwnerStatementTemplate = serde_json::from_str(unsigned_template_json)
+        .map_err(|_| IdentityError::InvalidEvent("owner template JSON is malformed".into()))?;
+    let status = match supplied.tags.get(2).map(Vec::as_slice) {
+        Some([name, status]) if name == "status" && status == "owned" => {
+            OwnerStatementStatus::Owned
+        }
+        Some([name, status]) if name == "status" && status == "revoked" => {
+            OwnerStatementStatus::Revoked
+        }
+        _ => {
+            return Err(IdentityError::InvalidEvent(
+                "owner template status tag is malformed".into(),
+            ))
+        }
+    };
+    validate_owner_statement_template(unsigned_template_json, status)
+}
+
+fn validate_owner_statement_template(
+    unsigned_template_json: &str,
+    status: OwnerStatementStatus,
+) -> Result<ValidatedOwnerBindingTemplate, IdentityError> {
     if unsigned_template_json.len() > MAX_EVENT_BYTES {
         return Err(IdentityError::InvalidEvent(
             "owner template is too large".into(),
@@ -863,12 +896,12 @@ pub(crate) fn validate_owned_statement_template(
     let expected = OwnerStatementTemplate {
         kind: OWNER_EVENT_KIND,
         created_at: supplied.created_at,
-        tags: owner_tags(&device_public_key, OwnerStatementStatus::Owned),
+        tags: owner_tags(&device_public_key, status),
         content: String::new(),
     };
     if supplied != expected {
         return Err(IdentityError::InvalidEvent(
-            "owner template has the wrong owned-statement shape".into(),
+            "owner template has the wrong statement shape".into(),
         ));
     }
     Ok(ValidatedOwnerBindingTemplate {

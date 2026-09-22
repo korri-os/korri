@@ -55,6 +55,11 @@ export function createFixtureHost(
     dismissSettingsProblem() {
       calls.push("settings-dismiss")
     },
+    exportIdentityBackup() {},
+    switchIdentityFromBackup() {},
+    switchIdentityToNip46() {},
+    deleteRetiredIdentity() {},
+    dismissIdentityStatus() {},
     gameActions(gameId) {
       return gameActions[gameId] ?? []
     },

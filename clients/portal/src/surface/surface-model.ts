@@ -11,6 +11,7 @@ import type {
   SurfaceAction,
   SurfaceCatalog,
   SurfaceGame,
+  SurfaceIdentityManagement,
   SurfaceLaunchLocation,
   SurfaceModel,
   SurfaceSettingGroup,
@@ -293,6 +294,7 @@ export function surfaceModelFrom(
     readonly buildLabel?: string
     readonly settings?: readonly SurfaceSettingGroup[]
     readonly settingsStatus?: SurfaceSettingsStatus
+    readonly identityManagement?: SurfaceIdentityManagement
   } = {},
 ): SurfaceModel {
   const actions =
@@ -309,6 +311,9 @@ export function surfaceModelFrom(
     actions,
     settings: options.settings ?? [],
     settingsStatus: options.settingsStatus ?? { _tag: "Idle" },
+    ...(options.identityManagement === undefined
+      ? {}
+      : { identityManagement: options.identityManagement }),
     ...(options.clockLabel === undefined
       ? {}
       : { clockLabel: options.clockLabel }),

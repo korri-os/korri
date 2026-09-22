@@ -1,0 +1,37 @@
+.shift-identity-warning {
+  margin: 0;
+  color: color-mix(in srgb, var(--shift-ink) 72%, transparent);
+  font-size: clamp(0.78rem, 1.9cqi, 1rem);
+  line-height: 1.45;
+}
+
+.shift-identity-qr {
+  display: block;
+  inline-size: min(17rem, 72cqi, 48cqb);
+  max-inline-size: 100%;
+  block-size: auto;
+  margin-inline: auto;
+  border-radius: 0.75rem;
+}
+
+.shift-identity-secret {
+  min-block-size: clamp(5rem, 20cqb, 9rem);
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+
+.shift-identity-confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.7rem;
+  color: var(--shift-ink);
+  font-size: clamp(0.78rem, 1.9cqi, 1rem);
+  line-height: 1.4;
+}
+
+.shift-identity-confirmation input {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  margin-block-start: 0.12rem;
+}

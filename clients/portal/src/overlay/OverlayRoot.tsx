@@ -47,6 +47,11 @@ export function OverlayRoot({
       runAction: () => {},
       changeSetting: () => {},
       dismissSettingsProblem: () => {},
+      exportIdentityBackup: () => {},
+      switchIdentityFromBackup: () => {},
+      switchIdentityToNip46: () => {},
+      deleteRetiredIdentity: () => {},
+      dismissIdentityStatus: () => {},
       gameActions: () => [],
       runGameAction: () => {},
       invokeGameplayControl: (controlId, value) => {

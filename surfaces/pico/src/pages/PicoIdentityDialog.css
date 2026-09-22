@@ -1,0 +1,90 @@
+.pico-identity-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: clamp(0.65rem, 2.5cqi, 1.25rem);
+  color: var(--pico-ink);
+  background: var(--pico-paper);
+  overflow: hidden;
+}
+
+.pico-identity-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block-end: 0.65rem;
+  border-block-end: 2px solid currentColor;
+}
+
+.pico-identity-dialog-body {
+  display: grid;
+  align-content: start;
+  gap: clamp(0.55rem, 2cqi, 1rem);
+  min-block-size: 0;
+  padding-block: 0.8rem;
+  overflow: auto;
+}
+
+.pico-identity-dialog label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.pico-identity-dialog input,
+.pico-identity-dialog textarea,
+.pico-identity-dialog select,
+.pico-identity-dialog button {
+  min-block-size: 2.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 2px solid currentColor;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.pico-identity-dialog textarea {
+  min-block-size: min(8rem, 24cqb);
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+
+.pico-identity-dialog button {
+  font-weight: 800;
+}
+
+.pico-identity-dialog button.danger {
+  color: #b3272d;
+}
+
+.pico-identity-dialog button:disabled {
+  opacity: 0.42;
+}
+
+.pico-identity-dialog img {
+  inline-size: min(15rem, 72cqi, 46cqb);
+  max-inline-size: 100%;
+  block-size: auto;
+  margin-inline: auto;
+}
+
+.pico-identity-check {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: start;
+}
+
+.pico-identity-check input {
+  min-block-size: 1.15rem;
+  inline-size: 1.15rem;
+  padding: 0;
+}
+
+.pico-identity-error {
+  color: #b3272d;
+  font-weight: 700;
+}

@@ -523,6 +523,12 @@ async fn main() {
     let signer_socket = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET")
         .map(PathBuf::from)
         .expect("KORRID_LOCAL_SIGNER_SOCKET must be set");
+    korrid::identity_switch::recover_pending_identity_switch(
+        &private_state_root,
+        signer_socket.clone(),
+    )
+    .await
+    .unwrap_or_else(|error| panic!("recover identity switch: {error}"));
     let signer = korrid::local_signer::UnixPersonSigner::new(signer_socket);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -535,9 +541,11 @@ async fn main() {
         .map(PathBuf::from)
         .expect("KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
     let signer_public_key =
-        korrid::local_signer::read_published_public_key(&signer_public_key_path)
+        korrid::local_signer::read_published_public_key_if_present(&signer_public_key_path)
             .unwrap_or_else(|error| panic!("read local signer public key: {error}"));
-    let local_only_owner = owner_uses_local_signer(&identity_state, &signer_public_key);
+    let local_only_owner = signer_public_key
+        .as_deref()
+        .is_some_and(|public_key| owner_uses_local_signer(&identity_state, public_key));
 
     use korrid::federation::coordinator::{
         Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources,

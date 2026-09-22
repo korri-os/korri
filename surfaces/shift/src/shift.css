@@ -36,6 +36,7 @@
  * host bundles it, so the stylesheet must resolve without depending on that
  * host having installed @korri/intrinsic-design under that exact name. */
 @import "../../../packages/intrinsic-design/recipe.css";
+@import "./identity-settings.css";
 
 /* -------------------------------------------------------------------------- *
  * Tokens — light mode (primary intent)

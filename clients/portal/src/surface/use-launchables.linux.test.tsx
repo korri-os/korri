@@ -87,6 +87,13 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     updateSetting: unavailable,
     setSteamGridDbCredential: unavailable,
     clearSteamGridDbCredential: unavailable,
+    async identityStatus() {
+      return { _tag: "Err", payload: { code: "OperationUnsupported", message: "unavailable" } }
+    },
+    exportIdentityBackup: unavailable,
+    switchIdentityFromBackup: unavailable,
+    switchIdentityToNip46: unavailable,
+    deleteRetiredIdentity: unavailable,
     registerDiscoveryReceipt: unavailable,
     removeDiscoveryLocation: unavailable,
     rescanDiscovery: unavailable,

@@ -1,6 +1,12 @@
-use std::{os::fd::FromRawFd, path::PathBuf, sync::Arc};
+use std::{
+    os::fd::FromRawFd,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
-use korrid::local_signer::{publish_public_key, serve_connection, LocalPersonSigner};
+use korrid::local_signer::{
+    publish_public_key, serve_connection, LocalSignerKeyring, LocalSignerKeyringStatus,
+};
 
 fn required_unprivileged_id(name: &str) -> Result<u32, String> {
     let value = std::env::var(name).map_err(|_| format!("{name} must be set"))?;
@@ -59,15 +65,19 @@ async fn main() {
         .unwrap_or_else(|error| panic!("{error}"));
     let expected_device_public_key =
         expected_device_public_key().unwrap_or_else(|error| panic!("{error}"));
-    let signer = Arc::new(
-        LocalPersonSigner::load_or_create(&root, &expected_device_public_key)
-            .unwrap_or_else(|error| panic!("could not open local signer: {error}")),
-    );
+    let keyring = LocalSignerKeyring::open_or_initialize(&root)
+        .unwrap_or_else(|error| panic!("could not open local signer: {error}"));
     let public_key_path = std::env::var_os("KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE")
         .map(PathBuf::from)
         .expect("KORRI_LOCAL_SIGNER_PUBLIC_KEY_FILE must be set");
-    publish_public_key(&public_key_path, &signer.public_key())
-        .unwrap_or_else(|error| panic!("could not publish local signer public key: {error}"));
+    if let LocalSignerKeyringStatus::Active { public_key } = keyring
+        .status()
+        .unwrap_or_else(|error| panic!("could not read local signer status: {error}"))
+    {
+        publish_public_key(&public_key_path, &public_key)
+            .unwrap_or_else(|error| panic!("could not publish local signer public key: {error}"));
+    }
+    let expected_device_public_key = Arc::new(Mutex::new(expected_device_public_key.trim().into()));
     let listener = tokio::net::UnixListener::from_std(
         inherited_listener().unwrap_or_else(|error| panic!("{error}")),
     )
@@ -87,9 +97,17 @@ async fn main() {
                     credentials.uid() == expected_uid && credentials.gid() == expected_gid
                 });
                 if authorized {
-                    let signer = signer.clone();
+                    let root = root.clone();
+                    let expected_device_public_key = Arc::clone(&expected_device_public_key);
+                    let public_key_path = public_key_path.clone();
                     tokio::spawn(async move {
-                        let _ = serve_connection(stream, signer).await;
+                        let _ = serve_connection(
+                            stream,
+                            root,
+                            expected_device_public_key,
+                            public_key_path,
+                        )
+                        .await;
                     });
                 }
             }

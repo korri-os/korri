@@ -170,6 +170,54 @@ export interface Health {
 export interface HealthRequest {
 }
 
+export interface IdentityBackup {
+	encryptedSecret: string;
+}
+
+export interface IdentityBackupExportRequest {
+	password: string;
+}
+
+export enum IdentityDataDisposition {
+	Transfer = "transfer",
+	Delete = "delete",
+}
+
+export interface IdentityLocalSwitchRequest {
+	encryptedSecret: string;
+	password: string;
+	dataDisposition: IdentityDataDisposition;
+	trustLossConfirmed: boolean;
+}
+
+export interface IdentityNip46SwitchRequest {
+	bunkerUri: string;
+	dataDisposition: IdentityDataDisposition;
+	trustLossConfirmed: boolean;
+}
+
+export interface IdentityRetiredDeleteRequest {
+	publicKey: string;
+	backupConfirmed: boolean;
+}
+
+export interface IdentityRetiredExportRequest {
+	publicKey: string;
+	password: string;
+}
+
+export interface IdentityStatus {
+	localBackupAvailable: boolean;
+	retiredPublicKeys: string[];
+}
+
+export interface IdentityStatusRequest {
+}
+
+export interface IdentitySwitchCompleted {
+	ownerPublicKey: string;
+}
+
 /** Legacy LaunchOverrides.config from library-item.ts; RetroArch rejects replace. */
 export interface LaunchConfigOverrides {
 	prepend?: string;
@@ -558,6 +606,22 @@ export type HealthOutcome =
 	| { _tag: "Ok", payload: Health }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type IdentityBackupOutcome =
+	| { _tag: "Ok", payload: IdentityBackup }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type IdentityRetiredDeleteOutcome =
+	| { _tag: "Ok", payload: IdentityStatus }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type IdentityStatusOutcome =
+	| { _tag: "Ok", payload: IdentityStatus }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type IdentitySwitchOutcome =
+	| { _tag: "Ok", payload: IdentitySwitchCompleted }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type LocalGamesListOutcome =
 	| { _tag: "Ok", payload: LocalGames }
 	| { _tag: "Err", payload: RpcFailure };
@@ -604,7 +668,13 @@ export type RpcRequest =
 	| { _tag: "system.settings.snapshot", payload: SettingsSnapshotRequest }
 	| { _tag: "system.settings.update", payload: SettingsUpdateRequest }
 	| { _tag: "system.settings.steamgriddbCredential.set", payload: SteamGridDbCredentialSetRequest }
-	| { _tag: "system.settings.steamgriddbCredential.clear", payload: SteamGridDbCredentialClearRequest };
+	| { _tag: "system.settings.steamgriddbCredential.clear", payload: SteamGridDbCredentialClearRequest }
+	| { _tag: "system.identity.status", payload: IdentityStatusRequest }
+	| { _tag: "system.identity.backup.export", payload: IdentityBackupExportRequest }
+	| { _tag: "system.identity.switch.local", payload: IdentityLocalSwitchRequest }
+	| { _tag: "system.identity.switch.nip46", payload: IdentityNip46SwitchRequest }
+	| { _tag: "system.identity.retired.export", payload: IdentityRetiredExportRequest }
+	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest };
 
 export type RpcResponse =
 	| { _tag: "app.local-games.routes", outcome: GameRoutesOutcome }
@@ -632,7 +702,13 @@ export type RpcResponse =
 	| { _tag: "system.settings.snapshot", outcome: SettingsSnapshotOutcome }
 	| { _tag: "system.settings.update", outcome: SettingsUpdateOutcome }
 	| { _tag: "system.settings.steamgriddbCredential.set", outcome: SensitiveSettingOutcome }
-	| { _tag: "system.settings.steamgriddbCredential.clear", outcome: SensitiveSettingOutcome };
+	| { _tag: "system.settings.steamgriddbCredential.clear", outcome: SensitiveSettingOutcome }
+	| { _tag: "system.identity.status", outcome: IdentityStatusOutcome }
+	| { _tag: "system.identity.backup.export", outcome: IdentityBackupOutcome }
+	| { _tag: "system.identity.switch.local", outcome: IdentitySwitchOutcome }
+	| { _tag: "system.identity.switch.nip46", outcome: IdentitySwitchOutcome }
+	| { _tag: "system.identity.retired.export", outcome: IdentityBackupOutcome }
+	| { _tag: "system.identity.retired.delete", outcome: IdentityRetiredDeleteOutcome };
 
 export type SelectedGameLaunchOutcome =
 	| { _tag: "Ok", payload: SelectedGameLaunch }

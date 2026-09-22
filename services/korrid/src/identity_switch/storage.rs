@@ -101,6 +101,10 @@ impl IdentitySwitchStorage {
         &self.transaction
     }
 
+    pub fn live_private_root(&self) -> PathBuf {
+        self.root.clone()
+    }
+
     pub fn staged_private_root(&self) -> PathBuf {
         self.transaction.join(NEXT_ROOT_DIRECTORY)
     }
@@ -175,10 +179,24 @@ impl IdentitySwitchStorage {
         if journal.phase() != JournalPhase::Preparing {
             return Err(IdentitySwitchStorageError::WrongPhase);
         }
-        self.remove_safe_staging_tree()?;
         fs::remove_file(self.journal_path())
             .map_err(|_| IdentitySwitchStorageError::Storage("remove preparing journal"))?;
         sync_directory(&self.transaction)?;
+        self.remove_safe_staging_tree()?;
+        Ok(())
+    }
+
+    pub fn finish_commit(&self) -> Result<(), IdentitySwitchStorageError> {
+        let journal = self
+            .load_journal()?
+            .ok_or(IdentitySwitchStorageError::JournalMissing)?;
+        if journal.phase() != JournalPhase::Commit {
+            return Err(IdentitySwitchStorageError::WrongPhase);
+        }
+        fs::remove_file(self.journal_path())
+            .map_err(|_| IdentitySwitchStorageError::Storage("remove committed journal"))?;
+        sync_directory(&self.transaction)?;
+        self.remove_safe_staging_tree()?;
         Ok(())
     }
 

@@ -907,6 +907,123 @@ pub enum HealthOutcome {
 }
 
 #[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentityDataDisposition {
+    Transfer,
+    Delete,
+}
+
+impl From<IdentityDataDisposition> for identity_switch::DataDisposition {
+    fn from(value: IdentityDataDisposition) -> Self {
+        match value {
+            IdentityDataDisposition::Transfer => Self::Transfer,
+            IdentityDataDisposition::Delete => Self::Delete,
+        }
+    }
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IdentityStatusRequest {}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityStatus {
+    pub local_backup_available: bool,
+    pub retired_public_keys: Vec<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityBackupExportRequest {
+    pub password: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityBackup {
+    pub encrypted_secret: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityLocalSwitchRequest {
+    pub encrypted_secret: String,
+    pub password: String,
+    pub data_disposition: IdentityDataDisposition,
+    pub trust_loss_confirmed: bool,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityNip46SwitchRequest {
+    pub bunker_uri: String,
+    pub data_disposition: IdentityDataDisposition,
+    pub trust_loss_confirmed: bool,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityRetiredExportRequest {
+    pub public_key: String,
+    pub password: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IdentityRetiredDeleteRequest {
+    pub public_key: String,
+    pub backup_confirmed: bool,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentitySwitchCompleted {
+    pub owner_public_key: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum IdentityStatusOutcome {
+    Ok(IdentityStatus),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum IdentityBackupOutcome {
+    Ok(IdentityBackup),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum IdentitySwitchOutcome {
+    Ok(IdentitySwitchCompleted),
+    Err(RpcFailure),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum IdentityRetiredDeleteOutcome {
+    Ok(IdentityStatus),
+    Err(RpcFailure),
+}
+
+#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
@@ -962,6 +1079,18 @@ pub enum RpcRequest {
     SteamGridDbCredentialSet(SteamGridDbCredentialSetRequest),
     #[serde(rename = "system.settings.steamgriddbCredential.clear")]
     SteamGridDbCredentialClear(SteamGridDbCredentialClearRequest),
+    #[serde(rename = "system.identity.status")]
+    IdentityStatus(IdentityStatusRequest),
+    #[serde(rename = "system.identity.backup.export")]
+    IdentityBackupExport(IdentityBackupExportRequest),
+    #[serde(rename = "system.identity.switch.local")]
+    IdentityLocalSwitch(IdentityLocalSwitchRequest),
+    #[serde(rename = "system.identity.switch.nip46")]
+    IdentityNip46Switch(IdentityNip46SwitchRequest),
+    #[serde(rename = "system.identity.retired.export")]
+    IdentityRetiredExport(IdentityRetiredExportRequest),
+    #[serde(rename = "system.identity.retired.delete")]
+    IdentityRetiredDelete(IdentityRetiredDeleteRequest),
 }
 
 #[typeshare]
@@ -1021,6 +1150,18 @@ pub enum RpcResponse {
     SteamGridDbCredentialSet(SensitiveSettingOutcome),
     #[serde(rename = "system.settings.steamgriddbCredential.clear")]
     SteamGridDbCredentialClear(SensitiveSettingOutcome),
+    #[serde(rename = "system.identity.status")]
+    IdentityStatus(IdentityStatusOutcome),
+    #[serde(rename = "system.identity.backup.export")]
+    IdentityBackupExport(IdentityBackupOutcome),
+    #[serde(rename = "system.identity.switch.local")]
+    IdentityLocalSwitch(IdentitySwitchOutcome),
+    #[serde(rename = "system.identity.switch.nip46")]
+    IdentityNip46Switch(IdentitySwitchOutcome),
+    #[serde(rename = "system.identity.retired.export")]
+    IdentityRetiredExport(IdentityBackupOutcome),
+    #[serde(rename = "system.identity.retired.delete")]
+    IdentityRetiredDelete(IdentityRetiredDeleteOutcome),
 }
 
 #[derive(Clone)]
@@ -1074,6 +1215,7 @@ struct AppState {
     // Retain the actual shared directory for snapshot-only B5 consumers.
     federation: Option<federation::FederationDirectory>,
     federation_wake: Option<DiscoveryControl>,
+    identity_switch: Option<Arc<identity_switch::IdentitySwitchCoordinator>>,
     mode: ServerMode,
     portal_access: Option<PortalAccess>,
     rpc_surface: RpcSurface,
@@ -2265,6 +2407,146 @@ async fn dispatch(
                 ),
             }
         }
+        RpcRequest::IdentityStatus(_) => {
+            let outcome = match &state.identity_switch {
+                Some(coordinator) => coordinator
+                    .signer_status()
+                    .await
+                    .map(|(local_backup_available, retired_public_keys)| {
+                        IdentityStatusOutcome::Ok(IdentityStatus {
+                            local_backup_available,
+                            retired_public_keys,
+                        })
+                    })
+                    .unwrap_or_else(|message| {
+                        IdentityStatusOutcome::Err(identity_failure(message))
+                    }),
+                None => IdentityStatusOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityStatus(outcome)
+        }
+        RpcRequest::IdentityBackupExport(request) => {
+            let outcome = match &state.identity_switch {
+                Some(coordinator) => coordinator
+                    .export_active_backup(request.password)
+                    .await
+                    .map(|encrypted_secret| {
+                        IdentityBackupOutcome::Ok(IdentityBackup { encrypted_secret })
+                    })
+                    .unwrap_or_else(|message| {
+                        IdentityBackupOutcome::Err(identity_failure(message))
+                    }),
+                None => IdentityBackupOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityBackupExport(outcome)
+        }
+        RpcRequest::IdentityLocalSwitch(request) => {
+            let outcome = match &state.identity_switch {
+                Some(coordinator) => {
+                    let coordinator = Arc::clone(coordinator);
+                    let result = tokio::spawn(async move {
+                        let result = coordinator
+                            .switch(
+                                identity_switch::ReplacementIdentity::LocalBackup {
+                                    encrypted_secret: request.encrypted_secret,
+                                    password: request.password,
+                                },
+                                request.data_disposition.into(),
+                                request.trust_loss_confirmed,
+                            )
+                            .await;
+                        schedule_identity_restart();
+                        result
+                    })
+                    .await
+                    .map_err(|_| "Identity-switch worker failed".to_owned())
+                    .and_then(|result| result);
+                    result
+                        .map(|owner_public_key| {
+                            IdentitySwitchOutcome::Ok(IdentitySwitchCompleted { owner_public_key })
+                        })
+                        .unwrap_or_else(|message| {
+                            IdentitySwitchOutcome::Err(identity_failure(message))
+                        })
+                }
+                None => IdentitySwitchOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityLocalSwitch(outcome)
+        }
+        RpcRequest::IdentityNip46Switch(request) => {
+            let outcome = match &state.identity_switch {
+                Some(coordinator) => {
+                    let coordinator = Arc::clone(coordinator);
+                    let result = tokio::spawn(async move {
+                        let result = coordinator
+                            .switch(
+                                identity_switch::ReplacementIdentity::Nip46 {
+                                    bunker_uri: request.bunker_uri,
+                                },
+                                request.data_disposition.into(),
+                                request.trust_loss_confirmed,
+                            )
+                            .await;
+                        schedule_identity_restart();
+                        result
+                    })
+                    .await
+                    .map_err(|_| "Identity-switch worker failed".to_owned())
+                    .and_then(|result| result);
+                    result
+                        .map(|owner_public_key| {
+                            IdentitySwitchOutcome::Ok(IdentitySwitchCompleted { owner_public_key })
+                        })
+                        .unwrap_or_else(|message| {
+                            IdentitySwitchOutcome::Err(identity_failure(message))
+                        })
+                }
+                None => IdentitySwitchOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityNip46Switch(outcome)
+        }
+        RpcRequest::IdentityRetiredExport(request) => {
+            let outcome = match &state.identity_switch {
+                Some(coordinator) => coordinator
+                    .export_retired_backup(request.public_key, request.password)
+                    .await
+                    .map(|encrypted_secret| {
+                        IdentityBackupOutcome::Ok(IdentityBackup { encrypted_secret })
+                    })
+                    .unwrap_or_else(|message| {
+                        IdentityBackupOutcome::Err(identity_failure(message))
+                    }),
+                None => IdentityBackupOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityRetiredExport(outcome)
+        }
+        RpcRequest::IdentityRetiredDelete(request) => {
+            let outcome = match &state.identity_switch {
+                Some(_) if !request.backup_confirmed => {
+                    IdentityRetiredDeleteOutcome::Err(identity_failure(
+                        "Retired-key deletion requires explicit backup confirmation".into(),
+                    ))
+                }
+                Some(coordinator) => match coordinator.delete_retired_key(request.public_key).await
+                {
+                    Ok(()) => coordinator
+                        .signer_status()
+                        .await
+                        .map(|(local_backup_available, retired_public_keys)| {
+                            IdentityRetiredDeleteOutcome::Ok(IdentityStatus {
+                                local_backup_available,
+                                retired_public_keys,
+                            })
+                        })
+                        .unwrap_or_else(|message| {
+                            IdentityRetiredDeleteOutcome::Err(identity_failure(message))
+                        }),
+                    Err(message) => IdentityRetiredDeleteOutcome::Err(identity_failure(message)),
+                },
+                None => IdentityRetiredDeleteOutcome::Err(identity_unavailable()),
+            };
+            RpcResponse::IdentityRetiredDelete(outcome)
+        }
     };
     Ok(response)
 }
@@ -2328,6 +2610,28 @@ fn folder_selection_failure(error: discovery::FolderSelectionGrantError) -> RpcF
         code: code.into(),
         message: error.to_string(),
     }
+}
+
+fn identity_failure(message: String) -> RpcFailure {
+    RpcFailure {
+        code: "IdentitySwitchFailed".into(),
+        message,
+    }
+}
+
+fn identity_unavailable() -> RpcFailure {
+    RpcFailure {
+        code: "OperationUnsupported".into(),
+        message: "identity management is unavailable on this device".into(),
+    }
+}
+
+fn schedule_identity_restart() {
+    #[cfg(not(test))]
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        std::process::exit(75);
+    });
 }
 
 fn settings_failure(error: config::settings::SettingsError) -> RpcFailure {
@@ -2589,6 +2893,7 @@ fn brain_app_state(
     let state = AppState {
         federation: resources.map(|resources| resources.directory),
         federation_wake,
+        identity_switch: None,
         mode: ServerMode::Brain(BrainRuntime {
             upstream,
             local_storage_root,
@@ -2743,6 +3048,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let lan = AppState {
         federation: None,
         federation_wake: None,
+        identity_switch: None,
         mode: ServerMode::Host(runtime.clone()),
         portal_access: None,
         rpc_surface: RpcSurface::Lan,
@@ -2751,6 +3057,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let local = AppState {
         federation: None,
         federation_wake: None,
+        identity_switch: None,
         mode: ServerMode::Host(runtime),
         portal_access: None,
         rpc_surface: RpcSurface::LocalControl,
@@ -2806,8 +3113,17 @@ fn secure_host_routers_with_federation(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
     let (mut lan, mut local) = app_states(runtime);
+    let identity_switch = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").map(|socket| {
+        Arc::new(identity_switch::IdentitySwitchCoordinator::new(
+            private_state_root.to_owned(),
+            PathBuf::from(socket),
+            resources.clone(),
+        ))
+    });
     lan.federation = Some(resources.directory.clone());
-    local.federation = Some(resources.directory);
+    local.federation = Some(resources.directory.clone());
+    lan.identity_switch = identity_switch.clone();
+    local.identity_switch = identity_switch;
     let portal = portal_router_for(&lan, portal_access);
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         lan,

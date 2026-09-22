@@ -150,6 +150,7 @@ pub enum AuthorizationContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerPolicy {
+    LocalOnly,
     OwnerDeviceOnly,
     ExplicitScope(Scope),
     CatalogOrStreamScope,
@@ -203,6 +204,12 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::SettingsUpdate(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialSet(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SteamGridDbCredentialClear(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::IdentityStatus(_)
+        | RpcRequest::IdentityBackupExport(_)
+        | RpcRequest::IdentityLocalSwitch(_)
+        | RpcRequest::IdentityNip46Switch(_)
+        | RpcRequest::IdentityRetiredExport(_)
+        | RpcRequest::IdentityRetiredDelete(_) => PeerPolicy::LocalOnly,
     }
 }
 
@@ -211,14 +218,15 @@ pub fn authorize(
     request: &RpcRequest,
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
-        AuthorizationContext::LocalBrowser
-        | AuthorizationContext::LocalUnixControl
-        | AuthorizationContext::TrustReconciliation => true,
-        AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => true,
+        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalUnixControl => true,
+        AuthorizationContext::TrustReconciliation => policy_for(request) != PeerPolicy::LocalOnly,
+        AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => {
+            policy_for(request) != PeerPolicy::LocalOnly
+        }
         AuthorizationContext::Peer(principal @ Principal::Household { .. })
         | AuthorizationContext::Peer(principal @ Principal::Guest { .. }) => {
             match policy_for(request) {
-                PeerPolicy::OwnerDeviceOnly => false,
+                PeerPolicy::LocalOnly | PeerPolicy::OwnerDeviceOnly => false,
                 PeerPolicy::ExplicitScope(scope) => principal.has_scope(scope),
                 PeerPolicy::CatalogOrStreamScope => {
                     principal.has_scope(Scope::CatalogRead)
@@ -247,6 +255,11 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
             | RpcRequest::SteamGridDbCredentialClear(_)
+            | RpcRequest::IdentityBackupExport(_)
+            | RpcRequest::IdentityLocalSwitch(_)
+            | RpcRequest::IdentityNip46Switch(_)
+            | RpcRequest::IdentityRetiredExport(_)
+            | RpcRequest::IdentityRetiredDelete(_)
     )
 }
 
@@ -339,6 +352,24 @@ impl Authorization {
     pub fn is_device_revoked(&self, owner: &str, device: &str) -> Result<bool, AuthorizationError> {
         let state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
         Ok(is_owner_device_revoked(&state.revocations, owner, device))
+    }
+
+    pub fn stream_client_grants(&self) -> Result<Vec<(String, String)>, AuthorizationError> {
+        self.certificate_grants().map(|grants| {
+            grants
+                .into_iter()
+                .map(|(_, grant)| (grant.host_uuid, grant.client_certificate))
+                .collect()
+        })
+    }
+
+    pub fn reset_after_identity_switch(&self) -> Result<(), AuthorizationError> {
+        let mut state = self.state.lock().map_err(|_| AuthorizationError::Storage)?;
+        clear_private_directory(&self.revocation_directory)?;
+        clear_private_directory(&self.certificate_directory)?;
+        state.revocations.clear();
+        state.pending_revocations.clear();
+        Ok(())
     }
 
     pub fn attempt(
@@ -923,6 +954,24 @@ fn prepare_private_directory(path: &Path) -> Result<(), AuthorizationError> {
     Ok(())
 }
 
+fn clear_private_directory(path: &Path) -> Result<(), AuthorizationError> {
+    prepare_private_directory(path)?;
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(path).map_err(|_| AuthorizationError::Storage)? {
+        let entry = entry.map_err(|_| AuthorizationError::Storage)?;
+        let metadata =
+            fs::symlink_metadata(entry.path()).map_err(|_| AuthorizationError::Storage)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(AuthorizationError::Storage);
+        }
+        entries.push(entry.path());
+    }
+    for entry in entries {
+        fs::remove_file(entry).map_err(|_| AuthorizationError::Storage)?;
+    }
+    sync_directory(path)
+}
+
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, AuthorizationError> {
     let file = File::open(path).map_err(|_| AuthorizationError::Storage)?;
     let mut bytes = Vec::new();
@@ -1056,7 +1105,8 @@ mod tests {
     #[test]
     fn every_current_request_tag_has_one_explicit_policy() {
         use PeerPolicy::{
-            CatalogOrStreamScope as Both, ExplicitScope as Scope, OwnerDeviceOnly as Owner,
+            CatalogOrStreamScope as Both, ExplicitScope as Scope, LocalOnly as Local,
+            OwnerDeviceOnly as Owner,
         };
         let stream = Scope(super::Scope::StreamLaunch);
         let cases = vec![
@@ -1162,8 +1212,42 @@ mod tests {
                 ),
                 Owner,
             ),
+            (
+                request(serde_json::json!({"_tag":"system.identity.status","payload":{}})),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.backup.export","payload":{"password":"p"}}),
+                ),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.switch.local","payload":{"encryptedSecret":"ncryptsec","password":"p","dataDisposition":"transfer","trustLossConfirmed":true}}),
+                ),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.switch.nip46","payload":{"bunkerUri":"bunker://x","dataDisposition":"delete","trustLossConfirmed":true}}),
+                ),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.retired.export","payload":{"publicKey":"k","password":"p"}}),
+                ),
+                Local,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"system.identity.retired.delete","payload":{"publicKey":"k","backupConfirmed":true}}),
+                ),
+                Local,
+            ),
         ];
-        assert_eq!(cases.len(), 21);
+        assert_eq!(cases.len(), 27);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }
@@ -1265,6 +1349,9 @@ mod tests {
             assert!(authorize(&owner, &request).is_ok());
             assert!(authorize(&unknown, &request).is_err());
         }
+        let identity = request(serde_json::json!({"_tag":"system.identity.status","payload":{}}));
+        assert!(authorize(&AuthorizationContext::LocalBrowser, &identity).is_ok());
+        assert!(authorize(&owner, &identity).is_err());
     }
 
     #[test]
