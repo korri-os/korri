@@ -96,6 +96,7 @@ pub struct SeatRuntime<B: SeatBackend> {
     backend: Option<B>,
     sources: BTreeMap<u8, SourceBinding>,
     last_state: [GamepadState; MAX_SEATS as usize],
+    has_reset: bool,
 }
 
 impl<B: SeatBackend> SeatRuntime<B> {
@@ -118,6 +119,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
             backend: Some(backend),
             sources: BTreeMap::new(),
             last_state: [GamepadState::neutral(); MAX_SEATS as usize],
+            has_reset: false,
         })
     }
 
@@ -208,22 +210,19 @@ impl<B: SeatBackend> SeatRuntime<B> {
         if launch_id != self.launch_id {
             return SeatResetOutcome::StaleLaunch;
         }
+        self.has_reset = true;
+        for binding in self.sources.values_mut() {
+            binding.requires_neutral = true;
+        }
         let active: Vec<_> = self
             .sources
-            .iter()
-            .filter_map(|(controller, binding)| {
-                (binding.state == SourceState::Connected).then_some((*controller, binding.slot))
-            })
+            .values()
+            .filter_map(|binding| (binding.state == SourceState::Connected).then_some(binding.slot))
             .collect();
-        for (controller, _) in &active {
-            if let Some(binding) = self.sources.get_mut(controller) {
-                binding.requires_neutral = true;
-            }
-        }
         let Some(backend) = self.backend.as_mut() else {
             return SeatResetOutcome::BackendFailed;
         };
-        for (_, slot) in active {
+        for slot in active {
             if backend.write_state(slot, GamepadState::neutral()).is_err() {
                 return SeatResetOutcome::BackendFailed;
             }
@@ -291,7 +290,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
                 window_start_ms: 0,
                 events_in_window: 0,
                 last_event_ms: 0,
-                requires_neutral: false,
+                requires_neutral: self.has_reset,
             },
         );
         MirrorOutcome::Accepted { slot }
