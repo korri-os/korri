@@ -5,10 +5,10 @@
 # has to be in Korri's cache before the device can install it, so this runs on
 # every push to main rather than on demand.
 #
-# Two jobs because a device closure is not one architecture. The odin2portal
-# closure holds 544 x86_64 derivations beside 6460 aarch64 ones: the kernel and
-# firmware are cross-built. The x86_64 job publishes those outputs first, so the
-# aarch64 job substitutes them instead of failing on work it cannot do.
+# Two jobs because a device closure is not one architecture. Odin 2 Portal and
+# RP Mini V2 cross-build their kernels and firmware on x86_64. The x86_64 job
+# publishes those outputs first, so the aarch64 jobs substitute them instead of
+# failing on work they cannot do.
 #
 # Both runners are GitHub-hosted and native, so no build depends on a machine of
 # ours being awake. There is no pull_request trigger: this workflow holds a
@@ -33,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       # Before Nix is installed: this reformats the runner's spare disk into
       # /nix. A GitHub runner otherwise offers about 20 GB, and a kernel build
@@ -60,8 +63,8 @@ jobs:
 
       # The one list here that is not derived, so check it rather than trust it.
       # An attribute belongs here only if its derivation appears in a device's
-      # build closure; today only odin2portal cross-builds anything, because the
-      # RG353M and RG DS kernels are native aarch64:
+      # build closure; today Odin 2 Portal and RP Mini V2 cross-build inputs,
+      # while the other exported device kernels are native aarch64:
       #
       #   nix derivation show -r .#nixosConfigurations.<device>.config.system.build.toplevel \
       #     | jq -r '.derivations | has("<drv name>")'
@@ -82,6 +85,8 @@ jobs:
             --package packages.x86_64-linux.odin2portal-kernel \
             --package packages.x86_64-linux.odin2portal-rescue-kernel \
             --package packages.x86_64-linux.odin2portal-firmware \
+            --package packages.x86_64-linux.rpminiv2-kernel \
+            --package packages.x86_64-linux.rpminiv2-firmware \
             --package packages.x86_64-linux.korri-portal
 
   # One device per runner. Signing a closure means writing a second, compressed
@@ -96,9 +101,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [odin2portal, rg353m, rgds, r36tmax]
+        device: [odin2portal, rg353m, rgds, rpminiv2, r36tmax]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
         with:
@@ -121,6 +129,10 @@ jobs:
 
       - name: Make room for the signed cache
         run: sudo install -d -o "$(id -u)" -g "$(id -g)" /nix/var/korri-nix-cache
+
+      - name: Check RP Mini V2 device contracts
+        if: ${{ matrix.device == 'rpminiv2' }}
+        run: nix run .#rpminiv2-check
 
       - name: Check R36T Max device contracts
         if: ${{ matrix.device == 'r36tmax' }}

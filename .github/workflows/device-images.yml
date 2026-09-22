@@ -10,6 +10,7 @@ on:
           - rg353m
           - odin2portal
           - rgds
+          - rpminiv2
           - r36tmax
         required: true
         default: rg353m
@@ -40,7 +41,7 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           case "$DEVICE" in
-            rg353m|odin2portal|rgds|r36tmax) ;;
+            rg353m|odin2portal|rgds|rpminiv2|r36tmax) ;;
             *) echo 'Unsupported Linux device image.' >&2; exit 1 ;;
           esac
           if [ "$DEVICE" = r36tmax ]; then
@@ -134,6 +135,9 @@ jobs:
         if: ${{ inputs.device == 'odin2portal' }}
         run: nix run .#odin2portal-cross-cache -- import "$RUNNER_TEMP/odin-cross-cache"
 
+      - name: Trust Korri's cache
+        run: .github/workflows/trust-korri-cache.sh
+
       - name: Report available disk space
         run: df -h / /nix
 
@@ -141,6 +145,10 @@ jobs:
         run: |
           nix run .#nixos-layout-check
           nix run .#device-image-dist-check
+
+      - name: Check RP Mini V2 device contracts
+        if: ${{ inputs.device == 'rpminiv2' }}
+        run: nix run .#rpminiv2-check
 
       - name: Check R36T Max device contracts
         if: ${{ inputs.device == 'r36tmax' }}
@@ -161,7 +169,7 @@ jobs:
 
   release:
     name: Publish unverified ${{ inputs.device }} prerelease
-    # Override implicit success(): RG353M intentionally skips the Odin ancestor.
+    # Override implicit success(): non-Odin devices intentionally skip the Odin ancestor.
     if: ${{ !cancelled() && needs.build.result == 'success' && inputs.publish && github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-24.04
@@ -215,6 +223,7 @@ jobs:
           case "$DEVICE" in
             rg353m) recovery='Physical recovery consoles, including USB serial, grant root access.' ;;
             rgds) recovery='RG DS bring-up image: physical recovery consoles, including USB serial, grant root access. No automatic Korri portal session yet. SD only; do not write internal storage.' ;;
+            rpminiv2) recovery='The physical recovery console grants root access. SD only; do not write internal storage.' ;;
             r36tmax) recovery='R36T Max candidate: the physical console grants root access. SD only; do not write internal storage. RK915 firmware requires separate owner provisioning. Display, memory, Wi-Fi, and bootloader acceptance remain device-specific.' ;;
             odin2portal) recovery='The panel recovery console grants root access. This Linux SD image does not modify Android or internal storage.' ;;
           esac
