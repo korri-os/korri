@@ -43,8 +43,7 @@ let
       odinRocknix = rocknix;
     };
     modules = [
-      (import ../../../services/inputd/nix/korri-linux-host.nix { inherit korri; })
-      (import ../../../services/kiosk/nixos-module.nix { inherit korri; })
+      (import ../../product/nixos-module.nix { inherit korri; })
       ./sd-image.nix
       ./web-session.nix
     ];
@@ -62,6 +61,7 @@ in
     configuration
     ;
   sdImage = configuration.config.system.build.sdImage;
+  moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
   inputplumberData =
     pkgs: inputplumber: (pkgs.callPackage ./rocknix { inherit inputplumber; }).inputplumberData;
 }

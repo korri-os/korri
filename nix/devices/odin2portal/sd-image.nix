@@ -36,10 +36,8 @@
 
 {
   imports = [
-    ../../base
     (import ../../formats/sd-card.nix { gpt = true; })
     ./platform-policy.nix
-    ./runtime-user.nix
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";

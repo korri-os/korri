@@ -1,35 +1,14 @@
-{ korri, pkgs, ... }:
-let
-  system = pkgs.stdenv.hostPlatform.system;
-  # Chromium 143 derives app_id from the bootstrap URL, ignoring --class for
-  # app windows. Verified with the native Wayland launcher probe. The window
-  # rule and korrid's focus exclusion must name the same window, so it is
-  # written once here.
-  kioskAppId = "chrome-127.0.0.1__kiosk-blank.html-Default";
-in
+# Odin 2 Portal screen, GPU, and control facts for the shared Korri product.
+{ odinRocknix, ... }:
 {
-  # The runtime identity and PipeWire are already owned by runtime-user.nix
-  # and audio/default.nix. The shared host adds only its service groups.
-  services.korriBundle = {
-    initialPackage = korri.packages.${system}.korri-bundle;
-    launcherPackage = korri.packages.${system}.korri-inputd;
-  };
-  services.korriLinuxInput = {
-    provider.package = korri.packages.${system}.inputplumber-korri;
-    inputd.package = korri.packages.${system}.korri-inputd;
-  };
-  services.korridLinuxDevice.package = korri.packages.${system}.korrid;
+  # The AYN MCU profile is observed device data. The product module owns
+  # InputPlumber and inputd; this device supplies only its control map.
+  services.korriLinuxInput.provider.extraDataPackages = [
+    odinRocknix.inputplumberData
+  ];
+
   services.korriLinuxHost = {
-    enable = true;
     label = "odin2portal";
-    runtimeUser = "korri";
-    runtimeUid = 1000;
-    runtimeGroup = "korri";
-    runtimeGid = 1000;
-    # Reuse RG353M's explicit loopback-test relay until a real relay is
-    # assigned. This does not claim federation discovery is configured.
-    relays = [ "ws://127.0.0.1:9" ];
-    validation.enable = false;
     compositor = {
       backend = "drm";
       drmDevice = "/dev/dri/card0";
@@ -37,24 +16,11 @@ in
       outputName = "DSI-1";
       mode = "1080x1920@120Hz";
       renderer = "gles2";
-      # Returning to a game must raise the game, never the hub that covers it.
-      neverFocusAppIds = [ kioskAppId ];
+      localInput.enable = true;
       extraConfig = ''
         output DSI-1 transform 270
         input type:touch map_to_output DSI-1
-        floating_maximum_size -1 x -1
-        for_window [app_id="^${
-          builtins.replaceStrings [ "." ] [ "[.]" ] kioskAppId
-        }$"] fullscreen disable, floating enable, border none, resize set width 100 ppt height 100 ppt, move position 0 0
-        for_window [shell="xwayland"] fullscreen disable, border none
       '';
     };
-    sunshine = {
-      package = korri.packages.${system}.sunshine-korri;
-      capture = "kms";
-      encoder = "software";
-      openFirewall = false;
-    };
   };
-  services.korriKiosk.enable = true;
 }
