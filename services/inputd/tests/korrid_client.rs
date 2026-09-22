@@ -352,7 +352,13 @@ async fn home_on_recovered_focus_failure_refreezes_exact_launch_and_recreates_in
         assert_eq!(request["payload"]["expectedLaunchId"], LAUNCH_ID);
         reply(
             &mut freeze,
-            &freezer_ok("app.session.freeze", "frozen", true),
+            &serde_json::json!({
+                "_tag": "app.session.freeze",
+                "outcome": { "_tag": "Ok", "payload": {
+                    "launchId": LAUNCH_ID, "state": "frozen", "changed": true
+                }}
+            })
+            .to_string(),
         )
         .await;
     });

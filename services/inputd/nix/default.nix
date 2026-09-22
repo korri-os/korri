@@ -44,7 +44,6 @@ let
   };
   sunshineApprovedDeviceBaseDerivation =
     sunshineApprovedPatches.approvedDeviceBaseDerivations.${sunshinePackage.korriBuildProfile} or null;
-  androidMoonlightRoot = ../../../clients/android/app/src/main/jni/moonlight-core/moonlight-common-c/src;
   sunshineOfflineRetirement = import ../../sunshine/offline-retirement.nix { inherit pkgs; };
   inputdPackage = import ../package.nix { inherit pkgs crane; };
   devApp = import ./dev-app.nix {
@@ -186,23 +185,6 @@ in
       ffmpegPackagePath = ../../sunshine/ffmpeg-v4l2m2m-static.nix;
       packagePath = ../../sunshine/package.nix;
       readmePath = ../../sunshine/README.md;
-    };
-    sunshine-korri-android-client-protocol = import ../../sunshine/android-client-protocol-check.nix {
-      inherit pkgs;
-      sunshinePatchPath = ../../sunshine/patches/0001-add-runtime-settings-protocol-surface.patch;
-      clientHeaderPath = androidMoonlightRoot + "/Limelight.h";
-      clientInternalHeaderPath = androidMoonlightRoot + "/SunshineRuntimeSettings.h";
-      clientProtocolPath = androidMoonlightRoot + "/SunshineRuntimeSettings.c";
-      clientDispatchPath = androidMoonlightRoot + "/SunshineRuntimeSettingsDispatch.c";
-      clientControlStreamPath = androidMoonlightRoot + "/ControlStream.c";
-      clientConnectionPath = androidMoonlightRoot + "/Connection.c";
-      clientJniPath = ../../../clients/android/app/src/main/jni/moonlight-core/simplejni.c;
-      clientJavaPath = ../../../clients/android/app/src/main/java/com/limelight/nvstream/jni/MoonBridge.java;
-      clientSnapshotJavaPath = ../../../clients/android/app/src/main/java/com/limelight/nvstream/jni/SunshineRuntimeSettingsSnapshot.java;
-      clientControllerHandlerPath = ../../../clients/android/app/src/main/java/com/limelight/binding/input/ControllerHandler.java;
-      clientControllerHeartbeatPath = ../../../clients/android/app/src/main/java/com/limelight/binding/input/ControllerHeartbeat.java;
-      clientControllerHeartbeatTestPath = ../../../clients/android/app/src/test/java/com/limelight/binding/input/ControllerHeartbeatTest.java;
-      nativeTestPath = ../../../clients/android/app/src/test-native/sunshine-runtime-settings-test.c;
     };
     inputplumber-korri-package = import ./inputplumber-package-check.nix {
       inherit
