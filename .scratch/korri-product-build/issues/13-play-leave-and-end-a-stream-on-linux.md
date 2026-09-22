@@ -1,6 +1,6 @@
 # Play, leave, and end a stream on Linux
 
-Status: in-progress
+Status: resolved
 Blocked by: 04
 
 ## What to build

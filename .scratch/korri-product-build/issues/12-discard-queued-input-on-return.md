@@ -1,6 +1,6 @@
 # Discard queued input on return
 
-Status: in-progress
+Status: resolved
 Blocked by: 04
 
 ## What to build
