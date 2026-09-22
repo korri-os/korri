@@ -612,12 +612,12 @@ in
         InaccessiblePaths = [
           cfg.localSignerPrivateStateRoot
           cfg.storageRoot
-          "-${cfg.sunshinePrivateStateRoot}"
           "-${cfg.compositorControlDirectory}"
-          "-${cfg.certificateControlDirectory}"
           "-/dev/inputplumber/sources"
           "/dev/uinput"
-        ];
+        ]
+        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
 
@@ -681,12 +681,12 @@ in
         InaccessiblePaths = [
           cfg.privateStateRoot
           cfg.storageRoot
-          "-${cfg.sunshinePrivateStateRoot}"
           "-${cfg.compositorControlDirectory}"
-          "-${cfg.certificateControlDirectory}"
           "-/dev/inputplumber/sources"
           "/dev/uinput"
-        ];
+        ]
+        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
 
