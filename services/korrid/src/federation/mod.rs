@@ -9,6 +9,7 @@ use crate::{
     peer_rpc::PeerCredentials,
     relay::{decode_endpoint, EndpointRecord},
 };
+use nostr::key::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -303,6 +304,41 @@ impl FederationDirectory {
     pub fn invalidate_work(&self) -> Result<(), FederationError> {
         let mut state = self.state.lock().map_err(|_| FederationError::Storage)?;
         state.epoch = next_epoch(state.epoch)?;
+        Ok(())
+    }
+
+    /// Replace all remembered federation state after an atomic identity switch.
+    ///
+    /// This operation deliberately does not accept the directory's current
+    /// credential identity: after the identity-directory exchange, this live
+    /// object still holds the old credential snapshot until korrid restarts.
+    /// Holding the directory state lock across validation and the durable write
+    /// excludes every ordinary peer/publication mutation. Ordinary operations
+    /// remain bound to the credential identity and fail after this reset.
+    pub fn reset_after_identity_switch(
+        &self,
+        new_device_public_key: &str,
+        new_owner_public_key: &str,
+    ) -> Result<(), FederationError> {
+        validate_reset_public_key(new_device_public_key)?;
+        validate_reset_public_key(new_owner_public_key)?;
+        if new_device_public_key == new_owner_public_key {
+            return Err(FederationError::Identity);
+        }
+        let memory = Memory {
+            local_device_public_key: new_device_public_key.into(),
+            owner_public_key: Some(new_owner_public_key.into()),
+            publication: None,
+            peers: BTreeMap::new(),
+        };
+        let bytes = encode(&memory)?;
+        let mut state = self.state.lock().map_err(|_| FederationError::Storage)?;
+        let epoch = next_epoch(state.epoch)?;
+        state.store.validate()?;
+        state.store.save(bytes)?;
+        state.memory = memory;
+        state.live.clear();
+        state.epoch = epoch;
         Ok(())
     }
 
@@ -751,6 +787,18 @@ where
 fn encode(memory: &Memory) -> Result<Vec<u8>, FederationError> {
     serde_json::to_vec(memory).map_err(|_| FederationError::Storage)
 }
+fn validate_reset_public_key(value: &str) -> Result<(), FederationError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        || PublicKey::from_hex(value).is_err()
+    {
+        return Err(FederationError::Identity);
+    }
+    Ok(())
+}
+
 fn next_epoch(epoch: u64) -> Result<u64, FederationError> {
     epoch.checked_add(1).ok_or(FederationError::Bounds)
 }

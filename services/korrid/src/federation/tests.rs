@@ -18,6 +18,7 @@ use nostr::{
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Barrier;
 
 fn binding(owner: &Keys, device: &str, status: &str, at: u64) -> String {
     EventBuilder::new(Kind::Custom(30_078), "")
@@ -336,6 +337,128 @@ fn generation_and_nip_timestamp_are_serialized_persisted_and_clock_bounded() {
             .generation,
         22
     );
+}
+
+#[test]
+fn identity_switch_reset_replaces_populated_memory_and_allows_only_explicit_rebinding() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    d.apply_endpoint_event(&d.begin_work().unwrap(), &f.event(&f.endpoint(1, 1000)))
+        .unwrap();
+    d.reserve_publication(&d.begin_work().unwrap()).unwrap();
+
+    let new_device = Keys::generate().public_key().to_hex();
+    let new_owner = Keys::generate().public_key().to_hex();
+    d.reset_after_identity_switch(&new_device, &new_owner)
+        .unwrap();
+    let path = f.root.path().join("federation/peers.json");
+    let document: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(document["localDevicePublicKey"], new_device);
+    assert_eq!(document["ownerPublicKey"], new_owner);
+    assert!(document["publication"].is_null());
+    assert_eq!(document["peers"], serde_json::json!({}));
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    d.reset_after_identity_switch(&new_device, &new_owner)
+        .unwrap();
+    let retried = fs::read(&path).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&retried).unwrap(),
+        document
+    );
+
+    let replacement_device = Keys::generate().public_key().to_hex();
+    let replacement_owner = Keys::generate().public_key().to_hex();
+    d.reset_after_identity_switch(&replacement_device, &replacement_owner)
+        .unwrap();
+    let rebound: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(rebound["localDevicePublicKey"], replacement_device);
+    assert_eq!(rebound["ownerPublicKey"], replacement_owner);
+    assert!(rebound["publication"].is_null());
+    assert_eq!(rebound["peers"], serde_json::json!({}));
+    assert!(
+        d.begin_work().is_err(),
+        "ordinary work keeps the old identity strict"
+    );
+}
+
+#[test]
+fn identity_switch_reset_serializes_against_concurrent_old_memory_mutation() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    let token = d.begin_work().unwrap();
+    let barrier = Arc::new(Barrier::new(3));
+    let mutation = {
+        let directory = d.clone();
+        let barrier = barrier.clone();
+        std::thread::spawn(move || {
+            barrier.wait();
+            let _ = directory.reserve_publication(&token);
+        })
+    };
+    let new_device = Keys::generate().public_key().to_hex();
+    let new_owner = Keys::generate().public_key().to_hex();
+    let reset = {
+        let directory = d.clone();
+        let barrier = barrier.clone();
+        let new_device = new_device.clone();
+        let new_owner = new_owner.clone();
+        std::thread::spawn(move || {
+            barrier.wait();
+            directory
+                .reset_after_identity_switch(&new_device, &new_owner)
+                .unwrap();
+        })
+    };
+    barrier.wait();
+    mutation.join().unwrap();
+    reset.join().unwrap();
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&fs::read(f.root.path().join("federation/peers.json")).unwrap())
+            .unwrap();
+    assert_eq!(document["localDevicePublicKey"], new_device);
+    assert_eq!(document["ownerPublicKey"], new_owner);
+    assert!(document["publication"].is_null());
+    assert_eq!(document["peers"], serde_json::json!({}));
+}
+
+#[test]
+fn identity_switch_reset_rejects_invalid_keys_and_unsafe_storage_without_writing() {
+    let f = Fixture::new();
+    let d = f.directory().unwrap();
+    f.roster(&d);
+    d.reserve_publication(&d.begin_work().unwrap()).unwrap();
+    let path = f.root.path().join("federation/peers.json");
+    let before = fs::read(&path).unwrap();
+    let valid = Keys::generate().public_key().to_hex();
+    let uppercase = "A".repeat(64);
+    for (device, owner) in [
+        ("not-a-key", valid.as_str()),
+        (valid.as_str(), uppercase.as_str()),
+        (valid.as_str(), valid.as_str()),
+    ] {
+        assert!(d.reset_after_identity_switch(device, owner).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    let replacement = Keys::generate().public_key().to_hex();
+    assert!(d.reset_after_identity_switch(&valid, &replacement).is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let directory = path.parent().unwrap();
+    let moved = f.root.path().join("federation-moved");
+    fs::rename(directory, &moved).unwrap();
+    symlink("federation-moved", directory).unwrap();
+    assert!(d.reset_after_identity_switch(&valid, &replacement).is_err());
+    assert_eq!(fs::read(moved.join("peers.json")).unwrap(), before);
 }
 
 #[test]
