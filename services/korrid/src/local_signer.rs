@@ -19,7 +19,7 @@ use std::{
     io::{Read, Write},
     os::{
         fd::AsRawFd,
-        unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+        unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
@@ -28,6 +28,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use zeroize::Zeroizing;
 
 const IDENTITY_DIRECTORY: &str = "identity";
+const ACTIVE_DIRECTORY: &str = "active";
+const RETIRED_DIRECTORY: &str = "retired";
 const PERSON_KEY_FILE: &str = "person.key";
 const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 static SIGNER_STORAGE: OnceLock<Mutex<()>> = OnceLock::new();
@@ -38,6 +40,14 @@ pub enum LocalSignerError {
     Storage,
     #[error("local signer key is invalid")]
     InvalidKey,
+    #[error("local signer has no active local key")]
+    NoActiveKey,
+    #[error("legacy local signer storage requires the explicit migration tool")]
+    LegacyKey,
+    #[error("local signer key conflicts with the requested keyring operation")]
+    KeyConflict,
+    #[error("local signer retired key was not found")]
+    RetiredKeyNotFound,
     #[error("password must not be blank")]
     InvalidPassword,
     #[error("NIP-49 encrypted secret is malformed")]
@@ -48,44 +58,448 @@ pub enum LocalSignerError {
     Encryption,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LocalSignerKeyringStatus {
+    Active { public_key: String },
+    Remote,
+}
+
+#[derive(Clone, Debug)]
+pub struct LocalSignerKeyring {
+    private_state_root: PathBuf,
+    identity_directory: PathBuf,
+    active_directory: PathBuf,
+    retired_directory: PathBuf,
+}
+
 pub struct LocalPersonSigner {
     keys: Keys,
     expected_device_public_key: String,
     state: Mutex<PersonSignerState>,
 }
 
+impl LocalSignerKeyring {
+    pub fn open_or_initialize(private_state_root: &Path) -> Result<Self, LocalSignerError> {
+        let _storage = storage_lock();
+        prepare_private_state_root(private_state_root)?;
+        let _process_lock = lock_directory(private_state_root)?;
+        cleanup_identity_temporaries(private_state_root)?;
+        let identity_directory = private_state_root.join(IDENTITY_DIRECTORY);
+        if path_kind(&identity_directory)?.is_none() {
+            initialize_keyring(private_state_root, &identity_directory)?;
+        }
+        let keyring = Self {
+            private_state_root: private_state_root.to_path_buf(),
+            active_directory: identity_directory.join(ACTIVE_DIRECTORY),
+            retired_directory: identity_directory.join(RETIRED_DIRECTORY),
+            identity_directory,
+        };
+        keyring.validate_top_level()?;
+        Ok(keyring)
+    }
+
+    pub fn status(&self) -> Result<LocalSignerKeyringStatus, LocalSignerError> {
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            match keyring.read_active_keys()? {
+                Some(keys) => Ok(LocalSignerKeyringStatus::Active {
+                    public_key: keys.public_key().to_hex(),
+                }),
+                None => Ok(LocalSignerKeyringStatus::Remote),
+            }
+        })
+    }
+
+    pub fn retired_public_keys(&self) -> Result<Vec<String>, LocalSignerError> {
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            let mut keys = keyring.retired_entries()?;
+            keys.sort();
+            Ok(keys)
+        })
+    }
+
+    pub fn persist_inactive(&self, signer: &LocalPersonSigner) -> Result<String, LocalSignerError> {
+        let public_key = signer.public_key();
+        self.with_lock(|keyring| {
+            keyring.validate_layout_except(Some(&public_key))?;
+            if keyring
+                .read_active_keys()?
+                .is_some_and(|active| active.public_key().to_hex() == public_key)
+            {
+                return Err(LocalSignerError::KeyConflict);
+            }
+            let directory = keyring.prepare_retired_key_directory(&public_key)?;
+            let path = directory.join(PERSON_KEY_FILE);
+            let encoded = encode_keys(&signer.keys);
+            match read_private_optional(&path, &keyring.private_state_root)? {
+                Some(bytes) => {
+                    let existing = parse_private_key_record(bytes)?;
+                    if existing.public_key().to_hex() != public_key {
+                        return Err(LocalSignerError::KeyConflict);
+                    }
+                }
+                None => {
+                    write_new_private(&path, &encoded, &keyring.private_state_root)?;
+                }
+            }
+            keyring.verify_retired_key(&public_key)?;
+            Ok(public_key)
+        })
+    }
+
+    pub fn inspect_inactive(&self, public_key: &str) -> Result<String, LocalSignerError> {
+        let public_key = parse_public_key_text(public_key)?;
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            keyring.verify_retired_key(&public_key)?;
+            Ok(public_key)
+        })
+    }
+
+    pub fn export_retired_nip49(
+        &self,
+        public_key: &str,
+        password: &str,
+    ) -> Result<String, LocalSignerError> {
+        validate_password(password)?;
+        let public_key = parse_public_key_text(public_key)?;
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            keyring
+                .read_retired_keys(&public_key)?
+                .secret_key()
+                .encrypt(password)
+                .and_then(|encrypted| encrypted.to_bech32())
+                .map_err(|_| LocalSignerError::Encryption)
+        })
+    }
+
+    pub fn promote_retired(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        let public_key = parse_public_key_text(public_key)?;
+        self.with_lock(|keyring| {
+            keyring.validate_layout_except(Some(&public_key))?;
+            keyring.promote_retired_locked(&public_key)
+        })
+    }
+
+    pub fn retire_active(
+        &self,
+        expected_active_public_key: &str,
+        replacement_public_key: Option<&str>,
+    ) -> Result<(), LocalSignerError> {
+        let expected = parse_public_key_text(expected_active_public_key)?;
+        let replacement = replacement_public_key
+            .map(parse_public_key_text)
+            .transpose()?;
+        if replacement.as_deref() == Some(expected.as_str()) {
+            return Err(LocalSignerError::KeyConflict);
+        }
+        self.with_lock(|keyring| {
+            keyring.validate_layout_except(Some(&expected))?;
+            match keyring.read_active_keys()? {
+                Some(active) if active.public_key().to_hex() == expected => {
+                    if let Some(replacement) = replacement.as_deref() {
+                        keyring.validate_retired_target(replacement)?;
+                    }
+                    let directory = keyring.prepare_retired_key_directory(&expected)?;
+                    let retired_path = directory.join(PERSON_KEY_FILE);
+                    let encoded = encode_keys(&active);
+                    match read_private_optional(&retired_path, &keyring.private_state_root)? {
+                        Some(bytes) => {
+                            if parse_private_key_record(bytes)?.public_key().to_hex() != expected {
+                                return Err(LocalSignerError::KeyConflict);
+                            }
+                        }
+                        None => {
+                            write_new_private(
+                                &retired_path,
+                                &encoded,
+                                &keyring.private_state_root,
+                            )?;
+                        }
+                    }
+                    keyring.verify_retired_key(&expected)?;
+                    fs::remove_file(keyring.active_key_path())
+                        .map_err(|_| LocalSignerError::Storage)?;
+                    sync_directory(&keyring.active_directory)?;
+                }
+                Some(active) => {
+                    let active_public_key = active.public_key().to_hex();
+                    if replacement.as_deref() != Some(active_public_key.as_str()) {
+                        return Err(LocalSignerError::KeyConflict);
+                    }
+                    keyring.verify_retired_key(&expected)?;
+                    keyring.promote_retired_locked(&active_public_key)?;
+                    return Ok(());
+                }
+                None => {
+                    keyring.verify_retired_key(&expected)?;
+                    if let Some(replacement) = replacement.as_deref() {
+                        keyring.validate_retired_target(replacement)?;
+                    }
+                }
+            }
+            if let Some(replacement) = replacement.as_deref() {
+                keyring.promote_retired_locked(replacement)?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn rollback_inactive(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        self.remove_retired(public_key, true)
+    }
+
+    pub fn delete_retired(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        self.remove_retired(public_key, false)
+    }
+
+    fn active_keys(&self) -> Result<Option<Keys>, LocalSignerError> {
+        self.with_lock(|keyring| {
+            keyring.validate_complete_layout()?;
+            keyring.read_active_keys()
+        })
+    }
+
+    fn remove_retired(
+        &self,
+        public_key: &str,
+        allow_empty_staging_directory: bool,
+    ) -> Result<(), LocalSignerError> {
+        let public_key = parse_public_key_text(public_key)?;
+        self.with_lock(|keyring| {
+            keyring.validate_layout_except(Some(&public_key))?;
+            if keyring
+                .read_active_keys()?
+                .is_some_and(|active| active.public_key().to_hex() == public_key)
+            {
+                return Err(LocalSignerError::KeyConflict);
+            }
+            let directory = keyring.retired_directory.join(&public_key);
+            if path_kind(&directory)?.is_none() {
+                return Ok(());
+            }
+            validate_private_directory(&directory, &keyring.private_state_root)?;
+            cleanup_private_temporaries(&directory)?;
+            if fs::read_dir(&directory)
+                .map_err(|_| LocalSignerError::Storage)?
+                .next()
+                .is_none()
+            {
+                if !allow_empty_staging_directory {
+                    return Err(LocalSignerError::RetiredKeyNotFound);
+                }
+            } else {
+                keyring.verify_retired_key(&public_key)?;
+                fs::remove_file(directory.join(PERSON_KEY_FILE))
+                    .map_err(|_| LocalSignerError::Storage)?;
+                sync_directory(&directory)?;
+            }
+            fs::remove_dir(&directory).map_err(|_| LocalSignerError::Storage)?;
+            sync_directory(&keyring.retired_directory)
+        })
+    }
+
+    fn with_lock<T>(
+        &self,
+        operation: impl FnOnce(&Self) -> Result<T, LocalSignerError>,
+    ) -> Result<T, LocalSignerError> {
+        let _storage = storage_lock();
+        let _process_lock = lock_directory(&self.private_state_root)?;
+        self.validate_top_level()?;
+        operation(self)
+    }
+
+    fn validate_top_level(&self) -> Result<(), LocalSignerError> {
+        validate_private_directory(&self.identity_directory, &self.private_state_root)?;
+        if path_kind(&self.identity_directory.join(PERSON_KEY_FILE))?.is_some() {
+            return Err(LocalSignerError::LegacyKey);
+        }
+        let mut seen_active = false;
+        let mut seen_retired = false;
+        for entry in
+            fs::read_dir(&self.identity_directory).map_err(|_| LocalSignerError::Storage)?
+        {
+            let entry = entry.map_err(|_| LocalSignerError::Storage)?;
+            match entry.file_name().to_str() {
+                Some(ACTIVE_DIRECTORY) => seen_active = true,
+                Some(RETIRED_DIRECTORY) => seen_retired = true,
+                Some(PERSON_KEY_FILE) => return Err(LocalSignerError::LegacyKey),
+                _ => return Err(LocalSignerError::Storage),
+            }
+        }
+        if !seen_active || !seen_retired {
+            return Err(LocalSignerError::Storage);
+        }
+        validate_private_directory(&self.active_directory, &self.private_state_root)?;
+        validate_private_directory(&self.retired_directory, &self.private_state_root)
+    }
+
+    fn validate_complete_layout(&self) -> Result<(), LocalSignerError> {
+        self.validate_layout_except(None)?;
+        if let Some(active) = self.read_active_keys()? {
+            let active_public_key = active.public_key().to_hex();
+            if path_kind(&self.retired_directory.join(active_public_key))?.is_some() {
+                return Err(LocalSignerError::Storage);
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_layout_except(&self, target: Option<&str>) -> Result<(), LocalSignerError> {
+        cleanup_private_temporaries(&self.active_directory)?;
+        validate_active_directory(self)?;
+        for entry in fs::read_dir(&self.retired_directory).map_err(|_| LocalSignerError::Storage)? {
+            let entry = entry.map_err(|_| LocalSignerError::Storage)?;
+            let name = entry
+                .file_name()
+                .to_str()
+                .ok_or(LocalSignerError::Storage)?
+                .to_owned();
+            parse_public_key_text(&name)?;
+            if target == Some(name.as_str()) {
+                let metadata =
+                    fs::symlink_metadata(entry.path()).map_err(|_| LocalSignerError::Storage)?;
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return Err(LocalSignerError::Storage);
+                }
+                validate_private_directory(&entry.path(), &self.private_state_root)?;
+                cleanup_private_temporaries(&entry.path())?;
+                continue;
+            }
+            self.verify_retired_key(&name)?;
+        }
+        Ok(())
+    }
+
+    fn retired_entries(&self) -> Result<Vec<String>, LocalSignerError> {
+        fs::read_dir(&self.retired_directory)
+            .map_err(|_| LocalSignerError::Storage)?
+            .map(|entry| {
+                entry
+                    .map_err(|_| LocalSignerError::Storage)?
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| LocalSignerError::Storage)
+            })
+            .collect()
+    }
+
+    fn active_key_path(&self) -> PathBuf {
+        self.active_directory.join(PERSON_KEY_FILE)
+    }
+
+    fn read_active_keys(&self) -> Result<Option<Keys>, LocalSignerError> {
+        read_private_optional(&self.active_key_path(), &self.private_state_root)?
+            .map(parse_private_key_record)
+            .transpose()
+    }
+
+    fn read_retired_keys(&self, public_key: &str) -> Result<Keys, LocalSignerError> {
+        let path = self
+            .retired_directory
+            .join(public_key)
+            .join(PERSON_KEY_FILE);
+        let keys = read_private_optional(&path, &self.private_state_root)?
+            .ok_or(LocalSignerError::RetiredKeyNotFound)
+            .and_then(parse_private_key_record)?;
+        if keys.public_key().to_hex() != public_key {
+            return Err(LocalSignerError::KeyConflict);
+        }
+        Ok(keys)
+    }
+
+    fn verify_retired_key(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        let directory = self.retired_directory.join(public_key);
+        validate_private_directory(&directory, &self.private_state_root)?;
+        cleanup_private_temporaries(&directory)?;
+        let mut entries = fs::read_dir(&directory).map_err(|_| LocalSignerError::Storage)?;
+        let entry = entries
+            .next()
+            .transpose()
+            .map_err(|_| LocalSignerError::Storage)?
+            .ok_or(LocalSignerError::RetiredKeyNotFound)?;
+        if entry.file_name() != PERSON_KEY_FILE || entries.next().is_some() {
+            return Err(LocalSignerError::Storage);
+        }
+        self.read_retired_keys(public_key).map(|_| ())
+    }
+
+    fn validate_retired_target(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        self.verify_retired_key(public_key)
+    }
+
+    fn prepare_retired_key_directory(&self, public_key: &str) -> Result<PathBuf, LocalSignerError> {
+        let directory = self.retired_directory.join(public_key);
+        match path_kind(&directory)? {
+            None => {
+                DirBuilder::new()
+                    .mode(0o700)
+                    .create(&directory)
+                    .map_err(|_| LocalSignerError::Storage)?;
+                sync_directory(&self.retired_directory)?;
+            }
+            Some(PathKind::Directory) => {
+                validate_private_directory(&directory, &self.private_state_root)?;
+                cleanup_private_temporaries(&directory)?;
+            }
+            Some(_) => return Err(LocalSignerError::Storage),
+        }
+        Ok(directory)
+    }
+
+    fn promote_retired_locked(&self, public_key: &str) -> Result<(), LocalSignerError> {
+        let retired_directory = self.retired_directory.join(public_key);
+        let retired_path = retired_directory.join(PERSON_KEY_FILE);
+        match self.read_active_keys()? {
+            Some(active) if active.public_key().to_hex() == public_key => {
+                if path_kind(&retired_directory)?.is_none() {
+                    return Ok(());
+                }
+                self.verify_retired_key(public_key)?;
+            }
+            Some(_) => return Err(LocalSignerError::KeyConflict),
+            None => {
+                self.verify_retired_key(public_key)?;
+                match fs::hard_link(&retired_path, self.active_key_path()) {
+                    Ok(()) => sync_directory(&self.active_directory)?,
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                        let active = self.read_active_keys()?.ok_or(LocalSignerError::Storage)?;
+                        if active.public_key().to_hex() != public_key {
+                            return Err(LocalSignerError::KeyConflict);
+                        }
+                    }
+                    Err(_) => return Err(LocalSignerError::Storage),
+                }
+            }
+        }
+        if path_kind(&retired_path)?.is_some() {
+            fs::remove_file(&retired_path).map_err(|_| LocalSignerError::Storage)?;
+            sync_directory(&retired_directory)?;
+        }
+        match fs::remove_dir(&retired_directory) {
+            Ok(()) => sync_directory(&self.retired_directory),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(LocalSignerError::Storage),
+        }
+    }
+}
+
 impl LocalPersonSigner {
-    /// Load the fixed automatic person key or create it once.
+    /// Load the fixed automatic person key or initialize the complete keyring once.
     ///
-    /// The private file follows the established identity-key representation:
-    /// one lowercase hexadecimal secp256k1 key plus a newline in a `0600` file
-    /// under a `0700` fixed identity directory.
+    /// An existing keyring without `active/person.key` represents remote
+    /// ownership. Runtime never generates a replacement key in that state.
     pub fn load_or_create(
         private_state_root: &Path,
         expected_device_public_key: &str,
     ) -> Result<Self, LocalSignerError> {
         let expected_device_public_key = parse_public_key_text(expected_device_public_key)?;
-        let _storage = SIGNER_STORAGE
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("local signer storage mutex poisoned");
-        let directory = prepare_identity_directory(private_state_root)?;
-        let _process_lock = lock_directory(&directory)?;
-        cleanup_private_temporaries(&directory)?;
-        let path = directory.join(PERSON_KEY_FILE);
-        let keys = match read_private_optional(&path)? {
-            Some(bytes) => parse_keys(bytes)?,
-            None => {
-                let keys = Keys::generate();
-                let mut encoded = Zeroizing::new(keys.secret_key().to_secret_hex().into_bytes());
-                encoded.push(b'\n');
-                if write_new_private(&path, &encoded)? {
-                    keys
-                } else {
-                    parse_keys(read_private_optional(&path)?.ok_or(LocalSignerError::Storage)?)?
-                }
-            }
-        };
+        let keyring = LocalSignerKeyring::open_or_initialize(private_state_root)?;
+        let keys = keyring
+            .active_keys()?
+            .ok_or(LocalSignerError::NoActiveKey)?;
         Ok(Self::from_keys(keys, expected_device_public_key))
     }
 
@@ -367,29 +781,126 @@ pub fn read_published_public_key(path: &Path) -> Result<String, LocalSignerError
     )
 }
 
-fn prepare_identity_directory(private_state_root: &Path) -> Result<PathBuf, LocalSignerError> {
-    if !private_state_root.exists() {
+fn storage_lock() -> std::sync::MutexGuard<'static, ()> {
+    SIGNER_STORAGE
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("local signer storage mutex poisoned")
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PathKind {
+    File,
+    Directory,
+    Symlink,
+    Other,
+}
+
+fn path_kind(path: &Path) -> Result<Option<PathKind>, LocalSignerError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(LocalSignerError::Storage),
+    };
+    Ok(Some(if metadata.file_type().is_symlink() {
+        PathKind::Symlink
+    } else if metadata.is_file() {
+        PathKind::File
+    } else if metadata.is_dir() {
+        PathKind::Directory
+    } else {
+        PathKind::Other
+    }))
+}
+
+fn prepare_private_state_root(private_state_root: &Path) -> Result<(), LocalSignerError> {
+    let mut created = false;
+    if path_kind(private_state_root)?.is_none() {
         match DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(private_state_root)
         {
-            Ok(()) => {}
+            Ok(()) => created = true,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => return Err(LocalSignerError::Storage),
         }
     }
     validate_directory(private_state_root)?;
-    let directory = private_state_root.join(IDENTITY_DIRECTORY);
-    if !directory.exists() {
-        match DirBuilder::new().mode(0o700).create(&directory) {
-            Ok(()) => sync_directory(private_state_root)?,
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(_) => return Err(LocalSignerError::Storage),
+    if created {
+        sync_directory(private_state_root)?;
+        if let Some(parent) = private_state_root.parent().filter(|parent| parent.exists()) {
+            sync_directory(parent)?;
         }
     }
-    validate_private_directory(&directory)?;
-    Ok(directory)
+    Ok(())
+}
+
+fn initialize_keyring(
+    private_state_root: &Path,
+    identity_directory: &Path,
+) -> Result<(), LocalSignerError> {
+    let temporary = private_state_root.join(format!(
+        ".{IDENTITY_DIRECTORY}.{}.tmp",
+        rand::random::<u64>()
+    ));
+    let result = (|| {
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&temporary)
+            .map_err(|_| LocalSignerError::Storage)?;
+        let active = temporary.join(ACTIVE_DIRECTORY);
+        let retired = temporary.join(RETIRED_DIRECTORY);
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&active)
+            .map_err(|_| LocalSignerError::Storage)?;
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&retired)
+            .map_err(|_| LocalSignerError::Storage)?;
+        let keys = Keys::generate();
+        let encoded = encode_keys(&keys);
+        write_unpublished_private(&active.join(PERSON_KEY_FILE), &encoded)?;
+        sync_directory(&active)?;
+        sync_directory(&retired)?;
+        sync_directory(&temporary)?;
+        fs::rename(&temporary, identity_directory).map_err(|_| LocalSignerError::Storage)?;
+        sync_directory(private_state_root)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temporary);
+    }
+    result
+}
+
+fn cleanup_identity_temporaries(private_state_root: &Path) -> Result<(), LocalSignerError> {
+    let prefix = format!(".{IDENTITY_DIRECTORY}.");
+    let owner = fs::symlink_metadata(private_state_root).map_err(|_| LocalSignerError::Storage)?;
+    let mut changed = false;
+    for entry in fs::read_dir(private_state_root).map_err(|_| LocalSignerError::Storage)? {
+        let entry = entry.map_err(|_| LocalSignerError::Storage)?;
+        let name = entry.file_name();
+        let name = name.to_str().ok_or(LocalSignerError::Storage)?;
+        if name.starts_with(&prefix) && name.ends_with(".tmp") {
+            let metadata =
+                fs::symlink_metadata(entry.path()).map_err(|_| LocalSignerError::Storage)?;
+            if !metadata.is_dir()
+                || metadata.file_type().is_symlink()
+                || metadata.permissions().mode() & 0o077 != 0
+                || metadata.uid() != owner.uid()
+                || metadata.gid() != owner.gid()
+            {
+                return Err(LocalSignerError::Storage);
+            }
+            fs::remove_dir_all(entry.path()).map_err(|_| LocalSignerError::Storage)?;
+            changed = true;
+        }
+    }
+    if changed {
+        sync_directory(private_state_root)?;
+    }
+    Ok(())
 }
 
 fn lock_directory(path: &Path) -> Result<File, LocalSignerError> {
@@ -402,24 +913,51 @@ fn lock_directory(path: &Path) -> Result<File, LocalSignerError> {
 
 fn cleanup_private_temporaries(directory: &Path) -> Result<(), LocalSignerError> {
     let prefix = format!(".{PERSON_KEY_FILE}.");
+    let owner = fs::symlink_metadata(directory).map_err(|_| LocalSignerError::Storage)?;
+    let mut changed = false;
     for entry in fs::read_dir(directory).map_err(|_| LocalSignerError::Storage)? {
         let entry = entry.map_err(|_| LocalSignerError::Storage)?;
         let name = entry.file_name();
         let name = name.to_str().ok_or(LocalSignerError::Storage)?;
         if name.starts_with(&prefix) && name.ends_with(".tmp") {
-            let metadata = entry.metadata().map_err(|_| LocalSignerError::Storage)?;
+            let metadata =
+                fs::symlink_metadata(entry.path()).map_err(|_| LocalSignerError::Storage)?;
             if !metadata.is_file()
-                || entry
-                    .file_type()
-                    .map_err(|_| LocalSignerError::Storage)?
-                    .is_symlink()
+                || metadata.file_type().is_symlink()
+                || metadata.permissions().mode() & 0o077 != 0
+                || metadata.uid() != owner.uid()
+                || metadata.gid() != owner.gid()
             {
                 return Err(LocalSignerError::Storage);
             }
             fs::remove_file(entry.path()).map_err(|_| LocalSignerError::Storage)?;
+            changed = true;
         }
     }
-    sync_directory(directory)
+    if changed {
+        sync_directory(directory)?;
+    }
+    Ok(())
+}
+
+fn validate_active_directory(keyring: &LocalSignerKeyring) -> Result<(), LocalSignerError> {
+    let mut count = 0;
+    for entry in fs::read_dir(&keyring.active_directory).map_err(|_| LocalSignerError::Storage)? {
+        let entry = entry.map_err(|_| LocalSignerError::Storage)?;
+        if entry.file_name() != PERSON_KEY_FILE {
+            return Err(LocalSignerError::Storage);
+        }
+        count += 1;
+    }
+    if count > 1 {
+        return Err(LocalSignerError::Storage);
+    }
+    if count == 1 {
+        keyring
+            .read_active_keys()?
+            .ok_or(LocalSignerError::Storage)?;
+    }
+    Ok(())
 }
 
 fn validate_directory(path: &Path) -> Result<(), LocalSignerError> {
@@ -430,57 +968,92 @@ fn validate_directory(path: &Path) -> Result<(), LocalSignerError> {
     Ok(())
 }
 
-fn validate_private_directory(path: &Path) -> Result<(), LocalSignerError> {
+fn validate_private_directory(path: &Path, ownership_root: &Path) -> Result<(), LocalSignerError> {
     validate_directory(path)?;
     let metadata = fs::symlink_metadata(path).map_err(|_| LocalSignerError::Storage)?;
-    if metadata.permissions().mode() & 0o077 != 0 {
+    let owner = fs::symlink_metadata(ownership_root).map_err(|_| LocalSignerError::Storage)?;
+    if metadata.permissions().mode() & 0o077 != 0
+        || metadata.uid() != owner.uid()
+        || metadata.gid() != owner.gid()
+    {
         return Err(LocalSignerError::Storage);
     }
     Ok(())
 }
 
-fn read_private_optional(path: &Path) -> Result<Option<Vec<u8>>, LocalSignerError> {
+fn read_private_optional(
+    path: &Path,
+    ownership_root: &Path,
+) -> Result<Option<Vec<u8>>, LocalSignerError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(LocalSignerError::Storage),
     };
+    let owner = fs::symlink_metadata(ownership_root).map_err(|_| LocalSignerError::Storage)?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
         || metadata.permissions().mode() & 0o077 != 0
-        || metadata.len() > 128
+        || metadata.uid() != owner.uid()
+        || metadata.gid() != owner.gid()
+        || metadata.len() != 65
     {
         return Err(LocalSignerError::Storage);
     }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    let mut bytes = Vec::with_capacity(65);
     File::open(path)
         .map_err(|_| LocalSignerError::Storage)?
-        .take(129)
+        .take(66)
         .read_to_end(&mut bytes)
         .map_err(|_| LocalSignerError::Storage)?;
-    if bytes.len() > 128 {
-        return Err(LocalSignerError::Storage);
+    if bytes.len() != 65 || bytes[64] != b'\n' {
+        return Err(LocalSignerError::InvalidKey);
     }
     Ok(Some(bytes))
 }
 
-fn parse_keys(bytes: Vec<u8>) -> Result<Keys, LocalSignerError> {
+fn parse_private_key_record(bytes: Vec<u8>) -> Result<Keys, LocalSignerError> {
     let bytes = Zeroizing::new(bytes);
-    let value = std::str::from_utf8(&bytes)
-        .map_err(|_| LocalSignerError::InvalidKey)?
-        .trim();
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    if bytes.len() != 65 || bytes[64] != b'\n' {
+        return Err(LocalSignerError::InvalidKey);
+    }
+    let value = std::str::from_utf8(&bytes[..64]).map_err(|_| LocalSignerError::InvalidKey)?;
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
         return Err(LocalSignerError::InvalidKey);
     }
     Keys::parse(value).map_err(|_| LocalSignerError::InvalidKey)
 }
 
-fn write_new_private(path: &Path, content: &[u8]) -> Result<bool, LocalSignerError> {
+fn encode_keys(keys: &Keys) -> Zeroizing<Vec<u8>> {
+    let mut encoded = Zeroizing::new(keys.secret_key().to_secret_hex().into_bytes());
+    encoded.push(b'\n');
+    encoded
+}
+
+fn write_unpublished_private(path: &Path, content: &[u8]) -> Result<(), LocalSignerError> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|_| LocalSignerError::Storage)?;
+    file.write_all(content)
+        .map_err(|_| LocalSignerError::Storage)?;
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|_| LocalSignerError::Storage)?;
+    file.sync_all().map_err(|_| LocalSignerError::Storage)
+}
+
+fn write_new_private(
+    path: &Path,
+    content: &[u8],
+    ownership_root: &Path,
+) -> Result<bool, LocalSignerError> {
     let parent = path.parent().ok_or(LocalSignerError::Storage)?;
+    validate_private_directory(parent, ownership_root)?;
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name()
@@ -489,19 +1062,9 @@ fn write_new_private(path: &Path, content: &[u8]) -> Result<bool, LocalSignerErr
         rand::random::<u64>()
     ));
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)
-            .map_err(|_| LocalSignerError::Storage)?;
-        file.write_all(content)
-            .map_err(|_| LocalSignerError::Storage)?;
-        file.sync_all().map_err(|_| LocalSignerError::Storage)?;
+        write_unpublished_private(&temporary, content)?;
         match fs::hard_link(&temporary, path) {
             Ok(()) => {
-                // The final name now references the already-complete private
-                // inode. Persist the install before removing the staging name.
                 sync_directory(parent)?;
                 fs::remove_file(&temporary).map_err(|_| LocalSignerError::Storage)?;
                 sync_directory(parent)?;
@@ -578,15 +1141,20 @@ mod tests {
 
         assert_eq!(second_owner, first_owner);
         let directory = signer_root.path().join("identity");
-        let key = directory.join("person.key");
-        assert_eq!(
-            fs::metadata(directory).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
+        let active = directory.join("active");
+        let retired = directory.join("retired");
+        let key = active.join("person.key");
+        for path in [&directory, &active, &retired] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
         assert_eq!(
             fs::metadata(key).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        assert_eq!(fs::read_dir(retired).unwrap().count(), 0);
     }
 
     #[tokio::test]
@@ -692,31 +1260,48 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_private_temporary_record_never_becomes_the_person_key() {
+    fn interrupted_private_temporary_does_not_turn_remote_ownership_into_a_local_key() {
         let root = tempfile::tempdir().unwrap();
         let directory = root.path().join("identity");
+        let active = directory.join("active");
+        let retired = directory.join("retired");
         fs::create_dir(&directory).unwrap();
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
-        let interrupted = directory.join(".person.key.interrupted.tmp");
+        fs::create_dir(&active).unwrap();
+        fs::create_dir(&retired).unwrap();
+        for path in [&directory, &active, &retired] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let interrupted = active.join(".person.key.interrupted.tmp");
         fs::write(&interrupted, b"incomplete").unwrap();
         fs::set_permissions(&interrupted, fs::Permissions::from_mode(0o600)).unwrap();
 
         let device = tempfile::tempdir().unwrap();
         let expected_device = device_public_key(device.path());
-        let first = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
-        let owner = first.keys.public_key().to_hex();
-        let complete = fs::read_to_string(directory.join("person.key")).unwrap();
-        assert_eq!(complete.len(), 65);
-        assert!(complete.ends_with('\n'));
+        assert!(matches!(
+            LocalPersonSigner::load_or_create(root.path(), &expected_device),
+            Err(LocalSignerError::NoActiveKey)
+        ));
         assert!(!interrupted.exists());
-        assert_eq!(
-            LocalPersonSigner::load_or_create(root.path(), &expected_device)
-                .unwrap()
-                .keys
-                .public_key()
-                .to_hex(),
-            owner
-        );
+        assert!(!active.join("person.key").exists());
+    }
+
+    #[test]
+    fn abandoned_unpublished_identity_tree_is_removed_before_atomic_initialization() {
+        let root = tempfile::tempdir().unwrap();
+        let abandoned = root.path().join(".identity.interrupted.tmp");
+        fs::create_dir(&abandoned).unwrap();
+        fs::set_permissions(&abandoned, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(abandoned.join("partial"), b"not published").unwrap();
+        let device = tempfile::tempdir().unwrap();
+
+        let signer =
+            LocalPersonSigner::load_or_create(root.path(), &device_public_key(device.path()))
+                .unwrap();
+
+        assert!(!abandoned.exists());
+        assert!(root.path().join("identity/active/person.key").is_file());
+        assert!(root.path().join("identity/retired").is_dir());
+        assert_eq!(signer.public_key().len(), 64);
     }
 
     #[test]
@@ -779,11 +1364,12 @@ mod tests {
             );
         }
         assert!(owners.iter().all(|owner| owner == &owners[0]));
-        let final_record = fs::read_to_string(root.path().join("identity/person.key")).unwrap();
+        let final_record =
+            fs::read_to_string(root.path().join("identity/active/person.key")).unwrap();
         assert_eq!(final_record.len(), 65);
         assert!(final_record.ends_with('\n'));
         assert_eq!(
-            fs::read_dir(root.path().join("identity"))
+            fs::read_dir(root.path().join("identity/active"))
                 .unwrap()
                 .filter_map(Result::ok)
                 .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
@@ -828,13 +1414,17 @@ mod tests {
             .apply_signed_owner_binding(&returned_template, &owner_public_key, &signed_event_json)
             .unwrap();
 
-        let identity_entries = fs::read_dir(signer_root.path().join("identity"))
+        let mut identity_entries = fs::read_dir(signer_root.path().join("identity"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
+        identity_entries.sort();
         assert_eq!(
             identity_entries,
-            vec![std::ffi::OsString::from("person.key")]
+            vec![
+                std::ffi::OsString::from("active"),
+                std::ffi::OsString::from("retired"),
+            ]
         );
     }
 
@@ -845,7 +1435,7 @@ mod tests {
         let expected_device = device_public_key(device_root.path());
         let active =
             LocalPersonSigner::load_or_create(signer_root.path(), &expected_device).unwrap();
-        let before = fs::read(signer_root.path().join("identity/person.key")).unwrap();
+        let before = fs::read(signer_root.path().join("identity/active/person.key")).unwrap();
         let encrypted = active.export_nip49("correct password").unwrap();
 
         assert!(matches!(
@@ -870,15 +1460,354 @@ mod tests {
         ));
 
         assert_eq!(
-            fs::read(signer_root.path().join("identity/person.key")).unwrap(),
+            fs::read(signer_root.path().join("identity/active/person.key"),).unwrap(),
             before
         );
         assert_eq!(
-            fs::read_dir(signer_root.path().join("identity"))
+            fs::read_dir(signer_root.path().join("identity/retired"))
                 .unwrap()
                 .count(),
-            1
+            0
         );
+    }
+
+    #[test]
+    fn legacy_person_key_is_refused_even_when_the_active_key_exists() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let legacy = root.path().join("identity/person.key");
+        fs::write(&legacy, "0".repeat(64) + "\n").unwrap();
+        fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert!(matches!(
+            LocalPersonSigner::load_or_create(root.path(), &expected_device),
+            Err(LocalSignerError::LegacyKey)
+        ));
+    }
+
+    #[test]
+    fn valid_keyring_without_an_active_key_reports_remote_ownership() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        fs::remove_file(root.path().join("identity/active/person.key")).unwrap();
+
+        assert_eq!(keyring.status().unwrap(), LocalSignerKeyringStatus::Remote);
+        assert!(matches!(
+            LocalPersonSigner::load_or_create(root.path(), &expected_device),
+            Err(LocalSignerError::NoActiveKey)
+        ));
+        assert!(!root.path().join("identity/active/person.key").exists());
+    }
+
+    #[test]
+    fn malformed_retired_names_and_key_mismatches_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        let malformed = root.path().join("identity/retired/NOT-A-PUBLIC-KEY");
+        fs::create_dir(&malformed).unwrap();
+        fs::set_permissions(&malformed, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(keyring.status().is_err());
+        fs::remove_dir(&malformed).unwrap();
+
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let first = LocalPersonSigner::import_nip49(
+            &LocalPersonSigner::load_or_create(root.path(), &expected_device)
+                .unwrap()
+                .export_nip49("first password")
+                .unwrap(),
+            "first password",
+            &expected_device,
+        )
+        .unwrap();
+        let other = Keys::generate();
+        let wrong_name = first.public_key();
+        let directory = root.path().join("identity/retired").join(&wrong_name);
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(directory.join("person.key"), encode_keys(&other).as_slice()).unwrap();
+        fs::set_permissions(
+            directory.join("person.key"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+        assert!(matches!(
+            keyring.status(),
+            Err(LocalSignerError::KeyConflict)
+        ));
+    }
+
+    #[test]
+    fn malformed_active_key_record_fails_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        let active = root.path().join("identity/active/person.key");
+        fs::write(&active, "z".repeat(64) + "\n").unwrap();
+        fs::set_permissions(&active, fs::Permissions::from_mode(0o600)).unwrap();
+
+        assert!(matches!(
+            keyring.status(),
+            Err(LocalSignerError::InvalidKey)
+        ));
+    }
+
+    #[test]
+    fn loose_directory_or_key_modes_fail_closed() {
+        let root = tempfile::tempdir().unwrap();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        let retired = root.path().join("identity/retired");
+        fs::set_permissions(&retired, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(matches!(keyring.status(), Err(LocalSignerError::Storage)));
+
+        fs::set_permissions(&retired, fs::Permissions::from_mode(0o700)).unwrap();
+        let active = root.path().join("identity/active/person.key");
+        fs::set_permissions(&active, fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(matches!(keyring.status(), Err(LocalSignerError::Storage)));
+    }
+
+    #[test]
+    fn symlinks_in_active_or_retired_storage_fail_closed() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        let active = root.path().join("identity/active/person.key");
+        let target = root.path().join("outside.key");
+        fs::rename(&active, &target).unwrap();
+        symlink(&target, &active).unwrap();
+        assert!(keyring.status().is_err());
+
+        fs::remove_file(&active).unwrap();
+        fs::rename(&target, &active).unwrap();
+        let retired_link = root.path().join("identity/retired").join("0".repeat(64));
+        symlink(root.path(), retired_link).unwrap();
+        assert!(keyring.status().is_err());
+    }
+
+    #[test]
+    fn inactive_persist_promote_and_retire_are_idempotent_at_retry_boundaries() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let active = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let old_public_key = active.public_key();
+        let replacement_encrypted = Keys::generate()
+            .secret_key()
+            .encrypt("replacement password")
+            .unwrap()
+            .to_bech32()
+            .unwrap();
+        let replacement = LocalPersonSigner::import_nip49(
+            &replacement_encrypted,
+            "replacement password",
+            &expected_device,
+        )
+        .unwrap();
+        let replacement_public_key = replacement.public_key();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+
+        assert_eq!(
+            keyring.persist_inactive(&replacement).unwrap(),
+            replacement_public_key
+        );
+        assert_eq!(
+            keyring.persist_inactive(&replacement).unwrap(),
+            replacement_public_key
+        );
+        assert_eq!(
+            keyring.inspect_inactive(&replacement_public_key).unwrap(),
+            replacement_public_key
+        );
+        let exported = keyring
+            .export_retired_nip49(&replacement_public_key, "second backup")
+            .unwrap();
+        assert_eq!(
+            LocalPersonSigner::import_nip49(&exported, "second backup", &expected_device)
+                .unwrap()
+                .public_key(),
+            replacement_public_key
+        );
+
+        keyring
+            .retire_active(&old_public_key, Some(&replacement_public_key))
+            .unwrap();
+        keyring
+            .retire_active(&old_public_key, Some(&replacement_public_key))
+            .unwrap();
+        assert_eq!(
+            keyring.status().unwrap(),
+            LocalSignerKeyringStatus::Active {
+                public_key: replacement_public_key.clone()
+            }
+        );
+        assert_eq!(
+            keyring.retired_public_keys().unwrap(),
+            vec![old_public_key.clone()]
+        );
+        let old_export = keyring
+            .export_retired_nip49(&old_public_key, "retired backup")
+            .unwrap();
+        assert_eq!(
+            LocalPersonSigner::import_nip49(&old_export, "retired backup", &expected_device)
+                .unwrap()
+                .public_key(),
+            old_public_key
+        );
+        keyring.promote_retired(&replacement_public_key).unwrap();
+    }
+
+    #[test]
+    fn retry_after_replacement_link_cleans_the_duplicate_retired_key() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let active = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let old_public_key = active.public_key();
+        let imported = LocalPersonSigner::import_nip49(
+            &Keys::generate()
+                .secret_key()
+                .encrypt("replacement password")
+                .unwrap()
+                .to_bech32()
+                .unwrap(),
+            "replacement password",
+            &expected_device,
+        )
+        .unwrap();
+        let replacement_public_key = imported.public_key();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        keyring.persist_inactive(&imported).unwrap();
+        keyring.retire_active(&old_public_key, None).unwrap();
+        fs::hard_link(
+            root.path()
+                .join("identity/retired")
+                .join(&replacement_public_key)
+                .join("person.key"),
+            root.path().join("identity/active/person.key"),
+        )
+        .unwrap();
+        assert!(matches!(keyring.status(), Err(LocalSignerError::Storage)));
+
+        keyring
+            .retire_active(&old_public_key, Some(&replacement_public_key))
+            .unwrap();
+
+        assert_eq!(
+            keyring.status().unwrap(),
+            LocalSignerKeyringStatus::Active {
+                public_key: replacement_public_key.clone()
+            }
+        );
+        assert!(!root
+            .path()
+            .join("identity/retired")
+            .join(replacement_public_key)
+            .exists());
+    }
+
+    #[test]
+    fn malformed_retired_directory_blocks_promotion_before_active_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let active = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let active_public_key = active.public_key();
+        let imported = LocalPersonSigner::import_nip49(
+            &Keys::generate()
+                .secret_key()
+                .encrypt("replacement password")
+                .unwrap()
+                .to_bech32()
+                .unwrap(),
+            "replacement password",
+            &expected_device,
+        )
+        .unwrap();
+        let imported_public_key = imported.public_key();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+        keyring.persist_inactive(&imported).unwrap();
+        fs::write(
+            root.path()
+                .join("identity/retired")
+                .join(&imported_public_key)
+                .join("unexpected"),
+            b"unsafe partial state",
+        )
+        .unwrap();
+
+        assert!(keyring.promote_retired(&imported_public_key).is_err());
+        assert!(matches!(keyring.status(), Err(LocalSignerError::Storage)));
+        assert_eq!(
+            parse_private_key_record(
+                fs::read(root.path().join("identity/active/person.key")).unwrap()
+            )
+            .unwrap()
+            .public_key()
+            .to_hex(),
+            active_public_key
+        );
+    }
+
+    #[test]
+    fn inactive_rollback_and_explicit_delete_are_exact_and_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let active = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let active_public_key = active.public_key();
+        let imported = LocalPersonSigner::import_nip49(
+            &Keys::generate()
+                .secret_key()
+                .encrypt("staged password")
+                .unwrap()
+                .to_bech32()
+                .unwrap(),
+            "staged password",
+            &expected_device,
+        )
+        .unwrap();
+        let imported_public_key = imported.public_key();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+
+        keyring.persist_inactive(&imported).unwrap();
+        keyring.rollback_inactive(&imported_public_key).unwrap();
+        keyring.rollback_inactive(&imported_public_key).unwrap();
+        assert!(keyring.retired_public_keys().unwrap().is_empty());
+
+        keyring.persist_inactive(&imported).unwrap();
+        keyring.delete_retired(&imported_public_key).unwrap();
+        keyring.delete_retired(&imported_public_key).unwrap();
+        let interrupted = root
+            .path()
+            .join("identity/retired")
+            .join(&imported_public_key);
+        fs::create_dir(&interrupted).unwrap();
+        fs::set_permissions(&interrupted, fs::Permissions::from_mode(0o700)).unwrap();
+        keyring.rollback_inactive(&imported_public_key).unwrap();
+        assert!(!interrupted.exists());
+        assert!(matches!(
+            keyring.delete_retired(&active_public_key),
+            Err(LocalSignerError::KeyConflict)
+        ));
+    }
+
+    #[test]
+    fn active_key_can_be_retired_without_replacement_for_remote_ownership() {
+        let root = tempfile::tempdir().unwrap();
+        let device = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device.path());
+        let active = LocalPersonSigner::load_or_create(root.path(), &expected_device).unwrap();
+        let public_key = active.public_key();
+        let keyring = LocalSignerKeyring::open_or_initialize(root.path()).unwrap();
+
+        keyring.retire_active(&public_key, None).unwrap();
+        keyring.retire_active(&public_key, None).unwrap();
+        assert_eq!(keyring.status().unwrap(), LocalSignerKeyringStatus::Remote);
+        assert_eq!(keyring.retired_public_keys().unwrap(), vec![public_key]);
     }
 
     #[tokio::test]
