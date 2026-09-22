@@ -8,6 +8,10 @@ use futures::future::BoxFuture;
 use nostr::{
     event::{EventBuilder, FinalizeEvent, Kind, Tag},
     key::{Keys, PublicKey},
+    nips::{
+        nip19::{FromBech32, ToBech32},
+        nip49::EncryptedSecretKey,
+    },
     types::Timestamp,
 };
 use std::{
@@ -34,6 +38,14 @@ pub enum LocalSignerError {
     Storage,
     #[error("local signer key is invalid")]
     InvalidKey,
+    #[error("password must not be blank")]
+    InvalidPassword,
+    #[error("NIP-49 encrypted secret is malformed")]
+    MalformedEncryptedSecret,
+    #[error("NIP-49 encrypted secret could not be decrypted with this password")]
+    IncorrectPassword,
+    #[error("local signer could not encrypt the person key")]
+    Encryption,
 }
 
 pub struct LocalPersonSigner {
@@ -74,17 +86,57 @@ impl LocalPersonSigner {
                 }
             }
         };
-        Ok(Self {
+        Ok(Self::from_keys(keys, expected_device_public_key))
+    }
+
+    /// Export this signer's person key as a NIP-49 encrypted secret.
+    ///
+    /// The password is passed unchanged to the NIP-49 implementation. A
+    /// whitespace-only password is rejected before encryption.
+    pub fn export_nip49(&self, password: &str) -> Result<String, LocalSignerError> {
+        validate_password(password)?;
+        self.keys
+            .secret_key()
+            .encrypt(password)
+            .and_then(|encrypted| encrypted.to_bech32())
+            .map_err(|_| LocalSignerError::Encryption)
+    }
+
+    /// Import a NIP-49 encrypted secret as a non-persisted signer candidate.
+    ///
+    /// This does not read or write signer storage. The returned candidate can
+    /// report its public key and implement the existing [`PersonSigner`]
+    /// owner-binding contract for a later identity-switch prepare operation.
+    pub fn import_nip49(
+        encrypted_secret: &str,
+        password: &str,
+        expected_device_public_key: &str,
+    ) -> Result<Self, LocalSignerError> {
+        validate_password(password)?;
+        let expected_device_public_key = parse_public_key_text(expected_device_public_key)?;
+        let encrypted = EncryptedSecretKey::from_bech32(encrypted_secret)
+            .map_err(|_| LocalSignerError::MalformedEncryptedSecret)?;
+        let secret = encrypted
+            .decrypt(password)
+            .map_err(|_| LocalSignerError::IncorrectPassword)?;
+        Ok(Self::from_keys(
+            Keys::new(secret),
+            expected_device_public_key,
+        ))
+    }
+
+    pub fn public_key(&self) -> String {
+        self.keys.public_key().to_hex()
+    }
+
+    fn from_keys(keys: Keys, expected_device_public_key: String) -> Self {
+        Self {
             keys,
             expected_device_public_key,
             state: Mutex::new(PersonSignerState::Unavailable {
                 message: "Local signer is ready".into(),
             }),
-        })
-    }
-
-    pub fn public_key(&self) -> String {
-        self.keys.public_key().to_hex()
+        }
     }
 
     fn sign(&self, template: &str) -> Result<(String, String), ()> {
@@ -235,6 +287,14 @@ async fn request_over_unix(
         return Err("local signer response is too large".into());
     }
     serde_json::from_slice(&response).map_err(|_| "local signer response is invalid".into())
+}
+
+fn validate_password(password: &str) -> Result<(), LocalSignerError> {
+    if password.trim().is_empty() {
+        Err(LocalSignerError::InvalidPassword)
+    } else {
+        Ok(())
+    }
 }
 
 fn parse_public_key_text(value: &str) -> Result<String, LocalSignerError> {
@@ -729,6 +789,95 @@ mod tests {
                 .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
                 .count(),
             0
+        );
+    }
+
+    #[tokio::test]
+    async fn active_local_key_exports_and_imports_as_a_non_persisted_nip49_signer() {
+        let signer_root = tempfile::tempdir().unwrap();
+        let device_root = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device_root.path());
+        let active =
+            LocalPersonSigner::load_or_create(signer_root.path(), &expected_device).unwrap();
+
+        let encrypted = active.export_nip49("backup password").unwrap();
+        assert!(encrypted.starts_with("ncryptsec1"));
+        let imported =
+            LocalPersonSigner::import_nip49(&encrypted, "backup password", &expected_device)
+                .unwrap();
+        assert_eq!(imported.public_key(), active.public_key());
+
+        let unsigned_event_template = template(device_root.path(), 100);
+        let state = imported
+            .request(PersonSignerRequest {
+                unsigned_event_template: unsigned_event_template.clone(),
+            })
+            .await;
+        let PersonSignerState::Approved {
+            owner_public_key,
+            unsigned_event_template: returned_template,
+            signed_event_json,
+        } = state
+        else {
+            panic!("imported signer did not approve the owner binding")
+        };
+        assert_eq!(owner_public_key, active.public_key());
+        assert_eq!(returned_template, unsigned_event_template);
+        DeviceIdentity::load_or_create(device_root.path())
+            .unwrap()
+            .apply_signed_owner_binding(&returned_template, &owner_public_key, &signed_event_json)
+            .unwrap();
+
+        let identity_entries = fs::read_dir(signer_root.path().join("identity"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identity_entries,
+            vec![std::ffi::OsString::from("person.key")]
+        );
+    }
+
+    #[test]
+    fn invalid_nip49_inputs_return_explicit_errors_without_changing_private_state() {
+        let signer_root = tempfile::tempdir().unwrap();
+        let device_root = tempfile::tempdir().unwrap();
+        let expected_device = device_public_key(device_root.path());
+        let active =
+            LocalPersonSigner::load_or_create(signer_root.path(), &expected_device).unwrap();
+        let before = fs::read(signer_root.path().join("identity/person.key")).unwrap();
+        let encrypted = active.export_nip49("correct password").unwrap();
+
+        assert!(matches!(
+            active.export_nip49(" \t\n"),
+            Err(LocalSignerError::InvalidPassword)
+        ));
+        assert!(matches!(
+            LocalPersonSigner::import_nip49(&encrypted, "", &expected_device),
+            Err(LocalSignerError::InvalidPassword)
+        ));
+        assert!(matches!(
+            LocalPersonSigner::import_nip49(
+                "not-a-nip49-encrypted-secret",
+                "correct password",
+                &expected_device,
+            ),
+            Err(LocalSignerError::MalformedEncryptedSecret)
+        ));
+        assert!(matches!(
+            LocalPersonSigner::import_nip49(&encrypted, "wrong password", &expected_device),
+            Err(LocalSignerError::IncorrectPassword)
+        ));
+
+        assert_eq!(
+            fs::read(signer_root.path().join("identity/person.key")).unwrap(),
+            before
+        );
+        assert_eq!(
+            fs::read_dir(signer_root.path().join("identity"))
+                .unwrap()
+                .count(),
+            1
         );
     }
 
