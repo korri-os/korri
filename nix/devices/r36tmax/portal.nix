@@ -1,33 +1,8 @@
-# Existing Korri session, not a new handheld surface or input implementation.
+# R36T Max hardware facts and recorded hardware limits.
+{ lib, ... }:
 {
-  korri,
-  lib,
-  pkgs,
-  ...
-}:
-let
-  system = pkgs.stdenv.hostPlatform.system;
-in
-{
-  # Use the existing RG DS runtime account contract without a new identity scheme.
-  users.groups.games.gid = 1001;
-  users.users.gameplay = {
-    isNormalUser = true;
-    uid = 1001;
-    group = "games";
-    home = "/home/gameplay";
-    createHome = true;
-  };
-
-  services.korriBundle = {
-    initialPackage = korri.packages.${system}.korri-bundle;
-    launcherPackage = korri.packages.${system}.korri-inputd;
-  };
-  services.korriLinuxInput = {
-    provider.package = korri.packages.${system}.inputplumber-korri;
-    inputd.package = korri.packages.${system}.korri-inputd;
-  };
-  services.korridLinuxDevice.package = korri.packages.${system}.korrid;
+  # Recorded limit: the normal image has no integrated H.264 encoder. The
+  # separately tested out-of-tree VEPU2 path is not part of this image.
 
   # The saved console survey has no GPU driver bound. The retained kernel builds
   # Panfrost as a module and the DTS enables ff400000.gpu. Load it explicitly.
@@ -36,17 +11,7 @@ in
   boot.kernelModules = lib.mkForce [ "panfrost" ];
 
   services.korriLinuxHost = {
-    enable = true;
     label = "r36tmax";
-    runtimeUser = "gameplay";
-    runtimeUid = 1001;
-    runtimeGroup = "games";
-    runtimeGid = 1001;
-    # Existing Odin/RG353M loopback-test relay, not a public relay or an owner
-    # binding. korrid requires a nonempty relay list even for a local session.
-    relays = [ "ws://127.0.0.1:9" ];
-    validation.enable = false;
-    audio.enable = false;
     compositor = {
       backend = "drm";
       # Survey 20260924-134219: rockchip-drm binds display-subsystem, DSI-1 is
@@ -61,19 +26,6 @@ in
       renderer = "gles2";
       # No physical input mapping, touch transform or controller profile here.
       localInput.enable = false;
-      remoteInput.enable = false;
     };
-    # The shared host still starts Sunshine and inputd. This is a full-stack
-    # memory candidate, not a claim that those costs have been removed.
-    sunshine.openFirewall = false;
   };
-
-  # Use the current credential-backed portal integration. The retired private
-  # kiosk expects brain.json, which the current korrid does not publish.
-  # Keep one browser and its sandbox; do not manufacture a compatibility file.
-  services.korri.webSurfaceHost = {
-    enable = true;
-    surfaceId = "pico";
-  };
-  services.korri.compositor.kiosk.enable = true;
 }

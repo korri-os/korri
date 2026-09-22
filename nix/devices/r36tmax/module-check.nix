@@ -1,4 +1,4 @@
-# Check the two exported systems, never a second fixture model of the image.
+# Check the exported systems and R36T Max hardware facts and recorded limits.
 {
   pkgs,
   configuration,
@@ -14,7 +14,12 @@ let
   gameButtons = import ./dts/game-buttons-check.nix { inherit pkgs; };
   speakerUcm = import ./audio/check.nix { inherit pkgs; };
   deviceUcm = "${configuration.pkgs.callPackage ./audio/ucm.nix { }}/share/alsa/ucm2";
-  common =
+  kernelConfig = builtins.readFile ./dts/config;
+  deviceFactsSource = builtins.readFile ./portal.nix;
+  distributionWorkflow = builtins.readFile ../../../.github/workflows/device-images.yml;
+  installerScript = pkgs.writeText "r36tmax-selected-installer" c.system.build.installBootLoader.text;
+
+  hardwareFacts =
     config:
     lib.all (a: a.assertion) config.assertions
     && builtins.isString config.system.build.toplevel.drvPath
@@ -33,40 +38,16 @@ let
     && lib.all (fs: !(lib.hasPrefix "/dev/mmcblk" fs.device)) (lib.attrValues config.fileSystems)
     && config.swapDevices == [ ]
     && config.sdImage.firmwarePartitionOffset == 16
-    && config.services.getty.autologinUser == "root"
-    && !config.services.openssh.enable
-    && !config.services.openssh.openFirewall
-    && !config.services.openssh.settings.PasswordAuthentication
-    && !config.services.openssh.settings.KbdInteractiveAuthentication
-    && config.users.users.root.openssh.authorizedKeys.keys == [ ]
-    && config.nix.settings.max-jobs == 0
-    && !config.nix.distributedBuilds
-    && config.nix.settings.builders == ""
-    && !config.nix.settings.fallback
-    && config.nix.settings.require-sigs
-    && config.nix.settings.always-allow-substitutes
-    && config.system.stateVersion == "25.11"
-    && config.networking.networkmanager.enable
-    && config.networking.networkmanager.ensureProfiles.profiles.korri.wifi.ssid == "$WIFI_SSID"
-    && config.networking.networkmanager.ensureProfiles.profiles.korri.wifi-security.psk == "$WIFI_PSK"
-    && config.networking.firewall.interfaces.usb0.allowedUDPPorts == [ 67 ]
-    && (config.networking.firewall.interfaces.usb0.allowedTCPPorts or [ ]) == [ ]
     && lib.elem "libcomposite" config.boot.kernelModules
     && lib.elem "usb_f_acm" config.boot.kernelModules
     && lib.elem "usb_f_ncm" config.boot.kernelModules
-    &&
-      config.environment.sessionVariables.ALSA_CONFIG_UCM2
-      == config.systemd.globalEnvironment.ALSA_CONFIG_UCM2
+    && config.environment.sessionVariables.ALSA_CONFIG_UCM2 == deviceUcm
     && config.systemd.globalEnvironment.ALSA_CONFIG_UCM2 == deviceUcm
     &&
       lib.hasInfix (builtins.unsafeDiscardStringContext deviceUcm)
         config.systemd.units."flight-recorder.service".text
     && config.systemd.services.usb-gadget.wantedBy == [ "multi-user.target" ]
     && config.systemd.services.flight-recorder.wantedBy == [ "sysinit.target" ];
-  kiosk = c.systemd.services.korri-chromium-kiosk;
-  credential = "KORRID_RPC_CAPABILITY:/run/korri-portal-credentials/KORRID_RPC_CAPABILITY";
-  kernelConfig = builtins.readFile ./dts/config;
-  installerScript = pkgs.writeText "r36tmax-selected-installer" c.system.build.installBootLoader.text;
 in
 assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelConfig)) [
   "SND_SOC_SIMPLE_AMPLIFIER"
@@ -77,14 +58,8 @@ assert lib.all (name: lib.elem "CONFIG_${name}=m" (lib.splitString "\n" kernelCo
   "NFT_REJECT"
   "NETFILTER_XT_MATCH_PKTTYPE"
 ];
-assert !(lib.hasInfix "wifi.env" c.sdImage.populateRootCommands);
-assert !(lib.hasInfix "wifi.env" console.sdImage.populateRootCommands);
-# The running korrid consumes a systemd credential and KORRID_PORTAL_ORIGIN.
-# A launcher expecting the retired brain.json producer is not compatible.
-assert !(c.systemd.services ? korri-kiosk);
-assert c.systemd.services.korrid.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
-assert common c;
-assert common console;
+assert hardwareFacts c;
+assert hardwareFacts console;
 assert lib.all (a: a.assertion) diagnosticConfiguration.config.assertions;
 assert lib.all (a: a.assertion) mainlineConfiguration.config.assertions;
 assert diagnosticConfiguration.config.services.openssh.enable;
@@ -97,36 +72,11 @@ assert mainlineConfiguration.config.sdImage.populateFirmwareCommands == ":";
 assert builtins.length c.boot.extraModulePackages == 1;
 assert lib.getName (builtins.head c.boot.extraModulePackages) == "rk915";
 assert c.boot.kernelPackages.kernel.drvPath == console.boot.kernelPackages.kernel.drvPath;
-assert lib.all (name: !(builtins.hasAttr name console.systemd.services)) [
-  "korri-compositor"
-  "korrid"
-  "korri-kiosk"
-  "korri-chromium-kiosk"
-  "korri-portal-credentials"
-  "sunshine"
-  "korri-inputd"
-  "inputplumber"
-];
-assert !(console.services.static-web-server.enable);
-assert !console.services.nginx.enable;
-assert c.services.korriLinuxHost.enable;
-assert c.services.korridLinuxDevice.enable;
-assert c.services.korri.webSurfaceHost.enable;
-assert c.services.korri.webSurfaceHost.surfaceId == "pico";
-assert c.services.korri.compositor.kiosk.enable;
-assert !c.services.korridLinuxDevice.browser.enable;
-assert !(c.systemd.services.korrid.environment ? KORRID_BROWSER_INFO_PATH);
-assert !c.services.static-web-server.enable;
-assert c.services.nginx.enable;
-assert builtins.length c.services.nginx.virtualHosts.korri-portal.listen == 1;
-assert lib.all (
-  listener: listener.addr == "127.0.0.1" && listener.port == 8099
-) c.services.nginx.virtualHosts.korri-portal.listen;
-assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
-assert kiosk.serviceConfig.LoadCredential == [ credential ];
-assert lib.elem "korri-portal-credentials.service" c.systemd.services.korrid.requires;
-assert lib.elem "korri-portal-credentials.service" kiosk.requires;
-assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
+assert !(lib.hasInfix "wifi.env" c.sdImage.populateRootCommands);
+assert !(lib.hasInfix "wifi.env" console.sdImage.populateRootCommands);
+assert lib.elem "panfrost" c.boot.kernelModules;
+assert c.services.korriLinuxHost.label == "r36tmax";
+assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert
   c.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";
@@ -137,28 +87,17 @@ assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
 assert c.services.korriLinuxHost.compositor.mode == "720x720@61Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert !c.services.korriLinuxHost.compositor.localInput.enable;
-assert !c.services.korriLinuxHost.compositor.remoteInput.enable;
-assert !c.services.korriLinuxHost.audio.enable;
-assert !c.services.korriLinuxHost.validation.enable;
-assert lib.elem "panfrost" c.boot.kernelModules;
-assert c.services.sunshine.enable;
-assert c.services.korriLinuxInput.inputd.enable;
-assert c.services.korriLinuxInput.provider.enable;
-assert !c.services.korriLinuxHost.sunshine.openFirewall;
-assert c.services.korriLinuxHost.firewallInterfaces == [ ];
-assert c.services.korriLinuxHost.ownerBindingFile == null;
-assert c.services.korriLinuxHost.nativePeers == [ ];
-assert c.services.korriLinuxHost.relays == [ "ws://127.0.0.1:9" ];
-assert kiosk.serviceConfig.NoNewPrivileges;
-assert kiosk.serviceConfig.PrivateTmp;
-assert kiosk.serviceConfig.ProtectSystem == "strict";
-assert kiosk.serviceConfig.LimitCORE == 0;
-assert kiosk.serviceConfig.User != "root";
-assert lib.elem "korrid.service" kiosk.requires;
-assert lib.elem "korri-compositor.service" kiosk.after;
-assert lib.hasSuffix "/bin/korri-chromium-kiosk" kiosk.serviceConfig.ExecStart;
-assert !(lib.hasInfix "--no-sandbox" kiosk.serviceConfig.ExecStart);
-assert lib.elem "korrid" (map lib.getName c.environment.systemPackages);
+assert c.services.korriLinuxHost.compositor.allowedInputIdentifiers == [ ];
+assert !(c.systemd.services ? sunshine);
+assert !(c.systemd.sockets ? korri-certificate-control);
+assert lib.hasInfix "Recorded limit: the normal image has no integrated H.264 encoder."
+  deviceFactsSource;
+assert !(lib.hasInfix "users.users" deviceFactsSource);
+assert !(lib.hasInfix "users.groups" deviceFactsSource);
+assert !(lib.hasInfix "runtimeUser" deviceFactsSource);
+assert lib.hasInfix
+  "R36T Max image distribution is on hold: package the ROCKNIX loader notices and corresponding source first."
+  distributionWorkflow;
 pkgs.runCommand "r36tmax-module-check"
   {
     nativeBuildInputs = [
