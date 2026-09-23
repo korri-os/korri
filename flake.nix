@@ -118,8 +118,9 @@
         sunshineV4l2m2mPackage =
           if system == "aarch64-linux" then
             let
+              rockchipMpp = pkgs.callPackage ./services/sunshine/rockchip-mpp.nix { };
               ffmpegArm = pkgs.callPackage ./services/sunshine/ffmpeg-rkmpp-static.nix {
-                rockchipMpp = pkgs.rockchip-mpp;
+                inherit rockchipMpp;
               };
             in
             pkgs.callPackage ./services/sunshine/package.nix {
@@ -128,7 +129,7 @@
               rkmppSupport = true;
               ffmpegRkmpp = ffmpegArm;
               ffmpegV4l2m2m = ffmpegArm;
-              rockchipMpp = pkgs.rockchip-mpp;
+              inherit rockchipMpp;
               libdrm = pkgs.libdrm;
             }
           else
