@@ -42,9 +42,6 @@ in
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
-  # No suspend or light-sleep path has been verified on this board.
-  services.korriProduct.sleep.states = [ ];
-
   boot = {
     consoleLogLevel = 7;
 

@@ -21,6 +21,9 @@ in
 {
   imports = [ ./game-plugins.nix ];
 
+  # No suspend or light-sleep path has been verified on this board.
+  services.korriProduct.sleep.states = [ ];
+
   image.baseName = lib.mkForce "nixos-rpminiv2-korri";
 
   boot = {

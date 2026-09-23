@@ -18,7 +18,6 @@
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
   # OLED idle blanking is not sleep; no sleep state is verified.
-  services.korriProduct.sleep.states = [ ];
   networking.hostName = "rpminiv2";
   system.tools.nixos-install.enable = false;
 
