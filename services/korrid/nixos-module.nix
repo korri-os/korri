@@ -516,7 +516,6 @@ in
       "d ${cfg.privateStateRoot} 0700 ${serviceUser} ${serviceGroup} -"
       "d ${cfg.privateStateRoot}/identity 0700 ${serviceUser} ${serviceGroup} -"
       "d ${cfg.localSignerPrivateStateRoot} 0700 ${signerUser} ${signerGroup} -"
-      "d ${cfg.localSignerPrivateStateRoot}/identity 0700 ${signerUser} ${signerGroup} -"
       "d /dev/inputplumber 0700 root root -"
       "d /dev/inputplumber/sources 0700 root root -"
       # These parents must exist before any game namespace is created and

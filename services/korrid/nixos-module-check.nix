@@ -454,7 +454,7 @@ assert builtins.elem "d /var/lib/korrid 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korrid/identity 0700 korrid korrid -" tmpfiles;
 assert builtins.elem "d /run/korri-local-signer 0751 root korrid -" tmpfiles;
 assert builtins.elem "d /var/lib/korri-local-signer 0700 korri-local-signer korri-local-signer -" tmpfiles;
-assert builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles;
+assert !(builtins.elem "d /var/lib/korri-local-signer/identity 0700 korri-local-signer korri-local-signer -" tmpfiles);
 assert builtins.elem "d /dev/inputplumber 0700 root root -" tmpfiles;
 assert builtins.elem "d /dev/inputplumber/sources 0700 root root -" tmpfiles;
 assert builtins.elem "systemd-tmpfiles-setup-dev.service" service.after;
