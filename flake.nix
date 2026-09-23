@@ -196,6 +196,7 @@
           rgds-kernel = rgds.kernel;
           rgds-uboot = rgds.uboot;
           rpminiv2-sd-image = rpminiv2.sdImage;
+          rpminiv2-korri-bundle = rpminiv2.configuration.config.services.korriBundle.initialPackage;
           rpminiv2-recovery-sd-image = rpminiv2.consoleSdImage;
           rpminiv2-kernel = rpminiv2.kernel;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernel;

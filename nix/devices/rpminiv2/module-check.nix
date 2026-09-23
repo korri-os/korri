@@ -176,6 +176,11 @@ assert
   map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
     "rpminiv2-inputplumber-data"
   ];
+assert
+  c.systemd.services.korri-bundle-selector.environment.KORRI_BUNDLE_INITIAL_PACKAGE
+  == toString c.services.korriBundle.initialPackage;
+assert lib.hasSuffix " initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}"
+  c.systemd.services.korri-bundle-selector.serviceConfig.ExecStart;
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert idle.serviceConfig.User == c.services.korriLinuxHost.runtimeUser;
@@ -223,6 +228,13 @@ pkgs.runCommand "rpminiv2-module-check"
     grep -F 'timeout 300' ${idle.serviceConfig.ExecStart}
     test -f ${c.services.inputplumber.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
     test -f ${c.services.inputplumber.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
+    bundle=${c.services.korriBundle.initialPackage}
+    test -L "$bundle/share/inputplumber"
+    test "$(readlink -f "$bundle/share/inputplumber")" = ${c.services.inputplumber.package}/share/inputplumber
+    test -f "$bundle/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml"
+    test -f "$bundle/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml"
+    test "$(readlink -f "$bundle/share/korri-input-profile")" = ${c.services.inputplumber.package}/share/inputplumber/profiles/korri-60-xbox_one_gamepad.yaml
+    test "$(readlink -f "$bundle/bin/inputplumber")" = ${c.services.inputplumber.package}/bin/inputplumber
     cp ${./verify-image.py} verify-image.py
     cp ${./verify-image.test.py} verify-image.test.py
     export RP_MINIV2_KORRI_KERNEL=${c.system.build.kernel}/${c.system.boot.loader.kernelFile}

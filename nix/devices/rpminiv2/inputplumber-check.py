@@ -15,14 +15,9 @@ def load(relative):
 
 
 profile = load("devices/01-retroid-pocket-mini-v2.yaml")
-assert profile["matches"] == [
-    {
-        "udev": {
-            "sys_path": "/sys/firmware/devicetree/base",
-            "attributes": [{"name": "model", "value": "Retroid Pocket Mini V2"}],
-        }
-    }
-]
+# The live device reports this DMI product name to InputPlumber. A match
+# against /sys/firmware/devicetree/base did not create a composite on hardware.
+assert profile["matches"] == [{"dmi_data": {"product_name": "Retroid Pocket Mini V2"}}]
 assert profile["source_devices"] == [
     {
         "group": "gamepad",

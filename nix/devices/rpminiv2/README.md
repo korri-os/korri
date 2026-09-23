@@ -189,14 +189,24 @@ replacement for it. Its current first milestone is deliberately local:
   disabled, and Sunshine cannot start in this milestone. No Wi-Fi, firewall,
   audio, Bluetooth, streaming acceptance, media decode, or internal-storage
   support is claimed.
-- InputPlumber matches DT model `Retroid Pocket Mini V2` and the kernel's exact
-  `Retroid Pocket Gamepad` / `retroid-pocket-gamepad/input0` source. It emits a
-  normalized Xbox 360 target for the browser Gamepad API.
+- InputPlumber matches the observed DMI product name `Retroid Pocket Mini V2`
+  and the kernel's exact `Retroid Pocket Gamepad` /
+  `retroid-pocket-gamepad/input0` source. Its composite creates an Xbox 360
+  target for the browser Gamepad API; controller output still needs physical
+  acceptance.
 - The map follows ROCKNIX's Retroid MCU evidence: analog triggers are
   `ABS_HAT2X` and `ABS_HAT2Y`, and the legacy `BTN_NORTH`/`BTN_WEST` source
   codes are swapped to preserve physical X/West and Y/North.
 - `g_serial` remains loaded from the matching root system and the product adds
   the modular `retroid` gamepad driver after root mounts.
+
+Build `.#packages.aarch64-linux.rpminiv2-korri-bundle` for Mini V2 bundle
+switches. The generic `korri-bundle` omits the Mini V2 capability map. The
+bundle launcher replaces InputPlumber's data path with its selected bundle, so
+switching to the generic bundle drops D-pad events. The bundle selector keeps an
+existing active selection at boot; changing the initial package does not repair
+an already-installed card. Use a new image or an explicit, verified bundle
+switch. Do not assume a service restart selects the new package.
 
 Physical acceptance must verify the DRM/render node identities, compositor
 startup, orientation, five-minute OLED idle and wake behavior, ABXY semantics,

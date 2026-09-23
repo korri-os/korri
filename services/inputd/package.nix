@@ -11,8 +11,24 @@ let
       || pkgs.lib.hasPrefix "${sourceRootString}/tests/fixtures/" (toString path)
       || toString path == "${sourceRootString}/deploy/device-check.sh";
   };
+  # evdev 0.13.2 encodes UI_SET_PHYS with sizeof(char) instead of
+  # sizeof(char*). The kernel rejects that ioctl with EINVAL, so both
+  # inputd's routed targets and the seat receiver fail to start.
+  cargoVendorDir = craneLib.vendorCargoDeps {
+    src = sourceRoot;
+    overrideVendorCargoPackage =
+      package: drv:
+      if package.name == "evdev" && package.version == "0.13.2" then
+        pkgs.applyPatches {
+          name = "evdev-0.13.2-uinput-phys-pointer";
+          src = drv;
+          patches = [ ./patches/evdev-0.13.2-uinput-phys-pointer.patch ];
+        }
+      else
+        drv;
+  };
   commonArgs = {
-    inherit src;
+    inherit src cargoVendorDir;
     pname = "korri-inputd";
     version = "0.0.0";
     strictDeps = true;

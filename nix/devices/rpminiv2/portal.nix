@@ -46,6 +46,15 @@ in
     korri.packages.${system}.rpminiv2-inputplumber-data
   ];
 
+  # The launcher takes InputPlumber data from the active bundle, not the
+  # service's XDG_DATA_DIRS. Use the same resolved device data in both places.
+  services.korriBundle.initialPackage = import ../../../services/inputd/nix/korri-bundle.nix {
+    inherit pkgs;
+    inputdPackage = korri.packages.${system}.korri-inputd;
+    inputplumberKorri = config.services.inputplumber.package;
+    korridPackage = korri.packages.${system}.korrid;
+  };
+
   services.korriLinuxHost = {
     label = "rpminiv2";
     compositor = {

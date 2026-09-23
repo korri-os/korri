@@ -82,9 +82,15 @@ assert signer.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-laun
 assert builtins.elem "korri-bundle-selector.service" provider.requires;
 assert builtins.elem "korri-bundle-selector.service" inputd.requires;
 assert builtins.elem "korri-bundle-selector.service" korrid.requires;
+assert selector.environment.KORRI_BUNDLE_INITIAL_PACKAGE == toString korriBundle;
 assert
   selector.serviceConfig.ExecStart
-  == "${inputdPackage}/bin/korri-bundle-select initialize ${korriBundle}";
+  == "${inputdPackage}/bin/korri-bundle-select initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}";
+assert pkgs.lib.hasInfix
+  "KORRI_BUNDLE_INITIAL_PACKAGE=${builtins.unsafeDiscardStringContext (toString korriBundle)}"
+  evaluated.config.systemd.units."korri-bundle-selector.service".text;
+assert pkgs.lib.hasInfix "initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}"
+  evaluated.config.systemd.units."korri-bundle-selector.service".text;
 pkgs.runCommand "korri-bundle-module-check" { } ''
   touch "$out"
 ''

@@ -44,11 +44,12 @@ in
         "korri-local-signer.service"
         "korrid.service"
       ];
+      environment.KORRI_BUNDLE_INITIAL_PACKAGE = toString cfg.initialPackage;
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
         UMask = "0077";
-        ExecStart = "${cfg.launcherPackage}/bin/korri-bundle-select initialize ${cfg.initialPackage}";
+        ExecStart = "${cfg.launcherPackage}/bin/korri-bundle-select initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}";
       };
     };
   };

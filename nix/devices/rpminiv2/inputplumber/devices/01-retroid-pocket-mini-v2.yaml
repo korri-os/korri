@@ -4,11 +4,8 @@ kind: CompositeDevice
 name: Retroid Pocket Mini V2 Layout
 
 matches:
-  - udev:
-      sys_path: /sys/firmware/devicetree/base
-      attributes:
-        - name: model
-          value: Retroid Pocket Mini V2
+  - dmi_data:
+      product_name: Retroid Pocket Mini V2
 
 maximum_sources: 1
 
