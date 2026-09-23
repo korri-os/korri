@@ -19,9 +19,12 @@ let
       "@sway@" = toString pkgs.sway;
     }
   );
-  rulesFile = pkgs.writeText "99-z-korri-sunshine-input.rules" (
-    builtins.readFile ./99-z-korri-sunshine-input.rules
-  );
+  rulesPackage = pkgs.writeTextFile {
+    name = "korri-sunshine-input-rules";
+    destination = "/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
+    text = builtins.readFile ./99-z-korri-sunshine-input.rules;
+  };
+  rulesFile = "${rulesPackage}/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
   setupPackage = pkgs.writeShellScriptBin "korri-sunshine-input-seat-setup" (
     substitute ./input-seat-setup.sh {
       "@coreutils@" = toString pkgs.coreutils;
@@ -52,7 +55,7 @@ in
     input-seat-receiver = "${inputdPackage}/bin/korri-input-seat-receiver";
     runtime = "${runtimePackage}/bin/korri-sunshine-run";
     setup = "${setupPackage}/bin/korri-sunshine-input-seat-setup";
-    input-rules = toString rulesFile;
+    input-rules = rulesFile;
   };
   services = {
     korri-sunshine = unit "korri-sunshine.service" ./korri-sunshine.service {
