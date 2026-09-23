@@ -113,7 +113,9 @@
         sunshineV4l2m2mPackage =
           if system == "aarch64-linux" then
             let
-              ffmpegArm = pkgs.callPackage ./services/sunshine/ffmpeg-rkmpp-static.nix { };
+              ffmpegArm = pkgs.callPackage ./services/sunshine/ffmpeg-rkmpp-static.nix {
+                rockchipMpp = pkgs.rockchip-mpp;
+              };
             in
             pkgs.callPackage ./services/sunshine/package.nix {
               sunshine = pkgs.sunshine;
