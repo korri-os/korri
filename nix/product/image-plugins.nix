@@ -6,7 +6,9 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   selection = import ./plugin-selection.nix {
-    plugins = plugins.packages.${system};
+    # Use the publisher's actual producer with this exact Korri builder.
+    # Source-only input avoids a Korri -> publisher -> Korri flake cycle.
+    plugins = (import (plugins.outPath + "/nix") { inherit korri; }).packages.${system};
   };
   seeded = import ../../services/korrid/plugin-host/image-seed.nix {
     inherit pkgs;

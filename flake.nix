@@ -5,7 +5,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     inputplumber-nixpkgs.url = "github:NixOS/nixpkgs/9a37a7b2ae651b6182ef08d0d446a964339bcdfe";
     flake-utils.url = "github:numtide/flake-utils";
-    plugins.url = "github:korri-os/plugins";
+    # The publisher imports Korri for its builder. Read its source without
+    # evaluating its flake here, so the image does not create a flake cycle.
+    plugins = {
+      url = "github:korri-os/plugins";
+      flake = false;
+    };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -247,6 +252,7 @@
             };
             korri-product-image-plugins = import ./nix/product/image-plugins-check.nix {
               inherit pkgs plugins;
+              korri = self;
               devices = { inherit rg353m rgds r36tmax rpminiv2 odin2portal; };
             };
             korri-device-cache = import ./nix/device-cache/module-check.nix {

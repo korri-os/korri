@@ -1,12 +1,14 @@
 {
   pkgs,
   plugins,
+  korri,
   devices,
 }:
 let
   lib = pkgs.lib;
+  published = (import (plugins.outPath + "/nix") { inherit korri; }).packages.aarch64-linux;
   selected = import ./plugin-selection.nix {
-    plugins = plugins.packages.aarch64-linux;
+    plugins = published;
   };
   names = [ "rg353m" "rgds" "r36tmax" "rpminiv2" "odin2portal" ];
   exactImage = name:
@@ -24,8 +26,8 @@ let
 in
 assert lib.all exactImage names;
 assert recoveryWithoutDefaults;
-assert !(lib.elem (toString plugins.packages.aarch64-linux.korri-plugin-sunshine) (map toString selected.r36tmax));
-assert lib.all (name: lib.elem (toString plugins.packages.aarch64-linux.korri-plugin-sunshine) (map toString selected.${name}))
+assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
+assert lib.all (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))
   [ "rg353m" "rgds" "rpminiv2" "odin2portal" ];
 pkgs.runCommand "korri-product-image-plugins-check" { } ''
   touch "$out"
