@@ -481,6 +481,8 @@ assert
   == ''["ws://127.0.0.1:7447"]'';
 assert builtins.elem "korri-bundle-selector.service" bundledService.requires;
 assert builtins.elem "korri-bundle-selector.service" bundledService.after;
+assert builtins.elem "korri-bundle-selector.service" bundled.config.systemd.services.korrid-identity.requires;
+assert builtins.elem "korri-bundle-selector.service" bundled.config.systemd.services.korrid-identity.after;
 assert bundledService.environment.KORRI_BUNDLE_ACTIVE == "/nix/var/nix/gcroots/korri-bundle/active";
 assert
   bundled.config.systemd.services.korrid-identity.environment.KORRI_BUNDLE_ACTIVE

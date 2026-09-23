@@ -694,6 +694,8 @@ in
       description = "Prepare the private korrid device identity";
       before = [ "korrid.service" ];
       requiredBy = [ "korrid.service" ];
+      requires = lib.optional bundleCfg.enable "korri-bundle-selector.service";
+      after = lib.optional bundleCfg.enable "korri-bundle-selector.service";
       environment = {
         KORRID_PRIVATE_STATE_ROOT = cfg.privateStateRoot;
       }
