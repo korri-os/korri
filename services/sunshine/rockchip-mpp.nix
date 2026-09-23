@@ -21,6 +21,9 @@ stdenv.mkDerivation {
   cmakeFlags = [
     (lib.cmakeBool "BUILD_TEST" false)
     (lib.cmakeBool "BUILD_SHARED_LIBS" true)
+    # MPP's .pc template prefixes these paths itself. Keep them relative.
+    "-DCMAKE_INSTALL_LIBDIR=lib"
+    "-DCMAKE_INSTALL_INCLUDEDIR=include"
   ];
 
   meta = {

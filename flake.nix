@@ -220,7 +220,6 @@
           rg35xxsp-uboot = rg35xxsp.uboot;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          korri-portal = import ./clients/portal/package.nix { inherit pkgs; };
           korri-chromium-aarch64 = import ./clients/linux/chromium/cross.nix { inherit pkgs; };
           rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernelCross;

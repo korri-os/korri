@@ -36,6 +36,8 @@ let
         ../bun.lock
         ../../../surfaces/shift/package.json
         ../../../surfaces/shift/bun.lock
+        ../../../surfaces/pico/package.json
+        ../../../surfaces/pico/bun.lock
         ../../../packages/intrinsic-design/package.json
       ];
     };
@@ -55,15 +57,22 @@ let
           bun install --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
         )
       done
+      (
+        cd surfaces/pico
+        # Pico is built by Vite; do not fetch its Caliper-only dev dependencies.
+        bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
+      )
       # Bun's local-file install must resolve to the build's source, not to a
       # temporary dependency-fetch directory or a stale copy in this output.
-      rm -rf surfaces/shift/node_modules/@korri/intrinsic-design
-      ln -s ../../../../packages/intrinsic-design surfaces/shift/node_modules/@korri/intrinsic-design
+      for surface in shift pico; do
+        rm -rf "surfaces/$surface/node_modules/@korri/intrinsic-design"
+        ln -s ../../../../packages/intrinsic-design "surfaces/$surface/node_modules/@korri/intrinsic-design"
+      done
       runHook postBuild
     '';
     installPhase = ''
       runHook preInstall
-      for project in surfaces/shift clients/portal; do
+      for project in surfaces/shift surfaces/pico clients/portal; do
         mkdir -p "$out/$project"
         cp -R "$project/node_modules" "$out/$project/"
       done
@@ -71,7 +80,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-lLSFbrmwTZJ2RYM0wNlpjVDq6XWmw7Tsp0l8qDhgSeI=";
+    outputHash = "sha256-X27Kn+fCXY70QDGVjmgKFLYnZ06CbH2//2rd6zlqSLw=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -91,7 +100,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME"
-    for project in surfaces/shift clients/portal; do
+    for project in surfaces/shift surfaces/pico clients/portal; do
       cp -R "${dependencies}/$project/node_modules" "$project/"
       chmod -R u+w "$project/node_modules"
     done
