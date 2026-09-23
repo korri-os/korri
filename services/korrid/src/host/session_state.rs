@@ -2572,7 +2572,7 @@ mod tests {
             {"id":3,"pid":9100,"focused":false},
             {"id":4,"pid":9100,"focused":false}
         ]}"#
-            .into();
+        .into();
         drop(control);
 
         let recovered = resuming_control(root.path(), backend, compositor);

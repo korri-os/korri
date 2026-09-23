@@ -477,10 +477,7 @@ fn verify_revocation(
     Ok(())
 }
 
-async fn owner_was_published(
-    identity: &DeviceIdentity,
-    event_json: &str,
-) -> Result<bool, String> {
+async fn owner_was_published(identity: &DeviceIdentity, event_json: &str) -> Result<bool, String> {
     let Some(relays) = relays_for(identity)? else {
         return Ok(false);
     };
