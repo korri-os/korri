@@ -130,7 +130,7 @@ let
       && contains "SOCK_SEQPACKET" readme
       && contains "Sunshine-source transport check" readme
       && contains "korri-input-seat-receiver" readme
-      && contains "services.korriLinuxHost.sunshine.inputSeats.enable" readme
+      && contains "approved Sunshine plugin starts the input-seat receiver" readme
       && contains "remains inert" readme
       && contains "Physical device acceptance remains separate" readme
     ))

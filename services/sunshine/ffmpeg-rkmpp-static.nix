@@ -12,6 +12,9 @@
 
 let
   approved = import ./approved-patches.nix;
+  v4l2m2mPatchesApproved = builtins.all (
+    record: builtins.hashFile "sha256" record.path == record.sha256
+  ) approved.v4l2m2mPatches;
   # Sunshine links against a static FFmpeg whose ABI is reviewed in
   # approved-patches.nix. Build the RKMPP encoder against that exact commit
   # so the nvenc/vaapi/x86 paths keep the same libavcodec contract.
@@ -22,6 +25,7 @@ let
     hash = approved.reviewedFfmpegSourceHash;
   };
 in
+assert v4l2m2mPatchesApproved;
 stdenv.mkDerivation {
   pname = "sunshine-ffmpeg-rkmpp";
   version = "8.0-${builtins.substring 0 7 approved.reviewedFfmpegCommit}";
@@ -29,8 +33,8 @@ stdenv.mkDerivation {
   src = fetchFromGitHub {
     owner = "LizardByte";
     repo = "build-deps";
-    rev = "2851db1";
-    hash = "sha256-ojpcgvn2DItXQp1lqrL4eVdv0MXwcAo0eGfcqzZQvz4=";
+    rev = approved.reviewedBuildDepsCommit;
+    hash = approved.reviewedBuildDepsSourceHash;
   };
 
   nativeBuildInputs = [
@@ -56,6 +60,9 @@ stdenv.mkDerivation {
       < ${./patches/ffmpeg/0001-add-rkmpp-h264-encoder.patch}
     patch -d third-party/FFmpeg/FFmpeg -p1 \
       < ${./patches/ffmpeg/0002-adapt-rkmpp-to-reviewed-ffmpeg.patch}
+    ${lib.concatMapStringsSep "\n" (record: ''
+      patch -d third-party/FFmpeg/FFmpeg -p1 < ${record.path}
+    '') approved.v4l2m2mPatches}
     # APPLY_GIT_PATCH uses `git apply`, which silently no-ops outside a git
     # checkout. Apply Sunshine's CBS patches with plain patch instead.
     for cbsPatch in patches/FFmpeg/FFmpeg/cbs/*.patch; do
@@ -64,7 +71,9 @@ stdenv.mkDerivation {
 
     substituteInPlace cmake/ffmpeg/ffmpeg.cmake \
       --replace-fail '        --enable-gpl' \
-                     '        --enable-gpl;--enable-version3;--enable-libdrm;--enable-rkmpp;--enable-encoder=h264_rkmpp'
+                     '        --enable-gpl;--enable-version3;--enable-libdrm;--enable-rkmpp;--enable-encoder=h264_rkmpp' \
+      --replace-fail '--enable-encoder=h264_v4l2m2m' \
+                     '--enable-encoder=h264_v4l2m2m,hevc_v4l2m2m'
   '';
 
   cmakeFlags = [
@@ -89,10 +98,21 @@ stdenv.mkDerivation {
     test -f "$out/lib/libswscale.a"
     test -f "$out/lib/libcbs.a"
     grep -F AV_HWDEVICE_TYPE_RKMPP "$out/include/libavutil/hwcontext.h"
+    # One static archive must contain both encoder families. Separate FFmpeg
+    # closures cannot supply both to the same Sunshine executable.
+    nm -g "$out/lib/libavcodec.a" | grep -F 'ff_h264_rkmpp_encoder' >/dev/null
+    nm -g "$out/lib/libavcodec.a" | grep -F 'ff_h264_v4l2m2m_encoder' >/dev/null
   '';
 
+  passthru = {
+    buildDepsRev = approved.reviewedBuildDepsCommit;
+    ffmpegCommit = approved.reviewedFfmpegCommit;
+    libavcodecVersion = approved.reviewedLibavcodecVersion;
+    patchSetSha256 = approved.v4l2m2mPatchSetSha256;
+  };
+
   meta = {
-    description = "Sunshine-compatible static FFmpeg with RKMPP H.264 encoding";
+    description = "Sunshine-compatible static FFmpeg with RKMPP and V4L2 M2M encoding";
     homepage = "https://github.com/LizardByte/build-deps";
     license = lib.licenses.gpl3Plus;
     platforms = [ "aarch64-linux" ];

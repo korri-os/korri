@@ -1,0 +1,18 @@
+[Unit]
+Description=Private Korri Sunshine certificate control socket
+Before=korri-sunshine.service
+
+[Socket]
+Accept=false
+ListenSequentialPacket=/run/korri-certificate-control/control.sock
+FileDescriptorName=korri-certificate-control
+SocketUser=root
+SocketGroup=korrid
+SocketMode=0660
+DirectoryMode=0751
+RemoveOnStop=true
+NonBlocking=true
+Service=korri-sunshine.service
+
+[Install]
+WantedBy=sockets.target

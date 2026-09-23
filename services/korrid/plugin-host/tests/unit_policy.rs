@@ -175,7 +175,7 @@ fn explicit_address_family_request_is_not_widened_by_the_host_policy() {
 #[test]
 fn real_seat_receiver_runtime_directory_and_mode_survive_the_host_policy() {
     let seat = report(include_str!(
-        "fixtures/streaming-host/korri-input-seat-receiver.service"
+        "fixtures/streaming-host/korri-sunshine-input-seat-receiver.service"
     ));
     let policy = unit::hardening(&seat);
     assert!(policy.contains(
@@ -200,7 +200,7 @@ fn explicit_closed_device_policy_is_not_widened_by_private_devices_false() {
 
 #[test]
 fn current_kms_streaming_request_widens_device_policy_only_for_that_unit() {
-    let streaming = report(include_str!("fixtures/streaming-host/sunshine.service"));
+    let streaming = report(include_str!("fixtures/streaming-host/korri-sunshine.service"));
     let policy = unit::hardening(&streaming);
     assert!(policy.contains("DevicePolicy=auto"));
     assert!(policy.contains("NoNewPrivileges=no"));
@@ -264,6 +264,7 @@ fn assert_inactive_purge(native_unit_count: usize) {
     let units = unit::Units {
         systemctl,
         unit_directory,
+        ownership_directory: temporary.path().join("unit-ownership"),
         firewall: korri_plugin_host::firewall::Firewall {
             ipv4: firewall.clone(),
             ipv6: firewall,

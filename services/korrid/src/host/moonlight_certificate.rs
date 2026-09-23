@@ -15,10 +15,10 @@ use std::{
 const MAX_FRAME_BYTES: usize = 16_384;
 const MAX_CERTIFICATE_BYTES: usize = 12_288;
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(1_500);
-const SOCKET_ENV: &str = "KORRID_SUNSHINE_CERTIFICATE_CONTROL_SOCKET";
-const SOCKET_GID_ENV: &str = "KORRID_SUNSHINE_CERTIFICATE_CONTROL_GID";
-const SOCKET_PEER_UID_ENV: &str = "KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_UID";
-const SOCKET_PEER_GID_ENV: &str = "KORRID_SUNSHINE_CERTIFICATE_CONTROL_PEER_GID";
+const SOCKET_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET";
+const SOCKET_GID_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_GID";
+const SOCKET_PEER_UID_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_UID";
+const SOCKET_PEER_GID_ENV: &str = "KORRID_STREAM_CERTIFICATE_CONTROL_PEER_GID";
 const SOCKET_MODE: u32 = 0o660;
 
 pub trait MoonlightCertificateAdapter: Send + Sync {
@@ -87,22 +87,22 @@ impl SocketCertificateAdapter {
             .map(PathBuf::from)
             .ok_or_else(|| {
                 failure(
-                    "SunshineCertificateControlUnavailable",
-                    "Sunshine certificate control socket is not configured",
+                    "StreamCertificateControlUnavailable",
+                    "Stream certificate control socket is not configured",
                 )
             })?;
         let expected_path_gid = std::env::var(SOCKET_GID_ENV)
             .map_err(|_| {
                 failure(
-                    "SunshineCertificateControlInvalid",
-                    "Sunshine certificate control socket group is not configured",
+                    "StreamCertificateControlInvalid",
+                    "Stream certificate control socket group is not configured",
                 )
             })?
             .parse::<u32>()
             .map_err(|_| {
                 failure(
-                    "SunshineCertificateControlInvalid",
-                    "Sunshine certificate control socket group is invalid",
+                    "StreamCertificateControlInvalid",
+                    "Stream certificate control socket group is invalid",
                 )
             })?;
         let expected_peer_uid = required_id_env(SOCKET_PEER_UID_ENV, "peer user")?;
@@ -151,8 +151,8 @@ impl SocketCertificateAdapter {
         .map_err(socket_failure)?;
         let decoded: SocketResponse = serde_json::from_slice(&response).map_err(|_| {
             failure(
-                "SunshineCertificateControlProtocol",
-                "Sunshine certificate control returned an invalid response",
+                "StreamCertificateControlProtocol",
+                "Stream certificate control returned an invalid response",
             )
         })?;
         decoded.into_result(request.operation)
@@ -174,8 +174,8 @@ impl SocketCertificateAdapter {
         let metadata = fs::symlink_metadata(&self.path).map_err(|error| {
             if error.kind() == io::ErrorKind::NotFound {
                 failure(
-                    "SunshineCertificateControlUnavailable",
-                    "Sunshine certificate control socket is unavailable",
+                    "StreamCertificateControlUnavailable",
+                    "Stream certificate control socket is unavailable",
                 )
             } else {
                 path_failure()
@@ -206,15 +206,15 @@ fn required_id_env(name: &str, label: &str) -> Result<u32, RpcFailure> {
     std::env::var(name)
         .map_err(|_| {
             failure(
-                "SunshineCertificateControlInvalid",
-                &format!("Sunshine certificate control {label} is not configured"),
+                "StreamCertificateControlInvalid",
+                &format!("Stream certificate control {label} is not configured"),
             )
         })?
         .parse::<u32>()
         .map_err(|_| {
             failure(
-                "SunshineCertificateControlInvalid",
-                &format!("Sunshine certificate control {label} is invalid"),
+                "StreamCertificateControlInvalid",
+                &format!("Stream certificate control {label} is invalid"),
             )
         })
 }
@@ -368,14 +368,14 @@ impl SocketRequest<'_> {
     fn encode(&self) -> Result<EncodedSocketRequest, RpcFailure> {
         let bytes = serde_json::to_vec(self).map_err(|_| {
             failure(
-                "SunshineCertificateControlInvalid",
-                "Sunshine certificate control request could not be encoded",
+                "StreamCertificateControlInvalid",
+                "Stream certificate control request could not be encoded",
             )
         })?;
         if bytes.len() > MAX_FRAME_BYTES {
             return Err(failure(
-                "SunshineCertificateControlInvalid",
-                "Sunshine certificate control request is too large",
+                "StreamCertificateControlInvalid",
+                "Stream certificate control request is too large",
             ));
         }
         Ok(EncodedSocketRequest {
@@ -416,7 +416,7 @@ impl SocketResponse {
                     && self.server_certificate.is_none() =>
             {
                 let code = self.code.ok_or_else(protocol_failure)?;
-                Err(map_sunshine_error(&code))
+                Err(map_stream_error(&code))
             }
             "ok" if self.code.is_none() => match operation {
                 SocketOperation::Attest => {
@@ -442,22 +442,22 @@ impl SocketResponse {
     }
 }
 
-fn map_sunshine_error(code: &str) -> RpcFailure {
+fn map_stream_error(code: &str) -> RpcFailure {
     match code {
-        "HostMismatch" => failure("HostMismatch", "Sunshine host UUID does not match"),
+        "HostMismatch" => failure("HostMismatch", "Stream host UUID does not match"),
         "InvalidCertificate" => invalid_certificate(),
         "PersistenceFailed" => failure(
-            "SunshineCertificateControlPersistenceFailed",
-            "Sunshine could not persist certificate control state",
+            "StreamCertificateControlPersistenceFailed",
+            "Stream host could not persist certificate control state",
         ),
         "StateIntegrityFailed" => failure(
-            "SunshineCertificateControlStateIntegrityFailed",
-            "Sunshine certificate control state integrity failed",
+            "StreamCertificateControlStateIntegrityFailed",
+            "Stream certificate control state integrity failed",
         ),
         "InvalidFrame" | "UnknownOperation" | "ResponseTooLarge" => protocol_failure(),
         "InvalidState" | "InternalError" => failure(
-            "SunshineCertificateControlFailed",
-            "Sunshine certificate control request failed",
+            "StreamCertificateControlFailed",
+            "Stream certificate control request failed",
         ),
         _ => protocol_failure(),
     }
@@ -711,27 +711,27 @@ fn set_socket_timeouts(fd: libc::c_int, timeout: Duration) -> io::Result<()> {
 
 fn socket_failure(error: io::Error) -> RpcFailure {
     let code = match error.kind() {
-        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => "SunshineCertificateControlTimeout",
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => "StreamCertificateControlTimeout",
         io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused => {
-            "SunshineCertificateControlUnavailable"
+            "StreamCertificateControlUnavailable"
         }
-        io::ErrorKind::PermissionDenied => "SunshineCertificateControlInvalid",
-        _ => "SunshineCertificateControlFailed",
+        io::ErrorKind::PermissionDenied => "StreamCertificateControlInvalid",
+        _ => "StreamCertificateControlFailed",
     };
-    failure(code, "Sunshine certificate control request failed")
+    failure(code, "Stream certificate control request failed")
 }
 
 fn path_failure() -> RpcFailure {
     failure(
-        "SunshineCertificateControlInvalid",
-        "Sunshine certificate control socket failed validation",
+        "StreamCertificateControlInvalid",
+        "Stream certificate control socket failed validation",
     )
 }
 
 fn protocol_failure() -> RpcFailure {
     failure(
-        "SunshineCertificateControlProtocol",
-        "Sunshine certificate control returned an invalid response",
+        "StreamCertificateControlProtocol",
+        "Stream certificate control returned an invalid response",
     )
 }
 
@@ -800,10 +800,10 @@ mod tests {
         let error = encode_revoke_request(host, &oversized)
             .err()
             .expect("one extra encoded byte must fail");
-        assert_eq!(error.code, "SunshineCertificateControlInvalid");
+        assert_eq!(error.code, "StreamCertificateControlInvalid");
         assert_eq!(
             error.message,
-            "Sunshine certificate control request is too large"
+            "Stream certificate control request is too large"
         );
         assert!(!error.message.contains(host));
         assert!(!error.message.contains(pem));
@@ -1004,7 +1004,7 @@ mod tests {
         // be distinguished from a slow one here. That case is bounded by
         // the connect timeout and covered by the timeout test above.
         let unavailable = UnavailableCertificateAdapter {
-            failure: failure("SunshineCertificateControlUnavailable", "not configured"),
+            failure: failure("StreamCertificateControlUnavailable", "not configured"),
         };
         assert!(!unavailable.available());
     }
@@ -1040,7 +1040,7 @@ mod tests {
             0o660,
         );
         let error = adapter.attest("sunshine-host").unwrap_err();
-        assert_eq!(error.code, "SunshineCertificateControlInvalid");
+        assert_eq!(error.code, "StreamCertificateControlInvalid");
         server.join().unwrap();
     }
 
@@ -1058,7 +1058,7 @@ mod tests {
         );
         assert_eq!(
             missing.attest("sunshine-host").unwrap_err().code,
-            "SunshineCertificateControlUnavailable"
+            "StreamCertificateControlUnavailable"
         );
 
         let path = root.path().join("wrong-mode.sock");
@@ -1074,7 +1074,7 @@ mod tests {
         );
         assert_eq!(
             invalid.attest("sunshine-host").unwrap_err().code,
-            "SunshineCertificateControlInvalid"
+            "StreamCertificateControlInvalid"
         );
     }
 
@@ -1117,7 +1117,7 @@ mod tests {
         );
         adapter.timeout = Duration::from_millis(20);
         let error = adapter.attest("sunshine-host").unwrap_err();
-        assert_eq!(error.code, "SunshineCertificateControlTimeout");
+        assert_eq!(error.code, "StreamCertificateControlTimeout");
         assert!(!error.message.contains("sunshine-host"));
         server.join().unwrap();
     }
@@ -1185,10 +1185,10 @@ mod tests {
         let secret = "not-json-with-client-certificate-body";
         let error =
             socket_adapter_error_for_reply(InvalidSocketReply::Bytes(secret.as_bytes().to_vec()));
-        assert_eq!(error.code, "SunshineCertificateControlProtocol");
+        assert_eq!(error.code, "StreamCertificateControlProtocol");
         assert_eq!(
             error.message,
-            "Sunshine certificate control returned an invalid response"
+            "Stream certificate control returned an invalid response"
         );
         assert!(!error.message.contains(secret));
         assert!(!error.message.contains("sunshine-host"));
@@ -1197,8 +1197,8 @@ mod tests {
     #[test]
     fn socket_adapter_rejects_peer_close_without_exposing_request_material() {
         let error = socket_adapter_error_for_reply(InvalidSocketReply::Close);
-        assert_eq!(error.code, "SunshineCertificateControlFailed");
-        assert_eq!(error.message, "Sunshine certificate control request failed");
+        assert_eq!(error.code, "StreamCertificateControlFailed");
+        assert_eq!(error.message, "Stream certificate control request failed");
         assert!(!error.message.contains("sunshine-host"));
     }
 
@@ -1206,8 +1206,8 @@ mod tests {
     fn socket_adapter_rejects_an_oversized_seqpacket_via_msg_trunc() {
         let oversized = vec![b'x'; MAX_FRAME_BYTES + 1];
         let error = socket_adapter_error_for_reply(InvalidSocketReply::Bytes(oversized));
-        assert_eq!(error.code, "SunshineCertificateControlFailed");
-        assert_eq!(error.message, "Sunshine certificate control request failed");
+        assert_eq!(error.code, "StreamCertificateControlFailed");
+        assert_eq!(error.message, "Stream certificate control request failed");
         assert!(!error.message.contains("sunshine-host"));
     }
 
@@ -1238,7 +1238,7 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("unknown peer error must fail"),
         };
-        assert_eq!(error.code, "SunshineCertificateControlProtocol");
+        assert_eq!(error.code, "StreamCertificateControlProtocol");
         assert!(!error.message.contains("PeerControlledCode"));
     }
 }

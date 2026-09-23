@@ -1,9 +1,6 @@
-# Temporary native streaming composition. The shared host substrate is also
-# used independently by the product; Sunshine-specific authority stays here.
+# Product-agnostic Linux compositor, input, audio, and korrid substrate.
+# Removable integrations such as Sunshine ship through the plugin host.
 { korri }:
 {
-  imports = [
-    (import ./korri-linux-host-core.nix { inherit korri; })
-    (import ./korri-streaming-host.nix { inherit korri; })
-  ];
+  imports = [ (import ./korri-linux-host-core.nix { inherit korri; }) ];
 }

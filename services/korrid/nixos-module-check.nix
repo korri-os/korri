@@ -36,7 +36,7 @@ let
       localSignerUid = 978;
       localSignerGid = 978;
       inherit deviceConfig;
-      sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
+      streamPrivateStateRoot = "/home/korri/.config/sunshine";
       certificateControlDirectory = lib.mkDefault "/run/korri-certificate-control";
       relays = [ "wss://relay.example.com/" ];
       nativePeers = [
@@ -73,7 +73,7 @@ let
   pluginFree = evaluate {
     services.korridLinuxDevice = {
       enable = true;
-      sunshinePrivateStateRoot = lib.mkForce null;
+      streamPrivateStateRoot = lib.mkForce null;
       certificateControlDirectory = lib.mkForce null;
     };
   };
@@ -306,7 +306,7 @@ let
 in
 assert allAssertionsPass enabled;
 assert allAssertionsPass pluginFree;
-assert !(pluginFreeService.environment ? KORRID_SUNSHINE_PRIVATE_STATE_ROOT);
+assert !(pluginFreeService.environment ? KORRID_STREAM_PRIVATE_STATE_ROOT);
 assert !(pluginFreeService.environment ? KORRID_CERTIFICATE_CONTROL_DIRECTORY);
 assert
   !(builtins.elem "/home/korri/.config/sunshine" pluginFreeService.serviceConfig.InaccessiblePaths);
@@ -342,7 +342,7 @@ assert
     KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE = "/run/korri-local-signer/public/person.pub";
     KORRID_RELAYS = ''["wss://relay.example.com"]'';
     KORRID_STORAGE_ROOT = "/var/lib/korri";
-    KORRID_SUNSHINE_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
+    KORRID_STREAM_PRIVATE_STATE_ROOT = "/home/korri/.config/sunshine";
     KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
     KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
     KORRID_UPSTREAMS = ''[{"baseUrl":"http://zao:43117","devicePublicKey":"${peerPublicKey}","kind":"native","label":"zao","moonlightAddress":"zao:47989"}]'';
@@ -357,7 +357,7 @@ assert service.environment.KORRID_ADDRESS == "127.0.0.1:43117";
 assert service.environment.KORRID_PRIVATE_STATE_ROOT == "/var/lib/korrid";
 assert service.environment.KORRID_LOCAL_SIGNER_SOCKET == "/run/korri-local-signer/signer.sock";
 assert service.environment.KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE == "/run/korri-local-signer/public/person.pub";
-assert service.environment.KORRID_SUNSHINE_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
+assert service.environment.KORRID_STREAM_PRIVATE_STATE_ROOT == "/home/korri/.config/sunshine";
 assert service.environment.KORRID_CONTROL_SOCKET == "/run/korrid-control/control.sock";
 assert service.environment.KORRID_CONTROL_DIRECTORY == "/run/korrid-control";
 assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
@@ -510,7 +510,7 @@ assert hasFailedAssertion "service UIDs must be distinct" sameUid;
 assert hasFailedAssertion "runtime user must not hold raw input" broadRuntime;
 assert hasFailedAssertion "korrid, or local-signer service groups" certificateControlRuntime;
 assert hasFailedAssertion
-  "korrid and local-signer private state roots and optional sunshine private state root must be normalized absolute paths"
+  "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths"
   invalidPrivatePath;
 assert hasFailedAssertion "controlSocket and its directory must be normalized absolute paths"
   invalidControlPath;

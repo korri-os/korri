@@ -23,3 +23,7 @@ Turn RG35XXSP from a console bring-up image into a normal Korri product device w
 - [ ] The device and workflow checks cover hardware facts, product-module import, and delivery. They do not widen the shared check's exclusions.
 - [ ] The image remains a development image until the full physical acceptance list in the canonical spec passes. Build, evaluation, and delivery alone do not grant support.
 - [ ] No firmware partition, forbidden internal-storage partition, migration path, or compatibility fallback is added.
+
+## Hardware gate, 2026-09-22
+
+The ROCKNIX-derived Linux 7.2 kernel files are present under `nix/devices/rg35xxsp/kernel/`, but this repository has no observed DRM node, active panel connector, controller mapping, Wi-Fi association, or audio result from an RG35XXSP. No USB serial device appeared at `/dev/ttyACM*` or `/dev/ttyUSB*` on the current build host. Do not guess display or input facts to force product evaluation, or publish an image as a supported product without the physical acceptance pass.

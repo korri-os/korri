@@ -62,9 +62,9 @@ let
   };
   dependentClock = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeTextDir "plugin.ts" "export const name = 'dependent-clock'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'dependent-clock'; export const services = ['dependent-clock'];";
     plugin = _: {
-      services.clock.serviceConfig = {
+      services."dependent-clock".serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
       };
@@ -240,14 +240,31 @@ let
       };
     };
   };
+  multipleBroken = mkPlugin {
+    publisher.namespace = "@example";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'multiple'; export const services = ['first', 'second'];";
+    plugin = _: {
+      services.first.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+      };
+      services.second.serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.coreutils}/bin/false";
+      };
+    };
+  };
   runtimeSeat = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'runtime-seat'; export const services = ['seat'];";
     plugin = _: {
       services.seat.serviceConfig = {
         Type = "exec";
+        ExecStartPre = "+${pkgs.coreutils}/bin/touch /etc/korri-plugin-seat-marker";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
+        ExecStopPost = "+${pkgs.coreutils}/bin/rm /etc/korri-plugin-seat-marker";
         User = "root";
+        ProtectSystem = "strict";
         RuntimeDirectory = "korri-input-seat";
         RuntimeDirectoryMode = "0711";
         RestrictAddressFamilies = [ "AF_UNIX" ];
@@ -319,6 +336,7 @@ let
           empty
           requiredLifecycle
           multiple
+          multipleBroken
           runtimeSeat
           emptyClock
           gameRuntimePackage
@@ -373,6 +391,7 @@ pkgs.testers.runNixOSTest {
           empty
           requiredLifecycle
           multiple
+          multipleBroken
           runtimeSeat
           emptyClock
           gameRuntimePackage
@@ -484,7 +503,7 @@ pkgs.testers.runNixOSTest {
           localSignerGid = 978;
           deviceConfig = productDeviceConfig;
           storageRoot = "/var/lib/korri-brain-smoke";
-          sunshinePrivateStateRoot = "/var/lib/korri-sunshine-private";
+          streamPrivateStateRoot = "/var/lib/korri-sunshine-private";
           relays = [ "ws://127.0.0.1:49000" ];
         };
         systemd.tmpfiles.rules = [
@@ -574,6 +593,23 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("korrid.service")
     machine.wait_for_open_port(49117)
 
+    # The SD builder creates private receipt files as an unprivileged build
+    # user. Boot tmpfiles must give them root ownership before restore reads
+    # them, without changing their private modes or following GC-root links.
+    machine.succeed("install -d -m 0700 /var/lib/korri-plugin-host/image-owner-check /nix/var/nix/gcroots/korri-plugin-host/image-owner-check")
+    machine.succeed("install -m 0600 /dev/null /var/lib/korri-plugin-host/image-owner-check/selection.json")
+    machine.succeed("chown -R 12345:12345 /var/lib/korri-plugin-host/image-owner-check /nix/var/nix/gcroots/korri-plugin-host/image-owner-check")
+    machine.succeed("install -m 0600 /dev/null /tmp/korri-plugin-image-nofollow; chown 12345:12345 /tmp/korri-plugin-image-nofollow")
+    machine.succeed("ln -s /tmp/korri-plugin-image-nofollow /nix/var/nix/gcroots/korri-plugin-host/image-owner-check/active")
+    machine.succeed("systemd-tmpfiles --create --prefix=/var/lib/korri-plugin-host")
+    machine.succeed("systemd-tmpfiles --create --prefix=/nix/var/nix/gcroots/korri-plugin-host")
+    for path in ["/var/lib/korri-plugin-host/image-owner-check", "/var/lib/korri-plugin-host/image-owner-check/selection.json", "/nix/var/nix/gcroots/korri-plugin-host/image-owner-check"]:
+        assert machine.succeed("stat -c %u:%g " + path).strip() == "0:0"
+    assert machine.succeed("stat -c %a /var/lib/korri-plugin-host/image-owner-check/selection.json").strip() == "600"
+    assert machine.succeed("stat -c %u /tmp/korri-plugin-image-nofollow").strip() == "12345"
+    machine.succeed("rm /var/lib/korri-plugin-host/image-owner-check/selection.json /nix/var/nix/gcroots/korri-plugin-host/image-owner-check/active /tmp/korri-plugin-image-nofollow")
+    machine.succeed("rmdir /var/lib/korri-plugin-host/image-owner-check /nix/var/nix/gcroots/korri-plugin-host/image-owner-check")
+
     # Real first boot: the automatic owner is local, silent, and held by a
     # distinct service identity. No relay connection means there was no owner
     # publication, roster import, endpoint read, or federation join.
@@ -582,12 +618,12 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("id -u plugin-user").strip() == "1000"
     signer_pid = machine.succeed("systemctl show korri-local-signer.service -p MainPID --value").strip()
     korrid_pid = machine.succeed("systemctl show korrid.service -p MainPID --value").strip()
-    machine.succeed("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-local-signer/identity/person.key")
+    machine.succeed("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-local-signer/identity/active/person.key")
     machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korrid/identity/device.key")
     machine.fail("nsenter -t " + signer_pid + " -m -- runuser -u korri-local-signer -- test -r /var/lib/korri-brain-smoke/device.yaml")
     machine.succeed("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korrid/identity/device.key")
-    machine.fail("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korri-local-signer/identity/person.key")
-    machine.fail("runuser -u plugin-user -- test -r /var/lib/korri-local-signer/identity/person.key")
+    machine.fail("nsenter -t " + korrid_pid + " -m -- runuser -u korrid -- test -r /var/lib/korri-local-signer/identity/active/person.key")
+    machine.fail("runuser -u plugin-user -- test -r /var/lib/korri-local-signer/identity/active/person.key")
     socket_denial = machine.fail(
         "runuser -u plugin-user -- ${pkgs.python3}/bin/python -c "
         + shlex.quote("import socket; socket.socket(socket.AF_UNIX).connect('/run/korri-local-signer/signer.sock')")
@@ -602,18 +638,18 @@ pkgs.testers.runNixOSTest {
     assert owner_before["_tag"] == "Owned", owner_before
     assert machine.succeed("cat /run/korri-local-signer/public/person.pub").strip() == owner_before["ownerPublicKey"]
     assert machine.succeed("cat /run/korri-local-signer/expected-device-public-key").strip() == owner_before["devicePublicKey"]
-    assert machine.succeed("stat -c '%U:%G:%a' /var/lib/korri-local-signer/identity /var/lib/korri-local-signer/identity/person.key").splitlines() == ["korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:600"]
+    assert machine.succeed("stat -c '%U:%G:%a' /var/lib/korri-local-signer/identity /var/lib/korri-local-signer/identity/active /var/lib/korri-local-signer/identity/active/person.key").splitlines() == ["korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:700", "korri-local-signer:korri-local-signer:600"]
     assert machine.succeed("stat -c '%U:%G:%a' /run/korri-local-signer/expected-device-public-key /run/korri-local-signer/public/person.pub").splitlines() == ["root:root:400", "korri-local-signer:korrid:640"]
     machine.fail("test -e /var/lib/korrid/identity/nip46-client.key")
     machine.fail("test -e /var/lib/korrid/identity/nip46.connection.json")
-    person_before = machine.succeed("sha256sum /var/lib/korri-local-signer/identity/person.key").split()[0]
+    person_before = machine.succeed("sha256sum /var/lib/korri-local-signer/identity/active/person.key").split()[0]
     binding_before = machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0]
     machine.succeed("systemctl restart korri-local-signer.service")
     machine.wait_for_unit("korri-local-signer.service")
     machine.succeed("systemctl restart korrid.service")
     machine.wait_for_unit("korrid.service")
     machine.wait_for_open_port(49117)
-    assert machine.succeed("sha256sum /var/lib/korri-local-signer/identity/person.key").split()[0] == person_before
+    assert machine.succeed("sha256sum /var/lib/korri-local-signer/identity/active/person.key").split()[0] == person_before
     assert machine.succeed("sha256sum /var/lib/korrid/identity/owner.event.json").split()[0] == binding_before
     assert json.loads(machine.succeed("KORRID_PRIVATE_STATE_ROOT=/var/lib/korrid korrid identity status")) == owner_before
     machine.succeed("sleep 1")
@@ -647,8 +683,15 @@ pkgs.testers.runNixOSTest {
     def managed_name(report):
         return report["state_directory"].rsplit("/", 1)[-1]
 
+    def native_unit_names(report):
+        names = []
+        for declared, native in report["native_units"].items():
+            suffix = "." + native["kind"]
+            names.append(declared if declared.endswith(suffix) else declared + suffix)
+        return sorted(names)
+
     def assert_ports(report, enabled):
-        marker = report["unit"].removesuffix(".service")
+        marker = managed_name(report)
         expected = []
         if enabled:
             for protocol, field in [("tcp", "allowedTCPPorts"), ("udp", "allowedUDPPorts")]:
@@ -805,22 +848,60 @@ pkgs.testers.runNixOSTest {
     multiple = install("${multiple}")
     assert multiple["unit"] is None
     assert sorted(multiple["native_units"]) == ["first", "second"]
+    multiple_units = native_unit_names(multiple)
+    assert multiple_units == ["first.service", "second.service"]
+    machine.succeed("printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /etc/systemd/system/first.service; systemctl daemon-reload")
+    collision = machine.fail("korri-plugin enable @example:multiple 2>&1")
+    assert "first.service conflicts with an existing host unit" in collision, collision
+    for unit in multiple_units:
+        machine.fail("test -e /run/systemd/system/" + unit)
+    machine.succeed("rm /etc/systemd/system/first.service; systemctl daemon-reload")
+    machine.succeed("korri-plugin enable @example:multiple")
+    for unit in multiple_units:
+        machine.wait_for_unit(unit)
+        machine.succeed("test -f /run/systemd/system/" + unit)
+    machine.succeed("korri-plugin restore-all")
+    for unit in multiple_units:
+        machine.wait_for_unit(unit)
+    # A later host upgrade can shadow a still-owned runtime fragment. Recovery
+    # must refuse it before it starts or stops the host's unit under that name.
+    machine.succeed("printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /etc/systemd/system/first.service; systemctl daemon-reload")
+    assert machine.succeed("systemctl show first.service --property=FragmentPath --value").strip() == "/etc/systemd/system/first.service"
+    shadowed = machine.fail("korri-plugin restore-all 2>&1")
+    assert "first.service is shadowed by a host unit" in shadowed, shadowed
+    machine.succeed("rm /etc/systemd/system/first.service; systemctl daemon-reload")
+    machine.succeed("korri-plugin restore-all")
+    multiple_broken = inspect("${multipleBroken}")
+    failed_multiple_update = machine.fail(
+        "korri-plugin update @example:multiple http://cache:5000 ${multipleBroken} "
+        + multiple_broken["approval"]
+        + " 2>&1"
+    )
+    assert "activation" in failed_multiple_update or "active" in failed_multiple_update, failed_multiple_update
+    assert json.loads(machine.succeed("korri-plugin status @example:multiple"))["package"] == multiple["package"]
+    for unit in multiple_units:
+        machine.wait_for_unit(unit)
+    machine.succeed("korri-plugin disable @example:multiple")
+    for unit in multiple_units:
+        machine.fail("test -e /run/systemd/system/" + unit)
     machine.succeed("mkdir -p " + multiple["state_directory"] + "; touch " + multiple["state_directory"] + "/retained-data")
     machine.succeed("korri-plugin remove @example:multiple --purge")
     machine.fail("test -e " + multiple["state_directory"])
-    machine.fail("test -e /run/systemd/system/" + managed_name(multiple) + ".service")
 
     runtime_seat = install("${runtimeSeat}")
     seat_unit = next(iter(runtime_seat["native_units"].values()))
     assert seat_unit["runtime_directory"] == "korri-input-seat"
     assert seat_unit["runtime_directory_mode"] == "0711"
     assert seat_unit["address_families"] == ["AF_UNIX"]
+    assert "ExecStopPost=+" in runtime_seat["warning"]
     machine.succeed("korri-plugin enable @example:runtime-seat")
     machine.wait_for_unit(runtime_seat["unit"])
     assert machine.succeed("systemctl show " + runtime_seat["unit"] + " --property=RestrictAddressFamilies --value").strip() == "AF_UNIX"
     assert machine.succeed("systemctl show " + runtime_seat["unit"] + " --property=RuntimeDirectoryMode --value").strip() == "0711"
     assert machine.succeed("stat -c %a /run/korri-input-seat").strip() == "711"
+    machine.succeed("test -f /etc/korri-plugin-seat-marker")
     machine.succeed("korri-plugin disable @example:runtime-seat; korri-plugin remove @example:runtime-seat --purge")
+    machine.fail("test -e /etc/korri-plugin-seat-marker")
     machine.fail("test -e /run/korri-input-seat")
 
     # A self-contained game plugin is one independently managed selection.
@@ -1135,7 +1216,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemctl is-active " + unit)
     # Interrupt one selection while another remains enabled. One restore
     # repairs that receipt; the unrelated corrupt receipt is still reported.
-    clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + clock["unit"].removesuffix(".service")
+    clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(clock)
     machine.succeed("ln -s ${alternate} " + clock_root + "/pending; systemctl stop " + clock["unit"])
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     machine.succeed("systemctl is-active " + clock["unit"])
@@ -1146,12 +1227,12 @@ pkgs.testers.runNixOSTest {
     assert dependent_clock["id"] in [p["id"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))]
     # Corrupt one receipt. Its independently managed peer remains running.
     # The all-or-error registry snapshot still refuses malformed authority.
-    clock_receipt_path = "/var/lib/korri-plugin-host/" + clock["unit"].removesuffix(".service") + "/selection.json"
+    clock_receipt_path = "/var/lib/korri-plugin-host/" + managed_name(clock) + "/selection.json"
     clock_receipt = machine.succeed("cat " + clock_receipt_path)
     machine.succeed("printf broken > " + clock_receipt_path)
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     machine.succeed("systemctl is-active " + dependent_clock["unit"])
-    machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + dependent_clock["unit"].removesuffix(".service") + "/active")
+    machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + managed_name(dependent_clock) + "/active")
     machine.fail("korri-plugin enabled-packages")
     machine.succeed("printf %s " + shlex.quote(clock_receipt) + " > " + clock_receipt_path)
     machine.succeed("korri-plugin restore-all")
@@ -1329,18 +1410,24 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin remove @example:clock --purge")
     machine.fail("test -e " + clock["state_directory"])
     machine.fail("test -L " + clock["state_directory"])
-    machine.fail("test -e /var/lib/private/" + clock["unit"].removesuffix(".service"))
+    machine.fail("test -e /var/lib/private/" + managed_name(clock))
     machine.fail("korri-plugin status @example:clock")
     machine.fail("test -e /run/systemd/system/" + clock["unit"])
     machine.fail("test -e /run/systemd/system/" + clock["unit"] + ".d")
     assert_ports(clock, False)
     assert_ports(report, False)
 
-    # Kill-equivalent boundary: unit file is durable, but daemon-reload/start
-    # never ran. Restore must not require an already loaded systemd unit.
+    # Kill-equivalent boundary: the host wrote exact runtime ownership and unit
+    # files, but daemon-reload/start never ran. Restore must clean that stage.
     staged = install("${tailscalePackage}")
-    machine.succeed("printf %s " + shlex.quote(staged["unit_configuration"]) + " > /run/systemd/system/" + staged["unit"])
-    machine.succeed("ln -s ${tailscalePackage} /nix/var/nix/gcroots/korri-plugin-host/" + staged["unit"].removesuffix(".service") + "/pending")
+    staged_native = next(iter(staged["native_units"].values()))
+    staged_policy = staged["unit_configuration"].split(staged_native["source"] + "\n", 1)[1]
+    staged_ownership = "/run/korri-plugin-host/units/" + managed_name(staged) + ".units"
+    machine.succeed("mkdir -p /run/korri-plugin-host/units /run/systemd/system/" + staged["unit"] + ".d")
+    machine.succeed("printf %s " + shlex.quote(staged["unit"] + "\n") + " > " + staged_ownership)
+    machine.succeed("printf %s " + shlex.quote(staged_native["source"]) + " > /run/systemd/system/" + staged["unit"])
+    machine.succeed("printf %s " + shlex.quote(staged_policy) + " > /run/systemd/system/" + staged["unit"] + ".d/zzzz-korri-policy.conf")
+    machine.succeed("ln -s ${tailscalePackage} /nix/var/nix/gcroots/korri-plugin-host/" + managed_name(staged) + "/pending")
     machine.succeed("korri-plugin restore-all")
     machine.fail("systemctl is-active " + staged["unit"])
     machine.succeed("korri-plugin remove @korri:tailscale --purge")
@@ -1357,7 +1444,7 @@ pkgs.testers.runNixOSTest {
         write_bindings(bindings)
         revoked = install("${tailscalePackage}")
         revoked_unit = revoked["unit"]
-        revoked_root = "/nix/var/nix/gcroots/korri-plugin-host/" + revoked_unit.removesuffix(".service")
+        revoked_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(revoked)
         revoked_update = inspect("${updated}")
         machine.succeed("korri-plugin update @korri:tailscale http://cache:5000 ${updated} " + revoked_update["approval"])
         machine.succeed("korri-plugin enable @korri:tailscale")
@@ -1448,7 +1535,7 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl is-active " + failed_cleanup["unit"])
     machine.succeed("rm " + bindings_path + "; mv " + bindings_path + ".saved " + bindings_path)
     machine.succeed("korri-plugin status @example:unclean")
-    machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + failed_cleanup["unit"].removesuffix(".service") + "/active")
+    machine.succeed("test -L /nix/var/nix/gcroots/korri-plugin-host/" + managed_name(failed_cleanup) + "/active")
     assert machine.succeed("readlink -f /run/current-system").strip() == generation
   '';
 }

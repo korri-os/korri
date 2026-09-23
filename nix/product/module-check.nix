@@ -539,6 +539,10 @@ assert !(requirements ? devices);
 assert builtins.attrNames fleetFailures == [ "invalid" ];
 assert productPluginHost.enable;
 assert productPluginHost.publishers == requirements.constants.publishers;
+assert productConfig.services.korriProduct.sleep.states == [ ];
+assert productConfig.services.logind.settings.Login.HandlePowerKey == "poweroff";
+assert productConfig.services.logind.settings.Login.HandleLidSwitch == "poweroff";
+assert rg353m.services.korriProduct.sleep.states == [ ];
 assert
   builtins.fromJSON productConfig.environment.etc."korri-plugin-host/publishers.json".text
   == requirements.constants.publishers;
@@ -584,8 +588,10 @@ assert
 assert
   productPluginDirectories == [
     "d /var/lib/korri-plugin-host 0700 root root -"
+    "Z /var/lib/korri-plugin-host - root root -"
     "d /run/korri-plugin-host 0755 root root -"
     "d /nix/var/nix/gcroots/korri-plugin-host 0700 root root -"
+    "Z /nix/var/nix/gcroots/korri-plugin-host - root root -"
   ];
 assert productPluginRestore.enable;
 assert productPluginRestore.wantedBy == [ "multi-user.target" ];
@@ -609,8 +615,21 @@ assert !rg353m.services.sunshine.openFirewall;
 assert !(rg353m.systemd.services ? sunshine);
 assert !(rg353m.systemd.sockets ? korri-certificate-control);
 assert !rg353m.services.korriLinuxInput.provider.sunshine.enableUinputAccess;
-assert !(rg353m.systemd.services.korrid.environment ? KORRID_SUNSHINE_PRIVATE_STATE_ROOT);
-assert !(rg353m.systemd.services.korrid.environment ? KORRID_CERTIFICATE_CONTROL_DIRECTORY);
+# Korrid owns the bounded trust effect even when the removable Sunshine plugin
+# is absent. No streaming unit, device grant, or firewall port follows from
+# these private optional paths.
+assert
+  rg353m.systemd.services.korrid.environment.KORRID_STREAM_PRIVATE_STATE_ROOT
+  == "/home/korri/.config/sunshine";
+assert
+  rg353m.systemd.services.korrid.environment.KORRID_CERTIFICATE_CONTROL_DIRECTORY
+  == "/run/korri-certificate-control";
+assert
+  rg353m.systemd.services.korrid.environment.KORRID_STREAM_CERTIFICATE_CONTROL_SOCKET
+  == "/run/korri-certificate-control/control.sock";
+assert
+  rg353m.systemd.services.korrid.environment.KORRID_INPUT_SEAT_CONTROL_SOCKET
+  == "/run/korri-input-seat/control.sock";
 assert !(builtins.elem 22 rg353mFirewallTcpPorts);
 assert lib.intersectLists streamingTcpPorts rg353mFirewallTcpPorts == [ ];
 assert

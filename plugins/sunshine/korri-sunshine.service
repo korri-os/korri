@@ -1,0 +1,47 @@
+[Unit]
+Description=Sunshine stream host for Korri
+BindsTo=korri-compositor.service
+Requires=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-seat-receiver.service
+After=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-seat-receiver.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=korri
+Group=korri-sunshine-input-seat
+SupplementaryGroups=video render
+WorkingDirectory=/home/korri
+Environment=KORRI_CERTIFICATE_CONTROL_UID=976
+Environment=KORRI_CERTIFICATE_CONTROL_GID=976
+Environment=KORRI_CERTIFICATE_CONTROL_OWNER_GID=976
+Environment=KORRI_CERTIFICATE_CONTROL_MODE=0660
+Environment=KORRI_CERTIFICATE_CONTROL_PATH=/run/korri-certificate-control/control.sock
+Environment=KORRI_INPUT_SEAT_MIRROR_SOCKET=/run/korri-input-seat/mirror.sock
+Environment=KORRI_INPUT_SEAT_RUNTIME_DIR=/run/korri-input-seat
+Environment=SUNSHINE_LIVE_SETTINGS_MVP=1
+Sockets=korri-sunshine-certificate-control.socket
+ExecStart=@runtime@
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=false
+CapabilityBoundingSet=CAP_SETPCAP CAP_SYS_ADMIN
+PrivateTmp=false
+PrivatePIDs=false
+PrivateDevices=false
+DevicePolicy=auto
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+ReadWritePaths=/home/korri/.config/sunshine /tmp
+InaccessiblePaths=/dev/inputplumber/sources
+
+[Install]
+WantedBy=multi-user.target

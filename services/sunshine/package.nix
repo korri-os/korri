@@ -20,18 +20,17 @@ baseSunshine.overrideAttrs (
       if cudaSupport then "cuda" else "software"
     }";
     buildProfile =
-      if rkmppSupport then
+      if rkmppSupport && v4l2m2mEnabled then
+        "${baseSunshine.stdenv.hostPlatform.system}-rkmpp-v4l2m2m"
+      else if rkmppSupport then
         "${baseSunshine.stdenv.hostPlatform.system}-rkmpp"
       else if v4l2m2mEnabled then
         "${baseSunshine.stdenv.hostPlatform.system}-v4l2m2m"
       else
         baseBuildProfile;
-    # RKMPP is approved under its own profile key because it appends Sunshine
-    # patches. V4L2 M2M only patches FFmpeg, so it keeps the base profile's
-    # approved upstream derivation.
-    approvedBaseDerivations =
-      approved.approvedBaseDerivationsByProfile.${buildProfile}
-        or approved.approvedBaseDerivationsByProfile.${baseBuildProfile} or [ ];
+    # Every released encoder combination has an explicit approval key, even
+    # when two profiles share the same unchanged upstream derivation.
+    approvedBaseDerivations = approved.approvedBaseDerivationsByProfile.${buildProfile} or [ ];
     # Build-time identity only: emitting this path in runtime provenance retains
     # the entire checkout, even with its string context discarded. Runtime
     # provenance records the approved source hash instead.
@@ -136,8 +135,12 @@ baseSunshine.overrideAttrs (
     throw "sunshine-korri CUDA inputs do not match the selected ${buildProfile} profile"
   else if rkmppSupport && cudaSupport then
     throw "sunshine-korri RKMPP and CUDA profiles are mutually exclusive"
-  else if rkmppSupport && v4l2m2mEnabled then
-    throw "sunshine-korri RKMPP and V4L2 M2M profiles are mutually exclusive"
+  else if
+    rkmppSupport
+    && v4l2m2mEnabled
+    && (ffmpegRkmpp.outPath or null) != (ffmpegV4l2m2m.outPath or null)
+  then
+    throw "sunshine-korri combined RKMPP and V4L2 M2M support requires one reviewed FFmpeg bundle"
   else if rkmppSupport && baseSunshine.stdenv.hostPlatform.system != "aarch64-linux" then
     throw "sunshine-korri RKMPP is approved only for aarch64-linux"
   else if rkmppSupport && (ffmpegRkmpp == null || rockchipMpp == null || libdrm == null) then
@@ -173,13 +176,14 @@ baseSunshine.overrideAttrs (
 
       cmakeFlags =
         (old.cmakeFlags or [ ])
-        ++ (if v4l2m2mEnabled then [ "-DFFMPEG_PREPARED_BINARIES=${ffmpegV4l2m2m}" ] else [ ])
         ++ (
           if rkmppSupport then
             [
               "-DFFMPEG_PREPARED_BINARIES=${ffmpegRkmpp}"
               "-DFFMPEG_PLATFORM_LIBRARIES=numa;va;va-drm;va-x11;X11;rockchip_mpp;drm"
             ]
+          else if v4l2m2mEnabled then
+            [ "-DFFMPEG_PREPARED_BINARIES=${ffmpegV4l2m2m}" ]
           else
             [ ]
         );

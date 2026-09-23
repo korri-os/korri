@@ -51,6 +51,9 @@ assert !(c.systemd.units ? "serial-getty@ttyGS0.service");
 # check owns the current product account policy.
 assert !(c.users.users ? gameplay);
 assert !(c.users.groups ? games);
+assert c.services.korriProduct.sleep.states == [ ];
+assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
+assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 assert c.services.korriLinuxHost.label == "rgds";
 assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert c.services.korriLinuxHost.compositor.localInput.enable;

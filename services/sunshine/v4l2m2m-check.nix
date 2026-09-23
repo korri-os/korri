@@ -36,7 +36,8 @@ assert
   !expectV4l2m2mPackage
   || (
     sunshineV4l2m2mPackage.korriV4l2m2mEnabled
-    && sunshineV4l2m2mPackage.korriBuildProfile == "aarch64-linux-v4l2m2m"
+    && sunshineV4l2m2mPackage.korriRkmppEnabled
+    && sunshineV4l2m2mPackage.korriBuildProfile == "aarch64-linux-rkmpp-v4l2m2m"
   );
 pkgs.runCommand "sunshine-korri-v4l2m2m-check" { } ''
   ${pkgs.gawk}/bin/awk '
@@ -59,14 +60,14 @@ pkgs.runCommand "sunshine-korri-v4l2m2m-check" { } ''
   grep -F '"repeat_headers"s, 1' ${patchedSource}/src/video.cpp >/dev/null
   grep -F 'FFmpeg PR #24328' ${ffmpegPatchPath} >/dev/null
   grep -F 'reviewedFfmpegCommit' ${ffmpegPackagePath} >/dev/null
-  grep -F 'BUILD_FFMPEG_CBS_PATCHES=ON' ${ffmpegPackagePath} >/dev/null
-  grep -F 'Rockchip RKMPP is a separate encoder profile' ${readmePath} >/dev/null
+  grep -F 'BUILD_FFMPEG_CBS_PATCHES' ${ffmpegPackagePath} >/dev/null
+  grep -F 'one aarch64 release' ${readmePath} >/dev/null
   ${
     if sunshineV4l2m2mPackage != null then
       ''
         test -x ${sunshineV4l2m2mPackage}/bin/sunshine
         provenance=${sunshineV4l2m2mPackage}/${sunshineV4l2m2mPackage.korriProvenanceRelativePath}
-        grep -Fx 'build_profile=aarch64-linux-v4l2m2m' "$provenance" >/dev/null
+        grep -Fx 'build_profile=aarch64-linux-rkmpp-v4l2m2m' "$provenance" >/dev/null
         grep -Fx 'v4l2m2m_enabled=1' "$provenance" >/dev/null
       ''
     else

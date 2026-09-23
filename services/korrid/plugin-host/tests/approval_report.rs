@@ -33,6 +33,17 @@ fn approval_report_names_each_units_widened_authority_before_approval() {
 }
 
 #[test]
+fn approval_report_exposes_root_cleanup_helper() {
+    let units = BTreeMap::from([(
+        "seat".into(),
+        NativeUnit::parse("[Service]\nType=simple\nUser=root\nExecStart=/nix/store/00000000000000000000000000000000-seat/bin/run\nExecStopPost=+/nix/store/00000000000000000000000000000000-seat/bin/cleanup\n").unwrap(),
+    )]);
+    let warning = package::authority_warning(&units);
+    assert!(warning.contains("ExecStopPost=+"), "{warning}");
+    assert!(warning.contains("PRIVILEGED HELPER"), "{warning}");
+}
+
+#[test]
 fn approval_report_preserves_explicit_closed_device_policy() {
     let units = BTreeMap::from([(
         "closed".into(),

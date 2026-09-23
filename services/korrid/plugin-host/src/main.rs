@@ -32,6 +32,21 @@ fn main() -> ExitCode {
             }
         };
     }
+    // The image builder needs the same receipt directory and GC-root name as
+    // the running host. Keep that name in one producer, not in a shell copy.
+    if let ["unit-name", id] = args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        if let Err(error) = korri_plugin_host::declaration::validate_id(id) {
+            eprintln!("korri-plugin: {error}");
+            return ExitCode::FAILURE;
+        }
+        println!("{}", package::unit_name(id));
+        return ExitCode::SUCCESS;
+    }
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("korri-plugin: administrator access is required");
         return ExitCode::FAILURE;

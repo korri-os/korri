@@ -86,6 +86,9 @@ assert c.boot.kernelPackages.kernel.drvPath == console.boot.kernelPackages.kerne
 assert !(lib.hasInfix "wifi.env" c.sdImage.populateRootCommands);
 assert !(lib.hasInfix "wifi.env" console.sdImage.populateRootCommands);
 assert lib.elem "panfrost" c.boot.kernelModules;
+assert c.services.korriProduct.sleep.states == [ ];
+assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
+assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
 assert c.services.korriLinuxHost.label == "r36tmax";
 assert c.services.korriLinuxHost.compositor.backend == "drm";
 assert

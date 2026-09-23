@@ -87,6 +87,10 @@ assert
 assert lib.elem "korri-compositor.service" kiosk.requires;
 assert lib.elem "korrid.service" kiosk.requires;
 
+assert c.services.korriProduct.sleep.states == [ ];
+assert c.services.logind.settings.Login.HandlePowerKey == "poweroff";
+assert c.services.logind.settings.Login.HandleLidSwitch == "poweroff";
+
 # The portal composition does not depend on the optional streaming host.
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);

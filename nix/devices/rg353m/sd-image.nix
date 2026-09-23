@@ -22,6 +22,8 @@ in
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
+  # No suspend or light-sleep path has been verified on this board.
+  services.korriProduct.sleep.states = [ ];
 
   # The panel is 640x480 at 60 Hz (rg353v2_mode: 24150 kHz / (762 x 528)), so
   # the splash renders at 60 fps. `quiet` stays off until this device is seen

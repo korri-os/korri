@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     inputplumber-nixpkgs.url = "github:NixOS/nixpkgs/9a37a7b2ae651b6182ef08d0d446a964339bcdfe";
     flake-utils.url = "github:numtide/flake-utils";
+    plugins.url = "github:korri-os/plugins";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -25,29 +26,30 @@
       nixpkgs,
       inputplumber-nixpkgs,
       flake-utils,
+      plugins,
       rust-overlay,
       crane,
       proseql,
     }:
     let
       rg353m = import ./nix/devices/rg353m {
-        inherit nixpkgs;
+        inherit nixpkgs plugins;
         korri = self;
       };
       rgds = import ./nix/devices/rgds {
-        inherit nixpkgs;
+        inherit nixpkgs plugins;
         korri = self;
       };
       r36tmax = import ./nix/devices/r36tmax {
-        inherit nixpkgs;
+        inherit nixpkgs plugins;
         korri = self;
       };
       rpminiv2 = import ./nix/devices/rpminiv2 {
-        inherit nixpkgs;
+        inherit nixpkgs plugins;
         korri = self;
       };
       odin2portal = import ./nix/devices/odin2portal {
-        inherit nixpkgs;
+        inherit nixpkgs plugins;
         korri = self;
       };
       rg35xxsp = import ./nix/devices/rg35xxsp {
@@ -96,6 +98,9 @@
         };
         pluginHost = import ./services/korrid/plugin-host {
           inherit pkgs crane korridPackage;
+          inputdPackage = inputplumber.packages.korri-inputd;
+          sunshinePackage =
+            if sunshineV4l2m2mPackage != null then sunshineV4l2m2mPackage else sunshinePackage;
           hostModule = nixosModules.korri-plugin-host;
         };
         korridPackage = import ./services/korrid/package.nix {
@@ -107,10 +112,17 @@
         };
         sunshineV4l2m2mPackage =
           if system == "aarch64-linux" then
+            let
+              ffmpegArm = pkgs.callPackage ./services/sunshine/ffmpeg-rkmpp-static.nix { };
+            in
             pkgs.callPackage ./services/sunshine/package.nix {
               sunshine = pkgs.sunshine;
               cudaSupport = false;
-              ffmpegV4l2m2m = pkgs.callPackage ./services/sunshine/ffmpeg-v4l2m2m-static.nix { };
+              rkmppSupport = true;
+              ffmpegRkmpp = ffmpegArm;
+              ffmpegV4l2m2m = ffmpegArm;
+              rockchipMpp = pkgs.rockchip-mpp;
+              libdrm = pkgs.libdrm;
             }
           else
             null;
@@ -230,6 +242,10 @@
               inherit pkgs nixpkgs;
               korri = self;
               productModule = nixosModules.korri-product;
+            };
+            korri-product-image-plugins = import ./nix/product/image-plugins-check.nix {
+              inherit pkgs plugins;
+              devices = { inherit rg353m rgds r36tmax rpminiv2 odin2portal; };
             };
             korri-device-cache = import ./nix/device-cache/module-check.nix {
               inherit pkgs;

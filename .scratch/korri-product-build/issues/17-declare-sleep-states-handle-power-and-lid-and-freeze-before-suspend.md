@@ -22,3 +22,7 @@ Make power and lid controls honest on every device. A device uses a declared sle
 - [ ] Automated tests cover declaration evaluation, state preference, no-state shutdown, power and lid events, exact-session freeze, and wake destination.
 - [ ] No test result is used to claim that a physical device can suspend. A wrong declaration remains ordinary maintenance under the approved policy.
 - [ ] No hibernation storage, swap policy, compatibility path, or fallback behavior is added.
+
+## Decisions, 2026-09-22
+
+Simon approved `services.korriProduct.sleep.states` as the Nix declaration and 900 seconds as the product-wide light-sleep shutdown delay. All six devices still declare no state on day one. The delay must not be treated as an active timer until light sleep has a working freeze and wake handler. The worktree now declares no state on the five existing product configurations and replaces Odin's ignored physical controls with logind shutdown. It rejects nonempty declarations until exact-session freeze and wake are implemented. RG35XXSP remains outside the product module pending hardware facts. No sleep acceptance check has run.

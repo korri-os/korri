@@ -3,6 +3,8 @@
   crane,
   hostModule,
   korridPackage,
+  inputdPackage,
+  sunshinePackage,
 }:
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
@@ -19,6 +21,14 @@ let
       source = ../../../plugins/${name};
       plugin = ../../../plugins/${name}/plugin.nix;
     };
+  sunshinePlugin = mkPlugin {
+    publisher.namespace = "@korri";
+    source = ../../../plugins/sunshine;
+    plugin = { pkgs }:
+      import ../../../plugins/sunshine/plugin.nix {
+        inherit pkgs inputdPackage sunshinePackage;
+      };
+  };
 in
 {
   lib = {
@@ -27,6 +37,7 @@ in
   packages = {
     korri-plugin-host = hostPackage;
     korri-plugin-ssh = firstPartyPlugin "ssh";
+    korri-plugin-sunshine = sunshinePlugin;
     # Hand-written, no family and no shared helper. It is built by the same
     # builder as a generated core and admitted by the same rules.
     korri-plugin-ppsspp = firstPartyPlugin "ppsspp";
@@ -36,6 +47,18 @@ in
     korri-ssh-upstream = (import ../../../plugins/ssh/upstream.nix { inherit pkgs; }).report;
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
     korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
+    korri-sunshine-plugin = sunshinePlugin;
+    korri-sunshine-plugin-admission = pkgs.runCommand "korri-sunshine-plugin-admission" {
+      nativeBuildInputs = [ pkgs.jq ];
+    } ''
+      ${hostPackage}/bin/korri-plugin seed ${sunshinePlugin} https://cache.example.invalid > receipt.json
+      jq -e '.id == "@korri:sunshine" and .desired.state == "Enabled" and .previous == null' receipt.json
+      touch "$out"
+    '';
+    korri-plugin-image-seed = import ./image-seed-check.nix {
+      inherit pkgs hostPackage;
+      sshPackage = firstPartyPlugin "ssh";
+    };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
         pkgs

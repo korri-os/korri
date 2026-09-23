@@ -394,7 +394,7 @@ impl HostRuntime {
     /// device fails so a brain can never attribute one host's readiness to
     /// another. The catalog answer is derived from the same configuration
     /// that `catalog_snapshot` uses. The stream-control answer is a bounded,
-    /// non-mutating probe of the protected Sunshine certificate control.
+    /// non-mutating probe of the protected Stream certificate control.
     /// A busy certificate permit set reports disabled rather than waiting.
     pub async fn source_status(
         &self,
@@ -852,8 +852,8 @@ impl HostRuntime {
         Arc::clone(&self.moonlight_certificate_permits)
             .try_acquire_owned()
             .map_err(|_| RpcFailure {
-                code: "SunshineCertificateControlBusy".into(),
-                message: "Sunshine certificate control is busy".into(),
+                code: "StreamCertificateControlBusy".into(),
+                message: "Stream certificate control is busy".into(),
             })
     }
 
@@ -948,8 +948,8 @@ fn exact_live_session(
 
 fn certificate_worker_failure(_error: tokio::task::JoinError) -> RpcFailure {
     RpcFailure {
-        code: "SunshineCertificateControlFailed".into(),
-        message: "Sunshine certificate control worker failed".into(),
+        code: "StreamCertificateControlFailed".into(),
+        message: "Stream certificate control worker failed".into(),
     }
 }
 
@@ -1226,7 +1226,7 @@ mod tests {
             .moonlight_certificate_attest("sunshine-host")
             .await
             .unwrap_err();
-        assert_eq!(busy.code, "SunshineCertificateControlBusy");
+        assert_eq!(busy.code, "StreamCertificateControlBusy");
         assert_eq!(
             adapter.entered.load(Ordering::SeqCst),
             MAX_CONCURRENT_CERTIFICATE_CONTROLS

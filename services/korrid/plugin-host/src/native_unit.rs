@@ -20,9 +20,50 @@ impl DevicePolicy {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeUnitKind {
+    Service,
+    Socket,
+}
+
+impl NativeUnitKind {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::Service => ".service",
+            Self::Socket => ".socket",
+        }
+    }
+}
+
+pub fn managed_unit_name(declared: &str, kind: NativeUnitKind) -> Result<String, String> {
+    for candidate in [NativeUnitKind::Service, NativeUnitKind::Socket] {
+        if declared.ends_with(candidate.suffix()) {
+            if kind != candidate {
+                return Err(format!(
+                    "native unit name {declared} does not match its {} implementation",
+                    kind.suffix()
+                ));
+            }
+            let base = declared
+                .strip_suffix(candidate.suffix())
+                .unwrap_or_default();
+            if crate::declaration::valid_name(base) {
+                return Ok(declared.into());
+            }
+            return Err(format!("invalid native unit name: {declared}"));
+        }
+    }
+    if !crate::declaration::valid_name(declared) {
+        return Err(format!("invalid native unit name: {declared}"));
+    }
+    Ok(format!("{declared}{}", kind.suffix()))
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeUnit {
     pub source: String,
+    pub kind: NativeUnitKind,
     pub user: Option<String>,
     pub capabilities: Vec<String>,
     pub devices: Vec<String>,
@@ -62,6 +103,7 @@ impl NativeUnit {
         }
         let mut unit = Self {
             source: source.into(),
+            kind: NativeUnitKind::Service,
             user: None,
             capabilities: vec![],
             devices: vec![],
@@ -167,10 +209,16 @@ impl NativeUnit {
                     ("[Service]", "ExecStopPost") => {
                         if value.is_empty() {
                             cleanup.clear();
+                            unit.privileged_directives
+                                .retain(|directive| !directive.starts_with("ExecStopPost="));
                         } else {
                             cleanup.push(
-                                command(value, false).map_err(|e| format!("ExecStopPost: {e}"))?,
+                                command(value, true).map_err(|e| format!("ExecStopPost: {e}"))?,
                             );
+                            if has_privileged_prefix(value) {
+                                unit.privileged_directives
+                                    .push(format!("ExecStopPost={value}"));
+                            }
                         }
                     }
                     ("[Service]", "Group") if crate::declaration::valid_name(value) => {
@@ -388,6 +436,7 @@ impl NativeUnit {
             if !socket_listener || !socket_service {
                 return Err("socket unit requires ListenSequentialPacket and Service".into());
             }
+            unit.kind = NativeUnitKind::Socket;
         } else {
             if service_type.is_none() {
                 return Err("Type must be simple, exec or notify".into());

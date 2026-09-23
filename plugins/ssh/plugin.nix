@@ -24,9 +24,9 @@ let
   start = "${startup}/bin/korri-sshd-start";
   service = pkgs.writeTextFile {
     name = "korri-sshd.service";
-    destination = "/lib/systemd/system/sshd.service";
+    destination = "/lib/systemd/system/korri-ssh.service";
     text = pkgs.lib.replaceStrings [ "@prepare@" "@start@" ] [ prepare start ] (
-      builtins.readFile ./sshd.service
+      builtins.readFile ./korri-ssh.service
     );
   };
 in
@@ -37,6 +37,6 @@ in
     ssh-keygen = "${openssh}/bin/ssh-keygen";
     inherit config prepare start;
   };
-  services.sshd = "${service}/lib/systemd/system/sshd.service";
+  services.korri-ssh = "${service}/lib/systemd/system/korri-ssh.service";
   inherit (upstream) ports;
 }

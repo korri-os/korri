@@ -182,7 +182,7 @@ in
       approvedPatchesPath = ../../sunshine/approved-patches.nix;
       patchPath = ../../sunshine/patches/0021-add-v4l2m2m-encoder.patch;
       ffmpegPatchPath = ../../sunshine/patches/ffmpeg/0001-fix-v4l2m2m-buffer-alignment.patch;
-      ffmpegPackagePath = ../../sunshine/ffmpeg-v4l2m2m-static.nix;
+      ffmpegPackagePath = ../../sunshine/ffmpeg-rkmpp-static.nix;
       packagePath = ../../sunshine/package.nix;
       readmePath = ../../sunshine/README.md;
     };

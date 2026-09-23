@@ -153,15 +153,12 @@ in
   # product behaviour owned by Korri's session and input layers, not a
   # substrate fact, so it is deliberately not here. Until it is ported, make
   # sure nothing can attempt a real suspend, because the wake path is
-  # untested and a failed resume looks like a hang.
+  # untested and a failed resume looks like a hang. The product handles a
+  # power press or lid close as a clean shutdown while no sleep state exists.
   systemd.targets = {
     sleep.enable = false;
     suspend.enable = false;
     hibernate.enable = false;
     hybrid-sleep.enable = false;
-  };
-  services.logind.settings.Login = {
-    HandlePowerKey = "ignore";
-    HandleLidSwitch = "ignore";
   };
 }

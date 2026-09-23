@@ -1,6 +1,6 @@
 # Retroid Pocket Mini V2 systems. The console system remains the verified
 # recovery baseline; the default configuration adds the Korri product session.
-{ nixpkgs, korri, ... }:
+{ nixpkgs, korri, plugins, ... }:
 let
   mkPkgs =
     system:
@@ -54,6 +54,7 @@ let
   configuration = consoleConfiguration.extendModules {
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })
+      (import ../../product/image-plugins.nix { inherit korri plugins; device = "rpminiv2"; })
       ./portal.nix
     ];
   };

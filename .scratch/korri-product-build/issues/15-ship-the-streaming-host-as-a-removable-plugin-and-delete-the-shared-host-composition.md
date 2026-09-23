@@ -21,3 +21,9 @@ Ship stream hosting as a normal approved plugin that owners can disable or remov
 - [ ] Approval tests prove that the report names all widened authority and that every unnamed request is refused by name.
 - [ ] A recorded enabled-device check demonstrates pairing and streaming, and each tested device records the encoder selected at startup with CPU load and temperature. These records do not create numeric performance targets.
 - [ ] No compatibility unit, disabled legacy service, fallback package, or dual composition remains.
+
+## Implementation in progress, 2026-09-22
+
+The `integrate/phase3` worktree holds the native Sunshine plugin and the shared-host deletion together. The plugin host now records exact unit ownership, checks collisions with host units both before registration and after systemd loads the fragment, and manages approved service/socket sets as one lifecycle. VM cases now check that a later host unit cannot shadow an owned plugin unit during recovery and that a privileged post-stop helper removes its host file. The final Sunshine package has an image-time admission check. The combined aarch64 FFmpeg build checks both encoder symbols and requires an explicit approved build-profile key. The shared product gate now holds the Korrid UID and GID at the values used by the per-system plugin's certificate and input-seat units. The stream-client trust adapter has generic Korrid names. This work is not committed or verified yet. The user asked that tests run only after implementation is finished.
+
+Default image selection still depends on ticket 16's image seeder and signed plugin release. Do not call this ticket complete until that route exists, the final VM checks pass, and a device demonstrates pairing and streaming. The administrative TCP port `47990` stays closed.

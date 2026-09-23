@@ -41,6 +41,8 @@
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
+  # Mainline suspend is unverified; this device declares no sleep state.
+  services.korriProduct.sleep.states = [ ];
 
   boot = {
     consoleLogLevel = 7;

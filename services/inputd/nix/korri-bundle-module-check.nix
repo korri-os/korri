@@ -64,7 +64,7 @@ let
           localSignerUid = 978;
           localSignerGid = 978;
           inherit deviceConfig;
-          sunshinePrivateStateRoot = "/home/korri/.config/sunshine";
+          streamPrivateStateRoot = "/home/korri/.config/sunshine";
         };
       }
     ];

@@ -1,12 +1,17 @@
-use korri_plugin_host::{native_unit::NativeUnit, package};
+use korri_plugin_host::{
+    native_unit::{managed_unit_name, NativeUnit, NativeUnitKind},
+    package,
+};
 use std::collections::BTreeMap;
 
-const SUNSHINE: &str = include_str!("fixtures/streaming-host/sunshine.service");
-const CONTROL: &str = include_str!("fixtures/streaming-host/korri-certificate-control.socket");
-const SEAT: &str = include_str!("fixtures/streaming-host/korri-input-seat-receiver.service");
+const SUNSHINE: &str = include_str!("fixtures/streaming-host/korri-sunshine.service");
+const CONTROL: &str =
+    include_str!("fixtures/streaming-host/korri-sunshine-certificate-control.socket");
+const SEAT: &str =
+    include_str!("fixtures/streaming-host/korri-sunshine-input-seat-receiver.service");
 
 #[test]
-fn current_generated_streaming_host_units_are_admitted_without_translation() {
+fn approved_three_unit_streaming_shape_is_admitted_without_translation() {
     let sunshine = NativeUnit::parse(SUNSHINE).unwrap();
     let control = NativeUnit::parse(CONTROL).unwrap();
     let seat = NativeUnit::parse(SEAT).unwrap();
@@ -14,6 +19,18 @@ fn current_generated_streaming_host_units_are_admitted_without_translation() {
     assert_eq!(sunshine.source, SUNSHINE);
     assert_eq!(control.source, CONTROL);
     assert_eq!(seat.source, SEAT);
+    assert_eq!(sunshine.kind, NativeUnitKind::Service);
+    assert_eq!(control.kind, NativeUnitKind::Socket);
+    assert_eq!(seat.kind, NativeUnitKind::Service);
+    assert_eq!(
+        managed_unit_name("korri-sunshine", sunshine.kind).unwrap(),
+        "korri-sunshine.service"
+    );
+    assert_eq!(
+        managed_unit_name("korri-sunshine-certificate-control.socket", control.kind).unwrap(),
+        "korri-sunshine-certificate-control.socket"
+    );
+    assert!(managed_unit_name("sunshine.socket", sunshine.kind).is_err());
     assert!(sunshine
         .executables
         .iter()
@@ -35,14 +52,14 @@ fn current_generated_streaming_host_units_are_admitted_without_translation() {
     assert_eq!(seat.devices, ["/dev/uinput rw"]);
 
     let warning = package::authority_warning(&BTreeMap::from([
-        ("sunshine.service".into(), sunshine),
-        ("korri-certificate-control.socket".into(), control),
-        ("korri-input-seat-receiver.service".into(), seat),
+        ("korri-sunshine.service".into(), sunshine),
+        ("korri-sunshine-certificate-control.socket".into(), control),
+        ("korri-sunshine-input-seat-receiver.service".into(), seat),
     ]));
     for named in [
-        "sunshine.service",
-        "korri-certificate-control.socket",
-        "korri-input-seat-receiver.service",
+        "korri-sunshine.service",
+        "korri-sunshine-certificate-control.socket",
+        "korri-sunshine-input-seat-receiver.service",
         "CAP_SETPCAP",
         "CAP_SYS_ADMIN",
         "CAP_CHOWN",

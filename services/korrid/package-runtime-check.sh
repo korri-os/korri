@@ -97,7 +97,7 @@ KORRID_PRIVATE_STATE_ROOT="$root/private" \
 KORRID_LOCAL_SIGNER_SOCKET="$root/signer.sock" \
 KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$root/signer-public/person.pub" \
 KORRID_RELAYS='["ws://127.0.0.1:43998"]' \
-KORRID_SUNSHINE_PRIVATE_STATE_ROOT="$root/sunshine" \
+KORRID_STREAM_PRIVATE_STATE_ROOT="$root/sunshine" \
 KORRID_SYSTEMCTL="$root/systemctl" \
 KORRID_SYSTEMD_RUN="$root/systemd-run" \
   "$binary" >"$root/stdout" 2>"$root/stderr" &

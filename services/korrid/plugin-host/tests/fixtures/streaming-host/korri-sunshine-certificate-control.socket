@@ -1,6 +1,6 @@
 [Unit]
 After=systemd-tmpfiles-setup.service systemd-tmpfiles-resetup.service
-Before=sunshine.service
+Before=korri-sunshine.service
 Description=Private Korri Sunshine certificate control socket
 Requires=systemd-tmpfiles-setup.service
 
@@ -11,7 +11,7 @@ FileDescriptorName=korri-certificate-control
 ListenSequentialPacket=/run/korri-certificate-control/control.sock
 NonBlocking=true
 RemoveOnStop=true
-Service=sunshine.service
+Service=korri-sunshine.service
 SocketGroup=korrid
 SocketMode=0660
 SocketUser=root

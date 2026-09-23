@@ -9,7 +9,7 @@
 # x86_64. The aarch64 builder cannot spare the ~30 GB a kernel compile needs,
 # so the system is assembled from the cross-built kernel while the rest of the
 # closure substitutes from cache.
-{ nixpkgs, korri }:
+{ nixpkgs, korri, plugins }:
 
 let
   mkPkgs =
@@ -44,6 +44,7 @@ let
     };
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })
+      (import ../../product/image-plugins.nix { inherit korri plugins; device = "odin2portal"; })
       ./sd-image.nix
       ./web-session.nix
     ];

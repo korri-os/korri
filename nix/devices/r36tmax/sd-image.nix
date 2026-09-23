@@ -6,6 +6,8 @@
   config,
   pkgs,
   lib,
+  korri,
+  plugins,
   ...
 }:
 
@@ -19,6 +21,16 @@ let
   recovery = import ./recovery { pkgs = pkgs.buildPackages; };
   bootFiles = recovery.bootFiles { system = config.system.build.toplevel; };
   kernel = pkgs.callPackage ./dts/kernel-trimmed.nix { };
+  productImage = config.services.korriProduct.installed or false;
+  selected = (import ../../product/plugin-selection.nix {
+    plugins = plugins.packages.${pkgs.stdenv.hostPlatform.system};
+  }).r36tmax;
+  seeded = import ../../../services/korrid/plugin-host/image-seed.nix {
+    inherit pkgs;
+    hostPackage = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
+    cacheUrl = (import ../../product/requirements.nix { inherit korri; }).constants.publishers."@korri".cacheUrl;
+    pluginPackages = selected;
+  };
 in
 {
   imports = [
@@ -30,6 +42,8 @@ in
   ];
 
   nixpkgs.hostPlatform = "aarch64-linux";
+  # No suspend or light-sleep path has been verified on this board.
+  services.korriProduct.sleep.states = [ ];
 
   boot = {
     consoleLogLevel = 7;
@@ -129,6 +143,7 @@ in
     # initrd do not fit in 30 MiB alongside a device tree per name its
     # boot.scr can ask for.
     firmwareSize = 128;
+    storePaths = lib.optionals productImage seeded.storePaths;
 
     populateFirmwareCommands = ''
       cp -r ${bootFiles}/. firmware/
@@ -141,6 +156,7 @@ in
       ${config.boot.loader.generic-extlinux-compatible.populateCmd} \
         -c ${config.system.build.toplevel} \
         -d ./files/boot
+      ${lib.optionalString productImage seeded.populateRootCommands}
     '';
 
     postBuildCommands = ''

@@ -1,8 +1,8 @@
 [Unit]
-After=korri-certificate-control.socket korri-input-source-guard.service korri-compositor.service network-online.target suid-sgid-wrappers.service korri-input-seat-receiver.service
+After=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service network-online.target suid-sgid-wrappers.service korri-sunshine-input-seat-receiver.service
 BindsTo=korri-compositor.service
 Description=Sunshine stream host for Korri
-Requires=korri-certificate-control.socket korri-input-source-guard.service korri-compositor.service suid-sgid-wrappers.service korri-input-seat-receiver.service
+Requires=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service suid-sgid-wrappers.service korri-sunshine-input-seat-receiver.service
 Wants=network-online.target
 
 [Service]
@@ -52,7 +52,7 @@ ReadWritePaths=/tmp
 Restart=on-failure
 RestartSec=5
 RestrictSUIDSGID=true
-Sockets=korri-certificate-control.socket
+Sockets=korri-sunshine-certificate-control.socket
 SupplementaryGroups=video
 SupplementaryGroups=render
 SupplementaryGroups=korri-sunshine-uinput

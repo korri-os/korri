@@ -954,7 +954,7 @@ remote_candidate_credentials() {
   runtime_home="$(getent passwd "$runtime_user" | cut -d: -f6)" || fail 'runtime home is unavailable'
   sunshine_private="$runtime_home/.config/sunshine"
   environment="$(systemctl show korrid.service -p Environment --value 2>/dev/null || true)"
-  [[ " $environment " == *" KORRID_SUNSHINE_PRIVATE_STATE_ROOT=$sunshine_private "* ]] \
+  [[ " $environment " == *" KORRID_STREAM_PRIVATE_STATE_ROOT=$sunshine_private "* ]] \
     || fail 'korrid lacks the exact Sunshine private-state game isolation path'
   input_gid="$(remote_group_gid input)" || fail 'input group is unavailable'
   # A removed legacy uinput group has no credentials to leak. If it remains,

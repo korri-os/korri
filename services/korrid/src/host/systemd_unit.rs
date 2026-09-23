@@ -107,7 +107,7 @@ struct ProtectedPaths {
     private_state_root: PathBuf,
     control_socket: PathBuf,
     control_directory: PathBuf,
-    sunshine_private_state_root: PathBuf,
+    stream_private_state_root: PathBuf,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
 }
@@ -143,7 +143,7 @@ pub struct SystemdLaunchUnitBackend {
     private_state_root: PathBuf,
     control_socket: PathBuf,
     control_directory: PathBuf,
-    sunshine_private_state_root: PathBuf,
+    stream_private_state_root: PathBuf,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
     helper_timeout: Duration,
@@ -308,7 +308,7 @@ impl SystemdLaunchUnitBackend {
         private_state_root: PathBuf,
         control_socket: PathBuf,
         control_directory: PathBuf,
-        sunshine_private_state_root: PathBuf,
+        stream_private_state_root: PathBuf,
         compositor_control_directory: PathBuf,
     ) -> Result<Self, LaunchUnitError> {
         Self::with_timeout_and_paths(
@@ -320,7 +320,7 @@ impl SystemdLaunchUnitBackend {
                 private_state_root,
                 control_socket,
                 control_directory,
-                sunshine_private_state_root,
+                stream_private_state_root,
                 compositor_control_directory,
                 certificate_control_directory: PathBuf::from(DEFAULT_CERTIFICATE_CONTROL_DIRECTORY),
             },
@@ -345,7 +345,7 @@ impl SystemdLaunchUnitBackend {
                 private_state_root: PathBuf::from(DEFAULT_PRIVATE_STATE_ROOT),
                 control_socket: PathBuf::from(DEFAULT_CONTROL_SOCKET),
                 control_directory: PathBuf::from(DEFAULT_CONTROL_DIRECTORY),
-                sunshine_private_state_root: PathBuf::from("/home/korri/.config/sunshine"),
+                stream_private_state_root: PathBuf::from("/home/korri/.config/sunshine"),
                 compositor_control_directory: PathBuf::from(DEFAULT_COMPOSITOR_CONTROL_DIRECTORY),
                 certificate_control_directory: PathBuf::from(DEFAULT_CERTIFICATE_CONTROL_DIRECTORY),
             },
@@ -365,7 +365,7 @@ impl SystemdLaunchUnitBackend {
             private_state_root,
             control_socket,
             control_directory,
-            sunshine_private_state_root,
+            stream_private_state_root,
             compositor_control_directory,
             certificate_control_directory,
         } = paths;
@@ -391,7 +391,7 @@ impl SystemdLaunchUnitBackend {
             ("private state root", &private_state_root),
             ("control socket", &control_socket),
             ("control directory", &control_directory),
-            ("Sunshine private state root", &sunshine_private_state_root),
+            ("stream-host private state root", &stream_private_state_root),
             (
                 "compositor control directory",
                 &compositor_control_directory,
@@ -422,7 +422,7 @@ impl SystemdLaunchUnitBackend {
             private_state_root,
             control_socket,
             control_directory,
-            sunshine_private_state_root,
+            stream_private_state_root,
             compositor_control_directory,
             certificate_control_directory,
             helper_timeout,
@@ -445,7 +445,7 @@ impl SystemdLaunchUnitBackend {
         let control_socket = configured_path("KORRID_CONTROL_SOCKET", DEFAULT_CONTROL_SOCKET);
         let control_directory =
             configured_path("KORRID_CONTROL_DIRECTORY", DEFAULT_CONTROL_DIRECTORY);
-        let sunshine_private_state_root = std::env::var_os("KORRID_SUNSHINE_PRIVATE_STATE_ROOT")
+        let stream_private_state_root = std::env::var_os("KORRID_STREAM_PRIVATE_STATE_ROOT")
             .map(PathBuf::from)
             .unwrap_or_default();
         let compositor_control_directory = configured_path(
@@ -465,7 +465,7 @@ impl SystemdLaunchUnitBackend {
                 private_state_root: private_state_root.clone(),
                 control_socket: control_socket.clone(),
                 control_directory: control_directory.clone(),
-                sunshine_private_state_root: sunshine_private_state_root.clone(),
+                stream_private_state_root: stream_private_state_root.clone(),
                 compositor_control_directory: compositor_control_directory.clone(),
                 certificate_control_directory: certificate_control_directory.clone(),
             },
@@ -479,7 +479,7 @@ impl SystemdLaunchUnitBackend {
             private_state_root,
             control_socket,
             control_directory,
-            sunshine_private_state_root,
+            stream_private_state_root,
             compositor_control_directory,
             certificate_control_directory,
             helper_timeout: DEFAULT_HELPER_TIMEOUT,
@@ -496,7 +496,7 @@ impl SystemdLaunchUnitBackend {
                 private_state_root: self.private_state_root.clone(),
                 control_socket: self.control_socket.clone(),
                 control_directory: self.control_directory.clone(),
-                sunshine_private_state_root: self.sunshine_private_state_root.clone(),
+                stream_private_state_root: self.stream_private_state_root.clone(),
                 compositor_control_directory: self.compositor_control_directory.clone(),
                 certificate_control_directory: self.certificate_control_directory.clone(),
             },
@@ -757,7 +757,7 @@ impl SystemdLaunchUnitBackend {
                 DEFAULT_BROWSER_RUNTIME_DIRECTORY,
                 self.control_socket.display(),
                 self.control_directory.display(),
-                self.sunshine_private_state_root.display(),
+                self.stream_private_state_root.display(),
                 self.compositor_control_directory.display(),
                 self.certificate_control_directory.display(),
                 self.runtime_uid

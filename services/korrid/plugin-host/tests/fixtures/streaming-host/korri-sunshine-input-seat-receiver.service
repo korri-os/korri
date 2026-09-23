@@ -1,6 +1,6 @@
 [Unit]
 After=systemd-tmpfiles-setup-dev.service systemd-tmpfiles-resetup.service korri-bundle-selector.service
-Before=korrid.service sunshine.service
+Before=korrid.service korri-sunshine.service
 Description=Protected Korri Sunshine input-seat receiver
 Requires=korri-bundle-selector.service
 

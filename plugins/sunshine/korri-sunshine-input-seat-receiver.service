@@ -1,0 +1,44 @@
+[Unit]
+Description=Protected Korri Sunshine input-seat receiver
+Requires=korri-bundle-selector.service
+After=korri-bundle-selector.service
+Before=korrid.service korri-sunshine.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+RuntimeDirectory=korri-input-seat
+RuntimeDirectoryMode=0711
+ExecStartPre=+@setup@ start
+ExecStart=@inputd@/bin/korri-bundle-launch input-seat-receiver --runtime-dir /run/korri-input-seat --control-uid 976 --control-gid 976 --sunshine-uid 1000 --sunshine-gid 980 --event-gid 1000
+ExecStopPost=+@setup@ stop
+Restart=on-failure
+RestartSec=1
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_CHOWN
+PrivateTmp=true
+PrivatePIDs=true
+PrivateDevices=false
+DevicePolicy=closed
+DeviceAllow=/dev/uinput rw
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/korri-input-seat
+
+[Install]
+WantedBy=multi-user.target

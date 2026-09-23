@@ -399,7 +399,7 @@ fn grant_retirement_partial_failure_keeps_failed_and_unattempted_grants_for_retr
         grants[..2].to_vec(),
     );
     let error = fixture.run(&adapter(&path)).unwrap_err();
-    assert!(error.contains("SunshineCertificateControlPersistenceFailed"));
+    assert!(error.contains("StreamCertificateControlPersistenceFailed"));
     assert!(!error.contains(CERTIFICATE));
     assert_eq!(server.join().unwrap().len(), 2);
     assert!(!grants[0].exists());
@@ -449,7 +449,7 @@ fn grant_retirement_rejects_wrong_socket_peer_and_sends_no_frame() {
     let mut adapter = adapter(&path);
     adapter.expected_peer_uid = unsafe { libc::geteuid() }.wrapping_add(1);
     let error = fixture.run(&adapter).unwrap_err();
-    assert!(error.contains("SunshineCertificateControlInvalid"));
+    assert!(error.contains("StreamCertificateControlInvalid"));
     assert!(grant.exists());
     let accepted = unsafe {
         libc::accept4(
@@ -572,7 +572,7 @@ fn grant_retirement_rejects_encoded_frame_expansion_before_any_mutation() {
     let server = serve(&path, vec![Reply::Changed(false)], vec![first.clone()]);
     let error = fixture.run(&adapter(&path)).unwrap_err();
     let connections = server.join().unwrap().len();
-    assert!(error.contains("SunshineCertificateControlInvalid"));
+    assert!(error.contains("StreamCertificateControlInvalid"));
     assert!(!error.contains(CERTIFICATE));
     assert_eq!(
         (connections, first.exists(), second.exists()),

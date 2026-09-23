@@ -68,7 +68,7 @@ implicit fallback. No physical device or recovery listener was changed here.
 
 ## Native sources and upstream extraction
 
-`plugin.ts` only names the plugin and service. `sshd.service`, `sshd_config`,
+`plugin.ts` only names the plugin and service. `korri-ssh.service`, `sshd_config`,
 `prepare.sh`, and `start.sh` own native behavior. `plugin.nix` substitutes
 immutable prebuilt program/configuration paths and uses the shared builder.
 The host's existing immutable-artifact contract requires files **inside**

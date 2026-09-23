@@ -1,22 +1,5 @@
-# Current streaming-host unit fixture
+# Streaming-host native-unit fixture
 
-These three files are the NixOS-rendered units from
-`services/inputd/nix/korri-linux-host.nix` at this commit. The fixture uses the
-RG353M configuration with `services.korriLinuxHost.sunshine.inputSeats.enable`
-set to `true`, so all three current units are present.
+These three units preserve the approved three-unit Sunshine authority shape for parser and approval-report tests. They cover a KMS Sunshine service, a private sequential-packet socket, and the root input-seat receiver.
 
-Regenerate each file from `c.config.systemd.units.<name>.text`, where:
-
-```nix
-let
-  f = builtins.getFlake (toString ./.);
-  c = f.nixosConfigurations.rg353m.extendModules {
-    modules = [
-      { services.korriLinuxHost.sunshine.inputSeats.enable = true; }
-    ];
-  };
-in c
-```
-
-The test consumes the rendered files unchanged. It does not restate their
-systemd configuration in TypeScript or in a Korri-specific schema.
+The fixture uses immutable test store paths so Rust tests can run without building Sunshine. The first-party package under `plugins/sunshine/` is the deployment source. Its package build and seed check prove that the generated native artifacts pass the same admission path.

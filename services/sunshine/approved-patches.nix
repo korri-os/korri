@@ -23,6 +23,11 @@ rec {
       # Same reviewed CUDA-free upstream recipe; RKMPP is added only downstream.
       "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv"
     ];
+    "aarch64-linux-rkmpp-v4l2m2m" = [
+      # Both encoder patches change the downstream static FFmpeg, not this
+      # reviewed upstream Sunshine derivation.
+      "/nix/store/8dhfxx3xi04qvlv8ihrg4p6ycqwx6fhc-sunshine-2025.924.154138.drv"
+    ];
   };
   approvedBaseDerivations = builtins.concatLists (
     builtins.attrValues approvedBaseDerivationsByProfile

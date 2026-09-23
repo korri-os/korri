@@ -16,9 +16,9 @@ use std::{
     time::Duration,
 };
 
-pub const BASE_POLICY: &str = "policy-v3: exact named native units; validated systemd directives; approved capabilities and device access; host hardening drop-ins; dynamic unprivileged services by default; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
+pub const BASE_POLICY: &str = "policy-v4: exact named native service and socket sets; validated systemd directives; collision-safe runtime ownership; approved capabilities and device access; host hardening drop-ins; dynamic unprivileged services by default; host-owned IPv4/IPv6 ports; no install scripts; no host module loading";
 
-pub const ROOT_POLICY: &str = "policy-root-v2: exact named native units; explicit native User=root; device-wide root authority including account switching, host files, devices and network; host-owned service lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
+pub const ROOT_POLICY: &str = "policy-root-v3: exact named native service and socket sets; explicit native User=root; collision-safe runtime ownership; device-wide root authority including account switching, host files, devices and network; host-owned lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
 
 #[derive(Clone, Serialize)]
 pub struct Report {
@@ -525,6 +525,12 @@ pub fn authority_warning(
                 " privileged directives [{}];",
                 unit.privileged_directives.join(", ")
             ));
+            if unit.privileged_directives.iter().any(|directive| {
+                directive.starts_with("ExecStartPre=+")
+                    || directive.starts_with("ExecStopPost=+")
+            }) {
+                report.push_str(" PRIVILEGED HELPER: + commands bypass the service sandbox and run with root authority.");
+            }
         }
         if unit.capabilities.is_empty() {
             report.push_str(" capabilities [none];");
@@ -545,6 +551,19 @@ pub fn authority_warning(
         }
     }
     report
+}
+
+fn native_rule_warning(files: &BTreeMap<String, PathBuf>) -> Result<String, String> {
+    let mut warning = String::new();
+    for (name, path) in files {
+        if path.file_name().is_some_and(|file| file.to_string_lossy().ends_with(".rules")) {
+            let bytes = read_regular(path, 64 * 1024)?;
+            let rules = std::str::from_utf8(&bytes)
+                .map_err(|_| format!("native udev rules {name} are not UTF-8"))?;
+            warning.push_str(&format!(" native udev rules {name}: {rules:?};"));
+        }
+    }
+    Ok(warning)
 }
 
 fn build_report(
@@ -579,6 +598,7 @@ fn build_report(
         let unit = crate::native_unit::NativeUnit::parse(
             std::str::from_utf8(&bytes).map_err(|_| "native unit is not UTF-8")?,
         )?;
+        crate::native_unit::managed_unit_name(name, unit.kind)?;
         if let Some(closure) = closure {
             for executable in &unit.executables {
                 if !crate::native_unit::is_host_wrapper(executable) {
@@ -591,10 +611,23 @@ fn build_report(
     if native_units.is_empty() && !manifest.ports.is_empty() {
         return Err("ports require an active service contribution".into());
     }
+    let mut managed_names = BTreeSet::new();
+    for (name, unit) in &native_units {
+        let managed = crate::native_unit::managed_unit_name(name, unit.kind)?;
+        if !managed_names.insert(managed) {
+            return Err("native declarations resolve to a duplicate systemd unit name".into());
+        }
+    }
+    let managed_unit = if managed_names.len() == 1 {
+        managed_names.iter().next().cloned()
+    } else {
+        None
+    };
     let has_root = native_units
         .values()
         .any(|unit| unit.user.as_deref() == Some("root"));
-    let warning = authority_warning(&native_units);
+    let mut warning = authority_warning(&native_units);
+    warning.push_str(&native_rule_warning(&manifest.files)?);
     let mut report = Report {
         id,
         package: package.into(),
@@ -611,7 +644,7 @@ fn build_report(
         },
         state_directory: format!("/var/lib/{unit}"),
         runtime_directory: format!("/run/{unit}"),
-        unit: (native_units.len() == 1).then(|| format!("{unit}.service")),
+        unit: managed_unit,
         unit_configuration: String::new(),
         declaration,
         native_units,
@@ -691,6 +724,17 @@ fn validate_artifact(
 #[cfg(test)]
 mod approval_tests {
     use super::*;
+
+    #[test]
+    fn native_udev_rule_requests_are_named_in_the_approval_warning() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("99-z-korri-sunshine-input.rules");
+        fs::write(&path, "KERNEL==\"uinput\", GROUP=\"korri-sunshine-input-seat\"\n").unwrap();
+        let warning = native_rule_warning(&BTreeMap::from([("input-rules".into(), path)])).unwrap();
+        assert!(warning.contains("native udev rules input-rules"));
+        assert!(warning.contains("uinput"));
+        assert!(warning.contains("korri-sunshine-input-seat"));
+    }
 
     fn snapshot(package: &Path) -> Result<SourceSnapshot, String> {
         SourceSnapshot::package_plugin(package, "plugin.ts", &["plugin.ts".into()])

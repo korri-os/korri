@@ -163,7 +163,7 @@ impl NativeClient {
             UpstreamError::Tagged { code, .. } if code == "HostMismatch" => {
                 UpstreamError::MoonlightHostChanged
             }
-            UpstreamError::Tagged { code, .. } if code == "SunshineCertificateControlBusy" => {
+            UpstreamError::Tagged { code, .. } if code == "StreamCertificateControlBusy" => {
                 UpstreamError::MoonlightCertificateBusy
             }
             UpstreamError::Tagged { .. } => UpstreamError::MoonlightCertificateRejected,

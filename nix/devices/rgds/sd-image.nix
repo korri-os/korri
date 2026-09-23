@@ -15,6 +15,8 @@ in
     ./usb-gadget.nix
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
+  # No suspend or light-sleep path has been verified on this board.
+  services.korriProduct.sleep.states = [ ];
   networking.hostName = "rgds";
 
   boot = {

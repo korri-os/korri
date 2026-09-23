@@ -128,6 +128,15 @@ in
       "korriLinuxHost"
       "runtimeGid"
     ] constants.runtimeAccount.gid)
+    # The per-system Sunshine artifact and the stream-host trust socket use
+    # these host-owned service IDs. A device cannot silently change the IDs
+    # while reusing the same approved plugin package.
+    (settingWithTestValue "stream certificate-control uid" [
+      "services" "korriLinuxHost" "serviceIdentities" "korridUid"
+    ] 976 979)
+    (settingWithTestValue "stream certificate-control gid" [
+      "services" "korriLinuxHost" "serviceIdentities" "korridGid"
+    ] 976 979)
     (lockedSettingWithTestValue "product relays" [
       "services"
       "korriLinuxHost"

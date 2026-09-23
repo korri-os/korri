@@ -138,6 +138,9 @@ jobs:
       - name: Trust Korri's cache
         run: .github/workflows/trust-korri-cache.sh
 
+      - name: Fetch only signed default plugin packages
+        run: bash .github/workflows/fetch-image-plugins.sh "$DEVICE"
+
       - name: Report available disk space
         run: df -h / /nix
 

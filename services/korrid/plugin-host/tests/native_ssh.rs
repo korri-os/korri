@@ -25,7 +25,7 @@ fn packaged_native_ssh_requests_root_authority_before_any_service_effect() {
         .contains("limited to this exact plugin build"));
     assert_eq!(report.ports.allowed_tcp_ports, [2222]);
     assert!(report.ports.allowed_udp_ports.is_empty());
-    let native = &report.native_units["sshd"];
+    let native = &report.native_units["korri-ssh"];
     assert_eq!(native.user.as_deref(), Some("root"));
     assert_eq!(native.executables.len(), 2);
     assert!(native

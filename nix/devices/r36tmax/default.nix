@@ -1,11 +1,11 @@
 # Two real systems share the same SD hardware and device policy. The console
 # system remains a recovery baseline; only the candidate starts the Korri stack.
-{ nixpkgs, korri }:
+{ nixpkgs, korri, plugins }:
 let
   bootchain = import ./bootloader { inherit nixpkgs; };
   consoleConfiguration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
-    specialArgs = { inherit korri; };
+    specialArgs = { inherit korri plugins; };
     modules = [
       ./sd-image.nix
       ../../base

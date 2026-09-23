@@ -257,7 +257,7 @@ in
       type = lib.types.str;
       default = "/run/korri-local-signer/signer.sock";
     };
-    sunshinePrivateStateRoot = lib.mkOption {
+    streamPrivateStateRoot = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Optional streaming-plugin private state directory hidden from every game unit.";
@@ -423,8 +423,8 @@ in
         assertion =
           validAbsolutePath cfg.privateStateRoot
           && validAbsolutePath cfg.localSignerPrivateStateRoot
-          && (cfg.sunshinePrivateStateRoot == null || validAbsolutePath cfg.sunshinePrivateStateRoot);
-        message = "korrid and local-signer private state roots and optional sunshine private state root must be normalized absolute paths.";
+          && (cfg.streamPrivateStateRoot == null || validAbsolutePath cfg.streamPrivateStateRoot);
+        message = "korrid and local-signer private state roots and optional stream-host private state root must be normalized absolute paths.";
       }
       {
         assertion =
@@ -616,7 +616,7 @@ in
           "-/dev/inputplumber/sources"
           "/dev/uinput"
         ]
-        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.streamPrivateStateRoot != null) "-${cfg.streamPrivateStateRoot}"
         ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
@@ -685,7 +685,7 @@ in
           "-/dev/inputplumber/sources"
           "/dev/uinput"
         ]
-        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.streamPrivateStateRoot != null) "-${cfg.streamPrivateStateRoot}"
         ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
@@ -741,7 +741,7 @@ in
           "-/dev/inputplumber/sources"
           "/dev/uinput"
         ]
-        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) "-${cfg.sunshinePrivateStateRoot}"
+        ++ lib.optional (cfg.streamPrivateStateRoot != null) "-${cfg.streamPrivateStateRoot}"
         ++ lib.optional (cfg.certificateControlDirectory != null) "-${cfg.certificateControlDirectory}";
       };
     };
@@ -787,8 +787,8 @@ in
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
       }
-      // lib.optionalAttrs (cfg.sunshinePrivateStateRoot != null) {
-        KORRID_SUNSHINE_PRIVATE_STATE_ROOT = cfg.sunshinePrivateStateRoot;
+      // lib.optionalAttrs (cfg.streamPrivateStateRoot != null) {
+        KORRID_STREAM_PRIVATE_STATE_ROOT = cfg.streamPrivateStateRoot;
       }
       // lib.optionalAttrs (cfg.certificateControlDirectory != null) {
         KORRID_CERTIFICATE_CONTROL_DIRECTORY = cfg.certificateControlDirectory;
@@ -865,7 +865,7 @@ in
           "-/dev/inputplumber/sources"
           cfg.localSignerPrivateStateRoot
         ]
-        ++ lib.optional (cfg.sunshinePrivateStateRoot != null) cfg.sunshinePrivateStateRoot;
+        ++ lib.optional (cfg.streamPrivateStateRoot != null) cfg.streamPrivateStateRoot;
       };
     };
 

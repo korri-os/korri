@@ -85,6 +85,7 @@ impl Host {
             units: Units {
                 systemctl,
                 unit_directory: "/run/systemd/system".into(),
+                ownership_directory: "/run/korri-plugin-host/units".into(),
                 firewall: crate::firewall::Firewall {
                     ipv4: package::tools(iptables)?,
                     ipv6: package::tools(ip6tables)?,
@@ -120,6 +121,7 @@ impl Host {
             units: Units {
                 systemctl: PathBuf::from("/unavailable-systemctl"),
                 unit_directory: root.join("units"),
+                ownership_directory: root.join("unit-ownership"),
                 firewall: crate::firewall::Firewall {
                     ipv4: PathBuf::from("/unavailable-iptables"),
                     ipv6: PathBuf::from("/unavailable-ip6tables"),
@@ -838,7 +840,7 @@ impl Host {
                 if let Desired::Removed { purge } = receipt.desired {
                     if !selection.software_released()? {
                         let report = self.approved(&receipt)?;
-                        if purge && !self.units.path(id).exists() {
+                        if purge && !self.units.has_owned_units(id)? {
                             self.units.purge_inactive(&report)?;
                         } else {
                             self.units_stop(id, purge)?;

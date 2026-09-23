@@ -77,9 +77,15 @@ in
         nix.settings.experimental-features = [ "nix-command" ];
         systemd.tmpfiles.rules = [
           "d /var/lib/korri-plugin-host 0700 root root -"
+          # SD root files are copied by an unprivileged image builder. Before
+          # restore-all reads seeded receipts, give only the host's private
+          # receipt tree its required root owner. Preserve file modes and never
+          # follow links into the selected packages.
+          "Z /var/lib/korri-plugin-host - root root -"
           # Read-only admission snapshot, never a privileged executable or socket.
           "d /run/korri-plugin-host 0755 root root -"
           "d /nix/var/nix/gcroots/korri-plugin-host 0700 root root -"
+          "Z /nix/var/nix/gcroots/korri-plugin-host - root root -"
         ];
         systemd.services.korri-plugin-host = {
           description = "Restore administrator-approved runtime plugins";
