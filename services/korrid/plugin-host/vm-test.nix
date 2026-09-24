@@ -51,9 +51,9 @@ let
   mkPlugin = import ./builder.nix { inherit pkgs; };
   alternate = mkPlugin {
     publisher.namespace = "@example";
-    source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['example-clock'];";
     plugin = _: {
-      services.clock.serviceConfig = {
+      services."example-clock".serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
       };
@@ -293,9 +293,9 @@ let
   };
   splitPayload = mkPlugin {
     publisher.namespace = "@split";
-    source = pkgs.writeTextDir "plugin.ts" "export const name = 'split-cache'; export const services = ['clock'];";
+    source = pkgs.writeTextDir "plugin.ts" "export const name = 'split-cache'; export const services = ['split-clock'];";
     plugin = _: {
-      services.clock.serviceConfig = {
+      services."split-clock".serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.coreutils}/bin/sleep 3600";
       };
@@ -483,6 +483,10 @@ pkgs.testers.runNixOSTest {
         services.korri.pluginHost.enable = true;
         services.korri.pluginHost.package = vmHostPackage;
         services.korri.pluginHost.officialCatalogUrl = "https://cache/repositories/official.json";
+        # Only this VM moves these root-owned files to test missing and
+        # revoked configuration. Production keeps immutable store links.
+        environment.etc."korri-plugin-host/official-catalog-url".mode = "0644";
+        environment.etc."korri-plugin-host/publishers.json".mode = "0644";
         users.users.plugin-user = {
           isNormalUser = true;
           uid = 1000;
@@ -850,12 +854,15 @@ pkgs.testers.runNixOSTest {
     assert sorted(multiple["native_units"]) == ["first", "second"]
     multiple_units = native_unit_names(multiple)
     assert multiple_units == ["first.service", "second.service"]
-    machine.succeed("printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /etc/systemd/system/first.service; systemctl daemon-reload")
+    # /etc/systemd/system is a read-only Nix store link in this VM. The
+    # higher-priority runtime control path acts as an unowned host unit.
+    machine.succeed("mkdir -p /run/systemd/system.control; printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /run/systemd/system.control/first.service; systemctl daemon-reload")
     collision = machine.fail("korri-plugin enable @example:multiple 2>&1")
     assert "first.service conflicts with an existing host unit" in collision, collision
+    machine.succeed("grep -Fx 'ExecStart=/bin/true' /run/systemd/system.control/first.service")
     for unit in multiple_units:
         machine.fail("test -e /run/systemd/system/" + unit)
-    machine.succeed("rm /etc/systemd/system/first.service; systemctl daemon-reload")
+    machine.succeed("rm /run/systemd/system.control/first.service; systemctl daemon-reload")
     machine.succeed("korri-plugin enable @example:multiple")
     for unit in multiple_units:
         machine.wait_for_unit(unit)
@@ -863,13 +870,13 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore-all")
     for unit in multiple_units:
         machine.wait_for_unit(unit)
-    # A later host upgrade can shadow a still-owned runtime fragment. Recovery
-    # must refuse it before it starts or stops the host's unit under that name.
-    machine.succeed("printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /etc/systemd/system/first.service; systemctl daemon-reload")
-    assert machine.succeed("systemctl show first.service --property=FragmentPath --value").strip() == "/etc/systemd/system/first.service"
+    # The higher-priority runtime control directory shadows the owned unit,
+    # just as a new /etc unit would, without writing into the Nix store.
+    machine.succeed("mkdir -p /run/systemd/system.control; printf '[Service]\\nType=oneshot\\nExecStart=/bin/true\\n' > /run/systemd/system.control/first.service; systemctl daemon-reload")
+    assert machine.succeed("systemctl show first.service --property=FragmentPath --value").strip() == "/run/systemd/system.control/first.service"
     shadowed = machine.fail("korri-plugin restore-all 2>&1")
     assert "first.service is shadowed by a host unit" in shadowed, shadowed
-    machine.succeed("rm /etc/systemd/system/first.service; systemctl daemon-reload")
+    machine.succeed("rm /run/systemd/system.control/first.service; systemctl daemon-reload")
     machine.succeed("korri-plugin restore-all")
     multiple_broken = inspect("${multipleBroken}")
     failed_multiple_update = machine.fail(
@@ -877,7 +884,9 @@ pkgs.testers.runNixOSTest {
         + multiple_broken["approval"]
         + " 2>&1"
     )
-    assert "activation" in failed_multiple_update or "active" in failed_multiple_update, failed_multiple_update
+    # systemd 258 can report a failed service start without a unit-specific
+    # message; the checks below prove the old selection and units recovered.
+    assert any(word in failed_multiple_update for word in ("activation", "active", "systemctl failed:")), failed_multiple_update
     assert json.loads(machine.succeed("korri-plugin status @example:multiple"))["package"] == multiple["package"]
     for unit in multiple_units:
         machine.wait_for_unit(unit)
@@ -1258,7 +1267,7 @@ pkgs.testers.runNixOSTest {
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     assert_ports(update, True)
     before_failed_update = json.loads(machine.succeed("korri-plugin status @korri:tailscale"))
-    lifecycle_root = "/nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service")
+    lifecycle_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(report)
     assert machine.succeed("readlink " + lifecycle_root + "/previous").strip() == before_failed_update["previous"]["package"]
     candidate = repository_inspect(source_b, "broken")
     machine.fail("korri-plugin repository switch @korri:tailscale " + source_b + " broken " + candidate["approval"])
@@ -1284,9 +1293,9 @@ pkgs.testers.runNixOSTest {
 
     pending = repository_inspect(source_b, "pending")
     machine.succeed("systemd-run --unit=interrupted-plugin-update /run/current-system/sw/bin/korri-plugin repository switch @korri:tailscale " + source_b + " pending " + pending["approval"])
-    machine.wait_until_succeeds("grep -Fx 'Type=notify' /run/systemd/system/" + unit)
-    machine.wait_until_succeeds("grep -F 'sleep 30' /run/systemd/system/" + unit)
-    machine.wait_until_succeeds("test $(systemctl show " + unit + " --property=ActiveState --value) = activating")
+    machine.wait_until_succeeds("grep -Fx 'Type=notify' /run/systemd/system/" + pending["unit"])
+    machine.wait_until_succeeds("grep -F 'sleep 30' /run/systemd/system/" + pending["unit"])
+    machine.wait_until_succeeds("test $(systemctl show " + pending["unit"] + " --property=ActiveState --value) = activating")
     machine.crash()
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
@@ -1302,7 +1311,7 @@ pkgs.testers.runNixOSTest {
     assert restored["provenance"] == update["provenance"]
     assert restored == before_failed_update
     assert machine.succeed("readlink " + lifecycle_root + "/previous").strip() == restored["previous"]["package"]
-    machine.succeed("test ! -L /nix/var/nix/gcroots/korri-plugin-host/" + unit.removesuffix(".service") + "/pending")
+    machine.succeed("test ! -L " + lifecycle_root + "/pending")
     pid = machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip()
     machine.succeed("iptables -w -F korri-plugins; ip6tables -w -F korri-plugins")
     machine.succeed("korri-plugin restore-all")
@@ -1360,7 +1369,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("rm -f /run/korri-plugin-removal-started /run/korri-plugin-gc-blocked; systemd-run --unit=interrupted-plugin-removal --service-type=exec ${interruptedRemove}/bin/interrupt-plugin-removal")
     machine.wait_until_succeeds("test -e /run/korri-plugin-removal-started", timeout=10)
     machine.wait_until_succeeds("test -e /run/korri-plugin-gc-blocked", timeout=30)
-    removal_receipt_path = "/var/lib/korri-plugin-host/" + unit.removesuffix(".service") + "/selection.json"
+    removal_receipt_path = "/var/lib/korri-plugin-host/" + managed_name(report) + "/selection.json"
     incomplete = json.loads(machine.succeed("cat " + removal_receipt_path))
     assert incomplete["desired"] == {"state": "Removed", "purge": False}
     machine.succeed("test $(find " + lifecycle_root + " -type l | wc -l) = 0")
@@ -1423,7 +1432,7 @@ pkgs.testers.runNixOSTest {
     staged_native = next(iter(staged["native_units"].values()))
     staged_policy = staged["unit_configuration"].split(staged_native["source"] + "\n", 1)[1]
     staged_ownership = "/run/korri-plugin-host/units/" + managed_name(staged) + ".units"
-    machine.succeed("mkdir -p /run/korri-plugin-host/units /run/systemd/system/" + staged["unit"] + ".d")
+    machine.succeed("install -d -m 0700 /run/korri-plugin-host/units; mkdir -p /run/systemd/system/" + staged["unit"] + ".d")
     machine.succeed("printf %s " + shlex.quote(staged["unit"] + "\n") + " > " + staged_ownership)
     machine.succeed("printf %s " + shlex.quote(staged_native["source"]) + " > /run/systemd/system/" + staged["unit"])
     machine.succeed("printf %s " + shlex.quote(staged_policy) + " > /run/systemd/system/" + staged["unit"] + ".d/zzzz-korri-policy.conf")
@@ -1463,7 +1472,7 @@ pkgs.testers.runNixOSTest {
         machine.fail("korri-plugin enable @korri:tailscale")
         # Deactivation must not recover an Enabled receipt first, even when an
         # interrupted operation left a GC root. It still requires exact approval.
-        receipt_path = "/var/lib/korri-plugin-host/" + revoked_unit.removesuffix(".service") + "/selection.json"
+        receipt_path = "/var/lib/korri-plugin-host/" + managed_name(revoked) + "/selection.json"
         receipt = json.loads(machine.succeed("cat " + receipt_path))
 
         def write_receipt(value):
