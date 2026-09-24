@@ -57,7 +57,7 @@ PROVEN_HASHES = {
 }
 KERNEL_HASHES = {
     "recovery": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
-    "korri": "cce753a8d3e93d9b90aadb6c85c1d58aef6bc28b17e2c3c65acee81c8d3a38a8",
+    "korri": "889fb9670054089d1d1dea8efad605f98c4bb1de2023c249b0b4af1a011e2c82",
 }
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 
