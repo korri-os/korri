@@ -134,6 +134,12 @@ permission expansion.
 - Never compile software or dispatch builds from target devices. Follow
   `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
   Runtime TS/JS transpilation remains part of the plugin scripting contract.
+- For Retroid Pocket Mini V2 debugging, change the running system on the
+  approved spare SD using prebuilt artifacts and scoped runtime edits. Full SD
+  image rewrites take too long for debugging. Reserve a rewrite for a separately
+  approved clean-image check after re-identifying the card. Keep the recovery
+  SD, internal storage, and loader unchanged. Keep plugin signature and
+  permission checks in force during device testing.
 - Keep the AYN Odin 2 Portal bootloader unlocked for stock-based custom
   firmware. Installation and recovery tools must verify the unlocked state and
   stop if the device is locked. They must not contain or run a bootloader lock
