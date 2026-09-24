@@ -96,6 +96,13 @@ build, before the thermal follow-up; a new build needs new artifact hashes:
 - module closure: 476 KB containing `g_serial`, `retroid`, and the USB gadget
   dependencies
 
+The thermal follow-up product kernel built on the development host with an
+18,516,480-byte `Image`, SHA-256
+`889fb9670054089d1d1dea8efad605f98c4bb1de2023c249b0b4af1a011e2c82`.
+Its Mini V2 DTB remains SHA-256
+`f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`.
+Neither hash proves a safe device boot or physical fan rotation.
+
 In that earlier build, the matching gadget and Retroid modules loaded from the root system. The companion
 firmware remains available to the initrd and root system for aliases, service
 manifests and module-time requests, including the three Adreno A650 blobs.
