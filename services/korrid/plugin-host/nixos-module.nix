@@ -92,6 +92,8 @@ in
           wantedBy = [ "multi-user.target" ];
           before = [ "korrid.service" ];
           restartTriggers = [ config.environment.etc."korri-plugin-host/publishers.json".source ];
+          # Nix must not fall back to /root/.cache under ProtectSystem=strict.
+          environment.XDG_CACHE_HOME = "/run/korri-plugin-host";
           after = [
             "systemd-tmpfiles-setup.service"
             "network.target"

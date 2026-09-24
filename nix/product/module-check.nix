@@ -606,6 +606,7 @@ assert
   == "${productPluginHost.package}/bin/korri-plugin restore-all";
 assert productPluginRestore.serviceConfig.Type == "oneshot";
 assert productPluginRestore.serviceConfig.User == "root";
+assert productPluginRestore.environment.XDG_CACHE_HOME == "/run/korri-plugin-host";
 assert
   productPluginRestore.restartTriggers == [
     productConfig.environment.etc."korri-plugin-host/publishers.json".source
