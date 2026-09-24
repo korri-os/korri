@@ -24,7 +24,7 @@ the Git blob IDs in the pinned recursive Git tree before vendoring. The stable
 | `dts/sm8250-retroidpocket-common.dtsi` and board DTS files | `projects/ROCKNIX/devices/SM8250/linux/dts/qcom/*` |
 | `config` baseline | `/proc/config.gz` from official ROCKNIX `20260901` running on the target Mini V2 |
 | `config-tty-trim` | Hardware-proven TTY trim derived from that full baseline |
-| `config-korri` | Product delta restoring the Retroid gamepad, uinput, and its direct Qualcomm haptics link dependency |
+| `config-korri` | Product delta restoring gamepad, fan PWM, PMIC thermal sensors, and the power key |
 
 `projects/ROCKNIX/packages/linux/package.mk` and `scripts/unpack` define the
 order: four mainline patches, three version patches, then 30 SM8250 patches,
@@ -69,17 +69,25 @@ hardware-proven output has these properties:
 - module closure: 444 KB containing `g_serial` and its four selected function
   modules
 
-`config-korri` starts from that exact trim and restores
+`config-korri` starts from that exact trim. It restores
 `CONFIG_INPUT_JOYSTICK`, modular `CONFIG_JOYSTICK_RETROID`,
 `CONFIG_INPUT_MISC`, `CONFIG_INPUT_UINPUT`, and
-`CONFIG_INPUT_QCOM_SPMI_HAPTICS`. The last symbol is not broad feature creep:
-the patched Retroid module directly references `qcom_spmi_haptics_rumble`, and
-modpost rejects the module without its provider. The product module check
-therefore requires the provider whenever the Retroid driver is selected.
-Namespace, cgroup and seccomp features needed by sandboxed Chromium were already
-present in the TTY trim.
+`CONFIG_INPUT_QCOM_SPMI_HAPTICS`. The patched Retroid module directly
+references `qcom_spmi_haptics_rumble`; modpost rejects it without that provider.
+The product module check requires both symbols. Namespace, cgroup and seccomp
+features needed by sandboxed Chromium were already present in the TTY trim.
+
+The thermal follow-up also restores the board's `pwm-fan` consumer, Qualcomm
+PM8150L LPG PWM provider, IIO/PMIC ADC thermal sensors, and PM8941-compatible
+power-key driver. The fan and its provider are built in so the fan's existing
+startup PWM of 70/255 does not depend on module auto-loading. No untested fan
+curve or automatic thermal shutdown is added. The board DTS has no fan tachometer;
+a PWM setting cannot prove physical fan rotation. A product-only one-shot service
+logs a read-only snapshot before the compositor, without timed sampling. Recovery stays on `config-tty-trim`.
+
 No touchscreen, Wi-Fi, audio, Bluetooth, media, UFS, or extra display driver is
-restored for the first portal milestone. Its statically verified output is:
+restored. The following sizes and hashes describe the **earlier** product
+build, before the thermal follow-up; a new build needs new artifact hashes:
 
 - `Image`: 18,448,896 bytes, SHA-256
   `cce753a8d3e93d9b90aadb6c85c1d58aef6bc28b17e2c3c65acee81c8d3a38a8`
@@ -88,7 +96,7 @@ restored for the first portal milestone. Its statically verified output is:
 - module closure: 476 KB containing `g_serial`, `retroid`, and the USB gadget
   dependencies
 
-The matching gadget and Retroid modules load from the root system. The companion
+In that earlier build, the matching gadget and Retroid modules loaded from the root system. The companion
 firmware remains available to the initrd and root system for aliases, service
 manifests and module-time requests, including the three Adreno A650 blobs.
 

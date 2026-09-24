@@ -11,6 +11,9 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   host = config.services.korriLinuxHost;
+  thermalSnapshot = pkgs.writeShellScript "rpminiv2-thermal-readonly" (
+    builtins.readFile ./thermal-readonly.sh
+  );
   displayIdle = pkgs.writeShellScript "rpminiv2-display-idle" ''
     exec ${pkgs.swayidle}/bin/swayidle -w \
       timeout 300 '${pkgs.sway}/bin/swaymsg output DSI-1 power off' \
@@ -77,6 +80,30 @@ in
 
   # Recorded limit: Chromium's GPU path has not been accepted on this device.
   services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
+
+  # Capture one bounded, read-only snapshot before the product session. This
+  # service does not stop a hot boot; the owner chose no automatic power-off.
+  # USB serial can read it with journalctl -b -u rpminiv2-thermal-snapshot.
+  systemd.services.rpminiv2-thermal-snapshot = {
+    description = "RP Mini V2 read-only thermal snapshot";
+    wantedBy = [ "multi-user.target" ];
+    before = [
+      "korri-compositor.service"
+      "korri-chromium-kiosk.service"
+    ];
+    path = [
+      pkgs.coreutils
+      pkgs.procps
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = thermalSnapshot;
+      TimeoutStartSec = "10s";
+      NoNewPrivileges = true;
+      ProtectSystem = "strict";
+      ProtectKernelTunables = true;
+    };
+  };
 
   # Protect the OLED after five graphical idle minutes. The TTY keeps its
   # separate consoleblank=60 policy. Local power and volume input can wake Sway.

@@ -17,10 +17,13 @@ includes a loader, Android, or firmware flashing path.
 Both kernels and their DTB build from the audited Linux 7.2 source and ROCKNIX
 patch queue. Hardware testing isolated the earlier black-screen build to GCC
 14.3; GCC 15.2 with Binutils 2.44 works. Recovery uses the 18.4 MB TTY trim. The
-product profile adds only the Retroid gamepad, `/dev/uinput`, and the direct
-Qualcomm haptics symbol dependency required by the patched gamepad module. The
-existing DRM/MSM, namespace, seccomp, firmware, SD-root, VFAT, and USB serial
-features remain unchanged.
+product profile adds the Retroid gamepad, `/dev/uinput`, its Qualcomm haptics
+dependency, the fan PWM drivers, PMIC thermal sensors, and the PMIC power-key
+driver. The DRM/MSM, namespace, seccomp, firmware, SD-root, VFAT, and USB serial
+features remain unchanged. Recovery keeps its tested TTY kernel config. A
+product-only one-shot service logs a read-only thermal snapshot before the
+compositor. It does not stop a hot boot. Read the snapshot over USB serial with
+`journalctl -b -u rpminiv2-thermal-snapshot`.
 
 The panel remains the emergency console and USB serial becomes the recovery
 shell after root mounts in both systems. `consoleblank=60` protects the TTY; the

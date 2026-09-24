@@ -48,6 +48,16 @@ let
     "CONFIG_USB_G_SERIAL=m"
   ];
   requiredProductKernelConfig = [
+    "CONFIG_HWMON=y"
+    "CONFIG_SENSORS_PWM_FAN=y"
+    "CONFIG_NEW_LEDS=y"
+    "CONFIG_LEDS_CLASS=y"
+    "CONFIG_LEDS_CLASS_MULTICOLOR=y"
+    "CONFIG_LEDS_QCOM_LPG=y"
+    "CONFIG_IIO=y"
+    "CONFIG_QCOM_SPMI_ADC5=y"
+    "CONFIG_QCOM_SPMI_ADC_TM5=y"
+    "CONFIG_INPUT_PM8941_PWRKEY=y"
     "CONFIG_CGROUPS=y"
     "CONFIG_INPUT_EVDEV=y"
     "CONFIG_INPUT_JOYSTICK=y"
@@ -124,6 +134,7 @@ let
   };
   productFailures = productCheck.validate "rpminiv2" configuration;
   idle = c.systemd.services.rpminiv2-display-idle;
+  thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -155,6 +166,7 @@ assert c.services.seatd.enable;
 assert !recovery.hardware.graphics.enable;
 assert !recovery.services.seatd.enable;
 assert !(recovery.systemd.services ? korrid);
+assert !(recovery.systemd.services ? rpminiv2-thermal-snapshot);
 assert !(recovery.systemd.services ? korri-compositor);
 assert !(recovery.systemd.services ? korri-chromium-kiosk);
 assert !(c.users.users ? gameplay);
@@ -193,6 +205,11 @@ assert idle.environment.WAYLAND_DISPLAY == "korri-wayland";
 assert idle.environment.SWAYSOCK == "/run/korri-compositor/sway-ipc.sock";
 assert lib.elem "korri-compositor.service" idle.requires;
 assert lib.elem "korri-compositor.service" idle.after;
+assert thermalSnapshot.wantedBy == [ "multi-user.target" ];
+assert lib.elem "korri-compositor.service" thermalSnapshot.before;
+assert lib.elem "korri-chromium-kiosk.service" thermalSnapshot.before;
+assert thermalSnapshot.serviceConfig.ProtectKernelTunables;
+assert thermalSnapshot.serviceConfig.TimeoutStartSec == "10s";
 assert lib.elem "libdrm" (packageNames recovery);
 assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
@@ -239,5 +256,8 @@ pkgs.runCommand "rpminiv2-module-check"
     cp ${./verify-image.test.py} verify-image.test.py
     export RP_MINIV2_KORRI_KERNEL=${c.system.build.kernel}/${c.system.boot.loader.kernelFile}
     python3 verify-image.test.py
+    cp ${./thermal-readonly.sh} thermal-readonly.sh
+    cp ${./thermal-readonly.test.py} thermal-readonly.test.py
+    python3 thermal-readonly.test.py
     touch "$out"
   ''
