@@ -719,7 +719,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /etc/ssh/authorized_keys.d/root")
     machine.succeed("printf '%s\\n' " + shlex.quote(login_key) + " > /home/plugin-user/.ssh/authorized_keys; chown -R plugin-user:users /home/plugin-user/.ssh; chmod 600 /home/plugin-user/.ssh/authorized_keys")
     ssh = inspect("${sshPackage}")
-    assert ssh["policy"].startswith("policy-root-v2:")
+    assert ssh["policy"].startswith("policy-root-v3:")
     assert "DEVICE-WIDE ROOT AUTHORITY" in ssh["warning"]
     assert len(ssh["native_units"]) == 1
     assert next(iter(ssh["native_units"].values()))["user"] == "root"
