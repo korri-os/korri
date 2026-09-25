@@ -26,22 +26,44 @@ let
   };
 in
 {
+  assertions = [
+    {
+      assertion = system == "aarch64-linux";
+      message = "The pinned offline plugin metadata is signed for aarch64-linux only";
+    }
+  ];
   sdImage.storePaths = seeded.storePaths;
   sdImage.populateRootCommands = lib.mkAfter seeded.populateRootCommands;
-  # Run before restore-all, after the SD image's first-boot --load-db. Never
-  # ask a remote cache for proof, and never build on the device. Once the
-  # closure has authenticated metadata, later boots skip the content rehash.
-  systemd.services.korri-plugin-host.preStart = lib.mkAfter ''
-    if ! ${pkgs.nix}/bin/nix --option substituters "" store verify \
-      --no-contents --recursive --sigs-needed 1 ${packages} >/dev/null 2>&1; then
-      cache="$(${pkgs.coreutils}/bin/mktemp -d /run/korri-plugin-host/offline-cache.XXXXXXXX)"
-      trap '${pkgs.coreutils}/bin/rm -rf -- "$cache"' EXIT
-      ${pkgs.gnutar}/bin/tar --no-same-owner --no-same-permissions \
-        -xzf ${offlineMetadata} -C "$cache"
-      ${pkgs.nix}/bin/nix --option substituters "" store copy-sigs \
-        --recursive --substituter "file://$cache" ${packages}
-      ${pkgs.nix}/bin/nix --option substituters "" store verify \
-        --recursive --sigs-needed 1 ${packages} >/dev/null
-    fi
-  '';
+  # This image-owned prerequisite leaves the shared product host unit intact.
+  # A RequiredBy link makes restore-all fail closed if proof registration fails.
+  # Boot registration has loaded the SD store before either service starts.
+  systemd.services.korri-plugin-offline-proofs = {
+    description = "Register signed metadata for shipped plugin closures";
+    requiredBy = [ "korri-plugin-host.service" ];
+    before = [ "korri-plugin-host.service" ];
+    after = [ "systemd-tmpfiles-setup.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      RuntimeDirectory = "korri-plugin-offline-proofs";
+      RuntimeDirectoryMode = "0700";
+      UMask = "0077";
+    };
+    # Never ask a remote cache for proof or build on a device. Reverify the
+    # already-signed closure on later boots without rehashing its contents.
+    script = ''
+      set -euo pipefail
+      if ! ${pkgs.nix}/bin/nix --option substituters "" store verify \
+        --no-contents --recursive --sigs-needed 1 ${packages} >/dev/null 2>&1; then
+        cache="$(${pkgs.coreutils}/bin/mktemp -d /run/korri-plugin-offline-proofs/offline-cache.XXXXXXXX)"
+        trap '${pkgs.coreutils}/bin/rm -rf -- "$cache"' EXIT
+        ${pkgs.gnutar}/bin/tar --no-same-owner --no-same-permissions \
+          -xzf ${offlineMetadata} -C "$cache"
+        ${pkgs.nix}/bin/nix --option substituters "" store copy-sigs \
+          --recursive --substituter "file://$cache" ${packages}
+        ${pkgs.nix}/bin/nix --option substituters "" store verify \
+          --recursive --sigs-needed 1 ${packages} >/dev/null
+      fi
+    '';
+  };
 }
