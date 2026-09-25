@@ -48,6 +48,9 @@ in
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
     korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
     korri-sunshine-plugin = sunshinePlugin;
+    korri-sunshine-plugin-native = import ./sunshine-native-check.nix {
+      inherit pkgs inputdPackage sunshinePackage;
+    };
     korri-sunshine-plugin-admission = pkgs.runCommand "korri-sunshine-plugin-admission" {
       nativeBuildInputs = [ pkgs.jq ];
     } ''

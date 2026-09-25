@@ -1,3 +1,5 @@
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-input-seat", MODE="0660", OPTIONS+="static_node=uinput"
 KERNEL=="uhid", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-input-seat", MODE="0660", OPTIONS+="static_node=uhid"
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", GROUP="korri", MODE="0660"
+# udevd ignores GROUP= for korri (GID 1000) because it is not a system group.
+# The receiver waits for exactly GID 1000 and mode 0660 on each seat node.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Korri Seat P[1-4]", MODE="0600", RUN+="@coreutils@/bin/chgrp 1000 $env{DEVNAME}", RUN+="@coreutils@/bin/chmod 0660 $env{DEVNAME}"

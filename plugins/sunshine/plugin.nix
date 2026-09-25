@@ -22,13 +22,16 @@ let
   rulesPackage = pkgs.writeTextFile {
     name = "korri-sunshine-input-rules";
     destination = "/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
-    text = builtins.readFile ./99-z-korri-sunshine-input.rules;
+    text = substitute ./99-z-korri-sunshine-input.rules {
+      "@coreutils@" = toString pkgs.coreutils;
+    };
   };
   rulesFile = "${rulesPackage}/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
   setupPackage = pkgs.writeShellScriptBin "korri-sunshine-input-seat-setup" (
     substitute ./input-seat-setup.sh {
       "@coreutils@" = toString pkgs.coreutils;
-      "@getent@" = toString pkgs.glibc.bin;
+      # glibc ships getent in its own output, not in glibc.bin.
+      "@getent@" = toString pkgs.getent;
       "@groupadd@" = toString pkgs.shadow;
       "@groupdel@" = toString pkgs.shadow;
       "@rules@" = toString rulesFile;
