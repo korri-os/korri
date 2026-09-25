@@ -15,10 +15,17 @@ let
     let
       config = devices.${name}.configuration.config;
       image = config.sdImage;
+      proofs = config.systemd.services.korri-plugin-offline-proofs;
       additional = lib.subtractLists [ (toString config.system.build.toplevel) ] (map toString image.storePaths);
     in
     additional == map toString selected.${name}
     && lib.hasInfix "korri-image-seed" image.populateRootCommands
+    && (
+      name == "r36tmax"
+      || (proofs.requiredBy == [ "korri-plugin-host.service" ]
+        && lib.elem "korri-plugin-host.service" proofs.before
+        && lib.hasInfix "--option substituters \"\" store copy-sigs" proofs.script)
+    )
     && lib.all (package: !(lib.elem (toString package) (map toString config.environment.systemPackages))) selected.${name};
   recoveryWithoutDefaults =
     !(lib.hasInfix "korri-image-seed" devices.r36tmax.consoleConfiguration.config.sdImage.populateRootCommands)
