@@ -21,8 +21,8 @@ let
   # shipped plugin closure, including dependencies omitted from the public
   # cache. The hash pins the exact archive; it carries no NAR or private key.
   offlineMetadata = pkgs.fetchurl {
-    url = "https://github.com/korri-os/plugins/releases/download/build-5e564b9cdceb/offline-metadata-${system}.tar.gz";
-    hash = "sha256-MsLt13c55GVvPY44RHbpBUuv0VgUyqfhkFy0y46YViY=";
+    url = "https://github.com/korri-os/plugins/releases/download/build-82c969ee0f49/offline-metadata-${system}.tar.gz";
+    hash = "sha256-peF6jqTJ3YtGKE/keueTXyBaf0ndiBtrsLzu7PjmDS8=";
   };
 in
 {
