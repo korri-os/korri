@@ -114,7 +114,16 @@ unchanged. The
 added networking code increases kernel attack surface; a build
 alone does not prove that Sunshine's service will run on the Mini V2.
 
-No touchscreen, Wi-Fi, audio, Bluetooth, media, UFS, or extra display driver is
+The product kernel also restores sound from the ROCKNIX baseline: the SM8250
+ASoC card with the WCD9385 headphone codec, the two WSA881x speaker amplifiers,
+the LPASS macros, Qualcomm SoundWire, DisplayPort audio, USB audio, and the
+ADSP remoteproc that runs the audio DSP. The drivers are modules, so the ADSP
+loads `qcom/sm8250/adsp.mbn` from the root file system; the config embeds no
+firmware. With remoteproc on, the CDSP and SLPI that the device tree enables
+also start. Recovery stays without sound. ROCKNIX's UCM (`../ucm`) sets the
+speaker amplifier volume to 12 at boot. No one has heard this build yet.
+
+No touchscreen, Wi-Fi, Bluetooth, media, UFS, or extra display driver is
 restored. The following sizes and hashes describe the **earlier** product
 build, before the thermal follow-up; a new build needs new artifact hashes:
 

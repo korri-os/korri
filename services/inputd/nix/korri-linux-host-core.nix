@@ -57,6 +57,10 @@ let
     [environment]
     DISPLAY = "${xwaylandDisplay}"
     XDG_SESSION_TYPE = "x11"
+    ${lib.optionalString cfg.audio.enable ''
+      # korrid binds only the Pulse directory into owned game units at this path.
+      PULSE_SERVER = "unix:/run/korri-game-audio/native"
+    ''}
 
     ${lib.optionalString cfg.validation.enable ''
       [[games]]

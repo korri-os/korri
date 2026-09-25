@@ -153,6 +153,11 @@ assert withAudio.config.services.pipewire.alsa.enable;
 assert withAudio.config.services.pipewire.wireplumber.enable;
 assert withAudio.config.users.users.korri.linger;
 assert builtins.elem "audio" withAudio.config.users.users.korri.extraGroups;
+# Games reach PipeWire only through the Pulse socket korrid binds into them.
+assert lib.hasInfix ''PULSE_SERVER = "unix:/run/korri-game-audio/native"'' (
+  builtins.readFile withAudio.config.services.korridLinuxDevice.deviceConfig
+);
+assert !(lib.hasInfix "PULSE_SERVER" (builtins.readFile valid.config.services.korridLinuxDevice.deviceConfig));
 assert allAssertionsPass browserPortal;
 assert browserKorrid.environment.KORRID_BROWSER_ADDRESS == "127.0.0.1:0";
 assert browserKorrid.environment.KORRID_BROWSER_ORIGIN == "http://127.0.0.1:8099";

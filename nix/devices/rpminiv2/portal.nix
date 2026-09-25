@@ -20,6 +20,9 @@ let
       resume '${pkgs.sway}/bin/swaymsg output DSI-1 power on' \
       before-sleep '${pkgs.sway}/bin/swaymsg output DSI-1 power off'
   '';
+  # ROCKNIX's UCM for the RetroidPocket card; stock alsa-ucm-conf has none.
+  ucm = pkgs.callPackage ./ucm { };
+  ucmDirectory = "${ucm}/share/alsa/ucm2";
 in
 {
   imports = [ ./game-plugins.nix ];
@@ -126,6 +129,30 @@ in
       NoNewPrivileges = true;
       PrivateTmp = true;
       ProtectSystem = "strict";
+    };
+  };
+
+  # PipeWire opens the card through ACP. WirePlumber runs the ALSA monitor, so
+  # both need the RetroidPocket UCM to find the speaker and headphone routes.
+  systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2 = ucmDirectory;
+  systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2 = ucmDirectory;
+
+  # PipeWire never runs the UCM boot sequences. They set ROCKNIX's speaker and
+  # headphone amplifier volumes, so run them once when the card appears.
+  services.udev.extraRules = ''
+    SUBSYSTEM=="sound", KERNEL=="controlC*", ATTRS{id}=="RetroidPocket", TAG+="systemd", ENV{SYSTEMD_WANTS}+="rpminiv2-audio-boot.service"
+  '';
+  systemd.services.rpminiv2-audio-boot = {
+    description = "RP Mini V2 ALSA UCM boot volumes";
+    environment.ALSA_CONFIG_UCM2 = ucmDirectory;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = [
+        "${pkgs.alsa-utils}/bin/alsaucm -c hw:RetroidPocket set _fboot ''"
+        "${pkgs.alsa-utils}/bin/alsaucm -c hw:RetroidPocket set _boot ''"
+      ];
+      TimeoutStartSec = "20s";
     };
   };
 

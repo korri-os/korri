@@ -81,6 +81,14 @@ let
     "CONFIG_IP_NF_IPTABLES=y"
     "CONFIG_IP6_NF_IPTABLES=y"
     "CONFIG_JOYSTICK_RETROID=m"
+    "CONFIG_SOUND=y"
+    "CONFIG_SND_SOC=y"
+    "CONFIG_SND_SOC_SM8250=m"
+    "CONFIG_SND_SOC_WCD938X_SDW=m"
+    "CONFIG_SND_SOC_WSA881X=m"
+    "CONFIG_SOUNDWIRE_QCOM=m"
+    "CONFIG_REMOTEPROC=y"
+    "CONFIG_QCOM_Q6V5_PAS=m"
     "CONFIG_PID_NS=y"
     "CONFIG_SECCOMP=y"
     "CONFIG_SECCOMP_FILTER=y"
@@ -156,6 +164,9 @@ assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
 assert lib.all hasProductKernelConfig (requiredKernelConfig ++ requiredRecoveryModules);
 assert lib.all hasProductKernelConfig requiredProductKernelConfig;
+# Sound is a product feature; the recovery kernel stays without it.
+assert hasRecoveryKernelConfig "# CONFIG_SOUND is not set";
+assert hasRecoveryKernelConfig "# CONFIG_REMOTEPROC is not set";
 assert common c;
 assert common recovery;
 # Use the shared product validator instead of duplicating its policy here.
@@ -227,6 +238,17 @@ assert lib.elem "korri-chromium-kiosk.service" thermalSnapshot.before;
 assert thermalSnapshot.serviceConfig.ProtectKernelTunables;
 assert thermalSnapshot.serviceConfig.TimeoutStartSec == "10s";
 assert lib.elem "libdrm" (packageNames recovery);
+# Sound: PipeWire and WirePlumber read ROCKNIX's RetroidPocket UCM, and the
+# card's arrival runs its boot volumes once.
+assert
+  c.systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2
+  == c.systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2;
+assert
+  c.systemd.services.rpminiv2-audio-boot.environment.ALSA_CONFIG_UCM2
+  == c.systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2;
+assert lib.hasInfix ''ATTRS{id}=="RetroidPocket"'' c.services.udev.extraRules;
+assert lib.hasInfix "rpminiv2-audio-boot.service" c.services.udev.extraRules;
+assert lib.hasInfix "PULSE_SERVER" (builtins.readFile c.services.korridLinuxDevice.deviceConfig);
 assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
   "android-tools"
@@ -259,6 +281,9 @@ pkgs.runCommand "rpminiv2-module-check"
   }
   ''
     grep -F 'timeout 300' ${idle.serviceConfig.ExecStart}
+    ucm=${c.systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2}
+    test "$(readlink -f "$ucm/conf.d/sm8250/retroidpocket-RetroidPocketMiniV2.conf")" = "$(readlink -f "$ucm/Qualcomm/sm8250/RetroidPocket.conf")"
+    grep -F "SpkrLeft PA Volume' 12" "$ucm/Qualcomm/sm8250/RetroidPocket.conf"
     test -f ${c.services.inputplumber.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
     test -f ${c.services.inputplumber.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
     bundle=${c.services.korriBundle.initialPackage}

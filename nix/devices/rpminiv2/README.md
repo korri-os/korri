@@ -190,8 +190,11 @@ replacement for it. Its current first milestone is deliberately local:
   Sway itself still requires accelerated GLES2 rendering.
 - The portal and korrid communicate over loopback. NetworkManager and Avahi are
   disabled, and Sunshine cannot start in this milestone. No Wi-Fi, firewall,
-  audio, Bluetooth, streaming acceptance, media decode, or internal-storage
-  support is claimed.
+  Bluetooth, streaming acceptance, media decode, or internal-storage support
+  is claimed.
+- The product image carries speaker, headphone and DisplayPort sound drivers
+  with ROCKNIX's `RetroidPocket` UCM (`ucm/`). Games reach PipeWire through
+  the Pulse socket. Sound is built but not yet hardware-accepted.
 - InputPlumber matches the observed DMI product name `Retroid Pocket Mini V2`
   and the kernel's exact `Retroid Pocket Gamepad` /
   `retroid-pocket-gamepad/input0` source. Its composite creates an Xbox 360
