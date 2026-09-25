@@ -15,6 +15,7 @@
 let
   version = "7.2";
   patchDir = ./patches;
+  productFanMap = kernelConfig == ./config-korri;
   patchNames = lib.sort lib.lessThan (
     builtins.filter (name: lib.hasSuffix ".patch" name) (builtins.attrNames (builtins.readDir patchDir))
   );
@@ -42,13 +43,20 @@ in
 kernel.overrideAttrs (previous: {
   # V2 includes the Mini DTS, which includes the shared Retroid DTSI.
   # ROCKNIX copies these after patching; preserve that sequence.
-  postPatch = (previous.postPatch or "") + ''
-    cp ${./dts}/sm8250-retroidpocket-common.dtsi arch/arm64/boot/dts/qcom/
-    cp ${./dts}/sm8250-retroidpocket-rpmini.dts arch/arm64/boot/dts/qcom/
-    cp ${./dts}/${dtbName}.dts arch/arm64/boot/dts/qcom/
-    echo 'dtb-$(CONFIG_ARCH_QCOM) += ${dtbName}.dtb' >> arch/arm64/boot/dts/qcom/Makefile
-    ln -s ${rpminiFirmware}/lib/firmware external-firmware
-  '';
+  postPatch =
+    (previous.postPatch or "")
+    + ''
+      cp ${./dts}/sm8250-retroidpocket-common.dtsi arch/arm64/boot/dts/qcom/
+      cp ${./dts}/sm8250-retroidpocket-rpmini.dts arch/arm64/boot/dts/qcom/
+      cp ${./dts}/${dtbName}.dts arch/arm64/boot/dts/qcom/
+      echo 'dtb-$(CONFIG_ARCH_QCOM) += ${dtbName}.dtb' >> arch/arm64/boot/dts/qcom/Makefile
+      ln -s ${rpminiFirmware}/lib/firmware external-firmware
+    ''
+    + lib.optionalString productFanMap ''
+      chmod u+w arch/arm64/boot/dts/qcom/${dtbName}.dts
+      printf '\n' >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+      cat ${./dts/sm8250-rpminiv2-korri-fan.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+    '';
   passthru = (previous.passthru or { }) // {
     inherit dtbName kernelConfig;
     compilerVersion = stdenv.cc.cc.version;
