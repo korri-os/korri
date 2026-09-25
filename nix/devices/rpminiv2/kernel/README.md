@@ -107,8 +107,11 @@ with nftables compatibility, connection tracking, and reject support for
 NixOS's firewall and the plugin host's IPv4/IPv6 port rules. The
 first offline restore of all 20 signed plugins failed when `iptables-nft`
 reported `Protocol not supported`; the old product config disabled both
-facilities even though NixOS enabled the firewall and IPv6. Recovery stays
-unchanged. The added networking code increases kernel attack surface; a build
+facilities even though NixOS enabled the firewall and IPv6. The next boot
+stopped at NixOS's LOG rule. Its next packet-type rule also needs the
+packet-type matcher, so both are enabled in the product kernel. Recovery stays
+unchanged. The
+added networking code increases kernel attack surface; a build
 alone does not prove that Sunshine's service will run on the Mini V2.
 
 No touchscreen, Wi-Fi, audio, Bluetooth, media, UFS, or extra display driver is
