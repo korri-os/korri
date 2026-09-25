@@ -52,12 +52,15 @@ GRUB_GLOBALS = [
 ]
 PROVEN_HASHES = {
     "loader": "39de9119311fa4274f27908a561f2b876133810325d9deff89a9461f832c838b",
-    "dtb": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
     "font": "734f45a5b8c134b5cc161d02a9650fa7cf939abbab1a32f254bab8da201c9385",
+}
+DTB_HASHES = {
+    "recovery": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
+    "korri": "6b2cb59d4be1ae7c3cbb543eed83cc96b1171194874df7e0ff40887f60a33eb8",
 }
 KERNEL_HASHES = {
     "recovery": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
-    "korri": "889fb9670054089d1d1dea8efad605f98c4bb1de2023c249b0b4af1a011e2c82",
+    "korri": "5d92482eef176f65f3d5394d9e1205d10c66585f0578cde4a18a216f98fe5fee",
 }
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 
@@ -466,7 +469,7 @@ def boot_files(fat, root, directory, fat_bytes, expected_hashes, profile):
     )
     require(
         file_sha256(directory / "devicetree") == expected_hashes["dtb"],
-        "DTB differs from the hardware-proven ROCKNIX artifact",
+        "DTB differs from the selected RP Mini V2 profile",
     )
     dtb = str(directory / "devicetree")
     require(
@@ -515,7 +518,7 @@ def main():
         default="recovery",
         help="kernel profile stored in the image (default: recovery)",
     )
-    for name, digest in {**PROVEN_HASHES, "kernel": None}.items():
+    for name, digest in {**PROVEN_HASHES, "dtb": None, "kernel": None}.items():
         parser.add_argument(
             f"--expected-{name}-sha256",
             type=expected_hash,
@@ -526,6 +529,7 @@ def main():
     expected_hashes = {
         name: getattr(args, f"expected_{name}_sha256") for name in PROVEN_HASHES
     }
+    expected_hashes["dtb"] = args.expected_dtb_sha256 or DTB_HASHES[args.profile]
     expected_hashes["kernel"] = (
         args.expected_kernel_sha256 or KERNEL_HASHES[args.profile]
     )

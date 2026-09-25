@@ -77,13 +77,30 @@ references `qcom_spmi_haptics_rumble`; modpost rejects it without that provider.
 The product module check requires both symbols. Namespace, cgroup and seccomp
 features needed by sandboxed Chromium were already present in the TTY trim.
 
-The thermal follow-up also restores the board's `pwm-fan` consumer, Qualcomm
+The earlier thermal follow-up restored the board's `pwm-fan` consumer, Qualcomm
 PM8150L LPG PWM provider, IIO/PMIC ADC thermal sensors, and PM8941-compatible
-power-key driver. The fan and its provider are built in so the fan's existing
-startup PWM of 70/255 does not depend on module auto-loading. No untested fan
-curve or automatic thermal shutdown is added. The board DTS has no fan tachometer;
-a PWM setting cannot prove physical fan rotation. A product-only one-shot service
-logs a read-only snapshot before the compositor, without timed sampling. Recovery stays on `config-tty-trim`.
+power-key driver. The fan and its provider are built in, so the earlier startup
+PWM of 70/255 did not depend on module auto-loading. It added no fan curve or
+automatic thermal shutdown. A product-only one-shot service logs a read-only
+snapshot before the compositor, without timed sampling. Recovery stays on
+`config-tty-trim`.
+
+The next product-only change ports the **moderate kernel fan map** from
+[ROCKNIX SM8250 PR #3339](https://github.com/ROCKNIX/distribution/pull/3339.patch):
+`cluster1-thermal` active trips at 45, 55, 62, 68, 73 and 78°C with 5°C
+hysteresis map to PWM 51, 77, 102, 128, 179 and 255. It changes the fan PWM
+period to 50,000 ns and the built-in driver startup duty to 51/255. The
+ROCKNIX startup patch still labels that duty as maximum cooling; this port
+initializes the driver's cooling state from its actual PWM instead. Otherwise
+a first request for maximum cooling could be ignored as a no-op. The map is
+appended only to the product V2 DTS, not to the hardware-proven recovery DTB.
+No ROCKNIX userspace profile service, thermal-trip writer, or unverified tach
+GPIO is added. The patch author tested the Pocket 5, not this Mini V2. The fan
+still has no exposed RPM on this image; neither PWM nor a build proves physical
+rotation. See [the source comparison](../../../../docs/briefs/2026-09-24-rpminiv2-fan-practices.md).
+The chosen map may cost fan noise and power; it does not fix unreadable PMIC
+zones, CPU `performance` policy, or the snapshot script's failed-read output.
+The owner chose no automatic power-off guard.
 
 No touchscreen, Wi-Fi, audio, Bluetooth, media, UFS, or extra display driver is
 restored. The following sizes and hashes describe the **earlier** product
@@ -102,6 +119,13 @@ The thermal follow-up product kernel built on the development host with an
 Its Mini V2 DTB remains SHA-256
 `f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`.
 Neither hash proves a safe device boot or physical fan rotation.
+
+The moderate-map product kernel built on the development host with `Image`
+SHA-256 `5d92482eef176f65f3d5394d9e1205d10c66585f0578cde4a18a216f98fe5fee`
+and Mini V2 DTB SHA-256
+`6b2cb59d4be1ae7c3cbb543eed83cc96b1171194874df7e0ff40887f60a33eb8`.
+The recovery DTB retains the hardware-proven hash above. These hashes pin
+artifacts for image acceptance, not hardware fan operation or safe temperatures.
 
 In that earlier build, the matching gadget and Retroid modules loaded from the root system. The companion
 firmware remains available to the initrd and root system for aliases, service

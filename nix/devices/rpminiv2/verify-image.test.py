@@ -75,13 +75,15 @@ def digest(path):
 
 
 class ProfileContract(unittest.TestCase):
-    def test_recovery_and_korri_pin_distinct_kernel_hashes(self):
+    def test_recovery_and_korri_pin_distinct_kernel_and_dtb_hashes(self):
         module = runpy.run_path(VERIFY)
-        hashes = module["KERNEL_HASHES"]
-        self.assertEqual(set(hashes), {"recovery", "korri"})
-        self.assertNotEqual(hashes["recovery"], hashes["korri"])
-        for value in hashes.values():
-            self.assertRegex(value, r"^[0-9a-f]{64}$")
+        for name in ("KERNEL_HASHES", "DTB_HASHES"):
+            with self.subTest(name=name):
+                hashes = module[name]
+                self.assertEqual(set(hashes), {"recovery", "korri"})
+                self.assertNotEqual(hashes["recovery"], hashes["korri"])
+                for value in hashes.values():
+                    self.assertRegex(value, r"^[0-9a-f]{64}$")
 
 
 class ImageAcceptance(unittest.TestCase):
