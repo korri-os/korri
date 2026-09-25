@@ -57,8 +57,9 @@ in
         --no-contents --recursive --sigs-needed 1 ${packages} >/dev/null 2>&1; then
         cache="$(${pkgs.coreutils}/bin/mktemp -d /run/korri-plugin-offline-proofs/offline-cache.XXXXXXXX)"
         trap '${pkgs.coreutils}/bin/rm -rf -- "$cache"' EXIT
-        ${pkgs.gnutar}/bin/tar --no-same-owner --no-same-permissions \
-          -xzf ${offlineMetadata} -C "$cache"
+        ${pkgs.gzip}/bin/gzip -dc ${offlineMetadata} | \
+          ${pkgs.gnutar}/bin/tar --no-same-owner --no-same-permissions \
+            -xf - -C "$cache"
         ${pkgs.nix}/bin/nix --option substituters "" store copy-sigs \
           --recursive --substituter "file://$cache" ${packages}
         ${pkgs.nix}/bin/nix --option substituters "" store verify \

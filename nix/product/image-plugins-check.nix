@@ -24,6 +24,7 @@ let
       name == "r36tmax"
       || (proofs.requiredBy == [ "korri-plugin-host.service" ]
         && lib.elem "korri-plugin-host.service" proofs.before
+        && lib.hasInfix "/bin/gzip -dc" proofs.script
         && lib.hasInfix "--option substituters \"\" store copy-sigs" proofs.script)
     )
     && lib.all (package: !(lib.elem (toString package) (map toString config.environment.systemPackages))) selected.${name};
