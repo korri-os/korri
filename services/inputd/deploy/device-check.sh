@@ -26,7 +26,8 @@ PORTAL_TARGET_PHYS='korri/inputd/portal'
 SUPPORTED_PRODUCTION_PROFILE='korri-60-xbox_one_gamepad.yaml'
 OLD_USER_UNITS=(korrid.service sunshine.service x11-headless.service)
 PREDICATE_SYSTEM_UNITS=(korrid.service sunshine.service x11-headless.service korri-compositor.service)
-SUNSHINE_UINPUT_GROUP='korri-sunshine-uinput'
+# The host-owned uinput group. Only Sunshine may hold it among checked units.
+SUNSHINE_UINPUT_GROUP='uinput'
 COMPOSITOR_CONTROL_DIRECTORY='/run/korri-compositor'
 COMPOSITOR_CONTROL_SOCKET='/run/korri-compositor/sway-ipc.sock'
 COMPOSITOR_WAYLAND_ALIAS='korri-wayland'
@@ -957,9 +958,9 @@ remote_candidate_credentials() {
   [[ " $environment " == *" KORRID_STREAM_PRIVATE_STATE_ROOT=$sunshine_private "* ]] \
     || fail 'korrid lacks the exact Sunshine private-state game isolation path'
   input_gid="$(remote_group_gid input)" || fail 'input group is unavailable'
-  # A removed legacy uinput group has no credentials to leak. If it remains,
-  # prove that no candidate or game process retains its numeric authority.
-  uinput_gid="$(remote_group_gid uinput 2>/dev/null || true)"
+  # The host uinput group is the Sunshine group below. Its policy (Sunshine
+  # only, never primary) replaces a separate forbidden-group check.
+  uinput_gid=''
   control_gid="$(remote_group_gid "$KORRID_CONTROL_GROUP")" || fail 'control group is unavailable'
   sunshine_gid="$(remote_group_gid "$SUNSHINE_UINPUT_GROUP")" || fail 'Sunshine uinput group is unavailable'
   manager_pid="$(systemctl show "user@$uid.service" -p MainPID --value 2>/dev/null || true)"

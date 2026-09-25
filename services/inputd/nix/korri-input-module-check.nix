@@ -285,10 +285,17 @@ assert
 assert
   sunshineProvider.config.systemd.services.sunshine.serviceConfig.SupplementaryGroups == [
     "render"
-    "korri-sunshine-uinput"
+    "uinput"
   ];
-assert
-  !(builtins.elem "korri-sunshine-uinput" sunshineProvider.config.users.users.korri.extraGroups);
+assert !(builtins.elem "uinput" sunshineProvider.config.users.users.korri.extraGroups);
+assert !(sunshineProvider.config.users.groups ? korri-sunshine-uinput);
+# The host owns /dev/uinput through one group with no members, whether or not
+# Sunshine is present.
+assert providerOnly.config.users.groups ? uinput;
+assert inputdOnly.config.users.groups ? uinput;
+assert (providerOnly.config.users.groups.uinput.members or [ ]) == [ ];
+assert lib.hasInfix ''GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"'' providerOnly.config.services.udev.extraRules;
+assert lib.hasInfix ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' inputdOnlyRules;
 assert allAssertionsPass inputdOnly;
 assert inputdOnly.config.systemd.services ? korri-inputd;
 assert !inputdOnly.config.services.inputplumber.enable;
@@ -375,9 +382,10 @@ assert
   bundledProvider.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputplumber";
 assert bundledInputd.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputd";
 assert bundleSelector.serviceConfig.UMask == "0077";
+assert bundleSelector.environment.KORRI_BUNDLE_INITIAL_PACKAGE == toString bundleFixture;
 assert
   bundleSelector.serviceConfig.ExecStart
-  == "${inputdPackage}/bin/korri-bundle-select initialize ${bundleFixture}";
+  == "${inputdPackage}/bin/korri-bundle-select initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}";
 assert hasFailedAssertion "requires its configured provider" contradictory;
 assert hasFailedAssertion "broad raw-input" broad;
 assert hasFailedAssertion "must exactly match the action user's primary identity"

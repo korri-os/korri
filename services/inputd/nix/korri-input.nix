@@ -27,7 +27,9 @@ let
       };
   inputdUser = "korri-inputd";
   controlGroup = "korri-control";
-  sunshineGroup = "korri-sunshine-uinput";
+  # The host owns /dev/uinput. A service gets write access only by joining this
+  # group; a plugin rule must never change the node's owner or group.
+  uinputGroup = "uinput";
   virtualTargetAcl = import ./virtual-target-acl.nix {
     inherit pkgs;
     inputdPackage = cfg.inputd.package;
@@ -152,14 +154,10 @@ in
         };
       };
       sunshine = {
-        enableUinputAccess = lib.mkEnableOption "service-specific Sunshine uinput access";
+        enableUinputAccess = lib.mkEnableOption "Sunshine membership in the host uinput group";
         serviceName = lib.mkOption {
           type = lib.types.str;
           default = "sunshine";
-        };
-        gid = lib.mkOption {
-          type = lib.types.ints.positive;
-          default = 979;
         };
       };
     };
@@ -260,14 +258,10 @@ in
         "d /dev/inputplumber/sources 0700 root root -"
       ];
       services.udev.extraRules = ''
-        # InputPlumber is root. Sunshine receives uinput only through its own service group.
+        # InputPlumber is root. Other services receive uinput only through the host group.
         KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${
           if cfg.inputd.enable then inputdUser else "root"
-        }", GROUP="${
-          if cfg.provider.sunshine.enableUinputAccess then sunshineGroup else "root"
-        }", MODE="${
-          if cfg.provider.sunshine.enableUinputAccess then "0660" else "0600"
-        }", OPTIONS+="static_node=uinput"
+        }", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"
 
       '';
       services.dbus.packages = [ providerPackage ];
@@ -290,12 +284,16 @@ in
         };
       };
     })
+    (lib.mkIf (cfg.provider.enable || cfg.inputd.enable) {
+      # No user is a member. Approved plugin services join it with
+      # SupplementaryGroups=uinput.
+      users.groups.${uinputGroup} = { };
+    })
     (lib.mkIf cfg.provider.sunshine.enableUinputAccess {
-      users.groups.${sunshineGroup}.gid = cfg.provider.sunshine.gid;
       systemd.services.${cfg.provider.sunshine.serviceName}.serviceConfig.SupplementaryGroups =
         lib.mkAfter
           [
-            sunshineGroup
+            uinputGroup
           ];
     })
     (lib.mkIf cfg.inputd.enable {
@@ -363,7 +361,7 @@ in
       # changing an ACL. Only inputd reads the InputPlumber source. Consumers
       # read distinct routed targets and cannot observe the inactive route.
       services.udev.extraRules = ''
-        ${lib.optionalString (!cfg.provider.enable) ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="root", MODE="0600", OPTIONS+="static_node=uinput"''}
+        ${lib.optionalString (!cfg.provider.enable) ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"''}
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant source ${toString cfg.inputd.uid} $env{DEVNAME}"
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri game)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/game", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant game ${toString cfg.inputd.actionUid} $env{DEVNAME}"
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri portal)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/portal", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant portal $env{DEVNAME}"

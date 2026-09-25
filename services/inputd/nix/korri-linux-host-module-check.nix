@@ -103,6 +103,11 @@ assert !(cfg.systemd.services ? korri-streaming-performance-profile);
 assert !(cfg.systemd.sockets ? korri-certificate-control);
 assert !(cfg.users.groups ? korri-sunshine-input-seat);
 assert !(cfg.users.groups ? korri-sunshine-uinput);
+# The base host owns /dev/uinput through one memberless group that approved
+# plugin units join.
+assert cfg.users.groups ? uinput;
+assert (cfg.users.groups.uinput.members or [ ]) == [ ];
+assert lib.hasInfix ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' cfg.services.udev.extraRules;
 assert !(lib.hasInfix "korri-sunshine" cfg.services.udev.extraRules);
 assert cfg.services.korriLinuxHost.enable;
 assert cfg.services.korriLinuxHost.runtimeUser == "korri";

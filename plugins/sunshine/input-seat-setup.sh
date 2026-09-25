@@ -1,7 +1,8 @@
 set -eu
 
 # NixOS writes the base input policy to 99-local.rules. Apply the approved
-# plugin grant after it, so the base's root-only uinput rule cannot undo it.
+# plugin grants for uhid and seat nodes after it. /dev/uinput belongs to the
+# host: the units reach it through SupplementaryGroups=uinput instead.
 rules=/run/udev/rules.d/99-z-korri-sunshine-input.rules
 case "${1:-}" in
   start)

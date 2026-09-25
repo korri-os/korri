@@ -9,7 +9,7 @@ Wants=network-online.target
 Type=simple
 User=korri
 Group=korri-sunshine-input-seat
-SupplementaryGroups=video render
+SupplementaryGroups=video render uinput
 WorkingDirectory=/home/korri
 Environment=KORRI_CERTIFICATE_CONTROL_UID=976
 Environment=KORRI_CERTIFICATE_CONTROL_GID=976

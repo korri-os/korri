@@ -8,6 +8,7 @@ Before=korrid.service korri-sunshine.service
 Type=simple
 User=root
 Group=root
+SupplementaryGroups=uinput
 RuntimeDirectory=korri-input-seat
 RuntimeDirectoryMode=0711
 ExecStartPre=+@setup@ start
