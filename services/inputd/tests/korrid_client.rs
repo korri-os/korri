@@ -33,14 +33,24 @@ async fn reply(stream: &mut tokio::net::UnixStream, body: &str) {
 }
 
 async fn request_body(stream: &mut tokio::net::UnixStream) -> serde_json::Value {
-    let mut request = Vec::new();
-    stream.read_to_end(&mut request).await.unwrap();
-    let body = request
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|position| &request[position + 4..])
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        assert!(head.len() < 4096, "request headers exceeded test limit");
+        stream.read_exact(&mut byte).await.unwrap();
+        head.push(byte[0]);
+    }
+    let length = std::str::from_utf8(&head)
+        .unwrap()
+        .lines()
+        .find_map(|line| line.strip_prefix("Content-Length: "))
+        .unwrap()
+        .trim()
+        .parse::<usize>()
         .unwrap();
-    serde_json::from_slice(body).unwrap()
+    let mut body = vec![0_u8; length];
+    stream.read_exact(&mut body).await.unwrap();
+    serde_json::from_slice(&body).unwrap()
 }
 
 fn status_ok(phase: &str) -> String {
@@ -99,6 +109,13 @@ async fn status_reads_the_exact_running_launch() {
         assert_eq!(
             request_body(&mut stream).await,
             serde_json::json!({"_tag":"app.session.status", "payload":{}})
+        );
+        let mut next = [0_u8; 1];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), stream.read(&mut next))
+                .await
+                .is_err(),
+            "the client must not half-close before reading the response"
         );
         reply(&mut stream, &status_ok("running")).await;
     });

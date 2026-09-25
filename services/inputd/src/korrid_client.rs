@@ -186,8 +186,8 @@ impl KorridClient {
             .write_all(body)
             .await
             .map_err(LocalControlError::Write)?;
-        stream.shutdown().await.map_err(LocalControlError::Write)?;
-
+        // Content-Length frames the request. Closing the write half here makes
+        // the live korrid HTTP server close the socket without a response.
         let mut response = Vec::new();
         let mut buffer = [0_u8; 4096];
         loop {
