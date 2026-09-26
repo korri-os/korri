@@ -287,12 +287,17 @@ pkgs.testers.runNixOSTest {
             rpc("app.session.status", {})
             assert freezer() == "running"
         machine.succeed("echo map > /run/freezer-test/map-game")
+        # A live game cgroup does not prove its window mapped. Keep process
+        # state beside the compositor tree when this asynchronous gate fails.
         try:
             machine.wait_until_succeeds(f'test "$(systemctl show -P FreezerState {kiosk})" = frozen', timeout=30)
         except Exception:
             print(machine.succeed(sway + " -t get_tree"))
             print(machine.succeed(f"cat /sys/fs/cgroup/system.slice/{game}/cgroup.procs"))
             print(machine.succeed(f"journalctl -u {game} -u korrid --no-pager"))
+            print(machine.succeed(f"systemctl show {game} -p ExecStart -p Environment -p ControlGroup -p FreezerState -p MainPID"))
+            print(machine.succeed("ps -eo pid,ppid,uid,stat,wchan:24,args"))
+            print(machine.succeed("stat /run/freezer-test/map-game"))
             raise
         reply = rpc("app.session.freeze", {"expectedLaunchId": launch_id})
         assert reply["_tag"] == "Ok", reply
