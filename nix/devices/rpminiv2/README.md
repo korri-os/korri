@@ -192,7 +192,11 @@ replacement for it. Its current first milestone is deliberately local:
 - The portal and korrid communicate over loopback. The product starts
   NetworkManager and BlueZ and installs the wireless regulatory database.
   Select Wi-Fi after boot with `nmcli device wifi connect <SSID> --ask`; do not
-  put credentials in the image. Avahi and Sunshine are not enabled by this
+  put credentials in the image. A restored native NetworkManager profile remains
+  available without `/etc/korri/wifi.env`; that provisioning file is optional.
+  The shared profile service leaves persistent profiles unchanged. Run
+  `nix/devices/rpminiv2/wifi-check.sh` for the local NetworkManager VM regression
+  check; it does not contact hardware. Avahi and Sunshine are not enabled by this
   device slice. Wi-Fi and Bluetooth still need physical acceptance; streaming,
   media decode, and internal-storage support are not claimed.
 - The product image carries speaker, headphone and DisplayPort sound drivers

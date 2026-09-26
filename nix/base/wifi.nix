@@ -16,9 +16,16 @@
 # base/default.nix imports this. Device modules add radio-specific settings
 # through networking.networkmanager.ensureProfiles.profiles.korri.wifi.
 # ../formats/sd-card.nix owns the optional build-time copy of wifi.env.
-{ ... }:
+{ lib, ... }:
 
 {
+  # ensureProfiles.environmentFiles accepts absolute paths, not systemd's '-'
+  # prefix. Make this provisioning file optional at the generated unit boundary.
+  # Persistent profiles in /etc/NetworkManager/system-connections remain owned
+  # by NetworkManager and need no provisioning environment.
+  systemd.services.NetworkManager-ensure-profiles.serviceConfig.EnvironmentFile =
+    lib.mkForce [ "-/etc/korri/wifi.env" ];
+
   networking.networkmanager.ensureProfiles = {
     environmentFiles = [ "/etc/korri/wifi.env" ];
     profiles.korri = {

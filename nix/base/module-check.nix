@@ -62,6 +62,9 @@ assert lib.all samePolicy (lib.attrValues korri.nixosConfigurations);
 assert profile.profiles.korri.wifi.ssid == "$WIFI_SSID";
 assert profile.profiles.korri.wifi-security.psk == "$WIFI_PSK";
 assert profile.environmentFiles == [ "/etc/korri/wifi.env" ];
+assert base.config.systemd.services.NetworkManager-ensure-profiles.serviceConfig.EnvironmentFile == [
+  "-/etc/korri/wifi.env"
+];
 assert !base.config.services.openssh.enable;
 assert !base.config.services.openssh.openFirewall;
 assert base.config.users.users.root.openssh.authorizedKeys.keys == [ ];
