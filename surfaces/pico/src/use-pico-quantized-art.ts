@@ -1,28 +1,32 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { quantizePico8 } from "./pico8-remap"
 
 /**
- * Draw an image into a canvas at a coarse grid and remap it to the sixteen.
+ * Draw an image into a small canvas and remap it to the sixteen, keeping the
+ * image's own shape.
  *
- * Shared by the cart's cover and the shelf's backdrop because they want the
- * same thing at different sizes, and two copies of a canvas pipeline is two
- * places for the crop maths to drift. The hook owns the whole effect: the
- * caller supplies a source and a shape and renders the canvas it gets back.
+ * Covers arrive at whatever ratio their platform uses — a square PICO-8 label,
+ * a tall box, a wide store header — and a cartridge takes the shape of its
+ * art, so nothing here crops. `cells` is the picture's size in palette pixels
+ * measured by area: a square gets `cells` × `cells`, and any other shape gets
+ * the same number of pixels spread over its own ratio, so a wide header and a
+ * tall box look equally coarse side by side.
  *
- * `cells` is the width in palette pixels, not device pixels — the canvas stays
- * tiny and CSS upscales it crisp, which is what makes the result read as sprite
- * work rather than as a blurred photograph.
+ * The canvas stays tiny and CSS upscales it crisp. Its backing size is its
+ * intrinsic size, so CSS that sets only one axis gets the other from the art.
+ * `ratio` is width ÷ height once the image has loaded, for CSS that has to fit
+ * the art inside a box on both axes; it is undefined before then and when
+ * there is no image.
  */
 export function usePicoQuantizedArt({
   src,
-  ratio,
   cells,
 }: {
   readonly src: string | undefined
-  readonly ratio: number
   readonly cells: number
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const [ratio, setRatio] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     const canvas = ref.current
@@ -34,31 +38,17 @@ export function usePicoQuantizedArt({
     const image = new Image()
     image.crossOrigin = "anonymous"
     image.onload = () => {
-      if (cancelled) return
-      const height = Math.max(8, Math.round(cells / ratio))
-      canvas.width = cells
+      if (cancelled || image.width === 0 || image.height === 0) return
+      const shape = image.width / image.height
+      const width = Math.max(1, Math.round(cells * Math.sqrt(shape)))
+      const height = Math.max(1, Math.round(cells / Math.sqrt(shape)))
+      canvas.width = width
       canvas.height = height
-      context.imageSmoothingEnabled = false
-
-      /* Cover-crop to the target shape before sampling, so the grid stays
-       * square and the art is not stretched into it. */
-      const sourceRatio = image.width / image.height
-      const sw = sourceRatio > ratio ? image.height * ratio : image.width
-      const sh = sourceRatio > ratio ? image.height : image.width / ratio
-      context.drawImage(
-        image,
-        (image.width - sw) / 2,
-        (image.height - sh) / 2,
-        sw,
-        sh,
-        0,
-        0,
-        cells,
-        height,
-      )
+      context.imageSmoothingEnabled = true
+      context.drawImage(image, 0, 0, width, height)
 
       try {
-        const pixels = context.getImageData(0, 0, cells, height)
+        const pixels = context.getImageData(0, 0, width, height)
         quantizePico8(pixels.data, "vivid")
         context.putImageData(pixels, 0, 0)
       } catch {
@@ -66,12 +56,13 @@ export function usePicoQuantizedArt({
          * downsampled draw survives, so the image stays pixelated and merely
          * keeps its own colours — worse than a remap, far better than nothing. */
       }
+      setRatio(Math.round((width / height) * 1000) / 1000)
     }
     image.src = src
     return () => {
       cancelled = true
     }
-  }, [src, ratio, cells])
+  }, [src, cells])
 
-  return ref
+  return { ref, ratio: src === undefined || src === "" ? undefined : ratio }
 }

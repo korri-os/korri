@@ -16,7 +16,6 @@
     "caliper:verify": "node caliper/verify-browser.mjs"
   },
   "dependencies": {
-    "@korri/intrinsic-design": "file:../../packages/intrinsic-design",
     "qrcode": "^1.5.4"
   },
   "peerDependencies": {

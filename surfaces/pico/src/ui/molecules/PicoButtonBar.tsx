@@ -6,22 +6,30 @@ export interface PicoButtonBarHint {
 }
 
 /**
- * The bottom chrome: what the buttons do on this screen.
+ * The bottom of every screen: what the face buttons do here, and on the left
+ * a short readout about the screen when it has one ("9 carts · 2 resumable").
  *
- * Aria-hidden as a whole. Every action it names is reachable by focusing the
- * control that performs it, so announcing the bar as well would read the same
- * affordance twice to someone who cannot see the glyphs anyway.
+ * Hidden from assistive technology: every hint restates a control that is
+ * already reachable and labelled, and the readout restates what the screen
+ * shows.
  */
 export function PicoButtonBar({
   hints,
+  readout,
 }: {
   readonly hints: readonly PicoButtonBarHint[]
+  readonly readout?: string
 }) {
   return (
     <footer aria-hidden className="pico-button-bar">
-      {hints.map((hint) => (
-        <PicoHint hintKey={hint.hintKey} key={hint.hintKey} label={hint.label} />
-      ))}
+      {readout === undefined ? null : (
+        <span className="pico-button-bar-readout">{readout}</span>
+      )}
+      <span className="pico-button-bar-hints">
+        {hints.map((hint) => (
+          <PicoHint hintKey={hint.hintKey} key={hint.hintKey} label={hint.label} />
+        ))}
+      </span>
     </footer>
   )
 }

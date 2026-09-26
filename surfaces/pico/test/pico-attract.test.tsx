@@ -69,7 +69,7 @@ describe("waking it", () => {
     act(() => {
       // From inside, the way a real press arrives: bubbling up from whatever
       // control had focus when the screen was left alone.
-      fireEvent.keyDown(document.querySelector(".pico-cart")!, { key: "Enter" })
+      fireEvent.keyDown(document.querySelector("button.pico-cart")!, { key: "Enter" })
     })
     expect(screen.queryByRole("img", { name: "Attract" })).toBeNull()
     expect(host.calls).toEqual([])

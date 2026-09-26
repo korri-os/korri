@@ -1,11 +1,12 @@
 import type { PicoOverlayControlView } from "../../pico-overlay-view"
+import { PicoRow } from "../atoms/PicoRow"
 
 /**
- * One gameplay control as a menu row: Korri's label left, its state right.
+ * One control Korri offers: a menu row, its current state on the right, and
+ * underneath it the reason it cannot be used or what it will do.
  *
- * A disabled control is drawn dimmed with Korri's reason beneath it rather than
- * hidden. Hiding it would make the menu change shape between opens, and the
- * reason is the useful part — "No save yet" tells the user what to do.
+ * A disabled control stays in the list with Korri's reason. Hiding it would
+ * leave the user wondering where it went.
  */
 export function PicoControlRow({
   control,
@@ -14,25 +15,19 @@ export function PicoControlRow({
   readonly control: PicoOverlayControlView
   readonly onActivate: () => void
 }) {
+  const note = !control.enabled && control.disabledReason !== undefined
+    ? control.disabledReason
+    : control.description
   return (
-    <li className="pico-control-row-item">
-      <button
-        className="pico-control-row"
-        data-destructive={control.destructive ? "true" : undefined}
+    <li className="pico-control-row">
+      <PicoRow
+        danger={control.destructive}
+        detail={control.stateLabel === undefined ? undefined : `◀ ${control.stateLabel} ▶`}
         disabled={!control.enabled}
-        onClick={onActivate}
-        type="button"
-      >
-        <span className="pico-control-row-label">{control.label}</span>
-        {control.stateLabel === undefined ? null : (
-          <span className="pico-control-row-state">‹ {control.stateLabel} ›</span>
-        )}
-      </button>
-      {!control.enabled && control.disabledReason !== undefined ? (
-        <p className="pico-control-row-reason">{control.disabledReason}</p>
-      ) : control.description === undefined ? null : (
-        <p className="pico-control-row-reason">{control.description}</p>
-      )}
+        label={control.label}
+        onPress={onActivate}
+      />
+      {note === undefined ? null : <p className="pico-control-row-reason">{note}</p>}
     </li>
   )
 }

@@ -1,16 +1,9 @@
 import type { PicoShelfGame } from "../../pico-shelf-game"
-import { PicoSub } from "../atoms/PicoSub"
-import { PicoTitle } from "../atoms/PicoTitle"
-import { PicoCart } from "../molecules/PicoCart"
-import { PicoKeyArtStage } from "../molecules/PicoKeyArtStage"
-import { PicoStatRun } from "../molecules/PicoStatRun"
+import { PicoButton } from "../atoms/PicoButton"
+import { PicoGameStage } from "./PicoGameStage"
 
 /**
- * One game, large, on its own key art.
- *
- * Legacy drew this three times — a spotlight, a last-played hero and a plain
- * hero — and they were one role with three names. This is the role: the game
- * the screen is about, stated as big as the screen allows.
+ * One game, large, with one thing to do: open it.
  *
  * The reason it leads is printed above the title. Korri publishes no featured
  * flag, so the rule is Pico's, and a rule the user cannot see reads as an
@@ -28,26 +21,20 @@ export function PicoGameHero({
   readonly onOpen: () => void
 }) {
   return (
-    <section aria-label={game.title} className="pico-game-hero">
-      <PicoKeyArtStage src={game.wideArtUrl} />
-      <button
-        aria-label={game.subtitle === undefined ? game.title : `${game.title}, ${game.subtitle}`}
-        className="pico-game-hero-open"
-        onClick={onOpen}
-        type="button"
+    <div className="pico-game-hero">
+      <PicoGameStage
+        artUrl={game.artUrl}
+        id={game.id}
+        kicker={reason}
+        resumable={game.resumable}
+        stats={stats}
+        subtitle={game.subtitle}
+        title={game.title}
       >
-        <span className="pico-game-hero-art">
-          <PicoCart artUrl={game.artUrl} id={game.id} placement="still" title={game.title} />
+        <span className="pico-game-hero-open">
+          <PicoButton label="OPEN" onPress={onOpen} />
         </span>
-        <span className="pico-game-hero-info">
-          {reason === undefined ? null : (
-            <span className="pico-game-hero-reason">{reason}</span>
-          )}
-          <PicoTitle size="lg" text={game.title} />
-          {game.subtitle === undefined ? null : <PicoSub text={game.subtitle} />}
-          <PicoStatRun stats={stats} />
-        </span>
-      </button>
-    </section>
+      </PicoGameStage>
+    </div>
   )
 }

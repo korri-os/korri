@@ -1,35 +1,27 @@
+/* The screen behind a question goes solid: the question is all there is. The
+ * scrim covers its nearest positioned ancestor, which is the screen body. */
 .pico-modal-scrim {
 	position: absolute;
 	inset: 0;
 	z-index: 2;
 	display: grid;
 	place-items: center;
-	padding: var(--pico-space-3);
-	background: color-mix(in srgb, var(--pico-cast-shadow) 70%, transparent);
+	padding: var(--pico-u);
+	background: var(--pico-bg);
 }
 
 .pico-modal {
-	display: flex;
-	flex-direction: column;
-	gap: var(--pico-space-2);
-	max-width: 80cqw;
-	padding: var(--pico-space-3);
-	background: var(--pico-chrome);
-	border: calc(var(--pico-edge) * 2) solid var(--pico-warn);
-	box-shadow: calc(var(--pico-edge) * 3) calc(var(--pico-edge) * 3) 0 var(--pico-cast-shadow);
-	animation: pico-rise 240ms steps(3, end) both;
+	display: grid;
+	width: min(100%, calc(var(--pico-px) * 230));
+	max-height: 100%;
+	min-height: 0;
 }
 
 .pico-modal-message {
 	margin: 0;
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text);
-	line-height: 1.4;
-	color: var(--pico-ink);
 }
 
 .pico-modal-actions {
-	display: flex;
-	gap: var(--pico-space-2);
-	justify-content: flex-end;
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
 }

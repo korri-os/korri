@@ -2,30 +2,30 @@ import { picoLabelFor } from "../../pico-label"
 import { PicoCoverArt } from "../atoms/PicoCoverArt"
 
 /**
- * Where a cart sits on the shelf. The focused cart is the hero; its neighbours
- * peek in from the sides.
+ * Where a cart is.
+ *
+ * `side` and `hero` sit on a shelf and are buttons: `hero` is the chosen one,
+ * lifted off the shelf with a shadow under it. `still` is a cart as the thing
+ * a screen is about — the big cartridge on a game's own screen — and renders
+ * as a figure that takes no focus. `tile` is a shelf-sized cart drawn inside
+ * another control, such as a search result, which owns the focus itself. One
+ * component, because a second cart would be the same plastic drawn twice.
  */
-/**
- * `hero` and `side` are shelf positions and are buttons. `still` is a cart as
- * artwork — on a game's own screen it is what the screen is about, not a
- * control, so it renders as a plain figure and takes no focus. One component,
- * because a second cart would be the same label drawn twice.
- */
-export type PicoCartPlacement = "hero" | "side" | "still"
+export type PicoCartPlacement = "hero" | "side" | "still" | "tile"
 
 /**
- * One game, drawn as a cartridge.
+ * One game, drawn as a cartridge: plastic shell, a notch at the top, grip
+ * ridges at the bottom, and the cover as the sticker in its window.
  *
- * A game with no art still gets a label: two palette colours and a dither
- * derived from its id, so a shelf of unillustrated games reads as a rack of
- * different cartridges rather than a row of identical rectangles. The choice
- * travels as data attributes rather than an inline style, which keeps the
- * colours in the stylesheet where they can be themed and reviewed.
+ * The cartridge takes the shape of its art. A tall box makes a tall cart and a
+ * wide store header a short one, so a shelf of mixed platforms reads as a real
+ * shelf rather than a grid of cropped squares. The shell colour comes from the
+ * game's id, carried as a data attribute so the colour stays in the
+ * stylesheet.
  *
- * Every cart is focusable, including the ones peeking at the edges: focus is
- * how a d-pad moves the shelf, so a cart that could not take focus would be
- * unreachable on the hardware Pico is built for. Focusing a cart is what makes
- * it the hero — the shelf listens rather than the cart deciding.
+ * Every shelf cart is focusable, including the ones at the edges: focus is how
+ * a d-pad moves along the shelf, so a cart that could not take focus would be
+ * unreachable on the hardware Pico is built for.
  */
 export function PicoCart({
   id,
@@ -48,27 +48,25 @@ export function PicoCart({
   readonly onActivate?: () => void
 }) {
   const label = picoLabelFor(id)
-  const Tag = placement === "still" ? "figure" : "button"
+  const name = subtitle === undefined ? title : `${title}, ${subtitle}`
+  const Tag = placement === "still" ? "figure" : placement === "tile" ? "span" : "button"
   return (
     <Tag
-      aria-label={subtitle === undefined ? title : `${title}, ${subtitle}`}
       className="pico-cart"
-      data-accent={label.accent}
-      data-dither={label.dither}
-      data-fill={label.fill}
-      data-ink={label.ink}
       data-placement={placement}
-      {...(placement === "still"
-        ? {}
-        : { onClick: onActivate, onFocus, type: "button" as const })}
+      data-shell={label.shell}
+      {...(placement === "tile"
+        ? { "aria-hidden": true }
+        : placement === "still"
+          ? { "aria-label": name }
+          : { "aria-label": name, onClick: onActivate, onFocus, type: "button" as const })}
     >
       <span className="pico-cart-window">
-        <PicoCoverArt artUrl={artUrl} title={title} />
+        <PicoCoverArt artUrl={artUrl} id={id} title={title} />
       </span>
-      <span aria-hidden className="pico-cart-notch" />
       {resumable ? (
         <span aria-hidden className="pico-cart-resume">
-          ▸
+          ▶
         </span>
       ) : null}
     </Tag>

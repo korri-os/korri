@@ -1,11 +1,17 @@
+/* Ten columns of fat keys. The rows are for reading order only; every key
+ * flows into one grid, so the last row (six characters, then space, delete
+ * and clear) fills exactly ten columns and nothing wraps. */
 .pico-keyboard {
-	display: flex;
-	flex-direction: column;
-	gap: calc(var(--pico-space-1) / 2);
+	display: grid;
+	grid-template-columns: repeat(10, minmax(0, 1fr));
+	gap: calc(var(--pico-px) * 2);
+	align-content: start;
 }
 
 .pico-keyboard-row {
-	display: flex;
-	justify-content: center;
-	gap: calc(var(--pico-space-1) / 2);
+	display: contents;
+}
+
+.pico-keyboard-row > [data-wide]:first-child {
+	grid-column: span 2;
 }

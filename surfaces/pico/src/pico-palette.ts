@@ -43,11 +43,12 @@ export const PICO_PALETTE: readonly PicoColor[] = [
 ]
 
 /**
- * Palette entries bright enough to carry a cartridge label. The near-blacks are
- * excluded: a label the same colour as the shelf is not a label.
+ * Palette entries bright enough to be cartridge plastic on a black ground, in
+ * the order `--pico-shell-N` declares them. The darks are excluded: a cartridge
+ * the colour of the floor is a hole in the shelf.
  */
-export const PICO_LABEL_COLORS: readonly PicoColor[] = [
-  2, 3, 4, 8, 9, 10, 11, 12, 13, 14,
+export const PICO_SHELL_COLORS: readonly PicoColor[] = [
+  12, 14, 9, 11, 15, 6, 8, 10, 3, 13,
 ].map((index) => PICO_PALETTE[index] as PicoColor)
 
 /** Perceived brightness, 0..255. Used to decide what ink survives on a fill. */

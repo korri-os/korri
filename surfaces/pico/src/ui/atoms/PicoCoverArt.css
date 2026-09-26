@@ -1,21 +1,51 @@
+/**
+ * Cover art at its own shape, fitted inside the box its container states:
+ * `--pico-art-w` by `--pico-art-h`. The canvas's backing size carries the
+ * art's ratio, so `height: auto` follows from the width.
+ *
+ * The width is the larger of the two that fit: the full box width, or the box
+ * height times the art's ratio, whichever is smaller. The ratio comes from
+ * `data-ratio` through typed attr(). A browser without typed attr() drops that
+ * declaration and keeps the first one, which letterboxes inside the box
+ * instead: worse, never cropped.
+ */
 .pico-cover-art-canvas {
 	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
+	width: var(--pico-art-w);
+	max-height: var(--pico-art-h);
+	object-fit: contain;
+	width: min(
+		var(--pico-art-w),
+		calc(var(--pico-art-h) * attr(data-ratio type(<number>), 1))
+	);
+	height: auto;
 	image-rendering: pixelated;
 }
 
-/* No background: the cart's dithered label is the ground, and painting over it
- * would throw away the one thing that distinguishes an unillustrated game. */
+/* The stand-in for missing art: a square sticker with the game's initials. */
 .pico-cover-art-initials {
+	--pico-sticker: var(--pico-shell-0);
 	display: grid;
 	place-items: center;
-	width: 100%;
-	height: 100%;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-lg);
-	color: inherit;
-	text-shadow: var(--pico-edge) var(--pico-edge) 0
-		color-mix(in srgb, var(--p8-black) 45%, transparent);
+	width: min(var(--pico-art-w), var(--pico-art-h));
+	aspect-ratio: 1;
+	font-size: var(--pico-initials-size, var(--pico-text-xl));
+	line-height: 1;
+	color: var(--pico-ink-dark);
+	background: var(--pico-sticker);
+	overflow: hidden;
 }
+
+.pico-cover-art-initials[data-ink="light"] {
+	color: var(--pico-ink);
+}
+
+.pico-cover-art-initials[data-sticker="1"] { --pico-sticker: var(--pico-shell-1); }
+.pico-cover-art-initials[data-sticker="2"] { --pico-sticker: var(--pico-shell-2); }
+.pico-cover-art-initials[data-sticker="3"] { --pico-sticker: var(--pico-shell-3); }
+.pico-cover-art-initials[data-sticker="4"] { --pico-sticker: var(--pico-shell-4); }
+.pico-cover-art-initials[data-sticker="5"] { --pico-sticker: var(--pico-shell-5); }
+.pico-cover-art-initials[data-sticker="6"] { --pico-sticker: var(--pico-shell-6); }
+.pico-cover-art-initials[data-sticker="7"] { --pico-sticker: var(--pico-shell-7); }
+.pico-cover-art-initials[data-sticker="8"] { --pico-sticker: var(--pico-shell-8); }
+.pico-cover-art-initials[data-sticker="9"] { --pico-sticker: var(--pico-shell-9); }

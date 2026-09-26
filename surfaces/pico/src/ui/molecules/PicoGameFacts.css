@@ -1,0 +1,36 @@
+/* Vertical rhythm in units: kicker, title, one unit, provenance, two units,
+ * chips. The title is the only big thing, so nothing else competes with it. */
+.pico-game-facts {
+	display: grid;
+	justify-items: start;
+	gap: var(--pico-u);
+	min-width: 0;
+	color: var(--pico-ink);
+}
+
+.pico-game-facts-kicker {
+	font-size: var(--pico-text-sm);
+	color: var(--pico-go);
+}
+
+.pico-game-facts-chips {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: calc(var(--pico-px) * 2) calc(var(--pico-px) * 3);
+	margin-top: var(--pico-u);
+}
+
+/* On a stage too short for everything, the kicker and the play chips yield:
+ * they are readouts, and the game's own screen states them in full. The
+ * title and provenance stay. */
+@container pico-stage (height < 16em) {
+	.pico-game-facts {
+		gap: var(--pico-px);
+	}
+
+	.pico-game-facts-kicker,
+	.pico-game-facts-chips {
+		display: none;
+	}
+}

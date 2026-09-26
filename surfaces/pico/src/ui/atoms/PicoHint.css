@@ -1,25 +1,23 @@
+/* A face button and what it does. The disc is drawn in pixels and the letter
+ * sits on it, the way PICO-8 draws its own O and X. */
 .pico-hint {
 	display: inline-flex;
-	gap: var(--pico-space-1);
 	align-items: center;
+	gap: calc(var(--pico-px) * 2);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-dim);
+	white-space: nowrap;
 }
 
-/**
- * The face button. Its colour drives the disc through `currentColor`, so the
- * shape and the key stay one decision rather than two that can drift apart.
- */
 .pico-hint-key {
 	position: relative;
 	display: inline-grid;
 	place-items: center;
-	width: 2.2em;
-	height: 2.2em;
-	font-size: var(--pico-text-xs);
+	width: calc(var(--pico-px) * 8);
+	height: calc(var(--pico-px) * 8);
+	flex: none;
 }
 
-/* A wrapper this component owns, rather than positioning the disc by the disc's
- * own class: reaching into a child's names is how two files end up sharing one
- * decision and drifting apart. */
 .pico-hint-key-disc {
 	position: absolute;
 	inset: 0;
@@ -27,33 +25,15 @@
 
 .pico-hint-key-glyph {
 	position: relative;
-	font-family: var(--pico-font-display);
-	/* Sized against the cap, not the bar: the letter fills the disc's flat middle
-	 * without touching the stepped edge, which is roughly the proportion legacy
-	 * struck at 1/2.2 of the cap. */
-	font-size: 0.9em;
+	font-weight: normal;
 	line-height: 1;
+	color: var(--pico-key-ink);
 }
 
 .pico-hint-key[data-key="a"] {
 	color: var(--pico-key-a);
 }
 
-.pico-hint-key[data-key="a"] .pico-hint-key-glyph {
-	color: var(--pico-key-a-ink);
-}
-
 .pico-hint-key[data-key="b"] {
 	color: var(--pico-key-b);
-}
-
-.pico-hint-key[data-key="b"] .pico-hint-key-glyph {
-	color: var(--pico-key-b-ink);
-}
-
-.pico-hint-label {
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
 }

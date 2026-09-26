@@ -1,10 +1,10 @@
 /**
- * The vendored faces are the ones that were looked at.
+ * The face is the one that was built from the glyph table.
  *
- * This pins bytes, not appearance: a woff2 from the wrong subset loads without
- * error and reports a face, so nothing short of rasterising glyphs can prove a
- * font is right. What this does catch is the file changing without anyone
- * deciding to change it — see src/fonts/README.md for how that bit once.
+ * This pins bytes, not appearance. scripts/build-font.py is deterministic, so
+ * a changed checksum means someone changed the table or the builder — and the
+ * pin makes that a decision rather than an accident. Re-check the rendered
+ * text by eye when changing either; see src/fonts/README.md.
  */
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
@@ -14,20 +14,29 @@ import { join } from "node:path"
 const FONTS = join(import.meta.dir, "..", "src", "fonts")
 
 const PINNED = {
-  "press-start-2p.woff2":
-    "afec86997fdaf54af1f59358fa2c1e2a0f1d04146edad18e5cd141d0384a7548",
-  "vt323.woff2":
-    "8ddbebcc1048154132e1d78eb9b1f7850bca1b7d857035ccf1cb4318ebc615b6",
+  "pico8.woff2": "f1cc9fa26350ad56630c949266508239e379fadb07c74a7f156da1286bbec7ac",
 } as const
 
-describe("vendored faces", () => {
+describe("the vendored face", () => {
   test.each(Object.entries(PINNED))("%s matches its pinned bytes", (file, sha) => {
     const bytes = readFileSync(join(FONTS, file))
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(sha)
   })
 
   test.each(Object.keys(PINNED))("%s is really woff2", (file) => {
-    // A truncated or HTML-error-page download still has a plausible size.
     expect(readFileSync(join(FONTS, file)).subarray(0, 4).toString()).toBe("wOF2")
+  })
+
+  test("the glyph table holds every printable ASCII character but the capitals", () => {
+    const table = readFileSync(join(FONTS, "pico8-glyphs.txt"), "utf8")
+    const codes = new Set(
+      [...table.matchAll(/^([0-9A-F]{4}) /gm)].map((match) => Number.parseInt(match[1] ?? "", 16)),
+    )
+    const missing: string[] = []
+    for (let code = 0x20; code < 0x7f; code += 1) {
+      const isCapital = code >= 0x41 && code <= 0x5a
+      if (!isCapital && !codes.has(code)) missing.push(String.fromCharCode(code))
+    }
+    expect(missing).toEqual([])
   })
 })

@@ -32,7 +32,7 @@ export function PicoLibrary({
   readonly clockLabel?: string
 }) {
   return (
-    <PicoScreenShell backdrop="none" clockLabel={clockLabel} hints={HINTS} label="FIND">
+    <PicoScreenShell clockLabel={clockLabel} hints={HINTS} label="FIND">
       <PicoLibraryBrowser
         library={library}
         onBackspace={onBackspace}

@@ -1,22 +1,20 @@
-import { PICO_LABEL_COLORS, picoLuminance } from "./pico-palette"
+import { PICO_SHELL_COLORS, picoLuminance } from "./pico-palette"
 
 /**
- * A cartridge label, derived from the game's id.
+ * A cartridge's plastics, derived from the game's id.
  *
- * Korri ships no art for most games, and a shelf of identical rectangles is the
- * single thing that made this surface look dead. Every game instead gets a
- * stable, distinct label: two palette colours and a dither step, hashed from
- * its id so the same game is the same colour on every boot and on every device
- * — a label that changed between visits would be worse than no label.
+ * Every game gets a stable, distinct shell colour, hashed from its id so the
+ * same game is the same colour on every boot and on every device — a cart that
+ * changed colour between visits would be worse than a grey one. A game with no
+ * art also gets a sticker in a second colour carrying its initials, never the
+ * shell's own colour, or the sticker would vanish into the plastic.
  */
 export interface PicoLabel {
-  /** Index into PICO_LABEL_COLORS for the ground. */
-  readonly fill: number
-  /** Index into PICO_LABEL_COLORS for the dither's second colour. */
-  readonly accent: number
-  /** Which of the dither's three cell sizes to use. */
-  readonly dither: number
-  /** Whether the fill needs light ink on top of it. */
+  /** Index into PICO_SHELL_COLORS for the cartridge body. */
+  readonly shell: number
+  /** Index into PICO_SHELL_COLORS for a no-art sticker. Never `shell`. */
+  readonly sticker: number
+  /** Whether the sticker needs light ink on top of it. */
   readonly ink: "light" | "dark"
 }
 
@@ -30,26 +28,22 @@ function hash(input: string): number {
   return h >>> 0
 }
 
-/** Below this, a fill is dark enough that black ink stops being readable. */
+/** Below this luminance, dark ink disappears into the sticker. */
 const INK_FLIP = 140
 
 export function picoLabelFor(gameId: string): PicoLabel {
   const h = hash(gameId)
-  const fill = h % PICO_LABEL_COLORS.length
-  /* Unsigned shifts throughout: `>>` is signed, so any id hashing above 2^31
-   * yields a negative offset — which lands the accent on the fill and draws a
-   * flat rectangle, or indexes off the palette entirely. */
-  const offset = 1 + ((h >>> 8) % (PICO_LABEL_COLORS.length - 1))
-  /* Never the same colour twice: a dither of one colour is a flat rectangle,
-   * which is what this exists to avoid. */
-  const accent = (fill + offset) % PICO_LABEL_COLORS.length
-  const fillColor = PICO_LABEL_COLORS[fill]
+  const shell = h % PICO_SHELL_COLORS.length
+  /* Unsigned shift: `>>` is signed, so an id hashing above 2^31 would give a
+   * negative offset and an index outside the palette. */
+  const offset = 1 + ((h >>> 8) % (PICO_SHELL_COLORS.length - 1))
+  const sticker = (shell + offset) % PICO_SHELL_COLORS.length
+  const stickerColor = PICO_SHELL_COLORS[sticker]
   return {
-    fill,
-    accent,
-    dither: (h >>> 16) % 3,
+    shell,
+    sticker,
     ink:
-      fillColor !== undefined && picoLuminance(fillColor) < INK_FLIP
+      stickerColor !== undefined && picoLuminance(stickerColor) < INK_FLIP
         ? "light"
         : "dark",
   }

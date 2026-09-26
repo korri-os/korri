@@ -8,8 +8,7 @@ import {
   PICO_IDENTITY_BACKUP_ACTION,
   PICO_IDENTITY_SWITCH_LOCAL_ACTION,
   PICO_IDENTITY_SWITCH_NIP46_ACTION,
-} from "../pico-settings-view"
-import "./PicoIdentityDialog.css"
+} from "../../pico-settings-view"
 
 interface PicoIdentityDialogProps {
   readonly action: string | null

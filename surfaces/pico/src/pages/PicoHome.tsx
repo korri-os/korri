@@ -1,4 +1,4 @@
-import { picoDetailViewFromGame } from "../pico-detail-view"
+import { picoStatsFor } from "../pico-detail-view"
 import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
@@ -20,7 +20,7 @@ const SHELF_HINTS = [
 /** With nothing to act on, the only honest hint left is the way out. */
 const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 
-/* The mode is in the breadcrumb rather than a badge of its own: the user is
+/* The mode is in the header rather than a badge of its own: the user is
  * already reading that line to know where they are. */
 const MODE_LABELS: Record<PicoHomeMode, string> = {
   shelf: "LIBRARY",
@@ -29,20 +29,30 @@ const MODE_LABELS: Record<PicoHomeMode, string> = {
 }
 
 /**
+ * How home lays the library out. Cycled by the treaty's `menu` button.
+ */
+export type PicoHomeMode = "shelf" | "grid" | "hero"
+
+/** "9 carts · 2 resumable": what the shelf holds, in the footer's quiet ink. */
+function shelfReadout(games: readonly PicoShelfGame[]): string {
+  const resumable = games.filter((game) => game.resumable === true).length
+  const carts = `${games.length} ${games.length === 1 ? "CART" : "CARTS"}`
+  return resumable === 0 ? carts : `${carts} · ${resumable} RESUMABLE`
+}
+
+/**
  * Pico's home screen.
  *
  * Every state it can be in — reading the library, empty, failed to read,
  * showing the shelf, asking where to play, starting a game, running one,
  * failing to start one — shares one frame and differs only in the body, so the
- * chrome never jumps. Which state is showing was decided upstream; this file
- * renders the answer and does not re-derive it.
+ * header and footer never jump. Which state is showing was decided upstream;
+ * this file renders the answer and does not re-derive it.
  *
  * Failure copy is Korri's own, passed through untouched: the surface cannot
  * tell a missing file from an unreachable host, and guessing would put a wrong
  * explanation in front of the user.
  */
-export type PicoHomeMode = "shelf" | "grid" | "hero"
-
 export function PicoHome({
   view,
   mode,
@@ -54,7 +64,6 @@ export function PicoHome({
   clockLabel,
 }: {
   readonly view: PicoScreenView
-  /** How the library is laid out. Cycled by the treaty's `menu` button. */
   readonly mode: PicoHomeMode
   /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
@@ -67,17 +76,12 @@ export function PicoHome({
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
 
-  /* Working states get the weave; everything else sits on the starfield. A
-   * screen that is waiting should look busier than one that is merely idle. */
-  const backdrop =
-    view._tag === "Busy" || view._tag === "Running" ? "dither" : "stars"
-
   return (
     <PicoScreenShell
-      backdrop={backdrop}
       clockLabel={clockLabel}
       hints={view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS}
       label={MODE_LABELS[mode]}
+      readout={view._tag === "Shelf" ? shelfReadout(view.games) : undefined}
     >
       {asking && placing !== undefined ? (
         <PicoLocationPicker
@@ -101,7 +105,7 @@ export function PicoHome({
                 game={pick.game}
                 onOpen={() => onOpenGame(pick.game.id)}
                 reason={pick.reason}
-                stats={picoDetailViewFromGame(pick.game).stats}
+                stats={picoStatsFor(pick.game)}
               />
             )
           })()}
@@ -145,11 +149,16 @@ export function PicoHome({
       ) : null}
 
       {view._tag === "Busy" ? (
-        <PicoLaunchStage detail={view.detail} kicker={view.kicker} />
+        <PicoLaunchStage cart={view.cart} detail={view.detail} kicker={view.kicker} />
       ) : null}
 
       {view._tag === "Running" ? (
-        <PicoLaunchStage gameTitle={view.gameTitle} kicker={view.kicker} />
+        <PicoLaunchStage
+          cart={view.cart}
+          gameTitle={view.gameTitle}
+          kicker={view.kicker}
+          phase="running"
+        />
       ) : null}
 
       {view._tag === "Problem" ? (
@@ -163,11 +172,8 @@ export function PicoHome({
               : [{ label: "OK", onPress: onDismiss }]
           }
           kicker={view.kicker}
-          message={
-            view.gameTitle === undefined
-              ? view.reason
-              : `${view.gameTitle} — ${view.reason}`
-          }
+          message={view.reason}
+          title={view.gameTitle}
           tone="warn"
         />
       ) : null}

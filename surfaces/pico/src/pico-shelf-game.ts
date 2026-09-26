@@ -21,8 +21,6 @@ export interface PicoShelfGame {
   readonly title: string
   readonly subtitle?: string
   readonly artUrl?: string
-  /** Wide art for the shelf's backdrop. Absent for most games. */
-  readonly wideArtUrl?: string
   readonly resumable?: boolean
   /**
    * The caption Korri grouped this game under. Absent when Korri grouped

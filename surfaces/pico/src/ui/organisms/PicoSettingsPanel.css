@@ -1,35 +1,28 @@
 .pico-settings-panel-rows {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
 .pico-settings-panel-clear {
-	display: flex;
-	justify-content: flex-end;
-	padding-top: var(--pico-space-1);
+	display: grid;
 }
 
 .pico-settings-panel-empty {
-	position: relative;
-	z-index: 1;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: var(--pico-space-1);
+	display: grid;
+	place-content: center;
+	gap: var(--pico-u);
 	height: 100%;
-	text-align: center;
-	font-family: var(--pico-font-term);
+	padding: calc(var(--pico-u) * 2);
 	font-size: var(--pico-text);
+	line-height: 1.5;
+	text-align: center;
 	color: var(--pico-ink-dim);
 }
 
 .pico-settings-panel-empty-kicker {
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-sm);
+	font-size: var(--pico-text-lg);
 	color: var(--pico-accent);
-	letter-spacing: 0.125em;
 }

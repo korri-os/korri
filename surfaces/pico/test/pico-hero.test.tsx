@@ -25,7 +25,7 @@ const hero = (overrides: Partial<SurfaceModel> = {}) => {
 describe("which game leads", () => {
   test("the one Korri says was played most recently", () => {
     hero()
-    // Hollow Knight is the only fixture with a lastPlayedAt.
+    // Hollow Knight has the latest lastPlayedAt of the three fixtures with one.
     expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy()
   })
 
@@ -63,7 +63,7 @@ describe("what the hero states", () => {
     const heroSection = screen.getByRole("region", { name: "Hollow Knight" })
     fireEvent.click(heroSection.querySelector("button")!)
     expect(host.calls).toEqual([])
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
   })
 })
 
@@ -87,6 +87,6 @@ describe("what can be resumed", () => {
     const resume = screen.getByRole("list", { name: "Resume" })
     fireEvent.click(resume.querySelector("button")!)
     expect(host.calls).toEqual([])
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
   })
 })

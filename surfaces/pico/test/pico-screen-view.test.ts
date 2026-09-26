@@ -65,6 +65,11 @@ describe("picoScreenViewFromModel", () => {
       _tag: "Running",
       kicker: "PLAYING",
       gameTitle: "Hollow Knight",
+      cart: {
+        id: "hollow",
+        title: "Hollow Knight",
+        artUrl: expect.stringMatching(/^data:image\/png;base64,/),
+      },
     })
   })
 

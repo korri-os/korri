@@ -1,24 +1,35 @@
+/* A fat key cap. The keyboard's grid decides its width; the cap decides only
+ * how it looks and how it shows the cursor. */
 .pico-key {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: calc(var(--pico-base) * 1.6);
-	padding: calc(var(--pico-space-1) / 2) calc(var(--pico-space-1) / 2);
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
+	display: grid;
+	place-items: center;
+	min-width: 0;
+	min-height: calc(var(--pico-px) * 12);
+	/* The keyboard decides how square a key is; a key alone is as tall as its
+	 * minimum. A wide key keeps the row's height, not its own ratio. */
+	aspect-ratio: var(--pico-key-ratio, auto);
+	margin: 0 var(--pico-drop-sm) var(--pico-drop-sm) 0;
+	font-size: var(--pico-text);
+	line-height: 1;
 	color: var(--pico-ink);
-	background: var(--pico-cast-shadow);
-	border: var(--pico-edge) solid var(--pico-chrome-edge);
-	cursor: pointer;
+	background: var(--pico-plate);
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-plate-shadow);
 }
 
 .pico-key[data-wide] {
-	min-width: calc(var(--pico-base) * 4);
+	aspect-ratio: auto;
+	font-size: var(--pico-text-sm);
 }
 
 .pico-key:focus-visible {
 	outline: none;
-	background: var(--pico-accent);
-	color: var(--pico-cast-shadow);
-	border-color: var(--pico-accent);
+	color: var(--pico-go-ink);
+	background: var(--pico-go);
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-key:active {
+	translate: var(--pico-drop-sm) var(--pico-drop-sm);
+	box-shadow: none;
 }

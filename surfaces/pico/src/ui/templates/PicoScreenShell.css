@@ -4,16 +4,16 @@
 	height: 100%;
 }
 
+/* A size container for the screen's own content. Everything inside measures
+ * this box, not the device: a body squeezed by a tall header on a short
+ * screen reflows the same way a short screen does.
+ *
+ * Its font-size is the small face, so a query's em against this body is 6
+ * virtual pixels: thresholds written in em scale with the pixel. */
 .pico-screen-shell-body {
 	position: relative;
 	min-height: 0;
 	overflow: hidden;
-}
-
-/* Above the backdrop. Without a stacking context of its own the content shares
- * one with a decoration, and a drifting gradient starts covering text. */
-.pico-screen-shell-content {
-	position: relative;
-	z-index: 1;
-	height: 100%;
+	container: pico-body / size;
+	font-size: var(--pico-text-sm);
 }

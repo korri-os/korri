@@ -1,155 +1,74 @@
 /**
- * Pico's motion.
+ * Pico's motion vocabulary.
  *
- * Every step is hard. An 8-bit interface has no easing curves and no fractional
- * opacity ramps — a blink is on or off, a rise lands on a whole cell — so these
- * use `steps()` and two-stop keyframes rather than the smooth transitions a web
- * UI would reach for. Distances are in container units, so motion scales with
- * the screen exactly like type and spacing do.
+ * Every animation steps. PICO-8 runs at 30 frames a second and nothing in it
+ * eases, so a component that wants movement names one of these and gives it a
+ * `steps()` timing; a smooth curve is the one thing that would give the toy
+ * away as a web page. Distances are whole virtual pixels for the same reason.
  *
- * Keyframes live together because several components share them; the
- * animations themselves are declared by each component, beside the thing that
- * moves.
+ * Reduced motion is honoured in pico.css, which owns the screen scope.
  */
 
-/* A hard on/off blink. No fade: the off state is dim, not absent, so the
- * element never disappears from a layout that is holding space for it. */
+/* A caret or a marker that blinks: fully on, then fully off. */
 @keyframes pico-blink {
-	0%,
 	50% {
-		opacity: 1;
-	}
-	50.01%,
-	100% {
-		opacity: 0.2;
+		visibility: hidden;
 	}
 }
 
-/* Content arriving. Rises a whole cell and lands. */
-@keyframes pico-rise {
+/* Something dropped into place: a cartridge, a card. */
+@keyframes pico-land {
 	from {
-		opacity: 0;
-		transform: translateY(4cqh);
+		translate: 0 calc(var(--pico-px) * -12);
 	}
 	to {
-		opacity: 1;
-		transform: translateY(0);
+		translate: 0 0;
 	}
 }
 
-/* A slower, shallower blink for text that has to stay readable while it
- * pulses — a kicker that dropped to 0.2 would be unreadable half the time. */
-@keyframes pico-flicker {
-	0%,
-	60% {
-		opacity: 1;
-	}
-	60.01%,
-	100% {
-		opacity: 0.55;
-	}
-}
-
-/* Idle bob, for a thing that is waiting rather than working. */
-@keyframes pico-bob {
-	from {
-		transform: translateY(0);
-	}
-	to {
-		transform: translateY(-2.2cqh);
-	}
-}
-
-/* An expanding ring on whatever the screen most wants pressed. */
-@keyframes pico-cta {
-	from {
-		box-shadow: 0 0 0 0 transparent;
-	}
-	to {
-		box-shadow: 0 0 0 0.7cqw
-			color-mix(in srgb, var(--pico-accent) 40%, transparent);
-	}
-}
-
-/* Failure. Three hard offsets, no return easing. */
-@keyframes pico-shake {
+/* The focus cycle. The shadow walks through three hot colours, the way
+ * PICO-8's own menu cursor flashes. */
+@keyframes pico-cycle {
 	0% {
-		transform: translateX(0);
+		--pico-cycle: var(--pico-cycle-0);
 	}
 	33% {
-		transform: translateX(-1.2cqw);
+		--pico-cycle: var(--pico-cycle-1);
 	}
 	66% {
-		transform: translateX(1.2cqw);
-	}
-	100% {
-		transform: translateX(0);
+		--pico-cycle: var(--pico-cycle-2);
 	}
 }
 
-/* The starfield's two layers drift by different amounts, which is the parallax.
- * Linear, because stars do not accelerate. */
-@keyframes pico-drift {
+/* A cartridge pushed down into the slot while a game starts. */
+@keyframes pico-seat {
+	from {
+		translate: 0 calc(var(--pico-px) * -8);
+	}
 	to {
-		background-position:
-			7cqw 7cqw,
-			-11cqw 11cqw;
+		translate: 0 calc(var(--pico-px) * 24);
 	}
 }
 
-/* The dither weave advances one tile per cycle; steps() does the rest. */
-@keyframes pico-scroll {
+/* One meter cell lighting. A component staggers cells with animation-delay
+ * and `forwards`, so each lights on its beat and stays lit. */
+@keyframes pico-light {
 	to {
-		background-position:
-			12cqw 12cqw,
-			0 0;
+		background: var(--pico-ok);
 	}
 }
 
-/* Barber pole. Work that is happening at an unknown rate: the stripes move, the
- * bar never fills, and nothing claims a percentage Korri did not publish. */
-@keyframes pico-barber {
-	to {
-		background-position: 1.2cqw 0;
-	}
-}
-
-/* The palette cycle. Straight through the bright half of the sixteen, one hard
- * step per colour — the loudest thing PICO-8 does with text. */
-@keyframes pico-palette-cycle {
-	0% {
-		color: var(--p8-red);
-	}
-	20% {
-		color: var(--p8-orange);
-	}
-	40% {
-		color: var(--p8-yellow);
-	}
-	60% {
-		color: var(--p8-lime);
-	}
-	80% {
-		color: var(--p8-blue);
-	}
-	100% {
-		color: var(--p8-pink);
-	}
-}
-
-/* A caption too long for its line, moving far enough to show the end and back.
- * Only applied when the text genuinely overflows. */
+/* A caption too long for its line walks along it and back. */
 @keyframes pico-marquee {
 	from {
-		transform: translateX(0);
+		translate: 0 0;
 	}
 	to {
-		transform: translateX(calc(-100% + 100cqw));
+		translate: calc(-100% + 100cqw) 0;
 	}
 }
 
-/* The attract rail travels exactly one set of carts, so its copy lands where it
- * started and the loop has no visible seam. */
+/* Attract mode: the rail drifts one whole copy to the left, then repeats. */
 @keyframes pico-attract-drift {
 	to {
 		transform: translateX(-50%);

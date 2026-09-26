@@ -1,27 +1,29 @@
+/* Everything that resumes, as a short shelf of result tiles under the hero. */
 .pico-resume-list {
-	position: relative;
-	z-index: 1;
-	display: flex;
-	flex-direction: column;
-	gap: calc(var(--pico-space-1) / 2);
-	min-height: 0;
-	padding: 0 var(--pico-space-3) var(--pico-space-1);
-	overflow-y: auto;
+	--pico-shelf-art-w: calc(var(--pico-px) * 20);
+	--pico-shelf-art-h: calc(var(--pico-px) * 36);
+	--pico-result-art-h: calc(var(--pico-px) * 46);
+	display: grid;
+	gap: var(--pico-u);
+	min-width: 0;
+	padding: 0 calc(var(--pico-u) * 2) var(--pico-u);
 }
 
 .pico-resume-list-title {
 	margin: 0;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
+	font-size: var(--pico-text-sm);
 	font-weight: normal;
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
+	color: var(--pico-ink-quiet);
 }
 
 .pico-resume-list-run {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: calc(var(--pico-px) * 44);
+	gap: calc(var(--pico-u) * 1.5);
 	margin: 0;
-	padding: 0;
+	padding: 0 0 var(--pico-drop-sm);
+	overflow-x: auto;
 	list-style: none;
+	scrollbar-width: none;
 }

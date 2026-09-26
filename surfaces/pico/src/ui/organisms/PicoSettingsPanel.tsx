@@ -1,15 +1,15 @@
 import { useState } from "react"
 import type { PicoSettingRowView, PicoSettingsView } from "../../pico-settings-view"
-import { PicoButton } from "../atoms/PicoButton"
+import { PicoRow } from "../atoms/PicoRow"
 import { PicoSettingRow } from "../molecules/PicoSettingRow"
 import { PicoPanelScreen } from "../templates/PicoPanelScreen"
 
 /**
- * Korri's settings groups as categories, each category's items as rows.
+ * Korri's settings groups as spines, each group's items as rows in its card.
  *
- * Owns which category is showing, because that is a fact about the screen and
- * not about the device. Owns nothing about values: a press hands the row to
- * the surface, which asks Korri, and Korri republishes.
+ * Owns which group is showing, because that is a fact about the screen and not
+ * about the device. Owns nothing about values: a press hands the row to the
+ * surface, which asks Korri, and Korri republishes.
  */
 export function PicoSettingsPanel({
   settings,
@@ -37,7 +37,6 @@ export function PicoSettingsPanel({
   return (
     <PicoPanelScreen
       current={current}
-      footer={settings.buildLabel}
       onSelect={setCurrent}
       tabs={settings.groups.map((candidate) => candidate.title)}
       title={group.title}
@@ -49,7 +48,7 @@ export function PicoSettingsPanel({
       </ul>
       {problem === undefined ? null : (
         <div className="pico-settings-panel-clear">
-          <PicoButton label="OK" onPress={onDismissProblem} />
+          <PicoRow label="OK" onPress={onDismissProblem} />
         </div>
       )}
     </PicoPanelScreen>

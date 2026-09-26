@@ -58,7 +58,7 @@ export function createPicoAdapter() {
     makeSeedInitialValuesForBinding: async ({ sourceId }: { sourceId: string }) => sourceId,
     previewScope: (children: ReactNode) => createElement("div", {
       className: "pico-caliper-scope pico-caliper-preview",
-    }, createElement("div", { className: "intrinsic pico-theme pico-screen" }, children)),
+    }, createElement("div", { className: "pico-theme pico-screen" }, children)),
     eventsForScreen: (_path: string) => events,
     mountSurface(host: HTMLElement, options: MountOptions) {
       if (options.mode !== "fixture") throw new Error("Pico's Caliper adapter supports fixtures only")

@@ -24,8 +24,9 @@ const TOKENS_CSS = "pico-tokens.css"
  *
  * `rgb()`/`rgba()`/`hsl()` are here because a hex is not the only way to write
  * a raw colour — legacy Pico's button bevel was four rgba() values, and a check
- * that only knew about hex would have waved it straight through. `color-mix()`
- * over a token is not matched: it names a role and derives from it.
+ * that only knew about hex would have waved it straight through. A blend of
+ * tokens is caught by its own test below: PICO-8 draws sixteen colours and
+ * nothing between them.
  */
 /**
  * Modules allowed to state the palette literally.
@@ -39,10 +40,12 @@ const PALETTE_MODULES = new Set(["pico-palette.ts"])
 const RAW_VALUE = /#[0-9a-fA-F]{3,8}\b|\b\d+px\b|\b(?:rgba?|hsla?)\(/g
 
 /**
- * What Pico may import. The surface treaty is the whole contract with Korri;
- * the intrinsic core is shared design maths. Anything else — Effect, atoms, a
- * router, another surface, a `@platform` module — would tie Pico to this
- * repository and break the promise that a surface can ship on its own.
+ * What Pico may import. The surface treaty is the whole contract with Korri.
+ * `qrcode` is a pure encoder the identity backup draws with: it is a package
+ * dependency of Pico itself, performs no effects, and would ship with Pico
+ * from any repository. Anything else — Effect, atoms, a router, another
+ * surface, a `@platform` module — would tie Pico to this repository and break
+ * the promise that a surface can ship on its own.
  */
 const ALLOWED_IMPORTS = [
   "react",
@@ -50,7 +53,7 @@ const ALLOWED_IMPORTS = [
   "react/jsx-runtime",
   "react-dom/client",
   "@contracts/surface/",
-  "@korri/intrinsic-design",
+  "qrcode",
 ]
 
 function walk(dir: string): readonly string[] {
@@ -209,34 +212,60 @@ describe("the surface treaty is the whole contract", () => {
   })
 })
 
-describe("the scale is Pico's own", () => {
-  /**
-   * The recipe derives `--intrinsic-base` at `:where(:root, .intrinsic)`. Pico
-   * declares its knobs on `.pico-theme`. Unless the same element also carries
-   * `intrinsic`, the derivation happens at `:root` from the package's neutral
-   * defaults and every one of Pico's knobs is inert — including the 1px snap
-   * that keeps a bitmap font off fractional sizes. It looks fine, which is
-   * exactly why it went unnoticed for a whole slice.
-   */
-  test("the element carrying the knobs also re-derives the scale", () => {
+describe("the pixel is Pico's own", () => {
+  const tokens = readFileSync(join(SRC, TOKENS_CSS), "utf8")
+
+  test("the root carries both the theme and the screen container", () => {
     const surface = readFileSync(join(SRC, "PicoSurface.tsx"), "utf8")
-    const themeClass = surface.match(/className="([^"]*\bpico-theme\b[^"]*)"/)
-    expect(themeClass).not.toBeNull()
-    expect((themeClass?.[1] ?? "").split(/\s+/)).toContain("intrinsic")
+    const rootClass = surface.match(/className="([^"]*\bpico-theme\b[^"]*)"/)
+    expect(rootClass).not.toBeNull()
+    expect((rootClass?.[1] ?? "").split(/\s+/)).toContain("pico-screen")
   })
 
-  test("the knobs are declared where the scale is derived", () => {
-    const tokens = readFileSync(join(SRC, TOKENS_CSS), "utf8")
-    const block = tokens.match(/\.pico-theme\s*\{[^}]*\}/s)
-    expect(block).not.toBeNull()
-    for (const knob of [
-      "--intrinsic-base-min",
-      "--intrinsic-base-cqi",
-      "--intrinsic-base-max",
-      "--intrinsic-ratio",
-      "--intrinsic-snap",
-    ]) {
-      expect(block![0]).toContain(knob)
+  /**
+   * A container's own `cq` units measure its ancestor. The pixel has to be
+   * derived on the screen's children, from both axes, or a wide short strip
+   * gets a pixel sized for a wide tall screen and its content falls off the
+   * bottom.
+   */
+  test("the pixel is derived inside the screen, from both axes", () => {
+    const block = tokens.match(/\.pico-theme > \*\s*\{[^}]*\}/s)?.[0] ?? ""
+    expect(block).toContain("--pico-px:")
+    expect(block).toContain("100cqw")
+    expect(block).toContain("100cqh")
+  })
+
+  /**
+   * Registered, the pixel computes to a length where it is derived and
+   * children inherit that length. Unregistered, a component that made itself
+   * a container would re-resolve the formula and quietly get another pixel.
+   */
+  test("the pixel and its inputs are registered", () => {
+    for (const property of ["--pico-px", "--pico-pixel-rows", "--pico-pixel-min"]) {
+      expect(tokens).toContain(`@property ${property} {`)
     }
+  })
+})
+
+describe("sixteen colours and nothing between them", () => {
+  /**
+   * PICO-8 cannot blend. A colour mix, a see-through layer or a smooth
+   * gradient is the fastest way to make this look like a web page again; the
+   * old surface's dim scrims and scanlines were exactly that. A hard-stop
+   * `repeating-linear-gradient` is a stripe pattern, not a blend, and stays
+   * allowed for grip ridges.
+   */
+  test("no stylesheet mixes, fades or grades a colour", () => {
+    const offenders = cssFiles
+      .flatMap((file) => {
+        const source = read(file).replace(/\/\*[\s\S]*?\*\//g, "")
+        const found = [
+          ...source.matchAll(/color-mix\(|(?<!repeating-)linear-gradient\(|radial-gradient\(|conic-gradient\(|opacity:\s*0?\.\d|mix-blend-mode/g),
+        ]
+        return found.map((match) => `${rel(file)}: ${match[0]}`)
+      })
+      .sort()
+
+    expect(offenders).toEqual([])
   })
 })

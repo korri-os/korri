@@ -1,186 +1,117 @@
-/* Bounded media, capped on both axes.
+/**
+ * A cartridge. The shell is fixed padding around a window, and the window is
+ * the art at its own ratio, so the shell takes the art's shape.
  *
- * The slot gives a definite height, so the cart takes it and derives its width
- * from the ratio — that is what keeps a cartridge portrait on a wide, short
- * body, where sizing from width instead produced a landscape rectangle that
- * stops reading as a cartridge at all. `max-width` caps it against the type
- * anchor so art and text still share one ceiling, and shrinks both axes
- * together when it binds.
+ * The art's box comes from the placement: a shelf cart has a fixed width and a
+ * height cap; a still cart takes the box its screen states through
+ * `--pico-cart-art-w` and `--pico-cart-art-h`.
  *
- * Deliberately not cqh: the height of a screen whose own height comes from its
- * host is not definite everywhere Pico mounts, and a zero there means invisible
- * carts rather than merely small ones. */
+ * The notch and the grip ridges are drawn with pseudo-elements in whole
+ * virtual pixels. The ridges are a hard-stop stripe, not a blend.
+ */
 .pico-cart {
+	--pico-shell: var(--pico-shell-0);
+	--pico-art-w: var(--pico-cart-art-w, calc(var(--pico-px) * 160));
+	--pico-art-h: var(--pico-cart-art-h, calc(var(--pico-px) * 160));
+	--pico-cart-pad: calc(var(--pico-px) * 5);
+	--pico-cart-top: calc(var(--pico-px) * 6);
+	--pico-cart-foot: calc(var(--pico-px) * 8);
+	--pico-cart-notch: calc(var(--pico-px) * 3);
+	--pico-cart-ridge: calc(var(--pico-px) * 3);
 	position: relative;
 	display: block;
-	height: 100%;
-	width: auto;
-	max-width: min(38cqw, calc(var(--pico-base) * 14));
-	aspect-ratio: 3 / 4;
-	padding: var(--pico-space-1);
-	border: var(--pico-edge) solid var(--pico-chrome-edge);
-	cursor: pointer;
-	/* Two palette colours in a hard checker — the dither that makes an
-	 * unillustrated cart read as a printed label instead of a filled box. Cell
-	 * size derives from the base so the weave scales with the screen rather than
-	 * turning into moire on a large panel. */
-	background:
-		repeating-conic-gradient(
-			var(--pico-cart-fill) 0% 25%,
-			var(--pico-cart-accent) 0% 50%
-		)
-		0 0 / var(--pico-cart-dither) var(--pico-cart-dither);
-	animation: pico-rise 240ms steps(4, end) both;
-}
-
-.pico-cart[data-dither="0"] {
-	--pico-cart-dither: calc(var(--pico-base) / 2);
-}
-
-.pico-cart[data-dither="1"] {
-	--pico-cart-dither: calc(var(--pico-base) * 0.75);
-}
-
-.pico-cart[data-dither="2"] {
-	--pico-cart-dither: var(--pico-base);
-}
-
-.pico-cart[data-fill="0"] {
-	--pico-cart-fill: var(--pico-label-0);
-}
-
-.pico-cart[data-fill="1"] {
-	--pico-cart-fill: var(--pico-label-1);
-}
-
-.pico-cart[data-fill="2"] {
-	--pico-cart-fill: var(--pico-label-2);
-}
-
-.pico-cart[data-fill="3"] {
-	--pico-cart-fill: var(--pico-label-3);
-}
-
-.pico-cart[data-fill="4"] {
-	--pico-cart-fill: var(--pico-label-4);
-}
-
-.pico-cart[data-fill="5"] {
-	--pico-cart-fill: var(--pico-label-5);
-}
-
-.pico-cart[data-fill="6"] {
-	--pico-cart-fill: var(--pico-label-6);
-}
-
-.pico-cart[data-fill="7"] {
-	--pico-cart-fill: var(--pico-label-7);
-}
-
-.pico-cart[data-fill="8"] {
-	--pico-cart-fill: var(--pico-label-8);
-}
-
-.pico-cart[data-fill="9"] {
-	--pico-cart-fill: var(--pico-label-9);
-}
-
-.pico-cart[data-accent="0"] {
-	--pico-cart-accent: var(--pico-label-0);
-}
-
-.pico-cart[data-accent="1"] {
-	--pico-cart-accent: var(--pico-label-1);
-}
-
-.pico-cart[data-accent="2"] {
-	--pico-cart-accent: var(--pico-label-2);
-}
-
-.pico-cart[data-accent="3"] {
-	--pico-cart-accent: var(--pico-label-3);
-}
-
-.pico-cart[data-accent="4"] {
-	--pico-cart-accent: var(--pico-label-4);
-}
-
-.pico-cart[data-accent="5"] {
-	--pico-cart-accent: var(--pico-label-5);
-}
-
-.pico-cart[data-accent="6"] {
-	--pico-cart-accent: var(--pico-label-6);
-}
-
-.pico-cart[data-accent="7"] {
-	--pico-cart-accent: var(--pico-label-7);
-}
-
-.pico-cart[data-accent="8"] {
-	--pico-cart-accent: var(--pico-label-8);
-}
-
-.pico-cart[data-accent="9"] {
-	--pico-cart-accent: var(--pico-label-9);
-}
-
-.pico-cart[data-placement="still"] {
+	flex: none;
+	width: fit-content;
 	margin: 0;
-	cursor: default;
-	/* A still fills the box it is given. The shelf's cap is against the screen,
-	 * but a still sits inside its own container, and 38cqw of a box already
-	 * sized to the cart is a cart one third as wide as its own frame — the
-	 * legacy detail screen had the same override for the same reason. */
-	width: 100%;
-	max-width: none;
+	padding: var(--pico-cart-top) var(--pico-cart-pad) var(--pico-cart-foot);
+	background: var(--pico-shell);
 }
 
-.pico-cart[data-placement="side"] {
-	transform: scale(0.72);
-	filter: saturate(0.7);
+/* The label slot at the top edge. */
+.pico-cart::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 30%;
+	width: 40%;
+	height: var(--pico-cart-notch);
+	background: var(--pico-bg);
 }
 
-.pico-cart:focus-visible {
-	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
-	outline-offset: var(--pico-edge);
-	/* The focused cart is what the screen wants pressed. */
-	animation: pico-cta 900ms steps(3, end) infinite alternate;
+/* Grip ridges along the bottom. */
+.pico-cart::after {
+	content: "";
+	position: absolute;
+	left: var(--pico-cart-pad);
+	right: var(--pico-cart-pad);
+	bottom: calc(var(--pico-px) * 2);
+	height: var(--pico-cart-ridge);
+	background: repeating-linear-gradient(
+		90deg,
+		var(--pico-ink-dark) 0 var(--pico-px),
+		transparent var(--pico-px) calc(var(--pico-px) * 3)
+	);
 }
 
 .pico-cart-window {
-	display: block;
-	width: 100%;
-	height: 100%;
-	overflow: hidden;
+	display: grid;
+	place-items: center;
+	outline: var(--pico-px) solid var(--pico-ink-dark);
 }
 
-/* Ink on the label follows the fill's brightness, decided in pico-label.ts so
- * the rule is testable rather than eyeballed per colour. */
-.pico-cart[data-ink="light"] .pico-cart-window {
-	color: var(--p8-white);
+/* A still cart is the subject of its screen: two shadow steps behind it and
+ * a margin that reserves them, so a neighbour's gap starts after the shadow. */
+.pico-cart[data-placement="still"] {
+	--pico-initials-size: var(--pico-text-xl);
+	margin: 0 calc(var(--pico-drop-lg) * 2) calc(var(--pico-drop-lg) * 2) 0;
+	box-shadow:
+		var(--pico-drop-lg) var(--pico-drop-lg) 0 var(--pico-cast-near),
+		calc(var(--pico-drop-lg) * 2) calc(var(--pico-drop-lg) * 2) 0 var(--pico-cast-far);
+	animation: pico-land 240ms steps(4, end);
 }
 
-.pico-cart[data-ink="dark"] .pico-cart-window {
-	color: var(--p8-black);
+/* Shelf carts: one width, height from the art, a smaller shell. */
+.pico-cart[data-placement="side"],
+.pico-cart[data-placement="hero"],
+.pico-cart[data-placement="tile"] {
+	--pico-art-w: var(--pico-shelf-art-w, calc(var(--pico-px) * 28));
+	--pico-art-h: var(--pico-shelf-art-h, calc(var(--pico-px) * 56));
+	--pico-cart-pad: calc(var(--pico-px) * 3);
+	--pico-cart-top: calc(var(--pico-px) * 4);
+	--pico-cart-foot: calc(var(--pico-px) * 6);
+	--pico-cart-notch: calc(var(--pico-px) * 2);
+	--pico-cart-ridge: calc(var(--pico-px) * 2);
+	--pico-initials-size: var(--pico-text);
 }
 
-/* The label slot every cartridge shell has. Decorative, and the one detail that
- * makes the shape read as a cartridge rather than a card. */
-.pico-cart-notch {
-	position: absolute;
-	top: 0;
-	left: 25%;
-	width: 50%;
-	height: var(--pico-space-1);
-	background: var(--pico-chrome-edge);
+.pico-cart[data-placement="hero"] {
+	translate: 0 calc(var(--pico-px) * -4);
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-ink);
 }
 
+.pico-cart:focus-visible {
+	outline: none;
+	translate: 0 calc(var(--pico-px) * -4);
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+/* A cart that continues where the player left off. */
 .pico-cart-resume {
 	position: absolute;
-	right: var(--pico-space-1);
-	bottom: var(--pico-space-1);
+	right: var(--pico-px);
+	bottom: 0;
 	font-size: var(--pico-text-sm);
-	color: var(--pico-ok);
-	animation: pico-blink 1.2s steps(1, end) infinite;
+	line-height: 1;
+	color: var(--pico-ink-dark);
 }
+
+.pico-cart[data-shell="1"] { --pico-shell: var(--pico-shell-1); }
+.pico-cart[data-shell="2"] { --pico-shell: var(--pico-shell-2); }
+.pico-cart[data-shell="3"] { --pico-shell: var(--pico-shell-3); }
+.pico-cart[data-shell="4"] { --pico-shell: var(--pico-shell-4); }
+.pico-cart[data-shell="5"] { --pico-shell: var(--pico-shell-5); }
+.pico-cart[data-shell="6"] { --pico-shell: var(--pico-shell-6); }
+.pico-cart[data-shell="7"] { --pico-shell: var(--pico-shell-7); }
+.pico-cart[data-shell="8"] { --pico-shell: var(--pico-shell-8); }
+.pico-cart[data-shell="9"] { --pico-shell: var(--pico-shell-9); }

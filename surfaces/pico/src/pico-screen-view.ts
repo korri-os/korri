@@ -2,6 +2,16 @@ import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { type PicoHomeView, picoHomeViewFromCatalog } from "./pico-home-view"
 
 /**
+ * The cartridge a launch is about: enough of the catalog entry to draw it.
+ * Present only when Korri names the game and the catalog holds it.
+ */
+export interface PicoLaunchCart {
+  readonly id: string
+  readonly title: string
+  readonly artUrl?: string
+}
+
+/**
  * Everything the screen can be showing, as one closed set.
  *
  * The catalog cases and the launch cases are deliberately one union rather than
@@ -12,11 +22,17 @@ import { type PicoHomeView, picoHomeViewFromCatalog } from "./pico-home-view"
  */
 export type PicoScreenView =
   | PicoHomeView
-  | { readonly _tag: "Busy"; readonly kicker: string; readonly detail?: string }
+  | {
+      readonly _tag: "Busy"
+      readonly kicker: string
+      readonly detail?: string
+      readonly cart?: PicoLaunchCart
+    }
   | {
       readonly _tag: "Running"
       readonly kicker: string
       readonly gameTitle?: string
+      readonly cart?: PicoLaunchCart
     }
   | {
       readonly _tag: "Problem"
@@ -29,32 +45,29 @@ export type PicoScreenView =
 /**
  * What the screen shows, decided once.
  *
- * Status outranks the catalog: while Korri is starting a game, failing to start
- * one, or running one, that is the truth about this device, and a shelf drawn
- * over it would invite the user to launch something else on top. The shelf is
- * only the answer when nothing else is happening.
- *
- * A `Problem` names its own game through `gameTitle` rather than whatever the
- * shelf happens to have focused, because the failure belongs to the game Korri
- * says it belongs to.
+ * Status outranks the catalog: while Korri is starting, running, or failing to
+ * start a game, that is the truth about this device, whatever the library says.
  */
 export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
   const status = model.status
   switch (status._tag) {
-    case "Busy":
+    case "Busy": {
+      const cart = cartFor(model, status.gameId)
       return {
         _tag: "Busy",
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(cart === undefined ? {} : { cart }),
       }
-    case "Running":
+    }
+    case "Running": {
+      const cart = cartFor(model, status.gameId)
       return {
         _tag: "Running",
         kicker: status.kicker,
-        ...(gameTitleFor(model, status.gameId) === undefined
-          ? {}
-          : { gameTitle: gameTitleFor(model, status.gameId) }),
+        ...(cart === undefined ? {} : { gameTitle: cart.title, cart }),
       }
+    }
     case "Problem":
       return {
         _tag: "Problem",
@@ -70,16 +83,18 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
   }
 }
 
-/**
- * `Running` carries an id but no title, so the title has to come from the
- * catalog. Absent when Korri did not say which game is running, or when the
- * catalog does not hold it — never guessed from what the user last touched.
- */
-function gameTitleFor(
+/** The catalog's own entry for Korri's id, or nothing: never a guess. */
+function cartFor(
   model: SurfaceModel,
   gameId: string | undefined,
-): string | undefined {
+): PicoLaunchCart | undefined {
   if (gameId === undefined) return undefined
   if (model.catalog._tag !== "Ready") return undefined
-  return model.catalog.games.find((game) => game.id === gameId)?.title
+  const game = model.catalog.games.find((candidate) => candidate.id === gameId)
+  if (game === undefined) return undefined
+  return {
+    id: game.id,
+    title: game.title,
+    ...(game.coverArtUrl === undefined ? {} : { artUrl: game.coverArtUrl }),
+  }
 }

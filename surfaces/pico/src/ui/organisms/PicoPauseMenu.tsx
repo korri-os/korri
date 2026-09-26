@@ -1,10 +1,11 @@
 import type { PicoOverlayControlView, PicoOverlayView } from "../../pico-overlay-view"
-import { PicoButton } from "../atoms/PicoButton"
-import { PicoTitle } from "../atoms/PicoTitle"
+import { PicoRow } from "../atoms/PicoRow"
+import { PicoCard } from "../molecules/PicoCard"
 import { PicoControlRow } from "../molecules/PicoControlRow"
 
 /**
- * Korri's gameplay controls as legacy's pause menu.
+ * Korri's gameplay controls as a pause menu: a blue card, because it tells
+ * you where you are, titled with the game.
  *
  * Korri's own controls first — Resume is always the first thing under the
  * thumb — then each plugin's group under its label.
@@ -24,13 +25,12 @@ export function PicoPauseMenu({
   readonly onRetry: () => void
 }) {
   return (
-    <>
-      <PicoTitle level={2} size="md" text={overlay.title} />
+    <PicoCard kicker="PAUSED" title={overlay.title} tone="tell">
       {overlay.problem === undefined ? null : (
         <section aria-label={overlay.problem.kicker} className="pico-pause-menu-problem">
           <span className="pico-pause-menu-problem-kicker">{overlay.problem.kicker}</span>
           <p className="pico-pause-menu-problem-reason">{overlay.problem.reason}</p>
-          {overlay.problem.canRetry ? <PicoButton label="TRY AGAIN" onPress={onRetry} /> : null}
+          {overlay.problem.canRetry ? <PicoRow label="TRY AGAIN" onPress={onRetry} /> : null}
         </section>
       )}
       <ul className="pico-pause-menu-list">
@@ -48,6 +48,6 @@ export function PicoPauseMenu({
           </ul>
         </section>
       ))}
-    </>
+    </PicoCard>
   )
 }

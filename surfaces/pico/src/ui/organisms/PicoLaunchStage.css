@@ -1,49 +1,122 @@
+/**
+ * Words on top, then the slot. The slot takes what height is left, and the
+ * cartridge in it is sized to that height, so a short screen gets a small
+ * cart rather than a cart pushed off the bottom.
+ */
 .pico-launch-stage {
+	container: pico-launch / size;
 	display: grid;
-	gap: var(--pico-space-2);
-	place-content: center;
+	grid-template-rows: auto minmax(0, 1fr);
 	justify-items: center;
+	gap: calc(var(--pico-u) * 2);
 	height: 100%;
-	padding: var(--pico-space-3);
+	padding-top: calc(var(--pico-u) * 2);
+	font-size: var(--pico-text-sm);
 	text-align: center;
+	overflow: hidden;
+}
+
+.pico-launch-stage-words {
+	display: grid;
+	justify-items: center;
+	gap: var(--pico-u);
+	padding: 0 calc(var(--pico-u) * 2);
 }
 
 .pico-launch-stage-kicker {
 	margin: 0;
-	/* Something is happening that Pico cannot measure. Cycling the palette says
-	 * "working" the way this interface says everything else. */
-	animation: pico-palette-cycle 1.5s steps(1, end) infinite;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text);
-	letter-spacing: 0.125em;
+	font-size: var(--pico-text-lg);
+	font-weight: normal;
+	line-height: 1.1;
+	color: var(--pico-ink);
 }
 
 .pico-launch-stage-game {
 	margin: 0;
-	animation: pico-rise 240ms steps(4, end) both;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink);
-	letter-spacing: 0.125em;
+	font-size: var(--pico-text);
+	color: var(--pico-accent);
 }
 
 .pico-launch-stage-detail {
 	margin: 0;
-	max-width: 24ch;
-	font-size: var(--pico-text);
-	color: var(--pico-ink-dim);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-ink-quiet);
 }
 
-/* Indeterminate by construction: stripes travelling through a bar that is
- * always full. A bar that filled would be a promise about time. */
-.pico-launch-stage-bar {
-	width: 60cqw;
-	height: var(--pico-space-2);
-	background: repeating-linear-gradient(
-		135deg,
-		var(--pico-accent) 0 1.2cqw,
-		var(--pico-chrome) 1.2cqw 2.4cqw
-	);
-	background-size: 2.4cqw 100%;
-	animation: pico-barber 600ms linear infinite;
+/* Sixteen cells. Each lights on its own beat and stays lit, so the fill steps
+ * cell by cell and then holds: the meter is a clock, not progress. */
+.pico-launch-stage-meter {
+	display: grid;
+	grid-template-columns: repeat(16, minmax(0, 1fr));
+	gap: var(--pico-px);
+	width: min(60cqw, calc(var(--pico-px) * 200));
+	height: calc(var(--pico-px) * 6);
+}
+
+.pico-launch-stage-cell {
+	background: var(--pico-plate);
+	animation: pico-light 1ms steps(1, end) forwards;
+}
+
+.pico-launch-stage[data-phase="running"] .pico-launch-stage-cell {
+	background: var(--pico-ok);
+	animation: none;
+}
+
+.pico-launch-stage-cell[data-cell="0"] { animation-delay: 90ms; }
+.pico-launch-stage-cell[data-cell="1"] { animation-delay: 180ms; }
+.pico-launch-stage-cell[data-cell="2"] { animation-delay: 270ms; }
+.pico-launch-stage-cell[data-cell="3"] { animation-delay: 360ms; }
+.pico-launch-stage-cell[data-cell="4"] { animation-delay: 450ms; }
+.pico-launch-stage-cell[data-cell="5"] { animation-delay: 540ms; }
+.pico-launch-stage-cell[data-cell="6"] { animation-delay: 630ms; }
+.pico-launch-stage-cell[data-cell="7"] { animation-delay: 720ms; }
+.pico-launch-stage-cell[data-cell="8"] { animation-delay: 810ms; }
+.pico-launch-stage-cell[data-cell="9"] { animation-delay: 900ms; }
+.pico-launch-stage-cell[data-cell="10"] { animation-delay: 990ms; }
+.pico-launch-stage-cell[data-cell="11"] { animation-delay: 1080ms; }
+.pico-launch-stage-cell[data-cell="12"] { animation-delay: 1170ms; }
+.pico-launch-stage-cell[data-cell="13"] { animation-delay: 1260ms; }
+.pico-launch-stage-cell[data-cell="14"] { animation-delay: 1350ms; }
+.pico-launch-stage-cell[data-cell="15"] { animation-delay: 1440ms; }
+
+/* The slot: the cartridge stands in it and sinks while the game starts. The
+ * mouth covers the cart's lower edge, which is what makes it read as "in". */
+.pico-launch-stage-slot {
+	container: pico-slot / size;
+	position: relative;
+	display: grid;
+	justify-items: center;
+	align-content: end;
+	width: 100%;
+	min-height: 0;
+}
+
+.pico-launch-stage-cart {
+	--pico-cart-art-w: 60cqw;
+	--pico-cart-art-h: calc(100cqh - var(--pico-px) * 40);
+	display: block;
+	translate: 0 calc(var(--pico-px) * 24);
+	animation: pico-seat 1200ms steps(8, end);
+}
+
+.pico-launch-stage[data-phase="running"] .pico-launch-stage-cart {
+	animation: none;
+}
+
+.pico-launch-stage-mouth {
+	position: relative;
+	z-index: 1;
+	width: 100%;
+	height: calc(var(--pico-px) * 14);
+	background: var(--pico-floor);
+	border-top: calc(var(--pico-px) * 3) solid var(--pico-floor-edge);
+}
+
+/* A slot too short to show a cart that anyone could read: words only. */
+@container pico-launch (height < 22em) {
+	.pico-launch-stage-slot {
+		display: none;
+	}
 }

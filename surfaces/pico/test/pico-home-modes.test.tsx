@@ -80,7 +80,7 @@ describe("the grid", () => {
     const host = grid()
     fireEvent.click(screen.getByRole("button", { name: /Spelunky/ }))
     expect(host.calls).toEqual([])
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
   })
 
   test("holds games Korri did not group under one honest heading", () => {

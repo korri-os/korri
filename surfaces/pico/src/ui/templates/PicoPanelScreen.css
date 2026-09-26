@@ -1,36 +1,48 @@
+/**
+ * Settings' plan, answered against the screen body (`pico-body`). Conditions
+ * are in em of the body's small face, 6 virtual pixels.
+ *
+ *   wide      spines | card
+ *   narrow    spines in a row above the card
+ */
 .pico-panel-screen {
-	position: relative;
-	z-index: 1;
 	display: grid;
-	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: calc(var(--pico-u) * 2);
 	height: 100%;
 	min-height: 0;
+	padding: var(--pico-u) calc(var(--pico-u) * 2);
+	font-size: var(--pico-text-sm);
 }
 
 .pico-panel-screen-detail {
-	display: flex;
-	flex-direction: column;
-	gap: var(--pico-space-1);
-	padding: var(--pico-space-2) var(--pico-space-3);
+	display: grid;
+	max-width: calc(var(--pico-px) * 300);
+	max-height: 100%;
 	min-height: 0;
-	overflow: hidden;
 }
 
-.pico-panel-screen-title {
-	padding-bottom: var(--pico-space-1);
-	border-bottom: var(--pico-edge) solid var(--pico-chrome-edge);
-}
+@container pico-body (width < 70em) {
+	.pico-panel-screen {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+	}
 
-.pico-panel-screen-body {
-	flex: 1 1 auto;
-	min-height: 0;
-	overflow-y: auto;
-}
+	.pico-panel-screen > [role="tablist"] {
+		grid-auto-flow: column;
+		justify-content: start;
+		padding: calc(var(--pico-px) * 3) 0 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
 
-.pico-panel-screen-footer {
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
-	text-align: right;
+	/* Standing in a row, a spine is pulled up rather than out. */
+	.pico-panel-screen > [role="tablist"] > [role="tab"] {
+		translate: 0 calc(var(--pico-px) * 2);
+	}
+
+	.pico-panel-screen > [role="tablist"] > [aria-selected="true"] {
+		translate: 0 calc(var(--pico-px) * -2);
+	}
 }

@@ -1,17 +1,44 @@
+/* A plastic button: solid body, hard shadow down and right, and nothing soft.
+ * The shadow is part of the button's footprint, so a margin reserves it and a
+ * neighbour's gap is measured from the shadow, not from the body. */
 .pico-button {
-	padding: var(--pico-space-1) var(--pico-space-2);
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-button-text, var(--pico-text-xs));
-	min-height: var(--pico-button-min-height, auto);
-	color: var(--pico-bg);
-	background: var(--pico-accent);
-	border: none;
-	cursor: pointer;
-	letter-spacing: 0.125em;
+	--pico-button-body: var(--pico-go);
+	--pico-button-ink: var(--pico-go-ink);
+	--pico-button-shadow: var(--pico-go-shadow);
+	display: inline-flex;
+	align-items: center;
+	gap: calc(var(--pico-px) * 3);
+	margin: 0 var(--pico-drop) var(--pico-drop) 0;
+	padding: calc(var(--pico-px) * 3) calc(var(--pico-px) * 6);
+	font-size: var(--pico-text-lg);
+	line-height: 1;
+	color: var(--pico-button-ink);
+	background: var(--pico-button-body);
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-button-shadow);
+	white-space: nowrap;
+}
+
+.pico-button[data-tone="quiet"] {
+	--pico-button-body: var(--pico-plate);
+	--pico-button-ink: var(--pico-plate-ink);
+	--pico-button-shadow: var(--pico-plate-shadow);
+	font-size: var(--pico-text);
+}
+
+.pico-button[data-tone="danger"] {
+	--pico-button-body: var(--pico-warn);
+	--pico-button-ink: var(--pico-warn-ink);
+	--pico-button-shadow: var(--pico-plate-shadow);
+	font-size: var(--pico-text);
 }
 
 .pico-button:focus-visible {
-	outline: var(--pico-edge) solid var(--pico-focus);
-	outline-offset: var(--pico-edge);
-	animation: pico-cta 900ms steps(3, end) infinite alternate;
+	outline: none;
+	--pico-button-shadow: var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-button:active {
+	translate: var(--pico-drop) var(--pico-drop);
+	box-shadow: none;
 }

@@ -1,20 +1,22 @@
+/* A figure as a chip: "2h 10m played". The caption follows the figure on the
+ * same plate, so a run of stats reads as one line of facts. */
 .pico-stat {
 	display: inline-flex;
-	flex-direction: column;
-	align-items: center;
-	gap: calc(var(--pico-space-1) / 4);
+	align-items: baseline;
+	gap: calc(var(--pico-px) * 2);
+	padding: 0 calc(var(--pico-px) * 3);
+	font-size: var(--pico-text-sm);
+	line-height: calc(var(--pico-px) * 10);
+	color: var(--pico-plate-ink);
+	background: var(--pico-plate);
+	white-space: nowrap;
 }
 
 .pico-stat-figure {
 	font-weight: normal;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text);
-	color: var(--pico-accent);
+	color: var(--pico-ink);
 }
 
 .pico-stat-caption {
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
+	color: var(--pico-ink-quiet);
 }

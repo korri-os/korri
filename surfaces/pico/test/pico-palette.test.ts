@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { PICO_LABEL_COLORS, PICO_PALETTE } from "../src/pico-palette"
+import { PICO_PALETTE, PICO_SHELL_COLORS } from "../src/pico-palette"
 
 const tokens = readFileSync(
   join(import.meta.dir, "..", "src", "pico-tokens.css"),
@@ -25,19 +25,19 @@ describe("the palette in TypeScript and the palette in CSS", () => {
     },
   )
 
-  test("every label role points at a colour the label set actually contains", () => {
-    const names = new Set(PICO_LABEL_COLORS.map((color) => color.name))
-    const roles = [...tokens.matchAll(/--pico-label-\d+:\s*var\(--p8-(\w+)\)/g)]
+  test("every shell role points at a colour the shell set actually contains", () => {
+    const names = new Set(PICO_SHELL_COLORS.map((color) => color.name))
+    const roles = [...tokens.matchAll(/--pico-shell-\d+:\s*var\(--p8-(\w+)\)/g)]
 
-    expect(roles.length).toBe(PICO_LABEL_COLORS.length)
+    expect(roles.length).toBe(PICO_SHELL_COLORS.length)
     for (const [, name] of roles) expect(names.has(name ?? "")).toBe(true)
   })
 
-  test("label roles are declared in the same order the module lists them", () => {
+  test("shell roles are declared in the same order the module lists them", () => {
     // The cart selects a colour by index, so order is the contract.
-    const roles = [...tokens.matchAll(/--pico-label-(\d+):\s*var\(--p8-(\w+)\)/g)]
+    const roles = [...tokens.matchAll(/--pico-shell-(\d+):\s*var\(--p8-(\w+)\)/g)]
     for (const [, index, name] of roles) {
-      expect(PICO_LABEL_COLORS[Number(index)]?.name).toBe(name ?? "")
+      expect(PICO_SHELL_COLORS[Number(index)]?.name).toBe(name ?? "")
     }
   })
 })

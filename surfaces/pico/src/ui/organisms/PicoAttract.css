@@ -1,51 +1,49 @@
+/* Attract mode: a black screen, a line of carts drifting left on a floor,
+ * and one blinking line. The rail is two copies of the same set, so moving
+ * it half its width lands on an identical frame and the loop has no seam. */
 .pico-attract {
+	--pico-shelf-art-w: calc(var(--pico-px) * 40);
+	--pico-shelf-art-h: calc(var(--pico-px) * 72);
 	position: absolute;
 	inset: 0;
 	z-index: 3;
 	display: grid;
-	/* An explicit column that cannot exceed the screen: the rail is deliberately
-	 * wider than the display, and a max-content column would let it push the
-	 * hint off to one side. */
 	grid-template-columns: minmax(0, 1fr);
 	grid-template-rows: 1fr auto 1fr;
 	align-items: center;
 	justify-items: center;
-	gap: var(--pico-space-2);
+	gap: calc(var(--pico-u) * 2);
 	overflow: hidden;
 	background: var(--pico-bg);
-	animation: pico-rise 400ms steps(4, end) both;
 }
 
 .pico-attract-rail {
 	display: flex;
-	width: max-content;
 	justify-self: start;
-	/* Exactly two equal sets: half the rail is one complete visual period. */
-	animation: pico-attract-drift 9s steps(30) infinite;
+	width: max-content;
+	border-bottom: calc(var(--pico-px) * 3) solid var(--pico-floor);
+	animation: pico-attract-drift 9s steps(90) infinite;
 }
 
 .pico-attract-set {
 	display: flex;
-	flex: 0 0 auto;
-	align-items: center;
+	flex: none;
+	align-items: flex-end;
 	justify-content: space-around;
-	gap: var(--pico-space-2);
+	gap: calc(var(--pico-u) * 2);
 	min-width: 100cqw;
-	padding-inline: calc(var(--pico-space-2) / 2);
+	padding: 0 var(--pico-u) var(--pico-px);
 }
 
 .pico-attract-cart {
-	flex: 0 0 auto;
-	container-type: size;
-	height: calc(var(--pico-base) * 6);
-	aspect-ratio: 3 / 4;
+	display: flex;
+	flex: none;
+	align-items: flex-end;
 }
 
 .pico-attract-hint {
 	align-self: start;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
+	font-size: var(--pico-text);
 	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
-	animation: pico-blink 1.4s steps(1, end) infinite;
+	animation: pico-blink 1400ms steps(1, end) infinite;
 }

@@ -31,10 +31,10 @@ const parts = walk(SRC)
  * weakening of the assertion for every other part.
  */
 const TEXTLESS = new Set([
-  "ui/atoms/PicoBackdrop.atom.part.tsx",
-  "ui/atoms/PicoKeyArt.atom.part.tsx",
-  "ui/molecules/PicoKeyArtStage.molecule.part.tsx",
+  "ui/atoms/PicoCoverArt.atom.part.tsx",
+  "ui/atoms/PicoPaletteBar.atom.part.tsx",
   "ui/atoms/PicoPixelDisc.atom.part.tsx",
+  "ui/molecules/PicoCart.molecule.part.tsx",
 ])
 
 afterEach(() => cleanup())

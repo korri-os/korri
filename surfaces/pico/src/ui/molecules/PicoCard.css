@@ -1,0 +1,83 @@
+/**
+ * A cartridge-shaped card. The shell colour says what kind of card it is; the
+ * --pico-row-* colours it sets are read by the rows inside it: dark rows on
+ * the plastic, and a light plate for the cursor.
+ */
+.pico-card {
+	--pico-card-shell: var(--pico-shell-ask);
+	--pico-card-ink: var(--pico-shell-ask-ink);
+	--pico-card-kicker: var(--pico-shell-ask-kicker);
+	--pico-row-plate: var(--pico-ink-dark);
+	--pico-row-ink: var(--pico-ink);
+	--pico-row-quiet: var(--pico-ink-quiet);
+	--pico-row-pick: var(--pico-pick);
+	--pico-row-pick-ink: var(--pico-pick-ink);
+	position: relative;
+	display: grid;
+	align-content: start;
+	gap: var(--pico-u);
+	min-width: 0;
+	max-height: 100%;
+	margin: 0 calc(var(--pico-drop-lg) + var(--pico-px)) calc(var(--pico-drop-lg) + var(--pico-px)) 0;
+	padding: calc(var(--pico-px) * 8) calc(var(--pico-px) * 7) calc(var(--pico-px) * 6);
+	font-size: var(--pico-text);
+	line-height: 1.5;
+	color: var(--pico-card-ink);
+	background: var(--pico-card-shell);
+	box-shadow: calc(var(--pico-drop-lg) + var(--pico-px)) calc(var(--pico-drop-lg) + var(--pico-px)) 0 var(--pico-cast-near);
+	overflow-y: auto;
+	scrollbar-width: none;
+	animation: pico-land 240ms steps(4, end);
+}
+
+.pico-card::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 30%;
+	width: 40%;
+	height: calc(var(--pico-px) * 3);
+	background: var(--pico-bg);
+}
+
+.pico-card[data-tone="warn"] {
+	--pico-card-shell: var(--pico-shell-warn);
+	--pico-card-ink: var(--pico-shell-warn-ink);
+	--pico-card-kicker: var(--pico-shell-warn-kicker);
+}
+
+.pico-card[data-tone="tell"] {
+	--pico-card-shell: var(--pico-shell-tell);
+	--pico-card-ink: var(--pico-shell-tell-ink);
+	--pico-card-kicker: var(--pico-shell-tell-kicker);
+}
+
+/* A card in a cartridge plastic: dark ink, navy kicker, whatever the tone. */
+.pico-card[data-shell] {
+	--pico-card-ink: var(--pico-ink-dark);
+	--pico-card-kicker: var(--pico-plate);
+}
+
+.pico-card[data-shell="0"] { --pico-card-shell: var(--pico-shell-0); }
+.pico-card[data-shell="1"] { --pico-card-shell: var(--pico-shell-1); }
+.pico-card[data-shell="2"] { --pico-card-shell: var(--pico-shell-2); }
+.pico-card[data-shell="3"] { --pico-card-shell: var(--pico-shell-3); }
+.pico-card[data-shell="4"] { --pico-card-shell: var(--pico-shell-4); }
+.pico-card[data-shell="5"] { --pico-card-shell: var(--pico-shell-5); }
+.pico-card[data-shell="6"] { --pico-card-shell: var(--pico-shell-6); }
+.pico-card[data-shell="7"] { --pico-card-shell: var(--pico-shell-7); }
+.pico-card[data-shell="8"] { --pico-card-shell: var(--pico-shell-8); }
+.pico-card[data-shell="9"] { --pico-card-shell: var(--pico-shell-9); }
+
+.pico-card-kicker {
+	font-size: var(--pico-text-sm);
+	color: var(--pico-card-kicker);
+}
+
+.pico-card-title {
+	margin: 0;
+	font-size: var(--pico-text-xl);
+	font-weight: normal;
+	line-height: 1.1;
+	overflow-wrap: anywhere;
+}

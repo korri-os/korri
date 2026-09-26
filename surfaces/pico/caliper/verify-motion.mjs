@@ -35,7 +35,7 @@ export async function verifyMotion(page, frame) {
   await homeCard.dispatchEvent("click")
   const home = frame.locator(".pt-object").filter({ has: frame.locator(".lab-part-mount .pico-caliper-mount") })
   await home.dispatchEvent("pointerdown")
-  const cart = home.locator(".pico-cart").first()
+  const cart = home.locator("button.pico-cart").first()
   await cart.focus()
   await page.clock.fastForward(46_000)
   await home.getByRole("img", { name: "Attract", exact: true }).waitFor()

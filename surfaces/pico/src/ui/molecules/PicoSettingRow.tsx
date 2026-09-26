@@ -1,5 +1,6 @@
 import type { PicoSettingRowView } from "../../pico-settings-view"
 import { PicoBadge } from "../atoms/PicoBadge"
+import { PicoRow } from "../atoms/PicoRow"
 import { PicoSegments } from "../atoms/PicoSegments"
 
 /**
@@ -18,29 +19,25 @@ export function PicoSettingRow({
   readonly onActivate: () => void
 }) {
   const interactive = row.control.kind !== "fact"
-  const Tag = interactive ? "button" : "div"
+  const detail = (
+    <>
+      {row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : null}
+      {row.control.kind === "cycle" ? (
+        <PicoSegments current={row.control.current} options={row.control.options} />
+      ) : row.value === undefined ? null : (
+        <span>{row.value}</span>
+      )}
+      {row.control.kind === "action" ? <span aria-hidden>▶</span> : null}
+    </>
+  )
   return (
-    <li className="pico-setting-row-item">
-      <Tag
-        className="pico-setting-row"
-        data-destructive={
-          row.control.kind === "action" && row.control.destructive ? "true" : undefined
-        }
-        {...(interactive ? { onClick: onActivate, type: "button" as const } : {})}
-      >
-        <span className="pico-setting-row-label">{row.label}</span>
-        <span className="pico-setting-row-state">
-          {row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : null}
-          {row.control.kind === "cycle" ? (
-            <PicoSegments current={row.control.current} options={row.control.options} />
-          ) : row.value === undefined ? null : (
-            <span className="pico-setting-row-value">{row.value}</span>
-          )}
-          {row.control.kind === "action" ? (
-            <span aria-hidden className="pico-setting-row-go">▶</span>
-          ) : null}
-        </span>
-      </Tag>
+    <li className="pico-setting-row">
+      <PicoRow
+        danger={row.control.kind === "action" && row.control.destructive}
+        detail={detail}
+        label={row.label}
+        onPress={interactive ? onActivate : undefined}
+      />
       {row.description === undefined ? null : (
         <p className="pico-setting-row-description">{row.description}</p>
       )}

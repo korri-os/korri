@@ -1,0 +1,57 @@
+/* A menu line. A card that holds rows sets the --pico-row-* colours for its
+ * own shell; on the bare ground the defaults below apply. */
+.pico-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--pico-u);
+	width: 100%;
+	min-width: 0;
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 4);
+	font-size: var(--pico-text);
+	line-height: 1.25;
+	text-align: start;
+	color: var(--pico-row-ink, var(--pico-ink));
+	background: var(--pico-row-plate, var(--pico-plate));
+}
+
+.pico-row-label {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.pico-row-detail {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: calc(var(--pico-px) * 2);
+	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+	white-space: nowrap;
+}
+
+.pico-row[data-danger] {
+	color: var(--pico-warn);
+}
+
+.pico-row:disabled {
+	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+	cursor: default;
+}
+
+/* The cursor: a light plate, dark ink, and a shadow that cycles. */
+.pico-row:focus-visible {
+	outline: none;
+	color: var(--pico-row-pick-ink, var(--pico-go-ink));
+	background: var(--pico-row-pick, var(--pico-go));
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-row:focus-visible .pico-row-detail {
+	color: var(--pico-pick-mark);
+}
+
+.pico-row[data-danger]:focus-visible {
+	color: var(--pico-warn-ink);
+	background: var(--pico-warn);
+}

@@ -1,38 +1,34 @@
-/* The existing overlay owns the frame. One scroll region keeps all runner
- * identities and commands reachable on either axis, with no size tiers. */
+/* Runner identities are prose and paths, not labels: they wrap anywhere and
+ * the card scrolls rather than shrinking text or targets. */
 .pico-runner-picker {
-  --pico-button-min-height: var(--pico-runner-target);
-  --pico-button-text: var(--pico-runner-label);
-  height: 100%;
-  min-width: 0;
-  font-family: var(--pico-font-term);
-  font-size: var(--pico-runner-text);
-  color: var(--pico-ink);
-  overflow-wrap: anywhere;
-}
-
-.pico-runner-picker :is(h1, h2) {
-  margin: 0;
-  font-family: var(--pico-font-display);
-  font-size: var(--pico-runner-label);
+	height: 100%;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .pico-runner-picker :is(p, dl, dd) {
-  margin: 0;
+	margin: 0;
+}
+
+.pico-runner-picker dl {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: var(--pico-px) calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
 }
 
 .pico-runner-picker dt {
-  color: var(--pico-ink-dim);
+	color: var(--pico-shell-tell-kicker);
 }
 
 .pico-runner-picker-route {
-  display: grid;
-  gap: var(--pico-space-1);
-  padding-block: var(--pico-space-2);
+	display: grid;
+	gap: var(--pico-u);
+	padding-top: var(--pico-u);
 }
 
-.pico-runner-picker button {
-  flex-shrink: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.pico-runner-picker-route > h2 {
+	margin: 0;
+	font-size: var(--pico-text-lg);
+	font-weight: normal;
 }

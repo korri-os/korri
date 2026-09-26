@@ -1,23 +1,24 @@
+/* A choice among several: a flat plate that turns yellow when chosen. Chosen
+ * is also announced through aria-pressed, never only coloured. */
 .pico-chip {
 	display: inline-flex;
 	align-items: center;
-	padding: calc(var(--pico-space-1) / 2) var(--pico-space-1);
-	font-family: var(--pico-font-term);
+	margin: 0 var(--pico-drop-sm) var(--pico-drop-sm) 0;
+	padding: 0 calc(var(--pico-px) * 3);
 	font-size: var(--pico-text-sm);
-	color: var(--pico-ink-dim);
-	background: transparent;
-	border: var(--pico-edge) solid var(--pico-chrome-edge);
-	cursor: pointer;
+	line-height: calc(var(--pico-px) * 10);
+	color: var(--pico-plate-ink);
+	background: var(--pico-plate);
 	white-space: nowrap;
 }
 
 .pico-chip[aria-pressed="true"] {
-	color: var(--pico-cast-shadow);
-	background: var(--pico-accent);
-	border-color: var(--pico-accent);
+	color: var(--pico-go-ink);
+	background: var(--pico-go);
 }
 
 .pico-chip:focus-visible {
-	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
-	outline-offset: var(--pico-edge);
+	outline: none;
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
 }

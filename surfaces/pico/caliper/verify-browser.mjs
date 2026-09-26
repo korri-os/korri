@@ -93,14 +93,14 @@ try {
   await badgeCard.dispatchEvent("click")
   const sizes = await frame.locator(".lab-scale-content").evaluateAll(nodes => nodes.map(e => ({width: e.clientWidth, height: e.clientHeight})))
   if (sizes.some(size => size.width <= 0 || size.height <= 0)) failures.push("part preview collapsed to zero dimensions")
-  const knob = frame.getByRole("spinbutton", { name: "--intrinsic-base-cqi value", exact: true })
+  const knob = frame.getByRole("spinbutton", { name: "--pico-pixel-rows value", exact: true })
   const original = await knob.inputValue()
   try {
-    await knob.fill("3.5")
+    await knob.fill("240")
     await knob.press("Tab")
     await page.waitForTimeout(300)
-    const value = await first.locator(".pico-theme").evaluate(e => getComputedStyle(e).getPropertyValue("--intrinsic-base-cqi").trim())
-    if (Number(value) !== 3.5) failures.push(`design knob did not reach Pico: ${value}`)
+    const value = await first.locator(".pico-theme").evaluate(e => getComputedStyle(e).getPropertyValue("--pico-pixel-rows").trim())
+    if (Number(value) !== 240) failures.push(`design knob did not reach Pico: ${value}`)
   } finally {
     await knob.fill(original)
     await knob.press("Tab")

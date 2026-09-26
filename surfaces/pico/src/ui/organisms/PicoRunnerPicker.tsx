@@ -1,6 +1,7 @@
 import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useLayoutEffect, useRef } from "react"
-import { PicoButton } from "../atoms/PicoButton"
+import { PicoRow } from "../atoms/PicoRow"
+import { PicoCard } from "../molecules/PicoCard"
 import { PicoGameOverlay } from "../templates/PicoGameOverlay"
 
 /** Shape: runner facts use Pico's scrollable panel and native buttons. */
@@ -34,7 +35,7 @@ export function PicoRunnerPicker({
           { hintKey: "b", label: "CANCEL" },
         ]}
       >
-        <h1>RUNTIMES · {choice.gameTitle}</h1>
+        <PicoCard kicker="RUNTIMES" title={choice.gameTitle} tone="tell">
         <p role="status">{choice.message}</p>
         {choice.saved.map(saved => (
           <p key={saved.label}>
@@ -61,7 +62,7 @@ export function PicoRunnerPicker({
               <p key={warning}>{warning}</p>
             ))}
             {route.actions.map(action => (
-              <PicoButton
+              <PicoRow
                 key={action.id}
                 label={action.label}
                 onPress={() => {
@@ -72,7 +73,7 @@ export function PicoRunnerPicker({
           </section>
         ))}
         {choice.actions.map(action => (
-          <PicoButton
+          <PicoRow
             key={action.id}
             label={action.label}
             onPress={() => {
@@ -80,6 +81,7 @@ export function PicoRunnerPicker({
             }}
           />
         ))}
+        </PicoCard>
       </PicoGameOverlay>
     </div>
   )

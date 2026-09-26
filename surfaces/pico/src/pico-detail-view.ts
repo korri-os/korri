@@ -14,7 +14,6 @@ export interface PicoDetailView {
   readonly title: string
   readonly subtitle?: string
   readonly artUrl?: string
-  readonly wideArtUrl?: string
   /** "CONTINUE" when Korri says the game resumes; "PLAY" otherwise. */
   readonly primaryLabel: "CONTINUE" | "PLAY"
   /**
@@ -31,9 +30,8 @@ export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
     title: game.title,
     ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
     ...(game.coverArtUrl === undefined ? {} : { artUrl: game.coverArtUrl }),
-    ...(game.wideArtUrl === undefined ? {} : { wideArtUrl: game.wideArtUrl }),
     primaryLabel: game.resumable === true ? "CONTINUE" : "PLAY",
-    stats: statsFor(game),
+    stats: picoStatsFor(game),
     ...(game.launchLocations === undefined || game.launchLocations.length === 0
       ? {}
       : { locations: game.launchLocations }),
@@ -46,7 +44,11 @@ export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
  * turning it into "2 days ago" needs a clock, and the treaty gives the surface
  * a preformatted `clockLabel` precisely so it never reads one itself.
  */
-function statsFor(game: SurfaceGame): PicoDetailView["stats"] {
+/** What Korri said about how much a game has been played, as display chips.
+ * Empty when Korri said nothing — the surface states no figure it was not given. */
+export function picoStatsFor(
+  game: Pick<SurfaceGame, "playCount" | "totalPlaytimeSeconds">,
+): PicoDetailView["stats"] {
   const stats: { figure: string; caption: string }[] = []
   if (game.playCount !== undefined) {
     stats.push({

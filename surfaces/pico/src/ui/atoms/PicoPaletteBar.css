@@ -1,0 +1,24 @@
+/* The palette as itself. This is the one stylesheet that names the sixteen
+ * directly, because showing them is the whole job. */
+.pico-palette-bar {
+	display: grid;
+	grid-template-columns: repeat(16, minmax(0, 1fr));
+	height: calc(var(--pico-px) * 3);
+}
+
+.pico-palette-bar-cell[data-cell="0"] { background: var(--p8-black); }
+.pico-palette-bar-cell[data-cell="1"] { background: var(--p8-navy); }
+.pico-palette-bar-cell[data-cell="2"] { background: var(--p8-maroon); }
+.pico-palette-bar-cell[data-cell="3"] { background: var(--p8-green); }
+.pico-palette-bar-cell[data-cell="4"] { background: var(--p8-brown); }
+.pico-palette-bar-cell[data-cell="5"] { background: var(--p8-slate); }
+.pico-palette-bar-cell[data-cell="6"] { background: var(--p8-silver); }
+.pico-palette-bar-cell[data-cell="7"] { background: var(--p8-white); }
+.pico-palette-bar-cell[data-cell="8"] { background: var(--p8-red); }
+.pico-palette-bar-cell[data-cell="9"] { background: var(--p8-orange); }
+.pico-palette-bar-cell[data-cell="10"] { background: var(--p8-yellow); }
+.pico-palette-bar-cell[data-cell="11"] { background: var(--p8-lime); }
+.pico-palette-bar-cell[data-cell="12"] { background: var(--p8-blue); }
+.pico-palette-bar-cell[data-cell="13"] { background: var(--p8-lilac); }
+.pico-palette-bar-cell[data-cell="14"] { background: var(--p8-pink); }
+.pico-palette-bar-cell[data-cell="15"] { background: var(--p8-peach); }

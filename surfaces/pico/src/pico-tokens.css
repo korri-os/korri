@@ -1,91 +1,78 @@
 /**
  * Pico's token substrate — the one file allowed to state a raw value.
  *
- * Two layers, deliberately separate:
+ * Three layers, deliberately separate:
  *
- *  1. The PICO-8 palette. Sixteen fixed colours; this is the brand, and the
- *     only place a hex may appear. Everything downstream names a role, never a
- *     colour, so a re-palette is one edit here.
- *  2. The intrinsic knobs. Pico does not derive its own scale — it feeds
- *     @korri/intrinsic-design and aliases the result. `--intrinsic-snap: 1px`
- *     is what keeps a bitmap font on whole pixels; without it the type scale
- *     lands on fractions and the pixel font blurs.
- *
- * The knobs live on `.pico-theme`, a scope separate from the painted screen, so
- * a preview can take Pico's scale without also taking its CRT grille and body
- * colour. Applied together on a real screen, the scale re-derives against that
- * screen's own container — which is how the same components read correctly on a
- * 3.5" handheld and a lean-back panel with no breakpoints. Applied alone, with
- * no container to measure, the base simply rests on its floor.
+ *  1. The PICO-8 palette. Sixteen fixed colours, and nothing else is ever
+ *     painted: no blend, no fractional opacity, no gradient. PICO-8 cannot draw
+ *     any of those, and every one of them made the old surface read as a DOS
+ *     terminal rather than a fantasy console.
+ *  2. The virtual pixel, `--pico-px`. Every size in Pico is a whole number of
+ *     them, so shadows, notches and the bitmap face all land on the same grid.
+ *  3. Roles. Components name a role, never a `--p8-*` colour, so a decision
+ *     like "what colour is a confirming button" is made once, here.
  */
 
 /**
- * Pico's tunable design inputs, declared as registered custom properties.
- *
- * These are standard CSS and mean something with no tool present: `initial-value`
- * is Pico's own default, so the surface renders correctly if nothing ever writes
- * to them. Registering one is the opt-in that makes it a design input a tool can
- * offer as a live control — which is why only genuine *inputs* appear here.
- *
- * Deliberately absent: every derived token. `--pico-text-*`, `--pico-space-*`,
- * and `--pico-scanline` are outputs of the scale, and exposing an output as a
- * knob invites someone to set a value the scale will immediately contradict.
- * The `--p8-*` sixteen are absent for a different reason: they are the brand
- * constant, not a preference.
+ * Pico's tunable design inputs, registered so a design tool can offer them as
+ * live controls. `initial-value` is Pico's own default, so the surface renders
+ * correctly if nothing ever writes to them. Only genuine inputs appear here:
+ * `--pico-px` and everything derived from it are outputs, and a knob for an
+ * output invites a value the derivation immediately contradicts.
  */
 
-/* The ground and the two colours that sit on it. The palette is fixed; which
- * roles it fills is the decision worth turning. */
+/* The ground everything stands on. Black: PICO-8's boot screen and the only
+ * ground on which all sixteen colours read. */
 @property --pico-bg {
 	syntax: "<color>";
 	inherits: true;
-	initial-value: #1d2b53;
+	initial-value: #000000;
 }
 
-@property --pico-chrome {
-	syntax: "<color>";
-	inherits: true;
-	initial-value: #0c1430;
-}
-
+/* The one colour that marks "where you are": the second word of the header. */
 @property --pico-accent {
 	syntax: "<color>";
 	inherits: true;
-	initial-value: #ffec27;
+	initial-value: #ff77a8;
 }
 
-/* The scale's character: what the base is anchored to, how fast type climbs,
- * and how much air a step of space buys. */
-@property --intrinsic-base-cqi {
+/* How many virtual pixels the screen's short side holds. Fewer rows means a
+ * bigger pixel. 360 gives 2 device pixels at 720p and 3 at 1080p. */
+@property --pico-pixel-rows {
 	syntax: "<number>";
 	inherits: true;
-	initial-value: 2.5;
+	initial-value: 360;
 }
 
-@property --intrinsic-ratio {
-	syntax: "<number>";
-	inherits: true;
-	initial-value: 1.25;
-}
-
-@property --intrinsic-space-unit {
+/* The smallest pixel Pico will draw with. Below 2 device pixels the face stops
+ * being legible on a handheld panel, so a small screen reflows instead. */
+@property --pico-pixel-min {
 	syntax: "<length>";
 	inherits: true;
-	initial-value: 0.5em;
+	initial-value: 2px;
 }
 
-/* The CRT grille: how many lines the screen pretends to have, and how hard they
- * press. Both are taste, and both look wrong at values a reader would guess. */
-@property --pico-scanline-lines {
-	syntax: "<number>";
+/**
+ * The virtual pixel, resolved to an absolute length.
+ *
+ * Registered so it computes where it is declared and children inherit the
+ * length, not the formula. Unregistered, `100cqh` would re-resolve against
+ * whichever container is nearest the element using it, and a component that
+ * made itself a container would silently get a different pixel.
+ */
+@property --pico-px {
+	syntax: "<length>";
 	inherits: true;
-	initial-value: 240;
+	initial-value: 2px;
 }
 
-@property --pico-scanline-tint {
-	syntax: "<percentage>";
+/* The colour the focus cycle is showing this frame. Registered so the
+ * `pico-cycle` keyframes can step it; components read it for a focused
+ * shadow. Not a knob: pico-motion.css drives it. */
+@property --pico-cycle {
+	syntax: "<color>";
 	inherits: true;
-	initial-value: 12%;
+	initial-value: #ff004d;
 }
 
 .pico-theme {
@@ -108,91 +95,104 @@
 	--p8-peach: #ffccaa;
 
 	/* Roles. Components name these; they never name a --p8-* directly. */
-	--pico-bg: var(--p8-navy);
+	--pico-bg: var(--p8-black);
+	--pico-accent: var(--p8-pink);
 	--pico-ink: var(--p8-white);
 	--pico-ink-dim: var(--p8-silver);
-	--pico-accent: var(--p8-yellow);
-	--pico-focus: var(--p8-blue);
-	--pico-warn: var(--p8-red);
+	--pico-ink-quiet: var(--p8-lilac);
+	--pico-ink-dark: var(--p8-black);
+	/* A plate is the quiet thing a label sits on: a chip, a key, a menu row. */
+	--pico-plate: var(--p8-navy);
+	--pico-plate-ink: var(--p8-peach);
+	--pico-plate-shadow: var(--p8-maroon);
+	/* The one thing the screen wants pressed. */
+	--pico-go: var(--p8-yellow);
+	--pico-go-ink: var(--p8-black);
+	--pico-go-shadow: var(--p8-brown);
+	/* A chosen row inside a coloured card. */
+	--pico-pick: var(--p8-white);
+	--pico-pick-ink: var(--p8-black);
+	--pico-pick-mark: var(--p8-brown);
 	--pico-ok: var(--p8-lime);
+	--pico-warn: var(--p8-red);
+	--pico-warn-ink: var(--p8-white);
+	/* The floor carts stand on, and the slot a launching cart seats into. */
+	--pico-floor: var(--p8-navy);
+	--pico-floor-edge: var(--p8-lilac);
 
-	/* Chrome reads as part of the design: a deeper navy from the body's own
-	 * family, edged in blue rather than a warm slate that would fight it. */
-	--pico-chrome: #0c1430;
-	--pico-chrome-edge: color-mix(in srgb, var(--p8-blue) 32%, var(--pico-chrome));
+	/* Card shells by what they say: yellow asks, red warns, blue tells. */
+	--pico-shell-ask: var(--p8-yellow);
+	--pico-shell-warn: var(--p8-red);
+	--pico-shell-tell: var(--p8-blue);
+	/* A card's ink and the quieter kicker above its title, per shell. */
+	--pico-shell-ask-ink: var(--p8-black);
+	--pico-shell-ask-kicker: var(--p8-brown);
+	--pico-shell-warn-ink: var(--p8-white);
+	--pico-shell-warn-kicker: var(--p8-peach);
+	--pico-shell-tell-ink: var(--p8-black);
+	--pico-shell-tell-kicker: var(--p8-navy);
+	/* The two shadow steps behind a large cartridge: navy, then maroon. */
+	--pico-cast-near: var(--p8-navy);
+	--pico-cast-far: var(--p8-maroon);
+	/* Focus is a colour cycle, the way PICO-8's own cursor is. */
+	--pico-cycle-0: var(--p8-red);
+	--pico-cycle-1: var(--p8-orange);
+	--pico-cycle-2: var(--p8-pink);
 
-	/* Intrinsic knobs. 8px floor is one character cell of the bitmap font. */
-	--intrinsic-base-min: 8px;
-	--intrinsic-base-cqi: 2.5;
-	--intrinsic-base-max: 200px;
-	--intrinsic-ratio: 1.25;
-	--intrinsic-space-unit: 0.5em;
-	--intrinsic-snap: 1px;
+	/* Cartridge plastics: the ten palette entries bright enough to be a shell.
+	 * Deliberately the raw palette rather than roles — a shell's whole job is
+	 * to be one of the sixteen. Kept in step with PICO_SHELL_COLORS in
+	 * pico-palette.ts by test/pico-palette.test.ts. */
+	--pico-shell-0: var(--p8-blue);
+	--pico-shell-1: var(--p8-pink);
+	--pico-shell-2: var(--p8-orange);
+	--pico-shell-3: var(--p8-lime);
+	--pico-shell-4: var(--p8-peach);
+	--pico-shell-5: var(--p8-silver);
+	--pico-shell-6: var(--p8-red);
+	--pico-shell-7: var(--p8-yellow);
+	--pico-shell-8: var(--p8-green);
+	--pico-shell-9: var(--p8-lilac);
 
-	/* Aliases onto the derived scale. Nothing below re-implements the maths. */
-	--pico-base: var(--intrinsic-base);
-	--pico-text-sm: var(--intrinsic-text-dn1);
-	--pico-text-xs: var(--intrinsic-text-dn2);
-	--pico-text: var(--intrinsic-text-0);
-	--pico-text-lg: var(--intrinsic-text-up1);
-	--pico-text-xl: var(--intrinsic-text-up2);
-	--pico-space-1: var(--intrinsic-space-1);
-	--pico-space-2: var(--intrinsic-space-2);
-	--pico-space-3: var(--intrinsic-space-3);
-	--pico-space-4: var(--intrinsic-space-4);
+	/* Face buttons, drawn the way PICO-8 draws its O and X. */
+	--pico-key-a: var(--p8-orange);
+	--pico-key-b: var(--p8-blue);
+	--pico-key-ink: var(--p8-navy);
 
-	/* Runner identities are prose, not cartridge labels. Keep them readable
-	 * in narrow containers; scroll rather than shrinking text or tap targets. */
-	--pico-runner-text: max(1rem, var(--pico-text));
-	--pico-runner-label: max(0.625rem, var(--pico-text-xs));
-	--pico-runner-target: max(3rem, var(--pico-space-4));
+	/* One face: Zep's PICO-8 glyphs, built by scripts/build-font.py. The em is
+	 * six glyph pixels, so a size of 6 × N device pixels draws every glyph
+	 * pixel as an N × N block. */
+	--pico-font: "Pico8", monospace;
+}
 
-	/* Cartridge-label colours: the ten palette entries bright enough to carry a
-	 * label. Deliberately the raw palette rather than semantic roles — a label's
-	 * whole job is to be one of the sixteen, so naming them by meaning would be
-	 * inventing meaning they do not have. Kept in step with pico-palette.ts by
-	 * test/pico-palette.test.ts. */
-	--pico-label-0: var(--p8-maroon);
-	--pico-label-1: var(--p8-green);
-	--pico-label-2: var(--p8-brown);
-	--pico-label-3: var(--p8-red);
-	--pico-label-4: var(--p8-orange);
-	--pico-label-5: var(--p8-yellow);
-	--pico-label-6: var(--p8-lime);
-	--pico-label-7: var(--p8-blue);
-	--pico-label-8: var(--p8-lilac);
-	--pico-label-9: var(--p8-pink);
-
-	/* Face-button colours. The gamepad convention, not a Pico invention: a
-	 * player reads the shape and colour before the letter, so A and B keep the
-	 * hues they have on the hardware. */
-	--pico-key-a: var(--p8-lime);
-	--pico-key-a-ink: var(--p8-black);
-	--pico-key-b: var(--p8-red);
-	--pico-key-b-ink: var(--p8-white);
-
-	/* Moulded-plastic shading. Named as roles so the one element in the design
-	 * allowed to look physical does not scatter raw colour through components. */
-	--pico-emboss-light: color-mix(in srgb, var(--p8-white) 50%, transparent);
-	--pico-emboss-dark: color-mix(in srgb, var(--p8-black) 32%, transparent);
-	--pico-cast-shadow: color-mix(in srgb, var(--p8-black) 55%, transparent);
-
-	/* Two families, two jobs: the bitmap face for chrome and headings, the
-	 * terminal face for running text it would be unreadable in. */
-	--pico-font-display: "Press Start 2P", monospace;
-	--pico-font-term: "VT323", monospace;
-
-	/* A hairline is the one place a device pixel is the honest unit: it must not
-	 * scale with the type ramp or it stops being a hairline. */
-	--pico-edge: 1px;
-
-	/* The grille is different. A CRT has a fixed number of lines whatever its
-	 * physical size, so the period belongs in screen-relative units, not device
-	 * pixels — pinned to px it drew the same four hard stripes across a small
-	 * bright chip at every screen size and made the button caps look damaged.
-	 * 240 lines is the look; the tint stays light enough to read through. */
-	--pico-scanline-lines: 240;
-	--pico-scanline: calc(100cqh / var(--pico-scanline-lines) / 2);
-	--pico-scanline-gap: calc(100cqh / var(--pico-scanline-lines));
-	--pico-scanline-tint: 12%;
+/**
+ * The derived scale. Declared on the theme root's children because a
+ * container's own `cq` units measure its ancestor, not itself: the root that
+ * carries `.pico-theme` is also the screen's size container, so only what sits
+ * inside it can measure it.
+ */
+.pico-theme > * {
+	--pico-px: max(
+		var(--pico-pixel-min),
+		round(down, calc(min(100cqw, 100cqh) / var(--pico-pixel-rows)), 1px)
+	);
+	/* The layout unit: everything spaces in whole units or whole pixels. */
+	--pico-u: calc(var(--pico-px) * 4);
+	/* Type, as whole glyph pixels (font-size ÷ 6): 1, 1.5, 2.5 and 3.5 virtual
+	 * pixels, each rounded to a whole device pixel so the face stays crisp at
+	 * every scale. At 720p that is 2, 3, 5 and 7 device pixels per glyph pixel. */
+	--pico-text-sm: calc(var(--pico-px) * 6);
+	--pico-text: calc(round(calc(var(--pico-px) * 1.5), 1px) * 6);
+	--pico-text-lg: calc(round(calc(var(--pico-px) * 2.5), 1px) * 6);
+	--pico-text-xl: calc(round(calc(var(--pico-px) * 3.5), 1px) * 6);
+	/* Hard shadows: the drop behind a small thing and behind a big one. */
+	--pico-drop-sm: calc(var(--pico-px) * 2);
+	--pico-drop: calc(var(--pico-px) * 3);
+	--pico-drop-lg: calc(var(--pico-px) * 4);
+	/* Focus rings are drawn in pixels too. */
+	--pico-edge: var(--pico-px);
+	/* The face's own size on everything inside, so text nobody sized is still
+	 * whole pixels. */
+	font-size: var(--pico-text);
+	line-height: 1.5;
 }

@@ -1,14 +1,14 @@
 import type { ReactNode } from "react"
-import { PicoTitle } from "../atoms/PicoTitle"
-import { PicoTabs } from "../molecules/PicoTabs"
+import { PicoCard } from "../molecules/PicoCard"
+import { PicoTabs, picoTabShell } from "../molecules/PicoTabs"
 
 /**
- * Categories down the side, one category's contents beside them: the layout
- * every settings-like screen in legacy shared.
+ * Sections as spines down the side, the chosen section's contents in a card
+ * of the same plastic beside them, so a section and what it holds read as one
+ * object.
  *
- * The seam between list and detail is a column split, not a stack, even on a
- * handheld — legacy found that a 4:3 screen has the width for it and lacks the
- * height for anything else.
+ * The split is a column, not a stack, while there is width for it; a narrow
+ * pane stands the spines in a row above the card instead.
  */
 export function PicoPanelScreen({
   tabs,
@@ -16,26 +16,20 @@ export function PicoPanelScreen({
   onSelect,
   title,
   children,
-  footer,
 }: {
   readonly tabs: readonly string[]
   readonly current: number
   readonly onSelect: (index: number) => void
   readonly title: string
   readonly children: ReactNode
-  readonly footer?: string
 }) {
   return (
     <div className="pico-panel-screen">
       <PicoTabs current={current} onSelect={onSelect} tabs={tabs} />
       <section aria-label={title} className="pico-panel-screen-detail">
-        <div className="pico-panel-screen-title">
-          <PicoTitle level={2} size="md" text={title} tone="accent" />
-        </div>
-        <div className="pico-panel-screen-body">{children}</div>
-        {footer === undefined ? null : (
-          <div className="pico-panel-screen-footer">{footer}</div>
-        )}
+        <PicoCard shell={picoTabShell(current)} tone="tell">
+          {children}
+        </PicoCard>
       </section>
     </div>
   )

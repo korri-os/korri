@@ -1,51 +1,34 @@
+/* Spines. Unchosen spines sit pushed in; the chosen one slides out and casts
+ * a light shadow, the way a cartridge pulled from a shelf would. */
 .pico-tabs {
-	display: flex;
-	flex-direction: column;
-	padding: var(--pico-space-1) 0;
-	background: var(--pico-chrome);
-	border-right: var(--pico-edge) solid var(--pico-chrome-edge);
-	overflow: hidden;
+	display: grid;
+	align-content: start;
+	gap: calc(var(--pico-px) * 3);
+	padding: 0 calc(var(--pico-px) * 3);
 }
 
 .pico-tabs-tab {
-	display: flex;
-	align-items: center;
-	gap: var(--pico-space-1);
-	padding: var(--pico-space-1) var(--pico-space-2) var(--pico-space-1) var(--pico-space-1);
-	font: inherit;
-	font-family: var(--pico-font-term);
+	--pico-spine: var(--pico-shell-0);
+	padding: calc(var(--pico-px) * 3) calc(var(--pico-px) * 5);
 	font-size: var(--pico-text);
-	color: var(--pico-ink-dim);
-	text-align: left;
-	background: transparent;
-	border: none;
-	cursor: pointer;
+	line-height: 1.1;
+	text-align: start;
+	color: var(--pico-ink-dark);
+	background: var(--pico-spine);
 	white-space: nowrap;
+	translate: calc(var(--pico-px) * -3) 0;
 }
 
-.pico-tabs-cursor {
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-accent);
-	visibility: hidden;
-}
+.pico-tabs-tab[data-shell="1"] { --pico-spine: var(--pico-shell-1); }
+.pico-tabs-tab[data-shell="2"] { --pico-spine: var(--pico-shell-2); }
 
 .pico-tabs-tab[aria-selected="true"] {
-	background: var(--pico-focus);
-	color: var(--pico-cast-shadow);
-}
-
-.pico-tabs-tab[aria-selected="true"] .pico-tabs-cursor {
-	visibility: visible;
-	color: var(--pico-cast-shadow);
+	translate: calc(var(--pico-px) * 3) 0;
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-ink);
 }
 
 .pico-tabs-tab:focus-visible {
-	outline: calc(var(--pico-edge) * 2) solid var(--pico-focus);
-	outline-offset: calc(var(--pico-edge) * -2);
-}
-
-.pico-tabs-label {
-	overflow: hidden;
-	text-overflow: ellipsis;
+	outline: none;
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
 }

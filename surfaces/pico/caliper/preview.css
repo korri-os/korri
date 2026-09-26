@@ -1,35 +1,31 @@
 /* Design-tool framing, not product layout. Caliper scales this definite frame
  * for gallery cards and placed parts; percentages alone collapse in its stage. */
 .pico-caliper-preview {
-  width: 40rem;
-  height: 30rem;
+	width: 40rem;
+	height: 30rem;
 }
 
 .pico-caliper-host,
 .pico-caliper-mount {
-  width: 100%;
-  height: 100%;
+	width: 100%;
+	height: 100%;
 }
 
 /* Caliper writes registered inputs on an ancestor. Override Pico's local
- * defaults only within the lab so its controls reach the recipe derivation.
- * The property registrations supply defaults; the product CSS is unchanged. */
+ * defaults only within the lab so its controls reach the derivation. The
+ * property registrations supply defaults; the product CSS is unchanged. */
 .pico-caliper-scope .pico-theme {
-  --intrinsic-base-cqi: inherit;
-  --intrinsic-ratio: inherit;
-  --intrinsic-space-unit: inherit;
-  --pico-bg: inherit;
-  --pico-chrome: inherit;
-  --pico-accent: inherit;
-  --pico-scanline-lines: inherit;
-  --pico-scanline-tint: inherit;
+	--pico-bg: inherit;
+	--pico-accent: inherit;
+	--pico-pixel-rows: inherit;
+	--pico-pixel-min: inherit;
 }
 
 /* A placed part already has a definite Caliper device/resizable frame. Only
  * gallery cards need the reference size above; placements must follow theirs. */
 .lab-part-mount > .pico-caliper-preview {
-  width: 100%;
-  height: 100%;
+	width: 100%;
+	height: 100%;
 }
 
 /* Caliper currently has one source list per adapter, not a per-part source
@@ -37,6 +33,6 @@
  * parts using discovered layer metadata, never a second part-name inventory.
  * Generated prop controls and device/page source controls remain available. */
 .pt-inspector:has(.pt-inspector-scope > .pt-layer-tag:not(.layer-page))
-  .pt-bind-row:has(> select[aria-label^="Data source for "]) {
-  display: none;
+	.pt-bind-row:has(> select[aria-label^="Data source for "]) {
+	display: none;
 }

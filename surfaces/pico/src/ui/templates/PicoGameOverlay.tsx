@@ -2,8 +2,8 @@ import type { ReactNode } from "react"
 import { PicoButtonBar, type PicoButtonBarHint } from "../molecules/PicoButtonBar"
 
 /**
- * The frame a pause menu sits in: a dark scrim over the game, a panel in the
- * middle, hints along the bottom.
+ * The frame a pause menu sits in: a card in the middle of a solid screen,
+ * hints along the bottom. The content brings its own card.
  *
  * No status bar. The game is still running behind this and owns the screen; a
  * clock and a breadcrumb would claim it back. The panel is bounded by the

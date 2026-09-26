@@ -6,7 +6,7 @@ export const note = "Chrome above and below, one scrolling body between"
 export default function PicoScreenShellPart() {
   return (
     <PicoScreenShell
-      backdrop="stars"
+      readout="9 CARTS · 2 RESUMABLE"
       clockLabel="10:24"
       hints={[
         { hintKey: "a", label: "PLAY" },

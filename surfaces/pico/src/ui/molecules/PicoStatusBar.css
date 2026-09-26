@@ -1,16 +1,31 @@
 .pico-status-bar {
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	padding: var(--pico-u) calc(var(--pico-u) * 2) 0;
+}
+
+.pico-status-bar-row {
 	display: flex;
-	gap: var(--pico-space-2);
-	align-items: center;
+	align-items: baseline;
 	justify-content: space-between;
-	padding: var(--pico-space-1) var(--pico-space-2);
-	background: var(--pico-chrome);
-	border-bottom: var(--pico-edge) solid var(--pico-chrome-edge);
+	gap: calc(var(--pico-u) * 2);
+	min-width: 0;
+}
+
+/* The breadcrumb yields before the clock: it truncates, the clock never does. */
+.pico-status-bar-where {
+	min-width: 0;
+	overflow: hidden;
+	font-size: var(--pico-text-lg);
+	line-height: 1.1;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pico-status-bar-place {
+	color: var(--pico-ink);
 }
 
 .pico-status-bar-label {
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-ink-dim);
-	letter-spacing: 0.125em;
+	color: var(--pico-accent);
 }

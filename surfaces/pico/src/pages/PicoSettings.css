@@ -1,6 +1,7 @@
+/* A notice over settings takes the whole body, on the solid ground. */
 .pico-settings-toast {
 	position: absolute;
 	inset: 0;
 	z-index: 2;
-	background: color-mix(in srgb, var(--pico-bg) 80%, transparent);
+	background: var(--pico-bg);
 }

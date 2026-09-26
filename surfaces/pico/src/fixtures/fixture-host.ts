@@ -13,6 +13,16 @@ import type {
   SurfaceInputAction,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
+import {
+  PICO_ART_BLOCKS,
+  PICO_ART_BRAMBLE,
+  PICO_ART_CAVERN,
+  PICO_ART_COMET,
+  PICO_ART_KNIGHT,
+  PICO_ART_SHORE,
+  PICO_ART_SUMMIT,
+  PICO_ART_TOWER,
+} from "./sample-art"
 
 export interface FixtureHost extends SurfaceHost {
   /** Every command the surface issued, in order. */
@@ -203,18 +213,22 @@ export const fixtureModel: SurfaceModel = {
   presentation: { kind: "catalog" },
   catalog: {
     _tag: "Ready",
+    /* Covers at every shape Korri's platforms use (see fixtures/sample-art.ts),
+     * one game with none, some resumable, one playable in two places. */
     games: [
       {
         id: "celeste",
         section: "Continue",
         title: "Celeste Classic",
         subtitle: "PICO-8 · This device",
+        coverArtUrl: PICO_ART_SUMMIT,
       },
       {
         id: "hollow",
         section: "Continue",
         title: "Hollow Knight",
         subtitle: "Switch · This device",
+        coverArtUrl: PICO_ART_KNIGHT,
         resumable: true,
         playCount: 3,
         totalPlaytimeSeconds: 7_800,
@@ -225,6 +239,7 @@ export const fixtureModel: SurfaceModel = {
         section: "zao",
         title: "Tetris",
         subtitle: "GB · zao",
+        coverArtUrl: PICO_ART_BLOCKS,
         launchLocations: [
           { id: "local", label: "This device" },
           { id: "zao", label: "zao" },
@@ -235,6 +250,48 @@ export const fixtureModel: SurfaceModel = {
         section: "This device",
         title: "Spelunky",
         subtitle: "PC · This device",
+        coverArtUrl: PICO_ART_CAVERN,
+      },
+      {
+        id: "lantern",
+        section: "This device",
+        title: "Lantern Keep",
+        subtitle: "PC · This device",
+        coverArtUrl: PICO_ART_TOWER,
+        playCount: 12,
+        totalPlaytimeSeconds: 41_400,
+        lastPlayedAt: 1_756_400_000_000,
+      },
+      {
+        id: "tide",
+        section: "zao",
+        title: "Tide Pool",
+        subtitle: "Mega Drive · zao",
+        coverArtUrl: PICO_ART_SHORE,
+      },
+      {
+        id: "comet",
+        section: "Continue",
+        title: "Comet Courier",
+        subtitle: "PC · This device",
+        coverArtUrl: PICO_ART_COMET,
+        resumable: true,
+        playCount: 1,
+        totalPlaytimeSeconds: 1_500,
+        lastPlayedAt: 1_756_900_000_000,
+      },
+      {
+        id: "bramble",
+        section: "This device",
+        title: "Bramble Run",
+        subtitle: "GBA · This device",
+        coverArtUrl: PICO_ART_BRAMBLE,
+      },
+      {
+        id: "petal",
+        section: "This device",
+        title: "Petal Quest",
+        subtitle: "PICO-8 · This device",
       },
     ],
   },

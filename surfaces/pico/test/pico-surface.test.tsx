@@ -40,9 +40,9 @@ describe("the shelf", () => {
   test("stands in for missing cover art instead of leaving a hole", () => {
     render(<PicoSurface host={createFixtureHost()} model={model()} />)
 
-    // No fixture game has art, so every cart shows initials from its title.
-    expect(screen.getByText("CC")).toBeTruthy()
-    expect(screen.getByText("HK")).toBeTruthy()
+    // Petal Quest is the one fixture game with no art: its cart carries a
+    // sticker with its initials rather than an empty window.
+    expect(screen.getByText("PQ")).toBeTruthy()
   })
 
   test("names the collection the focused game belongs to", () => {
@@ -58,7 +58,7 @@ describe("the shelf", () => {
     fireEvent.focus(screen.getByRole("button", { name: /Tetris/ }))
 
     expect(screen.getByRole("heading", { name: "Tetris" })).toBeTruthy()
-    expect(screen.getByLabelText("3 of 4")).toBeTruthy()
+    expect(screen.getByLabelText("3 of 9")).toBeTruthy()
   })
 
   test("shows the clock Korri preformatted", () => {
@@ -76,7 +76,7 @@ describe("launching", () => {
     fireEvent.click(screen.getByRole("button", { name: /Celeste Classic/ }))
 
     expect(host.calls).toEqual([])
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Celeste Classic" })).toBeTruthy()
   })
 })
@@ -130,7 +130,7 @@ describe("a game's own screen", () => {
 
     act(() => host.press("back"))
 
-    expect(screen.queryByText("GAME")).toBeNull()
+    expect(screen.queryByText("LIBRARY ›")).toBeNull()
     expect(screen.getByText("LIBRARY")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
@@ -244,7 +244,8 @@ describe("while Korri is doing something with a game", () => {
       />,
     )
 
-    expect(screen.getByText("Tetris — zao did not answer.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Tetris" })).toBeTruthy()
+    expect(screen.getByText("zao did not answer.")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "TRY AGAIN" }))
     expect(host.calls).toEqual(["retry"])
@@ -286,7 +287,7 @@ describe("the Back button", () => {
 
     // The question is gone; the game's screen is still up.
     expect(screen.queryByText("PLAY WHERE?")).toBeNull()
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
     expect(host.calls).toEqual([])
   })
 

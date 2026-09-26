@@ -1,51 +1,64 @@
+/* A result tile: a fixed-height art row with the cart standing on its bottom
+ * edge, so a short cart and a tall one share a line and the captions align. */
 .pico-result-row-item {
+	display: flex;
+	min-width: 0;
 	list-style: none;
 }
 
 .pico-result-row {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: var(--pico-space-1);
+	display: grid;
+	grid-template-rows: var(--pico-result-art-h, calc(var(--pico-px) * 66)) auto auto;
 	width: 100%;
-	padding: calc(var(--pico-space-1) / 2) var(--pico-space-1);
-	font: inherit;
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text);
-	color: var(--pico-ink);
-	text-align: left;
-	background: transparent;
-	border: none;
-	cursor: pointer;
+	min-width: 0;
+	padding: 0 0 calc(var(--pico-px) * 2);
+	text-align: start;
 }
 
-.pico-result-row:focus-visible {
-	outline: none;
-	background: var(--pico-accent);
-	color: var(--pico-cast-shadow);
-}
-
-.pico-result-row:focus-visible .pico-result-row-meta,
-.pico-result-row:focus-visible .pico-result-row-mark {
-	color: var(--pico-cast-shadow);
-}
-
-.pico-result-row-mark {
-	flex: 0 0 auto;
-	color: var(--pico-accent);
+.pico-result-row-art {
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding-bottom: var(--pico-px);
+	border-bottom: calc(var(--pico-px) * 2) solid var(--pico-floor);
+	overflow: hidden;
 }
 
 .pico-result-row-title {
-	min-width: 0;
-	white-space: normal;
+	display: -webkit-box;
+	margin-top: calc(var(--pico-px) * 3);
+	padding: 0 var(--pico-px);
+	overflow: hidden;
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-ink);
 	overflow-wrap: anywhere;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
 }
 
 .pico-result-row-meta {
-	margin-left: auto;
-	flex: 0 0 auto;
-	max-width: 100%;
-	overflow-wrap: anywhere;
+	padding: 0 var(--pico-px);
+	overflow: hidden;
 	font-size: var(--pico-text-sm);
-	color: var(--pico-ink-dim);
+	line-height: 1.5;
+	color: var(--pico-ink-quiet);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The cursor is on the caption: a yellow plate under the title. */
+.pico-result-row:focus-visible {
+	outline: none;
+}
+
+.pico-result-row:focus-visible .pico-result-row-title {
+	color: var(--pico-go-ink);
+	background: var(--pico-go);
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-result-row:focus-visible .pico-result-row-art {
+	border-bottom-color: var(--pico-go);
 }

@@ -48,7 +48,7 @@ test("the pointer sequence that wakes attract cannot activate the underlying car
   jest.useFakeTimers()
   render(<PicoSurface host={createFixtureHost()} model={fixtureModel} />)
   act(() => jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS + 1))
-  const cart = document.querySelector(".pico-cart")!
+  const cart = document.querySelector("button.pico-cart")!
   fireEvent.pointerDown(cart)
   fireEvent.pointerUp(cart)
   fireEvent.click(cart)

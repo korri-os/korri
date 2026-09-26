@@ -124,7 +124,7 @@ describe("choosing a result", () => {
     type("SP")
     fireEvent.click(screen.getByRole("button", { name: /Spelunky/ }))
     expect(host.calls).toEqual([])
-    expect(screen.getByText("GAME")).toBeTruthy()
+    expect(screen.getByText("LIBRARY ›")).toBeTruthy()
   })
 })
 
@@ -146,24 +146,28 @@ describe("ordering the results", () => {
     open()
     fireEvent.click(screen.getByRole("button", { name: "A-Z" }))
     const rows = screen.getAllByRole("button", { name: /·/ })
-    expect(rows[0]?.textContent).toContain("Celeste Classic")
-    expect(rows.at(-1)?.textContent).toContain("Tetris")
+    expect(rows[0]?.textContent).toContain("Bramble Run")
+    expect(rows.at(-1)?.textContent).toContain("Tide Pool")
   })
 
   test("sorts by how much a game has been played", () => {
     open()
     fireEvent.click(screen.getByRole("button", { name: "MOST PLAYED" }))
     const rows = screen.getAllByRole("button", { name: /·/ })
-    expect(rows[0]?.textContent).toContain("Hollow Knight")
+    // Lantern Keep has the most playtime Korri published: 11h 30m.
+    expect(rows[0]?.textContent).toContain("Lantern Keep")
+    expect(rows[1]?.textContent).toContain("Hollow Knight")
   })
 
   test("puts games Korri has never timed last rather than first", () => {
     open()
     fireEvent.click(screen.getByRole("button", { name: "RECENT" }))
     const rows = screen.getAllByRole("button", { name: /·/ })
-    // Hollow Knight is the only fixture with a lastPlayedAt; everything else is
-    // unknown, and unknown is not "a long time ago".
+    // Three fixtures carry a lastPlayedAt, Hollow Knight the latest; everything
+    // else is unknown, and unknown is not "a long time ago".
     expect(rows[0]?.textContent).toContain("Hollow Knight")
+    expect(rows[1]?.textContent).toContain("Comet Courier")
+    expect(rows[2]?.textContent).toContain("Lantern Keep")
   })
 
   test("orders within the collection, not across it", () => {
@@ -171,7 +175,8 @@ describe("ordering the results", () => {
     fireEvent.click(screen.getByRole("button", { name: "CONTINUE" }))
     fireEvent.click(screen.getByRole("button", { name: "A-Z" }))
     const rows = screen.getAllByRole("button", { name: /·/ })
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     expect(rows[0]?.textContent).toContain("Celeste Classic")
+    expect(rows[1]?.textContent).toContain("Comet Courier")
   })
 })

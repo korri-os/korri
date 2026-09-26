@@ -1,0 +1,100 @@
+/**
+ * The stage's plan, as a function of its own width and height.
+ *
+ * The section is the size container and the layout inside it answers the
+ * query; a container cannot style itself from its own size. Conditions are in
+ * em, and the stage's font-size is the small face (6 virtual pixels), so every
+ * threshold is a count of small-text lines and scales with the pixel, like
+ * everything it decides about.
+ *
+ *   default              art | facts, side by side
+ *   narrow, tall enough  art above facts
+ *   short, or narrow     facts only: the cartridge is a picture and yields
+ *     and short
+ *
+ * Every threshold is a guess until measured on the real panels.
+ */
+.pico-game-stage {
+	container: pico-stage / size;
+	height: 100%;
+	min-height: 0;
+	font-size: var(--pico-text-sm);
+	overflow: hidden;
+}
+
+.pico-game-stage-layout {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	column-gap: calc(var(--pico-u) * 3);
+	height: 100%;
+	padding: var(--pico-u) calc(var(--pico-u) * 2);
+}
+
+/* The cartridge's box: at most four tenths of the stage's width, and the
+ * stage's height less the shell, its shadow and the stage's own padding. */
+.pico-game-stage-art {
+	--pico-cart-art-w: min(42cqw, calc(var(--pico-px) * 190));
+	--pico-cart-art-h: min(calc(100cqh - var(--pico-px) * 38), calc(var(--pico-px) * 190));
+	display: grid;
+	align-items: center;
+}
+
+/* `safe`: when the facts are taller than the stage they start at the top and
+ * scroll, instead of centring and losing the title above the top edge. */
+.pico-game-stage-facts {
+	display: grid;
+	align-content: safe center;
+	justify-items: start;
+	gap: calc(var(--pico-u) * 3);
+	min-width: 0;
+	max-height: 100%;
+	padding: 0 var(--pico-drop) var(--pico-drop) 0;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+/* Narrow and tall: the cartridge goes on top and takes under half the height. */
+@container pico-stage (width < 45em) and (height >= 40em) {
+	.pico-game-stage-layout {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+		row-gap: calc(var(--pico-u) * 2);
+		align-items: start;
+	}
+
+	.pico-game-stage-art {
+		--pico-cart-art-w: calc(100cqw - var(--pico-px) * 40);
+		--pico-cart-art-h: 40cqh;
+		justify-items: center;
+	}
+
+	.pico-game-stage-facts {
+		align-content: start;
+	}
+}
+
+/* Too short, or too narrow and short, for a cartridge anyone could read. */
+@container pico-stage (height < 16em) or ((width < 45em) and (height < 40em)) {
+	.pico-game-stage-layout {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.pico-game-stage-art {
+		display: none;
+	}
+}
+
+/* Very short: the title steps down a size and the gaps close, so the title
+ * and whatever controls follow it stay on screen. */
+@container pico-stage (height < 24em) {
+	.pico-game-stage-layout {
+		--pico-title-xl: var(--pico-text-lg);
+		padding-top: calc(var(--pico-px) * 2);
+		padding-bottom: calc(var(--pico-px) * 2);
+	}
+
+	.pico-game-stage-facts {
+		gap: var(--pico-u);
+	}
+}

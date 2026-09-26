@@ -19,7 +19,7 @@ export default {
     "@contracts": "../../contracts",
   },
   sourcePartBridges: ["../pico-caliper-parts.ts"],
-  filesystemRoots: ["..", "./src", "../../contracts", "../../packages/intrinsic-design"],
+  filesystemRoots: ["..", "./src", "../../contracts"],
   capabilities: {
     backendlessFixtures: true,
   },

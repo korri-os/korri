@@ -1,16 +1,15 @@
 import type { PicoShelfLocation } from "../../pico-shelf-game"
-import { PicoButton } from "../atoms/PicoButton"
+import { PicoRow } from "../atoms/PicoRow"
+import { PicoCard } from "../molecules/PicoCard"
 
 /**
  * Where should this game run?
  *
- * Korri publishes locations only when there is a genuine choice, so this screen
- * appears only when the answer is unknown — and it takes the whole body rather
- * than floating over the shelf, because a modal on a handheld has to solve
- * focus trapping and a full-body panel simply does not have the problem.
- *
- * Korri orders the list (local device first, then stable host order); Pico
- * preserves that order rather than sorting by a rule of its own.
+ * Asked only when Korri says there is a real choice. The locations are Korri's
+ * own, in Korri's order and with Korri's labels; picking the first one for the
+ * user would start a game on the wrong machine, which is the one launch
+ * mistake that cannot be undone from the couch. A yellow card, because it is
+ * a question, and the only thing on screen while it is asked.
  */
 export function PicoLocationPicker({
   title,
@@ -22,19 +21,16 @@ export function PicoLocationPicker({
   readonly onChoose: (locationId: string) => void
 }) {
   return (
-    <section className="pico-location-picker">
-      <h1 className="pico-location-picker-title">{title}</h1>
-      <p className="pico-location-picker-prompt">PLAY WHERE?</p>
-      <ul className="pico-location-picker-list">
-        {locations.map((location) => (
-          <li className="pico-location-picker-item" key={location.id}>
-            <PicoButton
-              label={location.label}
-              onPress={() => onChoose(location.id)}
-            />
-          </li>
-        ))}
-      </ul>
+    <section aria-label="PLAY WHERE?" className="pico-location-picker">
+      <PicoCard kicker="PLAY WHERE?" title={title} tone="ask">
+        <ul className="pico-location-picker-list">
+          {locations.map((location) => (
+            <li className="pico-location-picker-item" key={location.id}>
+              <PicoRow label={location.label} onPress={() => onChoose(location.id)} />
+            </li>
+          ))}
+        </ul>
+      </PicoCard>
     </section>
   )
 }

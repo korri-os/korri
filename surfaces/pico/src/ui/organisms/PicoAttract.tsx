@@ -24,8 +24,8 @@ export function PicoAttract({ games }: { readonly games: readonly PicoShelfGame[
         {[0, 1].map((copy) => (
           <div className="pico-attract-set" key={copy}>
             {carts.map((game) => (
-              <span className="pico-attract-cart" key={game.id}>
-                <PicoCart artUrl={game.artUrl} id={game.id} placement="still" title={game.title} />
+              <span aria-label={game.title} className="pico-attract-cart" key={game.id}>
+                <PicoCart artUrl={game.artUrl} id={game.id} placement="tile" title={game.title} />
               </span>
             ))}
           </div>

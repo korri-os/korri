@@ -1,7 +1,6 @@
 import type { SurfaceAction } from "@contracts/surface/korri-surface"
 import type { PicoDetailView } from "../pico-detail-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
-import { PicoKeyArtStage } from "../ui/molecules/PicoKeyArtStage"
 import { PicoModal } from "../ui/organisms/PicoModal"
 import { PicoGameDetail as PicoGameDetailBody } from "../ui/organisms/PicoGameDetail"
 import { PicoLocationPicker } from "../ui/organisms/PicoLocationPicker"
@@ -15,11 +14,11 @@ const DETAIL_HINTS = [
 const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 
 /**
- * A game's own screen: the second of the two routes legacy actually shipped.
+ * A game's own screen.
  *
- * Same shell as home so the chrome does not jump; the body is the game. When a
- * launch needs a location the question replaces the body, exactly as it does
- * over the shelf, so the user learns one way of being asked.
+ * The header reads "library › the game": Back leads to the library, and the
+ * game is where you are. A launch location question and a destructive
+ * action's confirmation both take the whole body while they are asked.
  */
 export function PicoGameDetail({
   game,
@@ -34,11 +33,8 @@ export function PicoGameDetail({
   clockLabel,
 }: {
   readonly game: PicoDetailView
-  /** What Korri says can be done to this game. Usually empty. */
   readonly actions: readonly SurfaceAction[]
-  /** A destructive game action awaiting the user's yes, when one is. */
   readonly askingAction?: SurfaceAction
-  /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
   readonly onPlay: () => void
   readonly onRunAction: (action: SurfaceAction) => void
@@ -49,12 +45,11 @@ export function PicoGameDetail({
 }) {
   return (
     <PicoScreenShell
-      backdrop="stars"
       clockLabel={clockLabel}
       hints={placing === undefined ? DETAIL_HINTS : QUIET_HINTS}
-      label="GAME"
+      label={game.title}
+      place="LIBRARY ›"
     >
-      <PicoKeyArtStage src={game.wideArtUrl} />
       {placing === undefined ? (
         <PicoGameDetailBody
           actions={actions}

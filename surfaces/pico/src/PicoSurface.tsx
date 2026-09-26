@@ -12,7 +12,7 @@ import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings } from "./pages/PicoSettings"
-import { PicoIdentityDialog } from "./pages/PicoIdentityDialog"
+import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
 import {
@@ -52,12 +52,11 @@ export function PicoSurface({
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
 }) {
-  // `intrinsic` is not decoration: the recipe derives the whole scale at
-  // `:where(:root, .intrinsic)`, and Pico's knobs live on `.pico-theme`. Only
-  // when the same element carries both does the derivation read Pico's floor,
-  // anchor, ratio and whole-pixel snap instead of the package's defaults.
+  // `pico-theme` carries the palette and knobs; `pico-screen` is the size
+  // container the virtual pixel is measured against. Both on the root, so the
+  // pixel derives from exactly the box the host gave Pico.
   return (
-    <div className="intrinsic pico-theme pico-screen">
+    <div className="pico-theme pico-screen">
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : (

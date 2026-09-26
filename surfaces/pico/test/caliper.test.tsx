@@ -70,7 +70,7 @@ test("keyboard shortcuts are scoped, ignore typing and detach on dispose", async
 test("fixture launch publishes its consequence without invoking a backend", async () => {
   const node = host()
   await act(async () => { mounted.push(adapter.mountSurface(node, { mode: "fixture" })) })
-  await act(async () => { (node.querySelector(".pico-cart") as HTMLElement).click() })
+  await act(async () => { (node.querySelector("button.pico-cart") as HTMLElement).click() })
   const play = within(node).getByRole("button", { name: /play/i })
   await act(async () => { play.click() })
   expect(node.querySelector(".pico-launch-stage")).not.toBeNull()

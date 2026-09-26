@@ -1,40 +1,21 @@
+/* A notice stands alone in the middle of whatever room it is given. */
 .pico-notice {
 	display: grid;
-	gap: var(--pico-space-2);
-	place-content: center;
-	justify-items: center;
+	place-items: center;
 	height: 100%;
-	padding: var(--pico-space-3);
-	overflow-y: auto;
-	text-align: center;
+	padding: var(--pico-u);
 }
 
-.pico-notice-kicker {
-	margin: 0;
-	animation: pico-rise 200ms steps(3, end) both;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text);
-	color: var(--pico-ink);
-	letter-spacing: 0.125em;
-}
-
-.pico-notice[data-tone="warn"] .pico-notice-kicker {
-	color: var(--pico-warn);
-	/* A failure announces itself once and then holds still; a looping shake
-	 * would make an error the loudest thing on a screen the user is trying to
-	 * read. */
-	animation: pico-shake 220ms steps(3, end) 1 both;
+.pico-notice > * {
+	width: min(100%, calc(var(--pico-px) * 220));
 }
 
 .pico-notice-message {
 	margin: 0;
-	max-width: 24ch;
-	font-size: var(--pico-text);
-	color: var(--pico-ink-dim);
+	overflow-wrap: anywhere;
 }
 
 .pico-notice-actions {
-	display: flex;
-	gap: var(--pico-space-2);
-	justify-content: center;
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
 }

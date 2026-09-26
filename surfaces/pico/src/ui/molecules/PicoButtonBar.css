@@ -1,8 +1,25 @@
 .pico-button-bar {
 	display: flex;
-	gap: var(--pico-space-3);
 	align-items: center;
-	padding: var(--pico-space-1) var(--pico-space-2);
-	background: var(--pico-chrome);
-	border-top: var(--pico-edge) solid var(--pico-chrome-edge);
+	gap: calc(var(--pico-u) * 2);
+	padding: var(--pico-u) calc(var(--pico-u) * 2) calc(var(--pico-u) * 1.5);
+	min-width: 0;
+}
+
+/* The readout yields before the hints: it truncates, they never do. */
+.pico-button-bar-readout {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-quiet);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pico-button-bar-hints {
+	display: flex;
+	flex: none;
+	gap: calc(var(--pico-u) * 1.5);
+	margin-left: auto;
 }

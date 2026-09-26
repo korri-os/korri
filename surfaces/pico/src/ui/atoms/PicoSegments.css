@@ -1,19 +1,15 @@
+/* Every value a setting can take, the current one lit. Unlit values stay in
+ * the row's quiet ink so the lit one is the only colour in it. */
 .pico-segments {
 	display: inline-flex;
-	gap: var(--pico-edge);
-	font-family: var(--pico-font-term);
-	font-size: var(--pico-text-sm);
+	gap: calc(var(--pico-px) * 2);
 }
 
 .pico-segments-item {
-	padding: var(--pico-edge) calc(var(--pico-edge) * 3);
-	background: var(--pico-cast-shadow);
-	color: var(--pico-ink-dim);
-	border: var(--pico-edge) solid var(--pico-chrome-edge);
+	padding: 0 var(--pico-px);
 }
 
 .pico-segments-item[data-lit] {
-	background: var(--pico-accent);
-	color: var(--pico-cast-shadow);
-	border-color: var(--pico-accent);
+	color: var(--pico-ink-dark);
+	background: var(--pico-ok);
 }

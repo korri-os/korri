@@ -1,98 +1,61 @@
+/**
+ * The shelf's plan. Conditions are in em of the small face (6 virtual pixels).
+ *
+ * The rack is the control and the stage is a readout, so the rack takes its
+ * height first and the stage gets what is left. On a short body the shelf
+ * carts shrink before the rack gives up any cart; the stage's own plan then
+ * drops its cartridge before its facts.
+ */
 .pico-cart-shelf {
-	position: relative;
+	container: pico-shelf / size;
 	display: grid;
-	/* minmax(0, 1fr) not 1fr: a bare 1fr refuses to shrink below its content,
-	 * so the strip pushes the caption off the bottom of a short screen and the
-	 * position tally is the first thing to disappear. */
-	/* Section caption, strip, caption+tally. The caption rows are `auto` so the
-	 * strip is the only thing that gives way on a short screen. */
-	grid-template-rows: auto minmax(0, 1fr) auto;
-	gap: var(--pico-space-2);
+	grid-template-rows: minmax(0, 1fr) auto;
 	height: 100%;
-	padding: var(--pico-space-2) 0;
+	font-size: var(--pico-text-sm);
 }
 
-/* The shelf owns where its backdrop sits. An absolutely positioned child of a
- * grid is sized against its grid area, not the container, so the art has to be
- * lifted out of the track structure by an element this component controls
- * rather than by reaching into the atom's own class. */
-/* The collection the focused cart belongs to. Korri delivers games grouped and
- * consecutive, so on a one-row shelf the caption changing as you scroll IS the
- * group boundary — it is the only place a single strip can show one. */
-.pico-cart-shelf-section {
-	position: relative;
-	z-index: 1;
-	margin: 0;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text-xs);
-	color: var(--pico-accent);
-	letter-spacing: 0.125em;
-	text-align: center;
-}
-
-.pico-cart-shelf-strip {
-	/* Above the key art. A positioned element with z-index 0 paints over
-	 * ordinary in-flow content, so the backdrop would cover the shelf unless
-	 * everything that must stay legible is positioned too. */
-	position: relative;
-	z-index: 1;
-	display: flex;
-	gap: var(--pico-space-2);
-	align-items: center;
-	margin: 0;
-	/* Half the container either side, so the first and last cart can still reach
-	 * the middle: a shelf whose ends cannot be centred puts its edge games in a
-	 * place the design never accounts for. */
-	padding: 0 50cqw;
+.pico-cart-shelf-stage {
 	min-height: 0;
+}
+
+/* A line of carts on a floor. Carts stand on the floor's top edge; the rack
+ * leaves room above for the chosen cart to lift. */
+.pico-cart-shelf-rack {
+	--pico-shelf-art-w: calc(var(--pico-px) * 28);
+	--pico-shelf-art-h: calc(var(--pico-px) * 56);
+	position: relative;
+	display: flex;
+	align-items: flex-end;
+	gap: calc(var(--pico-px) * 4);
+	margin: 0;
+	padding: calc(var(--pico-px) * 8) calc(var(--pico-u) * 2) 0;
+	border-bottom: calc(var(--pico-px) * 3) solid var(--pico-floor);
 	overflow-x: auto;
-	scroll-snap-type: x mandatory;
+	overflow-y: hidden;
 	list-style: none;
 	scrollbar-width: none;
 }
 
 .pico-cart-shelf-slot {
-	/* A definite height for the cart's max-height to cap against, without
-	 * stretching the row: the strip's own height is the shelf's track. */
-	height: 100%;
 	display: flex;
-	flex: 0 0 auto;
-	align-items: center;
-	scroll-snap-align: center;
+	flex: none;
+	align-items: flex-end;
+	/* The chosen cart's shadow hangs off its right and bottom edges. */
+	padding: 0 var(--pico-drop) var(--pico-px) 0;
 }
 
-.pico-cart-shelf-caption {
-	position: relative;
-	z-index: 1;
-	display: grid;
-	gap: var(--pico-space-1);
-	justify-items: center;
-	text-align: center;
+/* Position on the shelf is a readout: on a stage with no room, it yields. */
+@container pico-stage (height < 16em) {
+	.pico-cart-shelf-tally {
+		display: none;
+	}
 }
 
-.pico-cart-shelf-title {
-	margin: 0;
-	font-family: var(--pico-font-display);
-	font-size: var(--pico-text);
-	color: var(--pico-ink);
-	letter-spacing: 0.125em;
-}
-
-.pico-cart-shelf-subtitle {
-	margin: 0;
-	max-width: 100cqw;
-	overflow: hidden;
-	font-size: var(--pico-text);
-	color: var(--pico-ink-dim);
-	white-space: nowrap;
-}
-
-.pico-cart-shelf-subtitle-run {
-	display: inline-block;
-}
-
-/* Set only when the text measured wider than its line, so a short caption
- * never moves. */
-.pico-cart-shelf-subtitle[data-marquee] .pico-cart-shelf-subtitle-run {
-	animation: pico-marquee 6s linear infinite alternate;
+/* A short shelf: smaller carts, same rule. */
+@container pico-shelf (height < 30em) {
+	.pico-cart-shelf-rack {
+		--pico-shelf-art-w: calc(var(--pico-px) * 20);
+		--pico-shelf-art-h: calc(var(--pico-px) * 36);
+		gap: calc(var(--pico-px) * 3);
+	}
 }
