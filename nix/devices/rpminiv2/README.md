@@ -195,7 +195,7 @@ replacement for it. Its current first milestone is deliberately local:
   put credentials in the image. A restored native NetworkManager profile remains
   available without `/etc/korri/wifi.env`; that provisioning file is optional.
   The shared profile service leaves persistent profiles unchanged. Run
-  `nix/devices/rpminiv2/wifi-check.sh` for the local NetworkManager VM regression
+  `nix build .#checks.x86_64-linux.rpminiv2-wifi` for the NetworkManager VM regression
   check; it does not contact hardware. Avahi and Sunshine are not enabled by this
   device slice. Wi-Fi and Bluetooth still need physical acceptance; streaming,
   media decode, and internal-storage support are not claimed.

@@ -87,6 +87,7 @@ in
         consoleConfiguration
         ;
     };
+  wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
   initrdModulesCheck =
     pkgs:
     pkgs.makeModulesClosure {

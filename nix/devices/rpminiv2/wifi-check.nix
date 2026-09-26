@@ -8,10 +8,12 @@ in
 assert environmentFiles == [ "-/etc/korri/wifi.env" ];
 pkgs.testers.runNixOSTest {
   name = "rpminiv2-optional-wifi-environment";
-  nodes.machine = { ... }: {
-    imports = [ ../../base/wifi.nix ];
-    networking.networkmanager.enable = true;
-  };
+  nodes.machine =
+    { ... }:
+    {
+      imports = [ ../../base/wifi.nix ];
+      networking.networkmanager.enable = true;
+    };
   testScript = ''
     import shlex
 
