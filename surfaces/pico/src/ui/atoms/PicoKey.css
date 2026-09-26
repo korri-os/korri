@@ -4,9 +4,12 @@
 	display: grid;
 	place-items: center;
 	min-width: 0;
-	min-height: calc(var(--pico-px) * 12);
-	/* The keyboard decides how square a key is; a key alone is as tall as its
-	 * minimum. A wide key keeps the row's height, not its own ratio. */
+	/* No min-height: through aspect-ratio it would become a minimum width and
+	 * push the last column off a narrow screen. A key is never shorter than
+	 * its own glyph plus padding anyway. */
+	padding: calc(var(--pico-px) * 2) 0;
+	/* The keyboard decides how square a key is. A wide key keeps the row's
+	 * height, not its own ratio. */
 	aspect-ratio: var(--pico-key-ratio, auto);
 	margin: 0 var(--pico-drop-sm) var(--pico-drop-sm) 0;
 	font-size: var(--pico-text);
