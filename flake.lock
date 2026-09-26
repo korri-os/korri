@@ -68,11 +68,11 @@
     "plugins": {
       "flake": false,
       "locked": {
-        "lastModified": 1790383589,
-        "narHash": "sha256-CmahJBA9wYAeLCKDrZtmSqQv83RY/opb4hzi9PZOcgk=",
+        "lastModified": 1790429043,
+        "narHash": "sha256-XlFnGn2aGj6NDBd12ZiBLaOiWugfGuygbStNUQsGF+s=",
         "owner": "korri-os",
         "repo": "plugins",
-        "rev": "e5e27ed406f2d17369d26185bd400bd150473692",
+        "rev": "46b91cb7fcb0f8ac7db4fd308ef3b9c53373e697",
         "type": "github"
       },
       "original": {
