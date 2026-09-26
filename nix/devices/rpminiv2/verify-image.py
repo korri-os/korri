@@ -56,11 +56,11 @@ PROVEN_HASHES = {
 }
 DTB_HASHES = {
     "recovery": "f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4",
-    "korri": "6b2cb59d4be1ae7c3cbb543eed83cc96b1171194874df7e0ff40887f60a33eb8",
+    "korri": "53abe644510292a5399bed66277e2ef558067789834084d58eeb72b400641543",
 }
 KERNEL_HASHES = {
     "recovery": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
-    "korri": "7778f27b5289dbc926578c1804eac0e5f2d70c851fc74514e85c19beb4386624",
+    "korri": "6f5b938b7590215bdb60d7d183729e12e06bffa2aadee9f8861a8f75e7dc7e30",
 }
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 

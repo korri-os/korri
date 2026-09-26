@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
-/* ROCKNIX SM8250 moderate fan map, PR #3339 (f0b5fade1e7b6e30e5522fb0f2395fd327fc433a).
- * Product-only overlay: keep the hardware-proven recovery DTB unchanged.
- * No tach GPIO or userspace thermal-trip writes are included.
+/* Product-only quiet fan trips, runtime-proven on the Mini V2 with schedutil.
+ * Keep the hardware-proven recovery DTB unchanged. Cooling levels and hysteresis
+ * remain from ROCKNIX SM8250 PR #3339. No tach GPIO or userspace writes.
  */
 
 &fan {
@@ -12,37 +12,37 @@
 &{/thermal-zones/cluster1-thermal} {
 	trips {
 		fan_active0: fan-active0 {
-			temperature = <45000>;
+			temperature = <52000>;
 			hysteresis = <5000>;
 			type = "active";
 		};
 
 		fan_active1: fan-active1 {
-			temperature = <55000>;
-			hysteresis = <5000>;
-			type = "active";
-		};
-
-		fan_active2: fan-active2 {
 			temperature = <62000>;
 			hysteresis = <5000>;
 			type = "active";
 		};
 
+		fan_active2: fan-active2 {
+			temperature = <69000>;
+			hysteresis = <5000>;
+			type = "active";
+		};
+
 		fan_active3: fan-active3 {
-			temperature = <68000>;
+			temperature = <75000>;
 			hysteresis = <5000>;
 			type = "active";
 		};
 
 		fan_active4: fan-active4 {
-			temperature = <73000>;
+			temperature = <80000>;
 			hysteresis = <5000>;
 			type = "active";
 		};
 
 		fan_active5: fan-active5 {
-			temperature = <78000>;
+			temperature = <85000>;
 			hysteresis = <5000>;
 			type = "active";
 		};

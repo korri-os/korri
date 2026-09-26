@@ -12,7 +12,7 @@ PRODUCT = Path(os.environ["RP_MINIV2_PRODUCT_DTB"])
 RECOVERY = Path(os.environ["RP_MINIV2_RECOVERY_DTB"])
 FAN = "/pwm-fan"
 ZONE = "/thermal-zones/cluster1-thermal"
-TRIPS = (45000, 55000, 62000, 68000, 73000, 78000)
+TRIPS = (52000, 62000, 69000, 75000, 80000, 85000)
 STATES = (1, 2, 3, 4, 6, 8)
 
 
@@ -30,7 +30,7 @@ def property_value(dtb, node, name, value_type="x"):
 
 
 class ProductFanMap(unittest.TestCase):
-    def test_compiled_moderate_policy(self):
+    def test_compiled_quiet_policy(self):
         self.assertEqual(
             property_value(PRODUCT, FAN, "cooling-levels"),
             [0, 51, 77, 102, 128, 153, 179, 204, 255],

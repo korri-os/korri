@@ -85,10 +85,10 @@ automatic thermal shutdown. A product-only one-shot service logs a read-only
 snapshot before the compositor, without timed sampling. Recovery stays on
 `config-tty-trim`.
 
-The next product-only change ports the **moderate kernel fan map** from
+The earlier product-only change ported the **moderate kernel fan map** from
 [ROCKNIX SM8250 PR #3339](https://github.com/ROCKNIX/distribution/pull/3339.patch):
 `cluster1-thermal` active trips at 45, 55, 62, 68, 73 and 78°C with 5°C
-hysteresis map to PWM 51, 77, 102, 128, 179 and 255. It changes the fan PWM
+hysteresis mapped to PWM 51, 77, 102, 128, 179 and 255. It changes the fan PWM
 period to 50,000 ns and the built-in driver startup duty to 51/255. The
 ROCKNIX startup patch still labels that duty as maximum cooling; this port
 initializes the driver's cooling state from its actual PWM instead. Otherwise
@@ -123,8 +123,53 @@ firmware. With remoteproc on, the CDSP and SLPI that the device tree enables
 also start. Recovery stays without sound. ROCKNIX's UCM (`../ucm`) sets the
 speaker amplifier volume to 12 at boot. No one has heard this build yet.
 
-No touchscreen, Wi-Fi, Bluetooth, media, UFS, or extra display driver is
-restored. The following sizes and hashes describe the **earlier** product
+The next-image product kernel restores the features listed below. Recovery
+keeps the original `config-tty-trim` and its DTB. These values come from the
+full `config` exported by official ROCKNIX `20260901` on this Mini V2, rather
+than from a generic device configuration. The board DTS enables QCA6390 power,
+PCIe, UART6 Bluetooth, both HTR3212 controllers, the PM8150B charger and fuel
+gauge, and Venus. This is a build policy, not a charging or physical-acceptance
+test.
+
+| Slice | Product-only Linux 7.2 features from the ROCKNIX baseline |
+| --- | --- |
+| K1 | Qualcomm PCIe/QMP PCIe PHY, cfg80211/mac80211, modular ath11k PCI, rfkill |
+| K2 | Modular Bluetooth HCI UART/QCA, LE and HIDP |
+| K3 | PlayStation, Sony, Nintendo and force-feedback Xbox gamepad drivers |
+| K4 | Built-in `CHARGER_QCOM_SMB5` with the existing `BATTERY_QCOM_FG`; no new charging policy or parameter changes |
+| K5 | V4L2 mem2mem and modular Qualcomm Venus media driver |
+| K6 | HTR3212 stick LEDs and baseline LED triggers |
+| K7 | Modular zram and baseline compression choices |
+| K8 | SCSI/USB mass storage and exFAT, modular NTFS3 |
+| K9 | Modular USB networking and RTL8152 |
+| K10 | Modular TUN and WireGuard |
+| K11 | Modular RAM pstore and built-in Qualcomm watchdog |
+| K12 | Product fan trips 52, 62, 69, 75, 80 and 85°C |
+
+The earlier PWM levels, 5°C hysteresis, period and startup duty stay as they
+were. These quiet trips were tested through runtime-only thermal settings on
+this Mini V2 alongside the `schedutil` CPU governor. They are not a measured
+safe charging or game-load thermal limit. At 40°C the fan remained at level 1
+after the runtime change; a new boot and step-down still need device checks.
+The new product kernel increases driver and network attack surface and module
+closure. No UFS or extra display driver is intentionally enabled. An SD EFI
+boot, charger behavior, fan rotation, wireless association, media decode and
+controller input require physical tests before support claims. A cross build
+on the development host produced an `Image` with SHA-256
+`6f5b938b7590215bdb60d7d183729e12e06bffa2aadee9f8861a8f75e7dc7e30`
+and product V2 DTB with SHA-256
+`53abe644510292a5399bed66277e2ef558067789834084d58eeb72b400641543`.
+The recovery DTB still hashes to
+`f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`.
+These are artifact pins, not evidence of device acceptance. The host cross
+build passed. `next-image-config.test.py` compared all K1–K11 values with the
+Linux 7.2 resolved `.config` and the original ROCKNIX baseline (2 tests).
+`fan-map.test.py` checked the compiled product and recovery DTBs (2 tests).
+The Mini V2 module check passed its image-verifier and board checks (34 image
+verifier tests, 2 additional fan tests, 2 thermal tests). No SD image was
+built or written, and no handheld build or physical test was run.
+
+The following sizes and hashes describe the **earlier** product
 build, before the thermal follow-up; a new build needs new artifact hashes:
 
 - `Image`: 18,448,896 bytes, SHA-256
@@ -141,7 +186,7 @@ Its Mini V2 DTB remains SHA-256
 `f9e32c33e14f3d974c461c674435a7002c73ec4243e96e3aef158620a730eee4`.
 Neither hash proves a safe device boot or physical fan rotation.
 
-The moderate-map product kernel built on the development host with `Image`
+The earlier moderate-map product kernel built on the development host with `Image`
 SHA-256 `5d92482eef176f65f3d5394d9e1205d10c66585f0578cde4a18a216f98fe5fee`
 and Mini V2 DTB SHA-256
 `6b2cb59d4be1ae7c3cbb543eed83cc96b1171194874df7e0ff40887f60a33eb8`.
