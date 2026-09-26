@@ -35,6 +35,10 @@ shell after root mounts in both systems. Recovery uses `g_serial`; the product
 carries the same `ttyGS0` root console in a composed NCM plus ACM gadget (see
 [USB network link](#usb-network-link)). `consoleblank=60` protects the TTY; the
 Korri system also powers `DSI-1` off after five graphical idle minutes.
+Inputd resets Sway's native idle notifier for controller activity, including
+volume and Home. It injects no pointer or keyboard input. See
+[controller activity](../../../services/inputd/CONTROLLER-ACTIVITY.md) for the
+noise margins, process bounds, tests, and remaining hardware acceptance.
 Physical consoles grant passwordless root access. Do not use either candidate where other people
 have untrusted physical access.
 
@@ -385,9 +389,11 @@ Then verify on the device:
 3. Chromium remains sandboxed. The kiosk command line must not contain
    `--no-sandbox`; renderer processes should report seccomp filtering in
    `/proc/<pid>/status`.
-4. Leave the device untouched for five minutes. The OLED must power off. Wake it
-   with an accepted local control and confirm the portal returns without
-   restarting the compositor or losing USB serial.
+4. Use the controller continuously for more than five minutes. The OLED must
+   remain on. Then leave the controller neutral and untouched for five minutes;
+   the OLED must power off. Check wake with every button, both sticks, both
+   triggers, volume, and Home. Confirm that the action still occurs once, focus
+   stays correct, and the compositor and USB serial remain available.
 5. Unplug and reconnect the USB cable once. Confirm that the serial console
    and the `10.42.3.1` link both return without a reboot. Then shut down
    cleanly, remove the product SD, and confirm the unchanged Android

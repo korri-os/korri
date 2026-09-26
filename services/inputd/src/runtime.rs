@@ -12,6 +12,7 @@ use korri_input_core::{
 
 use crate::{
     action_catalog::{action_entry, ActionId, ActionRoutes, DispatchMode, Trigger, ACTION_CATALOG},
+    activity::ControllerActivity,
     dbus::{authenticated_message, DbusAuthenticator, SemanticInput, Signal},
     devices::{
         resolve_target, validate_opened_descriptor, DeviceDescriptor, OpenedTarget, TargetIdentity,
@@ -102,7 +103,7 @@ impl Policies {
                         }
                     }
                 }
-                Trigger::ConfiguredBackTap | Trigger::Unsupported => {}
+                Trigger::Activity | Trigger::ConfiguredBackTap | Trigger::Unsupported => {}
             }
             if routes.back_tap == Some(entry.id) {
                 taps.push(TapDefinition::new(entry.id.as_str(), Control::Back));
@@ -200,6 +201,7 @@ pub struct Runtime {
     dbus: DbusAuthenticator,
     input_owner: InputOwner,
     started_at: Instant,
+    activity: Option<ControllerActivity>,
 }
 
 impl Default for Runtime {
@@ -213,6 +215,7 @@ impl Default for Runtime {
             dbus: DbusAuthenticator::default(),
             input_owner: InputOwner::Portal,
             started_at: Instant::now(),
+            activity: None,
         }
     }
 }
@@ -223,6 +226,10 @@ impl Runtime {
             policies: Policies::new(routes),
             ..Self::default()
         }
+    }
+
+    pub fn enable_activity(&mut self) {
+        self.activity = Some(ControllerActivity::default());
     }
 
     pub fn state(&self) -> &RuntimeState {
@@ -387,6 +394,9 @@ impl Runtime {
         self.dbus
             .authenticate(signal)
             .map(|input| {
+                if let Some(activity) = &mut self.activity {
+                    activity.semantic(input);
+                }
                 self.policies
                     .handle(InputSource::AuthenticatedDbus, input, now_ms)
             })
@@ -400,6 +410,9 @@ impl Runtime {
         }
         authenticated_message(&self.dbus, message)
             .map(|input| {
+                if let Some(activity) = &mut self.activity {
+                    activity.semantic(input);
+                }
                 self.policies
                     .handle(InputSource::AuthenticatedDbus, input, now_ms)
             })
@@ -414,7 +427,18 @@ impl Runtime {
         if !matches!(self.state, RuntimeState::Ready { .. }) {
             return Vec::new();
         }
-        self.policies.advance(now_ms)
+        let mut actions = self.policies.advance(now_ms);
+        if self
+            .activity
+            .as_mut()
+            .is_some_and(|activity| activity.take_due(now_ms))
+        {
+            actions.push(RuntimeAction {
+                id: ActionId::ControllerActivity,
+                dispatch_mode: DispatchMode::Direct,
+            });
+        }
+        actions
     }
 
     pub fn handle_evdev(&mut self, event_type: u16, code: u16, value: i32) -> Vec<RuntimeAction> {
@@ -428,6 +452,9 @@ impl Runtime {
             return Vec::new();
         }
         let now_ms = self.elapsed_ms();
+        if let Some(activity) = &mut self.activity {
+            activity.evdev(event_type, code, value);
+        }
         map_evdev(event_type, code, value)
             .map(|input| self.policies.handle(InputSource::Evdev, input, now_ms))
             .unwrap_or_default()
@@ -499,6 +526,9 @@ impl Runtime {
             self.policies.clear_evdev();
         }
         self.policies.reset();
+        if let Some(activity) = &mut self.activity {
+            activity.reset();
+        }
     }
 
     fn transition(&mut self, state: RuntimeState) {

@@ -11,6 +11,7 @@ use korri_input_core::controls::Control;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ActionId {
+    ControllerActivity,
     SystemPanel,
     KillCurrentGame,
     VolumeUp,
@@ -34,6 +35,7 @@ pub enum ActionId {
 impl ActionId {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ControllerActivity => "controller-activity",
             Self::SystemPanel => "system-panel",
             Self::KillCurrentGame => "kill-current-game",
             Self::VolumeUp => "volume-up",
@@ -89,6 +91,7 @@ pub struct Chord {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Trigger {
+    Activity,
     Tap(Control),
     Press(Control),
     Chords(&'static [Chord]),
@@ -177,6 +180,12 @@ const KILL_CURRENT_GAME: &[Chord] = &[Chord {
 }];
 
 pub const ACTION_CATALOG: &[ActionCatalogEntry] = &[
+    entry(
+        ActionId::ControllerActivity,
+        "KORRI_INPUTD_CONTROLLER_ACTIVITY",
+        Trigger::Activity,
+        DispatchMode::Direct,
+    ),
     entry(
         ActionId::SystemPanel,
         "KORRI_INPUTD_SYSTEM_PANEL",

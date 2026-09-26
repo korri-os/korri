@@ -36,6 +36,7 @@ let
     inherit (cfg.inputd) extraActionUsers;
   };
   actionNames = [
+    "controller-activity"
     "system-panel"
     "volume-up"
     "volume-down"
@@ -53,6 +54,7 @@ let
   ];
   alwaysReachable = lib.remove "toggle-steam-visibility" actionNames;
   actionEnvironmentNames = {
+    controller-activity = "KORRI_INPUTD_CONTROLLER_ACTIVITY";
     system-panel = "KORRI_INPUTD_SYSTEM_PANEL";
     volume-up = "KORRI_INPUTD_VOLUME_UP";
     volume-down = "KORRI_INPUTD_VOLUME_DOWN";

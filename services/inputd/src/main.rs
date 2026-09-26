@@ -5,8 +5,8 @@ use std::{
 
 use korri_inputd::{
     actions::{
-        commands_from_environment, set_parent_non_dumpable, ActionDispatcher, ActionIdentity,
-        ActionLimits, ActionOutcome, ActionRoutes, DispatchMode,
+        commands_from_environment, set_parent_non_dumpable, ActionCommands, ActionDispatcher,
+        ActionId, ActionIdentity, ActionLimits, ActionOutcome, ActionRoutes, DispatchMode,
     },
     bundle::is_inside_store_item,
     dbus::{DbusSignalSource, ProfileStatus},
@@ -75,6 +75,9 @@ fn initialize_health(health: &mut impl HealthPublisher) -> std::io::Result<()> {
 
 async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
     let mut runtime = Runtime::with_action_routes(services.routes);
+    if services.activity.is_some() {
+        runtime.enable_activity();
+    }
     let (input_owner_tx, mut input_owner_rx) = mpsc::channel(8);
     let input_owner_transaction = Arc::new(tokio::sync::Mutex::new(()));
     if let Some(client) = services.korrid.clone() {
@@ -392,6 +395,19 @@ fn dispatch_actions(
     input_owner_transaction: &Arc<tokio::sync::Mutex<()>>,
 ) {
     for action in matched {
+        if action.id == ActionId::ControllerActivity {
+            // Separate permit and short timeout: a stalled compositor must not
+            // occupy a volume/Home action slot. Runtime coalesces to <= 1 Hz.
+            if let Some(dispatcher) = services.activity.clone() {
+                tokio::spawn(async move {
+                    let outcome = dispatcher.dispatch(ActionId::ControllerActivity).await;
+                    if !matches!(outcome, ActionOutcome::Completed(_)) {
+                        log_action_outcome(ActionId::ControllerActivity, outcome);
+                    }
+                });
+            }
+            continue;
+        }
         tracing::info!(
             event = "inputd_policy_match",
             action = %action.id,
@@ -583,6 +599,7 @@ impl RuntimeProfile {
 
 struct ConfiguredServices {
     actions: Option<ActionDispatcher>,
+    activity: Option<ActionDispatcher>,
     routes: ActionRoutes,
     korrid: Option<KorridClient>,
     physical_input: bool,
@@ -626,6 +643,7 @@ fn configured_services_from_environment(
         }
         return Ok(ConfiguredServices {
             actions: None,
+            activity: None,
             routes,
             korrid: None,
             physical_input,
@@ -648,12 +666,31 @@ fn configured_services_from_environment(
     if unsafe { libc::getegid() } != identity.control_gid {
         return Err("inputd primary GID does not match KORRI_INPUTD_CONTROL_GID".into());
     }
+    let activity = commands
+        .get(ActionId::ControllerActivity)
+        .cloned()
+        .map(|command| {
+            let mut activity_commands = ActionCommands::default();
+            activity_commands.insert(ActionId::ControllerActivity, command);
+            ActionDispatcher::new(
+                activity_commands,
+                identity,
+                ActionLimits {
+                    max_concurrency: 1,
+                    timeout: Duration::from_millis(500),
+                    max_output_bytes: 1024,
+                },
+            )
+        })
+        .transpose()
+        .map_err(|error| error.to_string())?;
     let dispatcher = ActionDispatcher::new(commands, identity, ActionLimits::default())
         .map_err(|error| error.to_string())?;
     let socket = required_absolute_path("KORRI_INPUTD_CONTROL_SOCKET", environment)?;
     let profile_path = required_immutable_profile_path(environment)?;
     Ok(ConfiguredServices {
         actions: Some(dispatcher),
+        activity,
         routes,
         korrid: Some(KorridClient::new(socket)),
         physical_input: true,

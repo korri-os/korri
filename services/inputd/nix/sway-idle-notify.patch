@@ -1,0 +1,69 @@
+From: Korri <dev@korri.local>
+Subject: [PATCH] seat: add a runtime activity-only idle_notify command
+
+Inputd owns joystick input that libinput does not deliver to Sway. Allow its
+already authorized action user to reset the native seat idle notifier without
+inventing keyboard or pointer events, rebasing focus, or unhiding the cursor.
+This command is runtime-only and does not change idle policy or timeouts.
+
+--- a/include/sway/commands.h
++++ b/include/sway/commands.h
+@@ -308,6 +308,7 @@
+ sway_cmd seat_cmd_fallback;
+ sway_cmd seat_cmd_hide_cursor;
+ sway_cmd seat_cmd_idle_inhibit;
++sway_cmd seat_cmd_idle_notify;
+ sway_cmd seat_cmd_idle_wake;
+ sway_cmd seat_cmd_keyboard_grouping;
+ sway_cmd seat_cmd_pointer_constraint;
+--- a/sway/commands/seat.c
++++ b/sway/commands/seat.c
+@@ -10,6 +10,7 @@
+ // these handlers perform actions on the seat
+ static const struct cmd_handler seat_action_handlers[] = {
+ 	{ "cursor", seat_cmd_cursor },
++	{ "idle_notify", seat_cmd_idle_notify },
+ };
+ 
+ // must be in order for the bsearch
+--- a/sway/commands/seat/idle.c
++++ b/sway/commands/seat/idle.c
+@@ -2,11 +2,38 @@
+ #include <string.h>
+ #include <strings.h>
+ #include <stdint.h>
++#include <wlr/types/wlr_idle_notify_v1.h>
+ #include "log.h"
+ #include "sway/commands.h"
+ #include "sway/config.h"
++#include "sway/server.h"
++#include "sway/input/input-manager.h"
+ #include "sway/input/seat.h"
+ 
++struct cmd_results *seat_cmd_idle_notify(int argc, char **argv) {
++	struct cmd_results *error = checkarg(argc, "idle_notify", EXPECTED_EQUAL_TO, 0);
++	if (error) {
++		return error;
++	}
++	if (config->reading || !config->active) {
++		return cmd_results_new(CMD_FAILURE, "idle_notify is runtime-only");
++	}
++	struct seat_config *sc = config->handler_context.seat_config;
++	if (strcmp(sc->name, "*") == 0) {
++		struct sway_seat *seat;
++		wl_list_for_each(seat, &server.input->seats, link) {
++			wlr_idle_notifier_v1_notify_activity(server.idle_notifier_v1, seat->wlr_seat);
++		}
++	} else {
++		struct sway_seat *seat = input_manager_get_seat(sc->name, false);
++		if (!seat) {
++			return cmd_results_new(CMD_FAILURE, "Seat %s does not exist", sc->name);
++		}
++		wlr_idle_notifier_v1_notify_activity(server.idle_notifier_v1, seat->wlr_seat);
++	}
++	return cmd_results_new(CMD_SUCCESS, NULL);
++}
++
+ static const struct {
+ 	const char *name;
+ 	uint32_t value;

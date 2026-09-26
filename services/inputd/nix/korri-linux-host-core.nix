@@ -9,6 +9,7 @@
 }:
 let
   cfg = config.services.korriLinuxHost;
+  sway = import ./sway-activity.nix { inherit pkgs; };
   runtimeHome = config.users.users.${cfg.runtimeUser}.home or "/home/${cfg.runtimeUser}";
   runtimeDir = "/run/user/${toString cfg.runtimeUid}";
   compositorWorkspace = "korri:game:active";
@@ -133,7 +134,7 @@ let
           ;;
       esac
     fi
-    exec ${pkgs.sway}/bin/sway --unsupported-gpu --config "$KORRI_SWAY_CONFIG"
+    exec ${sway}/bin/sway --unsupported-gpu --config "$KORRI_SWAY_CONFIG"
   '';
   # The executable is product identity; the render node is a hardware fact
   # supplied through the service environment so it cannot perturb that identity.
@@ -523,7 +524,7 @@ in
       before = [ "korrid.service" ];
       path = [
         pkgs.dbus
-        pkgs.sway
+        sway
         pkgs.xwayland
       ];
       environment = {

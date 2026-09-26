@@ -72,6 +72,15 @@ in
   # actions. Run wpctl as the runtime user against that user's PipeWire graph;
   # no compositor key bindings are needed.
   services.korriLinuxInput.inputd.actions = {
+    # Inputd observes its existing normalized gamepad and authenticated direct
+    # actions. This native command only resets the seat's idle notifier; it
+    # cannot generate pointer/key events or change focus. Bounded to <= 1 Hz.
+    controller-activity.command = [
+      "${pkgs.sway}/bin/swaymsg"
+      "-s"
+      "/run/korri-compositor/sway-ipc.sock"
+      "seat * idle_notify"
+    ];
     volume-up = {
       command = [
         "${pkgs.wireplumber}/bin/wpctl"
@@ -150,7 +159,8 @@ in
   };
 
   # Protect the OLED after five graphical idle minutes. The TTY keeps its
-  # separate consoleblank=60 policy. Local power and volume input can wake Sway.
+  # separate consoleblank=60 policy. Inputd's controller activity resets the
+  # same native idle notifier as local compositor input, including after blank.
   systemd.services.rpminiv2-display-idle = {
     description = "RP Mini V2 OLED idle protection";
     wantedBy = [ "multi-user.target" ];

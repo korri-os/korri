@@ -133,7 +133,7 @@ fn identity_requiring_privilege_drop() -> ActionIdentity {
 
 #[test]
 fn legacy_action_vocabulary_has_stable_configuration_names() {
-    assert_eq!(ACTION_CATALOG.len(), 18);
+    assert_eq!(ACTION_CATALOG.len(), 19);
     assert_eq!(
         action_entry(ActionId::SystemPanel).legacy_environment_name,
         "KORRI_INPUTD_SYSTEM_PANEL"

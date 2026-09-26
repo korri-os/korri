@@ -75,6 +75,7 @@ in
     };
   };
   packages = {
+    sway-controller-activity = import ./sway-activity.nix { inherit pkgs; };
     inputplumber-korri = inputplumberKorri;
     korri-inputd = inputdPackage;
     korri-bundle = korriBundle;
@@ -92,6 +93,7 @@ in
     };
   };
   checks = {
+    sway-controller-activity = import ./sway-activity-check.nix { inherit pkgs; };
     sunshine-offline-retirement = sunshineOfflineRetirement;
     sunshine-korri-package = pkgs.runCommand "sunshine-korri-package-check" { } ''
       test -f ${sunshinePackage}/bin/sunshine

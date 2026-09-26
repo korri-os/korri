@@ -149,6 +149,7 @@ let
     services.korriLinuxInput.inputd = {
       enable = true;
       requireProvider = true;
+      actions.controller-activity.command = [ "${pkgs.coreutils}/bin/true" ];
       actions.workspace-next.command = [
         "${pkgs.coreutils}/bin/true"
         "--help"
@@ -297,6 +298,8 @@ assert (providerOnly.config.users.groups.uinput.members or [ ]) == [ ];
 assert lib.hasInfix ''GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"'' providerOnly.config.services.udev.extraRules;
 assert lib.hasInfix ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' inputdOnlyRules;
 assert allAssertionsPass inputdOnly;
+assert
+  !(inputdOnly.config.systemd.services.korri-inputd.environment ? KORRI_INPUTD_CONTROLLER_ACTIVITY);
 assert inputdOnly.config.systemd.services ? korri-inputd;
 assert !inputdOnly.config.services.inputplumber.enable;
 assert inputdService.serviceConfig.RestrictAddressFamilies == [ "AF_UNIX" ];
@@ -341,6 +344,11 @@ assert
   extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStopPost
   == "+${lib.getExe extraReaderAcl} revoke";
 assert allAssertionsPass combined;
+assert
+  (builtins.fromJSON (
+    builtins.unsafeDiscardStringContext combinedEnvironment.KORRI_INPUTD_CONTROLLER_ACTIVITY
+  )).executable
+  == "${pkgs.coreutils}/bin/true";
 assert builtins.elem "inputplumber.service" combinedService.after;
 assert builtins.elem "inputplumber.service" combinedService.wants;
 assert combined.config.users.users.korri-inputd.uid == 977;

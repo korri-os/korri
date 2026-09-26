@@ -179,6 +179,97 @@ fn ready_runtime_with_routes(
     runtime
 }
 
+#[tokio::test]
+async fn controller_activity_observes_routed_input_without_duplicate_events_for_either_owner() {
+    for owner in [InputOwner::Portal, InputOwner::Game] {
+        let events = (0..10000)
+            .map(|i| InputEvent::new(3, 0, 20000 + i % 2000))
+            .collect::<Vec<_>>();
+        let mut provider = InMemoryTargetProvider::with(vec![target("event10")]);
+        provider.route_on_open(events.clone());
+        let mut runtime = ready_runtime(&mut provider);
+        runtime.enable_activity();
+        runtime.set_input_owner(owner);
+        let mut activity_count = 0;
+        for i in 0..events.len() {
+            assert!(runtime
+                .next_evdev_actions()
+                .await
+                .unwrap()
+                .unwrap()
+                .is_empty());
+            let actions = runtime.advance_actions_at(i as u64);
+            assert!(actions
+                .iter()
+                .all(|action| action.id == ActionId::ControllerActivity));
+            activity_count += actions.len();
+        }
+        assert_eq!(activity_count, 10);
+        {
+            let routed = provider.routed.lock().unwrap();
+            match owner {
+                InputOwner::Game => {
+                    assert_eq!(routed.game, events);
+                    assert!(routed.portal.is_empty());
+                }
+                InputOwner::Portal => {
+                    assert_eq!(routed.portal, events);
+                    assert!(routed.game.is_empty());
+                }
+            }
+        }
+        assert!(runtime.next_evdev_actions().await.unwrap().is_none());
+        assert!(
+            runtime.advance_actions_at(20000).is_empty(),
+            "stream loss clears the held stick"
+        );
+    }
+}
+
+#[test]
+fn authenticated_direct_actions_wake_without_changing_their_dispatch() {
+    for (capability, id) in [
+        ("ui_volume_up", ActionId::VolumeUp),
+        ("ui_volume_down", ActionId::VolumeDown),
+        ("ui_guide", ActionId::SystemPanel),
+    ] {
+        let mut provider = InMemoryTargetProvider::with(vec![target("event10")]);
+        let mut runtime = ready_runtime(&mut provider);
+        runtime.enable_activity();
+        let message = |sender: &str, value: f64| {
+            zbus::Message::signal(DBUS_TARGET_PATH, DBUS_TARGET_INTERFACE, DBUS_INPUT_MEMBER)
+                .unwrap()
+                .sender(sender)
+                .unwrap()
+                .build(&(capability, value))
+                .unwrap()
+        };
+        assert!(runtime
+            .handle_dbus_message(&message(":1.99", 1.0))
+            .is_empty());
+        assert!(
+            runtime.advance_actions_at(0).is_empty(),
+            "unauthenticated signals cannot wake"
+        );
+        let mut actions = runtime.handle_dbus_message(&message(":1.42", 1.0));
+        assert_eq!(
+            runtime.advance_actions_at(0)[0].id,
+            ActionId::ControllerActivity
+        );
+        actions.extend(runtime.handle_dbus_message(&message(":1.42", 0.0)));
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].id, id);
+        assert_eq!(
+            runtime.advance_actions_at(1000)[0].id,
+            ActionId::ControllerActivity
+        );
+        assert!(runtime.advance_actions_at(2000).is_empty());
+        runtime.handle_dbus_message(&message(":1.42", 1.0));
+        runtime.source_ambiguous();
+        assert!(runtime.advance_actions_at(3000).is_empty());
+    }
+}
+
 fn send_dbus(
     runtime: &mut Runtime,
     control: Control,
@@ -396,6 +487,11 @@ fn legacy_controller_action_matrix_is_reachable_and_catalog_typed() {
         let mut runtime = ready_runtime_with_routes(&mut provider, routes);
         let mut emitted = Vec::new();
         match entry.trigger {
+            Trigger::Activity => {
+                runtime.enable_activity();
+                runtime.handle_evdev(1, 0x130, 1);
+                emitted.extend(runtime.advance_actions_at(0));
+            }
             Trigger::Tap(control) => {
                 emitted.extend(press_control(&mut runtime, control));
                 let code = if control == Control::Home {
