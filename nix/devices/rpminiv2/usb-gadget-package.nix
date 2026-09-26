@@ -39,6 +39,24 @@ pkgs.writeShellApplication {
       fi
     }
 
+    link_function() {
+      local function="$1"
+      local link="configs/c.1/$function"
+      if [ -L "$link" ]; then
+        # Configfs generates its own relative link text. Compare the targets,
+        # not that text. Relinking an existing function can fail even with
+        # ln -f: configfs permits each function only once per configuration.
+        if [ ! "$link" -ef "functions/$function" ]; then
+          printf 'unexpected function link: %s\n' "$link" >&2
+          exit 1
+        fi
+      else
+        # Configfs resolves relative targets from cwd at creation time,
+        # unlike a normal filesystem. An absolute target works in both.
+        ln -s "$gadget/functions/$function" "$link"
+      fi
+    }
+
     mkdir -p "$gadget"
     cd "$gadget"
     echo 0x1d6b > idVendor
@@ -61,8 +79,8 @@ pkgs.writeShellApplication {
       verify_value functions/ncm.usb0/dev_addr "$expected_device_mac"
     fi
     mkdir -p functions/acm.usb0
-    ln -sf functions/ncm.usb0 configs/c.1/
-    ln -sf functions/acm.usb0 configs/c.1/
+    link_function ncm.usb0
+    link_function acm.usb0
     # The device tree enables one controller, usb@a600000 (dwc3, dr_mode otg
     # with a role switch), so exactly one UDC is expected. It can register after
     # this service starts, as it did on the RG DS. Wait for it. Refuse to guess
@@ -70,7 +88,10 @@ pkgs.writeShellApplication {
     # this gadget carries the only USB root console on the product image.
     udcs=""
     for _ in $(seq 1 ${toString udcWaitSeconds}); do
-      udcs="$(find "$udc_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
+      # The class directory itself may not exist before the driver loads.
+      if [ -d "$udc_root" ]; then
+        udcs="$(find "$udc_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
+      fi
       if [ -n "$udcs" ]; then
         break
       fi
@@ -86,7 +107,13 @@ pkgs.writeShellApplication {
         "$udc_root" "$(printf '%s' "$udcs" | tr '\n' ' ')" >&2
       exit 1
     fi
-    printf 'binding the RP Mini V2 USB gadget to %s\n' "$udcs"
-    echo "$udcs" > UDC
+    # Writing even the same name to a bound configfs UDC returns EBUSY.
+    # Preserve an already-correct binding without disconnecting the console.
+    if [ -n "$(cat UDC)" ]; then
+      verify_value UDC "$udcs"
+    else
+      printf 'binding the RP Mini V2 USB gadget to %s\n' "$udcs"
+      echo "$udcs" > UDC
+    fi
   '';
 }

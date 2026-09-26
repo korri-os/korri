@@ -37,8 +37,9 @@ in
       ExecStart = lib.getExe gadgetConfigure;
     };
     preStop = ''
-      if ! echo "" > ${configfsGadget}/UDC; then
-        echo "failed to unbind the RP Mini V2 USB gadget" >&2
+      # Configfs returns ENODEV when an already-unbound gadget is unbound.
+      if [ -e ${configfsGadget}/UDC ] && [ -n "$(cat ${configfsGadget}/UDC)" ]; then
+        echo "" > ${configfsGadget}/UDC
       fi
     '';
   };

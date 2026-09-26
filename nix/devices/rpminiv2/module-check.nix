@@ -173,8 +173,9 @@ let
   gadget = c.systemd.services.usb-gadget;
   gadgetNetwork = c.systemd.network.networks."10-usb-gadget";
   gadgetPackage = configuration.pkgs.callPackage ./usb-gadget-package.nix { };
-  # The same script against temporary directories. One UDC wait second keeps
-  # the failure cases short.
+  # Shell control-flow checks only: ordinary directories are NOT configfs.
+  # usb-gadget-vm-test.nix checks kernel links, binding and service restarts.
+  # One UDC wait second keeps these failure cases short.
   gadgetTestPackage = pkgs.callPackage ./usb-gadget-package.nix {
     configfsRoot = "$TMPDIR/configfs";
     udcRoot = "$TMPDIR/udc";
@@ -252,7 +253,7 @@ assert lib.elem "sys-kernel-config.mount" gadget.requires;
 assert lib.elem "sys-kernel-config.mount" gadget.after;
 assert gadget.serviceConfig.ExecStart == lib.getExe gadgetPackage;
 assert lib.hasInfix ''
-  if ! echo "" > /sys/kernel/config/usb_gadget/rpminiv2/UDC; then
+  if [ -e /sys/kernel/config/usb_gadget/rpminiv2/UDC ] && [ -n "$(cat /sys/kernel/config/usb_gadget/rpminiv2/UDC)" ]; then
 '' gadget.preStop;
 assert gadgetNetwork.matchConfig.Name == "usb0";
 assert gadgetNetwork.address == [ "10.42.3.1/24" ];
@@ -412,26 +413,38 @@ pkgs.runCommand "rpminiv2-module-check"
     cp ${./thermal-readonly.test.py} thermal-readonly.test.py
     python3 thermal-readonly.test.py
 
-    # USB gadget: exercise the real script against temporary configfs and UDC
-    # directories.
+    # USB gadget shell checks with ordinary directories. These cannot prove
+    # configfs semantics, function registration, UDC binding or USB traffic.
     export PATH=${gadgetTestPackage}/bin:$PATH
     gadget_dir="$TMPDIR/configfs/rpminiv2"
-    mkdir -p "$TMPDIR/configfs" "$TMPDIR/udc"
-    # No controller: fail, say so, and leave the gadget unbound.
+    mkdir -p "$gadget_dir"
+    : > "$gadget_dir/UDC" # configfs supplies this attribute; plain dirs do not.
+    # Missing class directory: wait, fail, and leave the gadget unbound.
     if rpminiv2-usb-gadget-configure > none.stdout 2> none.stderr; then
       echo "gadget bound without a USB device controller" >&2
       exit 1
     fi
     grep -F 'no USB device controller appeared' none.stderr
     test ! -s "$gadget_dir/UDC"
+    # Existing but empty class directory follows the same timeout path.
+    mkdir "$TMPDIR/udc"
+    if rpminiv2-usb-gadget-configure > empty.stdout 2> empty.stderr; then
+      echo "gadget bound with an empty controller class" >&2
+      exit 1
+    fi
+    grep -F 'no USB device controller appeared' empty.stderr
     # The one controller the device tree enables.
     mkdir "$TMPDIR/udc/a600000.usb"
     rpminiv2-usb-gadget-configure
     test "$(cat "$gadget_dir/UDC")" = a600000.usb
     test "$(cat "$gadget_dir/functions/ncm.usb0/host_addr")" = 02:52:50:4d:32:01
     test "$(cat "$gadget_dir/functions/ncm.usb0/dev_addr")" = 02:52:50:4d:32:02
-    test -L "$gadget_dir/configs/c.1/ncm.usb0"
-    test -L "$gadget_dir/configs/c.1/acm.usb0"
+    test "$gadget_dir/configs/c.1/ncm.usb0" -ef "$gadget_dir/functions/ncm.usb0"
+    test "$gadget_dir/configs/c.1/acm.usb0" -ef "$gadget_dir/functions/acm.usb0"
+    # A second invocation must not nest links inside either function.
+    rpminiv2-usb-gadget-configure
+    test ! -e "$gadget_dir/functions/ncm.usb0/ncm.usb0"
+    test ! -e "$gadget_dir/functions/acm.usb0/acm.usb0"
     # A restart after preStop's unbind binds the same controller again.
     : > "$gadget_dir/UDC"
     rpminiv2-usb-gadget-configure

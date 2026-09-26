@@ -105,6 +105,7 @@ in
         ;
     };
   wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
+  usbGadgetCheck = pkgs: import ./usb-gadget-vm-test.nix { inherit pkgs; };
   initrdModulesCheck =
     pkgs:
     pkgs.makeModulesClosure {

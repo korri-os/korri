@@ -245,9 +245,9 @@ The recovery image does not change: it keeps `g_serial` and has no network.
 | Serial console | ACM function, device `/dev/ttyGS0`, root getty from the udev rule shared with recovery |
 | Network | NCM function, device interface `usb0` |
 | Device address | `10.42.3.1/24`, fixed |
-| Host address | DHCP lease from the device, `10.42.3.11` to `10.42.3.30` |
+| Host address | DHCP lease from the device, `10.42.3.10` to `10.42.3.29` |
 | NCM MACs | host `02:52:50:4d:32:01`, device `02:52:50:4d:32:02` |
-| Firewall on `usb0` | UDP 67 (the DHCP lease) only |
+| Firewall rule added by the gadget | UDP 67 (the DHCP lease) on `usb0`; no TCP rule |
 
 The `/24` is the next free one after the RG353M (`10.42.0`), RG DS
 (`10.42.1`) and R36T Max (`10.42.2`), so all four devices can share one
@@ -280,7 +280,43 @@ SSH reaches the device only through the SSH plugin's own TCP 2222 rule. This
 link opens no TCP port.
 
 If the gadget does not bind, the product has no USB console. The panel console
-and the unchanged recovery SD remain the recovery paths.
+and the unchanged recovery SD remain the recovery paths. A service restart
+briefly disconnects both USB functions. Running the configure script again
+while it is already bound leaves that binding in place.
+
+#### USB verification and limits
+
+Run the local disposable VM test (no handheld connection):
+
+```sh
+nix build .#checks.x86_64-linux.rpminiv2-usb-gadget
+```
+
+The VM uses real configfs and `dummy_hcd` on stock x86 Linux. It checks delayed
+controller arrival, valid function links, an already-bound invocation, service
+restart, DHCP and ping through NCM with the firewall enabled, the ACM root
+shell, and stopping an already-unbound gadget. The host network interface moves
+into a separate network namespace, so ping must cross the simulated USB link.
+This does not verify the Mini V2 kernel, DWC3 role switch, cable, or physical
+reconnection. Those still require the acceptance checks below.
+
+The fast shell checks in `module-check.nix` use ordinary directories. They
+check missing/empty/ambiguous controller discovery and address mismatch refusal,
+not kernel configfs semantics. In particular, configfs resolves a relative link
+target from the process working directory at creation time (`fs/configfs/symlink.c`,
+`get_target()`), then generates its own link text. The configure script uses
+absolute targets and preserves valid links. In the VM, the original `ln -sf`
+fails with `File exists` when unbound, and `Invalid argument` when bound.
+Ordinary-directory tests do not reproduce these failures.
+
+Linux 7.2 source confirms that `CONFIG_USB_CONFIGFS_ACM` is only a selector for
+`USB_U_SERIAL` and `USB_F_ACM` (`drivers/usb/gadget/Kconfig`). The baseline already
+builds both modules for `g_serial`. `function/f_acm.c` registers `acm` through
+`DECLARE_USB_FUNCTION_INIT`; `functions.c:usb_get_function_instance()` finds
+that registration or requests the `usbfunc:acm` module alias. Configfs therefore
+can use `usb_f_acm` with `CONFIG_USB_CONFIGFS_ACM` unset, without loading
+`g_serial`. This conclusion is source-verified; the stock VM does not reproduce
+the board's exact kernel configuration.
 
 Physical acceptance must verify the DRM/render node identities, compositor
 startup, orientation, five-minute OLED idle and wake behavior, ABXY semantics,
@@ -330,7 +366,7 @@ journalctl -b -u inputplumber -u korri-inputd -u korrid \
 Require all listed product services to be active, no failed unit, `DSI-1`
 connected at 1080 by 1240, both loadable root-time modules loaded and
 `g_serial` absent, the gadget bound to `a600000.usb` (record the actual name),
-`usb0` at `10.42.3.1/24`, only UDP 67 open on `usb0`, NetworkManager
+`usb0` at `10.42.3.1/24`, the gadget's UDP 67 rule on `usb0`, NetworkManager
 active, Avahi disabled, the plugin host active, and application listeners bound
 only to loopback. On the host, run the host-side commands from
 [USB network link](#usb-network-link): a `10.42.3.x` lease, ping replies, and a
