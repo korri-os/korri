@@ -34,6 +34,9 @@ regexes = [
   # published identifiers; korrid sends the device one as `devicePublicKey`.
   '''7bb368b270acb72d81856b7b7010d919ec4882afe7c3aaa56b7b6839e46b47f6''',
   '''f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9''',
+  # Public fixture capability used only inside the isolated portal-freezer VM.
+  # This is not a device credential; the production service never reads it.
+  '''^freezer-vm-only$''',
 ]
 paths = [
   # Vendored kernel patches. Their `key-select` and `key-m1` button tables read

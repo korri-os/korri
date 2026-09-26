@@ -9,7 +9,7 @@ use std::{
 };
 
 #[cfg(test)]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const UNIT_PREFIX: &str = "korri-game-";
 const UNIT_SUFFIX: &str = ".service";
@@ -99,6 +99,205 @@ pub trait LaunchUnitBackend: Send + Sync {
     /// focus nothing rather than guess at another program's window.
     fn window_pids(&self, _launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
         Ok(BTreeSet::new())
+    }
+}
+
+/// Names the portal unit korrid freezes while a focused game owns the
+/// screen. Absent, the portal is never frozen.
+pub(super) const PORTAL_UNIT_ENV: &str = "KORRID_PORTAL_UNIT";
+
+/// The portal surface korrid pauses while the player is in a focused live
+/// game. A frozen portal can neither paint nor take input, so every thaw
+/// request must leave it running.
+pub trait PortalUnit: Send + Sync {
+    fn freeze(&self) -> Result<(), LaunchUnitError>;
+    /// Leaves the unit running. A unit that is not frozen, including one
+    /// that is inactive or not loaded, needs no thaw and succeeds.
+    fn thaw(&self) -> Result<(), LaunchUnitError>;
+}
+
+/// Calls native FreezeUnit/ThawUnit through busctl, with the same bounded
+/// process runner as game controls. Unlike systemctl this takes no RefUnit
+/// authority. systemd holds the reply until the kernel freezer settles.
+#[derive(Clone, Debug)]
+pub struct SystemdPortalUnit {
+    helper: SystemdLaunchUnitBackend,
+    unit: String,
+}
+
+impl SystemdPortalUnit {
+    pub(super) fn new(
+        helper: SystemdLaunchUnitBackend,
+        unit: &str,
+    ) -> Result<Self, LaunchUnitError> {
+        if !valid_portal_unit(unit) {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::InvalidConfiguration,
+                "portal unit must be one exact service name that is not a game unit",
+            ));
+        }
+        Ok(Self {
+            helper,
+            unit: unit.to_owned(),
+        })
+    }
+
+    /// Reads the configured portal unit. `None` keeps the feature inert.
+    pub(super) fn from_environment() -> Option<Result<Self, LaunchUnitError>> {
+        let unit = std::env::var(PORTAL_UNIT_ENV).ok()?;
+        Some(Self::new(SystemdLaunchUnitBackend::default(), &unit))
+    }
+
+    /// systemd answers a freezer call only once the freezer settles, so the
+    /// call returns with the portal frozen or running.
+    fn verb_arguments(&self, method: &str) -> Vec<String> {
+        vec![
+            "--system".into(),
+            "--allow-interactive-authorization=no".into(),
+            "call".into(),
+            "org.freedesktop.systemd1".into(),
+            "/org/freedesktop/systemd1".into(),
+            "org.freedesktop.systemd1.Manager".into(),
+            method.into(),
+            "s".into(),
+            self.unit.clone(),
+        ]
+    }
+
+    fn call(&self, method: &str) -> Result<(), LaunchUnitError> {
+        // Both executables belong to the configured native systemd artifact.
+        self.helper
+            .require_success(
+                &self.helper.systemctl.with_file_name("busctl"),
+                &self.verb_arguments(method),
+            )
+            .map(|_| ())
+    }
+}
+
+impl PortalUnit for SystemdPortalUnit {
+    fn freeze(&self) -> Result<(), LaunchUnitError> {
+        self.call("FreezeUnit")
+    }
+
+    /// systemd refuses `thaw` on an inactive unit. Read the freezer state
+    /// first so a stopped or absent portal is not a thaw failure that korrid
+    /// would retry on every status read.
+    fn thaw(&self) -> Result<(), LaunchUnitError> {
+        let state = self.helper.observe_state(&[
+            "--system".into(),
+            "--no-ask-password".into(),
+            "show".into(),
+            self.unit.clone(),
+            "--property=LoadState".into(),
+            "--property=ActiveState".into(),
+            "--property=FreezerState".into(),
+        ])?;
+        if !state.needs_thaw_before_stop() {
+            return Ok(());
+        }
+        self.call("ThawUnit")
+    }
+}
+
+fn valid_portal_unit(unit: &str) -> bool {
+    let Some(stem) = unit.strip_suffix(UNIT_SUFFIX) else {
+        return false;
+    };
+    unit.len() <= 255
+        && !unit.starts_with(UNIT_PREFIX)
+        && stem
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && stem
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.:@".contains(&byte))
+}
+
+/// Records portal freezer requests the way the systemd portal unit applies
+/// them, so session tests can prove when korrid freezes and thaws it.
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct RecordingPortalUnit {
+    frozen: Mutex<bool>,
+    requests: Mutex<Vec<&'static str>>,
+    events: Option<Arc<Mutex<Vec<&'static str>>>>,
+    refused_thaws: Mutex<usize>,
+    refuse_freeze: Mutex<bool>,
+    pub(crate) thawed: tokio::sync::Notify,
+}
+
+#[cfg(test)]
+impl RecordingPortalUnit {
+    /// A portal an earlier korrid run froze and never thawed.
+    pub(crate) fn left_frozen() -> Self {
+        Self {
+            frozen: Mutex::new(true),
+            ..Self::default()
+        }
+    }
+
+    /// Adds `portal-freeze` and `portal-thaw` to a log shared with other
+    /// recorders so tests can prove ordering across effects.
+    pub(crate) fn with_events(events: Arc<Mutex<Vec<&'static str>>>) -> Self {
+        Self {
+            events: Some(events),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn frozen(&self) -> bool {
+        *self.frozen.lock().unwrap()
+    }
+
+    pub(crate) fn requests(&self) -> Vec<&'static str> {
+        self.requests.lock().unwrap().clone()
+    }
+
+    pub(crate) fn refuse_next_thaws(&self, count: usize) {
+        *self.refused_thaws.lock().unwrap() = count;
+    }
+
+    pub(crate) fn refuse_freeze(&self) {
+        *self.refuse_freeze.lock().unwrap() = true;
+    }
+
+    fn record(&self, request: &'static str, event: &'static str) {
+        self.requests.lock().unwrap().push(request);
+        if let Some(events) = &self.events {
+            events.lock().unwrap().push(event);
+        }
+    }
+}
+
+#[cfg(test)]
+impl PortalUnit for RecordingPortalUnit {
+    fn freeze(&self) -> Result<(), LaunchUnitError> {
+        self.record("freeze", "portal-freeze");
+        if *self.refuse_freeze.lock().unwrap() {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "portal freeze refused",
+            ));
+        }
+        *self.frozen.lock().unwrap() = true;
+        Ok(())
+    }
+
+    fn thaw(&self) -> Result<(), LaunchUnitError> {
+        self.record("thaw", "portal-thaw");
+        let mut refused = self.refused_thaws.lock().unwrap();
+        if *refused > 0 {
+            *refused -= 1;
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "portal thaw refused",
+            ));
+        }
+        *self.frozen.lock().unwrap() = false;
+        self.thawed.notify_one();
+        Ok(())
     }
 }
 
@@ -1028,6 +1227,31 @@ impl SystemdLaunchUnitBackend {
         }
     }
 
+    /// Runs one `systemctl show` for ActiveState and FreezerState. A unit
+    /// systemd does not know is reported as completed.
+    fn observe_state(&self, arguments: &[String]) -> Result<LaunchUnitState, LaunchUnitError> {
+        let output = self.run(&self.systemctl, arguments)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let values: BTreeMap<_, _> = stdout
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .collect();
+        if values.get("LoadState").copied() == Some("not-found") {
+            return Ok(LaunchUnitState::Completed);
+        }
+        if !output.status.success() {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                format!(
+                    "systemctl show failed with {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            ));
+        }
+        Self::parse_unit_state(&values)
+    }
+
     fn require_success(
         &self,
         program: &Path,
@@ -1072,27 +1296,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
-        let arguments = Self::state_arguments(launch_id)?;
-        let output = self.run(&self.systemctl, &arguments)?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let values: BTreeMap<_, _> = stdout
-            .lines()
-            .filter_map(|line| line.split_once('='))
-            .collect();
-        if values.get("LoadState").copied() == Some("not-found") {
-            return Ok(LaunchUnitState::Completed);
-        }
-        if !output.status.success() {
-            return Err(LaunchUnitError::new(
-                LaunchUnitErrorKind::Failed,
-                format!(
-                    "systemctl show failed with {}: {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ),
-            ));
-        }
-        Self::parse_unit_state(&values)
+        self.observe_state(&Self::state_arguments(launch_id)?)
     }
 
     fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
@@ -1232,6 +1436,60 @@ mod tests {
             2002,
         )
         .unwrap()
+    }
+
+    const PORTAL: &str = "korri-chromium-kiosk.service";
+
+    #[test]
+    fn portal_native_calls_need_no_unit_reference_or_extra_authority() {
+        let portal = SystemdPortalUnit::new(backend(1000), PORTAL).unwrap();
+        for method in ["FreezeUnit", "ThawUnit"] {
+            assert_eq!(
+                portal.verb_arguments(method),
+                [
+                    "--system",
+                    "--allow-interactive-authorization=no",
+                    "call",
+                    "org.freedesktop.systemd1",
+                    "/org/freedesktop/systemd1",
+                    "org.freedesktop.systemd1.Manager",
+                    method,
+                    "s",
+                    PORTAL,
+                ]
+            );
+        }
+        // Real D-Bus authorization and settled replies are exercised by
+        // clients/portal/nix/kiosk-freezer-vm-test.nix, not shell emulation.
+    }
+
+    #[test]
+    fn portal_unit_must_be_one_exact_non_game_service() {
+        for unit in [
+            "",
+            ".service",
+            "korri-chromium-kiosk",
+            "korri-chromium-kiosk.socket",
+            "-korri-chromium-kiosk.service",
+            "../korri-chromium-kiosk.service",
+            "korri chromium.service",
+            "korri-*.service",
+            "korri-game-0123456789abcdef0123456789abcdef.service",
+        ] {
+            assert_eq!(
+                SystemdPortalUnit::new(backend(1000), unit)
+                    .unwrap_err()
+                    .kind,
+                LaunchUnitErrorKind::InvalidConfiguration,
+                "accepted {unit:?}"
+            );
+        }
+        for unit in [PORTAL, "cage@tty1.service"] {
+            assert!(
+                SystemdPortalUnit::new(backend(1000), unit).is_ok(),
+                "{unit}"
+            );
+        }
     }
 
     #[test]

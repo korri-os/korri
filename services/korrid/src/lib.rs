@@ -3005,6 +3005,9 @@ pub fn host_routers_with_federation(
         storage_root.map(Into::into),
         private_state_root.clone(),
     );
+    // A device that freezes its portal keeps observing its own session, so a
+    // game that ends while the portal cannot poll still thaws it.
+    runtime.spawn_portal_watch();
     secure_host_routers_with_federation(runtime, &private_state_root, resources, portal_access)
 }
 

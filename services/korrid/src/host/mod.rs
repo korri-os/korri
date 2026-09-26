@@ -179,6 +179,9 @@ impl DynamicHostSource {
 
 const MAX_CONCURRENT_CERTIFICATE_CONTROLS: usize = 4;
 
+/// Observe focus and completion even when no browser can poll.
+const PORTAL_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) {
     let Some(identity) = DeviceIdentity::load_or_create(private_state_root).ok() else {
         return (None, None);
@@ -612,6 +615,48 @@ impl HostRuntime {
         })
         .await
         .map_err(host_worker_failure)?
+    }
+
+    /// Starts the portal watcher when this device freezes a portal. Without a
+    /// portal unit nothing is spawned.
+    pub fn spawn_portal_watch(&self) {
+        if let Some(watch) = self.portal_watch(PORTAL_WATCH_INTERVAL) {
+            tokio::spawn(watch);
+        }
+    }
+
+    /// A frozen portal cannot poll, and a game can end without any caller.
+    /// Observe focus as well as liveness, including a delayed first window
+    /// while the portal is still running. The first pass
+    /// runs at once, which releases a portal left frozen by an earlier run.
+    fn portal_watch(
+        &self,
+        interval: std::time::Duration,
+    ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
+        if !self.launcher.as_ref()?.control().freezes_portal() {
+            return None;
+        }
+        let runtime = self.clone();
+        Some(async move {
+            let mut ticks = tokio::time::interval(interval);
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticks.tick().await;
+                let observed = runtime.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(control) = observed.control() {
+                        control.status();
+                    }
+                })
+                .await;
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_portal_unit(mut self, portal: Arc<dyn systemd_unit::PortalUnit>) -> Self {
+        self.launcher = self.launcher.map(|launcher| launcher.with_portal(portal));
+        self
     }
 
     pub async fn session_stop(
@@ -1238,6 +1283,45 @@ mod tests {
         for task in active {
             assert!(task.await.unwrap().unwrap());
         }
+    }
+
+    #[tokio::test]
+    async fn portal_watch_retries_startup_thaw_without_any_client() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        fs::write(
+            &config,
+            "label = \"zao\"\n[[games]]\nid = \"wario\"\ntitle = \"Wario Land 4\"\ncommand = [\"game\"]\n",
+        )
+        .unwrap();
+        let backend = Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default());
+        let portal = Arc::new(systemd_unit::RecordingPortalUnit::left_frozen());
+        portal.refuse_next_thaws(2);
+        let runtime = HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            backend.clone(),
+        )
+        .with_portal_unit(portal.clone());
+
+        let watch = tokio::spawn(
+            runtime
+                .portal_watch(Duration::from_millis(10))
+                .expect("a configured portal is watched"),
+        );
+        // Startup releases a portal an earlier run left frozen and retries
+        // native failures. No prepare/status/portal RPC drives this progress.
+        tokio::time::timeout(Duration::from_secs(10), portal.thawed.notified())
+            .await
+            .expect("startup thaw retried within ten seconds");
+        assert!(!portal.frozen());
+        assert_eq!(portal.requests(), ["thaw", "thaw", "thaw"]);
+        watch.abort();
+
+        let unwatched =
+            HostRuntime::from_paths_with_backend(&config, None, root.path().join("other"), backend);
+        assert!(unwatched.portal_watch(Duration::from_millis(10)).is_none());
     }
 
     #[test]

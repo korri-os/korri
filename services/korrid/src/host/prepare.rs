@@ -3,7 +3,7 @@ use super::{
     config::{HostConfig, HostGame},
     input_seat::{DisabledInputSeats, InputSeatManager, UnixInputSeatManager},
     session_state::HostSessionControl,
-    systemd_unit::{LaunchUnitBackend, SystemdLaunchUnitBackend},
+    systemd_unit::{LaunchUnitBackend, PortalUnit, SystemdLaunchUnitBackend, SystemdPortalUnit},
 };
 use crate::{RpcFailure, SessionPrepared};
 use std::{
@@ -34,6 +34,18 @@ fn configured_compositor() -> Option<(Arc<dyn CompositorControl>, Vec<String>)> 
     Some((Arc::new(control), never_focus))
 }
 
+/// Read the portal unit korrid freezes during a focused live game. A device
+/// without one, or with an invalid name, never freezes its portal.
+fn configured_portal() -> Option<Arc<dyn PortalUnit>> {
+    match SystemdPortalUnit::from_environment()? {
+        Ok(portal) => Some(Arc::new(portal)),
+        Err(error) => {
+            eprintln!("korrid: portal freezing disabled: {}", error.message);
+            None
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct HostLauncher {
     games: Arc<HashMap<String, HostGame>>,
@@ -48,12 +60,21 @@ impl HostLauncher {
                 .map(PathBuf::from)
                 .map(|path| Arc::new(UnixInputSeatManager::new(path)) as Arc<dyn InputSeatManager>)
                 .unwrap_or_else(|| Arc::new(DisabledInputSeats));
-        Self::with_backends(
+        let launcher = Self::with_backends(
             config,
             private_state_root,
             Arc::new(SystemdLaunchUnitBackend::default()),
             input_seats,
-        )
+        );
+        match configured_portal() {
+            Some(portal) => launcher.with_portal(portal),
+            None => launcher,
+        }
+    }
+
+    pub(crate) fn with_portal(mut self, portal: Arc<dyn PortalUnit>) -> Self {
+        self.control = self.control.with_portal(portal);
+        self
     }
 
     #[cfg(test)]

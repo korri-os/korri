@@ -1,8 +1,9 @@
 use crate::{RpcFailure, SessionPrepared};
 use std::{
     collections::BTreeMap,
+    ops::{Deref, DerefMut},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -24,9 +25,10 @@ use super::input_seat::{InputSeatLease, InputSeatManager};
 use super::play_log::{PlayHistoryKey, PlayLogStore};
 #[cfg(test)]
 use super::systemd_unit::{
-    read_unit_pids, LaunchUnitError, LaunchUnitErrorKind, SystemdLaunchUnitBackend,
+    read_unit_pids, LaunchUnitError, LaunchUnitErrorKind, RecordingPortalUnit,
+    SystemdLaunchUnitBackend,
 };
-use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState, RUNNER_ID_ENV};
+use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState, PortalUnit, RUNNER_ID_ENV};
 
 /// Wall-clock seam. Production reads the system clock; tests supply
 /// deterministic instants so recorded durations are exact.
@@ -113,8 +115,8 @@ pub enum HostSessionFreezeChange {
         launch_id: String,
         message: String,
     },
-    /// The systemd helper refused the change. The unit is untouched and
-    /// the session stays in its last known state.
+    /// A native control refused the change. A failed portal thaw during
+    /// Leave rolls back the game freeze before returning this failure.
     HelperFailed {
         launch_id: String,
         message: String,
@@ -154,6 +156,65 @@ enum ActiveState {
     RecoveryBlocked,
 }
 
+/// What korrid last applied to the portal unit's freezer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PortalFreezerState {
+    /// Not proven since startup, or the last thaw failed.
+    Unknown,
+    /// Frozen, or a freeze was attempted. A refused freeze costs only power,
+    /// so it is not retried on every status read.
+    Frozen,
+    Thawed,
+}
+
+#[derive(Clone)]
+struct PortalFreezer {
+    unit: Arc<dyn PortalUnit>,
+    applied: Arc<Mutex<PortalFreezerState>>,
+    last_error: Arc<Mutex<Option<String>>>,
+}
+
+/// The session state under its mutex. Releasing it reconciles the portal
+/// freezer with the state left behind, so no transition or early return can
+/// leave the portal frozen outside a focused live game.
+struct SessionStateGuard<'a> {
+    control: &'a HostSessionControl,
+    state: MutexGuard<'a, ActiveState>,
+    reconcile: bool,
+}
+
+impl Deref for SessionStateGuard<'_> {
+    type Target = ActiveState;
+
+    fn deref(&self) -> &ActiveState {
+        &self.state
+    }
+}
+
+impl DerefMut for SessionStateGuard<'_> {
+    fn deref_mut(&mut self) -> &mut ActiveState {
+        &mut self.state
+    }
+}
+
+impl Drop for SessionStateGuard<'_> {
+    fn drop(&mut self) {
+        // A panic may leave a half-made transition. Thaw rather than trust it.
+        if std::thread::panicking() {
+            *self.state = ActiveState::RecoveryBlocked;
+            if let Some(portal) = &self.control.portal {
+                *portal
+                    .applied
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = PortalFreezerState::Unknown;
+            }
+            self.control.reconcile_portal(&self.state);
+        } else if self.reconcile {
+            self.control.reconcile_portal(&self.state);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct HostSessionControl {
     backend: Arc<dyn LaunchUnitBackend>,
@@ -171,6 +232,9 @@ pub struct HostSessionControl {
     compositor: Option<Arc<dyn CompositorControl>>,
     /// Surfaces that must never be focused as a game, such as the kiosk hub.
     never_focus: Vec<String>,
+    /// Frozen only while a running exact launch has observed compositor focus.
+    /// Absent, the portal is never touched.
+    portal: Option<PortalFreezer>,
 }
 
 impl HostSessionControl {
@@ -210,7 +274,130 @@ impl HostSessionControl {
             recovered_overlay_intent: Arc::new(Mutex::new(None)),
             compositor: None,
             never_focus: Vec::new(),
+            portal: None,
         }
+    }
+
+    /// Freeze this portal unit while a focused live game owns the screen.
+    /// Its freezer state is unknown until the first reconcile, so a portal
+    /// left frozen by an earlier korrid is thawed unless a game still holds
+    /// proven focus.
+    pub(crate) fn with_portal(mut self, unit: Arc<dyn PortalUnit>) -> Self {
+        self.portal = Some(PortalFreezer {
+            unit,
+            applied: Arc::new(Mutex::new(PortalFreezerState::Unknown)),
+            last_error: Arc::new(Mutex::new(None)),
+        });
+        self
+    }
+
+    fn lock_state(&self) -> SessionStateGuard<'_> {
+        let state = self.state.lock().unwrap_or_else(|error| {
+            let mut state = error.into_inner();
+            *state = ActiveState::RecoveryBlocked;
+            self.state.clear_poison();
+            state
+        });
+        SessionStateGuard {
+            control: self,
+            state,
+            reconcile: true,
+        }
+    }
+
+    /// Called only under the session transition mutex. Log a failure once,
+    /// then only a different failure or recovery, not once per watcher tick.
+    fn portal_result(
+        &self,
+        result: Result<(), super::systemd_unit::LaunchUnitError>,
+    ) -> Result<(), String> {
+        let portal = self.portal.as_ref().expect("configured portal");
+        let mut last = portal
+            .last_error
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        match result {
+            Ok(()) => {
+                if last.take().is_some() {
+                    eprintln!("korrid: portal freezer recovered");
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if last.as_ref() != Some(&error.message) {
+                    eprintln!("korrid: portal freezer failed: {}", error.message);
+                }
+                *last = Some(error.message.clone());
+                Err(error.message)
+            }
+        }
+    }
+
+    /// A Leave acknowledgement must include this result. Drop is only a
+    /// safety net for other transitions, not the Leave transaction itself.
+    fn thaw_portal(&self) -> Result<(), String> {
+        let Some(portal) = &self.portal else {
+            return Ok(());
+        };
+        let mut applied = portal
+            .applied
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *applied == PortalFreezerState::Thawed {
+            return Ok(());
+        }
+        *applied = PortalFreezerState::Unknown;
+        self.portal_result(portal.unit.thaw())?;
+        *applied = PortalFreezerState::Thawed;
+        Ok(())
+    }
+
+    /// Process liveness is not focus. Observe the existing exact-launch
+    /// compositor contract before freezing, including initial launch and
+    /// every watcher tick. Missing/delayed windows leave the portal running.
+    fn reconcile_portal(&self, state: &ActiveState) {
+        let Some(portal) = &self.portal else {
+            return;
+        };
+        let freeze = matches!(state, ActiveState::Running { launch_id, .. }
+            if matches!(self.current_focus_ownership(launch_id), Ok(FocusOwnership::Launch)));
+        let unknown = *portal
+            .applied
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            == PortalFreezerState::Unknown;
+        if (!freeze || unknown) && self.thaw_portal().is_err() {
+            return;
+        }
+        if freeze {
+            let mut applied = portal
+                .applied
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if *applied != PortalFreezerState::Frozen {
+                // A refused freeze costs only power. Do not retry until focus
+                // leaves and returns. Every attempted freeze still needs thaw.
+                let _ = self.portal_result(portal.unit.freeze());
+                *applied = PortalFreezerState::Frozen;
+            }
+        }
+    }
+
+    pub(crate) fn freezes_portal(&self) -> bool {
+        self.portal.is_some()
+    }
+
+    /// Test observation of a pending release. The production watcher always
+    /// observes focus too, even while a delayed game has no mapped window.
+    #[cfg(test)]
+    fn portal_watch_needed(&self) -> bool {
+        self.portal.as_ref().is_some_and(|portal| {
+            *portal
+                .applied
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                != PortalFreezerState::Thawed
+        })
     }
 
     /// Give this session control the authority needed to prove that a resumed
@@ -324,7 +511,7 @@ impl HostSessionControl {
         &self,
         expected_launch_id: &str,
     ) -> Result<Option<String>, String> {
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
         let active_launch_id = match &*state {
             ActiveState::Running { launch_id, .. }
@@ -562,7 +749,7 @@ impl HostSessionControl {
         resume_same_game: bool,
         runner_id: Option<&str>,
     ) -> Result<SessionPrepared, RpcFailure> {
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
         match &*state {
             ActiveState::Running {
@@ -706,7 +893,7 @@ impl HostSessionControl {
     }
 
     pub fn status(&self) -> HostSessionStatus {
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
         let tracked = match &*state {
             ActiveState::Running { launch_id, .. }
@@ -785,7 +972,7 @@ impl HostSessionControl {
     where
         F: FnOnce() -> Result<(), String>,
     {
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
         let (launch_id, game_id, recorded_frozen, portal_owned) = match &*state {
             ActiveState::Running { launch_id, game_id } if launch_id == expected_launch_id => {
@@ -987,7 +1174,7 @@ impl HostSessionControl {
         expected_launch_id: &str,
         target: FreezerTarget,
     ) -> HostSessionFreezeChange {
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         self.refresh_recovery(&mut state);
         let (launch_id, game_id) = match &*state {
             ActiveState::Running { launch_id, game_id }
@@ -1112,6 +1299,35 @@ impl HostSessionControl {
                 game_id: game_id.clone(),
             },
         };
+        if target == FreezerTarget::Frozen {
+            if let Err(message) = self.thaw_portal() {
+                // Inputd keeps Game input when Leave fails. Undo the game
+                // freeze before reporting failure, including an idempotent
+                // Leave of an already frozen launch. Never leave a frozen
+                // game behind with Game input.
+                state.reconcile = false;
+                if self.backend.thaw(&launch_id).is_err() {
+                    self.stop_game_after_seat_failure(&mut state, &launch_id);
+                    return HostSessionFreezeChange::RecoveryBlocked;
+                }
+                *state = ActiveState::Running {
+                    launch_id: launch_id.clone(),
+                    game_id: game_id.clone(),
+                };
+                if self.ensure_seats(&launch_id).is_err()
+                    || self.reset_seats(&launch_id).is_err()
+                    || Self::focus_failure(self.focus_launch(&launch_id)).is_some()
+                {
+                    if self
+                        .record_focus_failure(&mut state, launch_id.clone(), game_id)
+                        .is_err()
+                    {
+                        return HostSessionFreezeChange::RecoveryBlocked;
+                    }
+                }
+                return HostSessionFreezeChange::HelperFailed { launch_id, message };
+            }
+        }
         // Returning to a game restores the exact launch's streamed input-seat
         // lease before the game can take focus.
         if target == FreezerTarget::Running {
@@ -1158,7 +1374,7 @@ impl HostSessionControl {
 
     pub fn stop(&self, expected_launch_id: &str) -> HostSessionStop {
         let launch_id = {
-            let mut state = self.state.lock().expect("host session mutex poisoned");
+            let mut state = self.lock_state();
             self.refresh_recovery(&mut state);
             match &*state {
                 ActiveState::Running { launch_id, game_id }
@@ -1212,7 +1428,7 @@ impl HostSessionControl {
         // helper without the mutex.
         let seat_stop_failed = self.stop_seats(&launch_id).is_err();
         if self.backend.stop(&launch_id).is_err() {
-            let mut state = self.state.lock().expect("host session mutex poisoned");
+            let mut state = self.lock_state();
             if matches!(
                 self.backend.state(&launch_id),
                 Ok(LaunchUnitState::Completed)
@@ -1224,7 +1440,7 @@ impl HostSessionControl {
             return HostSessionStop::RecoveryBlocked;
         }
 
-        let mut state = self.state.lock().expect("host session mutex poisoned");
+        let mut state = self.lock_state();
         if seat_stop_failed {
             *state = ActiveState::RecoveryBlocked;
             return HostSessionStop::RecoveryBlocked;
@@ -1524,6 +1740,9 @@ mod tests {
         /// unit frozen, exactly as the real helper would.
         fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
             let mut state = self.state.lock().unwrap();
+            if let Some(events) = &state.return_events {
+                events.lock().unwrap().push("stop");
+            }
             if state
                 .units
                 .get(launch_id)
@@ -1571,6 +1790,9 @@ mod tests {
         fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
             let mut state = self.state.lock().unwrap();
             state.frozen.push(launch_id.into());
+            if let Some(events) = &state.return_events {
+                events.lock().unwrap().push("freeze");
+            }
             if state.freezer_fails {
                 return Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::Failed,
@@ -2633,6 +2855,377 @@ mod tests {
             ["thaw", "reset", "focus", "success"]
         );
         assert_eq!(manager.state.lock().unwrap().resets, [id]);
+    }
+
+    fn portal_control(
+        root: &Path,
+        backend: Arc<DeterministicBackend>,
+        compositor: Arc<RecordingCompositor>,
+        portal: Arc<RecordingPortalUnit>,
+    ) -> HostSessionControl {
+        resuming_control(root, backend, compositor).with_portal(portal)
+    }
+
+    #[test]
+    fn portal_stays_active_until_the_exact_delayed_game_window_has_focus() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            portal.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        assert!(!portal.frozen(), "process liveness is not focus");
+        backend.set_pids(&id, &[9100]);
+        // No mapped window, then an unrelated focused process, then a mapped
+        // game behind the portal: none proves that this launch owns focus.
+        for tree in [
+            "{\"nodes\":[]}".to_owned(),
+            compositor_tree(9200),
+            compositor_tree_with_focus(9100, 2),
+        ] {
+            *compositor.tree.lock().unwrap() = tree;
+            control.status();
+            assert!(!portal.frozen());
+        }
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        for _ in 0..3 {
+            control.status();
+        }
+        assert!(portal.frozen());
+        assert_eq!(portal.requests(), ["thaw", "freeze"]);
+        assert!(matches!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Changed { .. }
+        ));
+        assert!(!portal.frozen(), "Leave thaws before acknowledging success");
+        assert!(matches!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Unchanged { .. }
+        ));
+        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
+    }
+
+    #[test]
+    fn return_freezes_the_portal_only_after_the_game_is_focused() {
+        let root = tempfile::tempdir().unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().return_events = Some(events.clone());
+        let compositor = Arc::new(RecordingCompositor {
+            return_events: Some(events.clone()),
+            ..RecordingCompositor::default()
+        });
+        let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
+        let control = portal_control(root.path(), backend.clone(), compositor.clone(), portal);
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.freeze(&id);
+        events.lock().unwrap().clear();
+
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(*events.lock().unwrap(), ["thaw", "focus", "portal-freeze"]);
+    }
+
+    #[test]
+    fn a_refused_return_leaves_the_portal_running() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            portal.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.status();
+        control.freeze(&id);
+        compositor.focus_fails.store(true, Ordering::SeqCst);
+
+        assert!(matches!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed { .. }
+        ));
+        assert!(!portal.frozen());
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::FocusFailed { .. }
+        ));
+        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
+    }
+
+    #[test]
+    fn exact_stop_thaws_the_portal_before_the_game_stops() {
+        let root = tempfile::tempdir().unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().return_events = Some(events.clone());
+        let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            portal.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.status();
+        events.lock().unwrap().clear();
+
+        assert_eq!(
+            control.stop(&id),
+            HostSessionStop::Completed {
+                launch_id: id.clone()
+            }
+        );
+        assert_eq!(*events.lock().unwrap(), ["portal-thaw", "stop"]);
+        assert!(!portal.frozen());
+    }
+
+    #[test]
+    fn a_game_that_ends_on_its_own_thaws_the_portal() {
+        for ending in [LaunchUnitState::Completed, LaunchUnitState::Stopping] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let portal = Arc::new(RecordingPortalUnit::default());
+            let compositor = Arc::new(RecordingCompositor::default());
+            let control = portal_control(
+                root.path(),
+                backend.clone(),
+                compositor.clone(),
+                portal.clone(),
+            );
+            let id = prepare(&control, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.status();
+            assert!(portal.frozen());
+            backend.insert(&id, ending);
+
+            control.status();
+            assert!(!portal.frozen(), "{ending:?}");
+            assert!(!control.portal_watch_needed(), "{ending:?}");
+        }
+    }
+
+    #[test]
+    fn a_failed_launch_never_freezes_the_portal() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.state.lock().unwrap().launch_rejected = true;
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend,
+            Arc::new(RecordingCompositor::default()),
+            portal.clone(),
+        );
+
+        assert_eq!(
+            control
+                .prepare("one", None, Ok(&["game".into()]), &BTreeMap::new())
+                .unwrap_err()
+                .code,
+            "HostLaunchFailed"
+        );
+        assert!(!portal.frozen());
+        assert!(!portal.requests().contains(&"freeze"));
+    }
+
+    #[test]
+    fn overlay_controls_on_a_left_game_keep_the_portal_running() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            Arc::new(RecordingCompositor::default()),
+            portal.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        control.freeze(&id);
+
+        // The effect briefly thaws the game under one lock, then refreezes it.
+        control
+            .invoke_running_effect(&id, false, false, || Ok(()))
+            .unwrap();
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Frozen);
+        assert!(!portal.frozen());
+        assert_eq!(portal.requests(), ["thaw"]);
+    }
+
+    #[test]
+    fn restart_thaws_a_portal_left_frozen_unless_the_game_holds_focus() {
+        // No live game: the leftover freeze is released on first status.
+        let root = tempfile::tempdir().unwrap();
+        let portal = Arc::new(RecordingPortalUnit::left_frozen());
+        let control = portal_control(
+            root.path(),
+            Arc::new(DeterministicBackend::default()),
+            Arc::new(RecordingCompositor::default()),
+            portal.clone(),
+        );
+        assert!(control.portal_watch_needed(), "startup state is unproven");
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(!portal.frozen());
+        assert!(!control.portal_watch_needed());
+
+        // A live game behind the portal: recovery hands focus to Portal.
+        for (focused, frozen) in [(2, false), (3, true)] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let compositor = Arc::new(RecordingCompositor::default());
+            let first = resuming_control(root.path(), backend.clone(), compositor.clone());
+            let id = prepare(&first, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, focused);
+            drop(first);
+
+            let portal = Arc::new(RecordingPortalUnit::left_frozen());
+            let recovered = portal_control(root.path(), backend, compositor, portal.clone());
+            recovered.status();
+            assert_eq!(portal.frozen(), frozen, "focused node {focused}");
+        }
+    }
+
+    #[test]
+    fn a_refused_portal_thaw_is_retried_and_a_refused_freeze_is_not() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            portal.clone(),
+        );
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.status();
+        portal.refuse_next_thaws(1);
+
+        assert!(matches!(
+            control.freeze(&id),
+            HostSessionFreezeChange::HelperFailed { .. }
+        ));
+        assert!(portal.frozen(), "the refused thaw left it frozen");
+        assert_eq!(
+            backend.state(&id).unwrap(),
+            LaunchUnitState::Running,
+            "failed Leave rolls back game freeze before returning to Game input"
+        );
+        assert!(control.portal_watch_needed());
+        // The failed Leave kept Game input. A subsequent focus loss still
+        // retries the portal thaw, independently of any browser request.
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+        control.status();
+        assert!(!portal.frozen(), "the next observation retried the thaw");
+        control.status();
+        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw", "thaw"]);
+        control.freeze(&id);
+
+        portal.refuse_freeze();
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        assert_eq!(
+            control.thaw(&id),
+            HostSessionFreezeChange::Changed {
+                launch_id: id.clone()
+            }
+        );
+        control.status();
+        control.status();
+        assert!(!portal.frozen());
+        assert_eq!(
+            portal.requests(),
+            ["thaw", "freeze", "thaw", "thaw", "freeze"]
+        );
+    }
+
+    #[test]
+    fn a_panicking_transition_thaws_and_allows_the_watcher_to_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            Arc::new(DeterministicBackend::default()),
+            Arc::new(RecordingCompositor::default()),
+            portal.clone(),
+        );
+        control.status();
+        portal.refuse_next_thaws(1);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = control.lock_state();
+            // A panic after the native effect but before the applied-state
+            // update must not trust the earlier Thawed cache.
+            portal.freeze().unwrap();
+            panic!("interrupted transition");
+        }));
+        assert!(result.is_err());
+        assert!(portal.frozen());
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        assert!(!portal.frozen());
+    }
+
+    #[test]
+    fn failed_leave_rolls_back_before_acknowledgement_even_if_game_was_already_frozen() {
+        for already in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let backend = Arc::new(DeterministicBackend::default());
+            backend.state.lock().unwrap().return_events = Some(events.clone());
+            let compositor = Arc::new(RecordingCompositor {
+                return_events: Some(events.clone()),
+                ..RecordingCompositor::default()
+            });
+            let portal = Arc::new(RecordingPortalUnit::with_events(events.clone()));
+            let control = portal_control(
+                root.path(),
+                backend.clone(),
+                compositor.clone(),
+                portal.clone(),
+            );
+            let id = prepare(&control, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.status();
+            if already {
+                backend.insert(&id, LaunchUnitState::Frozen);
+            }
+            portal.refuse_next_thaws(1);
+            events.lock().unwrap().clear();
+            assert!(matches!(
+                control.freeze(&id),
+                HostSessionFreezeChange::HelperFailed { .. }
+            ));
+            events.lock().unwrap().push("failed-ack");
+            let expected = if already {
+                vec!["portal-thaw", "thaw", "focus", "failed-ack"]
+            } else {
+                vec!["freeze", "portal-thaw", "thaw", "focus", "failed-ack"]
+            };
+            assert_eq!(*events.lock().unwrap(), expected);
+            assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+            assert!(portal.frozen());
+        }
     }
 
     #[test]

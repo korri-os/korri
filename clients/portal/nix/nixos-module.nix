@@ -214,8 +214,10 @@ in
     (lib.mkIf kiosk.enable {
       # In the acknowledged Leave transaction, inputd first freezes the exact
       # launch, then routes input to Portal and runs this command to focus the
-      # one portal window. A failed Portal transition thaws and refocuses that
-      # exact launch. Return also thaws and focuses the exact game.
+      # one portal window. korrid thaws the portal before that freeze returns
+      # and freezes it again only once Return has focused the game. A failed
+      # Portal transition thaws and refocuses that exact launch. Return also
+      # thaws and focuses the exact game.
       services.korriLinuxInput.inputd.actions.system-panel.command = lib.mkDefault [
         "${pkgs.sway-unwrapped}/bin/swaymsg"
         "-s"

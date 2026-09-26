@@ -28,6 +28,8 @@ in
   imports = [
     ./game-plugins.nix
     ./usb-gadget.nix
+    # C3 activates only with the Mini V2 product's stop-thaw systemd patch.
+    ../../../clients/portal/nix/kiosk-freezer.nix
     ../../base/clock-governor.nix
   ];
 

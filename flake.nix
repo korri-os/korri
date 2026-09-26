@@ -305,6 +305,10 @@
               inherit pkgs nixpkgs;
               korri = self;
             };
+            korri-portal-freezer = import ./clients/portal/nix/kiosk-freezer-vm-test.nix {
+              inherit pkgs;
+              korrid = self.packages.${system}.korrid;
+            };
             korri-boot-splash = import ./brand/plymouth/module-check.nix {
               inherit pkgs nixpkgs;
             };

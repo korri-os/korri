@@ -10,6 +10,8 @@ let
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
         korri.nixosModules.korri-input
+        # Even an explicit board-edge import stays inert on unpatched PID 1.
+        ./kiosk-freezer.nix
         (import ./nixos-module.nix {
           inherit korri;
           chromiumArgs = [ "--force-prefers-reduced-motion" ];
@@ -93,6 +95,19 @@ let
   nginx = enabled.services.nginx.virtualHosts.korri-portal;
 in
 assert !(disabled.systemd.services ? korri-chromium-kiosk);
+# korrid freezes the kiosk during a focused live game. Without a kiosk the
+# feature stays inert: no unit name, no grant, no thaw hooks.
+assert !(disabled.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+assert !(serverOnly.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT);
+assert !(disabled.systemd.services ? korri-chromium-kiosk-thaw);
+assert !(serverOnly.systemd.services ? korri-chromium-kiosk-thaw);
+assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" disabled.security.polkit.extraConfig);
+assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" serverOnly.security.polkit.extraConfig);
+assert (disabled.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ];
+# A shared kiosk must not acquire C3 on unpatched systemd.
+assert !(daemon.environment ? KORRID_PORTAL_UNIT);
+assert !(enabled.systemd.services ? korri-chromium-kiosk-thaw);
+assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" enabled.security.polkit.extraConfig);
 assert !(disabled.systemd.services ? korri-portal-initialize);
 assert !(disabled.systemd.services ? korri-portal-credentials);
 assert !disabled.services.nginx.enable;

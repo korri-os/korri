@@ -196,6 +196,16 @@ assert lib.hasInfix (builtins.unsafeDiscardStringContext (
 assert
   !(lib.hasInfix (builtins.unsafeDiscardStringContext (toString dtDriverCheck)) recovery.sdImage.populateRootCommands);
 assert common recovery;
+# C3 is a Mini V2 product edge, never a recovery or unpatched-kiosk feature.
+assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_PORTAL_UNIT);
+assert !(recovery.systemd.services ? korri-chromium-kiosk-thaw);
+assert !(lib.hasInfix "korri-chromium-kiosk" recovery.security.polkit.extraConfig);
+assert
+  (c.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
+  == builtins.any (patch: baseNameOf (toString patch) == "stop-thaws-unit.patch") (
+    c.systemd.package.patches or [ ]
+  );
+assert !(c.systemd.services ? korri-chromium-kiosk-thaw);
 assert c.services.korri.clockGovernor.enable;
 assert c.services.korri.clockGovernor.cpuGovernor == "schedutil";
 assert c.services.korri.clockGovernor.gpuDevfreqNodes == [ ];
