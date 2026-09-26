@@ -188,10 +188,12 @@ replacement for it. Its current first milestone is deliberately local:
   270-degree panel transform.
 - Chromium uses software drawing for the first pass while remaining sandboxed.
   Sway itself still requires accelerated GLES2 rendering.
-- The portal and korrid communicate over loopback. NetworkManager and Avahi are
-  disabled, and Sunshine cannot start in this milestone. No Wi-Fi, firewall,
-  Bluetooth, streaming acceptance, media decode, or internal-storage support
-  is claimed.
+- The portal and korrid communicate over loopback. The product starts
+  NetworkManager and BlueZ and installs the wireless regulatory database.
+  Select Wi-Fi after boot with `nmcli device wifi connect <SSID> --ask`; do not
+  put credentials in the image. Avahi and Sunshine are not enabled by this
+  device slice. Wi-Fi and Bluetooth still need physical acceptance; streaming,
+  media decode, and internal-storage support are not claimed.
 - The product image carries speaker, headphone and DisplayPort sound drivers
   with ROCKNIX's `RetroidPocket` UCM (`ucm/`). Games reach PipeWire through
   the Pulse socket. Sound is built but not yet hardware-accepted.
@@ -205,6 +207,11 @@ replacement for it. Its current first milestone is deliberately local:
   codes are swapped to preserve physical X/West and Y/North.
 - `g_serial` remains loaded from the matching root system and the product adds
   the modular `retroid` gamepad driver after root mounts.
+- Product CPU policies use `schedutil`; GPU scaling and cpuidle are unchanged.
+  A one-shot timer retries the VA macro 20 seconds after boot only if the
+  RetroidPocket sound card is missing. InputPlumber takes the dedicated
+  `gpio-keys` and `pm8941_resin` volume keys and sends them to inputd actions
+  that run `wpctl` as the runtime user. No user Sway volume bindings are used.
 
 Build `.#packages.aarch64-linux.rpminiv2-korri-bundle` for Mini V2 bundle
 switches. The generic `korri-bundle` omits the Mini V2 capability map. The

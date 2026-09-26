@@ -25,7 +25,18 @@ let
   ucmDirectory = "${ucm}/share/alsa/ucm2";
 in
 {
-  imports = [ ./game-plugins.nix ];
+  imports = [
+    ./game-plugins.nix
+    ../../base/clock-governor.nix
+  ];
+
+  # Only CPU scaling is selected here. GPU devfreq remains at the kernel default.
+  services.korri.clockGovernor.enable = true;
+
+  # Use the board's packaged regulatory database; select an SSID after boot
+  # with nmcli rather than baking credentials into an installation image.
+  hardware.wirelessRegulatoryDatabase = true;
+  hardware.bluetooth.enable = true;
 
   # No suspend or light-sleep path has been verified on this board.
   services.korriProduct.sleep.states = [ ];
@@ -51,6 +62,20 @@ in
   services.korriLinuxInput.provider.extraDataPackages = [
     korri.packages.${system}.rpminiv2-inputplumber-data
   ];
+
+  # InputPlumber routes the two dedicated key devices to inputd's direct
+  # actions. Run wpctl as the runtime user against that user's PipeWire graph;
+  # no compositor key bindings are needed.
+  services.korriLinuxInput.inputd.actions = {
+    volume-up = {
+      command = [ "${pkgs.wireplumber}/bin/wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+" ];
+      environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
+    };
+    volume-down = {
+      command = [ "${pkgs.wireplumber}/bin/wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-" ];
+      environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
+    };
+  };
 
   # The launcher takes InputPlumber data from the active bundle, not the
   # service's XDG_DATA_DIRS. Use the same resolved device data in both places.
@@ -136,6 +161,30 @@ in
   # both need the RetroidPocket UCM to find the speaker and headphone routes.
   systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2 = ucmDirectory;
   systemd.user.services.wireplumber.environment.ALSA_CONFIG_UCM2 = ucmDirectory;
+
+  # The VA macro sometimes finishes probing before the other sound devices.
+  # Retry its module once, after boot, only if the RetroidPocket card is absent.
+  # Never reload an already working card or bypass the normal module checks.
+  systemd.timers.rpminiv2-va-macro-retry = {
+    wantedBy = [ "timers.target" ];
+    timerConfig.OnBootSec = "20s";
+  };
+  systemd.services.rpminiv2-va-macro-retry = {
+    description = "Retry RP Mini V2 VA macro if the sound card is missing";
+    unitConfig.ConditionPathExists = "!/proc/asound/RetroidPocket";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "rpminiv2-va-macro-retry" ''
+        set -eu
+        [ ! -e /proc/asound/RetroidPocket ] || exit 0
+        if [ -d /sys/module/snd_soc_lpass_va_macro ]; then
+          ${pkgs.kmod}/bin/modprobe -r snd-soc-lpass-va-macro
+        fi
+        ${pkgs.kmod}/bin/modprobe snd-soc-lpass-va-macro
+      '';
+      TimeoutStartSec = "15s";
+    };
+  };
 
   # PipeWire never runs the UCM boot sequences. They set ROCKNIX's speaker and
   # headphone amplifier volumes, so run them once when the card appears.

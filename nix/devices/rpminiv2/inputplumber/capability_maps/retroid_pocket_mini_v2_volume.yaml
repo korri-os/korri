@@ -1,0 +1,27 @@
+# The DTS maps gpio-keys to KEY_VOLUMEUP and pm8941_resin to KEY_VOLUMEDOWN.
+# Route these keys to inputd's direct actions, not to a virtual keyboard.
+version: 2
+kind: CapabilityMap
+name: Retroid Pocket Mini V2 Hardware Volume
+id: retroid_pocket_mini_v2_volume
+
+mapping:
+  - name: Volume Up
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEUP
+          value_type: button
+    target_event:
+      dbus: ui_volume_up
+
+  - name: Volume Down
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEDOWN
+          value_type: button
+    target_event:
+      dbus: ui_volume_down
+
+filtered_events: []

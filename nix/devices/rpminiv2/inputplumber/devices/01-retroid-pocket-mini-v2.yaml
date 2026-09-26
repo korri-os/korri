@@ -7,7 +7,8 @@ matches:
   - dmi_data:
       product_name: Retroid Pocket Mini V2
 
-maximum_sources: 1
+# The gamepad and the two separate hardware-volume input devices.
+maximum_sources: 3
 
 source_devices:
   - group: gamepad
@@ -16,6 +17,19 @@ source_devices:
       phys_path: retroid-pocket-gamepad/input0
       handler: event*
     capability_map_id: retroid_pocket_mini_v2
+
+  - group: keyboard
+    evdev:
+      name: gpio-keys
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: retroid_pocket_mini_v2_volume
+
+  - group: keyboard
+    evdev:
+      name: pm8941_resin
+      handler: event*
+    capability_map_id: retroid_pocket_mini_v2_volume
 
 options:
   auto_manage: true

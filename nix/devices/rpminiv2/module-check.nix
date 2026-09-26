@@ -101,9 +101,6 @@ let
     && config.hardware.deviceTree.name == "qcom/sm8250-retroidpocket-rpminiv2.dtb"
     && config.hardware.deviceTree.overlays == [ ]
     && !config.hardware.enableAllHardware
-    && !config.hardware.bluetooth.enable
-    && !(lib.elem "bluez" (packageNames config))
-    && !(config.systemd.services ? bluetooth)
     && config.hardware.firmwareCompression == "none"
     && config.boot.consoleLogLevel == 4
     && lib.filter (lib.hasPrefix "console=") config.boot.kernelParams == [ "console=tty0" ]
@@ -169,6 +166,20 @@ assert hasRecoveryKernelConfig "# CONFIG_SOUND is not set";
 assert hasRecoveryKernelConfig "# CONFIG_REMOTEPROC is not set";
 assert common c;
 assert common recovery;
+assert c.services.korri.clockGovernor.enable;
+assert c.services.korri.clockGovernor.cpuGovernor == "schedutil";
+assert c.services.korri.clockGovernor.gpuDevfreqNodes == [ ];
+assert c.services.korri.clockGovernor.cpuIdleDisable == [ ];
+assert !(recovery.systemd.services ? korri-clock-governor);
+assert c.hardware.bluetooth.enable;
+assert c.systemd.services ? bluetooth;
+assert c.systemd.timers ? rpminiv2-va-macro-retry;
+assert c.systemd.timers.rpminiv2-va-macro-retry.timerConfig.OnBootSec == "20s";
+assert c.systemd.services.rpminiv2-va-macro-retry.unitConfig.ConditionPathExists == "!/proc/asound/RetroidPocket";
+assert !recovery.hardware.bluetooth.enable;
+assert !(recovery.systemd.services ? bluetooth);
+assert c.networking.networkmanager.enable;
+assert c.hardware.wirelessRegulatoryDatabase;
 # Use the shared product validator instead of duplicating its policy here.
 assert productFailures == [ ];
 assert lib.all (a: a.assertion) c.assertions;
@@ -249,6 +260,14 @@ assert
 assert lib.hasInfix ''ATTRS{id}=="RetroidPocket"'' c.services.udev.extraRules;
 assert lib.hasInfix "rpminiv2-audio-boot.service" c.services.udev.extraRules;
 assert lib.hasInfix "PULSE_SERVER" (builtins.readFile c.services.korridLinuxDevice.deviceConfig);
+assert lib.hasSuffix "/bin/wpctl" (builtins.head c.services.korriLinuxInput.inputd.actions.volume-up.command);
+assert builtins.tail c.services.korriLinuxInput.inputd.actions.volume-up.command == [
+  "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"
+];
+assert lib.hasSuffix "/bin/wpctl" (builtins.head c.services.korriLinuxInput.inputd.actions.volume-down.command);
+assert builtins.tail c.services.korriLinuxInput.inputd.actions.volume-down.command == [
+  "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"
+];
 assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
   "android-tools"
@@ -286,11 +305,13 @@ pkgs.runCommand "rpminiv2-module-check"
     grep -F "SpkrLeft PA Volume' 12" "$ucm/Qualcomm/sm8250/RetroidPocket.conf"
     test -f ${c.services.inputplumber.package}/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml
     test -f ${c.services.inputplumber.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml
+    test -f ${c.services.inputplumber.package}/share/inputplumber/capability_maps/retroid_pocket_mini_v2_volume.yaml
     bundle=${c.services.korriBundle.initialPackage}
     test -L "$bundle/share/inputplumber"
     test "$(readlink -f "$bundle/share/inputplumber")" = ${c.services.inputplumber.package}/share/inputplumber
     test -f "$bundle/share/inputplumber/devices/01-retroid-pocket-mini-v2.yaml"
     test -f "$bundle/share/inputplumber/capability_maps/retroid_pocket_mini_v2.yaml"
+    test -f "$bundle/share/inputplumber/capability_maps/retroid_pocket_mini_v2_volume.yaml"
     test "$(readlink -f "$bundle/share/korri-input-profile")" = ${c.services.inputplumber.package}/share/inputplumber/profiles/korri-60-xbox_one_gamepad.yaml
     test "$(readlink -f "$bundle/bin/inputplumber")" = ${c.services.inputplumber.package}/bin/inputplumber
     cp ${./verify-image.py} verify-image.py

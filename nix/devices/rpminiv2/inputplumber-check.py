@@ -27,9 +27,19 @@ assert profile["source_devices"] == [
             "handler": "event*",
         },
         "capability_map_id": "retroid_pocket_mini_v2",
-    }
+    },
+    {
+        "group": "keyboard",
+        "evdev": {"name": "gpio-keys", "phys_path": "gpio-keys/input0", "handler": "event*"},
+        "capability_map_id": "retroid_pocket_mini_v2_volume",
+    },
+    {
+        "group": "keyboard",
+        "evdev": {"name": "pm8941_resin", "handler": "event*"},
+        "capability_map_id": "retroid_pocket_mini_v2_volume",
+    },
 ]
-assert profile["maximum_sources"] == 1
+assert profile["maximum_sources"] == 3
 assert profile["options"]["auto_manage"] is True
 assert profile["target_devices"] == ["xb360"]
 
@@ -103,6 +113,19 @@ assert buttons == expected_buttons, buttons
 assert triggers == expected_triggers, triggers
 assert axes == expected_axes, axes
 assert capabilities["filtered_events"] == []
+
+volume = load("capability_maps/retroid_pocket_mini_v2_volume.yaml")
+assert volume["id"] == profile["source_devices"][1]["capability_map_id"]
+assert volume["id"] == profile["source_devices"][2]["capability_map_id"]
+assert {
+    mapping["source_events"][0]["evdev"]["event_code"]: mapping["target_event"]["dbus"]
+    for mapping in volume["mapping"]
+} == {"KEY_VOLUMEUP": "ui_volume_up", "KEY_VOLUMEDOWN": "ui_volume_down"}
+assert all(
+    mapping["source_events"][0]["evdev"]["value_type"] == "button"
+    for mapping in volume["mapping"]
+)
+assert volume["filtered_events"] == []
 print(
     "RP Mini V2 profile, 15 mapped buttons, 1 intentionally unbound button, "
     "2 triggers, and 2 sticks passed"
