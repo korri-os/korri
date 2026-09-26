@@ -38,43 +38,45 @@ export function PicoLibraryBrowser({
 }) {
   return (
     <div className="pico-library-browser">
-      <div className="pico-library-browser-find">
-        <PicoQueryField query={library.query} />
-        <div className="pico-library-browser-collections">
-          {library.sections.map((candidate) => (
-            <PicoChip
-              key={candidate}
-              label={candidate.toUpperCase()}
-              onPress={() => onSection(candidate)}
-              pressed={candidate === section}
-            />
-          ))}
-        </div>
-        <div className="pico-library-browser-orders">
-          {library.orders.map((candidate) => (
-            <PicoChip
-              key={candidate}
-              label={PICO_ORDER_LABELS[candidate]}
-              onPress={() => onOrder(candidate)}
-              pressed={candidate === order}
-            />
-          ))}
-        </div>
-        <PicoKeyboard onBackspace={onBackspace} onClear={onClear} onType={onType} />
-      </div>
-      <div className="pico-library-browser-results">
-        {library.results.length === 0 ? (
-          <p className="pico-library-browser-empty">
-            <span className="pico-library-browser-empty-kicker">NOTHING MATCHES</span>
-            <span>Try fewer letters, or a different collection.</span>
-          </p>
-        ) : (
-          <ul className="pico-library-browser-list">
-            {library.results.map((game) => (
-              <PicoResultRow game={game} key={game.id} onOpen={() => onOpen(game.id)} />
+      <div className="pico-library-browser-layout">
+        <div className="pico-library-browser-find">
+          <PicoQueryField query={library.query} />
+          <div className="pico-library-browser-collections">
+            {library.sections.map((candidate) => (
+              <PicoChip
+                key={candidate}
+                label={candidate.toUpperCase()}
+                onPress={() => onSection(candidate)}
+                pressed={candidate === section}
+              />
             ))}
-          </ul>
-        )}
+          </div>
+          <div className="pico-library-browser-orders">
+            {library.orders.map((candidate) => (
+              <PicoChip
+                key={candidate}
+                label={PICO_ORDER_LABELS[candidate]}
+                onPress={() => onOrder(candidate)}
+                pressed={candidate === order}
+              />
+            ))}
+          </div>
+          <PicoKeyboard onBackspace={onBackspace} onClear={onClear} onType={onType} />
+        </div>
+        <div className="pico-library-browser-results">
+          {library.results.length === 0 ? (
+            <p className="pico-library-browser-empty">
+              <span className="pico-library-browser-empty-kicker">NOTHING MATCHES</span>
+              <span>Try fewer letters, or a different collection.</span>
+            </p>
+          ) : (
+            <ul className="pico-library-browser-list">
+              {library.results.map((game) => (
+                <PicoResultRow game={game} key={game.id} onOpen={() => onOpen(game.id)} />
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )

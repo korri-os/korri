@@ -25,12 +25,14 @@ export function PicoPanelScreen({
 }) {
   return (
     <div className="pico-panel-screen">
-      <PicoTabs current={current} onSelect={onSelect} tabs={tabs} />
-      <section aria-label={title} className="pico-panel-screen-detail">
-        <PicoCard shell={picoTabShell(current)} tone="tell">
-          {children}
-        </PicoCard>
-      </section>
+      <div className="pico-panel-screen-layout">
+        <PicoTabs current={current} onSelect={onSelect} tabs={tabs} />
+        <section aria-label={title} className="pico-panel-screen-detail">
+          <PicoCard shell={picoTabShell(current)} tone="tell">
+            {children}
+          </PicoCard>
+        </section>
+      </div>
     </div>
   )
 }

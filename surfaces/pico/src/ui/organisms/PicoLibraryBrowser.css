@@ -1,7 +1,8 @@
 /**
- * Find's plan, answered against the screen body (the `pico-body` container:
- * a container cannot query its own size). Conditions are in em of the body's
- * small face, 6 virtual pixels.
+ * Find's plan. The root is the size container and the layout inside it
+ * answers the query (a container cannot query its own size), so find adapts
+ * the same way inside a screen and placed on its own. Conditions are in em
+ * of the root's small face, 6 virtual pixels.
  *
  *   wide                 typing on the left, results on the right; each
  *                        column scrolls on its own
@@ -19,6 +20,13 @@
  */
 .pico-library-browser {
 	--pico-key-ratio: 1.1;
+	container: pico-find / size;
+	height: 100%;
+	min-height: 0;
+	font-size: var(--pico-text-sm);
+}
+
+.pico-library-browser-layout {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 	grid-template-rows: minmax(0, 1fr);
@@ -26,7 +34,6 @@
 	height: 100%;
 	min-height: 0;
 	padding: var(--pico-u) calc(var(--pico-u) * 2);
-	font-size: var(--pico-text-sm);
 }
 
 .pico-library-browser-find {
@@ -78,7 +85,7 @@
 }
 
 /* Short: flat keys, and smaller carts in the results. */
-@container pico-body (height < 50em) {
+@container pico-find (height < 50em) {
 	.pico-library-browser-find {
 		--pico-key-ratio: 2;
 	}
@@ -91,12 +98,12 @@
 }
 
 /* Narrow and tall: typing on top, results as a sideways row below. */
-@container pico-body (width < 90em) and (height >= 60em) {
-	.pico-library-browser .pico-library-browser-find {
+@container pico-find (width < 90em) and (height >= 60em) {
+	.pico-library-browser-layout .pico-library-browser-find {
 		--pico-key-ratio: 2.2;
 	}
 
-	.pico-library-browser {
+	.pico-library-browser-layout {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, auto) minmax(0, 1fr);
 		gap: var(--pico-u);
@@ -115,16 +122,16 @@
 	}
 }
 
-/* Narrow and short: one page. Neither region scrolls alone; the page does. */
-@container pico-body (width < 90em) and (height < 60em) {
-	.pico-library-browser > .pico-library-browser-find {
+/* Narrow and short: one page. Neither region scrolls alone; the page does.
+ * max-content rows keep each region at its full height, rather than rows
+ * squeezing and the results sliding under the keys. */
+@container pico-find (width < 90em) and (height < 60em) {
+	.pico-library-browser-layout > .pico-library-browser-find {
 		--pico-key-ratio: 2.2;
 		overflow: visible;
 	}
 
-	/* max-content, not auto: the regions keep their full height and the page
-	 * scrolls, rather than rows squeezing and the results sliding under keys. */
-	.pico-library-browser {
+	.pico-library-browser-layout {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: max-content max-content;
 		gap: calc(var(--pico-u) * 2);

@@ -1,11 +1,21 @@
 /**
- * Settings' plan, answered against the screen body (`pico-body`). Conditions
- * are in em of the body's small face, 6 virtual pixels.
+ * Settings' plan. The root is the size container and the layout inside it
+ * answers the query, so the panel adapts the same way inside a screen and
+ * placed on its own. Conditions are in em of the root's small face, 6 virtual
+ * pixels.
  *
- *   wide      spines | card
- *   narrow    spines in a row above the card
+ *   wide               spines | card
+ *   narrow             spines wrapped in rows above the card
+ *   narrow and short   one page that scrolls: spines, then the whole card
  */
 .pico-panel-screen {
+	container: pico-panel / size;
+	height: 100%;
+	min-height: 0;
+	font-size: var(--pico-text-sm);
+}
+
+.pico-panel-screen-layout {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
 	grid-template-rows: minmax(0, 1fr);
@@ -14,7 +24,6 @@
 	height: 100%;
 	min-height: 0;
 	padding: var(--pico-u) calc(var(--pico-u) * 2);
-	font-size: var(--pico-text-sm);
 }
 
 /* A column: the card shrinks to the room and scrolls inside itself. */
@@ -26,15 +35,15 @@
 	min-height: 0;
 }
 
-@container pico-body (width < 70em) {
-	.pico-panel-screen {
+@container pico-panel (width < 70em) {
+	.pico-panel-screen-layout {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto minmax(0, 1fr);
 	}
 
 	/* The spines wrap onto a second row rather than scroll: every section
 	 * stays on screen, and a half-visible spine is never the one focused. */
-	.pico-panel-screen > [role="tablist"] {
+	.pico-panel-screen-layout > [role="tablist"] {
 		display: flex;
 		flex-wrap: wrap;
 		min-width: 0;
@@ -42,11 +51,11 @@
 	}
 
 	/* Standing in a row, a spine is pulled up rather than out. */
-	.pico-panel-screen > [role="tablist"] > [role="tab"] {
+	.pico-panel-screen-layout > [role="tablist"] > [role="tab"] {
 		translate: 0 calc(var(--pico-px) * 2);
 	}
 
-	.pico-panel-screen > [role="tablist"] > [aria-selected="true"] {
+	.pico-panel-screen-layout > [role="tablist"] > [aria-selected="true"] {
 		translate: 0 calc(var(--pico-px) * -2);
 	}
 }
@@ -54,14 +63,14 @@
 /* Narrow and short: one page that scrolls, spines then the card at its full
  * height. A card squeezed under two rows of spines would have no room left
  * to show a single row. */
-@container pico-body (width < 70em) and (height < 40em) {
-	.pico-panel-screen {
+@container pico-panel (width < 70em) and (height < 40em) {
+	.pico-panel-screen-layout {
 		grid-template-rows: max-content max-content;
 		overflow-y: auto;
 		scrollbar-width: none;
 	}
 
-	.pico-panel-screen > .pico-panel-screen-detail {
+	.pico-panel-screen-layout > .pico-panel-screen-detail {
 		max-height: none;
 	}
 }
