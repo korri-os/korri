@@ -64,10 +64,9 @@ let
       )
       # Bun's local-file install must resolve to the build's source, not to a
       # temporary dependency-fetch directory or a stale copy in this output.
-      for surface in shift pico; do
-        rm -rf "surfaces/$surface/node_modules/@korri/intrinsic-design"
-        ln -s ../../../../packages/intrinsic-design "surfaces/$surface/node_modules/@korri/intrinsic-design"
-      done
+      # Only Shift uses the shared intrinsic package; Pico derives its own pixel.
+      rm -rf "surfaces/shift/node_modules/@korri/intrinsic-design"
+      ln -s ../../../../packages/intrinsic-design "surfaces/shift/node_modules/@korri/intrinsic-design"
       runHook postBuild
     '';
     installPhase = ''
@@ -80,7 +79,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-X27Kn+fCXY70QDGVjmgKFLYnZ06CbH2//2rd6zlqSLw=";
+    outputHash = "sha256-3THBRVMtrvLUGoO2c+SiiLsrC/fp5gKH1D4Epo6iLTc=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
