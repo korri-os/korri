@@ -11,7 +11,8 @@ V2:
 
 The recovery system is hardware-verified. The Korri system is statically
 verified but still requires a coordinated physical display and controller
-acceptance pass. Neither configuration starts SSH, writes internal storage, or
+acceptance pass. The product image seeds the key-only SSH plugin on TCP 2222;
+the recovery image does not start SSH. Neither image writes internal storage or
 includes a loader, Android, or firmware flashing path.
 
 Both kernels and their DTB build from the audited Linux 7.2 source and ROCKNIX
@@ -252,17 +253,20 @@ lsmod | grep -E '^(g_serial|retroid) '
 systemctl is-active inputplumber korri-inputd korrid korri-compositor nginx \
   korri-chromium-kiosk rpminiv2-display-idle
 systemctl --failed
-systemctl is-active sunshine || true
-systemctl is-enabled NetworkManager avahi-daemon || true
+systemctl is-active NetworkManager avahi-daemon || true
+systemctl is-active korri-plugin-host || true
+systemctl list-units 'korri-plugin-*.service' --all --no-pager
 ss -ltnp
 journalctl -b -u inputplumber -u korri-inputd -u korrid \
   -u korri-compositor -u korri-chromium-kiosk --no-pager
 ```
 
 Require all listed product services to be active, no failed unit, `DSI-1`
-connected at 1080 by 1240, both root-time modules loaded, NetworkManager and
-Avahi disabled, Sunshine inactive, and application listeners bound only to
-loopback. Then verify on the device:
+connected at 1080 by 1240, both root-time modules loaded, NetworkManager
+active, Avahi disabled, the plugin host active, and application listeners bound
+only to loopback. Check that SSH listens only on TCP 2222 with public-key
+access and that the selected Sunshine plugin starts when streaming is tested.
+Then verify on the device:
 
 1. The portal fills the landscape panel after the 270-degree transform with no
    clipped edge, upside-down content or software-composited Sway fallback.
