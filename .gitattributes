@@ -1,3 +1,4 @@
 clients/android/app/src/main/java/com/limelight/nvstream/jni/MoonBridge.java whitespace=cr-at-eol
 clients/android/app/src/main/java/com/limelight/binding/input/ControllerHandler.java whitespace=cr-at-eol
 services/sunshine/patches/*.patch whitespace=-blank-at-eol
+services/inputd/nix/sway-idle-notify.patch whitespace=-blank-at-eol,-space-before-tab
