@@ -180,6 +180,9 @@ workspace and Caliper may persist those changes to `.lab/pico/state.json`.
 The 2026-09-06 review inspected all 147 captures and fixed keyboard/title clipping,
 attract looping, navigation precedence and confirmation focus; see
 [`docs/acceptance/pico-caliper-2026-09-06.md`](../../docs/acceptance/pico-caliper-2026-09-06.md).
+The 2026-09-25 run after the C2 rebuild passed with 52 parts, 156 captures and
+no focus-bound cases. The first run after a source change can time out while
+Caliper reloads the edited modules; run it again before reading the failure.
 This is a browser simulation at configured physical sizes, not calibrated
 on-device readability or assistive-technology certification. Gamepad/spatial
 navigation, hardware and persistent kiosk deployment remain outside this check.
