@@ -4,6 +4,8 @@ use futures_util::StreamExt;
 use korri_input_core::controls::{Control, ControlTransition, DpadAxis};
 use zbus::{message::Type, proxy::CacheProperties, MatchRule, Message, MessageStream};
 
+use crate::source_topology::{SourceTopology, SysfsSourceClassifier};
+
 pub const INPUTPLUMBER_BUS_NAME: &str = "org.shadowblip.InputPlumber";
 pub const INPUTPLUMBER_ROOT_PATH: &str = "/org/shadowblip/InputPlumber";
 pub const COMPOSITE_DEVICE_INTERFACE: &str = "org.shadowblip.Input.CompositeDevice";
@@ -186,7 +188,11 @@ impl DbusSignalSource {
             .ok_or_else(|| DbusRuntimeError::Rejected("profile path is not UTF-8".into()))?;
         tokio::time::timeout(
             DBUS_OPERATION_TIMEOUT,
-            ensure_profile_unbounded(&self.connection, profile_path),
+            ensure_profile_unbounded(
+                &self.connection,
+                profile_path,
+                &SysfsSourceClassifier::system(),
+            ),
         )
         .await
         .map_err(|_| DbusRuntimeError::TimedOut)?
@@ -200,6 +206,7 @@ impl DbusSignalSource {
 async fn ensure_profile_unbounded(
     connection: &zbus::Connection,
     profile_path: &str,
+    classifier: &SysfsSourceClassifier,
 ) -> Result<ProfileStatus, DbusRuntimeError> {
     let Some(owner) = current_unique_owner(connection).await? else {
         return Ok(ProfileStatus::Pending);
@@ -290,7 +297,11 @@ async fn ensure_profile_unbounded(
     if current_unique_owner(connection).await?.as_deref() != Some(owner.as_str()) {
         return Ok(ProfileStatus::Pending);
     }
-    Ok(profile_status_with_sources(profile_status, &source_paths))
+    Ok(profile_status_with_sources(
+        profile_status,
+        &source_paths,
+        classifier,
+    ))
 }
 
 fn composite_disposition(dbus_devices: &[String], source_paths: &[String]) -> CompositeDisposition {
@@ -303,11 +314,18 @@ fn composite_disposition(dbus_devices: &[String], source_paths: &[String]) -> Co
     }
 }
 
-fn profile_status_with_sources(status: ProfileStatus, source_paths: &[String]) -> ProfileStatus {
-    match source_paths.len() {
-        0 => ProfileStatus::MissingSource,
-        1 => status,
-        _ => ProfileStatus::AmbiguousSources,
+/// The composite is usable only with exactly one gamepad-class source. Other
+/// sources that the device profile merges on purpose, such as volume keys, do
+/// not count. See `source_topology` for the classification rule.
+fn profile_status_with_sources(
+    status: ProfileStatus,
+    source_paths: &[String],
+    classifier: &SysfsSourceClassifier,
+) -> ProfileStatus {
+    match classifier.topology(source_paths) {
+        SourceTopology::MissingGamepad => ProfileStatus::MissingSource,
+        SourceTopology::OneGamepad => status,
+        SourceTopology::AmbiguousGamepads => ProfileStatus::AmbiguousSources,
     }
 }
 
@@ -466,14 +484,39 @@ pub fn map_capability(capability: &str, value: f64) -> Option<SemanticInput> {
 
 #[cfg(test)]
 mod tests {
-    use std::{future, time::Duration};
+    use std::{fs, future, path::Path, time::Duration};
 
     use super::{
         bounded_with_timeout, composite_disposition, composite_paths_from_introspection,
         profile_status_with_sources, CompositeDisposition, DbusRuntimeError, ProfileStatus,
         COMPOSITE_CACHE_PROPERTIES,
     };
+    use crate::source_topology::SysfsSourceClassifier;
     use zbus::proxy::CacheProperties;
+
+    fn write_capabilities(root: &Path, event: &str, key: &str, abs: &str) {
+        let capabilities = root
+            .join("class/input")
+            .join(event)
+            .join("device/capabilities");
+        fs::create_dir_all(&capabilities).unwrap();
+        fs::write(capabilities.join("key"), format!("{key}\n")).unwrap();
+        fs::write(capabilities.join("abs"), format!("{abs}\n")).unwrap();
+    }
+
+    // Capability bitmaps observed on the Retroid Pocket Mini V2.
+    fn mini_v2_sysfs() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        write_capabilities(
+            root.path(),
+            "event4",
+            "f00000000 0 0 0 7cdb000000400000 0 0 0 0",
+            "30003f",
+        );
+        write_capabilities(root.path(), "event3", "8000000000000 0", "0");
+        write_capabilities(root.path(), "event2", "4000000000000 0", "0");
+        root
+    }
 
     #[tokio::test]
     async fn bounded_wait_times_out_and_allows_a_fresh_retry() {
@@ -513,19 +556,80 @@ mod tests {
     }
 
     #[test]
-    fn profile_readiness_requires_one_live_source() {
+    fn profile_readiness_requires_one_live_gamepad_source() {
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
         assert_eq!(
-            profile_status_with_sources(ProfileStatus::Ready, &[]),
+            profile_status_with_sources(ProfileStatus::Ready, &[], &classifier),
             ProfileStatus::MissingSource
         );
         assert_eq!(
-            profile_status_with_sources(ProfileStatus::Applied, &["source".into()]),
+            profile_status_with_sources(
+                ProfileStatus::Applied,
+                &["/dev/input/event4".into()],
+                &classifier
+            ),
             ProfileStatus::Applied
+        );
+        write_capabilities(
+            root.path(),
+            "event7",
+            "f00000000 0 0 0 7cdb000000400000 0 0 0 0",
+            "30003f",
         );
         assert_eq!(
             profile_status_with_sources(
                 ProfileStatus::Ready,
-                &["source-a".into(), "source-b".into()]
+                &["/dev/input/event4".into(), "/dev/input/event7".into()],
+                &classifier
+            ),
+            ProfileStatus::AmbiguousSources
+        );
+    }
+
+    #[test]
+    fn mini_v2_composite_with_volume_key_sources_keeps_the_profile_status() {
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
+        // SourceDevicePaths as busctl reported it on the device.
+        let sources = [
+            "/dev/input/event3".to_owned(),
+            "/dev/input/event4".to_owned(),
+            "/dev/input/event2".to_owned(),
+        ];
+        assert_eq!(
+            profile_status_with_sources(ProfileStatus::Ready, &sources, &classifier),
+            ProfileStatus::Ready
+        );
+        assert_eq!(
+            profile_status_with_sources(ProfileStatus::Applied, &sources, &classifier),
+            ProfileStatus::Applied
+        );
+    }
+
+    #[test]
+    fn volume_key_sources_without_the_gamepad_are_a_missing_source() {
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
+        assert_eq!(
+            profile_status_with_sources(
+                ProfileStatus::Ready,
+                &["/dev/input/event3".into(), "/dev/input/event2".into()],
+                &classifier
+            ),
+            ProfileStatus::MissingSource
+        );
+    }
+
+    #[test]
+    fn unclassifiable_sources_beside_the_gamepad_stay_ambiguous() {
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
+        assert_eq!(
+            profile_status_with_sources(
+                ProfileStatus::Ready,
+                &["/dev/input/event4".into(), "/dev/input/event9".into()],
+                &classifier
             ),
             ProfileStatus::AmbiguousSources
         );
