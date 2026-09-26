@@ -35,6 +35,9 @@ in
 assert lib.all exactImage names;
 assert recoveryWithoutDefaults;
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
+assert lib.elem (toString published.korri-plugin-ssh) (map toString selected.rpminiv2);
+assert lib.all (name: !(lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name})))
+  [ "rg353m" "rgds" "r36tmax" "odin2portal" ];
 assert lib.all (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))
   [ "rg353m" "rgds" "rpminiv2" "odin2portal" ];
 pkgs.runCommand "korri-product-image-plugins-check" { } ''
