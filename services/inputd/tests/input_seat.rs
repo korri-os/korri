@@ -433,6 +433,39 @@ fn disconnect_write_failure_is_reported_and_can_be_neutralized_on_retry() {
 }
 
 #[test]
+fn boot_keeps_devices_across_leases_and_revokes_old_mirror_authority() {
+    let backend = RecordingSeatBackend::default();
+    let probe = backend.clone();
+    let mut runtime = SeatRuntime::boot(backend).unwrap();
+    assert_eq!(probe.created_slots(), vec![1, 2, 3, 4]);
+    assert_eq!(
+        runtime.accept(&envelope(&connected(0), TOKEN), 1),
+        MirrorOutcome::StaleLaunch
+    );
+    runtime.bind(LAUNCH, TOKEN).unwrap();
+    assert_eq!(
+        runtime.accept(&envelope(&connected(0), TOKEN), 2),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    runtime.unbind().unwrap();
+    assert!(probe.destroyed_slots().is_empty());
+    assert_eq!(
+        runtime.accept(&envelope(&connected(0), TOKEN), 3),
+        MirrorOutcome::StaleLaunch
+    );
+    let other = "fedcba9876543210fedcba9876543210";
+    let other_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    runtime.bind(other, other_token).unwrap();
+    assert_eq!(
+        runtime.accept(&envelope(&connected(0), TOKEN), 4),
+        MirrorOutcome::Unauthorized
+    );
+    assert_eq!(probe.created_slots(), vec![1, 2, 3, 4]);
+    runtime.stop().unwrap();
+    assert_eq!(probe.destroyed_slots(), vec![4, 3, 2, 1]);
+}
+
+#[test]
 fn stop_releases_all_seats() {
     let backend = RecordingSeatBackend::default();
     let probe = backend.clone();

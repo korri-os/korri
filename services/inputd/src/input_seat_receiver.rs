@@ -176,6 +176,14 @@ fn run(options: Options) -> Result<(), String> {
     let sidecar_path = options.runtime_dir.join("sunshine-active-launch.json");
     remove_runtime_object(&mirror_path, true)?;
     remove_runtime_object(&sidecar_path, false)?;
+    let backend: Box<dyn SeatBackend> = if options.dry_run {
+        Box::new(DryBackend)
+    } else {
+        Box::new(UinputSeatBackend::new(options.event_gid))
+    };
+    // The receiver owns all four devices for its whole lifetime. A lease
+    // grants launch-scoped mirror authority, not device lifetime.
+    let mut runtime = SeatRuntime::boot(backend)?;
     let control = Listener::bind(&control_path, 0o660, options.control_gid)?;
     let mut generation = 0u64;
     while !STOPPING.load(Ordering::Relaxed) {
@@ -211,8 +219,11 @@ fn run(options: Options) -> Result<(), String> {
             generation,
             &mirror_path,
             &sidecar_path,
+            &mut runtime,
         ) {
-            eprintln!("korri-input-seat-receiver: launch seat service failed: {error}");
+            // A failed cleanup must not leave held input on devices reused
+            // by the next launch. Exit so the receiver drops the devices.
+            return Err(format!("launch seat service failed: {error}"));
         }
     }
     remove_runtime_object(&mirror_path, true)?;
@@ -233,46 +244,30 @@ fn serve_launch(
     generation: u64,
     mirror_path: &Path,
     sidecar_path: &Path,
+    runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
 ) -> Result<(), String> {
     let token = random_token()?;
-    let backend: Box<dyn SeatBackend> = if options.dry_run {
-        Box::new(DryBackend)
-    } else {
-        Box::new(UinputSeatBackend::new(options.event_gid))
-    };
-    let runtime = SeatRuntime::start(&launch_id, &token, backend)?;
-    let mirror = match Listener::bind(mirror_path, 0o660, options.sunshine_gid) {
-        Ok(value) => value,
-        Err(error) => {
-            let _ = runtime.stop();
-            return Err(error);
-        }
-    };
-    if let Err(error) = write_sidecar(
-        sidecar_path,
-        options.sunshine_gid,
-        &launch_id,
-        generation,
-        &token,
-    ) {
-        let _ = runtime.stop();
-        return Err(error);
-    }
-    if let Err(error) = send_reply(lease.as_raw_fd(), 0, REASON_NONE) {
-        let _ = remove_runtime_object(sidecar_path, false);
-        let _ = runtime.stop();
-        return Err(error);
-    }
-    let mut runtime = Some(runtime);
-    let active_result = serve_active_launch(
-        options,
-        control_listener,
-        &lease,
-        &mirror,
-        &launch_id,
-        runtime.as_mut().expect("active input-seat runtime"),
-    );
-    let cleanup_result = cleanup_launch(sidecar_path, runtime.take());
+    runtime.bind(&launch_id, &token)?;
+    let active_result = (|| {
+        let mirror = Listener::bind(mirror_path, 0o660, options.sunshine_gid)?;
+        write_sidecar(
+            sidecar_path,
+            options.sunshine_gid,
+            &launch_id,
+            generation,
+            &token,
+        )?;
+        send_reply(lease.as_raw_fd(), 0, REASON_NONE)?;
+        serve_active_launch(
+            options,
+            control_listener,
+            &lease,
+            &mirror,
+            &launch_id,
+            runtime,
+        )
+    })();
+    let cleanup_result = cleanup_launch(sidecar_path, runtime);
     match (active_result, cleanup_result) {
         (Ok(LaunchExit::StopRequested), Ok(())) => send_reply(lease.as_raw_fd(), 0, REASON_NONE),
         (Ok(LaunchExit::LeaseEnded), Ok(())) => Ok(()),
@@ -379,10 +374,10 @@ fn serve_active_launch(
 
 fn cleanup_launch(
     sidecar: &Path,
-    runtime: Option<SeatRuntime<Box<dyn SeatBackend>>>,
+    runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
 ) -> Result<(), String> {
     let sidecar_result = remove_runtime_object(sidecar, false);
-    let runtime_result = runtime.map(SeatRuntime::stop).unwrap_or(Ok(()));
+    let runtime_result = runtime.unbind();
     sidecar_result.and(runtime_result)
 }
 

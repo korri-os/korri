@@ -512,14 +512,6 @@ impl HostSessionControl {
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked
         ) {
             *state = self.recover();
-            if let ActiveState::Running { launch_id, .. } | ActiveState::Frozen { launch_id, .. } =
-                &*state
-            {
-                let launch_id = launch_id.clone();
-                if self.ensure_seats(&launch_id).is_err() {
-                    self.stop_game_after_seat_failure(state, &launch_id);
-                }
-            }
         }
     }
 
@@ -739,8 +731,6 @@ impl HostSessionControl {
                         // Preserve the compositor failure and keep the streamed
                         // seat revoked. Status observation never freezes or thaws
                         // a focus-failed game.
-                    } else if self.ensure_seats(&launch_id).is_err() {
-                        self.stop_game_after_seat_failure(&mut state, &launch_id);
                     } else if !matches!(&*state, ActiveState::Stopping { .. }) {
                         // An in-flight exact stop owns the Stopping state;
                         // only reconcile the freezer state of a live launch.
@@ -2751,7 +2741,7 @@ mod tests {
             .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
 
         assert!(matches!(control.status(), HostSessionStatus::Frozen { .. }));
-        assert_eq!(manager.state.lock().unwrap().starts, [id]);
+        assert!(manager.state.lock().unwrap().starts.is_empty());
         assert_eq!(
             control.thaw(id),
             HostSessionFreezeChange::Changed {
@@ -3409,7 +3399,7 @@ mod tests {
                 game_id: Some("recovered".into()),
             }
         );
-        assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
         assert_eq!(
             control
                 .prepare("two", None, Ok(&["game".into()]), &BTreeMap::new())
@@ -3436,7 +3426,7 @@ mod tests {
     }
 
     #[test]
-    fn seat_failure_recovery_stops_a_frozen_unit_by_thawing_first() {
+    fn failed_seat_return_from_recovered_frozen_unit_keeps_it_live() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -3448,16 +3438,15 @@ mod tests {
             Arc::new(FailingSeatManager),
         );
 
-        // Recovery of a frozen unit whose seats cannot be re-acquired stops
-        // the game through the backend, which thaws before stopping.
-        assert_eq!(
-            control.status(),
-            HostSessionStatus::Completed {
-                launch_id: id.into()
-            }
-        );
+        // Status does not open a lease. Return reports the failure without
+        // stopping a recovered game whose seats cannot be acquired.
+        assert!(matches!(control.status(), HostSessionStatus::Frozen { .. }));
+        assert!(matches!(
+            control.thaw(id),
+            HostSessionFreezeChange::FocusFailed { .. }
+        ));
         assert_eq!(backend.state.lock().unwrap().thawed, [id]);
-        assert_eq!(backend.state.lock().unwrap().stopped, [id]);
+        assert!(backend.state.lock().unwrap().stopped.is_empty());
     }
 
     #[test]
@@ -3666,7 +3655,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_reacquires_input_seats_and_replaces_a_dead_lease() {
+    fn status_never_opens_or_replaces_input_seats_but_return_does() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -3690,19 +3679,27 @@ mod tests {
                 game_id: Some("recovered".into()),
             }
         );
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 0);
+        assert!(matches!(
+            control.thaw(id),
+            HostSessionFreezeChange::Unchanged { .. }
+        ));
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
         alive.store(false, Ordering::SeqCst);
-        assert_eq!(
+        assert!(matches!(
             control.status(),
-            HostSessionStatus::Running {
-                launch_id: id.into(),
-                game_id: Some("recovered".into()),
-            }
-        );
+            HostSessionStatus::Running { .. }
+        ));
+        assert_eq!(manager.starts.load(Ordering::SeqCst), 1);
+        assert!(matches!(
+            control.thaw(id),
+            HostSessionFreezeChange::Unchanged { .. }
+        ));
         assert_eq!(manager.starts.load(Ordering::SeqCst), 2);
     }
 
     #[test]
-    fn failed_seat_recovery_stops_the_known_game_without_losing_stop_identity() {
+    fn failed_seat_return_keeps_the_known_game_without_losing_stop_identity() {
         let root = tempfile::tempdir().unwrap();
         let backend = Arc::new(DeterministicBackend::default());
         let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -3718,19 +3715,19 @@ mod tests {
         )
         .with_compositor(compositor, vec![PORTAL_APP_ID.to_string()]);
 
-        assert_eq!(
+        assert!(matches!(
             control.status(),
-            HostSessionStatus::Completed {
-                launch_id: id.into()
-            }
-        );
-        assert_eq!(backend.state.lock().unwrap().stopped, [id]);
-        assert_eq!(
+            HostSessionStatus::Running { .. }
+        ));
+        assert!(backend.state.lock().unwrap().stopped.is_empty());
+        assert!(matches!(
+            control.thaw(id),
+            HostSessionFreezeChange::FocusFailed { .. }
+        ));
+        assert!(matches!(
             control.stop(id),
-            HostSessionStop::Completed {
-                launch_id: id.into()
-            }
-        );
+            HostSessionStop::Completed { .. }
+        ));
     }
 
     #[test]

@@ -120,6 +120,16 @@ fn exact_start_mirror_and_stop_lifecycle() {
     wait_absent(&receiver.path("sunshine-active-launch.json"));
     wait_absent(&receiver.path("sunshine-input-seat.sock"));
     assert!(receiver.child.try_wait().unwrap().is_none());
+
+    let next = connect(&receiver.path("control.sock"));
+    send(next.as_raw_fd(), &request(1, OTHER));
+    assert_eq!(receive(next.as_raw_fd(), 3), [1, 0, 0]);
+    let next_sidecar: Value = serde_json::from_slice(&fs::read(&sidecar_path).unwrap()).unwrap();
+    assert_eq!(next_sidecar["launchId"], OTHER);
+    assert_eq!(next_sidecar["generation"], 2);
+    assert_ne!(next_sidecar["mirrorToken"], token);
+    send(next.as_raw_fd(), &request(2, OTHER));
+    assert_eq!(receive(next.as_raw_fd(), 3), [1, 0, 0]);
 }
 
 #[test]

@@ -100,9 +100,13 @@ pub struct SeatRuntime<B: SeatBackend> {
 }
 
 impl<B: SeatBackend> SeatRuntime<B> {
-    pub fn start(launch_id: &str, mirror_token: &str, mut backend: B) -> Result<Self, String> {
-        validate_launch_id(launch_id)?;
-        validate_token(mirror_token)?;
+    pub fn start(launch_id: &str, mirror_token: &str, backend: B) -> Result<Self, String> {
+        let mut runtime = Self::boot(backend)?;
+        runtime.bind(launch_id, mirror_token)?;
+        Ok(runtime)
+    }
+
+    pub fn boot(mut backend: B) -> Result<Self, String> {
         let mut created = Vec::new();
         for slot in 1..=MAX_SEATS {
             if let Err(error) = backend.create(&SeatSpec::for_slot(slot)) {
@@ -114,8 +118,8 @@ impl<B: SeatBackend> SeatRuntime<B> {
             created.push(slot);
         }
         Ok(Self {
-            launch_id: launch_id.to_owned(),
-            mirror_token: mirror_token.to_owned(),
+            launch_id: String::new(),
+            mirror_token: String::new(),
             backend: Some(backend),
             sources: BTreeMap::new(),
             last_state: [GamepadState::neutral(); MAX_SEATS as usize],
@@ -123,7 +127,50 @@ impl<B: SeatBackend> SeatRuntime<B> {
         })
     }
 
+    pub fn bind(&mut self, launch_id: &str, mirror_token: &str) -> Result<(), String> {
+        validate_launch_id(launch_id)?;
+        validate_token(mirror_token)?;
+        if !self.launch_id.is_empty() {
+            return Err("input-seat launch is already bound".into());
+        }
+        self.launch_id = launch_id.to_owned();
+        self.mirror_token = mirror_token.to_owned();
+        self.has_reset = false;
+        Ok(())
+    }
+
+    pub fn unbind(&mut self) -> Result<(), String> {
+        if self.launch_id.is_empty() {
+            return Ok(());
+        }
+        // Revoke mirror authority before the next launch can bind. Keep the
+        // devices live, but release every held button and axis.
+        self.launch_id.clear();
+        self.mirror_token.clear();
+        self.sources.clear();
+        self.has_reset = false;
+        let mut first_error = None;
+        for slot in 1..=MAX_SEATS {
+            if self.last_state[(slot - 1) as usize] != GamepadState::neutral() {
+                if let Err(error) = self
+                    .backend
+                    .as_mut()
+                    .ok_or("input-seat backend is absent")?
+                    .write_state(slot, GamepadState::neutral())
+                {
+                    first_error.get_or_insert(error);
+                } else {
+                    self.last_state[(slot - 1) as usize] = GamepadState::neutral();
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
     pub fn accept(&mut self, packet: &[u8], now_ms: u64) -> MirrorOutcome {
+        if self.launch_id.is_empty() {
+            return MirrorOutcome::StaleLaunch;
+        }
         let Some(envelope) = decode_envelope(packet) else {
             return MirrorOutcome::Invalid;
         };
@@ -207,7 +254,7 @@ impl<B: SeatBackend> SeatRuntime<B> {
     }
 
     pub fn reset(&mut self, launch_id: &str) -> SeatResetOutcome {
-        if launch_id != self.launch_id {
+        if self.launch_id.is_empty() || launch_id != self.launch_id {
             return SeatResetOutcome::StaleLaunch;
         }
         self.has_reset = true;
