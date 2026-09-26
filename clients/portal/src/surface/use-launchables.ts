@@ -569,7 +569,12 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   }, [identityProblem, korrid])
 
   const dismissIdentityStatus = useCallback(() => {
-    setIdentityManagement(current => current && ({ ...current, status: { _tag: "Idle" } }))
+    // Keep the same object when nothing changes: a new one would publish a new
+    // model, and a surface that dismisses on render would then loop.
+    setIdentityManagement(current =>
+      current === undefined || current.status._tag === "Idle"
+        ? current
+        : { ...current, status: { _tag: "Idle" } })
   }, [])
 
   const confirmEntry = useCallback(
