@@ -1,6 +1,11 @@
 # Retroid Pocket Mini V2 systems. The console system remains the verified
 # recovery baseline; the default configuration adds the Korri product session.
-{ nixpkgs, korri, plugins, ... }:
+{
+  nixpkgs,
+  korri,
+  plugins,
+  ...
+}:
 let
   mkPkgs =
     system:
@@ -22,18 +27,14 @@ let
     rpminiFirmware = firmwareCross;
     stdenv = crossPkgs.gcc15Stdenv;
   };
-  kernel = pkgs.callPackage ./kernel {
-    rpminiFirmware = firmware;
-    stdenv = pkgs.gcc15Stdenv;
-    kernelConfig = ./kernel/config-korri;
-  };
+  # Both product exports use this same off-device cross build and config contract.
   kernelCross = crossPkgs.callPackage ./kernel {
     rpminiFirmware = firmwareCross;
     stdenv = crossPkgs.gcc15Stdenv;
     kernelConfig = ./kernel/config-korri;
   };
-  # Retain the full ROCKNIX configuration as a diagnostic output. The recovery
-  # and product images use the two bounded profiles above.
+  # Retain the unchanged ROCKNIX configuration as a diagnostic output. Product
+  # uses that baseline plus the explicit delta; recovery stays on its TTY trim.
   kernelSourceGcc15 = crossPkgs.callPackage ./kernel {
     rpminiFirmware = firmwareCross;
     stdenv = crossPkgs.gcc15Stdenv;
@@ -54,7 +55,10 @@ let
   configuration = consoleConfiguration.extendModules {
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })
-      (import ../../product/image-plugins.nix { inherit korri plugins; device = "rpminiv2"; })
+      (import ../../product/image-plugins.nix {
+        inherit korri plugins;
+        device = "rpminiv2";
+      })
       ./portal.nix
     ];
   };
@@ -63,7 +67,6 @@ in
   inherit
     configuration
     consoleConfiguration
-    kernel
     kernelCross
     recoveryKernel
     recoveryKernelCross

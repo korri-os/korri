@@ -1,0 +1,48 @@
+# Product = the full ROCKNIX 20260901 Mini V2 `config` plus these changes.
+# Regenerate config-korri with derive-config-korri.py. The build checks the
+# resolved configuration against this contract before compiling the kernel.
+# Nix cross compiler and binutils, proven by the GCC 15 display boot.
+CONFIG_CC_VERSION_TEXT="aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0"
+CONFIG_GCC_VERSION=150200
+CONFIG_AS_VERSION=24400
+CONFIG_LD_VERSION=24400
+CONFIG_PAHOLE_VERSION=130
+# Binutils 2.44 cannot assemble LSUI (arm64/Kconfig requires >= 2.45).
+# CONFIG_AS_HAS_LSUI is not set
+# CONFIG_ARM64_LSUI is not set
+# Kernel cross compiler has no userspace linker in its configure environment.
+# CONFIG_CC_CAN_LINK is not set
+# ROCKNIX export carries inactive embedded-initramfs fields with SOURCE="".
+# NixOS passes a separate initrd; usr/Kconfig removes these fields.
+# CONFIG_INITRAMFS_ROOT_UID is not set
+# CONFIG_INITRAMFS_ROOT_GID is not set
+# CONFIG_INITRAMFS_COMPRESSION_GZIP is not set
+# NixOS firewall and signed plugin host iptables-nft rules.
+CONFIG_NF_TABLES=y
+CONFIG_NETFILTER_XT_TARGET_LOG=y
+CONFIG_IP6_NF_IPTABLES=y
+CONFIG_NF_LOG_SYSLOG=y
+CONFIG_NFT_COMPAT=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_LOG=y
+CONFIG_NFT_REJECT=y
+# Selected by NFT_REJECT/INET and XT_TARGET_LOG with IPv6 iptables built in.
+CONFIG_NFT_REJECT_INET=y
+CONFIG_NFT_REJECT_IPV4=y
+CONFIG_NFT_REJECT_IPV6=y
+CONFIG_NF_REJECT_IPV4=y
+CONFIG_NF_REJECT_IPV6=y
+CONFIG_NF_LOG_IPV6=y
+CONFIG_NETFILTER_XT_MATCH_COMMENT=y
+CONFIG_NETFILTER_XT_MATCH_MULTIPORT=y
+CONFIG_NETFILTER_XT_MATCH_PKTTYPE=y
+# NO_IOPORT_MAP cannot be enabled with PCI on ARM64 (arch/arm64/Kconfig).
+# Retain PCI for the QCA6390 radio rather than copying the obsolete trim value.
+# CONFIG_NO_IOPORT_MAP is not set
+# Internal UFS holds Android and the loader. Keep its host inaccessible.
+# CONFIG_SCSI_UFSHCD is not set
+# CONFIG_SCSI_UFSHCD_PLATFORM is not set
+# CONFIG_SCSI_UFS_QCOM is not set
+# CONFIG_SCSI_UFS_BSG is not set
+# PMIC RTC remains enabled from ROCKNIX, by owner choice on 2026-09-26.
+# Its first runtime load set 2066 before NTP corrected the clock.

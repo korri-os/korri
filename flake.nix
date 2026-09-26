@@ -198,7 +198,7 @@
           rpminiv2-sd-image = rpminiv2.sdImage;
           rpminiv2-korri-bundle = rpminiv2.configuration.config.services.korriBundle.initialPackage;
           rpminiv2-recovery-sd-image = rpminiv2.consoleSdImage;
-          rpminiv2-kernel = rpminiv2.kernel;
+          rpminiv2-kernel = rpminiv2.kernelCross;
           rpminiv2-recovery-kernel = rpminiv2.recoveryKernel;
           rpminiv2-firmware = rpminiv2.firmware;
           r36tmax-sd-image = r36tmax.sdImage;

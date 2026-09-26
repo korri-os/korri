@@ -24,7 +24,7 @@ the Git blob IDs in the pinned recursive Git tree before vendoring. The stable
 | `dts/sm8250-retroidpocket-common.dtsi` and board DTS files | `projects/ROCKNIX/devices/SM8250/linux/dts/qcom/*` |
 | `config` baseline | `/proc/config.gz` from official ROCKNIX `20260901` running on the target Mini V2 |
 | `config-tty-trim` | Hardware-proven TTY trim derived from that full baseline |
-| `config-korri` | Product delta restoring gamepad, fan PWM, PMIC thermal sensors, and the power key |
+| `config-korri` | Generated full ROCKNIX baseline plus `config-korri.delta` |
 
 `projects/ROCKNIX/packages/linux/package.mk` and `scripts/unpack` define the
 order: four mainline patches, three version patches, then 30 SM8250 patches,
@@ -42,7 +42,41 @@ DTSI. V2 overrides the panel compatible to `ch13726a,rpminiv2` and the touch
 coordinates to 1080 by 1240. The common DTSI still includes the kernel's native
 SM8250 and PM8150 family files.
 
-## NixOS differences
+## Product configuration contract
+
+The product now uses the complete `config` plus `config-korri.delta`, not a
+feature list restored into the TTY trim. Run `./derive-config-korri.py` after
+changing the delta. Keep the original `config` and recovery `config-tty-trim`
+unchanged. `next-image-config.test.py` checks the generated file and every
+resolved Kconfig value before compilation and again in the board check.
+Missing symbols and explicit `not set` both mean disabled; all enabled,
+module, string and numeric values must match exactly. There is no blanket
+exception for toolchain or dependency symbols. Both product kernel package
+exports use the same x86-to-ARM cross build as the image, by owner choice.
+ARM-only builders need an x86 builder or the prebuilt artifact. The separate
+native recovery kernel export remains unchanged.
+
+The delta records the Nix GCC 15.2/Binutils 2.44 toolchain probes, inactive
+embedded-initramfs fields, nftables compatibility and reject/log dependencies,
+and removal of the internal UFS host. `NO_IOPORT_MAP` is not a netfilter
+symbol. ARM64 Kconfig enables it only when PCI is disabled. The product keeps
+PCI for Wi-Fi, so that old trim value cannot survive resolution. The separate
+NixOS initrd remains unchanged.
+
+Touch, grouped stick LEDs, PMIC temperature alarms and the PMIC RTC come from
+the full ROCKNIX baseline. The owner chose to retain the RTC on 2026-09-26.
+Its first runtime driver load set the clock to 2066 before NTP corrected it.
+Correct offline timekeeping and a safe clock at boot remain unverified. Sway
+maps `generic_ft5x06_(8d)` touch to `DSI-1`, following ROCKNIX; physical touch
+alignment still needs testing.
+
+The quiet fan map remains product-only. The full baseline makes `pwm-fan` a
+module rather than built-in, and embeds the baseline firmware paths. The
+larger driver set increases build size and exposed kernel code. Exact config
+and DT checks do not prove physical input, charging safety or fan rotation.
+The build evidence below describes earlier kernels, not this new candidate.
+
+## Earlier NixOS differences
 
 The full `config` is the configuration exported by the working ROCKNIX
 `20260901` kernel. That boot bound DSI, DisplayPort and the Adreno GPU before
@@ -69,7 +103,7 @@ hardware-proven output has these properties:
 - module closure: 444 KB containing `g_serial` and its four selected function
   modules
 
-`config-korri` starts from that exact trim. It restores
+The earlier `config-korri` started from that exact trim. It restored
 `CONFIG_INPUT_JOYSTICK`, modular `CONFIG_JOYSTICK_RETROID`,
 `CONFIG_INPUT_MISC`, `CONFIG_INPUT_UINPUT`, and
 `CONFIG_INPUT_QCOM_SPMI_HAPTICS`. The patched Retroid module directly

@@ -7,6 +7,7 @@
   linuxManualConfig,
   rpminiFirmware,
   stdenv,
+  buildPackages,
   kernelConfig ? ./config-tty-trim,
   # linuxPackagesFor supplies features when it re-invokes this function.
   features ? { },
@@ -16,6 +17,17 @@ let
   version = "7.2";
   patchDir = ./patches;
   productFanMap = kernelConfig == ./config-korri;
+  configPolicy = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./config
+      ./config-korri
+      ./config-korri.delta
+      ./config-tty-trim
+      ./derive-config-korri.py
+      ./next-image-config.test.py
+    ];
+  };
   patchNames = lib.sort lib.lessThan (
     builtins.filter (name: lib.hasSuffix ".patch" name) (builtins.attrNames (builtins.readDir patchDir))
   );
@@ -56,6 +68,14 @@ kernel.overrideAttrs (previous: {
       chmod u+w arch/arm64/boot/dts/qcom/${dtbName}.dts
       printf '\n' >> arch/arm64/boot/dts/qcom/${dtbName}.dts
       cat ${./dts/sm8250-rpminiv2-korri-fan.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+    '';
+  # Catch silent Kconfig dependency changes before spending time on compilation.
+  nativeBuildInputs =
+    (previous.nativeBuildInputs or [ ]) ++ lib.optional productFanMap buildPackages.python3;
+  postConfigure =
+    (previous.postConfigure or "")
+    + lib.optionalString productFanMap ''
+      python3 ${configPolicy}/next-image-config.test.py --source-directory ${configPolicy} "$buildRoot/.config"
     '';
   passthru = (previous.passthru or { }) // {
     inherit dtbName kernelConfig;

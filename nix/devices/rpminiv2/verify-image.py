@@ -60,7 +60,7 @@ DTB_HASHES = {
 }
 KERNEL_HASHES = {
     "recovery": "cb88bd10b292d8202b49920ad9ff49cb6aa05f0aef4a94ec78b10a3caa38d71b",
-    "korri": "6f5b938b7590215bdb60d7d183729e12e06bffa2aadee9f8861a8f75e7dc7e30",
+    "korri": "94ad11c936850d25a09e204c2e7dd62cacdbe6de963ad6e3d99aa47f86249836",
 }
 STORE_NAME = r"[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+"
 

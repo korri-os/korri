@@ -45,8 +45,8 @@ in
 
   boot = {
     kernelPackages = lib.mkForce (pkgs.linuxPackagesFor rpminiKorriKernel);
-    # The bounded kernel has atkbd, ctr, loop and uinput built in and no TUN or
-    # kTLS. Keep only the two real root-time modules.
+    # Preserve the explicit root-time list rather than the generic NixOS list.
+    # Other ROCKNIX drivers load through their device aliases.
     kernelModules = lib.mkForce [
       "g_serial"
       "retroid"
@@ -68,11 +68,21 @@ in
   # no compositor key bindings are needed.
   services.korriLinuxInput.inputd.actions = {
     volume-up = {
-      command = [ "${pkgs.wireplumber}/bin/wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+" ];
+      command = [
+        "${pkgs.wireplumber}/bin/wpctl"
+        "set-volume"
+        "@DEFAULT_AUDIO_SINK@"
+        "5%+"
+      ];
       environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
     };
     volume-down = {
-      command = [ "${pkgs.wireplumber}/bin/wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-" ];
+      command = [
+        "${pkgs.wireplumber}/bin/wpctl"
+        "set-volume"
+        "@DEFAULT_AUDIO_SINK@"
+        "5%-"
+      ];
       environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
     };
   };
@@ -102,6 +112,7 @@ in
       # produces the handheld's 1240x1080 upright landscape layout.
       extraConfig = ''
         output DSI-1 transform 90 scale 1
+        input "0:0:generic_ft5x06_(8d)" map_to_output DSI-1
       '';
     };
   };
@@ -208,7 +219,7 @@ in
   assertions = [
     {
       assertion = config.boot.kernelPackages.kernel.kernelConfig == ./kernel/config-korri;
-      message = "The RP Mini V2 product must use the Korri kernel profile.";
+      message = "The RP Mini V2 product must use the checked ROCKNIX baseline plus the Korri delta.";
     }
     {
       assertion = lib.elem "g_serial" config.boot.kernelModules;

@@ -1,56 +1,76 @@
 #!/usr/bin/env python3
-"""Check resolved product Kconfig against the Mini V2 ROCKNIX source baseline."""
+"""Require exact resolved Kconfig equality with ROCKNIX plus the reviewed delta."""
 
 import argparse
+import importlib.util
 from pathlib import Path
 import unittest
 
 HERE = Path(__file__).resolve().parent
-FEATURES = {
-    "K1": "PCI PCIE_QCOM PCIE_QCOM_COMMON PHY_QCOM_QMP_PCIE CFG80211 MAC80211 ATH11K ATH11K_PCI RFKILL",
-    "K2": "BT BT_HCIUART BT_HCIUART_SERDEV BT_HCIUART_QCA BT_QCA BT_LE BT_HIDP",
-    "K3": "HID_PLAYSTATION HID_SONY HID_NINTENDO JOYSTICK_XPAD JOYSTICK_XPAD_FF",
-    "K4": "CHARGER_QCOM_SMB5 BATTERY_QCOM_FG",
-    "K5": "MEDIA_SUPPORT V4L_MEM2MEM_DRIVERS V4L2_MEM2MEM_DEV VIDEO_QCOM_VENUS",
-    "K6": "LEDS_HTR3212 LEDS_TRIGGERS LEDS_TRIGGER_TIMER LEDS_TRIGGER_HEARTBEAT LEDS_TRIGGER_CPU LEDS_TRIGGER_DEFAULT_ON LEDS_TRIGGER_PANIC",
-    "K7": "ZRAM ZRAM_DEF_COMP_LZORLE",
-    "K8": "SCSI BLK_DEV_SD USB_STORAGE EXFAT_FS NTFS3_FS",
-    "K9": "USB_USBNET USB_RTL8152",
-    "K10": "TUN WIREGUARD",
-    "K11": "WATCHDOG QCOM_WDT PSTORE PSTORE_RAM",
-}
+spec = importlib.util.spec_from_file_location(
+    "config_policy", HERE / "derive-config-korri.py"
+)
+policy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(policy)
 
 
-def settings(path):
-    result = {}
-    for line in path.read_text().splitlines():
-        if line.startswith("CONFIG_"):
-            name, value = line.split("=", 1)
-            result[name] = value
-        elif line.startswith("# CONFIG_") and line.endswith(" is not set"):
-            result[line.split()[1]] = "n"
-    return result
+class ConfigPolicy(unittest.TestCase):
+    def test_delta_changes_only_named_settings(self):
+        baseline = "CONFIG_TOUCH=y\nCONFIG_NET=m\n# CONFIG_UFS is not set\n"
+        self.assertEqual(
+            policy.derive(baseline, "CONFIG_NET=y\nCONFIG_RTC=y\n"),
+            "CONFIG_TOUCH=y\nCONFIG_NET=y\n# CONFIG_UFS is not set\nCONFIG_RTC=y\n",
+        )
+
+    def test_missing_and_disabled_are_equivalent(self):
+        self.assertEqual(policy.differences({"CONFIG_UFS": "n"}, {}), [])
+
+    def test_any_unreviewed_difference_fails(self):
+        expected = {"CONFIG_TOUCH": "y", "CONFIG_RTC": "m"}
+        for actual in (
+            {"CONFIG_RTC": "m"},
+            {"CONFIG_TOUCH": "m", "CONFIG_RTC": "m"},
+            {**expected, "CONFIG_UFS": "y"},
+            {**expected, "CONFIG_NEW_DRIVER": "m"},
+        ):
+            with self.subTest(actual=actual):
+                self.assertTrue(policy.differences(expected, actual))
+
+    def test_duplicate_or_malformed_settings_fail(self):
+        for text in (
+            "CONFIG_A=y\nCONFIG_A=m\n",
+            "CONFIG_A\n",
+            "# CONFIG_A broken\n",
+            " CONFIG_NFT_LOG=y\n",
+            "CONFG_NFT_LOG=y\n",
+            " # CONFIG_NFT_LOG is not set\n",
+        ):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                policy.settings(text)
 
 
 class NextImageConfig(unittest.TestCase):
-    def test_rocknix_values_survive_kernel_resolution(self):
-        baseline = settings(SOURCE_DIR / "config")
-        product = settings(SOURCE_DIR / "config-korri")
-        resolved = settings(Path(RESOLVED))
-        for slice_name, names in FEATURES.items():
-            for name in names.split():
-                symbol = f"CONFIG_{name}"
-                with self.subTest(slice=slice_name, symbol=symbol):
-                    self.assertIn(baseline.get(symbol), ("y", "m"))
-                    self.assertEqual(product.get(symbol), baseline[symbol])
-                    self.assertEqual(resolved.get(symbol), baseline[symbol])
+    def test_checked_in_product_is_derived_from_rocknix(self):
+        self.assertEqual((SOURCE_DIR / "config-korri").read_text(), EXPECTED_TEXT)
 
-    def test_recovery_config_is_still_a_separate_profile(self):
-        recovery = settings(SOURCE_DIR / "config-tty-trim")
-        self.assertEqual(recovery["CONFIG_PCI"], "n")
-        self.assertEqual(recovery["CONFIG_BT"], "n")
-        self.assertEqual(recovery["CONFIG_MEDIA_SUPPORT"], "n")
-        self.assertEqual(recovery["CONFIG_WATCHDOG"], "n")
+    def test_every_resolved_value_matches_baseline_plus_delta(self):
+        changes = policy.differences(
+            policy.settings(EXPECTED_TEXT), policy.settings(Path(RESOLVED).read_text())
+        )
+        self.assertEqual(
+            changes, [], "Unreviewed Kconfig changes:\n" + "\n".join(changes)
+        )
+
+    def test_internal_ufs_is_unavailable_and_rtc_is_retained(self):
+        resolved = policy.settings(Path(RESOLVED).read_text())
+        for name in ("SCSI_UFSHCD", "SCSI_UFSHCD_PLATFORM", "SCSI_UFS_QCOM"):
+            self.assertEqual(resolved.get(f"CONFIG_{name}", "n"), "n")
+        self.assertEqual(resolved["CONFIG_RTC_DRV_PM8XXX"], "y")
+
+    def test_recovery_config_remains_a_separate_profile(self):
+        recovery = policy.settings((SOURCE_DIR / "config-tty-trim").read_text())
+        for name in ("PCI", "BT", "MEDIA_SUPPORT", "WATCHDOG"):
+            self.assertEqual(recovery[f"CONFIG_{name}"], "n")
 
 
 if __name__ == "__main__":
@@ -60,4 +80,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     RESOLVED = args.resolved_config
     SOURCE_DIR = args.source_directory
+    EXPECTED_TEXT = policy.derive(
+        (SOURCE_DIR / "config").read_text(),
+        (SOURCE_DIR / "config-korri.delta").read_text(),
+    )
     unittest.main(argv=[__file__])

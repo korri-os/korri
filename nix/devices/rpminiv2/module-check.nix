@@ -49,7 +49,7 @@ let
   ];
   requiredProductKernelConfig = [
     "CONFIG_HWMON=y"
-    "CONFIG_SENSORS_PWM_FAN=y"
+    "CONFIG_SENSORS_PWM_FAN=m"
     "CONFIG_NEW_LEDS=y"
     "CONFIG_LEDS_CLASS=y"
     "CONFIG_LEDS_CLASS_MULTICOLOR=y"
@@ -57,6 +57,11 @@ let
     "CONFIG_IIO=y"
     "CONFIG_QCOM_SPMI_ADC5=y"
     "CONFIG_QCOM_SPMI_ADC_TM5=y"
+    "CONFIG_QCOM_SPMI_TEMP_ALARM=y"
+    "CONFIG_TOUCHSCREEN_EDT_FT5X06=y"
+    "CONFIG_LEDS_GROUP_MULTICOLOR=y"
+    "CONFIG_NVMEM_SPMI_SDAM=m"
+    "CONFIG_RTC_DRV_PM8XXX=y"
     "CONFIG_INPUT_PM8941_PWRKEY=y"
     "CONFIG_CGROUPS=y"
     "CONFIG_INPUT_EVDEV=y"
@@ -88,7 +93,7 @@ let
     "CONFIG_SND_SOC_WSA881X=m"
     "CONFIG_SOUNDWIRE_QCOM=m"
     "CONFIG_REMOTEPROC=y"
-    "CONFIG_QCOM_Q6V5_PAS=m"
+    "CONFIG_QCOM_Q6V5_PAS=y"
     "CONFIG_PID_NS=y"
     "CONFIG_SECCOMP=y"
     "CONFIG_SECCOMP_FILTER=y"
@@ -175,7 +180,9 @@ assert c.hardware.bluetooth.enable;
 assert c.systemd.services ? bluetooth;
 assert c.systemd.timers ? rpminiv2-va-macro-retry;
 assert c.systemd.timers.rpminiv2-va-macro-retry.timerConfig.OnBootSec == "20s";
-assert c.systemd.services.rpminiv2-va-macro-retry.unitConfig.ConditionPathExists == "!/proc/asound/RetroidPocket";
+assert
+  c.systemd.services.rpminiv2-va-macro-retry.unitConfig.ConditionPathExists
+  == "!/proc/asound/RetroidPocket";
 assert !recovery.hardware.bluetooth.enable;
 assert !(recovery.systemd.services ? bluetooth);
 assert c.networking.networkmanager.enable;
@@ -191,6 +198,10 @@ assert lib.versionOlder c.boot.kernelPackages.kernel.compilerVersion "16";
 assert lib.versionAtLeast recovery.boot.kernelPackages.kernel.compilerVersion "15";
 assert lib.versionOlder recovery.boot.kernelPackages.kernel.compilerVersion "16";
 assert c.boot.kernelPackages.kernel.drvPath != recovery.boot.kernelPackages.kernel.drvPath;
+assert
+  korri.packages.aarch64-linux.rpminiv2-kernel.drvPath
+  == korri.packages.x86_64-linux.rpminiv2-kernel.drvPath;
+assert c.boot.kernelPackages.kernel.drvPath == korri.packages.x86_64-linux.rpminiv2-kernel.drvPath;
 assert c.image.baseName == "nixos-rpminiv2-korri";
 assert recovery.image.baseName == "nixos-rpminiv2";
 assert
@@ -220,6 +231,8 @@ assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
 assert c.services.korriLinuxHost.compositor.mode == "1080x1240@60Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert lib.hasInfix "output DSI-1 transform 90 scale 1"
+  c.services.korriLinuxHost.compositor.extraConfig;
+assert lib.hasInfix ''input "0:0:generic_ft5x06_(8d)" map_to_output DSI-1''
   c.services.korriLinuxHost.compositor.extraConfig;
 assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
 assert
@@ -260,14 +273,24 @@ assert
 assert lib.hasInfix ''ATTRS{id}=="RetroidPocket"'' c.services.udev.extraRules;
 assert lib.hasInfix "rpminiv2-audio-boot.service" c.services.udev.extraRules;
 assert lib.hasInfix "PULSE_SERVER" (builtins.readFile c.services.korridLinuxDevice.deviceConfig);
-assert lib.hasSuffix "/bin/wpctl" (builtins.head c.services.korriLinuxInput.inputd.actions.volume-up.command);
-assert builtins.tail c.services.korriLinuxInput.inputd.actions.volume-up.command == [
-  "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"
-];
-assert lib.hasSuffix "/bin/wpctl" (builtins.head c.services.korriLinuxInput.inputd.actions.volume-down.command);
-assert builtins.tail c.services.korriLinuxInput.inputd.actions.volume-down.command == [
-  "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-"
-];
+assert lib.hasSuffix "/bin/wpctl" (
+  builtins.head c.services.korriLinuxInput.inputd.actions.volume-up.command
+);
+assert
+  builtins.tail c.services.korriLinuxInput.inputd.actions.volume-up.command == [
+    "set-volume"
+    "@DEFAULT_AUDIO_SINK@"
+    "5%+"
+  ];
+assert lib.hasSuffix "/bin/wpctl" (
+  builtins.head c.services.korriLinuxInput.inputd.actions.volume-down.command
+);
+assert
+  builtins.tail c.services.korriLinuxInput.inputd.actions.volume-down.command == [
+    "set-volume"
+    "@DEFAULT_AUDIO_SINK@"
+    "5%-"
+  ];
 assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
   "android-tools"
@@ -322,7 +345,7 @@ pkgs.runCommand "rpminiv2-module-check"
     export RP_MINIV2_PRODUCT_DTB=${c.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     export RP_MINIV2_RECOVERY_DTB=${recovery.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     python3 fan-map.test.py
-    python3 ${./kernel/next-image-config.test.py} \
+    python3 ${./kernel}/next-image-config.test.py \
       --source-directory ${./kernel} \
       ${c.boot.kernelPackages.kernel.dev}/lib/modules/${c.boot.kernelPackages.kernel.modDirVersion}/build/.config
     cp ${./thermal-readonly.sh} thermal-readonly.sh
