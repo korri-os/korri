@@ -1,15 +1,27 @@
+/* The question takes the whole room it is in, and is its own size container
+ * so it can fit that room wherever it is placed. Its font-size is the small
+ * face: a query's em here is 6 virtual pixels. */
 .pico-location-picker {
+	container: pico-picker / size;
 	position: absolute;
 	inset: 0;
 	z-index: 2;
 	display: grid;
 	place-items: center;
 	padding: var(--pico-u);
+	font-size: var(--pico-text-sm);
 	background: var(--pico-bg);
 }
 
 .pico-location-picker > * {
 	width: min(100%, calc(var(--pico-px) * 200));
+}
+
+/* Short: the title steps down a size, so every choice fits without a scroll. */
+@container pico-picker (height < 45em) {
+	.pico-location-picker > * {
+		--pico-title-xl: var(--pico-text-lg);
+	}
 }
 
 .pico-location-picker-list {

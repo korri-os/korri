@@ -1,13 +1,22 @@
 /* The screen behind a question goes solid: the question is all there is. The
  * scrim covers its nearest positioned ancestor, which is the screen body. */
 .pico-modal-scrim {
+	container: pico-modal / size;
 	position: absolute;
 	inset: 0;
 	z-index: 2;
 	display: grid;
 	place-items: center;
 	padding: var(--pico-u);
+	font-size: var(--pico-text-sm);
 	background: var(--pico-bg);
+}
+
+/* Short: the question's title steps down a size, so the answers fit. */
+@container pico-modal (height < 45em) {
+	.pico-modal {
+		--pico-title-xl: var(--pico-text-lg);
+	}
 }
 
 /* A column, not a grid: a flex item shrinks to the container's max-height,
