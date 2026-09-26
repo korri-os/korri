@@ -1,7 +1,8 @@
 # Pico
 
-Korri's 8-bit handheld surface: a PICO-8 palette, a bitmap face, and a shelf of
-cartridges where the focused game is held in the middle.
+Korri's fantasy-console surface: PICO-8's sixteen colours on black, Zep's
+PICO-8 glyphs, and a shelf of cartridges that take the shape of their art,
+with the chosen one large on a stage above them.
 
 Pico is a **surface**, not a theme file. It owns its own layout, components, and
 stylesheet, and it is designed to be one of several — and eventually to live in
@@ -10,9 +11,9 @@ its own repository.
 ## The boundary
 
 Pico depends on exactly one thing from Korri: the treaty in
-`contracts/surface/korri-surface.ts`, imported **for types only**, plus the
-shared token maths in `@korri/intrinsic-design`. A gate enforces it; there is no
-runtime dependency in either direction.
+`contracts/surface/korri-surface.ts`, imported **for types only**. Its only
+other import is `qrcode`, a pure encoder for the identity backup. A gate
+enforces both; there is no runtime dependency in either direction.
 
 What that forbids, deliberately:
 
@@ -33,7 +34,9 @@ a component; they will find what review misses.
 - `test/authoring-gate.test.ts` — every part default-exports a function and a
   name; every atom, molecule, and organism part roots in **one imported
   component** so it emits real Inspector controls; no raw colour or pixel value
-  outside `src/pico-tokens.css`; no inline styles; no forbidden import; no
+  outside `src/pico-tokens.css`; no colour blend of any kind (no `color-mix`,
+  fractional opacity or smooth gradient); the virtual pixel is registered and
+  derived from both axes; no inline styles; no forbidden import; no
   design-part registry and no story files.
 
 Every assertion has been observed failing against a deliberate tripwire. If you
@@ -47,8 +50,12 @@ nix run .#pico-check      # gates, behaviour tests, and typecheck
 
 ```
 src/
-  pico-tokens.css     the only file allowed a raw colour or pixel value
-  pico.css            entry: recipe, tokens, one stylesheet per component
+  pico-tokens.css     the only file allowed a raw colour or pixel value; the
+                      palette, the virtual pixel and every role
+  pico-motion.css     stepped keyframes only; nothing in Pico eases
+  pico.css            entry: tokens, motion, one stylesheet per component
+  fonts/              pico8-glyphs.txt (the design) and pico8.woff2 (built)
+  fixtures/           the fixture host, and sample-art.ts (generated covers)
   PicoSurface.tsx     the composition root — the only file that reads the treaty
   pico-screen-view.ts what the screen shows, decided once: status outranks catalog
   pico-home-view.ts   catalog -> the home's own tagged state, converted once
@@ -60,6 +67,32 @@ Each component carries its own `<Name>.css` and `<Name>.<layer>.part.tsx`
 beside it. A class name is prefixed with the component that owns it, which is
 what makes a duplicated visual decision a build failure rather than a slow
 drift.
+
+`scripts/` holds the two generators. Both are deterministic Nix-shebang
+scripts, and their output is committed:
+
+```sh
+./scripts/build-font.py         # src/fonts/pico8.woff2 from pico8-glyphs.txt
+./scripts/draw-sample-art.py    # src/fixtures/sample-art.ts, original covers
+```
+
+## The look
+
+- **One virtual pixel.** `--pico-px` is the screen's short side divided by
+  360, in whole device pixels, never below 2. Every size is a multiple of it,
+  and type is a whole number of glyph pixels, so the face never blurs.
+- **Sixteen colours, nothing between them.** Under a question the screen goes
+  solid; focus is a hard shadow that colour-cycles, the way PICO-8's cursor
+  does.
+- **Carts take the shape of their art.** Covers are remapped to the palette at
+  their own ratio, about 64 × 64 palette pixels by area, and never cropped. A
+  game with no art gets a square sticker with its initials.
+- **Cards say what they are by colour.** Yellow asks, red warns, blue tells.
+- **Layout answers the container, not the device.** The body, the stage, the
+  shelf and the launch slot are size containers; thresholds are in em of the
+  small face, so they scale with the pixel. The ladder checked is 1920×1080,
+  1280×720, 640×480, 480×800, 1280×300 and 320×240. Every threshold is a
+  guess until measured on the real panels.
 
 ## Supported UI
 
