@@ -161,6 +161,10 @@ let
   productFailures = productCheck.validate "rpminiv2" configuration;
   idle = c.systemd.services.rpminiv2-display-idle;
   thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
+  dtDriverCheck = import ./kernel/dt-driver-check.nix {
+    inherit pkgs;
+    kernel = c.boot.kernelPackages.kernel;
+  };
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -345,6 +349,7 @@ pkgs.runCommand "rpminiv2-module-check"
     export RP_MINIV2_PRODUCT_DTB=${c.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     export RP_MINIV2_RECOVERY_DTB=${recovery.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     python3 fan-map.test.py
+    cat ${dtDriverCheck}
     python3 ${./kernel}/next-image-config.test.py \
       --source-directory ${./kernel} \
       ${c.boot.kernelPackages.kernel.dev}/lib/modules/${c.boot.kernelPackages.kernel.modDirVersion}/build/.config
