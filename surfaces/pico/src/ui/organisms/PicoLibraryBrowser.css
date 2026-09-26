@@ -69,14 +69,19 @@
 
 /* Short: flat keys, so the whole keyboard fits and results keep a row. */
 @container pico-body (height < 50em) {
-	.pico-library-browser {
+	.pico-library-browser-find {
 		--pico-key-ratio: 2;
 	}
 }
 
+/* Each custom property is declared once per selector: a design tool keys its
+ * controls by property and selector, and a second declaration collides. */
 @container pico-body (width < 90em) {
-	.pico-library-browser {
+	.pico-library-browser .pico-library-browser-find {
 		--pico-key-ratio: 2.2;
+	}
+
+	.pico-library-browser {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, auto) minmax(0, 1fr);
 		gap: var(--pico-u);

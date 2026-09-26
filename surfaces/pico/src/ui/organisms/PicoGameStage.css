@@ -63,7 +63,7 @@
 		align-items: start;
 	}
 
-	.pico-game-stage-art {
+	.pico-game-stage-layout > .pico-game-stage-art {
 		--pico-cart-art-w: calc(100cqw - var(--pico-px) * 40);
 		--pico-cart-art-h: 40cqh;
 		justify-items: center;

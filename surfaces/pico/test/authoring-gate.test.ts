@@ -247,6 +247,31 @@ describe("the pixel is Pico's own", () => {
   })
 })
 
+describe("design inputs are addressable", () => {
+  /**
+   * Caliper lists every custom property a stylesheet declares, keyed by
+   * property and selector. Declaring one twice for the same selector — once
+   * plainly and again inside a container query — gives two controls one key,
+   * and the design tool's own list breaks. A container-query override uses a
+   * more specific selector instead.
+   */
+  test("no selector declares the same custom property twice", () => {
+    const offenders = cssFiles.flatMap((file) => {
+      const source = read(file).replace(/\/\*[\s\S]*?\*\//g, "")
+      const seen = new Map<string, number>()
+      for (const [, selector, body] of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        for (const [, property] of (body ?? "").matchAll(/(--[a-z0-9-]+)\s*:/g)) {
+          const key = `${(selector ?? "").trim()} ${property}`
+          seen.set(key, (seen.get(key) ?? 0) + 1)
+        }
+      }
+      return [...seen.entries()].filter(([, count]) => count > 1).map(([key]) => `${rel(file)}: ${key}`)
+    })
+
+    expect(offenders.sort()).toEqual([])
+  })
+})
+
 describe("sixteen colours and nothing between them", () => {
   /**
    * PICO-8 cannot blend. A colour mix, a see-through layer or a smooth

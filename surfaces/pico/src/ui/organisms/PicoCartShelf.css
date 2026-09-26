@@ -53,7 +53,7 @@
 
 /* A short shelf: smaller carts, same rule. */
 @container pico-shelf (height < 30em) {
-	.pico-cart-shelf-rack {
+	.pico-cart-shelf .pico-cart-shelf-rack {
 		--pico-shelf-art-w: calc(var(--pico-px) * 20);
 		--pico-shelf-art-h: calc(var(--pico-px) * 36);
 		gap: calc(var(--pico-px) * 3);
