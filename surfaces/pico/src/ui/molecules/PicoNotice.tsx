@@ -1,3 +1,4 @@
+import "./PicoNotice.css"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "./PicoCard"
 

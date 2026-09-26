@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoTabs.css"
 /**
  * Sections as cartridge spines stood in a column; the chosen one is pulled
  * out towards the card it opens.

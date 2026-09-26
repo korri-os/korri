@@ -1,3 +1,4 @@
+import "./PicoButtonBar.css"
 import { PicoHint, type PicoHintKey } from "../atoms/PicoHint"
 
 export interface PicoButtonBarHint {

@@ -1,0 +1,10 @@
+/* The catalog's own layer. It exists to catch a press that is only meant to
+ * wake the screen, so that press can be stopped before it reaches a control. */
+.pico-catalog-surface {
+	position: relative;
+	height: 100%;
+}
+
+.pico-catalog-surface[hidden] {
+	display: none;
+}

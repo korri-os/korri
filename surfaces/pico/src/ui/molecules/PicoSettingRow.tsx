@@ -1,3 +1,4 @@
+import "./PicoSettingRow.css"
 import type { PicoSettingRowView } from "../../pico-settings-view"
 import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoRow } from "../atoms/PicoRow"

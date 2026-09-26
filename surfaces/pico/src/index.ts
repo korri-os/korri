@@ -6,6 +6,7 @@
  * that already renders React. Nothing else is exported; everything below this
  * file is Pico's business and may change without a host caring.
  */
+import "./pico-tokens.css"
+import "./pico.css"
 export { PicoSurface } from "./PicoSurface"
 export { picoSurface } from "./mount"
-import "./pico.css"

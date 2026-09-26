@@ -1,3 +1,4 @@
+import "./PicoSurface.css"
 import type {
   SurfaceAction,
   SurfaceGameplayOverlayPresentation,

@@ -1,3 +1,4 @@
+import "./PicoLocationPicker.css"
 import type { PicoShelfLocation } from "../../pico-shelf-game"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "../molecules/PicoCard"
@@ -22,15 +23,17 @@ export function PicoLocationPicker({
 }) {
   return (
     <section aria-label="PLAY WHERE?" className="pico-location-picker">
-      <PicoCard kicker="PLAY WHERE?" title={title} tone="ask">
-        <ul className="pico-location-picker-list">
-          {locations.map((location) => (
-            <li className="pico-location-picker-item" key={location.id}>
-              <PicoRow label={location.label} onPress={() => onChoose(location.id)} />
-            </li>
-          ))}
-        </ul>
-      </PicoCard>
+      <div className="pico-location-picker-content">
+        <PicoCard kicker="PLAY WHERE?" title={title} tone="ask">
+          <ul className="pico-location-picker-list">
+            {locations.map((location) => (
+              <li className="pico-location-picker-item" key={location.id}>
+                <PicoRow label={location.label} onPress={() => onChoose(location.id)} />
+              </li>
+            ))}
+          </ul>
+        </PicoCard>
+      </div>
     </section>
   )
 }

@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoAttract.css"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoCart } from "../molecules/PicoCart"
 

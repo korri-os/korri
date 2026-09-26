@@ -1,3 +1,4 @@
+import "./PicoPanelScreen.css"
 import type { ReactNode } from "react"
 import { PicoCard } from "../molecules/PicoCard"
 import { PicoTabs, picoTabShell } from "../molecules/PicoTabs"

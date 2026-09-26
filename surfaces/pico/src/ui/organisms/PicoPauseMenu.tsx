@@ -1,3 +1,4 @@
+import "./PicoPauseMenu.css"
 import type { PicoOverlayControlView, PicoOverlayView } from "../../pico-overlay-view"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "../molecules/PicoCard"

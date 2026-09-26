@@ -1,3 +1,4 @@
+import "./PicoResumeList.css"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoResultRow } from "../molecules/PicoResultRow"
 

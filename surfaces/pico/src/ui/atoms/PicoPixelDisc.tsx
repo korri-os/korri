@@ -1,3 +1,4 @@
+import "./PicoPixelDisc.css"
 /**
  * A disc drawn on an 8×8 grid.
  *

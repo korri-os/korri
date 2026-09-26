@@ -1,3 +1,4 @@
+import "./PicoPaletteBar.css"
 /** Sixteen, in PICO-8's own order. The count is the design, not a setting. */
 const CELLS = Array.from({ length: 16 }, (_, index) => index)
 

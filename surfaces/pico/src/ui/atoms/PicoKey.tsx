@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoKey.css"
 /**
  * One key on the on-screen keyboard.
  *

@@ -1,64 +1,5 @@
-/**
- * Pico's stylesheet entry.
- *
- * Import order is the dependency order: tokens and motion, then one
- * stylesheet per component. Every component stylesheet sits beside its
- * component and owns only class names prefixed with that component's own name
- * — which is what makes a duplicated visual decision a build failure rather
- * than a slow drift nobody sees.
- */
-@import "./pico-tokens.css";
-@import "./pico-motion.css";
-@import "./ui/atoms/PicoBadge.css";
-@import "./ui/atoms/PicoButton.css";
-@import "./ui/atoms/PicoChip.css";
-@import "./ui/atoms/PicoClock.css";
-@import "./ui/atoms/PicoCoverArt.css";
-@import "./ui/atoms/PicoHint.css";
-@import "./ui/atoms/PicoKey.css";
-@import "./ui/atoms/PicoPaletteBar.css";
-@import "./ui/atoms/PicoPixelDisc.css";
-@import "./ui/atoms/PicoRow.css";
-@import "./ui/atoms/PicoSegments.css";
-@import "./ui/atoms/PicoStat.css";
-@import "./ui/atoms/PicoSub.css";
-@import "./ui/atoms/PicoTally.css";
-@import "./ui/atoms/PicoTitle.css";
-@import "./ui/molecules/PicoButtonBar.css";
-@import "./ui/molecules/PicoCard.css";
-@import "./ui/molecules/PicoCart.css";
-@import "./ui/molecules/PicoControlRow.css";
-@import "./ui/molecules/PicoGameFacts.css";
-@import "./ui/molecules/PicoKeyboard.css";
-@import "./ui/molecules/PicoNotice.css";
-@import "./ui/molecules/PicoQueryField.css";
-@import "./ui/molecules/PicoResultRow.css";
-@import "./ui/molecules/PicoSettingRow.css";
-@import "./ui/molecules/PicoStatRun.css";
-@import "./ui/molecules/PicoStatusBar.css";
-@import "./ui/molecules/PicoTabs.css";
-@import "./ui/organisms/PicoAttract.css";
-@import "./ui/organisms/PicoCartGrid.css";
-@import "./ui/organisms/PicoCartShelf.css";
-@import "./ui/organisms/PicoGameActions.css";
-@import "./ui/organisms/PicoGameDetail.css";
-@import "./ui/organisms/PicoGameHero.css";
-@import "./ui/organisms/PicoGameStage.css";
-@import "./ui/organisms/PicoIdentityDialog.css";
-@import "./ui/organisms/PicoLaunchStage.css";
-@import "./ui/organisms/PicoLibraryBrowser.css";
-@import "./ui/organisms/PicoLocationPicker.css";
-@import "./ui/organisms/PicoModal.css";
-@import "./ui/organisms/PicoPauseMenu.css";
-@import "./ui/organisms/PicoResumeList.css";
-@import "./ui/organisms/PicoRunnerPicker.css";
-@import "./ui/organisms/PicoSettingsPanel.css";
-@import "./ui/templates/PicoGameOverlay.css";
-@import "./ui/templates/PicoPanelScreen.css";
-@import "./ui/templates/PicoScreenShell.css";
-@import "./pages/PicoHome.css";
-@import "./pages/PicoSettings.css";
-
+/** Global font, reset, screen scope and reduced motion only.
+ * Tokens are imported by index.ts; components import their own styles. */
 /* Built from src/fonts/pico8-glyphs.txt by scripts/build-font.py. Vendored,
  * not fetched: a preview and a handheld both have to render with no network. */
 @font-face {
@@ -116,17 +57,6 @@
 	border: 0;
 	border-radius: 0;
 	cursor: pointer;
-}
-
-/* The catalog's own layer. It exists to catch a press that is only meant to
- * wake the screen, so that press can be stopped before it reaches a control. */
-.pico-catalog-surface {
-	position: relative;
-	height: 100%;
-}
-
-.pico-catalog-surface[hidden] {
-	display: none;
 }
 
 /**

@@ -1,3 +1,4 @@
+import "./PicoKeyboard.css"
 import { PicoKey } from "../atoms/PicoKey"
 
 const ROWS = ["ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ0123", "456789"] as const

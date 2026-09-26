@@ -1,3 +1,4 @@
+import "./PicoBadge.css"
 /**
  * A small pill stating a condition: SAVING, FAILED, NEW.
  *

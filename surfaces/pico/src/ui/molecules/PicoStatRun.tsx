@@ -1,3 +1,4 @@
+import "./PicoStatRun.css"
 import { PicoStat } from "../atoms/PicoStat"
 
 /**

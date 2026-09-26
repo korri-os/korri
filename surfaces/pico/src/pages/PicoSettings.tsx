@@ -1,3 +1,4 @@
+import "./PicoSettings.css"
 import { useState } from "react"
 import type { PicoConfirmation, PicoSettingRowView, PicoSettingsView } from "../pico-settings-view"
 import { PicoNotice } from "../ui/molecules/PicoNotice"

@@ -1,3 +1,4 @@
+import "./PicoStat.css"
 /**
  * One fact: a figure with its caption beneath.
  *

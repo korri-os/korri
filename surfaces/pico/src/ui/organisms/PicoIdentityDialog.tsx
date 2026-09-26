@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoIdentityDialog.css"
 import type {
   SurfaceIdentityDisposition,
   SurfaceIdentityManagement,

@@ -25,7 +25,7 @@ What that forbids, deliberately:
 
 ## The gates are the specification
 
-Two test files hold the rules that prose cannot enforce. Read them before adding
+Three test files hold the rules that prose cannot enforce. Read them before adding
 a component; they will find what review misses.
 
 - `test/decomposition-gate.test.ts` — every rendered unit is a component with a
@@ -38,6 +38,12 @@ a component; they will find what review misses.
   fractional opacity or smooth gradient); the virtual pixel is registered and
   derived from both axes; no inline styles; no forbidden import; no
   design-part registry and no story files.
+
+- `test/css-ownership-gate.test.ts` checks that components import their own CSS,
+  shared motion has explicit consumers, and global CSS stays limited to screen
+  scope. It rejects CSS import chains, foreign classes and wildcard child
+  selectors. Its ownership checks cover static class names, not every possible
+  selector match.
 
 Every assertion has been observed failing against a deliberate tripwire. If you
 add one, break it once before you trust it.
@@ -53,7 +59,8 @@ src/
   pico-tokens.css     the only file allowed a raw colour or pixel value; the
                       palette, the virtual pixel and every role
   pico-motion.css     stepped keyframes only; nothing in Pico eases
-  pico.css            entry: tokens, motion, one stylesheet per component
+  pico.css            global font, reset, screen scope and reduced motion
+  PicoSurface.css     catalog-surface rules owned by the composition root
   fonts/              pico8-glyphs.txt (the design) and pico8.woff2 (built)
   fixtures/           the fixture host, and sample-art.ts (generated covers)
   PicoSurface.tsx     the composition root — the only file that reads the treaty
@@ -63,10 +70,29 @@ src/
   pages/
 ```
 
-Each component carries its own `<Name>.css` and `<Name>.<layer>.part.tsx`
-beside it. A class name is prefixed with the component that owns it, which is
-what makes a duplicated visual decision a build failure rather than a slow
-drift.
+Each component imports its sibling `<Name>.css` from its `.tsx` file. It carries
+its `<Name>.<layer>.part.tsx` beside it. A stylesheet styles only elements its
+component renders. It must not target another component's classes or arbitrary
+children. Class names identify their owner.
+
+Share values through tokens and structure through components. A component that
+uses shared keyframes imports `pico-motion.css` itself. Do not use CSS `@import`:
+Vite can read those files outside Caliper's take overlay. Explicit JS/TS imports
+keep stylesheet dependencies visible and let takes replace those files.
+
+`src/index.ts` imports tokens and global screen CSS. Import the public package
+entry to load the complete surface. The `./pico.css` export contains only the
+font, reset and screen scope; it does not load tokens or component styles alone.
+
+Parents can set documented custom properties on their own elements. For example,
+Notice and LocationPicker set `--pico-card-width`; Card owns the width rule.
+`--pico-title-xl` lets a short container reduce large titles. Layout-neutral
+content elements own that inherited setting inside size containers. They do not
+style the children directly. Shared styles stay shared; repeated declarations
+such as `display: grid` need no abstraction.
+
+Import order now follows component dependencies. Verify browser output when
+changing ownership, since a hidden cascade dependency can change the result.
 
 `scripts/` holds the two generators. Both are deterministic Nix-shebang
 scripts, and their output is committed:
@@ -116,9 +142,14 @@ bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
 Caliper finds everything else from the source: the 52 `*.part.tsx` files, the
-entry (`package.json` `exports["."]`), the global CSS (`src/pico.css`, imported
-by `src/index.ts`) and the wrapper (`<div className="pico-theme pico-screen">`
-in `src/PicoSurface.tsx`). Its Setup panel shows where each came from.
+entry (`package.json` `exports["."]`), stylesheets and the wrapper
+(`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
+panel shows where each came from.
+
+Caliper currently loads all side-effect stylesheet imports reachable from the
+entry into each preview, including component CSS. Pico's explicit imports make
+ownership visible, but do not change that Caliper behavior. Check direct
+component loading as well, so the preview cannot hide a missing import.
 
 Without a linked Caliper, `bun install` reports one package it cannot install.
 The portal's production install skips dev dependencies and is not affected.

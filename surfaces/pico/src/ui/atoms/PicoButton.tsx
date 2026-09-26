@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoButton.css"
 /**
  * What a button says about itself: `go` is the one thing the screen wants
  * pressed, `quiet` is a real choice that is not the main one, and `danger`

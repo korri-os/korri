@@ -259,24 +259,3 @@ describe("parts demonstrate only what Korri publishes", () => {
     expect(offenders.map((f) => relative(SRC, f))).toEqual([])
   })
 })
-
-describe("every stylesheet is reachable", () => {
-  /**
-   * A component's CSS sits beside it, and pico.css imports each one by hand. A
-   * file that is written and never imported styles nothing — the component
-   * renders in the browser's defaults and looks like a bug in the component,
-   * which is exactly how the detail screen first appeared: unstyled headings
-   * in the terminal face and no dither on a cart the shelf drew fine.
-   */
-  test("every component stylesheet is imported by pico.css", () => {
-    const entry = readFileSync(join(SRC, "pico.css"), "utf8")
-    const imported = new Set(
-      [...entry.matchAll(/@import\s+"\.\/([^"]+)"/g)].map((m) => m[1]),
-    )
-    const missing = allFiles
-      .filter((f) => f.endsWith(".css") && basename(f) !== "pico.css")
-      .map((f) => relative(SRC, f))
-      .filter((rel) => !imported.has(rel))
-    expect(missing).toEqual([])
-  })
-})

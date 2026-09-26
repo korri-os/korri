@@ -1,3 +1,4 @@
+import "./PicoModal.css"
 import { useEffect, useId, useRef } from "react"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "../molecules/PicoCard"

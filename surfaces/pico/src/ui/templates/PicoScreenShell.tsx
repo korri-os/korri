@@ -1,3 +1,4 @@
+import "./PicoScreenShell.css"
 import type { ReactNode } from "react"
 import {
   PicoButtonBar,
@@ -32,7 +33,9 @@ export function PicoScreenShell({
   return (
     <div className="pico-screen-shell">
       <PicoStatusBar clockLabel={clockLabel} label={label} place={place} />
-      <main className="pico-screen-shell-body">{children}</main>
+      <main className="pico-screen-shell-body">
+        <div className="pico-screen-shell-content">{children}</div>
+      </main>
       <PicoButtonBar hints={hints} readout={readout} />
     </div>
   )

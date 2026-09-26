@@ -1,3 +1,4 @@
+import "./PicoCartShelf.css"
 import { useEffect, useRef, useState } from "react"
 import { picoStatsFor } from "../../pico-detail-view"
 import type { PicoShelfGame } from "../../pico-shelf-game"

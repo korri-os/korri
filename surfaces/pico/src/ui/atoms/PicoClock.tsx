@@ -1,3 +1,4 @@
+import "./PicoClock.css"
 /**
  * The clock.
  *

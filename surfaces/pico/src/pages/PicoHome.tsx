@@ -1,3 +1,4 @@
+import "./PicoHome.css"
 import { picoStatsFor } from "../pico-detail-view"
 import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"

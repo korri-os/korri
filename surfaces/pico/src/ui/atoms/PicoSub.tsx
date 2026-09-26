@@ -1,3 +1,4 @@
+import "./PicoSub.css"
 /**
  * The line under a title: where a game came from, or what a screen is for.
  *

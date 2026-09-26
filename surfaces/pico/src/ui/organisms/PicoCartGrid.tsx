@@ -1,3 +1,4 @@
+import "./PicoCartGrid.css"
 import type { PicoCollection } from "../../pico-library-view"
 import { PicoCart } from "../molecules/PicoCart"
 

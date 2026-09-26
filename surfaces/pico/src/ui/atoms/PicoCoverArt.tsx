@@ -1,3 +1,4 @@
+import "./PicoCoverArt.css"
 import { picoInitials } from "../../pico-initials"
 import { picoLabelFor } from "../../pico-label"
 import { usePicoQuantizedArt } from "../../use-pico-quantized-art"

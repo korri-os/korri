@@ -2,6 +2,8 @@
  * A cartridge-shaped card. The shell colour says what kind of card it is; the
  * --pico-row-* colours it sets are read by the rows inside it: dark rows on
  * the plastic, and a light plate for the cursor.
+ * Parents may set --pico-card-width on their own element to constrain a card.
+ * With no constraint the card keeps its normal grid or block sizing.
  */
 .pico-card {
 	--pico-card-shell: var(--pico-shell-ask);
@@ -17,6 +19,7 @@
 	align-content: start;
 	gap: var(--pico-u);
 	min-width: 0;
+	width: var(--pico-card-width, auto);
 	max-height: 100%;
 	margin: 0 calc(var(--pico-drop-lg) + var(--pico-px)) calc(var(--pico-drop-lg) + var(--pico-px)) 0;
 	padding: calc(var(--pico-px) * 8) calc(var(--pico-px) * 7) calc(var(--pico-px) * 6);

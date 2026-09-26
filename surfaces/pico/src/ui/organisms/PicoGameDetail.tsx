@@ -1,3 +1,4 @@
+import "./PicoGameDetail.css"
 import type { SurfaceAction } from "@contracts/surface/korri-surface"
 import type { PicoDetailView } from "../../pico-detail-view"
 import { PicoButton } from "../atoms/PicoButton"

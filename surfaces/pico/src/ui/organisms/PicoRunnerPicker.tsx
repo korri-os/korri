@@ -1,3 +1,4 @@
+import "./PicoRunnerPicker.css"
 import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import { PicoRow } from "../atoms/PicoRow"

@@ -2,6 +2,7 @@
  * so it can fit that room wherever it is placed. Its font-size is the small
  * face: a query's em here is 6 virtual pixels. */
 .pico-location-picker {
+	--pico-card-width: min(100%, calc(var(--pico-px) * 200));
 	container: pico-picker / size;
 	position: absolute;
 	inset: 0;
@@ -13,13 +14,14 @@
 	background: var(--pico-bg);
 }
 
-.pico-location-picker > * {
-	width: min(100%, calc(var(--pico-px) * 200));
+/* Own the inherited title setting without adding a box to the grid. */
+.pico-location-picker-content {
+	display: contents;
 }
 
 /* Short: the title steps down a size, so every choice fits without a scroll. */
 @container pico-picker (height < 45em) {
-	.pico-location-picker > * {
+	.pico-location-picker-content {
 		--pico-title-xl: var(--pico-text-lg);
 	}
 }

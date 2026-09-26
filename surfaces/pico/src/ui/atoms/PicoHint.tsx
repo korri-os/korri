@@ -1,3 +1,4 @@
+import "./PicoHint.css"
 import { PicoPixelDisc } from "./PicoPixelDisc"
 
 /**

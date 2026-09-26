@@ -1,3 +1,4 @@
+import "./PicoGameStage.css"
 import type { ReactNode } from "react"
 import { PicoCart } from "../molecules/PicoCart"
 import { PicoGameFacts } from "../molecules/PicoGameFacts"

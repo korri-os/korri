@@ -1,3 +1,4 @@
+import "./PicoStatusBar.css"
 import { PicoClock } from "../atoms/PicoClock"
 import { PicoPaletteBar } from "../atoms/PicoPaletteBar"
 

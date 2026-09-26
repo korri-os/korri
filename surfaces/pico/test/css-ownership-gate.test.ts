@@ -1,0 +1,115 @@
+/**
+ * CSS dependencies belong to the modules that use them. A part must not need
+ * an unrelated component or a global import list to look right. These checks
+ * cover Pico's static class names and side-effect imports, not arbitrary CSS.
+ */
+import { describe, expect, test } from "bun:test"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { dirname, join, relative, resolve } from "node:path"
+import ts from "typescript"
+
+const SRC = join(import.meta.dir, "..", "src")
+function walk(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const file = join(dir, entry.name)
+    return entry.isDirectory() ? walk(file) : [file]
+  })
+}
+const files = walk(SRC)
+const cssFiles = files.filter(file => file.endsWith(".css"))
+const modules = files.filter(file => /\.tsx?$/.test(file) && !file.endsWith(".part.tsx"))
+const globalFiles = ["pico.css", "pico-tokens.css"].map(file => join(SRC, file))
+const motionFile = join(SRC, "pico-motion.css")
+const ownedFiles = cssFiles.filter(file => ![...globalFiles, motionFile].includes(file))
+const read = (file: string) => readFileSync(file, "utf8")
+const rel = (file: string) => relative(SRC, file)
+const css = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "")
+const sources = new Map(modules.map(file => [file, ts.createSourceFile(
+  file, read(file), ts.ScriptTarget.Latest, true,
+)]))
+function imports(file: string): string[] {
+  return sources.get(file)!.statements.flatMap(statement => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return []
+    const specifier = statement.moduleSpecifier.text
+    return specifier.endsWith(".css") ? [resolve(dirname(file), specifier)] : []
+  })
+}
+function classesRenderedBy(file: string): Set<string> {
+  const classes = new Set<string>()
+  function visit(node: ts.Node) {
+    if (ts.isJsxAttribute(node) && node.name.getText() === "className"
+      && node.initializer && ts.isStringLiteral(node.initializer)) {
+      for (const name of node.initializer.text.split(/\s+/)) classes.add(name)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sources.get(file)!)
+  return classes
+}
+
+// At-rule bodies contain ordinary selectors too. Ignore the at-rule header,
+// declarations and comments so filenames and explanatory examples do not count.
+function selectors(file: string): string[] {
+  return [...css(file).matchAll(/([^{}]+)\{/g)]
+    .map(match => match[1]!.trim())
+    .filter(selector => !selector.startsWith("@"))
+}
+
+describe("styles are loaded through their owners", () => {
+  test("stylesheets have no CSS import chain that bypasses the take overlay", () => {
+    expect(cssFiles.filter(file => /@import\b/.test(css(file))).map(rel)).toEqual([])
+  })
+
+  test("each component stylesheet is imported only by its sibling component", () => {
+    const offenders = ownedFiles.flatMap(file => {
+      const owner = file.replace(/\.css$/, ".tsx")
+      const consumers = modules.filter(module => imports(module).includes(file))
+      return existsSync(owner) && consumers.length === 1 && consumers[0] === owner
+        ? [] : [`${rel(file)}: imported by ${consumers.map(rel).join(", ") || "nothing"}`]
+    })
+    expect(offenders).toEqual([])
+  })
+
+  test("every stylesheet is reachable from a runtime module, never only a part", () => {
+    const loaded = new Set(modules.flatMap(imports))
+    expect(cssFiles.filter(file => !loaded.has(file)).map(rel)).toEqual([])
+    expect([...loaded].filter(file => !existsSync(file)).map(rel)).toEqual([])
+  })
+
+  test("the public entry loads global tokens and screen scope, not component styles", () => {
+    expect(imports(join(SRC, "index.ts")).sort()).toEqual([...globalFiles].sort())
+  })
+
+  test("components import shared motion exactly where their stylesheet uses it", () => {
+    const names = [...css(motionFile).matchAll(/@keyframes\s+([\w-]+)/g)].map(match => match[1]!)
+    const consumers = ownedFiles.filter(file => names.some(name => new RegExp(`\\b${name}\\b`).test(css(file))))
+      .map(file => file.replace(/\.css$/, ".tsx"))
+    expect(modules.filter(file => imports(file).includes(motionFile)).sort()).toEqual(consumers.sort())
+  })
+})
+
+describe("a stylesheet does not reach into another component", () => {
+  test("every class in an owned selector is rendered by the owning component", () => {
+    const offenders = ownedFiles.flatMap(file => {
+      const owner = file.replace(/\.css$/, ".tsx")
+      if (!existsSync(owner)) return [`${rel(file)}: no owner`]
+      const classes = classesRenderedBy(owner)
+      return selectors(file).flatMap(selector => [...selector.matchAll(/\.([a-z][\w-]*)/g)]
+        .filter(match => !classes.has(match[1]!))
+        .map(match => `${rel(file)}: .${match[1]}`))
+    })
+    expect(offenders).toEqual([])
+  })
+
+  test("owned selectors do not target arbitrary children", () => {
+    expect(ownedFiles.flatMap(file => selectors(file)
+      .filter(selector => /(^|[\s>+~,(])\*/.test(selector))
+      .map(selector => `${rel(file)}: ${selector}`))).toEqual([])
+  })
+
+  test("global screen CSS contains no component classes", () => {
+    const classes = selectors(join(SRC, "pico.css"))
+      .flatMap(selector => [...selector.matchAll(/\.([a-z][\w-]*)/g)].map(match => match[1]!))
+    expect([...new Set(classes)].sort()).toEqual(["pico-screen"])
+  })
+})

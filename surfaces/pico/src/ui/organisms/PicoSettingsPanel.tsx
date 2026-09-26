@@ -1,3 +1,4 @@
+import "./PicoSettingsPanel.css"
 import { useState } from "react"
 import type { PicoSettingRowView, PicoSettingsView } from "../../pico-settings-view"
 import { PicoRow } from "../atoms/PicoRow"

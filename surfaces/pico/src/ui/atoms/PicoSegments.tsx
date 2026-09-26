@@ -1,3 +1,4 @@
+import "./PicoSegments.css"
 /**
  * A run of labelled segments with one lit.
  *

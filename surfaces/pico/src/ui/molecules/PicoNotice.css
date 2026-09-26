@@ -1,13 +1,10 @@
 /* A notice stands alone in the middle of whatever room it is given. */
 .pico-notice {
+	--pico-card-width: min(100%, calc(var(--pico-px) * 220));
 	display: grid;
 	place-items: center;
 	height: 100%;
 	padding: var(--pico-u);
-}
-
-.pico-notice > * {
-	width: min(100%, calc(var(--pico-px) * 220));
 }
 
 .pico-notice-message {

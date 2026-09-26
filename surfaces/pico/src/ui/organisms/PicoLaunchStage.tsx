@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoLaunchStage.css"
 import type { PicoLaunchCart } from "../../pico-screen-view"
 import { PicoCart } from "../molecules/PicoCart"
 

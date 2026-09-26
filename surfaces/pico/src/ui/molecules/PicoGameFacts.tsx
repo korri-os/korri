@@ -1,3 +1,4 @@
+import "./PicoGameFacts.css"
 import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoSub } from "../atoms/PicoSub"
 import { PicoTitle } from "../atoms/PicoTitle"

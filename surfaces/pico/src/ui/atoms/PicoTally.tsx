@@ -1,3 +1,4 @@
+import "./PicoTally.css"
 /**
  * Where you are in the shelf, as a count.
  *

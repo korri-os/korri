@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoCart.css"
 import { picoLabelFor } from "../../pico-label"
 import { PicoCoverArt } from "../atoms/PicoCoverArt"
 

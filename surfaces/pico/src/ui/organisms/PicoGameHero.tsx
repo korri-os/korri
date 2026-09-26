@@ -1,3 +1,4 @@
+import "./PicoGameHero.css"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoButton } from "../atoms/PicoButton"
 import { PicoGameStage } from "./PicoGameStage"

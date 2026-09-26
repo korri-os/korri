@@ -1,3 +1,4 @@
+import "./PicoTitle.css"
 /**
  * A heading in the display face.
  *

@@ -1,3 +1,4 @@
+import "./PicoLibraryBrowser.css"
 import {
   PICO_ORDER_LABELS,
   type PicoLibraryView,

@@ -1,3 +1,5 @@
+import "../../pico-motion.css"
+import "./PicoRow.css"
 import type { ReactNode } from "react"
 
 /**
