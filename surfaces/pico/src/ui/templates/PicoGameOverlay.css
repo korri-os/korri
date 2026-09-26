@@ -2,6 +2,7 @@
  * and nothing else. The screen behind is solid — PICO-8 has no translucency,
  * and a see-through dim only made the card harder to read. */
 .pico-game-overlay {
+	container: pico-overlay / size;
 	position: relative;
 	display: grid;
 	grid-template-rows: minmax(0, 1fr) auto;
@@ -16,8 +17,18 @@
 	padding: var(--pico-u) calc(var(--pico-u) * 2) 0;
 }
 
+/* A short screen steps the card's title down a size, as the catalog does. */
+@container pico-overlay (height < 40em) {
+	.pico-game-overlay-pause {
+		--pico-title-xl: var(--pico-text-lg);
+	}
+}
+
+/* A column: the card shrinks to the room and scrolls inside itself, so the
+ * hints below are never covered. */
 .pico-game-overlay-panel {
-	display: grid;
+	display: flex;
+	flex-direction: column;
 	width: min(100%, calc(var(--pico-px) * 280));
 	max-height: 100%;
 	min-height: 0;

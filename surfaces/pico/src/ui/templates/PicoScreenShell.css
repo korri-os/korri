@@ -17,3 +17,11 @@
 	container: pico-body / size;
 	font-size: var(--pico-text-sm);
 }
+
+/* A short body steps every largest title down one size, so a card or a stage
+ * spends its height on the choices rather than on its heading. */
+@container pico-body (height < 30em) {
+	.pico-screen-shell-body > * {
+		--pico-title-xl: var(--pico-text-lg);
+	}
+}

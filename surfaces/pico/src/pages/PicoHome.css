@@ -1,8 +1,12 @@
 /* Hero mode: one game large, then a shelf of everything that resumes. The
- * shelf takes its own height first; the hero gets what is left. */
+ * shelf takes its own height first and the hero gets what is left, but never
+ * less than a title and its Open button: on a body too short for both, the
+ * page scrolls rather than squeezing the hero to nothing. */
 .pico-home-hero {
 	display: grid;
-	grid-template-rows: minmax(0, 1fr) auto;
+	grid-template-rows: minmax(calc(var(--pico-px) * 48), 1fr) auto;
 	height: 100%;
 	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: none;
 }

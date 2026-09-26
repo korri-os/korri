@@ -74,9 +74,10 @@
 	color: var(--pico-card-kicker);
 }
 
+/* A short screen may step the largest titles down a size (--pico-title-xl). */
 .pico-card-title {
 	margin: 0;
-	font-size: var(--pico-text-xl);
+	font-size: var(--pico-title-xl, var(--pico-text-xl));
 	font-weight: normal;
 	line-height: 1.1;
 	overflow-wrap: anywhere;
