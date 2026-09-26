@@ -215,7 +215,7 @@ let
       '';
     };
     nixos-layout-check = {
-      description = "Check the shared NixOS base, SD format, device data, and WiFi provisioning without deploying.";
+      description = "Check the shared NixOS base, SD format and first boot, device data, and WiFi provisioning without deploying.";
       runtimeInputs = [
         pkgs.nix
         pkgs.git
@@ -228,6 +228,7 @@ let
         nix build --no-link \
           .#checks.${pkgs.stdenv.hostPlatform.system}.korri-base \
           .#checks.${pkgs.stdenv.hostPlatform.system}.korri-sd-card \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.korri-sd-firstboot \
           .#checks.${pkgs.stdenv.hostPlatform.system}.korri-inputplumber-data \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-inputplumber \
           .#checks.${pkgs.stdenv.hostPlatform.system}.odin2portal-inputplumber \

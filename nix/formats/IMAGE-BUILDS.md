@@ -68,6 +68,67 @@ only the release job is retried.
 - First-boot setup and plugin support are TBD. This workflow does not promise
   that the current image can later enable SSH through a plugin without an update.
 
+## Native first-boot initialization
+
+`sd-card.nix` imports the pinned NixOS `installer/sd-card/sd-image.nix` and
+`expand-root.nix`. The latter disables only upstream partition expansion.
+It now uses `lib.mkBefore` to grow the mounted root before upstream maintenance,
+without consuming `/nix-path-registration`. The sysfs partition-number lookup,
+GPT-only backup-header repair, MBR path, and existing best-effort resize commands
+are unchanged.
+
+The pinned source is
+`/nix/store/1ny7brxnqbx6xilj7mjdlinzpb5a1s3i-source/nixos/modules/installer/sd-card/sd-image.nix`,
+lines 346–377. Its marker-guarded commands own the complete native sequence:
+store registration → `/etc/NIXOS` → system profile → marker removal.
+`system/boot/stage-2-init.sh` runs the merged commands after system activation.
+Previously the custom hook registered the store and removed the marker first.
+Upstream then skipped the system profile. No upstream initialization code is
+copied into the fix.
+
+This changes first boot of newly built images for **all shared SD-format
+consumers**. It adds no migration and does not repair existing installed cards.
+It does not change Wi-Fi credentials, plugin state, or other user data. No device
+contact, card rewrite, deployment, internal-storage write, or recovery-media
+change was performed for this fix.
+
+Run the focused checks and inspect the actual MiniV2 merged script:
+
+```sh
+nix build --no-link --print-out-paths \
+  .#checks.x86_64-linux.korri-sd-card \
+  .#checks.x86_64-linux.korri-sd-firstboot \
+  .#checks.x86_64-linux.korri-base \
+  .#checks.x86_64-linux.rpminiv2
+nix eval --raw .#nixosConfigurations.rpminiv2.config.boot.postBootCommands
+```
+
+The card check output preserves the exact evaluated `mbr-post-boot.sh` and
+`gpt-post-boot.sh`. It asserts exactly one native registration, tag, profile
+creation, and marker removal, in order after expansion. The existing
+`nixos-layout-check` app also includes the VM check, which needs a working QEMU
+virtualization backend and 2 GiB of guest RAM.
+
+Verified on 2026-09-26: all four focused checks passed. The five VM subtests use
+real partition tools, ext4, and Nix commands in chroots on two disposable virtual
+disks, with separate Nix databases and the VM's actual running system closure.
+They do not use command mocks.
+
+| Case | Verified result |
+|---|---|
+| Pre-fix negative control | Reinserting the old hook's registration/removal commands leaves a registered store but no system profile or `/etc/NIXOS`. |
+| Invalid registration | Real `nix-store --load-db` fails; the marker remains. Replacing the damaged test input permits retry. |
+| Profile obstruction | Real `nix-env` fails after registration; the marker remains. Removing the test obstruction permits retry. |
+| Fresh MBR and GPT | Partition and filesystem grow; native initialization completes once, in order; a user-data sentinel survives. Partition 2 differs from the block-device minor. |
+| Second VM boot | The unchanged merged scripts run again on the persisted disks. Profiles, generations, and user data remain unchanged; no maintenance command runs without the marker. |
+
+The VM output retains command logs under `evidence/sd-test/`. The first invocation
+runs through the test driver; the second runs from the VM's boot hook. This
+proves shared script behavior, not a complete SD-image boot or MiniV2 hardware
+behavior. The test does not emulate MMC or establish GPT backup-header relocation
+from a smaller physical card. Existing ignored resize errors remain best-effort;
+only failed native initialization retains its marker for a later retry.
+
 ## Runtime footprint
 
 Production images omit `glmark2`, `mesa-demos`, `vulkan-tools`, and the RG353M

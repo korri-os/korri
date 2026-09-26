@@ -74,10 +74,13 @@ selected SD, using the existing shared SD expansion code. Automatic systemd
 GPT discovery is disabled. Android partitions are not configured as mounts
 or swap.
 
-A source audit found an existing shared first-boot defect: the expansion hook
-removes the registration marker before NixOS creates the initial system
-profile. Keep the original SD image for rollback. Do not rely on generation
-history to retain the shipped system until that separate shared fix lands.
+The shared first-boot hook now expands the SD before NixOS registers the store,
+creates `/etc/NIXOS` and the initial system profile, then removes the registration
+marker. This fixes newly built images for every shared SD-format consumer, not
+only MiniV2. It does not repair existing installed cards with a missing profile.
+Keep their original SD image for rollback; do not assume their shipped system
+has a generation root. See [shared first-boot verification](../../formats/IMAGE-BUILDS.md#native-first-boot-initialization)
+for the source trace, disposable VM regression, and hardware limits.
 
 ## Build on a development machine
 

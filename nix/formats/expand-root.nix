@@ -11,9 +11,10 @@
 # Read the partition number from sysfs instead, where it is stated directly.
 # The Odin's GPT card must also move its backup header before growing. The
 # RG353M's MBR card must not run that step. Preserve both existing sequences.
+# Run before upstream sd-image maintenance, leaving its marker intact so it
+# owns store registration, /etc/NIXOS, the system profile, and marker removal.
 { gpt }:
 {
-  config,
   lib,
   pkgs,
   ...
@@ -22,7 +23,7 @@
 {
   sdImage.expandOnBoot = false;
 
-  boot.postBootCommands = ''
+  boot.postBootCommands = lib.mkBefore ''
     if [ -f /nix-path-registration ]; then
       set -euo pipefail
       set -x
@@ -34,9 +35,6 @@
       ${lib.optionalString gpt "${pkgs.gptfdisk}/bin/sgdisk -e \"$bootDevice\" || true\n  "}echo ",+," | ${pkgs.util-linux}/bin/sfdisk -N"$partNum" --no-reread --force "$bootDevice" || true
       ${pkgs.util-linux}/bin/partx -u "$bootDevice" || true
       ${pkgs.e2fsprogs}/bin/resize2fs "$rootPart" || true
-
-      ${config.nix.package.out}/bin/nix-store --load-db < /nix-path-registration
-      rm -f /nix-path-registration
     fi
   '';
 }
