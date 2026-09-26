@@ -31,6 +31,6 @@ nix build --no-link \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".sunshine-korri-package \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".sunshine-korri-runtime-settings \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".sunshine-korri-input-seat-patch \
-  .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".sunshine-korri-android-client-protocol \
+  .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".sunshine-korri-certificate-control \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".korri-input-seat-receiver \
   .#checks."$(nix eval --raw --impure --expr builtins.currentSystem)".korri-inputd-package

@@ -223,8 +223,7 @@ fn run(options: Options) -> Result<(), String> {
             connection,
             request.launch_id,
             generation,
-            &mirror_path,
-            &sidecar_path,
+            (&mirror_path, &sidecar_path),
             &mut runtime,
         ) {
             // A failed cleanup must not leave held input on devices reused
@@ -248,10 +247,10 @@ fn serve_launch(
     lease: OwnedFd,
     launch_id: String,
     generation: u64,
-    mirror_path: &Path,
-    sidecar_path: &Path,
+    paths: (&Path, &Path),
     runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
 ) -> Result<(), String> {
+    let (mirror_path, sidecar_path) = paths;
     let token = random_token()?;
     runtime.bind(&launch_id, &token)?;
     let active_result = (|| {

@@ -12,6 +12,7 @@ pkgs.mkShell {
   packages = [
     rustToolchain
     pkgs.cargo-audit
+    pkgs.dbus
     pkgs.nixfmt-rfc-style
     pkgs.shellcheck
   ];

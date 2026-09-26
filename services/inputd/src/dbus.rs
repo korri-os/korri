@@ -518,6 +518,132 @@ mod tests {
         root
     }
 
+    #[derive(Default)]
+    struct InMemoryCompositeState {
+        sources: Vec<String>,
+        profile: String,
+    }
+
+    struct InMemoryComposite(std::sync::Arc<std::sync::Mutex<InMemoryCompositeState>>);
+
+    #[zbus::interface(name = "org.shadowblip.Input.CompositeDevice")]
+    impl InMemoryComposite {
+        #[zbus(property)]
+        fn dbus_devices(&self) -> Vec<String> {
+            vec![super::DBUS_TARGET_PATH.into()]
+        }
+
+        #[zbus(property)]
+        fn source_device_paths(&self) -> Vec<String> {
+            self.0.lock().unwrap().sources.clone()
+        }
+
+        #[zbus(property)]
+        fn profile_path(&self) -> String {
+            self.0.lock().unwrap().profile.clone()
+        }
+
+        fn load_profile_path(&self, path: String) {
+            self.0.lock().unwrap().profile = path;
+        }
+
+        fn stop(&self) {}
+    }
+
+    async fn check_readiness(
+        connection: &zbus::Connection,
+        classifier: &SysfsSourceClassifier,
+        expected: ProfileStatus,
+    ) {
+        let actual = tokio::time::timeout(
+            Duration::from_secs(5),
+            super::ensure_profile_unbounded(connection, "/korri/profile.yaml", classifier),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn dbus_readiness_checks_live_composite_sources_and_sysfs() {
+        use std::{process::Stdio, sync::Arc, sync::Mutex};
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        // A private bus: this test never contacts the host's InputPlumber.
+        let mut daemon = tokio::process::Command::new("dbus-daemon")
+            .args(["--session", "--nofork", "--nopidfile", "--print-address=1"])
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("dbus-daemon is provided by the inputd dev shell");
+        let mut output = BufReader::new(daemon.stdout.take().unwrap()).lines();
+        let address = tokio::time::timeout(Duration::from_secs(5), output.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
+        let mini_sources = vec![
+            "/dev/input/event3".into(),
+            "/dev/input/event4".into(),
+            "/dev/input/event2".into(),
+        ];
+        let state = Arc::new(Mutex::new(InMemoryCompositeState {
+            sources: mini_sources.clone(),
+            ..Default::default()
+        }));
+        let _server = zbus::connection::Builder::address(address.as_str())
+            .unwrap()
+            .name(super::INPUTPLUMBER_BUS_NAME)
+            .unwrap()
+            .serve_at(
+                format!("{}/CompositeDevice0", super::INPUTPLUMBER_ROOT_PATH),
+                InMemoryComposite(state.clone()),
+            )
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let client = zbus::connection::Builder::address(address.as_str())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        check_readiness(&client, &classifier, ProfileStatus::Applied).await;
+        check_readiness(&client, &classifier, ProfileStatus::Ready).await;
+
+        write_capabilities(root.path(), "event7", "1000000000000 0 0 0 0", "0");
+        state
+            .lock()
+            .unwrap()
+            .sources
+            .push("/dev/input/event7".into());
+        check_readiness(&client, &classifier, ProfileStatus::AmbiguousSources).await;
+        state.lock().unwrap().sources = mini_sources.clone();
+
+        // A disconnection can remove sysfs before InputPlumber updates DBus.
+        fs::remove_dir_all(root.path().join("class/input/event4")).unwrap();
+        check_readiness(&client, &classifier, ProfileStatus::AmbiguousSources).await;
+        state.lock().unwrap().sources =
+            vec!["/dev/input/event3".into(), "/dev/input/event2".into()];
+        check_readiness(&client, &classifier, ProfileStatus::MissingSource).await;
+
+        // Malformed capabilities and invalid paths cannot justify merging.
+        write_capabilities(root.path(), "event4", "invalid", "0");
+        state.lock().unwrap().sources = mini_sources;
+        check_readiness(&client, &classifier, ProfileStatus::AmbiguousSources).await;
+        state.lock().unwrap().sources = vec!["/dev/input/event3".into(), "/dev/hidraw0".into()];
+        check_readiness(&client, &classifier, ProfileStatus::AmbiguousSources).await;
+        state.lock().unwrap().sources = vec!["/dev/hidraw0".into()];
+        check_readiness(&client, &classifier, ProfileStatus::Ready).await;
+        state.lock().unwrap().sources.clear();
+        check_readiness(&client, &classifier, ProfileStatus::MissingSource).await;
+        daemon.kill().await.unwrap();
+        daemon.wait().await.unwrap();
+    }
+
     #[tokio::test]
     async fn bounded_wait_times_out_and_allows_a_fresh_retry() {
         let result =

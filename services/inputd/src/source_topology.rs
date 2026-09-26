@@ -10,7 +10,7 @@
 //! the world-readable sysfs capability bitmaps instead:
 //! `<sysfs>/class/input/eventN/device/capabilities/{key,abs}`.
 //!
-//! Rule: a source is gamepad-class unless all of these are true:
+//! A source is known non-gamepad only when all of these are true:
 //!
 //! - its path is exactly `/dev/input/eventN`;
 //! - both bitmaps are readable and well formed;
@@ -27,9 +27,10 @@
 //! 0x130 or 0x120 as a gamepad). It also follows InputPlumber 0.75.2
 //! `EventDevice::get_driver_type`, which uses its keyboard driver only for
 //! udev `ID_INPUT_KEYBOARD` devices that are not `ID_INPUT_JOYSTICK`, and falls
-//! back to its gamepad driver for anything unknown. Any doubt, such as a
-//! non-evdev path or an unreadable bitmap, counts as gamepad-class, so the
-//! composite fails closed as ambiguous.
+//! back to its gamepad driver for anything unknown. A non-evdev path or an
+//! unreadable bitmap is unknown. Unknown sources preserve the old single-source
+//! behavior, but a multi-source composite must classify every source. Otherwise
+//! a disconnected gamepad plus readable volume keys could incorrectly be ready.
 //!
 //! The kernel prints each bitmap as hexadecimal `unsigned long` words, most
 //! significant word first. Like `devices.rs`, this parser takes 64-bit words.
@@ -45,6 +46,7 @@ const GAMEPAD_KEY_RANGES: [(usize, usize); 3] = [(0x120, 0x13f), (0x220, 0x223),
 pub enum SourceClass {
     Gamepad,
     NonGamepad,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,10 +73,10 @@ impl SysfsSourceClassifier {
     }
 
     pub fn classify(&self, source_path: &str) -> SourceClass {
-        if self.is_non_gamepad(source_path).unwrap_or(false) {
-            SourceClass::NonGamepad
-        } else {
-            SourceClass::Gamepad
+        match self.is_non_gamepad(source_path) {
+            Some(true) => SourceClass::NonGamepad,
+            Some(false) => SourceClass::Gamepad,
+            None => SourceClass::Unknown,
         }
     }
 
@@ -105,10 +107,15 @@ impl SysfsSourceClassifier {
     }
 
     pub fn topology(&self, source_paths: &[String]) -> SourceTopology {
-        let gamepads = source_paths
-            .iter()
-            .filter(|path| self.classify(path) == SourceClass::Gamepad)
-            .count();
+        let mut gamepads = 0;
+        for path in source_paths {
+            match self.classify(path) {
+                SourceClass::Gamepad => gamepads += 1,
+                SourceClass::NonGamepad => {}
+                SourceClass::Unknown if source_paths.len() == 1 => gamepads += 1,
+                SourceClass::Unknown => return SourceTopology::AmbiguousGamepads,
+            }
+        }
         match gamepads {
             0 => SourceTopology::MissingGamepad,
             1 => SourceTopology::OneGamepad,
@@ -195,6 +202,18 @@ mod tests {
 
     fn paths(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn bitmap_words_are_64_bit_most_significant_first() {
+        let words = super::parse_bitmap("1 8000000000000001\n").unwrap();
+        assert_eq!(words, vec![0x8000_0000_0000_0001, 1]);
+        for bit in [0, 63, 64] {
+            assert!(super::bitmap_has(&words, bit));
+        }
+        for bit in [1, 62, 65, 128] {
+            assert!(!super::bitmap_has(&words, bit));
+        }
     }
 
     #[test]
@@ -326,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_or_malformed_capabilities_fail_closed_as_gamepad_class() {
+    fn unreadable_or_malformed_capabilities_are_unknown() {
         let root = tempfile::tempdir().unwrap();
         write_source(root.path(), "event1", None, Some(NO_AXES));
         write_source(root.path(), "event2", Some(MINI_V2_RESIN_KEY), None);
@@ -345,27 +364,55 @@ mod tests {
         ] {
             assert_eq!(
                 classifier.classify(&format!("/dev/input/{event}")),
-                SourceClass::Gamepad,
+                SourceClass::Unknown,
                 "{event}"
             );
         }
     }
 
     #[test]
-    fn source_paths_outside_dev_input_event_nodes_fail_closed_as_gamepad_class() {
+    fn source_paths_outside_dev_input_event_nodes_are_unknown() {
         let root = mini_v2_sysfs();
         let classifier = SysfsSourceClassifier::new(root.path());
         for path in [
             "/dev/hidraw0",
             "/dev/input/event",
             "/dev/input/event3x",
+            "/dev/input/event3/../event2",
+            "/dev/input/event3/",
+            "/dev/input/event-3",
             "/dev/input/../input/event3",
             "/dev/inputplumber/sources/event3",
             "event3",
             "",
         ] {
-            assert_eq!(classifier.classify(path), SourceClass::Gamepad, "{path}");
+            assert_eq!(classifier.classify(path), SourceClass::Unknown, "{path}");
         }
+    }
+
+    #[test]
+    fn unknown_sources_only_preserve_the_old_single_source_behavior() {
+        let root = mini_v2_sysfs();
+        let classifier = SysfsSourceClassifier::new(root.path());
+        assert_eq!(
+            classifier.topology(&paths(&["/dev/hidraw0"])),
+            SourceTopology::OneGamepad
+        );
+        assert_eq!(
+            classifier.topology(&paths(&["/dev/hidraw0", "/dev/input/event3"])),
+            SourceTopology::AmbiguousGamepads
+        );
+        // InputPlumber can still report the old paths while sysfs has already
+        // removed the disconnected gamepad. Volume keys must not make it ready.
+        fs::remove_dir_all(root.path().join("class/input/event4")).unwrap();
+        assert_eq!(
+            classifier.topology(&paths(&[
+                "/dev/input/event3",
+                "/dev/input/event4",
+                "/dev/input/event2",
+            ])),
+            SourceTopology::AmbiguousGamepads
+        );
     }
 
     #[test]

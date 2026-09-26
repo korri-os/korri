@@ -483,11 +483,11 @@ case "$(basename "$0")" in
           physical="identity=$expected_identity event=event8 sysfs=/sys/devices/pci0000:00/input/input8/event8 profile=$profile"
           printf 'compositor-gate=pass renderer=gles2 output=HEADLESS-1 mode=1920x1080@60 performance=not-required wayland=stable xwayland=:0 sunshine-control=denied\n'
           printf 'automated-gates=pass raw-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
-          printf 'sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=%064d patches=15 base-version=2025.924.154138 libavcodec=62.11.100\n' 0
+          printf 'sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=%064d patches=16 base-version=2025.924.154138 libavcodec=62.11.100\n' 0
           printf 'sunshine-private-state=protected digest=%s\n' "${HARNESS_PRIVATE_STATE_DIGEST:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
           printf 'normalized-fingerprint=%s\n' "$normalized"
           [[ "$require_physical" != true ]] || printf 'controller-evidence=%s\n' "$physical"
-          sunshine='sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=0000000000000000000000000000000000000000000000000000000000000000 patches=15 base-version=2025.924.154138 libavcodec=62.11.100'
+          sunshine='sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=0000000000000000000000000000000000000000000000000000000000000000 patches=16 base-version=2025.924.154138 libavcodec=62.11.100'
           printf 'acceptance-fingerprint=normalized=%s sunshine=%q private-state=%s' "$normalized" "$sunshine" "${HARNESS_PRIVATE_STATE_DIGEST:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
           [[ "$require_physical" != true ]] || printf ' physical=%s' "$physical"
           printf '\n'
@@ -503,9 +503,9 @@ case "$(basename "$0")" in
             normalized="${HARNESS_FINGERPRINT:-node=/dev/input/event9 sysfs=/sys/devices/virtual/input/input9/event9 dev=13:73 inode=1:9 inputplumber=/nix/store/provider/bin/inputplumber version=0.75.2 keys=exact abs=exact ff=yes}"
           fi
           if [[ "${HARNESS_REPLACE_SUNSHINE:-no}" == yes ]]; then
-            sunshine='sunshine-executable=/nix/store/replaced-sunshine/bin/sunshine patch-set-sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff patches=15 base-version=2025.924.154138 libavcodec=62.11.100'
+            sunshine='sunshine-executable=/nix/store/replaced-sunshine/bin/sunshine patch-set-sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff patches=16 base-version=2025.924.154138 libavcodec=62.11.100'
           else
-            sunshine='sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=0000000000000000000000000000000000000000000000000000000000000000 patches=15 base-version=2025.924.154138 libavcodec=62.11.100'
+            sunshine='sunshine-executable=/nix/store/sunshine-korri/bin/sunshine-2025.924.154138-korri patch-set-sha256=0000000000000000000000000000000000000000000000000000000000000000 patches=16 base-version=2025.924.154138 libavcodec=62.11.100'
           fi
           if [[ "${HARNESS_REPLACE_PRIVATE_STATE:-no}" == yes ]]; then
             private_state=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -628,9 +628,10 @@ esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$HERE/device-check.sh"
-grep -F "EXPECTED_SUNSHINE_PATCH_SET_SHA256='e330647511163d07c252901908e7c29c435b36459246201162be58bb2eb007d5'" "$GATE" >/dev/null
-grep -F 'patch=0020-add-korrid-certificate-control.patch sha256=5ab5b2b5a464c4839f18aa1fc0f304b42b5b8c941fbc4ad5605b34eeaff525e0' "$GATE" >/dev/null
-grep -F 'patches=15' "$GATE" >/dev/null
+grep -F "EXPECTED_SUNSHINE_PATCH_SET_SHA256='b009201c4e2b09dd22d24e895a831142e9b6070446cfe3a89ee0a0a22bc9a75c'" "$GATE" >/dev/null
+grep -F 'patch=0020-add-korrid-certificate-control.patch sha256=8e97eb5c8cf30a5b80b6a13aa88102de4ff443103875873ae4eb8f483ccfe059' "$GATE" >/dev/null
+grep -F 'patch=0021-add-v4l2m2m-encoder.patch sha256=64e51b7085e2678d2abb04aafb5d9a4c8d961a2f2b6ced7c7636f85ec67a66b3' "$GATE" >/dev/null
+grep -F 'patches=16' "$GATE" >/dev/null
 KORRI_LEDGER_PROOF_HELPER="${KORRI_LEDGER_PROOF_HELPER:-${CARGO_TARGET_DIR:-$HERE/../target}/debug/korri-ledger-proof}"
 export KORRI_LEDGER_PROOF_HELPER
 [[ -x "$KORRI_LEDGER_PROOF_HELPER" ]] || {
@@ -639,6 +640,7 @@ export KORRI_LEDGER_PROOF_HELPER
 }
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+trap 'printf "device gate shell test failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 proof_ledger="$TMP/proof-ledger"
 proof_outside="$TMP/proof-outside"
 mkdir -m 0700 "$proof_ledger"
