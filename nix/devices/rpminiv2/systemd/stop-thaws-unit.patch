@@ -1,0 +1,65 @@
+--- a/src/core/unit.c
++++ b/src/core/unit.c
+@@ -2051,11 +2051,12 @@
+  *         -EBADR:    This unit type does not support stopping.
+  *         -EALREADY: Unit is already stopped.
+  *         -EAGAIN:   An operation is already in progress. Retry later.
+- *         -EDEADLK:  Unit is frozen
++ *         -EDEADLK:  Unit is frozen by a parent slice.
+  */
+ int unit_stop(Unit *u) {
+         UnitActiveState state;
+         Unit *following;
++        int r;
+ 
+         assert(u);
+ 
+@@ -2069,9 +2070,33 @@
+                 return unit_stop(following);
+         }
+ 
+-        /* Check to make sure the unit isn't frozen */
+-        if (u->freezer_state != FREEZER_RUNNING)
+-                return -EDEADLK;
++        if (u->freezer_state != FREEZER_RUNNING) {
++                /* Stopping a directly frozen unit must not require a second request from the caller.
++                 * Never thaw an ancestor: that would also resume unrelated units in that slice. */
++                for (Unit *slice = UNIT_GET_SLICE(u); slice; slice = UNIT_GET_SLICE(slice))
++                        if (!IN_SET(slice->freezer_state, FREEZER_RUNNING, FREEZER_THAWING))
++                                return -EDEADLK;
++
++                if (IN_SET(u->freezer_state, FREEZER_FREEZING_BY_PARENT, FREEZER_FROZEN_BY_PARENT))
++                        return -EDEADLK;
++
++                if (u->freezer_state != FREEZER_THAWING) {
++                        /* Bypass only the public pending-job guard. Use the unit-type callback so
++                         * that service watchdogs and slice descendants retain their normal handling. */
++                        assert(UNIT_VTABLE(u)->freezer_action);
++                        r = UNIT_VTABLE(u)->freezer_action(u, FREEZER_THAW);
++                        if (r < 0)
++                                return r;
++
++                        /* A pending Freeze invocation was superseded, even if the kernel had not
++                         * frozen yet and the thaw completed synchronously (no cgroup event follows). */
++                        bus_unit_send_pending_freezer_message(u, /* canceled = */ true);
++                }
++
++                /* The cgroup event completes any existing Thaw invocation and requeues this job. */
++                if (u->freezer_state != FREEZER_RUNNING)
++                        return -EAGAIN;
++        }
+ 
+         if (!UNIT_VTABLE(u)->stop)
+                 return -EBADR;
+@@ -6485,6 +6510,11 @@
+ 
+         /* If the cgroup's final state is against what's requested by us, report as canceled. */
+         bus_unit_send_pending_freezer_message(u, /* canceled = */ !expected);
++
++        /* unit_stop() waits for asynchronous thaw before invoking the stop callback. Only wake
++         * stop/restart jobs; start and reload keep their existing freezer semantics. */
++        if (u->job && IN_SET(u->job->type, JOB_STOP, JOB_RESTART))
++                job_add_to_run_queue(u->job);
+ }
+ 
+ int unit_freezer_action(Unit *u, FreezerAction action) {

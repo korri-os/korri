@@ -64,6 +64,7 @@ let
         device = "rpminiv2";
       })
       ./portal.nix
+      ./systemd/module.nix
       (
         { lib, ... }:
         {
@@ -106,6 +107,11 @@ in
     };
   wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
   usbGadgetCheck = pkgs: import ./usb-gadget-vm-test.nix { inherit pkgs; };
+  systemdCheck =
+    pkgs:
+    import ./systemd/check.nix {
+      inherit pkgs configuration consoleConfiguration;
+    };
   initrdModulesCheck =
     pkgs:
     pkgs.makeModulesClosure {

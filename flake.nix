@@ -286,6 +286,7 @@
             rpminiv2 = rpminiv2.moduleCheck pkgs;
             rpminiv2-wifi = rpminiv2.wifiCheck pkgs;
             rpminiv2-usb-gadget = rpminiv2.usbGadgetCheck pkgs;
+            rpminiv2-systemd-freezer = rpminiv2.systemdCheck pkgs;
             rpminiv2-delivery = import ./nix/devices/rpminiv2/delivery-check.nix { inherit pkgs; };
             rpminiv2-inputplumber = self.packages.${system}.rpminiv2-inputplumber-data;
             rpminiv2-initrd-modules = rpminiv2.initrdModulesCheck pkgs;
