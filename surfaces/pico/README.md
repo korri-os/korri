@@ -146,10 +146,11 @@ entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
 
-Caliper currently loads all side-effect stylesheet imports reachable from the
-entry into each preview, including component CSS. Pico's explicit imports make
-ownership visible, but do not change that Caliper behavior. Check direct
-component loading as well, so the preview cannot hide a missing import.
+Caliper injects the two global stylesheets imported by `src/index.ts`. Each
+part loads its component styles through its own imports. Badge loads three
+stylesheets and Button loads four, including shared motion. Unrelated component
+styles no longer hide a missing import. Caliper's `css` option can replace the
+global list for projects that keep their global imports elsewhere.
 
 Without a linked Caliper, `bun install` reports one package it cannot install.
 The portal's production install skips dev dependencies and is not affected.
