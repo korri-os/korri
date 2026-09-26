@@ -4618,7 +4618,7 @@ command = ["sh", "-c", "sleep 1"]
         std::fs::write(
             root.path().join("upstreams.json"),
             format!(
-                r#"[{{"label":"zao","kind":"native","baseUrl":"http://{address}","devicePublicKey":"{}"}}]"#,
+                r#"[{{"label":"zao","kind":"native","baseUrl":"http://{address}","devicePublicKey":"{}","moonlightAddress":"zao:47989"}}]"#,
                 "11".repeat(32)
             ),
         )
@@ -4642,7 +4642,7 @@ command = ["sh", "-c", "sleep 1"]
             Some("right-token"),
         )
         .await;
-        assert_eq!(prepared["outcome"]["_tag"], "Ok");
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
         let launch_id = prepared["outcome"]["payload"]["launchId"]
             .as_str()
             .unwrap()

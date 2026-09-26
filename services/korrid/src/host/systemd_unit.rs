@@ -359,11 +359,19 @@ impl Default for SystemdLaunchUnitBackend {
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
     runners: Mutex<BTreeMap<String, String>>,
+    window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
 }
 
 #[cfg(test)]
 impl InMemoryLaunchUnitBackend {
+    pub(crate) fn set_window_pids(&self, launch_id: &str, pids: BTreeSet<i32>) {
+        self.window_pids
+            .lock()
+            .unwrap()
+            .insert(launch_id.into(), pids);
+    }
+
     pub(crate) fn complete_live(&self) {
         let mut units = self.units.lock().unwrap();
         let launch_id = units
@@ -381,6 +389,16 @@ impl InMemoryLaunchUnitBackend {
 
 #[cfg(test)]
 impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
+    fn window_pids(&self, launch_id: &str) -> Result<BTreeSet<i32>, LaunchUnitError> {
+        Ok(self
+            .window_pids
+            .lock()
+            .unwrap()
+            .get(launch_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
     fn launch(
         &self,
         launch_id: &str,

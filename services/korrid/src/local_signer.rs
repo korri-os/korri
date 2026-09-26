@@ -1610,7 +1610,7 @@ mod tests {
         value["tags"].as_array_mut().unwrap().swap(0, 1);
         invalid.push(value);
         let mut value = canonical_json.clone();
-        value["tags"][2][1] = serde_json::json!("revoked");
+        value["tags"][2][1] = serde_json::json!("unknown");
         invalid.push(value);
         let mut value = canonical_json;
         value["tags"][0][1] = serde_json::json!("org.korri.device-owner:not-a-key");
@@ -1624,8 +1624,51 @@ mod tests {
                         .unwrap(),
                 })
                 .await;
-            assert!(matches!(state, PersonSignerState::InvalidResponse { .. }));
+            assert!(
+                matches!(state, PersonSignerState::InvalidResponse { .. }),
+                "{unsigned_event_template}: {state:?}"
+            );
         }
+    }
+
+    #[tokio::test]
+    async fn local_signer_signs_a_canonical_revocation_for_its_bound_device() {
+        let signer_root = tempfile::tempdir().unwrap();
+        let device_root = tempfile::tempdir().unwrap();
+        let mut identity = DeviceIdentity::load_or_create(device_root.path()).unwrap();
+        let signer = LocalPersonSigner::load_or_create(
+            signer_root.path(),
+            &device_public_key(device_root.path()),
+        )
+        .unwrap();
+        for (status, created_at) in [
+            (OwnerStatementStatus::Owned, 100),
+            (OwnerStatementStatus::Revoked, 101),
+        ] {
+            let template = identity
+                .owner_statement_template(status, created_at)
+                .unwrap();
+            let state = signer
+                .request(PersonSignerRequest {
+                    unsigned_event_template: template.clone(),
+                })
+                .await;
+            let PersonSignerState::Approved {
+                owner_public_key,
+                unsigned_event_template,
+                signed_event_json,
+            } = state
+            else {
+                panic!("canonical {status:?} was not approved: {state:?}");
+            };
+            assert_eq!(unsigned_event_template, template);
+            assert_eq!(owner_public_key, signer.public_key());
+            identity.apply_owner_statement(&signed_event_json).unwrap();
+        }
+        assert!(matches!(
+            identity.state(),
+            crate::identity::IdentityState::Revoked { .. }
+        ));
     }
 
     #[tokio::test]

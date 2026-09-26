@@ -1,4 +1,6 @@
 mod compositor_focus;
+#[cfg(test)]
+pub(crate) use compositor_focus::CompositorControl;
 mod config;
 pub(crate) mod control;
 mod identity;
@@ -651,6 +653,18 @@ impl HostRuntime {
                 .await;
             }
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_compositor(
+        mut self,
+        compositor: Arc<dyn CompositorControl>,
+        never_focus: Vec<String>,
+    ) -> Self {
+        self.launcher = self
+            .launcher
+            .map(|launcher| launcher.with_compositor(compositor, never_focus));
+        self
     }
 
     #[cfg(test)]

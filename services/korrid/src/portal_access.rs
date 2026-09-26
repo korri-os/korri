@@ -250,6 +250,29 @@ mod tests {
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
+    #[derive(Debug)]
+    struct InMemoryCompositor {
+        tree: Mutex<Value>,
+    }
+
+    impl crate::host::CompositorControl for InMemoryCompositor {
+        fn tree(&self) -> Result<String, String> {
+            Ok(self.tree.lock().unwrap().to_string())
+        }
+
+        fn focus(&self, node_id: i64) -> Result<(), String> {
+            let mut tree = self.tree.lock().unwrap();
+            let nodes = tree["nodes"].as_array_mut().unwrap();
+            if !nodes.iter().any(|node| node["id"] == node_id) {
+                return Err("window no longer exists".into());
+            }
+            for node in nodes {
+                node["focused"] = json!(node["id"] == node_id);
+            }
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn installed_routes_persist_choices_and_launch_explicit_runner_through_rpc() {
         let root = tempfile::tempdir().unwrap();
@@ -261,6 +284,12 @@ mod tests {
         std::fs::write(&config, "label = \"route-device\"\ngames = []\n").unwrap();
         let private = root.path().join("private");
         let backend = Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default());
+        let compositor = Arc::new(InMemoryCompositor {
+            tree: Mutex::new(json!({"id":1,"nodes":[
+                {"id":2,"pid":4100,"app_id":"chromium-browser","focused":true},
+                {"id":3,"pid":9100,"app_id":"retroarch","focused":false}
+            ]})),
+        });
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -306,7 +335,8 @@ mod tests {
             backend.clone(),
         )
         .with_route_registry(root.path().into(), registry.clone())
-        .with_retroarch_control_port(control_port);
+        .with_retroarch_control_port(control_port)
+        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
         let (app, _) = crate::secure_host_routers(
             runtime,
             &private,
@@ -340,6 +370,7 @@ mod tests {
         let launch_id = launch["outcome"]["payload"]["session"]["launchId"]
             .as_str()
             .unwrap();
+        backend.set_window_pids(launch_id, [9100].into());
         let controls = rpc(&app, "app.session.controls", json!({"launchId":launch_id})).await;
         assert_eq!(controls["outcome"]["_tag"], "Ok", "{controls}");
         assert_eq!(controls["outcome"]["payload"]["launchId"], launch_id);
@@ -424,7 +455,8 @@ mod tests {
             backend,
         )
         .with_route_registry(root.path().into(), registry)
-        .with_retroarch_control_port(control_port);
+        .with_retroarch_control_port(control_port)
+        .with_compositor(compositor.clone(), vec!["chromium-browser".into()]);
         let (app, _) = crate::secure_host_routers(
             recovered,
             &private,
@@ -447,6 +479,11 @@ mod tests {
         )
         .await;
         assert_eq!(returned["outcome"]["_tag"], "Ok", "{returned}");
+        assert_eq!(
+            compositor.tree.lock().unwrap()["nodes"][0]["focused"],
+            false
+        );
+        assert_eq!(compositor.tree.lock().unwrap()["nodes"][1]["focused"], true);
         // The runner accepts video_vsync and reports the key it cannot apply.
         // korrid carries that report to the portal without owning the table.
         assert_eq!(

@@ -121,11 +121,21 @@ async fn roster_catalog_source_session_and_optional_moonlight_survive_rebuild_an
     let registry =
         UpstreamRegistry::new_secure(vec![], f.credentials.clone()).with_federation(d.clone());
     assert!(registry.moonlight_host_candidates().is_err());
+    assert!(matches!(
+        registry.prepare_stream("game", None).await,
+        Err(crate::upstreams::UpstreamError::MoonlightHostCandidatesUnavailable)
+    ));
+    // Catalog discovery does not require a viewer address; starting a stream does.
     let catalog = registry.catalog_snapshot().await.unwrap();
     assert_eq!(catalog.games.len(), 1);
     assert_eq!(catalog.games[0].source.label, "Living room");
     assert_eq!(catalog.games[0].source.device_public_key, Some(f.key()));
     assert!(registry.source_status(&f.key()).await.is_ok());
+    let mut endpoint = f.endpoint(2, 1001);
+    endpoint.candidates = vec![url.clone()];
+    endpoint.moonlight_address = Some("living-room:47989".into());
+    d.apply_endpoint_event(&d.begin_work().unwrap(), &f.event(&endpoint))
+        .unwrap();
     let prepared = registry.prepare_stream("game", None).await.unwrap();
     assert!(registry
         .session_freeze(Some(&prepared.launch_id))
@@ -358,7 +368,7 @@ async fn deferred_static_file_preserves_selected_route_while_using_live_director
     let d = f.directory().unwrap();
     f.roster(&d);
     let url = host(&f).await;
-    announce(&f, &d, vec![url.clone()], None);
+    announce(&f, &d, vec![url.clone()], Some("living-room:47989".into()));
     let path = f.root.path().join("upstreams.json");
     let registry =
         UpstreamRegistry::from_env_or_file(&path, f.credentials.clone()).with_federation(d.clone());
@@ -857,7 +867,12 @@ async fn revoked_selection_allows_new_prepare_without_stopping_the_old_execution
     let d = f.directory().unwrap();
     f.roster(&d);
     let a_url = host(&f).await;
-    announce(&f, &d, vec![a_url.clone()], None);
+    announce(
+        &f,
+        &d,
+        vec![a_url.clone()],
+        Some("living-room:47989".into()),
+    );
     let (_b_root, b_key, b_url) = second_peer(&f).await;
     let registry = UpstreamRegistry::new_secure(
         vec![UpstreamHostConfig::native_secure("B", b_url, b_key).with_moonlight_address("B")],
@@ -911,7 +926,7 @@ async fn revoked_selected_controls_report_unavailable_not_a_remote_stop() {
         let d = f.directory().unwrap();
         f.roster(&d);
         let url = host(&f).await;
-        announce(&f, &d, vec![url.clone()], None);
+        announce(&f, &d, vec![url.clone()], Some("living-room:47989".into()));
         let registry =
             UpstreamRegistry::new_secure(vec![], f.credentials.clone()).with_federation(d.clone());
         let prepared = registry.prepare_stream("game", None).await.unwrap();
@@ -943,11 +958,11 @@ async fn revoked_selected_controls_report_unavailable_not_a_remote_stop() {
             ),
             "{operation}: {result:?}"
         );
-        // A second read has no selected route to query. The first call retired
-        // control, without issuing a successful stop or changing A's runtime.
+        // Revocation cannot prove that the far launch or its local viewer
+        // stopped. The viewer-backed selection stays tracked and unavailable.
         assert!(matches!(
-            registry.session_status().await.unwrap(),
-            crate::upstream::UpstreamSessionStatus::SessionStatus { active: None }
+            registry.session_status().await,
+            Err(crate::upstreams::UpstreamError::SourcePeerNotFound)
         ));
         let crate::upstream::UpstreamSessionStatus::SessionStatus {
             active: Some(active),
@@ -968,7 +983,7 @@ async fn selected_peer_outage_does_not_retire_control_or_allow_a_second_prepare(
     let d = f.directory().unwrap();
     f.roster(&d);
     let url = host(&f).await;
-    announce(&f, &d, vec![url.clone()], None);
+    announce(&f, &d, vec![url.clone()], Some("living-room:47989".into()));
     let (_b_root, b_key, b_url) = second_peer(&f).await;
     let registry = UpstreamRegistry::new_secure(
         vec![UpstreamHostConfig::native_secure("B", b_url, b_key).with_moonlight_address("B")],

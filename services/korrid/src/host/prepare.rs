@@ -72,6 +72,16 @@ impl HostLauncher {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_compositor(
+        mut self,
+        compositor: Arc<dyn CompositorControl>,
+        never_focus: Vec<String>,
+    ) -> Self {
+        self.control = self.control.with_compositor(compositor, never_focus);
+        self
+    }
+
     pub(crate) fn with_portal(mut self, portal: Arc<dyn PortalUnit>) -> Self {
         self.control = self.control.with_portal(portal);
         self
