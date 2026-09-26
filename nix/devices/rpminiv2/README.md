@@ -7,7 +7,8 @@ V2:
   serial recovery system.
 - `rpminiv2` extends that same SD-only baseline with the current Korri Linux
   host, Sway DRM compositor, credential-backed Pico portal, sandboxed Chromium,
-  and a device-specific InputPlumber profile.
+  a device-specific InputPlumber profile, and a USB network link beside the USB
+  serial console.
 
 The recovery system is hardware-verified. The Korri system is statically
 verified but still requires a coordinated physical display and controller
@@ -30,7 +31,9 @@ compositor. It does not stop a hot boot. Read the snapshot over USB serial with
 `journalctl -b -u rpminiv2-thermal-snapshot`.
 
 The panel remains the emergency console and USB serial becomes the recovery
-shell after root mounts in both systems. `consoleblank=60` protects the TTY; the
+shell after root mounts in both systems. Recovery uses `g_serial`; the product
+carries the same `ttyGS0` root console in a composed NCM plus ACM gadget (see
+[USB network link](#usb-network-link)). `consoleblank=60` protects the TTY; the
 Korri system also powers `DSI-1` off after five graphical idle minutes.
 Physical consoles grant passwordless root access. Do not use either candidate where other people
 have untrusted physical access.
@@ -213,8 +216,9 @@ replacement for it. Its current first milestone is deliberately local:
 - The map follows ROCKNIX's Retroid MCU evidence: analog triggers are
   `ABS_HAT2X` and `ABS_HAT2Y`, and the legacy `BTN_NORTH`/`BTN_WEST` source
   codes are swapped to preserve physical X/West and Y/North.
-- `g_serial` remains loaded from the matching root system and the product adds
-  the modular `retroid` gamepad driver after root mounts.
+- The product replaces `g_serial` with the composed USB gadget below. It loads
+  the modular `usb_f_acm` console function and the modular `retroid` gamepad
+  driver after root mounts; `libcomposite` and `usb_f_ncm` are built in.
 - Product CPU policies use `schedutil`; GPU scaling and cpuidle are unchanged.
   A one-shot timer retries the VA macro 20 seconds after boot only if the
   RetroidPocket sound card is missing. InputPlumber takes the dedicated
@@ -228,6 +232,55 @@ switching to the generic bundle drops D-pad events. The bundle selector keeps an
 existing active selection at boot; changing the initial package does not repair
 an already-installed card. Use a new image or an explicit, verified bundle
 switch. Do not assume a service restart selects the new package.
+
+### USB network link
+
+The product image composes one configfs USB gadget, `usb-gadget.service`, with
+two functions on one cable. It follows the RG353M, RG DS and R36T Max gadgets.
+The recovery image does not change: it keeps `g_serial` and has no network.
+
+| Item | Value |
+|---|---|
+| USB identity | `1d6b:0104`, manufacturer `Korri`, product `RP Mini V2 NixOS`, serial `rpminiv2-nixos` |
+| Serial console | ACM function, device `/dev/ttyGS0`, root getty from the udev rule shared with recovery |
+| Network | NCM function, device interface `usb0` |
+| Device address | `10.42.3.1/24`, fixed |
+| Host address | DHCP lease from the device, `10.42.3.11` to `10.42.3.30` |
+| NCM MACs | host `02:52:50:4d:32:01`, device `02:52:50:4d:32:02` |
+| Firewall on `usb0` | UDP 67 (the DHCP lease) only |
+
+The `/24` is the next free one after the RG353M (`10.42.0`), RG DS
+(`10.42.1`) and R36T Max (`10.42.2`), so all four devices can share one
+host. The device hands out no router and no DNS server, so the host's default
+route and name resolution do not change. NetworkManager ignores `usb0`;
+`systemd-networkd` owns only that link. Its wait-online unit is off, because
+the R36T Max recorded that unit failing at boot with this shape.
+
+The device tree enables one USB controller, `usb@a600000` (dwc3, `otg` with a
+role switch). The gadget waits up to 60 seconds for a USB device controller,
+binds the only one, and logs its name. It refuses to guess if there is more
+than one, and it logs every failure in `journalctl -b -u usb-gadget`. The
+expected controller name is `a600000.usb`. That name comes from the device
+tree, not from a hardware observation.
+
+The host (Zao) needs nothing beyond the stock Linux `cdc_ncm` and `cdc_acm`
+drivers and a DHCP client on the new wired interface. NetworkManager's default
+wired profile does this. The stable host MAC `02:52:50:4d:32:01` can pin a
+profile to this device if needed. Then:
+
+```sh
+# Host side
+ip -br addr | grep 10.42.3.
+ping -c 3 10.42.3.1
+ls -l /dev/serial/by-id/ | grep -F rpminiv2-nixos
+ssh -p 2222 ACCOUNT@10.42.3.1
+```
+
+SSH reaches the device only through the SSH plugin's own TCP 2222 rule. This
+link opens no TCP port.
+
+If the gadget does not bind, the product has no USB console. The panel console
+and the unchanged recovery SD remain the recovery paths.
 
 Physical acceptance must verify the DRM/render node identities, compositor
 startup, orientation, five-minute OLED idle and wake behavior, ABXY semantics,
@@ -256,7 +309,13 @@ lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS
 ls -l /dev/dri /sys/class/udc
 cat /sys/class/drm/card0-DSI-1/status
 cat /sys/class/drm/card0-DSI-1/modes
-lsmod | grep -E '^(g_serial|retroid) '
+lsmod | grep -E '^(usb_f_acm|retroid) '
+lsmod | grep -E '^g_serial ' && echo 'g_serial must not load' || true
+cat /sys/kernel/config/usb_gadget/rpminiv2/UDC
+systemctl is-active usb-gadget systemd-networkd
+ip -br addr show usb0
+iptables -S nixos-fw | grep -F usb0
+journalctl -b -u usb-gadget -u systemd-networkd --no-pager
 systemctl is-active inputplumber korri-inputd korrid korri-compositor nginx \
   korri-chromium-kiosk rpminiv2-display-idle
 systemctl --failed
@@ -269,9 +328,13 @@ journalctl -b -u inputplumber -u korri-inputd -u korrid \
 ```
 
 Require all listed product services to be active, no failed unit, `DSI-1`
-connected at 1080 by 1240, both root-time modules loaded, NetworkManager
+connected at 1080 by 1240, both loadable root-time modules loaded and
+`g_serial` absent, the gadget bound to `a600000.usb` (record the actual name),
+`usb0` at `10.42.3.1/24`, only UDP 67 open on `usb0`, NetworkManager
 active, Avahi disabled, the plugin host active, and application listeners bound
-only to loopback. Check that SSH listens only on TCP 2222 with public-key
+only to loopback. On the host, run the host-side commands from
+[USB network link](#usb-network-link): a `10.42.3.x` lease, ping replies, and a
+`rpminiv2-nixos` serial device must all appear on the same cable. Check that SSH listens only on TCP 2222 with public-key
 access and that the selected Sunshine plugin starts when streaming is tested.
 Then verify on the device:
 
@@ -289,8 +352,10 @@ Then verify on the device:
 4. Leave the device untouched for five minutes. The OLED must power off. Wake it
    with an accepted local control and confirm the portal returns without
    restarting the compositor or losing USB serial.
-5. Unplug and reconnect USB serial once, shut down cleanly, remove the product
-   SD, and confirm the unchanged Android installation still boots.
+5. Unplug and reconnect the USB cable once. Confirm that the serial console
+   and the `10.42.3.1` link both return without a reboot. Then shut down
+   cleanly, remove the product SD, and confirm the unchanged Android
+   installation still boots.
 
 On any failure, collect the journal and serial log, power down, and return to the
 verified recovery card. Do not modify the loader, firmware or internal storage
@@ -317,7 +382,9 @@ opening the case.
 5. Check the physical console. A USB keyboard can provide input if the panel
    works. The Linux serial gadget and its getty start after root mounts. The
    first unit enumerated it as USB `0525:a4a7` and
-   `/dev/ttyACM0`. Confirm that identity before connecting to it.
+   `/dev/ttyACM0`. That is the recovery identity; the product image enumerates
+   as `1d6b:0104` (see [USB network link](#usb-network-link)). Confirm the
+   identity before connecting to it.
 6. Run the read-only checks below and save their output.
 7. Confirm that removing the SD and selecting Android returns to the original
    installation. Do this before treating the candidate as a usable TTY image.
@@ -344,7 +411,7 @@ modetest -M msm -c
 | Shutdown and recovery | Shutdown completes and the factory path back to Android remains available. |
 
 The recovery cut still claims only TTY and USB serial. The product candidate
-adds portal display, Adreno compositor rendering, and built-in controller
-routing, but those additions remain hardware-unaccepted. Touch, physical
-networking, Bluetooth, audio, media decode, gameplay, suspend, and updates stay
+adds portal display, Adreno compositor rendering, built-in controller
+routing, and the USB network link, but those additions remain
+hardware-unaccepted. Touch, other physical networking, Bluetooth, audio, media decode, gameplay, suspend, and updates stay
 outside this milestone.

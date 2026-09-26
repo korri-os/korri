@@ -99,6 +99,15 @@ let
     "CONFIG_SECCOMP=y"
     "CONFIG_SECCOMP_FILTER=y"
     "CONFIG_USER_NS=y"
+    # The composed USB gadget. The ACM function comes from usb_f_acm.ko,
+    # which g_serial already requires (requiredRecoveryModules).
+    # CONFIG_USB_CONFIGFS_ACM only selects that module, so it may stay unset.
+    "CONFIG_CONFIGFS_FS=y"
+    "CONFIG_USB_LIBCOMPOSITE=y"
+    "CONFIG_USB_CONFIGFS=y"
+    "CONFIG_USB_CONFIGFS_NCM=y"
+    "CONFIG_USB_F_NCM=y"
+    "CONFIG_USB_U_ETHER=y"
   ];
   common =
     config:
@@ -136,7 +145,6 @@ let
     && config.swapDevices == [ ]
     && lib.elem "systemd.gpt_auto=0" config.boot.kernelParams
     && lib.elem "rd.systemd.gpt_auto=0" config.boot.kernelParams
-    && lib.elem "g_serial" config.boot.kernelModules
     && !(config.systemd.units ? "serial-getty@ttyGS0.service")
     && lib.hasInfix "serial-getty@ttyGS0.service" config.services.udev.extraRules
     && !config.system.tools.nixos-install.enable
@@ -162,6 +170,16 @@ let
   productFailures = productCheck.validate "rpminiv2" configuration;
   idle = c.systemd.services.rpminiv2-display-idle;
   thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
+  gadget = c.systemd.services.usb-gadget;
+  gadgetNetwork = c.systemd.network.networks."10-usb-gadget";
+  gadgetPackage = configuration.pkgs.callPackage ./usb-gadget-package.nix { };
+  # The same script against temporary directories. One UDC wait second keeps
+  # the failure cases short.
+  gadgetTestPackage = pkgs.callPackage ./usb-gadget-package.nix {
+    configfsRoot = "$TMPDIR/configfs";
+    udcRoot = "$TMPDIR/udc";
+    udcWaitSeconds = 1;
+  };
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -211,11 +229,46 @@ assert c.boot.kernelPackages.kernel.drvPath == korri.packages.x86_64-linux.rpmin
 assert c.image.baseName == "nixos-rpminiv2-korri";
 assert recovery.image.baseName == "nixos-rpminiv2";
 assert
-  c.boot.kernelModules == [
-    "g_serial"
+  lib.sort lib.lessThan c.boot.kernelModules == [
+    "libcomposite"
     "retroid"
+    "usb_f_acm"
+    "usb_f_ncm"
   ];
 assert !(lib.elem "retroid" recovery.boot.kernelModules);
+# USB: recovery keeps the hardware-proven g_serial console and no network.
+# The product replaces g_serial with the composed NCM plus ACM gadget; its
+# ACM tty is still ttyGS0, so the shared udev getty rule serves both.
+assert lib.elem "g_serial" recovery.boot.kernelModules;
+assert !(lib.any (lib.hasPrefix "usb_f_") recovery.boot.kernelModules);
+assert !(lib.elem "libcomposite" recovery.boot.kernelModules);
+assert !(recovery.systemd.services ? usb-gadget);
+assert !recovery.systemd.network.enable;
+assert recovery.networking.firewall.interfaces == { };
+assert !(lib.elem "usb0" recovery.networking.networkmanager.unmanaged);
+assert !(lib.elem "g_serial" c.boot.kernelModules);
+assert gadget.wantedBy == [ "multi-user.target" ];
+assert lib.elem "sys-kernel-config.mount" gadget.requires;
+assert lib.elem "sys-kernel-config.mount" gadget.after;
+assert gadget.serviceConfig.ExecStart == lib.getExe gadgetPackage;
+assert lib.hasInfix ''
+  if ! echo "" > /sys/kernel/config/usb_gadget/rpminiv2/UDC; then
+'' gadget.preStop;
+assert gadgetNetwork.matchConfig.Name == "usb0";
+assert gadgetNetwork.address == [ "10.42.3.1/24" ];
+assert gadgetNetwork.networkConfig.DHCPServer;
+assert gadgetNetwork.dhcpServerConfig.PoolOffset == 10;
+assert gadgetNetwork.dhcpServerConfig.PoolSize == 20;
+assert !gadgetNetwork.dhcpServerConfig.EmitDNS;
+assert !gadgetNetwork.dhcpServerConfig.EmitRouter;
+assert !gadgetNetwork.linkConfig.RequiredForOnline;
+assert !c.systemd.network.wait-online.enable;
+assert lib.elem "usb0" c.networking.networkmanager.unmanaged;
+# The cable carries a link, not an open door: only the DHCP lease port.
+assert c.networking.firewall.interfaces.usb0.allowedUDPPorts == [ 67 ];
+assert (c.networking.firewall.interfaces.usb0.allowedTCPPorts or [ ]) == [ ];
+assert (c.networking.firewall.interfaces.usb0.allowedTCPPortRanges or [ ]) == [ ];
+assert (c.networking.firewall.interfaces.usb0.allowedUDPPortRanges or [ ]) == [ ];
 assert c.hardware.graphics.enable;
 assert c.services.seatd.enable;
 assert !recovery.hardware.graphics.enable;
@@ -358,5 +411,48 @@ pkgs.runCommand "rpminiv2-module-check"
     cp ${./thermal-readonly.sh} thermal-readonly.sh
     cp ${./thermal-readonly.test.py} thermal-readonly.test.py
     python3 thermal-readonly.test.py
+
+    # USB gadget: exercise the real script against temporary configfs and UDC
+    # directories.
+    export PATH=${gadgetTestPackage}/bin:$PATH
+    gadget_dir="$TMPDIR/configfs/rpminiv2"
+    mkdir -p "$TMPDIR/configfs" "$TMPDIR/udc"
+    # No controller: fail, say so, and leave the gadget unbound.
+    if rpminiv2-usb-gadget-configure > none.stdout 2> none.stderr; then
+      echo "gadget bound without a USB device controller" >&2
+      exit 1
+    fi
+    grep -F 'no USB device controller appeared' none.stderr
+    test ! -s "$gadget_dir/UDC"
+    # The one controller the device tree enables.
+    mkdir "$TMPDIR/udc/a600000.usb"
+    rpminiv2-usb-gadget-configure
+    test "$(cat "$gadget_dir/UDC")" = a600000.usb
+    test "$(cat "$gadget_dir/functions/ncm.usb0/host_addr")" = 02:52:50:4d:32:01
+    test "$(cat "$gadget_dir/functions/ncm.usb0/dev_addr")" = 02:52:50:4d:32:02
+    test -L "$gadget_dir/configs/c.1/ncm.usb0"
+    test -L "$gadget_dir/configs/c.1/acm.usb0"
+    # A restart after preStop's unbind binds the same controller again.
+    : > "$gadget_dir/UDC"
+    rpminiv2-usb-gadget-configure
+    test "$(cat "$gadget_dir/UDC")" = a600000.usb
+    # A second controller is ambiguous: refuse it and name both.
+    : > "$gadget_dir/UDC"
+    mkdir "$TMPDIR/udc/a800000.usb"
+    if rpminiv2-usb-gadget-configure > two.stdout 2> two.stderr; then
+      echo "gadget guessed between two USB device controllers" >&2
+      exit 1
+    fi
+    grep -F 'found: a600000.usb a800000.usb' two.stderr
+    test ! -s "$gadget_dir/UDC"
+    rmdir "$TMPDIR/udc/a800000.usb"
+    # A changed existing NCM address is refused before the bind.
+    printf '%s\n' 02:00:00:00:00:01 > "$gadget_dir/functions/ncm.usb0/host_addr"
+    if rpminiv2-usb-gadget-configure > mismatch.stdout 2> mismatch.stderr; then
+      echo "mismatched existing NCM address unexpectedly succeeded" >&2
+      exit 1
+    fi
+    grep -F 'expected 02:52:50:4d:32:01' mismatch.stderr
+    test ! -s "$gadget_dir/UDC"
     touch "$out"
   ''

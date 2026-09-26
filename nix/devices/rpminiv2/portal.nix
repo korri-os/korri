@@ -27,6 +27,7 @@ in
 {
   imports = [
     ./game-plugins.nix
+    ./usb-gadget.nix
     ../../base/clock-governor.nix
   ];
 
@@ -45,10 +46,14 @@ in
 
   boot = {
     kernelPackages = lib.mkForce (pkgs.linuxPackagesFor rpminiKorriKernel);
-    # Preserve the explicit root-time list rather than the generic NixOS list.
-    # Other ROCKNIX drivers load through their device aliases.
+    # Drop recovery's g_serial: it would claim the controller before configfs
+    # can compose NCM beside the ACM console. libcomposite and usb_f_ncm are
+    # built in; usb_f_acm carries the USB root console. Other ROCKNIX drivers
+    # load through their device aliases.
     kernelModules = lib.mkForce [
-      "g_serial"
+      "libcomposite"
+      "usb_f_ncm"
+      "usb_f_acm"
       "retroid"
     ];
   };
@@ -222,8 +227,11 @@ in
       message = "The RP Mini V2 product must use the checked ROCKNIX baseline plus the Korri delta.";
     }
     {
-      assertion = lib.elem "g_serial" config.boot.kernelModules;
-      message = "The RP Mini V2 product must retain USB serial recovery.";
+      assertion =
+        lib.elem "usb_f_acm" config.boot.kernelModules
+        && !(lib.elem "g_serial" config.boot.kernelModules)
+        && config.systemd.services ? usb-gadget;
+      message = "The RP Mini V2 product must carry its USB serial console in the composed gadget.";
     }
   ];
 }
