@@ -322,6 +322,9 @@ pkgs.runCommand "rpminiv2-module-check"
     export RP_MINIV2_PRODUCT_DTB=${c.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     export RP_MINIV2_RECOVERY_DTB=${recovery.system.build.kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb
     python3 fan-map.test.py
+    python3 ${./kernel/next-image-config.test.py} \
+      --source-directory ${./kernel} \
+      ${c.boot.kernelPackages.kernel.dev}/lib/modules/${c.boot.kernelPackages.kernel.modDirVersion}/build/.config
     cp ${./thermal-readonly.sh} thermal-readonly.sh
     cp ${./thermal-readonly.test.py} thermal-readonly.test.py
     python3 thermal-readonly.test.py

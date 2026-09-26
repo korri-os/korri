@@ -34,8 +34,8 @@ def settings(path):
 
 class NextImageConfig(unittest.TestCase):
     def test_rocknix_values_survive_kernel_resolution(self):
-        baseline = settings(HERE / "config")
-        product = settings(HERE / "config-korri")
+        baseline = settings(SOURCE_DIR / "config")
+        product = settings(SOURCE_DIR / "config-korri")
         resolved = settings(Path(RESOLVED))
         for slice_name, names in FEATURES.items():
             for name in names.split():
@@ -46,7 +46,7 @@ class NextImageConfig(unittest.TestCase):
                     self.assertEqual(resolved.get(symbol), baseline[symbol])
 
     def test_recovery_config_is_still_a_separate_profile(self):
-        recovery = settings(HERE / "config-tty-trim")
+        recovery = settings(SOURCE_DIR / "config-tty-trim")
         self.assertEqual(recovery["CONFIG_PCI"], "n")
         self.assertEqual(recovery["CONFIG_BT"], "n")
         self.assertEqual(recovery["CONFIG_MEDIA_SUPPORT"], "n")
@@ -56,6 +56,8 @@ class NextImageConfig(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("resolved_config", help="the built kernel dev output's .config")
+    parser.add_argument("--source-directory", type=Path, default=HERE)
     args = parser.parse_args()
     RESOLVED = args.resolved_config
+    SOURCE_DIR = args.source_directory
     unittest.main(argv=[__file__])
