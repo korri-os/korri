@@ -56,6 +56,10 @@ export function PicoIdentityDialog({
   const exportKey = retiredKey(action, "export")
   const deleteKey = retiredKey(action, "delete")
   const working = status?._tag === "Working"
+  // Callers pass a new callback on every render. Only a new action resets the
+  // dialog; a render alone must not clear input, dismiss status or move focus.
+  const dismissStatus = useRef(onDismissStatus)
+  dismissStatus.current = onDismissStatus
 
   useEffect(() => {
     setPassword("")
@@ -64,11 +68,11 @@ export function PicoIdentityDialog({
     setDisposition("transfer")
     setConfirmed(false)
     setQr(undefined)
-    onDismissStatus()
+    dismissStatus.current()
     requestAnimationFrame(() => {
       dialogRef.current?.querySelector<HTMLElement>("button, input, textarea, select")?.focus()
     })
-  }, [action, onDismissStatus])
+  }, [action])
 
   useEffect(() => {
     if (status?._tag !== "BackupReady") {
