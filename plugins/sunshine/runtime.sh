@@ -17,7 +17,7 @@ done
 attempt=0
 while :; do
   if [ -S "$runtime_dir/pulse/native" ] &&
-    @coreutils@/bin/timeout 1 @pipewire@/bin/pw-metadata -n default |
+    XDG_RUNTIME_DIR="$runtime_dir" @coreutils@/bin/timeout 1 @pipewire@/bin/pw-metadata -n default |
       @gnugrep@/bin/grep -q 'Found "default" metadata'; then
     break
   fi
