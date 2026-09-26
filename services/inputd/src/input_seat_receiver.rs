@@ -1,3 +1,4 @@
+use korri_inputd::health::{systemd::SystemdHealthPublisher, HealthPublisher, RuntimeHealth};
 use korri_inputd::input_seat::{
     validate_launch_id, GamepadState, MirrorOutcome, SeatBackend, SeatResetOutcome, SeatRuntime,
     SeatSpec, MAX_MIRROR_FRAME_BYTES,
@@ -185,6 +186,11 @@ fn run(options: Options) -> Result<(), String> {
     // grants launch-scoped mirror authority, not device lifetime.
     let mut runtime = SeatRuntime::boot(backend)?;
     let control = Listener::bind(&control_path, 0o660, options.control_gid)?;
+    // systemd must not release dependent services until all four pads and the
+    // control listener are available. Failure to notify fails initialization.
+    SystemdHealthPublisher::default()
+        .initialized(RuntimeHealth::Ready)
+        .map_err(display)?;
     let mut generation = 0u64;
     while !STOPPING.load(Ordering::Relaxed) {
         let connection = match poll_accept(&control, 250)? {

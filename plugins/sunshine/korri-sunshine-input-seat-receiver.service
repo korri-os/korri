@@ -5,7 +5,7 @@ After=korri-bundle-selector.service
 Before=korrid.service korri-sunshine.service
 
 [Service]
-Type=simple
+Type=notify
 User=root
 Group=root
 SupplementaryGroups=uinput

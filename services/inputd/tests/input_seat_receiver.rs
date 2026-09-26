@@ -7,7 +7,8 @@ use std::{
         fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
         unix::{
             ffi::OsStrExt,
-            fs::{MetadataExt, PermissionsExt},
+            fs::{FileTypeExt, MetadataExt, PermissionsExt},
+            net::UnixDatagram,
         },
     },
     path::Path,
@@ -26,27 +27,7 @@ struct Receiver {
 impl Receiver {
     fn start(expected_uid: u32) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let gid = unsafe { libc::getgid() };
-        let child = Command::new(env!("CARGO_BIN_EXE_korri-input-seat-receiver"))
-            .args([
-                "--runtime-dir",
-                root.path().to_str().unwrap(),
-                "--control-uid",
-                &expected_uid.to_string(),
-                "--control-gid",
-                &gid.to_string(),
-                "--sunshine-uid",
-                &unsafe { libc::getuid() }.to_string(),
-                "--sunshine-gid",
-                &gid.to_string(),
-                "--event-gid",
-                &gid.to_string(),
-                "--dry-run",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = spawn_receiver(root.path(), expected_uid, None);
         wait_for(root.path().join("control.sock").as_path());
         Self { child, root }
     }
@@ -54,11 +35,93 @@ impl Receiver {
         self.root.path().join(name)
     }
 }
+
+fn spawn_receiver(root: &Path, expected_uid: u32, notify_socket: Option<&Path>) -> Child {
+    let gid = unsafe { libc::getgid() };
+    let mut command = Command::new(env!("CARGO_BIN_EXE_korri-input-seat-receiver"));
+    command
+        .args([
+            "--runtime-dir",
+            root.to_str().unwrap(),
+            "--control-uid",
+            &expected_uid.to_string(),
+            "--control-gid",
+            &gid.to_string(),
+            "--sunshine-uid",
+            &unsafe { libc::getuid() }.to_string(),
+            "--sunshine-gid",
+            &gid.to_string(),
+            "--event-gid",
+            &gid.to_string(),
+            "--dry-run",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    // Do not inherit systemd's socket from the test runner.
+    command.env_remove("NOTIFY_SOCKET");
+    if let Some(socket) = notify_socket {
+        command.env("NOTIFY_SOCKET", socket);
+    }
+    command.spawn().unwrap()
+}
 impl Drop for Receiver {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+#[test]
+fn ready_notification_follows_boot_and_listening_control_socket() {
+    let root = tempfile::tempdir().unwrap();
+    let notify_path = root.path().join("notify.sock");
+    let notify = UnixDatagram::bind(&notify_path).unwrap();
+    notify
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    // Dry-run executes the same four-slot SeatRuntime::boot path without /dev/uinput.
+    let mut child = spawn_receiver(root.path(), unsafe { libc::getuid() }, Some(&notify_path));
+    let mut message = [0u8; 128];
+    let count = notify.recv(&mut message).unwrap();
+    assert_eq!(&message[..count], b"READY=1\nSTATUS=Ready");
+    let control_path = root.path().join("control.sock");
+    assert!(fs::symlink_metadata(&control_path)
+        .unwrap()
+        .file_type()
+        .is_socket());
+    let _control = connect(&control_path);
+    assert!(child.try_wait().unwrap().is_none());
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+#[test]
+fn failed_socket_initialization_never_notifies_ready() {
+    let root = tempfile::tempdir().unwrap();
+    let notify_path = root.path().join("notify.sock");
+    let notify = UnixDatagram::bind(&notify_path).unwrap();
+    notify
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    // Boot completes, but an unsafe control path must fail before READY=1.
+    fs::write(root.path().join("control.sock"), b"not a socket").unwrap();
+    let mut child = spawn_receiver(root.path(), unsafe { libc::getuid() }, Some(&notify_path));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "receiver did not exit on initialization failure"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!status.success());
+    assert!(
+        notify.recv(&mut [0u8; 128]).is_err(),
+        "failed startup sent a notification"
+    );
 }
 
 #[test]
