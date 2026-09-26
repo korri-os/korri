@@ -32,12 +32,13 @@
 		grid-template-rows: auto minmax(0, 1fr);
 	}
 
+	/* The spines wrap onto a second row rather than scroll: every section
+	 * stays on screen, and a half-visible spine is never the one focused. */
 	.pico-panel-screen > [role="tablist"] {
-		grid-auto-flow: column;
-		justify-content: start;
+		display: flex;
+		flex-wrap: wrap;
+		min-width: 0;
 		padding: calc(var(--pico-px) * 3) 0 0;
-		overflow-x: auto;
-		scrollbar-width: none;
 	}
 
 	/* Standing in a row, a spine is pulled up rather than out. */
@@ -47,5 +48,20 @@
 
 	.pico-panel-screen > [role="tablist"] > [aria-selected="true"] {
 		translate: 0 calc(var(--pico-px) * -2);
+	}
+}
+
+/* Narrow and short: one page that scrolls, spines then the card at its full
+ * height. A card squeezed under two rows of spines would have no room left
+ * to show a single row. */
+@container pico-body (width < 70em) and (height < 40em) {
+	.pico-panel-screen {
+		grid-template-rows: max-content max-content;
+		overflow-y: auto;
+		scrollbar-width: none;
+	}
+
+	.pico-panel-screen > .pico-panel-screen-detail {
+		max-height: none;
 	}
 }

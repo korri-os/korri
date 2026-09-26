@@ -19,6 +19,7 @@
 
 .pico-identity-dialog header {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
 	gap: calc(var(--pico-u) * 2);
@@ -28,8 +29,17 @@
 }
 
 .pico-identity-dialog strong {
+	min-width: 0;
 	font-weight: normal;
 	color: var(--pico-accent);
+	overflow-wrap: anywhere;
+}
+
+/* Fields and their notes share the body's width; nothing here is wider than
+ * the screen it is on. */
+.pico-identity-dialog :is(input, textarea, select) {
+	min-width: 0;
+	max-width: 100%;
 }
 
 .pico-identity-dialog-body {

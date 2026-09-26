@@ -33,7 +33,10 @@ export async function verifyPhysical(page, frame, directory) {
         const result = await control.evaluate(element => {
           const frame = element.closest(".lab-compose-screen-frame").getBoundingClientRect()
           const box = element.getBoundingClientRect()
-          const label = element.getAttribute("aria-label") ?? element.textContent?.trim() ?? ""
+          // A form field is named by its <label>, not by its own text.
+          const label = element.getAttribute("aria-label")
+            ?? (element.labels?.length ? element.labels[0].textContent?.trim() : element.textContent?.trim())
+            ?? ""
           return { label, inside: box.width > 0 && box.height > 0 &&
             box.left >= frame.left - 1 && box.right <= frame.right + 1 &&
             box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1 }

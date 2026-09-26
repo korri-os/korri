@@ -3,16 +3,25 @@
  * a container cannot query its own size). Conditions are in em of the body's
  * small face, 6 virtual pixels.
  *
- *   wide      typing on the left, results on the right, each half the width
- *   narrow    typing on top at its own height; results below as one row of
- *             carts that scrolls sideways, like the shelf
+ *   wide                 typing on the left, results on the right; each
+ *                        column scrolls on its own
+ *   narrow and tall      typing on top at its own height; results below as
+ *                        one row of carts that scrolls sideways, like the shelf
+ *   narrow and short     one page that scrolls: typing, then every result.
+ *                        Two regions would leave the results no height at all
+ *   short                smaller carts, so one result fits the room it has
  *
- * The keyboard is the control and keeps its height; the results give way.
+ * Every control stays reachable: focus scrolls whichever region holds it,
+ * and no single key or result is taller than the room it scrolls in.
+ *
+ * Each custom property is declared once per selector: a design tool keys its
+ * controls by property and selector, and a second declaration collides.
  */
 .pico-library-browser {
 	--pico-key-ratio: 1.1;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
 	gap: calc(var(--pico-u) * 2);
 	height: 100%;
 	min-height: 0;
@@ -38,6 +47,7 @@
 }
 
 .pico-library-browser-results {
+	min-width: 0;
 	min-height: 0;
 	overflow-y: auto;
 	scrollbar-width: none;
@@ -67,16 +77,21 @@
 	color: var(--pico-accent);
 }
 
-/* Short: flat keys, so the whole keyboard fits and results keep a row. */
+/* Short: flat keys, and smaller carts in the results. */
 @container pico-body (height < 50em) {
 	.pico-library-browser-find {
 		--pico-key-ratio: 2;
 	}
+
+	.pico-library-browser-results {
+		--pico-result-art-h: calc(var(--pico-px) * 34);
+		--pico-shelf-art-w: calc(var(--pico-px) * 18);
+		--pico-shelf-art-h: calc(var(--pico-px) * 24);
+	}
 }
 
-/* Each custom property is declared once per selector: a design tool keys its
- * controls by property and selector, and a second declaration collides. */
-@container pico-body (width < 90em) {
+/* Narrow and tall: typing on top, results as a sideways row below. */
+@container pico-body (width < 90em) and (height >= 60em) {
 	.pico-library-browser .pico-library-browser-find {
 		--pico-key-ratio: 2.2;
 	}
@@ -97,5 +112,27 @@
 
 	.pico-library-browser-results {
 		overflow-y: hidden;
+	}
+}
+
+/* Narrow and short: one page. Neither region scrolls alone; the page does. */
+@container pico-body (width < 90em) and (height < 60em) {
+	.pico-library-browser > .pico-library-browser-find {
+		--pico-key-ratio: 2.2;
+		overflow: visible;
+	}
+
+	/* max-content, not auto: the regions keep their full height and the page
+	 * scrolls, rather than rows squeezing and the results sliding under keys. */
+	.pico-library-browser {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: max-content max-content;
+		gap: calc(var(--pico-u) * 2);
+		overflow-y: auto;
+		scrollbar-width: none;
+	}
+
+	.pico-library-browser-results {
+		overflow: visible;
 	}
 }
