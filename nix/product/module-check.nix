@@ -7,11 +7,15 @@
 let
   inherit (pkgs) lib;
   defaultSystem = pkgs.stdenv.hostPlatform.system;
-  referenceForSystem =
+  # Share the independent reference evaluations across the hostile cases.
+  # These are the two platforms exercised below, not candidate package sets.
+  references = lib.genAttrs (lib.unique [ defaultSystem "aarch64-linux" ]) (
     system:
     import ./reference.nix {
       inherit nixpkgs korri productModule system;
-    };
+    }
+  );
+  referenceForSystem = system: references.${system};
   reference = referenceForSystem defaultSystem;
   check = import ./check-lib.nix {
     inherit
@@ -451,8 +455,186 @@ let
     47990
     48010
   ];
+
+  # Replay the approved producers independently of the real board, then try
+  # hostile final-value edits. The validation name stays the real export name;
+  # test labels must not switch a mutation back to the default reference.
+  nativeName = "rpminiv2";
+  armReference = referenceForSystem "aarch64-linux";
+  nativeProduct = armReference.deviceReferences.${nativeName}.product;
+  nativeRequirements = check.requirementsForDevice nativeName nativeProduct;
+  mutateNative = module: nativeProduct.extendModules { modules = [ module ]; };
+  nativeUnitCases = [
+    {
+      unit = "korrid";
+      field = "ExecStart";
+      value = "/bin/false";
+    }
+    {
+      unit = "korrid";
+      field = "ExecStopPost";
+      value = [ ];
+    }
+    {
+      unit = "korrid";
+      field = "ExecStopPost";
+      value = [ "/bin/true" ];
+    }
+    {
+      unit = "korrid";
+      field = "CapabilityBoundingSet";
+      value = [ "CAP_SYS_ADMIN" ];
+    }
+    {
+      unit = "korrid";
+      field = "ReadWritePaths";
+      value = [ "/" ];
+    }
+    {
+      unit = "korri-chromium-kiosk";
+      field = "ExecStart";
+      value = "/bin/false";
+    }
+    {
+      unit = "korri-chromium-kiosk";
+      field = "ExecStopPost";
+      value = [ "/bin/true" ];
+    }
+    {
+      unit = "NetworkManager";
+      field = "ExecStart";
+      value = "/bin/false";
+    }
+  ];
+  nativeUnitCasePasses =
+    case:
+    let
+      device = mutateNative {
+        systemd.services.${case.unit}.serviceConfig.${case.field} = lib.mkForce case.value;
+      };
+    in
+    device.config.systemd.services.${case.unit}.serviceConfig.${case.field} == case.value
+    && builtins.elem (check.systemServiceLivenessFailure nativeName case.unit) (
+      check.validate nativeName device
+    );
+  nativeHookMutation = mutateNative {
+    systemd.services.korrid.postStop = lib.mkForce "exit 1";
+  };
+  nativeUserMutation = mutateNative {
+    systemd.user.services.pipewire.serviceConfig.ExecStart = lib.mkForce "/bin/false";
+  };
+  nativePackage = nativeProduct.config.systemd.package;
+  swappedNativePackage = nativePackage.overrideAttrs (old: {
+    # Same version, name, and approved patch; different executable authority.
+    postInstall = (old.postInstall or "") + "\necho tampered > $out/review-test\n";
+  });
+  nativePackageSwap = mutateNative {
+    systemd.package = lib.mkForce swappedNativePackage;
+  };
+  nativeUnpatched = mutateNative {
+    systemd.package = lib.mkForce armReference.product.config.systemd.package;
+  };
+  nativeWithoutKiosk = mutateNative {
+    services.korri.compositor.kiosk.enable = lib.mkForce false;
+  };
+  nativeSettingCasePasses =
+    requirement:
+    let
+      value = wrongValue requirement;
+      device = mutateNative (lib.setAttrByPath requirement.path (lib.mkOverride 0 value));
+    in
+    valueAt requirement.path device.config == value
+    && builtins.elem (check.settingFailure nativeName requirement) (check.validate nativeName device);
+  nativeOnlySettings = armReference.deviceReferences.${nativeName}.settings;
+  extraNativeAuthority = mutateNative {
+    security.polkit.extraConfig = lib.mkAfter ''
+      polkit.addRule(function(action, subject) { return polkit.Result.YES; });
+    '';
+  };
+  nativePolicyRequirement = builtins.head (
+    builtins.filter (
+      requirement:
+      requirement.path == [
+        "security"
+        "polkit"
+        "extraConfig"
+      ]
+    ) nativeOnlySettings
+  );
+  missingNativeDbusPolicy = mutateNative {
+    services.dbus.packages = lib.mkForce (
+      builtins.filter (
+        package: !(builtins.elem (toString package) nativeRequirements.requiredDbusPackages)
+      ) nativeProduct.config.services.dbus.packages
+    );
+  };
+  tamperedNativeDbusPolicy = missingNativeDbusPolicy.extendModules {
+    modules = [
+      (
+        { pkgs, ... }:
+        {
+          services.dbus.packages = lib.mkOverride 0 (
+            missingNativeDbusPolicy.config.services.dbus.packages
+            ++ [
+              (pkgs.writeTextDir "share/dbus-1/system.d/korri-portal-freezer.conf" ''
+                <busconfig><policy user="korrid"><allow send_destination="*"/></policy></busconfig>
+              '')
+            ]
+          );
+        }
+      )
+    ];
+  };
 in
 assert check.validate "standalone" standalone == [ ];
+assert check.validate nativeName nativeProduct == [ ];
+assert check.validate nativeName korri.nixosConfigurations.rpminiv2 == [ ];
+assert
+  nativeRequirements.requiredUnits == (check.requirementsForSystem "aarch64-linux").requiredUnits;
+assert lib.all nativeUnitCasePasses nativeUnitCases;
+assert builtins.elem (check.systemServiceLivenessFailure nativeName "korrid") (
+  check.validate nativeName nativeHookMutation
+);
+assert builtins.elem (check.userServiceLivenessFailure nativeName "pipewire") (
+  check.validate nativeName nativeUserMutation
+);
+assert toString swappedNativePackage != toString nativePackage;
+assert swappedNativePackage.patches == nativePackage.patches;
+assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
+  check.validate nativeName nativePackageSwap
+);
+assert builtins.elem (check.nativeSystemdPackageFailure nativeName) (
+  check.validate nativeName nativeUnpatched
+);
+# The imported producer remains inert without either prerequisite.
+assert lib.all (device:
+  !(device.config.systemd.services.korrid.environment ? KORRID_PORTAL_UNIT)
+  && (device.config.systemd.services.korrid.serviceConfig.ExecStopPost or [ ]) == [ ]
+  && !(lib.hasInfix "korri-chromium-kiosk" device.config.security.polkit.extraConfig)
+  && lib.intersectLists nativeRequirements.requiredDbusPackages
+    (map toString device.config.services.dbus.packages) == [ ]
+) [ nativeUnpatched nativeWithoutKiosk ];
+assert check.validate nativeName nativeWithoutKiosk != [ ];
+# A matching native artifact cannot opt another device into the Mini V2 edge.
+assert builtins.elem (check.nativeSystemdPackageFailure "rg353m") (
+  check.validate "rg353m" nativeProduct
+);
+assert lib.all nativeSettingCasePasses nativeOnlySettings;
+assert builtins.elem (check.settingFailure nativeName nativePolicyRequirement) (
+  check.validate nativeName extraNativeAuthority
+);
+assert builtins.length nativeRequirements.requiredDbusPackages == 1;
+assert lib.all
+  (
+    device:
+    builtins.elem (check.dbusPackageFailure nativeName (builtins.head nativeRequirements.requiredDbusPackages)) (
+      check.validate nativeName device
+    )
+  )
+  [
+    missingNativeDbusPolicy
+    tamperedNativeDbusPolicy
+  ];
 assert check.validate "rg353m" korri.nixosConfigurations.rg353m == [ ];
 assert check.validate "rg353m-rescue" korri.nixosConfigurations.rg353m-rescue == [ ];
 assert

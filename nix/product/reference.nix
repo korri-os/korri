@@ -16,8 +16,6 @@ let
       };
     };
   };
-in
-{
   product = nixpkgs.lib.nixosSystem {
     inherit system;
     specialArgs = { inherit korri; };
@@ -34,5 +32,16 @@ in
         system.stateVersion = "25.11";
       }
     ];
+  };
+in
+{
+  inherit product bare;
+  # A complete, trusted replay, not exceptions to the service signature. Only
+  # the Mini V2 product export uses these approved native producers. Never
+  # derive the expected package or hooks from the configuration under test.
+  deviceReferences = nixpkgs.lib.optionalAttrs (system == "aarch64-linux") {
+    rpminiv2 = import ../devices/rpminiv2/product-reference.nix {
+      inherit product bare;
+    };
   };
 }

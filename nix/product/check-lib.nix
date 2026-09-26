@@ -31,6 +31,9 @@ let
   missingModuleFailure = name: "${name} does not expose the internal Korri product marker";
   systemdPackageFailure =
     name: package: "${name} omits required product systemd package contribution ${package}";
+  nativeSystemdPackageFailure = name: "${name} changes the trusted native systemd package";
+  dbusPackageFailure =
+    name: package: "${name} omits required product D-Bus package contribution ${package}";
 
   settingMatches = config: requirement: valueAt requirement.path null config == requirement.expected;
   unitEnabled = unit: unit != null && (unit.enable or true);
@@ -227,13 +230,23 @@ let
     declaredRequirements
     // {
       inherit requiredSystemdPackages requiredUnits unitSignatures;
+      nativeSystemdPackage = toString reference.product.config.systemd.package;
+      requiredDbusPackages = reference.requiredDbusPackages or [ ];
+      settings = declaredRequirements.settings ++ (reference.settings or [ ]);
     };
   requirementsForSystem = system: requirementsForReference (referenceForSystem system);
   requirements = requirementsForSystem defaultSystem;
   inherit (requirements) requiredUnits unitSignatures;
 
   deviceSystem = device: device.pkgs.stdenv.hostPlatform.system;
-  requirementsForDevice = device: requirementsForSystem (deviceSystem device);
+  # The checked export name and platform select a trusted reference. Candidate
+  # package names, patch basenames, flags, and unit fields cannot opt into it.
+  requirementsForDevice =
+    name: device:
+    let
+      reference = referenceForSystem (deviceSystem device);
+    in
+    requirementsForReference ((reference.deviceReferences or { }).${name} or reference);
 
   validateSetting =
     name: device: requirement:
@@ -294,8 +307,11 @@ let
   validate =
     name: device:
     let
-      deviceRequirements = requirementsForDevice device;
+      deviceRequirements = requirementsForDevice name device;
       settingFailures = lib.concatMap (validateSetting name device) deviceRequirements.settings;
+      nativePackageFailures = lib.optional (
+        toString device.config.systemd.package != deviceRequirements.nativeSystemdPackage
+      ) (nativeSystemdPackageFailure name);
       # A forced parent setting can make dependent unit implementations
       # intentionally unevaluable. Report that public-contract failure first;
       # unit liveness has its own final-value cases once settings match.
@@ -304,9 +320,15 @@ let
           className: validateUnitClass className name device deviceRequirements
         ) (builtins.attrNames unitClasses)
         ++ validateSystemdPackages name device deviceRequirements
+        ++ lib.concatMap (
+          package:
+          lib.optional (!(builtins.elem package (map toString device.config.services.dbus.packages))) (
+            dbusPackageFailure name package
+          )
+        ) deviceRequirements.requiredDbusPackages
       );
     in
-    validateModule name device ++ settingFailures ++ unitFailures;
+    validateModule name device ++ settingFailures ++ nativePackageFailures ++ unitFailures;
 
   validateAll =
     configurations:
@@ -327,6 +349,9 @@ in
     requiredUnits
     requirements
     requirementsForSystem
+    requirementsForDevice
+    nativeSystemdPackageFailure
+    dbusPackageFailure
     settingFailure
     settingMatches
     systemdPackageFailure
