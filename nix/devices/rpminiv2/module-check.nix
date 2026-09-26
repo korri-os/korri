@@ -6,6 +6,7 @@
   korri,
   configuration,
   consoleConfiguration,
+  dtDriverCheck,
 }:
 let
   inherit (pkgs) lib;
@@ -161,10 +162,6 @@ let
   productFailures = productCheck.validate "rpminiv2" configuration;
   idle = c.systemd.services.rpminiv2-display-idle;
   thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
-  dtDriverCheck = import ./kernel/dt-driver-check.nix {
-    inherit pkgs;
-    kernel = c.boot.kernelPackages.kernel;
-  };
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -174,6 +171,11 @@ assert lib.all hasProductKernelConfig requiredProductKernelConfig;
 assert hasRecoveryKernelConfig "# CONFIG_SOUND is not set";
 assert hasRecoveryKernelConfig "# CONFIG_REMOTEPROC is not set";
 assert common c;
+assert lib.hasInfix (builtins.unsafeDiscardStringContext (
+  toString dtDriverCheck
+)) c.sdImage.populateRootCommands;
+assert
+  !(lib.hasInfix (builtins.unsafeDiscardStringContext (toString dtDriverCheck)) recovery.sdImage.populateRootCommands);
 assert common recovery;
 assert c.services.korri.clockGovernor.enable;
 assert c.services.korri.clockGovernor.cpuGovernor == "schedutil";

@@ -1,8 +1,9 @@
 # Compiled DT driver coverage
 
 `dt-driver-check.nix` checks the **product** DTB against outputs of the same
-kernel derivation. `../module-check.nix` requires this check. Recovery is not
-changed. Run the board gate with `nix run .#rpminiv2-check`.
+kernel derivation. Both `../module-check.nix` and direct product SD-image
+assembly require this check. Recovery is unchanged. Run the board gate with
+`nix run .#rpminiv2-check`.
 
 The output is a TSV report. A `MISSING` row names the full node path and every
 compatible string and fails the build. Input errors also fail. Each compatible
@@ -103,8 +104,11 @@ runs these tests. Standalone tests without those inputs explicitly skip them.
 | Standalone fixtures | 13 tests passed; 2 real-kernel tests explicitly skipped. |
 | Nix sandbox | The standalone check derivation passed against the merged host fixture, including all 15 tests. The real board-check dependency failed against the unmodified product outputs with the same 13 missing nodes. `nix eval --raw .#checks.x86_64-linux.rpminiv2.drvPath` passed. |
 
-The parent must still build the new product kernel and run the board gate.
-The board gate does not by itself make every `rpminiv2-sd-image` build depend on
-this check. A release must run it. For a direct image dependency, the parent can
-reuse this derivation in its image build graph; this change does not alter the
-kernel/config derivation or add a dependency to the recovery image.
+The new full ROCKNIX product kernel also passed this audit and all 15 tests
+on Zao. The input paths were `i6xmnqi4w9rpkir25qvjnli0agdg59dn`, modules
+`05nccfxqi9x5zmzkayfhq7x1gncbs2m8`, and dev
+`bvw247rlsyj0hicc33y4nd4a0j3y1j32`. The later parser-only rebuild,
+`v7y2488amzg4rbzi8gs96nv5213ml76p`, passed again through the board gate.
+Both report 182 driver-covered, 29 data, 38 reviewed, 61 disabled and zero
+missing nodes. `../default.nix` makes the product image depend on this same
+derivation before root population. Recovery has no audit dependency.

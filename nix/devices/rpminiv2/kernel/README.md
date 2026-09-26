@@ -74,7 +74,16 @@ The quiet fan map remains product-only. The full baseline makes `pwm-fan` a
 module rather than built-in, and embeds the baseline firmware paths. The
 larger driver set increases build size and exposed kernel code. Exact config
 and DT checks do not prove physical input, charging safety or fan rotation.
-The build evidence below describes earlier kernels, not this new candidate.
+The historical build evidence below describes earlier kernels. On 2026-09-26,
+the full product cross-build passed on Zao. Its `Image` SHA-256 is
+`94ad11c936850d25a09e204c2e7dd62cacdbe6de963ad6e3d99aa47f86249836`.
+The product DTB remains
+`53abe644510292a5399bed66277e2ef558067789834084d58eeb72b400641543`.
+The board gate passed 34 image-verifier tests, eight exact-config tests,
+15 compiled-driver audit tests, two fan tests, and two thermal tests.
+Product and recovery module-closure, delivery and InputPlumber checks passed.
+Recovery's kernel derivation is identical to the earlier one. These checks do
+not constitute a new image build, card write, or hardware acceptance.
 
 ## Earlier NixOS differences
 

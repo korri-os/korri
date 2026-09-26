@@ -2,11 +2,18 @@
 # never use the source .config or a running device as a coverage proxy.
 { pkgs, kernel }:
 let
-  python = pkgs.python3.withPackages (p: [ p.libfdt p.pyelftools ]);
+  python = pkgs.python3.withPackages (p: [
+    p.libfdt
+    p.pyelftools
+  ]);
 in
 pkgs.runCommand "rpminiv2-dt-driver-check"
   {
-    nativeBuildInputs = [ python pkgs.dtc pkgs.stdenv.cc ];
+    nativeBuildInputs = [
+      python
+      pkgs.dtc
+      pkgs.stdenv.cc
+    ];
     RP_MINIV2_AUDIT_DTB = "${kernel}/dtbs/qcom/sm8250-retroidpocket-rpminiv2.dtb";
     RP_MINIV2_AUDIT_MODULES = "${kernel.modules}/lib/modules/${kernel.modDirVersion}";
     RP_MINIV2_AUDIT_VMLINUX = "${kernel.dev}/vmlinux";

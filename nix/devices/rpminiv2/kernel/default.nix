@@ -52,33 +52,35 @@ let
     };
   };
 in
-kernel.overrideAttrs (previous: {
-  # V2 includes the Mini DTS, which includes the shared Retroid DTSI.
-  # ROCKNIX copies these after patching; preserve that sequence.
-  postPatch =
-    (previous.postPatch or "")
-    + ''
-      cp ${./dts}/sm8250-retroidpocket-common.dtsi arch/arm64/boot/dts/qcom/
-      cp ${./dts}/sm8250-retroidpocket-rpmini.dts arch/arm64/boot/dts/qcom/
-      cp ${./dts}/${dtbName}.dts arch/arm64/boot/dts/qcom/
-      echo 'dtb-$(CONFIG_ARCH_QCOM) += ${dtbName}.dtb' >> arch/arm64/boot/dts/qcom/Makefile
-      ln -s ${rpminiFirmware}/lib/firmware external-firmware
-    ''
-    + lib.optionalString productFanMap ''
-      chmod u+w arch/arm64/boot/dts/qcom/${dtbName}.dts
-      printf '\n' >> arch/arm64/boot/dts/qcom/${dtbName}.dts
-      cat ${./dts/sm8250-rpminiv2-korri-fan.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
-    '';
-  # Catch silent Kconfig dependency changes before spending time on compilation.
-  nativeBuildInputs =
-    (previous.nativeBuildInputs or [ ]) ++ lib.optional productFanMap buildPackages.python3;
-  postConfigure =
-    (previous.postConfigure or "")
-    + lib.optionalString productFanMap ''
+kernel.overrideAttrs (
+  previous:
+  {
+    # V2 includes the Mini DTS, which includes the shared Retroid DTSI.
+    # ROCKNIX copies these after patching; preserve that sequence.
+    postPatch =
+      (previous.postPatch or "")
+      + ''
+        cp ${./dts}/sm8250-retroidpocket-common.dtsi arch/arm64/boot/dts/qcom/
+        cp ${./dts}/sm8250-retroidpocket-rpmini.dts arch/arm64/boot/dts/qcom/
+        cp ${./dts}/${dtbName}.dts arch/arm64/boot/dts/qcom/
+        echo 'dtb-$(CONFIG_ARCH_QCOM) += ${dtbName}.dtb' >> arch/arm64/boot/dts/qcom/Makefile
+        ln -s ${rpminiFirmware}/lib/firmware external-firmware
+      ''
+      + lib.optionalString productFanMap ''
+        chmod u+w arch/arm64/boot/dts/qcom/${dtbName}.dts
+        printf '\n' >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+        cat ${./dts/sm8250-rpminiv2-korri-fan.dtsi} >> arch/arm64/boot/dts/qcom/${dtbName}.dts
+      '';
+    passthru = (previous.passthru or { }) // {
+      inherit dtbName kernelConfig;
+      compilerVersion = stdenv.cc.cc.version;
+    };
+  }
+  // lib.optionalAttrs productFanMap {
+    # Add no empty hook to recovery: its exact derivation must stay unchanged.
+    nativeBuildInputs = (previous.nativeBuildInputs or [ ]) ++ [ buildPackages.python3 ];
+    postConfigure = (previous.postConfigure or "") + ''
       python3 ${configPolicy}/next-image-config.test.py --source-directory ${configPolicy} "$buildRoot/.config"
     '';
-  passthru = (previous.passthru or { }) // {
-    inherit dtbName kernelConfig;
-    compilerVersion = stdenv.cc.cc.version;
-  };
-})
+  }
+)

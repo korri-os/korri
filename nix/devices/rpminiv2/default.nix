@@ -33,6 +33,10 @@ let
     stdenv = crossPkgs.gcc15Stdenv;
     kernelConfig = ./kernel/config-korri;
   };
+  dtDriverCheck = import ./kernel/dt-driver-check.nix {
+    pkgs = buildPkgs;
+    kernel = kernelCross;
+  };
   # Retain the unchanged ROCKNIX configuration as a diagnostic output. Product
   # uses that baseline plus the explicit delta; recovery stays on its TTY trim.
   kernelSourceGcc15 = crossPkgs.callPackage ./kernel {
@@ -60,6 +64,15 @@ let
         device = "rpminiv2";
       })
       ./portal.nix
+      (
+        { lib, ... }:
+        {
+          # Direct image builds must pass the same compiled-driver gate as checks.
+          sdImage.populateRootCommands = lib.mkBefore ''
+            test -s ${dtDriverCheck}
+          '';
+        }
+      )
     ];
   };
 in
@@ -88,6 +101,7 @@ in
         korri
         configuration
         consoleConfiguration
+        dtDriverCheck
         ;
     };
   wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
