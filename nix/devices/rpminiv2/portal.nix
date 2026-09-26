@@ -20,6 +20,36 @@ let
       resume '${pkgs.sway}/bin/swaymsg output DSI-1 power on' \
       before-sleep '${pkgs.sway}/bin/swaymsg output DSI-1 power off'
   '';
+  # One configfs gadget carries the serial console (ttyGS0) and an NCM link.
+  # If it cannot bind, g_serial restores the console alone.
+  usbAddress = "10.55.0.2/24";
+  usbGadget = pkgs.writeShellScript "rpminiv2-usb-gadget" ''
+    set -eu
+    PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.iproute2 pkgs.kmod ]}
+    g=/sys/kernel/config/usb_gadget/korri
+    if [ ! -d "$g" ]; then
+      mkdir -p "$g"
+      cd "$g"
+      echo 0x1d6b > idVendor
+      echo 0x0104 > idProduct
+      mkdir -p strings/0x409 configs/c.1/strings/0x409
+      echo Korri > strings/0x409/manufacturer
+      echo "Retroid Pocket Mini V2" > strings/0x409/product
+      echo "serial + ncm" > configs/c.1/strings/0x409/configuration
+      mkdir functions/acm.GS0 functions/ncm.usb0
+      echo 02:4b:52:00:00:02 > functions/ncm.usb0/dev_addr
+      echo 02:4b:52:00:00:01 > functions/ncm.usb0/host_addr
+      ln -s "$g/functions/acm.GS0" configs/c.1/
+      ln -s "$g/functions/ncm.usb0" configs/c.1/
+      ls /sys/class/udc | head -n 1 > UDC
+    fi
+    ifname="$(cat "$g/functions/ncm.usb0/ifname")"
+    ip link set "$ifname" up
+    ip address replace ${usbAddress} dev "$ifname"
+  '';
+  usbGadgetFallback = pkgs.writeShellScript "rpminiv2-usb-gadget-fallback" ''
+    [ "$SERVICE_RESULT" = success ] || ${pkgs.kmod}/bin/modprobe g_serial
+  '';
   # ROCKNIX's UCM for the RetroidPocket card; stock alsa-ucm-conf has none.
   ucm = pkgs.callPackage ./ucm { };
   ucmDirectory = "${ucm}/share/alsa/ucm2";
@@ -36,10 +66,8 @@ in
     kernelPackages = lib.mkForce (pkgs.linuxPackagesFor rpminiKorriKernel);
     # The bounded kernel has atkbd, ctr, loop and uinput built in and no TUN or
     # kTLS. Keep only the two real root-time modules.
-    kernelModules = lib.mkForce [
-      "g_serial"
-      "retroid"
-    ];
+    # The composite gadget replaces g_serial, which stays as the fallback.
+    kernelModules = lib.mkForce [ "retroid" ];
   };
 
   # The recovery module forces graphics off. This product-only override is
@@ -77,6 +105,9 @@ in
       # produces the handheld's 1240x1080 upright landscape layout.
       extraConfig = ''
         output DSI-1 transform 90 scale 1
+        input type:touch map_to_output DSI-1
+        bindsym --locked XF86AudioRaiseVolume exec ${pkgs.wireplumber}/bin/wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+        bindsym --locked XF86AudioLowerVolume exec ${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
       '';
     };
   };
@@ -132,6 +163,19 @@ in
     };
   };
 
+  systemd.services.rpminiv2-usb-gadget = {
+    description = "RP Mini V2 USB serial and network gadget";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "sys-kernel-config.mount" "systemd-udevd.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = usbGadget;
+      ExecStopPost = usbGadgetFallback;
+    };
+  };
+  networking.networkmanager.unmanaged = [ "interface-name:usb0" ];
+
   # PipeWire opens the card through ACP. WirePlumber runs the ALSA monitor, so
   # both need the RetroidPocket UCM to find the speaker and headphone routes.
   systemd.user.services.pipewire.environment.ALSA_CONFIG_UCM2 = ucmDirectory;
@@ -162,7 +206,7 @@ in
       message = "The RP Mini V2 product must use the Korri kernel profile.";
     }
     {
-      assertion = lib.elem "g_serial" config.boot.kernelModules;
+      assertion = config.systemd.services.rpminiv2-usb-gadget.serviceConfig.ExecStopPost == usbGadgetFallback;
       message = "The RP Mini V2 product must retain USB serial recovery.";
     }
   ];

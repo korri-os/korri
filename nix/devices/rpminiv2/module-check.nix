@@ -133,7 +133,7 @@ let
     && config.swapDevices == [ ]
     && lib.elem "systemd.gpt_auto=0" config.boot.kernelParams
     && lib.elem "rd.systemd.gpt_auto=0" config.boot.kernelParams
-    && lib.elem "g_serial" config.boot.kernelModules
+    && (lib.elem "g_serial" config.boot.kernelModules || config.systemd.services ? rpminiv2-usb-gadget)
     && !(config.systemd.units ? "serial-getty@ttyGS0.service")
     && lib.hasInfix "serial-getty@ttyGS0.service" config.services.udev.extraRules
     && !config.system.tools.nixos-install.enable
@@ -183,10 +183,8 @@ assert c.boot.kernelPackages.kernel.drvPath != recovery.boot.kernelPackages.kern
 assert c.image.baseName == "nixos-rpminiv2-korri";
 assert recovery.image.baseName == "nixos-rpminiv2";
 assert
-  c.boot.kernelModules == [
-    "g_serial"
-    "retroid"
-  ];
+  c.boot.kernelModules == [ "retroid" ];
+assert lib.elem "g_serial" recovery.boot.kernelModules;
 assert !(lib.elem "retroid" recovery.boot.kernelModules);
 assert c.hardware.graphics.enable;
 assert c.services.seatd.enable;
