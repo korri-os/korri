@@ -317,7 +317,7 @@ assert lib.hasSuffix " initialize \${KORRI_BUNDLE_INITIAL_PACKAGE}"
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert c.services.korriLinuxInput.inputd.actions.controller-activity.command == [
-  "${configuration.pkgs.sway}/bin/swaymsg"
+  "${configuration.pkgs.sway-unwrapped}/bin/swaymsg"
   "-s"
   "/run/korri-compositor/sway-ipc.sock"
   "seat * idle_notify"

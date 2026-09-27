@@ -105,6 +105,12 @@ in
         dtDriverCheck
         ;
     };
+  inputdActionCheck =
+    pkgs:
+    import ./inputd-action-check.nix {
+      inherit pkgs configuration;
+      inputd = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-inputd;
+    };
   wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
   usbGadgetCheck = pkgs: import ./usb-gadget-vm-test.nix { inherit pkgs; };
   systemdCheck =

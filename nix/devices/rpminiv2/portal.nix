@@ -78,7 +78,7 @@ in
     # actions. This native command only resets the seat's idle notifier; it
     # cannot generate pointer/key events or change focus. Bounded to <= 1 Hz.
     controller-activity.command = [
-      "${pkgs.sway}/bin/swaymsg"
+      "${pkgs.sway-unwrapped}/bin/swaymsg"
       "-s"
       "/run/korri-compositor/sway-ipc.sock"
       "seat * idle_notify"
