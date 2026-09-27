@@ -1,12 +1,10 @@
-/* The palette as itself. This is the one stylesheet that names the sixteen
- * directly, because showing them is the whole job. */
+/* The fifteen non-black palette colours fill the bar in equal-width cells. */
 .pico-palette-bar {
 	display: grid;
-	grid-template-columns: repeat(16, minmax(0, 1fr));
+	grid-template-columns: repeat(15, minmax(0, 1fr));
 	height: calc(var(--pico-px) * 3);
 }
 
-.pico-palette-bar-cell[data-cell="0"] { background: var(--p8-black); }
 .pico-palette-bar-cell[data-cell="1"] { background: var(--p8-navy); }
 .pico-palette-bar-cell[data-cell="2"] { background: var(--p8-maroon); }
 .pico-palette-bar-cell[data-cell="3"] { background: var(--p8-green); }

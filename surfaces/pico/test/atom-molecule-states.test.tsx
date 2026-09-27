@@ -268,7 +268,7 @@ test("absent clock does not remove the status breadcrumb or palette", () => {
   expect(view.getByText("SETTINGS")).toBeDefined()
   expect(view.getByText("korri")).toBeDefined()
   expect(view.container.querySelector(".pico-clock")).toBeNull()
-  expect(view.container.querySelectorAll(".pico-palette-bar-cell")).toHaveLength(16)
+  expect(view.container.querySelectorAll(".pico-palette-bar-cell")).toHaveLength(15)
 })
 
 test("selectable tabs move their announced selection on activation", () => {

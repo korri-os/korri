@@ -1,9 +1,9 @@
 import "./PicoPaletteBar.css"
-/** Sixteen, in PICO-8's own order. The count is the design, not a setting. */
-const CELLS = Array.from({ length: 16 }, (_, index) => index)
+/** Skip black: it disappears into the background and looks like a gap. */
+const CELLS = Array.from({ length: 15 }, (_, index) => index + 1)
 
 /**
- * The sixteen colours in a row, under the header.
+ * The fifteen non-black colours in PICO-8 order, under the header.
  *
  * It is the one place Pico shows its palette as itself rather than as roles,
  * and it tells the eye at a glance which machine this is. Decoration only: it

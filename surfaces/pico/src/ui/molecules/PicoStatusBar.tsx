@@ -4,7 +4,7 @@ import { PicoPaletteBar } from "../atoms/PicoPaletteBar"
 
 /**
  * The top of every screen: where you are in two words, Korri's clock, and the
- * sixteen underneath.
+ * non-black palette colours underneath.
  *
  * `place` is the way back (the library, or Korri itself) and `label` is where
  * you are now, in the accent colour. Two words and a colour are the whole
