@@ -6,3 +6,7 @@ export const note = "A figure and its caption; the view formats, the stat shows"
 export default function PicoStatPart() {
   return <PicoStat caption="PLAYED" figure="2H 10M" />
 }
+
+export function LargeCount() {
+  return <PicoStat caption="PLAYS" figure="12345" />
+}

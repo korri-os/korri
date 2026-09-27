@@ -9,3 +9,18 @@ export default function PicoControlRowPart() {
   const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[3]!
   return <PicoControlRow control={control} onActivate={() => undefined} />
 }
+
+export function DisabledWithReason() {
+  const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[1]!
+  return <PicoControlRow control={control} onActivate={() => undefined} />
+}
+
+export function DestructiveCommand() {
+  const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).controls[1]!
+  return <PicoControlRow control={control} onActivate={() => undefined} />
+}
+
+export function RangeValue() {
+  const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[4]!
+  return <PicoControlRow control={control} onActivate={() => undefined} />
+}

@@ -6,3 +6,7 @@ export const note = "Preformatted by Korri; the surface never reformats"
 export default function PicoClockPart() {
   return <PicoClock label="10:24" />
 }
+
+export function TwelveHourLabel() {
+  return <PicoClock label="10:24 PM" />
+}

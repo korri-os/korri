@@ -13,3 +13,7 @@ export default function PicoButtonBarPart() {
     />
   )
 }
+
+export function WithReadout() {
+  return <PicoButtonBar hints={[{ hintKey: "b", label: "BACK" }]} readout="9 carts · 2 resumable" />
+}

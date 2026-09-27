@@ -6,3 +6,7 @@ export const note = "States what a button already does; never interactive"
 export default function PicoHintPart() {
   return <PicoHint hintKey="a" label="PLAY" />
 }
+
+export function Back() {
+  return <PicoHint hintKey="b" label="BACK" />
+}

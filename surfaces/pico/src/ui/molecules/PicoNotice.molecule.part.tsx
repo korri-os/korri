@@ -12,3 +12,22 @@ export default function PicoNoticePart() {
     />
   )
 }
+
+export function RetryableFailure() {
+  return (
+    <PicoNotice
+      actions={[
+        { label: "Try again", onPress: () => undefined },
+        { label: "Back", onPress: () => undefined },
+      ]}
+      kicker="COULD NOT START"
+      message="The device did not respond."
+      title="Hollow Knight"
+      tone="warn"
+    />
+  )
+}
+
+export function Loading() {
+  return <PicoNotice kicker="LOADING LIBRARY" message="Waiting for your games." tone="info" />
+}

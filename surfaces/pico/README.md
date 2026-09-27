@@ -165,6 +165,42 @@ global list for projects that keep their global imports elsewhere.
 Without a linked Caliper, `bun install` reports one package it cannot install.
 The portal's production install skips dev dependencies and is not affected.
 
+### Named states
+
+Each part keeps its default example. Additional uppercase function exports show
+meaningful alternate inputs of the same real component. Caliper lists these
+states under the part; **All states** shows them together. Fixtures use the
+existing surface treaty and component props, with no backend or request swapping.
+
+The audit covers all 52 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+so their default examples are their only states. A second export would duplicate
+the same output. Other parts include alternate inputs such as missing artwork,
+long content, disabled actions, loading, errors, and empty collections where
+those cases belong to the component's contract.
+
+`test/named-states.test.tsx` discovers exported states and mounts them with no
+props. Focused state tests assert their content and behavior. Some components
+return nothing for valid inputs; an `Empty` preview for those documented cases
+is not a loading failure. Internal interaction states still require interaction
+with the real component. These examples are not an exhaustive combination of
+all props and do not prove that every layout fits every size.
+
+`fixtures/PicoPartFrame.tsx` supplies the documented art-size properties and
+space for the hero cart's lift in two isolated examples. It changes only the
+preview container. The [verification record](../../docs/acceptance/pico-named-states-2026-09-27.md)
+lists intentional empty states, browser checks, and limits.
+
+To review all states of one part at both configured device sizes:
+
+```sh
+caliper-render --url http://localhost:5173 \
+  --part src/pages/PicoHome.page.part.tsx --state '*' --device '*'
+```
+
+Set `CHROMIUM` to the Chromium executable. Read the verdict and browser errors,
+then inspect the PNGs and any reported overflow. A successful mount alone does
+not prove that the content is visible.
+
 ## Verification
 
 ```sh

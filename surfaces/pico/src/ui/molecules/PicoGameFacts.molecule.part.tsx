@@ -17,3 +17,18 @@ export default function PicoGameFactsPart() {
     />
   )
 }
+
+export function NeverPlayed() {
+  return <PicoGameFacts stats={[]} title="Petal Quest" />
+}
+
+export function LongTitle() {
+  return (
+    <PicoGameFacts
+      level={2}
+      stats={[{ figure: "12345", caption: "PLAYS" }]}
+      subtitle="Super Nintendo Entertainment System · Living room device"
+      title="The Legend of Zelda: A Link to the Past"
+    />
+  )
+}

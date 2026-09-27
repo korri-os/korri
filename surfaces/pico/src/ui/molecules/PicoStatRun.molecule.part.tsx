@@ -9,3 +9,7 @@ export default function PicoStatRunPart() {
   const game = fixtureModel.catalog._tag === "Ready" ? fixtureModel.catalog.games[1]! : { id: "x", title: "x" }
   return <PicoStatRun stats={picoDetailViewFromGame(game).stats} />
 }
+
+export function NeverPlayed() {
+  return <PicoStatRun stats={[]} />
+}

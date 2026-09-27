@@ -6,3 +6,7 @@ export const note = "Where you are in two words, the clock, the sixteen; no batt
 export default function PicoStatusBarPart() {
   return <PicoStatusBar clockLabel="10:24" label="LIBRARY" place="korri" />
 }
+
+export function WithoutClock() {
+  return <PicoStatusBar label="SETTINGS" place="korri" />
+}

@@ -1,4 +1,6 @@
 import { fixtureModel } from "../../fixtures/fixture-host"
+import { PicoPartFrame } from "../../fixtures/PicoPartFrame"
+import { PICO_ART_CAVERN, PICO_ART_SUMMIT } from "../../fixtures/sample-art"
 import { PicoCoverArt } from "./PicoCoverArt"
 
 export const name = "Cover Art"
@@ -8,4 +10,16 @@ const game = fixtureModel.catalog._tag === "Ready" ? fixtureModel.catalog.games[
 
 export default function PicoCoverArtPart() {
   return <PicoCoverArt artUrl={game?.coverArtUrl} id="hollow" title="Hollow Knight" />
+}
+
+export function MissingArt() {
+  return <PicoPartFrame><PicoCoverArt id="petal" title="Petal Quest" /></PicoPartFrame>
+}
+
+export function WideArt() {
+  return <PicoCoverArt artUrl={PICO_ART_CAVERN} id="spelunky" title="Spelunky" />
+}
+
+export function SquareArt() {
+  return <PicoCoverArt artUrl={PICO_ART_SUMMIT} id="celeste" title="Celeste Classic" />
 }

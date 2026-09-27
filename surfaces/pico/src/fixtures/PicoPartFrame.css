@@ -1,0 +1,15 @@
+/* The fixture owns only its box. Art consumes its documented size properties;
+ * padding reserves the cart's existing lift and shadow, without changing them. */
+.pico-part-frame {
+	--pico-part-inset: calc(var(--pico-px) * 6);
+	--pico-art-w: 100cqw;
+	--pico-art-h: 100cqh;
+	box-sizing: border-box;
+	container-type: size;
+	display: grid;
+	align-content: start;
+	justify-items: start;
+	width: 100%;
+	height: 100%;
+	padding: var(--pico-part-inset);
+}
