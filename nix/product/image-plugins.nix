@@ -29,8 +29,8 @@ let
     hash = "sha256-OlWpH0izwxlLfoKp4iPMv62WA35qrZhuHhcseOzXOso=";
   };
   seatMetadata = pkgs.fetchurl {
-    url = "https://github.com/korri-os/plugins/releases/download/build-46b91cb7fcb0/offline-metadata-${system}.tar.gz";
-    hash = "sha256-3PCT8/cnd3HrFXes9iFQrsapWiQpfLJS2UKZCX0tXwo=";
+    url = "https://github.com/korri-os/plugins/releases/download/build-03873007ef46/offline-metadata-${system}.tar.gz";
+    hash = "sha256-UuBxHD7uUW/OkxF2sUfJsWHg4q+LlM+Rt81AZRxcX0U=";
   };
   # Derive one local proof cache from the two publisher archives. Duplicate
   # metadata must be byte-identical; image assembly rejects missing proofs.
