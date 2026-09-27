@@ -1,12 +1,17 @@
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
-import { fixtureShelfGame } from "../fixtures/named-states"
+import { fixtureShelfGame, noArtworkGame } from "../fixtures/named-states"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { PicoHome, type PicoHomeMode } from "./PicoHome"
 
 export const name = "Home"
 export const note = "The shelf, with Korri's catalog ready"
 export const surface = true
+
+// Empty removes the shelf; it is deliberately not a shelf composition.
+export const composition = {
+  NoArtwork: [{ part: "src/ui/organisms/PicoCartShelf.organism.part.tsx", state: "NoArtwork" }],
+} as const
 
 function home(model: SurfaceModel, mode: PicoHomeMode = "shelf", placing?: ReturnType<typeof fixtureShelfGame>) {
   const host = createFixtureHost()
@@ -21,6 +26,9 @@ export function Error() {
   return home({ ...fixtureModel, catalog: { _tag: "Error", message: "The library could not be read." } })
 }
 export function Ready() { return home(fixtureModel) }
+export function NoArtwork() {
+  return home({ ...fixtureModel, catalog: { _tag: "Ready", games: [noArtworkGame] } })
+}
 export function Grid() { return home(fixtureModel, "grid") }
 export function Hero() { return home(fixtureModel, "hero") }
 export function ChooseLocation() { return home(fixtureModel, "shelf", fixtureShelfGame("tetris")) }

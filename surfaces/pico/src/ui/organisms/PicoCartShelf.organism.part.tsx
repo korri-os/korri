@@ -1,7 +1,11 @@
-import { fixtureGame, longTitleGame, fixtureShelfGames } from "../../fixtures/named-states"
+import { fixtureGame, longTitleGame, fixtureShelfGames, noArtworkGame } from "../../fixtures/named-states"
 import { fixtureModel } from "../../fixtures/fixture-host"
 import { picoHomeViewFromCatalog } from "../../pico-home-view"
 import { PicoCartShelf } from "./PicoCartShelf"
+
+export const composition = {
+  NoArtwork: [{ part: "src/ui/molecules/PicoCart.molecule.part.tsx", state: "MissingArtHero" }],
+} as const
 
 // Intentionally null: the shelf has no selected game when its input is empty.
 export function EmptyLibrary() {
@@ -9,7 +13,7 @@ export function EmptyLibrary() {
 }
 
 export function NoArtwork() {
-  return <PicoCartShelf games={fixtureShelfGames([fixtureGame("petal")])} onOpen={() => undefined} />
+  return <PicoCartShelf games={fixtureShelfGames([noArtworkGame])} onOpen={() => undefined} />
 }
 
 export function ResumableFirst() {

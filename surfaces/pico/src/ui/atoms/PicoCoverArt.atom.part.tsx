@@ -1,4 +1,5 @@
 import { fixtureModel } from "../../fixtures/fixture-host"
+import { noArtworkGame } from "../../fixtures/named-states"
 import { PicoPartFrame } from "../../fixtures/PicoPartFrame"
 import { PICO_ART_CAVERN, PICO_ART_SUMMIT } from "../../fixtures/sample-art"
 import { PicoCoverArt } from "./PicoCoverArt"
@@ -13,7 +14,9 @@ export default function PicoCoverArtPart() {
 }
 
 export function MissingArt() {
-  return <PicoPartFrame><PicoCoverArt id="petal" title="Petal Quest" /></PicoPartFrame>
+  return <PicoPartFrame><PicoCoverArt
+    artUrl={noArtworkGame.coverArtUrl} id={noArtworkGame.id} title={noArtworkGame.title}
+  /></PicoPartFrame>
 }
 
 export function WideArt() {

@@ -17,6 +17,9 @@ export function fixtureGame(id: string): SurfaceGame {
   return game
 }
 
+// One missing-art input shared by the Home, shelf, cart and cover previews.
+export const noArtworkGame = fixtureGame("petal")
+
 // Content stress data uses existing treaty fields, not a new catalog schema.
 export const longTitleGame: SurfaceGame = {
   ...fixtureGame("bramble"),
