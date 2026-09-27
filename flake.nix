@@ -184,6 +184,7 @@
             rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
+            korri-portal-input-probe = import ./clients/linux/diagnostics/package.nix { inherit pkgs; };
             korri-plymouth-theme = pkgs.callPackage ./brand/plymouth/package.nix { };
             korri-chromium = import ./clients/linux/chromium/package.nix { inherit pkgs; };
           }

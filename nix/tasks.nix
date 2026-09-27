@@ -77,6 +77,25 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-inputd-action
       '';
     };
+    rpminiv2-input-iterate = {
+      description = "Build and test browser/controller changes on the spare Mini V2, then restore the kiosk.";
+      usageSuffix = " -- <ssh-target> --ssh-config FILE --expected-system STORE_PATH [--isolate-portal] [--keep-on-pass] [--trace-input]";
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.nix
+        pkgs.openssh
+      ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/iteration/run.py" "$@"
+      '';
+    };
+    rpminiv2-input-iterate-check = {
+      description = "Test the Mini V2 input-iteration verdict without contacting a device.";
+      runtimeInputs = [ pkgs.python3 ];
+      script = ''
+        exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/iteration/run.test.py"
+      '';
+    };
     rpminiv2-initrd-check = {
       description = "Build the Mini V2 Korri early module closure and root-time modules; cross-build on x86_64.";
       runtimeInputs = [ pkgs.nix ];
