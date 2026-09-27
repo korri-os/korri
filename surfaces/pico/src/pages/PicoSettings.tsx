@@ -3,7 +3,7 @@ import { useState } from "react"
 import type { PicoConfirmation, PicoSettingRowView, PicoSettingsView } from "../pico-settings-view"
 import { PicoNotice } from "../ui/molecules/PicoNotice"
 import { PicoModal } from "../ui/organisms/PicoModal"
-import { PicoSettingsPanel } from "../ui/organisms/PicoSettingsPanel"
+import { PicoSettingsPanel } from "./PicoSettingsPanel"
 import { PicoScreenShell } from "../ui/templates/PicoScreenShell"
 
 const HINTS = [

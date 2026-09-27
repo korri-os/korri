@@ -7,7 +7,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
-import { PicoRunnerPicker } from "./ui/organisms/PicoRunnerPicker"
+import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
 import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"

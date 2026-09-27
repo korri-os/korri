@@ -1,12 +1,13 @@
 import "./PicoSettingsPanel.css"
 import { useState } from "react"
-import type { PicoSettingRowView, PicoSettingsView } from "../../pico-settings-view"
-import { PicoRow } from "../atoms/PicoRow"
-import { PicoSettingRow } from "../molecules/PicoSettingRow"
-import { PicoPanelScreen } from "../templates/PicoPanelScreen"
+import type { PicoSettingRowView, PicoSettingsView } from "../pico-settings-view"
+import { PicoRow } from "../ui/atoms/PicoRow"
+import { PicoSettingRow } from "../ui/molecules/PicoSettingRow"
+import { PicoPanelScreen } from "../ui/templates/PicoPanelScreen"
 
 /**
- * Korri's settings groups as spines, each group's items as rows in its card.
+ * Page content: Korri's settings groups fill the shared panel-screen template.
+ * PicoSettings adds the screen shell and action handling around this instance.
  *
  * Owns which group is showing, because that is a fact about the screen and not
  * about the device. Owns nothing about values: a press hands the row to the

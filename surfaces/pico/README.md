@@ -30,7 +30,9 @@ a component; they will find what review misses.
 
 - `test/decomposition-gate.test.ts` — every rendered unit is a component with a
   part beside it, at every layer; one component per file; no `className` literal
-  or class selector defined twice.
+  or class selector defined twice. Direct runtime imports can point down or stay
+  within a layer, never up. Part suffixes must match their component's directory.
+  Type-only imports do not compose UI and are excluded from the direction check.
 - `test/authoring-gate.test.ts` — every part default-exports a function and a
   name; every atom, molecule, and organism part roots in **one imported
   component** so it emits real Inspector controls; no raw colour or pixel value
@@ -69,6 +71,14 @@ src/
   ui/atoms|molecules|organisms|templates
   pages/
 ```
+
+Templates arrange slots without supplying the final content. Pages fill those
+slots with facts and actions. `PicoRunnerPicker` fills `PicoGameOverlay` with
+runner choices. `PicoSettingsPanel` fills `PicoPanelScreen` with settings groups;
+`PicoSettings` adds the outer shell and action handling. Both content components
+therefore live in `pages/`, not `ui/organisms/`. Same-layer composition is allowed.
+Their Caliper parts now use `src/pages/<Name>.page.part.tsx`; saved links to the
+old organism part paths must be updated.
 
 Each component imports its sibling `<Name>.css` from its `.tsx` file. It carries
 its `<Name>.<layer>.part.tsx` beside it. A stylesheet styles only elements its

@@ -1,11 +1,11 @@
 import "./PicoRunnerPicker.css"
 import type { SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
 import { useEffect, useLayoutEffect, useRef } from "react"
-import { PicoRow } from "../atoms/PicoRow"
-import { PicoCard } from "../molecules/PicoCard"
-import { PicoGameOverlay } from "../templates/PicoGameOverlay"
+import { PicoRow } from "../ui/atoms/PicoRow"
+import { PicoCard } from "../ui/molecules/PicoCard"
+import { PicoGameOverlay } from "../ui/templates/PicoGameOverlay"
 
-/** Shape: runner facts use Pico's scrollable panel and native buttons. */
+/** Page: runner facts and actions fill the shared game-overlay template. */
 export function PicoRunnerPicker({
   choice,
   onAction,

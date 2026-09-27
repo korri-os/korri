@@ -13,6 +13,7 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
+import ts from "typescript"
 
 const SRC = join(import.meta.dir, "..", "src")
 
@@ -107,6 +108,94 @@ describe("every rendered unit is a component with a part beside it", () => {
       .sort()
 
     expect(badLayers).toEqual([])
+  })
+})
+
+/** Type-only imports describe data, not composition. Keep runtime edges only. */
+function runtimeImports(source: ts.SourceFile): string[] {
+  const imports: string[] = []
+  function visit(node: ts.Node) {
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause
+      if (clause?.isTypeOnly) return
+      const bindings = clause?.namedBindings
+      if (!clause?.name && bindings && ts.isNamedImports(bindings)
+        && bindings.elements.length > 0 && bindings.elements.every(item => item.isTypeOnly)) return
+      if (ts.isStringLiteral(node.moduleSpecifier)) imports.push(node.moduleSpecifier.text)
+    } else if (ts.isExportDeclaration(node)) {
+      if (node.isTypeOnly) return
+      if (node.exportClause && ts.isNamedExports(node.exportClause)
+        && node.exportClause.elements.every(item => item.isTypeOnly)) return
+      if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) imports.push(node.moduleSpecifier.text)
+    } else if (ts.isCallExpression(node)
+      && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+        || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
+      const argument = node.arguments[0]
+      if (argument && ts.isStringLiteral(argument)) imports.push(argument.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return imports
+}
+
+const layerDirectories: Record<Layer, string> = {
+  page: "pages",
+  template: "ui/templates",
+  organism: "ui/organisms",
+  molecule: "ui/molecules",
+  atom: "ui/atoms",
+}
+
+function componentLayer(file: string): Layer | undefined {
+  const directory = relative(SRC, dirname(file))
+  return LAYERS.find(layer => directory === layerDirectories[layer])
+}
+
+describe("composition imports stay at the same layer or point down", () => {
+  test("a part's declared layer agrees with its component's directory", () => {
+    expect(partFiles.filter(file => partLayer(file) !== componentLayer(file))
+      .map(file => relative(SRC, file))).toEqual([])
+  })
+
+  test.each([
+    ['import type { Page } from "./Page"', []],
+    ['import { type Page } from "./Page"', []],
+    ['export type { Page } from "./Page"', []],
+    ['export { type Page } from "./Page"', []],
+    ['type Page = import("./Page").Page', []],
+    ['import { type Props, Page } from "./Page"', ["./Page"]],
+    ['import Page, { type Props } from "./Page"', ["./Page"]],
+    ['import * as page from "./Page"', ["./Page"]],
+    ['import "./Page"', ["./Page"]],
+    ['export { Page } from "./Page"', ["./Page"]],
+    ['export * from "./Page"', ["./Page"]],
+    ['const page = import("./Page")', ["./Page"]],
+    ['const page = require("./Page")', ["./Page"]],
+  ] as const)("classifies runtime dependencies in %s", (text, expected) => {
+    expect(runtimeImports(ts.createSourceFile("example.tsx", text, ts.ScriptTarget.Latest, true)))
+      .toEqual([...expected])
+  })
+
+  test("no component imports a higher-layer component at runtime", () => {
+    const configPath = join(SRC, "..", "tsconfig.json")
+    const config = ts.readConfigFile(configPath, ts.sys.readFile)
+    expect(config.error).toBeUndefined()
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath))
+    expect(parsed.errors).toEqual([])
+    const offenders = componentFiles.flatMap(file => {
+      const from = componentLayer(file)
+      if (from === undefined) return [`${relative(SRC, file)}: no layer`]
+      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
+      return runtimeImports(source).flatMap(specifier => {
+        // Use the product's resolver so path aliases cannot evade the gate.
+        const target = ts.resolveModuleName(specifier, file, parsed.options, ts.sys).resolvedModule
+        const to = target && componentLayer(target.resolvedFileName)
+        return to !== undefined && LAYERS.indexOf(to) < LAYERS.indexOf(from)
+          ? [`${relative(SRC, file)} (${from}) -> ${specifier} (${to})`] : []
+      })
+    })
+    expect(offenders.sort()).toEqual([])
   })
 })
 

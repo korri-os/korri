@@ -1,4 +1,4 @@
-import { runnerChoice } from "../../fixtures/runner-choice"
+import { runnerChoice } from "../fixtures/runner-choice"
 import { PicoRunnerPicker } from "./PicoRunnerPicker"
 
 export const name = "Runner Picker"

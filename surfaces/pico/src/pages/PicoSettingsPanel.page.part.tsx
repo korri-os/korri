@@ -1,5 +1,5 @@
-import { fixtureModel } from "../../fixtures/fixture-host"
-import { picoSettingsViewFromModel } from "../../pico-settings-view"
+import { fixtureModel } from "../fixtures/fixture-host"
+import { picoSettingsViewFromModel } from "../pico-settings-view"
 import { PicoSettingsPanel } from "./PicoSettingsPanel"
 
 export const name = "Settings Panel"
