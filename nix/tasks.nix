@@ -68,11 +68,13 @@ let
       '';
     };
     rpminiv2-check = {
-      description = "Check the Retroid Pocket Mini V2 Korri and recovery configurations and offline image verifier.";
+      description = "Check the Retroid Pocket Mini V2 Korri and recovery configurations, inputd activity action, and offline image verifier.";
       runtimeInputs = [ pkgs.nix ];
       script = ''
         cd "$KORRI_ROOT"
-        exec nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2
+        exec nix build --no-link \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2 \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-inputd-action
       '';
     };
     rpminiv2-initrd-check = {
