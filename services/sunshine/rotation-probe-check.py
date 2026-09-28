@@ -67,14 +67,37 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         original_readback = 'gl::ctx.GetTextureSubImage(rgb->tex[0], 0, img_offset_x, img_offset_y, 0, width, height, 1, GL_BGRA, GL_UNSIGNED_BYTE, img_out->height * img_out->row_pitch, img_out->data);'
         assert before.count(original_readback) == after.count(original_readback) == 1, 'unrotated readback changed'
         assert after.count('gl::ctx.GetTextureSubImage(') == before.count('gl::ctx.GetTextureSubImage(') + 1, 'extra readback outside rotated path'
-        assert 'if (capture_rotate_90) {' in after and 'if (!capture_rotate_90 && cursor && captured_cursor.visible)' in after
+        assert 'if (capture_rotate_90) {' in after and 'blend_rotated_cursor(*img_out);' in after
+        assert 'blend_cursor(*img_out);' in after, 'unrotated cursor blending changed'
+        assert 'cannot capture a visible hardware cursor' not in after
+        assert 'auto target_x = captured_cursor.y - img_offset_y + static_cast<std::int32_t>(y);' in after
+        assert 'auto target_y = img.height - 1 - (captured_cursor.x - img_offset_x + static_cast<std::int32_t>(x));' in after
+        assert 'std::memcpy(&cursor_pixel, captured_cursor.pixels.data()' in after
         assert '#if defined(SUNSHINE_BUILD_WAYLAND) && !defined(SUNSHINE_CAPTURE_ROTATION_FORCE_OFF)' in after
         assert 'vec2(tex.y, 1.0 - tex.x)' in after, 'rotation shader changed: retest orientation'
         assert 'output_transform = monitor->second.output_transform' in after
+        assert 'output_name = monitor->second.output_name' in after
+        assert 'monitor_descriptor.output_transform.reset();' in after, 'mismatched Wayland mode must not authorize rotation'
+        assert '" CRTC="sv << crtc_id << " plane="sv << plane_id' in after
         print(f'{profile}: approved patches + probe apply; KMS GPU suffix and identity readback unchanged')
 
 # Asymmetric, labelled source: verify the shader's counter-clockwise coordinates.
 source_pixels = [['A', 'B', 'C'], ['D', 'E', 'F']]
 rotated = [[source_pixels[x][2 - y] for x in range(2)] for y in range(3)]
 assert rotated == [['C', 'F'], ['B', 'E'], ['A', 'D']]
-print('static gates passed (no runtime GPU or device timing claim)')
+# Verify cursor sample placement including a partially clipped cursor. The
+# shader and cursor must use the same source-to-destination mapping.
+for source_width, source_height, cursor_x, cursor_y, cursor_width, cursor_height in [
+    (3, 2, 0, 0, 3, 2),
+    (3, 2, -1, 0, 3, 2),
+    (3, 2, 2, 1, 2, 2),
+]:
+    for y in range(cursor_height):
+        for x in range(cursor_width):
+            raw_x, raw_y = cursor_x + x, cursor_y + y
+            target_x, target_y = raw_y, source_width - 1 - raw_x
+            visible = 0 <= raw_x < source_width and 0 <= raw_y < source_height
+            assert visible == (0 <= target_x < source_height and 0 <= target_y < source_width)
+            if visible:
+                assert rotated[target_y][target_x] == source_pixels[raw_y][raw_x]
+print('static gates passed (no runtime GPU, cursor compositing, or device timing claim)')

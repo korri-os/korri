@@ -22,9 +22,14 @@ not a fix ready to release.
   `SUNSHINE_CAPTURE_ROTATION_FORCE_OFF` keeps the unrotated path available in
   an otherwise identical instrumented build for a controlled comparison.
 - The shader applies the 90-degree counter-clockwise transform specified by
-  `WL_OUTPUT_TRANSFORM_90`. The Mini's actual Wayland event, exact monitor match,
-  and observed orientation still need a physical check. Do not infer them from
-  `swaymsg` output or the panel's dimensions alone.
+  `WL_OUTPUT_TRANSFORM_90`. A visible hardware cursor follows the same
+  source-to-destination mapping after readback. It visits only cursor pixels,
+  not the whole frame; the existing blend already does not scale the cursor.
+  A mismatched Wayland output mode cannot authorize rotation. The probe logs
+  the matched Wayland output name, DRM CRTC/plane, raw size, output size and
+  transform at initialization. The Mini's actual Wayland event, exact match,
+  cursor appearance and observed orientation still need a physical check.
+  Do not infer them from `swaymsg` output or panel dimensions alone.
 
 At 1240 × 1080 × 4 bytes, the extra destination texture holds **5,356,800
 bytes** (about 5.11 MiB). An uncached full-frame GPU read plus write at 60
@@ -48,18 +53,39 @@ checks that the original unrotated readback stays, and checks the asymmetric
 zero-copy runtime trace. The `--fuzz=0` probe application prevents silent
 context relocation in the two reviewed profiles.
 
-Compile the instrumented x86_64 probe off-device, without changing the
-approved package or patch list:
+Compile each instrumented profile off-device, without changing the approved
+package or patch list:
 
 ```sh
 nix build --impure --file services/sunshine/rotation-probe-build.nix \
-  --out-link /tmp/sunshine-rotation-x86-build
+  --out-link /tmp/sunshine-rotation-x86-experiment
+nix build --impure --file services/sunshine/rotation-probe-build.nix \
+  --argstr system aarch64-linux \
+  --out-link /tmp/sunshine-rotation-arm-experiment
+nix build --impure --file services/sunshine/rotation-probe-build.nix \
+  --argstr system aarch64-linux --arg forceOff true \
+  --out-link /tmp/sunshine-rotation-arm-force-off
+nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
+  --out-link /tmp/sunshine-rotation-plugin-on
+nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
+  --arg forceOff true --out-link /tmp/sunshine-rotation-plugin-off
+services/sunshine/rotation-probe-artifact-check.py \
+  /tmp/sunshine-rotation-plugin-on /tmp/sunshine-rotation-plugin-off
 ```
 
-This proves C++ compilation for the x86_64 profile. It does **not** compile
-the aarch64/RKMPP profile or verify a Mini GL context. The resulting package
-has unchanged release provenance and must **never** be deployed as an approved
-Sunshine build. The experimental derivation defines
+The ARM expression selects the actual `sunshine-korri-v4l2m2m` RKMPP profile.
+The derivation has an experimental name and version. Its provenance identifies
+it as an experiment and records the probe hash, parent profile and force-off
+mode. It is **not** an approved
+Sunshine build or a plugin closure. The existing plugin's approval binds its
+exact package closure. `rotation-probe-plugin.nix` builds the matching
+experimental plugin output for both ARM variants off-device; it does not
+publish or sign them. Do not substitute a standalone executable under the
+existing plugin unit, even after signing the binary. The plugin host needs a
+publisher-bound signature for the **new full closure** and an inspected exact
+approval. The artifact check reads both actual plugin manifests, package
+provenance, patch hash and AArch64 ELF headers. It does not verify a signature,
+Mini GL context, or physical timing. The derivation defines
 `SUNSHINE_CAPTURE_ROTATION_PROBE` for timing logs.
 Each 300 successful KMS RAM frames log p50/p95/p99/max for capture (without FPS
 pacing) and for readback plus the conditional draw. Each 300 encoded frames log
@@ -71,11 +97,11 @@ negotiated frame period; it is **not** a count of missed delivery deadlines.
 
 ## Trial gates before any device change
 
-1. Review the patch and monitor correlation. Add a correct transformed cursor
-   path: the prototype deliberately returns a capture error when a visible
-   hardware cursor is requested on a rotated stream. Confirm GL output,
-   90-degree direction, and output dimensions on the actual Mini.
-2. Obtain separate approval for a signed, reversible deployment. Recheck the
+1. Review the patch and guessed monitor correlation. Confirm visible cursor
+   rendering, GL output, 90-degree direction, and output dimensions on the
+   actual Mini; static pixel mapping alone is not physical proof.
+2. Obtain separate approval for a newly admitted exact signed plugin closure
+   and a reversible device trial, not an override of the old approved unit. Recheck the
    exact device, active game/stream, pairing, signature checks, plugin owner,
    runtime overrides, and rollback. Build off-device; never compile on the
    Mini. Leave the current manual trial alone until its owner is ready.
@@ -89,5 +115,6 @@ negotiated frame period; it is **not** a count of missed delivery deadlines.
    timings. The IDR warning is a separate acceptance issue.
 
 **Cost of this route:** an extra GPU pass and texture on rotated KMS RAM
-captures, plus review and measured trial time. It does not fix cursor handling,
-monitor-correlation uncertainty, or IDR recovery. Do not ship it on that basis.
+captures, plus review and measured trial time. Cursor blending still visits
+only visible cursor pixels. Physical cursor behavior, monitor-correlation
+uncertainty, and IDR recovery remain open. Do not ship it on that basis.
