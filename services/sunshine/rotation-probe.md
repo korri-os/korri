@@ -105,8 +105,14 @@ negotiated frame period; it is **not** a count of missed delivery deadlines.
 2. Obtain separate approval for a newly admitted exact signed plugin closure
    and a reversible device trial, not an override of the old approved unit. Recheck the
    exact device, active game/stream, pairing, signature checks, plugin owner,
-   runtime overrides, and rollback. Build off-device; never compile on the
-   Mini. Leave the current manual trial alone until its owner is ready.
+   runtime overrides, and rollback. Record the original signed selection and
+   approval before each update. Build off-device; never compile on the Mini.
+   Leave the current manual trial alone until its owner is ready. Test only
+   one variant at a time: stop the stream, restore the original selection
+   with `korri-plugin restore`, and verify its receipt and service before
+   installing the other variant. The host retains only the current and one
+   previous selection, so installing off and on back-to-back would discard
+   the direct rollback to the original selection.
 3. Compare `FORCE_OFF` with rotation on the **same** moving glmark2 scene,
    resolution, encoder, FPS, cursor state, and warm-up. Record 300-frame timing
    distributions, delivered FPS and actual late/dropped frames, Sunshine CPU
