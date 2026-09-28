@@ -379,6 +379,8 @@ in
             "org.shadowblip.Input.CompositeDevice.DbusDevices",
             "org.shadowblip.Input.CompositeDevice.ProfilePath",
             "org.shadowblip.Input.CompositeDevice.SourceDevicePaths",
+            "org.shadowblip.Input.CompositeDevice.TargetDevices",
+            "org.shadowblip.Input.Target.DevicePaths",
             "org.shadowblip.Input.CompositeDevice.LoadProfilePath",
             "org.shadowblip.Input.CompositeDevice.Stop"
           ].indexOf(action.id) >= 0) {

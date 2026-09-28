@@ -1,0 +1,501 @@
+diff --git a/rootfs/usr/share/polkit-1/actions/org.shadowblip.InputPlumber.policy b/rootfs/usr/share/polkit-1/actions/org.shadowblip.InputPlumber.policy
+index b7c4bcf..91f4924 100644
+--- a/rootfs/usr/share/polkit-1/actions/org.shadowblip.InputPlumber.policy
++++ b/rootfs/usr/share/polkit-1/actions/org.shadowblip.InputPlumber.policy
+@@ -236,0 +237,10 @@
++  <action id="org.shadowblip.Input.Target.DevicePaths">
++    <description>Read the evdev nodes owned by a target device</description>
++    <message>Authorization required to read a target device's evdev nodes.</message>
++    <defaults>
++      <allow_any>no</allow_any>
++      <allow_inactive>no</allow_inactive>
++      <allow_active>no</allow_active>
++    </defaults>
++  </action>
++
+diff --git a/src/dbus/interface/target/mod.rs b/src/dbus/interface/target/mod.rs
+index 213253f..fc6fce6 100644
+--- a/src/dbus/interface/target/mod.rs
++++ b/src/dbus/interface/target/mod.rs
+@@ -8 +8 @@ pub mod touchscreen;
+-use zbus::fdo;
++use zbus::{fdo, message::Header, Connection};
+@@ -11 +11,4 @@ use zbus_macros::interface;
+-use crate::input::target::TargetDeviceTypeId;
++use crate::{
++    dbus::polkit::check_polkit,
++    input::target::{client::TargetDeviceClient, TargetDeviceTypeId},
++};
+@@ -19,0 +23 @@ pub struct TargetInterface {
++    client: TargetDeviceClient,
+@@ -23 +27 @@ impl TargetInterface {
+-    pub fn new(device_type: &TargetDeviceTypeId) -> TargetInterface {
++    pub fn new(device_type: &TargetDeviceTypeId, client: TargetDeviceClient) -> TargetInterface {
+@@ -26,0 +31 @@ impl TargetInterface {
++            client,
+@@ -35,0 +41,21 @@ impl TargetInterface {
++    /// Actual evdev nodes owned by this target, not its source devices.
++    /// Query on demand: node numbers are not stable across target recreation.
++    #[zbus(property(emits_changed_signal = "false"))]
++    async fn device_paths(
++        &self,
++        #[zbus(connection)] conn: &Connection,
++        #[zbus(header)] hdr: Option<Header<'_>>,
++    ) -> fdo::Result<Vec<String>> {
++        // ObjectManager reads properties without a caller header, including
++        // for external GetManagedObjects calls and InterfacesAdded broadcasts.
++        // The shared helper accepts None; this protected property must not.
++        let hdr = hdr.ok_or_else(|| {
++            fdo::Error::AccessDenied("DevicePaths requires a caller header".into())
++        })?;
++        check_polkit(conn, Some(hdr), "org.shadowblip.Input.Target.DevicePaths").await?;
++        self.client
++            .get_device_paths()
++            .await
++            .map_err(|err| fdo::Error::Failed(err.to_string()))
++    }
++
+diff --git a/src/input/target/client.rs b/src/input/target/client.rs
+index e45e9d9..78aa3d2 100644
+--- a/src/input/target/client.rs
++++ b/src/input/target/client.rs
+@@ -128,0 +129,11 @@ impl TargetDeviceClient {
++    /// Returns the actual evdev nodes owned by this target.
++    pub async fn get_device_paths(&self) -> Result<Vec<String>, ClientError> {
++        let (tx, rx) = channel(1);
++        self.send(TargetCommand::GetDevicePaths(tx)).await?;
++        match Self::recv(rx).await {
++            Some(Ok(paths)) => Ok(paths),
++            Some(Err(err)) => Err(ClientError::ServiceError(err.into())),
++            None => Err(ClientError::ChannelClosed),
++        }
++    }
++
+diff --git a/src/input/target/command.rs b/src/input/target/command.rs
+index 23a71c3..df8e030 100644
+--- a/src/input/target/command.rs
++++ b/src/input/target/command.rs
+@@ -25,0 +26,2 @@ pub enum TargetCommand {
++    /// Return actual evdev nodes owned by the target, or a discovery error.
++    GetDevicePaths(Sender<Result<Vec<String>, String>>),
+diff --git a/src/input/target/dbus.rs b/src/input/target/dbus.rs
+index 7ce4729..2f9d6fd 100644
+--- a/src/input/target/dbus.rs
++++ b/src/input/target/dbus.rs
+@@ -343,0 +344,5 @@ impl TargetInputDevice for DBusDevice {
++    fn get_device_paths(&mut self) -> Result<Vec<String>, InputError> {
++        // This target emits DBus signals and creates no evdev nodes.
++        Ok(Vec::new())
++    }
++
+diff --git a/src/input/target/device_paths_test.rs b/src/input/target/device_paths_test.rs
+new file mode 100644
+index 0000000..2899ba5
+--- /dev/null
++++ b/src/input/target/device_paths_test.rs
+@@ -0,0 +1,329 @@
++use super::*;
++use futures::StreamExt;
++use std::io::{BufRead, BufReader};
++use std::process::{Child, Command, Stdio};
++use std::sync::atomic::{AtomicUsize, Ordering};
++use zbus::{connection::Builder, object_server::Interface, zvariant::Value, Connection};
++
++// A private, real bus; never use the machine's system bus or disable polkit.
++struct SessionBus {
++    child: Child,
++    address: String,
++}
++
++impl SessionBus {
++    fn new() -> Self {
++        // Use the installed native session configuration explicitly; a Nix
++        // build sandbox has no /etc/dbus-1/session.conf.
++        let config = std::env::var("DBUS_TEST_SESSION_CONFIG")
++            .expect("set DBUS_TEST_SESSION_CONFIG to dbus's share/dbus-1/session.conf");
++        let mut child = Command::new("dbus-daemon")
++            .arg(format!("--config-file={config}"))
++            .args([
++                "--nofork",
++                "--print-address=1",
++                // Override any fixed address included by the host configuration.
++                "--address=unix:tmpdir=/tmp",
++            ])
++            .stdout(Stdio::piped())
++            .spawn()
++            .expect("dbus-daemon must be installed to run the interface regression");
++        let mut address = String::new();
++        BufReader::new(child.stdout.take().unwrap())
++            .read_line(&mut address)
++            .unwrap();
++        Self { child, address }
++    }
++
++    async fn connect(&self) -> Connection {
++        Builder::address(self.address.trim())
++            .unwrap()
++            .build()
++            .await
++            .unwrap()
++    }
++}
++
++impl Drop for SessionBus {
++    fn drop(&mut self) {
++        let _ = self.child.kill();
++        let _ = self.child.wait();
++    }
++}
++
++#[tokio::test]
++async fn device_paths_interface_is_read_only_and_requires_authorization() {
++    let bus = SessionBus::new();
++    let server = bus.connect().await;
++    let caller = bus.connect().await;
++    let (tx, mut rx) = mpsc::channel(1);
++    let iface = TargetInterface::new(&TargetDeviceTypeId::try_from("dbus").unwrap(), tx.into());
++    let mut xml = String::new();
++    iface.introspect_to_writer(&mut xml, 0);
++    assert!(xml.contains("<property name=\"DevicePaths\" type=\"as\" access=\"read\">"));
++    let path = "/org/shadowblip/InputPlumber/devices/target/test";
++    server.object_server().at(path, iface).await.unwrap();
++
++    let values: Vec<String> = vec!["/dev/input/event999".into()];
++    let error = caller
++        .call_method(
++            server.unique_name(),
++            path,
++            Some("org.freedesktop.DBus.Properties"),
++            "Set",
++            &(
++                "org.shadowblip.Input.Target",
++                "DevicePaths",
++                Value::from(values),
++            ),
++        )
++        .await
++        .unwrap_err();
++    match error {
++        zbus::Error::MethodError(name, _, _) => {
++            // zbus 5.12 has no setter dispatch for read-only properties.
++            assert_eq!(name.as_str(), "org.freedesktop.DBus.Error.UnknownProperty");
++        }
++        error => panic!("Unexpected Set failure: {error}"),
++    }
++    // No authority service exists on this bus: a real external read must fail
++    // closed, without sending a command to the target.
++    assert!(caller
++        .call_method(
++            server.unique_name(),
++            path,
++            Some("org.freedesktop.DBus.Properties"),
++            "Get",
++            &("org.shadowblip.Input.Target", "DevicePaths"),
++        )
++        .await
++        .is_err());
++    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
++}
++
++pub(super) async fn query<T: TargetInputDevice + TargetOutputDevice + Send + 'static>(
++    device: &mut MutexGuard<'_, T>,
++) -> Result<Vec<String>, client::ClientError> {
++    let (tx, mut rx) = mpsc::channel(1);
++    let client = TargetDeviceClient::new(tx);
++    let request = tokio::spawn(async move { client.get_device_paths().await });
++    TargetDriver::<T>::process_command(
++        &TargetDeviceTypeId::try_from("dbus").unwrap(),
++        &mut None,
++        &None,
++        device,
++        rx.recv().await.unwrap(),
++    )
++    .unwrap();
++    request.await.unwrap()
++}
++
++#[tokio::test]
++async fn device_paths_real_dbus_target_returns_no_evdev_nodes() {
++    let device = Mutex::new(DBusDevice::new());
++    assert!(query(&mut device.lock().unwrap()).await.unwrap().is_empty());
++}
++
++#[tokio::test]
++async fn device_paths_unsupported_discovery_is_an_error_not_empty_success() {
++    // This real target has deferred creation and does not implement discovery.
++    let device = Mutex::new(TouchscreenDevice::new().unwrap());
++    let mut device = device.lock().unwrap();
++    assert!(matches!(
++        query(&mut device).await,
++        Err(client::ClientError::ServiceError(_))
++    ));
++    // The error did not stop command handling: the next real input command works.
++    TargetDriver::<TouchscreenDevice>::process_command(
++        &TargetDeviceTypeId::try_from("touchscreen").unwrap(),
++        &mut None,
++        &None,
++        &mut device,
++        TargetCommand::WriteEvent(NativeEvent::new(
++            Capability::None,
++            super::super::event::value::InputValue::Bool(false),
++        )),
++    )
++    .unwrap();
++}
++
++#[tokio::test]
++async fn device_paths_expired_and_full_reply_channels_do_not_stop_input() {
++    let device = Mutex::new(DBusDevice::new());
++    let mut device = device.lock().unwrap();
++    let (expired, rx) = mpsc::channel(1);
++    drop(rx);
++    let (full, _rx) = mpsc::channel(1);
++    full.try_send(Ok(Vec::new())).unwrap();
++    for sender in [expired, full] {
++        TargetDriver::<DBusDevice>::process_command(
++            &TargetDeviceTypeId::try_from("dbus").unwrap(),
++            &mut None,
++            &None,
++            &mut device,
++            TargetCommand::GetDevicePaths(sender),
++        )
++        .unwrap();
++    }
++    assert!(query(&mut device).await.unwrap().is_empty());
++}
++
++#[tokio::test]
++async fn device_paths_headerless_getter_denies_without_querying_target() {
++    let bus = SessionBus::new();
++    let conn = bus.connect().await;
++    let path = "/org/shadowblip/InputPlumber/devices/target/internal";
++    let type_id = TargetDeviceTypeId::try_from("dbus").unwrap();
++    let (tx, mut rx) = mpsc::channel(1);
++    let iface = TargetInterface::new(&type_id, tx.into());
++    let emitter = zbus::object_server::SignalEmitter::new(&conn, path).unwrap();
++    let server = conn.object_server();
++    // ObjectManager also invokes this headerless path for external callers
++    // and broadcasts. Missing caller authority must not trigger discovery.
++    tokio::select! {
++        result = iface.get("DevicePaths", &server, &conn, None, &emitter) => {
++            assert!(result.unwrap().is_err());
++        }
++        _ = rx.recv() => panic!("headerless getter queried target metadata"),
++    }
++    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
++}
++
++// Process real target commands using the real node-free DBus target. Count
++// discovery requests without inventing device paths or an authorization service.
++fn counted_dbus_target() -> (TargetDeviceClient, Arc<AtomicUsize>, JoinHandle<()>) {
++    let (tx, mut rx) = mpsc::channel(1);
++    let requests = Arc::new(AtomicUsize::new(0));
++    let count = requests.clone();
++    let task = tokio::spawn(async move {
++        let device = Mutex::new(DBusDevice::new());
++        while let Some(cmd) = rx.recv().await {
++            if matches!(&cmd, TargetCommand::GetDevicePaths(_)) {
++                count.fetch_add(1, Ordering::SeqCst);
++            }
++            TargetDriver::<DBusDevice>::process_command(
++                &TargetDeviceTypeId::try_from("dbus").unwrap(),
++                &mut None,
++                &None,
++                &mut device.lock().unwrap(),
++                cmd,
++            )
++            .unwrap();
++        }
++    });
++    (tx.into(), requests, task)
++}
++
++async fn assert_object_manager_hides_device_paths(check_added_signal: bool) {
++    let bus = SessionBus::new();
++    let server = bus.connect().await;
++    let caller = bus.connect().await;
++    // Match InputPlumber's real service-root ObjectManager registration.
++    let root = crate::constants::BUS_PREFIX;
++    server
++        .object_server()
++        .at(root, zbus::fdo::ObjectManager)
++        .await
++        .unwrap();
++    let proxy = zbus::fdo::ObjectManagerProxy::builder(&caller)
++        .destination(server.unique_name().unwrap())
++        .unwrap()
++        .path(root)
++        .unwrap()
++        .build()
++        .await
++        .unwrap();
++    let mut added = proxy.receive_interfaces_added().await.unwrap();
++    let (client, requests, task) = counted_dbus_target();
++    let path = "/org/shadowblip/InputPlumber/devices/target/object_manager";
++    let iface = TargetInterface::new(&TargetDeviceTypeId::try_from("dbus").unwrap(), client);
++    server.object_server().at(path, iface).await.unwrap();
++
++    let (exposed, queried) = if check_added_signal {
++        let signal = tokio::time::timeout(Duration::from_secs(3), added.next())
++            .await
++            .unwrap()
++            .unwrap();
++        let args = signal.args().unwrap();
++        assert!(args.object_path().as_str() == path);
++        let props = args
++            .interfaces_and_properties()
++            .get("org.shadowblip.Input.Target")
++            .unwrap();
++        assert!(props.contains_key("Name"));
++        (
++            props.contains_key("DevicePaths"),
++            requests.load(Ordering::SeqCst),
++        )
++    } else {
++        // Measure only this external request, independent of startup signals.
++        let before = requests.load(Ordering::SeqCst);
++        let objects = tokio::time::timeout(Duration::from_secs(3), proxy.get_managed_objects())
++            .await
++            .unwrap()
++            .unwrap();
++        let props = objects
++            .get(&zbus::zvariant::ObjectPath::try_from(path).unwrap())
++            .unwrap()
++            .get("org.shadowblip.Input.Target")
++            .unwrap();
++        assert!(props.contains_key("Name"));
++        (
++            props.contains_key("DevicePaths"),
++            requests.load(Ordering::SeqCst) - before,
++        )
++    };
++    task.abort();
++    // Do not include property contents in assertion output.
++    assert!(
++        !exposed,
++        "ObjectManager exposed DevicePaths without authorization"
++    );
++    assert_eq!(queried, 0, "ObjectManager queried target metadata");
++}
++
++#[tokio::test]
++async fn device_paths_get_managed_objects_omits_metadata_without_query() {
++    assert_object_manager_hides_device_paths(false).await;
++}
++
++#[tokio::test]
++async fn device_paths_interfaces_added_omits_metadata_without_query() {
++    assert_object_manager_hides_device_paths(true).await;
++}
++
++#[tokio::test]
++async fn device_paths_closed_target_and_lost_response_fail() {
++    let (tx, rx) = mpsc::channel(1);
++    drop(rx);
++    assert!(TargetDeviceClient::new(tx)
++        .get_device_paths()
++        .await
++        .is_err());
++
++    let (tx, mut rx) = mpsc::channel(1);
++    let request = tokio::spawn(async move { TargetDeviceClient::new(tx).get_device_paths().await });
++    drop(rx.recv().await.unwrap());
++    assert!(request.await.unwrap().is_err());
++}
++
++#[tokio::test]
++async fn device_paths_send_and_response_waits_are_bounded() {
++    let (tx, _rx) = mpsc::channel(1);
++    tx.try_send(TargetCommand::ClearState).unwrap();
++    let saturated = TargetDeviceClient::new(tx);
++    let (tx, mut rx) = mpsc::channel(1);
++    let unresponsive = TargetDeviceClient::new(tx);
++    let responses = async {
++        let request = tokio::spawn(async move { unresponsive.get_device_paths().await });
++        let _unanswered = rx.recv().await.unwrap();
++        request.await.unwrap()
++    };
++    let (send, response) = tokio::time::timeout(Duration::from_secs(7), async {
++        tokio::join!(saturated.get_device_paths(), responses)
++    })
++    .await
++    .expect("target metadata commands must time out");
++    assert!(send.is_err());
++    assert!(response.is_err());
++}
+diff --git a/src/input/target/mod.rs b/src/input/target/mod.rs
+index 22a49c2..7e3495b 100644
+--- a/src/input/target/mod.rs
++++ b/src/input/target/mod.rs
+@@ -67,0 +68,3 @@ pub mod xpad;
++#[cfg(test)]
++mod device_paths_test;
++
+@@ -357,0 +361,6 @@ pub trait TargetInputDevice {
++    /// Returns actual evdev nodes owned by this target. Unsupported discovery
++    /// must be an error, not an empty list that could hide an existing device.
++    fn get_device_paths(&mut self) -> Result<Vec<String>, InputError> {
++        Err("Evdev node discovery is not supported for this target".into())
++    }
++
+@@ -504 +513 @@ impl<T: TargetInputDevice + TargetOutputDevice + Send + 'static> TargetDriver<T>
+-                let target_iface = TargetInterface::new(&self.type_id);
++                let target_iface = TargetInterface::new(&self.type_id, client.clone());
+@@ -712,0 +722,8 @@ impl<T: TargetInputDevice + TargetOutputDevice + Send + 'static> TargetDriver<T>
++            TargetCommand::GetDevicePaths(sender) => {
++                let paths = implementation
++                    .get_device_paths()
++                    .map_err(|err| err.to_string());
++                // Metadata failure, cancellation, or a full reply channel must
++                // never terminate or block the input processing loop.
++                let _ = sender.try_send(paths);
++            }
+diff --git a/src/input/target/xpad.rs b/src/input/target/xpad.rs
+index be45c8f..1b1cc6b 100644
+--- a/src/input/target/xpad.rs
++++ b/src/input/target/xpad.rs
+@@ -234,0 +235,12 @@ impl TargetInputDevice for XBoxController {
++    fn get_device_paths(&mut self) -> Result<Vec<String>, InputError> {
++        self.device
++            .enumerate_dev_nodes_blocking()?
++            .map(|path| {
++                path?
++                    .into_os_string()
++                    .into_string()
++                    .map_err(|_| InputError::from("Evdev node path is not valid UTF-8"))
++            })
++            .collect()
++    }
++
+@@ -407,0 +420,31 @@ impl TargetOutputDevice for XBoxController {
++
++#[cfg(test)]
++mod device_paths_tests {
++    use super::*;
++    use std::sync::Mutex;
++
++    #[tokio::test]
++    #[ignore = "requires an explicitly authorized off-device /dev/uinput test host"]
++    async fn identical_xbox_targets_report_only_their_own_kernel_nodes() {
++        let mut first = XBoxController::new("xb360").unwrap();
++        let mut second = XBoxController::new("xb360").unwrap();
++        let expected = first
++            .device
++            .enumerate_dev_nodes_blocking()
++            .unwrap()
++            .map(|path| path.unwrap().into_os_string().into_string().unwrap())
++            .collect::<Vec<_>>();
++        let second_paths = second.get_device_paths().unwrap();
++        let first = Mutex::new(first);
++        let mut actual = super::super::device_paths_test::query(&mut first.lock().unwrap())
++            .await
++            .unwrap();
++        let mut expected = expected;
++        expected.sort();
++        actual.sort();
++        assert!(!actual.is_empty());
++        assert!(!second_paths.is_empty());
++        assert_eq!(actual, expected);
++        assert!(actual.iter().all(|path| !second_paths.contains(path)));
++    }
++}

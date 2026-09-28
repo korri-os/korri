@@ -195,6 +195,10 @@ in
         inputplumberKorri
         ;
     };
+    inputplumber-device-paths-vm = import ./inputplumber-device-paths-vm-test.nix {
+      module = korriInputModule;
+      inherit pkgs inputdPackage inputplumberKorri;
+    };
     korri-input-seat-receiver = import ./korri-input-seat-receiver-check.nix {
       inherit pkgs inputdPackage;
     };

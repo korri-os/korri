@@ -365,6 +365,24 @@ assert lib.hasInfix "org.shadowblip.Input.CompositeDevice.SourceDevicePaths"
   combined.config.security.polkit.extraConfig;
 assert lib.hasInfix "org.shadowblip.Input.CompositeDevice.Stop"
   combined.config.security.polkit.extraConfig;
+# Exact metadata grants only. Keep the pre-existing profile/Stop authority,
+# without granting any new mutation, broad property read, or target action.
+assert lib.hasInfix "org.shadowblip.Input.CompositeDevice.TargetDevices"
+  combined.config.security.polkit.extraConfig;
+assert lib.hasInfix "org.shadowblip.Input.Target.DevicePaths"
+  combined.config.security.polkit.extraConfig;
+assert
+  lib.concatMap (value: if builtins.isList value then value else [ ]) (
+    builtins.split ''"(org[.]shadowblip[.][^"]+)"'' combined.config.security.polkit.extraConfig
+  ) == [
+    "org.shadowblip.Input.CompositeDevice.DbusDevices"
+    "org.shadowblip.Input.CompositeDevice.ProfilePath"
+    "org.shadowblip.Input.CompositeDevice.SourceDevicePaths"
+    "org.shadowblip.Input.CompositeDevice.TargetDevices"
+    "org.shadowblip.Input.Target.DevicePaths"
+    "org.shadowblip.Input.CompositeDevice.LoadProfilePath"
+    "org.shadowblip.Input.CompositeDevice.Stop"
+  ];
 assert
   (builtins.fromJSON (
     builtins.unsafeDiscardStringContext combinedEnvironment.KORRI_INPUTD_WORKSPACE_NEXT

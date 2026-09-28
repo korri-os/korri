@@ -1,6 +1,6 @@
 # Unified controller input
 
-Status: transport checkpoint `8c2114c2` and pool checkpoint `e9aef9ac` are committed. The user approved first-message authentication, session-scoped reservations, and `host.preferences.playerCount` in `device.yaml`. Controller production routing is unchanged. Count storage, guarded Linux RPC, and truthful settings editability pass scoped checks and review. Physical source identity and native producer integration still need grounding.
+Status: checkpoints `8c2114c2`, `e9aef9ac`, and `c53d9973` are committed. Transport, pool logic, count storage, and truthful settings editability pass their scoped checks. Controller production routing is unchanged. The user approved the InputPlumber read-only target-node mapping next; physical reconnect identity and complete native producer integration still need grounding.
 
 ## Approved behavior
 
@@ -41,6 +41,8 @@ Do not implement ungrounded schema to make the plan look complete.
 3. Configuration ownership is resolved: korrid manages the device's seat count. Changing it must not require a Nix deployment. Nix installs the service and permissions. Pool recreation can occur only with no active session. The Nix-option recommendation was withdrawn after the user questioned deploy-to-change configuration. The user agreed to korrid ownership. Resolved through ask `bfbcdb38-687c-44f3-af1a-1aef03c42fb7`: the user approved `host.preferences.playerCount` in the existing `device.yaml`. It is device-only, not inherited or overridden by games. Default four; valid integer values are 1–255. This is a representation limit, not a hardware-support claim. Use the existing conflict-safe writer, not another file. Refuse count changes during active sessions, including pause.
 
 4. The user approved `SettingsSnapshot.editableSettingIds` after ask `8ead77c6-5dfa-45e4-bc08-573e68b91449`. It is a mandatory list of existing setting IDs with supported, authorized write handlers. It grants no authority. Runtime preconditions remain checked on write. Keep uneditable values visible and omit their existing `interaction` declarations. No persistent setting or new surface-treaty field is needed.
+
+5. The user approved the recommended option from ask `00fd4155-0004-4c3c-8647-4b33b46b2e02`, after its plain-language explanation. Add read-only `org.shadowblip.Input.Target.DevicePaths` to InputPlumber, reporting each target's actual evdev nodes. Inputd follows the existing composite-to-target mapping and validates the reported nodes before opening. Preserve existing controller identity fingerprints. Build InputPlumber off-device, not Chromium. Add only the narrow metadata-read permission needed for this lookup. No handheld deployment is authorized.
 
 Changes to source identity, reservation lifetime, overflow, or remote authority require an explicit decision when current or legacy contracts do not cover the case.
 
@@ -172,5 +174,19 @@ The integrated editability check passed 172 affected Rust tests, all 301 portal 
 The preview client now accepts a real settings snapshot as fixture data. Its private authorization set cannot be expanded by editing the seed or returned metadata. Settings responses are cloned, and real HTTP permission refusals produce PermissionDenied rather than BrainUnreachable.
 
 A controller-accessibility test also failed before the Pico fix: read-only settings had tabIndex -1. Pico now opts only fact settings into native group focus, with unique label/value references and no action handler. Shift already uses this pattern. The actual Shift integration and Pico tests prove readonly values remain focusable without opening editors or invoking writers. No CSS or layout algorithm changed. Live browser geometry and Caliper HMR were not exercised.
+
+## Target-node mapping checkpoint
+
+The patched InputPlumber release build and package check passed off-device. The release library and binary suites each passed 23 tests with one kernel-device test ignored; four doctests passed. The successful outputs are `/nix/store/i73lx1y0yfj5630hi0m9q39j181b6bh5-inputplumber-korri-0.75.2` and `/nix/store/ivsjg35a7af21jjx22cvsd2m786cgfh4-inputplumber-korri-package-check`. Parent-managed process `proc_6af5` verified both outputs. Earlier attempts failed because the test bus inherited host session configuration; those results are not the accepted build.
+
+Inputd's initial discovery implementation passed 124 scoped tests and module evaluation. Integration inspection found a concrete mismatch: the installed `60-xbox_one_gamepad.yaml` creates `xb360`, `mouse`, and `keyboard`, while only Xbox targets currently implement DevicePaths. The corrected consumer selects normalized targets through existing DeviceType metadata, ignores empty/volume-only persisted composites, and compares metadata sets rather than order. Its 21 private-DBus cases passed within an 88-test rerun, with all-target Clippy and formatting passing.
+
+The isolated NixOS VM proof passed in 52 seconds through parent-managed process `proc_4514`. It created two identical real Xbox targets only inside the guest. Inputd read their distinct kernel nodes through the real system bus and polkit. Unrelated users were denied direct reads, and inputd was denied GetAll, Set, and CreateTargetDevice. Existing Stop/LoadProfilePath grants remained intact. No host input device was passed through.
+
+**Provider security correction verified:** review found a path outside the first direct-access checks. zbus ObjectManager calls getters without a caller header for GetManagedObjects and InterfacesAdded. Upstream check_polkit accepts a missing header, so the initial getter exposed DevicePaths without authorization. The corrected getter rejects a missing header locally, before the unchanged shared helper. Three new regression cases failed on the old getter and passed after the fix.
+
+Parent-managed process `proc_ad4f` rebuilt the corrected provider, module policy check, and expanded VM check successfully in 417 seconds. Both release suites passed 25 tests with one kernel-only test ignored; four doctests passed. The real-kernel VM proved authorized direct reads still work and successful ObjectManager replies plus broadcasts omit DevicePaths. The corrected provider is `/nix/store/2kzj0j0n1pm4hzfrmpdjgqhxn5x6yb34-inputplumber-korri-0.75.2`; the VM result is `/nix/store/dnxcvzrqhchn6933fv3jmnrhj78fn3md-vm-test-run-korri-inputplumber-device-paths`; the module result is `/nix/store/bx6j17q7y7ffpiag3z8f32vzi1n7rm7d-korri-input-module-check`. Patch SHA-256 is `a62c92e8f4bad5ea393b7b772597ce7684d412a4a1f9149e37bc6297396b3013`. The earlier i73lx1y0 output is superseded and must not be deployed. All long builds now belong to the parent's visible process tool.
+
+The complete `korrid-test` task also passed after running the existing locked script-fixture setup. Its log is `/tmp/pi-processes-TnenuC/proc_4abf-stdout.log`. This is not the remaining full `korrid-check` release/smoke gate.
 
 No device operation ran. Controller capture, native delivery, pool application, and deployment remain incomplete. The work is not ready to land.

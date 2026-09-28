@@ -8,6 +8,7 @@ pub mod devices;
 pub mod direct_runner;
 pub mod health;
 pub mod korrid_client;
+pub mod physical_sources;
 pub mod runtime;
 pub mod source_topology;
 pub mod virtual_targets;

@@ -25,14 +25,21 @@ assert
   inputplumberRuntime.upstream.sourceHash == "sha256-KiSroDcaWvzr5sP0jzr1GFyk0lHbtCFJrP3g5/b3hLQ=";
 assert
   inputplumberRuntime.upstream.cargoHash == "sha256-VwQ38Jv5OvyBqo9BBTnpUjgNwAbWyIdUKFKXsGC6+Mo=";
-assert inputplumberRuntime.upstream.patches == [ ./inputplumber-dbus-observer-timing.patch ];
+assert
+  inputplumberRuntime.upstream.patches == [
+    ./inputplumber-dbus-observer-timing.patch
+    ./inputplumber-target-device-paths.patch
+  ];
 assert inputplumberRuntime.patches == inputplumberRuntime.upstream.patches;
 assert inputplumberRuntime.doCheck;
 assert inputplumberKorri.version == inputplumberRuntime.version;
 assert inputplumberKorri.upstream == inputplumberRuntime.upstream;
 pkgs.runCommand "inputplumber-korri-package-check"
   {
-    nativeBuildInputs = [ pkgs.yq-go ];
+    nativeBuildInputs = [
+      pkgs.yq-go
+      pkgs.libxml2
+    ];
   }
   ''
     set -euo pipefail
@@ -74,6 +81,12 @@ pkgs.runCommand "inputplumber-korri-package-check"
       echo "pinned InputPlumber must create one automatic DBus target per composite" >&2
       exit 1
     }
+
+    policy="${inputplumberRuntime}/share/polkit-1/actions/org.shadowblip.InputPlumber.policy"
+    xmllint --nonet --noout "$policy"
+    action='/policyconfig/action[@id="org.shadowblip.Input.Target.DevicePaths"]'
+    test "$(xmllint --xpath "count($action)" "$policy")" = 1
+    test "$(xmllint --xpath "count($action/defaults/*[text()='no'])" "$policy")" = 3
 
     test -f "$selected_device" || {
       echo "selected upstream profile ${data.selectedDeviceProfile} is missing" >&2
