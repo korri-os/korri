@@ -2,7 +2,13 @@
 
 `rotation-probe.patch` is deliberately **not** in `approved-patches.nix` or
 `package.nix`. It is not installed on any device. The patch is an experiment,
-not a fix ready to release.
+not a fix ready to release. The first signed batch, `build-932cd7194921`,
+**must not be installed on the current Mini**. Its inspected plugins replace
+the active root-owned receiver with a different root setup and require the
+absent `korri-input-seat-receiver.service`. The active signed selection remains
+`/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin` with its own
+`korri-sunshine-input-seat-receiver.service`. The replacement trial outputs
+must retain that producer and permission boundary.
 
 ## Scope and provenance
 
@@ -43,7 +49,8 @@ Run from the worktree on a build machine with the approved source available:
 
 ```sh
 services/sunshine/rotation-probe-check.py \
-  /nix/store/gybylg65i7xxapkabpwy1jgscbb44b0l-source
+  /nix/store/gybylg65i7xxapkabpwy1jgscbb44b0l-source \
+  /nix/store/3gjgvw98yp52scnbwdxibdfw9abzk3k3-source
 ```
 
 The check applies the probe after both the approved base patch set and the
@@ -70,11 +77,16 @@ nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
 nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
   --arg forceOff true --out-link /tmp/sunshine-rotation-plugin-off
 services/sunshine/rotation-probe-artifact-check.py \
-  /tmp/sunshine-rotation-plugin-on /tmp/sunshine-rotation-plugin-off
+  /tmp/sunshine-rotation-plugin-on /tmp/sunshine-rotation-plugin-off \
+  /nix/store/3gjgvw98yp52scnbwdxibdfw9abzk3k3-source
 ```
 
-The ARM expression selects the actual `sunshine-korri-v4l2m2m` RKMPP profile.
-The derivation has an experimental name and version. Its provenance identifies
+The ARM expression selects the `sunshine-korri-v4l2m2m` RKMPP profile from
+Core `1a988da5`, the exact producer of the Mini's active signed plugin and
+Sunshine binary. `rotation-probe-baseline.nix` pins that producer. It must
+not silently follow the current Core plugin, which changed its units, receiver,
+input patch and requested authority. The derivation has an experimental name
+and version. Its provenance identifies
 it as an experiment and records the probe hash, parent profile and force-off
 mode. It is **not** an approved
 Sunshine build or a plugin closure. The existing plugin's approval binds its
@@ -88,9 +100,9 @@ publisher-bound signature for the **new full closure** and an inspected exact
 approval. The on/off batch contains two outputs with the same `@korri:sunshine`
 identity, so lookup by release and plugin ID rejects it as ambiguous. Inspect
 each exact ARM output path from the batch separately; verify its signed
-manifest and probe mode before approving an update. The artifact check reads
-both actual plugin manifests, package
-provenance, patch hash and AArch64 ELF headers. It does not verify a signature,
+manifest and probe mode before approving an update. The artifact check reads both actual plugin
+manifests, the retained receiver and setup paths, package provenance, patch
+hash and AArch64 ELF headers. It does not verify a signature,
 Mini GL context, or physical timing. The derivation defines
 `SUNSHINE_CAPTURE_ROTATION_PROBE` for timing logs.
 Each 300 successful KMS RAM frames log p50/p95/p99/max for capture (without FPS
@@ -109,7 +121,8 @@ negotiated frame period; it is **not** a count of missed delivery deadlines.
 2. Obtain separate approval for a newly admitted exact signed plugin closure
    and a reversible device trial, not an override of the old approved unit. Recheck the
    exact device, active game/stream, pairing, signature checks, plugin owner,
-   runtime overrides, and rollback. Record the original signed selection and
+   runtime overrides, old receiver unit and service policy, and rollback.
+   Refuse a candidate with changed native authority or a missing host unit. Record the original signed selection and
    approval before each update. Build off-device; never compile on the Mini.
    Leave the current manual trial alone until its owner is ready. Test only
    one variant at a time: stop the stream, restore the original selection

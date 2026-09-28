@@ -2,7 +2,7 @@
 {
   system ? "x86_64-linux",
   forceOff ? false,
-  korri ? builtins.getFlake ("path:" + toString ../..),
+  korri ? import ./rotation-probe-baseline.nix,
 }:
 let
   packageName = if system == "aarch64-linux" then "sunshine-korri-v4l2m2m" else "sunshine-korri";

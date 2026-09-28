@@ -10,12 +10,15 @@ import sys
 import tempfile
 
 service = Path(__file__).resolve().parent
-if len(sys.argv) != 2:
-    raise SystemExit(f'usage: {sys.argv[0]} /nix/store/...-sunshine-source')
+if len(sys.argv) != 3:
+    raise SystemExit(f'usage: {sys.argv[0]} /nix/store/...-sunshine-source /nix/store/...-baseline-korri-source')
 source = Path(sys.argv[1]).resolve()
+baseline = Path(sys.argv[2]).resolve()
 if not (source / 'src/platform/linux/kmsgrab.cpp').is_file():
     raise SystemExit('Sunshine source path is missing')
-approved = service / 'approved-patches.nix'
+approved = baseline / 'services/sunshine/approved-patches.nix'
+if not approved.is_file() or not (baseline / 'plugins/sunshine/korri-sunshine-input-seat-receiver.service').is_file():
+    raise SystemExit('The installed Mini plugin producer is missing')
 expr = f'let a = import {approved}; in map (p: toString p.path) (a.patches ++ a.rkmppPatches)'
 records = json.loads(subprocess.check_output(['nix', 'eval', '--json', '--impure', '--expr', expr], text=True))
 probe = service / 'rotation-probe.patch'
