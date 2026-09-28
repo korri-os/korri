@@ -34,6 +34,9 @@ let
       throw "The portal requires korrid's configured socket address."
     else
       "http://127.0.0.1:${builtins.head addressPort}";
+  # The browser receives controller input from the same private local daemon.
+  # HTTP connect-src does not authorize the WebSocket scheme.
+  korridWebSocketOrigin = "ws://127.0.0.1:${builtins.head addressPort}";
   credentialService = "korri-portal-credentials.service";
   credentialDirectory = "korri-portal-credentials";
   kioskParents = [
@@ -201,7 +204,7 @@ in
             try_files $uri $uri/ =404;
             add_header Cache-Control "no-store" always;
             add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ${
-              if kiosk.enable then korridOrigin else "'none'"
+              if kiosk.enable then "${korridOrigin} ${korridWebSocketOrigin}" else "'none'"
             }; object-src 'none'; frame-ancestors 'none'" always;
           '';
         };

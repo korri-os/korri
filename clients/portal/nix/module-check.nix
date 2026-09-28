@@ -226,8 +226,9 @@ assert
     }
   ];
 assert builtins.attrNames nginx.locations == [ "/" ];
-assert nixpkgs.lib.hasInfix "connect-src http://127.0.0.1:39217;" nginx.locations."/".extraConfig;
-assert nixpkgs.lib.hasInfix "connect-src http://127.0.0.1:43117;"
+assert nixpkgs.lib.hasInfix "connect-src http://127.0.0.1:39217 ws://127.0.0.1:39217;"
+  nginx.locations."/".extraConfig;
+assert nixpkgs.lib.hasInfix "connect-src http://127.0.0.1:43117 ws://127.0.0.1:43117;"
   alternate.services.nginx.virtualHosts.korri-portal.locations."/".extraConfig;
 assert builtins.any (
   a: !a.assertion && a.message == "The portal must listen on loopback only."
