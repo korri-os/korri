@@ -170,6 +170,7 @@ def main():
     shutil.copyfile(script, payload / "target.sh")
     shutil.copyfile(script.with_name("inspect.sh"), payload / "inspect.sh")
     shutil.copyfile(script.with_name("keep.sh"), payload / "keep.sh")
+    shutil.copyfile(script.with_name("no-game.jq"), payload / "no-game.jq")
     hashes = "".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
         for path in sorted(payload.iterdir())

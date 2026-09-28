@@ -240,6 +240,32 @@ existing active selection at boot; changing the initial package does not repair
 an already-installed card. Use a new image or an explicit, verified bundle
 switch. Do not assume a service restart selects the new package.
 
+### Volume action sandbox
+
+Inputd exposes only the runtime user's native `pipewire-0` socket through a
+read-only bind. `ProtectHome=tmpfs` keeps home files, other runtime files and
+the user D-Bus socket hidden. A read-only socket mount still permits PipeWire
+protocol requests, including volume changes. It is not a volume-only API grant.
+
+Inputd waits for the user manager, whose socket activation precedes readiness.
+An absent audio socket does not prevent controller startup. Restarting only the
+PipeWire daemon preserves the socket. Replacing the socket or restarting its
+user manager requires an inputd restart to refresh the bind. Do that only after
+the game ends, and refresh the temporary browser input view as described in
+[controller iteration](iteration/README.md). Do not restart inputd automatically
+during gameplay.
+
+`nix build --no-link .#checks.x86_64-linux.rpminiv2-volume` tests real PipeWire
+volume changes, protected-file visibility, cold-start ordering, daemon restart,
+and missing/replaced socket recovery. It runs off-device without a board kernel.
+
+The current spare-SD installation received the same policy in
+`/etc/systemd/system.control/korri-inputd.service.d/91-volume-socket.conf`.
+Live mixer reads verified 40% to 35% and back to 40%; subsequent physical button
+presses changed the mixer and the owner confirmed operation. This is not a
+fresh-boot or speaker-quality acceptance result. Remove the one-off override
+when activating a generation that includes the source fix.
+
 ### USB network link
 
 The product image composes one configfs USB gadget, `usb-gadget.service`, with

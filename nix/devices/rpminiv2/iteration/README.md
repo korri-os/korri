@@ -41,6 +41,8 @@ targets. The loop recognizes this owned view as its rollback baseline.
    unchanged. Only this test package applies `clients/linux/diagnostics/shell.patch`.
 2. Verify the Mini V2 model, SD root and boot partitions, approved generation,
    inputd readiness, absence of a live game, and unmodified kiosk configuration.
+   Only korrid's `NoActiveSession` and `SessionCompleted` status errors establish
+   idle state. Active sessions, recovery blocks and unknown failures stop the run.
 3. Copy the prebuilt launcher and D-pad replayer to RAM. Verify their checksums
    and require all runtime library references to be present already. No Nix
    signature bypass, download, or build runs on the target.

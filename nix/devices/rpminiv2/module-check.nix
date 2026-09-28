@@ -368,6 +368,32 @@ assert
     "@DEFAULT_AUDIO_SINK@"
     "5%-"
   ];
+# wpctl may reach only its native PipeWire socket, not the runtime user's
+# home, user bus, or other runtime files. Audio absence must not block inputd.
+assert c.services.pipewire.socketActivation;
+assert lib.elem "sockets.target" c.systemd.user.sockets.pipewire.wantedBy;
+assert c.systemd.services.korri-inputd.serviceConfig.ProtectHome == "tmpfs";
+assert
+  c.systemd.services.korri-inputd.serviceConfig.BindReadOnlyPaths == [
+    "-/run/user/${toString c.services.korriLinuxHost.runtimeUid}/pipewire-0"
+  ];
+assert (c.systemd.services.korri-inputd.serviceConfig.BindPaths or [ ]) == [ ];
+assert lib.all
+  (
+    name:
+    c.services.korriLinuxInput.inputd.actions.${name}.environment.XDG_RUNTIME_DIR
+    == "/run/user/${toString c.services.korriLinuxHost.runtimeUid}"
+  )
+  [
+    "volume-up"
+    "volume-down"
+  ];
+assert lib.elem "user@${toString c.services.korriLinuxHost.runtimeUid}.service"
+  c.systemd.services.korri-inputd.wants;
+assert lib.elem "user@${toString c.services.korriLinuxHost.runtimeUid}.service"
+  c.systemd.services.korri-inputd.after;
+assert
+  !(lib.elem "user@${toString c.services.korriLinuxHost.runtimeUid}.service" c.systemd.services.korri-inputd.requires);
 assert lib.all (name: !(lib.elem name (packageNames recovery))) [
   "alsa-utils"
   "android-tools"

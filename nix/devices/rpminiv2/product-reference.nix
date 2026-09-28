@@ -1,11 +1,30 @@
-# Only the approved native stop-thaw package and exact kiosk wiring differ
-# from the shared product reference. No board hardware or candidate config is
-# imported here: either would let device edits redefine their own authority.
+# Only the approved native stop-thaw package, exact kiosk wiring and native
+# audio-socket exposure differ from the shared product reference. No board
+# hardware or candidate config may redefine this independent authority.
 { product, bare }:
 let
   native = product.extendModules { modules = [ ./systemd/module.nix ]; };
   trusted = native.extendModules {
-    modules = [ ../../../clients/portal/nix/kiosk-freezer.nix ];
+    modules = [
+      ../../../clients/portal/nix/kiosk-freezer.nix
+      (
+        { config, lib, ... }:
+        {
+          # Independent authority for the approved Mini V2 exception. Do not
+          # import portal.nix: broader candidate binds must still fail the gate.
+          systemd.services.korri-inputd = {
+            wants = [ "user@${toString config.services.korriLinuxHost.runtimeUid}.service" ];
+            after = [ "user@${toString config.services.korriLinuxHost.runtimeUid}.service" ];
+            serviceConfig = {
+              ProtectHome = lib.mkForce "tmpfs";
+              BindReadOnlyPaths = [
+                "-/run/user/${toString config.services.korriLinuxHost.runtimeUid}/pipewire-0"
+              ];
+            };
+          };
+        }
+      )
+    ];
   };
   setting = name: path: {
     inherit name path;

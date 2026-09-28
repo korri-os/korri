@@ -60,7 +60,7 @@ jq=$(grep -oE '/nix/store/[a-z0-9]{32}-jq[^ /]*/bin/jq' "$original")
 no_game() {
   local status
   status=$(runuser -u korri-inputd -g korri-control -- curl --silent --show-error --max-time 4 --unix-socket /run/korrid-control/control.sock -H 'Content-Type: application/json' --data '{"_tag":"app.session.status","payload":{}}' http://localhost/rpc) || return 1
-  printf '%s' "$status" | "$jq" -e '._tag == "app.session.status" and .outcome._tag == "Err" and .outcome.payload.code == "NoActiveSession"' >/dev/null
+  printf '%s' "$status" | "$jq" -e -f "$stage/no-game.jq" >/dev/null
 }
 no_game
 (cd "$stage" && sha256sum --check payload.sha256)

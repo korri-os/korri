@@ -103,6 +103,20 @@ in
     };
   };
 
+  # Keep home directories and the rest of /run/user hidden. Only wpctl's
+  # existing native socket crosses inputd's mount namespace; no user bus is
+  # needed. The user manager creates its sockets before reporting ready.
+  # Missing audio must not stop controllers. If the socket itself is removed
+  # and recreated (not just PipeWire restarted), restart inputd to rebind it.
+  systemd.services.korri-inputd = {
+    wants = [ "user@${toString host.runtimeUid}.service" ];
+    after = [ "user@${toString host.runtimeUid}.service" ];
+    serviceConfig = {
+      ProtectHome = lib.mkForce "tmpfs";
+      BindReadOnlyPaths = [ "-/run/user/${toString host.runtimeUid}/pipewire-0" ];
+    };
+  };
+
   # The launcher takes InputPlumber data from the active bundle, not the
   # service's XDG_DATA_DIRS. Use the same resolved device data in both places.
   services.korriBundle.initialPackage = import ../../../services/inputd/nix/korri-bundle.nix {

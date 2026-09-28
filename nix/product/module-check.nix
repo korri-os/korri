@@ -466,6 +466,25 @@ let
   mutateNative = module: nativeProduct.extendModules { modules = [ module ]; };
   nativeUnitCases = [
     {
+      unit = "korri-inputd";
+      field = "BindReadOnlyPaths";
+      value = [ "/run/user/${toString nativeProduct.config.services.korriLinuxHost.runtimeUid}" ];
+    }
+    {
+      unit = "korri-inputd";
+      field = "BindReadOnlyPaths";
+      value = nativeProduct.config.systemd.services.korri-inputd.serviceConfig.BindReadOnlyPaths ++ [
+        "/run/user/${toString nativeProduct.config.services.korriLinuxHost.runtimeUid}/bus"
+      ];
+    }
+    {
+      unit = "korri-inputd";
+      field = "BindPaths";
+      value = [
+        "/run/user/${toString nativeProduct.config.services.korriLinuxHost.runtimeUid}/pipewire-0"
+      ];
+    }
+    {
       unit = "korrid";
       field = "ExecStart";
       value = "/bin/false";

@@ -286,6 +286,7 @@
             rg35xxsp = rg35xxsp.moduleCheck pkgs;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
             rpminiv2-inputd-action = rpminiv2.inputdActionCheck pkgs;
+            rpminiv2-volume = rpminiv2.volumeCheck pkgs;
             rpminiv2-wifi = rpminiv2.wifiCheck pkgs;
             rpminiv2-usb-gadget = rpminiv2.usbGadgetCheck pkgs;
             rpminiv2-systemd-freezer = rpminiv2.systemdCheck pkgs;

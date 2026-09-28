@@ -1,7 +1,9 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i python3 -p python3
+#!nix-shell -i python3 -p python3 jq
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
 import unittest
 
 spec = importlib.util.spec_from_file_location(
@@ -106,6 +108,65 @@ class VerdictTests(unittest.TestCase):
         self.after["focusIndex"] = 3
         self.after["focusNode"] = self.before["focusNode"]
         self.assertFalse(self.check())
+
+
+class IdleGuardTests(unittest.TestCase):
+    def accepts(self, response):
+        result = subprocess.run(
+            ["jq", "-e", "-f", str(Path(__file__).with_name("no-game.jq"))],
+            input=json.dumps(response),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return result.returncode == 0
+
+    def status_error(self, code):
+        return {
+            "_tag": "app.session.status",
+            "outcome": {"_tag": "Err", "payload": {"code": code}},
+        }
+
+    def test_no_active_session_is_idle(self):
+        self.assertTrue(self.accepts(self.status_error("NoActiveSession")))
+
+    def test_completed_launch_is_idle(self):
+        self.assertTrue(self.accepts(self.status_error("SessionCompleted")))
+
+    def test_uncertain_or_recovery_errors_are_not_idle(self):
+        for code in (
+            "HostRecoveryBlocked",
+            "UpstreamUnreachable",
+            "StaleLaunchIdentity",
+        ):
+            with self.subTest(code=code):
+                self.assertFalse(self.accepts(self.status_error(code)))
+
+    def test_active_or_overlay_session_is_not_idle(self):
+        for field in ("active", "overlay"):
+            self.assertFalse(
+                self.accepts(
+                    {
+                        "_tag": "app.session.status",
+                        "outcome": {
+                            "_tag": "Ok",
+                            "payload": {
+                                field: {
+                                    "launchId": "fixture-launch",
+                                    "gameId": "fixture-game",
+                                    "phase": "running",
+                                }
+                            },
+                        },
+                    }
+                )
+            )
+
+    def test_wrong_rpc_and_missing_reply_are_not_idle(self):
+        response = self.status_error("SessionCompleted")
+        response["_tag"] = "app.session.stop"
+        self.assertFalse(self.accepts(response))
+        self.assertFalse(self.accepts({}))
 
 
 if __name__ == "__main__":

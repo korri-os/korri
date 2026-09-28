@@ -68,13 +68,14 @@ let
       '';
     };
     rpminiv2-check = {
-      description = "Check the Retroid Pocket Mini V2 Korri and recovery configurations, inputd activity action, and offline image verifier.";
+      description = "Check the Retroid Pocket Mini V2 configurations, inputd activity action, volume sandbox VM, and offline image verifier.";
       runtimeInputs = [ pkgs.nix ];
       script = ''
         cd "$KORRI_ROOT"
         exec nix build --no-link \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2 \
-          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-inputd-action
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-inputd-action \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2-volume
       '';
     };
     rpminiv2-input-iterate = {
@@ -91,7 +92,10 @@ let
     };
     rpminiv2-input-iterate-check = {
       description = "Test the Mini V2 input-iteration verdict without contacting a device.";
-      runtimeInputs = [ pkgs.python3 ];
+      runtimeInputs = [
+        pkgs.python3
+        pkgs.jq
+      ];
       script = ''
         exec python3 "$KORRI_ROOT/nix/devices/rpminiv2/iteration/run.test.py"
       '';
