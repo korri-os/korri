@@ -164,7 +164,7 @@ impl DbusSignalSource {
     async fn for_connection_unbounded(connection: zbus::Connection) -> zbus::Result<Self> {
         let rule = MatchRule::builder()
             .msg_type(Type::Signal)
-            .path(DBUS_TARGET_PATH)?
+            .path_namespace("/org/shadowblip/InputPlumber/devices/target")?
             .interface(DBUS_TARGET_INTERFACE)?
             .member(DBUS_INPUT_MEMBER)?
             .build();
@@ -175,8 +175,33 @@ impl DbusSignalSource {
         })
     }
 
+    pub fn connection(&self) -> &zbus::Connection {
+        &self.connection
+    }
+
     pub async fn current_owner(&self) -> Result<Option<String>, DbusRuntimeError> {
-        current_authenticated_owner(&self.connection).await
+        bounded(current_unique_owner(&self.connection)).await
+    }
+
+    /// Production multi-source profile reconciliation. DBus paths are mapped
+    /// per composite during physical discovery, never assumed to be dbus0.
+    pub async fn ensure_capture_profiles(
+        &self,
+        profile_path: &Path,
+    ) -> Result<ProfileStatus, DbusRuntimeError> {
+        let path = profile_path
+            .to_str()
+            .ok_or_else(|| DbusRuntimeError::Rejected("profile path is not UTF-8".into()))?;
+        tokio::time::timeout(
+            DBUS_OPERATION_TIMEOUT,
+            ensure_capture_profiles_unbounded(
+                &self.connection,
+                path,
+                &SysfsSourceClassifier::system(),
+            ),
+        )
+        .await
+        .map_err(|_| DbusRuntimeError::TimedOut)?
     }
 
     pub async fn ensure_profile(
@@ -201,6 +226,85 @@ impl DbusSignalSource {
     pub async fn next_message(&mut self) -> zbus::Result<Option<Message>> {
         self.messages.next().await.transpose()
     }
+}
+
+async fn ensure_capture_profiles_unbounded(
+    connection: &zbus::Connection,
+    profile_path: &str,
+    classifier: &SysfsSourceClassifier,
+) -> Result<ProfileStatus, DbusRuntimeError> {
+    let Some(owner) = current_unique_owner(connection).await? else {
+        return Ok(ProfileStatus::Pending);
+    };
+    let root = zbus::fdo::IntrospectableProxy::builder(connection)
+        .destination(owner.as_str())?
+        .path(INPUTPLUMBER_ROOT_PATH)?
+        .cache_properties(CacheProperties::No)
+        .build()
+        .await?;
+    let xml = root.introspect().await.map_err(zbus::Error::from)?;
+    if xml.len() > 1024 * 1024 {
+        return Err(DbusRuntimeError::Rejected(
+            "composite introspection exceeds bound".into(),
+        ));
+    }
+    let paths = composite_paths_from_introspection(&xml);
+    if paths.len() > 256 {
+        return Err(DbusRuntimeError::Rejected("too many composites".into()));
+    }
+    let mut count = 0;
+    let mut applied = false;
+    for path in paths {
+        let proxy = CompositeDeviceProxy::builder(connection)
+            .destination(owner.as_str())?
+            .path(path.as_str())?
+            .cache_properties(CacheProperties::No)
+            .build()
+            .await?;
+        let sources = proxy.source_device_paths().await?;
+        if sources.len() > 256 {
+            return Err(DbusRuntimeError::Rejected(
+                "too many physical sources".into(),
+            ));
+        }
+        match classifier.topology(&sources) {
+            SourceTopology::MissingGamepad => continue,
+            SourceTopology::AmbiguousGamepads => return Ok(ProfileStatus::AmbiguousSources),
+            SourceTopology::OneGamepad => {}
+        }
+        if !sources
+            .iter()
+            .any(|path| classifier.classify(path) == crate::source_topology::SourceClass::Gamepad)
+        {
+            return Ok(ProfileStatus::AmbiguousSources);
+        }
+        count += 1;
+        if proxy.profile_path().await? != profile_path {
+            if current_unique_owner(connection).await?.as_deref() != Some(owner.as_str()) {
+                return Ok(ProfileStatus::Pending);
+            }
+            proxy.load_profile_path(profile_path.to_owned()).await?;
+            applied = true;
+            if proxy.profile_path().await? != profile_path {
+                return Err(DbusRuntimeError::Rejected(
+                    "InputPlumber did not retain the immutable Korri profile".into(),
+                ));
+            }
+        }
+        if proxy.source_device_paths().await? != sources {
+            return Ok(ProfileStatus::Pending);
+        }
+    }
+    if current_unique_owner(connection).await?.as_deref() != Some(owner.as_str()) {
+        return Ok(ProfileStatus::Pending);
+    }
+    Ok(if count == 0 {
+        ProfileStatus::MissingSource
+    } else if applied {
+        ProfileStatus::Applied
+    } else {
+        ProfileStatus::Ready
+    })
 }
 
 async fn ensure_profile_unbounded(

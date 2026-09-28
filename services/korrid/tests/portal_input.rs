@@ -81,7 +81,7 @@ async fn authenticate(socket: &mut Socket, classes: &[&str]) {
     text(socket, json!({"classes": classes}).to_string()).await;
 }
 
-async fn event(socket: &mut Socket) -> Value {
+async fn wire_event(socket: &mut Socket) -> Value {
     let message = timeout(WAIT, socket.next())
         .await
         .unwrap()
@@ -93,9 +93,19 @@ async fn event(socket: &mut Socket) -> Value {
     serde_json::from_str(&text).unwrap()
 }
 
+// Legacy assertions concern events. Dedicated barrier tests inspect wire_event.
+async fn event(socket: &mut Socket) -> Value {
+    loop {
+        let value = wire_event(socket).await;
+        if value["kind"] != "initialization-complete" && value["kind"] != "device-state-complete" {
+            return value;
+        }
+    }
+}
+
 async fn silent(socket: &mut Socket) {
     assert!(
-        timeout(Duration::from_millis(25), socket.next())
+        timeout(Duration::from_millis(25), event(socket))
             .await
             .is_err(),
         "socket sent data before expected"
@@ -103,12 +113,22 @@ async fn silent(socket: &mut Socket) {
 }
 
 async fn closed(socket: &mut Socket) {
-    match timeout(WAIT, socket.next())
-        .await
-        .expect("socket must close")
-    {
-        None | Some(Err(_)) | Some(Ok(Message::Close(_))) => {}
-        _ => panic!("closed connection must not drain queued events"),
+    loop {
+        match timeout(WAIT, socket.next())
+            .await
+            .expect("socket must close")
+        {
+            None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
+            Some(Ok(Message::Text(text))) => {
+                let value: Value = serde_json::from_str(&text).unwrap();
+                assert!(
+                    value["kind"] == "initialization-complete"
+                        || value["kind"] == "device-state-complete",
+                    "closed connection must not drain queued events"
+                );
+            }
+            _ => panic!("closed connection must not drain queued events"),
+        }
     }
 }
 
@@ -366,7 +386,7 @@ async fn silent_unauthenticated_and_unsubscribed_sockets_expire_without_events()
 }
 
 #[tokio::test]
-async fn metadata_only_after_auth_and_subscription_no_preauth_input_or_action_replay() {
+async fn current_baseline_only_after_auth_and_subscription_no_action_replay() {
     let (server, source) = server().await;
     let mut socket = connect(&server).await;
     source.publish(added("pad", "gamepad")).unwrap();
@@ -384,7 +404,12 @@ async fn metadata_only_after_auth_and_subscription_no_preauth_input_or_action_re
         json!({"classes":["gamepad","system"]}).to_string(),
     )
     .await;
-    assert_eq!(event(&mut socket).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut socket).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut socket).await["value"], 1.0);
+    assert_eq!(
+        wire_event(&mut socket).await["kind"],
+        "initialization-complete"
+    );
     silent(&mut socket).await;
     source.publish(input("pad", "gamepad", 0.0)).unwrap();
     assert_eq!(event(&mut socket).await["value"], 0.0);
@@ -471,6 +496,7 @@ async fn class_filter_snapshot_lifecycle_subscription_change_and_reconnect() {
     );
     text(&mut socket, json!({"classes":["keyboard"]}).to_string()).await;
     assert_eq!(event(&mut socket).await["device"]["deviceId"], "keyboard");
+    assert_eq!(event(&mut socket).await["value"], 1.0);
     source.publish(input("pad", "gamepad", 1.0)).unwrap();
     source.publish(removed("keyboard")).unwrap();
     assert_eq!(event(&mut socket).await["kind"], "device-removed");
@@ -480,6 +506,7 @@ async fn class_filter_snapshot_lifecycle_subscription_change_and_reconnect() {
     let mut socket = connect(&server).await;
     authenticate(&mut socket, &["gamepad", "keyboard"]).await;
     assert_eq!(event(&mut socket).await["device"]["deviceId"], "pad");
+    assert_eq!(event(&mut socket).await["value"], 1.0);
     silent(&mut socket).await;
 }
 
@@ -554,6 +581,7 @@ async fn per_connection_queue_overflow_disconnects_without_draining_and_does_not
     let mut fresh = connect(&server).await;
     authenticate(&mut fresh, &["gamepad"]).await;
     assert_eq!(event(&mut fresh).await["kind"], "device-added");
+    assert_eq!(event(&mut fresh).await["value"], 1.0);
     silent(&mut fresh).await;
 }
 
@@ -760,7 +788,7 @@ async fn non_reading_socket_hits_write_deadline_and_releases_connection_budget()
 }
 
 #[tokio::test]
-async fn active_client_disposal_releases_its_slot_and_reconnect_gets_only_metadata() {
+async fn active_client_disposal_releases_slot_and_reconnect_gets_current_baseline() {
     let (server, source) = server_with(
         PortalInputLimits {
             connections: 1,
@@ -794,6 +822,7 @@ async fn active_client_disposal_releases_its_slot_and_reconnect_gets_only_metada
     .unwrap();
     authenticate(&mut replacement, &["gamepad"]).await;
     assert_eq!(event(&mut replacement).await["kind"], "device-added");
+    assert_eq!(event(&mut replacement).await["value"], 1.0);
     silent(&mut replacement).await;
 }
 
@@ -818,4 +847,504 @@ async fn nonfinite_values_are_rejected_without_emitting_null_numbers() {
         Err(PublishError::NonFinite)
     );
     silent(&mut socket).await;
+}
+
+#[test]
+fn lifecycle_struct_union_preserves_exact_flat_wire_and_rejects_extra_fields() {
+    for value in [
+        json!({"kind":"initialization-complete","generation":"1"}),
+        json!({"kind":"device-state-complete","deviceId":"pad"}),
+        json!({"kind":"suspend","generation":"1","requestId":"2"}),
+        json!({"kind":"resume","generation":"1","requestId":"2"}),
+    ] {
+        let control: NativeInputControl = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(control).unwrap(), value);
+        let mut extra = value;
+        extra["payload"] = json!({});
+        assert!(serde_json::from_value::<NativeInputControl>(extra).is_err());
+    }
+    let value = json!({"kind":"suspended","generation":"1","requestId":"2"});
+    let ack: NativeInputAcknowledgement = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(ack).unwrap(), value);
+    for bad in [
+        json!({"kind":"resume","generation":"1","requestId":"2"}),
+        json!({"kind":"suspended","generation":"1","requestId":"2","input":1}),
+        json!({"kind":"suspended","generation":"1"}),
+    ] {
+        assert!(serde_json::from_value::<NativeInputAcknowledgement>(bad).is_err());
+    }
+}
+
+#[tokio::test]
+async fn all_physical_and_remote_sources_attach_above_64_without_expanding_live_queues() {
+    let count = korri_input_contract::MAX_PHYSICAL_SOURCES + 16;
+    assert_eq!(PortalInputLimits::default().devices, count);
+    let (server, source) = server_with(
+        PortalInputLimits {
+            queued_events: 2,
+            ..limits()
+        },
+        PortalPermission::LocalSessions,
+    )
+    .await;
+    for index in 0..count {
+        let id = format!("source-{index}");
+        source.publish(added(&id, "gamepad")).unwrap();
+        source.publish(input(&id, "gamepad", 1.0)).unwrap();
+    }
+    assert_eq!(
+        source.publish(added("over-budget", "gamepad")),
+        Err(PublishError::DeviceLimit)
+    );
+    // Each subscriber gets the full bounded current-state baseline, not a
+    // 64-source truncation and not a replay through the small live queue.
+    for _ in 0..2 {
+        let mut socket = connect(&server).await;
+        authenticate(&mut socket, &["gamepad"]).await;
+        let mut known = std::collections::HashSet::new();
+        for _ in 0..count {
+            let metadata = wire_event(&mut socket).await;
+            assert_eq!(metadata["kind"], "device-added");
+            let id = metadata["device"]["deviceId"].as_str().unwrap();
+            assert!(known.insert(id.to_owned()));
+            let held = wire_event(&mut socket).await;
+            assert_eq!(held["deviceId"], id);
+            assert_eq!(held["value"], 1.0);
+        }
+        assert_eq!(known.len(), count);
+        assert_eq!(
+            wire_event(&mut socket).await["kind"],
+            "initialization-complete"
+        );
+        // The last source is not silently excluded after the full baseline.
+        source
+            .publish(input(&format!("source-{}", count - 1), "gamepad", 1.0))
+            .unwrap();
+        assert_eq!(wire_event(&mut socket).await["kind"], "input");
+        // Finite live queue policy still applies at this device count.
+        for _ in 0..3 {
+            source.publish(input("source-0", "gamepad", 1.0)).unwrap();
+        }
+        closed(&mut socket).await;
+    }
+}
+
+fn key_value(device_id: &str, code: f64, value: f64) -> NativeInputInput {
+    let NativeInputEvent::Input(mut input) = input(device_id, "gamepad", value) else {
+        unreachable!()
+    };
+    input.code = code;
+    input
+}
+
+#[tokio::test]
+async fn measured_frames_preserve_short_press_release_and_canonical_report_boundary() {
+    let (server, source) = server().await;
+    source.publish(added("pad", "gamepad")).unwrap();
+    let (mut socket, _) = attach(&server).await;
+    for value in [1.0, 0.0] {
+        source
+            .publish_frame("pad", vec![key_value("pad", 304.0, value)])
+            .unwrap();
+        let key = wire_event(&mut socket).await;
+        assert_eq!(key["code"], 304.0);
+        assert_eq!(key["value"], value);
+        let report = wire_event(&mut socket).await;
+        assert_eq!(report["kind"], "input");
+        assert_eq!(report["deviceId"], "pad");
+        assert_eq!(report["type"], 0.0);
+        assert_eq!(report["code"], 0.0);
+        assert_eq!(report["value"], 0.0);
+    }
+    // A malformed later delta cannot commit an earlier release or emit a prefix.
+    assert_eq!(
+        source.publish_frame(
+            "pad",
+            vec![key_value("pad", 304.0, 1.0), key_value("pad", 315.0, 3.0)]
+        ),
+        Err(PublishError::InvalidInput)
+    );
+    silent(&mut socket).await;
+    let mut fresh = connect(&server).await;
+    authenticate(&mut fresh, &["gamepad"]).await;
+    assert_eq!(wire_event(&mut fresh).await["kind"], "device-added");
+    let baseline = wire_event(&mut fresh).await;
+    assert_eq!(baseline["code"], 304.0);
+    assert_eq!(baseline["value"], 0.0);
+    assert_eq!(
+        wire_event(&mut fresh).await["kind"],
+        "initialization-complete"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn attachment_racing_a_split_start_to_a_frame_never_captures_transient_neutral() {
+    use std::sync::Arc;
+    let (server, source) = server_with(
+        PortalInputLimits {
+            queued_events: 4096,
+            ..limits()
+        },
+        PortalPermission::LocalSessions,
+    )
+    .await;
+    let source = Arc::new(source);
+    let NativeInputEvent::DeviceAdded(added) = added("pad", "gamepad") else {
+        unreachable!()
+    };
+    source
+        .publish_device(
+            added.device,
+            vec![key_value("pad", 315.0, 1.0), key_value("pad", 304.0, 0.0)],
+        )
+        .unwrap();
+    for _ in 0..8 {
+        let mut socket = connect(&server).await;
+        text(&mut socket, format!("Bearer {CAPABILITY}")).await;
+        let publisher = Arc::clone(&source);
+        let task = tokio::task::spawn_blocking(move || {
+            for index in 0..256 {
+                let a = if index % 2 == 0 { 1.0 } else { 0.0 };
+                publisher
+                    .publish_frame(
+                        "pad",
+                        vec![key_value("pad", 315.0, 1.0 - a), key_value("pad", 304.0, a)],
+                    )
+                    .unwrap();
+                std::thread::yield_now();
+            }
+        });
+        text(&mut socket, json!({"classes":["gamepad"]}).to_string()).await;
+        assert_eq!(wire_event(&mut socket).await["kind"], "device-added");
+        let mut baseline = std::collections::BTreeMap::new();
+        loop {
+            let frame = wire_event(&mut socket).await;
+            if frame["kind"] == "initialization-complete" {
+                break;
+            }
+            assert_eq!(frame["kind"], "input");
+            baseline.insert(
+                frame["code"].as_f64().unwrap() as u16,
+                frame["value"].as_f64().unwrap(),
+            );
+        }
+        assert_eq!(baseline.len(), 2);
+        assert_eq!(
+            baseline[&304] + baseline[&315],
+            1.0,
+            "attachment captured partial sample"
+        );
+        task.await.unwrap();
+        socket.close(None).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn local_retirement_winning_selection_releases_budget_and_is_not_a_suspend_participant() {
+    let (server, source) = server_with(
+        PortalInputLimits {
+            connections: 1,
+            ..limits()
+        },
+        PortalPermission::LocalSessions,
+    )
+    .await;
+    for _ in 0..8 {
+        let (mut socket, generation) = attach(&server).await;
+        text(
+            &mut socket,
+            json!({"kind":"retire","generation":generation}).to_string(),
+        )
+        .await;
+        assert_eq!(
+            wire_event(&mut socket).await,
+            json!({"kind":"retired","generation":generation})
+        );
+        // The release decision preceded its reply under the selection mutex.
+        // Even if close has not completed, suspend must not await this client.
+        assert_eq!(source.suspend(WAIT).await, Ok(()));
+        closed(&mut socket).await;
+        source.resume();
+    }
+}
+
+#[tokio::test]
+async fn suspend_selection_winning_local_retirement_keeps_exact_ack_channel() {
+    use std::sync::Arc;
+    let (server, source) = server().await;
+    let source = Arc::new(source);
+    let (mut socket, generation) = attach(&server).await;
+    let worker = Arc::clone(&source);
+    let pending = tokio::spawn(async move { worker.suspend(WAIT).await });
+    let selected = wire_event(&mut socket).await;
+    assert_eq!(selected["kind"], "suspend");
+    text(
+        &mut socket,
+        json!({"kind":"retire","generation":generation}).to_string(),
+    )
+    .await;
+    silent(&mut socket).await; // no retired permission to close a selected socket
+    assert!(!pending.is_finished()); // retire is not a substitute for suspended ACK
+    acknowledge(&mut socket, &selected).await;
+    assert_eq!(pending.await.unwrap(), Ok(()));
+    source.resume();
+    assert_eq!(wire_event(&mut socket).await["kind"], "resume");
+    closed(&mut socket).await;
+}
+
+#[tokio::test]
+async fn local_retirement_does_not_turn_selected_eof_into_success_or_accept_foreign_generation() {
+    use portal_input::SuspendError;
+    use std::sync::Arc;
+    for valid_generation in [true, false] {
+        let (server, source) = server().await;
+        let source = Arc::new(source);
+        let (mut socket, generation) = attach(&server).await;
+        let worker = Arc::clone(&source);
+        let pending = tokio::spawn(async move { worker.suspend(WAIT).await });
+        assert_eq!(wire_event(&mut socket).await["kind"], "suspend");
+        text(&mut socket, json!({"kind":"retire","generation":if valid_generation { generation } else { "999".to_owned() }}).to_string()).await;
+        if valid_generation {
+            silent(&mut socket).await;
+            socket.close(None).await.unwrap();
+        }
+        closed(&mut socket).await;
+        assert_eq!(pending.await.unwrap(), Err(SuspendError::Disconnected));
+        source.resume();
+    }
+}
+
+#[test]
+fn local_retirement_wire_is_generation_matched_without_new_input_authority() {
+    let request = json!({"kind":"retire","generation":"7"});
+    let decoded: NativeInputRetirement = serde_json::from_value(request.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), request);
+    let reply = json!({"kind":"retired","generation":"7"});
+    let decoded: NativeInputControl = serde_json::from_value(reply.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), reply);
+    for bad in [
+        json!({"kind":"retire"}),
+        json!({"kind":"retire","generation":"7","input":1}),
+        json!({"kind":"retired","generation":"7"}),
+    ] {
+        assert!(serde_json::from_value::<NativeInputRetirement>(bad).is_err());
+    }
+}
+
+async fn attach(server: &Server) -> (Socket, String) {
+    let mut socket = connect(server).await;
+    authenticate(&mut socket, &["gamepad"]).await;
+    loop {
+        let frame = wire_event(&mut socket).await;
+        if frame["kind"] == "initialization-complete" {
+            return (socket, frame["generation"].as_str().unwrap().to_owned());
+        }
+    }
+}
+
+async fn acknowledge(socket: &mut Socket, command: &Value) {
+    text(socket, json!({"kind":"suspended", "generation":command["generation"], "requestId":command["requestId"]}).to_string()).await;
+}
+
+#[tokio::test]
+async fn atomic_arrival_baseline_and_completion_precede_live_input_for_all_subscribers() {
+    let (server, source) = server().await;
+    let NativeInputEvent::DeviceAdded(added) = added("held", "gamepad") else {
+        unreachable!()
+    };
+    let NativeInputEvent::Input(held) = input("held", "gamepad", 1.0) else {
+        unreachable!()
+    };
+    let (mut live, _) = attach(&server).await;
+    source.publish_device(added.device, vec![held]).unwrap();
+    assert_eq!(wire_event(&mut live).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut live).await["value"], 1.0);
+    assert_eq!(
+        wire_event(&mut live).await,
+        json!({"kind":"device-state-complete","deviceId":"held"})
+    );
+    let mut fresh = connect(&server).await;
+    authenticate(&mut fresh, &["gamepad"]).await;
+    assert_eq!(wire_event(&mut fresh).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut fresh).await["value"], 1.0);
+    assert_eq!(
+        wire_event(&mut fresh).await["kind"],
+        "initialization-complete"
+    );
+    source.publish(input("held", "gamepad", 0.0)).unwrap();
+    assert_eq!(wire_event(&mut live).await["value"], 0.0);
+    assert_eq!(wire_event(&mut fresh).await["value"], 0.0);
+}
+
+#[tokio::test]
+async fn baseline_keeps_only_latest_values_not_input_history() {
+    let (server, source) = server().await;
+    source.publish(added("pad", "gamepad")).unwrap();
+    source.publish(input("pad", "gamepad", 1.0)).unwrap();
+    source.publish(input("pad", "gamepad", 2.0)).unwrap();
+    source.publish(input("pad", "gamepad", 0.0)).unwrap();
+    let mut socket = connect(&server).await;
+    authenticate(&mut socket, &["gamepad"]).await;
+    assert_eq!(wire_event(&mut socket).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut socket).await["value"], 0.0);
+    assert_eq!(
+        wire_event(&mut socket).await["kind"],
+        "initialization-complete"
+    );
+    silent(&mut socket).await;
+}
+
+#[tokio::test]
+async fn suspension_waits_for_every_subscriber_then_resume_requires_new_generation_and_baseline() {
+    use std::sync::Arc;
+    let (server, source) = server().await;
+    let source = Arc::new(source);
+    source.publish(added("pad", "gamepad")).unwrap();
+    let (mut first, first_generation) = attach(&server).await;
+    let (mut second, second_generation) = attach(&server).await;
+    assert_ne!(first_generation, second_generation);
+    let worker = Arc::clone(&source);
+    let suspended = tokio::spawn(async move { worker.suspend(WAIT).await });
+    let a = wire_event(&mut first).await;
+    let b = wire_event(&mut second).await;
+    assert_eq!(a["kind"], "suspend");
+    assert_eq!(a["generation"], first_generation);
+    assert_eq!(b["generation"], second_generation);
+    assert_eq!(a["requestId"], b["requestId"]);
+    acknowledge(&mut first, &a).await;
+    assert!(!suspended.is_finished());
+    // Inactive input updates current state but is never queued for delivery.
+    source.publish(input("pad", "gamepad", 1.0)).unwrap();
+    silent(&mut first).await;
+    silent(&mut second).await;
+    acknowledge(&mut second, &b).await;
+    assert_eq!(suspended.await.unwrap(), Ok(()));
+    source.resume();
+    let resumed = wire_event(&mut first).await;
+    assert_eq!(
+        resumed,
+        json!({"kind":"resume", "generation":first_generation, "requestId":a["requestId"]})
+    );
+    assert_eq!(wire_event(&mut second).await["kind"], "resume");
+    closed(&mut first).await;
+    closed(&mut second).await;
+    let mut fresh = connect(&server).await;
+    authenticate(&mut fresh, &["gamepad"]).await;
+    assert_eq!(wire_event(&mut fresh).await["kind"], "device-added");
+    assert_eq!(wire_event(&mut fresh).await["value"], 1.0);
+    let complete = wire_event(&mut fresh).await;
+    assert_eq!(complete["kind"], "initialization-complete");
+    assert_ne!(complete["generation"], first_generation);
+}
+
+#[tokio::test]
+async fn stale_or_forged_lifecycle_ack_cannot_complete_freezer_barrier() {
+    use portal_input::SuspendError;
+    use std::sync::Arc;
+    for wrong_field in ["generation", "requestId"] {
+        let (server, source) = server().await;
+        let source = Arc::new(source);
+        let (mut socket, _) = attach(&server).await;
+        let worker = Arc::clone(&source);
+        let suspended = tokio::spawn(async move { worker.suspend(WAIT).await });
+        let mut command = wire_event(&mut socket).await;
+        command[wrong_field] = json!("999");
+        acknowledge(&mut socket, &command).await;
+        closed(&mut socket).await;
+        assert_eq!(suspended.await.unwrap(), Err(SuspendError::Disconnected));
+        // Failure never silently reenables delivery/freezer transition.
+        assert_eq!(
+            source.suspend(WAIT).await,
+            Err(SuspendError::AlreadySuspended)
+        );
+        source.resume();
+        let (_replacement, _) = attach(&server).await;
+    }
+}
+
+#[tokio::test]
+async fn acknowledgement_from_previous_suspension_cannot_retire_a_new_connection() {
+    use portal_input::SuspendError;
+    use std::sync::Arc;
+    let (server, source) = server().await;
+    let source = Arc::new(source);
+    let (mut first, _) = attach(&server).await;
+    let worker = Arc::clone(&source);
+    let pending = tokio::spawn(async move { worker.suspend(WAIT).await });
+    let old = wire_event(&mut first).await;
+    acknowledge(&mut first, &old).await;
+    assert_eq!(pending.await.unwrap(), Ok(()));
+    source.resume();
+    assert_eq!(wire_event(&mut first).await["kind"], "resume");
+    closed(&mut first).await;
+    let (mut replacement, _) = attach(&server).await;
+    let worker = Arc::clone(&source);
+    let pending = tokio::spawn(async move { worker.suspend(WAIT).await });
+    let current = wire_event(&mut replacement).await;
+    assert_ne!(current["generation"], old["generation"]);
+    assert_ne!(current["requestId"], old["requestId"]);
+    acknowledge(&mut replacement, &old).await;
+    closed(&mut replacement).await;
+    assert_eq!(pending.await.unwrap(), Err(SuspendError::Disconnected));
+    source.resume();
+}
+
+#[tokio::test]
+async fn missing_ack_is_explicit_timeout_and_unsolicited_ack_is_not_authority() {
+    use portal_input::SuspendError;
+    use std::sync::Arc;
+    let (server, source) = server().await;
+    let source = Arc::new(source);
+    let (mut socket, generation) = attach(&server).await;
+    text(
+        &mut socket,
+        json!({"kind":"suspended","generation":generation,"requestId":"1"}).to_string(),
+    )
+    .await;
+    closed(&mut socket).await;
+    let (mut socket, _) = attach(&server).await;
+    let worker = Arc::clone(&source);
+    let suspended = tokio::spawn(async move { worker.suspend(Duration::from_millis(50)).await });
+    assert_eq!(wire_event(&mut socket).await["kind"], "suspend");
+    assert_eq!(suspended.await.unwrap(), Err(SuspendError::Timeout));
+    source.resume();
+    assert_eq!(wire_event(&mut socket).await["kind"], "resume");
+    closed(&mut socket).await;
+}
+
+#[tokio::test]
+async fn producer_reset_clears_metadata_and_held_state_then_allows_fresh_attachment() {
+    let (server, source) = server().await;
+    let mut socket = subscribed(&server, &source).await;
+    source.publish(input("pad", "gamepad", 1.0)).unwrap();
+    source.reset();
+    closed(&mut socket).await;
+    let mut fresh = connect(&server).await;
+    authenticate(&mut fresh, &["gamepad"]).await;
+    assert_eq!(
+        wire_event(&mut fresh).await["kind"],
+        "initialization-complete"
+    );
+    silent(&mut fresh).await;
+}
+
+#[tokio::test]
+async fn current_state_key_space_and_values_are_bounded_by_linux_evdev() {
+    let (_server, source) = server().await;
+    source.publish(added("pad", "gamepad")).unwrap();
+    for (event_type, code, value) in [
+        (1.0, 768.0, 1.0),
+        (3.0, 64.0, 1.0),
+        (1.0, 304.0, 3.0),
+        (1.0, 304.5, 1.0),
+        (32.0, 0.0, 0.0),
+        (3.0, 0.0, 2147483648.0),
+    ] {
+        let mut event = input("pad", "gamepad", value);
+        if let NativeInputEvent::Input(input) = &mut event {
+            input.input_type = event_type;
+            input.code = code;
+        }
+        assert_eq!(source.publish(event), Err(PublishError::InvalidInput));
+    }
 }

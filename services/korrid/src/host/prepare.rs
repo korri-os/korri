@@ -1,7 +1,7 @@
 use super::{
     compositor_focus::{CompositorControl, SwaymsgCompositorControl},
     config::{HostConfig, HostGame},
-    input_seat::{DisabledInputSeats, InputSeatManager, UnixInputSeatManager},
+    input_seat::InputSeatManager,
     session_state::HostSessionControl,
     systemd_unit::{LaunchUnitBackend, PortalUnit, SystemdLaunchUnitBackend, SystemdPortalUnit},
 };
@@ -54,18 +54,21 @@ pub struct HostLauncher {
 }
 
 impl HostLauncher {
-    pub fn new(config: &HostConfig, private_state_root: &Path) -> Self {
-        let input_seats: Arc<dyn InputSeatManager> =
-            std::env::var_os("KORRID_INPUT_SEAT_CONTROL_SOCKET")
-                .map(PathBuf::from)
-                .map(|path| Arc::new(UnixInputSeatManager::new(path)) as Arc<dyn InputSeatManager>)
-                .unwrap_or_else(|| Arc::new(DisabledInputSeats));
-        let launcher = Self::with_backends(
+    pub(crate) fn new(
+        config: &HostConfig,
+        private_state_root: &Path,
+        input_seats: Arc<dyn InputSeatManager>,
+        native: Option<Arc<crate::portal_input::PortalInputSource>>,
+    ) -> Self {
+        let mut launcher = Self::with_backends(
             config,
             private_state_root,
             Arc::new(SystemdLaunchUnitBackend::default()),
             input_seats,
         );
+        if let Some(native) = native {
+            launcher.control = launcher.control.with_native_input(native);
+        }
         match configured_portal() {
             Some(portal) => launcher.with_portal(portal),
             None => launcher,
@@ -97,7 +100,7 @@ impl HostLauncher {
             config,
             private_state_root,
             backend,
-            Arc::new(DisabledInputSeats),
+            Arc::new(super::input_seat::DisabledInputSeats),
         )
     }
 
@@ -317,6 +320,28 @@ mod tests {
     }
 
     impl InputSeatManager for RecordingSeatManager {
+        fn initialize(&self, _: u8, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn apply_count(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn begin_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn end_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn route(&self, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn ready(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn is_fenced(&self) -> bool {
+            false
+        }
+        fn fence(&self) {}
         fn start(
             &self,
             _launch_id: &str,

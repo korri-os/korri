@@ -38,10 +38,11 @@
  
  // local includes
  #include "config.h"
-@@ -57,6 +73,313 @@
+@@ -56,6 +72,460 @@
+     DOWN,  ///< Button is down
      UP  ///< Button is up
    };
- 
++
 +  constexpr std::size_t KORRI_INPUT_SEAT_MAX_FRAME_BYTES = 2048;
 +  constexpr std::size_t KORRI_INPUT_SEAT_MAX_SIDECAR_BYTES = 4096;
 +  constexpr std::size_t KORRI_INPUT_SEAT_MAX_LAUNCH_ID_BYTES = 128;
@@ -285,6 +286,14 @@
 +#else
 +    constexpr auto send_flags = MSG_DONTWAIT;
 +#endif
++    // Do not disclose launch authority to an untrusted local socket replacement.
++    ucred peer {};
++    socklen_t peer_size = sizeof(peer);
++    if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &peer_size) != 0 ||
++        peer_size != sizeof(peer) || peer.uid != 0) {
++      ::close(fd);
++      return true;
++    }
 +    auto result = ::send(fd, frame.data(), frame.size(), send_flags);
 +    auto incomplete_send = result != static_cast<ssize_t>(frame.size());
 +    ::close(fd);
@@ -302,33 +311,21 @@
 +    return out;
 +  }
 +
-+  bool korri_input_seat_emit_source_connected(std::int32_t controller_number) {
-+    if (!korri_input_seat_receiver_configured()) {
-+      return false;
-+    }
-+    auto active = korri_input_seat_active_launch();
++  bool korri_input_seat_emit_source_connected(std::int32_t controller_number, const korri_input_seat_active_launch_t &active) {
 +    auto out = korri_input_seat_frame_prefix("source-connected"sv, controller_number, active.launch_id);
 +    out << '}';
 +    korri_input_seat_emit_json(out.str(), active);
 +    return true;
 +  }
 +
-+  bool korri_input_seat_emit_source_disconnected(std::int32_t controller_number, std::string_view reason) {
-+    if (!korri_input_seat_receiver_configured()) {
-+      return false;
-+    }
-+    auto active = korri_input_seat_active_launch();
++  bool korri_input_seat_emit_source_disconnected(std::int32_t controller_number, std::string_view reason, const korri_input_seat_active_launch_t &active) {
 +    auto out = korri_input_seat_frame_prefix("source-disconnected"sv, controller_number, active.launch_id);
 +    out << ",\"reason\":\"" << korri_input_seat_json_escape(reason) << "\"}";
 +    korri_input_seat_emit_json(out.str(), active);
 +    return true;
 +  }
 +
-+  bool korri_input_seat_emit_source_state(PNV_MULTI_CONTROLLER_PACKET packet) {
-+    if (!korri_input_seat_receiver_configured()) {
-+      return false;
-+    }
-+    auto active = korri_input_seat_active_launch();
++  bool korri_input_seat_emit_source_state(PNV_MULTI_CONTROLLER_PACKET packet, const korri_input_seat_active_launch_t &active) {
 +    const auto buttons = static_cast<std::uint32_t>(static_cast<std::uint16_t>(packet->buttonFlags)) |
 +                         (static_cast<std::uint32_t>(static_cast<std::uint16_t>(packet->buttonFlags2)) << 16);
 +    auto out = korri_input_seat_frame_prefix("source-state"sv, packet->controllerNumber, active.launch_id);
@@ -343,22 +340,189 @@
 +    korri_input_seat_emit_json(out.str(), active);
 +    return true;
 +  }
-+#else
-+  bool korri_input_seat_emit_source_connected(std::int32_t) { return false; }
-+  bool korri_input_seat_emit_source_disconnected(std::int32_t, std::string_view) { return false; }
-+  bool korri_input_seat_emit_source_state(PNV_MULTI_CONTROLLER_PACKET) { return false; }
-+#endif
++  // All mutable controller state and timer IDs belong to the single upstream
++  // input task_pool thread (main.cpp: task_pool.start(1)). Only stopped crosses
++  // threads. Never capture input_t strongly in a recurring timer.
++  struct korri_input_seat_stream_t;
++  static std::vector<std::weak_ptr<korri_input_seat_stream_t>> korri_input_seat_streams;
 +
++  bool korri_input_seat_same_launch(const korri_input_seat_active_launch_t &a, const korri_input_seat_active_launch_t &b) {
++    return a.ready && b.ready && a.launch_id == b.launch_id &&
++           a.generation == b.generation && a.mirror_token == b.mirror_token;
++  }
++
++  struct korri_input_seat_stream_t: std::enable_shared_from_this<korri_input_seat_stream_t> {
++    // Capture exactly once, at input::alloc, NOT on first input or on a timer.
++    const bool configured {korri_input_seat_receiver_configured()};
++    const korri_input_seat_active_launch_t authority {configured ? korri_input_seat_active_launch() : korri_input_seat_active_launch_t {}};
++    std::atomic_bool stopped {false};
++    bool fenced {!authority.ready};
++    bool registered {false};
++    struct controller_t {
++      bool connected {false};
++      bool has_state {false};
++      NV_MULTI_CONTROLLER_PACKET state {};
++    };
++    std::array<controller_t, MAX_GAMEPADS> controllers {};
++    thread_pool_util::ThreadPool::task_id_t timer {};
++
++    ~korri_input_seat_stream_t() {
++      task_pool.cancel(timer);
++    }
++
++    void disconnect(std::size_t number, std::string_view reason) {
++      if (controllers[number].connected) {
++        korri_input_seat_emit_source_disconnected(number, reason, authority);
++        controllers[number] = {};
++      }
++    }
++
++    void retire(std::string_view reason) {
++      fenced = true;
++      task_pool.cancel(timer);
++      timer = nullptr;
++      for (std::size_t number = 0; number < controllers.size(); ++number) {
++        disconnect(number, reason);
++      }
++    }
++
++    bool allowed() {
++      if (stopped.load() || fenced) {
++        return false;
++      }
++      if (!korri_input_seat_same_launch(authority, korri_input_seat_active_launch())) {
++        // Even disappearance is terminal. An old stream can never acquire a
++        // replacement launch's authority or replay held state into that launch.
++        retire("launch-authority-changed"sv);
++        return false;
++      }
++      return true;
++    }
++
++    bool claim(std::size_t number) {
++      if (!allowed()) {
++        return false;
++      }
++      if (!registered) {
++        korri_input_seat_streams.erase(std::remove_if(korri_input_seat_streams.begin(), korri_input_seat_streams.end(),
++          [](const auto &entry) { return entry.expired(); }), korri_input_seat_streams.end());
++        korri_input_seat_streams.emplace_back(shared_from_this());
++        registered = true;
++      }
++      for (const auto &entry : korri_input_seat_streams) {
++        auto other = entry.lock();
++        if (other && other.get() != this && korri_input_seat_same_launch(authority, other->authority) &&
++            other->controllers[number].connected) {
++          // The private treaty has no stream ID. Do not merge two streams or
++          // silently remap controllerNumber. Neither ambiguous stream may win.
++          other->retire("ambiguous-controller-number"sv);
++          retire("ambiguous-controller-number"sv);
++          BOOST_LOG(warning) << "input seat mirror fenced colliding stream controller numbers"sv;
++          return false;
++        }
++      }
++      if (!controllers[number].connected) {
++        controllers[number].connected = true;
++        korri_input_seat_emit_source_connected(number, authority);
++      }
++      schedule();
++      return true;
++    }
++
++    void schedule() {
++      if (!timer && !stopped.load() && !fenced) {
++        timer = task_pool.pushDelayed([weak = weak_from_this()]() {
++          if (auto stream = weak.lock()) {
++            stream->timer = nullptr;
++            stream->refresh();
++          }
++        }, 200ms).task_id;
++      }
++    }
++
++    void refresh() {
++      if (!allowed()) {
++        return;
++      }
++      bool live = false;
++      for (std::size_t number = 0; number < controllers.size(); ++number) {
++        auto &controller = controllers[number];
++        if (!controller.connected) {
++          continue;
++        }
++        live = true;
++        if (stopped.load()) {
++          break;
++        }
++        if (controller.has_state) {
++          korri_input_seat_emit_source_state(&controller.state, authority);
++        }
++        // Arrival does not establish neutral state. Never fabricate a baseline
++        // for a controller that has not sent its first actual state packet.
++      }
++      if (live) {
++        schedule();
++      }
++    }
++
++    void arrival(std::size_t number) {
++      claim(number);
++    }
++
++    void update(PNV_MULTI_CONTROLLER_PACKET packet) {
++      if (!allowed()) {
++        return;
++      }
++      // The mask describes the stream's live set, not just this packet's index.
++      for (std::size_t number = 0; number < controllers.size(); ++number) {
++        if (!(static_cast<std::uint16_t>(packet->activeGamepadMask) & (1u << number))) {
++          disconnect(number, "active-gamepad-mask-cleared"sv);
++        }
++      }
++      auto number = packet->controllerNumber;
++      if ((static_cast<std::uint16_t>(packet->activeGamepadMask) & (1u << number)) && claim(number)) {
++        controllers[number].state = *packet;
++        controllers[number].has_state = true;
++        if (!stopped.load()) {
++          korri_input_seat_emit_source_state(packet, authority);
++        }
++      }
++    }
++  };
++
++  void korri_input_seat_stop(const std::shared_ptr<korri_input_seat_stream_t> &stream) {
++    if (!stream->stopped.exchange(true)) {
++      task_pool.push([stream]() { stream->retire("stream-stopped"sv); });
++    }
++  }
++#endif
+ 
    template<std::size_t N>
    int alloc_id(std::bitset<N> &gamepad_mask) {
-     for (int x = 0; x < gamepad_mask.size(); ++x) {
-@@ -844,7 +1167,16 @@
+@@ -174,6 +644,14 @@
+         accumulated_vscroll_delta {},
+         accumulated_hscroll_delta {} {
+     }
++
++#ifdef __linux__
++    std::shared_ptr<korri_input_seat_stream_t> mirror {std::make_shared<korri_input_seat_stream_t>()};
++
++    ~input_t() {
++      korri_input_seat_stop(mirror);
++    }
++#endif
+ 
+     // Keep track of alt+ctrl+shift key combo
+     int shortcutFlags;
+@@ -844,7 +1322,19 @@
        return;
      }
  
 -    if (input->gamepads[packet->controllerNumber].id >= 0) {
 +    auto &gamepad = input->gamepads[packet->controllerNumber];
-+    if (korri_input_seat_emit_source_connected(packet->controllerNumber)) {
++#ifdef __linux__
++    if (input->mirror->configured) {
++      input->mirror->arrival(packet->controllerNumber);
 +      if (gamepad.id >= 0) {
 +        free_gamepad(platf_input, gamepad.id);
 +        gamepad.id = -1;
@@ -366,32 +530,73 @@
 +      return;
 +    }
 +
++#endif
 +    if (gamepad.id >= 0) {
        BOOST_LOG(warning) << "ControllerNumber already allocated ["sv << packet->controllerNumber << ']';
        return;
      }
-@@ -1091,6 +1423,24 @@
+@@ -1090,6 +1580,19 @@
+     }
  
      auto &gamepad = input->gamepads[packet->controllerNumber];
- 
-+    // If the protected receiver is active, it owns controller seats. Sunshine
-+    // remains the controller event source and does not create a second gamepad.
-+    if (packet->activeGamepadMask & (1 << packet->controllerNumber)) {
-+      if (korri_input_seat_emit_source_state(packet)) {
-+        if (gamepad.id >= 0) {
-+          free_gamepad(platf_input, gamepad.id);
-+          gamepad.id = -1;
-+        }
-+        return;
-+      }
-+    } else if (korri_input_seat_emit_source_disconnected(packet->controllerNumber, "active-gamepad-mask-cleared"sv)) {
++
++#ifdef __linux__
++    // Configuration selects the receiver even when authority or transport is
++    // unavailable. Sunshine does not create a second gamepad as a fallback.
++    if (input->mirror->configured) {
++      input->mirror->update(packet);
 +      if (gamepad.id >= 0) {
 +        free_gamepad(platf_input, gamepad.id);
 +        gamepad.id = -1;
 +      }
 +      return;
 +    }
-+
++#endif
+ 
      // If this is an event for a new gamepad, create the gamepad now. Ideally, the client would
      // send a controller arrival instead of this but it's still supported for legacy clients.
-     if ((packet->activeGamepadMask & (1 << packet->controllerNumber)) && gamepad.id < 0) {
+@@ -1584,7 +2087,16 @@
+     task_pool.push(passthrough_next_message, input);
+   }
+ 
++  void stop(std::shared_ptr<input_t> &input) {
++#ifdef __linux__
++    if (input) {
++      korri_input_seat_stop(input->mirror);
++    }
++#endif
++  }
++
+   void reset(std::shared_ptr<input_t> &input) {
++    stop(input);
+     task_pool.cancel(key_press_repeat_id);
+     task_pool.cancel(input->mouse_left_button_timeout);
+ 
+--- a/src/input.h
++++ b/src/input.h
+@@ -15,6 +15,8 @@
+   struct input_t;
+ 
+   void print(void *input);
++  // Fence controller presence immediately, before slow stream thread joins.
++  void stop(std::shared_ptr<input_t> &input);
+   void reset(std::shared_ptr<input_t> &input);
+   void passthrough(std::shared_ptr<input_t> &input, std::vector<std::uint8_t> &&input_data);
+ 
+--- a/src/stream.cpp
++++ b/src/stream.cpp
+@@ -1160,6 +1160,7 @@
+         }
+       }
+ 
++      input::stop(session->input);
+       session->shutdown_event->raise(true);
+       session->controlEnd.raise(true);
+     }
+@@ -1892,5 +1893,6 @@
+         return;
+       }
+ 
++      input::stop(session.input);
+       session.shutdown_event->raise(true);
+     }

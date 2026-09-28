@@ -256,7 +256,7 @@ async fn peer_list_encrypted_owner_only_and_local_unix_control() {
         Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
     );
     let (peer, local) =
-        secure_host_routers_with_federation(runtime, f.root.path(), f.resources.clone(), None);
+        secure_host_routers_with_federation(runtime, f.root.path(), f.resources.clone(), None, None);
     let (status, expected) = list_local(local, None).await;
     assert_eq!(status, StatusCode::OK);
     let other_root = tempfile::tempdir().unwrap();

@@ -7,26 +7,42 @@ let
   lib = pkgs.lib;
   craneLib = (crane.mkLib pkgs).overrideToolchain pkgs.rust-bin.stable.latest.default;
   proseqlSource = import ./proseql-source.nix { inherit pkgs proseql; };
-  sourceRoot = ./.;
+  sourceRoot = ../..;
   sourceRootString = toString sourceRoot;
   relativeSourcePath = path: lib.removePrefix "${sourceRootString}/" (toString path);
   cleanSource = lib.cleanSourceWith {
     src = sourceRoot;
     filter =
       path: type:
-      (craneLib.filterCargoSources path type)
+      let
+        relative = relativeSourcePath path;
+        inCrate = lib.hasPrefix "services/korrid/" relative;
+        inTreaty = lib.hasPrefix "contracts/input/" relative;
+      in
+      toString path == sourceRootString
+      || builtins.elem relative [
+        "services"
+        "services/korrid"
+        "contracts"
+        "contracts/input"
+      ]
+      || ((inCrate || inTreaty) && craneLib.filterCargoSources path type)
       # The shared scheduler is host runtime source included by completion.rs.
-      || (type != "directory" && relativeSourcePath path == "src/script/completion.js")
+      || relative == "services/korrid/src/script/completion.js"
       # The script unit tests include the checked-in example plugin source.
-      || lib.hasPrefix "${sourceRootString}/examples/" (toString path);
+      || lib.hasPrefix "services/korrid/examples/" relative;
   };
   src = proseqlSource.composeCargoSource cleanSource;
   commonArgs = {
     inherit src;
+    postUnpack = ''sourceRoot+=/services/korrid'';
     # crane reads Cargo.lock and .cargo/config.toml during evaluation. Vendor
     # from the filtered checkout so evaluating this package for another
     # platform does not force a build of the composed source derivation.
-    cargoVendorDir = craneLib.vendorCargoDeps { src = cleanSource; };
+    cargoVendorDir = craneLib.vendorCargoDeps {
+      src = cleanSource;
+      cargoLock = ./Cargo.lock;
+    };
     pname = "korrid";
     version = "0.0.0";
     strictDeps = true;
@@ -45,7 +61,11 @@ let
       # directory above; the proseql cache link is re-added by the script.
       dummySrc = craneLib.mkDummySrc {
         src = cleanSource;
-        extraDummyScript = proseqlSource.dummySourceScript;
+        cargoLock = ./Cargo.lock;
+        extraDummyScript = ''
+          mv "$out/Cargo.lock" "$out/services/korrid/Cargo.lock"
+          ${proseqlSource.dummySourceScript}
+        '';
       };
     }
   );

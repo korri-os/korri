@@ -4,6 +4,13 @@
 
 export type LaunchSettingValue = boolean | number | string;
 
+/**
+ * Transient delivery barriers grounded in the host's freezer transitions.
+ * Use the same literal/struct union as legacy events: Typeshare does not support
+ * internally tagged algebraic enums. Rust still enforces every exact wire kind.
+ */
+export type NativeInputControl = NativeInputInitializationComplete | NativeInputDeviceStateComplete | NativeInputSuspend | NativeInputResume | NativeInputRetired;
+
 export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" | "system" | "unknown";
 
 export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
@@ -292,6 +299,12 @@ export interface MoonlightCertificateRevoked {
 	removed: boolean;
 }
 
+export interface NativeInputAcknowledgement {
+	kind: "suspended";
+	generation: string;
+	requestId: string;
+}
+
 export interface NativeInputAction {
 	kind: "action";
 	class: NativeInputDeviceClass;
@@ -324,6 +337,16 @@ export interface NativeInputDeviceRemoved {
 	deviceId: string;
 }
 
+export interface NativeInputDeviceStateComplete {
+	kind: "device-state-complete";
+	deviceId: string;
+}
+
+export interface NativeInputInitializationComplete {
+	kind: "initialization-complete";
+	generation: string;
+}
+
 export interface NativeInputInput {
 	kind: "input";
 	deviceId: string;
@@ -334,8 +357,30 @@ export interface NativeInputInput {
 	timestamp: number;
 }
 
+export interface NativeInputResume {
+	kind: "resume";
+	generation: string;
+	requestId: string;
+}
+
+export interface NativeInputRetired {
+	kind: "retired";
+	generation: string;
+}
+
+export interface NativeInputRetirement {
+	kind: "retire";
+	generation: string;
+}
+
 export interface NativeInputSubscription {
 	classes: NativeInputDeviceClass[];
+}
+
+export interface NativeInputSuspend {
+	kind: "suspend";
+	generation: string;
+	requestId: string;
 }
 
 export enum PeerListState {

@@ -111,9 +111,9 @@ assert !(nixpkgs.lib.hasInfix "korri-chromium-kiosk" enabled.security.polkit.ext
 assert !(disabled.systemd.services ? korri-portal-initialize);
 assert !(disabled.systemd.services ? korri-portal-credentials);
 assert !disabled.services.nginx.enable;
-assert disabled.services.korriLinuxInput.inputd.extraActionUsers == [ ];
-assert serverOnly.services.korriLinuxInput.inputd.extraActionUsers == [ ];
-assert enabled.services.korriLinuxInput.inputd.extraActionUsers == [ "korri-portal" ];
+assert !(disabled.services.korriLinuxInput.inputd ? extraActionUsers);
+assert !(serverOnly.services.korriLinuxInput.inputd ? extraActionUsers);
+assert !(enabled.services.korriLinuxInput.inputd ? extraActionUsers);
 assert enabled.users.users.korri-portal.uid == null;
 assert service.serviceConfig.User == "korri-portal";
 assert service.serviceConfig.Group == "korri-portal";
@@ -171,12 +171,13 @@ assert
   enabled.systemd.sockets.korrid-control.socketConfig
   == disabled.systemd.sockets.korrid-control.socketConfig;
 assert service.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/";
-assert enabled.services.korriLinuxInput.inputd.actions.system-panel.command == [
-  "${pkgs.sway-unwrapped}/bin/swaymsg"
-  "-s"
-  "/run/korri-compositor/sway-ipc.sock"
-  ''[app_id="chromium-browser"] focus''
-];
+assert
+  enabled.services.korriLinuxInput.inputd.actions.system-panel.command == [
+    "${pkgs.sway-unwrapped}/bin/swaymsg"
+    "-s"
+    "/run/korri-compositor/sway-ipc.sock"
+    ''[app_id="chromium-browser"] focus''
+  ];
 # A device that names a surface opens it through the portal's own preference
 # seam; the served origin and asset root stay identical either way.
 assert

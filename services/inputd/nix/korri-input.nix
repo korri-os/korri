@@ -33,7 +33,6 @@ let
   virtualTargetAcl = import ./virtual-target-acl.nix {
     inherit pkgs;
     inputdPackage = cfg.inputd.package;
-    inherit (cfg.inputd) extraActionUsers;
   };
   actionNames = [
     "controller-activity"
@@ -177,16 +176,6 @@ in
       uid = lib.mkOption { type = lib.types.ints.positive; };
       controlGid = lib.mkOption { type = lib.types.ints.positive; };
       actionUser = lib.mkOption { type = lib.types.str; };
-      extraActionUsers = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        description = ''
-          Trusted local users that may read only inputd's portal-facing
-          virtual Xbox target. The game user reads a distinct game-facing
-          target, and only inputd reads InputPlumber's normalized source.
-          The ACL helper resolves names at runtime so system UIDs may be unset.
-        '';
-      };
       actionUid = lib.mkOption { type = lib.types.ints.positive; };
       actionGid = lib.mkOption { type = lib.types.ints.positive; };
       controlSocket = lib.mkOption {
@@ -360,13 +349,13 @@ in
       };
       environment.systemPackages = [ cfg.inputd.package ];
       # The helper repeats each complete identity and capability match before
-      # changing an ACL. Only inputd reads the InputPlumber source. Consumers
-      # read distinct routed targets and cannot observe the inactive route.
+      # changing an ACL. Only inputd reads normalized InputPlumber sources.
+      # Portal navigation uses authenticated native delivery, never device ACLs.
       services.udev.extraRules = ''
-        ${lib.optionalString (!cfg.provider.enable) ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"''}
+        ${lib.optionalString (!cfg.provider.enable)
+          ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="${inputdUser}", GROUP="${uinputGroup}", MODE="0660", OPTIONS+="static_node=uinput"''
+        }
         SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant source ${toString cfg.inputd.uid} $env{DEVNAME}"
-        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri game)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/game", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant game ${toString cfg.inputd.actionUid} $env{DEVNAME}"
-        SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Microsoft X-Box 360 pad (Korri portal)", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", ATTRS{phys}=="korri/inputd/portal", OWNER="root", GROUP="root", MODE="0600", RUN+="${lib.getExe virtualTargetAcl} grant portal $env{DEVNAME}"
       '';
       services.dbus.packages = [ providerDbusPolicy ];
       security.polkit.enable = true;
@@ -417,7 +406,7 @@ in
         serviceConfig = {
           Type = "notify";
           NotifyAccess = "main";
-          ExecStartPre = "+${lib.getExe virtualTargetAcl} reapply ${toString cfg.inputd.uid} ${toString cfg.inputd.actionUid}";
+          ExecStartPre = "+${lib.getExe virtualTargetAcl} reapply ${toString cfg.inputd.uid}";
           ExecStart =
             if bundleCfg.enable then
               "${bundleCfg.launcherPackage}/bin/korri-bundle-launch inputd"

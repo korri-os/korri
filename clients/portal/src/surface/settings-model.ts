@@ -36,6 +36,12 @@ const onOff = [
   { value: "false", label: "Off" },
 ] as const
 
+// The device-only setting accepts the existing positive-u8 seat range.
+const playerCounts = Array.from({ length: 255 }, (_, index) => {
+  const value = String(index + 1)
+  return { value, label: value }
+})
+
 const secretStatusLabel = (status: SecretSettingStatus): string =>
   status === SecretSettingStatus.Configured ? "Configured" : "Not configured"
 
@@ -73,6 +79,19 @@ export function settingsFrom(
                 placeholder: "This device",
                 maxLength: 64,
               },
+            } : {}),
+          },
+    ]),
+    group("Controllers", [
+      facts.settings === undefined
+        ? undefined
+        : {
+            id: "host.preferences.playerCount",
+            label: "Player seats",
+            value: String(facts.settings.playerCount),
+            description: "Shared by physical and remote controllers. Stop the game before changing.",
+            ...(canEdit("host.preferences.playerCount") ? {
+              interaction: { kind: "choice" as const, choices: playerCounts },
             } : {}),
           },
     ]),

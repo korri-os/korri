@@ -55,7 +55,7 @@ rec {
   v4l2m2mPatchSetSha256 = "e918232613be4264d0c7c55900ff030674cc66e3f8f37f4daa0c59f1051960a6";
   reviewedNvencApiMajor = 12;
   reviewedNvencApiMinor = 0;
-  patchSetSha256 = "b009201c4e2b09dd22d24e895a831142e9b6070446cfe3a89ee0a0a22bc9a75c";
+  patchSetSha256 = "05bf1fc0ce67f14fb1090fcf4ff5ec4226811db0a8869a70f75bb12a5bcfb110";
   patches = [
     {
       name = "0001-add-runtime-settings-protocol-surface.patch";
@@ -105,7 +105,7 @@ rec {
     {
       name = "0015-add-korri-input-seat-event-mirror.patch";
       path = ./patches/0015-add-korri-input-seat-event-mirror.patch;
-      sha256 = "c0eab65a69c17b2f3f5b6c9c69fabaaf51519da26a81f9e57dbd714ab5ca92db";
+      sha256 = "389f1cc385e3e0374fa6822f301ac0b263ee81cbcd6bc6f326262d95a4ce7e09";
     }
     {
       name = "0016-add-seamless-nvenc-runtime-path.patch";
@@ -236,5 +236,5 @@ rec {
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "9831de83dc5ce51d70fcbc4fa6eb4d72e0566d0a04ecc76e9e987859fdea5a3e";
+  rkmppPatchSetSha256 = "7193ffe3e3939ed1c14af8666fcfe0ce8682be9533a570f233584860a8879e1f";
 }

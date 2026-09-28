@@ -49,6 +49,19 @@ impl Composite {
     fn target_devices(&self) -> Vec<String> {
         self.targets.lock().unwrap().clone()
     }
+
+    #[zbus(property)]
+    fn dbus_devices(&self) -> Vec<String> {
+        let sources = self.sources.lock().unwrap();
+        let suffix = if sources.iter().any(|path| path == "/dev/input/event7") {
+            "7"
+        } else {
+            "4"
+        };
+        vec![format!(
+            "/org/shadowblip/InputPlumber/devices/target/dbus{suffix}"
+        )]
+    }
 }
 
 #[derive(Default)]
@@ -529,6 +542,8 @@ async fn missing_ambiguous_and_disconnected_gamepad_topologies_are_rejected() {
         vec!["/dev/input/event4", "/dev/input/event7"],
         vec!["/dev/input/event4", "/dev/input/event4"],
         vec!["/dev/input/event4", "/dev/input/event99"],
+        vec!["/dev/input/event99"], // OneGamepad(Unknown) is not provenance.
+        vec!["/dev/hidraw0"],
         vec!["/dev/input/event"],
         vec!["/dev/input/event4/../event7"],
     ] {

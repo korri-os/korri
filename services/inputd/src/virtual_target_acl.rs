@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CString, OsStr, OsString},
+    ffi::{CString, OsStr},
     fs,
     os::{
         fd::RawFd,
@@ -11,9 +11,7 @@ use std::{
 };
 
 use evdev::raw_stream::RawDevice;
-use korri_inputd::devices::{
-    GAME_TARGET_NAME, GAME_TARGET_PHYS, PORTAL_TARGET_NAME, PORTAL_TARGET_PHYS, XB360_TARGET_NAME,
-};
+use korri_inputd::devices::XB360_TARGET_NAME;
 const TARGET_KEYS: [u16; 15] = [
     0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x13a, 0x13b, 0x13c, 0x13d, 0x13e, 0x2c0, 0x2c1,
     0x2c2, 0x2c3,
@@ -39,8 +37,6 @@ struct Facts {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TargetKind {
     Source,
-    Game,
-    Portal,
 }
 
 impl Facts {
@@ -61,8 +57,6 @@ impl Facts {
             self.force_feedback,
         ) {
             (XB360_TARGET_NAME, "", true) => Some(TargetKind::Source),
-            (GAME_TARGET_NAME, GAME_TARGET_PHYS, false) => Some(TargetKind::Game),
-            (PORTAL_TARGET_NAME, PORTAL_TARGET_PHYS, false) => Some(TargetKind::Portal),
             _ => None,
         }
     }
@@ -103,7 +97,6 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
     let mut device_root = PathBuf::from("/dev/input");
     let mut sys_root = PathBuf::from("/sys");
     let mut setfacl = PathBuf::from("setfacl");
-    let mut action_users = Vec::new();
     while args
         .first()
         .and_then(|v| v.to_str())
@@ -116,7 +109,6 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
             Some("--device-root") => device_root = value.into(),
             Some("--sys-root") => sys_root = value.into(),
             Some("--setfacl") => setfacl = value.into(),
-            Some("--action-user") => action_users.push(value),
             _ => return Err("unknown option".into()),
         }
     }
@@ -127,10 +119,7 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
     match operation {
         "grant" if args.len() == 4 => {
             let kind = target_kind(&args[1])?;
-            let users = match kind {
-                TargetKind::Source | TargetKind::Game => vec![numeric_id(&args[2])?],
-                TargetKind::Portal => return Err("portal grant has no numeric identity".into()),
-            };
+            let users = [numeric_id(&args[2])?];
             mutate_one(
                 &args[3],
                 &device_root,
@@ -140,33 +129,15 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
                 Some(&users),
             )
         }
-        "grant" if args.len() == 3 && args[1] == "portal" => {
-            let users = action_user_ids(&action_users)?;
-            mutate_one(
-                &args[2],
-                &device_root,
-                &sys_root,
-                &setfacl,
-                TargetKind::Portal,
-                Some(&users),
-            )
-        }
-        "reapply" if args.len() == 3 => {
+        "reapply" if args.len() == 2 => {
             let inputd = numeric_id(&args[1])?;
-            let game = numeric_id(&args[2])?;
-            let portal = action_user_ids(&action_users)?;
             for entry in fs::read_dir(&device_root).map_err(generic)? {
                 let entry = entry.map_err(generic)?;
                 if !event_name(&entry.file_name()) {
                     continue;
                 }
                 if let Ok(held) = open_requested(&entry.path(), &device_root, &sys_root) {
-                    let users: &[u32] = match held.kind {
-                        TargetKind::Source => std::slice::from_ref(&inputd),
-                        TargetKind::Game => std::slice::from_ref(&game),
-                        TargetKind::Portal => &portal,
-                    };
-                    mutate_held(&held, &sys_root, &setfacl, Some(users))?;
+                    mutate_held(&held, &sys_root, &setfacl, Some(&[inputd]))?;
                 }
             }
             Ok(())
@@ -183,68 +154,14 @@ fn run(mut args: Vec<std::ffi::OsString>) -> Result<(), String> {
             }
             Ok(())
         }
-        _ => Err(
-            "usage: [--action-user NAME]... {grant source UID DEVICE|grant game UID DEVICE|grant portal DEVICE|reapply INPUTD_UID GAME_UID|revoke}"
-                .into(),
-        ),
+        _ => Err("usage: {grant source UID DEVICE|reapply INPUTD_UID|revoke}".into()),
     }
 }
 
 fn target_kind(value: &OsStr) -> Result<TargetKind, String> {
     match value.to_str() {
         Some("source") => Ok(TargetKind::Source),
-        Some("game") => Ok(TargetKind::Game),
-        Some("portal") => Ok(TargetKind::Portal),
         _ => Err("target kind is invalid".into()),
-    }
-}
-
-fn action_user_ids(names: &[OsString]) -> Result<Vec<u32>, String> {
-    let mut users = Vec::new();
-    for name in names {
-        let uid = action_user_id(name)?;
-        if !users.contains(&uid) {
-            users.push(uid);
-        }
-    }
-    Ok(users)
-}
-
-fn action_user_id(name: &OsStr) -> Result<u32, String> {
-    let name = CString::new(name.as_bytes()).map_err(|_| "action user name is invalid")?;
-    if name.as_bytes().is_empty() {
-        return Err("action user name is invalid".into());
-    }
-    // NixOS can assign system UIDs at activation. Resolve the trusted name once,
-    // before any mutation, and pass only numeric IDs to setfacl. Revoke does not
-    // resolve names: account removal must not prevent removal of its ACL.
-    let mut buffer = vec![0u8; 1024];
-    loop {
-        let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
-        let mut result = std::ptr::null_mut();
-        let status = unsafe {
-            libc::getpwnam_r(
-                name.as_ptr(),
-                &mut entry,
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                &mut result,
-            )
-        };
-        if status == libc::ERANGE && buffer.len() < 1024 * 1024 {
-            buffer.resize(buffer.len() * 2, 0);
-            continue;
-        }
-        if status != 0 || result.is_null() {
-            return Err(format!(
-                "action user {} could not be resolved",
-                name.to_string_lossy()
-            ));
-        }
-        if entry.pw_uid == 0 || entry.pw_uid == u32::MAX {
-            return Err("action user must have an unprivileged UID".into());
-        }
-        return Ok(entry.pw_uid);
     }
 }
 
@@ -447,20 +364,22 @@ mod tests {
         assert_eq!(f.kind(), None);
     }
     #[test]
-    fn routed_targets_require_their_exact_names_and_physical_paths() {
-        let mut game = valid();
-        game.name = GAME_TARGET_NAME.into();
-        game.physical_path = GAME_TARGET_PHYS.into();
-        game.force_feedback = false;
-        assert_eq!(game.kind(), Some(TargetKind::Game));
-
-        let mut portal = game.clone();
-        portal.name = PORTAL_TARGET_NAME.into();
-        portal.physical_path = PORTAL_TARGET_PHYS.into();
-        assert_eq!(portal.kind(), Some(TargetKind::Portal));
-
-        portal.physical_path = GAME_TARGET_PHYS.into();
-        assert_eq!(portal.kind(), None);
+    fn retired_portal_and_game_targets_never_receive_a_source_grant() {
+        for (name, phys) in [
+            ("Microsoft X-Box 360 pad (Korri game)", "korri/inputd/game"),
+            (
+                "Microsoft X-Box 360 pad (Korri portal)",
+                "korri/inputd/portal",
+            ),
+        ] {
+            let mut facts = valid();
+            facts.name = name.into();
+            facts.physical_path = phys.into();
+            facts.force_feedback = false;
+            assert_eq!(facts.kind(), None);
+        }
+        assert!(target_kind(OsStr::new("game")).is_err());
+        assert!(target_kind(OsStr::new("portal")).is_err());
     }
 
     #[test]
@@ -487,73 +406,30 @@ mod tests {
         assert_ne!(a, b);
     }
     #[test]
-    fn named_action_user_is_resolved_before_reapply() {
+    fn reapply_grants_only_the_inputd_identity_and_rejects_retired_arguments() {
         let root = tempfile::tempdir().unwrap();
-        // Exercise the real account database without assuming a fixed system UID.
-        let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
-        let mut result = std::ptr::null_mut();
-        let mut buffer = vec![0u8; 16384];
-        let uid = unsafe { libc::geteuid() };
-        if uid == 0 {
-            return;
-        }
-        assert_eq!(
-            unsafe {
-                libc::getpwuid_r(
-                    uid,
-                    &mut entry,
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len(),
-                    &mut result,
-                )
-            },
-            0
-        );
-        assert!(!result.is_null());
-        let name = unsafe { std::ffi::CStr::from_ptr(entry.pw_name) }
-            .to_str()
-            .unwrap();
-        assert_eq!(action_user_id(OsStr::new(name)).unwrap(), uid);
-        assert_eq!(
-            action_user_ids(&[name.into(), name.into()]).unwrap(),
-            vec![uid]
-        );
-        run(vec![
-            "--action-user".into(),
-            name.into(),
+        let args = vec![
             "--device-root".into(),
             root.path().into(),
             "reapply".into(),
             "977".into(),
-            "1001".into(),
-        ])
-        .unwrap();
-    }
-
-    #[test]
-    fn invalid_named_users_fail_closed_but_cannot_block_revoke() {
-        for name in ["root", "", "korri-acl-no-such-user", "bad\0name"] {
-            assert!(action_user_id(OsStr::new(name)).is_err());
-        }
-        let root = tempfile::tempdir().unwrap();
-        run(vec![
+        ];
+        run(args.clone()).unwrap();
+        let mut retired = args;
+        retired.push("1001".into());
+        assert!(run(retired).is_err());
+        assert!(run(vec![
             "--action-user".into(),
-            "korri-acl-no-such-user".into(),
+            "korri-portal".into(),
+            "revoke".into()
+        ])
+        .is_err());
+        run(vec![
             "--device-root".into(),
             root.path().into(),
             "revoke".into(),
         ])
         .unwrap();
-        assert!(run(vec![
-            "--action-user".into(),
-            "korri-acl-no-such-user".into(),
-            "--device-root".into(),
-            root.path().into(),
-            "reapply".into(),
-            "977".into(),
-            "1001".into(),
-        ])
-        .is_err());
     }
 
     #[test]

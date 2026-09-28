@@ -84,7 +84,7 @@ describe("settingsFrom", () => {
     ])
   })
 
-  it("keeps Linux count-only snapshots readable without offering unsupported editors", () => {
+  it("offers the complete seat range only to the authorized Linux count writer", () => {
     const settings: SettingsSnapshot = {
       ...configuration,
       editableSettingIds: ["host.preferences.playerCount"],
@@ -94,11 +94,28 @@ describe("settingsFrom", () => {
     const items = groups.flatMap(group => group.items)
     expect(items.map(item => [item.id, item.value])).toEqual([
       ["device-name", "usu"],
+      ["host.preferences.playerCount", "4"],
       ["steamgriddb-credential", "Configured"],
       ["@korri:mgba", "On"],
       ["@korri:retroarch", "Off"],
     ])
-    expect(items.every(item => item.interaction === undefined)).toBe(true)
+    expect(items.filter(item => item.interaction !== undefined).map(item => item.id))
+      .toEqual(["host.preferences.playerCount"])
+    const count = items.find(item => item.id === "host.preferences.playerCount")
+    expect(count?.interaction).toEqual({
+      kind: "choice",
+      choices: Array.from({ length: 255 }, (_, index) => ({
+        value: String(index + 1), label: String(index + 1),
+      })),
+    })
+  })
+
+  it("shows the applied count, including counts above four, without a writer", () => {
+    const count = group({ settings: {
+      ...configuration, playerCount: 6, editableSettingIds: [],
+    } }, "Controllers")?.items[0]
+    expect(count).toMatchObject({ id: "host.preferences.playerCount", value: "6" })
+    expect(count?.interaction).toBeUndefined()
   })
 
   it("enables only the exact listed setting IDs", () => {
@@ -113,7 +130,7 @@ describe("settingsFrom", () => {
   it("keeps read-only snapshots readable and accepts an absent snapshot", () => {
     const items = settingsFrom({ settings: { ...configuration, editableSettingIds: [] } })
       .flatMap(group => group.items)
-    expect(items).toHaveLength(4)
+    expect(items).toHaveLength(5)
     expect(items.every(item => item.interaction === undefined)).toBe(true)
     expect(settingsFrom({})).toEqual([])
   })

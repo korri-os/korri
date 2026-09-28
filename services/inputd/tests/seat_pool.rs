@@ -523,6 +523,62 @@ fn stop_failures_do_not_skip_other_neutralizations_or_destroys() {
 }
 
 #[test]
+fn idle_resize_retains_surviving_devices_and_connected_assignments() {
+    let (mut pool, probe) = pool(DEFAULT_SEAT_COUNT);
+    pool.connect(7).unwrap();
+    pool.write_state(&7, HELD).unwrap();
+    let start = probe.calls().len();
+    pool.resize(NonZeroU8::new(6).unwrap()).unwrap();
+    assert_eq!(pool.count(), 6);
+    assert_eq!(pool.slot(&7), Some(1));
+    assert_eq!(probe.state(1), GamepadState::neutral());
+    assert!(!probe.calls()[start..]
+        .iter()
+        .any(|call| matches!(call, Call::Destroy(_))));
+    for source in 8..=12 {
+        pool.connect(source).unwrap();
+    }
+    pool.resize(NonZeroU8::new(2).unwrap()).unwrap();
+    assert_eq!(pool.count(), 2);
+    assert_eq!(pool.slot(&7), Some(1));
+    assert_eq!(pool.slot(&8), Some(2));
+    assert_eq!(pool.slot(&9), None);
+    assert_eq!(probe.0.lock().unwrap().live.len(), 2);
+}
+
+#[test]
+fn resize_refuses_even_identical_count_during_session_and_reports_partial_failure() {
+    let (mut pool, probe) = pool(DEFAULT_SEAT_COUNT);
+    pool.begin_session(SESSION).unwrap();
+    assert_eq!(
+        pool.resize(DEFAULT_SEAT_COUNT),
+        Err(PoolError::SessionAlreadyActive)
+    );
+    pool.end_session(SESSION).unwrap();
+    probe.0.lock().unwrap().fail_create = Some(6);
+    assert!(matches!(
+        pool.resize(NonZeroU8::new(6).unwrap()),
+        Err(PoolError::Backend(_))
+    ));
+    // This backend deliberately retains resources even from failed create.
+    // The receiver treats the failure as fatal; backend drop releases them.
+    drop(pool);
+    assert!(probe.0.lock().unwrap().live.is_empty());
+}
+
+#[test]
+fn neutral_route_barrier_does_not_end_session_or_drop_assignments() {
+    let (mut pool, probe) = one_seat();
+    pool.begin_session(SESSION).unwrap();
+    pool.connect(7).unwrap();
+    pool.write_state(&7, HELD).unwrap();
+    pool.neutralize().unwrap();
+    assert_eq!(probe.state(1), GamepadState::neutral());
+    assert_eq!(pool.session(), Some(SESSION));
+    assert_eq!(pool.slot(&7), Some(1));
+}
+
+#[test]
 fn drop_cleans_up_even_during_session_with_failed_source_loss() {
     let (mut pool, probe) = one_seat();
     pool.begin_session(SESSION).unwrap();

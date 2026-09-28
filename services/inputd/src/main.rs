@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap, ffi::OsString, path::PathBuf, process::ExitCode, sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, process::ExitCode, time::Duration};
 
 use korri_inputd::{
     actions::{
@@ -9,22 +6,19 @@ use korri_inputd::{
         ActionId, ActionIdentity, ActionLimits, ActionOutcome, ActionRoutes, DispatchMode,
     },
     bundle::is_inside_store_item,
+    capture::CaptureRuntime as Runtime,
     dbus::{DbusSignalSource, ProfileStatus},
     devices::EvdevProvider,
     health::{systemd::SystemdHealthPublisher, HealthPublisher, RuntimeHealth},
     korrid_client::{ExactPanelOutcome, ExactStopOutcome, KorridClient},
-    runtime::{Runtime, RuntimeAction, RECONCILE_INTERVAL},
-    virtual_targets::InputOwner,
+    producer::PrivateInputChannel,
+    runtime::{RuntimeAction, RECONCILE_INTERVAL},
 };
-use tokio::{
-    sync::{mpsc, oneshot},
-    time::MissedTickBehavior,
-};
+use tokio::time::MissedTickBehavior;
 use tracing_subscriber::EnvFilter;
 
 const DBUS_RETRY_INTERVAL: Duration = RECONCILE_INTERVAL;
 const HOLD_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const OWNER_RECONCILE_INTERVAL: Duration = Duration::from_millis(100);
 const STORE_ROOT: &str = "/nix/store";
 const SUPPORTED_PROFILE_NAME: &str = "korri-60-xbox_one_gamepad.yaml";
 
@@ -78,16 +72,11 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
     if services.activity.is_some() {
         runtime.enable_activity();
     }
-    let (input_owner_tx, mut input_owner_rx) = mpsc::channel(8);
-    let input_owner_transaction = Arc::new(tokio::sync::Mutex::new(()));
-    if let Some(client) = services.korrid.clone() {
-        tokio::spawn(reconcile_input_owner(
-            client,
-            input_owner_tx.clone(),
-            Arc::clone(&input_owner_transaction),
-        ));
-    }
     let mut provider = EvdevProvider::default();
+    let mut producer: Option<PrivateInputChannel> = None;
+    let mut remote_baseline = true;
+    let mut heartbeat = tokio::time::interval(Duration::from_millis(200));
+    heartbeat.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut dbus = None;
     let mut dbus_failure_logged = false;
     let mut profile_wait_logged = false;
@@ -99,25 +88,47 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
     loop {
         let has_evdev = runtime.has_open_target();
         let has_dbus = dbus.is_some();
+        let has_producer = producer.is_some();
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 tracing::info!(event = "inputd_shutdown", "shutdown requested");
                 return;
             }
+            _ = heartbeat.tick(), if has_producer => runtime.heartbeat(),
+            reply = next_producer_reply(&mut producer), if has_producer => {
+                match reply {
+                    Some(reply) => {
+                        if remote_baseline {
+                            for source in reply.remote_sources {
+                                runtime.handle_remote_event(korri_input_contract::RemoteEvent::Connected { source });
+                            }
+                            remote_baseline = false;
+                        }
+                        for event in reply.remote_events {
+                            dispatch_actions(runtime.handle_remote_event(event), &services);
+                        }
+                    }
+                    None => {
+                        producer = None;
+                        runtime.transport_lost();
+                    }
+                }
+            }
             _ = hold_poll.tick() => {
                 dispatch_actions(
                     runtime.advance_actions(),
                     &services,
-                    &input_owner_tx,
-                    &input_owner_transaction,
                 );
             }
-            command = input_owner_rx.recv() => {
-                if let Some(command) = command {
-                    apply_owner_command(&mut runtime, command);
-                }
-            }
             _ = reconcile.tick(), if services.physical_input => {
+                if producer.is_none() {
+                    if let Some(client) = &services.korrid {
+                        match client.input_channel().await {
+                            Ok(channel) => { producer = Some(channel); remote_baseline = true; }
+                            Err(_) => { runtime.transport_lost(); continue; }
+                        }
+                    }
+                }
                 if dbus.is_none() {
                     match DbusSignalSource::system().await {
                         Ok(source) => dbus = Some(source),
@@ -162,7 +173,7 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                 if runtime.dbus_owner().is_some() {
                     match profile_status {
                         ProfileStatus::Ready | ProfileStatus::Applied => {
-                            runtime.reconcile(&mut provider)
+                            runtime.reconcile(&mut provider, dbus.as_ref().expect("authenticated DBus connection")).await
                         }
                         ProfileStatus::MissingSource => runtime.source_missing(),
                         ProfileStatus::AmbiguousSources => runtime.source_ambiguous(),
@@ -178,8 +189,6 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                             dispatch_actions(
                                 runtime.handle_dbus_message(&message),
                                 &services,
-                                &input_owner_tx,
-                                &input_owner_transaction,
                             );
                         } else {
                             dbus_failure_logged = true;
@@ -209,8 +218,6 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                         dispatch_actions(
                             matched,
                             &services,
-                            &input_owner_tx,
-                            &input_owner_transaction,
                         )
                     }
                     Ok(None) => tracing::warn!(
@@ -225,6 +232,21 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                 }
             }
         }
+        let updates = runtime.take_updates();
+        let delivered = match updates {
+            Ok(updates) => match &producer {
+                Some(channel) => updates
+                    .into_iter()
+                    .all(|update| channel.send(update).is_ok()),
+                // Explicit development capture has no effects or destination.
+                None => services.korrid.is_none(),
+            },
+            Err(_) => false,
+        };
+        if !delivered {
+            producer = None;
+            runtime.transport_lost();
+        }
         if let Err(error) = health.publish(RuntimeHealth::from(runtime.state())) {
             tracing::warn!(
                 event = "inputd_health_publish_failed",
@@ -233,6 +255,16 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
             );
         }
     }
+}
+
+async fn next_producer_reply(
+    source: &mut Option<PrivateInputChannel>,
+) -> Option<korri_input_contract::SeatReply> {
+    source
+        .as_mut()
+        .expect("producer branch only while connected")
+        .next()
+        .await
 }
 
 async fn next_dbus_message(
@@ -258,7 +290,7 @@ async fn ensure_runtime_profile(
         runtime.set_dbus_owner(None);
         return ProfileStatus::Pending;
     };
-    match connected.ensure_profile(profile_path).await {
+    match connected.ensure_capture_profiles(profile_path).await {
         Ok(ProfileStatus::Ready) => {
             if *wait_logged {
                 tracing::info!(
@@ -292,7 +324,7 @@ async fn ensure_runtime_profile(
                 tracing::info!(
                     event = "inputd_profile_pending",
                     profile = %profile_path.display(),
-                    "waiting for one supported InputPlumber composite"
+                    "waiting for validated InputPlumber composites"
                 );
             }
             *wait_logged = true;
@@ -341,59 +373,7 @@ async fn refresh_owner(runtime: &mut Runtime, source: &mut Option<DbusSignalSour
     }
 }
 
-struct InputOwnerCommand {
-    owner: InputOwner,
-    applied: Option<oneshot::Sender<()>>,
-}
-
-fn apply_owner_command(runtime: &mut Runtime, command: InputOwnerCommand) {
-    runtime.set_input_owner(command.owner);
-    if let Some(applied) = command.applied {
-        let _ = applied.send(());
-    }
-}
-
-async fn apply_input_owner(commands: &mpsc::Sender<InputOwnerCommand>, owner: InputOwner) -> bool {
-    let (applied, wait) = oneshot::channel();
-    commands
-        .send(InputOwnerCommand {
-            owner,
-            applied: Some(applied),
-        })
-        .await
-        .is_ok()
-        && wait.await.is_ok()
-}
-
-async fn reconcile_input_owner(
-    client: KorridClient,
-    commands: mpsc::Sender<InputOwnerCommand>,
-    transaction: Arc<tokio::sync::Mutex<()>>,
-) {
-    loop {
-        {
-            // A status observation and its owner update are one transaction.
-            // Home holds the same guard from exact freeze through Portal focus
-            // or exact rollback, so reconciliation cannot overwrite ownership
-            // while Leave is in flight.
-            let _transaction = transaction.lock().await;
-            let next = client
-                .status()
-                .await
-                .map(|status| status.input_owner())
-                .unwrap_or(InputOwner::Portal);
-            apply_input_owner(&commands, next).await;
-        }
-        tokio::time::sleep(OWNER_RECONCILE_INTERVAL).await;
-    }
-}
-
-fn dispatch_actions(
-    matched: Vec<RuntimeAction>,
-    services: &ConfiguredServices,
-    input_owner: &mpsc::Sender<InputOwnerCommand>,
-    input_owner_transaction: &Arc<tokio::sync::Mutex<()>>,
-) {
+fn dispatch_actions(matched: Vec<RuntimeAction>, services: &ConfiguredServices) {
     for action in matched {
         if action.id == ActionId::ControllerActivity {
             // Separate permit and short timeout: a stalled compositor must not
@@ -447,19 +427,13 @@ fn dispatch_actions(
                 .expect("hardened actions always configure exact local control")
                 .clone();
             let dispatcher = dispatcher.clone();
-            let input_owner = input_owner.clone();
-            let transaction = Arc::clone(input_owner_transaction);
             tokio::spawn(async move {
-                let _transaction = transaction.lock().await;
                 let outcome = client
                     .toggle_panel_exact_with(|| async {
-                        if !apply_input_owner(&input_owner, InputOwner::Portal).await {
-                            tracing::warn!(
-                                event = "inputd_portal_owner_failed",
-                                "could not route input to Portal after exact freeze"
-                            );
-                            return false;
-                        }
+                        // HostSessionControl::set_freezer acknowledges receiver
+                        // route(None) before this exact-freeze RPC succeeds.
+                        // Its shared seats remain neutral while Portal owns input;
+                        // inputd must not inject a second routing decision.
                         let focus = dispatcher.dispatch(action.id).await;
                         let succeeded = portal_focus_succeeded(&focus);
                         log_action_outcome(action.id, focus);
@@ -468,13 +442,11 @@ fn dispatch_actions(
                     .await;
                 match outcome {
                     Ok(outcome) => {
-                        apply_input_owner(&input_owner, input_owner_after_panel(outcome)).await;
                         log_panel_outcome(outcome);
                     }
                     Err(error) => {
-                        // The exact session result is unknown. Keep routing
-                        // fail-closed to Portal rather than guess Game.
-                        apply_input_owner(&input_owner, InputOwner::Portal).await;
+                        // No focus effect follows an uncertain transition.
+                        // Korrid retains the sole receiver routing authority.
                         tracing::warn!(
                             event = "inputd_exact_panel_failed",
                             error = %error,
@@ -534,17 +506,6 @@ fn log_action_outcome(action_id: korri_inputd::actions::ActionId, outcome: Actio
 
 fn portal_focus_succeeded(outcome: &ActionOutcome) -> bool {
     matches!(outcome, ActionOutcome::Completed(_))
-}
-
-fn input_owner_after_panel(outcome: ExactPanelOutcome) -> InputOwner {
-    if matches!(
-        outcome,
-        ExactPanelOutcome::Returned | ExactPanelOutcome::LeaveRefused
-    ) {
-        InputOwner::Game
-    } else {
-        InputOwner::Portal
-    }
 }
 
 fn log_panel_outcome(outcome: ExactPanelOutcome) {
@@ -779,22 +740,6 @@ mod tests {
     }
 
     #[test]
-    fn leave_never_routes_to_game_and_refused_leave_restores_the_prior_owner() {
-        for outcome in [
-            ExactPanelOutcome::Opened,
-            ExactPanelOutcome::FocusFailed,
-            ExactPanelOutcome::NoActive,
-            ExactPanelOutcome::AlreadyStopping,
-            ExactPanelOutcome::RecoveryBlocked,
-        ] {
-            assert_eq!(input_owner_after_panel(outcome), InputOwner::Portal);
-        }
-        for outcome in [ExactPanelOutcome::Returned, ExactPanelOutcome::LeaveRefused] {
-            assert_eq!(input_owner_after_panel(outcome), InputOwner::Game);
-        }
-    }
-
-    #[test]
     fn only_a_completed_portal_action_allows_a_frozen_leave_to_remain_in_portal() {
         use korri_inputd::actions::ActionOutput;
         use std::os::unix::process::ExitStatusExt;
@@ -815,41 +760,6 @@ mod tests {
         ] {
             assert!(!portal_focus_succeeded(&outcome));
         }
-    }
-
-    #[tokio::test]
-    async fn reconciliation_cannot_apply_a_running_owner_during_home_transaction() {
-        let transaction = Arc::new(tokio::sync::Mutex::new(()));
-        let home = transaction.lock().await;
-        let observed = Arc::clone(&transaction);
-        let (applied, mut receiver) = mpsc::channel(1);
-        let reconciliation = tokio::spawn(async move {
-            let _observation = observed.lock().await;
-            applied.send(InputOwner::Game).await.unwrap();
-        });
-
-        assert!(
-            tokio::time::timeout(Duration::from_millis(25), receiver.recv())
-                .await
-                .is_err(),
-            "a pre-Leave Running observation escaped the Home transaction"
-        );
-        drop(home);
-        assert_eq!(receiver.recv().await, Some(InputOwner::Game));
-        reconciliation.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn acknowledged_owner_change_waits_until_runtime_applies_it() {
-        let (commands, mut receiver) = mpsc::channel(1);
-        let applying =
-            tokio::spawn(async move { apply_input_owner(&commands, InputOwner::Portal).await });
-
-        let command = receiver.recv().await.unwrap();
-        assert_eq!(command.owner, InputOwner::Portal);
-        assert!(!applying.is_finished());
-        command.applied.unwrap().send(()).unwrap();
-        assert!(applying.await.unwrap());
     }
 
     #[test]

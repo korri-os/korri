@@ -1,7 +1,6 @@
 //! Read-only, owner-bound discovery of normalized physical controller outputs.
 //!
-//! This is not wired into the runtime. The returned paths are live provenance,
-//! not reconnect identities. Callers must still open through their provider and
+//! The returned paths are live provenance, not reconnect identities. Callers must still open through their provider and
 //! call `validate_opened_descriptor` on the actual opened descriptor. Neither
 //! DBus reads nor an enumeration snapshot can close that device-open race.
 
@@ -29,6 +28,8 @@ trait Composite {
     fn source_device_paths(&self) -> zbus::Result<Vec<String>>;
     #[zbus(property)]
     fn target_devices(&self) -> zbus::Result<Vec<String>>;
+    #[zbus(property)]
+    fn dbus_devices(&self) -> zbus::Result<Vec<String>>;
 }
 
 #[zbus::proxy(interface = "org.shadowblip.Input.Target")]
@@ -51,13 +52,92 @@ pub struct PhysicalSource {
     pub composite_path: String,
     pub source_device_paths: Vec<String>,
     pub target_path: String,
+    pub dbus_paths: Vec<String>,
     pub descriptor: DeviceDescriptor,
+}
+
+/// Legacy discover-devices.ts stableDeviceId uses uniq, then phys. Its eventN
+/// fallback is deliberately rejected: node numbers cannot identify reconnects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentifiedSource {
+    pub source: PhysicalSource,
+    pub device_id: String,
+    pub raw: DeviceDescriptor,
+}
+
+pub fn identify_sources(
+    sources: &PhysicalSources,
+    devices: &[DeviceDescriptor],
+    classifier: &SysfsSourceClassifier,
+) -> Result<Vec<IdentifiedSource>, DbusRuntimeError> {
+    if sources.controllers.len() > korri_input_contract::MAX_PHYSICAL_SOURCES {
+        return Err(rejected("too many physical controllers"));
+    }
+    let mut identities = HashSet::new();
+    let mut result = Vec::new();
+    for source in &sources.controllers {
+        if source
+            .source_device_paths
+            .iter()
+            .any(|path| classifier.classify(path) == crate::source_topology::SourceClass::Unknown)
+        {
+            return Err(rejected("unknown physical source class"));
+        }
+        let gamepads = source
+            .source_device_paths
+            .iter()
+            .filter(|path| {
+                classifier.classify(path) == crate::source_topology::SourceClass::Gamepad
+            })
+            .collect::<Vec<_>>();
+        let [path] = gamepads.as_slice() else {
+            return Err(rejected(
+                "physical identity requires one positive gamepad source",
+            ));
+        };
+        let raw = devices
+            .iter()
+            .filter(|device| device.path == Path::new(path.as_str()))
+            .collect::<Vec<_>>();
+        let [raw] = raw.as_slice() else {
+            return Err(rejected("missing or ambiguous raw source descriptor"));
+        };
+        if raw.is_validated_inputplumber_xb360()
+            || raw.class != crate::devices::DeviceClass::Gamepad
+            || raw.name.is_empty()
+            || raw.name.len() > 512
+            || raw.name.chars().any(char::is_control)
+        {
+            return Err(rejected("raw source is not a physical gamepad"));
+        }
+        let device_id = raw
+            .unique_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .or(raw.physical_path.as_deref().filter(|id| !id.is_empty()))
+            .ok_or_else(|| {
+                rejected("physical source has neither uniq nor phys reconnect identity")
+            })?;
+        if device_id.len() > 256
+            || device_id.chars().any(char::is_control)
+            || !identities.insert(device_id.to_owned())
+        {
+            return Err(rejected("invalid or duplicate physical reconnect identity"));
+        }
+        result.push(IdentifiedSource {
+            source: source.clone(),
+            device_id: device_id.to_owned(),
+            raw: (*raw).clone(),
+        });
+    }
+    Ok(result)
 }
 
 struct CompositeSnapshot {
     path: String,
     sources: Vec<String>,
     topology: SourceTopology,
+    dbus_paths: Vec<String>,
     // Persisted composites without a gamepad do not need target inspection.
     targets: Option<Vec<TargetSnapshot>>,
 }
@@ -102,6 +182,13 @@ fn is_event_path(path: &str) -> bool {
     path.strip_prefix("/dev/input/event").is_some_and(|number| {
         !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
     })
+}
+
+pub fn is_dbus_target_path(path: &str) -> bool {
+    path.strip_prefix("/org/shadowblip/InputPlumber/devices/target/dbus")
+        .is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn is_target_path(path: &str) -> bool {
@@ -159,6 +246,7 @@ async fn discover(
     let mut assigned_sources = HashSet::new();
     let mut assigned_targets = HashSet::new();
     let mut assigned_nodes = HashSet::new();
+    let mut assigned_dbus = HashSet::new();
     for path in paths {
         let composite = CompositeProxy::builder(connection)
             .destination(owner.as_str())?
@@ -180,12 +268,14 @@ async fn discover(
             return Err(rejected("duplicate or cross-composite physical source"));
         }
         let topology = classifier.topology(&sources);
+        let dbus_paths = path_set(composite.dbus_devices().await?)?;
         match topology {
             SourceTopology::MissingGamepad => {
                 snapshots.push(CompositeSnapshot {
                     path,
                     sources,
                     topology,
+                    dbus_paths,
                     targets: None,
                 });
                 continue;
@@ -194,6 +284,32 @@ async fn discover(
                 return Err(rejected("composite requires one gamepad-class source"));
             }
             SourceTopology::OneGamepad => {}
+        }
+        // OneGamepad historically also accepts a single Unknown source. That
+        // is not positive physical identity evidence.
+        if sources
+            .iter()
+            .filter(|path| {
+                classifier.classify(path) == crate::source_topology::SourceClass::Gamepad
+            })
+            .count()
+            != 1
+            || sources.iter().any(|path| {
+                classifier.classify(path) == crate::source_topology::SourceClass::Unknown
+            })
+        {
+            return Err(rejected(
+                "physical controller lacks positive gamepad provenance",
+            ));
+        }
+        if dbus_paths.len() != 1
+            || !dbus_paths
+                .iter()
+                .all(|path| is_dbus_target_path(path) && assigned_dbus.insert(path.clone()))
+        {
+            return Err(rejected(
+                "controller requires one authenticated DBus target",
+            ));
         }
         let targets = path_set(composite.target_devices().await?)?;
         let mut candidates = Vec::new();
@@ -253,12 +369,14 @@ async fn discover(
             composite_path: path.clone(),
             source_device_paths: sources.clone(),
             target_path: target_path.clone(),
+            dbus_paths: dbus_paths.clone(),
             descriptor: descriptor.clone(),
         });
         snapshots.push(CompositeSnapshot {
             path,
             sources,
             topology,
+            dbus_paths,
             targets: Some(target_snapshots),
         });
     }
@@ -273,6 +391,7 @@ async fn discover(
             .await?;
         if path_set(composite.source_device_paths().await?)? != snapshot.sources
             || classifier.topology(&snapshot.sources) != snapshot.topology
+            || path_set(composite.dbus_devices().await?)? != snapshot.dbus_paths
         {
             return Err(rejected("InputPlumber composite changed during discovery"));
         }

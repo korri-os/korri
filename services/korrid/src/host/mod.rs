@@ -4,10 +4,12 @@ pub(crate) use compositor_focus::CompositorControl;
 mod config;
 pub(crate) mod control;
 mod identity;
+mod input_coordination;
 mod input_seat;
 pub(crate) mod moonlight_certificate;
 pub(crate) mod play_log;
 mod prepare;
+mod private_input;
 pub(crate) mod retroarch_control;
 mod session_state;
 mod systemd_unit;
@@ -213,6 +215,7 @@ pub struct HostRuntime {
     moonlight_certificate: Arc<dyn MoonlightCertificateAdapter>,
     moonlight_certificate_permits: Arc<tokio::sync::Semaphore>,
     retroarch_control: Arc<dyn RetroarchControlExecutor>,
+    input_coordinator: Option<Arc<input_coordination::SeatCoordinator>>,
 }
 
 impl HostRuntime {
@@ -229,11 +232,38 @@ impl HostRuntime {
         storage_root: Option<PathBuf>,
         private_state_root: PathBuf,
     ) -> Self {
+        Self::from_paths_with_native_input(path, storage_root, private_state_root, None)
+    }
+
+    pub(crate) fn from_paths_with_native_input(
+        path: &Path,
+        storage_root: Option<PathBuf>,
+        private_state_root: PathBuf,
+        native: Option<Arc<crate::portal_input::PortalInputSource>>,
+    ) -> Self {
         let config = HostConfig::read(path);
-        let launcher = config
-            .as_ref()
-            .ok()
-            .map(|config| HostLauncher::new(config, &private_state_root));
+        let socket = std::env::var_os("KORRID_INPUT_SEAT_CONTROL_SOCKET")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/run/korri-input-seat/control.sock"));
+        let coordinator = input_coordination::SeatCoordinator::connect(&socket, native.clone());
+        let input_coordinator = coordinator.as_ref().ok().cloned();
+        let manager = Arc::new(input_seat::UnixInputSeatManager::new(socket, coordinator));
+        let launcher = config.as_ref().ok().map(|config| {
+            let launcher = HostLauncher::new(config, &private_state_root, manager, native);
+            let count = storage_root
+                .as_ref()
+                .ok_or_else(|| "device settings root is not configured".to_string())
+                .and_then(|root| {
+                    crate::config::settings::read(root)
+                        .map(|settings| settings.player_count)
+                        .map_err(|e| e.to_string())
+                });
+            if let Err(error) = count.and_then(|count| launcher.control().initialize_input(count)) {
+                launcher.control().fence_input();
+                eprintln!("korrid: input pool startup reconciliation failed: {error}");
+            }
+            launcher
+        });
         let dynamic = storage_root.map(DynamicHostSource::Installed);
         let (device_public_key, owner_public_key) = identity_keys(&private_state_root);
         Self {
@@ -251,7 +281,12 @@ impl HostRuntime {
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
             )),
             retroarch_control: Arc::new(NetworkRetroarchControl::default()),
+            input_coordinator,
         }
+    }
+
+    pub(crate) fn private_input_router(&self) -> Option<axum::Router> {
+        self.input_coordinator.clone().map(private_input::router)
     }
 
     #[cfg(test)]
@@ -282,6 +317,7 @@ impl HostRuntime {
                 MAX_CONCURRENT_CERTIFICATE_CONTROLS,
             )),
             retroarch_control: Arc::new(NetworkRetroarchControl::default()),
+            input_coordinator: None,
         }
     }
 
@@ -558,8 +594,8 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
-    /// Store the approved device count only. Applying it to the persistent
-    /// controller pool belongs to the future coordinator, not this RPC.
+    /// Commit runtime and file under the same idle transition lock. An
+    /// uncertain acknowledgement or failed compensation fences new launches.
     pub async fn update_player_count(
         &self,
         request: crate::SettingsUpdateRequest,
@@ -574,20 +610,70 @@ impl HostRuntime {
             .map_err(crate::settings_failure)?;
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            runtime.control()?.with_idle_session(|| {
-                let readable = crate::config::settings::update_with_registry_source(
-                    runtime.route_root()?,
+            let control = runtime.control()?;
+            control.with_idle_session(|| {
+                use crate::config::settings;
+                let root = runtime.route_root()?;
+                let registry = runtime.settings_registry_source();
+                let before = settings::read_with_registry_source(root, &registry)
+                    .map_err(crate::settings_failure)?;
+                if before.revision != request.expected_revision {
+                    return Err(crate::settings_failure(settings::SettingsError::Conflict));
+                }
+                let sensitive = settings::read_sensitive(&runtime.private_state_root)
+                    .map_err(crate::settings_failure)?;
+                let settings::SettingChange::PlayerCount(count) = &change else {
+                    unreachable!("validated player count")
+                };
+                let count = count.get();
+                if let Err(message) = control.apply_input_count(count) {
+                    if control.apply_input_count(before.player_count).is_err() {
+                        control.fence_input();
+                    }
+                    return Err(RpcFailure {
+                        code: "InputSeatUnavailable".into(),
+                        message,
+                    });
+                }
+                let written = settings::update_with_registry_source(
+                    root,
                     &runtime.private_state_root,
                     &runtime.route_write_lock,
                     &request.expected_revision,
                     change,
-                    &runtime.settings_registry_source(),
-                )
-                .map_err(crate::settings_failure)?;
-                let sensitive =
-                    crate::config::settings::read_sensitive(&runtime.private_state_root)
-                        .map_err(crate::settings_failure)?;
-                Ok(crate::settings_snapshot(readable, sensitive))
+                    &registry,
+                );
+                match written {
+                    Ok(readable) => {
+                        let current = settings::read_with_registry_source(root, &registry);
+                        if readable.player_count != count
+                            || !current.as_ref().is_ok_and(|current| {
+                                current.revision == readable.revision
+                                    && current.player_count == count
+                            })
+                        {
+                            control.fence_input();
+                            return Err(RpcFailure {
+                                code: "InputSeatUnavailable".into(),
+                                message:
+                                    "settings changed during pool application; launches are fenced"
+                                        .into(),
+                            });
+                        }
+                        Ok(crate::settings_snapshot(readable, sensitive))
+                    }
+                    Err(error) => {
+                        // Only compensate the runtime when the file is still
+                        // exactly the pre-transaction revision. Do not overwrite
+                        // an outside writer or guess after a partial file error.
+                        let unchanged = settings::read_with_registry_source(root, &registry)
+                            .is_ok_and(|current| current.revision == before.revision);
+                        if !unchanged || control.apply_input_count(before.player_count).is_err() {
+                            control.fence_input();
+                        }
+                        Err(crate::settings_failure(error))
+                    }
+                }
             })
         })
         .await
@@ -679,8 +765,7 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
-    /// Starts the portal watcher when this device freezes a portal. Without a
-    /// portal unit nothing is spawned.
+    /// Observe session completion and input focus even without a portal freezer.
     pub fn spawn_portal_watch(&self) {
         if let Some(watch) = self.portal_watch(PORTAL_WATCH_INTERVAL) {
             tokio::spawn(watch);
@@ -695,9 +780,7 @@ impl HostRuntime {
         &self,
         interval: std::time::Duration,
     ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
-        if !self.launcher.as_ref()?.control().freezes_portal() {
-            return None;
-        }
+        self.launcher.as_ref()?;
         let runtime = self.clone();
         Some(async move {
             let mut ticks = tokio::time::interval(interval);
@@ -1108,6 +1191,113 @@ mod tests {
         time::Duration,
     };
 
+    fn count_runtime(root: &Path, pool: Arc<input_seat::RecordingInputPool>) -> HostRuntime {
+        crate::config::test_fixtures::gba(root);
+        let registry = crate::plugin_test_fixtures::installed(root);
+        let path = root.join("host.toml");
+        fs::write(&path, "label = \"count-test\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n").unwrap();
+        let backend = Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default());
+        let mut runtime = HostRuntime::from_paths_with_backend(
+            &path,
+            Some(root.into()),
+            root.join("private"),
+            backend.clone(),
+        )
+        .with_route_registry(root.into(), registry);
+        runtime.launcher = Some(HostLauncher::with_backends(
+            runtime.config.as_ref().unwrap(),
+            &root.join("private"),
+            backend,
+            pool,
+        ));
+        runtime.control().unwrap().initialize_input(4).unwrap();
+        runtime
+    }
+
+    #[tokio::test]
+    async fn count_success_means_acknowledged_pool_and_file_agree() {
+        let root = tempfile::tempdir().unwrap();
+        let pool = Arc::new(input_seat::RecordingInputPool::default());
+        let runtime = count_runtime(root.path(), pool.clone());
+        let before = runtime.settings_snapshot().await.unwrap();
+        let after = runtime
+            .update_player_count(crate::SettingsUpdateRequest {
+                setting_id: crate::config::settings::PLAYER_COUNT_SETTING_ID.into(),
+                expected_revision: before.revision,
+                value: "6".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(after.player_count, 6);
+        assert_eq!(*pool.count.lock().unwrap(), 6);
+        assert_eq!(
+            runtime.settings_snapshot().await.unwrap().revision,
+            after.revision
+        );
+        let prepared = runtime.prepare("one", None).await.unwrap();
+        assert_eq!(
+            pool.session.lock().unwrap().as_deref(),
+            Some(prepared.launch_id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn refused_count_rolls_back_and_failed_compensation_fences_prepare() {
+        for compensation_fails in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let pool = Arc::new(input_seat::RecordingInputPool::default());
+            let runtime = count_runtime(root.path(), pool.clone());
+            let before = runtime.settings_snapshot().await.unwrap();
+            let original = fs::read(root.path().join("device.yaml")).unwrap();
+            *pool.fail_counts.lock().unwrap() = if compensation_fails {
+                vec![6, 4]
+            } else {
+                vec![6]
+            };
+            let error = runtime
+                .update_player_count(crate::SettingsUpdateRequest {
+                    setting_id: crate::config::settings::PLAYER_COUNT_SETTING_ID.into(),
+                    expected_revision: before.revision,
+                    value: "6".into(),
+                })
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "InputSeatUnavailable");
+            assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), original);
+            assert_eq!(pool.fenced.load(Ordering::SeqCst), compensation_fails);
+            assert_eq!(
+                runtime.prepare("one", None).await.is_err(),
+                compensation_fails
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn file_revision_change_during_runtime_ack_preserves_external_bytes_and_fences_launch() {
+        let root = tempfile::tempdir().unwrap();
+        let pool = Arc::new(input_seat::RecordingInputPool::default());
+        let runtime = count_runtime(root.path(), pool.clone());
+        let before = runtime.settings_snapshot().await.unwrap();
+        let path = root.path().join("device.yaml");
+        let mut external = fs::read(&path).unwrap();
+        external.extend_from_slice(b"\n# external writer\n");
+        let changed = external.clone();
+        *pool.on_apply.lock().unwrap() =
+            Some(Box::new(move |_| fs::write(&path, &changed).unwrap()));
+        let error = runtime
+            .update_player_count(crate::SettingsUpdateRequest {
+                setting_id: crate::config::settings::PLAYER_COUNT_SETTING_ID.into(),
+                expected_revision: before.revision,
+                value: "6".into(),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "SettingsConflict");
+        assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), external);
+        assert!(pool.fenced.load(Ordering::SeqCst));
+        assert!(runtime.prepare("one", None).await.is_err());
+    }
+
     #[tokio::test]
     async fn concurrent_runner_choice_responses_keep_their_own_committed_revisions() {
         use crate::config::settings::{runner_choice_revisions, RunnerChoiceScope};
@@ -1360,6 +1550,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn watcher_releases_completed_session_without_portal_unit_or_browser_polling() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        fs::write(&config, "label = \"watch-test\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n").unwrap();
+        let backend = Arc::new(systemd_unit::InMemoryLaunchUnitBackend::default());
+        let pool = Arc::new(input_seat::RecordingInputPool::default());
+        let mut runtime = HostRuntime::from_paths_with_backend(
+            &config,
+            None,
+            root.path().join("private"),
+            backend.clone(),
+        );
+        runtime.launcher = Some(HostLauncher::with_backends(
+            runtime.config.as_ref().unwrap(),
+            &root.path().join("private"),
+            backend.clone(),
+            pool.clone(),
+        ));
+        runtime.prepare("one", None).await.unwrap();
+        assert!(pool.session.lock().unwrap().is_some());
+        let watcher = tokio::spawn(runtime.portal_watch(Duration::from_millis(10)).unwrap());
+        backend.complete_live();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pool.session.lock().unwrap().is_some() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        watcher.abort();
+        let _ = watcher.await;
+        assert!(pool
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.starts_with("end:")));
+    }
+
+    #[tokio::test]
     async fn portal_watch_retries_startup_thaw_without_any_client() {
         let root = tempfile::tempdir().unwrap();
         let config = root.path().join("host.toml");
@@ -1395,7 +1625,7 @@ mod tests {
 
         let unwatched =
             HostRuntime::from_paths_with_backend(&config, None, root.path().join("other"), backend);
-        assert!(unwatched.portal_watch(Duration::from_millis(10)).is_none());
+        assert!(unwatched.portal_watch(Duration::from_millis(10)).is_some());
     }
 
     #[test]

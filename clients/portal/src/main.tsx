@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client"
 import { createInputBus } from "./input/bus"
 import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
+import { createNativeInputAdapter } from "./input/native-adapter"
 import { createSpatialFocusController } from "./input/spatial-focus"
 import {
   createHttpKorridClient,
@@ -77,7 +78,8 @@ async function mountPortal() {
     : createInMemoryKorridClient()
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
-  bus.use(createGamepadAdapter())
+  // One controller transport: Linux native evdev, browser development Gamepad.
+  bus.use(linuxRuntime ? createNativeInputAdapter(linuxRuntime) : createGamepadAdapter())
   createSpatialFocusController(bus)
 
   let presentation: "catalog" | "gameplay-overlay" = "catalog"

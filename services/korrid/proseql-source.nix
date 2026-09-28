@@ -18,15 +18,16 @@ in
   '';
 
   dummySourceScript = ''
-    mkdir -p "$out/.cache"
-    ln -s "${proseql}" "$out/${cachePath}"
+    mkdir -p "$out/${crateRoot}/.cache"
+    ln -s "${proseql}" "$out/${crateRoot}/${cachePath}"
   '';
 
-  composeCargoSource = src:
+  composeCargoSource =
+    src:
     pkgs.runCommand "korrid-source-with-proseql" { } ''
       mkdir -p "$out"
       cp -R --no-preserve=mode,ownership ${src}/. "$out/"
-      mkdir -p "$out/.cache"
-      ln -s "${proseql}" "$out/${cachePath}"
+      mkdir -p "$out/${crateRoot}/.cache"
+      ln -s "${proseql}" "$out/${crateRoot}/${cachePath}"
     '';
 }

@@ -1,4 +1,4 @@
-use crate::input_seat::{GamepadState, SeatBackend, SeatSpec};
+use crate::input_seat::{GamepadState, SeatBackend, SeatSpec, GAMEPAD_STICK_FLAT};
 use evdev::{
     uinput::VirtualDevice, AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, EventType, InputEvent,
     InputId, KeyCode, UinputAbsSetup,
@@ -85,11 +85,31 @@ impl UinputSeatBackend {
             .with_keys(&keys)
             .map_err(display)?;
         for (axis, minimum, maximum, flat) in [
-            (AbsoluteAxisCode::ABS_X, -32768, 32767, 4096),
-            (AbsoluteAxisCode::ABS_Y, -32768, 32767, 4096),
+            (
+                AbsoluteAxisCode::ABS_X,
+                -32768,
+                32767,
+                i32::from(GAMEPAD_STICK_FLAT),
+            ),
+            (
+                AbsoluteAxisCode::ABS_Y,
+                -32768,
+                32767,
+                i32::from(GAMEPAD_STICK_FLAT),
+            ),
             (AbsoluteAxisCode::ABS_Z, 0, 255, 0),
-            (AbsoluteAxisCode::ABS_RX, -32768, 32767, 4096),
-            (AbsoluteAxisCode::ABS_RY, -32768, 32767, 4096),
+            (
+                AbsoluteAxisCode::ABS_RX,
+                -32768,
+                32767,
+                i32::from(GAMEPAD_STICK_FLAT),
+            ),
+            (
+                AbsoluteAxisCode::ABS_RY,
+                -32768,
+                32767,
+                i32::from(GAMEPAD_STICK_FLAT),
+            ),
             (AbsoluteAxisCode::ABS_RZ, 0, 255, 0),
             (AbsoluteAxisCode::ABS_HAT0X, -1, 1, 0),
             (AbsoluteAxisCode::ABS_HAT0Y, -1, 1, 0),

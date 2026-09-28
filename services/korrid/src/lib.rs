@@ -3089,6 +3089,21 @@ pub fn host_routers_with_storage_and_private(
     )
 }
 
+async fn require_loopback_native(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let local = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .is_some_and(|peer| peer.0.ip().is_loopback());
+    if !local {
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    }
+    next.run(request).await
+}
+
 /// Build the same routers over federation resources the caller already owns,
 /// so one process shares a single directory, credentials and authorization
 /// with its discovery coordinator.
@@ -3100,15 +3115,39 @@ pub fn host_routers_with_federation(
     portal_access: Option<PortalAccess>,
 ) -> (Router, Router) {
     let private_state_root = private_state_root.into();
-    let runtime = host::HostRuntime::from_paths_with_private_state(
+    let native = portal_access.clone().map(|access| {
+        portal_input::router(
+            access,
+            portal_input::PortalInputLimits {
+                devices: korri_input_contract::MAX_PHYSICAL_SOURCES + 16,
+                queued_events: 1024,
+                ..portal_input::PortalInputLimits::default()
+            },
+        )
+    });
+    let (native_router, native_source) = match native {
+        Some((router, source)) => (
+            Some(router.layer(axum::middleware::from_fn(require_loopback_native))),
+            Some(Arc::new(source)),
+        ),
+        None => (None, None),
+    };
+    let runtime = host::HostRuntime::from_paths_with_native_input(
         config_path.as_ref(),
         storage_root.map(Into::into),
         private_state_root.clone(),
+        native_source,
     );
     // A device that freezes its portal keeps observing its own session, so a
     // game that ends while the portal cannot poll still thaws it.
     runtime.spawn_portal_watch();
-    secure_host_routers_with_federation(runtime, &private_state_root, resources, portal_access)
+    secure_host_routers_with_federation(
+        runtime,
+        &private_state_root,
+        resources,
+        portal_access,
+        native_router,
+    )
 }
 
 #[cfg(test)]
@@ -3214,7 +3253,9 @@ fn secure_host_routers_with_federation(
     private_state_root: &Path,
     resources: FederationResources,
     portal_access: Option<PortalAccess>,
+    native_router: Option<Router>,
 ) -> (Router, Router) {
+    let private_input = runtime.private_input_router();
     let (mut lan, mut local) = app_states(runtime);
     let identity_switch = std::env::var_os("KORRID_LOCAL_SIGNER_SOCKET").map(|socket| {
         Arc::new(identity_switch::IdentitySwitchCoordinator::new(
@@ -3227,7 +3268,10 @@ fn secure_host_routers_with_federation(
     local.federation = Some(resources.directory.clone());
     lan.identity_switch = identity_switch.clone();
     local.identity_switch = identity_switch;
-    let portal = portal_router_for(&lan, portal_access);
+    let portal = portal_router_for(&lan, portal_access).map(|router| match native_router {
+        Some(native) => router.merge(native),
+        None => router,
+    });
     let peer = peer_rpc::PeerRpcServer::with_shared_authority(
         lan,
         private_state_root,
@@ -3235,10 +3279,12 @@ fn secure_host_routers_with_federation(
         resources.authorization,
     )
     .expect("load peer replay authority");
-    (
-        peer.router(portal),
-        Router::new().route("/rpc", post(rpc)).with_state(local),
-    )
+    let local = Router::new().route("/rpc", post(rpc)).with_state(local);
+    let local = match private_input {
+        Some(input) => local.merge(input),
+        None => local,
+    };
+    (peer.router(portal), local)
 }
 
 /// Generate an unguessable capability for one server lifetime.
@@ -3608,6 +3654,27 @@ mod tests {
         types::Timestamp,
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn native_browser_route_refuses_non_loopback_and_missing_socket_provenance() {
+        for (peer, expected) in [
+            (None, StatusCode::FORBIDDEN),
+            (Some("192.0.2.1:1234"), StatusCode::FORBIDDEN),
+            (Some("127.0.0.1:1234"), StatusCode::OK),
+            (Some("[::1]:1234"), StatusCode::OK),
+        ] {
+            let app = Router::new()
+                .route("/", axum::routing::get(|| async { StatusCode::OK }))
+                .layer(axum::middleware::from_fn(require_loopback_native));
+            let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
+            if let Some(peer) = peer {
+                request.extensions_mut().insert(axum::extract::ConnectInfo(
+                    peer.parse::<std::net::SocketAddr>().unwrap(),
+                ));
+            }
+            assert_eq!(app.oneshot(request).await.unwrap().status(), expected);
+        }
+    }
 
     const PNG_1X1: &[u8] = &[
         137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4,

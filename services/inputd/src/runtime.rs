@@ -69,14 +69,14 @@ pub struct RuntimeAction {
     pub dispatch_mode: DispatchMode,
 }
 
-struct Policies {
+pub(crate) struct Policies {
     non_destructive: ShortcutPolicy,
     destructive: ShortcutPolicy,
     direct_presses: std::collections::BTreeMap<Control, ActionId>,
 }
 
 impl Policies {
-    fn new(routes: ActionRoutes) -> Self {
+    pub(crate) fn new(routes: ActionRoutes) -> Self {
         let mut shortcuts = Vec::new();
         let mut destructive = Vec::new();
         let mut taps = Vec::new();
@@ -116,7 +116,7 @@ impl Policies {
         }
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.non_destructive.reset();
         self.destructive.reset();
     }
@@ -125,7 +125,7 @@ impl Policies {
         self.non_destructive.clear_source(EVDEV_SOURCE);
     }
 
-    fn handle(
+    pub(crate) fn handle(
         &mut self,
         source: InputSource,
         input: SemanticInput,
@@ -133,6 +133,7 @@ impl Policies {
     ) -> Vec<RuntimeAction> {
         let source_name = match source {
             InputSource::Evdev => EVDEV_SOURCE,
+            InputSource::Remote => "remote:authenticated-mirror",
             InputSource::AuthenticatedDbus => DBUS_SOURCE,
         };
         let mut actions = handle_policy(&mut self.non_destructive, source_name, input)
@@ -189,8 +190,9 @@ fn handle_policy(policy: &mut ShortcutPolicy, source: &str, input: SemanticInput
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum InputSource {
+pub(crate) enum InputSource {
     Evdev,
+    Remote,
     AuthenticatedDbus,
 }
 

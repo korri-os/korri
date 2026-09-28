@@ -606,10 +606,71 @@ in
       };
     };
 
+    # Persistent seats belong to the core, including physical-only hosts.
+    # Extracted from the former Sunshine receiver unit; plugin removal must
+    # neither stop these devices nor revoke their event-node permissions.
+    services.udev.packages = [
+      (import ./input-seat-rules.nix {
+        inherit pkgs;
+        eventGid = cfg.runtimeGid;
+      })
+    ];
+    systemd.services.korri-input-seat-receiver = {
+      description = "Protected Korri shared controller seat receiver";
+      wantedBy = [ "multi-user.target" ];
+      requires = [ "korri-bundle-selector.service" ];
+      after = [
+        "korri-bundle-selector.service"
+        "systemd-udevd.service"
+      ];
+      before = [ "korrid.service" ];
+      environment.KORRI_BUNDLE_ACTIVE = config.services.korriBundle.activePath;
+      serviceConfig = {
+        Type = "notify";
+        User = "root";
+        Group = "root";
+        SupplementaryGroups = [ "uinput" ];
+        RuntimeDirectory = "korri-input-seat";
+        RuntimeDirectoryMode = "0711";
+        ExecStart = "${config.services.korriBundle.launcherPackage}/bin/korri-bundle-launch input-seat-receiver --runtime-dir /run/korri-input-seat --control-uid ${toString cfg.serviceIdentities.korridUid} --control-gid ${toString cfg.serviceIdentities.korridGid} --sunshine-uid ${toString cfg.runtimeUid} --sunshine-gid 980 --event-gid ${toString cfg.runtimeGid}";
+        Restart = "on-failure";
+        RestartSec = 1;
+        UMask = "0077";
+        NoNewPrivileges = true;
+        CapabilityBoundingSet = [ "CAP_CHOWN" ];
+        PrivateTmp = true;
+        PrivatePIDs = true;
+        PrivateDevices = false;
+        DevicePolicy = "closed";
+        DeviceAllow = [ "/dev/uinput rw" ];
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectKernelLogs = true;
+        ProtectControlGroups = true;
+        ProtectClock = true;
+        ProtectHostname = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        SystemCallArchitectures = "native";
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        ReadWritePaths = [ "/run/korri-input-seat" ];
+      };
+    };
     systemd.services.korrid = {
       bindsTo = lib.mkAfter [ "korri-compositor.service" ];
-      requires = lib.mkAfter [ "korri-compositor.service" ];
-      after = lib.mkAfter [ "korri-compositor.service" ];
+      requires = lib.mkAfter [
+        "korri-compositor.service"
+        "korri-input-seat-receiver.service"
+      ];
+      after = lib.mkAfter [
+        "korri-compositor.service"
+        "korri-input-seat-receiver.service"
+      ];
     };
   };
 }

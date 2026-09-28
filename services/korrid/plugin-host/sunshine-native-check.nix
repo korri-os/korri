@@ -1,14 +1,11 @@
-# Check the Sunshine plugin's native root helpers against the store paths they
-# actually reference. The receiver's setup runs before any plugin unit, so a
-# missing tool or a udev rule that udevd refuses stops the whole plugin host.
+# Check the plugin-owned UHID setup without granting it core seat ownership.
 {
   pkgs,
-  inputdPackage,
   sunshinePackage,
 }:
 let
   plugin = import ../../../plugins/sunshine/plugin.nix {
-    inherit pkgs inputdPackage sunshinePackage;
+    inherit pkgs sunshinePackage;
   };
 in
 pkgs.runCommand "korri-sunshine-plugin-native-check"
@@ -23,7 +20,7 @@ pkgs.runCommand "korri-sunshine-plugin-native-check"
     setup=${plugin.files.setup}
     rules=${plugin.files.input-rules}
     sunshine_unit=${plugin.services.korri-sunshine}
-    receiver_unit=${plugin.services.korri-sunshine-input-seat-receiver}
+    setup_unit=${plugin.services.korri-sunshine-input-setup}
 
     # Every store tool the setup helper calls must exist in its closure.
     tools="$(grep -oE '/nix/store/[a-z0-9]{32}-[^/ ]+/bin/[A-Za-z0-9_.-]+' "$setup" | sort -u)"
@@ -43,13 +40,19 @@ pkgs.runCommand "korri-sunshine-plugin-native-check"
       fi
     done
 
-    # udevd ignores GROUP= for a group that is not a system group. The seat
-    # event nodes belong to the korri login user (GID 1000), which is not one,
-    # so a GROUP= assignment on them silently leaves the nodes root-only.
-    if grep -E 'Korri Seat' "$rules" | grep -qE 'GROUP='; then
-      echo "seat event rule assigns GROUP=, which udevd refuses for GID 1000" >&2
-      exit 1
-    fi
+    # The plugin must not own or trigger changes to persistent core seats.
+    ! grep -E 'Korri Seat|SUBSYSTEM=="input"' "$rules"
+    ! grep -F -- '--subsystem-match=input' "$setup"
+    ! grep -E 'RuntimeDirectory=korri-input-seat|korri-bundle-launch' "$setup_unit"
+    grep -Fx 'Type=exec' "$setup_unit"
+    grep -F 'ExecStartPre=+' "$setup_unit"
+    grep -F 'ExecStopPost=+' "$setup_unit"
+    grep -E '^ExecStart=/nix/store/[^ ]+/bin/sleep infinity$' "$setup_unit"
+    ! grep -E '^ExecStart=\+|^RemainAfterExit=' "$setup_unit"
+    grep -E '^Requires=.*korri-sunshine-input-setup.service.*korri-input-seat-receiver.service' "$sunshine_unit"
+    ! grep -F 'korri-sunshine-input-seat-receiver.service' "$sunshine_unit"
+    grep -Fx 'Environment=KORRI_INPUT_SEAT_MIRROR_SOCKET=/run/korri-input-seat/sunshine-input-seat.sock' "$sunshine_unit"
+    grep -F 'runtime_dir.join("sunshine-input-seat.sock")' ${../../inputd/src/input_seat_receiver.rs}
 
     # The host owns /dev/uinput (korri-inputd:uinput 0660). A plugin rule that
     # sets its owner, group or mode takes the node from every other holder,
@@ -59,13 +62,8 @@ pkgs.runCommand "korri-sunshine-plugin-native-check"
       exit 1
     fi
 
-    # Both services open /dev/uinput, so both join the host group.
-    for unit in "$sunshine_unit" "$receiver_unit"; do
-      if ! grep -qE '^SupplementaryGroups=(.* )?uinput( |$)' "$unit"; then
-        echo "$unit lacks SupplementaryGroups=uinput" >&2
-        exit 1
-      fi
-    done
+    # Only Sunshine opens /dev/uinput; the setup unit owns no devices.
+    grep -qE '^SupplementaryGroups=(.* )?uinput( |$)' "$sunshine_unit"
 
     udevadm verify --resolve-names=never --no-style "$rules"
     touch "$out"

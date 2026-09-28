@@ -1400,6 +1400,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "korri-input-contract"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "korrid"
 version = "0.0.0"
 dependencies = [
@@ -1412,6 +1419,7 @@ dependencies = [
  "image",
  "indexmap",
  "jni",
+ "korri-input-contract",
  "libc",
  "log",
  "nostr",

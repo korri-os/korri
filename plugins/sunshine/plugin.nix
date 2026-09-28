@@ -1,11 +1,11 @@
 {
   pkgs,
-  inputdPackage,
   sunshinePackage,
 }:
 let
   lib = pkgs.lib;
-  substitute = path: replacements:
+  substitute =
+    path: replacements:
     lib.replaceStrings (builtins.attrNames replacements) (builtins.attrValues replacements) (
       builtins.readFile path
     );
@@ -22,9 +22,7 @@ let
   rulesPackage = pkgs.writeTextFile {
     name = "korri-sunshine-input-rules";
     destination = "/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
-    text = substitute ./99-z-korri-sunshine-input.rules {
-      "@coreutils@" = toString pkgs.coreutils;
-    };
+    text = builtins.readFile ./99-z-korri-sunshine-input.rules;
   };
   rulesFile = "${rulesPackage}/lib/udev/rules.d/99-z-korri-sunshine-input.rules";
   setupPackage = pkgs.writeShellScriptBin "korri-sunshine-input-seat-setup" (
@@ -38,7 +36,8 @@ let
       "@udevadm@" = toString pkgs.systemd;
     }
   );
-  unit = name: source: replacements:
+  unit =
+    name: source: replacements:
     let
       package = pkgs.writeTextFile {
         name = "korri-${name}";
@@ -51,11 +50,9 @@ in
 {
   packages = {
     sunshine = sunshinePackage;
-    inputd = inputdPackage;
   };
   files = {
     sunshine = "${sunshinePackage}/bin/sunshine";
-    input-seat-receiver = "${inputdPackage}/bin/korri-input-seat-receiver";
     runtime = "${runtimePackage}/bin/korri-sunshine-run";
     setup = "${setupPackage}/bin/korri-sunshine-input-seat-setup";
     input-rules = rulesFile;
@@ -65,15 +62,27 @@ in
       "@runtime@" = "${runtimePackage}/bin/korri-sunshine-run";
     };
     "korri-sunshine-certificate-control.socket" =
-      unit "korri-sunshine-certificate-control.socket" ./korri-sunshine-certificate-control.socket { };
-    korri-sunshine-input-seat-receiver =
-      unit "korri-sunshine-input-seat-receiver.service" ./korri-sunshine-input-seat-receiver.service {
-        "@inputd@" = toString inputdPackage;
-        "@setup@" = "${setupPackage}/bin/korri-sunshine-input-seat-setup";
-      };
+      unit "korri-sunshine-certificate-control.socket" ./korri-sunshine-certificate-control.socket
+        { };
+    korri-sunshine-input-setup =
+      unit "korri-sunshine-input-setup.service" ./korri-sunshine-input-setup.service
+        {
+          "@setup@" = "${setupPackage}/bin/korri-sunshine-input-seat-setup";
+          "@coreutils@" = toString pkgs.coreutils;
+        };
   };
   ports = {
-    allowedTCPPorts = [ 47984 47989 48010 ];
-    allowedUDPPorts = [ 47998 47999 48000 48002 48010 ];
+    allowedTCPPorts = [
+      47984
+      47989
+      48010
+    ];
+    allowedUDPPorts = [
+      47998
+      47999
+      48000
+      48002
+      48010
+    ];
   };
 }

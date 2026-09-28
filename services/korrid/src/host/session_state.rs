@@ -208,9 +208,18 @@ impl Drop for SessionStateGuard<'_> {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner) = PortalFreezerState::Unknown;
             }
-            self.control.reconcile_portal(&self.state);
+            let _ = self.control.reconcile_portal(&self.state);
         } else if self.reconcile {
-            self.control.reconcile_portal(&self.state);
+            if let Err(message) = self.control.reconcile_portal(&self.state) {
+                eprintln!("korrid: input/freezer transition failed: {message}");
+                if let ActiveState::Running { launch_id, game_id } = &*self.state {
+                    let (launch_id, game_id) = (launch_id.clone(), game_id.clone());
+                    let _ = self
+                        .control
+                        .record_focus_failure(&mut self.state, launch_id, game_id);
+                }
+                let _ = self.control.thaw_portal();
+            }
         }
     }
 }
@@ -235,6 +244,10 @@ pub struct HostSessionControl {
     /// Frozen only while a running exact launch has observed compositor focus.
     /// Absent, the portal is never touched.
     portal: Option<PortalFreezer>,
+    native_input: Option<(
+        Arc<crate::portal_input::PortalInputSource>,
+        tokio::runtime::Handle,
+    )>,
 }
 
 impl HostSessionControl {
@@ -275,6 +288,7 @@ impl HostSessionControl {
             compositor: None,
             never_focus: Vec::new(),
             portal: None,
+            native_input: None,
         }
     }
 
@@ -289,6 +303,54 @@ impl HostSessionControl {
             last_error: Arc::new(Mutex::new(None)),
         });
         self
+    }
+
+    pub(crate) fn with_native_input(
+        mut self,
+        source: Arc<crate::portal_input::PortalInputSource>,
+    ) -> Self {
+        self.native_input = Some((source, tokio::runtime::Handle::current()));
+        self
+    }
+
+    pub(crate) fn initialize_input(&self, count: u8) -> Result<(), String> {
+        let mut state = self.lock_state();
+        state.reconcile = false;
+        self.refresh_recovery(&mut state);
+        let session = match &*state {
+            ActiveState::Running { launch_id, .. }
+            | ActiveState::Frozen { launch_id, .. }
+            | ActiveState::FocusFailed { launch_id, .. }
+            | ActiveState::Stopping { launch_id, .. } => Some(launch_id.as_str()),
+            ActiveState::NoActive | ActiveState::Completed { .. } => None,
+            _ => return Err("host session authority is unresolved".into()),
+        };
+        self.input_seats.initialize(count, session)
+    }
+
+    pub(crate) fn apply_input_count(&self, count: u8) -> Result<(), String> {
+        self.input_seats.apply_count(count)
+    }
+    pub(crate) fn fence_input(&self) {
+        self.input_seats.fence();
+    }
+    fn retire_native(&self) -> Result<(), String> {
+        if let Some((source, runtime)) = &self.native_input {
+            if let Err(error) = runtime.block_on(source.suspend(std::time::Duration::from_secs(2)))
+            {
+                self.input_seats.route(None)?;
+                source.resume();
+                return Err(format!(
+                    "native input retirement was not acknowledged: {error}"
+                ));
+            }
+        }
+        Ok(())
+    }
+    fn resume_native(&self) {
+        if let Some((source, _)) = &self.native_input {
+            source.resume();
+        }
     }
 
     fn lock_state(&self) -> SessionStateGuard<'_> {
@@ -336,6 +398,33 @@ impl HostSessionControl {
     /// A Leave acknowledgement must include this result. Drop is only a
     /// safety net for other transitions, not the Leave transaction itself.
     fn thaw_portal(&self) -> Result<(), String> {
+        // Native resume must never overlap the old gameplay route, including
+        // focus loss and guard-driven recovery, not only explicit Leave.
+        if let Err(message) = self.input_seats.route(None) {
+            if self.input_seats.is_fenced() {
+                self.emergency_thaw_portal()?;
+            }
+            // Even a successful emergency unit thaw does not acknowledge an
+            // input handoff or resume native delivery.
+            return Err(message);
+        }
+        self.thaw_portal_unit()?;
+        self.resume_native();
+        Ok(())
+    }
+
+    /// Terminal coordinator loss retires controller delivery permanently for
+    /// this runtime. Thaw only the UI unit so keyboard/mouse recovery remains
+    /// possible. Keep the journal/reservations and launch fence untouched.
+    fn emergency_thaw_portal(&self) -> Result<(), String> {
+        self.input_seats.fence();
+        if let Some((source, _)) = &self.native_input {
+            source.reset();
+        }
+        self.thaw_portal_unit()
+    }
+
+    fn thaw_portal_unit(&self) -> Result<(), String> {
         let Some(portal) = &self.portal else {
             return Ok(());
         };
@@ -355,20 +444,34 @@ impl HostSessionControl {
     /// Process liveness is not focus. Observe the existing exact-launch
     /// compositor contract before freezing, including initial launch and
     /// every watcher tick. Missing/delayed windows leave the portal running.
-    fn reconcile_portal(&self, state: &ActiveState) {
-        let Some(portal) = &self.portal else {
-            return;
-        };
+    fn reconcile_portal(&self, state: &ActiveState) -> Result<(), String> {
+        if self.input_seats.is_fenced() {
+            self.emergency_thaw_portal()?;
+            return Err("input coordination is fenced; restart korrid after resolving the exact active session".into());
+        }
         let freeze = matches!(state, ActiveState::Running { launch_id, .. }
             if matches!(self.current_focus_ownership(launch_id), Ok(FocusOwnership::Launch)));
+        let route = match state {
+            ActiveState::Running { launch_id, .. } if freeze => Some(launch_id.as_str()),
+            _ => None,
+        };
+        let Some(portal) = &self.portal else {
+            // Focus and controller ownership do not depend on an optional
+            // cgroup freezer. The same exact-launch proof selects gameplay.
+            return self.input_seats.route(route);
+        };
         let unknown = *portal
             .applied
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             == PortalFreezerState::Unknown;
-        if (!freeze || unknown) && self.thaw_portal().is_err() {
-            return;
+        if !freeze {
+            return self.thaw_portal();
         }
+        if unknown {
+            self.thaw_portal()?;
+        }
+        self.input_seats.route(route)?;
         if freeze {
             let mut applied = portal
                 .applied
@@ -377,14 +480,27 @@ impl HostSessionControl {
             if *applied != PortalFreezerState::Frozen {
                 // A refused freeze costs only power. Do not retry until focus
                 // leaves and returns. Every attempted freeze still needs thaw.
-                let _ = self.portal_result(portal.unit.freeze());
+                self.retire_native()?;
+                if self.portal_result(portal.unit.freeze()).is_err() && self.native_input.is_some()
+                {
+                    // Keep the existing best-effort freezer policy. A refused
+                    // helper can have partially frozen the unit: prove thaw
+                    // before resuming the retired browser stream.
+                    *applied = PortalFreezerState::Unknown;
+                    drop(applied);
+                    self.thaw_portal()?;
+                    self.input_seats.route(route)?;
+                    // Suppress repeated freeze attempts until focus leaves.
+                    *portal
+                        .applied
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = PortalFreezerState::Frozen;
+                    return Ok(());
+                }
                 *applied = PortalFreezerState::Frozen;
             }
         }
-    }
-
-    pub(crate) fn freezes_portal(&self) -> bool {
-        self.portal.is_some()
+        Ok(())
     }
 
     /// Test observation of a pending release. The production watcher always
@@ -538,6 +654,7 @@ impl HostSessionControl {
         let Some(record) = read_active(&self.identity_root)? else {
             return Ok(());
         };
+        self.input_seats.end_session(record.launch_id())?;
         let (key, entry) = match record {
             ActiveSession::Running {
                 person_public_key: None,
@@ -623,6 +740,7 @@ impl HostSessionControl {
     }
 
     fn stop_seats(&self, launch_id: &str) -> Result<(), String> {
+        self.input_seats.route(None)?;
         let lease = self
             .seat_lease
             .lock()
@@ -788,6 +906,9 @@ impl HostSessionControl {
         runner_id: Option<&str>,
     ) -> Result<SessionPrepared, RpcFailure> {
         let mut state = self.lock_state();
+        self.input_seats
+            .ready()
+            .map_err(|message| failure("InputSeatUnavailable", message))?;
         self.refresh_recovery(&mut state);
         match &*state {
             ActiveState::Running {
@@ -802,6 +923,8 @@ impl HostSessionControl {
                         "input seats failed and the active game was stopped",
                     ));
                 }
+                self.reconcile_portal(&state)
+                    .map_err(|message| failure("InputTransitionFailed", message))?;
                 return Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id: launch_id.clone(),
@@ -855,12 +978,19 @@ impl HostSessionControl {
             *state = ActiveState::RecoveryBlocked;
             failure("HostRecoveryBlocked", message)
         })?;
-        let seat_lease = match self.input_seats.start(&launch_id) {
+        let seat_lease = match self
+            .input_seats
+            .begin_session(&launch_id)
+            .and_then(|()| self.input_seats.start(&launch_id))
+        {
             Ok(lease) => lease,
             Err(message) => {
                 // The game never ran; discard the record without logging.
-                let _ = self.discard_active();
-                *state = ActiveState::NoActive;
+                *state = if self.discard_active().is_ok() {
+                    ActiveState::NoActive
+                } else {
+                    ActiveState::RecoveryBlocked
+                };
                 return Err(failure("InputSeatUnavailable", message));
             }
         };
@@ -903,12 +1033,31 @@ impl HostSessionControl {
                 *self.seat_lease.lock().expect("input-seat mutex poisoned") =
                     Some((launch_id.clone(), seat_lease));
                 *state = active_from_observed(observed, launch_id.clone(), Some(game_id.into()));
+                if let Err(message) = self.reconcile_portal(&state) {
+                    let _ = self.record_focus_failure(
+                        &mut state,
+                        launch_id.clone(),
+                        Some(game_id.into()),
+                    );
+                    return Err(failure("InputTransitionFailed", message));
+                }
                 Ok(SessionPrepared {
                     game_id: game_id.into(),
                     launch_id,
                 })
             }
-            Ok(LaunchUnitState::Stopping | LaunchUnitState::Completed) => {
+            Ok(LaunchUnitState::Stopping) => {
+                let _ = seat_lease.stop(&launch_id);
+                *state = ActiveState::Stopping {
+                    launch_id,
+                    game_id: Some(game_id.into()),
+                };
+                Err(failure(
+                    "HostLaunchFailed",
+                    "host game is stopping before prepare completed",
+                ))
+            }
+            Ok(LaunchUnitState::Completed) => {
                 // The unit died before prepare returned. No play is
                 // recorded for a launch the player never received.
                 let _ = seat_lease.stop(&launch_id);
@@ -983,12 +1132,23 @@ impl HostSessionControl {
                 Err(_) => *state = ActiveState::RecoveryBlocked,
             }
         }
+        state.reconcile = false;
+        if let Err(message) = self.reconcile_portal(&state) {
+            if let ActiveState::Running { launch_id, game_id } = &*state {
+                let (launch_id, game_id) = (launch_id.clone(), game_id.clone());
+                eprintln!("korrid: input transition failed: {message}");
+                let _ = self.record_focus_failure(&mut state, launch_id, game_id);
+            }
+        }
         status_from_state(&state)
     }
 
     /// Removes the active record for a launch that never reached the
     /// player. Nothing is logged.
     fn discard_active(&self) -> Result<(), String> {
+        if let Some(record) = read_active(&self.identity_root)? {
+            self.input_seats.end_session(record.launch_id())?;
+        }
         consume_active(&self.identity_root).map(|_| ())
     }
 
@@ -1061,6 +1221,9 @@ impl HostSessionControl {
                 return Err(HostSessionEffectFailure::NoActive);
             }
         }
+        self.input_seats
+            .ready()
+            .map_err(HostSessionEffectFailure::Unavailable)?;
         let restore_frozen = recorded_frozen || observed_frozen;
         if observed_frozen {
             self.backend
@@ -1279,6 +1442,11 @@ impl HostSessionControl {
                 return HostSessionFreezeChange::RecoveryBlocked;
             }
         }
+        if target == FreezerTarget::Running {
+            if let Err(message) = self.input_seats.ready() {
+                return HostSessionFreezeChange::HelperFailed { launch_id, message };
+            }
+        }
         // Only a settled state short-circuits. A unit observed `freezing`
         // or `thawing` always receives the verb; systemd's freeze and thaw
         // are idempotent, so the extra call is harmless and the response
@@ -1338,7 +1506,11 @@ impl HostSessionControl {
             },
         };
         if target == FreezerTarget::Frozen {
-            if let Err(message) = self.thaw_portal() {
+            if let Err(message) = self
+                .input_seats
+                .route(None)
+                .and_then(|()| self.thaw_portal())
+            {
                 // Inputd keeps Game input when Leave fails. Undo the game
                 // freeze before reporting failure, including an idempotent
                 // Leave of an already frozen launch. Never leave a frozen
@@ -1353,6 +1525,7 @@ impl HostSessionControl {
                     game_id: game_id.clone(),
                 };
                 if self.ensure_seats(&launch_id).is_err()
+                    || self.input_seats.route(Some(&launch_id)).is_err()
                     || self.reset_seats(&launch_id).is_err()
                     || Self::focus_failure(self.focus_launch(&launch_id)).is_some()
                 {
@@ -1402,6 +1575,10 @@ impl HostSessionControl {
                 }
                 return HostSessionFreezeChange::FocusFailed { launch_id, message };
             }
+        }
+        if let Err(message) = self.reconcile_portal(&state) {
+            let _ = self.record_focus_failure(&mut state, launch_id.clone(), game_id);
+            return HostSessionFreezeChange::HelperFailed { launch_id, message };
         }
         if already {
             HostSessionFreezeChange::Unchanged { launch_id }
@@ -2092,6 +2269,28 @@ mod tests {
     }
     struct FailingSeatManager;
     impl InputSeatManager for TestSeatManager {
+        fn initialize(&self, _: u8, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn apply_count(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn begin_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn end_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn route(&self, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn ready(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn is_fenced(&self) -> bool {
+            false
+        }
+        fn fence(&self) {}
         fn start(&self, _launch_id: &str) -> Result<Box<dyn InputSeatLease>, String> {
             self.starts.fetch_add(1, Ordering::SeqCst);
             self.alive.store(true, Ordering::SeqCst);
@@ -2101,6 +2300,28 @@ mod tests {
         }
     }
     impl InputSeatManager for FailingSeatManager {
+        fn initialize(&self, _: u8, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn apply_count(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn begin_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn end_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn route(&self, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn ready(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn is_fenced(&self) -> bool {
+            false
+        }
+        fn fence(&self) {}
         fn start(&self, _launch_id: &str) -> Result<Box<dyn InputSeatLease>, String> {
             Err("seat receiver unavailable".into())
         }
@@ -2139,6 +2360,28 @@ mod tests {
     }
 
     impl InputSeatManager for ResetSeatManager {
+        fn initialize(&self, _: u8, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn apply_count(&self, _: u8) -> Result<(), String> {
+            Ok(())
+        }
+        fn begin_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn end_session(&self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn route(&self, _: Option<&str>) -> Result<(), String> {
+            Ok(())
+        }
+        fn ready(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn is_fenced(&self) -> bool {
+            false
+        }
+        fn fence(&self) {}
         fn start(&self, launch_id: &str) -> Result<Box<dyn InputSeatLease>, String> {
             self.state.lock().unwrap().starts.push(launch_id.into());
             Ok(Box::new(ResetSeatLease {
@@ -3261,6 +3504,550 @@ mod tests {
             recovered.status();
             assert_eq!(portal.frozen(), frozen, "focused node {focused}");
         }
+    }
+
+    #[test]
+    fn lost_receiver_reservations_block_frozen_resume_and_new_launch_without_recreation() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        let root = tempfile::tempdir().unwrap();
+        let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        persist_test_record(root.path(), id);
+        let backend = Arc::new(DeterministicBackend::default());
+        backend.insert(id, LaunchUnitState::Frozen);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let (coordinator, receiver) = test_support::coordinator(move |request| {
+            seen.lock().unwrap().push(request);
+            let mut reply = test_support::reply();
+            reply.recovery_required = true;
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "must-not-open".into(),
+            Ok(coordinator.clone()),
+        ));
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone());
+        assert!(control
+            .initialize_input(6)
+            .unwrap_err()
+            .contains("lost live session reservations"));
+        assert!(manager.ready().is_err());
+        assert!(matches!(
+            control.thaw(id),
+            HostSessionFreezeChange::HelperFailed { .. }
+        ));
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Frozen);
+        assert!(backend.state.lock().unwrap().thawed.is_empty());
+        assert!(control
+            .prepare("new", None, Ok(&["game".into()]), &BTreeMap::new())
+            .is_err());
+        assert!(requests.lock().unwrap().iter().all(|request| matches!(
+            request,
+            korri_input_contract::SeatRequest::Hello | korri_input_contract::SeatRequest::Poll
+        )));
+        drop(control);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
+        // Resolution needs actual game completion, not a replacement input
+        // session. A subsequent idle startup can apply the configured count.
+        backend.insert(id, LaunchUnitState::Completed);
+        let (coordinator, receiver) = test_support::coordinator(|request| {
+            let mut reply = test_support::reply();
+            if let korri_input_contract::SeatRequest::ApplyCount { count } = request {
+                reply.count = count;
+            }
+            reply
+        });
+        let manager = Arc::new(UnixInputSeatManager::new(
+            "unused".into(),
+            Ok(coordinator.clone()),
+        ));
+        let recovered = HostSessionControl::with_input_seats(root.path(), backend, manager.clone());
+        recovered.initialize_input(6).unwrap();
+        assert!(manager.ready().is_ok());
+        drop(recovered);
+        drop(manager);
+        drop(coordinator);
+        receiver.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_control_loss_thaws_only_portal_and_keeps_native_and_launches_fenced() {
+        use super::super::{input_coordination::test_support, input_seat::UnixInputSeatManager};
+        use futures::{SinkExt, StreamExt};
+        use korri_input_contract::SeatRequest;
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+        // Real seqpacket EOF and native WS; systemd/compositor are recording
+        // backends. This proves the host transition, not a kernel freezer.
+        for (completed, refuse_first_thaw) in [(false, false), (true, false), (true, true)] {
+            let access = crate::portal_access::PortalAccess::new(
+                "test-capability",
+                "http://portal.local",
+                crate::portal_access::PortalPermission::LocalSessions,
+            );
+            let (app, source) = crate::portal_input::router(access, Default::default());
+            let source = Arc::new(source);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mut request = format!("ws://{}/", listener.local_addr().unwrap())
+                .into_client_request()
+                .unwrap();
+            request
+                .headers_mut()
+                .insert("Origin", "http://portal.local".parse().unwrap());
+            let reconnect = request.clone();
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let (mut client, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+            client
+                .send(Message::Text("Bearer test-capability".into()))
+                .await
+                .unwrap();
+            client
+                .send(Message::Text(r#"{"classes":["gamepad"]}"#.into()))
+                .await
+                .unwrap();
+            let initial: serde_json::Value =
+                serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(initial["kind"], "initialization-complete");
+
+            let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            let lost = Arc::new(AtomicBool::new(false));
+            let loss = lost.clone();
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let received = requests.clone();
+            let (coordinator, receiver) =
+                test_support::coordinator_until_disconnect(Some(source.clone()), move |request| {
+                    if loss.load(Ordering::SeqCst) {
+                        return None;
+                    }
+                    received.lock().unwrap().push(request);
+                    let mut reply = test_support::reply();
+                    reply.session = Some(id.into());
+                    Some(reply)
+                });
+            let root = tempfile::tempdir().unwrap();
+            persist_test_record(root.path(), id);
+            let backend = Arc::new(DeterministicBackend::default());
+            backend.insert(id, LaunchUnitState::Running);
+            backend.set_pids(id, &[9100]);
+            let compositor = Arc::new(RecordingCompositor::default());
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            let portal = Arc::new(RecordingPortalUnit::default());
+            let manager = Arc::new(UnixInputSeatManager::new(
+                "unused-mirror-socket".into(),
+                Ok(coordinator.clone()),
+            ));
+            let control =
+                HostSessionControl::with_input_seats(root.path(), backend.clone(), manager.clone())
+                    .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()])
+                    .with_portal(portal.clone())
+                    .with_native_input(source.clone());
+            control.initialize_input(4).unwrap();
+            let observe = control.clone();
+            let frozen = tokio::task::spawn_blocking(move || observe.status());
+            let retire: serde_json::Value =
+                serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(retire["kind"], "suspend");
+            client.send(Message::Text(serde_json::json!({"kind":"suspended","generation":retire["generation"],"requestId":retire["requestId"]}).to_string().into())).await.unwrap();
+            assert!(matches!(
+                frozen.await.unwrap(),
+                HostSessionStatus::Running { .. }
+            ));
+            assert!(portal.frozen());
+
+            lost.store(true, Ordering::SeqCst);
+            let transport = coordinator.clone();
+            assert!(
+                tokio::task::spawn_blocking(move || transport.request(SeatRequest::Poll))
+                    .await
+                    .unwrap()
+                    .is_err()
+            );
+            receiver.join().unwrap();
+            assert!(manager.is_fenced());
+            if completed {
+                backend.insert(id, LaunchUnitState::Completed);
+            } else {
+                *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+            }
+            if refuse_first_thaw {
+                portal.refuse_next_thaws(1);
+            }
+            let observe = control.clone();
+            assert_eq!(
+                tokio::task::spawn_blocking(move || observe.status())
+                    .await
+                    .unwrap(),
+                HostSessionStatus::RecoveryBlocked
+            );
+            if refuse_first_thaw {
+                assert!(portal.frozen(), "a refused helper is not claimed as thawed");
+                let retry = control.clone();
+                assert_eq!(
+                    tokio::task::spawn_blocking(move || retry.status())
+                        .await
+                        .unwrap(),
+                    HostSessionStatus::RecoveryBlocked
+                );
+            }
+            assert!(
+                !portal.frozen(),
+                "keyboard/mouse recovery must survive terminal input loss"
+            );
+            assert_eq!(
+                backend.state(id).unwrap(),
+                if completed {
+                    LaunchUnitState::Completed
+                } else {
+                    LaunchUnitState::Running
+                }
+            );
+            assert!(
+                backend.state.lock().unwrap().thawed.is_empty(),
+                "emergency portal thaw must not resume the game"
+            );
+            assert!(manager.ready().is_err());
+            assert!(manager.is_fenced());
+            assert!(
+                root.path().join("host-session").join(ACTIVE_FILE).exists(),
+                "uncertain reservation completion keeps the exact recovery record"
+            );
+            let attempt = control.clone();
+            assert!(tokio::task::spawn_blocking(move || attempt.prepare(
+                "new",
+                None,
+                Ok(&["game".into()]),
+                &BTreeMap::new()
+            ))
+            .await
+            .unwrap()
+            .is_err());
+            assert_eq!(
+                requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|request| matches!(request, SeatRequest::BeginSession { .. }))
+                    .count(),
+                1
+            );
+            assert!(!requests.lock().unwrap().iter().any(|request| matches!(
+                request,
+                SeatRequest::ApplyCount { .. } | SeatRequest::EndSession { .. }
+            )));
+            // The original attachment is reset, not resumed. New attachment
+            // also remains blocked by the original native suspension.
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while let Some(Ok(message)) = client.next().await {
+                    assert!(
+                        !message.is_text(),
+                        "terminal recovery must not send native resume/input"
+                    );
+                    if message.is_close() {
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                source.suspend(Duration::from_millis(1)).await,
+                Err(crate::portal_input::SuspendError::AlreadySuspended)
+            );
+            let error = tokio_tungstenite::connect_async(reconnect)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, tokio_tungstenite::tungstenite::Error::Http(response) if response.status() == axum::http::StatusCode::SERVICE_UNAVAILABLE)
+            );
+            drop(client);
+            drop(control);
+            drop(manager);
+            drop(coordinator);
+            drop(source);
+            server.abort();
+            let _ = server.await;
+        }
+    }
+
+    #[test]
+    fn external_focus_loss_requires_neutral_route_ack_before_thaw() {
+        use super::super::input_seat::RecordingInputPool;
+        for refuse in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let pool = Arc::new(RecordingInputPool::default());
+            let compositor = Arc::new(RecordingCompositor::default());
+            let portal = Arc::new(RecordingPortalUnit::default());
+            let control =
+                HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
+                    .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()])
+                    .with_portal(portal.clone());
+            let id = prepare(&control, "one").launch_id;
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            control.status();
+            assert!(portal.frozen());
+            let (entered, enter) = std::sync::mpsc::sync_channel(1);
+            let (release, released) = std::sync::mpsc::sync_channel(1);
+            let mut first = true;
+            let observed = portal.clone();
+            *pool.on_route.lock().unwrap() = Some(Box::new(move |route| {
+                assert!(route.is_none());
+                assert!(
+                    observed.frozen(),
+                    "unit thaw must follow receiver route acknowledgement"
+                );
+                if first {
+                    first = false;
+                    entered.send(()).unwrap();
+                    released.recv_timeout(Duration::from_secs(2)).unwrap();
+                }
+                if refuse {
+                    Err("route refused".into())
+                } else {
+                    Ok(())
+                }
+            }));
+            *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+            let worker = thread::spawn(move || control.status());
+            enter.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(portal.frozen());
+            release.send(()).unwrap();
+            let result = worker.join().unwrap();
+            assert!(
+                !pool.is_fenced(),
+                "this is an ordinary route refusal, not terminal transport loss"
+            );
+            assert_eq!(portal.frozen(), refuse);
+            if refuse {
+                assert_eq!(result, HostSessionStatus::RecoveryBlocked);
+            }
+            assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        }
+    }
+
+    #[test]
+    fn focus_routes_shared_pool_without_a_portal_freezer() {
+        use super::super::input_seat::RecordingInputPool;
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let pool = Arc::new(RecordingInputPool::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        control.status();
+        assert_eq!(
+            pool.calls.lock().unwrap().last().unwrap(),
+            &format!("route:{id}")
+        );
+        *compositor.tree.lock().unwrap() = compositor_tree_with_focus(9100, 2);
+        control.status();
+        assert_eq!(pool.calls.lock().unwrap().last().unwrap(), "route:portal");
+        assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+        assert_eq!(pool.session.lock().unwrap().as_deref(), Some(id.as_str()));
+        backend.insert(&id, LaunchUnitState::Completed);
+        control.status();
+        assert!(pool.session.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn shared_pool_reservations_survive_pause_and_focus_failure_until_exact_completion() {
+        use super::super::input_seat::RecordingInputPool;
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let pool = Arc::new(RecordingInputPool::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let control =
+            HostSessionControl::with_input_seats(root.path(), backend.clone(), pool.clone())
+                .with_compositor(compositor.clone(), vec![PORTAL_APP_ID.into()]);
+        control.initialize_input(6).unwrap();
+        let id = prepare(&control, "one").launch_id;
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        assert_eq!(pool.session.lock().unwrap().as_deref(), Some(id.as_str()));
+        assert!(matches!(
+            control.freeze(&id),
+            HostSessionFreezeChange::Changed { .. }
+        ));
+        assert_eq!(pool.session.lock().unwrap().as_deref(), Some(id.as_str()));
+        compositor.focus_fails.store(true, Ordering::SeqCst);
+        assert!(matches!(
+            control.thaw(&id),
+            HostSessionFreezeChange::FocusFailed { .. }
+        ));
+        assert_eq!(pool.session.lock().unwrap().as_deref(), Some(id.as_str()));
+        assert!(control.with_idle_session(|| Ok(())).is_err());
+        assert!(matches!(
+            control.stop(&id),
+            HostSessionStop::Completed { .. }
+        ));
+        assert!(pool.session.lock().unwrap().is_none());
+        let calls = pool.calls.lock().unwrap();
+        assert_eq!(calls.first().unwrap(), "count:6");
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.starts_with("begin:"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            calls.iter().filter(|call| call.starts_with("end:")).count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn native_retirement_ack_precedes_actual_portal_freeze_and_thaw_resumes() {
+        for acknowledge in [true, false] {
+            use futures::{SinkExt, StreamExt};
+            use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+            let access = crate::portal_access::PortalAccess::new(
+                "test-capability",
+                "http://portal.local",
+                crate::portal_access::PortalPermission::LocalSessions,
+            );
+            let (app, source) = crate::portal_input::router(access, Default::default());
+            let source = Arc::new(source);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mut request = format!("ws://{}/", listener.local_addr().unwrap())
+                .into_client_request()
+                .unwrap();
+            request
+                .headers_mut()
+                .insert("Origin", "http://portal.local".parse().unwrap());
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let (mut client, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+            client
+                .send(Message::Text("Bearer test-capability".into()))
+                .await
+                .unwrap();
+            client
+                .send(Message::Text(r#"{"classes":["gamepad"]}"#.into()))
+                .await
+                .unwrap();
+            let initial: serde_json::Value =
+                serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(initial["kind"], "initialization-complete");
+            let root = tempfile::tempdir().unwrap();
+            let backend = Arc::new(DeterministicBackend::default());
+            let compositor = Arc::new(RecordingCompositor::default());
+            let portal = Arc::new(RecordingPortalUnit::default());
+            let control = portal_control(
+                root.path(),
+                backend.clone(),
+                compositor.clone(),
+                portal.clone(),
+            )
+            .with_native_input(source);
+            let launch = control.clone();
+            let id = tokio::task::spawn_blocking(move || prepare(&launch, "one").launch_id)
+                .await
+                .unwrap();
+            backend.set_pids(&id, &[9100]);
+            *compositor.tree.lock().unwrap() = compositor_tree(9100);
+            let observe = control.clone();
+            let frozen = tokio::task::spawn_blocking(move || observe.status());
+            let retire: serde_json::Value =
+                serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(retire["kind"], "suspend");
+            assert!(
+                !portal.frozen(),
+                "the unit cannot freeze before browser retirement acknowledgement"
+            );
+            if !acknowledge {
+                assert!(matches!(
+                    frozen.await.unwrap(),
+                    HostSessionStatus::FocusFailed { .. }
+                ));
+                assert!(
+                    !portal.frozen(),
+                    "missing acknowledgement must fail rather than bypass retirement"
+                );
+                assert_eq!(backend.state(&id).unwrap(), LaunchUnitState::Running);
+                drop(client);
+                drop(control);
+                server.abort();
+                let _ = server.await;
+                continue;
+            }
+            client.send(Message::Text(serde_json::json!({"kind":"suspended","generation":retire["generation"],"requestId":retire["requestId"]}).to_string().into())).await.unwrap();
+            assert!(matches!(
+                frozen.await.unwrap(),
+                HostSessionStatus::Running { .. }
+            ));
+            assert!(portal.frozen());
+            let leave = control.clone();
+            assert!(matches!(
+                tokio::task::spawn_blocking(move || leave.freeze(&id))
+                    .await
+                    .unwrap(),
+                HostSessionFreezeChange::Changed { .. }
+            ));
+            let resumed: serde_json::Value =
+                serde_json::from_str(client.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(resumed["kind"], "resume");
+            assert!(!portal.frozen());
+            drop(client);
+            drop(control);
+            server.abort();
+            let _ = server.await;
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_best_effort_freeze_thaws_before_native_resume_without_retrying() {
+        let access = crate::portal_access::PortalAccess::new(
+            "test-capability",
+            "http://portal.local",
+            crate::portal_access::PortalPermission::LocalSessions,
+        );
+        let (_app, source) = crate::portal_input::router(access, Default::default());
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let compositor = Arc::new(RecordingCompositor::default());
+        let portal = Arc::new(RecordingPortalUnit::default());
+        let control = portal_control(
+            root.path(),
+            backend.clone(),
+            compositor.clone(),
+            portal.clone(),
+        )
+        .with_native_input(Arc::new(source));
+        let first = control.clone();
+        let id = tokio::task::spawn_blocking(move || prepare(&first, "one").launch_id)
+            .await
+            .unwrap();
+        backend.set_pids(&id, &[9100]);
+        *compositor.tree.lock().unwrap() = compositor_tree(9100);
+        portal.refuse_freeze();
+        tokio::task::spawn_blocking(move || {
+            assert!(matches!(
+                control.status(),
+                HostSessionStatus::Running { .. }
+            ));
+            control.status();
+        })
+        .await
+        .unwrap();
+        assert!(!portal.frozen());
+        assert_eq!(portal.requests(), ["thaw", "freeze", "thaw"]);
     }
 
     #[test]

@@ -129,21 +129,6 @@ let
   inputdOnly = withInputd {
     services.korriLinuxInput.inputd.enable = true;
   };
-  extraReader = withInputd {
-    services.korriLinuxInput.inputd = {
-      enable = true;
-      extraActionUsers = [ "korri-portal" ];
-    };
-    users.groups.korri-portal = { };
-    users.users.korri-portal = {
-      isSystemUser = true;
-      group = "korri-portal";
-    };
-  };
-  extraReaderAcl = import ./virtual-target-acl.nix {
-    inherit pkgs inputdPackage;
-    extraActionUsers = [ "korri-portal" ];
-  };
   combined = withInputd {
     services.korriLinuxInput.provider.enable = true;
     services.korriLinuxInput.inputd = {
@@ -160,6 +145,7 @@ let
     mkdir -p "$out/bin" "$out/share"
     ln -s ${inputplumberKorri}/bin/inputplumber "$out/bin/inputplumber"
     ln -s ${inputdPackage}/bin/korri-inputd "$out/bin/korri-inputd"
+    ln -s ${inputdPackage}/bin/korri-input-seat-receiver "$out/bin/korri-input-seat-receiver"
     ln -s ${pkgs.coreutils}/bin/true "$out/bin/korrid"
     ln -s ${pkgs.coreutils}/bin/true "$out/bin/korri-local-signer"
     ln -s ${inputplumberKorri}/share/inputplumber "$out/share/inputplumber"
@@ -295,8 +281,11 @@ assert !(sunshineProvider.config.users.groups ? korri-sunshine-uinput);
 assert providerOnly.config.users.groups ? uinput;
 assert inputdOnly.config.users.groups ? uinput;
 assert (providerOnly.config.users.groups.uinput.members or [ ]) == [ ];
-assert lib.hasInfix ''GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"'' providerOnly.config.services.udev.extraRules;
-assert lib.hasInfix ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' inputdOnlyRules;
+assert lib.hasInfix ''GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"''
+  providerOnly.config.services.udev.extraRules;
+assert lib.hasInfix
+  ''KERNEL=="uinput", SUBSYSTEM=="misc", OWNER="korri-inputd", GROUP="uinput", MODE="0660"''
+  inputdOnlyRules;
 assert allAssertionsPass inputdOnly;
 assert
   !(inputdOnly.config.systemd.services.korri-inputd.environment ? KORRI_INPUTD_CONTROLLER_ACTIVITY);
@@ -324,31 +313,20 @@ assert builtins.elem "korri-input-source-guard.service" inputdService.after;
 assert lib.hasInfix "Microsoft X-Box 360 pad" inputdOnlyRules;
 assert lib.hasInfix "korri-virtual-target-acl" inputdOnlyRules;
 assert lib.hasInfix " grant source 977 $env{DEVNAME}" inputdOnlyRules;
-assert lib.hasInfix " grant game 1000 $env{DEVNAME}" inputdOnlyRules;
-assert lib.hasInfix " grant portal $env{DEVNAME}" inputdOnlyRules;
+assert !(lib.hasInfix " grant game " inputdOnlyRules);
+assert !(lib.hasInfix " grant portal " inputdOnlyRules);
+assert !(lib.hasInfix "korri/inputd/game" inputdOnlyRules);
+assert !(lib.hasInfix "korri/inputd/portal" inputdOnlyRules);
+assert !(inputdOnly.options.services.korriLinuxInput.inputd ? extraActionUsers);
 assert lib.hasInfix "korri-virtual-target-acl" inputdService.serviceConfig.ExecStartPre;
-assert lib.hasSuffix " reapply 977 1000" inputdService.serviceConfig.ExecStartPre;
+assert lib.hasSuffix " reapply 977" inputdService.serviceConfig.ExecStartPre;
 assert lib.hasSuffix " revoke" inputdService.serviceConfig.ExecStopPost;
 assert !(inputdService.environment ? KORRI_INPUTD_KILL_CURRENT_GAME);
-assert allAssertionsPass extraReader;
-assert extraReader.config.users.users.korri-portal.uid == null;
-assert extraReader.config.users.users.korri-portal.extraGroups == [ ];
-assert inputdOnly.config.services.korriLinuxInput.inputd.extraActionUsers == [ ];
-assert lib.hasInfix
-  (builtins.unsafeDiscardStringContext "${lib.getExe extraReaderAcl} grant portal $env{DEVNAME}")
-  extraReader.config.services.udev.extraRules;
-assert
-  extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStartPre
-  == "+${lib.getExe extraReaderAcl} reapply 977 1000";
-assert
-  extraReader.config.systemd.services.korri-inputd.serviceConfig.ExecStopPost
-  == "+${lib.getExe extraReaderAcl} revoke";
 assert allAssertionsPass combined;
 assert
   (builtins.fromJSON (
     builtins.unsafeDiscardStringContext combinedEnvironment.KORRI_INPUTD_CONTROLLER_ACTIVITY
-  )).executable
-  == "${pkgs.coreutils}/bin/true";
+  )).executable == "${pkgs.coreutils}/bin/true";
 assert builtins.elem "inputplumber.service" combinedService.after;
 assert builtins.elem "inputplumber.service" combinedService.wants;
 assert combined.config.users.users.korri-inputd.uid == 977;
@@ -455,7 +433,6 @@ pkgs.runCommand "korri-input-module-check" { } ''
 
   test -x ${inputdPackage}/bin/korri-virtual-target-acl
   grep -F -- '--device-root /dev/input' ${lib.getExe virtualTargetAcl} >/dev/null
-  grep -F -- '--action-user korri-portal' ${lib.getExe extraReaderAcl} >/dev/null
   ! grep -F -- '--action-user' ${lib.getExe virtualTargetAcl}
   touch "$out"
 ''

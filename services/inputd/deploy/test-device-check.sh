@@ -335,6 +335,9 @@ case "$(basename "$0")" in
           rollback="$2"
           printf 'candidate=%s\n' "$candidate"
           printf 'candidate-switch=%s\n' "${HARNESS_CANDIDATE_SWITCH:-yes}"
+          if [[ "${HARNESS_UNIFIED_INPUT:-no}" == yes ]]; then
+            printf '%s\n' 'candidate-native-input=unverified'
+          fi
           printf 'rollback=%s\n' "$rollback"
           printf 'rollback-switch=%s\n' "${HARNESS_ROLLBACK_SWITCH:-yes}"
           expected_identity="${3:-}"
@@ -429,8 +432,8 @@ case "$(basename "$0")" in
             printf 'device gate: Sunshine private configuration tree is unsafe or incomplete\n' >&2
             exit 88
           }
-          [[ "${HARNESS_TOPOLOGY_MODEL:-one}" == one ]] || {
-            printf 'modeled topology has %s normalized targets\n' "$HARNESS_TOPOLOGY_MODEL" >&2
+          [[ "${HARNESS_TOPOLOGY_MODEL:-one}" != missing ]] || {
+            printf 'modeled topology has no validated normalized targets\n' >&2
             exit 61
           }
           [[ "${HARNESS_PROVENANCE_MODEL:-valid}" == valid ]] || {
@@ -628,7 +631,7 @@ esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$HERE/device-check.sh"
-grep -F "EXPECTED_SUNSHINE_PATCH_SET_SHA256='b009201c4e2b09dd22d24e895a831142e9b6070446cfe3a89ee0a0a22bc9a75c'" "$GATE" >/dev/null
+grep -F "EXPECTED_SUNSHINE_PATCH_SET_SHA256='05bf1fc0ce67f14fb1090fcf4ff5ec4226811db0a8869a70f75bb12a5bcfb110'" "$GATE" >/dev/null
 grep -F 'patch=0020-add-korrid-certificate-control.patch sha256=8e97eb5c8cf30a5b80b6a13aa88102de4ff443103875873ae4eb8f483ccfe059' "$GATE" >/dev/null
 grep -F 'patch=0021-add-v4l2m2m-encoder.patch sha256=64e51b7085e2678d2abb04aafb5d9a4c8d961a2f2b6ced7c7636f85ec67a66b3' "$GATE" >/dev/null
 grep -F 'patches=16' "$GATE" >/dev/null
@@ -831,6 +834,26 @@ assert_no_mutation() {
     exit 1
   fi
 }
+
+# Exercise exact production identity/proof helpers without /dev or SSH.
+source_gate_function remote_canonical_seat_slot
+source_gate_function remote_candidate_input_acceptance
+source_gate_function remote_native_input_acceptance
+for slot in 1 4 6 255; do
+  [[ "$(remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0001)" == "$slot" ]]
+done
+for slot in 0 01 256 999 1000; do
+  assert_fails remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0001
+done
+assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p2' 0003:045e:028e:0001
+assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p1' 0003:045e:028e:0002
+assert_fails_with 'configured-seat-count=unverified' remote_native_input_acceptance
+assert_fails_with 'native-delivery=unverified' remote_native_input_acceptance
+seat_generation="$TMP/core-seat-generation"
+mkdir -p "$seat_generation/etc/systemd/system"
+[[ -z "$(remote_candidate_input_acceptance "$seat_generation")" ]]
+printf '[Service]\n' >"$seat_generation/etc/systemd/system/korri-input-seat-receiver.service"
+[[ "$(remote_candidate_input_acceptance "$seat_generation")" == candidate-native-input=unverified ]]
 
 SELECT_LEDGER_HELPER_SOURCE="$(awk '
   /^select_ledger_proof_helper\(\) \{/ { found=1 }
@@ -2260,6 +2283,11 @@ run_baseline_failure_model() {
   [[ ! -f "$ledger/state" ]]
   unset "$variable"
 }
+# Legacy modeled successes are not evidence for unified native delivery.
+run_baseline_failure_model unified-input-unverified HARNESS_UNIFIED_INPUT yes \
+  'unified controller candidate is not accepted by this maintenance gate'
+# This refusal must not contaminate the later legacy lifecycle scenarios.
+[[ ! -v HARNESS_UNIFIED_INPUT ]]
 run_baseline_failure_model baseline-pairing-absent HARNESS_PAIRING_PRESENT false   'Sunshine baseline pairing state is absent'
 for private_baseline_model in invalid link special unsafe empty; do
   run_baseline_failure_model "baseline-private-$private_baseline_model"     HARNESS_BASELINE_PRIVATE_MODEL "$private_baseline_model"     'Sunshine baseline private-state digest is invalid'
@@ -2278,7 +2306,7 @@ run_failure_model() {
   grep -F 'action=restore' "$HARNESS_LOG" >/dev/null
   unset "$variable"
 }
-run_failure_model topology HARNESS_TOPOLOGY_MODEL two 'modeled topology has two normalized targets'
+run_failure_model topology HARNESS_TOPOLOGY_MODEL missing 'modeled topology has no validated normalized targets'
 run_failure_model provenance HARNESS_PROVENANCE_MODEL invalid 'modeled target provenance/capability fingerprint is invalid'
 run_failure_model acl HARNESS_ACL_MODEL raw-readable 'modeled runtime-user ACL exposes raw input'
 run_failure_model same-name-raw HARNESS_TOPOLOGY_FIXTURE \
@@ -2485,7 +2513,8 @@ run_interactive() {
 run_abrupt_kill() {
   local mode="$1" pause_action="$2" ledger_state="$3" ledger="$4"
   shift 4
-  local pause_marker="$TMP/abrupt-$RANDOM.ready" pid
+  local pause_marker="$TMP/abrupt-$RANDOM.ready" pid started=$SECONDS
+  local alive=no paused=no marker=no lease=no state_matches=no refusal=no child_status=running
   export HARNESS_PAUSE_ACTION="$pause_action" HARNESS_PAUSE_MARKER="$pause_marker"
   setsid "$GATE" --host "$HOSTNAME" --expected-machine-id "$MACHINE_ID" --expected-hostname "$HOSTNAME" \
     --mode "$mode" "$@" >"$pause_marker.stdout" 2>"$pause_marker.stderr" &
@@ -2498,8 +2527,32 @@ run_abrupt_kill() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.01
   done
-  [[ -e "$pause_marker" && -e "$HARNESS_ATTEMPT_MARKER" && -e "$HARNESS_ATTEMPT_LEASE" ]]
-  grep -Fx "state=$ledger_state" "$ledger/state" >/dev/null
+  if [[ ! -e "$pause_marker" || ! -e "$HARNESS_ATTEMPT_MARKER" || ! -e "$HARNESS_ATTEMPT_LEASE" ]] \
+    || ! grep -Fx "state=$ledger_state" "$ledger/state" >/dev/null 2>&1; then
+    # Do not dump child stderr, argv, the command log, or ledger contents: each
+    # can carry confirmation tokens/nonces. Emit only fixed labels/booleans.
+    kill -0 "$pid" 2>/dev/null && alive=yes
+    [[ ! -e "$pause_marker" ]] || paused=yes
+    [[ ! -e "$HARNESS_ATTEMPT_MARKER" ]] || marker=yes
+    [[ ! -e "$HARNESS_ATTEMPT_LEASE" ]] || lease=yes
+    grep -Fx "state=$ledger_state" "$ledger/state" >/dev/null 2>&1 && state_matches=yes
+    grep -F 'unified controller candidate is not accepted by this maintenance gate' \
+      "$pause_marker.stderr" >/dev/null 2>&1 && refusal=yes
+    if [[ "$alive" == no ]]; then
+      child_status=0
+      wait "$pid" 2>/dev/null || child_status=$?
+    fi
+    printf 'abrupt-kill wait failed: mode=%s action=%s elapsed=%ss child-alive=%s child-status=%s paused=%s marker=%s lease=%s expected-state=%s unified-refusal=%s\n' \
+      "$mode" "$pause_action" "$((SECONDS - started))" "$alive" "$child_status" \
+      "$paused" "$marker" "$lease" "$state_matches" "$refusal" >&2
+    # A failed synchronization must not leave the modeled gate running while
+    # the outer EXIT trap removes its temporary ledger and transport files.
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rmdir "$HARNESS_LOG.lock" 2>/dev/null || true
+    unset HARNESS_PAUSE_ACTION HARNESS_PAUSE_MARKER
+    return 1
+  fi
   kill -KILL -- "-$pid"
   wait "$pid" 2>/dev/null || true
   # The real flock is released by SIGKILL. The mkdir-based harness needs the

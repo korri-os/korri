@@ -164,6 +164,10 @@ in
       packagePath = ../../sunshine/package.nix;
       readmePath = ../../sunshine/README.md;
     };
+    sunshine-korri-input-presence =
+      (import ../../sunshine/input-seat-presence-check.nix {
+        inherit pkgs;
+      }).vm;
     sunshine-korri-input-seat-patch = import ../../sunshine/input-seat-patch-check.nix {
       inherit pkgs sunshinePackage;
       approvedPatchesPath = ../../sunshine/approved-patches.nix;
@@ -198,6 +202,9 @@ in
     inputplumber-device-paths-vm = import ./inputplumber-device-paths-vm-test.nix {
       module = korriInputModule;
       inherit pkgs inputdPackage inputplumberKorri;
+    };
+    unified-controller-input-vm = import ./unified-controller-input-vm-test.nix {
+      inherit pkgs inputdPackage;
     };
     korri-input-seat-receiver = import ./korri-input-seat-receiver-check.nix {
       inherit pkgs inputdPackage;
@@ -298,6 +305,18 @@ in
         korriBundle
         ;
     };
+    korri-input-seat-core =
+      (import ./korri-linux-host-module-check.nix {
+        module = korriLinuxHostModule;
+        inherit
+          pkgs
+          sunshinePackage
+          inputdPackage
+          inputplumberKorri
+          korridPackage
+          korriBundle
+          ;
+      }).seatVmTest;
     korri-linux-host-module = import ./korri-linux-host-module-check.nix {
       module = korriLinuxHostModule;
       inherit

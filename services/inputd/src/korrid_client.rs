@@ -55,6 +55,10 @@ impl KorridClient {
         }
     }
 
+    pub async fn input_channel(&self) -> io::Result<crate::producer::PrivateInputChannel> {
+        crate::producer::PrivateInputChannel::connect(&self.socket_path).await
+    }
+
     pub async fn status(&self) -> Result<SessionStatus, LocalControlError> {
         let attempts = self.limits.status_attempts.max(1);
         for attempt in 0..attempts {
@@ -74,10 +78,10 @@ impl KorridClient {
     }
 
     /// Runs one complete Home transaction. The guard covers the status read,
-    /// exact freezer mutation, Portal ownership, and portal focus. Leave must
-    /// freeze the observed launch before it enters Portal. A failed Portal
-    /// transition thaws and refocuses that same launch before Game ownership
-    /// is restored.
+    /// exact host transition and portal focus. HostSessionControl::set_freezer
+    /// acknowledges receiver route(None) and portal thaw before freeze succeeds.
+    /// A failed focus effect thaws and refocuses that same launch through korrid;
+    /// inputd never applies its own shared-seat route.
     pub async fn toggle_panel_exact_with<F, Fut>(
         &self,
         enter_portal: F,
@@ -103,9 +107,8 @@ impl KorridClient {
                     other => return Ok(other),
                 }
                 if !enter_portal().await {
-                    // Portal routing or focus can fail after a partial effect.
-                    // Thaw and refocus the exact frozen launch before the caller
-                    // restores Game ownership.
+                    // Focus can fail after a partial effect. Korrid thaws and
+                    // refocuses the exact frozen launch, then restores its route.
                     return match self
                         .change_freezer(&launch_id, "app.session.thaw", "thaw")
                         .await?

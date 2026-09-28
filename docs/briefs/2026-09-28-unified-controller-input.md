@@ -1,6 +1,10 @@
 # Unified controller input
 
-Status: checkpoints `8c2114c2`, `e9aef9ac`, and `c53d9973` are committed. Transport, pool logic, count storage, and truthful settings editability pass their scoped checks. Controller production routing is unchanged. The user approved the InputPlumber read-only target-node mapping next; physical reconnect identity and complete native producer integration still need grounding.
+Status: production integration and off-device validation are complete. The rebased checkpoints are `3f32a28d`, `98f744e9`, `825ee02c`, and `bec87c18`. Original worktree hashes remain below where they identify an earlier verification run. The native controller path now runs through inputd, local korrid, one shared root-owned pool, and the portal semantic adapter. No handheld operation or deployment ran. Hardware acceptance and the signed-plugin ownership cutover remain separately approved delivery work.
+
+After the private-coordination proposal, the user said: "I'm stepping away. Don't stop for any more questions unless crucial. Get this done till the end". Continue through implementation, off-device validation, review, and landing. Keep the existing root seat service as pool owner and extend its existing private contracts. This does not authorize deployment or any handheld operation. Resolve implementation details from actual producers, consumers, and legacy behavior. Do not expand remote authority or invent unrelated persisted configuration.
+
+Current parallel ownership: the receiver worker owns pool/receiver and the extracted private Rust treaty; the korrid worker owns daemon coordination and host lifecycle; the capture worker owns inputd physical capture and private channel; the native worker owns portal transport, mapping, and stream lifecycle; the packaging worker owns native/Nix ownership and permissions. The parent owns cross-slice integration, dependency declarations, generated output, visible test processes, review, and landing. Workers must not launch builds or hidden test processes.
 
 ## Approved behavior
 
@@ -44,7 +48,7 @@ Do not implement ungrounded schema to make the plan look complete.
 
 5. The user approved the recommended option from ask `00fd4155-0004-4c3c-8647-4b33b46b2e02`, after its plain-language explanation. Add read-only `org.shadowblip.Input.Target.DevicePaths` to InputPlumber, reporting each target's actual evdev nodes. Inputd follows the existing composite-to-target mapping and validates the reported nodes before opening. Preserve existing controller identity fingerprints. Build InputPlumber off-device, not Chromium. Add only the narrow metadata-read permission needed for this lookup. No handheld deployment is authorized.
 
-Changes to source identity, reservation lifetime, overflow, or remote authority require an explicit decision when current or legacy contracts do not cover the case.
+The subsequent instruction authorizes completion of the proposed private coordination. Preserve source identity from the real legacy producer, reservation lifetime already chosen by the user, navigation for all connected sources, and existing remote launch authority. Stop only for a crucial unresolved decision or safety issue, not routine implementation details. Never use volatile event-node numbering as reconnect identity or merge ambiguous controllers.
 
 The source audit found these specific gaps:
 
@@ -189,4 +193,57 @@ Parent-managed process `proc_ad4f` rebuilt the corrected provider, module policy
 
 The complete `korrid-test` task also passed after running the existing locked script-fixture setup. Its log is `/tmp/pi-processes-TnenuC/proc_4abf-stdout.log`. This is not the remaining full `korrid-check` release/smoke gate.
 
-No device operation ran. Controller capture, native delivery, pool application, and deployment remain incomplete. The work is not ready to land.
+No device operation ran. The subsequent integration and final verification below supersede the unwired checkpoint status.
+
+## Production integration and review
+
+The private treaty in `contracts/input/` extracts `GamepadState` from the existing receiver. Its operations come from the actual consumers: physical source lifecycle, the existing pool session methods, idle count application, routing, and remote feedback. It introduces no stored file or public listener. The existing seqpacket control socket gains a bounded coordinator lane. The original binary START/STOP/RESET still controls only the authenticated Sunshine mirror lease. The existing credential-filtered korrid Unix HTTP listener carries physical updates and remote feedback. Both services compile the same Rust treaty.
+
+Reconnect identity preserves legacy `stableDeviceId` precedence: raw-source `uniq`, then `phys`. InputPlumber's validated composite mapping supplies the raw source and normalized target association. Reject missing or duplicate identities instead of using event-node numbering. A phys-only identity follows the hardware port. It cannot distinguish identical replacements at that port.
+
+Native initialization and freezer controls are transient Rust-owned delivery messages, not device properties or stored configuration. Initial metadata and complete current state attach atomically. The browser retires an attachment before acknowledging suspension. Returning uses a new authenticated connection and baseline. The existing evdev SYN_REPORT boundary must also preserve complete live samples, so partial updates cannot invent a neutral state.
+
+Core packaging now owns the receiver and exact seat permissions for P1 through P255. Sunshine retains its own UHID setup, not seat lifetime. The portal has no controller-device ACL. Deployment must later retire the old signed plugin-owned receiver before enabling core ownership. That operational cut needs separate approval and must never run both owners together.
+
+The count setting uses the existing choice interaction. The [Bumble numeric picker](https://mobbin.com/screens/4f87f13a-349b-48b9-87c5-0e37e08c80c5) shows a current value with a bounded value picker. This change adopts that separation but reuses Korri's controller-focusable choice sheet instead of adding a wheel or changing layout. All 255 approved values remain reachable. The cost is a long list at large counts. Eleven focused binding and real Shift interaction tests passed, including controller confirmation changing four to six. This is not proof of live pool application.
+
+Initial inputd all-target compilation and tests passed, as did its production Nix package build and input/host/portal module assertions. The native transport passed 31 real-socket tests after treaty generation succeeded. Further changes require another complete run. A package fixture incorrectly sent only remote connection metadata; it now sends the first real state before expecting a baseline. One VM build also captured an in-progress source edit and failed compilation. Neither attempt proves kernel acceptance.
+
+Independent review found and closed these integration defects: browser blur could close a pending suspension acknowledgement, split controller samples could falsely rearm input, physical reports inherited a remote-only rate limit, and quiet remote sources lacked a producer heartbeat. Review also closed unsafe receiver-restart recovery, native resume before a neutral game-route acknowledgement, attachment exhaustion after repeated blur, and emergency portal thaw blocked by terminal input failure.
+
+Local retirement now uses a generation-matched retire/retired exchange serialized with suspension selection. Repeated blur does not consume the connection budget. A terminal coordinator failure permits unit-only portal thaw for keyboard/mouse recovery. It does not resume native delivery or permit launches. Controller recovery requires exact-session resolution and korrid restart.
+
+The kernel VM found a separate decoder bug. Without an optional disconnect reason, the untagged parser selected the connection shape and ignored the actual kind. A focused regression failed before the correction. Serde now dispatches by the existing kind tag, without changing the mirror wire.
+
+Sunshine now captures launch/token/generation once per actual stream, maintains measured controller state, and schedules current-state refresh every 200 ms on its existing executor. Actual stream-stop and broadcast-shutdown paths retire presence. A replaced authority cannot be adopted by an old stream. Colliding controller numbers from simultaneous streams fail closed rather than merge. A local emission already in progress can finish during stop; recurring refresh cannot revive that stream. The test includes a packet queued before stop, not just a canceled timer.
+
+The native plugin helper retains the admission parser's supported Type=exec and privileged pre/post helpers, with an immutable idle process. It does not expand the parser to permit privileged ExecStart. The installed mirror socket environment now matches the receiver's existing sunshine-input-seat.sock. Both corrections pass actual plugin admission, not only systemd syntax checks.
+
+## Final off-device verification
+
+| Gate | Verified result and boundary |
+| --- | --- |
+| `nix run .#inputd-check` | Passed in parent process `proc_ca22`. Includes strict inputd/core Clippy, Rust tests, WASM portability, shell syntax/lint, complete modeled delivery tests, and package/module/provenance checks. It contacted no handheld. |
+| `nix run .#korrid-check` | Passed in `proc_41bd`. Includes 628 library tests, 37 native socket tests, the other integration suites, treaty regeneration, release binaries, config/RPC smoke checks, and portal build. Existing ignored tests remain ignored. |
+| `nix run .#portal-check` | Passed all 358 tests and TypeScript checking in `proc_41bd`. Covers controller-driven seat-count editing, whole-sample rearm, eight ordinary blur cycles, and both retirement/suspension orderings. |
+| Shift and Pico | Shift passed 62 tests in the korrid gate. `nix run .#pico-check` passed 572 tests, typechecking, and authoring gates in `proc_41bd`. No live browser geometry or Caliper HMR claim follows. |
+| `unified-controller-input-vm` | Passed with real kernel 4/6/5/6 seats, full state/capability reads, mixed allocation, loss neutralization, exact credentials/token checks, reservations, idle resize, and receiver restart refusal/reconciliation. Physical ingress and Sunshine frames are boundary fixtures, not hardware capture. |
+| `korri-input-seat-core` | Passed real core-unit/uinput/udev lifetime checks, including plugin setup removal without destroying seats and browser device-access denial. The korrid process is a launch-order probe here, not the host implementation. |
+| `inputplumber-device-paths-vm` | Passed actual provider/kernel/DBus/polkit checks, including ObjectManager omission and narrow direct-read authorization. This does not claim physical hardware acceptance. |
+| Plugin/package policy | `korri-sunshine-plugin-native`, `korri-sunshine-plugin-admission`, and `korri-portal-module` passed in `proc_01b9`. Seed admission is not a signed cold-device installation. |
+| Sunshine release and presence | `proc_a201` built the final release and passed `sunshine-korri-input-presence` plus `sunshine-korri-input-seat-patch`. The root VM compiles the actual patched input.cpp, packet queue, authority reader, timer, and socket transport. It proves quiet presence, held baselines, stop/queued-packet retirement, authority replacement, collision refusal, and impostor denial. ENet teardown hook execution and full network streaming remain outside that test. |
+| Mini V2 configuration | `nix run .#rpminiv2-check` passed in `proc_ce97` on build machines. This is configuration/activity validation, not a boot or deployment. |
+
+The final Sunshine patch hash is `389f1cc385e3e0374fa6822f301ac0b263ee81cbcd6bc6f326262d95a4ce7e09`. The ordered base digest is `05bf1fc0ce67f14fb1090fcf4ff5ec4226811db0a8869a70f75bb12a5bcfb110`; base plus RKMPP is `7193ffe3e3939ed1c14af8666fcfe0ce8682be9533a570f233584860a8879e1f`. Base source, dependency pins, and approved upstream derivations did not change.
+
+Strict all-target korrid Clippy remains nonzero for 11 existing production diagnostics and eight existing test diagnostics. The four introduced test lints were fixed. The final audit `proc_9f50` reports only that baseline debt, compared against `9004e9eb`. No lint suppression or unrelated cleanup was added.
+
+Two earlier full-gate attempts exposed validation limits, not accepted passes. Concurrent builds coincided with a script execution deadline and an interruption-harness timeout. An isolated interruption reproduction and the complete shell suite then passed without changing the timeout. Setting RUST_TEST_THREADS=1 also changed a pre-existing child-test stdout format and broke its public-key-line parser. The final complete checks passed with normal test scheduling after large builds finished. Do not weaken VM deadlines to conceal these failures.
+
+## Delivery restrictions and remaining costs
+
+No SSH trial, handheld restart, workaround removal, firmware write, or SD rewrite ran. The existing per-boot browser view and startup override remain untouched. The code is not a hardware-navigation acceptance result.
+
+The new Sunshine closure and unit set require fresh publisher signatures/offline proofs before device delivery. Existing approval cannot authorize the replacement. The first-rollout maintenance gate now refuses unified-input candidates before activation because it cannot perform the signed-plugin ownership cutover or authorized native/count acceptance. It must not report controller delivery from a ready PID or socket. See `services/inputd/deploy/README.md` for this explicit limitation. This task does not authorize that cutover or bypass signatures.
+
+The count range remains a representation limit, not a claim that every device can create 255 seats within bounded deadlines. Creation or uncertain acknowledgements can fence launches until recovery. A phys-only reconnect key follows a port, not an independently distinguishable controller. Simultaneous remote streams with colliding controller numbers must reconnect after refusal. The added process hops, finite buffers, and retirement exchanges cost latency and can refuse input under overload. These limits are explicit rather than hidden behind stale replay or fallback routes.

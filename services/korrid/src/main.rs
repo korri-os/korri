@@ -183,7 +183,13 @@ async fn serve_host_surfaces(
     local_failure: oneshot::Receiver<io::Error>,
     local_router: Router,
 ) -> (&'static str, io::Result<()>) {
-    let lan_server = async move { axum::serve(lan_listener, lan_router).await };
+    let lan_server = async move {
+        axum::serve(
+            lan_listener,
+            lan_router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+    };
     let local_server = serve_local_control(local_listener, local_failure, local_router);
     first_server_exit(lan_server, local_server).await
 }
@@ -649,7 +655,14 @@ async fn main() {
         if let Some((router, listener, failure)) = local {
             serve_host_surfaces(lan_listener, lan_router, listener, failure, router).await
         } else {
-            ("LAN", axum::serve(lan_listener, lan_router).await)
+            (
+                "LAN",
+                axum::serve(
+                    lan_listener,
+                    lan_router.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .await,
+            )
         }
     };
     let shutdown = async move {

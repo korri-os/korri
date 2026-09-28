@@ -224,9 +224,8 @@ in
         compositorControlSocket
         ''[app_id="${portalAppId}"] focus''
       ];
-      # Chromium reads only inputd's portal-facing virtual target, never the
-      # normalized source, game route, or raw sources.
-      services.korriLinuxInput.inputd.extraActionUsers = [ user ];
+      # Controller input arrives through authenticated local korrid delivery.
+      # Chromium needs no raw or normalized controller-device ACL.
       users.groups.${group} = { };
       users.users.${user} = {
         isSystemUser = true;

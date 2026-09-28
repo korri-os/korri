@@ -86,6 +86,11 @@ let
   compositor = cfg.systemd.services.korri-compositor;
   korrid = cfg.systemd.services.korrid;
   inputd = cfg.systemd.services.korri-inputd;
+  receiver = cfg.systemd.services.korri-input-seat-receiver;
+  seatRules = import ./input-seat-rules.nix {
+    inherit pkgs;
+    eventGid = 1000;
+  };
   browserKorrid = browserPortal.config.systemd.services.korrid;
   physicalCompositor = physical.config.systemd.services.korri-compositor;
   validationAction = cfg.services.korriLinuxInput.inputd.actions.workspace-next.command;
@@ -98,7 +103,33 @@ assert cfg.services.korridLinuxDevice.enable;
 assert cfg.services.inputplumber.enable;
 assert !cfg.services.sunshine.enable;
 assert !(cfg.systemd.services ? sunshine);
-assert !(cfg.systemd.services ? korri-input-seat-receiver);
+assert cfg.systemd.services ? korri-input-seat-receiver;
+assert builtins.elem "multi-user.target" receiver.wantedBy;
+assert builtins.elem "korri-bundle-selector.service" receiver.requires;
+assert builtins.elem "korri-bundle-selector.service" receiver.after;
+assert builtins.elem "korrid.service" receiver.before;
+assert !(builtins.elem "korrid.service" receiver.requires);
+assert !(builtins.elem "korrid.service" receiver.after);
+assert builtins.elem "korri-input-seat-receiver.service" korrid.requires;
+assert builtins.elem "korri-input-seat-receiver.service" korrid.after;
+assert receiver.serviceConfig.Type == "notify";
+assert receiver.serviceConfig.User == "root";
+assert receiver.serviceConfig.Group == "root";
+assert receiver.serviceConfig.CapabilityBoundingSet == [ "CAP_CHOWN" ];
+assert receiver.serviceConfig.DeviceAllow == [ "/dev/uinput rw" ];
+assert receiver.serviceConfig.RuntimeDirectory == "korri-input-seat";
+assert receiver.serviceConfig.RuntimeDirectoryMode == "0711";
+assert receiver.serviceConfig.SupplementaryGroups == [ "uinput" ];
+assert receiver.environment.KORRI_BUNDLE_ACTIVE == cfg.services.korriBundle.activePath;
+assert
+  receiver.serviceConfig.ExecStart
+  == "${inputdPackage}/bin/korri-bundle-launch input-seat-receiver --runtime-dir /run/korri-input-seat --control-uid 976 --control-gid 976 --sunshine-uid 1000 --sunshine-gid 980 --event-gid 1000";
+assert !(receiver.serviceConfig ? ExecStartPre);
+assert !(receiver.serviceConfig ? ExecStopPost);
+assert builtins.elem seatRules cfg.services.udev.packages;
+assert physical.config.systemd.services ? korri-input-seat-receiver;
+assert builtins.elem "korri-input-seat-receiver.service"
+  physical.config.systemd.services.korrid.requires;
 assert !(cfg.systemd.services ? korri-streaming-performance-profile);
 assert !(cfg.systemd.sockets ? korri-certificate-control);
 assert !(cfg.users.groups ? korri-sunshine-input-seat);
@@ -107,7 +138,8 @@ assert !(cfg.users.groups ? korri-sunshine-uinput);
 # plugin units join.
 assert cfg.users.groups ? uinput;
 assert (cfg.users.groups.uinput.members or [ ]) == [ ];
-assert lib.hasInfix ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"'' cfg.services.udev.extraRules;
+assert lib.hasInfix ''OWNER="korri-inputd", GROUP="uinput", MODE="0660"''
+  cfg.services.udev.extraRules;
 assert !(lib.hasInfix "korri-sunshine" cfg.services.udev.extraRules);
 assert cfg.services.korriLinuxHost.enable;
 assert cfg.services.korriLinuxHost.runtimeUser == "korri";
@@ -139,12 +171,13 @@ assert builtins.elem "/var/lib/korrid" korrid.serviceConfig.ReadWritePaths;
 assert inputd.serviceConfig.User == "korri-inputd";
 assert builtins.elem 39217 cfg.networking.firewall.interfaces.tailscale0.allowedTCPPorts;
 assert builtins.hasAttr "workspace-next" cfg.services.korriLinuxInput.inputd.actions;
-assert validationAction == [
-  "${pkgs.sway-unwrapped}/bin/swaymsg"
-  "-s"
-  "/run/korri-compositor/sway-ipc.sock"
-  ''workspace "korri:game:active"; focus child; fullscreen enable; border none''
-];
+assert
+  validationAction == [
+    "${pkgs.sway-unwrapped}/bin/swaymsg"
+    "-s"
+    "/run/korri-compositor/sway-ipc.sock"
+    ''workspace "korri:game:active"; focus child; fullscreen enable; border none''
+  ];
 assert noValidation.config.services.korriLinuxInput.inputd.actions == { };
 assert allAssertionsPass withAudio;
 assert withAudio.config.services.pipewire.enable;
@@ -157,7 +190,10 @@ assert builtins.elem "audio" withAudio.config.users.users.korri.extraGroups;
 assert lib.hasInfix ''PULSE_SERVER = "unix:/run/korri-game-audio/native"'' (
   builtins.readFile withAudio.config.services.korridLinuxDevice.deviceConfig
 );
-assert !(lib.hasInfix "PULSE_SERVER" (builtins.readFile valid.config.services.korridLinuxDevice.deviceConfig));
+assert
+  !(lib.hasInfix "PULSE_SERVER" (
+    builtins.readFile valid.config.services.korridLinuxDevice.deviceConfig
+  ));
 assert allAssertionsPass browserPortal;
 assert browserKorrid.environment.KORRID_BROWSER_ADDRESS == "127.0.0.1:0";
 assert browserKorrid.environment.KORRID_BROWSER_ORIGIN == "http://127.0.0.1:8099";
@@ -171,6 +207,39 @@ assert physicalCompositor.environment.WLR_RENDER_DRM_DEVICE == "/dev/dri/renderD
 assert builtins.elem "seat" physicalCompositor.serviceConfig.SupplementaryGroups;
 assert hasFailedAssertion "DRM compositor requires" missingDrmDevice;
 assert hasFailedAssertion "runtime identity" wrongRuntimeUid;
-pkgs.runCommand "korri-linux-host-module-check" { } ''
-  touch "$out"
-''
+pkgs.runCommand "korri-linux-host-module-check"
+  {
+    nativeBuildInputs = [
+      pkgs.systemd
+      pkgs.python3
+    ];
+    passthru.seatVmTest = import ./input-seat-core-vm-test.nix {
+      inherit
+        pkgs
+        inputdPackage
+        receiver
+        seatRules
+        sunshinePackage
+        ;
+      selector = cfg.systemd.services.korri-bundle-selector;
+    };
+  }
+  ''
+      udevadm verify --resolve-names=never --no-style ${seatRules}/lib/udev/rules.d/99-z-korri-input-seat.rules
+      python3 - ${seatRules}/lib/udev/rules.d/99-z-korri-input-seat.rules <<'PY'
+    import re, sys
+    rules = open(sys.argv[1]).read().splitlines()
+    assert len(rules) == 255
+    for slot, rule in enumerate(rules, 1):
+        assert f'ATTRS{{name}}=="Korri Seat P{slot}"' in rule
+        assert f'ATTRS{{phys}}=="korri/input-seat/p{slot}"' in rule
+        for key, value in [('bustype', '0003'), ('vendor', '045e'), ('product', '028e'), ('version', '0001')]:
+            assert f'ATTRS{{id/{key}}}=="{value}"' in rule
+        assert 'GROUP=' not in rule
+        assert 'TAG-="uaccess"' in rule
+        assert '/bin/chgrp 1000 $env{DEVNAME}' in rule
+        assert '/bin/chmod 0660 $env{DEVNAME}' in rule
+    assert set(re.findall(r'Korri Seat P([^"\n]+)', '\n'.join(rules))) == {str(n) for n in range(1, 256)}
+    PY
+      touch "$out"
+  ''

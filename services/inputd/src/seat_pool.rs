@@ -1,13 +1,13 @@
-//! Internal, unwired pool of persistent virtual gamepads.
+//! Persistent virtual gamepads owned by the production seat receiver.
 //!
 //! The caller supplies opaque source keys and an explicit count. Keys carry no
 //! physical identity or remote authority here; authentication, mapping, input
-//! rearming and source-loss detection belong to the future coordinator.
+//! rearming and source-loss detection belong to the receiver coordinator.
 //! `NonZeroU8` reflects the existing slot representation, not a persisted setting
 //! range or a decision about zero.
 //!
 //! One pool owns its backend and devices until consuming `stop` or drop. There is
-//! no resizing. A coordinator may recreate a pool only outside a session (process
+//! idle-only resizing. A coordinator may resize a pool only outside a session (process
 //! shutdown can of course drop it at any time). Backends must own their resources
 //! and release them on drop, including resources from failed create/destroy calls.
 //! A successful backend write must establish the requested full state, even after
@@ -166,6 +166,70 @@ impl<K: Eq, B: SeatBackend> SeatPool<K, B> {
         }
         self.write(index, state).map_err(PoolError::Backend)?;
         Ok(self.seats[index].slot)
+    }
+
+    pub fn count(&self) -> u8 {
+        self.seats.len() as u8
+    }
+
+    pub fn session(&self) -> Option<&str> {
+        self.session.as_deref()
+    }
+
+    pub fn slot(&self, source: &K) -> Option<u8> {
+        self.index(source).map(|index| self.seats[index].slot)
+    }
+
+    /// Retains every binding. Routing changes must not end reservation scope.
+    pub fn neutralize(&mut self) -> Result<(), PoolError> {
+        let mut errors = Vec::new();
+        for index in 0..self.seats.len() {
+            if let Err(error) = self.write(index, GamepadState::neutral()) {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(PoolError::Backend(errors.join("; ")))
+        }
+    }
+
+    /// Keep surviving devices and assignments. On failure the caller must retire
+    /// this pool: kernel effects may be partial and no count ack is safe.
+    pub fn resize(&mut self, count: NonZeroU8) -> Result<(), PoolError> {
+        if self.session.is_some() {
+            return Err(PoolError::SessionAlreadyActive);
+        }
+        if count.get() == self.count() {
+            return Ok(());
+        }
+        self.neutralize()?;
+        while self.seats.len() > usize::from(count.get()) {
+            let slot = self.seats.last().unwrap().slot;
+            self.backend
+                .as_mut()
+                .expect("live pool owns backend")
+                .destroy(slot)
+                .map_err(PoolError::Backend)?;
+            self.seats.pop();
+        }
+        while self.seats.len() < usize::from(count.get()) {
+            let slot = self.count() + 1;
+            self.backend
+                .as_mut()
+                .expect("live pool owns backend")
+                .create(&SeatSpec::for_slot(slot))
+                .map_err(PoolError::Backend)?;
+            self.seats.push(Seat {
+                slot,
+                binding: None,
+                known_state: None,
+            });
+            self.write(self.seats.len() - 1, GamepadState::neutral())
+                .map_err(PoolError::Backend)?;
+        }
+        Ok(())
     }
 
     /// Finite ownership: neutralize all seats, attempt every destroy in reverse

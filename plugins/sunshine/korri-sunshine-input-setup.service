@@ -1,0 +1,35 @@
+[Unit]
+Description=Approved Sunshine UHID permissions and group
+Before=korri-sunshine.service
+
+[Service]
+Type=exec
+User=root
+Group=root
+ExecStartPre=+@setup@ start
+ExecStart=@coreutils@/bin/sleep infinity
+ExecStopPost=+@setup@ stop
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+PrivateTmp=true
+PrivatePIDs=true
+PrivateDevices=false
+ProtectSystem=strict
+ProtectHome=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 # Explicit-target, reversible gate for the first Linux InputPlumber rollout.
+# Unified-input candidates are refused before activation: this gate has no
+# authorized playerCount/native-delivery observer or signed-plugin cutover.
 # Remote argv is always single-quoted by ssh_transport. No caller value is
 # sent as unquoted remote shell text.
 
@@ -19,10 +21,8 @@ GATE_LOCK='/run/lock/korri-device-gate.lock'
 ATTEMPT_MARKER='/var/lib/korri-device-gate/attempt'
 ATTEMPT_UNIT='korri-device-gate-attempt.service'
 NORMALIZED_NAME='Microsoft X-Box 360 pad'
-GAME_TARGET_NAME='Microsoft X-Box 360 pad (Korri game)'
-PORTAL_TARGET_NAME='Microsoft X-Box 360 pad (Korri portal)'
-GAME_TARGET_PHYS='korri/inputd/game'
-PORTAL_TARGET_PHYS='korri/inputd/portal'
+# input_seat_uinput.rs BUTTONS (D-pad is ABS_HAT0X/Y, not four keys).
+SEAT_KEYS='304,305,307,308,310,311,314,315,316,317,318'
 SUPPORTED_PRODUCTION_PROFILE='korri-60-xbox_one_gamepad.yaml'
 OLD_USER_UNITS=(korrid.service sunshine.service x11-headless.service)
 PREDICATE_SYSTEM_UNITS=(korrid.service sunshine.service x11-headless.service korri-compositor.service)
@@ -40,7 +40,7 @@ EXPECTED_SUNSHINE_LIBAVCODEC_VERSION='62.11.100'
 EXPECTED_SUNSHINE_FFMPEG_COMMIT='61c50407fd429a5e2ec616e2e846c3fe3743879a'
 EXPECTED_SUNSHINE_FFMPEG_SOURCE_HASH='sha256-LKQUfHb9/Z4uvPx4vrtAOPL95Un9/C26lvCbQZ51avk='
 EXPECTED_SUNSHINE_NVENC_API='12.0'
-EXPECTED_SUNSHINE_PATCH_SET_SHA256='b009201c4e2b09dd22d24e895a831142e9b6070446cfe3a89ee0a0a22bc9a75c'
+EXPECTED_SUNSHINE_PATCH_SET_SHA256='05bf1fc0ce67f14fb1090fcf4ff5ec4226811db0a8869a70f75bb12a5bcfb110'
 KORRID_CONTROL_GROUP='korri-control'
 KORRID_CONTROL_PEER_USER='korri-inputd'
 KORRID_CONTROL_SOCKET='/run/korrid-control/control.sock'
@@ -64,7 +64,7 @@ patch=0010-extend-runtime-resolution-fresh-idr-window.patch sha256=86252208da87b
 patch=0012-persist-runtime-config-and-reinit-capture-after-resolution.patch sha256=2ac28eb76da2d02aa97812e9708094480cc1b7c4b897cf123772c24f16c493c6
 patch=0013-request-async-capture-reinit-after-runtime-resolution.patch sha256=0831530081f9551173ff1a74a5ca2771942e9c519ec476c27548a1d3cbea3fa2
 patch=0014-skip-runtime-vaapi-destructor-flush.patch sha256=59eedaf576f99223bd807205c45b12b1ac5f9850225614530b4ab925e3204e50
-patch=0015-add-korri-input-seat-event-mirror.patch sha256=c0eab65a69c17b2f3f5b6c9c69fabaaf51519da26a81f9e57dbd714ab5ca92db
+patch=0015-add-korri-input-seat-event-mirror.patch sha256=389f1cc385e3e0374fa6822f301ac0b263ee81cbcd6bc6f326262d95a4ce7e09
 patch=0016-add-seamless-nvenc-runtime-path.patch sha256=686decb81379741e01e0b9b0e9105bbe23765a1bf728565767604383983a7074
 patch=0017-use-wayland-ram-capture-for-cuda.patch sha256=a87aefc6eb5f71a4d413d751eefb87743745a2fab126dded5b66b23b949f66b2
 patch=0018-vectorize-wayland-bgr888-with-swscale.patch sha256=753971f16e33598215caa455074f3bbca23e43b0cf2a2b8a97779f356486203f
@@ -558,35 +558,76 @@ remote_normalized_fingerprint() {
     printf '%s\n' "$fingerprint"
     count=$((count + 1))
   done
-  [[ "$count" -eq 1 ]]
+  [[ "$count" -ge 1 ]]
 }
 
-remote_routed_target_node() {
-  local expected_name="$1" expected_phys="$2" event node name phys uniq identity sysfs keys axes count=0
+remote_canonical_seat_slot() {
+  local name="$1" phys="$2" identity="$3" slot
+  [[ "$name" =~ ^Korri\ Seat\ P([1-9][0-9]{0,2})$ ]] || return 1
+  slot="${BASH_REMATCH[1]}"
+  ((slot <= 255)) || return 1
+  [[ "$phys" == "korri/input-seat/p$slot" && "$identity" == '0003:045e:028e:0001' ]] || return 1
+  printf '%s\n' "$slot"
+}
+
+remote_shared_seat_nodes() {
+  local event node name phys uniq identity sysfs keys axes slot metadata dev_stat dev_sys count=0
+  local -A slots=()
   shopt -s nullglob
   for event in /sys/class/input/event*; do
     [[ -r "$event/device/name" ]] || continue
     name="$(<"$event/device/name")"
-    [[ "$name" == "$expected_name" ]] || continue
+    [[ "$name" == 'Korri Seat P'* ]] || continue
     node="/dev/input/${event##*/}"
     phys="$(cat "$event/device/phys" 2>/dev/null || true)"
     uniq="$(cat "$event/device/uniq" 2>/dev/null || true)"
     identity="$(cat "$event/device/id/bustype" 2>/dev/null || true):$(cat "$event/device/id/vendor" 2>/dev/null || true):$(cat "$event/device/id/product" 2>/dev/null || true):$(cat "$event/device/id/version" 2>/dev/null || true)"
+    slot="$(remote_canonical_seat_slot "$name" "$phys" "$identity")" || return 1
+    [[ -z "${slots[$slot]:-}" && -z "$uniq" ]] || return 1
     sysfs="$(realpath -e -- "$event" 2>/dev/null || true)"
+    [[ "$sysfs" == /sys/devices/virtual/input/input*/event* && -c "$node" && ! -L "$node" ]] || return 1
     keys="$(remote_bitmap_codes "$event/device/capabilities/key" | paste -sd, -)"
     axes="$(remote_bitmap_codes "$event/device/capabilities/abs" | paste -sd, -)"
-    [[ "$phys" == "$expected_phys" && -z "$uniq" ]] || continue
-    [[ "$identity" == '0003:045e:028e:0001' ]] || continue
-    [[ "$sysfs" == /sys/devices/virtual/input/input*/event* ]] || continue
-    [[ "$keys" == "$EXPECTED_KEYS" && "$axes" == "$EXPECTED_ABS" ]] || continue
-    printf '%s\n' "$node"
+    [[ "$keys" == "$SEAT_KEYS" && "$axes" == "$EXPECTED_ABS" ]] || return 1
+    dev_sys="$(<"$event/dev")"
+    dev_stat="$(stat -Lc '%t:%T' "$node")" || return 1
+    [[ "$dev_stat" =~ ^[0-9a-fA-F]+:[0-9a-fA-F]+$ ]] || return 1
+    [[ "$dev_sys" == "$((16#${dev_stat%:*})):$((16#${dev_stat#*:}))" ]] || return 1
+    metadata="$(stat -c '%u:%g:%a' "$node")" || return 1
+    [[ "$metadata" == "0:$1:660" ]] || return 1
+    slots[$slot]="$node"
     count=$((count + 1))
   done
-  [[ "$count" -eq 1 ]]
+  ((count >= 1 && count <= 255)) || return 1
+  for ((slot = 1; slot <= count; slot++)); do
+    [[ -n "${slots[$slot]:-}" ]] || return 1
+    printf '%s\n' "${slots[$slot]}"
+  done
 }
 
 remote_managed_virtual_name() {
-  [[ "$1" == "$NORMALIZED_NAME" || "$1" == "$GAME_TARGET_NAME" || "$1" == "$PORTAL_TARGET_NAME" ]]
+  [[ "$1" == "$NORMALIZED_NAME" || "$1" == 'Korri Seat P'* ]]
+}
+
+remote_native_input_acceptance() {
+  printf '%s\n' 'physical-source-membership=unverified observer=unavailable' >&2
+  # Configured count is host.preferences.playerCount in device.yaml, exposed as
+  # SettingsSnapshot.playerCount. Host settings reads require LocalBrowser;
+  # this maintenance gate is not that principal. Do not guess four, equate
+  # observed count with configured count, take the coordinator connection, or
+  # extract the portal capability. Ready/socket/PID cannot prove native actions.
+  printf '%s\n' 'configured-seat-count=unverified source=host.preferences.playerCount observer=unavailable' >&2
+  printf '%s\n' 'native-delivery=unverified reason=no-end-to-end-observer' >&2
+  return 1
+}
+
+remote_candidate_input_acceptance() {
+  local candidate="$1"
+  # The existing generation artifact is the discriminator, not a new setting.
+  if [[ -e "$candidate/etc/systemd/system/korri-input-seat-receiver.service" \
+    || -L "$candidate/etc/systemd/system/korri-input-seat-receiver.service" ]]; then
+    printf '%s\n' 'candidate-native-input=unverified'
+  fi
 }
 
 remote_controller_candidates() {
@@ -1534,6 +1575,7 @@ remote_preflight() {
   rollback_real="$(realpath -e -- "$rollback" 2>/dev/null || true)"
   printf 'candidate=%s\n' "$candidate_real"
   printf 'candidate-switch=%s\n' "$([[ -x "$candidate_real/bin/switch-to-configuration" ]] && printf yes || printf no)"
+  remote_candidate_input_acceptance "$candidate_real"
   printf 'rollback=%s\n' "$rollback_real"
   printf 'rollback-switch=%s\n' "$([[ -x "$rollback_real/bin/switch-to-configuration" ]] && printf yes || printf no)"
   printf 'temporary-artifacts-dirty=%s\n' "$(remote_temporary_artifacts_dirty && printf yes || printf no)"
@@ -1662,9 +1704,10 @@ remote_acceptance_fingerprint() {
 
 remote_automated_gates() {
   local runtime_user="$1" expected_identity="$2" profile="$3" require_physical="$4"
-  local fingerprint controller_evidence acceptance delegate delegate_controllers node game_node portal_node event event_node event_name unit active enabled readable_raw=0
+  local fingerprint controller_evidence acceptance delegate delegate_controllers node seat_nodes runtime_gid browser_user event event_node unit active enabled readable_raw=0
   remote_wait_unit inputplumber.service
   remote_wait_unit korri-inputd.service Ready
+  remote_wait_unit korri-input-seat-receiver.service Ready
   remote_wait_unit korrid.service
   remote_wait_unit korri-compositor.service
   remote_wait_unit sunshine.service
@@ -1692,42 +1735,47 @@ remote_automated_gates() {
     controller_evidence="$(remote_physical_controller_evidence "$expected_identity" "$profile")" \
       || fail 'expected physical controller is not live, supported, and selected with the production profile'
   fi
-  node="${fingerprint#node=}"
-  node="${node%% *}"
-  game_node="$(remote_routed_target_node "$GAME_TARGET_NAME" "$GAME_TARGET_PHYS")" \
-    || fail 'game-facing routed target is missing or invalid'
-  portal_node="$(remote_routed_target_node "$PORTAL_TARGET_NAME" "$PORTAL_TARGET_PHYS")" \
-    || fail 'portal-facing routed target is missing or invalid'
-  ! sudo -n -u "$runtime_user" test -r "$node" \
-    || fail 'runtime user can still read the normalized source target'
-  sudo -n -u "$runtime_user" test -r "$game_node" \
-    || fail 'runtime user cannot read the game-facing routed target'
-  ! sudo -n -u "$runtime_user" test -r "$portal_node" \
-    || fail 'runtime user can read the portal-facing routed target'
+  runtime_gid="$(id -g "$runtime_user")" || fail 'runtime group is unavailable'
+  seat_nodes="$(remote_shared_seat_nodes "$runtime_gid")" || fail 'shared seat identity, contiguous slots, or permissions are invalid'
+  browser_user="$(systemctl show korri-chromium-kiosk.service -p User --value)" || fail 'portal identity is unavailable'
+  [[ -n "$browser_user" && "$browser_user" != root ]] || fail 'portal identity is unverified'
+  while IFS= read -r node; do
+    sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user cannot read a shared seat'
+    ! sudo -n -u "$browser_user" test -r "$node" || fail 'portal user can read a shared seat'
+  done <<<"$seat_nodes"
+  while IFS= read -r node; do
+    node="${node#node=}"
+    node="${node%% *}"
+    ! sudo -n -u "$runtime_user" test -r "$node" || fail 'runtime user can read a normalized source'
+    ! sudo -n -u "$browser_user" test -r "$node" || fail 'portal user can read a normalized source'
+  done <<<"$fingerprint"
   shopt -s nullglob
   for event in /sys/class/input/event*; do
     event_node="/dev/input/${event##*/}"
-    event_name="$(cat "$event/device/name" 2>/dev/null || true)"
-    remote_managed_virtual_name "$event_name" && continue
+    # Skip only nodes whose complete identity and permissions were checked.
+    grep -Fx "$event_node" <<<"$seat_nodes" >/dev/null && continue
     if udevadm info --query=property --name="$event_node" 2>/dev/null | grep -Fx 'ID_INPUT_JOYSTICK=1' >/dev/null \
-      && sudo -n -u "$runtime_user" test -r "$event_node"; then
+      && { sudo -n -u "$runtime_user" test -r "$event_node" || sudo -n -u "$browser_user" test -r "$event_node"; }; then
       readable_raw=$((readable_raw + 1))
     fi
   done
-  [[ "$readable_raw" -eq 0 ]] || fail "runtime user can read $readable_raw raw controller node(s)"
+  [[ "$readable_raw" -eq 0 ]] || fail "runtime or portal user can read $readable_raw raw controller node(s)"
   remote_dbus_unique_owner org.shadowblip.InputPlumber >/dev/null \
     || fail 'InputPlumber has no unique DBus owner'
-  busctl --system introspect org.shadowblip.InputPlumber /org/shadowblip/InputPlumber/devices/target/dbus0 org.shadowblip.Input.DBusDevice --no-pager 2>/dev/null \
-    | grep -F 'InputEvent' >/dev/null || fail 'InputPlumber DBus target interface is unavailable'
+  # No dbus0 assumption: provenance now follows each composite's DBusDevices.
+  # The maintenance gate has no authenticated multi-source capture observer.
+  printf '%s\n' 'physical-source-membership=unverified observer=unavailable' >&2
   [[ "$(stat -fc %T /sys/fs/cgroup)" == cgroup2fs ]] || fail 'cgroup v2 is unavailable'
   delegate="$(systemctl show korri-inputd.service -p Delegate --value 2>/dev/null || true)"
   delegate_controllers="$(systemctl show korri-inputd.service -p DelegateControllers --value 2>/dev/null || true)"
   [[ "$delegate" == yes ]] || fail 'inputd Delegate is not enabled'
   [[ " $delegate_controllers " == *' pids '* ]] || fail 'inputd DelegateControllers does not contain pids'
   [[ "$(remote_catalog_health)" == Ok ]] || fail 'korrid catalog is unhealthy'
+  printf 'shared-seat-nodes=observed count=%s\n' "$(wc -l <<<"$seat_nodes")"
+  remote_native_input_acceptance || fail 'native input acceptance is unverified; maintenance delivery is blocked'
   acceptance="$(remote_acceptance_fingerprint "$runtime_user" "$expected_identity" "$profile" "$require_physical")" \
     || fail 'acceptance fingerprint could not be captured'
-  printf 'automated-gates=pass raw-readable=0 source-readable=0 game-route-readable=1 portal-route-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
+  printf 'automated-gates=pass raw-readable=0 source-readable=0 shared-seats-readable=1 portal-device-readable=0 inputd-status=Ready system-korrid=active system-korri-compositor=active system-sunshine=active pairing-state=present credentials=service-specific sunshine-package=attested catalog=Ok delegate=yes controllers=pids\n'
   printf '%s\n' "$sunshine_provenance"
   printf 'sunshine-private-state=protected digest=%s\n' "$sunshine_private_state"
   printf 'normalized-fingerprint=%s\n' "$fingerprint"
@@ -2280,6 +2328,9 @@ remote_rollback="$(awk -F= '$1 == "rollback" {print substr($0, index($0, "=") + 
 [[ "$remote_rollback" == "$ROLLBACK" ]] || fail 'rollback generation is unavailable or not canonical on the target'
 grep -Fx 'candidate-switch=yes' <<<"$preflight" >/dev/null || fail 'candidate has no switch-to-configuration executable'
 grep -Fx 'rollback-switch=yes' <<<"$preflight" >/dev/null || fail 'rollback generation has no switch-to-configuration executable'
+if grep -Fx 'candidate-native-input=unverified' <<<"$preflight" >/dev/null; then
+  fail 'unified controller candidate is not accepted by this maintenance gate: configured count, native delivery, and signed-plugin ownership cutover are unverified; no activation attempted'
+fi
 grep -Fx 'temporary-artifacts-dirty=no' <<<"$preflight" >/dev/null || fail 'dirty or untracked U7 temporary devices/profiles are present'
 if [[ "$MODE" == candidate-test || "$MODE" == persistent-switch || "$MODE" == candidate-reboot-verify ]]; then
   grep -Fx 'expected-controller=yes' <<<"$preflight" >/dev/null \

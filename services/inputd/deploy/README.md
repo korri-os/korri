@@ -1,6 +1,55 @@
 # Linux input development and deployment
 
-Routine development does not use a NixOS activation. Run `nix run .#korri-dev` to start isolated korrid and inputd processes. Physical input and all actions are disabled by default. `nix run .#korri-dev -- --physical` only asks development inputd to open an already-running normalized InputPlumber source; actions remain disabled. The app does not install the provider, grant source or `/dev/uinput` access, or apply ACLs to the two routed targets. It reaches `Ready` only when those permissions and the provider already exist outside `korri-dev`; this flag is not a self-contained physical-input setup.
+## Unified controller cut: delivery blocked
+
+**Device approval is still required. No device operation is authorized by this
+change.** The maintenance gate refuses a candidate that contains the core
+`korri-input-seat-receiver.service` before activation. The older rollout and
+Sunshine-service procedure below is historical, not a compatible delivery path
+for the shared-pool runtime. Its lock, private-state, signature/provenance, and
+rollback checks remain in place; a passing modeled legacy test is not native
+input acceptance.
+
+The gate can inspect the real service state, validated normalized event nodes,
+and canonical P1–P255 seat nodes. Seat checks use `SeatSpec::for_slot`, the exact
+`input_seat_uinput.rs` keys/axes and USB identity, contiguous slots, root owner,
+and the existing runtime user's primary GID with mode `0660`. It checks runtime
+readability and denies both source and seat access to the kiosk user obtained
+from `korri-chromium-kiosk.service`. More than one normalized source is valid.
+These observations do not prove controller assignment or navigation.
+
+The configured seat count comes from `host.preferences.playerCount` in the
+existing `device.yaml`, default four, valid 1–255. Korrid exposes it as
+`SettingsSnapshot.playerCount`, but host settings reads require the local
+browser principal. This maintenance gate has no authorized reader for that
+fact. It must not guess four, equate observed seat count with configured count,
+read a portal capability, or take over the private coordinator connection.
+It reports configured count, physical source membership, and native delivery as
+**unverified**, never as passing. A future reviewed observer and end-to-end
+acceptance procedure must cover held-state baselines, inactivity, thaw/rearm,
+shared allocation, and reconnect reservations. Service `Ready`, socket presence,
+and a kernel device alone cannot prove these facts.
+
+### Future one-off ownership cutover
+
+After separate approval, identify the actual installed signed Sunshine package
+and preserve its config, identity, paired clients, and permissions. Stop its old
+plugin-owned receiver before activating the core receiver; never overlap two
+seat owners. Install core seat udev permissions and retire the old runtime rule
+through approved plugin cleanup. Install and reapprove the new signed Sunshine
+artifacts because their unit set and requested authority changed. Sunshine
+retains group 980 and its UHID permission helper; plugin removal must not stop
+core seats. Preserve exact korrid/runtime IDs and token permissions. Do not add
+an alias, fallback, dual owner, guessed migration state, or signature exception.
+Build off-device and follow `nix/device-cache/README.md`; never build on a target.
+
+The historical `sunshine.service` lifecycle in this gate does not implement
+that signed-plugin cutover. Do not use it to attempt the cutover or to remove
+the temporary portal startup/view override. A future approved delivery change
+must replace those lifecycle assumptions and prove rollback before lifting the
+preflight refusal.
+
+Routine development does not use a NixOS activation. Run `nix run .#korri-dev` to start isolated korrid and inputd processes. Physical input and all actions are disabled by default. `nix run .#korri-dev -- --physical` only asks development inputd to open an already-running normalized InputPlumber source; actions remain disabled. The app does not install the provider, shared receiver, authenticated coordination, or source ACLs. This flag is not a self-contained physical-input setup and is not proof of native delivery.
 
 A normal NixOS consumer imports only `nixosModules.korri-linux-host` and enables `services.korriLinuxHost`. The consumer supplies its runtime identity, network interfaces, and DRM render device. Korri owns InputPlumber, inputd, korrid, Sunshine, headless Sway, service identities, permissions, ordering, validation actions, and the bundle selector. Lower-level modules remain available for Korri development and unusual platform composition. A device configuration does not copy their policy.
 
@@ -140,9 +189,9 @@ Use one private ledger for the complete sequence. The gate rejects out-of-order 
 
 Candidate, persistent, and candidate-reboot modes have no default controller. The operator copies one sanitized identity from `inspect`, checks it against the physical controller, and passes its exact lowercase `BUS:VENDOR:PRODUCT:VERSION`. Pre-activation validates exactly one live non-virtual node with that identity, matching device major/minor, and `ID_INPUT_JOYSTICK=1`; it does not require the rollback provider to expose the candidate profile. While the candidate is active, its InputPlumber composite must list that exact `/dev/input/eventN` in `SourceDevicePaths`, and its `ProfilePath` must be the production package's `korri-60-xbox_one_gamepad.yaml`. Candidate-test records this proof. Persistent switch requires that prior evidence and rechecks the live physical identity before activation; the acceptance fingerprint rechecks full profile selection after activation.
 
-The Korri host keeps source devnodes in `/dev/input` so InputPlumber 0.75.2 receives upstream add and remove events. InputPlumber removes `uaccess` and sets source mode `000`. The gate proves that the runtime user cannot open either the raw node or InputPlumber's normalized source. Inputd exclusively reads that normalized source and routes each new event to one of two virtual targets. The game user can read only the game target. The portal user can read only the portal target. An acknowledged Home Leave freezes the observed exact launch before inputd routes Portal input or focuses the portal. That successful local-control freeze records one process-local overlay intent. Browser status exposes an overlay only while the same exact launch remains Frozen or FocusFailed. After korrid restarts, one uniquely identified exact game window plus authoritative focus on an excluded Korri/Portal surface reconstructs that launch's process-local overlay intent. Missing authority, mismatched PIDs, multiple launch windows, multiple focused nodes, unrelated focus, and ordinary Running game focus never reconstruct intent. Home on a recovered FocusFailed launch freezes that same exact launch again, which recreates the handoff before Portal focus. A successful Return, confirmed Stopped result, authoritative absence/staleness/completion, or terminal remote replacement invalidates the intent. `SelectedRemoteSessionReplaced` drops the stale upstream selection and the portal shows non-retryable Session changed behavior. Pending, confirmation-required, unavailable, and other refused stop outcomes retain it. A Return or failed-Leave rollback that cannot prove exact game focus retains the same intent in FocusFailed. The intent is never persisted or retargeted. A failed Portal transition thaws and refocuses that same launch before Game ownership returns. If compositor authority is absent or no unique exact-launch window can be focused, rollback reports FocusFailed and input remains Portal-owned. A refused exact freeze does not focus Portal or retarget a replacement launch. Inputd stops only empty non-authoritative composites, which removes stale secondary targets without replacing the primary target. The rollback ACL digest ignores a redundant POSIX ACL mask when no named user or group ACL entry exists. It still records the mode, owner, group, runtime-user access, named entries, and effective permissions.
+The Korri host keeps source devnodes in `/dev/input` so InputPlumber 0.75.2 receives upstream add and remove events. InputPlumber removes `uaccess` and sets source mode `000`. The gate proves that the runtime user cannot open either the raw node or InputPlumber's normalized source. Inputd exclusively captures validated normalized sources. Korrid coordinates the shared persistent seats and authenticated native browser delivery. The game user can read shared seats; the portal user receives no controller device ACL. An acknowledged Home Leave freezes the observed exact launch before inputd routes Portal input or focuses the portal. That successful local-control freeze records one process-local overlay intent. Browser status exposes an overlay only while the same exact launch remains Frozen or FocusFailed. After korrid restarts, one uniquely identified exact game window plus authoritative focus on an excluded Korri/Portal surface reconstructs that launch's process-local overlay intent. Missing authority, mismatched PIDs, multiple launch windows, multiple focused nodes, unrelated focus, and ordinary Running game focus never reconstruct intent. Home on a recovered FocusFailed launch freezes that same exact launch again, which recreates the handoff before Portal focus. A successful Return, confirmed Stopped result, authoritative absence/staleness/completion, or terminal remote replacement invalidates the intent. `SelectedRemoteSessionReplaced` drops the stale upstream selection and the portal shows non-retryable Session changed behavior. Pending, confirmation-required, unavailable, and other refused stop outcomes retain it. A Return or failed-Leave rollback that cannot prove exact game focus retains the same intent in FocusFailed. The intent is never persisted or retargeted. A failed Portal transition thaws and refocuses that same launch before Game ownership returns. If compositor authority is absent or no unique exact-launch window can be focused, rollback reports FocusFailed and input remains Portal-owned. A refused exact freeze does not focus Portal or retarget a replacement launch. Inputd stops only empty non-authoritative composites, which removes stale secondary targets without replacing the primary target. The rollback ACL digest ignores a redundant POSIX ACL mask when no named user or group ACL entry exists. It still records the mode, owner, group, runtime-user access, named entries, and effective permissions.
 
-Ticket 04 routes input events only. The game-facing and portal-facing virtual targets do not advertise or forward `EV_FF`, although the normalized source requires force-feedback support. Rumble is therefore unavailable through these routed targets. Hardware validation must report this limitation and must not claim force-feedback coverage. Output and rumble ownership need a separate protocol outside ticket 04; do not add partial output routing to this slice.
+The shared seat backend does not advertise or forward `EV_FF`, although normalized sources require force-feedback support. Do not claim rumble coverage. Output ownership needs a separate protocol.
 
 A synthetic controller can be used only during separate temporary preflight work. Use the exact name `Korri U7 Synthetic Controller` and a private path matching `korri-u7-device-gate.*` only for that bounded preflight. Remove both before invoking a mutation mode. The gate refuses either artifact before mutation. Synthetic, virtual, stale, unsupported, generic-joystick, and identity-mismatched evidence never satisfies persistence or reboot acceptance.
 
@@ -158,8 +207,8 @@ The validation `workspace-next` action runs immutable `swaymsg` argv without a s
 
 | HITL stage | Operator action and required observation |
 |---|---|
-| `normalized-gameplay` | Start a fresh game process. Confirm exactly one Xbox 360 target works and no raw physical controller opens under the runtime identity. |
-| `health-recovery-ambiguity` | Disconnect and reconnect the source. Confirm `Missing`/`Recovering`, then `Ready`. Introduce one bounded second normalized test target. Confirm `Ambiguous`, no action, held-state clearing, recovery, and full cleanup. |
+| `normalized-gameplay` | Historical token; blocked for unified input. Future acceptance must compare the configured count with persistent seats and prove physical/remote shared allocation without raw or browser device access. |
+| `health-recovery-ambiguity` | Historical token; multiple validated normalized sources are now valid. Future acceptance must prove per-source disconnect/reconnect, duplicate-identity refusal, neutral clearing, and session reservations including pause. |
 | `dbus-spoof-and-exclusive-grab` | Use a bounded exclusive evdev grab. Confirm the raw observer blocks while the authenticated DBus shortcut still fires. Emit the same signal from an unrelated system-bus client and confirm inputd rejects it. |
 | `exact-stop-and-races` | Record one active launch ID. Activate the exact kill chord and confirm it immediately stops only that launch cgroup, once per press with repeats suppressed until release. Repeat replacement, child-exit/restart, and provider/korrid restart races. Confirm stale chord activations never stop a replacement and korrid restart does not kill the active launch. |
 | `direct-action-isolation` | Keep exactly one game active. Trigger the configured action and confirm the focus or fullscreen change. Inspect the action child and confirm its identity, cgroup, environment, descriptors, capabilities, limits, and cleanup. The gate proves that the game can use Xwayland but cannot see native Wayland, Sway IPC, or the compositor process. |
@@ -168,9 +217,9 @@ The validation `workspace-next` action runs immutable `swaymsg` argv without a s
 
 The automated portion requires active InputPlumber, inputd, korrid, the Korri compositor, and Sunshine. It requires inputd status `Ready`. It verifies the compositor output, stable Wayland alias, Xwayland `:0`, and the NVIDIA render device. It verifies the Sunshine Wayland environment. Sunshine uses a private PID namespace and cannot reach Sway IPC directly or through procfs. The gate also checks private state, pairing, package provenance, normalized input, DBus, cgroup delegation, and catalog health.
 
-For korrid, the compositor, Sunshine, and inputd, the gate requires an explicit unit user and a Nix-store unit file. It requires one live main PID with matching UID and GID values. The gate checks process groups for these services, the runtime user manager, and each live game unit. Inputd has direct service-specific `/dev/uinput` authority to create the Game and Portal targets. The gate denies that authority to korrid, the compositor, the runtime user manager, and every game unit. Sunshine retains only its separate `korri-sunshine-uinput` authority. Only inputd can use `korri-control`. Required `video` and `render` groups remain allowed. Each game unit hides the compositor control directory and runtime-user directory. It receives a read-only bind for Xwayland socket `X0` only. The gate rejects all other visible X11 sockets. Each game unit also uses a private PID namespace, so procfs cannot reveal Sway's root directory.
+For korrid, the compositor, Sunshine, and inputd, the gate requires an explicit unit user and a Nix-store unit file. It requires one live main PID with matching UID and GID values. The gate checks process groups for these services, the runtime user manager, and each live game unit. The root core receiver now creates shared seats. Inputd retains its trusted shortcut privileges but no longer creates Game and Portal targets. The gate denies that authority to korrid, the compositor, the runtime user manager, and every game unit. Sunshine retains only its separate `korri-sunshine-uinput` authority. Only inputd can use `korri-control`. Required `video` and `render` groups remain allowed. Each game unit hides the compositor control directory and runtime-user directory. It receives a read-only bind for Xwayland socket `X0` only. The gate rejects all other visible X11 sockets. Each game unit also uses a private PID namespace, so procfs cannot reveal Sway's root directory.
 
-The raw-readable scan skips only the event node whose complete normalized fingerprint still equals the verified fingerprint. A physical joystick with the same `Microsoft X-Box 360 pad` name remains raw and causes failure when the runtime user can read it. The two inputd delegation properties use the values returned by `systemctl show`; `Delegate=pids` is not a valid substitute for the runtime boolean property.
+The raw-readable scan skips only the shared seat nodes whose complete identity and permissions were checked. It includes normalized sources, which must be unreadable by both runtime and kiosk users. A physical joystick with the same `Microsoft X-Box 360 pad` name remains raw and causes failure when the runtime user can read it. The two inputd delegation properties use the values returned by `systemctl show`; `Delegate=pids` is not a valid substitute for the runtime boolean property.
 
 ## Failure handling
 

@@ -1,8 +1,8 @@
 [Unit]
 Description=Sunshine stream host for Korri
 BindsTo=korri-compositor.service
-Requires=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-seat-receiver.service
-After=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-seat-receiver.service network-online.target
+Requires=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-setup.service korri-input-seat-receiver.service
+After=korri-sunshine-certificate-control.socket korri-input-source-guard.service korri-compositor.service korri-sunshine-input-setup.service korri-input-seat-receiver.service network-online.target
 Wants=network-online.target
 
 [Service]
@@ -16,7 +16,7 @@ Environment=KORRI_CERTIFICATE_CONTROL_GID=976
 Environment=KORRI_CERTIFICATE_CONTROL_OWNER_GID=976
 Environment=KORRI_CERTIFICATE_CONTROL_MODE=0660
 Environment=KORRI_CERTIFICATE_CONTROL_PATH=/run/korri-certificate-control/control.sock
-Environment=KORRI_INPUT_SEAT_MIRROR_SOCKET=/run/korri-input-seat/mirror.sock
+Environment=KORRI_INPUT_SEAT_MIRROR_SOCKET=/run/korri-input-seat/sunshine-input-seat.sock
 Environment=KORRI_INPUT_SEAT_RUNTIME_DIR=/run/korri-input-seat
 Environment=SUNSHINE_LIVE_SETTINGS_MVP=1
 Sockets=korri-sunshine-certificate-control.socket

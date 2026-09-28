@@ -164,7 +164,7 @@ describe("Linux catalog execution without a native bridge", () => {
     })
     expect(settingsFrom(harness.current().facts).flatMap(group => group.items)
       .map(item => item.id)).toEqual([
-      "device-name", "steamgriddb-credential", "local-games",
+      "device-name", "host.preferences.playerCount", "steamgriddb-credential", "local-games",
       "game-discovery-status", "game-folder-rescan", "korrid-version",
     ])
   })

@@ -9,3 +9,12 @@ NativeInputDeviceRemovedKindWire = '"device-removed"'
 NativeInputActionKindWire = '"action"'
 NativeInputSystemActionWire = '"system"'
 NativeInputEventWire = "NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction"
+# Exact transient lifecycle literals and struct union, enforced by native_input.rs.
+NativeInputInitializationCompleteKindWire = '"initialization-complete"'
+NativeInputDeviceStateCompleteKindWire = '"device-state-complete"'
+NativeInputSuspendKindWire = '"suspend"'
+NativeInputResumeKindWire = '"resume"'
+NativeInputSuspendedKindWire = '"suspended"'
+NativeInputControlWire = "NativeInputInitializationComplete | NativeInputDeviceStateComplete | NativeInputSuspend | NativeInputResume | NativeInputRetired"
+NativeInputRetireKindWire = '"retire"'
+NativeInputRetiredKindWire = '"retired"'

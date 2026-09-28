@@ -1,7 +1,8 @@
 use korri_inputd::health::{systemd::SystemdHealthPublisher, HealthPublisher, RuntimeHealth};
 use korri_inputd::input_seat::{
-    validate_launch_id, GamepadState, MirrorOutcome, SeatBackend, SeatResetOutcome, SeatRuntime,
-    SeatSpec, MAX_MIRROR_FRAME_BYTES,
+    validate_launch_id, GamepadState, MirrorOutcome, SeatBackend, SeatFailure, SeatReply,
+    SeatRequest, SeatResetOutcome, SeatRuntime, SeatSpec, COORDINATION_VERSION,
+    COORDINATOR_TIMEOUT_MS, MAX_COORDINATION_BYTES, MAX_MIRROR_FRAME_BYTES,
 };
 use korri_inputd::input_seat_uinput::UinputSeatBackend;
 use serde::Serialize;
@@ -33,7 +34,6 @@ const REASON_PEER: u8 = 2;
 const REASON_ACTIVE: u8 = 3;
 const REASON_BACKEND: u8 = 4;
 const REASON_STALE: u8 = 5;
-const CONTROL_IO_TIMEOUT_MS: i32 = 2_000;
 const ACTIVE_CONTROL_IO_TIMEOUT_MS: i32 = 50;
 const MIRROR_IO_TIMEOUT_MS: i32 = 20;
 static STOPPING: AtomicBool = AtomicBool::new(false);
@@ -47,12 +47,17 @@ struct Options {
     sunshine_gid: u32,
     event_gid: u32,
     dry_run: bool,
+    dry_run_fail_create_slot: Option<u8>,
 }
 
-#[derive(Default)]
-struct DryBackend;
+struct DryBackend {
+    fail_create_slot: Option<u8>,
+}
 impl SeatBackend for DryBackend {
-    fn create(&mut self, _spec: &SeatSpec) -> Result<(), String> {
+    fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
+        if self.fail_create_slot == Some(spec.slot) {
+            return Err("injected dry-run create failure".into());
+        }
         Ok(())
     }
     fn write_state(&mut self, _slot: u8, _state: GamepadState) -> Result<(), String> {
@@ -132,6 +137,7 @@ fn parse_options() -> Result<Options, String> {
     let mut sunshine_gid = None;
     let mut event_gid = None;
     let mut dry_run = false;
+    let mut dry_run_fail_create_slot = None;
     while let Some(flag) = args.next() {
         match flag.to_str() {
             Some("--runtime-dir") => runtime_dir = args.next().map(PathBuf::from),
@@ -141,8 +147,15 @@ fn parse_options() -> Result<Options, String> {
             Some("--sunshine-gid") => sunshine_gid = Some(number(args.next())?),
             Some("--event-gid") => event_gid = Some(number(args.next())?),
             Some("--dry-run") => dry_run = true,
+            Some("--dry-run-fail-create-slot") => {
+                dry_run_fail_create_slot =
+                    Some(u8::try_from(number(args.next())?).map_err(|_| "invalid failure slot")?);
+            }
             _ => return Err("invalid receiver option".into()),
         }
+    }
+    if dry_run_fail_create_slot.is_some() && !dry_run {
+        return Err("failure injection requires --dry-run".into());
     }
     Ok(Options {
         runtime_dir: runtime_dir.ok_or("runtime directory is required")?,
@@ -152,6 +165,7 @@ fn parse_options() -> Result<Options, String> {
         sunshine_gid: sunshine_gid.ok_or("Sunshine GID is required")?,
         event_gid: event_gid.ok_or("event GID is required")?,
         dry_run,
+        dry_run_fail_create_slot,
     })
 }
 
@@ -169,6 +183,17 @@ fn number(value: Option<std::ffi::OsString>) -> Result<u32, String> {
     }
 }
 
+struct Coordinator {
+    fd: OwnedFd,
+    last_request_ms: u64,
+}
+struct Lease {
+    fd: OwnedFd,
+    mirror: Listener,
+    launch_id: String,
+}
+type Runtime = SeatRuntime<Box<dyn SeatBackend>>;
+
 fn run(options: Options) -> Result<(), String> {
     install_signal_handlers()?;
     validate_runtime_directory(&options.runtime_dir, options.dry_run)?;
@@ -178,232 +203,333 @@ fn run(options: Options) -> Result<(), String> {
     remove_runtime_object(&mirror_path, true)?;
     remove_runtime_object(&sidecar_path, false)?;
     let backend: Box<dyn SeatBackend> = if options.dry_run {
-        Box::new(DryBackend)
+        Box::new(DryBackend {
+            fail_create_slot: options.dry_run_fail_create_slot,
+        })
     } else {
         Box::new(UinputSeatBackend::new(options.event_gid))
     };
-    // The receiver owns all four devices for its whole lifetime. A lease
-    // grants launch-scoped mirror authority, not device lifetime.
     let mut runtime = SeatRuntime::boot(backend)?;
     let control = Listener::bind(&control_path, 0o660, options.control_gid)?;
-    // systemd must not release dependent services until all four pads and the
-    // control listener are available. Failure to notify fails initialization.
+    // Devices and listener precede readiness. Count reconciliation precedes START.
     SystemdHealthPublisher::default()
         .initialized(RuntimeHealth::Ready)
         .map_err(display)?;
+    let mut coordinator: Option<Coordinator> = None;
+    let mut lease: Option<Lease> = None;
     let mut generation = 0u64;
-    while !STOPPING.load(Ordering::Relaxed) {
-        let connection = match poll_accept(&control, 250)? {
-            Some(value) => value,
-            None => continue,
-        };
-        if peer_credentials(connection.as_raw_fd())? != (options.control_uid, options.control_gid) {
-            let _ = receive_packet(
-                connection.as_raw_fd(),
-                CONTROL_BYTES + 1,
-                ACTIVE_CONTROL_IO_TIMEOUT_MS,
-            );
-            let _ = send_reply(connection.as_raw_fd(), 1, REASON_PEER);
-            continue;
-        }
-        let Some(request) = receive_control(connection.as_raw_fd(), CONTROL_IO_TIMEOUT_MS)? else {
-            let _ = send_reply(connection.as_raw_fd(), 1, REASON_INVALID);
-            continue;
-        };
-        if request.operation != CONTROL_START {
-            let _ = send_reply(connection.as_raw_fd(), 1, REASON_INVALID);
-            continue;
-        }
-        generation = generation
-            .checked_add(1)
-            .ok_or("input-seat generation overflow")?;
-        if let Err(error) = serve_launch(
-            &options,
-            &control,
-            connection,
-            request.launch_id,
-            generation,
-            (&mirror_path, &sidecar_path),
-            &mut runtime,
-        ) {
-            // A failed cleanup must not leave held input on devices reused
-            // by the next launch. Exit so the receiver drops the devices.
-            return Err(format!("launch seat service failed: {error}"));
-        }
-    }
-    remove_runtime_object(&mirror_path, true)?;
-    remove_runtime_object(&sidecar_path, false)?;
-    Ok(())
-}
-
-struct ControlRequest {
-    operation: u8,
-    launch_id: String,
-}
-
-fn serve_launch(
-    options: &Options,
-    control_listener: &Listener,
-    lease: OwnedFd,
-    launch_id: String,
-    generation: u64,
-    paths: (&Path, &Path),
-    runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
-) -> Result<(), String> {
-    let (mirror_path, sidecar_path) = paths;
-    let token = random_token()?;
-    runtime.bind(&launch_id, &token)?;
-    let active_result = (|| {
-        let mirror = Listener::bind(mirror_path, 0o660, options.sunshine_gid)?;
-        write_sidecar(
-            sidecar_path,
-            options.sunshine_gid,
-            &launch_id,
-            generation,
-            &token,
-        )?;
-        send_reply(lease.as_raw_fd(), 0, REASON_NONE)?;
-        serve_active_launch(
-            options,
-            control_listener,
-            &lease,
-            &mirror,
-            &launch_id,
-            runtime,
-        )
-    })();
-    let cleanup_result = cleanup_launch(sidecar_path, runtime);
-    match (active_result, cleanup_result) {
-        (Ok(LaunchExit::StopRequested), Ok(())) => send_reply(lease.as_raw_fd(), 0, REASON_NONE),
-        (Ok(LaunchExit::LeaseEnded), Ok(())) => Ok(()),
-        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
-        (Err(error), Err(cleanup)) => Err(format!("{error}; input-seat cleanup failed: {cleanup}")),
-    }
-}
-
-enum LaunchExit {
-    StopRequested,
-    LeaseEnded,
-}
-
-fn serve_active_launch(
-    options: &Options,
-    control_listener: &Listener,
-    lease: &OwnedFd,
-    mirror: &Listener,
-    launch_id: &str,
-    runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
-) -> Result<LaunchExit, String> {
-    while !STOPPING.load(Ordering::Relaxed) {
-        let mut fds = [
-            libc::pollfd {
-                fd: lease.as_raw_fd(),
-                events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: control_listener.fd.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: mirror.fd.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        let result = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 250) };
-        if result < 0 {
-            if errno() == libc::EINTR {
-                continue;
+    let result = (|| {
+        while !STOPPING.load(Ordering::Relaxed) {
+            let mut fds = [
+                descriptor(control.fd.as_raw_fd()),
+                descriptor(
+                    coordinator
+                        .as_ref()
+                        .map_or(-1, |value| value.fd.as_raw_fd()),
+                ),
+                descriptor(lease.as_ref().map_or(-1, |value| value.fd.as_raw_fd())),
+                descriptor(
+                    lease
+                        .as_ref()
+                        .map_or(-1, |value| value.mirror.fd.as_raw_fd()),
+                ),
+            ];
+            if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, 20) } < 0 {
+                if errno() == libc::EINTR {
+                    continue;
+                }
+                return Err(last("poll"));
             }
-            return Err(last("poll"));
-        }
-        if fds[1].revents & libc::POLLIN != 0 {
-            if let Ok(extra) = control_listener.accept() {
-                let _ = receive_control(extra.as_raw_fd(), ACTIVE_CONTROL_IO_TIMEOUT_MS);
-                let _ = send_reply(extra.as_raw_fd(), 1, REASON_ACTIVE);
+            let now = monotonic_ms();
+            // A failed coordinator retires every producer, but NOT the session.
+            let mut lost = coordinator.as_ref().is_some_and(|value| {
+                now.saturating_sub(value.last_request_ms) >= COORDINATOR_TIMEOUT_MS
+            }) || fds[1].revents & (libc::POLLHUP | libc::POLLERR) != 0;
+            if !lost && fds[1].revents & libc::POLLIN != 0 {
+                if let Some(value) = coordinator.as_mut() {
+                    let request = receive_packet(
+                        value.fd.as_raw_fd(),
+                        MAX_COORDINATION_BYTES + 1,
+                        ACTIVE_CONTROL_IO_TIMEOUT_MS,
+                    )
+                    .ok()
+                    .and_then(|packet| decode_coordination(&packet));
+                    if let Some(request) =
+                        request.filter(|request| !matches!(request, SeatRequest::Hello))
+                    {
+                        value.last_request_ms = now;
+                        let reply = runtime.coordinate(request, now);
+                        if lease.is_some() && runtime.mirror_launch().is_none() {
+                            retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?;
+                        }
+                        lost = send_coordination(value.fd.as_raw_fd(), &reply).is_err();
+                        if runtime.faulted() {
+                            return Err(
+                                "seat backend is uncertain; receiver restart required".into()
+                            );
+                        }
+                    } else {
+                        lost = true;
+                    }
+                }
             }
-        }
-        if fds[2].revents & libc::POLLIN != 0 {
-            if let Ok(frame) = mirror.accept() {
-                if peer_credentials(frame.as_raw_fd())?
-                    == (options.sunshine_uid, options.sunshine_gid)
-                {
-                    if let Ok(packet) = receive_packet(
-                        frame.as_raw_fd(),
-                        MAX_MIRROR_FRAME_BYTES + 1,
-                        MIRROR_IO_TIMEOUT_MS,
-                    ) {
-                        if packet.len() <= MAX_MIRROR_FRAME_BYTES
-                            && runtime.accept(&packet, monotonic_ms())
-                                == MirrorOutcome::BackendFailed
+            if lost {
+                lose_coordinator(&mut coordinator, &mut lease, &sidecar_path, &mut runtime)?;
+            }
+
+            // Lease commands take priority over mirror traffic and new clients.
+            if fds[2].revents & libc::POLLIN != 0 {
+                if let Some(value) = lease.as_ref() {
+                    let request = receive_packet(
+                        value.fd.as_raw_fd(),
+                        CONTROL_BYTES + 1,
+                        ACTIVE_CONTROL_IO_TIMEOUT_MS,
+                    )
+                    .ok()
+                    .and_then(|packet| decode_control(&packet));
+                    match request {
+                        Some(request)
+                            if request.operation == CONTROL_STOP
+                                && request.launch_id == value.launch_id =>
                         {
-                            return Err("input-seat backend write failed".into());
+                            retire_lease(&mut lease, &sidecar_path, &mut runtime, true)?;
+                        }
+                        Some(request) if request.operation == CONTROL_RESET => {
+                            let (status, reason) = match runtime.reset(&request.launch_id) {
+                                SeatResetOutcome::Accepted => (0, REASON_NONE),
+                                SeatResetOutcome::StaleLaunch => (1, REASON_STALE),
+                                SeatResetOutcome::BackendFailed => (1, REASON_BACKEND),
+                            };
+                            let failed = send_reply(value.fd.as_raw_fd(), status, reason).is_err();
+                            if runtime.faulted() {
+                                return Err("seat reset failed".into());
+                            }
+                            if failed {
+                                retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?;
+                            }
+                        }
+                        Some(request) => {
+                            let reason = if request.operation == CONTROL_STOP {
+                                REASON_STALE
+                            } else {
+                                REASON_INVALID
+                            };
+                            if send_reply(value.fd.as_raw_fd(), 1, reason).is_err() {
+                                retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?;
+                            }
+                        }
+                        None => retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?,
+                    }
+                }
+            }
+            if fds[2].revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+                retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?;
+            }
+            if fds[3].revents & libc::POLLIN != 0 {
+                if let Some(value) = lease.as_ref() {
+                    if let Ok(frame) = value.mirror.accept() {
+                        if peer_credentials(frame.as_raw_fd())?
+                            == (options.sunshine_uid, options.sunshine_gid)
+                        {
+                            if let Ok(packet) = receive_packet(
+                                frame.as_raw_fd(),
+                                MAX_MIRROR_FRAME_BYTES + 1,
+                                MIRROR_IO_TIMEOUT_MS,
+                            ) {
+                                if runtime.accept(&packet, now) == MirrorOutcome::BackendFailed {
+                                    return Err("input-seat backend write failed".into());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            runtime.expire_stale(now)?;
+            if runtime.feedback_failed() {
+                lose_coordinator(&mut coordinator, &mut lease, &sidecar_path, &mut runtime)?;
+            }
+            if fds[0].revents & libc::POLLIN != 0 {
+                if let Ok(connection) = control.accept() {
+                    // Authenticate BOTH lanes, including extra connections during a lease.
+                    if peer_credentials(connection.as_raw_fd())?
+                        != (options.control_uid, options.control_gid)
+                    {
+                        let _ = receive_packet(
+                            connection.as_raw_fd(),
+                            MAX_COORDINATION_BYTES + 1,
+                            ACTIVE_CONTROL_IO_TIMEOUT_MS,
+                        );
+                        let _ = send_reply(connection.as_raw_fd(), 1, REASON_PEER);
+                        continue;
+                    }
+                    let Ok(packet) = receive_packet(
+                        connection.as_raw_fd(),
+                        MAX_COORDINATION_BYTES + 1,
+                        ACTIVE_CONTROL_IO_TIMEOUT_MS,
+                    ) else {
+                        continue;
+                    };
+                    if packet.first() == Some(&COORDINATION_VERSION) {
+                        if decode_coordination(&packet) != Some(SeatRequest::Hello) {
+                            let _ = send_coordination(
+                                connection.as_raw_fd(),
+                                &rejected_coordination(SeatFailure::Invalid),
+                            );
+                        } else if coordinator.is_some() {
+                            let _ = send_coordination(
+                                connection.as_raw_fd(),
+                                &rejected_coordination(SeatFailure::Active),
+                            );
+                        } else {
+                            let reply = runtime.coordinate(SeatRequest::Hello, now);
+                            if send_coordination(connection.as_raw_fd(), &reply).is_ok() {
+                                coordinator = Some(Coordinator {
+                                    fd: connection,
+                                    last_request_ms: now,
+                                });
+                            }
+                        }
+                        continue;
+                    }
+                    let Some(request) = decode_control(&packet) else {
+                        let _ = send_reply(connection.as_raw_fd(), 1, REASON_INVALID);
+                        continue;
+                    };
+                    if lease.is_some() {
+                        let _ = send_reply(connection.as_raw_fd(), 1, REASON_ACTIVE);
+                    } else if request.operation != CONTROL_START {
+                        let _ = send_reply(connection.as_raw_fd(), 1, REASON_INVALID);
+                    } else if coordinator.is_none() {
+                        let _ = send_reply(connection.as_raw_fd(), 1, REASON_BACKEND);
+                    } else {
+                        let token = random_token()?;
+                        if runtime.bind(&request.launch_id, &token).is_err() {
+                            let _ = send_reply(connection.as_raw_fd(), 1, REASON_BACKEND);
+                            continue;
+                        }
+                        generation = generation
+                            .checked_add(1)
+                            .ok_or("input-seat generation overflow")?;
+                        let mirror = Listener::bind(&mirror_path, 0o660, options.sunshine_gid)?;
+                        write_sidecar(
+                            &sidecar_path,
+                            options.sunshine_gid,
+                            &request.launch_id,
+                            generation,
+                            &token,
+                        )?;
+                        lease = Some(Lease {
+                            fd: connection,
+                            mirror,
+                            launch_id: request.launch_id,
+                        });
+                        if send_reply(lease.as_ref().unwrap().fd.as_raw_fd(), 0, REASON_NONE)
+                            .is_err()
+                        {
+                            retire_lease(&mut lease, &sidecar_path, &mut runtime, false)?;
                         }
                     }
                 }
             }
         }
-        runtime.expire_stale(monotonic_ms())?;
-        if fds[0].revents & libc::POLLIN != 0 {
-            let Some(request) = receive_control(lease.as_raw_fd(), ACTIVE_CONTROL_IO_TIMEOUT_MS)?
-            else {
-                return Ok(LaunchExit::LeaseEnded);
-            };
-            if request.operation == CONTROL_STOP && request.launch_id == launch_id {
-                return Ok(LaunchExit::StopRequested);
-            }
-            if request.operation == CONTROL_RESET {
-                let (status, reason) = match runtime.reset(&request.launch_id) {
-                    SeatResetOutcome::Accepted => (0, REASON_NONE),
-                    SeatResetOutcome::StaleLaunch => (1, REASON_STALE),
-                    SeatResetOutcome::BackendFailed => (1, REASON_BACKEND),
-                };
-                let _ = send_reply(lease.as_raw_fd(), status, reason);
-                continue;
-            }
-            let reason = if request.operation == CONTROL_STOP {
-                REASON_STALE
-            } else {
-                REASON_INVALID
-            };
-            let _ = send_reply(lease.as_raw_fd(), 1, reason);
-        }
-        if fds[0].revents & (libc::POLLHUP | libc::POLLERR) != 0 {
-            return Ok(LaunchExit::LeaseEnded);
-        }
-    }
-    Ok(LaunchExit::LeaseEnded)
+        Ok(())
+    })();
+    // Always clean the private authority artifacts, including fatal backend exits.
+    let cleanup = retire_lease(&mut lease, &sidecar_path, &mut runtime, false);
+    let neutral = runtime.coordinator_lost();
+    result.and(cleanup).and(neutral)
 }
-
-fn cleanup_launch(
+fn descriptor(fd: RawFd) -> libc::pollfd {
+    libc::pollfd {
+        fd,
+        events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
+        revents: 0,
+    }
+}
+fn retire_lease(
+    lease: &mut Option<Lease>,
     sidecar: &Path,
-    runtime: &mut SeatRuntime<Box<dyn SeatBackend>>,
+    runtime: &mut Runtime,
+    acknowledge: bool,
 ) -> Result<(), String> {
-    let sidecar_result = remove_runtime_object(sidecar, false);
-    let runtime_result = runtime.unbind();
-    sidecar_result.and(runtime_result)
+    let result = runtime.unbind();
+    let cleanup = remove_runtime_object(sidecar, false);
+    if let Some(value) = lease.take() {
+        drop(value.mirror);
+        result?;
+        cleanup?;
+        if acknowledge {
+            let _ = send_reply(value.fd.as_raw_fd(), 0, REASON_NONE);
+        }
+    } else {
+        result?;
+        cleanup?;
+    }
+    Ok(())
 }
-
-fn receive_control(fd: RawFd, timeout_ms: i32) -> Result<Option<ControlRequest>, String> {
-    let bytes = receive_packet(fd, CONTROL_BYTES + 1, timeout_ms)?;
-    if bytes.is_empty() {
-        return Ok(None);
-    }
+fn lose_coordinator(
+    coordinator: &mut Option<Coordinator>,
+    lease: &mut Option<Lease>,
+    sidecar: &Path,
+    runtime: &mut Runtime,
+) -> Result<(), String> {
+    *coordinator = None;
+    let neutral = runtime.coordinator_lost();
+    let cleanup = retire_lease(lease, sidecar, runtime, false);
+    neutral.and(cleanup)
+}
+struct ControlRequest {
+    operation: u8,
+    launch_id: String,
+}
+fn decode_control(bytes: &[u8]) -> Option<ControlRequest> {
     if bytes.len() != CONTROL_BYTES || bytes[0] != CONTROL_VERSION {
-        return Ok(None);
+        return None;
     }
-    let launch_id = std::str::from_utf8(&bytes[2..])
-        .map_err(display)?
-        .to_owned();
-    if validate_launch_id(&launch_id).is_err() {
-        return Ok(None);
-    }
-    Ok(Some(ControlRequest {
+    let launch_id = std::str::from_utf8(&bytes[2..]).ok()?.to_owned();
+    validate_launch_id(&launch_id).ok()?;
+    Some(ControlRequest {
         operation: bytes[1],
         launch_id,
-    }))
+    })
+}
+fn decode_coordination(bytes: &[u8]) -> Option<SeatRequest> {
+    if bytes.first() != Some(&COORDINATION_VERSION) || bytes.len() > MAX_COORDINATION_BYTES {
+        return None;
+    }
+    serde_json::from_slice(&bytes[1..]).ok()
+}
+fn rejected_coordination(failure: SeatFailure) -> SeatReply {
+    SeatReply {
+        failure: Some(failure),
+        count: 0,
+        session: None,
+        recovery_required: true,
+        slot: None,
+        remote_sources: Vec::new(),
+        remote_events: Vec::new(),
+    }
+}
+fn send_coordination(fd: RawFd, reply: &SeatReply) -> Result<(), String> {
+    let mut bytes = vec![COORDINATION_VERSION];
+    bytes.extend(serde_json::to_vec(reply).map_err(display)?);
+    if bytes.len() > MAX_COORDINATION_BYTES {
+        return Err("coordination reply exceeds bound".into());
+    }
+    wait_ready(fd, libc::POLLOUT, ACTIVE_CONTROL_IO_TIMEOUT_MS)?;
+    let count = unsafe {
+        libc::send(
+            fd,
+            bytes.as_ptr().cast(),
+            bytes.len(),
+            libc::MSG_NOSIGNAL | libc::MSG_DONTWAIT,
+        )
+    };
+    if count == bytes.len() as isize {
+        Ok(())
+    } else {
+        Err(last("coordination send"))
+    }
 }
 
 fn receive_packet(fd: RawFd, capacity: usize, timeout_ms: i32) -> Result<Vec<u8>, String> {
@@ -477,30 +603,6 @@ fn bind_unix(fd: RawFd, path: &Path) -> Result<(), String> {
         Ok(())
     } else {
         Err(last("bind"))
-    }
-}
-
-fn poll_accept(listener: &Listener, timeout: i32) -> Result<Option<OwnedFd>, String> {
-    let mut pollfd = libc::pollfd {
-        fd: listener.fd.as_raw_fd(),
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    let result = unsafe { libc::poll(&mut pollfd, 1, timeout) };
-    if result < 0 {
-        if errno() == libc::EINTR {
-            return Ok(None);
-        }
-        return Err(last("poll"));
-    }
-    if result == 0 || pollfd.revents & libc::POLLIN == 0 {
-        Ok(None)
-    } else {
-        match listener.accept() {
-            Ok(connection) => Ok(Some(connection)),
-            Err(_) if errno() == libc::EAGAIN || errno() == libc::EWOULDBLOCK => Ok(None),
-            Err(error) => Err(error),
-        }
     }
 }
 

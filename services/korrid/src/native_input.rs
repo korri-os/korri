@@ -129,3 +129,119 @@ pub enum NativeInputEvent {
 pub struct NativeInputSubscription {
     pub classes: Vec<NativeInputDeviceClass>,
 }
+
+/// Transient delivery barriers grounded in the host's freezer transitions.
+/// Use the same literal/struct union as legacy events: Typeshare does not support
+/// internally tagged algebraic enums. Rust still enforces every exact wire kind.
+#[typeshare(serialized_as = "NativeInputControlWire")]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum NativeInputControl {
+    InitializationComplete(NativeInputInitializationComplete),
+    DeviceStateComplete(NativeInputDeviceStateComplete),
+    Suspend(NativeInputSuspend),
+    Resume(NativeInputResume),
+    Retired(NativeInputRetired),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputInitializationCompleteKind {
+    #[serde(rename = "initialization-complete")]
+    InitializationComplete,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeInputInitializationComplete {
+    #[typeshare(serialized_as = "NativeInputInitializationCompleteKindWire")]
+    pub kind: NativeInputInitializationCompleteKind,
+    pub generation: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputDeviceStateCompleteKind {
+    #[serde(rename = "device-state-complete")]
+    DeviceStateComplete,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeInputDeviceStateComplete {
+    #[typeshare(serialized_as = "NativeInputDeviceStateCompleteKindWire")]
+    pub kind: NativeInputDeviceStateCompleteKind,
+    pub device_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputSuspendKind {
+    #[serde(rename = "suspend")]
+    Suspend,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeInputSuspend {
+    #[typeshare(serialized_as = "NativeInputSuspendKindWire")]
+    pub kind: NativeInputSuspendKind,
+    pub generation: String,
+    pub request_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputResumeKind {
+    #[serde(rename = "resume")]
+    Resume,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeInputResume {
+    #[typeshare(serialized_as = "NativeInputResumeKindWire")]
+    pub kind: NativeInputResumeKind,
+    pub generation: String,
+    pub request_id: String,
+}
+
+/// Local blur retirement requests release only this authenticated attachment.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputRetireKind {
+    #[serde(rename = "retire")]
+    Retire,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeInputRetirement {
+    #[typeshare(serialized_as = "NativeInputRetireKindWire")]
+    pub kind: NativeInputRetireKind,
+    pub generation: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputRetiredKind {
+    #[serde(rename = "retired")]
+    Retired,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeInputRetired {
+    #[typeshare(serialized_as = "NativeInputRetiredKindWire")]
+    pub kind: NativeInputRetiredKind,
+    pub generation: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NativeInputSuspendedKind {
+    #[serde(rename = "suspended")]
+    Suspended,
+}
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeInputAcknowledgement {
+    #[typeshare(serialized_as = "NativeInputSuspendedKindWire")]
+    pub kind: NativeInputSuspendedKind,
+    pub generation: String,
+    pub request_id: String,
+}

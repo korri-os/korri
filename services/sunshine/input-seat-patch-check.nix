@@ -19,6 +19,7 @@ let
   patchName = builtins.baseNameOf patchPath;
   approvedPatch = lib.findFirst (record: record.name == patchName) null approved.patches;
   patchSha256 = builtins.hashFile "sha256" patchPath;
+  presence = import ./input-seat-presence-check.nix { inherit pkgs; };
   expectedPatchSetSha256 =
     if sunshinePackage.korriRkmppEnabled or false then
       approved.rkmppPatchSetSha256
@@ -72,6 +73,8 @@ let
       && contains "SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK" patch
       && !(contains "SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK" patch)
       && contains "MSG_NOSIGNAL | MSG_DONTWAIT" patch
+      && contains "SO_PEERCRED" patch
+      && contains "peer.uid != 0" patch
       && contains "connect_error != EINPROGRESS" patch
       && contains "connect_error != EAGAIN" patch
       && contains "result != static_cast<ssize_t>(frame.size())" patch
@@ -101,12 +104,23 @@ let
     (check "an active receiver replaces Sunshine native gamepad allocation" (
       contains "bool korri_input_seat_emit_json" patch
       && contains "bool korri_input_seat_receiver_configured()" patch
-      && contains "if (!korri_input_seat_receiver_configured())" patch
-      && contains "if (korri_input_seat_emit_source_connected(packet->controllerNumber))" patch
-      && contains "if (korri_input_seat_emit_source_state(packet))" patch
+      && contains "if (input->mirror->configured)" patch
+      && contains "input->mirror->arrival(packet->controllerNumber)" patch
+      && contains "input->mirror->update(packet)" patch
       && contains "korri_input_seat_emit_source_disconnected" patch
       && contains "free_gamepad(platf_input, gamepad.id)" patch
       && contains "does not create a second gamepad" patch
+    ))
+    (check "presence uses immutable authority and upstream stream lifetime" (
+      contains "const korri_input_seat_active_launch_t authority" patch
+      && contains "a.generation == b.generation && a.mirror_token == b.mirror_token" patch
+      && contains "weak = weak_from_this()" patch
+      && contains "}, 200ms).task_id" patch
+      && contains "task_pool.cancel(timer)" patch
+      && contains "stopped.exchange(true)" patch
+      && contains "input::stop(session.input)" patch
+      && contains "input::stop(session->input)" patch
+      && contains "ambiguous-controller-number" patch
     ))
     (check "the mirror forwards no non-controller packet domain" (
       !(contains "passthrough(PNV_KEYBOARD_PACKET" patch)
@@ -130,7 +144,7 @@ let
       && contains "SOCK_SEQPACKET" readme
       && contains "Sunshine-source transport check" readme
       && contains "korri-input-seat-receiver" readme
-      && contains "approved Sunshine plugin starts the input-seat receiver" readme
+      && contains "core-owned input-seat receiver" readme
       && contains "remains inert" readme
       && contains "Physical device acceptance remains separate" readme
     ))
@@ -155,10 +169,12 @@ else
       grep -Fx 'patch=${patchName} sha256=${approvedPatch.sha256}' "$provenance" >/dev/null
       grep -Fx 'patch_set_sha256=${expectedPatchSetSha256}' "$provenance" >/dev/null
 
-      # This checks the declared AF_UNIX SOCK_SEQPACKET transport model under
-      # backpressure. The package build above proves that patch 0015 compiles;
-      # final device validation proves the running Sunshine behavior.
+      # This older Python test checks only the transport model. The root VM
+      # additionally runs the real patched input.cpp through its packet queue,
+      # upstream executor, authority reader and socket writes. Retain the full
+      # release package dependency above; the focused binary is not a substitute.
       python3 ${nonblockingTestPath}
+      test -e ${presence.vm}
 
       mkdir -p "$out"
       printf '%s\n' '${approvedPatch.sha256}' > "$out/input-seat-patch-sha256"

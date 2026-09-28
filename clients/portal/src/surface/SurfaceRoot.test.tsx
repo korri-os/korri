@@ -367,7 +367,7 @@ async function openWarioDetail() {
 }
 
 describe("SurfaceRoot", () => {
-  test("renders a count-only settings snapshot as focusable facts without opening editors", async () => {
+  test("keeps unsupported settings readable and changes seat count through controller confirmation", async () => {
     const seeded = okSettings()
     if (seeded._tag !== "Ok") throw new Error("Missing settings fixture")
     const base = createInMemoryKorridClient({
@@ -417,5 +417,22 @@ describe("SurfaceRoot", () => {
       expect(view.container.querySelector('[role="dialog"][aria-label^="Change "]')).toBeNull()
     }
     expect(mutations).toEqual([])
+
+    const count = buttonNamed("Player seats: 4", view.container)
+    await act(async () => { count.focus() })
+    await confirm(view)
+    await waitFor(() => expect(dialogNamed("Change Player seats")).toBeDefined(), "seat picker")
+    const picker = dialogNamed("Change Player seats")
+    expect(buttonNamed("1", picker)).toBeDefined()
+    expect(buttonNamed("255", picker)).toBeDefined()
+    const six = buttonNamed("6", picker)
+    six.getBoundingClientRect = () => new DOMRect(0, 0, 100, 40)
+    await act(async () => {
+      six.focus()
+      view.bus.emit({ type: "confirm" })
+      await sleep()
+    })
+    await waitFor(() => expect(buttonNamed("Player seats: 6", view.container)).toBeDefined(), "applied count")
+    expect(mutations).toEqual(["setting"])
   })
 })

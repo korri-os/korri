@@ -24,9 +24,10 @@ let
   sunshinePlugin = mkPlugin {
     publisher.namespace = "@korri";
     source = ../../../plugins/sunshine;
-    plugin = { pkgs }:
+    plugin =
+      { pkgs }:
       import ../../../plugins/sunshine/plugin.nix {
-        inherit pkgs inputdPackage sunshinePackage;
+        inherit pkgs sunshinePackage;
       };
   };
 in
@@ -49,15 +50,18 @@ in
     korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
     korri-sunshine-plugin = sunshinePlugin;
     korri-sunshine-plugin-native = import ./sunshine-native-check.nix {
-      inherit pkgs inputdPackage sunshinePackage;
+      inherit pkgs sunshinePackage;
     };
-    korri-sunshine-plugin-admission = pkgs.runCommand "korri-sunshine-plugin-admission" {
-      nativeBuildInputs = [ pkgs.jq ];
-    } ''
-      ${hostPackage}/bin/korri-plugin seed ${sunshinePlugin} https://cache.example.invalid > receipt.json
-      jq -e '.id == "@korri:sunshine" and .desired.state == "Enabled" and .previous == null' receipt.json
-      touch "$out"
-    '';
+    korri-sunshine-plugin-admission =
+      pkgs.runCommand "korri-sunshine-plugin-admission"
+        {
+          nativeBuildInputs = [ pkgs.jq ];
+        }
+        ''
+          ${hostPackage}/bin/korri-plugin seed ${sunshinePlugin} https://cache.example.invalid > receipt.json
+          jq -e '.id == "@korri:sunshine" and .desired.state == "Enabled" and .previous == null' receipt.json
+          touch "$out"
+        '';
     korri-plugin-image-seed = import ./image-seed-check.nix {
       inherit pkgs hostPackage;
       sshPackage = firstPartyPlugin "ssh";

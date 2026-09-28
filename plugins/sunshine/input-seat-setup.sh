@@ -1,8 +1,8 @@
 set -eu
 
 # NixOS writes the base input policy to 99-local.rules. Apply the approved
-# plugin grants for uhid and seat nodes after it. /dev/uinput belongs to the
-# host: the units reach it through SupplementaryGroups=uinput instead.
+# plugin grant for uhid after it. Persistent seats and /dev/uinput belong to
+# the host; stopping this helper does not change their permissions.
 rules=/run/udev/rules.d/99-z-korri-sunshine-input.rules
 case "${1:-}" in
   start)
@@ -16,7 +16,6 @@ case "${1:-}" in
     @coreutils@/bin/install -m 0644 @rules@ "$rules"
     @udevadm@/bin/udevadm control --reload
     @udevadm@/bin/udevadm trigger --action=change --subsystem-match=misc
-    @udevadm@/bin/udevadm trigger --action=change --subsystem-match=input
     ;;
   stop)
     if @getent@/bin/getent group korri-sunshine-input-seat >/dev/null; then
@@ -28,7 +27,6 @@ case "${1:-}" in
     @coreutils@/bin/rm -f "$rules"
     @udevadm@/bin/udevadm control --reload
     @udevadm@/bin/udevadm trigger --action=change --subsystem-match=misc
-    @udevadm@/bin/udevadm trigger --action=change --subsystem-match=input
     @groupdel@/bin/groupdel korri-sunshine-input-seat
     ;;
   *)

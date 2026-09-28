@@ -8,7 +8,7 @@ use std::{
 use evdev::{raw_stream::RawDevice, InputEvent, InputId};
 use futures_util::Stream;
 
-use crate::virtual_targets::{TargetRouter, UinputTargetRouter};
+use crate::virtual_targets::TargetRouter;
 
 pub const XB360_TARGET_NAME: &str = "Microsoft X-Box 360 pad";
 pub const GAME_TARGET_NAME: &str = "Microsoft X-Box 360 pad (Korri game)";
@@ -180,6 +180,18 @@ pub trait TargetProvider {
     fn open(&mut self, expected: &DeviceDescriptor) -> io::Result<OpenedTarget>;
 }
 
+/// Capture-only opening. It never creates a portal or gameplay uinput target.
+pub struct OpenedCapture {
+    pub descriptor: DeviceDescriptor,
+    pub events: InputEventStream,
+    pub initial: korri_input_contract::GamepadState,
+}
+
+pub trait CaptureProvider {
+    fn enumerate_capture(&mut self) -> io::Result<Vec<DeviceDescriptor>>;
+    fn open_capture(&mut self, expected: &DeviceDescriptor) -> io::Result<OpenedCapture>;
+}
+
 pub struct EvdevProvider {
     proc_devices: PathBuf,
     input_root: PathBuf,
@@ -203,29 +215,36 @@ impl EvdevProvider {
     }
 }
 
-impl TargetProvider for EvdevProvider {
-    fn enumerate(&mut self) -> io::Result<Vec<DeviceDescriptor>> {
+impl CaptureProvider for EvdevProvider {
+    fn enumerate_capture(&mut self) -> io::Result<Vec<DeviceDescriptor>> {
         let content = std::fs::read_to_string(&self.proc_devices)?;
         Ok(parse_proc_bus_input_devices(&content, &self.input_root))
     }
 
-    fn open(&mut self, expected: &DeviceDescriptor) -> io::Result<OpenedTarget> {
-        // RawDevice exposes SYN_DROPPED. Runtime handles it by closing this
-        // stream and reconciling instead of retaining potentially stale state.
+    fn open_capture(&mut self, expected: &DeviceDescriptor) -> io::Result<OpenedCapture> {
         let mut device = RawDevice::open(&expected.path)?;
         let device_number = fstat_device_number(&device)?;
-        let sysfs_path = sysfs_path_for_device_number(device_number, Path::new("/sys"));
-        let descriptor =
-            descriptor_from_opened_device(expected, &device, device_number, sysfs_path);
-        let router = Box::new(UinputTargetRouter::from_source(&device)?);
-        // Inputd is the only reader of the normalized source. Consumers read
-        // one of the two routed targets instead.
+        let descriptor = descriptor_from_opened_device(
+            expected,
+            &device,
+            device_number,
+            sysfs_path_for_device_number(device_number, Path::new("/sys")),
+        );
+        // Check the actual fd before grabbing it or publishing any source fact.
+        validate_opened_descriptor(expected, &descriptor)
+            .map_err(|_| io::Error::other("capture descriptor changed after enumeration"))?;
         device.grab()?;
-        let events = device.into_event_stream()?;
-        Ok(OpenedTarget {
+        let mut initial = korri_input_contract::GamepadState::neutral();
+        for key in device.get_key_state()?.iter() {
+            crate::capture::apply_event(&mut initial, 1, key.0, 1)?;
+        }
+        for (axis, info) in device.get_absinfo()? {
+            crate::capture::apply_event(&mut initial, 3, axis.0, info.value())?;
+        }
+        Ok(OpenedCapture {
             descriptor,
-            events: Box::pin(events),
-            router,
+            initial,
+            events: Box::pin(device.into_event_stream()?),
         })
     }
 }

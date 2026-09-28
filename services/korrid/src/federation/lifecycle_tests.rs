@@ -71,7 +71,7 @@ async fn inbound_rpc_and_directory_use_the_same_revocation_authority() {
     let resources = FederationResources::open(root.path()).unwrap();
     resources.directory.apply_membership(&resources.directory.begin_work().unwrap(), &[caller_identity.owner_statement_json().unwrap()]).unwrap();
     let runtime = host::HostRuntime::from_paths_with_backend(&config, None, root.path().to_owned(), Arc::new(host::control::InMemoryLaunchUnitBackend::default()));
-    let router = secure_host_routers_with_federation(runtime, root.path(), resources.clone(), None).0;
+    let router = secure_host_routers_with_federation(runtime, root.path(), resources.clone(), None, None).0;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let host = tokio::spawn(async move { axum::serve(listener, router).await.unwrap(); });
