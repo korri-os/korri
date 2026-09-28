@@ -2,11 +2,11 @@
 {
   system ? "x86_64-linux",
   forceOff ? false,
+  korri ? builtins.getFlake ("path:" + toString ../..),
 }:
 let
-  flake = builtins.getFlake ("path:" + toString ../..);
   packageName = if system == "aarch64-linux" then "sunshine-korri-v4l2m2m" else "sunshine-korri";
-  original = flake.packages.${system}.${packageName};
+  original = korri.packages.${system}.${packageName};
   probeHash = builtins.hashFile "sha256" ./rotation-probe.patch;
 in
 assert builtins.elem system [ "x86_64-linux" "aarch64-linux" ];

@@ -3,11 +3,11 @@
 {
   system ? "aarch64-linux",
   forceOff ? false,
+  korri ? builtins.getFlake ("path:" + toString ../..),
 }:
 let
-  flake = builtins.getFlake ("path:" + toString ../..);
-  pluginBuilder = flake.lib.${system}.mkPlugin;
-  sunshinePackage = import ./rotation-probe-build.nix { inherit system forceOff; };
+  pluginBuilder = korri.lib.${system}.mkPlugin;
+  sunshinePackage = import ./rotation-probe-build.nix { inherit system forceOff korri; };
 in
 # The official publisher builds the same selected names on both architectures.
 # The Mini trial uses only the aarch64-linux outputs.
