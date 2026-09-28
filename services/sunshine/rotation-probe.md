@@ -85,7 +85,11 @@ outputs on x86_64 and aarch64, so it also builds experimental x86_64 plugin
 outputs. The Mini trial uses **only** the ARM outputs. Do not substitute a standalone executable under the
 existing plugin unit, even after signing the binary. The plugin host needs a
 publisher-bound signature for the **new full closure** and an inspected exact
-approval. The artifact check reads both actual plugin manifests, package
+approval. The on/off batch contains two outputs with the same `@korri:sunshine`
+identity, so lookup by release and plugin ID rejects it as ambiguous. Inspect
+each exact ARM output path from the batch separately; verify its signed
+manifest and probe mode before approving an update. The artifact check reads
+both actual plugin manifests, package
 provenance, patch hash and AArch64 ELF headers. It does not verify a signature,
 Mini GL context, or physical timing. The derivation defines
 `SUNSHINE_CAPTURE_ROTATION_PROBE` for timing logs.
