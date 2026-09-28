@@ -14,3 +14,4 @@ pub mod virtual_targets;
 
 pub mod input_seat;
 pub mod input_seat_uinput;
+pub mod seat_pool;

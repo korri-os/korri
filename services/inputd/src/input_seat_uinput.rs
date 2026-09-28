@@ -1,4 +1,4 @@
-use crate::input_seat::{GamepadState, SeatBackend, SeatSpec, MAX_SEATS};
+use crate::input_seat::{GamepadState, SeatBackend, SeatSpec};
 use evdev::{
     uinput::VirtualDevice, AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, EventType, InputEvent,
     InputId, KeyCode, UinputAbsSetup,
@@ -27,7 +27,11 @@ const DPAD_RIGHT: u32 = 0x0008;
 
 struct SeatDevice {
     device: VirtualDevice,
-    state: GamepadState,
+    output: SeatOutput,
+}
+
+struct SeatOutput {
+    state: Option<GamepadState>,
 }
 
 pub struct UinputSeatBackend {
@@ -119,7 +123,7 @@ impl UinputSeatBackend {
 
 impl SeatBackend for UinputSeatBackend {
     fn create(&mut self, spec: &SeatSpec) -> Result<(), String> {
-        if spec.slot == 0 || spec.slot > MAX_SEATS || self.devices.contains_key(&spec.slot) {
+        if spec.slot == 0 || self.devices.contains_key(&spec.slot) {
             return Err("invalid or duplicate Korri seat slot".into());
         }
         if !self.preflight_complete {
@@ -132,7 +136,9 @@ impl SeatBackend for UinputSeatBackend {
             spec.slot,
             SeatDevice {
                 device,
-                state: GamepadState::neutral(),
+                output: SeatOutput {
+                    state: Some(GamepadState::neutral()),
+                },
             },
         );
         Ok(())
@@ -143,68 +149,8 @@ impl SeatBackend for UinputSeatBackend {
             .devices
             .get_mut(&slot)
             .ok_or_else(|| "Korri seat is not active".to_string())?;
-        let current = seat.state;
-        let mut events = Vec::new();
-        for (mask, key) in BUTTONS {
-            let before = current.buttons & mask != 0;
-            let after = next.buttons & mask != 0;
-            if before != after {
-                events.push(InputEvent::new(EventType::KEY.0, key.0, i32::from(after)));
-            }
-        }
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_HAT0X,
-            hat(current.buttons, DPAD_LEFT, DPAD_RIGHT),
-            hat(next.buttons, DPAD_LEFT, DPAD_RIGHT),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_HAT0Y,
-            hat(current.buttons, DPAD_UP, DPAD_DOWN),
-            hat(next.buttons, DPAD_UP, DPAD_DOWN),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_Z,
-            current.left_trigger.into(),
-            next.left_trigger.into(),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_RZ,
-            current.right_trigger.into(),
-            next.right_trigger.into(),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_X,
-            current.left_stick_x.into(),
-            next.left_stick_x.into(),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_Y,
-            current.left_stick_y.into(),
-            next.left_stick_y.into(),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_RX,
-            current.right_stick_x.into(),
-            next.right_stick_x.into(),
-        );
-        push_axis(
-            &mut events,
-            AbsoluteAxisCode::ABS_RY,
-            current.right_stick_y.into(),
-            next.right_stick_y.into(),
-        );
-        if !events.is_empty() {
-            seat.device.emit(&events).map_err(display)?;
-            seat.state = next;
-        }
-        Ok(())
+        seat.output
+            .write(next, |events| seat.device.emit(events).map_err(display))
     }
 
     fn destroy(&mut self, slot: u8) -> Result<(), String> {
@@ -213,8 +159,87 @@ impl SeatBackend for UinputSeatBackend {
     }
 }
 
-fn push_axis(events: &mut Vec<InputEvent>, axis: AbsoluteAxisCode, before: i32, after: i32) {
-    if before != after {
+impl SeatOutput {
+    fn write(
+        &mut self,
+        next: GamepadState,
+        emit: impl FnOnce(&[InputEvent]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let current = self.state;
+        let mut events = Vec::new();
+        for (mask, key) in BUTTONS {
+            let before = current.map(|state| state.buttons & mask != 0);
+            let after = next.buttons & mask != 0;
+            if before != Some(after) {
+                events.push(InputEvent::new(EventType::KEY.0, key.0, i32::from(after)));
+            }
+        }
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_HAT0X,
+            current.map(|state| hat(state.buttons, DPAD_LEFT, DPAD_RIGHT)),
+            hat(next.buttons, DPAD_LEFT, DPAD_RIGHT),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_HAT0Y,
+            current.map(|state| hat(state.buttons, DPAD_UP, DPAD_DOWN)),
+            hat(next.buttons, DPAD_UP, DPAD_DOWN),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_Z,
+            current.map(|state| state.left_trigger.into()),
+            next.left_trigger.into(),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_RZ,
+            current.map(|state| state.right_trigger.into()),
+            next.right_trigger.into(),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_X,
+            current.map(|state| state.left_stick_x.into()),
+            next.left_stick_x.into(),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_Y,
+            current.map(|state| state.left_stick_y.into()),
+            next.left_stick_y.into(),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_RX,
+            current.map(|state| state.right_stick_x.into()),
+            next.right_stick_x.into(),
+        );
+        push_axis(
+            &mut events,
+            AbsoluteAxisCode::ABS_RY,
+            current.map(|state| state.right_stick_y.into()),
+            next.right_stick_y.into(),
+        );
+        if !events.is_empty() {
+            // emit can apply part of a frame before failing. The next write must
+            // establish every control, not diff against a state we no longer know.
+            self.state = None;
+            emit(&events)?;
+        }
+        self.state = Some(next);
+        Ok(())
+    }
+}
+
+fn push_axis(
+    events: &mut Vec<InputEvent>,
+    axis: AbsoluteAxisCode,
+    before: Option<i32>,
+    after: i32,
+) {
+    if before != Some(after) {
         events.push(InputEvent::new(EventType::ABSOLUTE.0, axis.0, after));
     }
 }
@@ -229,9 +254,10 @@ fn hat(buttons: u32, negative: u32, positive: u32) -> i32 {
 
 fn is_seat_identity(name: Option<&str>, physical_path: Option<&str>) -> bool {
     fn slot(value: &str, prefix: &str) -> bool {
-        value
-            .strip_prefix(prefix)
-            .is_some_and(|slot| slot.len() == 1 && matches!(slot.as_bytes()[0], b'1'..=b'4'))
+        value.strip_prefix(prefix).is_some_and(|slot| {
+            slot.parse::<std::num::NonZeroU8>()
+                .is_ok_and(|number| number.to_string() == slot)
+        })
     }
     name.is_some_and(|value| slot(value, "Korri Seat P"))
         || physical_path.is_some_and(|value| slot(value, "korri/input-seat/p"))
@@ -243,13 +269,78 @@ fn display(error: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::is_seat_identity;
+    use super::{is_seat_identity, GamepadState, InputEvent, SeatOutput, BUTTONS};
+
+    #[test]
+    fn failed_emit_requires_a_full_neutral_write_instead_of_trusting_the_old_cache() {
+        let mut output = SeatOutput {
+            state: Some(GamepadState::neutral()),
+        };
+        let mut observed = Vec::<InputEvent>::new();
+        let held = GamepadState {
+            buttons: 0x1000,
+            left_stick_x: 20_000,
+            ..GamepadState::neutral()
+        };
+        assert!(output
+            .write(held, |events| {
+                // The real emit call can fail after some events reached uinput.
+                observed.push(events[0]);
+                Err("partial write".into())
+            })
+            .is_err());
+        assert_eq!(observed[0].value(), 1);
+
+        let mut retry = Vec::new();
+        output
+            .write(GamepadState::neutral(), |events| {
+                retry.extend_from_slice(events);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(retry.len(), BUTTONS.len() + 8);
+        assert!(retry.iter().all(|event| event.value() == 0));
+        assert!(retry.iter().any(|event| event.code() == observed[0].code()));
+    }
+
+    #[test]
+    fn successful_emit_keeps_delta_writes_and_deduplication() {
+        let mut output = SeatOutput {
+            state: Some(GamepadState::neutral()),
+        };
+        let held = GamepadState {
+            buttons: 0x1000,
+            ..GamepadState::neutral()
+        };
+        output
+            .write(held, |events| {
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].value(), 1);
+                Ok(())
+            })
+            .unwrap();
+        output
+            .write(held, |_| panic!("unchanged state must not be emitted"))
+            .unwrap();
+        output
+            .write(GamepadState::neutral(), |events| {
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].value(), 0);
+                Ok(())
+            })
+            .unwrap();
+    }
 
     #[test]
     fn only_exact_korri_seat_identities_are_reserved() {
         assert!(is_seat_identity(Some("Korri Seat P1"), None));
         assert!(is_seat_identity(None, Some("korri/input-seat/p4")));
-        assert!(!is_seat_identity(Some("Korri Seat P5"), None));
+        assert!(is_seat_identity(Some("Korri Seat P6"), None));
+        assert!(is_seat_identity(None, Some("korri/input-seat/p255")));
+        assert!(!is_seat_identity(Some("Korri Seat P0"), None));
+        assert!(!is_seat_identity(Some("Korri Seat P01"), None));
+        assert!(!is_seat_identity(Some("Korri Seat P256"), None));
+        assert!(!is_seat_identity(Some("Korri Seat P+1"), None));
         assert!(!is_seat_identity(Some("Korri Seat P1 extra"), None));
         assert!(!is_seat_identity(None, Some("korri/input-seat/p1/extra")));
     }

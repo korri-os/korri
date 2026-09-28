@@ -1,12 +1,14 @@
 # Unified controller input
 
-Status: transport implementation. The user approved first-message authentication with the existing portal capability. Production routing is unchanged. Shared-seat assignment and configuration still need grounded decisions.
+Status: transport checkpoint committed as `8c2114c2`. The user approved first-message authentication, session-scoped disconnected-seat reservations, and korrid-managed device configuration for the count. Production routing is unchanged. Physical source identity and the persisted count contract still need grounding.
 
 ## Approved behavior
 
 The user approved native evdev input, authenticated WebSocket delivery through local korrid, and a persistent pool of `n` virtual gamepads. The default is four. Physical and remote controllers share that pool. Each connected controller can navigate the active portal.
 
 Inactive portal input does nothing. Access revocation is not required. Do not retain gameplay input for later portal delivery. Preserve the neutral-before-rearm guard and host-owned system shortcuts.
+
+A disconnected controller keeps its seat reserved until the current session ends, including while paused. The same controller reclaims that seat on reconnect. When the session ends, free disconnected reservations. With no active session, free the disconnected source's slot immediately. The virtual gamepad stays present and neutral. Reservations can block a replacement controller while all slots remain occupied or reserved.
 
 Do not use CDP for controller delivery or rebuild Chromium. Work and tests run off-device. The handheld stays untouched until separate deployment approval.
 
@@ -35,16 +37,17 @@ The new transport avoids Chromium gamepad discovery for portal navigation. It do
 Do not implement ungrounded schema to make the plan look complete.
 
 1. Resolved on 2026-09-28: send the existing portal capability in the first WebSocket message. Check the exact portal origin before upgrade. Authenticate before sending metadata or events. Bound handshake time, message size, connection count, and queued data. Never log or persist the credential. Do not accept controller injection from the browser.
-2. Resolve shared-seat assignment from the existing seat-state rules. Current remote sources take the first free seat. A disconnect neutralizes the seat and reserves it for that controller number until the launch ends. Determine how that rule applies to physical sources with no launch boundary before implementing it.
-3. Resolve the producer, name, and allowed range of the seat-count configuration. The user chose default four, not a settings schema or maximum.
+2. Resolved on 2026-09-28 through ask `0807f30b-438a-4b38-91a5-2d7f01534916`: the user selected `reserve-through-session`. Preserve a disconnected controller's reservation during the session, including pause. Release disconnected reservations when the session ends or immediately when no session exists. Physical reconnect identity still needs real producer evidence.
+3. Configuration ownership is resolved: korrid manages the device's seat count. Changing it must not require a Nix deployment. Nix installs the service and permissions. Pool recreation can occur only with no active session. The Nix-option recommendation was withdrawn after the user questioned deploy-to-change configuration. The user agreed to korrid ownership. Persisted placement, field representation, and validation remain unresolved; the rejected Nix proposal did not approve its proposed range.
 
 Changes to source identity, reservation lifetime, overflow, or remote authority require an explicit decision when current or legacy contracts do not cover the case.
 
 The source audit found these specific gaps:
 
-- Legacy `product/platform/input-seat/policy.ts` defines `playerCount` for a launch companion, limited to zero through four. That is not a daemon pool configuration contract.
+- Legacy `product/platform/input-seat/policy.ts` defines `playerCount` for a launch companion, limited to zero through four. That is not a daemon pool configuration contract. Main's existing `config/settings.rs` edits the fixed `device.yaml` through conflict-safe writes. However, the `SettingsSnapshot` and `SettingsUpdate` handlers in `lib.rs` reject Linux host mode. Do not assume that adding a field alone produces a usable Linux setting.
 - Validated normalized controllers currently share name, input ID, and absent physical/unique IDs. `DeviceDescriptor::stable_identity` cannot distinguish several such controllers for reconnect reservation. Ground source identity in actual InputPlumber provenance before extending it.
-- Legacy exposes explicit seat leave. Main clears reservations on launch end. Neither defines when to release a disconnected physical controller's reservation in a launch-independent pool.
+- The pinned InputPlumber 0.75.2 source confirms a specific missing link. `src/dbus/interface/composite_device.rs` exposes `SourceDevicePaths` and `TargetDevices`, but target paths are DBus objects. `src/dbus/interface/target/mod.rs` exposes target Name and DeviceType, and the gamepad interface exposes Name. Neither provides its evdev node. `src/input/target/xpad.rs` provides no distinct phys/uniq identity. Do not associate several identical normalized pads with physical sources by enumeration order or volatile `eventN`. A native producer change needs a deliberate contract and permission review.
+- Legacy exposes explicit seat leave. Main clears reservations on launch end. The user extended session-scoped reservation to physical sources. No permanent reservation or timed eviction is required.
 - Neither branch has a browser capability WebSocket handshake. The legacy server upgrades without bearer or origin checks. Main's authenticated Nostr relay socket uses a different principal and protocol.
 - Legacy native input clearing does not enforce neutral-before-rearm. Its default stale timer expires at 250 ms, before its 400 ms repeat delay without refresh events. Preserve useful behavior, not these defects.
 
@@ -66,7 +69,9 @@ Test the real transport with correct and incorrect authority and origin. Test di
 
 ### 3. Unify persistent seats
 
-After the assignment and count decisions, make one pool own the virtual devices independently of physical connections or remote launches. Feed validated normalized physical input and authenticated remote input into that pool. Keep device identity stable for the pool's lifetime. Do not promise fixed kernel event-node numbers across restart.
+The internal `services/inputd/src/seat_pool.rs` engine now owns persistent devices and implements the approved reservation lifecycle. It accepts an explicit count and opaque source keys from a future coordinator. It does not decide persisted configuration, physical identity, remote authentication, or source mapping.
+
+Production integration must feed validated normalized physical input and authenticated remote input into that pool. Keep device identity stable for the pool's lifetime. Do not promise fixed kernel event-node numbers across restart.
 
 Use native systemd and Nix configuration at their existing ownership points. Do not copy service configuration into a plugin declaration. Remove separate local portal/game targets in the same runtime cut that installs the shared path.
 
@@ -123,5 +128,25 @@ Strict korrid Clippy found 11 existing warnings in unchanged code. The new trans
 Independent review found no blocker in this intentionally unwired slice. Both suggested improvements are applied. The wire test now compares serialized output against the original legacy fixture, including optional fields. The browser rejects oversized strings before allocating a UTF-8 copy, and valid oversized JSON tests cover both character and byte limits.
 
 The transport is not mounted in production. The remaining freshness problem includes bytes already accepted by TCP or buffered in a frozen browser. Server queue limits alone do not solve it. Initial held-state synchronization and the native semantic mapper also remain unimplemented.
+
+## Pool checkpoint
+
+The pool engine implements first-free allocation, shared caller-supplied key space, same-source reservation reclaim, no stealing, exact session end, and connected-assignment retention. Pause has no pool transition. Devices survive disconnects and session changes. The engine cannot resize itself. Its caller supplies the count, with four as the existing default.
+
+An off-device failure-injection test reproduced a uinput writer-cache fault in the production encoder. After a partially applied write failed, a neutral retry emitted zero events because the old cache still said neutral. The fix marks cached state unknown before emission. A retry then emits all 11 buttons and eight axes. Successful writes still use deltas and deduplicate repeated state.
+
+The real backend now accepts positive existing u8 slots beyond four and recognizes canonical seat names through that representation. This does not prove installed permissions. `plugins/sunshine/99-z-korri-sunshine-input.rules` still grants seat access only for P1–P4. Moving pool ownership out of Sunshine and extending permission coverage remain production-integration work. No permission rule changed here.
+
+| Latest inputd check | Result |
+| --- | --- |
+| Library tests, including actual encoder recovery | 40 passed. |
+| Existing remote seat runtime | 18 passed. |
+| Existing receiver process and local sockets | 6 passed. |
+| Runtime reconciliation | 23 passed. |
+| New pool engine | 18 passed, including an explicit six-seat pool with a recording backend. |
+| All-target Clippy with warnings denied | Passed. |
+| Formatting and whitespace | Passed. |
+
+These 105 tests ran off-device. Independent source review found no blocker in the intentionally unwired pool and writer changes. A stale test comment about the old four-slot backend restriction was corrected. Kernel-level six-seat creation and physical reconnect identity are not verified.
 
 No device operation ran. The work is not ready to land.
