@@ -10,6 +10,7 @@ const nativeHttp = {
   Headers,
   Request,
   Response,
+  WebSocket,
   AbortController,
   AbortSignal,
   DOMException,

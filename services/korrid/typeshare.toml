@@ -1,3 +1,11 @@
 # Typeshare cannot infer Serde's untagged scalar union. Rust owns its decoder.
 [typescript.type_mappings]
 LaunchSettingScalar = "boolean | number | string"
+# Exact legacy native-input literals and union, enforced by native_input.rs.
+NativeInputDeviceClassWire = '"gamepad" | "keyboard" | "mouse" | "touch" | "system" | "unknown"'
+NativeInputInputKindWire = '"input"'
+NativeInputDeviceAddedKindWire = '"device-added"'
+NativeInputDeviceRemovedKindWire = '"device-removed"'
+NativeInputActionKindWire = '"action"'
+NativeInputSystemActionWire = '"system"'
+NativeInputEventWire = "NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction"

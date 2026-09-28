@@ -1,4 +1,4 @@
-//! Browser authority for the existing `/rpc` contract on either runtime.
+//! Browser authority for `/rpc` and the local portal's native-input socket.
 
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 
@@ -97,16 +97,43 @@ impl PortalAccess {
         &self.allowed_origins
     }
 
+    /// Browser sockets require exactly one allowed Origin before upgrading.
+    /// RPC retains its separate allowance for native callers without Origin.
+    pub(crate) fn authorize_socket_origin(&self, headers: &HeaderMap) -> Result<(), StatusCode> {
+        let mut origins = headers.get_all(header::ORIGIN).iter();
+        if origins
+            .next()
+            .is_some_and(|origin| self.allowed_origins.contains(origin))
+            && origins.next().is_none()
+        {
+            Ok(())
+        } else {
+            Err(StatusCode::FORBIDDEN)
+        }
+    }
+
+    /// Same representation as Authorization, supplied in the first WS text frame.
+    /// Never include the submitted value in an error or diagnostic.
+    pub(crate) fn authorize_bearer(&self, bearer: &str) -> Result<(), StatusCode> {
+        if bearer.strip_prefix("Bearer ") == Some(self.capability.as_str()) {
+            Ok(())
+        } else {
+            Err(StatusCode::UNAUTHORIZED)
+        }
+    }
+
     pub(crate) fn authorize(
         &self,
         headers: &HeaderMap,
         request: &RpcRequest,
     ) -> Result<(), StatusCode> {
-        let expected = format!("Bearer {}", self.capability);
         let mut authorizations = headers.get_all(header::AUTHORIZATION).iter();
-        if authorizations.next().and_then(|value| value.to_str().ok()) != Some(expected.as_str())
-            || authorizations.next().is_some()
-        {
+        let bearer = authorizations
+            .next()
+            .and_then(|value| value.to_str().ok())
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+        self.authorize_bearer(bearer)?;
+        if authorizations.next().is_some() {
             return Err(StatusCode::UNAUTHORIZED);
         }
         // CORS alone hides a response; it does not prevent a request's effects.
@@ -143,6 +170,29 @@ mod tests {
 
     const TOKEN: &str = "portal-test-token";
     const ORIGIN: &str = "http://127.0.0.1:8099";
+
+    #[test]
+    fn rpc_native_origin_remains_optional_but_socket_origin_is_required() {
+        let access = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::ReadOnly);
+        let request = RpcRequest::Health(crate::HealthRequest {});
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {TOKEN}").parse().unwrap(),
+        );
+        assert_eq!(access.authorize(&headers, &request), Ok(()));
+        assert_eq!(
+            access.authorize_socket_origin(&headers),
+            Err(StatusCode::FORBIDDEN)
+        );
+        headers.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        assert_eq!(access.authorize_socket_origin(&headers), Ok(()));
+        headers.insert(header::ORIGIN, "https://foreign.example".parse().unwrap());
+        assert_eq!(
+            access.authorize(&headers, &request),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
 
     #[test]
     fn local_sessions_allow_only_local_prepare_and_exact_session_controls() {

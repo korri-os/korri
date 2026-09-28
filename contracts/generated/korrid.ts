@@ -4,6 +4,10 @@
 
 export type LaunchSettingValue = boolean | number | string;
 
+export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" | "system" | "unknown";
+
+export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
+
 export interface ActiveSession {
 	launchId: string;
 	host?: string;
@@ -286,6 +290,52 @@ export interface MoonlightCertificateRevokeRequest {
 
 export interface MoonlightCertificateRevoked {
 	removed: boolean;
+}
+
+export interface NativeInputAction {
+	kind: "action";
+	class: NativeInputDeviceClass;
+	action: "system";
+	timestamp: number;
+}
+
+export interface NativeInputAxisInfo {
+	code: number;
+	minimum: number;
+	maximum: number;
+	flat?: number;
+}
+
+export interface NativeInputDeviceInfo {
+	deviceId: string;
+	class: NativeInputDeviceClass;
+	name: string;
+	capabilities: string[];
+	axes?: NativeInputAxisInfo[];
+}
+
+export interface NativeInputDeviceAdded {
+	kind: "device-added";
+	device: NativeInputDeviceInfo;
+}
+
+export interface NativeInputDeviceRemoved {
+	kind: "device-removed";
+	deviceId: string;
+}
+
+export interface NativeInputInput {
+	kind: "input";
+	deviceId: string;
+	class: NativeInputDeviceClass;
+	type: number;
+	code: number;
+	value: number;
+	timestamp: number;
+}
+
+export interface NativeInputSubscription {
+	classes: NativeInputDeviceClass[];
 }
 
 export enum PeerListState {

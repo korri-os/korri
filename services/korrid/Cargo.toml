@@ -12,7 +12,7 @@ name = "korrid"
 path = "src/main.rs"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 crc32fast = "1"
 futures = "0.3"
@@ -22,6 +22,10 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 rand = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 libc = "0.2"
+# Tungstenite logs complete messages/close frames at trace/debug. A browser
+# capability must stay private even when an embedding host enables trace logs.
+# Cost: log-facade debug/trace diagnostics are unavailable across this build.
+log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }
 nostr = { version = "0.45.4", default-features = false, features = ["std", "os-rng", "nip44", "nip49", "nip59"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

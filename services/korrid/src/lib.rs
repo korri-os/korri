@@ -32,9 +32,11 @@ pub mod identity_cli;
 pub mod identity_switch;
 pub mod linux_viewer;
 pub mod local_signer;
+pub mod native_input;
 mod peer_rpc;
 pub mod play_log;
 pub mod portal_access;
+pub mod portal_input;
 pub mod relay;
 pub mod remote_signer;
 

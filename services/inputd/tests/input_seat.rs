@@ -125,6 +125,46 @@ fn four_sources_get_stable_seats_and_a_fifth_is_rejected() {
 }
 
 #[test]
+fn remote_lease_assigns_by_arrival_order_and_keeps_disconnected_reservations() {
+    let backend = RecordingSeatBackend::default();
+    let probe = backend.clone();
+    let mut runtime = SeatRuntime::start(LAUNCH, TOKEN, backend).unwrap();
+    for (controller, slot) in [(7, 1), (4, 2), (12, 3), (0, 4)] {
+        assert_eq!(
+            runtime.accept(&envelope(&connected(controller), TOKEN), 10),
+            MirrorOutcome::Accepted { slot }
+        );
+    }
+    assert_eq!(
+        runtime.accept(&envelope(&state(4, 0x1000, 1, 2), TOKEN), 11),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert_eq!(
+        runtime.accept(&envelope(&disconnected(4), TOKEN), 12),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert_eq!(probe.states(2).last(), Some(&GamepadState::neutral()));
+    assert_eq!(
+        runtime.accept(&envelope(&connected(9), TOKEN), 13),
+        MirrorOutcome::NoSeat
+    );
+    assert_eq!(
+        runtime.accept(&envelope(&connected(4), TOKEN), 14),
+        MirrorOutcome::Accepted { slot: 2 }
+    );
+    assert!(probe.destroyed_slots().is_empty());
+
+    runtime.unbind().unwrap();
+    runtime.bind(LAUNCH, TOKEN).unwrap();
+    assert_eq!(
+        runtime.accept(&envelope(&connected(9), TOKEN), 15),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(probe.created_slots(), vec![1, 2, 3, 4]);
+    assert!(probe.destroyed_slots().is_empty());
+}
+
+#[test]
 fn state_without_a_connected_frame_acquires_a_seat() {
     let backend = RecordingSeatBackend::default();
     let probe = backend.clone();
@@ -443,11 +483,19 @@ fn boot_keeps_devices_across_leases_and_revokes_old_mirror_authority() {
         MirrorOutcome::StaleLaunch
     );
     runtime.bind(LAUNCH, TOKEN).unwrap();
-    assert_eq!(
-        runtime.accept(&envelope(&connected(0), TOKEN), 2),
-        MirrorOutcome::Accepted { slot: 1 }
-    );
+    for controller in 0..4 {
+        assert_eq!(
+            runtime.accept(&envelope(&state(controller, 0x1000, 12, -34), TOKEN), 2),
+            MirrorOutcome::Accepted {
+                slot: controller + 1
+            }
+        );
+    }
     runtime.unbind().unwrap();
+    for slot in 1..=4 {
+        assert_eq!(probe.states(slot).len(), 2);
+        assert_eq!(probe.states(slot).last(), Some(&GamepadState::neutral()));
+    }
     assert!(probe.destroyed_slots().is_empty());
     assert_eq!(
         runtime.accept(&envelope(&connected(0), TOKEN), 3),
@@ -460,8 +508,20 @@ fn boot_keeps_devices_across_leases_and_revokes_old_mirror_authority() {
         runtime.accept(&envelope(&connected(0), TOKEN), 4),
         MirrorOutcome::Unauthorized
     );
+    for slot in 1..=4 {
+        assert_eq!(probe.states(slot).len(), 2);
+    }
+    // The next lease reuses the same devices and accepts fresh authority.
+    let next_state = state(7, 0x2000, 56, -78).replace(LAUNCH, other);
+    assert_eq!(
+        runtime.accept(&envelope(&next_state, other_token), 5),
+        MirrorOutcome::Accepted { slot: 1 }
+    );
+    assert_eq!(probe.states(1).last().unwrap().buttons, 0x2000);
     assert_eq!(probe.created_slots(), vec![1, 2, 3, 4]);
+    assert!(probe.destroyed_slots().is_empty());
     runtime.stop().unwrap();
+    assert_eq!(probe.states(1).last(), Some(&GamepadState::neutral()));
     assert_eq!(probe.destroyed_slots(), vec![4, 3, 2, 1]);
 }
 
