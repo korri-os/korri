@@ -2,7 +2,7 @@
 # Explicit installed bash/Python only. Never invoke nix-shell on the device.
 set -euo pipefail
 umask 077
-mode=${1:?stage, run, restore or verify}
+mode=${1:?stage, run, manual, restore, verify or manual-check}
 if [[ "$mode" == stage ]]; then
   [[ "$EUID" == 0 ]]
   [[ "$(tr -d '\0' </proc/device-tree/model)" == 'Retroid Pocket Mini V2' ]]
@@ -23,14 +23,14 @@ shift 3
 [[ "$EUID" == 0 && "$stage" =~ ^/run/korri-input-trial\.[A-Za-z0-9]{8}$ ]]
 [[ ! -L "$stage" && "$(stat -c '%u:%a' "$stage")" == 0:755 ]]
 [[ "$python" == /nix/store/*/bin/python3 && -x "$python" ]]
-[[ "$mode" == run || "$mode" == restore || "$mode" == verify ]]
+[[ "$mode" == run || "$mode" == manual || "$mode" == restore || "$mode" == verify || "$mode" == manual-check ]]
 # The outer shell owns the real plugin-host lock across BOTH the candidate and
 # rollback. A separate restore/verify invocation must acquire it too.
 [[ -f /var/lib/korri-plugin-host/lock && ! -L /var/lib/korri-plugin-host/lock ]]
 [[ "$(stat -c '%u' /var/lib/korri-plugin-host/lock)" == 0 ]]
 exec 9<>/var/lib/korri-plugin-host/lock
 flock -n 9
-if [[ "$mode" != run ]]; then
+if [[ "$mode" != run && "$mode" != manual ]]; then
   timeout --signal=TERM --kill-after=10s 180s "$python" "$stage/run.py" "$mode" "$stage" "$@" 9>&-
   exit $?
 fi
@@ -38,6 +38,13 @@ finish() {
   code=$?
   trap - EXIT
   trap '' HUP INT TERM
+  if [[ "$mode" == manual && "$code" == 0 ]]; then
+    if timeout --signal=TERM --kill-after=5s 45s "$python" "$stage/run.py" manual-check "$stage"; then
+      echo 'LEFT RUNNING FOR MANUAL TEST: rollback requires an explicit restore command'
+      exit 0
+    fi
+    code=92
+  fi
   if [[ -f "$stage/baseline/state.json" ]]; then
     if ! timeout --signal=TERM --kill-after=10s 180s "$python" "$stage/run.py" restore "$stage"; then
       echo 'STOP: rollback failed; baseline retained privately; do not start another trial' >&2
@@ -53,4 +60,7 @@ finish() {
 trap finish EXIT
 trap 'exit 130' HUP INT TERM
 # Coreutils timeout supervises the entire process group, not only Python.
+if [[ "$mode" == manual ]]; then
+  set -- "$@" --manual
+fi
 timeout --signal=TERM --kill-after=10s 180s "$python" "$stage/run.py" trial "$stage" "$@" 9>&-

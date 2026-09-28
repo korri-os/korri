@@ -634,6 +634,10 @@ def trial(stage, args):
     invocation = show(KIOSK, "InvocationID")
     require(re.fullmatch(r"[a-f0-9]{32}", invocation), "invalid kiosk invocation")
     write(stage / "control/ready", "READY: supply protected physical composite/target/event tuple; no games\n")
+    if args.manual:
+        write(stage / "control/manual-ready", "MANUAL READY: retain candidate until explicit restore\n")
+        verify_manual(stage)
+        return
     if args.check_rollback:
         os.kill(os.getpid(), signal.SIGTERM)
     end = time.monotonic() + 45
@@ -668,6 +672,29 @@ def trial(stage, args):
     write(stage / "evidence/observer.log", records + "\n")
     no_game()
     write(stage / "evidence/capture", "CAPTURE COMPLETE: physical native path only; host verdict required\n")
+
+
+def verify_manual(stage):
+    """Verify the actual running candidate, not only its readiness marker."""
+    assert_stage(stage)
+    verify_payload(stage)
+    state = json.loads((stage / "baseline/state.json").read_text())
+    require(state["mutated"] and not state["restored"], "manual candidate is not active")
+    require((stage / "control/manual-ready").read_text() ==
+            "MANUAL READY: retain candidate until explicit restore\n", "manual readiness missing")
+    expected = {unit: str(stage / "bin" / binary) for unit, binary in
+                ((PROVIDER, "inputplumber"), (CORE, "korri-input-seat-receiver"),
+                 (BRAIN, "korrid"), (INPUTD, "korri-inputd"), (KIOSK, "korri-portal-shell"))}
+    process_identities(expected)
+    require(show(INPUTD, "StatusText") == "Ready" and show(KIOSK, "FreezerState") == "running",
+            "manual input or kiosk is not ready")
+    for unit in (SUNSHINE, state["old_receiver"]):
+        require(show(unit, "ActiveState") == "inactive" and show(unit, "LoadState") == "masked",
+                "old producer is not isolated")
+    for path, expected_file in state["owned"].items():
+        require(fingerprint(path) == expected_file, "manual runtime override changed")
+    no_game()
+    print("MANUAL TEST READY: candidate is running; no replay or automatic rollback", flush=True)
 
 
 def view_text():
@@ -922,8 +949,10 @@ def main():
     trial_parser.add_argument("--kiosk-launcher", required=True)
     trial_parser.add_argument("--guard-path", action="append", required=True)
     trial_parser.add_argument("--provider-arg", action="append", default=[])
-    trial_parser.add_argument("--check-rollback", action="store_true")
-    for mode in ("restore", "verify"):
+    trial_mode = trial_parser.add_mutually_exclusive_group()
+    trial_mode.add_argument("--check-rollback", action="store_true")
+    trial_mode.add_argument("--manual", action="store_true")
+    for mode in ("restore", "verify", "manual-check"):
         sub.add_parser(mode).add_argument("stage", type=Path)
     host = sub.add_parser("verdict")
     host.add_argument("evidence", type=Path)
@@ -942,6 +971,8 @@ def main():
                 trial(args.stage, args)
             elif args.mode == "restore":
                 restore(args.stage)
+            elif args.mode == "manual-check":
+                verify_manual(args.stage)
             else:
                 verify(args.stage)
     except RuntimeError as error:

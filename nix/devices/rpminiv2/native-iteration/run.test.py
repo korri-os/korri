@@ -5,6 +5,8 @@ import importlib.util
 import json
 import subprocess
 import stat
+import shlex
+import sys
 from types import SimpleNamespace
 from pathlib import Path
 import tempfile
@@ -15,6 +17,38 @@ SPEC = importlib.util.spec_from_file_location("native_iteration", Path(__file__)
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 PARSER = Path(__file__).resolve().parents[4] / "clients/linux/diagnostics/native-verdict.py"
+
+
+class ManualHandoff(unittest.TestCase):
+    def finish_case(self, mode, startup_status, verification_status):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            (stage / "baseline").mkdir()
+            (stage / "baseline/state.json").write_text("{}")
+            (stage / "run.py").write_text(
+                "import pathlib, sys\n"
+                "root = pathlib.Path(__file__).parent\n"
+                "with (root/'calls').open('a') as log: log.write(sys.argv[1]+'\\n')\n"
+                f"sys.exit({verification_status} if sys.argv[1] == 'manual-check' else 0)\n")
+            source = Path(__file__).with_name("target.sh").read_text()
+            function = "finish() {" + source.split("finish() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
+            harness = stage / "finish.sh"
+            harness.write_text(
+                "#!/usr/bin/env nix-shell\n#! nix-shell -i bash -p bash coreutils\n"
+                f"mode={shlex.quote(mode)}\nstage={shlex.quote(str(stage))}\npython={shlex.quote(sys.executable)}\n"
+                + function + f"(exit {startup_status})\nfinish\n")
+            result = subprocess.run(["bash", str(harness)], capture_output=True, text=True)
+            return result.returncode, (stage / "calls").read_text().splitlines()
+
+    def test_successful_manual_handoff_never_calls_restore(self):
+        self.assertEqual(self.finish_case("manual", 0, 0), (0, ["manual-check"]))
+
+    def test_failed_manual_verification_restores_and_reports_failure(self):
+        self.assertEqual(self.finish_case("manual", 0, 1), (92, ["manual-check", "restore", "verify"]))
+
+    def test_failed_setup_and_automatic_trials_keep_rollback(self):
+        self.assertEqual(self.finish_case("manual", 1, 0), (1, ["restore", "verify"]))
+        self.assertEqual(self.finish_case("run", 0, 0), (0, ["restore", "verify"]))
 
 
 class Safety(unittest.TestCase):

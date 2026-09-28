@@ -146,6 +146,20 @@ For the first rollback exercise add `--check-rollback`. It sends the candidate
 Python process SIGTERM after readiness, before replay. A nonzero candidate exit is
 expected; require independent rollback verification. This is not a navigation pass.
 
+## Leave running for a manual test
+
+Use `target.sh manual STAGE PYTHON` with the same observed arguments as `run`.
+This mode performs no replay. It checks actual candidate readiness twice, then
+leaves services running without an automatic rollback timer. Setup or verification
+failure still triggers the original rollback path. Use `manual-check` for a fresh
+idle-readiness check, and `restore` explicitly after the user finishes and exits
+any game. Do not restore merely because the automated setup command has ended.
+
+Keep the private baseline and RAM payload until manual testing ends. Do not run
+plugin install or restore operations while the candidate owns the input stack.
+Signed Sunshine is stopped during this test, so remote streaming is unavailable.
+The candidate is temporary, not a permanent installation.
+
 ## Rollback and verdict
 
 EXIT, HUP, INT and TERM invoke rollback; the candidate has a 180-second deadline.
