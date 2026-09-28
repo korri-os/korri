@@ -5,6 +5,8 @@ import { type DeviceFacts, settingsFrom } from "./settings-model"
 const configuration: SettingsSnapshot = {
   revision: "r1",
   deviceName: "usu",
+  playerCount: 4,
+  editableSettingIds: ["device-name", "steamgriddb-credential", "@korri:mgba", "@korri:retroarch"],
   steamGridDbCredential: SecretSettingStatus.NotConfigured,
   plugins: [
     { id: "@korri:mgba", title: "mGBA", enabled: true },
@@ -80,6 +82,40 @@ describe("settingsFrom", () => {
         },
       },
     ])
+  })
+
+  it("keeps Linux count-only snapshots readable without offering unsupported editors", () => {
+    const settings: SettingsSnapshot = {
+      ...configuration,
+      editableSettingIds: ["host.preferences.playerCount"],
+      steamGridDbCredential: SecretSettingStatus.Configured,
+    }
+    const groups = settingsFrom({ settings })
+    const items = groups.flatMap(group => group.items)
+    expect(items.map(item => [item.id, item.value])).toEqual([
+      ["device-name", "usu"],
+      ["steamgriddb-credential", "Configured"],
+      ["@korri:mgba", "On"],
+      ["@korri:retroarch", "Off"],
+    ])
+    expect(items.every(item => item.interaction === undefined)).toBe(true)
+  })
+
+  it("enables only the exact listed setting IDs", () => {
+    const settings: SettingsSnapshot = {
+      ...configuration,
+      editableSettingIds: ["device-name", "@korri:mgba.extra"],
+    }
+    const items = settingsFrom({ settings }).flatMap(group => group.items)
+    expect(items.filter(item => item.interaction !== undefined).map(item => item.id)).toEqual(["device-name"])
+  })
+
+  it("keeps read-only snapshots readable and accepts an absent snapshot", () => {
+    const items = settingsFrom({ settings: { ...configuration, editableSettingIds: [] } })
+      .flatMap(group => group.items)
+    expect(items).toHaveLength(4)
+    expect(items.every(item => item.interaction === undefined)).toBe(true)
+    expect(settingsFrom({})).toEqual([])
   })
 
   it("composes game folder actions without exposing paths as contract fields", () => {

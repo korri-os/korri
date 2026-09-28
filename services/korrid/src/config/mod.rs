@@ -9,6 +9,7 @@ pub mod storage;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroU8;
 
 use serde::{
     de::{Error as DeError, MapAccess, Visitor},
@@ -16,6 +17,8 @@ use serde::{
 };
 use serde_json::Value;
 use thiserror::Error;
+
+pub const DEFAULT_PLAYER_COUNT: u8 = 4;
 
 pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "host",
@@ -58,6 +61,18 @@ pub struct ConfigSnapshot {
     pub games: BTreeMap<String, GamePayload>,
     pub releases: BTreeMap<String, ReleasePayload>,
     pub locations: BTreeMap<String, Vec<Location>>,
+}
+
+impl ConfigSnapshot {
+    /// Device-owned pool size; launch and catalog opinions never participate.
+    pub fn player_count(&self) -> u8 {
+        self.host
+            .as_ref()
+            .and_then(|host| host.preferences.as_ref())
+            .and_then(|preferences| preferences.player_count)
+            .map(NonZeroU8::get)
+            .unwrap_or(DEFAULT_PLAYER_COUNT)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -355,7 +370,7 @@ pub struct HostPayload {
     #[serde(default, deserialize_with = "optional_non_null")]
     pub moonlight: Option<BTreeMap<String, Value>>,
     #[serde(default, deserialize_with = "optional_non_null")]
-    pub preferences: Option<Preferences>,
+    pub preferences: Option<HostPreferences>,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub plugin: Option<ProviderValueMap>,
     #[serde(default, deserialize_with = "optional_non_null")]
@@ -388,7 +403,13 @@ impl HostPayload {
                 "host moonlight policy is not executable in this slice",
             );
         }
-        if self.preferences.is_some() {
+        // The count defaults to four when its leaf is absent, including an
+        // empty host preference map. Launch preferences remain unsupported.
+        if self
+            .preferences
+            .as_ref()
+            .is_some_and(|preferences| preferences.launch.is_some())
+        {
             push_issue(
                 issues,
                 &format!("{path}.preferences"),
@@ -675,6 +696,20 @@ pub struct LaunchPolicy {
 }
 
 pub type ProviderValueMap = BTreeMap<ProviderIdString, Value>;
+
+/// Unlike inheritable preferences, this record may set the device's pool size.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HostPreferences {
+    #[serde(default, deserialize_with = "optional_non_null")]
+    pub launch: Option<LaunchPreferences>,
+    #[serde(
+        default,
+        rename = "playerCount",
+        deserialize_with = "optional_non_null"
+    )]
+    pub player_count: Option<NonZeroU8>,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]

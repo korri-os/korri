@@ -11,6 +11,10 @@ export function Fact() {
   return <PicoRow detail="korrid 0.4.1" label="Software" />
 }
 
+export function FocusableFact() {
+  return <PicoRow detail="korrid 0.4.1" focusable label="Software" />
+}
+
 export function Disabled() {
   return <PicoRow detail="No save yet" disabled label="Load state" onPress={() => undefined} />
 }

@@ -77,6 +77,15 @@ test("fact row is not a disabled button", () => {
   expect(view.queryByRole("button")).toBeNull()
 })
 
+test("focusable fact exposes its label and value without an action", () => {
+  const view = render(<Row.FocusableFact />)
+  const fact = view.getByRole("group", { name: "Software korrid 0.4.1" })
+  expect(fact.tabIndex).toBe(0)
+  fact.focus()
+  expect(document.activeElement).toBe(fact)
+  expect(view.queryByRole("button")).toBeNull()
+})
+
 test("disabled and destructive rows remain distinct", () => {
   const view = render(<><Row.Disabled /><Row.Destructive /></>)
   const disabled = view.getByRole("button", { name: "Load state No save yet" }) as HTMLButtonElement

@@ -1,6 +1,6 @@
 # Unified controller input
 
-Status: transport checkpoint committed as `8c2114c2`. The user approved first-message authentication, session-scoped disconnected-seat reservations, and korrid-managed device configuration for the count. Production routing is unchanged. Physical source identity and the persisted count contract still need grounding.
+Status: transport checkpoint `8c2114c2` and pool checkpoint `e9aef9ac` are committed. The user approved first-message authentication, session-scoped reservations, and `host.preferences.playerCount` in `device.yaml`. Controller production routing is unchanged. Count storage, guarded Linux RPC, and truthful settings editability pass scoped checks and review. Physical source identity and native producer integration still need grounding.
 
 ## Approved behavior
 
@@ -38,7 +38,9 @@ Do not implement ungrounded schema to make the plan look complete.
 
 1. Resolved on 2026-09-28: send the existing portal capability in the first WebSocket message. Check the exact portal origin before upgrade. Authenticate before sending metadata or events. Bound handshake time, message size, connection count, and queued data. Never log or persist the credential. Do not accept controller injection from the browser.
 2. Resolved on 2026-09-28 through ask `0807f30b-438a-4b38-91a5-2d7f01534916`: the user selected `reserve-through-session`. Preserve a disconnected controller's reservation during the session, including pause. Release disconnected reservations when the session ends or immediately when no session exists. Physical reconnect identity still needs real producer evidence.
-3. Configuration ownership is resolved: korrid manages the device's seat count. Changing it must not require a Nix deployment. Nix installs the service and permissions. Pool recreation can occur only with no active session. The Nix-option recommendation was withdrawn after the user questioned deploy-to-change configuration. The user agreed to korrid ownership. Persisted placement, field representation, and validation remain unresolved; the rejected Nix proposal did not approve its proposed range.
+3. Configuration ownership is resolved: korrid manages the device's seat count. Changing it must not require a Nix deployment. Nix installs the service and permissions. Pool recreation can occur only with no active session. The Nix-option recommendation was withdrawn after the user questioned deploy-to-change configuration. The user agreed to korrid ownership. Resolved through ask `bfbcdb38-687c-44f3-af1a-1aef03c42fb7`: the user approved `host.preferences.playerCount` in the existing `device.yaml`. It is device-only, not inherited or overridden by games. Default four; valid integer values are 1–255. This is a representation limit, not a hardware-support claim. Use the existing conflict-safe writer, not another file. Refuse count changes during active sessions, including pause.
+
+4. The user approved `SettingsSnapshot.editableSettingIds` after ask `8ead77c6-5dfa-45e4-bc08-573e68b91449`. It is a mandatory list of existing setting IDs with supported, authorized write handlers. It grants no authority. Runtime preconditions remain checked on write. Keep uneditable values visible and omit their existing `interaction` declarations. No persistent setting or new surface-treaty field is needed.
 
 Changes to source identity, reservation lifetime, overflow, or remote authority require an explicit decision when current or legacy contracts do not cover the case.
 
@@ -149,4 +151,26 @@ The real backend now accepts positive existing u8 slots beyond four and recogniz
 
 These 105 tests ran off-device. Independent source review found no blocker in the intentionally unwired pool and writer changes. A stale test comment about the old four-slot backend restriction was corrected. Kernel-level six-seat creation and physical reconnect identity are not verified.
 
-No device operation ran. The work is not ready to land.
+## Count storage and RPC checkpoint
+
+`host.preferences.playerCount` now decodes as a device-only integer from 1 through 255. The resolved default is four. The existing fixed-file writer changes that leaf under its revision checks and preserves unrelated configuration values and catalog bytes. Host-specific preferences keep the count out of games, profiles, runners, families, and releases. No Nix setting or extra configuration file was added.
+
+The existing Settings RPC uses the approved field path as its setting ID. Linux Host mode reads settings and accepts only count writes. LocalSessions authorization permits only that exact new setting ID; unrelated settings remain blocked. ReadOnly cannot write. Peer, plain LAN, private-control, and Brain paths cannot bypass the new local idle gate.
+
+The idle gate holds the same transition mutex as prepare, freeze, and stop across the complete configuration write. It also requires empty live-unit enumeration and no active journal record. It rejects active, paused, stopping, focus-failed, or uncertain states without changing game/freezer state. This stores the count; it does not yet apply it to the live pool.
+
+A regression test found that an empty host preference map returned the default count but remained classified as unsupported. The fix makes an absent count usable even after a manual leaf deletion. Unimplemented launch preferences remain rejected. The test failed before the fix and passed afterward.
+
+The parent integrated check passed 168 affected Rust tests and all 291 portal tests, plus TypeScript checking, formatting, treaty regeneration, and whitespace checks. The 19 new browser tests use the existing HTTP request shape and in-memory implementation. The real-file/RPC tests cover bounds, CAS conflicts, preservation, failed writes, active-session refusal, authority, and prepare/write serialization. The full korrid gate and release build remain unrun.
+
+**Resolved review blocker:** `SettingsSnapshot.editableSettingIds` now intersects supported write handlers with the actual caller's authorization. Host Full/LocalSessions advertises only the count. Host ReadOnly advertises none. Brain Full advertises name and credential writes, but not count or installed-plugin toggles. Both successful reads and writes carry the metadata. Forging it cannot grant permission. The host adapter omits unsupported interactions while preserving values. Count presentation is not part of this fix.
+
+This is a binding change, not new view structure. Keep existing rows and container behavior. The [Klaviyo settings reference](https://mobbin.com/screens/faa8603d-1547-4ae3-b076-e6074917288c) shows email and role as plain information alongside explicit name inputs. Retain that distinction through Korri's existing read-only row variant. Do not copy the reference's navigation or introduce disabled-looking inputs for unsupported operations.
+
+The integrated editability check passed 172 affected Rust tests, all 301 portal tests, and all 572 Pico tests. TypeScript checking, Rust formatting, treaty regeneration, Pico authoring/coverage gates, and whitespace checks passed. Independent review found no remaining blocker in this checkpoint. Strict korrid Clippy still has the previously recorded unrelated warnings.
+
+The preview client now accepts a real settings snapshot as fixture data. Its private authorization set cannot be expanded by editing the seed or returned metadata. Settings responses are cloned, and real HTTP permission refusals produce PermissionDenied rather than BrainUnreachable.
+
+A controller-accessibility test also failed before the Pico fix: read-only settings had tabIndex -1. Pico now opts only fact settings into native group focus, with unique label/value references and no action handler. Shift already uses this pattern. The actual Shift integration and Pico tests prove readonly values remain focusable without opening editors or invoking writers. No CSS or layout algorithm changed. Live browser geometry and Caliper HMR were not exercised.
+
+No device operation ran. Controller capture, native delivery, pool application, and deployment remain incomplete. The work is not ready to land.

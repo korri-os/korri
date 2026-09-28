@@ -152,6 +152,10 @@ const routeUnavailable = (error: unknown) => error instanceof KorridHttpError &&
   ? { _tag: "Err" as const, payload: { code: "PermissionDenied", message: "This portal does not have permission for this action. Runtime reads remain available." } }
   : unreachable(error)
 
+const settingWriteUnavailable = (error: unknown) => error instanceof KorridHttpError && error.status === 403
+  ? { _tag: "Err" as const, payload: { code: "PermissionDenied", message: "This portal cannot change this setting." } }
+  : unreachable(error)
+
 const statusUnavailable = (error: unknown): SessionStatusOutcome =>
   error instanceof DOMException && error.name === "TimeoutError"
     ? {
@@ -268,7 +272,7 @@ export function createHttpKorridClient(
         })
         return response.outcome
       } catch (error) {
-        return unreachable(error)
+        return settingWriteUnavailable(error)
       }
     },
     async setSteamGridDbCredential(token) {
@@ -279,7 +283,7 @@ export function createHttpKorridClient(
         })
         return response.outcome
       } catch (error) {
-        return unreachable(error)
+        return settingWriteUnavailable(error)
       }
     },
     async clearSteamGridDbCredential() {
@@ -290,7 +294,7 @@ export function createHttpKorridClient(
         })
         return response.outcome
       } catch (error) {
-        return unreachable(error)
+        return settingWriteUnavailable(error)
       }
     },
     async identityStatus() {
@@ -571,6 +575,8 @@ export interface InMemoryKorridClientConfig {
   readonly routeDelayMs?: number
   readonly routeMutationDelayMs?: number
   readonly routePermission?: "Full" | "LocalSessions" | "ReadOnly"
+  /** Seed the same setting facts and editability metadata returned by the server. */
+  readonly settings?: SettingsSnapshot
   readonly localGames?: readonly LocalGame[]
   readonly localFailures?: readonly { readonly code: string; readonly message: string }[]
   readonly discovery?: DiscoverySnapshot
@@ -705,14 +711,26 @@ export function createInMemoryKorridClient(
       payload: { launchId: expectedLaunchId, state, changed },
     }
   }
+  const seedSettings = config.settings
+  const plugins: SettingsSnapshot["plugins"] = structuredClone(seedSettings?.plugins ?? [
+    { id: "@korri:mgba", title: "mGBA", enabled: true },
+    { id: "@korri:retroarch", title: "RetroArch", enabled: true },
+  ])
+  const supportedSettingIds = new Set([
+    "device-name", "steamgriddb-credential", "host.preferences.playerCount",
+    ...plugins.map(plugin => plugin.id),
+  ])
+  const editableSettingIds = new Set(
+    (seedSettings?.editableSettingIds ?? [...supportedSettingIds]).filter(id => supportedSettingIds.has(id)),
+  )
+  const deniedSetting = () => routeFailure("PermissionDenied", "This caller cannot change this setting.")
   let settings: SettingsSnapshot = {
-    revision: "in-memory-0",
-    deviceName: "Browser",
-    steamGridDbCredential: SecretSettingStatus.NotConfigured,
-    plugins: [
-      { id: "@korri:mgba", title: "mGBA", enabled: true },
-      { id: "@korri:retroarch", title: "RetroArch", enabled: true },
-    ],
+    revision: seedSettings?.revision ?? "in-memory-0",
+    deviceName: seedSettings === undefined ? "Browser" : seedSettings.deviceName,
+    playerCount: seedSettings?.playerCount ?? 4,
+    editableSettingIds: [...editableSettingIds],
+    steamGridDbCredential: seedSettings?.steamGridDbCredential ?? SecretSettingStatus.NotConfigured,
+    plugins,
   }
   let settingsRevision = 0
   let discovery: DiscoverySnapshot = config.discovery ?? {
@@ -750,9 +768,27 @@ export function createInMemoryKorridClient(
       return { _tag: "Ok", payload: { version: "korrid-in-memory" } }
     },
     async settingsSnapshot() {
-      return { _tag: "Ok", payload: settings }
+      return { _tag: "Ok", payload: structuredClone(settings) }
     },
     async updateSetting(expectedRevision, settingId, value) {
+      if (!editableSettingIds.has(settingId)) return deniedSetting()
+      if (settingId === "steamgriddb-credential") {
+        return routeFailure("OperationUnsupported", "Credential changes use their dedicated operation.")
+      }
+      let playerCount: number | undefined
+      if (settingId === "host.preferences.playerCount") {
+        const parsed = Number(value)
+        if (!/^\+?[0-9]+$/.test(value) || !Number.isInteger(parsed) || parsed < 1 || parsed > 255) {
+          return routeFailure("SettingsInvalid", "playerCount must be an integer from 1 to 255")
+        }
+        if (behavior === "status-fail") {
+          return routeFailure("HostRecoveryBlocked", "Session inactivity cannot be verified")
+        }
+        if (activeSession !== undefined) {
+          return routeFailure("ActiveSessionConflict", "Stop the active session before changing playerCount")
+        }
+        playerCount = parsed
+      }
       if (expectedRevision !== settings.revision) {
         return {
           _tag: "Err",
@@ -764,15 +800,17 @@ export function createInMemoryKorridClient(
         ...settings,
         revision: `in-memory-${settingsRevision}`,
         ...(settingId === "device-name" ? { deviceName: value.trim() } : {}),
+        ...(playerCount === undefined ? {} : { playerCount }),
         plugins: settings.plugins.map(plugin =>
           plugin.id === settingId
             ? { ...plugin, enabled: value === "true" }
             : plugin,
         ),
       }
-      return { _tag: "Ok", payload: settings }
+      return { _tag: "Ok", payload: structuredClone(settings) }
     },
     async setSteamGridDbCredential(token) {
+      if (!editableSettingIds.has("steamgriddb-credential")) return deniedSetting()
       if (token.trim().length === 0) {
         return {
           _tag: "Err",
@@ -792,6 +830,7 @@ export function createInMemoryKorridClient(
       }
     },
     async clearSteamGridDbCredential() {
+      if (!editableSettingIds.has("steamgriddb-credential")) return deniedSetting()
       settings = {
         ...settings,
         steamGridDbCredential: SecretSettingStatus.NotConfigured,

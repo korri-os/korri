@@ -120,6 +120,8 @@ function okSettings(): SettingsSnapshotOutcome {
     payload: {
       revision: "settings-0",
       deviceName: "Browser",
+      playerCount: 4,
+      editableSettingIds: ["device-name", "steamgriddb-credential", "@korri:mgba", "@korri:retroarch"],
       plugins: [
         { id: "@korri:mgba", title: "mGBA", enabled: true },
         { id: "@korri:retroarch", title: "RetroArch", enabled: true },
@@ -365,4 +367,55 @@ async function openWarioDetail() {
 }
 
 describe("SurfaceRoot", () => {
+  test("renders a count-only settings snapshot as focusable facts without opening editors", async () => {
+    const seeded = okSettings()
+    if (seeded._tag !== "Ok") throw new Error("Missing settings fixture")
+    const base = createInMemoryKorridClient({
+      games: [],
+      settings: {
+        ...seeded.payload,
+        editableSettingIds: ["host.preferences.playerCount"],
+        steamGridDbCredential: SecretSettingStatus.Configured,
+      },
+    })
+    const mutations: string[] = []
+    const korrid: KorridClient = {
+      ...base,
+      async updateSetting(...args) {
+        mutations.push("setting")
+        return base.updateSetting(...args)
+      },
+      async setSteamGridDbCredential(value) {
+        mutations.push("credential-set")
+        return base.setSteamGridDbCredential(value)
+      },
+      async clearSteamGridDbCredential() {
+        mutations.push("credential-clear")
+        return base.clearSteamGridDbCredential()
+      },
+    }
+    const view = await renderSurfaceRoot(
+      { localGames: [], remoteGames: [] },
+      { localLaunches: [], prepared: [], streams: [] },
+      { korrid },
+    )
+    await waitFor(() => expect(buttonNamed("Settings", view.container)).toBeDefined(), "settings navigation")
+    await click(buttonNamed("Settings", view.container))
+    for (const label of ["Name: Browser", "SteamGridDB API key: Configured", "mGBA: On", "RetroArch: On"]) {
+      const row = view.container.querySelector<HTMLElement>(`[aria-label="${label}"]`)
+      if (row === null) throw new Error(`Missing read-only setting ${label}`)
+      expect(row.tagName).toBe("DIV")
+      expect(row.getAttribute("role")).toBe("group")
+      expect(row.tabIndex).toBe(0)
+      await act(async () => {
+        row.focus()
+        row.click()
+        view.bus.emit({ type: "confirm" })
+        await sleep()
+      })
+      expect(document.activeElement).toBe(row)
+      expect(view.container.querySelector('[role="dialog"][aria-label^="Change "]')).toBeNull()
+    }
+    expect(mutations).toEqual([])
+  })
 })

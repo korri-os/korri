@@ -702,6 +702,44 @@ impl HostSessionControl {
         }
     }
 
+    /// Serialize device-only settings with prepare, freeze, and stop. Prove
+    /// absence from both the live units and the durable journal, not a cached
+    /// status read. This check never stops, thaws, or recovers a game merely to
+    /// permit a configuration write. Unresolved recovery must finish elsewhere.
+    pub(crate) fn with_idle_session<T>(
+        &self,
+        mutation: impl FnOnce() -> Result<T, RpcFailure>,
+    ) -> Result<T, RpcFailure> {
+        let mut state = self.lock_state();
+        // Even a rejected settings request must not change portal/game state.
+        state.reconcile = false;
+        match &*state {
+            ActiveState::Running { .. }
+            | ActiveState::Frozen { .. }
+            | ActiveState::FocusFailed { .. }
+            | ActiveState::Stopping { .. } => {
+                return Err(failure(
+                    "ActiveSessionConflict",
+                    "player count cannot change while a host session is active",
+                ));
+            }
+            ActiveState::RecoveryBlocked => return Err(recovery_blocked_failure()),
+            ActiveState::RecoveryPending
+            | ActiveState::Completed { .. }
+            | ActiveState::NoActive => {}
+        }
+        let live = self
+            .backend
+            .live_launch_ids()
+            .map_err(|_| recovery_blocked_failure())?;
+        let recorded = read_active(&self.identity_root).map_err(|_| recovery_blocked_failure())?;
+        if !live.is_empty() || recorded.is_some() {
+            return Err(recovery_blocked_failure());
+        }
+        // Keep the transition guard alive across the complete CAS write.
+        mutation()
+    }
+
     pub fn prepare(
         &self,
         game_id: &str,
@@ -1632,6 +1670,126 @@ mod tests {
     };
 
     use std::collections::BTreeSet;
+
+    #[test]
+    fn idle_mutation_rejects_live_units_stopping_and_uncertain_recovery() {
+        let root = tempfile::tempdir().unwrap();
+        let backend = Arc::new(DeterministicBackend::default());
+        let control = HostSessionControl::new(root.path(), backend.clone());
+        assert_eq!(control.status(), HostSessionStatus::NoActive);
+        let mutation = || panic!("a refused idle mutation must never execute");
+
+        // A cached idle status cannot conceal an untracked unit.
+        let launch = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        backend.insert(launch, LaunchUnitState::Running);
+        assert_eq!(
+            control.with_idle_session::<()>(mutation).unwrap_err().code,
+            "HostRecoveryBlocked"
+        );
+        backend.insert(launch, LaunchUnitState::Completed);
+        backend.state.lock().unwrap().enumeration_unavailable = true;
+        assert_eq!(
+            control.with_idle_session::<()>(mutation).unwrap_err().code,
+            "HostRecoveryBlocked"
+        );
+        backend.state.lock().unwrap().enumeration_unavailable = false;
+        let prepared = control
+            .prepare("game", None, Ok(&["game".into()]), &BTreeMap::new())
+            .unwrap();
+        backend.insert(&prepared.launch_id, LaunchUnitState::Stopping);
+        assert!(matches!(
+            control.status(),
+            HostSessionStatus::Stopping { .. }
+        ));
+        assert_eq!(
+            control.with_idle_session::<()>(mutation).unwrap_err().code,
+            "ActiveSessionConflict"
+        );
+        assert!(backend.state.lock().unwrap().stopped.is_empty());
+        assert!(backend.state.lock().unwrap().thawed.is_empty());
+    }
+
+    #[test]
+    fn idle_cas_mutation_and_prepare_hold_the_same_transition_mutex() {
+        use crate::config::settings::{self, SettingChange};
+        use std::sync::mpsc;
+        let root = tempfile::tempdir().unwrap();
+        crate::config::test_fixtures::gba(root.path());
+        let source = crate::plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin_test_fixtures::installed(root.path()),
+        ));
+        let revision = settings::read_with_registry_source(root.path(), &source)
+            .unwrap()
+            .revision;
+        let private = root.path().join("private");
+        fs::create_dir(&private).unwrap();
+        let backend = Arc::new(super::super::systemd_unit::InMemoryLaunchUnitBackend::default());
+        let control = HostSessionControl::new(&private, backend.clone());
+        let (entered, inside) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let (preparing, started) = mpsc::channel();
+        let (prepared, completed) = mpsc::channel();
+        thread::scope(|threads| {
+            let mutation_control = &control;
+            let root = root.path();
+            let private = &private;
+            let source = &source;
+            threads.spawn(move || {
+                mutation_control
+                    .with_idle_session(|| {
+                        assert!(matches!(
+                            mutation_control.state.try_lock(),
+                            Err(std::sync::TryLockError::WouldBlock)
+                        ));
+                        entered.send(()).unwrap();
+                        released.recv_timeout(Duration::from_secs(10)).unwrap();
+                        settings::update_with_registry_source(
+                            root,
+                            private,
+                            &Mutex::new(()),
+                            &revision,
+                            SettingChange::PlayerCount(std::num::NonZeroU8::new(6).unwrap()),
+                            source,
+                        )
+                        .map_err(crate::settings_failure)
+                    })
+                    .unwrap();
+            });
+            inside.recv_timeout(Duration::from_secs(10)).unwrap();
+            let prepare_control = &control;
+            threads.spawn(move || {
+                preparing.send(()).unwrap();
+                let result =
+                    prepare_control.prepare("game", None, Ok(&["game".into()]), &BTreeMap::new());
+                prepared.send(result).unwrap();
+            });
+            started.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert!(completed.recv_timeout(Duration::from_millis(100)).is_err());
+            assert!(backend.live_launch_ids().unwrap().is_empty());
+            release.send(()).unwrap();
+            let result = completed.recv_timeout(Duration::from_secs(10)).unwrap();
+            assert!(result.is_ok(), "{result:?}");
+        });
+        assert_eq!(
+            settings::read_with_registry_source(root.path(), &source)
+                .unwrap()
+                .player_count,
+            6
+        );
+        assert_eq!(backend.live_launch_ids().unwrap().len(), 1);
+        let bytes = fs::read(root.path().join("device.yaml")).unwrap();
+        assert_eq!(
+            control
+                .with_idle_session(|| {
+                    fs::write(root.path().join("device.yaml"), b"must not execute").unwrap();
+                    Ok(())
+                })
+                .unwrap_err()
+                .code,
+            "ActiveSessionConflict"
+        );
+        assert_eq!(fs::read(root.path().join("device.yaml")).unwrap(), bytes);
+    }
 
     #[derive(Default)]
     struct BackendState {

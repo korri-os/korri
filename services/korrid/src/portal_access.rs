@@ -54,6 +54,9 @@ impl PortalPermission {
                 initial_read
                     || match request {
                         RpcRequest::SessionPrepare(request) => request.host.is_none(),
+                        RpcRequest::SettingsUpdate(request) => {
+                            request.setting_id == crate::config::settings::PLAYER_COUNT_SETTING_ID
+                        }
                         // The existing stop contract has no peer selector. The host
                         // executor enforces expectedLaunchId before changing a session.
                         RpcRequest::SessionStop(_)
@@ -95,6 +98,12 @@ impl PortalAccess {
 
     pub(crate) fn allowed_origins(&self) -> &[HeaderValue] {
         &self.allowed_origins
+    }
+
+    /// Permission check for an already authenticated local browser caller.
+    /// This is not a substitute for bearer and origin validation.
+    pub(crate) fn permits(&self, request: &RpcRequest) -> bool {
+        self.permission.permits(request)
     }
 
     /// Browser sockets require exactly one allowed Origin before upgrading.
@@ -144,7 +153,7 @@ impl PortalAccess {
                 return Err(StatusCode::FORBIDDEN);
             }
         }
-        if !self.permission.permits(request) {
+        if !self.permits(request) {
             return Err(StatusCode::FORBIDDEN);
         }
         Ok(())

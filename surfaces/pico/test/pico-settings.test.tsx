@@ -62,6 +62,25 @@ describe("reading a group", () => {
     expect(screen.getByText("korrid 0.4.1")).toBeTruthy()
   })
 
+  test("read-only facts keep native focus without pretending to be editable", () => {
+    const { host } = open({
+      settings: [{
+        title: "Device",
+        items: [{ id: "device-name", label: "Name", value: "handheld" }],
+      }],
+    })
+    const row = screen.getByText("Name").closest<HTMLElement>(".pico-row")
+    if (row === null) throw new Error("Missing fact row")
+    expect(row.tagName).toBe("DIV")
+    expect(row.tabIndex).toBe(0)
+    expect(screen.getByRole("group", { name: "Name handheld" })).toBe(row)
+    act(() => row.focus())
+    expect(document.activeElement).toBe(row)
+    fireEvent.click(row)
+    expect(host.calls).toEqual([])
+    expect(screen.queryByText("NO KEYBOARD YET")).toBeNull()
+  })
+
   test("moving to another category shows its items", () => {
     open()
     fireEvent.click(screen.getByRole("tab", { name: "PERMISSIONS" }))

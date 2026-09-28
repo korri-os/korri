@@ -221,6 +221,122 @@ fn locations_keep_legacy_fields_but_reject_kind_and_unknown_fields() {
 }
 
 #[test]
+fn player_count_defaults_only_from_device_configuration() {
+    assert_eq!(korrid::config::ConfigSnapshot::default().player_count(), 4);
+    for device in [
+        "{}",
+        "host: {}",
+        "host: {title: handheld}",
+        "host: {preferences: {}}",
+    ] {
+        let snapshot = decode_config_documents(device, "{}", "{}").unwrap();
+        assert_eq!(snapshot.player_count(), 4, "{device}");
+        classify_snapshot_support(&snapshot).unwrap();
+    }
+    for count in [1, 6, 255] {
+        let device = format!("host: {{preferences: {{playerCount: {count}}}}}");
+        let snapshot = decode_config_documents(&device, &gba_games(), &gba_releases()).unwrap();
+        assert_eq!(snapshot.player_count(), count);
+        classify_snapshot_support(&snapshot).unwrap();
+    }
+}
+
+#[test]
+fn player_count_rejects_non_positive_out_of_range_and_non_integer_values() {
+    for value in [
+        "0", "-1", "256", "1.5", "6.0", "null", "'6'", "true", "false", "[]", "{}",
+    ] {
+        let device = format!("host: {{preferences: {{playerCount: {value}}}}}");
+        assert!(
+            decode_config_documents(&device, "{}", "{}").is_err(),
+            "{value}"
+        );
+    }
+    for device in [
+        "host: {preferences: null}",
+        "host: {preferences: {playerCount: 6, typo: true}}",
+        "host: {preferences: {player_count: 6}}",
+        "host: {playerCount: 6}",
+    ] {
+        assert!(
+            decode_config_documents(device, "{}", "{}").is_err(),
+            "{device}"
+        );
+    }
+}
+
+#[test]
+fn player_count_is_not_an_inheritable_or_catalog_preference() {
+    for device in [
+        "profiles: {local: {preferences: {playerCount: 6}}}",
+        "systems: {gba: {preferences: {playerCount: 6}}}",
+        "families: {'@korri:retroarch': {preferences: {playerCount: 6}}}",
+        "runners: {'@korri:mgba/mgba': {preferences: {playerCount: 6}}}",
+    ] {
+        assert!(
+            decode_config_documents(device, "{}", "{}").is_err(),
+            "{device}"
+        );
+    }
+    let games = format!("{}    preferences: {{playerCount: 6}}\n", gba_games());
+    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
+    let releases = format!("{}    preferences: {{playerCount: 6}}\n", gba_releases());
+    assert!(decode_config_documents("{}", &gba_games(), &releases).is_err());
+    assert!(serde_yaml::from_str::<korrid::config::Preferences>("playerCount: 6").is_err());
+    assert!(serde_yaml::from_str::<korrid::config::InheritableLayer>(
+        "preferences: {playerCount: 6}"
+    )
+    .is_err());
+    for (games, releases) in [
+        ("host: {preferences: {playerCount: 6}}", "{}"),
+        ("{}", "host: {preferences: {playerCount: 6}}"),
+    ] {
+        assert!(decode_config_documents("{}", games, releases).is_err());
+    }
+}
+
+#[test]
+fn player_count_does_not_enable_unsupported_launch_preferences() {
+    for launch in [
+        "{}",
+        "{video: {fullscreen: true, resolution: {width: 640, height: 480}, aspect-ratio: '4:3'}}",
+        "{audio: {volume: 75}}",
+    ] {
+        for count in ["", "playerCount: 6, "] {
+            let device = format!("host: {{preferences: {{{count}launch: {launch}}}}}");
+            let snapshot = decode_config_documents(&device, "{}", "{}").unwrap();
+            assert!(classify_snapshot_support(&snapshot)
+                .unwrap_err()
+                .to_string()
+                .contains("host.preferences"));
+        }
+    }
+    for launch in [
+        "null",
+        "{typo: true}",
+        "{audio: {volume: 101}}",
+        "{video: {fullscreen: null}}",
+    ] {
+        let device = format!("host: {{preferences: {{playerCount: 6, launch: {launch}}}}}");
+        assert!(
+            decode_config_documents(&device, "{}", "{}").is_err(),
+            "{launch}"
+        );
+    }
+    let releases = format!(
+        "{}    preferences: {{launch: {{audio: {{volume: 75}}}}}}\n",
+        gba_releases()
+    );
+    let snapshot = decode_config_documents(
+        "host: {preferences: {playerCount: 6}}",
+        &gba_games(),
+        &releases,
+    )
+    .unwrap();
+    assert!(classify_snapshot_support(&snapshot).is_err());
+}
+
+#[test]
 fn unsupported_populated_behavior_is_reported_explicitly() {
     let snapshot = decode_config_documents(
         "host:\n  moonlight:\n    platform:\n      name: v4l2m2m",

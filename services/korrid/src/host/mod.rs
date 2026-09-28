@@ -534,6 +534,66 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    fn settings_registry_source(&self) -> plugin_policy::RegistrySource {
+        #[cfg(test)]
+        if let Some(DynamicHostSource::Selected(_, registry)) = &self.dynamic {
+            return plugin_policy::RegistrySource::Selected(Arc::clone(registry));
+        }
+        plugin_policy::RegistrySource::Installed
+    }
+
+    pub async fn settings_snapshot(&self) -> Result<crate::SettingsSnapshot, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let readable = crate::config::settings::read_with_registry_source(
+                runtime.route_root()?,
+                &runtime.settings_registry_source(),
+            )
+            .map_err(crate::settings_failure)?;
+            let sensitive = crate::config::settings::read_sensitive(&runtime.private_state_root)
+                .map_err(crate::settings_failure)?;
+            Ok(crate::settings_snapshot(readable, sensitive))
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    /// Store the approved device count only. Applying it to the persistent
+    /// controller pool belongs to the future coordinator, not this RPC.
+    pub async fn update_player_count(
+        &self,
+        request: crate::SettingsUpdateRequest,
+    ) -> Result<crate::SettingsSnapshot, RpcFailure> {
+        if request.setting_id != crate::config::settings::PLAYER_COUNT_SETTING_ID {
+            return Err(RpcFailure {
+                code: "OperationUnsupported".into(),
+                message: "host settings writes support only host.preferences.playerCount".into(),
+            });
+        }
+        let change = crate::config::settings::parse_change(&request.setting_id, request.value)
+            .map_err(crate::settings_failure)?;
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            runtime.control()?.with_idle_session(|| {
+                let readable = crate::config::settings::update_with_registry_source(
+                    runtime.route_root()?,
+                    &runtime.private_state_root,
+                    &runtime.route_write_lock,
+                    &request.expected_revision,
+                    change,
+                    &runtime.settings_registry_source(),
+                )
+                .map_err(crate::settings_failure)?;
+                let sensitive =
+                    crate::config::settings::read_sensitive(&runtime.private_state_root)
+                        .map_err(crate::settings_failure)?;
+                Ok(crate::settings_snapshot(readable, sensitive))
+            })
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
     pub async fn set_game_runner(
         &self,
         request: crate::game_routes::GameRunnerSetRequest,

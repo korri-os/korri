@@ -592,6 +592,12 @@ export interface SessionThawRequest {
 export interface SettingsSnapshot {
 	revision: string;
 	deviceName?: string;
+	playerCount: number;
+	/**
+	 * Supported write handlers authorized for this caller. Advisory only:
+	 * every write still checks authority and runtime preconditions.
+	 */
+	editableSettingIds: string[];
 	plugins: PluginSetting[];
 	steamGridDbCredential: SecretSettingStatus;
 }
@@ -603,7 +609,8 @@ export interface SettingsUpdateRequest {
 	expectedRevision: string;
 	settingId: string;
 	/** Text transport keeps the surface treaty generic. Plugin values are
-     * exactly "true" or "false"; device-name values are the name itself. */
+     * exactly "true" or "false"; device-name values are the name itself;
+     * host.preferences.playerCount is an integer from 1 through 255. */
 	value: string;
 }
 

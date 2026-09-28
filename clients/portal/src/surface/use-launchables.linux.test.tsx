@@ -62,7 +62,8 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
       return {
         _tag: "Ok",
         payload: {
-          revision: "r1", deviceName: "odin2portal", plugins: [],
+          revision: "r1", deviceName: "odin2portal", playerCount: 4, plugins: [],
+          editableSettingIds: ["host.preferences.playerCount"],
           steamGridDbCredential: SecretSettingStatus.NotConfigured,
         },
       }
@@ -149,7 +150,8 @@ describe("Linux catalog execution without a native bridge", () => {
     expect(harness.current().facts).toEqual({
       version: "korrid-test",
       settings: {
-        revision: "r1", deviceName: "odin2portal", plugins: [],
+        revision: "r1", deviceName: "odin2portal", playerCount: 4, plugins: [],
+        editableSettingIds: ["host.preferences.playerCount"],
         steamGridDbCredential: SecretSettingStatus.NotConfigured,
       },
       localGameCount: 0,

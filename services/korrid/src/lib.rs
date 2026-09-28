@@ -775,6 +775,10 @@ pub struct SettingsSnapshot {
     pub revision: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    pub player_count: u8,
+    /// Supported write handlers authorized for this caller. Advisory only:
+    /// every write still checks authority and runtime preconditions.
+    pub editable_setting_ids: Vec<String>,
     pub plugins: Vec<PluginSetting>,
     pub steam_grid_db_credential: config::settings::SecretSettingStatus,
 }
@@ -803,7 +807,8 @@ pub struct SettingsUpdateRequest {
     pub expected_revision: String,
     pub setting_id: String,
     /** Text transport keeps the surface treaty generic. Plugin values are
-     * exactly "true" or "false"; device-name values are the name itself. */
+     * exactly "true" or "false"; device-name values are the name itself;
+     * host.preferences.playerCount is an integer from 1 through 255. */
     pub value: String,
 }
 
@@ -1793,7 +1798,7 @@ async fn dispatch(
     request: RpcRequest,
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
-    let response = match request {
+    let mut response = match request {
         RpcRequest::GameRoutes(request) => RpcResponse::GameRoutes(match &state.mode {
             ServerMode::Host(host) => host
                 .game_routes(request.game_id)
@@ -2286,31 +2291,39 @@ async fn dispatch(
                 .map(SettingsSnapshotOutcome::Ok)
                 .unwrap_or_else(|error| SettingsSnapshotOutcome::Err(settings_failure(error))),
             ),
-            ServerMode::Host(_) => {
-                RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "settings are available only from the Android brain".into(),
-                }))
+            ServerMode::Host(host)
+                if state.portal_access.is_some()
+                    && matches!(
+                        authorization,
+                        authorization::AuthorizationContext::LocalBrowser
+                    ) =>
+            {
+                RpcResponse::SettingsSnapshot(
+                    host.settings_snapshot()
+                        .await
+                        .map(SettingsSnapshotOutcome::Ok)
+                        .unwrap_or_else(SettingsSnapshotOutcome::Err),
+                )
             }
+            ServerMode::Host(_) => RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Err(
+                local_settings_required(),
+            )),
         },
         RpcRequest::SettingsUpdate(request) => match &state.mode {
             ServerMode::Brain(brain) => {
-                let change = if request.setting_id == config::settings::DEVICE_NAME_SETTING_ID {
-                    Ok(config::settings::SettingChange::DeviceName(request.value))
-                } else {
-                    request
-                        .value
-                        .parse::<bool>()
-                        .map(|enabled| config::settings::SettingChange::PluginEnabled {
-                            id: request.setting_id,
-                            enabled,
-                        })
-                        .map_err(|_| {
-                            config::settings::SettingsError::Invalid(
-                                "plugin value must be true or false".into(),
-                            )
-                        })
-                };
+                // Brain mode has no authoritative local session transition lock.
+                // Do not let its general settings writer bypass the idle gate.
+                if request.setting_id == config::settings::PLAYER_COUNT_SETTING_ID {
+                    return Ok(RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(
+                        RpcFailure {
+                            code: "HostRecoveryBlocked".into(),
+                            message:
+                                "local session authority is unavailable for player count changes"
+                                    .into(),
+                        },
+                    )));
+                }
+                let change = config::settings::parse_change(&request.setting_id, request.value);
                 let outcome = change.and_then(|change| {
                     config::settings::update_with_registry_source(
                         &brain.local_storage_root,
@@ -2339,11 +2352,22 @@ async fn dispatch(
                         }),
                 )
             }
+            ServerMode::Host(host)
+                if state.portal_access.is_some()
+                    && matches!(
+                        authorization,
+                        authorization::AuthorizationContext::LocalBrowser
+                    ) =>
+            {
+                RpcResponse::SettingsUpdate(
+                    host.update_player_count(request)
+                        .await
+                        .map(SettingsUpdateOutcome::Ok)
+                        .unwrap_or_else(SettingsUpdateOutcome::Err),
+                )
+            }
             ServerMode::Host(_) => {
-                RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "settings are available only from the Android brain".into(),
-                }))
+                RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Err(local_settings_required()))
             }
         },
         RpcRequest::SteamGridDbCredentialSet(request) => match &state.mode {
@@ -2550,7 +2574,78 @@ async fn dispatch(
             RpcResponse::IdentityRetiredDelete(outcome)
         }
     };
+    match &mut response {
+        RpcResponse::SettingsSnapshot(SettingsSnapshotOutcome::Ok(snapshot))
+        | RpcResponse::SettingsUpdate(SettingsUpdateOutcome::Ok(snapshot)) => {
+            snapshot.editable_setting_ids = editable_setting_ids(state, authorization);
+        }
+        _ => {}
+    }
     Ok(response)
+}
+
+/// Support comes from the implemented handlers, not the list of stored values.
+/// Probe the existing authorization policies without executing any write.
+fn editable_setting_ids(
+    state: &AppState,
+    context: &authorization::AuthorizationContext,
+) -> Vec<String> {
+    use authorization::AuthorizationContext;
+    use config::settings::{DEVICE_NAME_SETTING_ID, PLAYER_COUNT_SETTING_ID};
+
+    let permitted = |request: &RpcRequest| {
+        authorization::authorize(context, request).is_ok()
+            && (!matches!(context, AuthorizationContext::LocalBrowser)
+                || state
+                    .portal_access
+                    .as_ref()
+                    .is_none_or(|access| access.permits(request)))
+    };
+    let setting_update = |id: &str| {
+        RpcRequest::SettingsUpdate(SettingsUpdateRequest {
+            expected_revision: String::new(),
+            setting_id: id.into(),
+            value: String::new(),
+        })
+    };
+    let mut ids = Vec::new();
+    match &state.mode {
+        ServerMode::Host(_)
+            if state.portal_access.is_some()
+                && matches!(context, AuthorizationContext::LocalBrowser) =>
+        {
+            if permitted(&setting_update(PLAYER_COUNT_SETTING_ID)) {
+                ids.push(PLAYER_COUNT_SETTING_ID.into());
+            }
+        }
+        ServerMode::Host(_) => {}
+        ServerMode::Brain(_) => {
+            if permitted(&setting_update(DEVICE_NAME_SETTING_ID)) {
+                ids.push(DEVICE_NAME_SETTING_ID.into());
+            }
+            // This existing frontend setting uses two dedicated write handlers.
+            // Neither the credential nor any private path belongs in metadata.
+            if permitted(&RpcRequest::SteamGridDbCredentialSet(
+                SteamGridDbCredentialSetRequest {
+                    token: String::new(),
+                },
+            )) && permitted(&RpcRequest::SteamGridDbCredentialClear(
+                SteamGridDbCredentialClearRequest {},
+            )) {
+                ids.push("steamgriddb-credential".into());
+            }
+            // Brain count writes and installed-plugin toggles are refused by
+            // their handlers, even for an otherwise fully authorized caller.
+        }
+    }
+    ids
+}
+
+fn local_settings_required() -> RpcFailure {
+    RpcFailure {
+        code: "OperationUnsupported".into(),
+        message: "host settings require the local portal capability".into(),
+    }
 }
 
 fn settings_snapshot(
@@ -2560,6 +2655,9 @@ fn settings_snapshot(
     SettingsSnapshot {
         revision: settings.revision,
         device_name: settings.device_name,
+        player_count: settings.player_count,
+        // Dispatch fills caller-specific metadata after the successful read/write.
+        editable_setting_ids: Vec::new(),
         plugins: settings
             .plugins
             .into_iter()
@@ -3473,6 +3571,8 @@ pub fn issue_folder_selection_receipt(
         .map(|grant| grant.token)
 }
 
+#[cfg(test)]
+mod controller_count_tests;
 pub mod host;
 pub mod launcher;
 pub mod plugin;

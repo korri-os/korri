@@ -37,6 +37,7 @@ export function PicoSettingRow({
         danger={row.control.kind === "action" && row.control.destructive}
         detail={detail}
         label={row.label}
+        focusable={!interactive}
         onPress={interactive ? onActivate : undefined}
       />
       {row.description === undefined ? null : (

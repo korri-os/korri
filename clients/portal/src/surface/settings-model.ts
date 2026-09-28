@@ -58,6 +58,7 @@ const discoveryStateLabel = (snapshot: DiscoverySnapshot | undefined): string =>
 export function settingsFrom(
   facts: DeviceFacts,
 ): readonly SurfaceSettingGroup[] {
+  const canEdit = (id: string) => facts.settings?.editableSettingIds.includes(id) ?? false
   const groups = [
     group("Device", [
       facts.settings === undefined
@@ -66,11 +67,13 @@ export function settingsFrom(
             id: "device-name",
             label: "Name",
             value: facts.settings.deviceName ?? "Unnamed",
-            interaction: {
-              kind: "text" as const,
-              placeholder: "This device",
-              maxLength: 64,
-            },
+            ...(canEdit("device-name") ? {
+              interaction: {
+                kind: "text" as const,
+                placeholder: "This device",
+                maxLength: 64,
+              },
+            } : {}),
           },
     ]),
     group("Metadata", [
@@ -81,14 +84,16 @@ export function settingsFrom(
             label: "SteamGridDB API key",
             value: secretStatusLabel(facts.settings.steamGridDbCredential),
             description: "Used only by korrid for metadata and cover art lookup",
-            interaction: {
-              kind: "sensitiveText" as const,
-              placeholder: "Paste API key",
-              maxLength: 256,
-              ...(facts.settings.steamGridDbCredential === SecretSettingStatus.Configured
-                ? { clearLabel: "Clear saved key" }
-                : {}),
-            },
+            ...(canEdit("steamgriddb-credential") ? {
+              interaction: {
+                kind: "sensitiveText" as const,
+                placeholder: "Paste API key",
+                maxLength: 256,
+                ...(facts.settings.steamGridDbCredential === SecretSettingStatus.Configured
+                  ? { clearLabel: "Clear saved key" }
+                  : {}),
+              },
+            } : {}),
           },
     ]),
     group(
@@ -97,7 +102,7 @@ export function settingsFrom(
         id: plugin.id,
         label: plugin.title,
         value: plugin.enabled ? "On" : "Off",
-        interaction: { kind: "choice" as const, choices: onOff },
+        ...(canEdit(plugin.id) ? { interaction: { kind: "choice" as const, choices: onOff } } : {}),
       })) ?? [],
     ),
     group("Games", [

@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
+    num::NonZeroU8,
     path::{Path, PathBuf},
 };
 
@@ -23,6 +24,7 @@ use super::{
 use crate::plugin_policy;
 
 pub const DEVICE_NAME_SETTING_ID: &str = "device-name";
+pub const PLAYER_COUNT_SETTING_ID: &str = "host.preferences.playerCount";
 const STEAMGRIDDB_CREDENTIAL_FILE_NAME: &str = "steamgriddb.credential";
 
 #[typeshare::typeshare]
@@ -41,6 +43,7 @@ pub struct SensitiveSettings {
 pub struct ReadableSettings {
     pub revision: String,
     pub device_name: Option<String>,
+    pub player_count: u8,
     pub plugins: Vec<ReadablePluginSetting>,
 }
 
@@ -54,6 +57,7 @@ pub struct ReadablePluginSetting {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SettingChange {
     DeviceName(String),
+    PlayerCount(NonZeroU8),
     PluginEnabled { id: String, enabled: bool },
 }
 
@@ -67,6 +71,25 @@ pub enum SettingsError {
     Storage(String),
     #[error("settings candidate: {0}")]
     Candidate(String),
+}
+
+pub fn parse_change(setting_id: &str, value: String) -> Result<SettingChange, SettingsError> {
+    match setting_id {
+        DEVICE_NAME_SETTING_ID => Ok(SettingChange::DeviceName(value)),
+        PLAYER_COUNT_SETTING_ID => value
+            .parse::<NonZeroU8>()
+            .map(SettingChange::PlayerCount)
+            .map_err(|_| {
+                SettingsError::Invalid("player count must be an integer from 1 to 255".into())
+            }),
+        _ => value
+            .parse::<bool>()
+            .map(|enabled| SettingChange::PluginEnabled {
+                id: setting_id.into(),
+                enabled,
+            })
+            .map_err(|_| SettingsError::Invalid("plugin value must be true or false".into())),
+    }
 }
 
 pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
@@ -103,6 +126,7 @@ pub fn read_with_registry_source(
 
     Ok(ReadableSettings {
         revision: revision(&config),
+        player_count: snapshot.player_count(),
         device_name: snapshot.host.and_then(|host| host.title),
         plugins,
     })
@@ -252,6 +276,13 @@ pub fn update_with_registry_source(
 
     match change {
         SettingChange::DeviceName(value) => set_device_name(&mut document, value)?,
+        SettingChange::PlayerCount(value) => {
+            let preferences = mapping_at(mapping_at(&mut document, "host")?, "preferences")?;
+            preferences.insert(
+                Value::String("playerCount".into()),
+                Value::from(value.get()),
+            );
+        }
         SettingChange::PluginEnabled { id, enabled } => {
             set_plugin_enabled(&mut document, id, enabled, source)?
         }
@@ -608,6 +639,7 @@ mod tests {
         let settings = read(root.path()).unwrap();
 
         assert_eq!(settings.device_name, None);
+        assert_eq!(settings.player_count, super::super::DEFAULT_PLAYER_COUNT);
         assert_eq!(
             fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
             b"{}\n"
@@ -620,6 +652,267 @@ mod tests {
             fs::read(root.path().join(RELEASES_FILE_NAME)).unwrap(),
             b"{}\n"
         );
+    }
+
+    #[test]
+    fn removing_only_the_count_leaf_restores_the_default_without_rewriting_the_file() {
+        let root = root("host: {title: handheld, preferences: {playerCount: 6}}\n");
+        let before = read(root.path()).unwrap();
+        assert_eq!(before.player_count, 6);
+        let reset = "host: {title: handheld, preferences: {}}\n";
+        fs::write(root.path().join(DEVICE_FILE_NAME), reset).unwrap();
+        let after = read(root.path()).unwrap();
+        assert_eq!(after.player_count, 4);
+        assert_eq!(after.device_name, before.device_name);
+        assert_ne!(after.revision, before.revision);
+        assert_eq!(
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+            reset.as_bytes()
+        );
+    }
+
+    #[test]
+    fn parses_count_without_changing_name_or_plugin_parsing() {
+        assert_eq!(PLAYER_COUNT_SETTING_ID, "host.preferences.playerCount");
+        for count in [1, 6, 255] {
+            assert_eq!(
+                parse_change(PLAYER_COUNT_SETTING_ID, count.to_string()).unwrap(),
+                SettingChange::PlayerCount(NonZeroU8::new(count).unwrap())
+            );
+        }
+        for value in [
+            "0", "-1", "256", "1.5", "null", "\"6\"", "true", "false", "", "six",
+        ] {
+            assert!(
+                matches!(
+                    parse_change(PLAYER_COUNT_SETTING_ID, value.into()),
+                    Err(SettingsError::Invalid(_))
+                ),
+                "{value}"
+            );
+        }
+        assert_eq!(
+            parse_change(DEVICE_NAME_SETTING_ID, "  handheld  ".into()).unwrap(),
+            SettingChange::DeviceName("  handheld  ".into())
+        );
+        for enabled in [true, false] {
+            assert_eq!(
+                parse_change("@korri:sample", enabled.to_string()).unwrap(),
+                SettingChange::PluginEnabled {
+                    id: "@korri:sample".into(),
+                    enabled
+                }
+            );
+        }
+        assert!(matches!(
+            parse_change("@korri:sample", "1".into()),
+            Err(SettingsError::Invalid(message)) if message == "plugin value must be true or false"
+        ));
+    }
+
+    #[test]
+    fn count_updates_only_the_approved_leaf_and_preserves_catalog_bytes() {
+        let root = root("{}");
+        crate::config::test_fixtures::combined(root.path());
+        let device_path = root.path().join(DEVICE_FILE_NAME);
+        let original = fs::read_to_string(&device_path).unwrap();
+        let mut expected: Value = serde_yaml::from_str(&original).unwrap();
+        let catalog_before: Vec<_> = [GAMES_FILE_NAME, RELEASES_FILE_NAME]
+            .map(|name| fs::read(root.path().join(name)).unwrap())
+            .into();
+        let private = tempfile::tempdir().unwrap();
+        let lock = std::sync::Mutex::new(());
+        let mut settings = read(root.path()).unwrap();
+        for count in [1, 6, 255] {
+            let before = settings;
+            settings = update(
+                root.path(),
+                private.path(),
+                &lock,
+                &before.revision,
+                SettingChange::PlayerCount(NonZeroU8::new(count).unwrap()),
+            )
+            .unwrap();
+            assert_eq!(settings.player_count, count);
+            assert_eq!(settings.device_name, before.device_name);
+            assert_eq!(settings.plugins, before.plugins);
+            assert_ne!(settings.revision, before.revision);
+            let saved = fs::read_to_string(&device_path).unwrap();
+            let actual: Value = serde_yaml::from_str(&saved).unwrap();
+            let preferences = mapping_at(
+                mapping_at(expected.as_mapping_mut().unwrap(), "host").unwrap(),
+                "preferences",
+            )
+            .unwrap();
+            preferences.insert(Value::String("playerCount".into()), Value::from(count));
+            assert_eq!(actual, expected);
+            for (name, bytes) in [GAMES_FILE_NAME, RELEASES_FILE_NAME]
+                .iter()
+                .zip(&catalog_before)
+            {
+                assert_eq!(&fs::read(root.path().join(name)).unwrap(), bytes);
+            }
+            assert_eq!(read(root.path()).unwrap(), settings);
+        }
+        // Other settings also preserve the count once written.
+        let after = update(
+            root.path(),
+            private.path(),
+            &lock,
+            &settings.revision,
+            SettingChange::DeviceName("renamed".into()),
+        )
+        .unwrap();
+        assert_eq!(after.player_count, 255);
+    }
+
+    #[test]
+    fn count_update_creates_only_missing_host_and_preferences_maps() {
+        for device in ["{}", "host: {}", "host: {title: handheld}"] {
+            let root = root(device);
+            let before = read(root.path()).unwrap();
+            let after = update(
+                root.path(),
+                tempfile::tempdir().unwrap().path(),
+                &std::sync::Mutex::new(()),
+                &before.revision,
+                SettingChange::PlayerCount(NonZeroU8::new(6).unwrap()),
+            )
+            .unwrap();
+            assert_eq!(after.player_count, 6);
+            assert_eq!(after.device_name, before.device_name);
+            let saved: Value = serde_yaml::from_str(
+                &fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(saved["host"]["preferences"]["playerCount"], Value::from(6));
+        }
+    }
+
+    #[test]
+    fn count_update_rejects_stale_revision_without_mutation() {
+        let root = root("host: {preferences: {playerCount: 1}}\n");
+        let private = tempfile::tempdir().unwrap();
+        let lock = std::sync::Mutex::new(());
+        let before = read(root.path()).unwrap();
+        let after = update(
+            root.path(),
+            private.path(),
+            &lock,
+            &before.revision,
+            SettingChange::PlayerCount(NonZeroU8::new(6).unwrap()),
+        )
+        .unwrap();
+        let original = fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap();
+        assert!(matches!(
+            update(
+                root.path(),
+                private.path(),
+                &lock,
+                &before.revision,
+                SettingChange::PlayerCount(NonZeroU8::new(255).unwrap())
+            ),
+            Err(SettingsError::Conflict)
+        ));
+        assert_eq!(
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+            original
+        );
+        assert_eq!(read(root.path()).unwrap(), after);
+
+        fs::write(
+            root.path().join(DEVICE_FILE_NAME),
+            b"host: {title: external}\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            update(
+                root.path(),
+                private.path(),
+                &lock,
+                &after.revision,
+                SettingChange::PlayerCount(NonZeroU8::new(1).unwrap())
+            ),
+            Err(SettingsError::Conflict)
+        ));
+        assert_eq!(
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+            b"host: {title: external}\n"
+        );
+    }
+
+    #[test]
+    fn count_update_validates_all_candidate_documents_before_writing() {
+        for (file, content) in [
+            (
+                DEVICE_FILE_NAME,
+                "host: {preferences: {playerCount: 6, launch: {audio: {volume: 75}}}}",
+            ),
+            (
+                DEVICE_FILE_NAME,
+                "host: {preferences: {playerCount: 6, typo: true}}",
+            ),
+            (DEVICE_FILE_NAME, "host: {env: {EXAMPLE: value}}"),
+            (
+                GAMES_FILE_NAME,
+                "games: {bad: {title: broken, releases: []}}",
+            ),
+            (RELEASES_FILE_NAME, "releases: {bad: {}}"),
+        ] {
+            let root = root("host: {preferences: {playerCount: 1}}");
+            fs::write(root.path().join(file), content).unwrap();
+            let original = fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap();
+            let error = update(
+                root.path(),
+                tempfile::tempdir().unwrap().path(),
+                &std::sync::Mutex::new(()),
+                &revision(&original),
+                SettingChange::PlayerCount(NonZeroU8::new(255).unwrap()),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, SettingsError::Candidate(_)),
+                "{file}: {error}"
+            );
+            assert_eq!(
+                fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+                original
+            );
+            assert_eq!(fs::read_to_string(root.path().join(file)).unwrap(), content);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn count_write_failure_preserves_file_and_readable_state() {
+        use std::os::unix::fs::PermissionsExt;
+        // Root bypasses directory permissions. The normal unprivileged check
+        // exercises a real failed temporary-file write, not a simulated error.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let root = root("host: {preferences: {playerCount: 6}}\n");
+        let before = read(root.path()).unwrap();
+        let original = fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o500)).unwrap();
+        let result = update(
+            root.path(),
+            tempfile::tempdir().unwrap().path(),
+            &std::sync::Mutex::new(()),
+            &before.revision,
+            SettingChange::PlayerCount(NonZeroU8::new(255).unwrap()),
+        );
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            matches!(result, Err(SettingsError::Storage(_))),
+            "{result:?}"
+        );
+        assert_eq!(
+            fs::read(root.path().join(DEVICE_FILE_NAME)).unwrap(),
+            original
+        );
+        assert_eq!(read(root.path()).unwrap(), before);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
     #[test]
