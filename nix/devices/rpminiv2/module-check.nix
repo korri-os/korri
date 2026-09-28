@@ -99,9 +99,12 @@ let
     "CONFIG_SECCOMP=y"
     "CONFIG_SECCOMP_FILTER=y"
     "CONFIG_USER_NS=y"
-    # The composed USB gadget. The ACM function comes from usb_f_acm.ko,
-    # which g_serial already requires (requiredRecoveryModules).
-    # CONFIG_USB_CONFIGFS_ACM only selects that module, so it may stay unset.
+    # Product configfs ACM is built in; recovery keeps modular g_serial.
+    "CONFIG_USB_CONFIGFS_ACM=y"
+    "CONFIG_USB_F_ACM=y"
+    "CONFIG_USB_U_SERIAL=y"
+    "CONFIG_USB_F_SERIAL=m"
+    "CONFIG_USB_F_OBEX=m"
     "CONFIG_CONFIGFS_FS=y"
     "CONFIG_USB_LIBCOMPOSITE=y"
     "CONFIG_USB_CONFIGFS=y"
@@ -184,7 +187,7 @@ let
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
-assert lib.all hasProductKernelConfig (requiredKernelConfig ++ requiredRecoveryModules);
+assert lib.all hasProductKernelConfig requiredKernelConfig;
 assert lib.all hasProductKernelConfig requiredProductKernelConfig;
 # Sound is a product feature; the recovery kernel stays without it.
 assert hasRecoveryKernelConfig "# CONFIG_SOUND is not set";

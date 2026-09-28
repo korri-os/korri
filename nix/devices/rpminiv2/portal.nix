@@ -48,16 +48,8 @@ in
 
   boot = {
     kernelPackages = lib.mkForce (pkgs.linuxPackagesFor rpminiKorriKernel);
-    # Drop recovery's g_serial: it would claim the controller before configfs
-    # can compose NCM beside the ACM console. libcomposite and usb_f_ncm are
-    # built in; usb_f_acm carries the USB root console. Other ROCKNIX drivers
-    # load through their device aliases.
-    kernelModules = lib.mkForce [
-      "libcomposite"
-      "usb_f_ncm"
-      "usb_f_acm"
-      "retroid"
-    ];
+    # g_serial would claim the controller before the composed NCM + ACM gadget.
+    kernelModules = lib.mkForce [ "libcomposite" "usb_f_ncm" "usb_f_acm" "retroid" ];
   };
 
   # The recovery module forces graphics off. This product-only override is

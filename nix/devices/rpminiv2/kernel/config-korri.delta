@@ -39,6 +39,11 @@ CONFIG_NETFILTER_XT_MATCH_PKTTYPE=y
 # NO_IOPORT_MAP cannot be enabled with PCI on ARM64 (arch/arm64/Kconfig).
 # Retain PCI for the QCA6390 radio rather than copying the obsolete trim value.
 # CONFIG_NO_IOPORT_MAP is not set
+# Preserve the observed composite ACM serial console beside NCM. Enabling
+# configfs ACM also selects these two dependencies built in (kernel .config).
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_U_SERIAL=y
 # Internal UFS holds Android and the loader. Keep its host inaccessible.
 # CONFIG_SCSI_UFSHCD is not set
 # CONFIG_SCSI_UFSHCD_PLATFORM is not set

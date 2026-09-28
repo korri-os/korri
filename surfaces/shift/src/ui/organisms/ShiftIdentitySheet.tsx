@@ -3,7 +3,7 @@ import type {
   SurfaceIdentityManagement,
 } from "@contracts/surface/korri-surface"
 import * as QRCode from "qrcode"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ShiftSheetAction } from "../molecules/ShiftSheetAction"
 import { ShiftSheetBody } from "./ShiftSheetBody"
 import { ShiftSheetGroup } from "./ShiftSheetGroup"
@@ -64,6 +64,10 @@ export function ShiftIdentitySheet({
   const status = identity?.status
   const working = status?._tag === "Working"
   const workingLabel = status?._tag === "Working" ? status.operation : undefined
+  // Callers pass a new callback on every render. Only a new action resets the
+  // sheet; a render alone must not clear input or dismiss status again.
+  const dismissStatus = useRef(onDismissStatus)
+  dismissStatus.current = onDismissStatus
 
   useEffect(() => {
     setPassword("")
@@ -72,8 +76,8 @@ export function ShiftIdentitySheet({
     setDisposition("transfer")
     setConfirmed(false)
     setQrDataUrl(undefined)
-    onDismissStatus()
-  }, [action, onDismissStatus])
+    dismissStatus.current()
+  }, [action])
 
   useEffect(() => {
     if (status?._tag !== "BackupReady") {

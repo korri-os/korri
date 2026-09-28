@@ -32,9 +32,9 @@ in
   rg353m = shared ++ n64AndDreamcast ++ streamingHost;
   rgds = shared ++ n64AndDreamcast ++ streamingHost;
   r36tmax = shared;
-  # The Mini V2 owner approved SSH access for the next removable SD image.
-  # Root authorization remains device-owned and is installed after imaging.
-  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ select [ "ssh" ];
+  # The Mini V2 reaches a computer over its USB network gadget; key-only SSH
+  # is its copy and debug path. Root authorization remains device-owned.
+  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ [ plugins.korri-plugin-ssh ];
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost;
   # RG35XXSP is not a product image yet. Its choice becomes active only when
   # measured display/input facts allow the product module and image to land.
