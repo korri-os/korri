@@ -80,7 +80,9 @@ mode. It is **not** an approved
 Sunshine build or a plugin closure. The existing plugin's approval binds its
 exact package closure. `rotation-probe-plugin.nix` builds the matching
 experimental plugin output for both ARM variants off-device; it does not
-publish or sign them. Do not substitute a standalone executable under the
+publish or sign them. The official plugin publisher requires the same named
+outputs on x86_64 and aarch64, so it also builds experimental x86_64 plugin
+outputs. The Mini trial uses **only** the ARM outputs. Do not substitute a standalone executable under the
 existing plugin unit, even after signing the binary. The plugin host needs a
 publisher-bound signature for the **new full closure** and an inspected exact
 approval. The artifact check reads both actual plugin manifests, package
