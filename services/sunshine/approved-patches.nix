@@ -222,6 +222,22 @@ rec {
     sha256 = "d1df5c2938b8fc2c2d550d294c7adadc7ec65e0d4706f1cbd1a1dfbe94de52e8";
   };
 
+  # Accepted from the Mini V2 rotation trial as tested on the device (signed
+  # clockwise and SPS-crop candidates, 2026-09-29): rotate KMS capture to the
+  # output transform and crop the encoded SPS to the visible size. The probe
+  # build flag stays on, exactly as tested. Devices whose output has no
+  # transform take the unrotated path. See rotation-probe.md.
+  rotationPatch = {
+    name = "0033-rotate-kms-capture-to-output-transform.patch";
+    path = ./patches/0033-rotate-kms-capture-to-output-transform.patch;
+    sha256 = "56d65c527b94657c937a710e12d2d487ebfa14d8988fbb96a778544c3aa20a1d";
+  };
+  rotationCropPatch = {
+    name = "0034-crop-encoded-sps-to-visible-size.patch";
+    path = ./patches/0034-crop-encoded-sps-to-visible-size.patch;
+    sha256 = "dd2ef90eba90c1628e418e540502b42aea4c85339c70114ca7a806aa257cbe7f";
+  };
+
   rkmppPatches = [
     rkmppPatch
     rkmppZeroCopyPatch
@@ -232,9 +248,11 @@ rec {
     rkmppWaylandBufferPoolPatch
     rkmppWaylandPipelinePatch
     rkmppEncodeSchedulePatch
+    rotationPatch
+    rotationCropPatch
   ];
 
   # Ordered digest of patches ++ rkmppPatches. Bump only after reviewing the
   # complete base-plus-RKMPP patch order.
-  rkmppPatchSetSha256 = "7193ffe3e3939ed1c14af8666fcfe0ce8682be9533a570f233584860a8879e1f";
+  rkmppPatchSetSha256 = "cb138307fe1554a26a1f546ce8de46e45afce2b271440dfa064d29064e4724a7";
 }

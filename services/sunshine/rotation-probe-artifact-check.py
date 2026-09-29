@@ -10,8 +10,8 @@ if len(sys.argv) not in (3, 4):
     raise SystemExit(f'usage: {sys.argv[0]} ON_PLUGIN [OFF_PLUGIN] BASELINE_KORRI_SOURCE')
 baseline_unit = Path(sys.argv[-1]).resolve(strict=True) / 'plugins/sunshine/korri-sunshine.service'
 assert baseline_unit.is_file(), 'missing Mini plugin producer'
-expected_hash = __import__('hashlib').sha256((Path(__file__).parent / 'rotation-probe.patch').read_bytes()).hexdigest()
-expected_crop_hash = __import__('hashlib').sha256((Path(__file__).parent / 'rotation-crop.patch').read_bytes()).hexdigest()
+expected_hash = __import__('hashlib').sha256((Path(__file__).parent / 'patches' / '0033-rotate-kms-capture-to-output-transform.patch').read_bytes()).hexdigest()
+expected_crop_hash = __import__('hashlib').sha256((Path(__file__).parent / 'patches' / '0034-crop-encoded-sps-to-visible-size.patch').read_bytes()).hexdigest()
 modes = [('on', sys.argv[1])]
 if len(sys.argv) == 4:
     modes.append(('off', sys.argv[2]))

@@ -21,8 +21,8 @@ if not approved.is_file() or not (baseline / 'plugins/sunshine/korri-sunshine-in
     raise SystemExit('The installed Mini plugin producer is missing')
 expr = f'let a = import {approved}; in map (p: toString p.path) (a.patches ++ a.rkmppPatches)'
 records = json.loads(subprocess.check_output(['nix', 'eval', '--json', '--impure', '--expr', expr], text=True))
-probe = service / 'rotation-probe.patch'
-crop = service / 'rotation-crop.patch'
+probe = service / 'patches' / '0033-rotate-kms-capture-to-output-transform.patch'
+crop = service / 'patches' / '0034-crop-encoded-sps-to-visible-size.patch'
 crop_files = {line[6:].split('\t', 1)[0] for line in crop.read_text().splitlines() if line.startswith('+++ b/')}
 assert crop_files == {'src/cbs.cpp', 'src/video.cpp'}, 'crop patch changed files outside SPS creation and injection'
 probe_files = {line[6:].split('\t', 1)[0] for line in probe.read_text().splitlines() if line.startswith('+++ b/')}

@@ -39,10 +39,22 @@ let
       url = "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${version}.tar.xz";
       hash = "sha256-+f7z0UwN9TgZAm9L50RZg1wqCw3L9bW72eoZ8IKUArM=";
     };
-    kernelPatches = map (name: {
-      inherit name;
-      patch = patchDir + "/${name}";
-    }) patchNames;
+    kernelPatches =
+      map (name: {
+        inherit name;
+        patch = patchDir + "/${name}";
+      }) patchNames
+      # Product-only Iris encoder controls Sunshine's h264_v4l2m2m needs on
+      # SM8250 gen1 firmware. The recovery kernel stays unchanged.
+      ++ lib.optionals productFanMap (
+        map (name: {
+          inherit name;
+          patch = ./product-patches + "/${name}";
+        }) [
+          "9999-media-qcom-iris-add-request-key-frame-support.patch"
+          "9999-media-qcom-iris-gen1-repeat-headers.patch"
+        ]
+      );
     configfile = kernelConfig;
     allowImportFromDerivation = true;
     extraMeta = {

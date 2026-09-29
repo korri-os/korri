@@ -1,0 +1,63 @@
+Subject: [PATCH] media: qcom: iris: expose gen1 encoder repeat headers
+
+Korri-local patch against Linux 7.2. SM8250 uses the gen1 HFI boolean
+HFI_PROPERTY_CONFIG_VENC_SYNC_FRAME_SEQUENCE_HEADER, not the gen2 header
+mode enum. Expose PREPEND_SPSPPS_TO_IDR and consume it when HEADER_MODE
+programs that boolean, as gen2 already consumes this companion control.
+Both controls remain static (set before streaming).
+
+The Qualcomm SM8250 Venus driver maps PREPEND_SPSPPS_TO_IDR directly to
+this property with struct hfi_enable: msm_venc_set_sequence_header_mode()
+in techpack/video/msm/vidc/msm_venc.c, lines 3504-3536, at
+LineageOS/android_kernel_xiaomi_sm8250 commit
+f3d39dae3253e7f8bb623eb83a146088f3174148. Thus it is the repeat-at-IDR switch,
+not a distinct first-frame-only switch. Linux 7.2 Venus venc.c:876-888
+already enables it for HEADER_MODE_JOINED_WITH_1ST_FRAME, as does Iris.
+
+Preserve that existing HEADER_MODE mapping when prepend is disabled;
+enabling prepend overrides separate mode. Gen1 has only this one boolean:
+joined mode therefore still enables repeating headers even when prepend
+is zero. This patch does not invent independently selectable gen2 modes.
+Actual firmware output must still be checked for SPS/PPS before later IDRs.
+
+Pair with the existing upstream add-request-key-frame-support patch for
+FORCE_KEY_FRAME. Gen1 already reads picture_type from the compressed FBD
+packet and maps IDR/I to KEYFRAME; no gen2 subscription patch is needed.
+
+--- a/drivers/media/platform/qcom/iris/iris_hfi_gen1.c
++++ b/drivers/media/platform/qcom/iris/iris_hfi_gen1.c
+@@ -127,6 +127,13 @@
+ 		.flags = CAP_FLAG_OUTPUT_PORT | CAP_FLAG_MENU,
+ 		.set = iris_set_header_mode_gen1,
+ 	},
++	{
++		.cap_id = PREPEND_SPSPPS_TO_IDR,
++		.min = 0,
++		.max = 1,
++		.step_or_mask = 1,
++		.value = 0,
++	},
+ 	{
+ 		.cap_id = BITRATE,
+ 		.min = BITRATE_MIN,
+--- a/drivers/media/platform/qcom/iris/iris_ctrls.c
++++ b/drivers/media/platform/qcom/iris/iris_ctrls.c
+@@ -605,11 +605,17 @@
+ int iris_set_header_mode_gen1(struct iris_inst *inst, enum platform_inst_fw_cap_type cap_id)
+ {
+ 	const struct iris_hfi_session_ops *hfi_ops = inst->hfi_session_ops;
++	u32 prepend_sps_pps = inst->fw_caps[PREPEND_SPSPPS_TO_IDR].value;
+ 	u32 header_mode = inst->fw_caps[cap_id].value;
+ 	u32 hfi_id = inst->fw_caps[cap_id].hfi_id;
+ 	u32 hfi_val;
+ 
+-	if (header_mode == V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE)
++	/*
++	 * Gen1 prefixes sync frames with sequence headers using one boolean.
++	 * Keep the existing joined-header behavior when prepend is disabled.
++	 */
++	if (!prepend_sps_pps &&
++	    header_mode == V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE)
+ 		hfi_val = 0;
+ 	else
+ 		hfi_val = 1;

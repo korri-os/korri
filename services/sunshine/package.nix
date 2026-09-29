@@ -181,6 +181,9 @@ baseSunshine.overrideAttrs (
             [
               "-DFFMPEG_PREPARED_BINARIES=${ffmpegRkmpp}"
               "-DFFMPEG_PLATFORM_LIBRARIES=numa;va;va-drm;va-x11;X11;rockchip_mpp;drm"
+              # Enables the accepted output-transform rotation (patch 0033)
+              # exactly as tested on the Mini V2.
+              "-DCMAKE_CXX_FLAGS=-DSUNSHINE_CAPTURE_ROTATION_PROBE"
             ]
           else if v4l2m2mEnabled then
             [ "-DFFMPEG_PREPARED_BINARIES=${ffmpegV4l2m2m}" ]
