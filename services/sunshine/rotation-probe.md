@@ -11,6 +11,44 @@ with its `korri-sunshine-input-seat-receiver.service`. The signed rotation-on
 diagnostic package remains the previous selection. Any replacement must
 retain the original producer and permission boundary.
 
+## Controlled moving-scene comparison (2026-09-29)
+
+The owner confirmed that the clockwise signed package streams an upright
+picture with working cursor movement. The Mini then streamed Moonlight Desktop
+with the same `glmark2-es2-wayland` shading scene on both signed variants:
+`--size 800x600 --swap-mode fifo -b shading:duration=30.0:shading=phong`.
+The screen stayed awake. Both runs used KMS RAM capture, H.264 V4L2M2M, and
+the same 1080×1240 source. The on run used signed plugin
+`/nix/store/frc9rcm8iw3zlcbhc2dlz9709x30sv4m-korri-plugin`; the force-off
+run used `/nix/store/fxafkf5xgbnsqrf30ljx7pycqhlvg1xf-korri-plugin`. The
+original signed selection was restored between variants, and the working on
+package was selected again afterward, with the original as direct rollback.
+Sunshine, its input-seat receiver, SSH, the external audio drop-in, and H.264
+startup were verified after selection; no units were failed.
+
+Each stream supplied six consecutive 300-frame stage summaries during the
+30-second scene. Exclude the first complete window as warm-up, then take the
+median of the remaining five window p50 values. These values are summaries
+of frame-stage measurements, not individual frame samples:
+
+| Stage (ms) | Off p50 | On p50 | On minus off |
+| --- | ---: | ---: | ---: |
+| Readback plus conditional draw | 4.780 | 5.021 | **+0.241** |
+| KMS capture, excluding FPS pacing | 4.947 | 5.239 | **+0.292** |
+| Conversion | 8.801 | 9.138 | +0.337 |
+| Encode call | 0.305 | 0.332 | +0.026 |
+
+The median capture-window p95 was 5.218 ms off and 5.790 ms on. The
+300-frame window p50 ranges were 4.943–4.985 ms off and 5.217–5.362 ms on.
+`glmark2` reported 61 app FPS in both runs (frame times 16.655 ms off and
+16.665 ms on). Capture-stage budget-overruns were 3/1,500 off and 15/1,500
+on; they do **not** count missed delivery deadlines. Do not add the stage
+differences to infer end-to-end latency. The output orientation differs, and
+Sunshine's encode-call time does not prove hardware completion. This is one
+on/off pair, not a repeated or randomized trial; delivered stream FPS, actual
+dropped frames, GPU occupancy, power, and thermal delta were not measured.
+Logs are saved locally at `/tmp/mini-rotation-comparison-{on,off}.sunshine.log`.
+
 ## Mini trial result and diagnostic change
 
 On 2026-09-28, the compatible signed force-off package was selected with the
