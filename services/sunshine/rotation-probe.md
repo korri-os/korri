@@ -74,10 +74,18 @@ with no green on either visible edge. `rotation-crop-stream-check.py` reports
 `RED` for the earlier real Mini sample (1920×1088 versus 1920×1080), and
 `GREEN` for both the rewritten sample and the 1240×1080 laboratory stream.
 That test verifies the codec mechanism, not the new C++ binary or the Mini
-stream. The ARM plugin built off-device, and its local manifest, retained
-receiver, native unit and provenance passed the artifact check. The candidate
-still needs an officially signed full closure, exact approval, and a physical
-Moonlight check. Until then, preserve the selected upright package and original rollback.
+stream. Both publisher architectures built, and the official signing workflow
+[36588085951](https://github.com/korri-os/plugins/actions/runs/36588085951)
+published `build-7c984304a1f9`. Its ARM path
+`/nix/store/2yyq3ibyrs37yszk9j2bj5hkk1blpfsm-korri-plugin` matches the
+locally checked output. Signed Mini inspection accepted the exact closure with
+approval `f52b45b4c03ed8c898c42ef2b766cc655d62e1164002d64ec388f25b0c4619b1`.
+Its authority, receiver, setup, units and ports match the original plugin.
+The inspection did not select or start it; the upright package and original
+rollback remain selected. The Mini rebooted before inspection, and its temporary
+`/run/systemd/system/korri-sunshine.service.d/90-audio-runtime.conf` is gone.
+Resolve that audio setting before any plugin switch. A physical Moonlight check
+and separate approval for activation remain necessary.
 
 ## Mini trial result and diagnostic change
 
