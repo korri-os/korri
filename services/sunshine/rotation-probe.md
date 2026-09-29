@@ -113,7 +113,16 @@ whether the candidate caused or merely shared the encoder failure.
 The selected package is again the signed upright package, with the signed
 original as direct rollback. The audio file has the expected hash; Sunshine,
 the input receiver, and SSH were active on the last check. The temporary trial
-scripts and stage were removed. Do not switch packages again until the
+scripts and stage were removed. The owner then approved one reboot to check
+encoder readiness. The Mini returned on boot
+`804cccad-6f5d-4d8a-9f48-64b763008934` with the same installed system and
+signed receipts. Its plugin host was briefly busy at boot; after that cleared,
+the exact runtime audio file was restored. Sunshine, receiver, and SSH stayed
+active, with zero restarts in the 15-second check. **The upright package still
+failed to open `h264_v4l2m2m` on `/dev/video1`** at 18:44:27 UTC with
+`Invalid argument`; no H.264 encoder was found. A stable service is not a
+stream-ready service. The reboot did not recover encoding. No further package
+switch or Moonlight test was run. Do not switch packages again until the
 `/dev/video1` initialization failure is understood, and obtain fresh owner
 readiness before a visual test.
 
