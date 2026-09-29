@@ -81,11 +81,41 @@ published `build-7c984304a1f9`. Its ARM path
 locally checked output. Signed Mini inspection accepted the exact closure with
 approval `f52b45b4c03ed8c898c42ef2b766cc655d62e1164002d64ec388f25b0c4619b1`.
 Its authority, receiver, setup, units and ports match the original plugin.
-The inspection did not select or start it; the upright package and original
-rollback remain selected. The Mini rebooted before inspection, and its temporary
-`/run/systemd/system/korri-sunshine.service.d/90-audio-runtime.conf` is gone.
-Resolve that audio setting before any plugin switch. A physical Moonlight check
-and separate approval for activation remain necessary.
+The inspection did not select or start it. The Mini rebooted before inspection,
+and its temporary audio setting had disappeared. The later activation attempts
+are recorded below; neither reached a Moonlight stream.
+
+## Signed crop trial blocked at encoder startup (2026-09-29)
+
+The owner approved an exact-path trial. After the reboot, Sunshine had been
+logging `Gameplay audio server did not become ready` since 15:24 UTC. A first
+video-only switch selected the crop candidate but could not start Sunshine; the
+scoped recovery returned the upright package with the original as direct
+rollback. The owner then approved restoring the earlier runtime-only audio
+file, exactly `[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/1000\n`
+(SHA-256 `992e81a1f01803ee4ed9378ebf42113e6e6554e5c1334c9c0f18d0921e15516b`).
+Sunshine stayed active for 20 seconds without a restart. This file is lost on
+reboot; the runtime-only repair is not a permanent audio fix.
+
+With fresh owner readiness, a second switch selected the signed crop candidate
+while parking and then restoring that audio file. Sunshine passed its audio
+check but could not initialize `h264_v4l2m2m` on `/dev/video1`: `Could not open
+codec [h264_v4l2m2m]: Invalid argument` at 18:31:49 UTC. The encoder probe
+never reached `Found H.264 encoder`, so the script restored the upright
+package through the signed original. The upright package also failed the same
+codec-open check at 18:32:26 UTC, after audio was restored. Its service stayed
+active for ten seconds with zero restarts, but **active does not mean it can
+stream**. No H.264 success was logged on this boot. The crop code only rewrites
+packets after an encoder opens; this trial did not exercise it. The candidate's
+effect on either green edge remains unverified. These logs alone cannot show
+whether the candidate caused or merely shared the encoder failure.
+
+The selected package is again the signed upright package, with the signed
+original as direct rollback. The audio file has the expected hash; Sunshine,
+the input receiver, and SSH were active on the last check. The temporary trial
+scripts and stage were removed. Do not switch packages again until the
+`/dev/video1` initialization failure is understood, and obtain fresh owner
+readiness before a visual test.
 
 ## Mini trial result and diagnostic change
 
