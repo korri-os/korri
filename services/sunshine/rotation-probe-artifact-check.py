@@ -6,12 +6,15 @@ from pathlib import Path
 import subprocess
 import sys
 
-if len(sys.argv) != 4:
-    raise SystemExit(f'usage: {sys.argv[0]} ON_PLUGIN OFF_PLUGIN BASELINE_KORRI_SOURCE')
-baseline_unit = Path(sys.argv[3]).resolve(strict=True) / 'plugins/sunshine/korri-sunshine.service'
+if len(sys.argv) not in (3, 4):
+    raise SystemExit(f'usage: {sys.argv[0]} ON_PLUGIN [OFF_PLUGIN] BASELINE_KORRI_SOURCE')
+baseline_unit = Path(sys.argv[-1]).resolve(strict=True) / 'plugins/sunshine/korri-sunshine.service'
 assert baseline_unit.is_file(), 'missing Mini plugin producer'
 expected_hash = __import__('hashlib').sha256((Path(__file__).parent / 'rotation-probe.patch').read_bytes()).hexdigest()
-for mode, raw_path in [('on', sys.argv[1]), ('off', sys.argv[2])]:
+modes = [('on', sys.argv[1])]
+if len(sys.argv) == 4:
+    modes.append(('off', sys.argv[2]))
+for mode, raw_path in modes:
     plugin = Path(raw_path).resolve(strict=True)
     manifest = json.loads((plugin / 'manifest.json').read_text())
     assert manifest['publisher']['namespace'] == '@korri'

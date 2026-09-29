@@ -39,14 +39,14 @@
 +        BOOST_LOG(info) << "KMS rotation probe decision: Wayland output="sv
 +                        << (output_name.empty() ? "<unmatched>" : output_name)
 +                        << " transform="sv << (output_transform ? std::to_string(*output_transform) : "<missing>")
-+                        << " expected_90="sv << (output_transform == WL_OUTPUT_TRANSFORM_90)
++                        << " expected_270="sv << (output_transform == WL_OUTPUT_TRANSFORM_270)
 +                        << " CRTC="sv << crtc_id << " plane="sv << plane_id
 +                        << " DRM rotation="sv << plane_rotation
 +                        << " expected_rotate_0="sv << (plane_rotation == DRM_MODE_ROTATE_0)
 +                        << " raw="sv << img_width << 'x' << img_height
 +                        << " capture="sv << width << 'x' << height
 +                        << " offset="sv << img_offset_x << ',' << img_offset_y;
-+        if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {
++        if (output_transform == WL_OUTPUT_TRANSFORM_270 && plane_rotation == DRM_MODE_ROTATE_0) {
 +          if (width <= 0 || height <= 0 || width != img_width || height != img_height || img_offset_x || img_offset_y) {
 +            BOOST_LOG(error) << "KMS rotation probe requires a full-size, uncropped framebuffer"sv;
 +            return -1;

@@ -8,7 +8,7 @@ setup and require the absent `korri-input-seat-receiver.service`. After testing
 the compatible `build-211e26ed0ca1` batch, the Mini again selects the original
 signed package `/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin`
 with its `korri-sunshine-input-seat-receiver.service`. The signed rotation-on
-trial package remains the previous rollback selection. Any replacement must
+diagnostic package remains the previous selection. Any replacement must
 retain the original producer and permission boundary.
 
 ## Mini trial result and diagnostic change
@@ -30,15 +30,17 @@ scene, delivered-FPS measure or cursor result. The original signed package was
 restored again; its receiver, SSH, audio environment and H.264 startup were
 verified active. The trial did not write an SD card or firmware.
 
-Sway's live output query reported `DSI-1` transform `90`; the active DRM primary
-plane reported `rotation=1` (`rotate-0`). These are observations of the
-compositor and DRM plane, **not** the values Sunshine saw in its rotation guard.
-This revision logs the Wayland-to-DRM output correlation and the guard's actual
-Wayland transform, plane rotation, CRTC, plane, framebuffer dimensions and
-offsets once per KMS RAM capture initialization. It does not relax the guard
-or change the readback, rotation shader, cursor blending or other capture
-routes. A newly signed exact package and separate Mini approval are required
-before another device test.
+The signed diagnostic on 2026-09-29 recorded the awake Mini's actual guard
+inputs: Wayland output DSI-1 transform 3 (270 degrees), DRM rotation 1
+(rotate-0), and a full 1080x1240 capture at offset 0,0. The old guard logged
+`expected_90=false`, so the shader did not run. The first diagnostic startup
+found the screen powered off and DRM mode 0x0; the original package showed the
+same startup failure until the screen was woken. After both trials, the
+original package, receiver, audio setting, and H.264 startup were verified.
+This revision accepts only the observed Wayland 270 transform; the DRM and
+full-frame restrictions, shader, and cursor mapping remain unchanged. This
+has not yet produced a rotated stream. A newly signed exact package and
+separate Mini approval are required before another device test.
 
 The Mini also has an externally managed `90-audio-runtime.conf` in Sunshine's
 host-owned systemd drop-in directory. The plugin host's stop path cannot remove
@@ -55,7 +57,7 @@ setting afterward.
   The existing KMS-to-Wayland output match associates it with a DRM CRTC. That
   match is explicitly described as guesswork in `kmsgrab.cpp`.
 - Only the KMS **RAM** capture object tries rotation. It selects the GPU pass
-  when the matched Wayland output reports `WL_OUTPUT_TRANSFORM_90`, the DRM
+  when the matched Wayland output reports `WL_OUTPUT_TRANSFORM_270`, the DRM
   plane reports `DRM_MODE_ROTATE_0`, and the source rectangle is the entire,
   uncropped framebuffer. The output dimensions are swapped. The source texture
   is drawn into one persistent destination texture; the existing single
@@ -66,15 +68,15 @@ setting afterward.
   color conversion. The uninstrumented build has no per-frame clocks or logs.
   `SUNSHINE_CAPTURE_ROTATION_FORCE_OFF` keeps the unrotated path available in
   an otherwise identical instrumented build for a controlled comparison.
-- The shader applies the 90-degree counter-clockwise transform specified by
-  `WL_OUTPUT_TRANSFORM_90`. A visible hardware cursor follows the same
+- The unchanged shader applies a 90-degree counter-clockwise transform to the
+  raw framebuffer. A visible hardware cursor follows the same
   source-to-destination mapping after readback. It visits only cursor pixels,
   not the whole frame; the existing blend already does not scale the cursor.
   A mismatched Wayland output mode cannot authorize rotation. The probe logs
   the matched Wayland output name, DRM CRTC/plane, raw size, output size and
-  transform at initialization. The Mini's actual Wayland event, exact match,
-  cursor appearance and observed orientation still need a physical check.
-  Do not infer them from `swaymsg` output or panel dimensions alone.
+  transform at initialization. The Mini's Wayland event and output match are
+  observed; cursor appearance and orientation still need a physical check.
+  Sway reports 90 while its wl_output geometry reports 270.
 
 At 1240 × 1080 × 4 bytes, the extra destination texture holds **5,356,800
 bytes** (about 5.11 MiB). An uncached full-frame GPU read plus write at 60
@@ -99,7 +101,7 @@ checks that the original unrotated readback stays, and checks the asymmetric
 zero-copy runtime trace. The `--fuzz=0` probe application prevents silent
 context relocation in the two reviewed profiles.
 
-Compile each instrumented profile off-device, without changing the approved
+Compile the corrected on profile off-device, without changing the approved
 package or patch list:
 
 ```sh
@@ -108,15 +110,10 @@ nix build --impure --file services/sunshine/rotation-probe-build.nix \
 nix build --impure --file services/sunshine/rotation-probe-build.nix \
   --argstr system aarch64-linux \
   --out-link /tmp/sunshine-rotation-arm-experiment
-nix build --impure --file services/sunshine/rotation-probe-build.nix \
-  --argstr system aarch64-linux --arg forceOff true \
-  --out-link /tmp/sunshine-rotation-arm-force-off
 nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
   --out-link /tmp/sunshine-rotation-plugin-on
-nix build --impure --file services/sunshine/rotation-probe-plugin.nix \
-  --arg forceOff true --out-link /tmp/sunshine-rotation-plugin-off
 services/sunshine/rotation-probe-artifact-check.py \
-  /tmp/sunshine-rotation-plugin-on /tmp/sunshine-rotation-plugin-off \
+  /tmp/sunshine-rotation-plugin-on \
   /nix/store/3gjgvw98yp52scnbwdxibdfw9abzk3k3-source
 ```
 
@@ -127,8 +124,9 @@ not silently follow the current Core plugin, which changed its units, receiver,
 input patch and requested authority. The derivation has an experimental name
 and version. Its provenance identifies
 it as an experiment and records the probe hash, parent profile and force-off
-mode. It is **not** an approved
-Sunshine build or a plugin closure. The existing plugin's approval binds its
+mode. The new batch needs only an on package; the compatible off variant from
+the previous signed batch remains available for a separate controlled trial.
+It is **not** an approved Sunshine build or a plugin closure. The existing plugin's approval binds its
 exact package closure. `rotation-probe-plugin.nix` builds the matching
 experimental plugin output for both ARM variants off-device; it does not
 publish or sign them. The official plugin publisher requires the same named
@@ -136,9 +134,9 @@ outputs on x86_64 and aarch64, so it also builds experimental x86_64 plugin
 outputs. The Mini trial uses **only** the ARM outputs. Do not substitute a standalone executable under the
 existing plugin unit, even after signing the binary. The plugin host needs a
 publisher-bound signature for the **new full closure** and an inspected exact
-approval. The on/off batch contains two outputs with the same `@korri:sunshine`
+approval. The earlier on/off batch contains two outputs with the same `@korri:sunshine`
 identity, so lookup by release and plugin ID rejects it as ambiguous. Inspect
-each exact ARM output path from the batch separately; verify its signed
+the exact ARM output path from the new on-only batch; verify its signed
 manifest and probe mode before approving an update. The artifact check reads both actual plugin
 manifests, the retained receiver and setup paths, package provenance, patch
 hash and AArch64 ELF headers. It does not verify a signature,

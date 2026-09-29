@@ -85,8 +85,12 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         assert after.count('KMS rotation probe output match: Wayland output=') == 1
         assert after.count('KMS rotation probe decision: Wayland output=') == 1
         assert 'auto plane_rotation = card.get_panel_orientation(plane_id);' in after
-        assert 'if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {' in after
-        assert after.index('KMS rotation probe decision: Wayland output=') < after.index('if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {')
+        # Awake Mini log: wl_output transform=3 (270), DRM rotation=1 (rotate-0),
+        # full 1080x1240 capture at offset 0,0. The 90 guard skipped the shader.
+        assert '<< " expected_270="sv << (output_transform == WL_OUTPUT_TRANSFORM_270)' in after
+        assert 'if (output_transform == WL_OUTPUT_TRANSFORM_270 && plane_rotation == DRM_MODE_ROTATE_0) {' in after
+        assert 'if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {' not in after
+        assert after.index('KMS rotation probe decision: Wayland output=') < after.index('if (output_transform == WL_OUTPUT_TRANSFORM_270 && plane_rotation == DRM_MODE_ROTATE_0) {')
         assert after.index('KMS rotation probe output match: Wayland output=') < after.index('monitor_descriptor.output_transform.reset();')
         print(f'{profile}: approved patches + probe apply; KMS GPU suffix and identity readback unchanged')
 
