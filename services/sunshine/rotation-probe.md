@@ -1,14 +1,53 @@
 # Sunshine KMS rotation cost probe (off-device only)
 
 `rotation-probe.patch` is deliberately **not** in `approved-patches.nix` or
-`package.nix`. It is not installed on any device. The patch is an experiment,
-not a fix ready to release. The first signed batch, `build-932cd7194921`,
-**must not be installed on the current Mini**. Its inspected plugins replace
-the active root-owned receiver with a different root setup and require the
-absent `korri-input-seat-receiver.service`. The active signed selection remains
-`/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin` with its own
-`korri-sunshine-input-seat-receiver.service`. The replacement trial outputs
-must retain that producer and permission boundary.
+`package.nix`. It is an experiment, not a fix ready to release. The first signed
+batch, `build-932cd7194921`, **must not be selected on the current Mini**. Its
+inspected plugins replace the active root-owned receiver with a different root
+setup and require the absent `korri-input-seat-receiver.service`. After testing
+the compatible `build-211e26ed0ca1` batch, the Mini again selects the original
+signed package `/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin`
+with its `korri-sunshine-input-seat-receiver.service`. The signed rotation-on
+trial package remains the previous rollback selection. Any replacement must
+retain the original producer and permission boundary.
+
+## Mini trial result and diagnostic change
+
+On 2026-09-28, the compatible signed force-off package was selected with the
+original as rollback. Moonlight returned `failed to start desktop error 503`.
+Sunshine logged a KMS capture initialization failure, then no working encoder;
+its startup saw a `0x0` expected mode against `1080x1240`. The original package
+had shown that same transient startup mismatch before recovering, so this is
+not proof that the probe caused the 503. The original signed selection was
+restored and Moonlight opened, but the picture remained rotated.
+
+The compatible signed rotation-on package then streamed. The owner still saw a
+rotated picture. Its 300-frame capture logs repeatedly reported
+`rotated=false`, so the rotation pass never ran. The logged unrotated capture
+p50 was about 5.1 ms in the observed windows. This is **not** rotation cost:
+there is no rotated timing sample, matched force-off stream, controlled moving
+scene, delivered-FPS measure or cursor result. The original signed package was
+restored again; its receiver, SSH, audio environment and H.264 startup were
+verified active. The trial did not write an SD card or firmware.
+
+Sway's live output query reported `DSI-1` transform `90`; the active DRM primary
+plane reported `rotation=1` (`rotate-0`). These are observations of the
+compositor and DRM plane, **not** the values Sunshine saw in its rotation guard.
+This revision logs the Wayland-to-DRM output correlation and the guard's actual
+Wayland transform, plane rotation, CRTC, plane, framebuffer dimensions and
+offsets once per KMS RAM capture initialization. It does not relax the guard
+or change the readback, rotation shader, cursor blending or other capture
+routes. A newly signed exact package and separate Mini approval are required
+before another device test.
+
+The Mini also has an externally managed `90-audio-runtime.conf` in Sunshine's
+host-owned systemd drop-in directory. The plugin host's stop path cannot remove
+that directory while the extra file remains; the first update stopped Sunshine
+and needed a scoped `/run` recovery from the saved original unit and policy.
+For the subsequent trials, the audio file was parked only during the host
+update/restore, then restored and applied by a service restart. Do not repeat
+a plugin update without accounting for this conflict and verifying the audio
+setting afterward.
 
 ## Scope and provenance
 

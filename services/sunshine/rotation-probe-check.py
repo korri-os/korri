@@ -82,6 +82,12 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         assert 'output_name = monitor->second.output_name' in after
         assert 'monitor_descriptor.output_transform.reset();' in after, 'mismatched Wayland mode must not authorize rotation'
         assert '" CRTC="sv << crtc_id << " plane="sv << plane_id' in after
+        assert after.count('KMS rotation probe output match: Wayland output=') == 1
+        assert after.count('KMS rotation probe decision: Wayland output=') == 1
+        assert 'auto plane_rotation = card.get_panel_orientation(plane_id);' in after
+        assert 'if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {' in after
+        assert after.index('KMS rotation probe decision: Wayland output=') < after.index('if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {')
+        assert after.index('KMS rotation probe output match: Wayland output=') < after.index('monitor_descriptor.output_transform.reset();')
         print(f'{profile}: approved patches + probe apply; KMS GPU suffix and identity readback unchanged')
 
 # Asymmetric, labelled source: verify the shader's counter-clockwise coordinates.

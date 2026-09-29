@@ -25,7 +25,7 @@
 +      std::optional<std::int32_t> output_transform;
 +      std::string output_name;
  
-@@ -1156,2 +1167,66 @@
+@@ -1156,2 +1167,77 @@
  
 +#ifdef SUNSHINE_CAPTURE_ROTATION_PROBE
 +        capture_samples_ms.reserve(300);
@@ -35,7 +35,18 @@
 +#if defined(SUNSHINE_BUILD_WAYLAND) && !defined(SUNSHINE_CAPTURE_ROTATION_FORCE_OFF)
 +        // Use the same wl_output that KMS already correlates for touch. Never
 +        // change the DMA-BUF/VAAPI/CUDA path or an untransformed RAM capture.
-+        if (output_transform == WL_OUTPUT_TRANSFORM_90 && card.get_panel_orientation(plane_id) == DRM_MODE_ROTATE_0) {
++        auto plane_rotation = card.get_panel_orientation(plane_id);
++        BOOST_LOG(info) << "KMS rotation probe decision: Wayland output="sv
++                        << (output_name.empty() ? "<unmatched>" : output_name)
++                        << " transform="sv << (output_transform ? std::to_string(*output_transform) : "<missing>")
++                        << " expected_90="sv << (output_transform == WL_OUTPUT_TRANSFORM_90)
++                        << " CRTC="sv << crtc_id << " plane="sv << plane_id
++                        << " DRM rotation="sv << plane_rotation
++                        << " expected_rotate_0="sv << (plane_rotation == DRM_MODE_ROTATE_0)
++                        << " raw="sv << img_width << 'x' << img_height
++                        << " capture="sv << width << 'x' << height
++                        << " offset="sv << img_offset_x << ',' << img_offset_y;
++        if (output_transform == WL_OUTPUT_TRANSFORM_90 && plane_rotation == DRM_MODE_ROTATE_0) {
 +          if (width <= 0 || height <= 0 || width != img_width || height != img_height || img_offset_x || img_offset_y) {
 +            BOOST_LOG(error) << "KMS rotation probe requires a full-size, uncropped framebuffer"sv;
 +            return -1;
@@ -92,7 +103,7 @@
 +        }
 +#endif
          return 0;
-@@ -1268,3 +1343,34 @@
+@@ -1268,3 +1354,34 @@
  
 +      void blend_rotated_cursor(img_t &img) {
 +        // Only visit cursor pixels. The image shader maps a raw source pixel
@@ -127,7 +138,7 @@
 +        auto capture_start = std::chrono::steady_clock::now();
 +#endif
          file_t fb_fd[4];
-@@ -1299,4 +1405,24 @@
+@@ -1299,4 +1416,24 @@
  
 -        gl::ctx.GetTextureSubImage(rgb->tex[0], 0, img_offset_x, img_offset_y, 0, width, height, 1, GL_BGRA, GL_UNSIGNED_BYTE, img_out->height * img_out->row_pitch, img_out->data);
 -
@@ -154,7 +165,7 @@
 +        report_probe_samples(readback_samples_ms, "readback plus conditional draw");
 +#endif
          img_out->frame_timestamp = frame_timestamp;
-@@ -1304,5 +1430,12 @@
+@@ -1304,5 +1441,12 @@
          if (cursor && captured_cursor.visible) {
 -          blend_cursor(*img_out);
 +          if (capture_rotate_90) {
@@ -169,7 +180,7 @@
 +        report_probe_samples(capture_samples_ms, "capture (excludes FPS pacing)");
 +#endif
          return capture_e::ok;
-@@ -1328,2 +1461,23 @@
+@@ -1328,2 +1472,23 @@
        egl::ctx_t ctx;
 +      bool capture_rotate_90 {false};
 +      std::optional<gl::tex_t> rotated_texture;
@@ -193,12 +204,17 @@
 +      }
 +#endif
      };
-@@ -1544,2 +1698,4 @@
+@@ -1544,2 +1709,9 @@
              monitor_descriptor.viewport.offset_y = monitor->viewport.offset_y;
 +            monitor_descriptor.output_transform = monitor->output_transform;
 +            monitor_descriptor.output_name = monitor->name;
++            BOOST_LOG(info) << "KMS rotation probe output match: Wayland output="sv << monitor->name
++                            << " transform="sv << (monitor->output_transform ? std::to_string(*monitor->output_transform) : "<missing>")
++                            << " DRM monitor="sv << monitor_descriptor.monitor_index
++                            << " expected="sv << monitor_descriptor.viewport.width << 'x' << monitor_descriptor.viewport.height
++                            << " observed="sv << monitor->viewport.width << 'x' << monitor->viewport.height;
  
-@@ -1555,2 +1711,4 @@
+@@ -1555,2 +1727,4 @@
                  << monitor->viewport.width << 'x' << monitor->viewport.height;
 +              // A guessed match with conflicting mode cannot authorize rotation.
 +              monitor_descriptor.output_transform.reset();
