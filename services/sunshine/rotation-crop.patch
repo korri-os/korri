@@ -1,0 +1,53 @@
+--- a/src/cbs.cpp
++++ b/src/cbs.cpp
+@@ -5,5 +5,6 @@
+  * @brief Definitions for FFmpeg Coded Bitstream API.
+  */
++#include <cstring>
+ extern "C" {
+ // lib includes
+ #include <libavcodec/avcodec.h>
+@@ -111,6 +112,30 @@
+       sps->max_num_ref_frames = avctx->refs;
+     }
+ 
++    // Iris emits its aligned storage size in the H.264 SPS. The V4L2
++    // input frame is smaller, so uncropped padding becomes green in Moonlight.
++    // Only correct a progressive 4:2:0 SPS that has no driver-provided crop.
++    if (avctx->codec && std::strcmp(avctx->codec->name, "h264_v4l2m2m") == 0 &&
++        sps->chroma_format_idc == 1 && sps->frame_mbs_only_flag &&
++        !sps->frame_cropping_flag) {
++      const int coded_width = 16 * (sps->pic_width_in_mbs_minus1 + 1);
++      const int coded_height = 16 * (sps->pic_height_in_map_units_minus1 + 1);
++      const int excess_width = coded_width - avctx->width;
++      const int excess_height = coded_height - avctx->height;
++      if (avctx->width > 0 && avctx->height > 0 && excess_width >= 0 && excess_height >= 0 &&
++          excess_width % 2 == 0 && excess_height % 2 == 0) {
++        if (excess_width || excess_height) {
++          sps->frame_cropping_flag = 1;
++          sps->frame_crop_right_offset = excess_width / 2;
++          sps->frame_crop_bottom_offset = excess_height / 2;
++          BOOST_LOG(info) << "V4L2 H.264 SPS crop: coded "sv << coded_width << 'x' << coded_height
++                          << " visible "sv << avctx->width << 'x' << avctx->height;
++        }
++      } else {
++        BOOST_LOG(warning) << "V4L2 H.264 SPS crop skipped: incompatible coded and visible sizes"sv;
++      }
++    }
++
+     sps->vui_parameters_present_flag = 1;
+ 
+     auto &vui = sps->vui;
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -1843,6 +1843,9 @@
+ 
+       // 0 ==> don't inject, 1 ==> inject for h264, 2 ==> inject for hevc
+-      config.videoFormat <= 1 ? (1 - (int) video_format[encoder_t::VUI_PARAMETERS]) * (1 + config.videoFormat) : 0
++      // Iris reports VUI support but omits the visible-frame crop. Replace
++      // the H.264 SPS once even when its VUI would otherwise pass validation.
++      config.videoFormat == 0 && video_format.name == "h264_v4l2m2m" ?
++        1 : (config.videoFormat <= 1 ? (1 - (int) video_format[encoder_t::VUI_PARAMETERS]) * (1 + config.videoFormat) : 0)
+     );
+ 
+     return session;

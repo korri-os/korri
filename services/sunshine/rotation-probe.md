@@ -4,11 +4,12 @@
 `package.nix`. It is an experiment, not a fix ready to release. The first signed
 batch, `build-932cd7194921`, **must not be selected on the current Mini**. Its
 inspected plugins replace the active root-owned receiver with a different root
-setup and require the absent `korri-input-seat-receiver.service`. After testing
-the compatible `build-211e26ed0ca1` batch, the Mini again selects the original
-signed package `/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin`
-with its `korri-sunshine-input-seat-receiver.service`. The signed rotation-on
-diagnostic package remains the previous selection. Any replacement must
+setup and require the absent `korri-input-seat-receiver.service`. After the controlled trial, the Mini selected the signed upright clockwise
+package `/nix/store/frc9rcm8iw3zlcbhc2dlz9709x30sv4m-korri-plugin`.
+The original signed package
+`/nix/store/fq4ayc50jgf0b3bd85hpw41cg6kx83ig-korri-plugin` remained its
+direct rollback, with `korri-sunshine-input-seat-receiver.service`. These are
+last verified selections, not current device state. Any replacement must
 retain the original producer and permission boundary.
 
 ## Controlled moving-scene comparison (2026-09-29)
@@ -48,6 +49,35 @@ Sunshine's encode-call time does not prove hardware completion. This is one
 on/off pair, not a repeated or randomized trial; delivered stream FPS, actual
 dropped frames, GPU occupancy, power, and thermal delta were not measured.
 Logs are saved locally at `/tmp/mini-rotation-comparison-{on,off}.sunshine.log`.
+
+## Green edges after the upright trial (candidate not deployed)
+
+The owner supplied a Moonlight screenshot with green right and bottom edges.
+A read-only screenshot check measured about 40 horizontal and 8 vertical
+stream pixels of green on the 1240×1080 picture. An earlier actual Mini H.264
+sample at `/tmp/rpmini-sunshine-encoded.j3ISfK/1920x1080.h264` decodes as
+1920×1088; its final eight rows are green. FFmpeg's reviewed V4L2 buffer
+copy writes only the visible NV12 rows and columns into driver-aligned storage.
+The encoded H.264 SPS of that sample did not crop the storage padding. These
+observations support a missing H.264 visible-frame crop, not a rotation draw
+failure. The exact coded dimensions and SPS of the screenshot's stream have
+not yet been captured, so the cause of its right edge remains inferred.
+
+The separate `rotation-crop.patch` candidate uses Sunshine's existing SPS
+replacement on `h264_v4l2m2m` only. It forces that replacement even when the
+encoder's VUI passes validation. For uncropped progressive 4:2:0 SPS records,
+it sets right and bottom crop offsets from coded size minus requested visible
+size in the SPS's two-pixel units. It leaves other encoders and already cropped
+SPS records unchanged. An off-device 1280×1088 test image with green padding
+on its last 40 columns and eight rows decoded at 1240×1080 after an SPS crop,
+with no green on either visible edge. `rotation-crop-stream-check.py` reports
+`RED` for the earlier real Mini sample (1920×1088 versus 1920×1080), and
+`GREEN` for both the rewritten sample and the 1240×1080 laboratory stream.
+That test verifies the codec mechanism, not the new C++ binary or the Mini
+stream. The ARM plugin built off-device, and its local manifest, retained
+receiver, native unit and provenance passed the artifact check. The candidate
+still needs an officially signed full closure, exact approval, and a physical
+Moonlight check. Until then, preserve the selected upright package and original rollback.
 
 ## Mini trial result and diagnostic change
 

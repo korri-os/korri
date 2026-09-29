@@ -11,6 +11,7 @@ if len(sys.argv) not in (3, 4):
 baseline_unit = Path(sys.argv[-1]).resolve(strict=True) / 'plugins/sunshine/korri-sunshine.service'
 assert baseline_unit.is_file(), 'missing Mini plugin producer'
 expected_hash = __import__('hashlib').sha256((Path(__file__).parent / 'rotation-probe.patch').read_bytes()).hexdigest()
+expected_crop_hash = __import__('hashlib').sha256((Path(__file__).parent / 'rotation-crop.patch').read_bytes()).hexdigest()
 modes = [('on', sys.argv[1])]
 if len(sys.argv) == 4:
     modes.append(('off', sys.argv[2]))
@@ -40,6 +41,7 @@ for mode, raw_path in modes:
     assert provenance['experimental_parent_profile'] == provenance['build_profile']
     assert provenance['experimental_rotation_probe'] == '1'
     assert provenance['experimental_rotation_patch_sha256'] == expected_hash
+    assert provenance['experimental_v4l2_sps_crop_patch_sha256'] == expected_crop_hash
     assert provenance['experimental_rotation_force_off'] == ('1' if mode == 'off' else '0')
     assert provenance['approved_parent_patch_set_sha256'] != expected_hash
     result = subprocess.run(['readelf', '-h', str(package / 'bin/sunshine')], capture_output=True, text=True, check=True)

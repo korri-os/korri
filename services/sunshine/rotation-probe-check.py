@@ -22,6 +22,9 @@ if not approved.is_file() or not (baseline / 'plugins/sunshine/korri-sunshine-in
 expr = f'let a = import {approved}; in map (p: toString p.path) (a.patches ++ a.rkmppPatches)'
 records = json.loads(subprocess.check_output(['nix', 'eval', '--json', '--impure', '--expr', expr], text=True))
 probe = service / 'rotation-probe.patch'
+crop = service / 'rotation-crop.patch'
+crop_files = {line[6:].split('\t', 1)[0] for line in crop.read_text().splitlines() if line.startswith('+++ b/')}
+assert crop_files == {'src/cbs.cpp', 'src/video.cpp'}, 'crop patch changed files outside SPS creation and injection'
 probe_files = {line[6:].split('\t', 1)[0] for line in probe.read_text().splitlines() if line.startswith('+++ b/')}
 assert probe_files == {
     'src/platform/linux/kmsgrab.cpp',
@@ -31,7 +34,7 @@ assert probe_files == {
 }, 'prototype modified a capture or conversion backend outside its reviewed scope'
 assert '+          gl::ctx.Finish(' not in probe.read_text(), 'new GPU completion wait'
 paths = set()
-for name in records + [str(probe)]:
+for name in records + [str(probe), str(crop)]:
     for line in Path(name).read_text().splitlines():
         if line.startswith(('--- a/', '+++ b/')):
             relative = line[6:].split('\t', 1)[0]
@@ -62,6 +65,16 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         if result.returncode:
             raise SystemExit(f'{profile}: prototype patch failed:\n{result.stdout}\n{result.stderr}')
         after = kms.read_text()
+        result = subprocess.run(['patch', '-p1', '--batch', '--forward', '--fuzz=0', '-i', str(crop)], cwd=tree, capture_output=True, text=True)
+        if result.returncode:
+            raise SystemExit(f'{profile}: SPS crop patch failed:\n{result.stdout}\n{result.stderr}')
+        cbs = (tree / 'src/cbs.cpp').read_text()
+        assert 'std::strcmp(avctx->codec->name, "h264_v4l2m2m") == 0' in cbs
+        assert 'sps->frame_crop_right_offset = excess_width / 2;' in cbs
+        assert 'sps->frame_crop_bottom_offset = excess_height / 2;' in cbs
+        assert 'sps->chroma_format_idc == 1 && sps->frame_mbs_only_flag &&' in cbs
+        assert '!sps->frame_cropping_flag' in cbs
+        assert 'config.videoFormat == 0 && video_format.name == "h264_v4l2m2m" ?' in (tree / 'src/video.cpp').read_text()
         vram_marker = 'class display_vram_t: public display_t {'
         gpu_end = '}  // namespace kms'
         before_gpu = before.split(vram_marker, 1)[1].split(gpu_end, 1)[0]
