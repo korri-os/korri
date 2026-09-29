@@ -66,7 +66,7 @@
 +uniform sampler2D image;
 +in vec2 tex;
 +layout(location = 0) out vec4 color;
-+void main() { color = texture(image, vec2(tex.y, 1.0 - tex.x)); }
++void main() { color = texture(image, vec2(1.0 - tex.y, tex.x)); }
 +)", GL_FRAGMENT_SHADER);
 +          if (vertex.has_right() || fragment.has_right()) {
 +            BOOST_LOG(error) << "Couldn't compile the KMS rotation probe shaders"sv;
@@ -107,12 +107,12 @@
  
 +      void blend_rotated_cursor(img_t &img) {
 +        // Only visit cursor pixels. The image shader maps a raw source pixel
-+        // (x, y) to (y, source_width - 1 - x) in top-left image coordinates.
++        // (x, y) to (source_height - 1 - y, x) in top-left image coordinates.
 +        auto *pixels = reinterpret_cast<std::uint32_t *>(img.data);
 +        for (std::uint32_t y = 0; y < captured_cursor.src_h; ++y) {
 +          for (std::uint32_t x = 0; x < captured_cursor.src_w; ++x) {
-+            auto target_x = captured_cursor.y - img_offset_y + static_cast<std::int32_t>(y);
-+            auto target_y = img.height - 1 - (captured_cursor.x - img_offset_x + static_cast<std::int32_t>(x));
++            auto target_x = img.width - 1 - (captured_cursor.y - img_offset_y + static_cast<std::int32_t>(y));
++            auto target_y = captured_cursor.x - img_offset_x + static_cast<std::int32_t>(x);
 +            if (target_x < 0 || target_x >= img.width || target_y < 0 || target_y >= img.height) {
 +              continue;
 +            }

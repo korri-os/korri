@@ -73,11 +73,11 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         assert 'if (capture_rotate_90) {' in after and 'blend_rotated_cursor(*img_out);' in after
         assert 'blend_cursor(*img_out);' in after, 'unrotated cursor blending changed'
         assert 'cannot capture a visible hardware cursor' not in after
-        assert 'auto target_x = captured_cursor.y - img_offset_y + static_cast<std::int32_t>(y);' in after
-        assert 'auto target_y = img.height - 1 - (captured_cursor.x - img_offset_x + static_cast<std::int32_t>(x));' in after
+        assert 'auto target_x = img.width - 1 - (captured_cursor.y - img_offset_y + static_cast<std::int32_t>(y));' in after
+        assert 'auto target_y = captured_cursor.x - img_offset_x + static_cast<std::int32_t>(x);' in after
         assert 'std::memcpy(&cursor_pixel, captured_cursor.pixels.data()' in after
         assert '#if defined(SUNSHINE_BUILD_WAYLAND) && !defined(SUNSHINE_CAPTURE_ROTATION_FORCE_OFF)' in after
-        assert 'vec2(tex.y, 1.0 - tex.x)' in after, 'rotation shader changed: retest orientation'
+        assert 'vec2(1.0 - tex.y, tex.x)' in after, 'clockwise rotation shader missing'
         assert 'output_transform = monitor->second.output_transform' in after
         assert 'output_name = monitor->second.output_name' in after
         assert 'monitor_descriptor.output_transform.reset();' in after, 'mismatched Wayland mode must not authorize rotation'
@@ -94,10 +94,11 @@ for profile, patches in [('base', base_records), ('rkmpp', records)]:
         assert after.index('KMS rotation probe output match: Wayland output=') < after.index('monitor_descriptor.output_transform.reset();')
         print(f'{profile}: approved patches + probe apply; KMS GPU suffix and identity readback unchanged')
 
-# Asymmetric, labelled source: verify the shader's counter-clockwise coordinates.
+# The owner observed the counter-clockwise candidate upside down. Verify the
+# opposite direction on an asymmetric, labelled 3x2 source.
 source_pixels = [['A', 'B', 'C'], ['D', 'E', 'F']]
-rotated = [[source_pixels[x][2 - y] for x in range(2)] for y in range(3)]
-assert rotated == [['C', 'F'], ['B', 'E'], ['A', 'D']]
+rotated = [[source_pixels[1 - x][y] for x in range(2)] for y in range(3)]
+assert rotated == [['D', 'A'], ['E', 'B'], ['F', 'C']]
 # Verify cursor sample placement including a partially clipped cursor. The
 # shader and cursor must use the same source-to-destination mapping.
 for source_width, source_height, cursor_x, cursor_y, cursor_width, cursor_height in [
@@ -108,7 +109,7 @@ for source_width, source_height, cursor_x, cursor_y, cursor_width, cursor_height
     for y in range(cursor_height):
         for x in range(cursor_width):
             raw_x, raw_y = cursor_x + x, cursor_y + y
-            target_x, target_y = raw_y, source_width - 1 - raw_x
+            target_x, target_y = source_height - 1 - raw_y, raw_x
             visible = 0 <= raw_x < source_width and 0 <= raw_y < source_height
             assert visible == (0 <= target_x < source_height and 0 <= target_y < source_width)
             if visible:

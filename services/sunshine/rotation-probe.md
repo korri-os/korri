@@ -37,10 +37,16 @@ inputs: Wayland output DSI-1 transform 3 (270 degrees), DRM rotation 1
 found the screen powered off and DRM mode 0x0; the original package showed the
 same startup failure until the screen was woken. After both trials, the
 original package, receiver, audio setting, and H.264 startup were verified.
-This revision accepts only the observed Wayland 270 transform; the DRM and
-full-frame restrictions, shader, and cursor mapping remain unchanged. This
-has not yet produced a rotated stream. A newly signed exact package and
-separate Mini approval are required before another device test.
+The signed 270-guard candidate then opened Moonlight on 2026-09-29, but the
+owner saw an upside-down picture. Its log reported `rotated=true` in two
+300-frame windows: capture p50 5.24045 and 5.26144 ms; readback plus draw
+p50 5.04223 and 5.05645 ms. These are real rotated-stage timings, but not a
+controlled on/off cost or a valid visual result. An earlier 503 in this trial
+occurred after the screen powered off; waking it allowed the stream to open.
+The original signed package, H.264, receiver and audio setting were restored.
+This revision reverses only the shader direction and cursor mapping, keeping
+the observed Wayland 270, DRM and full-frame guard. A newly signed exact
+package and separate Mini approval are required before another device test.
 
 The Mini also has an externally managed `90-audio-runtime.conf` in Sunshine's
 host-owned systemd drop-in directory. The plugin host's stop path cannot remove
@@ -68,8 +74,8 @@ setting afterward.
   color conversion. The uninstrumented build has no per-frame clocks or logs.
   `SUNSHINE_CAPTURE_ROTATION_FORCE_OFF` keeps the unrotated path available in
   an otherwise identical instrumented build for a controlled comparison.
-- The unchanged shader applies a 90-degree counter-clockwise transform to the
-  raw framebuffer. A visible hardware cursor follows the same
+- The shader now applies a 90-degree clockwise transform to the raw
+  framebuffer. A visible hardware cursor follows the same
   source-to-destination mapping after readback. It visits only cursor pixels,
   not the whole frame; the existing blend already does not scale the cursor.
   A mismatched Wayland output mode cannot authorize rotation. The probe logs
@@ -97,7 +103,7 @@ services/sunshine/rotation-probe-check.py \
 The check applies the probe after both the approved base patch set and the
 approved RKMPP patch set. It compares the KMS GPU capture class before/after,
 checks that the original unrotated readback stays, and checks the asymmetric
-3 × 2 shader coordinate mapping. These are **static** checks, not a GPU or
+3 × 2 clockwise shader and cursor mapping. These are **static** checks, not a GPU or
 zero-copy runtime trace. The `--fuzz=0` probe application prevents silent
 context relocation in the two reviewed profiles.
 
