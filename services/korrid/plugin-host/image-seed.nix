@@ -1,6 +1,6 @@
 # The NixOS SD builder copies storePaths into the image separately from the
-# system closure. Only the generated receipt and GC root retain a selected
-# plugin on the device after the image has been written.
+# system closure. Receipts and GC roots retain active selections. The offline
+# proof service also retains default closures in the system generation.
 {
   pkgs,
   hostPackage,
