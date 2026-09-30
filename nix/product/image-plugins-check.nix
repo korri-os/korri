@@ -44,15 +44,15 @@ in
 assert lib.all exactImage names;
 assert recoveryWithoutDefaults;
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
-assert lib.elem (toString published.korri-plugin-ssh) (map toString selected.rpminiv2);
-assert lib.all
-  (name: !(lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name})))
-  [
-    "rg353m"
-    "rgds"
-    "r36tmax"
-    "odin2portal"
-  ];
+# Key-only SSH ships on every device (owner decision, 2026-09-30).
+assert lib.all (name: lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name})) [
+  "rg353m"
+  "rgds"
+  "r36tmax"
+  "rpminiv2"
+  "odin2portal"
+  "rg35xxsp"
+];
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))
   [

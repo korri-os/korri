@@ -27,16 +27,18 @@ let
   n64AndDreamcast = select [ "mupen64plus" "flycast" ];
   ds = select [ "melonds" ];
   streamingHost = [ plugins.korri-plugin-sunshine ];
+  # Key-only SSH on every device (owner decision, 2026-09-30): it is the copy
+  # and debug path over the USB network link and Wi-Fi. Root authorization
+  # remains device-owned; with no authorized key nobody can log in.
+  ssh = [ plugins.korri-plugin-ssh ];
 in
 {
-  rg353m = shared ++ n64AndDreamcast ++ streamingHost;
-  rgds = shared ++ n64AndDreamcast ++ streamingHost;
-  r36tmax = shared;
-  # The Mini V2 reaches a computer over its USB network gadget; key-only SSH
-  # is its copy and debug path. Root authorization remains device-owned.
-  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ [ plugins.korri-plugin-ssh ];
-  odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost;
+  rg353m = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
+  rgds = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
+  r36tmax = shared ++ ssh;
+  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
+  odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   # RG35XXSP is not a product image yet. Its choice becomes active only when
   # measured display/input facts allow the product module and image to land.
-  rg35xxsp = shared;
+  rg35xxsp = shared ++ ssh;
 }
