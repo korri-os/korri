@@ -1,15 +1,27 @@
 # External plugin release-path verification
 
-Local release preparation and offline acceptance pass on the current sources.
-Current-revision hosted CI remains pending. Live publication and handheld
-installation are not authorized or verified.
+Batch 4 is incomplete. Local release preparation and offline acceptance pass.
+The final hosted x86 build and lifecycle pass. Its actual artifact passes
+production-bound signature and payload checks. Hosted ARM validation fails when
+its software VM cannot reach a guest shell. No ARM artifact was produced.
+Both hosted runs skipped publication. No further retry, live publication or
+handheld installation is authorized.
 
 ## Sources and completed work
 
 Core baseline is `80e15526dc7e5d6a004d2fa5ed1218e75b57d942`.
 Publisher baseline is `6b813d524e737dac1345c84b2e63d65b47ec699d`.
-Both local mains contain batches 1–3. Remote Core main remains `1c9499051`;
-remote publisher main remains `37d805c` at the start of this verification.
+Both local mains contain batches 1–3. Remote Core main remains `1c9499051`.
+After separate user approval, publisher remote main advanced from `37d805c` to
+reviewed `add556d61e4c6fe3a4a4f0d4e9dd4fb59342d088`, then separately approved
+`a62bc0d5c8607803ac73e613a47c3d79104ef1e5` with the controlled Nix pin and test
+improvements below.
+
+This evidence is revision-bound. After the tested commits, another session advanced
+local Core main to `93a77b2090506563991a2defd92c38db9cc7461f` with an inputd fix,
+and publisher main to `0cbdfdd2167015f43dfeba00cd0bbcef79cc0d6a` with RetroArch
+seat-pad changes. Those behavior changes are not covered by these release-path
+receipts. The hosted artifact checks deliberately evaluate immutable `a62bc0d…`.
 
 Publisher test commit `5cc4911b2adb2141f0dcbe3c3b2d1782a20f2b7e` adds
 caller-owned compiler-input coverage to the existing churn regression. It also
@@ -162,8 +174,13 @@ read Core cache. Mixing Core signatures into publishing exports can cause an
 append-only conflict. Current warm-store test artifacts preserve those signatures
 and must not be published. Publication is not atomic: metadata collision or
 capacity refusal can follow a public NAR batch. Live release permissions, upload
-races, digest reporting, and current capacity remain unverified. Current production
-private-key signing and fresh upstream availability were not tested locally.
+races and live asset digest reporting remain unverified. A read-only metadata
+snapshot at 2026-09-30T16:41:21Z found 242 cache assets against the 1000-asset limit,
+leaving 758 slots then. This does not prove later capacity or write permission.
+The final hosted x86 artifact now proves current full production-bound signatures
+and prepared payload bytes. Its preparation omitted 313 stock paths after upstream
+checks. Local temporary-key artifacts and missing current ARM artifacts do not
+establish the corresponding ARM production signing or fresh upstream result.
 
 Independent plugin closures can retain old dependency versions and use more disk.
 Core updates do not apply plugin dependency security updates. The offline proof
@@ -171,8 +188,107 @@ service retains default closures in the system generation after uninstall.
 
 ## Measured hosted CI
 
-Current-revision hosted CI is pending approval. Historical timings below are
-measured step durations, not predictions. Jobs overlap and Core inputs differ.
+User ask `149857a3-45df-49af-a0b7-b86848bfb02b` approved the publisher source-only
+push and non-publishing CI. Run [36745677457](https://github.com/korri-os/plugins/actions/runs/36745677457)
+checks `add556d61e4c6fe3a4a4f0d4e9dd4fb59342d088` on native x86 and ARM runners.
+It selects only the changed SSH/Sunshine wrapper outputs and sets `publish=false`.
+The first run failed overall. Measured stages are below; skipped stages are
+not zero-time successful builds. No artifacts were produced.
+
+| First run stage | Native x86 | Native ARM |
+| --- | ---: | ---: |
+| Scoped input invalidation | Passed, 1m36s | Passed, 1m27s |
+| Broad validation | Failed, 11m59s | Failed, 11m52s |
+| Selected-package build | Skipped | Skipped |
+| Signing, preparation, upload | Skipped | Skipped |
+
+The independent x86 generic lifecycle and input-presence job passed in 40m56s.
+Publication was skipped. The native build jobs failed the same
+`test-offline-retirement.cpp:417` assertion in the administrative offline-retirement
+producer check. The exact immutable x86 package passed an actual local rebuild in
+51s. A controlled unsafe-parent reproduction reached the same assertion with
+`unsafe state ancestor ownership or permissions`; this proves an environment-sensitive
+fixture failure, not the actual GHA directory metadata. No runtime security check
+was weakened. A proposed sandbox `/tmp` fixture also failed and was not landed.
+CI installed Nix 2.35.1; the verified local rebuild used 2.34.1. The version difference
+is observed, not a proven cause.
+
+User ask `4e486caa-0d8a-47c4-9f4f-7e68e12e3f37` approved one controlled retry
+with Nix 2.34.1 pinned through the action's established `install_url` input.
+Publisher commit `a62bc0d5c8607803ac73e613a47c3d79104ef1e5` pins all three Nix
+steps and adds a positive retirement control below a safe 0700 ancestor, then
+requires refusal after only that ancestor becomes 0770. The producer, original
+build fixture, signing, owner guards, permissions and all release gates remain
+unchanged. A parsed-workflow comparison verified that only the installer inputs
+changed. Independent review found no remaining blocker in this bounded change.
+
+The improved native x86 check passed in 61s. The installed full test, including
+real xattrs outside Nix's syscall filter, passed in 0.37s. All five plugin output
+paths are unchanged on both architectures. The standalone administrative helper's
+input-addressed output paths change, but its actual x86 CLI binary is byte-identical
+to the old binary. Both SHA256 values are
+`4f3257f317a6f2532dc41c2bc69e49e65350bee9efee8c3d2a977f658b57809c`.
+That executable comparison is not proof of unchanged whole-output NARs or ARM bytes.
+Both-systems scoped invalidation passed again in 113s.
+
+Retry [36754078980](https://github.com/korri-os/plugins/actions/runs/36754078980)
+uses exact `a62bc0d5c8607803ac73e613a47c3d79104ef1e5`, the same two outputs,
+and `publish=false`. The retry failed overall, after 70m28s of supervision.
+
+| Pinned retry stage | Native x86 | Native ARM |
+| --- | ---: | ---: |
+| Scoped input invalidation | Passed, 1m10s | Passed, 1m24s |
+| Broad validation | Passed, 8m54s | Failed, 68m12s |
+| Selected-package build | Passed, 4s | Skipped |
+| Signing and preparation | Passed, 1m36s | Skipped |
+| Artifact upload | Passed, 2s | Skipped |
+
+The independent x86 lifecycle and input-presence job passed in 51m56s.
+Publication was skipped. ARM failed `vm-test-run-sunshine-input-seat-presence`
+with exit 143 at its 3600s test timeout. The last driver messages repeatedly
+report that the guest root shell has produced no data. The existing ARM test
+explicitly selects QEMU TCG without KVM. This proves a guest-startup/driver
+acceptance failure, not its root cause, an encoder failure, or ARM gameplay.
+Do not remove the gate or claim that a larger timeout solves it.
+
+The short x86 selected-output stage substituted OpenSSH and four SSH artifacts
+from the signed publisher cache, then ran the manifest and SSH wrapper builders.
+Sunshine's native output had already been substituted in broad validation.
+Thus 4s is not native compilation time. Across the x86 build job, logs show 1302
+distinct stock-cache paths and 18 publisher-cache paths substituted. Broad validation
+launched 450 derivation builders, including checks and source/vendor preparation;
+this count is not 450 compiler invocations. ARM broad validation launched 474
+builders and substituted 1341 stock and six publisher paths before the VM failure.
+Its later selected-output/signing stages did not run.
+
+The only uploaded artifact is x86. The actual packaged `korri-cache combine`
+accepts it alone in 0.16s; this is not a current two-architecture combine.
+The direct original offline archive passes Core's unsigned-private-registration
+proof tests in 1.42s for both current roots and all 327 transitive paths, using
+`korri-plugins-1:qlK5Mgb3dYhF76WC4jGhrvL+CHsU93De7GpBFtrXb98=`.
+Negative controls cover missing/conflicting proofs, corrupt transitive signatures,
+wrong StorePath and same-label wrong key. The archive has only publisher and stock
+signature names, not the CI test-only key. This is current production-bound x86
+proof, not merely a matching label or the earlier temporary-key exercise.
+
+All 14 downloaded custom NAR assets pass compressed FileHash/FileSize and
+decompressed signed NarHash/NarSize checks in 0.75s. Their records match the
+production-bound archive. They total 8,646,360 compressed bytes. The other 313
+paths remain in the complete offline proof archive despite upstream omission
+from public metadata/payload. NAR URLs name the unpublished verification tag;
+these bytes and signatures do not prove live URL availability or installation.
+
+Nix 2.35.1 compatibility remains unverified. Two source changes distinguish the
+retry, so x86 success does not isolate the installer version as the cause.
+No further retry, live publication or device deployment is approved.
+
+Historical timings below are measured step durations, not predictions. Jobs
+run concurrently and Core inputs differ.
+
+The Core read-only acceptance workflow is not registered on its remote default
+branch. No dispatch occurred. Pushing Core main to register it would trigger cache
+publication, which remains unapproved. The executed local Core task is not a
+passing hosted Core check.
 
 | Stage | Baseline 36588085951 | Batch 1 36651820275 |
 | --- | ---: | ---: |
@@ -205,10 +321,19 @@ Entry points are `app-churn.json`, `bounded-build.json`,
 `packaged-cache-report.json`, `review-followups.json`, `nar-reuse-report.json`,
 `direct-produced-archive-*.log`, and Core `report.json` plus
 `production-offline-vm.log`. Actual image contexts are in
-`/tmp/korri-batch4-image-contexts.json`.
+`/tmp/korri-batch4-image-contexts.json`. Hosted run metadata, exact step timings
+and logs are in `/tmp/korri-batch4-ci/publisher/` and
+`/tmp/korri-batch4-ci-retry/publisher/`. The latter contains the sole downloaded
+x86 artifact, `artifact-verification.json` and `log-observations.json`.
+`/tmp/korri-batch4-ci/pin-verification/report.json` records workflow-policy
+comparison, both-architecture output identities, the full installed native test
+and actual x86 CLI byte equality. Core workflow non-registration is recorded in
+`/tmp/korri-batch4-ci/core/unavailable.json`.
 
 Generic ARM plugin lifecycle, ARM changed-native compilation, physical encoder
 acceptance, ROM gameplay, physical image boots, handheld offline installation,
-and live release publication remain unverified. Prior ARM Sunshine software-VM
-input acceptance is not a replacement for those checks. Obtain separate approval
+and live release publication remain unverified. Current hosted ARM input acceptance
+also failed its software-VM startup timeout; current ARM signed artifacts and the
+current two-architecture hosted combine are absent. Local temporary-key and
+historical production ARM proofs are not substitutes for them. Obtain separate approval
 before a Core main push, cache publication, image-pin update, or handheld operation.
