@@ -4,7 +4,12 @@ use evdev::{
     InputId, KeyCode, UinputAbsSetup,
 };
 use std::{
-    collections::BTreeMap, ffi::CString, fs, os::unix::fs::MetadataExt, thread, time::Duration,
+    collections::BTreeMap,
+    ffi::CString,
+    fs,
+    os::unix::fs::MetadataExt,
+    thread,
+    time::{Duration, Instant},
 };
 
 const BUTTONS: &[(u32, KeyCode)] = &[
@@ -20,6 +25,10 @@ const BUTTONS: &[(u32, KeyCode)] = &[
     (0x4000, KeyCode::BTN_NORTH),
     (0x8000, KeyCode::BTN_WEST),
 ];
+/// udev applies the seat node's group and mode through a RUN rule. During boot
+/// coldplug the RG353M's udev queue measured over 2 s behind; the old 2 s budget
+/// failed three times there and tripped the unit's start limit.
+const EVENT_NODE_BUDGET: Duration = Duration::from_secs(15);
 const DPAD_UP: u32 = 0x0001;
 const DPAD_DOWN: u32 = 0x0002;
 const DPAD_LEFT: u32 = 0x0004;
@@ -125,7 +134,8 @@ impl UinputSeatBackend {
     }
 
     fn wait_for_event_node(&self, device: &mut VirtualDevice) -> Result<(), String> {
-        for _ in 0..100 {
+        let deadline = Instant::now() + EVENT_NODE_BUDGET;
+        while Instant::now() < deadline {
             if let Ok(nodes) = device.enumerate_dev_nodes_blocking() {
                 for path in nodes.flatten() {
                     if let Ok(metadata) = fs::metadata(path) {
