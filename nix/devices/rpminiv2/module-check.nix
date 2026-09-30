@@ -175,15 +175,6 @@ let
   thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
   gadget = c.systemd.services.usb-gadget;
   gadgetNetwork = c.systemd.network.networks."10-usb-gadget";
-  gadgetPackage = configuration.pkgs.callPackage ./usb-gadget-package.nix { };
-  # Shell control-flow checks only: ordinary directories are NOT configfs.
-  # usb-gadget-vm-test.nix checks kernel links, binding and service restarts.
-  # One UDC wait second keeps these failure cases short.
-  gadgetTestPackage = pkgs.callPackage ./usb-gadget-package.nix {
-    configfsRoot = "$TMPDIR/configfs";
-    udcRoot = "$TMPDIR/udc";
-    udcWaitSeconds = 1;
-  };
 in
 assert lib.all hasRecoveryKernelConfig requiredKernelConfig;
 assert lib.all hasRecoveryKernelConfig requiredRecoveryModules;
@@ -264,10 +255,11 @@ assert !(lib.elem "g_serial" c.boot.kernelModules);
 assert gadget.wantedBy == [ "multi-user.target" ];
 assert lib.elem "sys-kernel-config.mount" gadget.requires;
 assert lib.elem "sys-kernel-config.mount" gadget.after;
-assert gadget.serviceConfig.ExecStart == lib.getExe gadgetPackage;
-assert lib.hasInfix ''
-  if [ -e /sys/kernel/config/usb_gadget/rpminiv2/UDC ] && [ -n "$(cat /sys/kernel/config/usb_gadget/rpminiv2/UDC)" ]; then
-'' gadget.preStop;
+# The product owns the gadget program; this board supplies its identity.
+assert gadget.environment.KORRI_USB_GADGET_NAME == "rpminiv2";
+assert gadget.environment.KORRI_USB_GADGET_HOST_MAC == "02:52:50:4d:32:01";
+assert gadget.environment.KORRI_USB_GADGET_DEVICE_MAC == "02:52:50:4d:32:02";
+assert gadget.environment.KORRI_USB_GADGET_UDC == "";
 assert gadgetNetwork.matchConfig.Name == "usb0";
 assert gadgetNetwork.address == [ "10.42.3.1/24" ];
 assert gadgetNetwork.networkConfig.DHCPServer;
@@ -460,59 +452,5 @@ pkgs.runCommand "rpminiv2-module-check"
     cp ${./thermal-readonly.test.py} thermal-readonly.test.py
     python3 thermal-readonly.test.py
 
-    # USB gadget shell checks with ordinary directories. These cannot prove
-    # configfs semantics, function registration, UDC binding or USB traffic.
-    export PATH=${gadgetTestPackage}/bin:$PATH
-    gadget_dir="$TMPDIR/configfs/rpminiv2"
-    mkdir -p "$gadget_dir"
-    : > "$gadget_dir/UDC" # configfs supplies this attribute; plain dirs do not.
-    # Missing class directory: wait, fail, and leave the gadget unbound.
-    if rpminiv2-usb-gadget-configure > none.stdout 2> none.stderr; then
-      echo "gadget bound without a USB device controller" >&2
-      exit 1
-    fi
-    grep -F 'no USB device controller appeared' none.stderr
-    test ! -s "$gadget_dir/UDC"
-    # Existing but empty class directory follows the same timeout path.
-    mkdir "$TMPDIR/udc"
-    if rpminiv2-usb-gadget-configure > empty.stdout 2> empty.stderr; then
-      echo "gadget bound with an empty controller class" >&2
-      exit 1
-    fi
-    grep -F 'no USB device controller appeared' empty.stderr
-    # The one controller the device tree enables.
-    mkdir "$TMPDIR/udc/a600000.usb"
-    rpminiv2-usb-gadget-configure
-    test "$(cat "$gadget_dir/UDC")" = a600000.usb
-    test "$(cat "$gadget_dir/functions/ncm.usb0/host_addr")" = 02:52:50:4d:32:01
-    test "$(cat "$gadget_dir/functions/ncm.usb0/dev_addr")" = 02:52:50:4d:32:02
-    test "$gadget_dir/configs/c.1/ncm.usb0" -ef "$gadget_dir/functions/ncm.usb0"
-    test "$gadget_dir/configs/c.1/acm.usb0" -ef "$gadget_dir/functions/acm.usb0"
-    # A second invocation must not nest links inside either function.
-    rpminiv2-usb-gadget-configure
-    test ! -e "$gadget_dir/functions/ncm.usb0/ncm.usb0"
-    test ! -e "$gadget_dir/functions/acm.usb0/acm.usb0"
-    # A restart after preStop's unbind binds the same controller again.
-    : > "$gadget_dir/UDC"
-    rpminiv2-usb-gadget-configure
-    test "$(cat "$gadget_dir/UDC")" = a600000.usb
-    # A second controller is ambiguous: refuse it and name both.
-    : > "$gadget_dir/UDC"
-    mkdir "$TMPDIR/udc/a800000.usb"
-    if rpminiv2-usb-gadget-configure > two.stdout 2> two.stderr; then
-      echo "gadget guessed between two USB device controllers" >&2
-      exit 1
-    fi
-    grep -F 'found: a600000.usb a800000.usb' two.stderr
-    test ! -s "$gadget_dir/UDC"
-    rmdir "$TMPDIR/udc/a800000.usb"
-    # A changed existing NCM address is refused before the bind.
-    printf '%s\n' 02:00:00:00:00:01 > "$gadget_dir/functions/ncm.usb0/host_addr"
-    if rpminiv2-usb-gadget-configure > mismatch.stdout 2> mismatch.stderr; then
-      echo "mismatched existing NCM address unexpectedly succeeded" >&2
-      exit 1
-    fi
-    grep -F 'expected 02:52:50:4d:32:01' mismatch.stderr
-    test ! -s "$gadget_dir/UDC"
     touch "$out"
   ''

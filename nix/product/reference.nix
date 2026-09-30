@@ -7,6 +7,13 @@
 let
   hardwareStub = {
     networking.hostName = "korri-product-reference";
+    services.korriProduct.usbGadget = {
+      name = "reference";
+      product = "Korri reference";
+      address = "10.42.255.1";
+      hostMac = "02:00:00:00:00:01";
+      deviceMac = "02:00:00:00:00:02";
+    };
     services.korriLinuxHost = {
       label = "korri-product-reference";
       compositor = {

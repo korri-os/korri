@@ -21,6 +21,20 @@ in
     korri.packages.${system}.rgds-inputplumber-data
   ];
 
+  # The two Goodix touch controllers. This load used to sit in the removed
+  # device gadget module.
+  boot.kernelModules = [ "goodix_ts" ];
+
+  # USB gadget identity. The board's device tree selects peripheral mode on
+  # usb_host0_xhci, so this port is a gadget and never a host.
+  services.korriProduct.usbGadget = {
+    name = "rgds";
+    product = "RG DS NixOS";
+    address = "10.42.1.1";
+    hostMac = "02:52:47:52:47:01";
+    deviceMac = "02:52:47:52:47:02";
+  };
+
   services.korriLinuxHost = {
     label = "rgds";
     compositor = {

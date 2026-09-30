@@ -18,9 +18,17 @@ let
   ucmDirectory = "${ucm}/share/alsa/ucm2";
 in
 {
-  imports = [
-    ./usb-gadget.nix
-  ];
+  # USB gadget identity. The device tree enables one controller, usb@a600000
+  # (dwc3, dr_mode otg with a role switch), so exactly one UDC is expected.
+  services.korriProduct.usbGadget = {
+    name = "rpminiv2";
+    product = "RP Mini V2 NixOS";
+    # The next free /24 after the RG353M (10.42.0), RG DS (10.42.1) and
+    # R36T Max (10.42.2). "PM2" in ASCII after the shared 02:52 prefix.
+    address = "10.42.3.1";
+    hostMac = "02:52:50:4d:32:01";
+    deviceMac = "02:52:50:4d:32:02";
+  };
 
   # The product enables CPU scaling. GPU devfreq remains at the kernel default.
 

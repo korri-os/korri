@@ -12,7 +12,6 @@ in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
-    ./usb-gadget.nix
   ];
   nixpkgs.hostPlatform = "aarch64-linux";
   # No suspend or light-sleep path has been verified on this board.

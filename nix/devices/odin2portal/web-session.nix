@@ -7,6 +7,17 @@
     odinRocknix.inputplumberData
   ];
 
+  # USB gadget identity. Unverified on hardware: usb_1 is dwc3 with a Type-C
+  # role switch, and this kernel gained ACM on 2026-09-30. The next free /24;
+  # "OD2" in ASCII after the shared 02:52 prefix.
+  services.korriProduct.usbGadget = {
+    name = "odin2portal";
+    product = "Odin 2 Portal NixOS";
+    address = "10.42.4.1";
+    hostMac = "02:52:4f:44:32:01";
+    deviceMac = "02:52:4f:44:32:02";
+  };
+
   services.korriLinuxHost = {
     label = "odin2portal";
     compositor = {

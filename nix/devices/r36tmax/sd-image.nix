@@ -36,11 +36,21 @@ in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
-    ./usb-gadget.nix
+    # The board's UART5 console exists only on internal pads, so the recovery
+    # image carries the product gadget too: a root console and a network link
+    # from the moment Linux brings USB up (PX30, dwc2).
+    ../../product/usb-gadget.nix
     ./nixpkgs-registry.nix
     ./wifi
     ./audio
   ];
+  services.korriProduct.usbGadget = {
+    name = "r36tmax";
+    product = "R36T Max NixOS";
+    address = "10.42.2.1";
+    hostMac = "02:52:33:36:54:01";
+    deviceMac = "02:52:33:36:54:02";
+  };
 
   nixpkgs.hostPlatform = "aarch64-linux";
   boot = {

@@ -111,7 +111,6 @@ in
     };
   volumeCheck = pkgs: import ./volume-vm-test.nix { inherit pkgs configuration; };
   wifiCheck = pkgs: import ./wifi-check.nix { inherit pkgs configuration; };
-  usbGadgetCheck = pkgs: import ./usb-gadget-vm-test.nix { inherit pkgs; };
   systemdCheck =
     pkgs:
     import ../../product/systemd/check.nix {

@@ -9,7 +9,7 @@ let
   };
   # Build the gadget script here so its text can be read. The device build is
   # aarch64; this copy only has to prove the script's shape.
-  gadgetScript = pkgs.callPackage ./usb-gadget-package.nix { };
+  gadgetScript = pkgs.callPackage ../../product/usb-gadget-package.nix { };
   gadgetText = builtins.readFile (lib.getExe gadgetScript);
   rawWrite = builtins.unsafeDiscardStringContext c.sdImage.postBuildCommands;
 in

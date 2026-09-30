@@ -15,6 +15,18 @@ in
     korri.packages.${system}.rg353m-inputplumber-data
   ];
 
+  # USB gadget identity. The RG353P device tree sets usb@fcc00000 to
+  # dr_mode = "peripheral", the controller Android used for adb. Name it:
+  # on 2026-09-30 a second controller (fd000000.usb) also probed.
+  services.korriProduct.usbGadget = {
+    name = "rg353m";
+    product = "RG353M NixOS";
+    address = "10.42.0.1";
+    hostMac = "02:52:47:35:33:01";
+    deviceMac = "02:52:47:35:33:02";
+    udc = "fcc00000.usb";
+  };
+
   services.korriLinuxHost = {
     label = "haku";
 

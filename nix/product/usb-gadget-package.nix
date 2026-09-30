@@ -1,32 +1,41 @@
-# Compose the RP Mini V2 product USB gadget through configfs: one cable carries
-# an NCM network link and the ACM root console. The shape and identifiers follow
-# the RG353M, RG DS and R36T Max gadgets. This device keeps its own gadget name
-# and addresses so all of them can be attached to one workstation at once.
+# Compose the product USB gadget through configfs: one cable carries an NCM
+# network link and the ACM root console. Extracted from the RP Mini V2 script,
+# the strictest of the four device copies (RG353M, RG DS, R36T Max, Mini V2).
+#
+# The program is the same on every device, so the product check can compare it
+# exactly. Device identity arrives as unit environment:
+#   KORRI_USB_GADGET_NAME     configfs gadget and serial-number stem
+#   KORRI_USB_GADGET_PRODUCT  USB product string
+#   KORRI_USB_GADGET_HOST_MAC / KORRI_USB_GADGET_DEVICE_MAC  NCM addresses
+#   KORRI_USB_GADGET_UDC      optional: the one controller to bind; empty means
+#                             exactly one controller must appear
 {
   pkgs,
   configfsRoot ? "/sys/kernel/config/usb_gadget",
   udcRoot ? "/sys/class/udc",
   udcWaitSeconds ? 60,
-  # "RPM2" in ASCII after the shared 02 prefix. The kernel reports these
-  # addresses in lower case, so the comparison below needs lower case too.
-  hostMac ? "02:52:50:4d:32:01",
-  deviceMac ? "02:52:50:4d:32:02",
 }:
 
 pkgs.writeShellApplication {
-  name = "rpminiv2-usb-gadget-configure";
+  name = "korri-usb-gadget-configure";
   runtimeInputs = [
     pkgs.coreutils
     pkgs.findutils
+    pkgs.gnugrep
   ];
   text = ''
     set -euo pipefail
 
+    readonly name="''${KORRI_USB_GADGET_NAME:?}"
+    readonly product="''${KORRI_USB_GADGET_PRODUCT:?}"
+    # The kernel reports these addresses in lower case, so compare lower case.
+    expected_host_mac="$(printf '%s' "''${KORRI_USB_GADGET_HOST_MAC:?}" | tr 'A-F' 'a-f')"
+    expected_device_mac="$(printf '%s' "''${KORRI_USB_GADGET_DEVICE_MAC:?}" | tr 'A-F' 'a-f')"
+    readonly expected_host_mac expected_device_mac
+    readonly wanted_udc="''${KORRI_USB_GADGET_UDC:-}"
     readonly gadget_root="${configfsRoot}"
     readonly udc_root="${udcRoot}"
-    readonly gadget="$gadget_root/rpminiv2"
-    readonly expected_host_mac=${hostMac}
-    readonly expected_device_mac=${deviceMac}
+    readonly gadget="$gadget_root/$name"
 
     verify_value() {
       local path="$1"
@@ -64,9 +73,9 @@ pkgs.writeShellApplication {
     echo 0x0100 > bcdDevice
     echo 0x0200 > bcdUSB
     mkdir -p strings/0x409
-    echo "rpminiv2-nixos" > strings/0x409/serialnumber
+    echo "$name-nixos" > strings/0x409/serialnumber
     echo "Korri" > strings/0x409/manufacturer
-    echo "RP Mini V2 NixOS" > strings/0x409/product
+    echo "$product" > strings/0x409/product
     mkdir -p configs/c.1/strings/0x409
     echo "NCM + ACM" > configs/c.1/strings/0x409/configuration
     echo 250 > configs/c.1/MaxPower
@@ -81,22 +90,31 @@ pkgs.writeShellApplication {
     mkdir -p functions/acm.usb0
     link_function ncm.usb0
     link_function acm.usb0
-    # The device tree enables one controller, usb@a600000 (dwc3, dr_mode otg
-    # with a role switch), so exactly one UDC is expected. It can register after
-    # this service starts, as it did on the RG DS. Wait for it. Refuse to guess
-    # if a second controller appears, and report every failure in the journal:
-    # this gadget carries the only USB root console on the product image.
+
+    # The controller can register after this service starts, as it did on the
+    # RG DS. Wait for it. Refuse to guess between controllers, and report every
+    # failure in the journal: this gadget carries the only USB root console.
     udcs=""
     for _ in $(seq 1 ${toString udcWaitSeconds}); do
       # The class directory itself may not exist before the driver loads.
       if [ -d "$udc_root" ]; then
         udcs="$(find "$udc_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
       fi
-      if [ -n "$udcs" ]; then
+      if [ -n "$wanted_udc" ]; then
+        if printf '%s\n' "$udcs" | grep -qxF "$wanted_udc"; then
+          udcs="$wanted_udc"
+          break
+        fi
+      elif [ -n "$udcs" ]; then
         break
       fi
       sleep 1
     done
+    if [ -n "$wanted_udc" ] && [ "$udcs" != "$wanted_udc" ]; then
+      printf 'USB device controller %s did not appear in %s after %s seconds\n' \
+        "$wanted_udc" "$udc_root" ${toString udcWaitSeconds} >&2
+      exit 1
+    fi
     if [ -z "$udcs" ]; then
       printf 'no USB device controller appeared in %s after %s seconds\n' \
         "$udc_root" ${toString udcWaitSeconds} >&2
@@ -112,7 +130,7 @@ pkgs.writeShellApplication {
     if [ -n "$(cat UDC)" ]; then
       verify_value UDC "$udcs"
     else
-      printf 'binding the RP Mini V2 USB gadget to %s\n' "$udcs"
+      printf 'binding the %s USB gadget to %s\n' "$name" "$udcs"
       echo "$udcs" > UDC
     fi
   '';

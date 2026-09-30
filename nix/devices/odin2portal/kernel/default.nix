@@ -27,7 +27,8 @@
 # It sorts each directory by file name. The two 0000 prefixes keep that order
 # under one sorted glob.
 #
-# The config differs from ROCKNIX in two placeholders only:
+# The config differs from ROCKNIX in the ACM gadget function (added
+# 2026-09-30 for the product USB console) and two placeholders:
 # CONFIG_DEFAULT_HOSTNAME (was @DEVICENAME@) and CONFIG_INITRAMFS_SOURCE
 # (was @INITRAMFS_SOURCE@). ROCKNIX puts its initramfs in the kernel. The
 # systemd-boot entry supplies the NixOS initrd.

@@ -1,16 +1,25 @@
 # Real kernel configfs and dummy_hcd, not a directory simulation. This tests
-# the product module on a stock x86 kernel; it does not test the board's DWC3.
+# the product gadget module on a stock x86 kernel; it does not test any
+# board's controller. Moved from the RP Mini V2 with its identity values.
 { pkgs }:
+let
+  identity = {
+    name = "rpminiv2";
+    product = "RP Mini V2 NixOS";
+    address = "10.42.3.1";
+    hostMac = "02:52:50:4d:32:01";
+    deviceMac = "02:52:50:4d:32:02";
+  };
+  environment = "KORRI_USB_GADGET_NAME=${identity.name} KORRI_USB_GADGET_PRODUCT='${identity.product}' KORRI_USB_GADGET_HOST_MAC=${identity.hostMac} KORRI_USB_GADGET_DEVICE_MAC=${identity.deviceMac}";
+in
 pkgs.testers.runNixOSTest {
-  name = "rpminiv2-usb-gadget";
+  name = "korri-product-usb-gadget";
   nodes.machine =
     { pkgs, ... }:
     {
       imports = [ ./usb-gadget.nix ];
+      services.korriProduct.usbGadget = identity;
       boot.kernelModules = [
-        "libcomposite"
-        "usb_f_ncm"
-        "usb_f_acm"
         "cdc_ncm"
         "cdc_acm"
       ];
@@ -18,10 +27,6 @@ pkgs.testers.runNixOSTest {
       boot.blacklistedKernelModules = [ "dummy_hcd" ];
       networking.networkmanager.enable = true;
       services.getty.autologinUser = "root";
-      # Same rule as sd-image.nix; do not import its ARM image/kernel settings.
-      services.udev.extraRules = ''
-        SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="serial-getty@ttyGS0.service"
-      '';
       environment.systemPackages = [
         pkgs.dhcpcd
         pkgs.usbutils
@@ -31,7 +36,7 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     start_all()
     gadget = "/sys/kernel/config/usb_gadget/rpminiv2"
-    configure = "${pkgs.callPackage ./usb-gadget-package.nix { }}/bin/rpminiv2-usb-gadget-configure"
+    configure = "env ${environment} ${pkgs.callPackage ./usb-gadget-package.nix { }}/bin/korri-usb-gadget-configure"
 
     with subtest("real configfs links before delayed controller arrival"):
         machine.wait_until_succeeds(f"test -L {gadget}/configs/c.1/acm.usb0", timeout=60)

@@ -16,7 +16,6 @@ in
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
-    ./usb-gadget.nix
     ./firmware.nix
     ./nixpkgs-registry.nix
   ];

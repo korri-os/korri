@@ -264,7 +264,7 @@
               inputplumber = inputplumber.packages.inputplumber-korri;
               dataPackage = self.packages.${system}.rg353m-inputplumber-data;
             };
-            rg353m-usb-gadget = rg353m.usbGadgetCheck pkgs;
+            korri-product-usb-gadget = import ./nix/product/usb-gadget-check.nix { inherit pkgs; };
             rg353m-audio = rg353m.audioCheck pkgs;
             rg353m-diagnostics = rg353m.diagnosticsCheck pkgs;
             rg353m-registry = rg353m.registryCheck pkgs;
@@ -279,7 +279,7 @@
             rpminiv2-inputd-action = rpminiv2.inputdActionCheck pkgs;
             rpminiv2-volume = rpminiv2.volumeCheck pkgs;
             rpminiv2-wifi = rpminiv2.wifiCheck pkgs;
-            rpminiv2-usb-gadget = rpminiv2.usbGadgetCheck pkgs;
+            korri-product-usb-gadget-vm = import ./nix/product/usb-gadget-vm-test.nix { inherit pkgs; };
             rpminiv2-systemd-freezer = rpminiv2.systemdCheck pkgs;
             rpminiv2-delivery = import ./nix/devices/rpminiv2/delivery-check.nix { inherit pkgs; };
             rpminiv2-inputplumber = self.packages.${system}.rpminiv2-inputplumber-data;
