@@ -638,3 +638,78 @@ fn normalized_state_preserves_signed_axes_triggers_and_hat_without_wrapping() {
     assert!(apply_event(&mut state, 3, 0, 32768).is_err());
     assert!(apply_event(&mut state, 3, 16, -2).is_err());
 }
+
+fn topology() -> Vec<DeviceDescriptor> {
+    parse_proc_bus_input_devices(
+        include_str!("fixtures/proc-bus-input/one-virtual-one-raw.txt"),
+        Path::new("/dev/input"),
+    )
+}
+
+// A settled pass lets the 1 Hz reconcile skip its DBus round trips, which
+// otherwise hold the event loop and delay every controller read behind them.
+#[tokio::test]
+async fn unchanged_topology_after_a_captured_pass_is_settled_until_any_change() {
+    let ids = identities();
+    let mut provider = Provider::default();
+    let _one = provider.add(&ids[0], GamepadState::neutral());
+    let mut runtime = runtime();
+    let devices = topology();
+    assert!(
+        !runtime.topology_settled(&devices),
+        "no pass has settled yet"
+    );
+    runtime
+        .reconcile_sources(&mut provider, vec![ids[0].clone()])
+        .unwrap();
+    runtime.record_settled_topology(devices.clone());
+    assert!(runtime.topology_settled(&devices));
+    let mut added = devices.clone();
+    added.push(devices[0].clone());
+    added.last_mut().unwrap().path = "/dev/input/event99".into();
+    assert!(
+        !runtime.topology_settled(&added),
+        "a new input device needs a full pass"
+    );
+    assert!(
+        !runtime.topology_settled(&devices[1..]),
+        "a removed input device needs a full pass"
+    );
+}
+
+#[tokio::test]
+async fn nothing_settles_without_an_open_capture() {
+    let mut runtime = runtime();
+    let devices = topology();
+    runtime.record_settled_topology(devices.clone());
+    assert!(!runtime.topology_settled(&devices));
+}
+
+#[tokio::test]
+async fn source_loss_owner_change_and_transport_loss_unsettle_the_topology() {
+    let ids = identities();
+    let devices = topology();
+    for case in 0..5 {
+        let mut provider = Provider::default();
+        let one = provider.add(&ids[0], GamepadState::neutral());
+        let mut runtime = runtime();
+        runtime
+            .reconcile_sources(&mut provider, vec![ids[0].clone()])
+            .unwrap();
+        runtime.record_settled_topology(devices.clone());
+        match case {
+            0 => event(&mut runtime, &one, 0, 3, 0).await, // SYN_DROPPED
+            1 => {
+                drop(one);
+                assert!(runtime.next_evdev_actions().await.unwrap().is_none());
+            }
+            2 => runtime.set_dbus_owner(Some(":1.43")),
+            3 => runtime.transport_lost(),
+            _ => runtime.source_ambiguous(),
+        }
+        assert!(
+            !runtime.topology_settled(&devices),
+            "case {case} must force a full pass"
+        );
+    }
+}

@@ -8,7 +8,7 @@ use korri_inputd::{
     bundle::is_inside_store_item,
     capture::CaptureRuntime as Runtime,
     dbus::{DbusSignalSource, ProfileStatus},
-    devices::EvdevProvider,
+    devices::{CaptureProvider, EvdevProvider},
     health::{systemd::SystemdHealthPublisher, HealthPublisher, RuntimeHealth},
     korrid_client::{ExactPanelOutcome, ExactStopOutcome, KorridClient},
     producer::PrivateInputChannel,
@@ -143,6 +143,16 @@ async fn run(services: ConfiguredServices, health: &mut impl HealthPublisher) {
                             }
                         }
                     }
+                }
+                // A full pass holds this loop for its DBus round trips (about
+                // 26 calls), and no controller event is read meanwhile. Skip it
+                // while the captured topology is unchanged; see topology_settled.
+                if dbus.is_some()
+                    && provider
+                        .enumerate_capture()
+                        .is_ok_and(|devices| runtime.topology_settled(&devices))
+                {
+                    continue;
                 }
                 let profile_status = ensure_runtime_profile(
                     &mut runtime,

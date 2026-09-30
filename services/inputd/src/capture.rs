@@ -132,6 +132,9 @@ pub struct CaptureRuntime {
     started: Instant,
     poll_cursor: usize,
     overflow: bool,
+    /// Kernel input topology after the last complete authenticated pass that
+    /// left captures open. Any source loss or authority change clears it.
+    settled: Option<Vec<DeviceDescriptor>>,
 }
 
 impl CaptureRuntime {
@@ -149,7 +152,19 @@ impl CaptureRuntime {
             started: Instant::now(),
             poll_cursor: 0,
             overflow: false,
+            settled: None,
         }
+    }
+    /// True when nothing a full pass checks can have changed: the same
+    /// provider owner still holds the grabbed captures and the kernel input
+    /// device list is identical. An owner restart destroys its uinput targets,
+    /// which ends their streams and clears this record, so skipping the DBus
+    /// round trips cannot keep a stale capture authoritative.
+    pub fn topology_settled(&self, devices: &[DeviceDescriptor]) -> bool {
+        self.owner.is_some() && !self.sources.is_empty() && self.settled.as_deref() == Some(devices)
+    }
+    pub fn record_settled_topology(&mut self, devices: Vec<DeviceDescriptor>) {
+        self.settled = (self.owner.is_some() && !self.sources.is_empty()).then_some(devices);
     }
     pub fn enable_activity(&mut self) {
         self.activity = Some(ControllerActivity::default());
@@ -168,6 +183,7 @@ impl CaptureRuntime {
             .filter(|owner| zbus::names::UniqueName::try_from(*owner).is_ok())
             .map(str::to_owned);
         if self.owner != owner {
+            self.settled = None;
             self.close_sources();
             self.owner = owner;
             self.state = RuntimeState::Recovering {
@@ -189,6 +205,7 @@ impl CaptureRuntime {
         Ok(self.updates.drain(..).collect())
     }
     pub fn transport_lost(&mut self) {
+        self.settled = None;
         self.close_sources();
         self.remote.clear();
         self.updates.clear();
@@ -198,10 +215,12 @@ impl CaptureRuntime {
         };
     }
     pub fn source_missing(&mut self) {
+        self.settled = None;
         self.close_sources();
         self.state = RuntimeState::Missing { raw_gamepads: 0 };
     }
     pub fn source_ambiguous(&mut self) {
+        self.settled = None;
         self.close_sources();
         self.state = RuntimeState::Recovering {
             reason: RecoveryReason::SourceTopologyAmbiguous,
@@ -209,6 +228,7 @@ impl CaptureRuntime {
     }
     fn remove(&mut self, id: &str) {
         if self.sources.remove(id).is_some() {
+            self.settled = None;
             self.queue(SeatRequest::PhysicalDisconnected {
                 device_id: id.to_owned(),
             });
@@ -267,21 +287,26 @@ impl CaptureRuntime {
                 &after_open,
                 &classifier,
             )?;
+            let settled = after_open;
             // Opening may run after the discovery pass. Revalidate provider
             // authority before queued source facts can leave this runtime.
             if dbus.current_owner().await.ok().flatten().as_deref() != self.owner.as_deref() {
                 return Err(io::Error::other("physical owner changed during open"));
             }
-            Ok::<_, io::Error>(())
+            Ok::<_, io::Error>(settled)
         }
         .await;
-        if let Err(error) = result {
-            self.updates.truncate(queued_before);
-            tracing::warn!(event = "inputd_capture_reconcile_failed", error = %error, "physical capture failed closed");
-            self.source_ambiguous();
-            // A failed pass may have removed an old source before a later open
-            // failed. Retire the complete producer authority, not a partial diff.
-            self.overflow = true;
+        self.settled = None;
+        match result {
+            Ok(devices) => self.record_settled_topology(devices),
+            Err(error) => {
+                self.updates.truncate(queued_before);
+                tracing::warn!(event = "inputd_capture_reconcile_failed", error = %error, "physical capture failed closed");
+                self.source_ambiguous();
+                // A failed pass may have removed an old source before a later open
+                // failed. Retire the complete producer authority, not a partial diff.
+                self.overflow = true;
+            }
         }
     }
     pub fn reconcile_sources(
