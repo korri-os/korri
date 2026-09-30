@@ -25,6 +25,7 @@ in
     ./game-library-access.nix
     ./systemd/module.nix
     ./usb-gadget.nix
+    ./boot.nix
     ../../clients/portal/nix/kiosk-freezer.nix
     ../base/clock-governor.nix
   ];

@@ -12,7 +12,6 @@ in
 {
   imports = [
     (import ../../formats/sd-card.nix { gpt = false; })
-    ../../../brand/plymouth/nixos-module.nix
     ./audio.nix
     ./bluetooth.nix
     ./gpu.nix
@@ -25,13 +24,9 @@ in
   services.korriProduct.sleep.states = [ ];
 
   # The panel is 640x480 at 60 Hz (rg353v2_mode: 24150 kHz / (762 x 528)), so
-  # the splash renders at 60 fps. `quiet` stays off until this device is seen
-  # to boot with the splash: the panel is the only debugging channel it has.
-  services.korri.bootSplash = {
-    enable = true;
-    refreshRate = 60;
-    quiet = false;
-  };
+  # the product splash renders at 60 fps. The product's development boot keeps
+  # the verbose panel text this device used for debugging.
+  services.korri.bootSplash.refreshRate = 60;
 
   boot = {
     consoleLogLevel = 7;

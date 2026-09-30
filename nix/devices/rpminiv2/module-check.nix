@@ -120,7 +120,6 @@ let
     && config.hardware.deviceTree.overlays == [ ]
     && !config.hardware.enableAllHardware
     && config.hardware.firmwareCompression == "none"
-    && config.boot.consoleLogLevel == 4
     && lib.filter (lib.hasPrefix "console=") config.boot.kernelParams == [ "console=tty0" ]
     && lib.elem "quiet" config.boot.kernelParams
     && lib.elem "rootwait" config.boot.kernelParams
@@ -190,6 +189,10 @@ assert lib.hasInfix (builtins.unsafeDiscardStringContext (
 assert
   !(lib.hasInfix (builtins.unsafeDiscardStringContext (toString dtDriverCheck)) recovery.sdImage.populateRootCommands);
 assert common recovery;
+# Recovery keeps the ROCKNIX console level; the product quiet splash hides it.
+assert recovery.boot.consoleLogLevel == 4;
+assert c.boot.consoleLogLevel == 0;
+assert c.specialisation.development.configuration.boot.consoleLogLevel == 7;
 # The portal freeze is product behavior, never a recovery or unpatched-kiosk feature.
 assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_PORTAL_UNIT);
 assert !(recovery.systemd.services ? korri-chromium-kiosk-thaw);
