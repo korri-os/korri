@@ -141,7 +141,9 @@ let
       ];
     };
   };
-  bundleFixture = pkgs.runCommand "korri-module-bundle-fixture" { } ''
+  bundleFixture = pkgs.runCommand "korri-module-bundle-fixture" {
+    passthru.inputplumber = inputplumberKorri;
+  } ''
     mkdir -p "$out/bin" "$out/share"
     ln -s ${inputplumberKorri}/bin/inputplumber "$out/bin/inputplumber"
     ln -s ${inputdPackage}/bin/korri-inputd "$out/bin/korri-inputd"
