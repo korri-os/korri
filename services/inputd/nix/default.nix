@@ -8,9 +8,7 @@
   korridLinuxDeviceModule,
   korriLinuxHostModule,
   korridPackage,
-  sunshinePackage,
-  sunshineV4l2m2mPackage ? null,
-  sunshineRkmppPackage ? null,
+  sunshinePlugin,
 }:
 
 let
@@ -20,31 +18,11 @@ let
   };
   inputplumberData = import ./inputplumber-data.nix { inherit pkgs; };
   inputplumberKorri = inputplumberData.compose { inherit inputplumberRuntime; };
-  sunshineApprovedPatches = import ../../sunshine/approved-patches.nix;
-  sunshinePatchDefinitions =
-    sunshineApprovedPatches.patches
-    ++ (if sunshinePackage.korriRkmppEnabled then sunshineApprovedPatches.rkmppPatches else [ ]);
-  sunshinePatchPaths = map (record: record.path) sunshinePatchDefinitions;
-  sunshinePatchManifest =
-    builtins.concatStringsSep "\n" (
-      map (record: "patch=${record.name} sha256=${record.sha256}") sunshinePatchDefinitions
-    )
-    + "\n";
-  sunshinePatchManifestFile = pkgs.writeText "sunshine-korri-approved-patch-manifest" sunshinePatchManifest;
-  sunshineExpectedPatchSetSha256 =
-    if sunshinePackage.korriRkmppEnabled then
-      sunshineApprovedPatches.rkmppPatchSetSha256
-    else
-      sunshineApprovedPatches.patchSetSha256;
-  sunshineApprovedBaseDerivations =
-    sunshineApprovedPatches.approvedBaseDerivationsByProfile.${sunshinePackage.korriBuildProfile}
-      or [ ];
-  sunshineBasePackage = pkgs.sunshine.override {
-    cudaSupport = sunshinePackage.korriCudaEnabled;
-  };
-  sunshineApprovedDeviceBaseDerivation =
-    sunshineApprovedPatches.approvedDeviceBaseDerivations.${sunshinePackage.korriBuildProfile} or null;
-  sunshineOfflineRetirement = import ../../sunshine/offline-retirement.nix { inherit pkgs; };
+  # Preserve the existing consumer approval reference, extracted from the
+  # reviewed device gate at f6597dd6f. Publisher provenance cannot replace it.
+  # Fixtures keep the native line format and do not enter runtime policy.
+  sunshineApprovalFixture = ./tests/fixtures/device-gate-sunshine-approval.txt;
+  sunshinePatchFixture = ./tests/fixtures/device-gate-sunshine-patches.txt;
   inputdPackage = import ../package.nix { inherit pkgs crane; };
   devApp = import ./dev-app.nix {
     inherit pkgs inputdPackage korridPackage;
@@ -64,10 +42,6 @@ let
 in
 {
   apps = {
-    sunshine-retire-all-clients = {
-      type = "app";
-      program = "${sunshineOfflineRetirement}/bin/sunshine-retire-all-clients";
-    };
     korri-dev = toApp devApp;
     korri-bundle-select = {
       type = "app";
@@ -79,119 +53,9 @@ in
     inputplumber-korri = inputplumberKorri;
     korri-inputd = inputdPackage;
     korri-bundle = korriBundle;
-    sunshine-korri = sunshinePackage;
-    sunshine-retire-all-clients = sunshineOfflineRetirement;
-  }
-  // pkgs.lib.optionalAttrs (sunshineRkmppPackage != null) {
-    sunshine-korri-rkmpp = sunshineRkmppPackage;
-  }
-  // pkgs.lib.optionalAttrs (sunshineV4l2m2mPackage != null) {
-    sunshine-korri-v4l2m2m = sunshineV4l2m2mPackage;
-    sunshine-v4l2m2m-probe = import ../../sunshine/v4l2m2m-probe.nix {
-      inherit pkgs;
-      ffmpeg = pkgs.callPackage ../../sunshine/ffmpeg-v4l2m2m-static.nix { };
-    };
   };
   checks = {
     sway-controller-activity = import ./sway-activity-check.nix { inherit pkgs; };
-    sunshine-offline-retirement = sunshineOfflineRetirement;
-    sunshine-korri-package = pkgs.runCommand "sunshine-korri-package-check" { } ''
-      test -f ${sunshinePackage}/bin/sunshine
-      test -x ${sunshinePackage}/bin/sunshine
-      ${
-        if sunshinePackage.korriCudaEnabled then
-          ''
-            test ! -L ${sunshinePackage}/bin/sunshine
-            test -L ${sunshinePackage}/bin/.sunshine-wrapped
-            grep -F '"${sunshinePackage}/bin/.sunshine-wrapped"' ${sunshinePackage}/bin/sunshine >/dev/null
-          ''
-        else
-          ''
-            test -L ${sunshinePackage}/bin/sunshine
-            case "$(readlink -f ${sunshinePackage}/bin/sunshine)" in
-              ${sunshinePackage}/bin/sunshine-*) ;;
-              *) exit 1 ;;
-            esac
-          ''
-      }
-      test "${sunshinePackage.pname}" = sunshine-korri
-      test "${sunshinePackage.version}" = "${pkgs.sunshine.version}-korri"
-      test "${toString (builtins.length sunshinePackage.korriPatchNames)}" = 16
-      test "${sunshinePackage.korriBaseSunshineVersion}" = "${sunshineApprovedPatches.baseSunshineVersion}"
-      test "${sunshinePackage.korriApprovedBaseSunshineSourceHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
-      test "${pkgs.sunshine.src.outputHash}" = "${sunshineApprovedPatches.approvedBaseSourceHash}"
-      test "${sunshinePackage.korriBaseSunshineSource}" = "${builtins.unsafeDiscardStringContext (toString pkgs.sunshine.src)}"
-      test "${sunshinePackage.korriBuildProfile}" = "${system}-${
-        if sunshinePackage.korriRkmppEnabled then
-          "rkmpp"
-        else if sunshinePackage.korriCudaEnabled then
-          "cuda"
-        else
-          "software"
-      }"
-      test "${sunshinePackage.korriBaseSunshineDerivation}" = "${builtins.unsafeDiscardStringContext sunshineBasePackage.drvPath}"
-      test "${toString (builtins.elem sunshinePackage.korriBaseSunshineDerivation sunshineApprovedBaseDerivations)}" = 1
-      test "${sunshinePackage.korriApprovedBaseSunshineDerivation}" = "${sunshinePackage.korriBaseSunshineDerivation}"
-      test "${toString (sunshineApprovedDeviceBaseDerivation != null)}" = 1
-      test "${sunshinePackage.korriReviewedLibavcodecVersion}" = "${sunshineApprovedPatches.reviewedLibavcodecVersion}"
-      test "${sunshinePackage.korriReviewedFfmpegCommit}" = "${sunshineApprovedPatches.reviewedFfmpegCommit}"
-      test "${sunshinePackage.korriReviewedFfmpegSourceHash}" = "${sunshineApprovedPatches.reviewedFfmpegSourceHash}"
-      test "${toString sunshinePackage.korriReviewedNvencApiMajor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMajor}"
-      test "${toString sunshinePackage.korriReviewedNvencApiMinor}" = "${toString sunshineApprovedPatches.reviewedNvencApiMinor}"
-      test "${toString sunshinePackage.korriCudaEnabled}" = "${toString (system == "x86_64-linux")}"
-      test "${toString sunshinePackage.korriRkmppEnabled}" = "${toString (system == "aarch64-linux")}"
-      test "${sunshinePackage.korriPatchSetSha256}" = "${sunshineExpectedPatchSetSha256}"
-      provenance=${sunshinePackage}/${sunshinePackage.korriProvenanceRelativePath}
-      test -f "$provenance"
-      grep -Fx 'package=sunshine-korri' "$provenance" >/dev/null
-      grep -Fx 'build_profile=${sunshinePackage.korriBuildProfile}' "$provenance" >/dev/null
-      grep -Fx 'cuda_enabled=${
-        if sunshinePackage.korriCudaEnabled then "1" else "0"
-      }' "$provenance" >/dev/null
-      grep -Fx 'approved_base_sunshine_source_hash=${sunshineApprovedPatches.approvedBaseSourceHash}' "$provenance" >/dev/null
-      grep -Fx 'approved_base_sunshine_derivation=${sunshinePackage.korriBaseSunshineDerivation}' "$provenance" >/dev/null
-      grep -Fx 'reviewed_ffmpeg_commit=${sunshineApprovedPatches.reviewedFfmpegCommit}' "$provenance" >/dev/null
-      grep -Fx 'reviewed_ffmpeg_source_hash=${sunshineApprovedPatches.reviewedFfmpegSourceHash}' "$provenance" >/dev/null
-      grep -Fx 'reviewed_nvenc_api=${toString sunshineApprovedPatches.reviewedNvencApiMajor}.${toString sunshineApprovedPatches.reviewedNvencApiMinor}' "$provenance" >/dev/null
-      grep -Fx 'executable=bin/sunshine' "$provenance" >/dev/null
-      grep -Fx 'patch_set_sha256=${sunshinePackage.korriPatchSetSha256}' "$provenance" >/dev/null
-      touch "$out"
-    '';
-    sunshine-korri-runtime-settings = import ../../sunshine/runtime-settings-check.nix {
-      inherit pkgs sunshinePackage;
-      approvedPatchesPath = ../../sunshine/approved-patches.nix;
-      patchPaths = sunshinePatchPaths;
-      packagePath = ../../sunshine/package.nix;
-      readmePath = ../../sunshine/README.md;
-    };
-    sunshine-korri-input-presence =
-      (import ../../sunshine/input-seat-presence-check.nix {
-        inherit pkgs;
-      }).vm;
-    sunshine-korri-input-seat-patch = import ../../sunshine/input-seat-patch-check.nix {
-      inherit pkgs sunshinePackage;
-      approvedPatchesPath = ../../sunshine/approved-patches.nix;
-      nonblockingTestPath = ../../sunshine/test-nonblocking-mirror.py;
-      patchPath = ../../sunshine/patches/0015-add-korri-input-seat-event-mirror.patch;
-      packagePath = ../../sunshine/package.nix;
-      readmePath = ../../sunshine/README.md;
-    };
-    sunshine-korri-certificate-control = import ../../sunshine/certificate-control-check.nix {
-      inherit pkgs sunshinePackage;
-      approvedPatchesPath = ../../sunshine/approved-patches.nix;
-      patchPath = ../../sunshine/patches/0020-add-korrid-certificate-control.patch;
-      packagePath = ../../sunshine/package.nix;
-      testPath = ../../sunshine/test-certificate-control.cpp;
-    };
-    sunshine-korri-v4l2m2m = import ../../sunshine/v4l2m2m-check.nix {
-      inherit pkgs sunshinePackage sunshineV4l2m2mPackage;
-      approvedPatchesPath = ../../sunshine/approved-patches.nix;
-      patchPath = ../../sunshine/patches/0021-add-v4l2m2m-encoder.patch;
-      ffmpegPatchPath = ../../sunshine/patches/ffmpeg/0001-fix-v4l2m2m-buffer-alignment.patch;
-      ffmpegPackagePath = ../../sunshine/ffmpeg-rkmpp-static.nix;
-      packagePath = ../../sunshine/package.nix;
-      readmePath = ../../sunshine/README.md;
-    };
     inputplumber-korri-package = import ./inputplumber-package-check.nix {
       inherit
         pkgs
@@ -209,75 +73,80 @@ in
     korri-input-seat-receiver = import ./korri-input-seat-receiver-check.nix {
       inherit pkgs inputdPackage;
     };
-    korri-inputd-package = pkgs.runCommand "korri-inputd-package-check" { } ''
-      test -x ${inputdPackage}/bin/korri-inputd
-      test -x ${inputdPackage}/bin/korri-input-seat-receiver
-      test -x ${inputdPackage}/bin/korri-bundle-launch
-      test -x ${inputdPackage}/bin/korri-bundle-select
-      test -x ${inputdPackage}/bin/korri-device-gate
-      test "$(sha256sum ${inputdPackage}/bin/korri-device-gate | cut -d' ' -f1)" = \
-        "$(sha256sum ${../deploy/device-check.sh} | cut -d' ' -f1)"
-      gate=${inputdPackage}/bin/korri-device-gate
-      grep -Fx "EXPECTED_SUNSHINE_FORMAT='1'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_BASE_VERSION='${sunshineApprovedPatches.baseSunshineVersion}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_BASE_SOURCE_HASH='${sunshineApprovedPatches.approvedBaseSourceHash}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_BASE_DERIVATION='${sunshineApprovedPatches.approvedDeviceBaseDerivation}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_LIBAVCODEC_VERSION='${sunshineApprovedPatches.reviewedLibavcodecVersion}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_FFMPEG_COMMIT='${sunshineApprovedPatches.reviewedFfmpegCommit}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_FFMPEG_SOURCE_HASH='${sunshineApprovedPatches.reviewedFfmpegSourceHash}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_NVENC_API='${toString sunshineApprovedPatches.reviewedNvencApiMajor}.${toString sunshineApprovedPatches.reviewedNvencApiMinor}'" "$gate" >/dev/null
-      grep -Fx "EXPECTED_SUNSHINE_PATCH_SET_SHA256='${sunshineApprovedPatches.patchSetSha256}'" "$gate" >/dev/null
-      grep '^patch=' "$gate" > actual-patch-manifest
-      cmp actual-patch-manifest ${sunshinePatchManifestFile}
+    korri-inputd-package =
+      pkgs.runCommand "korri-inputd-package-check" { nativeBuildInputs = [ pkgs.jq ]; }
+        ''
+          test -x ${inputdPackage}/bin/korri-inputd
+          test -x ${inputdPackage}/bin/korri-input-seat-receiver
+          test -x ${inputdPackage}/bin/korri-bundle-launch
+          test -x ${inputdPackage}/bin/korri-bundle-select
+          test -x ${inputdPackage}/bin/korri-device-gate
+          test "$(sha256sum ${inputdPackage}/bin/korri-device-gate | cut -d' ' -f1)" = \
+            "$(sha256sum ${../deploy/device-check.sh} | cut -d' ' -f1)"
+          gate=${inputdPackage}/bin/korri-device-gate
+          grep '^EXPECTED_SUNSHINE_' "$gate" > actual-sunshine-approval
+          cmp actual-sunshine-approval ${sunshineApprovalFixture}
+          grep '^patch=' "$gate" > actual-patch-manifest
+          cmp actual-patch-manifest ${sunshinePatchFixture}
 
-      # Linux resolves /proc/PID/exe through the bin/sunshine symlink. Exercise
-      # the gate's exact resolver against the shipped versioned target.
-      declared=${sunshinePackage}/bin/sunshine
-      test -f "$declared"
-      ${
-        if sunshinePackage.korriCudaEnabled then
-          ''
-            wrapped=${sunshinePackage}/bin/.sunshine-wrapped
+          # Exercise the exact resolver against the actual selected package, not
+          # a producer recipe. The installed provenance determines wrapper mode.
+          manifest=${sunshinePlugin}/manifest.json
+          sunshine_package="$(jq -er '.packages.sunshine' "$manifest")"
+          declared="$(jq -er '.files.sunshine' "$manifest")"
+          test "$declared" = "$sunshine_package/bin/sunshine"
+          test -f "$declared"
+          provenance="$sunshine_package/share/korri/sunshine-korri/provenance"
+          if grep -Fx 'cuda_enabled=1' "$provenance" >/dev/null; then
+            wrapped="$sunshine_package/bin/.sunshine-wrapped"
             test ! -L "$declared"
             test -L "$wrapped"
             grep -F 'bin/.sunshine-wrapped' "$declared" >/dev/null
             running="$(readlink -f -- "$wrapped")"
-          ''
-        else
-          ''
+          else
+            grep -Fx 'cuda_enabled=0' "$provenance" >/dev/null
             test -L "$declared"
             running="$(readlink -f -- "$declared")"
-          ''
-      }
-      case "$running" in
-        ${sunshinePackage}/bin/sunshine-*) ;;
-        *) echo "Sunshine did not resolve to its versioned package target" >&2; exit 1 ;;
-      esac
-      sed -n '/^REMOTE_SUNSHINE_PACKAGE_ROOT=/,/^}/p' "$gate" > sunshine-executable-resolver.sh
-      # shellcheck disable=SC1091
-      source ./sunshine-executable-resolver.sh
-      remote_resolve_sunshine_executable "$running" "$declared"
-      test "$REMOTE_SUNSHINE_PACKAGE_ROOT" = ${sunshinePackage}
+          fi
+          case "$running" in
+            "$sunshine_package"/bin/sunshine-*) ;;
+            *) echo "Sunshine did not resolve to its versioned package target" >&2; exit 1 ;;
+          esac
+          sed -n '/^REMOTE_SUNSHINE_PACKAGE_ROOT=/,/^}/p' "$gate" > sunshine-executable-resolver.sh
+          # shellcheck disable=SC1091
+          source ./sunshine-executable-resolver.sh
+          if grep -Fx 'cuda_enabled=1' "$provenance" >/dev/null; then
+            remote_resolve_sunshine_executable "$running" "$declared"
+            test "$REMOTE_SUNSHINE_PACKAGE_ROOT" = "$sunshine_package"
+          else
+            # The existing deployment gate does not approve the ARM symlink
+            # layout. Assert its refusal; do not expand that policy here.
+            if remote_resolve_sunshine_executable "$running" "$declared"; then
+              echo "device gate accepted an unsupported Sunshine layout" >&2
+              exit 1
+            fi
+            test -z "$REMOTE_SUNSHINE_PACKAGE_ROOT"
+          fi
 
-      test -x ${inputdPackage}/bin/korri-sunshine-state-digest
-      test -x ${inputdPackage}/bin/korri-ledger-proof
-      test -x ${inputdPackage}/bin/korri-virtual-target-acl
-      test -x ${devApp}/bin/korri-dev
-      grep -F 'KORRI_INPUTD_PROFILE=development' ${devApp}/bin/korri-dev >/dev/null
-      grep -F 'KORRI_INPUTD_SOURCE="$physical_input"' ${devApp}/bin/korri-dev >/dev/null
-      grep -F '${korridPackage}/bin/korri-local-signer' ${devApp}/bin/korri-dev >/dev/null
-      grep -F 'CREDENTIALS_DIRECTORY=$signer_credential_root' ${devApp}/bin/korri-dev >/dev/null
-      grep -F 'KORRID_LOCAL_SIGNER_SOCKET="$signer_socket"' ${devApp}/bin/korri-dev >/dev/null
-      grep -F 'KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$signer_public_key"' ${devApp}/bin/korri-dev >/dev/null
-      test "$(readlink -f ${korriBundle}/bin/inputplumber)" = ${inputplumberKorri}/bin/inputplumber
-      test "$(readlink -f ${korriBundle}/bin/korri-inputd)" = ${inputdPackage}/bin/korri-inputd
-      test "$(readlink -f ${korriBundle}/bin/korrid)" = ${korridPackage}/bin/korrid
-      test "$(readlink -f ${korriBundle}/bin/korri-local-signer)" = ${korridPackage}/bin/korri-local-signer
-      test "$(readlink -f ${korriBundle}/share/inputplumber)" = ${inputplumberKorri}/share/inputplumber
-      test "$(readlink -f ${korriBundle}/share/korri-input-profile)" = \
-        ${inputplumberKorri}/share/inputplumber/profiles/${inputplumberData.resolvedProfile}
-      touch "$out"
-    '';
+          test -x ${inputdPackage}/bin/korri-sunshine-state-digest
+          test -x ${inputdPackage}/bin/korri-ledger-proof
+          test -x ${inputdPackage}/bin/korri-virtual-target-acl
+          test -x ${devApp}/bin/korri-dev
+          grep -F 'KORRI_INPUTD_PROFILE=development' ${devApp}/bin/korri-dev >/dev/null
+          grep -F 'KORRI_INPUTD_SOURCE="$physical_input"' ${devApp}/bin/korri-dev >/dev/null
+          grep -F '${korridPackage}/bin/korri-local-signer' ${devApp}/bin/korri-dev >/dev/null
+          grep -F 'CREDENTIALS_DIRECTORY=$signer_credential_root' ${devApp}/bin/korri-dev >/dev/null
+          grep -F 'KORRID_LOCAL_SIGNER_SOCKET="$signer_socket"' ${devApp}/bin/korri-dev >/dev/null
+          grep -F 'KORRID_LOCAL_SIGNER_PUBLIC_KEY_FILE="$signer_public_key"' ${devApp}/bin/korri-dev >/dev/null
+          test "$(readlink -f ${korriBundle}/bin/inputplumber)" = ${inputplumberKorri}/bin/inputplumber
+          test "$(readlink -f ${korriBundle}/bin/korri-inputd)" = ${inputdPackage}/bin/korri-inputd
+          test "$(readlink -f ${korriBundle}/bin/korrid)" = ${korridPackage}/bin/korrid
+          test "$(readlink -f ${korriBundle}/bin/korri-local-signer)" = ${korridPackage}/bin/korri-local-signer
+          test "$(readlink -f ${korriBundle}/share/inputplumber)" = ${inputplumberKorri}/share/inputplumber
+          test "$(readlink -f ${korriBundle}/share/korri-input-profile)" = \
+            ${inputplumberKorri}/share/inputplumber/profiles/${inputplumberData.resolvedProfile}
+          touch "$out"
+        '';
     korri-input-module = import ./korri-input-module-check.nix {
       module = korriInputModule;
       bundleModule = korriBundleModule;
@@ -310,7 +179,7 @@ in
         module = korriLinuxHostModule;
         inherit
           pkgs
-          sunshinePackage
+          sunshinePlugin
           inputdPackage
           inputplumberKorri
           korridPackage
@@ -321,8 +190,7 @@ in
       module = korriLinuxHostModule;
       inherit
         pkgs
-        sunshinePackage
-        sunshineV4l2m2mPackage
+        sunshinePlugin
         inputdPackage
         inputplumberKorri
         korridPackage

@@ -1,9 +1,8 @@
 # The builder must refuse a file that names a store output rather than a path
 # inside one. It also owns the source inventory: authors supply a directory,
 # never a handwritten manifest list or a single-file compatibility input.
-{ pkgs }:
+{ pkgs, mkPlugin }:
 let
-  mkPlugin = import ./builder.nix { inherit pkgs; };
   publisher.namespace = "@korri";
   source = pkgs.runCommand "plugin-source" { } ''
     mkdir -p "$out/src" "$out/node_modules/@fixture/title"

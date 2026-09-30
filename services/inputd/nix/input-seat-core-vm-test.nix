@@ -6,13 +6,13 @@
   receiver,
   selector,
   seatRules,
-  sunshinePackage,
+  sunshinePlugin,
 }:
 let
-  plugin = import ../../../plugins/sunshine/plugin.nix { inherit pkgs sunshinePackage; };
-  setupUnit = pkgs.runCommand "sunshine-seat-vm-native-unit" { } ''
+  setupUnit = pkgs.runCommand "sunshine-seat-vm-native-unit" { nativeBuildInputs = [ pkgs.jq ]; } ''
     mkdir -p "$out/lib/systemd/system"
-    ln -s ${plugin.services.korri-sunshine-input-setup} "$out/lib/systemd/system/korri-sunshine-input-setup.service"
+    setup="$(jq -er '.services["korri-sunshine-input-setup"]' ${sunshinePlugin}/manifest.json)"
+    ln -s "$setup" "$out/lib/systemd/system/korri-sunshine-input-setup.service"
   '';
   inspect = pkgs.writeText "inspect-core-seats.py" ''
     import json, os, pathlib, stat

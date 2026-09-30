@@ -27,7 +27,11 @@ def snapshot(root: Path, target: Path) -> None:
 def evaluate(root: Path) -> list:
     expression = f"""
       let korri = builtins.getFlake {json.dumps("path:" + str(root))};
-          pkgs = korri.lib.x86_64-linux.pkgs;
+          pkgs = import korri.inputs.nixpkgs {{
+            system = "x86_64-linux";
+            overlays = [ korri.inputs.rust-overlay.overlays.default ];
+            config.allowUnfree = true;
+          }};
           binding = (import (korri.outPath + "/nix/product/requirements.nix") {{ inherit korri; }}).constants.publishers."@korri";
       in (map (system: let
         published = import (korri.outPath + "/nix/product/published-plugins.nix") {{ inherit system; }};

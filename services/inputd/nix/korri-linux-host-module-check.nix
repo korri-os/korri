@@ -1,9 +1,7 @@
 {
   pkgs,
   module,
-  sunshinePackage,
-  sunshineV4l2m2mPackage ? null,
-  sunshineRkmppPackage ? null,
+  sunshinePlugin,
   inputdPackage,
   inputplumberKorri,
   korridPackage,
@@ -219,7 +217,7 @@ pkgs.runCommand "korri-linux-host-module-check"
         inputdPackage
         receiver
         seatRules
-        sunshinePackage
+        sunshinePlugin
         ;
       selector = cfg.systemd.services.korri-bundle-selector;
     };

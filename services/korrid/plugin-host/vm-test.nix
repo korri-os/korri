@@ -48,7 +48,7 @@ let
           -out "$out/cert.pem" -keyout "$out/key.pem" \
           -subj '/CN=cache' -addext 'subjectAltName=DNS:cache'
       '';
-  mkPlugin = import ./builder.nix { inherit pkgs; };
+  mkPlugin = (import ./interface.nix).mkPlugin { inherit pkgs; };
   alternate = mkPlugin {
     publisher.namespace = "@example";
     source = pkgs.writeTextDir "plugin.ts" "export const name = 'clock'; export const title = 'Clock'; export const services = ['example-clock'];";

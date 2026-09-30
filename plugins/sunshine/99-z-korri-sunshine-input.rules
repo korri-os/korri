@@ -1,1 +1,0 @@
-KERNEL=="uhid", SUBSYSTEM=="misc", TAG-="uaccess", OWNER="root", GROUP="korri-sunshine-input-seat", MODE="0660", OPTIONS+="static_node=uhid"

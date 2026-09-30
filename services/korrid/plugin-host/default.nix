@@ -4,7 +4,8 @@
   hostModule,
   korridPackage,
   inputdPackage,
-  sunshinePackage,
+  sshPackage,
+  sunshinePlugin,
 }:
 let
   hostPackage = import ./package.nix { inherit pkgs crane; };
@@ -13,7 +14,8 @@ let
     cargoFeatures = [ "vm-lifecycle-policy" ];
   };
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
-  mkPlugin = import ./builder.nix { inherit pkgs; };
+  interface = import ./interface.nix;
+  mkPlugin = interface.mkPlugin { inherit pkgs; };
   firstPartyPlugin =
     name:
     mkPlugin {
@@ -21,36 +23,22 @@ let
       source = ../../../plugins/${name};
       plugin = ../../../plugins/${name}/plugin.nix;
     };
-  sunshinePlugin = mkPlugin {
-    publisher.namespace = "@korri";
-    source = ../../../plugins/sunshine;
-    plugin =
-      { pkgs }:
-      import ../../../plugins/sunshine/plugin.nix {
-        inherit pkgs sunshinePackage;
-      };
-  };
 in
 {
-  lib = {
-    inherit pkgs mkPlugin;
-  };
   packages = {
     korri-plugin-host = hostPackage;
-    korri-plugin-ssh = firstPartyPlugin "ssh";
-    korri-plugin-sunshine = sunshinePlugin;
     # Hand-written, no family and no shared helper. It is built by the same
     # builder as a generated core and admitted by the same rules.
     korri-plugin-ppsspp = firstPartyPlugin "ppsspp";
   };
   checks = {
     korri-plugin-host = hostPackage;
-    korri-ssh-upstream = (import ../../../plugins/ssh/upstream.nix { inherit pkgs; }).report;
+    # Test policy only. This output is never installed on a product device.
+    korri-plugin-host-vm = vmHostPackage;
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
-    korri-plugin-builder = import ./builder-check.nix { inherit pkgs; };
-    korri-sunshine-plugin = sunshinePlugin;
+    korri-plugin-builder = interface.pluginBuilderCheck { inherit pkgs; };
     korri-sunshine-plugin-native = import ./sunshine-native-check.nix {
-      inherit pkgs sunshinePackage;
+      inherit pkgs sunshinePlugin;
     };
     korri-sunshine-plugin-admission =
       pkgs.runCommand "korri-sunshine-plugin-admission"
@@ -63,8 +51,7 @@ in
           touch "$out"
         '';
     korri-plugin-image-seed = import ./image-seed-check.nix {
-      inherit pkgs hostPackage;
-      sshPackage = firstPartyPlugin "ssh";
+      inherit pkgs hostPackage sshPackage;
     };
     korri-runtime-plugin-host = import ./vm-test.nix {
       inherit
@@ -74,8 +61,8 @@ in
         vmHostPackage
         korridPackage
         tailscalePackage
+        sshPackage
         ;
-      sshPackage = firstPartyPlugin "ssh";
     };
   };
   apps = {

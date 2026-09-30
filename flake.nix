@@ -97,45 +97,22 @@
         pluginHost = import ./services/korrid/plugin-host {
           inherit pkgs crane korridPackage;
           inputdPackage = inputplumber.packages.korri-inputd;
-          sunshinePackage =
-            if sunshineV4l2m2mPackage != null then sunshineV4l2m2mPackage else sunshinePackage;
+          sshPackage = publishedPlugins.korri-plugin-ssh;
+          sunshinePlugin = publishedPlugins.korri-plugin-sunshine;
           hostModule = nixosModules.korri-plugin-host;
         };
         korridPackage = import ./services/korrid/package.nix {
           inherit pkgs proseql crane;
         };
-        sunshinePackage = pkgs.callPackage ./services/sunshine/package.nix {
-          sunshine = pkgs.sunshine;
-          cudaSupport = system == "x86_64-linux";
-        };
-        sunshineV4l2m2mPackage =
-          if system == "aarch64-linux" then
-            let
-              rockchipMpp = pkgs.callPackage ./services/sunshine/rockchip-mpp.nix { };
-              ffmpegArm = pkgs.callPackage ./services/sunshine/ffmpeg-rkmpp-static.nix {
-                inherit rockchipMpp;
-              };
-            in
-            pkgs.callPackage ./services/sunshine/package.nix {
-              sunshine = pkgs.sunshine;
-              cudaSupport = false;
-              rkmppSupport = true;
-              ffmpegRkmpp = ffmpegArm;
-              ffmpegV4l2m2m = ffmpegArm;
-              inherit rockchipMpp;
-              libdrm = pkgs.libdrm;
-            }
-          else
-            null;
+        publishedPlugins = import ./nix/product/published-plugins.nix { inherit system; };
         inputplumber = import ./services/inputd/nix {
           inherit
             pkgs
             system
             crane
             korridPackage
-            sunshinePackage
-            sunshineV4l2m2mPackage
             ;
+          sunshinePlugin = publishedPlugins.korri-plugin-sunshine;
           inputplumberNixpkgs = inputplumber-nixpkgs;
           korriBundleModule = nixosModules.korri-bundle;
           korriInputModule = nixosModules.korri-input;
@@ -163,7 +140,7 @@
         devShells.korrid = import ./services/korrid/devshell.nix { inherit pkgs proseql; };
         devShells.inputd = import ./services/inputd/devshell.nix { inherit pkgs; };
         devShells.plugin-host = pluginHost.devShell;
-        lib = pluginHost.lib;
+        lib = import ./services/korrid/plugin-host/interface.nix;
         packages = {
           korrid = korridPackage;
           korri-portal = import ./clients/portal/nix/package.nix { inherit pkgs; };
