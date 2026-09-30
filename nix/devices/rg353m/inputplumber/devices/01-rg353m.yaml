@@ -14,9 +14,10 @@ matches:
           value: Anbernic
         - name: compatible
           value: "anbernic,rg353p*"
-# Keep inputd's one-source ownership invariant. Sticks are a separate device
-# on this kernel and are deliberately not claimed by this button-only slice.
-maximum_sources: 1
+# One gamepad source keeps inputd's one-source ownership invariant. Sticks are
+# a separate device on this kernel and are deliberately not claimed. The
+# volume keys are a separate keyboard source, as on the RP Mini V2.
+maximum_sources: 2
 source_devices:
   - group: gamepad
     evdev:
@@ -24,6 +25,13 @@ source_devices:
       phys_path: gpio-keys/input0
       handler: event*
     capability_map_id: rocknix_rg353m_map
+  - group: keyboard
+    evdev:
+      name: gpio-keys-vol
+      # gpio_keys sets this phys for every instance; the name selects it.
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: anbernic_rg353m_volume
 options:
   auto_manage: true
 # Same xb360 target selected by the legacy RK3566 composition. No keyboard

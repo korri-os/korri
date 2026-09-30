@@ -35,9 +35,27 @@ assert profile["source_devices"] == [
             "handler": "event*",
         },
         "capability_map_id": "rocknix_rg353m_map",
-    }
+    },
+    {
+        "group": "keyboard",
+        "evdev": {
+            "name": "gpio-keys-vol",
+            "phys_path": "gpio-keys/input0",
+            "handler": "event*",
+        },
+        "capability_map_id": "anbernic_rg353m_volume",
+    },
 ]
-assert profile["maximum_sources"] == 1
+assert profile["maximum_sources"] == 2
+# Grounded in the card's rk3566-anbernic-rg353p.dtb (2026-09-30): the
+# gpio-keys-vol node sends linux,code 0x73 and 0x72.
+volume = load("capability_maps/anbernic_rg353m_volume.yaml")
+assert volume["id"] == profile["source_devices"][1]["capability_map_id"]
+assert {
+    mapping["source_events"][0]["evdev"]["event_code"]: mapping["target_event"]["dbus"]
+    for mapping in volume["mapping"]
+} == {"KEY_VOLUMEUP": "ui_volume_up", "KEY_VOLUMEDOWN": "ui_volume_down"}
+assert volume["filtered_events"] == []
 assert profile["options"]["auto_manage"] is True
 assert profile["target_devices"] == ["xb360"]
 capabilities = load("capability_maps/rocknix_rg353m_map.yaml")

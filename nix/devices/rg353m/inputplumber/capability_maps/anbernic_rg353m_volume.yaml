@@ -1,0 +1,29 @@
+# The card's rk3566-anbernic-rg353p.dtb (the upstream DT that ROCKNIX RK3566
+# also builds) has a gpio-keys-vol node: button-vol-up sends linux,code 0x73
+# (KEY_VOLUMEUP) and button-vol-down sends 0x72 (KEY_VOLUMEDOWN). Route these
+# keys to inputd's direct actions, the same shape as the RP Mini V2 map.
+version: 2
+kind: CapabilityMap
+name: Anbernic RG353M Hardware Volume
+id: anbernic_rg353m_volume
+
+mapping:
+  - name: Volume Up
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEUP
+          value_type: button
+    target_event:
+      dbus: ui_volume_up
+
+  - name: Volume Down
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEDOWN
+          value_type: button
+    target_event:
+      dbus: ui_volume_down
+
+filtered_events: []
