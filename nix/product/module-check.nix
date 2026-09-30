@@ -608,7 +608,23 @@ let
       )
     ];
   };
+  # The Linux 7.2 pin: another series fails unless the device states why.
+  kernelPinHolds = config: [ config.services.korriProduct.kernel.pinHolds ];
+  unpinnedKernel = withoutReason: standalone.extendModules {
+    modules = [
+      (
+        { pkgs, ... }:
+        {
+          boot.kernelPackages = lib.mkForce pkgs.linuxPackages_6_12;
+          services.korriProduct.kernel.overrideReason = lib.mkForce withoutReason;
+        }
+      )
+    ];
+  };
 in
+assert kernelPinHolds (unpinnedKernel null).config == [ false ];
+assert kernelPinHolds (unpinnedKernel "review-test board needs 6.12").config == [ true ];
+assert (unpinnedKernel null).config.services.korriProduct.kernel.series == "7.2";
 assert check.validate "standalone" standalone == [ ];
 assert check.validate nativeName nativeProduct == [ ];
 assert check.validate nativeName korri.nixosConfigurations.rpminiv2 == [ ];

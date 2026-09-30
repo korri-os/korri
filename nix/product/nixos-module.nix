@@ -26,6 +26,7 @@ in
     ./systemd/module.nix
     ./usb-gadget.nix
     ./boot.nix
+    ./kernel.nix
     ../../clients/portal/nix/kiosk-freezer.nix
     ../base/clock-governor.nix
   ];

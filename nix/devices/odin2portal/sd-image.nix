@@ -117,6 +117,7 @@
   # normal generation limit removes generation 3.
   specialisation.linux-7_0_2-rescue.configuration = {
     system.nixos.tags = [ "linux-7.0.2-rescue" ];
+    services.korriProduct.kernel.overrideReason = "rescue entry: the last known-good Odin kernel before 7.2";
     boot.kernelPackages = lib.mkForce (pkgs.linuxPackagesFor odinRescueKernel);
     # The DTB lives under the kernel's dtbs/ directory, which is where the
     # NixOS default for this option points. Forcing the package to the kernel

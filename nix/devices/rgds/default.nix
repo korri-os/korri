@@ -16,7 +16,7 @@ let
   # Expose local cross-builds for preflight on development machines, never on
   # the handheld. The distribution workflow builds the native ARM image.
   crossPkgs = (import nixpkgs { system = "x86_64-linux"; }).pkgsCross.aarch64-multiplatform;
-  kernelCross = crossPkgs.callPackage ./kernel.nix { };
+  kernelCross = crossPkgs.callPackage ../../product/kernel/mainline-7.2.nix { };
 in
 {
   inherit configuration;

@@ -11,7 +11,7 @@ and the factory boot sequence still need hardware verification.
 
 | Piece | Grounding |
 |---|---|
-| Kernel | Linux 7.2 release tarball, hash in `kernel.nix`. The RG DS DTS and Jadard panel driver are in this source. |
+| Kernel | Linux 7.2 release tarball, hash in `../../product/kernel/mainline-7.2.nix`. The RG DS DTS and Jadard panel driver are in this source. |
 | U-Boot | v2026.10-rc4 archive, hash in `uboot.nix`, upstream `anbernic-rg-ds-rk3568_defconfig`. This is a release candidate. |
 | Firmware | The pinned nixpkgs `rkbin.BL31_RK3568` and `rkbin.TPL_RK3568`, as consumed by the existing RG353M U-Boot package. These are binary firmware, not fully open firmware. |
 | Image layout | The existing NixOS SD builder and RG353M raw-loader placement. MBR, a 16 MiB gap, loader at sector 64, FAT `NIXOS_BOOT`, bootable ext4 `NIXOS_RGDS`. |
@@ -22,7 +22,7 @@ and the factory boot sequence still need hardware verification.
 
 The kernel override stays inside this device directory. It does not change
 `flake.lock`, the RG353M kernel, or the Odin kernel. The pinned nixpkgs common
-kernel configuration predates 7.2. `kernel.nix` removes audited obsolete
+kernel configuration predates 7.2. `../../product/kernel/mainline-7.2.nix` removes audited obsolete
 symbols and selects supported replacements while retaining strict checks.
 The RG DS disables the SD installer's broad `hardware.enableAllHardware`
 list. That list requests obsolete PC drivers such as `pata_qdi` and caused

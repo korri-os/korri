@@ -19,7 +19,7 @@ in
   networking.hostName = "rgds";
 
   boot = {
-    kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ./kernel.nix { });
+    kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ../../product/kernel/mainline-7.2.nix { });
     consoleLogLevel = 7;
     kernelParams = [
       "console=ttyS2,1500000n8"

@@ -56,9 +56,11 @@ in
       "pwm_bl"
       "panfrost"
     ];
-    # Start with the stock mainline kernel. It contains the RG353P device tree
-    # and the RK3566 storage, display, RK817 audio, and RTL8821CS WiFi drivers.
-    kernelPackages = pkgs.linuxPackages_latest;
+    # The product's mainline Linux 7.2 (shared with the RG DS). It contains the
+    # RG353P device tree and the RK3566 storage, display, RK817 audio, and
+    # RTL8821CS WiFi drivers. Until 2026-09-30 this was linuxPackages_latest
+    # (6.18.2); 7.2 is not yet booted on this board.
+    kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ../../product/kernel/mainline-7.2.nix { });
     # The stock ST7703 driver draws nothing on the rg353v-panel-v2 glass. Ship
     # the corrected driver as an out-of-tree module in updates/, which depmod
     # prefers over the in-tree copy, instead of patching and rebuilding the

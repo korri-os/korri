@@ -7,6 +7,8 @@
 let
   hardwareStub = {
     networking.hostName = "korri-product-reference";
+    # The reference evaluates product services, not a board; it has no kernel.
+    services.korriProduct.kernel.overrideReason = "reference evaluation, no board kernel";
     services.korriProduct.usbGadget = {
       name = "reference";
       product = "Korri reference";

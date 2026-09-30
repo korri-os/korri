@@ -1,5 +1,6 @@
+# The product's mainline Linux 7.2 for Rockchip RK356x boards. Moved from the
+# RG DS on 2026-09-30, when the product pinned 7.2; the RG353M uses it too.
 # RG DS board and Jadard dual-panel support are upstream in Linux 7.x.
-# Keep this source override local: the other devices retain their kernel pins.
 {
   lib,
   linux_latest,
