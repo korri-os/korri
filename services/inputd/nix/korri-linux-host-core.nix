@@ -134,6 +134,31 @@ let
           ;;
       esac
     fi
+    # wlroots splits WLR_DRM_DEVICES on colons, and every PCI path holds
+    # them. Pass the card node that the PCI path names, whether or not udev
+    # has created the symbolic link yet.
+    case "$want" in
+      /dev/dri/by-path/pci-*-card)
+        name="''${want#/dev/dri/by-path/pci-}"
+        name="''${name%-card}"
+        resolved=
+        for card in /sys/class/drm/card[0-9]*; do
+          case "''${card##*/}" in *-*) continue ;; esac
+          [ -e "$card/device" ] || continue
+          target=$(${pkgs.coreutils}/bin/readlink -f "$card/device")
+          if [ "''${target##*/}" = "$name" ]; then
+            resolved="/dev/dri/''${card##*/}"
+            break
+          fi
+        done
+        if [ -z "$resolved" ]; then
+          echo "no DRM card for PCI device $name" >&2
+          exit 1
+        fi
+        WLR_DRM_DEVICES="$resolved"
+        export WLR_DRM_DEVICES
+        ;;
+    esac
     exec ${sway}/bin/sway --unsupported-gpu --config "$KORRI_SWAY_CONFIG"
   '';
   # The executable is product identity; the render node is a hardware fact
