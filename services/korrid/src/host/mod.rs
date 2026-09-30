@@ -254,9 +254,8 @@ impl HostRuntime {
                 .as_ref()
                 .ok_or_else(|| "device settings root is not configured".to_string())
                 .and_then(|root| {
-                    crate::config::settings::read(root)
-                        .map(|settings| settings.player_count)
-                        .map_err(|e| e.to_string())
+                    // device.yaml only: plugin state must never fence input.
+                    crate::config::settings::read_player_count(root).map_err(|e| e.to_string())
                 });
             if let Err(error) = count.and_then(|count| launcher.control().initialize_input(count)) {
                 launcher.control().fence_input();

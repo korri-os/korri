@@ -96,10 +96,14 @@ pub fn read(root: &Path) -> Result<ReadableSettings, SettingsError> {
     read_with_registry_source(root, &plugin_policy::RegistrySource::Installed)
 }
 
-pub fn read_with_registry_source(
-    root: &Path,
-    source: &plugin_policy::RegistrySource,
-) -> Result<ReadableSettings, SettingsError> {
+/// The seat count from `device.yaml` alone. Startup sizes the shared seat pool
+/// with it, so it must not depend on plugin state: a slow or failed plugin host
+/// would otherwise fence every controller.
+pub fn read_player_count(root: &Path) -> Result<u8, SettingsError> {
+    read_device_documents(root).map(|(_, snapshot)| snapshot.player_count())
+}
+
+fn read_device_documents(root: &Path) -> Result<(String, super::ConfigSnapshot), SettingsError> {
     ensure_fixed_files(root)?;
     let config = read_fixed(root, DEVICE_FILE_NAME)?;
     let games = read_fixed(root, GAMES_FILE_NAME)?;
@@ -109,6 +113,14 @@ pub fn read_with_registry_source(
     // settings page that would be unable to save it safely.
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
+    Ok((config, snapshot))
+}
+
+pub fn read_with_registry_source(
+    root: &Path,
+    source: &plugin_policy::RegistrySource,
+) -> Result<ReadableSettings, SettingsError> {
+    let (config, snapshot) = read_device_documents(root)?;
 
     let registry = source
         .registry()
@@ -651,6 +663,29 @@ mod tests {
         assert_eq!(
             fs::read(root.path().join(RELEASES_FILE_NAME)).unwrap(),
             b"{}\n"
+        );
+    }
+
+    // Startup sizes the seat pool from device.yaml alone. A missing or failed
+    // plugin registry must not make the count unreadable, because an unreadable
+    // count fences all controller input.
+    #[test]
+    fn player_count_is_read_without_the_plugin_registry() {
+        let root = root("host: {preferences: {playerCount: 6}}\n");
+        assert!(
+            plugin_policy::RegistrySource::Installed.registry().is_err(),
+            "this test needs the installed plugin registry to be absent"
+        );
+
+        assert_eq!(read_player_count(root.path()).unwrap(), 6);
+    }
+
+    #[test]
+    fn player_count_defaults_when_device_yaml_is_empty() {
+        let root = root("{}\n");
+        assert_eq!(
+            read_player_count(root.path()).unwrap(),
+            super::super::DEFAULT_PLAYER_COUNT
         );
     }
 
