@@ -492,8 +492,9 @@ for each included system, with alternatives left to the owner. Source: ticket 03
 with the six lists selected in ticket 10 from pinned ROCKNIX platform tables.
 
 Moonlight ships preinstalled as a removable plugin for now, with a later move to
-opt-in installation. No date was chosen. SSH and Tailscale are optional
-additions, not preinstalled. Content acquisition is deferred, so no legacy
+opt-in installation. No date was chosen. Key-only SSH is preinstalled on
+every device (owner decision, 2026-09-30). Tailscale is an optional addition,
+not preinstalled. Content acquisition is deferred, so no legacy
 provider is ported.
 
 The RG DS list uses the RK3566 table as a stated analogy. The R36T Max uses the
@@ -648,6 +649,22 @@ behavior. No infrastructure supports it today.
   This spec authorizes no device write, no flashing and no deployment.
 
 ## Further Notes
+
+### Owner decisions of 2026-09-30
+
+The RG353M and RP Mini V2 audit
+(`evidence/2026-09-30-rg353m-rpminiv2-audit.md`) found product behavior that
+only one device had. The owner decided:
+
+- Product behavior, on every device: volume actions, controller activity and
+  display idle, game library access for the runtime user, the clock governor,
+  no networkd wait-online, the portal freeze with the patched systemd, the boot
+  splash with a quiet boot, and the USB gadget (network link and console).
+- Key-only SSH ships preinstalled on every device. This replaces the earlier
+  "SSH is not preinstalled" line under Default plugin selection.
+- The product pins Linux 7.2. A device may override the version only when it
+  is necessary, and it must state the reason.
+- The verbose development boot is an option chosen at boot, not the default.
 
 ### Open decisions to settle during implementation
 
