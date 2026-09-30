@@ -27,7 +27,7 @@ if ! NIX_CONFIG="$config" nix config show trusted-public-keys | grep -Fq "$key";
   exit 1
 fi
 
-paths=$(nix eval --json ".#nixosConfigurations.$device.config.sdImage.storePaths" --apply 'xs: map toString xs')
+paths=$(NIX_CONFIG="$config" nix eval --json ".#nixosConfigurations.$device.config.sdImage.storePaths" --apply 'xs: map toString xs')
 mapfile -t packages < <(printf '%s' "$paths" | jq -r '.[] | select(endswith("-korri-plugin"))')
 count=$(printf '%s' "$paths" | jq 'length')
 if (( ${#packages[@]} < 1 || ${#packages[@]} != count - 1 )); then
@@ -45,7 +45,7 @@ for package in "${packages[@]}"; do
     exit 1
   fi
   NIX_CONFIG="$config" nix build --no-link "$package" \
-    --option max-jobs 0 --option fallback false --option require-sigs true
+    --option max-jobs 0 --option builders "" --option fallback false --option require-sigs true
   echo "verified signed image plugin: $package"
 done
 

@@ -1,11 +1,14 @@
-{ nixpkgs, korri, plugins }:
+{ nixpkgs, korri }:
 let
   configuration = nixpkgs.lib.nixosSystem {
     system = "aarch64-linux";
     specialArgs = { inherit korri; };
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })
-      (import ../../product/image-plugins.nix { inherit korri plugins; device = "rgds"; })
+      (import ../../product/image-plugins.nix {
+        inherit korri;
+        device = "rgds";
+      })
       ./sd-image.nix
       ./portal.nix
     ];

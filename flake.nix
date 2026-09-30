@@ -5,12 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     inputplumber-nixpkgs.url = "github:NixOS/nixpkgs/9a37a7b2ae651b6182ef08d0d446a964339bcdfe";
     flake-utils.url = "github:numtide/flake-utils";
-    # The publisher imports Korri for its builder. Read its source without
-    # evaluating its flake here, so the image does not create a flake cycle.
-    plugins = {
-      url = "github:korri-os/plugins";
-      flake = false;
-    };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,30 +25,29 @@
       nixpkgs,
       inputplumber-nixpkgs,
       flake-utils,
-      plugins,
       rust-overlay,
       crane,
       proseql,
     }:
     let
       rg353m = import ./nix/devices/rg353m {
-        inherit nixpkgs plugins;
+        inherit nixpkgs;
         korri = self;
       };
       rgds = import ./nix/devices/rgds {
-        inherit nixpkgs plugins;
+        inherit nixpkgs;
         korri = self;
       };
       r36tmax = import ./nix/devices/r36tmax {
-        inherit nixpkgs plugins;
+        inherit nixpkgs;
         korri = self;
       };
       rpminiv2 = import ./nix/devices/rpminiv2 {
-        inherit nixpkgs plugins;
+        inherit nixpkgs;
         korri = self;
       };
       odin2portal = import ./nix/devices/odin2portal {
-        inherit nixpkgs plugins;
+        inherit nixpkgs;
         korri = self;
       };
       rg35xxsp = import ./nix/devices/rg35xxsp {
@@ -243,7 +236,18 @@
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
           // pluginHost.checks
+          // (import ./nix/product/published-plugin-checks.nix {
+            inherit pkgs korridPackage;
+            korri = self;
+            hostPackage = pluginHost.packages.korri-plugin-host;
+          })
           // {
+            korri-published-game-launch = import ./services/korrid/published-game-launch-check.nix {
+              inherit pkgs korridPackage;
+            };
+            korri-published-interface-break = import ./services/korrid/published-interface-break-check.nix {
+              inherit pkgs korridPackage;
+            };
             korri-product = import ./nix/product/check.nix {
               inherit pkgs nixpkgs;
               korri = self;
@@ -256,9 +260,16 @@
               productModule = nixosModules.korri-product;
             };
             korri-product-image-plugins = import ./nix/product/image-plugins-check.nix {
-              inherit pkgs plugins;
-              korri = self;
-              devices = { inherit rg353m rgds r36tmax rpminiv2 odin2portal; };
+              inherit pkgs;
+              devices = {
+                inherit
+                  rg353m
+                  rgds
+                  r36tmax
+                  rpminiv2
+                  odin2portal
+                  ;
+              };
             };
             korri-device-cache = import ./nix/device-cache/module-check.nix {
               inherit pkgs;

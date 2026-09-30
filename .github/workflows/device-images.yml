@@ -141,6 +141,12 @@ jobs:
       - name: Fetch only signed default plugin packages
         run: bash .github/workflows/fetch-image-plugins.sh "$DEVICE"
 
+      - name: Accept published packages with current Core before image assembly
+        run: |
+          nix build --no-link \
+            .#checks.aarch64-linux.korri-published-plugins-aarch64-linux \
+            .#checks.aarch64-linux.korri-published-game-launch
+
       - name: Report available disk space
         run: df -h / /nix
 

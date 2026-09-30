@@ -1,12 +1,10 @@
 {
   pkgs,
-  plugins,
-  korri,
   devices,
 }:
 let
   lib = pkgs.lib;
-  published = (import (plugins.outPath + "/nix") { inherit korri; }).packages.aarch64-linux;
+  published = import ./published-plugins.nix { system = "aarch64-linux"; };
   selected = import ./plugin-selection.nix {
     plugins = published;
   };
@@ -29,15 +27,13 @@ let
     in
     additional == map toString selected.${name}
     && lib.hasInfix "korri-image-seed" image.populateRootCommands
-    && (
-      name == "r36tmax"
-      || (
-        proofs.requiredBy == [ "korri-plugin-host.service" ]
-        && lib.elem "korri-plugin-host.service" proofs.before
-        && lib.hasInfix "korri-image-plugin-offline-metadata/." proofs.script
-        && lib.hasInfix "--option substituters \"\" store copy-sigs" proofs.script
-      )
-    )
+    && proofs.requiredBy == [ "korri-plugin-host.service" ]
+    && lib.elem "korri-plugin-host.service" proofs.before
+    && lib.hasInfix "korri-image-plugin-offline-metadata/." proofs.script
+    && lib.hasInfix "--offline" proofs.script
+    && lib.hasInfix "--option extra-substituters ''" proofs.script
+    && lib.hasInfix "--option extra-trusted-public-keys ''" proofs.script
+    && lib.hasInfix "store copy-sigs --recursive --substituter \"file://$cache\"" proofs.script
     && lib.all (
       package: !(lib.elem (toString package) (map toString config.environment.systemPackages))
     ) selected.${name};

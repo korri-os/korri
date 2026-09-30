@@ -3,7 +3,6 @@
 {
   nixpkgs,
   korri,
-  plugins,
   ...
 }:
 let
@@ -60,7 +59,7 @@ let
     modules = [
       (import ../../product/nixos-module.nix { inherit korri; })
       (import ../../product/image-plugins.nix {
-        inherit korri plugins;
+        inherit korri;
         device = "rpminiv2";
       })
       ./portal.nix

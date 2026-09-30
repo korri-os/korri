@@ -37,6 +37,9 @@ regexes = [
   # Public fixture capability used only inside the isolated portal-freezer VM.
   # This is not a device credential; the production service never reads it.
   '''^freezer-vm-only$''',
+  # Public capability used only by the disposable published-plugin VM's RPC
+  # client and brain. It is not a production device credential.
+  '''^published-plugin-vm-capability$''',
 ]
 paths = [
   # Vendored kernel patches. Their `key-select` and `key-m1` button tables read

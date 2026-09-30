@@ -45,6 +45,18 @@ let
         exec gitleaks git --staged --redact --verbose --no-banner .
       '';
     };
+    korri-published-plugins-check = {
+      description = "Check current Core against exact published plugins, signed offline closures, and a host-interface break.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.jq
+        pkgs.python3
+        pkgs.git
+      ];
+      script = ''
+        exec bash "$KORRI_ROOT/nix/product/published-plugins-check.sh"
+      '';
+    };
     r36tmax-check = {
       description = "Check the R36T Max console and Korri configurations without deploying.";
       runtimeInputs = [ pkgs.nix ];

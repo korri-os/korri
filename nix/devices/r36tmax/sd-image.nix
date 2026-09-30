@@ -7,7 +7,6 @@
   pkgs,
   lib,
   korri,
-  plugins,
   ...
 }:
 
@@ -22,13 +21,15 @@ let
   bootFiles = recovery.bootFiles { system = config.system.build.toplevel; };
   kernel = pkgs.callPackage ./dts/kernel-trimmed.nix { };
   productImage = config.services.korriProduct.installed or false;
-  selected = (import ../../product/plugin-selection.nix {
-    plugins = (import (plugins.outPath + "/nix") { inherit korri; }).packages.${pkgs.stdenv.hostPlatform.system};
-  }).r36tmax;
+  selected =
+    (import ../../product/plugin-selection.nix {
+      plugins = import ../../product/published-plugins.nix { system = pkgs.stdenv.hostPlatform.system; };
+    }).r36tmax;
   seeded = import ../../../services/korrid/plugin-host/image-seed.nix {
     inherit pkgs;
     hostPackage = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
-    cacheUrl = (import ../../product/requirements.nix { inherit korri; }).constants.publishers."@korri".cacheUrl;
+    cacheUrl =
+      (import ../../product/requirements.nix { inherit korri; }).constants.publishers."@korri".cacheUrl;
     pluginPackages = selected;
   };
 in
@@ -140,7 +141,6 @@ in
     # initrd do not fit in 30 MiB alongside a device tree per name its
     # boot.scr can ask for.
     firmwareSize = 128;
-    storePaths = lib.optionals productImage seeded.storePaths;
 
     populateFirmwareCommands = ''
       cp -r ${bootFiles}/. firmware/

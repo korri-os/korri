@@ -65,22 +65,6 @@
         "type": "github"
       }
     },
-    "plugins": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1790726415,
-        "narHash": "sha256-Vmj4dSpiq2S8XlrJmdEMoV7S7Rm+IJKIgCNAsfAG/1Q=",
-        "owner": "korri-os",
-        "repo": "plugins",
-        "rev": "1ac92607fdccc38f963133104896ce62adb0f8c5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "korri-os",
-        "repo": "plugins",
-        "type": "github"
-      }
-    },
     "proseql": {
       "flake": false,
       "locked": {
@@ -104,7 +88,6 @@
         "flake-utils": "flake-utils",
         "inputplumber-nixpkgs": "inputplumber-nixpkgs",
         "nixpkgs": "nixpkgs",
-        "plugins": "plugins",
         "proseql": "proseql",
         "rust-overlay": "rust-overlay"
       }
