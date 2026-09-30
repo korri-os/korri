@@ -1,10 +1,7 @@
-# Opt-in for the existing Linux game plugins on the RP Mini V2.
-#
-# The plugin host restores administrator-approved selections from its receipt
-# directory. The image carries those receipts and the plugin packages, and this
-# module binds the one publisher the device trusts. Nothing here installs or
-# enables a plugin by name: the receipts are the approval record, and the host
-# re-verifies each one against the bound key before it starts anything.
+# Game library access for the runtime user, on every product device. Moved
+# unchanged from the RP Mini V2 (game-plugins.nix). Without it /var/lib/korri
+# stays korrid-only (0700), and a launched game cannot read ROMs or write saves:
+# the RG353M card showed exactly that on 2026-09-30.
 {
   config,
   lib,

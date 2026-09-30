@@ -1,9 +1,9 @@
-# This gate requires the sibling Mini V2 systemd patch. Never substitute an
+# This gate requires the product systemd patch. Never substitute an
 # unpatched package or accept a second stop attempt as success.
 {
   pkgs,
   korrid,
-  systemd ? pkgs.callPackage ../../../nix/devices/rpminiv2/systemd/package.nix { },
+  systemd ? pkgs.callPackage ../../../nix/product/systemd/package.nix { },
 }:
 let
   runtime = korrid.overrideAttrs (old: {

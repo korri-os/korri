@@ -21,7 +21,6 @@ let
 in
 {
   imports = [
-    ../../base/clock-governor.nix
     ../../base/fan-control.nix
   ];
 

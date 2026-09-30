@@ -63,7 +63,6 @@ let
         device = "rpminiv2";
       })
       ./portal.nix
-      ./systemd/module.nix
       (
         { lib, ... }:
         {
@@ -115,7 +114,7 @@ in
   usbGadgetCheck = pkgs: import ./usb-gadget-vm-test.nix { inherit pkgs; };
   systemdCheck =
     pkgs:
-    import ./systemd/check.nix {
+    import ../../product/systemd/check.nix {
       inherit pkgs configuration consoleConfiguration;
     };
   initrdModulesCheck =

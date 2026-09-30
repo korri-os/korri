@@ -20,6 +20,12 @@ in
       chromiumArgs = [ "--force-prefers-reduced-motion" ];
     })
     (import ../../services/korrid/plugin-host/nixos-module.nix { inherit korri; })
+    # Lifted from the RP Mini V2 on 2026-09-30 so every device ships them.
+    ./controls.nix
+    ./game-library-access.nix
+    ./systemd/module.nix
+    ../../clients/portal/nix/kiosk-freezer.nix
+    ../base/clock-governor.nix
   ];
 
   options.services.korriProduct = {
@@ -52,6 +58,17 @@ in
       HandleLidSwitchExternalPower = "poweroff";
       HandleLidSwitchDocked = "poweroff";
     };
+
+    # Load-following CPU governor on every device. A device adds its GPU
+    # devfreq nodes and SoC errata as hardware facts.
+    services.korri.clockGovernor.enable = true;
+
+    # networkd, where a device uses it, manages only the USB cable link, which
+    # is never required for online. Its wait-online unit otherwise blocks
+    # network-online.target for 120 s and fails: on the RG353M that delayed the
+    # Sunshine plugin past the plugin host's deadline and left input fenced.
+    # NetworkManager's wait-online still serves network-online.target.
+    systemd.network.wait-online.enable = false;
 
     # The NixOS default cache is already in the base list. Keep one exact
     # product list rather than appending the default a second time through the

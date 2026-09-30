@@ -69,8 +69,12 @@ let
           check.settingFailure name requirement
         )
       ) deviceRequirements.settings;
+      # The product's patched systemd is part of the contract on every device.
+      nativeFailures = lib.optional (
+        toString device.config.systemd.package != deviceRequirements.nativeSystemdPackage
+      ) (check.nativeSystemdPackageFailure name);
     in
-    settingFailures;
+    settingFailures ++ nativeFailures;
   settingTestPasses =
     requirement:
     let
@@ -461,7 +465,7 @@ let
   # test labels must not switch a mutation back to the default reference.
   nativeName = "rpminiv2";
   armReference = referenceForSystem "aarch64-linux";
-  nativeProduct = armReference.deviceReferences.${nativeName}.product;
+  nativeProduct = armReference.product;
   nativeRequirements = check.requirementsForDevice nativeName nativeProduct;
   mutateNative = module: nativeProduct.extendModules { modules = [ module ]; };
   nativeUnitCases = [
@@ -551,7 +555,7 @@ let
     systemd.package = lib.mkForce swappedNativePackage;
   };
   nativeUnpatched = mutateNative {
-    systemd.package = lib.mkForce armReference.product.config.systemd.package;
+    systemd.package = lib.mkForce nativeProduct.pkgs.systemd;
   };
   nativeWithoutKiosk = mutateNative {
     services.korri.compositor.kiosk.enable = lib.mkForce false;
@@ -564,7 +568,7 @@ let
     in
     valueAt requirement.path device.config == value
     && builtins.elem (check.settingFailure nativeName requirement) (check.validate nativeName device);
-  nativeOnlySettings = armReference.deviceReferences.${nativeName}.settings;
+  nativeOnlySettings = armReference.settings;
   extraNativeAuthority = mutateNative {
     security.polkit.extraConfig = lib.mkAfter ''
       polkit.addRule(function(action, subject) { return polkit.Result.YES; });
@@ -634,10 +638,8 @@ assert lib.all (device:
     (map toString device.config.services.dbus.packages) == [ ]
 ) [ nativeUnpatched nativeWithoutKiosk ];
 assert check.validate nativeName nativeWithoutKiosk != [ ];
-# A matching native artifact cannot opt another device into the Mini V2 edge.
-assert builtins.elem (check.nativeSystemdPackageFailure "rg353m") (
-  check.validate "rg353m" nativeProduct
-);
+# The same product contract holds for every device export.
+assert check.validate "rg353m" nativeProduct == [ ];
 assert lib.all nativeSettingCasePasses nativeOnlySettings;
 assert builtins.elem (check.settingFailure nativeName nativePolicyRequirement) (
   check.validate nativeName extraNativeAuthority

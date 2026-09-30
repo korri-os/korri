@@ -10,31 +10,19 @@
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  host = config.services.korriLinuxHost;
   thermalSnapshot = pkgs.writeShellScript "rpminiv2-thermal-readonly" (
     builtins.readFile ./thermal-readonly.sh
   );
-  displayIdle = pkgs.writeShellScript "rpminiv2-display-idle" ''
-    exec ${pkgs.swayidle}/bin/swayidle -w \
-      timeout 300 '${pkgs.sway}/bin/swaymsg output DSI-1 power off' \
-      resume '${pkgs.sway}/bin/swaymsg output DSI-1 power on' \
-      before-sleep '${pkgs.sway}/bin/swaymsg output DSI-1 power off'
-  '';
   # ROCKNIX's UCM for the RetroidPocket card; stock alsa-ucm-conf has none.
   ucm = pkgs.callPackage ./ucm { };
   ucmDirectory = "${ucm}/share/alsa/ucm2";
 in
 {
   imports = [
-    ./game-plugins.nix
     ./usb-gadget.nix
-    # C3 activates only with the Mini V2 product's stop-thaw systemd patch.
-    ../../../clients/portal/nix/kiosk-freezer.nix
-    ../../base/clock-governor.nix
   ];
 
-  # Only CPU scaling is selected here. GPU devfreq remains at the kernel default.
-  services.korri.clockGovernor.enable = true;
+  # The product enables CPU scaling. GPU devfreq remains at the kernel default.
 
   # Use the board's packaged regulatory database; select an SSID after boot
   # with nmcli rather than baking credentials into an installation image.
@@ -62,52 +50,8 @@ in
     korri.packages.${system}.rpminiv2-inputplumber-data
   ];
 
-  # InputPlumber routes the two dedicated key devices to inputd's direct
-  # actions. Run wpctl as the runtime user against that user's PipeWire graph;
-  # no compositor key bindings are needed.
-  services.korriLinuxInput.inputd.actions = {
-    # Inputd observes its existing normalized gamepad and authenticated direct
-    # actions. This native command only resets the seat's idle notifier; it
-    # cannot generate pointer/key events or change focus. Bounded to <= 1 Hz.
-    controller-activity.command = [
-      "${pkgs.sway-unwrapped}/bin/swaymsg"
-      "-s"
-      "/run/korri-compositor/sway-ipc.sock"
-      "seat * idle_notify"
-    ];
-    volume-up = {
-      command = [
-        "${pkgs.wireplumber}/bin/wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%+"
-      ];
-      environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
-    };
-    volume-down = {
-      command = [
-        "${pkgs.wireplumber}/bin/wpctl"
-        "set-volume"
-        "@DEFAULT_AUDIO_SINK@"
-        "5%-"
-      ];
-      environment.XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
-    };
-  };
-
-  # Keep home directories and the rest of /run/user hidden. Only wpctl's
-  # existing native socket crosses inputd's mount namespace; no user bus is
-  # needed. The user manager creates its sockets before reporting ready.
-  # Missing audio must not stop controllers. If the socket itself is removed
-  # and recreated (not just PipeWire restarted), restart inputd to rebind it.
-  systemd.services.korri-inputd = {
-    wants = [ "user@${toString host.runtimeUid}.service" ];
-    after = [ "user@${toString host.runtimeUid}.service" ];
-    serviceConfig = {
-      ProtectHome = lib.mkForce "tmpfs";
-      BindReadOnlyPaths = [ "-/run/user/${toString host.runtimeUid}/pipewire-0" ];
-    };
-  };
+  # The product owns the volume, controller-activity and display-idle actions.
+  # This board's InputPlumber data routes its two volume key devices to them.
 
   services.korriLinuxHost = {
     label = "rpminiv2";
@@ -154,31 +98,6 @@ in
       NoNewPrivileges = true;
       ProtectSystem = "strict";
       ProtectKernelTunables = true;
-    };
-  };
-
-  # Protect the OLED after five graphical idle minutes. The TTY keeps its
-  # separate consoleblank=60 policy. Inputd's controller activity resets the
-  # same native idle notifier as local compositor input, including after blank.
-  systemd.services.rpminiv2-display-idle = {
-    description = "RP Mini V2 OLED idle protection";
-    wantedBy = [ "multi-user.target" ];
-    requires = [ "korri-compositor.service" ];
-    after = [ "korri-compositor.service" ];
-    environment = {
-      XDG_RUNTIME_DIR = "/run/user/${toString host.runtimeUid}";
-      WAYLAND_DISPLAY = "korri-wayland";
-      SWAYSOCK = "/run/korri-compositor/sway-ipc.sock";
-    };
-    serviceConfig = {
-      User = host.runtimeUser;
-      Group = host.runtimeGroup;
-      ExecStart = displayIdle;
-      Restart = "always";
-      RestartSec = 1;
-      NoNewPrivileges = true;
-      PrivateTmp = true;
-      ProtectSystem = "strict";
     };
   };
 

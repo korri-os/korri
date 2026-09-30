@@ -239,14 +239,9 @@ let
   inherit (requirements) requiredUnits unitSignatures;
 
   deviceSystem = device: device.pkgs.stdenv.hostPlatform.system;
-  # The checked export name and platform select a trusted reference. Candidate
-  # package names, patch basenames, flags, and unit fields cannot opt into it.
-  requirementsForDevice =
-    name: device:
-    let
-      reference = referenceForSystem (deviceSystem device);
-    in
-    requirementsForReference ((reference.deviceReferences or { }).${name} or reference);
+  # Only the platform selects the trusted reference. Every device meets the
+  # same product; no export name selects a different contract.
+  requirementsForDevice = _name: device: requirementsForSystem (deviceSystem device);
 
   validateSetting =
     name: device: requirement:

@@ -44,11 +44,9 @@ in
   services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
 
   # Native device testing crossed 68 C at the previous 1.8 GHz ceiling. The
-  # 1.104 GHz ceiling sustained GBA below 60 C with schedutil.
-  powerManagement = {
-    cpuFreqGovernor = "schedutil";
-    cpufreq.max = 1104000;
-  };
+  # 1.104 GHz ceiling sustained GBA below 60 C with schedutil. The product's
+  # clock governor selects schedutil; this ceiling is the board's thermal fact.
+  powerManagement.cpufreq.max = 1104000;
   # RTL8821CS deep power saving caused pairing failures and dropped links.
   # Keep this as NetworkManager hardware configuration, not executable profile
   # hook source owned by the product gate.

@@ -1,4 +1,4 @@
-# Approved Mini V2 stop semantics, not an upstream bugfix-only backport.
+# Product stop semantics, not an upstream bugfix-only backport.
 { systemd }:
 assert systemd.version == "258.2";
 systemd.overrideAttrs (old: {

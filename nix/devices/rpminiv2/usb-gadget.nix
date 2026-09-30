@@ -53,12 +53,6 @@ in
   networking.firewall.interfaces.usb0.allowedUDPPorts = [ 67 ];
   systemd.network = {
     enable = true;
-    # networkd manages only this cable link, which is never required for
-    # online. The R36T Max records that its networkd wait-online unit then
-    # fails at boot and leaves the system degraded (KERNEL-7.2.md). The
-    # product acceptance requires no failed unit. NetworkManager's own
-    # wait-online unit still serves network-online.target.
-    wait-online.enable = false;
     networks."10-usb-gadget" = {
       matchConfig.Name = "usb0";
       address = [ "${gadgetAddress}/${toString gadgetPrefix}" ];

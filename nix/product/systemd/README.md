@@ -1,13 +1,14 @@
-# Mini V2: stop thaws directly frozen units
+# Product systemd: stop thaws directly frozen units
 
-The owner approved this downstream semantic change on 2026-09-26. It is not
-an upstream bugfix-only backport. Upstream systemd 258.2's
-`TEST-38-FREEZER.sh:279` expects a frozen unit's stop to fail.
+The owner approved this downstream semantic change on 2026-09-26 for the
+RP Mini V2, and made it product-wide on 2026-09-30. It is not an upstream
+bugfix-only backport. Upstream systemd 258.2's `TEST-38-FREEZER.sh:279`
+expects a frozen unit's stop to fail.
 
 ## Boundary and implementation
 
-`../default.nix` imports `module.nix` only in the product extension. Recovery
-and the other device configurations retain their original systemd package.
+`../nixos-module.nix` imports `module.nix` for every product device. Recovery
+configurations that do not import the product keep the original systemd package.
 The override appends one native C patch and refuses versions other than 258.2.
 It adds no polkit or DBus policy and does not enable kiosk freezing itself.
 

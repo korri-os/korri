@@ -1,4 +1,4 @@
-# Imported only at the Mini V2 product edge, with its patched systemd.
+# Product portal freeze. Active only with the product's patched systemd.
 # The unit and account are the existing native kiosk and korrid artifacts.
 {
   config,
@@ -18,7 +18,7 @@ let
 in
 {
   # No kiosk, recovery, or unpatched systemd: no freezer authority or hooks.
-  # The sibling Mini V2 systemd/module.nix supplies this exact stop-path patch.
+  # nix/product/systemd/module.nix supplies this exact stop-path patch.
   config = lib.mkIf (config.services.korri.compositor.kiosk.enable && patched) {
     systemd.services.korrid = {
       environment.KORRID_PORTAL_UNIT = unit;

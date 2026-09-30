@@ -171,7 +171,7 @@ let
       };
   };
   productFailures = productCheck.validate "rpminiv2" configuration;
-  idle = c.systemd.services.rpminiv2-display-idle;
+  idle = c.systemd.services.korri-display-idle;
   thermalSnapshot = c.systemd.services.rpminiv2-thermal-snapshot;
   gadget = c.systemd.services.usb-gadget;
   gadgetNetwork = c.systemd.network.networks."10-usb-gadget";
@@ -199,7 +199,7 @@ assert lib.hasInfix (builtins.unsafeDiscardStringContext (
 assert
   !(lib.hasInfix (builtins.unsafeDiscardStringContext (toString dtDriverCheck)) recovery.sdImage.populateRootCommands);
 assert common recovery;
-# C3 is a Mini V2 product edge, never a recovery or unpatched-kiosk feature.
+# The portal freeze is product behavior, never a recovery or unpatched-kiosk feature.
 assert !((recovery.systemd.services.korrid.environment or { }) ? KORRID_PORTAL_UNIT);
 assert !(recovery.systemd.services ? korri-chromium-kiosk-thaw);
 assert !(lib.hasInfix "korri-chromium-kiosk" recovery.security.polkit.extraConfig);
@@ -325,7 +325,8 @@ assert c.services.korriLinuxInput.inputd.actions.controller-activity.command == 
   "/run/korri-compositor/sway-ipc.sock"
   "seat * idle_notify"
 ];
-assert !(recovery.systemd.services ? rpminiv2-display-idle);
+assert !(recovery.systemd.services ? korri-display-idle);
+assert idle.environment.KORRI_DISPLAY_OUTPUT == "DSI-1";
 assert idle.serviceConfig.User == c.services.korriLinuxHost.runtimeUser;
 assert idle.serviceConfig.Group == c.services.korriLinuxHost.runtimeGroup;
 assert

@@ -93,19 +93,21 @@ let
         fi
       done
 
-      ${lib.concatMapStringsSep "\n      " (node: ''
-        gpu_dir="$sysfs_root"/class/devfreq/${lib.escapeShellArg node}
+      # Device facts arrive as space-separated unit environment. The option
+      # types admit only sysfs-safe names, so word splitting is exact.
+      for node in ''${KORRI_CLOCK_GPU_NODES:-}; do
+        gpu_dir="$sysfs_root/class/devfreq/$node"
         if [ -e "$gpu_dir/governor" ] && grep -qw "$gpu_governor" "$gpu_dir/available_governors" 2>/dev/null; then
           write_governor "$gpu_dir/governor" "$gpu_governor"
         fi
-      '') cfg.gpuDevfreqNodes}
+      done
 
       # Hold configured cpuidle states disabled (write 1 to their `disable`).
       # Re-asserted every poll because suspend/resume re-enables them.
-      ${lib.concatMapStringsSep "\n      " (entry: ''
-        idle_file="$sysfs_root/devices/system/cpu/${lib.escapeShellArg entry}/disable"
+      for entry in ''${KORRI_CLOCK_CPUIDLE_DISABLE:-}; do
+        idle_file="$sysfs_root/devices/system/cpu/$entry/disable"
         [ -e "$idle_file" ] && write_governor "$idle_file" "1"
-      '') cfg.cpuIdleDisable}
+      done
 
       if [ "$max_iterations" -gt 0 ] && [ "$iteration" -ge "$max_iterations" ]; then
         break
@@ -135,7 +137,7 @@ in
     };
 
     gpuDevfreqNodes = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (lib.types.strMatching "^[A-Za-z0-9._:-]+$");
       default = [ ];
       example = [ "3d00000.gpu" ];
       description = ''
@@ -145,7 +147,7 @@ in
     };
 
     cpuIdleDisable = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (lib.types.strMatching "^cpu[0-9]+/cpuidle/state[0-9]+$");
       default = [ ];
       example = [ "cpu0/cpuidle/state1" ];
       description = ''
@@ -164,6 +166,10 @@ in
       description = "Korri CPU/GPU frequency-governor policy (${cfg.cpuGovernor}/${cfg.gpuGovernor})";
       wantedBy = [ "multi-user.target" ];
       after = [ "systemd-udevd.service" ];
+      environment = {
+        KORRI_CLOCK_GPU_NODES = lib.concatStringsSep " " cfg.gpuDevfreqNodes;
+        KORRI_CLOCK_CPUIDLE_DISABLE = lib.concatStringsSep " " cfg.cpuIdleDisable;
+      };
       unitConfig = {
         StartLimitIntervalSec = 300;
         StartLimitBurst = 5;
