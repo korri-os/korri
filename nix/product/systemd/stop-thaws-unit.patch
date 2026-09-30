@@ -1,6 +1,6 @@
 --- a/src/core/unit.c
 +++ b/src/core/unit.c
-@@ -2051,11 +2051,12 @@
+@@ -2075,11 +2075,12 @@
   *         -EBADR:    This unit type does not support stopping.
   *         -EALREADY: Unit is already stopped.
   *         -EAGAIN:   An operation is already in progress. Retry later.
@@ -14,7 +14,7 @@
  
          assert(u);
  
-@@ -2069,9 +2070,33 @@
+@@ -2093,9 +2094,33 @@
                  return unit_stop(following);
          }
  
@@ -51,10 +51,10 @@
  
          if (!UNIT_VTABLE(u)->stop)
                  return -EBADR;
-@@ -6485,6 +6510,11 @@
+@@ -6575,6 +6600,11 @@
  
          /* If the cgroup's final state is against what's requested by us, report as canceled. */
-         bus_unit_send_pending_freezer_message(u, /* canceled = */ !expected);
+         bus_unit_send_pending_freezer_message(u, /* canceled= */ !expected);
 +
 +        /* unit_stop() waits for asynchronous thaw before invoking the stop callback. Only wake
 +         * stop/restart jobs; start and reload keep their existing freezer semantics. */

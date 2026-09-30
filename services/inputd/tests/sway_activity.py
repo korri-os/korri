@@ -92,6 +92,13 @@ with tempfile.TemporaryDirectory() as directory:
                       "seat seat0 fallback true\nseat * hide_cursor 200\n")
     sway_log = root / "sway.log"
     try:
+        runtime_config = root / "runtime-only.conf"
+        runtime_config.write_text(config.read_text() + "seat * idle_notify\n")
+        validation = subprocess.run(
+            ["sway", "--validate", "-c", str(runtime_config)],
+            capture_output=True, text=True, timeout=10)
+        assert validation.returncode != 0, "idle_notify accepted in configuration"
+        assert "idle_notify is runtime-only" in validation.stderr, validation.stderr
         with sway_log.open("w") as output:
             sway = start(["sway", "--unsupported-gpu", "-c", str(config)],
                          stdout=output, stderr=output)

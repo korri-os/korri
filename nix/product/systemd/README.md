@@ -9,10 +9,10 @@ expects a frozen unit's stop to fail.
 
 `../nixos-module.nix` imports `module.nix` for every product device. Recovery
 configurations that do not import the product keep the original systemd package.
-The override appends one native C patch and refuses versions other than 258.2.
+The override appends one native C patch and refuses versions other than 261.2.
 It adds no polkit or DBus policy and does not enable kiosk freezing itself.
 
-The source inspected was
+The original 258.2 source inspected was
 `/nix/store/zfx7f4w3pmv21n8f79ly9nq3gcv35vlg-source`:
 
 - `src/core/unit.c`: `unit_stop`, `unit_freezer_complete`, and the public
@@ -35,6 +35,40 @@ still has job result `frozen`; the owner must thaw that slice separately. This
 also applies to an independently frozen child inside a frozen slice. Start and
 reload retain their existing behavior. Out-of-band cgroup writes retain
 upstream's separate state-tracking behavior.
+
+## Port verified on 2026-09-30
+
+The September nixpkgs update supplies systemd 261.2. The inspected source is
+`/nix/store/kmjp175p5kwpaab5vcvs97i3xcmay856-source`.
+The patch needs only new hunk line numbers and upstream comment spacing.
+It applies with zero fuzz and no offsets. Its C behavior is unchanged.
+The test uses the new driver's `copy_from_machine` method. It does not disable
+type checking or remove a regression.
+
+The normal updated-product VM check is blocked by Sunshine's package approval
+gate. An isolated run uses the original product dependency fixture from Korri
+commit `1c94990513cb1d9c6e443fd481472c36124778ca` and the patched 261.2 PID1.
+The VM runs the new nixpkgs. It checks `/proc/1/exe` against that PID1 before
+running the existing regression. The final test script passed in 87.54 seconds.
+
+All 30 race iterations, pending freezer calls, ancestor isolation, watchdog,
+narrow unprivileged stop/restart, fixture crash recovery, six upstream cases,
+and the shutdown marker check passed. The six-case expectation and `/testok`
+checks remain unchanged. Review found that the first run's upstream watchdog
+loop could not find `sleep` and therefore did not keep its one-second cadence.
+The fixture now gives that command an explicit coreutils path. The check rejects
+missing-command errors in both the suite output and the watchdog unit's journal.
+
+Evidence:
+
+- VM output: `/nix/store/ad6h4ph3zd74gv3bib35x2s5xbikn4nj-vm-test-run-rpminiv2-systemd-freezer-stop`.
+- Tested x86 PID1: `/nix/store/b28yx4av2hxv46rcvprykd4mm88qqgw1-systemd-261.2`.
+- Local reproduction: `nix build --no-link --print-out-paths -L --impure --file /tmp/korri-systemd-261-regression.nix`.
+- Final run log: `/tmp/pi-processes-76k6oc/proc_a4fd-stderr.log`.
+
+This proves the 261.2 port against the existing dependency fixture, not the
+complete updated product. No new ARM build, hardware acceptance, publication,
+or deployment ran. The 258.2 evidence below is historical.
 
 ## Verified on 2026-09-26
 
@@ -70,9 +104,10 @@ fixtures, not the Rust daemon, Chromium, nginx, or the compositor.
 
 All **six** upstream `TEST-38-FREEZER.sh` cases ran on the patched PID1:
 `dbus_api`, `preserve_state`, `recursive`, `systemctl`, `systemctl_show`, and
-`watchdog`. The watchdog case includes daemon reload and reexec. The test
-fixture changes only the deliberate stop-failure expectation and removes its
+`watchdog`. The watchdog case includes daemon reload and reexec. The original test
+fixture changed only the deliberate stop-failure expectation and removed its
 subsequent thaw/duplicate stop because the transient service is now collected.
+The 261.2 fixture also gives the watchdog's `sleep` command an explicit path.
 The six completed cases and `/testok` are required, so a skipped suite fails.
 Upstream's original systemctl calls and timing waits are retained; no broad
 polkit rights are granted to make those root tests pass.

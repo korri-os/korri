@@ -33,6 +33,11 @@ let
     assert text.count(old) == 1
     path.write_text(text.replace(old, new))
     PY
+    # The transient watchdog service does not inherit the test shell's PATH.
+    # Keep its one-second heartbeat instead of silently spinning without sleep.
+    substituteInPlace "$out/TEST-38-FREEZER.sh" \
+      --replace-fail 'systemd-notify WATCHDOG=1; sleep 1; done' \
+      'systemd-notify WATCHDOG=1; ${pkgs.coreutils}/bin/sleep 1; done'
   '';
   service = name: {
     serviceConfig = {
@@ -124,10 +129,12 @@ pkgs.testers.runNixOSTest {
     print(machine.succeed("su -s /bin/sh freezer-client -c '${python}/bin/python ${./regression.py} unprivileged stop'", timeout=60))
     machine.succeed("bash ${upstream}/TEST-38-FREEZER.sh > /var/log/upstream-freezer.log 2>&1 || { cat /var/log/upstream-freezer.log; exit 1; }", timeout=180)
     machine.succeed("test -f /testok")
+    machine.fail("grep -F 'command not found' /var/log/upstream-freezer.log")
+    machine.fail("journalctl --no-pager -u wd.service | grep -F 'command not found'")
     completed = machine.succeed("grep 'testcase_.* END' /var/log/upstream-freezer.log").splitlines()
     assert len(completed) == 6, completed
     print("PASS: all six upstream TEST-38-FREEZER cases: " + ", ".join(completed))
-    machine.copy_from_vm("/var/log/upstream-freezer.log")
+    machine.copy_from_machine("/var/log/upstream-freezer.log")
     # shutdown() initiates ordinary poweroff. The frozen process itself must
     # receive SIGTERM and fsync its marker before the virtual disk goes away.
     machine.shutdown()

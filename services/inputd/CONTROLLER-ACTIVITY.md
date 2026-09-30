@@ -7,7 +7,7 @@ ships the activity command, but that alone does not reset idle.
 `seat <name|*> idle_notify` calls wlroots' native idle notifier. It does not
 move or unhide a cursor, send input events, change focus, or alter the timeout.
 It is runtime-only. The small patch lives in `nix/sway-idle-notify.patch`.
-`nix/sway-activity.nix` asserts Sway 1.11 and its pinned source hash, keeps the
+`nix/sway-activity.nix` asserts Sway 1.12 and its pinned source hash, keeps the
 upstream patches and dependencies, and is the package used by the shared host.
 The flake also exports it as `packages.<system>.sway-controller-activity`.
 
@@ -43,8 +43,9 @@ activity time by up to about one second.
 
 - `nix build .#checks.x86_64-linux.sway-controller-activity` starts real headless
   Sway, two Wayland event observers, and swayidle. Only the test uses a two-second
-  timeout. It checks native idle/resume, sustained activity, re-idle, unchanged
-  window focus and no input events from the activity command. A test-only
+  timeout. It checks configuration-time rejection, native idle/resume, sustained
+  activity, re-idle, unchanged window focus and no input events from the activity
+  command. A test-only
   persistent virtual pointer validates that the observers work before and after.
 - A separate phase checks actual headless output power-off and power-on through
   swayidle. Sway's existing output-power path can re-enter pointer focus; this is

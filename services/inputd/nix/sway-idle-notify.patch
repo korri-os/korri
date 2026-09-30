@@ -8,7 +8,7 @@ This command is runtime-only and does not change idle policy or timeouts.
 
 --- a/include/sway/commands.h
 +++ b/include/sway/commands.h
-@@ -308,6 +308,7 @@
+@@ -309,6 +309,7 @@
  sway_cmd seat_cmd_fallback;
  sway_cmd seat_cmd_hide_cursor;
  sway_cmd seat_cmd_idle_inhibit;
