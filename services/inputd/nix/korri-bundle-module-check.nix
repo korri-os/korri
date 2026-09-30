@@ -12,7 +12,7 @@ let
   deviceConfig = pkgs.writeText "korri-bundle-host.toml" ''
     label = "bundle-check"
   '';
-  evaluated = import "${pkgs.path}/nixos/lib/eval-config.nix" {
+  evaluate = bundle: import "${pkgs.path}/nixos/lib/eval-config.nix" {
     system = pkgs.stdenv.hostPlatform.system;
     modules = [
       korriBundleModule
@@ -33,9 +33,9 @@ let
         };
         services.korriBundle = {
           enable = true;
-          initialPackage = korriBundle;
           launcherPackage = inputdPackage;
-        };
+        }
+        // pkgs.lib.optionalAttrs (bundle != null) { initialPackage = bundle; };
         services.korriLinuxInput = {
           provider = {
             enable = true;
@@ -69,12 +69,29 @@ let
       }
     ];
   };
+  evaluated = evaluate korriBundle;
+  # Each device's own InputPlumber data (its built-in controller file on top of
+  # the generic list) must reach the bundle that actually starts InputPlumber.
+  carriesDeviceData = config: config.services.korriBundle.carriesDeviceInputPlumber;
+  defaulted = (evaluate null).config;
+  foreign = (evaluate (
+    import ./korri-bundle.nix {
+      inherit pkgs inputdPackage korridPackage;
+      inputplumberKorri = pkgs.emptyDirectory;
+    }
+  )).config;
   selector = evaluated.config.systemd.services.korri-bundle-selector;
   provider = evaluated.config.systemd.services.inputplumber;
   inputd = evaluated.config.systemd.services.korri-inputd;
   korrid = evaluated.config.systemd.services.korrid;
   signer = evaluated.config.systemd.services.korri-local-signer;
 in
+assert carriesDeviceData evaluated.config;
+assert carriesDeviceData defaulted;
+assert
+  toString defaulted.services.korriBundle.initialPackage.inputplumber
+  == toString defaulted.services.inputplumber.package;
+assert !carriesDeviceData foreign;
 assert provider.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputplumber";
 assert inputd.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch inputd";
 assert korrid.serviceConfig.ExecStart == "${inputdPackage}/bin/korri-bundle-launch korrid";

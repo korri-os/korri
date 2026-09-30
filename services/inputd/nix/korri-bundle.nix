@@ -5,7 +5,13 @@
   korridPackage,
 }:
 
-pkgs.runCommand "korri-bundle-0.0.0" { } ''
+pkgs.runCommand "korri-bundle-0.0.0"
+  {
+    # Not part of the derivation; lets the NixOS module prove which
+    # InputPlumber data this bundle starts.
+    passthru.inputplumber = inputplumberKorri;
+  }
+  ''
   set -euo pipefail
   mkdir -p "$out/bin" "$out/share"
   ln -s ${inputplumberKorri}/bin/inputplumber "$out/bin/inputplumber"
