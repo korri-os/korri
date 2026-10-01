@@ -44,10 +44,11 @@ CONFIG_NETFILTER_XT_MATCH_PKTTYPE=y
 CONFIG_USB_CONFIGFS_ACM=y
 CONFIG_USB_F_ACM=y
 CONFIG_USB_U_SERIAL=y
-# Internal UFS holds Android and the loader. Keep its host inaccessible.
-# CONFIG_SCSI_UFSHCD is not set
-# CONFIG_SCSI_UFSHCD_PLATFORM is not set
-# CONFIG_SCSI_UFS_QCOM is not set
+# Internal UFS holds Android, the Retroid loader and the Qualcomm boot chain.
+# The ROCKNIX host driver stays built in so the product can boot from an
+# internal root (owner request, 2026-10-01). The UFS BSG node stays off, so
+# userspace has no path for UFS query requests that change provisioning,
+# boot-LUN selection or other device attributes.
 # CONFIG_SCSI_UFS_BSG is not set
 # PMIC RTC remains enabled from ROCKNIX, by owner choice on 2026-09-26.
 # Its first runtime load set 2066 before NTP corrected the clock.

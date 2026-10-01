@@ -60,12 +60,11 @@ compiled DTB. The old runtime audit is an observation, not the coverage source.
 ## Reviewed hardware omissions
 
 The fixed owner-approved list is CPU cores/timers/CPU PMU, CoreSight, CAMCC,
-the deliberately uncompiled UFS host, simple-framebuffer, simple-battery, and
-GMU. `REVIEWED` requires **both the exact existing path and compatible list**.
+simple-framebuffer, simple-battery, and GMU. The UFS host is compiled for the
+internal root and is covered as a driver. `REVIEWED` requires **both the exact existing path and compatible list**.
 It never exempts descendants. Existing compiled coverage takes precedence and
 is reported as `DRIVER`. A new path or changed compatible list needs review.
-The UFS exception does not exempt its PHY. CPU PMU does not exempt the two
-Qualcomm bandwidth monitors. There are no additional hardware omissions.
+CPU PMU does not exempt the two Qualcomm bandwidth monitors. There are no additional hardware omissions.
 
 ## Tests and direct use
 

@@ -61,10 +61,13 @@ class NextImageConfig(unittest.TestCase):
             changes, [], "Unreviewed Kconfig changes:\n" + "\n".join(changes)
         )
 
-    def test_internal_ufs_is_unavailable_and_rtc_is_retained(self):
+    def test_internal_ufs_is_block_only_and_rtc_is_retained(self):
         resolved = policy.settings(Path(RESOLVED).read_text())
+        # Built in, so an internal root mounts without an initrd module.
         for name in ("SCSI_UFSHCD", "SCSI_UFSHCD_PLATFORM", "SCSI_UFS_QCOM"):
-            self.assertEqual(resolved.get(f"CONFIG_{name}", "n"), "n")
+            self.assertEqual(resolved.get(f"CONFIG_{name}", "n"), "y")
+        # No UFS query path from userspace.
+        self.assertEqual(resolved.get("CONFIG_SCSI_UFS_BSG", "n"), "n")
         self.assertEqual(resolved["CONFIG_RTC_DRV_PM8XXX"], "y")
 
     def test_recovery_config_remains_a_separate_profile(self):

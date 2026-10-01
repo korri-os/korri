@@ -140,8 +140,16 @@ in
 
   # PipeWire never runs the UCM boot sequences. They set ROCKNIX's speaker and
   # headphone amplifier volumes, so run them once when the card appears.
+  #
+  # The product kernel sees internal UFS so it can boot an internal root. Only
+  # LUN 0 (Android data and any Korri partitions) is ever written. LUNs 1 to 5
+  # hold the Qualcomm boot chain, the Retroid loader and modem data, so every
+  # block device on them becomes read-only when it appears. This stops an
+  # accidental write. It does not stop root from clearing the flag or sending
+  # SCSI commands directly.
   services.udev.extraRules = ''
     SUBSYSTEM=="sound", KERNEL=="controlC*", ATTRS{id}=="RetroidPocket", TAG+="systemd", ENV{SYSTEMD_WANTS}+="rpminiv2-audio-boot.service"
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_PATH}=="platform-1d84000.ufshc-scsi-0:0:0:*", ENV{ID_PATH}!="platform-1d84000.ufshc-scsi-0:0:0:0", RUN+="${pkgs.util-linux}/bin/blockdev --setro $devnode"
   '';
   systemd.services.rpminiv2-audio-boot = {
     description = "RP Mini V2 ALSA UCM boot volumes";

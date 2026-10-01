@@ -242,10 +242,6 @@ REVIEWED = {
         ("qcom,sm8250-camcc",),
     ): "camera clock controller",
     (
-        "/soc@0/ufshc@1d84000",
-        ("qcom,sm8250-ufshc", "qcom,ufshc", "jedec,ufs-2.0"),
-    ): "UFS host deliberately not compiled; internal storage excluded",
-    (
         "/soc@0/gmu@3d6a000",
         ("qcom,adreno-gmu-650.2", "qcom,adreno-gmu"),
     ): "GPU-managed GMU",
