@@ -10,9 +10,9 @@ import { PICO_FONTS, type PicoFontId } from "./pico-fonts"
  * The treaty's interaction kinds collapse to what Pico can actually offer from
  * a d-pad and two buttons. `choice` becomes a cycler that sends the next value
  * on confirm — the same control legacy drew as `‹ VALUE ›`. `text` and
- * `sensitiveText` are shown but not edited: Pico has no on-screen keyboard yet,
- * and a row that looks editable and is not would be a lie the user finds out
- * about with their thumb.
+ * `sensitiveText` both become `text`, opened in Pico's editor: `sensitive`
+ * marks a secret, which starts empty and is masked, and whose `value` is only
+ * Korri's word about the saved one ("Configured"), never the secret.
  *
  * `step` is a cycler for a long list: it shows only the current choice, as
  * `◀ CHOICE ▶`, because ten face names side by side do not fit a row.
@@ -22,7 +22,14 @@ export type PicoSettingControl =
   | { readonly kind: "action"; readonly actionId: string; readonly destructive: boolean; readonly confirmation?: PicoConfirmation }
   | { readonly kind: "cycle"; readonly next: string; readonly options: readonly string[]; readonly current: number }
   | { readonly kind: "step"; readonly next: string; readonly current: string }
-  | { readonly kind: "text" }
+  | {
+      readonly kind: "text"
+      readonly sensitive: boolean
+      readonly placeholder?: string
+      readonly maxLength?: number
+      /** Korri's words for clearing a saved secret, only when there is one to clear. */
+      readonly clearLabel?: string
+    }
 
 export interface PicoConfirmation {
   readonly title: string
@@ -38,6 +45,11 @@ export interface PicoSettingRowView {
   readonly control: PicoSettingControl
   /** What Korri says about this row right now. */
   readonly state: "idle" | "saving" | { readonly problem: string }
+}
+
+/** A row Pico's text editor can open. */
+export type PicoTextSettingRowView = PicoSettingRowView & {
+  readonly control: Extract<PicoSettingControl, { readonly kind: "text" }>
 }
 
 export interface PicoSettingsGroupView {
@@ -179,7 +191,19 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
       }
     }
     case "text":
+      return {
+        kind: "text",
+        sensitive: false,
+        ...(interaction.placeholder === undefined ? {} : { placeholder: interaction.placeholder }),
+        ...(interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }),
+      }
     case "sensitiveText":
-      return { kind: "text" }
+      return {
+        kind: "text",
+        sensitive: true,
+        ...(interaction.placeholder === undefined ? {} : { placeholder: interaction.placeholder }),
+        ...(interaction.maxLength === undefined ? {} : { maxLength: interaction.maxLength }),
+        ...(interaction.clearLabel === undefined ? {} : { clearLabel: interaction.clearLabel }),
+      }
   }
 }

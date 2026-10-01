@@ -12,7 +12,9 @@
 	 * height, not its own ratio. */
 	aspect-ratio: var(--pico-key-ratio, auto);
 	margin: 0 var(--pico-drop-sm) var(--pico-drop-sm) 0;
-	font-size: var(--pico-text);
+	/* A keyboard's container may set a smaller face for every key, as it
+	 * sets their ratio. */
+	font-size: var(--pico-key-text, var(--pico-text));
 	line-height: 1;
 	color: var(--pico-ink);
 	background: var(--pico-plate);
@@ -22,6 +24,13 @@
 .pico-key[data-wide] {
 	aspect-ratio: auto;
 	font-size: var(--pico-text-sm);
+}
+
+/* A mode that is on: the key stays green until it is pressed again. The
+ * cursor's yellow still wins while it sits on the key (below). */
+.pico-key[data-lit] {
+	color: var(--pico-ink-dark);
+	background: var(--pico-ok);
 }
 
 .pico-key:focus-visible {

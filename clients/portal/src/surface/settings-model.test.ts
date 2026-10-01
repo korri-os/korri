@@ -27,6 +27,13 @@ describe("settingsFrom", () => {
     })
   })
 
+  it("publishes no name for a device that has none, so an editor starts empty", () => {
+    const { deviceName: _, ...unnamed } = configuration
+    const item = group({ settings: unnamed }, "Device")?.items[0]
+    expect(item).toMatchObject({ id: "device-name", interaction: { kind: "text", placeholder: "This device" } })
+    expect(item).not.toHaveProperty("value")
+  })
+
   it("publishes SteamGridDB as a write-only sensitive setting", () => {
     const item = group(
       {

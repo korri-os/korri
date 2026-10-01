@@ -150,7 +150,10 @@ files into the glyph tables; run them only to take a new upstream version.
 
 Pico renders the catalog (shelf/grid/hero), game detail and launch locations,
 Find, grouped settings, gameplay overlay and attract mode. The portal selects
-it with `?surface=pico`. Settings text editing remains unavailable.
+it with `?surface=pico`. A text setting opens Pico's editor: the keyboard
+adds a case key (lit while capitals are on) and a symbols key with every
+printable ASCII symbol; a secret is masked, and clearing a saved one asks
+first.
 
 Everything is reachable with the d-pad, A and B alone, because many handhelds
 send the surface no `system`, `options` or `menu` button. Home's MENU key on
@@ -193,7 +196,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 53 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 57 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where

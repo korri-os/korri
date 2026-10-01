@@ -1,0 +1,45 @@
+/* The value large over a floor line, then a blinking block. The line packs
+ * the value to its end and clips the start, so the end is always in view. */
+.pico-text-field {
+	display: flex;
+	align-items: baseline;
+	gap: calc(var(--pico-px) * 3);
+	min-width: 0;
+	padding-bottom: calc(var(--pico-px) * 3);
+	border-bottom: calc(var(--pico-px) * 2) solid var(--pico-floor);
+	font-size: var(--pico-text-lg);
+	line-height: 1.1;
+	color: var(--pico-ink);
+}
+
+.pico-text-field-line {
+	display: flex;
+	flex: 0 1 auto;
+	justify-content: flex-end;
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* `pre` keeps a typed space, including one at the end, visible as room. */
+.pico-text-field-text {
+	flex: none;
+	white-space: pre;
+}
+
+.pico-text-field-placeholder {
+	flex: none;
+	font-size: var(--pico-text);
+	white-space: nowrap;
+	color: var(--pico-ink-quiet);
+}
+
+.pico-text-field-cut {
+	flex: none;
+	color: var(--pico-ink-quiet);
+}
+
+.pico-text-field-caret {
+	flex: none;
+	color: var(--pico-accent);
+	animation: pico-blink 1200ms steps(1, end) infinite;
+}

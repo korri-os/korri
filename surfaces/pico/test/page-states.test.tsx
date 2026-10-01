@@ -109,14 +109,19 @@ test("settings and panel publish real empty, saving and failure rows", () => {
   }
 })
 
-test("settings confirmation reuses the fixture copy; unsupported typing stays an interaction", () => {
+test("settings confirmation reuses the fixture copy; text settings open the editor", () => {
   const confirming = render(<Settings.ConfirmForget />)
   expect(confirming.getByRole("dialog", { name: "FORGET EVERYTHING?" })).toBeDefined()
   confirming.unmount()
-  const defaults = render(<Settings.default />)
-  expect(defaults.queryByText("NO KEYBOARD YET")).toBeNull()
-  fireEvent.click(defaults.getByRole("button", { name: /Name/ }))
-  expect(defaults.getByText("NO KEYBOARD YET")).toBeDefined()
+  const name = render(<Settings.EditName />)
+  expect(name.getByRole("textbox", { name: "Name" }).textContent).toContain("usu")
+  expect(name.getByRole("button", { name: "Capitals" })).toBeDefined()
+  name.unmount()
+  const secret = render(<Settings.EditSecret />)
+  expect(secret.getByRole("button", { name: "CLEAR SAVED KEY" })).toBeDefined()
+  secret.unmount()
+  const clearing = render(<Settings.ConfirmClearSecret />)
+  expect(clearing.getByRole("dialog", { name: "CLEAR SAVED KEY?" })).toBeDefined()
 })
 
 test("template variants fill their own slots without changing the templates", () => {

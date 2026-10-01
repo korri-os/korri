@@ -72,7 +72,9 @@ export function settingsFrom(
         : {
             id: "device-name",
             label: "Name",
-            value: facts.settings.deviceName ?? "Unnamed",
+            // No name, no value: a surface's editor then starts empty and shows
+            // the placeholder, instead of seeding a word nobody chose.
+            ...(facts.settings.deviceName == null ? {} : { value: facts.settings.deviceName }),
             ...(canEdit("device-name") ? {
               interaction: {
                 kind: "text" as const,

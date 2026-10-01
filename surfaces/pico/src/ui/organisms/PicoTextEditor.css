@@ -1,0 +1,258 @@
+/**
+ * The editor's plan. The root is the size container; em is its small face,
+ * as in Find. Four parts: the field, the keys, a heading (Korri's group and
+ * description), and the actions.
+ *
+ *   wide    (w >= 90em)          field over keys on the left; heading over
+ *                                actions on the right, level with them.
+ *   narrow  (w < 90em)           field, keys, actions, then the description.
+ *                                The page scrolls when it must; the field is
+ *                                pinned so no key is ever pressed blind.
+ *   short   (w < 90em, h < 26em) field and count on one line, then the
+ *                                actions, then the keys, which scroll on
+ *                                their own and show a cut row. Save never
+ *                                leaves the screen. NOW yields; keys take the
+ *                                small face.
+ *
+ * The status bar already names the setting (SETTINGS › NAME), so the editor
+ * never repeats it; the wide column names only the group it came from.
+ * Every threshold is a guess until measured on the real panels.
+ */
+.pico-text-editor {
+	--pico-key-ratio: 1.1;
+	container: pico-text-editor / size;
+	position: relative;
+	height: 100%;
+	min-height: 0;
+	margin: 0;
+	font-size: var(--pico-text-sm);
+}
+
+.pico-text-editor-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: "field" "keys" "actions" "heading";
+	align-content: start;
+	gap: calc(var(--pico-u) * 1.5);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-u) calc(var(--pico-u) * 2);
+	overflow-y: auto;
+	scrollbar-width: none;
+	/* Keys scrolled into view land below the pinned field, not under it. */
+	scroll-padding-top: calc(var(--pico-px) * 34);
+}
+
+/* The field and its readouts: pinned while the page scrolls beneath. */
+.pico-text-editor-field {
+	grid-area: field;
+	position: sticky;
+	top: calc(var(--pico-u) * -1);
+	z-index: 1;
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	min-width: 0;
+	padding: var(--pico-u) 0 calc(var(--pico-px) * 2);
+	margin-top: calc(var(--pico-u) * -1);
+	background: var(--pico-bg);
+}
+
+/* The keys keep their whole height here: the page scrolls instead. A zero
+ * minimum would let the grid squeeze their row and draw the actions over
+ * the last keys. Only the short layout scrolls the keys on their own. */
+.pico-text-editor-keys {
+	grid-area: keys;
+	min-width: 0;
+}
+
+.pico-text-editor-heading {
+	grid-area: heading;
+	display: grid;
+	align-content: start;
+	gap: calc(var(--pico-px) * 2);
+	min-width: 0;
+}
+
+/* Narrow: the status bar names the setting; only the description is new. */
+.pico-text-editor-group {
+	display: none;
+	color: var(--pico-ink-quiet);
+}
+
+.pico-text-editor-description {
+	margin: 0;
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-ink-dim);
+}
+
+/* Save and Cancel side by side; Clear on its own line below them. */
+.pico-text-editor-actions {
+	grid-area: actions;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	align-content: start;
+	gap: calc(var(--pico-px) * 3);
+	min-width: 0;
+}
+
+.pico-text-editor-action[data-role="clear"] {
+	grid-column: 1 / -1;
+}
+
+.pico-text-editor-foot {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--pico-u);
+	min-width: 0;
+	color: var(--pico-ink-quiet);
+}
+
+.pico-text-editor-now {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pico-text-editor-now b {
+	font-weight: normal;
+	color: var(--pico-ink-dim);
+}
+
+.pico-text-editor-count {
+	flex: none;
+	margin-left: auto;
+	padding: 0 var(--pico-px);
+}
+
+/* At the limit the count says so on a red plate; the next key does nothing. */
+.pico-text-editor-count[data-full] {
+	color: var(--pico-warn-ink);
+	background: var(--pico-warn);
+}
+
+.pico-text-editor-problem {
+	--pico-row-plate: var(--pico-ink-dark);
+	display: grid;
+	gap: var(--pico-px);
+	padding: calc(var(--pico-px) * 3) calc(var(--pico-px) * 4);
+	color: var(--pico-warn-ink);
+	background: var(--pico-warn);
+}
+
+.pico-text-editor-problem-kicker {
+	color: var(--pico-shell-warn-kicker);
+}
+
+.pico-text-editor-problem-reason {
+	margin: 0;
+	font-size: var(--pico-text);
+	line-height: 1.4;
+}
+
+/* Saving: the keys go quiet. They keep focus, so the cursor never jumps. */
+.pico-text-editor[data-busy] .pico-text-editor-keys {
+	--pico-ink: var(--pico-ink-quiet);
+}
+
+/* ---- Wide: two columns, the right one level with the left ---- */
+@container pico-text-editor (width >= 90em) {
+	.pico-text-editor-layout {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		grid-template-areas: "field heading" "keys actions";
+		grid-template-rows: max-content max-content;
+		gap: calc(var(--pico-u) * 1.5) calc(var(--pico-u) * 2);
+	}
+
+	.pico-text-editor-field {
+		position: static;
+		margin-top: 0;
+		padding-top: 0;
+	}
+
+	.pico-text-editor-group {
+		display: block;
+	}
+
+	.pico-text-editor-actions {
+		grid-template-columns: minmax(0, 1fr);
+		max-width: calc(var(--pico-px) * 160);
+	}
+}
+
+/* Narrow and not tall: flat keys, so the grid costs less height. */
+@container pico-text-editor (width < 90em) and (height < 50em) {
+	.pico-text-editor-keys {
+		--pico-key-ratio: 2.2;
+	}
+}
+
+/* ---- Short: Save stays on screen; only the keys scroll ---- */
+@container pico-text-editor (width < 90em) and (height < 26em) {
+	.pico-text-editor-layout {
+		grid-template-areas: "field" "actions" "keys";
+		grid-template-rows: auto auto minmax(0, 1fr);
+		gap: calc(var(--pico-px) * 3);
+		overflow: hidden;
+	}
+
+	.pico-text-editor-heading {
+		display: none;
+	}
+
+	.pico-text-editor-field {
+		position: static;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: end;
+		column-gap: var(--pico-u);
+		margin-top: 0;
+		padding: 0;
+	}
+
+	.pico-text-editor-foot {
+		display: contents;
+	}
+
+	.pico-text-editor-count {
+		grid-row: 1;
+		grid-column: 2;
+	}
+
+	.pico-text-editor-now {
+		display: none;
+	}
+
+	/* No room to stack Korri's refusal over the field: it covers the editor
+	 * until OK, and the typed value is still there underneath. */
+	.pico-text-editor-problem {
+		position: absolute;
+		inset: calc(var(--pico-px) * 3) 0 0;
+		z-index: 2;
+		align-content: center;
+		padding: var(--pico-u) calc(var(--pico-u) * 2);
+	}
+
+	.pico-text-editor-keys {
+		min-height: 0;
+		overflow-y: auto;
+		scrollbar-width: none;
+		/* Room for the keys' hard shadows inside the scroll box. */
+		padding-bottom: var(--pico-drop-sm);
+		/* A key's face (PicoKey.css), small here so more rows show. */
+		--pico-key-text: var(--pico-text-sm);
+	}
+
+	/* All actions on one line in the small face, sized to their labels, so
+	 * Clear does not cost the keys a second row. */
+	.pico-text-editor-actions {
+		--pico-text: var(--pico-text-sm);
+		display: flex;
+		flex-wrap: wrap;
+	}
+
+	.pico-text-editor-action {
+		flex: 1 1 auto;
+	}
+}

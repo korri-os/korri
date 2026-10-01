@@ -1,7 +1,10 @@
-/* A notice over settings takes the whole body, on the solid ground. */
-.pico-settings-toast {
-	position: absolute;
-	inset: 0;
-	z-index: 2;
-	background: var(--pico-bg);
+/* The list adds no box of its own, so the panel fills the body as before.
+ * While a text setting is edited the list is kept but hidden, which also
+ * takes it out of the cursor's reach. */
+.pico-settings-list {
+	display: contents;
+}
+
+.pico-settings-list[hidden] {
+	display: none;
 }

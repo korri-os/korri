@@ -30,7 +30,7 @@ export function PicoSettingRow({
       ) : row.value === undefined ? null : (
         <span>{row.value}</span>
       )}
-      {row.control.kind === "action" ? <span aria-hidden>▶</span> : null}
+      {row.control.kind === "action" || row.control.kind === "text" ? <span aria-hidden>▶</span> : null}
     </>
   )
   return (

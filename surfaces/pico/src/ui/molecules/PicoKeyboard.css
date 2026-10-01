@@ -1,6 +1,7 @@
 /* Ten columns of fat keys. The rows are for reading order only; every key
- * flows into one grid, so the last row (six characters, then space, delete
- * and clear) fills exactly ten columns and nothing wraps. */
+ * flows into one grid, so the last character row (six characters, then
+ * space, delete and clear) fills exactly ten columns and nothing wraps. The
+ * text keyboard adds one more row: its two modes, five columns each. */
 .pico-keyboard {
 	display: grid;
 	grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -14,4 +15,9 @@
 
 .pico-keyboard-row > [data-wide]:first-child {
 	grid-column: span 2;
+}
+
+/* The text keyboard's modes: two toggles, half a row each. */
+.pico-keyboard-row.pico-keyboard-modes > [aria-pressed] {
+	grid-column: span 5;
 }

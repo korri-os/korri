@@ -12,7 +12,7 @@ import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
-import { PicoSettings } from "./pages/PicoSettings"
+import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
@@ -209,6 +209,12 @@ function PicoCatalogSurface({
   const [asking, setAsking] = useState<
     { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
   >(undefined)
+  /* The text setting open in the editor, and whether clearing it is asked.
+   * Here, not in the editor, so Back reaches the question first, then the
+   * editor, then Settings. */
+  const [editing, setEditing] = useState<PicoSettingsEditing | undefined>(undefined)
+  /* Stable, because the editor closes itself through it from an effect. */
+  const closeEditor = useCallback(() => setEditing(undefined), [])
   const view = picoScreenViewFromModel(model)
   const sessionReturn = useRef<PicoSessionReturn>({ _tag: "Idle" })
 
@@ -221,6 +227,7 @@ function PicoCatalogSurface({
     setPlacing(undefined)
     setAskingAction(undefined)
     setAsking(undefined)
+    setEditing(undefined)
     setSettingsOpen(false)
     setFinding(false)
     setMenuOpen(false)
@@ -235,6 +242,7 @@ function PicoCatalogSurface({
   const canAttract = !runnerOpen && view._tag === "Shelf" && !settingsOpen && !finding
     && !menuOpen && viewingId === undefined && placing === undefined
     && asking === undefined && askingAction === undefined && identityAction === null
+    && editing === undefined
 
   useEffect(() => {
     if (!canAttract) {
@@ -263,6 +271,8 @@ function PicoCatalogSurface({
       if (identityAction !== null) { setIdentityAction(null); return }
       if (askingAction !== undefined) { setAskingAction(undefined); return }
       if (asking !== undefined) { setAsking(undefined); return }
+      if (editing?.clearing === true) { setEditing({ ...editing, clearing: false }); return }
+      if (editing !== undefined) { setEditing(undefined); return }
       if (placing !== undefined) { setPlacing(undefined); return }
       if (menuOpen) { setMenuOpen(false); return }
       if (settingsOpen) { setSettingsOpen(false); return }
@@ -273,6 +283,7 @@ function PicoCatalogSurface({
     const offSystem = host.input.on("system", () => {
       if (runnerOpen || wake()) return
       setMenuOpen(false)
+      setEditing(undefined)
       setSettingsOpen((open) => !open)
     })
     const offOptions = host.input.on("options", () => {
@@ -290,7 +301,7 @@ function PicoCatalogSurface({
       offOptions()
       offMenu()
     }
-  }, [host, model.status._tag, identityAction, askingAction, asking, placing, menuOpen, settingsOpen, viewingId, finding, wake, runnerOpen, cycleMode])
+  }, [host, model.status._tag, identityAction, askingAction, asking, editing, placing, menuOpen, settingsOpen, viewingId, finding, wake, runnerOpen, cycleMode])
 
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
@@ -362,8 +373,13 @@ function PicoCatalogSurface({
         <PicoSettings
           asking={asking}
           clockLabel={model.clockLabel}
+          editing={editing}
           onAsk={(actionId, confirmation) => setAsking({ actionId, confirmation })}
+          onAskClear={() => setEditing((open) => (open === undefined ? open : { ...open, clearing: true }))}
           onCancel={() => setAsking(undefined)}
+          onCancelClear={() => setEditing((open) => (open === undefined ? open : { ...open, clearing: false }))}
+          onCloseEditor={closeEditor}
+          onEdit={(settingId) => setEditing({ settingId, clearing: false })}
           onChange={(settingId, value) => {
             /* Pico's own row: Pico keeps it, and Korri is never asked. */
             if (settingId === PICO_FONT_SETTING) {

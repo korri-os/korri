@@ -48,6 +48,24 @@ export const failedSettingsModel: SurfaceModel = {
   settingsStatus: { _tag: "Problem", settingId: "device-name", message: "The device name could not be saved." },
 }
 export const emptySettingsModel: SurfaceModel = { ...fixtureModel, settings: [] }
+/** The portal's saved-secret row, as clients/portal/src/surface/settings-model.ts
+ * publishes it when a key is configured. */
+export const secretSettingModel: SurfaceModel = {
+  ...fixtureModel,
+  settings: [
+    ...fixtureModel.settings,
+    {
+      title: "Metadata",
+      items: [{
+        id: "steamgriddb-credential",
+        label: "SteamGridDB API key",
+        value: "Configured",
+        description: "Used only by korrid for metadata and cover art lookup",
+        interaction: { kind: "sensitiveText", placeholder: "Paste API key", maxLength: 256, clearLabel: "Clear saved key" },
+      }],
+    },
+  ],
+}
 
 export function fixtureSettingsConfirmation() {
   const row = picoSettingsViewFromModel(fixtureModel).groups

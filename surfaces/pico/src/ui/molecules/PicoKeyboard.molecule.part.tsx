@@ -3,7 +3,7 @@ import { PicoKeyboard } from "./PicoKeyboard"
 import { PicoQueryField } from "./PicoQueryField"
 
 export const name = "Keyboard"
-export const note = "Letters and digits; a search matches names, not punctuation"
+export const note = "Find types capitals and digits; a setting adds case and every ASCII symbol"
 
 export default function PicoKeyboardPart() {
   return (
@@ -24,5 +24,12 @@ export function EditingQuery() {
         onType={character => setQuery(value => value + character)}
       />
     </>
+  )
+}
+
+// A setting's value: small letters, a case key and a symbols key under them.
+export function TextSetting() {
+  return (
+    <PicoKeyboard charset="text" onBackspace={() => undefined} onClear={() => undefined} onType={() => undefined} />
   )
 }

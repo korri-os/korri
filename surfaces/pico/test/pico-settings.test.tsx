@@ -154,7 +154,7 @@ describe("reading a group", () => {
     expect(document.activeElement).toBe(row)
     fireEvent.click(row)
     expect(host.calls).toEqual([])
-    expect(screen.queryByText("NO KEYBOARD YET")).toBeNull()
+    expect(screen.queryByRole("textbox")).toBeNull()
   })
 
   test("moving to another category shows its items", () => {
@@ -232,11 +232,3 @@ describe("running an action", () => {
   })
 })
 
-describe("text Korri lets the user edit", () => {
-  test("is shown but not pretended editable until Pico has a keyboard", () => {
-    const { host } = open()
-    fireEvent.click(screen.getByRole("button", { name: /Name/ }))
-    expect(host.calls).toEqual([])
-    expect(screen.getByText("NO KEYBOARD YET")).toBeTruthy()
-  })
-})
