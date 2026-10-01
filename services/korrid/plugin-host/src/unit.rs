@@ -22,32 +22,70 @@ type ExecStatus = (String, Vec<String>, bool, u64, u64, u64, u64, u32, i32, i32)
 
 impl Units {
     pub fn start(&self, report: &Report) -> Result<(), String> {
-        if report.native_units.is_empty() {
-            return Ok(());
+        self.start_all(&[report]).pop().unwrap_or(Ok(()))
+    }
+
+    /// Start several plugins' units with one systemd reload. Each reload cost
+    /// about 1.5 s on the RG353M at boot. The result at each index belongs to
+    /// the report at that index; a plugin that fails is cleaned up alone.
+    pub fn start_all(&self, reports: &[&Report]) -> Vec<Result<(), String>> {
+        let mut results = Vec::with_capacity(reports.len());
+        let mut staged = Vec::new();
+        for (index, report) in reports.iter().enumerate() {
+            if report.native_units.is_empty() {
+                results.push(Ok(()));
+                continue;
+            }
+            let units = match managed_units(report) {
+                Ok(units) => units,
+                Err(error) => {
+                    results.push(Err(self.cleanup_failed(report, error)));
+                    continue;
+                }
+            };
+            if let Err(error) = self.write(report, &units) {
+                let error = self.discard_after(report, &units, error);
+                results.push(Err(self.cleanup_failed(report, error)));
+                continue;
+            }
+            results.push(Ok(()));
+            staged.push((index, units));
         }
-        match self.start_units(report) {
-            Ok(()) => Ok(()),
-            Err(error) => match self.stop(&report.id, false) {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!("{error}; activation cleanup failed: {cleanup}")),
-            },
+        if staged.is_empty() {
+            return results;
+        }
+        if let Err(error) = self.checked(["daemon-reload"]) {
+            for (index, units) in &staged {
+                let report = reports[*index];
+                let error = self.discard_after(report, units, error.clone());
+                results[*index] = Err(self.cleanup_failed(report, error));
+            }
+            return results;
+        }
+        for (index, units) in &staged {
+            let report = reports[*index];
+            if let Err(error) = self.activate(report, units) {
+                results[*index] = Err(self.cleanup_failed(report, error));
+            }
+        }
+        results
+    }
+
+    fn discard_after(&self, report: &Report, units: &[ManagedUnit<'_>], error: String) -> String {
+        match self.discard_written(&report.id, units) {
+            Ok(()) => error,
+            Err(cleanup) => format!("{error}; staged-unit cleanup failed: {cleanup}"),
         }
     }
 
-    fn start_units(&self, report: &Report) -> Result<(), String> {
-        let units = managed_units(report)?;
-        if let Err(error) = self.write(report, &units) {
-            return match self.discard_written(&report.id, &units) {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!("{error}; staged-unit cleanup failed: {cleanup}")),
-            };
+    fn cleanup_failed(&self, report: &Report, error: String) -> String {
+        match self.stop(&report.id, false) {
+            Ok(()) => error,
+            Err(cleanup) => format!("{error}; activation cleanup failed: {cleanup}"),
         }
-        if let Err(error) = self.checked(["daemon-reload"]) {
-            return match self.discard_written(&report.id, &units) {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!("{error}; staged-unit cleanup failed: {cleanup}")),
-            };
-        }
+    }
+
+    fn activate(&self, report: &Report, units: &[ManagedUnit<'_>]) -> Result<(), String> {
         let connection = zbus::blocking::connection::Builder::system()
             .map_err(|e| e.to_string())?
             .method_timeout(Duration::from_secs(10))
@@ -60,7 +98,7 @@ impl Units {
             "org.freedesktop.systemd1.Manager",
         )
         .map_err(|e| e.to_string())?;
-        for unit in &units {
+        for unit in units {
             let object: zbus::zvariant::OwnedObjectPath = manager
                 .call("LoadUnit", &unit.name)
                 .map_err(|e| e.to_string())?;
@@ -75,7 +113,7 @@ impl Units {
         let mut start = vec!["start".to_owned()];
         start.extend(units.iter().map(|unit| unit.name.clone()));
         self.checked(start)?;
-        for unit in &units {
+        for unit in units {
             self.checked(["is-active", "--quiet", unit.name.as_str()])?;
         }
         // Do not expose a competing listener while activation is pending.

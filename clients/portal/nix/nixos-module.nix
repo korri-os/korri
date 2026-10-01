@@ -274,7 +274,10 @@ in
         # A recovered parent must pull the kiosk back in after a failed boot job.
         wantedBy = [ "multi-user.target" ] ++ kioskParents;
         requires = kioskParents;
-        after = kioskParents;
+        # Not after korrid: Chromium takes about 7 s to start on the RG353M,
+        # so it starts beside korrid and the portal waits for korrid to answer
+        # before it mounts (clients/portal/src/korrid/wait-for-korrid.ts).
+        after = lib.remove "korrid.service" kioskParents;
         partOf = kioskParents;
         environment = cfg.environment // {
           HOME = home;

@@ -6,6 +6,7 @@ import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
 import { createNativeInputAdapter } from "./input/native-adapter"
 import { createSpatialFocusController } from "./input/spatial-focus"
+import { waitForKorrid } from "./korrid/wait-for-korrid"
 import {
   createHttpKorridClient,
   createInMemoryKorridClient,
@@ -76,6 +77,9 @@ async function mountPortal() {
         linuxRuntime.korridCapability,
       )
     : createInMemoryKorridClient()
+  // The kiosk starts beside korrid at boot. The binding is already consumed;
+  // hold the first surface and input connection until the brain answers.
+  if (linuxRuntime) await waitForKorrid(korrid)
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
   // One controller transport: Linux native evdev, browser development Gamepad.

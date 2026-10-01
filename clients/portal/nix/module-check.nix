@@ -160,9 +160,14 @@ assert builtins.all
   [
     "korri-compositor.service"
     "nginx.service"
-    "korrid.service"
     credentialService
   ];
+# The kiosk starts beside korrid, not after it: Chromium is ready by the time
+# korrid is, and the portal waits for korrid to answer before it mounts.
+assert builtins.elem "korrid.service" service.wantedBy;
+assert builtins.elem "korrid.service" service.requires;
+assert builtins.elem "korrid.service" service.partOf;
+assert !(builtins.elem "korrid.service" service.after);
 assert builtins.elem credentialService daemon.wantedBy;
 assert builtins.elem credentialService daemon.requires;
 assert builtins.elem credentialService daemon.after;

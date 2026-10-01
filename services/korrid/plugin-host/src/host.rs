@@ -47,6 +47,22 @@ pub struct Host {
     test_runtime: Option<TestRuntime>,
 }
 
+/// Boot-time checks prepared before restore walks the plugins.
+struct BootChecks {
+    snapshot: package::StoreSnapshot,
+    /// Plugin ID -> (package it was loaded from, its report or load error).
+    reports: BTreeMap<String, (PathBuf, Result<Report, String>)>,
+}
+
+/// What boot restore did with one state directory.
+enum Restored {
+    Nothing,
+    /// Enabled, checked and already running as approved.
+    Running(Receipt, Report),
+    /// Enabled and checked, but stopped: the caller starts it.
+    Stopped(Receipt, Report),
+}
+
 #[cfg(test)]
 #[derive(Clone, Default)]
 struct TestRuntime {
@@ -664,7 +680,8 @@ impl Host {
         }
         self.release_download()?;
         let mut enabled = Vec::new();
-        let snapshot = self.boot_snapshot();
+        let mut stopped = Vec::new();
+        let checks = self.boot_checks();
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
@@ -673,14 +690,26 @@ impl Host {
             let result = if entry.file_name() == storage::SOURCES_DIR
                 || entry.file_name() == storage::STAGING_DIR
             {
-                storage::directory(&entry.path()).map(|()| None)
+                storage::directory(&entry.path()).map(|()| Restored::Nothing)
             } else {
-                self.restore_directory(&entry.path(), snapshot.as_ref())
+                self.restore_directory(&entry.path(), checks.as_ref())
             };
             match result {
-                Ok(Some(checked)) => enabled.push(checked),
-                Ok(None) => {}
+                Ok(Restored::Running(receipt, report)) => enabled.push((receipt, report)),
+                Ok(Restored::Stopped(receipt, report)) => stopped.push((receipt, report)),
+                Ok(Restored::Nothing) => {}
                 Err(error) => errors.push(error),
+            }
+        }
+        // Start every stopped plugin with one systemd reload, not one each.
+        let started = {
+            let reports: Vec<&Report> = stopped.iter().map(|(_, report)| report).collect();
+            self.units_start_all(&reports)
+        };
+        for ((receipt, report), result) in stopped.into_iter().zip(started) {
+            match result.and_then(|()| self.selection(&receipt.id).settle(&receipt)) {
+                Ok(()) => enabled.push((receipt, report)),
+                Err(error) => errors.push(format!("plugin {}: {error}", receipt.id)),
             }
         }
         // A plugin that failed to restore is left out of the list, and its
@@ -709,16 +738,16 @@ impl Host {
         }
     }
 
-    /// Store metadata for every enabled plugin, read with one Nix call. Only a
-    /// speed-up: each check still runs, and a plugin the snapshot does not
-    /// cover is queried on its own. Any failure here means no snapshot, never
-    /// a refused plugin; the per-plugin path reports the real error.
-    fn boot_snapshot(&self) -> Option<package::StoreSnapshot> {
+    /// Boot-time checks prepared up front: store metadata for every enabled
+    /// plugin from one Nix call, and each plugin's report loaded on all
+    /// cores. Only a speed-up: a plugin missing here is loaded on its own, and
+    /// any failure to prepare means no cache, never a refused plugin.
+    fn boot_checks(&self) -> Option<BootChecks> {
         #[cfg(test)]
         if self.test_runtime.is_some() {
             return None;
         }
-        let mut packages = Vec::new();
+        let mut receipts = Vec::new();
         for entry in fs::read_dir(self.state.root()).ok()?.flatten() {
             if let Ok(Some(receipt)) =
                 storage::read_json::<Receipt>(&entry.path().join("selection.json"))
@@ -726,25 +755,34 @@ impl Host {
                 if matches!(receipt.desired, Desired::Enabled)
                     && package::validate_store_path(&receipt.package).is_ok()
                 {
-                    packages.push(receipt.package);
+                    receipts.push(receipt);
                 }
             }
         }
-        if packages.is_empty() {
+        if receipts.is_empty() {
             return None;
         }
-        let packages: Vec<&Path> = packages.iter().map(PathBuf::as_path).collect();
-        package::StoreSnapshot::query(&self.nix, &packages).ok()
+        let packages: Vec<&Path> = receipts.iter().map(|r| r.package.as_path()).collect();
+        let snapshot = package::StoreSnapshot::query(&self.nix, &packages).ok()?;
+        let loaded = crate::parallel::map(&receipts, |receipt| {
+            package::load_from(&snapshot, &receipt.package, receipt.provenance.clone())
+        });
+        let reports = receipts
+            .into_iter()
+            .zip(loaded)
+            .map(|(receipt, report)| (receipt.id, (receipt.package, report)))
+            .collect();
+        Some(BootChecks { snapshot, reports })
     }
 
-    /// Restore one state directory. For an enabled plugin, return its checked
-    /// report: boot publishes it without loading the plugin a second time.
-    /// An error names the plugin it belongs to.
+    /// Restore one state directory. An enabled plugin comes back with its
+    /// checked report, running or stopped for the caller to start. An error
+    /// names the plugin it belongs to.
     fn restore_directory(
         &self,
         path: &Path,
-        snapshot: Option<&package::StoreSnapshot>,
-    ) -> Result<Option<(Receipt, Report)>, String> {
+        checks: Option<&BootChecks>,
+    ) -> Result<Restored, String> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
             if self.directory(&receipt.id) != path {
@@ -752,7 +790,7 @@ impl Host {
             }
             let id = receipt.id.clone();
             return self
-                .restore_receipt(receipt, snapshot)
+                .restore_receipt(receipt, checks)
                 .map_err(|error| format!("plugin {id}: {error}"));
         }
         // Install is always disabled. Without a committed receipt it
@@ -771,22 +809,22 @@ impl Host {
         let roots = self.paths.roots.join(name);
         storage::directory(&roots)?;
         SelectionStore::new(path.join("selection.json"), roots).remove()?;
-        Ok(None)
+        Ok(Restored::Nothing)
     }
 
     fn restore_receipt(
         &self,
         receipt: Receipt,
-        snapshot: Option<&package::StoreSnapshot>,
-    ) -> Result<Option<(Receipt, Report)>, String> {
+        checks: Option<&BootChecks>,
+    ) -> Result<Restored, String> {
         self.prepare(&receipt.id)?;
         if !matches!(receipt.desired, Desired::Enabled) {
             self.restore_one(&receipt.id)?;
-            return Ok(None);
+            return Ok(Restored::Nothing);
         }
-        let report = self.approved_in(&receipt, snapshot)?;
+        let report = self.approved_in(&receipt, checks)?;
         let authorized = self.verify_publisher_in(
-            snapshot,
+            checks.map(|checks| &checks.snapshot),
             &receipt.package,
             &receipt.provenance,
             package::StoreContents::TrustRegistered,
@@ -799,15 +837,14 @@ impl Host {
             && self.units_matches_running(&report)?
         {
             self.firewall_apply(&report)?;
-        } else {
-            // Stop first even when authority was revoked. Keep the
-            // receipt and roots on denial; never restart revoked code.
-            self.units_stop(&receipt.id, false)?;
-            authorized?;
-            self.units_start(&report)?;
+            self.selection(&receipt.id).settle(&receipt)?;
+            return Ok(Restored::Running(receipt, report));
         }
-        self.selection(&receipt.id).settle(&receipt)?;
-        Ok(Some((receipt, report)))
+        // Stop first even when authority was revoked. Keep the receipt and
+        // roots on denial; never restart revoked code.
+        self.units_stop(&receipt.id, false)?;
+        authorized?;
+        Ok(Restored::Stopped(receipt, report))
     }
 
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
@@ -911,6 +948,22 @@ impl Host {
         self.units.start(report)
     }
 
+    fn units_start_all(&self, reports: &[&Report]) -> Vec<Result<(), String>> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            let ids: Vec<&str> = reports.iter().map(|report| report.id.as_str()).collect();
+            runtime
+                .events
+                .borrow_mut()
+                .push(format!("start-batch:{}", ids.join(",")));
+            return reports
+                .iter()
+                .map(|report| self.units_start(report))
+                .collect();
+        }
+        self.units.start_all(reports)
+    }
+
     fn units_matches_running(&self, report: &Report) -> Result<bool, String> {
         #[cfg(test)]
         if self.test_runtime.is_some() {
@@ -935,14 +988,25 @@ impl Host {
     fn approved_in(
         &self,
         receipt: &Receipt,
-        snapshot: Option<&package::StoreSnapshot>,
+        checks: Option<&BootChecks>,
     ) -> Result<Report, String> {
         validate_id(&receipt.id)?;
-        let load = || match snapshot.filter(|snapshot| snapshot.contains(&receipt.package)) {
-            Some(snapshot) => {
-                package::load_from(snapshot, &receipt.package, receipt.provenance.clone())
+        let load = || {
+            if let Some((_, report)) = checks
+                .and_then(|checks| checks.reports.get(&receipt.id))
+                .filter(|(package, _)| *package == receipt.package)
+            {
+                return report.clone();
             }
-            None => package::load(&self.nix, &receipt.package, receipt.provenance.clone()),
+            match checks
+                .map(|checks| &checks.snapshot)
+                .filter(|snapshot| snapshot.contains(&receipt.package))
+            {
+                Some(snapshot) => {
+                    package::load_from(snapshot, &receipt.package, receipt.provenance.clone())
+                }
+                None => package::load(&self.nix, &receipt.package, receipt.provenance.clone()),
+            }
         };
         #[cfg(test)]
         let report = if let Some(runtime) = &self.test_runtime {
@@ -1382,6 +1446,38 @@ mod tests {
             loads(&runtime),
             ["load:@test:clock", "load:@test:idle", "load:@test:weather"]
         );
+    }
+
+    #[test]
+    fn boot_restore_starts_every_stopped_plugin_in_one_batch() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let clock = report("@test:clock", "clock-batch");
+        let idle = report("@test:idle", "idle-batch");
+        let stream = report("@test:stream", "stream-batch");
+        let runtime = runtime(&[clock.clone(), idle.clone(), stream.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        for selected in [&clock, &idle, &stream] {
+            install(&host, selected.clone());
+        }
+        host.set_enabled(&clock.id, true).unwrap();
+        host.set_enabled(&stream.id, true).unwrap();
+        runtime.events.borrow_mut().clear();
+
+        host.restore_all().unwrap();
+
+        let batches: Vec<String> = runtime
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.starts_with("start-batch:"))
+            .cloned()
+            .collect();
+        assert_eq!(batches.len(), 1, "{batches:?}");
+        let mut started: Vec<&str> = batches[0]["start-batch:".len()..].split(',').collect();
+        started.sort();
+        assert_eq!(started, ["@test:clock", "@test:stream"]);
+        assert_eq!(published(&host).1, ["@test:clock", "@test:stream"]);
     }
 
     #[test]

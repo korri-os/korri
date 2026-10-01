@@ -7,6 +7,7 @@ mod https_url;
 pub mod lifecycle;
 pub mod native_unit;
 pub mod package;
+mod parallel;
 pub mod process;
 pub mod provenance;
 pub mod publisher;
