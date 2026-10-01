@@ -63,8 +63,9 @@ jobs:
 
       # The one list here that is not derived, so check it rather than trust it.
       # An attribute belongs here only if its derivation appears in a device's
-      # build closure; today Odin 2 Portal and RP Mini V2 cross-build inputs,
-      # while the other exported device kernels are native aarch64:
+      # build closure; today Odin 2 Portal, RP Mini V2 and the H700 devices
+      # cross-build inputs, while the other exported device kernels are native
+      # aarch64. h700-uboot is in the H700 image derivation, not the toplevel:
       #
       #   nix derivation show -r .#nixosConfigurations.<device>.config.system.build.toplevel \
       #     | jq -r '.derivations | has("<drv name>")'
@@ -88,6 +89,8 @@ jobs:
             --package packages.x86_64-linux.rpminiv2-kernel \
             --package packages.x86_64-linux.rpminiv2-firmware \
             --package packages.x86_64-linux.rpminiv2-rocknix-baseline \
+            --package packages.x86_64-linux.h700-kernel \
+            --package packages.x86_64-linux.h700-uboot \
             --package packages.x86_64-linux.korri-portal
 
   # One device per runner. Signing a closure means writing a second, compressed
@@ -102,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [odin2portal, rg353m, rgds, rpminiv2, r36tmax]
+        device: [odin2portal, rg353m, rgds, rpminiv2, r36tmax, rg35xxsp, rg35xxpro]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

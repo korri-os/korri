@@ -6,7 +6,7 @@ set -euo pipefail
 
 device=${1:?usage: fetch-image-plugins.sh DEVICE}
 case "$device" in
-  rg353m|rgds|r36tmax|rpminiv2|odin2portal) ;;
+  rg353m|rgds|r36tmax|rpminiv2|odin2portal|rg35xxsp|rg35xxpro) ;;
   *) echo "unsupported product image: $device" >&2; exit 2 ;;
 esac
 

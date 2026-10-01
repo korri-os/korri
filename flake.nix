@@ -50,7 +50,15 @@
         inherit nixpkgs;
         korri = self;
       };
+      h700 = import ./nix/devices/h700 {
+        inherit nixpkgs;
+        korri = self;
+      };
       rg35xxsp = import ./nix/devices/rg35xxsp {
+        inherit nixpkgs;
+        korri = self;
+      };
+      rg35xxpro = import ./nix/devices/rg35xxpro {
         inherit nixpkgs;
         korri = self;
       };
@@ -80,8 +88,8 @@
         rpminiv2 = rpminiv2.configuration;
         r36tmax = r36tmax.configuration;
         odin2portal = odin2portal.configuration;
-        # RG35XXSP remains a product device. It returns here after its product
-        # composition and delivery land; its packages stay available for bring-up.
+        rg35xxsp = rg35xxsp.configuration;
+        rg35xxpro = rg35xxpro.configuration;
       };
     }
     // flake-utils.lib.eachDefaultSystem (
@@ -153,6 +161,7 @@
             rg353m-inputplumber-data = rg353m.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rgds-inputplumber-data = rgds.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             rpminiv2-inputplumber-data = rpminiv2.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
+            h700-inputplumber-data = h700.inputplumberData pkgs inputplumber.packages.inputplumber-korri;
             korri-portal-shell = import ./clients/linux/package.nix { inherit pkgs; };
             korri-portal-input-probe = import ./clients/linux/diagnostics/package.nix { inherit pkgs; };
             korri-portal-native-input-probe = import ./clients/linux/diagnostics/native-package.nix {
@@ -191,8 +200,10 @@
           odin2portal-alsa-lib = odin2portal.rocknix.alsaLib;
           odin2portal-inputplumber-data = odin2portal.rocknix.inputplumberData;
           rg35xxsp-sd-image = rg35xxsp.sdImage;
-          rg35xxsp-kernel = rg35xxsp.kernel;
-          rg35xxsp-uboot = rg35xxsp.uboot;
+          rg35xxsp-v2-panel-sd-image = rg35xxsp.v2PanelSdImage;
+          rg35xxpro-sd-image = rg35xxpro.sdImage;
+          h700-kernel = h700.kernel;
+          h700-uboot = h700.uboot;
         }
         // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           korri-chromium-aarch64 = import ./clients/linux/chromium/cross.nix { inherit pkgs; };
@@ -207,8 +218,8 @@
           odin2portal-kernel = odin2portal.kernelCross;
           odin2portal-rescue-kernel = odin2portal.rescueKernelCross;
           odin2portal-firmware = odin2portal.firmwareCross;
-          rg35xxsp-uboot = rg35xxsp.ubootCross;
-          rg35xxsp-kernel = rg35xxsp.kernelCross;
+          h700-uboot = h700.ubootCross;
+          h700-kernel = h700.kernelCross;
         };
         checks = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           inputplumber.checks
@@ -245,6 +256,8 @@
                   r36tmax
                   rpminiv2
                   odin2portal
+                  rg35xxsp
+                  rg35xxpro
                   ;
               };
             };
@@ -274,7 +287,17 @@
               korri = self;
             };
             rgds = rgds.moduleCheck pkgs;
-            rg35xxsp = rg35xxsp.moduleCheck pkgs;
+            h700 = import ./nix/devices/h700/module-check.nix {
+              inherit pkgs;
+              korri = self;
+              configurations = {
+                inherit rg35xxsp rg35xxpro;
+                rg35xxsp-v2-panel = {
+                  configuration = rg35xxsp.v2PanelConfiguration;
+                };
+              };
+            };
+            h700-inputplumber = self.packages.${system}.h700-inputplumber-data;
             rpminiv2 = rpminiv2.moduleCheck pkgs;
             rpminiv2-inputd-action = rpminiv2.inputdActionCheck pkgs;
             rpminiv2-volume = rpminiv2.volumeCheck pkgs;

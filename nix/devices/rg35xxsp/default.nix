@@ -1,45 +1,32 @@
+# Anbernic RG35XX SP: the H700 family product with this board's facts.
 { nixpkgs, korri }:
 let
-  mkPkgs =
-    system:
-    import nixpkgs {
-      inherit system;
-      config.allowUnfree = true;
-    };
-  pkgs = mkPkgs "aarch64-linux";
-  crossPkgs = (mkPkgs "x86_64-linux").pkgsCross.aarch64-multiplatform;
-  kernel = pkgs.callPackage ./kernel { };
-  kernelCross = crossPkgs.callPackage ./kernel { };
-  configuration = nixpkgs.lib.nixosSystem {
-    system = "aarch64-linux";
-    specialArgs = { inherit korri; };
+  h700 = import ../h700 { inherit nixpkgs korri; };
+  configuration = h700.mkConfiguration {
+    device = "rg35xxsp";
+    module = ./hardware.nix;
+  };
+  # ROCKNIX ships two SP trees because two panels exist and nothing on the
+  # outside tells them apart ("try the other DTB"; rocknix.org H700
+  # installation guide). The v2-panel tree changes only the panel's init file.
+  # Same system, same labels; only the device tree and image name differ.
+  v2PanelConfiguration = configuration.extendModules {
     modules = [
-      ./sd-image.nix
+      (
+        { lib, ... }:
+        {
+          hardware.deviceTree = {
+            filter = lib.mkForce "sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb";
+            name = lib.mkForce "allwinner/sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb";
+          };
+          image.baseName = lib.mkForce "nixos-rg35xxsp-v2-panel";
+        }
+      )
     ];
   };
-  uboot = configuration.pkgs.callPackage ./uboot.nix { };
-  ubootCross = crossPkgs.callPackage ./uboot.nix { };
 in
 {
-  inherit configuration;
+  inherit configuration v2PanelConfiguration;
   sdImage = configuration.config.system.build.sdImage;
-  inherit kernel kernelCross;
-  inherit uboot ubootCross;
-  moduleCheck = pkgs: import ./module-check.nix { inherit pkgs configuration; };
-  initrdModulesCheck =
-    pkgs:
-    pkgs.makeModulesClosure {
-      kernel =
-        (
-          if pkgs.stdenv.hostPlatform.isx86_64 then
-            kernelCross
-          else
-            configuration.config.boot.kernelPackages.kernel
-        ).modules;
-      firmware = [ pkgs.linux-firmware ];
-      rootModules =
-        configuration.config.boot.initrd.availableKernelModules
-        ++ configuration.config.boot.initrd.kernelModules;
-      allowMissing = false;
-    };
+  v2PanelSdImage = v2PanelConfiguration.config.system.build.sdImage;
 }

@@ -1,0 +1,24 @@
+# Product = the unchanged ROCKNIX H700 `config` plus these changes. default.nix
+# applies them in place at evaluation; each symbol may appear once.
+# NixOS firewall and signed plugin host iptables-nft rules. The same set the
+# RP Mini V2 product delta adds (nix/devices/rpminiv2/kernel/config-korri.delta).
+CONFIG_NF_TABLES=y
+CONFIG_IP6_NF_IPTABLES=y
+CONFIG_NFT_COMPAT=y
+CONFIG_NFT_CT=y
+CONFIG_NFT_LOG=y
+CONFIG_NFT_REJECT=y
+CONFIG_NFT_REJECT_INET=y
+CONFIG_NFT_REJECT_IPV4=y
+CONFIG_NFT_REJECT_IPV6=y
+CONFIG_NETFILTER_XT_MATCH_COMMENT=y
+CONFIG_NETFILTER_XT_MATCH_MULTIPORT=y
+CONFIG_NETFILTER_XT_MATCH_PKTTYPE=y
+# The product USB gadget composes an ACM root console beside NCM
+# (nix/product/usb-gadget-package.nix creates functions/acm.usb0).
+CONFIG_USB_CONFIGFS_ACM=y
+CONFIG_USB_F_ACM=y
+CONFIG_USB_U_SERIAL=y
+# The board trees bind the gamepad to rocknix-singleadc-joypad (patch 0211).
+# ROCKNIX ships it as a module; patch 0222 builds the same source in-tree.
+CONFIG_JOYSTICK_ROCKNIX_SINGLEADC=m

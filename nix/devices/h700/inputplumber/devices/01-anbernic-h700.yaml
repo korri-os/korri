@@ -1,0 +1,55 @@
+# Claim the Anbernic H700 gamepad and volume keys and present one standard
+# controller. Not yet observed on hardware: every value below is read from the
+# board device trees and the pinned joypad driver source.
+#
+# - model: sun50i-h700-anbernic-rg35xx-sp.dts and ROCKNIX's
+#   sun50i-h700-anbernic-rg35xx-pro.dts (kernel patch 0223). The SP v2-panel
+#   tree inherits the SP model string.
+# - Gamepad: rocknix-singleadc-joypad (patch 0211 binds it, patch 0222 builds
+#   it) names its input device from the joypad-name property, "H700 Gamepad",
+#   and sets phys to "rocknix-singleadc-joypad/input0". It carries every button
+#   and, on the Pro, both analog sticks.
+# - Volume: the gpio-keys-volume node. gpio_keys names the device after its
+#   node when it has no label and sets phys "gpio-keys/input0" for every node,
+#   as on the RG353M. The lid switch is a separate gpio-keys node for logind
+#   and is not claimed here.
+version: 1
+kind: CompositeDevice
+name: Anbernic H700 Layout
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: "Anbernic RG35XX SP"
+        - name: compatible
+          value: "anbernic,rg35xx-sp*"
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: "Anbernic RG35XX Pro"
+        - name: compatible
+          value: "anbernic,rg35xx-pro*"
+# One gamepad source keeps inputd's one-source ownership invariant. The volume
+# keys are a separate keyboard source, as on the RG353M and RP Mini V2.
+maximum_sources: 2
+source_devices:
+  - group: gamepad
+    evdev:
+      name: H700 Gamepad
+      phys_path: rocknix-singleadc-joypad/input0
+      handler: event*
+    capability_map_id: anbernic_h700_gamepad
+  - group: keyboard
+    evdev:
+      name: gpio-keys-volume
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: anbernic_h700_volume
+options:
+  auto_manage: true
+# The same xb360 target as the other devices. The browser Gamepad API reads it
+# directly; no keyboard translation or mouse emulation is introduced here.
+target_devices:
+  - xb360

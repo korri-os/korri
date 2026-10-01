@@ -12,6 +12,8 @@ on:
           - rgds
           - rpminiv2
           - r36tmax
+          - rg35xxsp
+          - rg35xxpro
         required: true
         default: rg353m
       publish:
@@ -41,7 +43,7 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
         run: |
           case "$DEVICE" in
-            rg353m|odin2portal|rgds|rpminiv2|r36tmax) ;;
+            rg353m|odin2portal|rgds|rpminiv2|r36tmax|rg35xxsp|rg35xxpro) ;;
             *) echo 'Unsupported Linux device image.' >&2; exit 1 ;;
           esac
           if [ "$DEVICE" = r36tmax ]; then

@@ -1,0 +1,114 @@
+# Map for the H700 Gamepad (rocknix-singleadc-joypad). Every code below is the
+# linux,code of a joypad sw* node in sun50i-h700-anbernic-rg35xx-2024.dts after
+# patch 0211, which both the SP and Pro trees include. The board labels A, B,
+# X, Y in Nintendo positions and the tree already reports them by position
+# (A = BTN_EAST, B = BTN_SOUTH, X = BTN_NORTH, Y = BTN_WEST), so no swap is
+# needed. L2 and R2 are digital keys. BTN_MODE is the "F" (menu) key; it maps
+# to Guide, as on the RP Mini V2.
+#
+# The sticks exist only on the Pro (amux-count = 4): amux-channel-mapping
+# reports the left stick as ABS_X/ABS_Y and the right stick as ABS_RX/ABS_RY.
+# On the SP the driver registers no axes, so those two entries never fire.
+version: 2
+kind: CapabilityMap
+name: Anbernic H700 Gamepad
+id: anbernic_h700_gamepad
+mapping:
+  - name: Guide Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_MODE, value_type: button }
+    target_event:
+      gamepad: { button: Guide }
+  - name: South Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_SOUTH, value_type: button }
+    target_event:
+      gamepad: { button: South }
+  - name: East Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_EAST, value_type: button }
+    target_event:
+      gamepad: { button: East }
+  - name: North Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_NORTH, value_type: button }
+    target_event:
+      gamepad: { button: North }
+  - name: West Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_WEST, value_type: button }
+    target_event:
+      gamepad: { button: West }
+  - name: Start Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_START, value_type: button }
+    target_event:
+      gamepad: { button: Start }
+  - name: Select Button
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_SELECT, value_type: button }
+    target_event:
+      gamepad: { button: Select }
+  - name: Left Bumper
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_TL, value_type: button }
+    target_event:
+      gamepad: { button: LeftBumper }
+  - name: Right Bumper
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_TR, value_type: button }
+    target_event:
+      gamepad: { button: RightBumper }
+  - name: Left Trigger
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_TL2, value_type: trigger }
+    target_event:
+      gamepad: { trigger: { name: LeftTrigger } }
+  - name: Right Trigger
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_TR2, value_type: trigger }
+    target_event:
+      gamepad: { trigger: { name: RightTrigger } }
+  - name: Left Stick Click
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_THUMBL, value_type: button }
+    target_event:
+      gamepad: { button: LeftStick }
+  - name: Right Stick Click
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_THUMBR, value_type: button }
+    target_event:
+      gamepad: { button: RightStick }
+  - name: Dpad Up
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_DPAD_UP, value_type: button }
+    target_event:
+      gamepad: { button: DPadUp }
+  - name: Dpad Down
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_DPAD_DOWN, value_type: button }
+    target_event:
+      gamepad: { button: DPadDown }
+  - name: Dpad Left
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_DPAD_LEFT, value_type: button }
+    target_event:
+      gamepad: { button: DPadLeft }
+  - name: Dpad Right
+    source_events:
+      - evdev: { event_type: KEY, event_code: BTN_DPAD_RIGHT, value_type: button }
+    target_event:
+      gamepad: { button: DPadRight }
+  - name: Left Stick
+    source_events:
+      - evdev: { event_type: ABS, event_code: ABS_X, value_type: joystick_x }
+      - evdev: { event_type: ABS, event_code: ABS_Y, value_type: joystick_y }
+    target_event:
+      gamepad: { axis: { name: LeftStick } }
+  - name: Right Stick
+    source_events:
+      - evdev: { event_type: ABS, event_code: ABS_RX, value_type: joystick_x }
+      - evdev: { event_type: ABS, event_code: ABS_RY, value_type: joystick_y }
+    target_event:
+      gamepad: { axis: { name: RightStick } }
+filtered_events: []

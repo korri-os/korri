@@ -1,0 +1,36 @@
+Subject: [PATCH] input: joystick: build the ROCKNIX single-ADC joypad in-tree
+
+ROCKNIX builds rocknix-singleadc-joypad out of tree. Korri copies the pinned
+source (ROCKNIX/rocknix-joypad d02ed13a) into drivers/input/joystick in the
+kernel derivation, so the driver is built with the cross-compiled kernel and
+its modules. This patch only adds the Kconfig symbol and Makefile line.
+---
+diff -Naur a/drivers/input/joystick/Kconfig b/drivers/input/joystick/Kconfig
+--- a/drivers/input/joystick/Kconfig
++++ b/drivers/input/joystick/Kconfig
+@@ -422,4 +422,17 @@
+ 	  To compile this driver as a module, choose M here: the module will be
+ 	  called adafruit-seesaw.
+ 
++config JOYSTICK_ROCKNIX_SINGLEADC
++	tristate "ROCKNIX single-ADC joypad"
++	depends on OF && IIO && PWM && GPIOLIB
++	select INPUT_POLLDEV
++	help
++	  Say Y here for the ROCKNIX joypad driver used by Allwinner H700
++	  handhelds: GPIO buttons and analog sticks behind one ADC multiplexer.
++	  The source file is copied in from the ROCKNIX rocknix-joypad
++	  repository at build time.
++
++	  To compile this driver as a module, choose M here: the module will be
++	  called rocknix-singleadc-joypad.
++
+ endif
+diff -Naur a/drivers/input/joystick/Makefile b/drivers/input/joystick/Makefile
+--- a/drivers/input/joystick/Makefile
++++ b/drivers/input/joystick/Makefile
+@@ -41,3 +41,4 @@
+ obj-$(CONFIG_JOYSTICK_WALKERA0701)	+= walkera0701.o
+ obj-$(CONFIG_JOYSTICK_XPAD)		+= xpad.o
+ obj-$(CONFIG_JOYSTICK_ZHENHUA)		+= zhenhua.o
++obj-$(CONFIG_JOYSTICK_ROCKNIX_SINGLEADC)	+= rocknix-singleadc-joypad.o

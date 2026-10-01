@@ -1,0 +1,29 @@
+# sun50i-h700-anbernic-rg35xx-2024.dts has a gpio-keys-volume node:
+# button-vol-up sends KEY_VOLUMEUP (PE1) and button-vol-down sends
+# KEY_VOLUMEDOWN (PE2). Route these keys to inputd's direct actions, the same
+# shape as the RG353M and RP Mini V2 maps.
+version: 2
+kind: CapabilityMap
+name: Anbernic H700 Hardware Volume
+id: anbernic_h700_volume
+
+mapping:
+  - name: Volume Up
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEUP
+          value_type: button
+    target_event:
+      dbus: ui_volume_up
+
+  - name: Volume Down
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEDOWN
+          value_type: button
+    target_event:
+      dbus: ui_volume_down
+
+filtered_events: []

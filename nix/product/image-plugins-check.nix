@@ -14,6 +14,8 @@ let
     "r36tmax"
     "rpminiv2"
     "odin2portal"
+    "rg35xxsp"
+    "rg35xxpro"
   ];
   exactImage =
     name:
@@ -52,6 +54,7 @@ assert lib.all (name: lib.elem (toString published.korri-plugin-ssh) (map toStri
   "rpminiv2"
   "odin2portal"
   "rg35xxsp"
+  "rg35xxpro"
 ];
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))

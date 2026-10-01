@@ -18,9 +18,10 @@ let
     matched != null && builtins.stringLength (builtins.head matched) == 40;
 in
 assert lib.hasInfix "          - rpminiv2" imageWorkflow;
-assert lib.hasInfix "rg353m|odin2portal|rgds|rpminiv2|r36tmax" imageWorkflow;
+assert lib.hasInfix "rg353m|odin2portal|rgds|rpminiv2|r36tmax|rg35xxsp|rg35xxpro" imageWorkflow;
 assert lib.hasInfix ''DEVICE-sd-image" "$RUNNER_TEMP/device-dist'' imageWorkflow;
-assert lib.hasInfix "device: [odin2portal, rg353m, rgds, rpminiv2, r36tmax]" cacheWorkflow;
+assert lib.hasInfix "device: [odin2portal, rg353m, rgds, rpminiv2, r36tmax, rg35xxsp, rg35xxpro]"
+  cacheWorkflow;
 assert lib.hasInfix "packages.x86_64-linux.rpminiv2-kernel" cacheWorkflow;
 assert lib.hasInfix "packages.x86_64-linux.rpminiv2-firmware" cacheWorkflow;
 assert lib.hasInfix "packages.x86_64-linux.rpminiv2-rocknix-baseline" cacheWorkflow;

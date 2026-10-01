@@ -38,7 +38,8 @@ in
   r36tmax = shared ++ ssh;
   rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
-  # RG35XXSP is not a product image yet. Its choice becomes active only when
-  # measured display/input facts allow the product module and image to land.
+  # The two H700 boards use ROCKNIX's H700 table (evidence/rocknix-
+  # recommendations.md). No streaming host until an encoder result exists.
   rg35xxsp = shared ++ ssh;
+  rg35xxpro = shared ++ ssh;
 }

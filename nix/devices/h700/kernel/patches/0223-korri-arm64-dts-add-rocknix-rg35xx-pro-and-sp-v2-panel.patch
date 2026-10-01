@@ -1,0 +1,60 @@
+Subject: [PATCH] arm64: dts: allwinner: add the ROCKNIX RG35XX Pro and SP v2-panel trees
+
+Copied unchanged from ROCKNIX projects/ROCKNIX/devices/H700/linux/dts/allwinner
+(identical on ROCKNIX next, checked 2026-10-01). ROCKNIX rsyncs these files
+into the kernel tree; Korri carries them as one patch with their Makefile
+entries. The Pro tree is the Plus board with four analog-stick ADC channels;
+the SP v2-panel tree is the SP board with the later panel init sequence.
+---
+diff -Naur a/arch/arm64/boot/dts/allwinner/Makefile b/arch/arm64/boot/dts/allwinner/Makefile
+--- a/arch/arm64/boot/dts/allwinner/Makefile
++++ b/arch/arm64/boot/dts/allwinner/Makefile
+@@ -62,6 +62,8 @@
+ dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-h.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-plus.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp.dtb
++dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb
++dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-pro.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun55i-a527-cubie-a5e.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun55i-h728-x96qpro+.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun55i-t527-avaota-a1.dtb
+diff -Naur a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-pro.dts b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-pro.dts
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-pro.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-pro.dts
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++/*
++ * Copyright (C) 2024 Ryan Walklin <ryan@testtoast.com>.
++ * Copyright (C) 2024 Chris Morgan <macroalpha82@gmail.com>.
++ */
++
++#include "sun50i-h700-anbernic-rg35xx-plus.dts"
++
++/ {
++	model = "Anbernic RG35XX Pro";
++	compatible = "anbernic,rg35xx-pro", "allwinner,sun50i-h700";
++	rocknix-dt-id = "sun50i-h700-anbernic-rg35xx-pro";
++};
++
++&joypad {
++	amux-count = <4>;
++};
+diff -Naur a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-sp-v2-panel.dts b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-sp-v2-panel.dts
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-sp-v2-panel.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-sp-v2-panel.dts
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++/*
++ * Copyright (C) 2024 Ryan Walklin <ryan@testtoast.com>.
++ * Copyright (C) 2024 Chris Morgan <macroalpha82@gmail.com>.
++ */
++
++#include "sun50i-h700-anbernic-rg35xx-sp.dts"
++
++/ {
++	rocknix-dt-id = "sun50i-h700-anbernic-rg35xx-sp-v2-panel";
++};
++
++&panel {
++	compatible = "anbernic,rg35xx-sp-v2-panel", "panel-mipi-dpi-spi";
++};

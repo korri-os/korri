@@ -272,7 +272,9 @@ let
           .#checks.${pkgs.stdenv.hostPlatform.system}.rg353m-usb-gadget \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rgds \
           .#checks.${pkgs.stdenv.hostPlatform.system}.rpminiv2 \
-          .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-inputplumber
+          .#checks.${pkgs.stdenv.hostPlatform.system}.rgds-inputplumber \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.h700 \
+          .#checks.${pkgs.stdenv.hostPlatform.system}.h700-inputplumber
         # Exercise impure staging on every run without real network credentials.
         if [ -z "''${KORRI_WIFI_ENV:-}" ]; then
           wifi_fixture="$(mktemp)"
