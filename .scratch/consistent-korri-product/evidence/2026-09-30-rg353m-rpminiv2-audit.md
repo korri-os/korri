@@ -86,7 +86,28 @@ spec allows the DS emulator on the Mini only.
 
 - The spec says Moonlight ships preinstalled. Neither selection contains it.
 
-## Decisions needed
+## Status after the owner decisions (2026-09-30, evening)
+
+| Item | State | Commit |
+|---|---|---|
+| T2 input fence depends on plugin state | Fixed in source: the seat count reads `device.yaml` only | `345b7f902` |
+| T1 seat receiver 2 s budget | Raised to 15 s. Proof needs an RG353M boot | `f273c8591` |
+| M1 portal freeze + patched systemd | Product, every device | `4fc6bbbc1` |
+| M2 volume actions | Product actions; RG353M key map from its DTB | `4fc6bbbc1`, `04452b56c` |
+| M3 controller activity, display idle | Product | `4fc6bbbc1` |
+| M4 game library ACLs | Product | `4fc6bbbc1` |
+| M5 networkd wait-online | Off in the product | `4fc6bbbc1` |
+| M6 clock governor | Product; device GPU/idle facts as unit environment | `4fc6bbbc1` |
+| M7 SSH | Preinstalled on every device (owner decision) | `9b4e9ee7c` |
+| USB gadget | Product, every device; Odin gains ACM, untested | `97476aeca` |
+| R1 splash, quiet boot | Product, every device | `896297910` |
+| R2 development boot | `development` specialisation on every device. Selecting it at power-on is open | `896297910` |
+| Kernel pin 7.2 | Product assertion; RG353M moves to mainline 7.2 | `001a07a89` |
+| T3 RG353M USB controller fault | Open; may change on 7.2 | |
+
+None of this is verified on hardware yet.
+
+## Decisions needed (answered 2026-09-30)
 
 1. M1: should the portal freeze ship on every device? That requires the
    patched systemd on every device.
