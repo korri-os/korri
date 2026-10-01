@@ -134,12 +134,19 @@ permission expansion.
 - Never compile software or dispatch builds from target devices. Follow
   `nix/device-cache/README.md` for prebuilt downloads and cache-failure policy.
   Runtime TS/JS transpilation remains part of the plugin scripting contract.
-- For Retroid Pocket Mini V2 debugging, change the running system on the
-  approved spare SD using prebuilt artifacts and scoped runtime edits. Full SD
-  image rewrites take too long for debugging. Reserve a rewrite for a separately
-  approved clean-image check after re-identifying the card. Keep the recovery
-  SD, internal storage, and loader unchanged. Keep plugin signature and
-  permission checks in force during device testing.
+- Debug the Retroid Pocket Mini V2 on its running system with prebuilt
+  artifacts and scoped runtime edits. Since 2026-10-01 it boots from internal
+  UFS. `nix/devices/rpminiv2/INTERNAL.md` records the layout and recovery.
+  Recovery must never require opening the case, so a system update writes only
+  the internal ESP (LUN 0 #21, `RPMINIV2`) and root (LUN 0 #22,
+  `NIXOS_RPMINIV2`). UFS LUNs 1 to 5 (`xbl*`, `cdt`, `ddr`, `abl*`, `loader*`,
+  `tz*`, `hyp*`, `aop*`, `devcfg*`, `uefi*`, modem data) and LUN 0 #1 to #20
+  (`persist`, `metadata`, `misc` and the rest) stay unwritten. UFS
+  provisioning and the boot LUN stay unchanged, which is why the product kernel
+  keeps `SCSI_UFS_BSG` off. A GPT edit, a reformat, or a full image write needs
+  explicit user approval for that run. The loader boots an SD before UFS, so
+  insert only an SD whose labels differ from the internal ones. Keep plugin
+  signature and permission checks in force during device testing.
 - Keep the AYN Odin 2 Portal bootloader unlocked for stock-based custom
   firmware. Installation and recovery tools must verify the unlocked state and
   stop if the device is locked. They must not contain or run a bootloader lock
