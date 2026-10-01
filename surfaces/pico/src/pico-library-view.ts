@@ -69,9 +69,13 @@ export function picoLibraryViewFrom(
 /**
  * Sorting is stable and never invents a rank.
  *
- * A game Korri has never timed or counted sorts last rather than as a zero: an
- * unplayed game is not "played least recently", it is unknown, and putting the
- * unknowns at the top of RECENT would make the order look broken.
+ * MOST PLAYED ranks by recorded playtime and nothing else. A play count is a
+ * different unit, so a game with a count but no playtime is not ranked by it:
+ * 40 plays is not 40 seconds. A recorded zero is a time and ranks.
+ *
+ * A game Korri has never timed sorts last rather than as a zero, in Korri's
+ * order: an unplayed game is not "played least recently", it is unknown, and
+ * putting the unknowns at the top of RECENT would make the order look broken.
  */
 function ordered(
   games: readonly PicoShelfGame[],
@@ -79,7 +83,7 @@ function ordered(
 ): readonly PicoShelfGame[] {
   if (order === "korri") return games
   const by = (game: PicoShelfGame): number | undefined =>
-    order === "played" ? game.totalPlaytimeSeconds ?? game.playCount : game.lastPlayedAt
+    order === "played" ? game.totalPlaytimeSeconds : game.lastPlayedAt
   if (order === "title") {
     return [...games].sort((a, b) => a.title.localeCompare(b.title))
   }

@@ -7,17 +7,41 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import type { SurfaceGame, SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { PicoSurface } from "../src/PicoSurface"
 
 afterEach(() => cleanup())
 
-const open = () => {
+const open = (model: SurfaceModel = fixtureModel) => {
   const host = createFixtureHost()
-  render(<PicoSurface host={host} model={fixtureModel} />)
+  render(<PicoSurface host={host} model={model} />)
   act(() => host.press("options"))
   return host
 }
+
+/* Every shape of play facts the treaty's types allow, in this catalog order. */
+const mixedPlayFacts: SurfaceModel = (() => {
+  const game = (id: string, title: string, facts: Partial<SurfaceGame>): SurfaceGame => ({
+    id,
+    title,
+    subtitle: "PC · This device",
+    ...facts,
+  })
+  return {
+    ...fixtureModel,
+    catalog: {
+      _tag: "Ready",
+      games: [
+        game("plays", "Plays Only", { playCount: 40 }),
+        game("both", "Both Facts", { playCount: 1, totalPlaytimeSeconds: 600, lastPlayedAt: 2 }),
+        game("none", "No Record", {}),
+        game("time", "Time Only", { totalPlaytimeSeconds: 3_600 }),
+        game("zero", "Zero Time", { playCount: 1, totalPlaytimeSeconds: 0, lastPlayedAt: 1 }),
+      ],
+    },
+  }
+})()
 
 const type = (word: string) => {
   for (const letter of word) {
@@ -157,6 +181,22 @@ describe("ordering the results", () => {
     // Lantern Keep has the most playtime Korri published: 11h 30m.
     expect(rows[0]?.textContent).toContain("Lantern Keep")
     expect(rows[1]?.textContent).toContain("Hollow Knight")
+  })
+
+  test("ranks most played by playtime alone and never by a play count", () => {
+    open(mixedPlayFacts)
+    fireEvent.click(screen.getByRole("button", { name: "MOST PLAYED" }))
+    const rows = screen.getAllByRole("button", { name: /·/ }).map((row) => row.textContent)
+    // Ranked by seconds; a recorded zero is a time and ranks. Games with no
+    // playtime follow in Korri's order, however many plays they have: 40 plays
+    // is not 40 seconds, and no record is not zero.
+    expect(rows).toEqual([
+      expect.stringContaining("Time Only"),
+      expect.stringContaining("Both Facts"),
+      expect.stringContaining("Zero Time"),
+      expect.stringContaining("Plays Only"),
+      expect.stringContaining("No Record"),
+    ])
   })
 
   test("puts games Korri has never timed last rather than first", () => {
