@@ -866,6 +866,22 @@ assert lib.assertMsg (
 assert lib.assertMsg (
   networkWaits rg353m == [ ]
 ) "rg353m units wait for the network: ${builtins.toJSON (networkWaits rg353m)}";
+# Coldplug replays devices and named module events only (udev-coldplug-package.nix).
+assert lib.all (
+  config:
+  let
+    exec = config.systemd.services.systemd-udev-trigger.serviceConfig.ExecStart or [ ];
+  in
+  lib.assertMsg (
+    builtins.isList exec
+    && builtins.length exec == 2
+    && builtins.elemAt exec 0 == ""
+    && lib.hasSuffix "/bin/korri-udev-coldplug" (builtins.elemAt exec 1)
+  ) "systemd-udev-trigger must run only korri-udev-coldplug: ${builtins.toJSON exec}"
+) [
+  productConfig
+  rg353m
+];
 assert
   productPluginRestore.serviceConfig.ExecStart
   == "${productPluginHost.package}/bin/korri-plugin restore-all";

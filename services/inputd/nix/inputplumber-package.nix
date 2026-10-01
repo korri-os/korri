@@ -10,6 +10,7 @@ let
   patches = [
     ./inputplumber-dbus-observer-timing.patch
     ./inputplumber-target-device-paths.patch
+    ./inputplumber-startup-unhide-quiet.patch
   ];
 in
 assert inputplumber.pname == "inputplumber";
@@ -21,8 +22,11 @@ inputplumber.overrideAttrs (previous: {
   # Keep the upstream source and dependency pins. The observer patch avoids
   # the 240 ms chord delay without changing genuine chord timing. Target node
   # discovery uses the native target-owned VirtualDevice, not identity guesses.
+  # The startup unhide reloads and re-triggers udev only when it undid a hide:
+  # upstream ran a full `udevadm trigger` on every start, which on the RG353M
+  # (2026-10-01) queued 628 change events behind boot coldplug.
   inherit patches;
-  # Both patches' regression tests run with the upstream unit suite on builds.
+  # The patches' regression tests run with the upstream unit suite on builds.
   doCheck = true;
   nativeCheckInputs = (previous.nativeCheckInputs or [ ]) ++ [ dbus ];
   DBUS_TEST_SESSION_CONFIG = "${dbus}/share/dbus-1/session.conf";

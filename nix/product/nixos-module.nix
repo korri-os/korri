@@ -25,6 +25,7 @@ in
     ./game-library-access.nix
     ./systemd/module.nix
     ./usb-gadget.nix
+    ./udev-coldplug.nix
     ./boot.nix
     ./kernel.nix
     ../../clients/portal/nix/kiosk-freezer.nix

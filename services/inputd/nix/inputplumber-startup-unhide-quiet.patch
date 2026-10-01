@@ -1,0 +1,110 @@
+diff --git a/src/udev/mod.rs b/src/udev/mod.rs
+index cbedf12..2ba325d 100644
+--- a/src/udev/mod.rs
++++ b/src/udev/mod.rs
+@@ -3,6 +3,8 @@
+ 
+ #[cfg(test)]
+ pub mod device_test;
++#[cfg(test)]
++mod unhide_test;
+ 
+ pub mod device;
+ 
+@@ -193,11 +195,10 @@ pub async fn unhide_device(path: String) -> Result<(), Box<dyn Error>> {
+     Ok(())
+ }
+ 
+-/// Unhide all devices hidden by InputPlumber
+-pub async fn unhide_all() -> Result<(), Box<dyn Error>> {
+-    // Remove all created udev rules
+-    let entries = fs::read_dir(RULES_PREFIX)?;
+-    for entry in entries {
++/// Remove every InputPlumber hide rule in `dir` and return how many it removed.
++pub(crate) fn remove_hide_rules(dir: &Path) -> std::io::Result<usize> {
++    let mut removed = 0;
++    for entry in fs::read_dir(dir)? {
+         let Ok(entry) = entry else {
+             continue;
+         };
+@@ -208,7 +209,15 @@ pub async fn unhide_all() -> Result<(), Box<dyn Error>> {
+         let path = entry.path().to_string_lossy().to_string();
+         log::debug!("Removing hide rule: {path}");
+         fs::remove_file(path)?;
++        removed += 1;
+     }
++    Ok(removed)
++}
++
++/// Unhide all devices hidden by InputPlumber
++pub async fn unhide_all() -> Result<(), Box<dyn Error>> {
++    // Remove all created udev rules
++    let mut undone = remove_hide_rules(Path::new(RULES_PREFIX))?;
+ 
+     // Move all devices back
+     let entries = fs::read_dir("/dev/inputplumber/sources")?;
+@@ -225,11 +234,20 @@ pub async fn unhide_all() -> Result<(), Box<dyn Error>> {
+             format!("/dev/{name}")
+         };
+         log::debug!("Restoring device node path {path:?} to '{dst_path}'");
+-        if let Err(e) = fs::rename(&path, &dst_path) {
+-            log::warn!("Failed to move device node from {path:?} to {dst_path}: {e}");
++        match fs::rename(&path, &dst_path) {
++            Ok(()) => undone += 1,
++            Err(e) => log::warn!("Failed to move device node from {path:?} to {dst_path}: {e}"),
+         }
+     }
+ 
++    // Nothing was hidden, so udev has nothing to re-evaluate. A full
++    // `udevadm trigger` replays a change event for every device on the system;
++    // at boot that queued hundreds of events ahead of real device setup.
++    if undone == 0 {
++        log::debug!("No hidden devices to restore; skipping udev reload");
++        return Ok(());
++    }
++
+     // Reload udev rules
+     reload_all().await?;
+ 
+diff --git a/src/udev/unhide_test.rs b/src/udev/unhide_test.rs
+new file mode 100644
+index 0000000..64eea24
+--- /dev/null
++++ b/src/udev/unhide_test.rs
+@@ -0,0 +1,36 @@
++use std::{fs, path::PathBuf};
++
++use crate::udev::remove_hide_rules;
++
++fn scratch_dir(name: &str) -> PathBuf {
++    let dir = std::env::temp_dir().join(format!("inputplumber-{name}-{}", std::process::id()));
++    let _ = fs::remove_dir_all(&dir);
++    fs::create_dir_all(&dir).unwrap();
++    dir
++}
++
++#[test]
++fn no_hide_rules_means_nothing_to_undo() {
++    let dir = scratch_dir("no-hide-rules");
++    fs::write(dir.join("61-dev-root-link.rules"), "").unwrap();
++    fs::write(dir.join("99-z-other.rules"), "").unwrap();
++
++    assert_eq!(remove_hide_rules(&dir).unwrap(), 0);
++    assert!(dir.join("61-dev-root-link.rules").exists());
++    assert!(dir.join("99-z-other.rules").exists());
++    fs::remove_dir_all(&dir).unwrap();
++}
++
++#[test]
++fn stale_hide_rules_are_removed_and_counted() {
++    let dir = scratch_dir("stale-hide-rules");
++    fs::write(dir.join("50-inputplumber-hide-event0-early.rules"), "").unwrap();
++    fs::write(dir.join("96-inputplumber-hide-event0-late.rules"), "").unwrap();
++    fs::write(dir.join("61-dev-root-link.rules"), "").unwrap();
++
++    assert_eq!(remove_hide_rules(&dir).unwrap(), 2);
++    assert!(!dir.join("50-inputplumber-hide-event0-early.rules").exists());
++    assert!(!dir.join("96-inputplumber-hide-event0-late.rules").exists());
++    assert!(dir.join("61-dev-root-link.rules").exists());
++    fs::remove_dir_all(&dir).unwrap();
++}

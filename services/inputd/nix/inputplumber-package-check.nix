@@ -29,6 +29,7 @@ assert
   inputplumberRuntime.upstream.patches == [
     ./inputplumber-dbus-observer-timing.patch
     ./inputplumber-target-device-paths.patch
+    ./inputplumber-startup-unhide-quiet.patch
   ];
 assert inputplumberRuntime.patches == inputplumberRuntime.upstream.patches;
 assert inputplumberRuntime.doCheck;
