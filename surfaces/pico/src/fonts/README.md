@@ -9,7 +9,7 @@ storage; see `../pico-font-preference.ts`).
 | `<id>.glyphs.txt` | One face: one pixel bitmap per character, read out of the upstream file. Do not edit by hand. |
 | `pico-symbols.txt` | Pico's own symbols (`· … ‹ › ◀ ▶ ▸ ← → ↑ ↓ – —`, curly quotes, `×`, `−`, `█`, `✓`), drawn for Pico in a 3×5 cell. Added to every face that lacks them. |
 | `<id>.woff2` | A face, built from its table. Do not edit. |
-| `licenses/` | The licence texts that must travel with a face. |
+| `licenses/` | The licence texts that must travel with a face. The portal package (`clients/portal/nix/package.nix`) copies them to `licenses/pico-fonts/` beside the bundle, and its install check fails without them. |
 | `../../scripts/fetch-font-sources.sh` | Downloads the upstream files and checks their pinned checksums. |
 | `../../scripts/extract-font-tables.py` | Reads each upstream file into its table. |
 | `../../scripts/build-fonts.py` | Builds the faces, `../pico-fonts.css` and `../pico-fonts.ts`. Deterministic: same tables, same bytes. |

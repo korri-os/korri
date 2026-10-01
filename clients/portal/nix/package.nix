@@ -117,6 +117,10 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p "$out"
     cp -R dist/. "$out/"
+    # The licence texts of Pico's faces travel with the built faces. Vite
+    # emits only what code references, so they are copied here, beside it.
+    mkdir -p "$out/licenses/pico-fonts"
+    cp ../../surfaces/pico/src/fonts/licenses/*.txt "$out/licenses/pico-fonts/"
     runHook postInstall
   '';
 
@@ -142,6 +146,10 @@ pkgs.stdenvNoCC.mkDerivation {
     # Both source-built surfaces must ship, not just an empty Vite shell.
     grep -Fq 'pico-screen' "''${css[@]}"
     grep -Fq 'data-shift-surface' "''${css[@]}"
+    # Pico's faces whose licences ask for their text to travel with every
+    # copy (Spleen's BSD 2-Clause, Tiny5's OFL) ship it beside the bundle.
+    grep -Fq 'Frederic Cambus' "$out/licenses/pico-fonts/spleen-LICENSE.txt"
+    grep -Fq 'SIL OPEN FONT LICENSE' "$out/licenses/pico-fonts/tiny5-OFL.txt"
     runHook postInstallCheck
   '';
 
