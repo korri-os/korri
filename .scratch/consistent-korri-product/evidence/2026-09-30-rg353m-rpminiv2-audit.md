@@ -42,7 +42,7 @@ networkd, tmpfiles ACLs, inputd actions, the boot splash or timing budgets.
 | # | Behavior | Mini source | RG353M state | Class |
 |---|---|---|---|---|
 | M1 | Portal freezes while a game runs, and thaws after | `clients/portal/nix/kiosk-freezer.nix` + patched systemd `nix/devices/rpminiv2/systemd/`, imported in `portal.nix:32` | Absent (verified: no `KORRID_PORTAL_UNIT`, no freezer polkit rule) | Product behavior. Needs a decision, because it needs the patched systemd. |
-| M2 | Volume buttons change the volume | `portal.nix:78` inputd `volume-up`/`volume-down` actions, plus the inputd PipeWire socket bind | Absent (verified) | Product behavior. The command (`wpctl`) is not board-specific. |
+| M2 | Volume buttons change the volume | `portal.nix:78` inputd `volume-up`/`volume-down` actions, the inputd PipeWire socket bind, and a volume capability map in the Mini's InputPlumber data | Absent in both places (verified): no inputd action, and `nix/devices/rg353m/inputplumber/` maps no volume keys | Product behavior. The command (`wpctl`) is not board-specific. The key map is a hardware fact that the RG353M does not supply. |
 | M3 | Controller activity keeps the screen awake, and the display goes idle | inputd `controller-activity` action, `rpminiv2-display-idle.service` | Absent (verified) | Product behavior. The idle policy can depend on the panel. |
 | M4 | The game user can read the library and write saves | `nix/devices/rpminiv2/game-plugins.nix` tmpfiles ACLs on `/var/lib/korri`, `roms/*`, `users/default/*` | Absent. On the card, `/var/lib/korri` is `drwx------ korrid:korrid` with no ACL and no `roms` or `users` directory (verified). Games that run as `korri` probably cannot read ROMs or write saves (inferred). | Product behavior |
 | M5 | No 120 s network wait at boot | `usb-gadget.nix:61` `wait-online.enable = false` | On. It fails after 120 s on every boot (verified), which starts the chain that blocks all input | Product behavior |
@@ -84,7 +84,8 @@ spec allows the DS emulator on the Mini only.
 
 ## Spec deviations found on both devices
 
-- The spec says Moonlight ships preinstalled. Neither selection contains it.
+- The spec says Moonlight ships preinstalled. `nix/product/` does not select
+  it for any device (verified by search).
 
 ## Status after the owner decisions (2026-09-30, evening)
 
