@@ -1,5 +1,7 @@
 /* Grid mode: every collection as its own shelf, one above the other, each a
- * line of carts standing on a floor. The page scrolls; a shelf wraps. */
+ * line of carts standing on a floor. The page scrolls; a shelf wraps. In each
+ * line every slot is as tall as the tallest cart, so Down leaves the line
+ * instead of stepping onto a shorter neighbour. */
 .pico-cart-grid {
 	display: grid;
 	align-content: start;
@@ -31,7 +33,7 @@
 	--pico-shelf-art-h: calc(var(--pico-px) * 44);
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-end;
+	align-items: stretch;
 	gap: calc(var(--pico-px) * 6) calc(var(--pico-px) * 4);
 	margin: 0;
 	padding: calc(var(--pico-px) * 6) 0 0;

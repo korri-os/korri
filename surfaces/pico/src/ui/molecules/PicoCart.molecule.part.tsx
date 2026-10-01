@@ -51,6 +51,7 @@ export function MissingArtHero() {
     id={noArtworkGame.id}
     onActivate={() => undefined}
     placement="hero"
+    progress="new"
     resumable={noArtworkGame.resumable ?? false}
     subtitle={noArtworkGame.subtitle}
     title={noArtworkGame.title}

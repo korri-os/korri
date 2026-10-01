@@ -7,7 +7,8 @@ import { PicoCoverArt } from "../atoms/PicoCoverArt"
  * Where a cart is.
  *
  * `side` and `hero` sit on a shelf and are buttons: `hero` is the chosen one,
- * lifted off the shelf with a shadow under it. `still` is a cart as the thing
+ * lifted off the shelf with a shadow under it. The button is as tall as its
+ * row, and the cart stands at the bottom of it. `still` is a cart as the thing
  * a screen is about — the big cartridge on a game's own screen — and renders
  * as a figure that takes no focus. `tile` is a shelf-sized cart drawn inside
  * another control, such as a search result, which owns the focus itself. One
@@ -33,6 +34,12 @@ export type PicoCartProgress = "resume" | "new" | "played"
  * Every shelf cart is focusable, including the ones at the edges: focus is how
  * a d-pad moves along the shelf, so a cart that could not take focus would be
  * unreachable on the hardware Pico is built for.
+ *
+ * The host moves focus to the control whose centre is nearest in the pressed
+ * direction. Carts take their height from their art, so a button the size of
+ * its cart would put each centre at a different height, and Down from a tall
+ * cart would step sideways onto a short neighbour instead of leaving the row.
+ * A button the height of its row gives every cart in the row one centre.
  */
 export function PicoCart({
   id,
@@ -60,8 +67,8 @@ export function PicoCart({
   const look = picoCartLookFor(id, subtitle)
   const state: PicoCartProgress = progress ?? (resumable ? "resume" : "played")
   const name = subtitle === undefined ? title : `${title}, ${subtitle}`
-  const Tag = placement === "still" ? "figure" : placement === "tile" ? "span" : "button"
-  return (
+  const Tag = placement === "still" ? "figure" : "span"
+  const cart = (
     <Tag
       className="pico-cart"
       data-placement={placement}
@@ -72,7 +79,7 @@ export function PicoCart({
         ? { "aria-hidden": true }
         : placement === "still"
           ? { "aria-label": name }
-          : { "aria-label": name, onClick: onActivate, onFocus, type: "button" as const })}
+          : {})}
     >
       <span className="pico-cart-window">
         <PicoCoverArt artUrl={artUrl} id={id} subtitle={subtitle} title={title} />
@@ -88,5 +95,11 @@ export function PicoCart({
         </span>
       ) : null}
     </Tag>
+  )
+  if (placement === "still" || placement === "tile") return cart
+  return (
+    <button aria-label={name} className="pico-cart-button" onClick={onActivate} onFocus={onFocus} type="button">
+      {cart}
+    </button>
   )
 }

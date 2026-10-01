@@ -136,6 +136,11 @@ Pico renders the catalog (shelf/grid/hero), game detail and launch locations,
 Find, grouped settings, gameplay overlay and attract mode. The portal selects
 it with `?surface=pico`. Settings text editing remains unavailable.
 
+Everything is reachable with the d-pad, A and B alone, because many handhelds
+send the surface no `system`, `options` or `menu` button. Home's MENU key on
+the floor row opens FIND, SETTINGS and VIEW; those three buttons remain
+shortcuts where a device sends them.
+
 ## Caliper
 
 Caliper shows Pico's parts at true device size. It is a dev-only Vite plugin,
@@ -151,7 +156,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 53 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 55 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.

@@ -1,0 +1,38 @@
+/* A quiet plate with a small shadow: the same object as a quiet button, at
+ * the size of a hint. The shadow is part of the key's footprint, so a margin
+ * reserves it. */
+.pico-menu-key {
+	display: inline-flex;
+	align-items: center;
+	gap: calc(var(--pico-px) * 2);
+	margin: 0 var(--pico-drop-sm) var(--pico-drop-sm) 0;
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 3);
+	font-size: var(--pico-text-sm);
+	line-height: 1;
+	color: var(--pico-plate-ink);
+	background: var(--pico-plate);
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-plate-shadow);
+	white-space: nowrap;
+}
+
+.pico-menu-key-icon {
+	display: block;
+	flex: none;
+	width: calc(var(--pico-px) * 8);
+	height: calc(var(--pico-px) * 8);
+}
+
+/* The cursor: the yellow plate and the cycling shadow every Pico control
+ * wears. It reads without the cycle, which reduced motion stops. */
+.pico-menu-key:focus-visible {
+	outline: none;
+	color: var(--pico-go-ink);
+	background: var(--pico-go);
+	box-shadow: var(--pico-drop-sm) var(--pico-drop-sm) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-menu-key:active {
+	translate: var(--pico-drop-sm) var(--pico-drop-sm);
+	box-shadow: none;
+}

@@ -22,13 +22,14 @@
  * cart to lift, and keeps the stage's own spacing: the floor stops two units
  * from each side, like the stage and the header's palette bar, and one unit
  * of ground shows between the carts' feet and the floor, the same as the
- * stage's padding. */
+ * stage's padding. Every slot is as tall as the tallest cart; each cart
+ * stands at the bottom of its own. */
 .pico-cart-shelf-rack {
 	--pico-shelf-art-w: calc(var(--pico-px) * 28);
 	--pico-shelf-art-h: calc(var(--pico-px) * 56);
 	position: relative;
 	display: flex;
-	align-items: flex-end;
+	align-items: stretch;
 	gap: calc(var(--pico-px) * 4);
 	margin: 0 calc(var(--pico-u) * 2);
 	padding: calc(var(--pico-px) * 8) 0 var(--pico-u);

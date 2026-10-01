@@ -146,6 +146,14 @@ function PicoCatalogSurface({
   /* How home lays the library out. View state, not device state: it is about
    * this person in this chair, and Korri has no opinion on it. */
   const [mode, setMode] = useState<PicoHomeMode>(initialView?._tag === "Home" ? initialView.mode ?? "shelf" : "shelf")
+  /* Home's MENU list, and whether Back from a screen it opened should put the
+   * cursor back on MENU. Here because Back closes the list and Back arrives
+   * through the host, and because the screens it opens replace home. */
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [returnToMenu, setReturnToMenu] = useState(false)
+  /* The shelf's chosen cart. Home unmounts behind every screen it opens, and
+   * coming back should find the game the player left the cursor on. */
+  const [shelfGameId, setShelfGameId] = useState<string | undefined>(undefined)
   /* A destructive game action awaiting a yes. Korri's game actions carry no
    * confirmation copy of their own, so the question is built from the label. */
   const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
@@ -195,6 +203,8 @@ function PicoCatalogSurface({
     setAsking(undefined)
     setSettingsOpen(false)
     setFinding(false)
+    setMenuOpen(false)
+    setReturnToMenu(false)
     setMode("shelf")
   }, [model.catalog, model.status, viewingId])
 
@@ -203,7 +213,7 @@ function PicoCatalogSurface({
    * all screens the user is waiting on, and hiding one behind decoration would
    * lose the thing they are waiting for. */
   const canAttract = !runnerOpen && view._tag === "Shelf" && !settingsOpen && !finding
-    && viewingId === undefined && placing === undefined
+    && !menuOpen && viewingId === undefined && placing === undefined
     && asking === undefined && askingAction === undefined && identityAction === null
 
   useEffect(() => {
@@ -214,6 +224,12 @@ function PicoCatalogSurface({
     const timer = setTimeout(() => setAttracting(true), PICO_ATTRACT_AFTER_MS)
     return () => clearTimeout(timer)
   }, [canAttract, awake])
+
+  const cycleMode = useCallback(() => {
+    setMode((current) =>
+      current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
+    )
+  }, [])
 
   useEffect(() => {
     const offBack = host.input.on("back", () => {
@@ -228,6 +244,7 @@ function PicoCatalogSurface({
       if (askingAction !== undefined) { setAskingAction(undefined); return }
       if (asking !== undefined) { setAsking(undefined); return }
       if (placing !== undefined) { setPlacing(undefined); return }
+      if (menuOpen) { setMenuOpen(false); return }
       if (settingsOpen) { setSettingsOpen(false); return }
       // The detail page sits above Find. Clear it first so the query survives.
       if (viewingId !== undefined) { setViewingId(undefined); return }
@@ -235,17 +252,17 @@ function PicoCatalogSurface({
     })
     const offSystem = host.input.on("system", () => {
       if (runnerOpen || wake()) return
+      setMenuOpen(false)
       setSettingsOpen((open) => !open)
     })
     const offOptions = host.input.on("options", () => {
       if (runnerOpen || wake()) return
+      setMenuOpen(false)
       setFinding((open) => !open)
     })
     const offMenu = host.input.on("menu", () => {
       if (runnerOpen || wake()) return
-      setMode((current) =>
-        current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
-      )
+      cycleMode()
     })
     return () => {
       offBack()
@@ -253,7 +270,7 @@ function PicoCatalogSurface({
       offOptions()
       offMenu()
     }
-  }, [host, model.status._tag, identityAction, askingAction, asking, placing, settingsOpen, viewingId, finding, wake, runnerOpen])
+  }, [host, model.status._tag, identityAction, askingAction, asking, placing, menuOpen, settingsOpen, viewingId, finding, wake, runnerOpen, cycleMode])
 
   const launchGame = (gameId: string) => {
     const game = view._tag === "Shelf"
@@ -376,12 +393,34 @@ function PicoCatalogSurface({
       ) : (
         <PicoHome
           clockLabel={model.clockLabel}
+          menu={{
+            open: menuOpen,
+            returning: returnToMenu,
+            onToggle: () => setMenuOpen((open) => !open),
+            onFind: () => {
+              setMenuOpen(false)
+              setReturnToMenu(true)
+              setFinding(true)
+            },
+            onSettings: () => {
+              setMenuOpen(false)
+              setReturnToMenu(true)
+              setSettingsOpen(true)
+            },
+            onView: cycleMode,
+            onReturned: () => setReturnToMenu(false),
+          }}
           onChooseLocation={chooseLocation}
           onDismiss={() => host.dismiss()}
           mode={mode}
-          onOpenGame={setViewingId}
+          onOpenGame={(gameId) => {
+            setMenuOpen(false)
+            setViewingId(gameId)
+          }}
           onRetry={() => (view._tag === "Problem" ? host.retry() : host.reload())}
+          onSelectGame={setShelfGameId}
           placing={placing}
+          selectedGameId={shelfGameId}
           view={view}
         />
       )}

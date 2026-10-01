@@ -1,0 +1,32 @@
+/* The key keeps its own place in the row; the list is positioned from it. */
+.pico-menu {
+	position: relative;
+	display: flex;
+	flex: none;
+	align-items: center;
+}
+
+/* The list opens above the key and lines up with its left edge. It is drawn
+ * over the screen, never clipped by the body, and never taller than the
+ * screen: past that it scrolls, and the host's focus mover scrolls an entry
+ * into view as the cursor reaches it. */
+.pico-menu-list {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + var(--pico-px) * 2);
+	z-index: 3;
+	width: max-content;
+	max-width: calc(100cqw - var(--pico-u) * 4);
+	max-height: calc(100cqh - var(--pico-u) * 8);
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+.pico-menu-entries {
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	min-width: calc(var(--pico-px) * 90);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}

@@ -143,10 +143,11 @@ test("card tone, optional kicker, shell, and title identity are explicit", () =>
 test("cart placements distinguish focusable shelves from a decorative tile", () => {
   const view = render(<Cart.ResumableHero />)
   expect(view.getByRole("button", { name: "Hollow Knight, Switch · This device" })
-    .getAttribute("data-placement")).toBe("hero")
+    .querySelector(".pico-cart")?.getAttribute("data-placement")).toBe("hero")
   expect(view.container.querySelector(".pico-cart-resume")).not.toBeNull()
   view.rerender(<Cart.MissingArtSide />)
-  expect(view.getByRole("button", { name: "Petal Quest" }).getAttribute("data-placement")).toBe("side")
+  expect(view.getByRole("button", { name: "Petal Quest" })
+    .querySelector(".pico-cart")?.getAttribute("data-placement")).toBe("side")
   expect(view.getByText("PQ")).toBeDefined()
   expect(view.container.querySelector(".pico-cart-resume")).toBeNull()
   view.rerender(<Cart.WideTile />)

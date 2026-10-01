@@ -74,7 +74,7 @@ test("the missing-art catalog drives Home's count and selected cart together", (
   const carts = rack.querySelectorAll(".pico-cart")
   expect(carts.length).toBe(1)
   expect(carts[0]?.getAttribute("data-placement")).toBe("hero")
-  expect(carts[0]?.getAttribute("aria-label")).toContain(noArtworkGame.title)
+  expect(carts[0]?.closest("button")?.getAttribute("aria-label")).toContain(noArtworkGame.title)
   expect(view.container.querySelector(".pico-cover-art-canvas")).toBeNull()
 })
 

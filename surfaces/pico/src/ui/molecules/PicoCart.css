@@ -84,13 +84,26 @@
 	--pico-initials-size: var(--pico-text);
 }
 
+/* A shelf cart's button fills the height of its row and stands the cart at
+ * the bottom, so every cart in a row has one centre for the host's focus
+ * mover. A lifted cart moves inside the button; the button does not move. */
+.pico-cart-button {
+	display: flex;
+	flex: none;
+	align-items: flex-end;
+	align-self: stretch;
+}
+
+.pico-cart-button:focus-visible {
+	outline: none;
+}
+
 .pico-cart[data-placement="hero"] {
 	translate: 0 calc(var(--pico-px) * -4);
 	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-ink);
 }
 
-.pico-cart:focus-visible {
-	outline: none;
+.pico-cart-button:focus-visible > .pico-cart {
 	translate: 0 calc(var(--pico-px) * -4);
 	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
 	animation: pico-cycle 600ms steps(1, end) infinite;

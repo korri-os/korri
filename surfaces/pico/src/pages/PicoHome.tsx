@@ -1,4 +1,5 @@
 import "./PicoHome.css"
+import { useState } from "react"
 import { picoStatsFor } from "../pico-detail-view"
 import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
@@ -10,6 +11,7 @@ import { PicoGameHero } from "../ui/organisms/PicoGameHero"
 import { PicoResumeList } from "../ui/organisms/PicoResumeList"
 import { PicoLaunchStage } from "../ui/organisms/PicoLaunchStage"
 import { PicoLocationPicker } from "../ui/organisms/PicoLocationPicker"
+import { PicoMenu } from "../ui/organisms/PicoMenu"
 import { PicoScreenShell } from "../ui/templates/PicoScreenShell"
 
 /** Hints for a shelf the user can act on. */
@@ -21,6 +23,15 @@ const SHELF_HINTS = [
 /** With nothing to act on, the only honest hint left is the way out. */
 const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 
+const MENU_LABEL = "MENU"
+
+/* The layout's own word, for the VIEW line in the menu. */
+const VIEW_WORDS: Record<PicoHomeMode, string> = {
+  shelf: "SHELF",
+  grid: "GRID",
+  hero: "HERO",
+}
+
 /* The mode is in the header rather than a badge of its own: the user is
  * already reading that line to know where they are. */
 const MODE_LABELS: Record<PicoHomeMode, string> = {
@@ -30,9 +41,27 @@ const MODE_LABELS: Record<PicoHomeMode, string> = {
 }
 
 /**
- * How home lays the library out. Cycled by the treaty's `menu` button.
+ * How home lays the library out. Cycled by the treaty's `menu` button and by
+ * VIEW in the MENU list.
  */
 export type PicoHomeMode = "shelf" | "grid" | "hero"
+
+/**
+ * Home's MENU key and its list: FIND, SETTINGS and VIEW, which the treaty's
+ * `options`, `system` and `menu` buttons also reach. Whether the list is open
+ * belongs to the owner, because Back closes it and Back arrives through the
+ * host.
+ */
+export interface PicoHomeMenu {
+  readonly open: boolean
+  /** Put the cursor on MENU as home appears: Back from a screen MENU opened. */
+  readonly returning: boolean
+  readonly onToggle: () => void
+  readonly onFind: () => void
+  readonly onSettings: () => void
+  readonly onView: () => void
+  readonly onReturned: () => void
+}
 
 /** "9 carts · 2 resumable": what the shelf holds, in the footer's quiet ink. */
 function shelfReadout(games: readonly PicoShelfGame[]): string {
@@ -57,7 +86,10 @@ function shelfReadout(games: readonly PicoShelfGame[]): string {
 export function PicoHome({
   view,
   mode,
+  menu,
   placing,
+  selectedGameId,
+  onSelectGame,
   onOpenGame,
   onChooseLocation,
   onRetry,
@@ -66,8 +98,13 @@ export function PicoHome({
 }: {
   readonly view: PicoScreenView
   readonly mode: PicoHomeMode
+  /** With no menu, home offers no MENU key. */
+  readonly menu?: PicoHomeMenu
   /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
+  /** The shelf's chosen cart, kept by the owner so it survives home leaving. */
+  readonly selectedGameId?: string
+  readonly onSelectGame?: (gameId: string) => void
   /** Selecting a cart opens the game's own screen; launching happens there. */
   readonly onOpenGame: (gameId: string) => void
   readonly onChooseLocation: (locationId: string) => void
@@ -76,12 +113,43 @@ export function PicoHome({
   readonly clockLabel?: string
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
+  /* The name of the focused MENU key or menu line, for the A hint. */
+  const [aim, setAim] = useState<string | undefined>(undefined)
+  /* MENU stands wherever home is the library: on the shelf in every layout,
+   * and while the library is read, empty or unreadable, when Settings is most
+   * needed. Not over a launch, a running game or a question. */
+  const offered = menu !== undefined && !asking && (view._tag === "Shelf"
+    || view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed")
+  const open = offered && menu.open
+  const hints = open
+    ? [
+        ...(aim === undefined || aim === MENU_LABEL ? [] : [{ hintKey: "a" as const, label: aim }]),
+        { hintKey: "b" as const, label: "CLOSE" },
+      ]
+    : offered && aim === MENU_LABEL
+      ? [{ hintKey: "a" as const, label: MENU_LABEL }, { hintKey: "b" as const, label: "BACK" }]
+      : view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS
 
   return (
     <PicoScreenShell
       clockLabel={clockLabel}
-      hints={view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS}
+      hints={hints}
       label={MODE_LABELS[mode]}
+      lead={offered ? (
+        <PicoMenu
+          claimFocus={menu.returning}
+          entries={[
+            { label: "FIND", onPress: menu.onFind },
+            { label: "SETTINGS", onPress: menu.onSettings },
+            { detail: `◀ ${VIEW_WORDS[mode]} ▶`, label: "VIEW", onPress: menu.onView },
+          ]}
+          label={MENU_LABEL}
+          onAim={setAim}
+          onFocusClaimed={menu.onReturned}
+          onToggle={menu.onToggle}
+          open={open}
+        />
+      ) : undefined}
       readout={view._tag === "Shelf" ? shelfReadout(view.games) : undefined}
     >
       {asking && placing !== undefined ? (
@@ -93,7 +161,12 @@ export function PicoHome({
       ) : null}
 
       {view._tag === "Shelf" && !asking && mode === "shelf" ? (
-        <PicoCartShelf games={view.games} onOpen={onOpenGame} />
+        <PicoCartShelf
+          games={view.games}
+          onOpen={onOpenGame}
+          onSelect={onSelectGame}
+          selectedId={selectedGameId}
+        />
       ) : null}
 
       {view._tag === "Shelf" && !asking && mode === "hero" ? (
