@@ -109,9 +109,13 @@ impl Units {
             {
                 return Ok(false);
             }
-            let fragment = self.checked(["show", "--property=FragmentPath", "--value", &unit.name])?;
+            let fragment =
+                self.checked(["show", "--property=FragmentPath", "--value", &unit.name])?;
             if fragment.trim() != self.unit_path(&unit.name).to_string_lossy().as_ref() {
-                return Err(format!("native unit {} is shadowed by a host unit", unit.name));
+                return Err(format!(
+                    "native unit {} is shadowed by a host unit",
+                    unit.name
+                ));
             }
             if !process::run(
                 &self.systemctl,
@@ -393,9 +397,13 @@ impl Units {
             "org.freedesktop.systemd1.Unit",
         )
         .map_err(|e| e.to_string())?;
-        let fragment: String = loaded.get_property("FragmentPath").map_err(|e| e.to_string())?;
+        let fragment: String = loaded
+            .get_property("FragmentPath")
+            .map_err(|e| e.to_string())?;
         if fragment != self.unit_path(unit).to_string_lossy().as_ref() {
-            return Err(format!("native unit {unit} is shadowed by a host unit: {fragment}"));
+            return Err(format!(
+                "native unit {unit} is shadowed by a host unit: {fragment}"
+            ));
         }
         Ok(())
     }

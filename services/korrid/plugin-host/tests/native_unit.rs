@@ -276,9 +276,15 @@ fn quotes_escapes_and_native_credentials_are_validated_not_translated() {
 fn privileged_cleanup_is_named_and_resettable() {
     let source = format!("{UNIT}User=root\nExecStopPost=+/nix/store/00000000000000000000000000000000-daemon/bin/cleanup\n");
     let unit = NativeUnit::parse(&source).unwrap();
-    assert!(unit.privileged_directives.iter().any(|directive| directive.starts_with("ExecStopPost=+")));
+    assert!(unit
+        .privileged_directives
+        .iter()
+        .any(|directive| directive.starts_with("ExecStopPost=+")));
     let reset = NativeUnit::parse(&format!("{source}ExecStopPost=\n")).unwrap();
-    assert!(!reset.privileged_directives.iter().any(|directive| directive.starts_with("ExecStopPost=")));
+    assert!(!reset
+        .privileged_directives
+        .iter()
+        .any(|directive| directive.starts_with("ExecStopPost=")));
 }
 
 #[test]

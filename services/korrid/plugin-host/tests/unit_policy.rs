@@ -200,7 +200,9 @@ fn explicit_closed_device_policy_is_not_widened_by_private_devices_false() {
 
 #[test]
 fn current_kms_streaming_request_widens_device_policy_only_for_that_unit() {
-    let streaming = report(include_str!("fixtures/streaming-host/korri-sunshine.service"));
+    let streaming = report(include_str!(
+        "fixtures/streaming-host/korri-sunshine.service"
+    ));
     let policy = unit::hardening(&streaming);
     assert!(policy.contains("DevicePolicy=auto"));
     assert!(policy.contains("NoNewPrivileges=no"));
