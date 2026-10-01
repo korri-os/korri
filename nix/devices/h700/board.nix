@@ -17,7 +17,6 @@ let
   firmwarePartitionOffsetMiB = 16;
   # Allwinner BROM searches for SPL starting at sector 16 (8 KiB offset).
   ubootStartSector = 16;
-  ucmDirectory = "${pkgs.alsa-ucm-conf}/share/alsa/ucm2";
 in
 {
   imports = [
@@ -124,22 +123,24 @@ in
   # failures and dropped links.
   networking.networkmanager.wifi.powersave = false;
 
-  # PipeWire never runs UCM boot sequences. The H616 codec UCM in
-  # alsa-ucm-conf (conf.d/sun4i-codec/h616-audio-codec.conf) turns "DAC
-  # Playback Switch" on in its FixedBootSequence; without it the DAC never
-  # reaches the line out. ROCKNIX's H700 sleep hooks toggle the same switch.
-  # The card is "H616 Audio Codec" in sun4i-codec.c, so ALSA gives it the id
-  # "Codec" (the last word of the short name).
+  # The codec starts with "DAC Playback Switch" off. With it off, DAPM finds
+  # no route from the DAC, the playback DMA never advances, and a game that
+  # syncs to audio stops after its first frame (seen on the RG35XX Pro,
+  # 2026-10-01). ROCKNIX turns the switch on in a FixedBootSequence that only
+  # its alsa-ucm-conf patch adds (H700/0002_Add-Allwinner-H616-configuration);
+  # the upstream alsa-ucm-conf H616 profile has no boot sequence. ROCKNIX's
+  # H700 sleep hooks toggle the same switch. The card is "H616 Audio Codec"
+  # in sun4i-codec.c, so ALSA gives it the id "Codec" (the last word of the
+  # short name).
   services.udev.extraRules = ''
     SUBSYSTEM=="sound", KERNEL=="controlC*", ATTRS{id}=="Codec", TAG+="systemd", ENV{SYSTEMD_WANTS}+="h700-audio-boot.service"
   '';
   systemd.services.h700-audio-boot = {
-    description = "Anbernic H700 ALSA UCM fixed boot sequence";
-    environment.ALSA_CONFIG_UCM2 = ucmDirectory;
+    description = "Anbernic H700 codec DAC route";
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "${pkgs.alsa-utils}/bin/alsaucm -c hw:Codec set _fboot ''";
+      ExecStart = "${pkgs.alsa-utils}/bin/amixer -c Codec -q cset name='DAC Playback Switch' on,on";
       TimeoutStartSec = "20s";
     };
   };
