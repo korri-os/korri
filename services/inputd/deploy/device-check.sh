@@ -1033,7 +1033,7 @@ remote_candidate_credentials() {
     [[ "$pid" =~ ^[1-9][0-9]*$ && "$primary_gid" =~ ^[0-9]+$ ]] \
       || fail "game unit process credentials are invalid: $unit"
     inaccessible="$(systemctl show "$unit" -p InaccessiblePaths --value 2>/dev/null || true)"
-    [[ " $inaccessible " == *" $sunshine_private "* ]] \
+    [[ " $inaccessible " == *" -$sunshine_private "* ]] \
       || fail "Sunshine private state is visible to game unit: $unit"
     [[ " $inaccessible " == *" $COMPOSITOR_CONTROL_DIRECTORY "* ]] \
       || fail "compositor control is visible to game unit: $unit"
