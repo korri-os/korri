@@ -27,3 +27,17 @@ Turn RG35XXSP from a console bring-up image into a normal Korri product device w
 ## Hardware gate, 2026-09-22
 
 The ROCKNIX-derived Linux 7.2 kernel files are present under `nix/devices/rg35xxsp/kernel/`, but this repository has no observed DRM node, active panel connector, controller mapping, Wi-Fi association, or audio result from an RG35XXSP. No USB serial device appeared at `/dev/ttyACM*` or `/dev/ttyUSB*` on the current build host. Do not guess display or input facts to force product evaluation, or publish an image as a supported product without the physical acceptance pass.
+
+## Progress, 2026-10-01
+
+On the owner's request ("get the information from ROCKNIX, build them out,
+flash new cards"), the RG35XX SP and a new RG35XX Pro import the product
+module from a shared H700 family (`nix/devices/h700`), with image and cache
+workflow entries. This does not pass the hardware gate above. The display,
+input, audio and Wi-Fi values are read from the device trees and driver
+sources, not guessed and not yet observed; each file names its source. The
+first boot of each card must confirm or replace them.
+
+Found while porting: patch 0211 binds the gamepad to `rocknix-singleadc-joypad`,
+but nothing built that driver, so the earlier image had no buttons. The kernel
+now builds it in tree from ROCKNIX's pinned source.
