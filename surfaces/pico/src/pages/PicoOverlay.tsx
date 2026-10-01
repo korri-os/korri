@@ -8,11 +8,16 @@ const HINTS = [
   { hintKey: "b", label: "RESUME" },
 ] as const
 
+/* Named only when a range can be adjusted: left and right otherwise move the
+ * cursor, which needs no hint. */
+const ADJUST_HINT = { hintKey: "lr", label: "ADJUST" } as const
+
 /**
  * The gameplay overlay: what Pico draws over a running game when Korri asks.
  *
  * Decides what a press means. A control that carries a value sends it; a bare
- * command sends its id; a destructive one asks first. The question is Pico's
+ * command sends its id; a destructive one asks first. A range is not pressed:
+ * left and right adjust it, and its settled value is sent. The question is Pico's
  * because the treaty's gameplay controls carry no confirmation copy of their
  * own — so it is built from Korri's label, and says only that.
  */
@@ -23,6 +28,7 @@ export function PicoOverlay({
   onConfirm,
   onCancel,
   onInvoke,
+  onAdjust,
   onRetry,
 }: {
   readonly overlay: PicoOverlayView
@@ -31,15 +37,19 @@ export function PicoOverlay({
   readonly onConfirm: () => void
   readonly onCancel: () => void
   readonly onInvoke: (control: PicoOverlayControlView) => void
+  /** A range settled on a new value. */
+  readonly onAdjust: (control: PicoOverlayControlView, value: number) => void
   readonly onRetry: () => void
 }) {
   const activate = (control: PicoOverlayControlView) => {
     if (control.destructive && control.sends === undefined) onAsk(control)
     else onInvoke(control)
   }
+  const adjustable = [...overlay.controls, ...overlay.groups.flatMap((group) => group.controls)]
+    .some((control) => control.range !== undefined && control.enabled)
   return (
-    <PicoGameOverlay hints={HINTS} label={overlay.title}>
-      <PicoPauseMenu onActivate={activate} onRetry={onRetry} overlay={overlay} />
+    <PicoGameOverlay hints={adjustable ? [ADJUST_HINT, ...HINTS] : HINTS} label={overlay.title}>
+      <PicoPauseMenu onActivate={activate} onAdjust={onAdjust} onRetry={onRetry} overlay={overlay} />
       {asking === undefined ? null : (
         <PicoModal
           confirmLabel={asking.label.toUpperCase()}

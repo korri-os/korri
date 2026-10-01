@@ -37,3 +37,10 @@
 .pico-hint-key[data-key="b"] {
 	color: var(--pico-key-b);
 }
+
+/* Left and right: both arrows on one plain plate, as wide as they need. */
+.pico-hint-key[data-key="lr"] {
+	width: auto;
+	padding: 0 var(--pico-px);
+	background: var(--pico-key-lr);
+}

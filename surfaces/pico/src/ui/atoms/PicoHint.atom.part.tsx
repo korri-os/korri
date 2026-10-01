@@ -10,3 +10,7 @@ export default function PicoHintPart() {
 export function Back() {
   return <PicoHint hintKey="b" label="BACK" />
 }
+
+export function Adjust() {
+  return <PicoHint hintKey="lr" label="ADJUST" />
+}

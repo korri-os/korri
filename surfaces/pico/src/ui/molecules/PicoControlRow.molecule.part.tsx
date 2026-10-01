@@ -7,20 +7,20 @@ export const note = "Korri's label left, state right; disabled is dimmed with it
 
 export default function PicoControlRowPart() {
   const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[3]!
-  return <PicoControlRow control={control} onActivate={() => undefined} />
+  return <PicoControlRow control={control} onActivate={() => undefined} onAdjust={() => undefined} />
 }
 
 export function DisabledWithReason() {
   const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[1]!
-  return <PicoControlRow control={control} onActivate={() => undefined} />
+  return <PicoControlRow control={control} onActivate={() => undefined} onAdjust={() => undefined} />
 }
 
 export function DestructiveCommand() {
   const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).controls[1]!
-  return <PicoControlRow control={control} onActivate={() => undefined} />
+  return <PicoControlRow control={control} onActivate={() => undefined} onAdjust={() => undefined} />
 }
 
 export function RangeValue() {
   const control = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status).groups[0]!.controls[4]!
-  return <PicoControlRow control={control} onActivate={() => undefined} />
+  return <PicoControlRow control={control} onActivate={() => undefined} onAdjust={() => undefined} />
 }

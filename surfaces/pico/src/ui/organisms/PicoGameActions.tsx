@@ -37,6 +37,8 @@ export function PicoGameActions({
             }}
             key={action.id}
             onActivate={() => onRun(action)}
+            /* A game action is a command; it is never a range. */
+            onAdjust={() => undefined}
           />
         ))}
       </ul>

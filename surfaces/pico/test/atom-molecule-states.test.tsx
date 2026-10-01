@@ -168,9 +168,11 @@ test("destructive command has a description but no state arrows", () => {
   expect(view.container.querySelector(".pico-row-detail")).toBeNull()
 })
 
-test("range gameplay control displays the supplied value", () => {
+test("range gameplay control is a slider with the supplied value", () => {
   const view = render(<ControlRow.RangeValue />)
-  expect(view.getByRole("button", { name: "Volume ◀ 80 ▶" })).toBeDefined()
+  const slider = view.getByRole("slider", { name: "Volume" })
+  expect(slider.getAttribute("aria-valuetext")).toBe("80")
+  expect(slider.getAttribute("data-korri-horizontal-control")).toBe("range")
 })
 
 test("unplayed game facts do not invent metadata or a resume badge", () => {

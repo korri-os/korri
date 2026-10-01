@@ -157,6 +157,8 @@
 	/* Face buttons, drawn the way PICO-8 draws its O and X. */
 	--pico-key-a: var(--p8-orange);
 	--pico-key-b: var(--p8-blue);
+	/* Left and right together: a plain plate, since the d-pad has no colour. */
+	--pico-key-lr: var(--p8-silver);
 	--pico-key-ink: var(--p8-navy);
 
 	/* One face: Zep's PICO-8 glyphs, built by scripts/build-font.py. The em is

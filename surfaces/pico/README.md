@@ -151,7 +151,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 52 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 53 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -172,7 +172,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 52 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 53 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where

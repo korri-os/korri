@@ -1,0 +1,100 @@
+/* A menu line that holds a number. It reads its colours from the card it sits
+ * in (--pico-row-*), as PicoRow does, so it matches the rows around it.
+ *
+ * The slider is an inline-size container. Its em is the row face. When the
+ * line is narrow, the label and the control wrap onto two lines, and then the
+ * meter yields: it restates the value, which stays. The arrows never yield. */
+.pico-slider {
+	container: pico-slider / inline-size;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: calc(var(--pico-px) * 2) var(--pico-u);
+	width: 100%;
+	min-width: 0;
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 4);
+	font-size: var(--pico-text);
+	line-height: 1.25;
+	color: var(--pico-row-ink, var(--pico-ink));
+	background: var(--pico-row-plate, var(--pico-plate));
+}
+
+.pico-slider-label {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.pico-slider-control {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: calc(var(--pico-px) * 3);
+	margin-left: auto;
+}
+
+.pico-slider-arrow {
+	cursor: pointer;
+}
+
+/* At min or max the arrow that would do nothing goes quiet. */
+.pico-slider-arrow[data-off] {
+	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+	cursor: default;
+}
+
+.pico-slider-meter {
+	display: inline-flex;
+	gap: var(--pico-px);
+}
+
+.pico-slider-cell {
+	width: calc(var(--pico-px) * 2);
+	height: calc(var(--pico-px) * 5);
+	background: var(--pico-plate);
+}
+
+.pico-slider-cell[data-lit] {
+	background: var(--pico-ok);
+}
+
+.pico-slider-value {
+	min-width: 3ch;
+	text-align: end;
+}
+
+/* The cursor: the whole line lifts onto the light plate, as a row does. */
+.pico-slider:focus-visible {
+	outline: none;
+	color: var(--pico-row-pick-ink, var(--pico-go-ink));
+	background: var(--pico-row-pick, var(--pico-go));
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
+.pico-slider:focus-visible .pico-slider-cell {
+	background: var(--pico-row-quiet, var(--pico-ink-quiet));
+}
+
+.pico-slider:focus-visible .pico-slider-cell[data-lit] {
+	background: var(--pico-row-pick-ink, var(--pico-go-ink));
+}
+
+.pico-slider[aria-disabled="true"] {
+	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+}
+
+.pico-slider[aria-disabled="true"] .pico-slider-arrow {
+	cursor: default;
+}
+
+.pico-slider[aria-disabled="true"] .pico-slider-cell[data-lit] {
+	background: var(--pico-row-quiet, var(--pico-ink-quiet));
+}
+
+/* Narrow: the meter yields before anything the value or the arrows say. */
+@container pico-slider (width < 24em) {
+	.pico-slider-meter {
+		display: none;
+	}
+}

@@ -19,10 +19,13 @@ import { PicoControlRow } from "../molecules/PicoControlRow"
 export function PicoPauseMenu({
   overlay,
   onActivate,
+  onAdjust,
   onRetry,
 }: {
   readonly overlay: PicoOverlayView
   readonly onActivate: (control: PicoOverlayControlView) => void
+  /** A range settled on a new value. */
+  readonly onAdjust: (control: PicoOverlayControlView, value: number) => void
   readonly onRetry: () => void
 }) {
   return (
@@ -36,7 +39,12 @@ export function PicoPauseMenu({
       )}
       <ul className="pico-pause-menu-list">
         {overlay.controls.map((control) => (
-          <PicoControlRow control={control} key={control.id} onActivate={() => onActivate(control)} />
+          <PicoControlRow
+            control={control}
+            key={control.id}
+            onActivate={() => onActivate(control)}
+            onAdjust={(value) => onAdjust(control, value)}
+          />
         ))}
       </ul>
       {overlay.groups.map((group) => (
@@ -44,7 +52,12 @@ export function PicoPauseMenu({
           <h3 className="pico-pause-menu-group-label">{group.label}</h3>
           <ul className="pico-pause-menu-list">
             {group.controls.map((control) => (
-              <PicoControlRow control={control} key={control.id} onActivate={() => onActivate(control)} />
+              <PicoControlRow
+                control={control}
+                key={control.id}
+                onActivate={() => onActivate(control)}
+                onAdjust={(value) => onAdjust(control, value)}
+              />
             ))}
           </ul>
         </section>

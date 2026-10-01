@@ -113,6 +113,7 @@ function PicoOverlaySurface({
         if (asking !== undefined) invoke(asking)
         setAsking(undefined)
       }}
+      onAdjust={(control, value) => host.invokeGameplayControl(control.id, { kind: "range", value })}
       onInvoke={invoke}
       onRetry={() => host.retry()}
       overlay={picoOverlayViewFrom(presentation, model.status)}

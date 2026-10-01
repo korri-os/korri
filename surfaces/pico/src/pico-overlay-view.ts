@@ -8,12 +8,14 @@ import type {
 /**
  * One gameplay control as the overlay draws it, and what pressing it sends.
  *
- * Every interaction kind collapses to one press from a d-pad: a toggle flips,
- * a choice advances and wraps, a range steps up and stops at its ceiling. A
- * range does not wrap: on the press after full volume, wrapping would mute the
- * game, and a control whose next press silences everything is the wrong kind
- * of surprise mid-play. The value to send is computed here, once, so the button
- * that draws the control never knows what a range is.
+ * A toggle and a choice collapse to one press from a d-pad: a toggle flips, a
+ * choice advances and wraps. The value to send is computed here, once, so the
+ * button that draws the control never knows what a toggle is.
+ *
+ * A range is not pressed. It is one focus stop that left lowers and right
+ * raises by Korri's step, so it carries its bounds instead of a value to send.
+ * It stops at min and max and never wraps: on the press after full volume,
+ * wrapping would mute the game, which is the wrong kind of surprise mid-play.
  */
 export interface PicoOverlayControlView {
   readonly id: string
@@ -24,8 +26,38 @@ export interface PicoOverlayControlView {
   readonly destructive: boolean
   /** Current state as text, when the control has one: "ON", "CRT", "80". */
   readonly stateLabel?: string
-  /** What a press sends. Absent for a bare command. */
+  /** What a press sends. Absent for a bare command and for a range. */
   readonly sends?: SurfaceGameplayControlValue
+  /** Present only for a range: Korri's value and bounds, adjusted by left and right. */
+  readonly range?: PicoOverlayRange
+}
+
+export interface PicoOverlayRange {
+  readonly value: number
+  readonly min: number
+  readonly max: number
+  readonly step: number
+}
+
+/** Decimal places Korri's step and min imply, so 0.1 steps print "0.3", never "0.30000000000000004". */
+function placesOf(range: Pick<PicoOverlayRange, "min" | "step">): number {
+  const places = (n: number) => {
+    const text = String(n)
+    const dot = text.indexOf(".")
+    return dot === -1 ? 0 : text.length - dot - 1
+  }
+  return Math.max(places(range.step), places(range.min))
+}
+
+/** A range value as the screen states it, to the step's precision. */
+export function picoRangeLabel(value: number, range: Pick<PicoOverlayRange, "min" | "step">): string {
+  return value.toFixed(placesOf(range))
+}
+
+/** One of Korri's steps down (-1) or up (1), clamped to min and max. */
+export function picoRangeStep(range: PicoOverlayRange, way: -1 | 1): number {
+  const next = Number((range.value + way * range.step).toFixed(placesOf(range)))
+  return Math.min(range.max, Math.max(range.min, next))
 }
 
 export interface PicoOverlayGroupView {
@@ -88,13 +120,11 @@ function controlView(control: SurfaceGameplayControl): PicoOverlayControlView {
         sends: { kind: "choice", value: next?.value ?? i.value },
       }
     }
-    case "range": {
-      const stepped = i.value + i.step
+    case "range":
       return {
         ...base,
-        stateLabel: String(i.value),
-        sends: { kind: "range", value: Math.min(stepped, i.max) },
+        stateLabel: picoRangeLabel(i.value, i),
+        range: { value: i.value, min: i.min, max: i.max, step: i.step },
       }
-    }
   }
 }
