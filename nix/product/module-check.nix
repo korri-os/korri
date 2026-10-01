@@ -448,6 +448,47 @@ let
     || lib.hasSuffix ":22" address
     || lib.hasSuffix ":2222" address;
   rg353m = korri.nixosConfigurations.rg353m.config;
+  # Every After= path from `unit` through NixOS-defined units that reaches one
+  # of `targets`. Units a package ships are opaque here, so a package unit that
+  # waits for the network must itself be one of the targets.
+  unitAfter =
+    config: unit:
+    let
+      parts = builtins.match "(.+)\\.(service|target|socket)" unit;
+      kind = builtins.getAttr (builtins.elemAt parts 1) {
+        service = "services";
+        target = "targets";
+        socket = "sockets";
+      };
+    in
+    if parts == null then
+      [ ]
+    else
+      (config.systemd.${kind}.${builtins.elemAt parts 0} or { }).after or [ ];
+  afterPaths =
+    config: targets: path: unit:
+    if builtins.elem unit targets then
+      [ (lib.concatStringsSep " -> " (path ++ [ unit ])) ]
+    else if builtins.elem unit path then
+      [ ]
+    else
+      lib.concatMap (afterPaths config targets (path ++ [ unit ])) (unitAfter config unit);
+  # The screen and the plugin host start without the network (RG353M,
+  # 2026-10-01: network.target waited for the USB controller until 24 s).
+  # plymouth-quit.service is a target because its package orders it after
+  # systemd-user-sessions.service, which orders after network.target.
+  networkWaits =
+    config:
+    lib.concatMap (afterPaths config [
+      "network.target"
+      "network-online.target"
+      "systemd-user-sessions.service"
+      "plymouth-quit.service"
+    ] [ ]) [
+      "korri-compositor.service"
+      "korri-chromium-kiosk.service"
+      "korri-plugin-host.service"
+    ];
   rg353mFirewallTcpPorts =
     rg353m.networking.firewall.allowedTCPPorts
     ++ lib.concatMap (interface: interface.allowedTCPPorts or [ ]) (
@@ -817,9 +858,14 @@ assert productPluginRestore.wantedBy == [ "multi-user.target" ];
 assert builtins.elem "korrid.service" productPluginRestore.before;
 assert lib.all (unit: builtins.elem unit productPluginRestore.after) [
   "systemd-tmpfiles-setup.service"
-  "network.target"
   "firewall.service"
 ];
+assert lib.assertMsg (
+  networkWaits productConfig == [ ]
+) "product units wait for the network: ${builtins.toJSON (networkWaits productConfig)}";
+assert lib.assertMsg (
+  networkWaits rg353m == [ ]
+) "rg353m units wait for the network: ${builtins.toJSON (networkWaits rg353m)}";
 assert
   productPluginRestore.serviceConfig.ExecStart
   == "${productPluginHost.package}/bin/korri-plugin restore-all";

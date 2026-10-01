@@ -4,11 +4,17 @@
 # the KMS device until it lets go, and korri-compositor already restarts on
 # EAGAIN when it loses that race. So the sequence is fixed here:
 #
-#   korri-boot-splash-handoff   tells the theme to assemble the wordmark and
-#                               waits for the animation to finish
-#   plymouth-quit               quits with --retain-splash, leaving the last
-#                               frame on the framebuffer and releasing DRM
+#   korri-boot-splash-handoff   tells the theme to assemble the wordmark,
+#                               waits for the animation to finish, then quits
+#                               with --retain-splash, leaving the last frame
+#                               on the framebuffer and releasing DRM
 #   korri-compositor            starts only after that
+#
+# The handoff quits Plymouth itself because the package's plymouth-quit is
+# ordered after systemd-user-sessions, and so after network.target. On the
+# RG353M that held the screen until 24 s (2026-10-01). A drop-in cannot remove
+# an After= entry, so plymouth-quit keeps that ordering and finds Plymouth
+# already gone.
 #
 # Nothing in this path may fail the boot: the handoff ignores errors, because
 # a splash that blocks startup is worse than no splash.
@@ -27,9 +33,10 @@ let
       plymouth
       pkgs.coreutils
     ];
+    # The message and the wait only shape the last frame; quit even if they fail.
     text = ''
-      plymouth display-message --text=korri:wordmark
-      sleep ${toString cfg.animationSeconds}
+      plymouth display-message --text=korri:wordmark && sleep ${toString cfg.animationSeconds}
+      plymouth quit --retain-splash
     '';
   };
 in
@@ -96,8 +103,11 @@ in
     systemd.services = lib.mkMerge [
       {
         korri-boot-splash-handoff = {
-          description = "Assemble the Korri wordmark before Plymouth quits";
+          description = "Assemble the Korri wordmark and quit Plymouth";
           wantedBy = [ "multi-user.target" ];
+          # plymouth-start has DefaultDependencies=no, so sysinit.target does
+          # not order after it. The package's plymouth-quit orders after it too.
+          after = [ "plymouth-start.service" ];
           before = [ "plymouth-quit.service" ];
           serviceConfig = {
             Type = "oneshot";
@@ -109,6 +119,7 @@ in
 
         # Upstream quits without --retain-splash, which blanks the screen the
         # moment Plymouth exits and leaves the panel dark until Chromium paints.
+        # The handoff normally quits first. This keeps the frame when it fails.
         #
         # plymouth-quit.service comes from the plymouth package, so this lands
         # in a drop-in, and ExecStart in a drop-in appends. The empty first
@@ -125,7 +136,7 @@ in
       # defines korri-compositor is present: ordering a unit that does not
       # exist would conjure an empty one.
       (lib.mkIf (config.services ? korriLinuxHost && config.services.korriLinuxHost.enable) {
-        korri-compositor.after = [ "plymouth-quit.service" ];
+        korri-compositor.after = [ "korri-boot-splash-handoff.service" ];
       })
     ];
   };

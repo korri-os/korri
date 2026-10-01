@@ -211,7 +211,12 @@ in
       };
       systemd.services.nginx = {
         requires = [ "korri-portal-initialize.service" ];
-        after = [ "korri-portal-initialize.service" ];
+        # Replaces the nginx module's After=network.target. The kiosk orders
+        # after nginx, and on the RG353M network.target waited for the USB
+        # controller until 24 s (2026-10-01). network.target never promised
+        # configured addresses, and the portal listens on loopback, which
+        # systemd brings up itself.
+        after = lib.mkForce [ "korri-portal-initialize.service" ];
       };
     })
     (lib.mkIf kiosk.enable {

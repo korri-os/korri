@@ -94,9 +94,12 @@ in
           restartTriggers = [ config.environment.etc."korri-plugin-host/publishers.json".source ];
           # Nix must not fall back to /root/.cache under ProtectSystem=strict.
           environment.XDG_CACHE_HOME = "/run/korri-plugin-host";
+          # Not after network.target. Boot restore checks signatures already in
+          # the local store, and network.target never meant online, so the
+          # cache fallback for a missing signature gained nothing from it. On
+          # the RG353M it waited for the USB controller until 24 s (2026-10-01).
           after = [
             "systemd-tmpfiles-setup.service"
-            "network.target"
             "firewall.service"
           ];
           serviceConfig = {
