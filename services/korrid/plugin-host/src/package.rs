@@ -285,7 +285,7 @@ fn public_key_bytes(key: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NarInfo {
     nar_hash: String,
@@ -317,27 +317,41 @@ fn path_info(nix: &Path, package: &str, cache: Option<&str>) -> Result<NarInfo, 
         .ok_or_else(|| "Nix metadata names another output".into())
 }
 
-fn fingerprint(nix: &Path, package: &str, info: &NarInfo) -> Result<String, String> {
+/// Nix's base-32 form of an SRI `sha256-` hash, as `nix hash convert --to
+/// nix32` prints it. Computed here because each `nix` call costs about 0.3 s
+/// on an RK3566.
+pub fn nix32_sha256(sri: &str) -> Result<String, String> {
+    const ALPHABET: &[u8; 32] = b"0123456789abcdfghijklmnpqrsvwxyz";
+    let encoded = sri
+        .strip_prefix("sha256-")
+        .ok_or("unsupported NAR fingerprint")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| "invalid NAR hash encoding")?;
+    if bytes.len() != 32 {
+        return Err("invalid NAR hash length".into());
+    }
+    let length = (bytes.len() * 8 - 1) / 5 + 1;
+    let mut out = String::with_capacity(length);
+    for n in (0..length).rev() {
+        let bit = n * 5;
+        let (i, j) = (bit / 8, bit % 8);
+        let low = u16::from(bytes[i]) >> j;
+        let high = bytes
+            .get(i + 1)
+            .map_or(0, |byte| u16::from(*byte) << (8 - j));
+        out.push(char::from(ALPHABET[usize::from((low | high) & 0x1f)]));
+    }
+    Ok(out)
+}
+
+fn fingerprint(package: &str, info: &NarInfo) -> Result<String, String> {
     // This is Nix's ValidPathInfo::fingerprint(), not a signature-name check.
     // Nix normalizes its SRI hash to the nix32 form used in that fingerprint.
     if !info.nar_hash.starts_with("sha256-") || info.nar_size == 0 {
         return Err("unsupported NAR fingerprint".into());
     }
-    let hash = process::checked(
-        nix,
-        [
-            "--extra-experimental-features",
-            "nix-command",
-            "hash",
-            "convert",
-            "--hash-algo",
-            "sha256",
-            "--to",
-            "nix32",
-            &info.nar_hash,
-        ],
-        Duration::from_secs(10),
-    )?;
+    let hash = nix32_sha256(&info.nar_hash)?;
     let mut references = info.references.clone();
     for reference in &references {
         validate_store_path(Path::new(reference))?;
@@ -382,8 +396,87 @@ pub enum StoreContents {
     TrustRegistered,
 }
 
+/// Store metadata for several packages and their closures, read with one
+/// `nix path-info --json --recursive` call. Boot restore uses it so that 20
+/// plugins cost one Nix call instead of three each.
+pub struct StoreSnapshot {
+    infos: BTreeMap<String, NarInfo>,
+}
+
+impl StoreSnapshot {
+    pub fn query(nix: &Path, packages: &[&Path]) -> Result<Self, String> {
+        let mut args = vec![
+            "--extra-experimental-features",
+            "nix-command",
+            "path-info",
+            "--json",
+            "--recursive",
+        ];
+        for package in packages {
+            validate_store_path(package)?;
+            args.push(package.to_str().ok_or("invalid package path")?);
+        }
+        let json = process::checked(nix, args, Duration::from_secs(60))?;
+        let infos: BTreeMap<String, NarInfo> = serde_json::from_str(&json)
+            .map_err(|error| format!("invalid Nix path metadata: {error}"))?;
+        for path in infos.keys() {
+            validate_store_path(Path::new(path))?;
+        }
+        Ok(Self { infos })
+    }
+
+    pub fn contains(&self, package: &Path) -> bool {
+        package
+            .to_str()
+            .is_some_and(|package| self.infos.contains_key(package))
+    }
+
+    fn info(&self, package: &Path) -> Result<&NarInfo, String> {
+        package
+            .to_str()
+            .and_then(|package| self.infos.get(package))
+            .ok_or_else(|| format!("no store metadata for {}", package.display()))
+    }
+
+    /// The same set `nix path-info --recursive <package>` prints.
+    pub fn closure(&self, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
+        let mut closure = BTreeSet::new();
+        let mut queue = vec![package.to_path_buf()];
+        while let Some(path) = queue.pop() {
+            if !closure.insert(path.clone()) {
+                continue;
+            }
+            for reference in &self.info(&path)?.references {
+                validate_store_path(Path::new(reference))?;
+                queue.push(PathBuf::from(reference));
+            }
+        }
+        Ok(closure)
+    }
+
+    pub fn fingerprint(&self, package: &Path) -> Result<String, String> {
+        fingerprint(
+            package.to_str().ok_or("invalid package path")?,
+            self.info(package)?,
+        )
+    }
+}
+
 pub fn verify_publisher(
     nix: &Path,
+    package: &Path,
+    source: Option<&str>,
+    bindings: &PublisherBindings,
+    contents: StoreContents,
+) -> Result<String, String> {
+    verify_publisher_in(nix, None, package, source, bindings, contents)
+}
+
+/// `verify_publisher` that reads the package's local metadata from a
+/// snapshot when one covers it. The cache fallback still queries Nix.
+pub fn verify_publisher_in(
+    nix: &Path,
+    snapshot: Option<&StoreSnapshot>,
     package: &Path,
     source: Option<&str>,
     bindings: &PublisherBindings,
@@ -417,15 +510,18 @@ pub fn verify_publisher(
         ));
     }
     let key = public_key_bytes(&binding.public_key)?;
-    let local = path_info(nix, package_text, None)?;
-    let local_fingerprint = fingerprint(nix, package_text, &local)?;
+    let local = match snapshot.filter(|snapshot| snapshot.contains(package)) {
+        Some(snapshot) => snapshot.info(package)?.clone(),
+        None => path_info(nix, package_text, None)?,
+    };
+    let local_fingerprint = fingerprint(package_text, &local)?;
     if signed_by(&local, &local_fingerprint, &key) {
         return Ok(namespace);
     }
     // Store images may omit locally registered signatures. Fetch only metadata
     // from the bound cache, and require it to sign the actual local NAR.
     let remote = path_info(nix, package_text, Some(&binding.cache_url))?;
-    if fingerprint(nix, package_text, &remote)? != local_fingerprint
+    if fingerprint(package_text, &remote)? != local_fingerprint
         || !signed_by(&remote, &local_fingerprint, &key)
     {
         return Err(format!(
@@ -485,6 +581,16 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
 
 pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report, String> {
     let closure = closure_of(nix, package)?;
+    build_report(package, provenance, Some(&closure))
+}
+
+/// `load` with the closure taken from a snapshot instead of a Nix call.
+pub fn load_from(
+    snapshot: &StoreSnapshot,
+    package: &Path,
+    provenance: Provenance,
+) -> Result<Report, String> {
+    let closure = snapshot.closure(package)?;
     build_report(package, provenance, Some(&closure))
 }
 

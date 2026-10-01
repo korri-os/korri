@@ -291,6 +291,16 @@ impl Host {
         provenance: &Provenance,
         contents: package::StoreContents,
     ) -> Result<(), String> {
+        self.verify_publisher_in(None, selected, provenance, contents)
+    }
+
+    fn verify_publisher_in(
+        &self,
+        snapshot: Option<&package::StoreSnapshot>,
+        selected: &Path,
+        provenance: &Provenance,
+        contents: package::StoreContents,
+    ) -> Result<(), String> {
         #[cfg(test)]
         if self.test_runtime.is_some() {
             let _ = (selected, provenance, contents);
@@ -300,7 +310,14 @@ impl Host {
             Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
             Provenance::Repository { .. } => None,
         };
-        package::verify_publisher(&self.nix, selected, cache, &self.publishers, contents)?;
+        package::verify_publisher_in(
+            &self.nix,
+            snapshot,
+            selected,
+            cache,
+            &self.publishers,
+            contents,
+        )?;
         Ok(())
     }
 
@@ -646,6 +663,7 @@ impl Host {
         }
         self.release_download()?;
         let mut enabled = Vec::new();
+        let snapshot = self.boot_snapshot();
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
@@ -656,7 +674,7 @@ impl Host {
             {
                 storage::directory(&entry.path()).map(|()| None)
             } else {
-                self.restore_directory(&entry.path())
+                self.restore_directory(&entry.path(), snapshot.as_ref())
             };
             match result {
                 Ok(Some(checked)) => enabled.push(checked),
@@ -681,9 +699,41 @@ impl Host {
         self.write_registry(reports)
     }
 
+    /// Store metadata for every enabled plugin, read with one Nix call. Only a
+    /// speed-up: each check still runs, and a plugin the snapshot does not
+    /// cover is queried on its own. Any failure here means no snapshot, never
+    /// a refused plugin; the per-plugin path reports the real error.
+    fn boot_snapshot(&self) -> Option<package::StoreSnapshot> {
+        #[cfg(test)]
+        if self.test_runtime.is_some() {
+            return None;
+        }
+        let mut packages = Vec::new();
+        for entry in fs::read_dir(self.state.root()).ok()?.flatten() {
+            if let Ok(Some(receipt)) =
+                storage::read_json::<Receipt>(&entry.path().join("selection.json"))
+            {
+                if matches!(receipt.desired, Desired::Enabled)
+                    && package::validate_store_path(&receipt.package).is_ok()
+                {
+                    packages.push(receipt.package);
+                }
+            }
+        }
+        if packages.is_empty() {
+            return None;
+        }
+        let packages: Vec<&Path> = packages.iter().map(PathBuf::as_path).collect();
+        package::StoreSnapshot::query(&self.nix, &packages).ok()
+    }
+
     /// Restore one state directory. For an enabled plugin, return its checked
     /// report: boot publishes it without loading the plugin a second time.
-    fn restore_directory(&self, path: &Path) -> Result<Option<(Receipt, Report)>, String> {
+    fn restore_directory(
+        &self,
+        path: &Path,
+        snapshot: Option<&package::StoreSnapshot>,
+    ) -> Result<Option<(Receipt, Report)>, String> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
             if self.directory(&receipt.id) != path {
@@ -691,8 +741,9 @@ impl Host {
             }
             self.prepare(&receipt.id)?;
             if matches!(receipt.desired, Desired::Enabled) {
-                let report = self.approved(&receipt)?;
-                let authorized = self.verify_publisher(
+                let report = self.approved_in(&receipt, snapshot)?;
+                let authorized = self.verify_publisher_in(
+                    snapshot,
                     &receipt.package,
                     &receipt.provenance,
                     package::StoreContents::TrustRegistered,
@@ -853,7 +904,21 @@ impl Host {
     }
 
     fn approved(&self, receipt: &Receipt) -> Result<Report, String> {
+        self.approved_in(receipt, None)
+    }
+
+    fn approved_in(
+        &self,
+        receipt: &Receipt,
+        snapshot: Option<&package::StoreSnapshot>,
+    ) -> Result<Report, String> {
         validate_id(&receipt.id)?;
+        let load = || match snapshot.filter(|snapshot| snapshot.contains(&receipt.package)) {
+            Some(snapshot) => {
+                package::load_from(snapshot, &receipt.package, receipt.provenance.clone())
+            }
+            None => package::load(&self.nix, &receipt.package, receipt.provenance.clone()),
+        };
         #[cfg(test)]
         let report = if let Some(runtime) = &self.test_runtime {
             runtime
@@ -867,10 +932,10 @@ impl Host {
                 .cloned()
                 .ok_or_else(|| format!("missing test report for {}", receipt.package.display()))?
         } else {
-            package::load(&self.nix, &receipt.package, receipt.provenance.clone())?
+            load()?
         };
         #[cfg(not(test))]
-        let report = package::load(&self.nix, &receipt.package, receipt.provenance.clone())?;
+        let report = load()?;
         if report.id != receipt.id || report.approval != receipt.approval {
             return Err("installed package or host policy no longer matches its approval".into());
         }
