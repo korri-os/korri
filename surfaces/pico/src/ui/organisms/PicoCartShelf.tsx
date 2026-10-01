@@ -76,7 +76,13 @@ export function PicoCartShelf({
               onActivate={() => onOpen(game.id)}
               onFocus={() => setFocusedIndex(index)}
               placement={index === focusedIndex ? "hero" : "side"}
-              resumable={game.resumable ?? false}
+              progress={
+                game.resumable === true
+                  ? "resume"
+                  : picoStatsFor(game).length === 0
+                    ? "new"
+                    : "played"
+              }
               subtitle={game.subtitle}
               title={game.title}
             />

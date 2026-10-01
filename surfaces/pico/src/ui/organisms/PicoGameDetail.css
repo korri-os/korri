@@ -1,6 +1,11 @@
+/* Room under the header's palette bar. It is spacing, so it scales with the
+ * body's height (the shell body is a size container) and closes to a sliver
+ * on a short screen before the stage has to give up anything it shows. */
 .pico-game-detail {
+	box-sizing: border-box;
 	height: 100%;
 	min-height: 0;
+	padding-top: clamp(0px, 3cqh, calc(var(--pico-u) * 3));
 }
 
 .pico-game-detail-actions {

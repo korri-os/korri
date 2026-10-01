@@ -43,7 +43,15 @@ export function PicoGameStage({
     <section aria-label={title} className="pico-game-stage">
       <div className="pico-game-stage-layout">
         <div className="pico-game-stage-art">
-          <PicoCart artUrl={artUrl} id={id} key={id} placement="still" title={title} />
+          <PicoCart
+            artUrl={artUrl}
+            id={id}
+            key={id}
+            placement="still"
+            resumable={resumable}
+            subtitle={subtitle}
+            title={title}
+          />
         </div>
         <div className="pico-game-stage-facts">
           <PicoGameFacts

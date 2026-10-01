@@ -96,14 +96,128 @@
 	animation: pico-cycle 600ms steps(1, end) infinite;
 }
 
-/* A cart that continues where the player left off. */
+/* A cart that continues where the player left off: a green tab hanging off
+ * its top-right corner, read at a glance along the shelf. */
 .pico-cart-resume {
 	position: absolute;
-	right: var(--pico-px);
-	bottom: 0;
+	top: calc(var(--pico-px) * -3);
+	right: calc(var(--pico-px) * -3);
+	z-index: 1;
+	padding: calc(var(--pico-px) * 1) calc(var(--pico-px) * 1) 0;
 	font-size: var(--pico-text-sm);
 	line-height: 1;
 	color: var(--pico-ink-dark);
+	background: var(--pico-ok);
+	box-shadow: var(--pico-px) var(--pico-px) 0 var(--pico-ink-dark);
+}
+
+.pico-cart[data-placement="still"] .pico-cart-resume {
+	top: calc(var(--pico-px) * -4);
+	right: calc(var(--pico-px) * -4);
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 2) var(--pico-px);
+	font-size: var(--pico-text);
+}
+
+/* A cart nobody has played yet: still in its wrap. A plate-coloured band
+ * across the window's foot with NEW on it. */
+.pico-cart-new {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: calc(var(--pico-cart-foot) - var(--pico-px) * 1);
+	z-index: 1;
+	padding-top: var(--pico-px);
+	font-size: var(--pico-text-sm);
+	line-height: 1;
+	text-align: center;
+	color: var(--pico-go);
+	background: var(--pico-plate);
+}
+
+/*
+ * Silhouettes by system. Each is drawn in the two pseudo-elements the shell
+ * already has — the label slot on top and the ridges at the foot — so every
+ * shape is still whole virtual pixels of background cut out of the plastic.
+ */
+
+/* PICO-8: the classic cart, with a second, shorter slot. */
+.pico-cart[data-system="pico8"]::before {
+	left: 20%;
+	width: 60%;
+}
+
+/* Game Boy: the top-right corner is clipped off. */
+.pico-cart[data-system="gb"]::before,
+.pico-cart[data-system="gbc"]::before {
+	left: auto;
+	right: 0;
+	width: 22%;
+	height: calc(var(--pico-cart-notch) * 2);
+}
+
+/* GBC: the same body with a stripe across the top. */
+.pico-cart[data-system="gbc"] {
+	border-top: var(--pico-px) solid var(--pico-ink-dark);
+}
+
+/* GBA: short and wide, both upper corners clipped. */
+.pico-cart[data-system="gba"]::before {
+	left: 0;
+	width: 100%;
+	height: calc(var(--pico-cart-notch) * 2);
+	background: linear-gradient(
+		90deg,
+		var(--pico-bg) 0 calc(var(--pico-px) * 3),
+		transparent calc(var(--pico-px) * 3) calc(100% - var(--pico-px) * 3),
+		var(--pico-bg) calc(100% - var(--pico-px) * 3)
+	);
+}
+
+.pico-cart[data-system="gba"] {
+	--pico-cart-foot: calc(var(--pico-px) * 4);
+}
+
+.pico-cart[data-system="gba"]::after {
+	display: none;
+}
+
+/* NES: tall grey slab, ridges across the top instead of a slot. */
+.pico-cart[data-system="nes"] {
+	--pico-cart-top: calc(var(--pico-px) * 8);
+}
+
+.pico-cart[data-system="nes"]::before {
+	top: calc(var(--pico-px) * 2);
+	left: var(--pico-cart-pad);
+	width: auto;
+	right: var(--pico-cart-pad);
+	height: calc(var(--pico-px) * 3);
+	background: repeating-linear-gradient(
+		0deg,
+		var(--pico-ink-dark) 0 var(--pico-px),
+		transparent var(--pico-px) calc(var(--pico-px) * 2)
+	);
+}
+
+/* SNES: two slots at the shoulders and a wider foot. */
+.pico-cart[data-system="snes"]::before {
+	left: 12%;
+	width: 76%;
+	background: linear-gradient(
+		90deg,
+		var(--pico-bg) 0 25%,
+		transparent 25% 75%,
+		var(--pico-bg) 75%
+	);
+}
+
+/* Mega Drive: a dark top band the label hangs from. */
+.pico-cart[data-system="md"] {
+	border-top: calc(var(--pico-px) * 3) solid var(--pico-ink-dark);
+}
+
+.pico-cart[data-system="md"]::before {
+	display: none;
 }
 
 .pico-cart[data-shell="1"] { --pico-shell: var(--pico-shell-1); }

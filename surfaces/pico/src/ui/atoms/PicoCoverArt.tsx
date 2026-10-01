@@ -1,6 +1,6 @@
 import "./PicoCoverArt.css"
 import { picoInitials } from "../../pico-initials"
-import { picoLabelFor } from "../../pico-label"
+import { picoCartLookFor } from "../../pico-label"
 import { usePicoQuantizedArt } from "../../use-pico-quantized-art"
 
 /** Palette pixels per side of a square cover; other shapes keep the area. Coarse
@@ -28,16 +28,19 @@ const CELLS = 64
 export function PicoCoverArt({
   id,
   title,
+  subtitle,
   artUrl,
 }: {
   readonly id: string
   readonly title: string
+  /** Names the system, so the sticker never matches that system's plastic. */
+  readonly subtitle?: string
   readonly artUrl?: string
 }) {
   const { ref, ratio } = usePicoQuantizedArt({ src: artUrl, cells: CELLS })
 
   if (artUrl === undefined || artUrl === "") {
-    const label = picoLabelFor(id)
+    const label = picoCartLookFor(id, subtitle)
     return (
       <span
         aria-hidden

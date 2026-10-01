@@ -18,8 +18,11 @@
 	min-height: 0;
 }
 
-/* A line of carts on a floor. Carts stand on the floor's top edge; the rack
- * leaves room above for the chosen cart to lift. */
+/* A line of carts above a floor. The rack leaves room above for the chosen
+ * cart to lift, and keeps the stage's own spacing: the floor stops two units
+ * from each side, like the stage and the header's palette bar, and one unit
+ * of ground shows between the carts' feet and the floor, the same as the
+ * stage's padding. */
 .pico-cart-shelf-rack {
 	--pico-shelf-art-w: calc(var(--pico-px) * 28);
 	--pico-shelf-art-h: calc(var(--pico-px) * 56);
@@ -27,8 +30,8 @@
 	display: flex;
 	align-items: flex-end;
 	gap: calc(var(--pico-px) * 4);
-	margin: 0;
-	padding: calc(var(--pico-px) * 8) calc(var(--pico-u) * 2) 0;
+	margin: 0 calc(var(--pico-u) * 2);
+	padding: calc(var(--pico-px) * 8) 0 var(--pico-u);
 	border-bottom: calc(var(--pico-px) * 3) solid var(--pico-floor);
 	overflow-x: auto;
 	overflow-y: hidden;
