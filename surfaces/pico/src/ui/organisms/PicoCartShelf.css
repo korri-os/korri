@@ -1,5 +1,6 @@
 /**
- * The shelf's plan. Conditions are in em of the small face (6 virtual pixels).
+ * The shelf's plan. Conditions are heights in em of the small face, a line of
+ * small text in whichever face is shown.
  *
  * The rack is the control and the stage is a readout, so the rack takes its
  * height first and the stage gets what is left. On a short body the shelf

@@ -1,14 +1,15 @@
 /**
- * The editor's plan. The root is the size container; em is its small face,
- * as in Find. Four parts: the field, the keys, a heading (Korri's group and
- * description), and the actions.
+ * The editor's plan. The root is the size container; as in Find, heights are
+ * in em (lines of its small face) and widths in ch (the face's glyphs). Four
+ * parts: the field, the keys, a heading (Korri's group and description), and
+ * the actions.
  *
- *   wide    (w >= 90em)          field over keys on the left; heading over
+ *   wide    (w >= 135ch)          field over keys on the left; heading over
  *                                actions on the right, level with them.
- *   narrow  (w < 90em)           field, keys, actions, then the description.
+ *   narrow  (w < 135ch)           field, keys, actions, then the description.
  *                                The page scrolls when it must; the field is
  *                                pinned so no key is ever pressed blind.
- *   short   (w < 90em, h < 26em) field and count on one line, then the
+ *   short   (w < 135ch, h < 26em) field and count on one line, then the
  *                                actions, then the keys, which scroll on
  *                                their own and show a cut row. Save never
  *                                leaves the screen. NOW yields; keys take the
@@ -158,7 +159,7 @@
 }
 
 /* ---- Wide: two columns, the right one level with the left ---- */
-@container pico-text-editor (width >= 90em) {
+@container pico-text-editor (width >= 135ch) {
 	.pico-text-editor-layout {
 		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		grid-template-areas: "field heading" "keys actions";
@@ -183,14 +184,14 @@
 }
 
 /* Narrow and not tall: flat keys, so the grid costs less height. */
-@container pico-text-editor (width < 90em) and (height < 50em) {
+@container pico-text-editor (width < 135ch) and (height < 50em) {
 	.pico-text-editor-keys {
 		--pico-key-ratio: 2.2;
 	}
 }
 
 /* ---- Short: Save stays on screen; only the keys scroll ---- */
-@container pico-text-editor (width < 90em) and (height < 26em) {
+@container pico-text-editor (width < 135ch) and (height < 26em) {
 	.pico-text-editor-layout {
 		grid-template-areas: "field" "actions" "keys";
 		grid-template-rows: auto auto minmax(0, 1fr);

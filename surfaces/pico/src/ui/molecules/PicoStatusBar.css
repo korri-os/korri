@@ -1,5 +1,6 @@
 /* An inline-size container, so the breadcrumb can decide from its own width.
- * Its font-size is the small face: a query's em here is 6 virtual pixels. */
+ * Its font-size is the small face, so a width in ch is the face's own glyph
+ * advance and the breadcrumb hides when its text would not fit. */
 .pico-status-bar {
 	container: pico-status / inline-size;
 	font-size: var(--pico-text-sm);
@@ -36,7 +37,7 @@
 
 /* Narrow: the way back yields to where you are. Back still leads there; only
  * its word goes. */
-@container pico-status (width < 50em) {
+@container pico-status (width < 75ch) {
 	.pico-status-bar-place {
 		display: none;
 	}

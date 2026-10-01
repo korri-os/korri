@@ -294,3 +294,24 @@ describe("sixteen colours and nothing between them", () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe("layouts answer the face, axis by axis", () => {
+  /**
+   * A container query's em is its container's small face: the face's rows
+   * of glyph pixels. Rows are line height, so a height condition in em
+   * scales with the lines it has to fit. Width is not rows: Tiny5 has seven
+   * rows and four-pixel glyphs, so a width condition in em asked for 17%
+   * more room than its text needs, and narrow layouts arrived early. A width
+   * condition is written in ch, the face's own glyph advance, and scales
+   * with how wide the text really is.
+   */
+  test("no container query states a width in em", () => {
+    const offenders = cssFiles.flatMap((file) =>
+      [...read(file).replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/@container[^{]*/g)]
+        .filter((match) => /\b(?:width|inline-size)\s*[<>=]+\s*[\d.]+em\b/.test(match[0]))
+        .map((match) => `${rel(file)}: ${match[0].trim()}`),
+    )
+
+    expect(offenders.sort()).toEqual([])
+  })
+})

@@ -26,6 +26,27 @@
 	font-size: var(--pico-text-sm);
 }
 
+/* A word cap and its short form: the word while the keyboard has room. The
+ * short form is one glyph, so it takes a character key's size, not the
+ * word's small face. */
+.pico-key-short {
+	display: none;
+	font-size: var(--pico-key-text, var(--pico-text));
+}
+
+/* The keyboard (PicoKeyboard.css) is an inline-size container in the small
+ * face. Below six glyphs per column, with the gaps, a five-letter word no
+ * longer fits its one-column key. */
+@container pico-keys (width < 60ch) {
+	.pico-key-long {
+		display: none;
+	}
+
+	.pico-key-short {
+		display: inline;
+	}
+}
+
 /* A mode that is on: the key stays green until it is pressed again. The
  * cursor's yellow still wins while it sits on the key (below). */
 .pico-key[data-lit] {

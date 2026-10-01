@@ -9,5 +9,7 @@
 	padding: 0 calc(var(--pico-px) * 4);
 	font-size: var(--pico-text-sm);
 	line-height: 1.5;
-	color: var(--pico-row-quiet, var(--pico-ink-quiet));
+	/* On a card it sits on the plastic, not on a row's plate, so it takes the
+	 * card's note ink; on bare ground, the quiet ink. */
+	color: var(--pico-card-note, var(--pico-ink-quiet));
 }

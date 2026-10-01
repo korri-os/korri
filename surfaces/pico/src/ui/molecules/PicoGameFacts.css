@@ -34,3 +34,19 @@
 		display: none;
 	}
 }
+
+/* A stage with room for one small line (Home at 320x240): the title alone,
+ * in the small face, on one line and cut with an ellipsis. Before, the facts
+ * scrolled and showed the top pixels of a large title as a row of dots. */
+@container pico-stage (height < 3em) {
+	.pico-game-facts {
+		--pico-title-xl: var(--pico-text-sm);
+		--pico-title-white-space: nowrap;
+		--pico-title-overflow: hidden;
+		justify-items: stretch;
+	}
+
+	.pico-game-facts-sub {
+		display: none;
+	}
+}

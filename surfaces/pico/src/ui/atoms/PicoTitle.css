@@ -6,6 +6,11 @@
 	line-height: 1.1;
 	color: inherit;
 	overflow-wrap: anywhere;
+	/* A container with room for one line only may keep a title to that line,
+	 * cut with an ellipsis, rather than show the top of a second one. */
+	white-space: var(--pico-title-white-space, normal);
+	overflow: var(--pico-title-overflow, visible);
+	text-overflow: ellipsis;
 }
 
 .pico-title[data-size="sm"] {

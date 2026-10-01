@@ -10,15 +10,21 @@ import "./PicoKey.css"
  *
  * A key that switches a mode (capitals) passes `lit`: the key is a toggle,
  * says so to assistive technology, and is drawn green while the mode is on.
+ *
+ * A word cap may pass `shortCap`, drawn instead when its keyboard is too
+ * narrow for the word (CLEAR becomes × at 320 wide). The accessible name
+ * does not change.
  */
 export function PicoKey({
   cap,
+  shortCap,
   label,
   wide = false,
   lit,
   onPress,
 }: {
   readonly cap: string
+  readonly shortCap?: string
   readonly label: string
   readonly wide?: boolean
   /** Present only on a toggle: whether its mode is on. */
@@ -35,7 +41,12 @@ export function PicoKey({
       onClick={onPress}
       type="button"
     >
-      {cap}
+      {shortCap === undefined ? cap : (
+        <>
+          <span className="pico-key-long">{cap}</span>
+          <span className="pico-key-short">{shortCap}</span>
+        </>
+      )}
     </button>
   )
 }

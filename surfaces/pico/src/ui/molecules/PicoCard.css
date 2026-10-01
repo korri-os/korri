@@ -9,6 +9,7 @@
 	--pico-card-shell: var(--pico-shell-ask);
 	--pico-card-ink: var(--pico-shell-ask-ink);
 	--pico-card-kicker: var(--pico-shell-ask-kicker);
+	--pico-card-note: var(--pico-shell-ask-note);
 	--pico-row-plate: var(--pico-ink-dark);
 	--pico-row-ink: var(--pico-ink);
 	--pico-row-quiet: var(--pico-ink-quiet);
@@ -17,12 +18,13 @@
 	position: relative;
 	display: grid;
 	align-content: start;
-	gap: var(--pico-u);
+	/* Spacing yields first: a container out of room may close the gap. */
+	gap: var(--pico-card-gap, var(--pico-u));
 	min-width: 0;
 	width: var(--pico-card-width, auto);
 	max-height: 100%;
 	margin: 0 calc(var(--pico-drop-lg) + var(--pico-px)) calc(var(--pico-drop-lg) + var(--pico-px)) 0;
-	padding: calc(var(--pico-px) * 8) calc(var(--pico-px) * 7) calc(var(--pico-px) * 6);
+	padding: var(--pico-card-pad, calc(var(--pico-px) * 8) calc(var(--pico-px) * 7) calc(var(--pico-px) * 6));
 	font-size: var(--pico-text);
 	line-height: 1.5;
 	color: var(--pico-card-ink);
@@ -47,18 +49,21 @@
 	--pico-card-shell: var(--pico-shell-warn);
 	--pico-card-ink: var(--pico-shell-warn-ink);
 	--pico-card-kicker: var(--pico-shell-warn-kicker);
+	--pico-card-note: var(--pico-shell-warn-note);
 }
 
 .pico-card[data-tone="tell"] {
 	--pico-card-shell: var(--pico-shell-tell);
 	--pico-card-ink: var(--pico-shell-tell-ink);
 	--pico-card-kicker: var(--pico-shell-tell-kicker);
+	--pico-card-note: var(--pico-shell-tell-note);
 }
 
 /* A card in a cartridge plastic: dark ink, navy kicker, whatever the tone. */
 .pico-card[data-shell] {
 	--pico-card-ink: var(--pico-ink-dark);
 	--pico-card-kicker: var(--pico-plate);
+	--pico-card-note: var(--pico-ink-dark);
 }
 
 .pico-card[data-shell="0"] { --pico-card-shell: var(--pico-shell-0); }
@@ -72,7 +77,10 @@
 .pico-card[data-shell="8"] { --pico-card-shell: var(--pico-shell-8); }
 .pico-card[data-shell="9"] { --pico-card-shell: var(--pico-shell-9); }
 
+/* A container out of room may let the kicker yield (--pico-card-kicker-display:
+ * none): it is a readout above a title that already says the same thing. */
 .pico-card-kicker {
+	display: var(--pico-card-kicker-display, block);
 	font-size: var(--pico-text-sm);
 	color: var(--pico-card-kicker);
 }

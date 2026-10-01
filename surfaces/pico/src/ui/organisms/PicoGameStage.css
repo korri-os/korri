@@ -2,10 +2,10 @@
  * The stage's plan, as a function of its own width and height.
  *
  * The section is the size container and the layout inside it answers the
- * query; a container cannot style itself from its own size. Conditions are in
- * em, and the stage's font-size is the small face (6 virtual pixels), so every
- * threshold is a count of small-text lines and scales with the pixel, like
- * everything it decides about.
+ * query; a container cannot style itself from its own size. The stage's
+ * font-size is the small face. Heights are in em, a count of small-text lines;
+ * widths are in ch, a count of the face's glyphs. Both scale with the pixel
+ * and the face, like everything they decide about.
  *
  *   default              art | facts, side by side
  *   narrow, tall enough  art above facts
@@ -55,7 +55,7 @@
 }
 
 /* Narrow and tall: the cartridge goes on top and takes under half the height. */
-@container pico-stage (width < 45em) and (height >= 40em) {
+@container pico-stage (width < 67.5ch) and (height >= 40em) {
 	.pico-game-stage-layout {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto minmax(0, 1fr);
@@ -75,7 +75,7 @@
 }
 
 /* Too short, or too narrow and short, for a cartridge anyone could read. */
-@container pico-stage (height < 16em) or ((width < 45em) and (height < 40em)) {
+@container pico-stage (height < 16em) or ((width < 67.5ch) and (height < 40em)) {
 	.pico-game-stage-layout {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -96,5 +96,18 @@
 
 	.pico-game-stage-facts {
 		gap: var(--pico-u);
+	}
+}
+
+/* One small line of room: no vertical padding, so the title's line fits
+ * whole (PicoGameFacts keeps it to that line). */
+@container pico-stage (height < 3em) {
+	.pico-game-stage-layout {
+		padding-top: 0;
+		padding-bottom: 0;
+	}
+
+	.pico-game-stage-facts {
+		padding-bottom: 0;
 	}
 }

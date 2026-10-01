@@ -38,3 +38,31 @@
 	display: grid;
 	gap: calc(var(--pico-px) * 2);
 }
+
+/* Very short (320x240). A card that scrolled would scroll its own title away
+ * as the cursor reached Cancel, so the question is made to fit instead, in
+ * the yield order: the card's padding and gaps close, the kicker (it repeats
+ * the title) goes, the title and message step down a size, and the answers
+ * stand side by side in the small face. A message longer than the room left
+ * still scrolls with the card, as before. */
+@container pico-modal (height < 20em) {
+	/* More specific than the 45em rule, so one selector declares it once. */
+	.pico-modal-scrim > .pico-modal {
+		--pico-title-xl: var(--pico-text);
+		--pico-card-kicker-display: none;
+		--pico-card-gap: calc(var(--pico-px) * 2);
+		/* The top keeps room for the shell's notch. */
+		--pico-card-pad: calc(var(--pico-px) * 5) calc(var(--pico-px) * 5) calc(var(--pico-px) * 4);
+	}
+
+	.pico-modal-message {
+		font-size: var(--pico-text-sm);
+	}
+
+	/* The confirm label keeps its own width when it can; Cancel takes the rest. */
+	.pico-modal-actions {
+		--pico-text: var(--pico-text-sm);
+		grid-template-columns: fit-content(70%) minmax(0, 1fr);
+		grid-auto-flow: column;
+	}
+}

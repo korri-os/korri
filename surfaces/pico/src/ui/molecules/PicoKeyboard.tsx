@@ -67,8 +67,8 @@ export function PicoKeyboard({
       ))}
       <div className="pico-keyboard-row">
         <PicoKey cap="SPACE" label="Type a space" onPress={() => onType(" ")} wide />
-        <PicoKey cap="DEL" label="Backspace" onPress={onBackspace} wide />
-        <PicoKey cap="CLEAR" label="Clear" onPress={onClear} wide />
+        <PicoKey cap="DEL" label="Backspace" onPress={onBackspace} shortCap="←" wide />
+        <PicoKey cap="CLEAR" label="Clear" onPress={onClear} shortCap="×" wide />
       </div>
       {charset === "text" ? (
         <div className="pico-keyboard-row pico-keyboard-modes">

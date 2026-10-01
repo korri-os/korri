@@ -93,7 +93,7 @@
 }
 
 /* Narrow: the meter yields before anything the value or the arrows say. */
-@container pico-slider (width < 24em) {
+@container pico-slider (width < 36ch) {
 	.pico-slider-meter {
 		display: none;
 	}

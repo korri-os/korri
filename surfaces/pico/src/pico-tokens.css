@@ -131,6 +131,12 @@
 	--pico-shell-warn-kicker: var(--p8-peach);
 	--pico-shell-tell-ink: var(--p8-black);
 	--pico-shell-tell-kicker: var(--p8-navy);
+	/* A note in the small face on a shell, such as why a control is off: the
+	 * darkest ink that is not the card's own and still reaches 4.5:1
+	 * (test/contrast-gate.test.ts). Lilac read 1.7:1 on blue. */
+	--pico-shell-ask-note: var(--p8-navy);
+	--pico-shell-warn-note: var(--p8-black);
+	--pico-shell-tell-note: var(--p8-navy);
 	/* The two shadow steps behind a large cartridge: navy, then maroon. */
 	--pico-cast-near: var(--p8-navy);
 	--pico-cast-far: var(--p8-maroon);

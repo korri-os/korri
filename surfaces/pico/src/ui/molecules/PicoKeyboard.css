@@ -3,6 +3,10 @@
  * space, delete and clear) fills exactly ten columns and nothing wraps. The
  * text keyboard adds one more row: its two modes, five columns each. */
 .pico-keyboard {
+	/* Its word keys' caps answer its width (PicoKey.css). Word caps are drawn
+	 * in the small face, so the container's ch is that face's glyph. */
+	container: pico-keys / inline-size;
+	font-size: var(--pico-text-sm);
 	display: grid;
 	grid-template-columns: repeat(10, minmax(0, 1fr));
 	gap: calc(var(--pico-px) * 2);

@@ -33,7 +33,11 @@ export function PicoGameFacts({
     <div className="pico-game-facts">
       {kicker === undefined ? null : <span className="pico-game-facts-kicker">{kicker}</span>}
       <PicoTitle level={level} size="xl" text={title} />
-      {subtitle === undefined ? null : <PicoSub text={subtitle} />}
+      {subtitle === undefined ? null : (
+        <div className="pico-game-facts-sub">
+          <PicoSub text={subtitle} />
+        </div>
+      )}
       <div className="pico-game-facts-chips">
         {resumable ? <PicoBadge text="RESUME" tone="ok" /> : null}
         <PicoStatRun stats={stats} />

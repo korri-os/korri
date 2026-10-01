@@ -1,6 +1,6 @@
 /* The question takes the whole room it is in, and is its own size container
  * so it can fit that room wherever it is placed. Its font-size is the small
- * face: a query's em here is 6 virtual pixels. */
+ * face: a height in em here is a line of small text. */
 .pico-location-picker {
 	--pico-card-width: min(100%, calc(var(--pico-px) * 200));
 	container: pico-picker / size;

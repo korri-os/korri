@@ -1,8 +1,8 @@
 /**
  * Settings' plan. The root is the size container and the layout inside it
  * answers the query, so the panel adapts the same way inside a screen and
- * placed on its own. Conditions are in em of the root's small face, 6 virtual
- * pixels.
+ * placed on its own. Conditions use the root's small face: heights in em (its
+ * lines), widths in ch (its glyph advance).
  *
  *   wide               spines | card
  *   narrow             spines wrapped in rows above the card
@@ -35,7 +35,7 @@
 	min-height: 0;
 }
 
-@container pico-panel (width < 70em) {
+@container pico-panel (width < 105ch) {
 	.pico-panel-screen-layout {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto minmax(0, 1fr);
@@ -63,7 +63,7 @@
 /* Narrow and short: one page that scrolls, spines then the card at its full
  * height. A card squeezed under two rows of spines would have no room left
  * to show a single row. */
-@container pico-panel (width < 70em) and (height < 40em) {
+@container pico-panel (width < 105ch) and (height < 40em) {
 	.pico-panel-screen-layout {
 		grid-template-rows: max-content max-content;
 		overflow-y: auto;
