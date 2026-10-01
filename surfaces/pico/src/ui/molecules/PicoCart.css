@@ -174,16 +174,15 @@
 }
 
 /* GBA: short and wide, both upper corners clipped. */
+/* Each corner is a solid border of background, so no stop can fall between
+ * two device pixels and blend. */
 .pico-cart[data-system="gba"]::before {
+	box-sizing: border-box;
 	left: 0;
 	width: 100%;
 	height: calc(var(--pico-cart-notch) * 2);
-	background: linear-gradient(
-		90deg,
-		var(--pico-bg) 0 calc(var(--pico-px) * 3),
-		transparent calc(var(--pico-px) * 3) calc(100% - var(--pico-px) * 3),
-		var(--pico-bg) calc(100% - var(--pico-px) * 3)
-	);
+	background: transparent;
+	border-inline: calc(var(--pico-px) * 3) solid var(--pico-bg);
 }
 
 .pico-cart[data-system="gba"] {
@@ -212,16 +211,22 @@
 	);
 }
 
-/* SNES: two slots at the shoulders and a wider foot. */
+/* SNES: two slots at the shoulders, each a plain block of background. The
+ * shell's own ::before draws the left one; the window's ::before, positioned
+ * against the shell because the window is not, draws the right one. */
 .pico-cart[data-system="snes"]::before {
 	left: 12%;
-	width: 76%;
-	background: linear-gradient(
-		90deg,
-		var(--pico-bg) 0 25%,
-		transparent 25% 75%,
-		var(--pico-bg) 75%
-	);
+	width: 19%;
+}
+
+.pico-cart[data-system="snes"] .pico-cart-window::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	right: 12%;
+	width: 19%;
+	height: var(--pico-cart-notch);
+	background: var(--pico-bg);
 }
 
 /* Mega Drive: a dark top band the label hangs from. */

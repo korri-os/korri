@@ -5,7 +5,7 @@
 	box-sizing: border-box;
 	height: 100%;
 	min-height: 0;
-	padding-top: clamp(0px, 3cqh, calc(var(--pico-u) * 3));
+	padding-top: min(3cqh, calc(var(--pico-u) * 3));
 }
 
 .pico-game-detail-actions {
