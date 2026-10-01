@@ -544,7 +544,7 @@ impl Host {
         if matches!(receipt.desired, Desired::Removed { .. }) {
             // A prior removal keeps its original purge choice. Retrying the
             // command resumes that request instead of replacing it.
-            self.restore_one(id, package::StoreContents::Rehash)?;
+            self.restore_one(id)?;
             return self.publish_registry();
         }
         // Do not restore a pending enabled selection before stopping it. The
@@ -555,7 +555,7 @@ impl Host {
         receipt.desired = desired;
         self.invalidate_registry()?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
-        self.restore_one(id, package::StoreContents::Rehash)?;
+        self.restore_one(id)?;
         self.publish_registry()
     }
 
@@ -574,17 +574,7 @@ impl Host {
             if !matches!(receipt.desired, Desired::Enabled) {
                 continue;
             }
-            if fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok() {
-                return Err(format!("plugin {} has an unfinished selection", receipt.id));
-            }
-            if fs::read_link(self.root(&receipt.id, "active")).map_err(|e| e.to_string())?
-                != receipt.package
-            {
-                return Err(format!(
-                    "plugin {} has an inconsistent active root",
-                    receipt.id
-                ));
-            }
+            self.settled(&receipt)?;
             let report = self.approved(&receipt)?;
             self.verify_publisher(
                 &receipt.package,
@@ -594,6 +584,23 @@ impl Host {
             reports.push(report);
         }
         Ok(reports)
+    }
+
+    /// An enabled receipt is listed only when its selection is committed and
+    /// its active root pins exactly the receipt's package.
+    fn settled(&self, receipt: &Receipt) -> Result<(), String> {
+        if fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok() {
+            return Err(format!("plugin {} has an unfinished selection", receipt.id));
+        }
+        if fs::read_link(self.root(&receipt.id, "active")).map_err(|e| e.to_string())?
+            != receipt.package
+        {
+            return Err(format!(
+                "plugin {} has an inconsistent active root",
+                receipt.id
+            ));
+        }
+        Ok(())
     }
 
     fn receipts(&self) -> Result<Vec<Receipt>, String> {
@@ -638,6 +645,7 @@ impl Host {
             errors.push(error);
         }
         self.release_download()?;
+        let mut enabled = Vec::new();
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
@@ -646,48 +654,68 @@ impl Host {
             let result = if entry.file_name() == storage::SOURCES_DIR
                 || entry.file_name() == storage::STAGING_DIR
             {
-                storage::directory(&entry.path())
+                storage::directory(&entry.path()).map(|()| None)
             } else {
                 self.restore_directory(&entry.path())
             };
-            if let Err(error) = result {
-                errors.push(error);
+            match result {
+                Ok(Some(checked)) => enabled.push(checked),
+                Ok(None) => {}
+                Err(error) => errors.push(error),
             }
         }
-        if errors.is_empty() {
-            self.publish_registry()
-        } else {
-            Err(errors.join("; "))
+        if !errors.is_empty() {
+            return Err(errors.join("; "));
         }
+        // Restore already checked each enabled plugin's approval, declaration
+        // and publisher signature. Publish those reports; checking them again
+        // would repeat the slowest part of boot. Single-plugin operations
+        // publish through enabled_packages(), and a test holds the two lists
+        // equal.
+        enabled.sort_by(|(a, _), (b, _)| a.id.cmp(&b.id));
+        let mut reports = Vec::new();
+        for (receipt, report) in enabled {
+            self.settled(&receipt)?;
+            reports.push(report);
+        }
+        self.write_registry(reports)
     }
 
-    fn restore_directory(&self, path: &Path) -> Result<(), String> {
+    /// Restore one state directory. For an enabled plugin, return its checked
+    /// report: boot publishes it without loading the plugin a second time.
+    fn restore_directory(&self, path: &Path) -> Result<Option<(Receipt, Report)>, String> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
             if self.directory(&receipt.id) != path {
                 return Err("receipt identity does not match its directory".into());
             }
             self.prepare(&receipt.id)?;
-            let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
-            if !pending && matches!(receipt.desired, Desired::Enabled) {
+            if matches!(receipt.desired, Desired::Enabled) {
                 let report = self.approved(&receipt)?;
-                if self
-                    .verify_publisher(
-                        &receipt.package,
-                        &receipt.provenance,
-                        package::StoreContents::TrustRegistered,
-                    )
-                    .is_ok()
+                let authorized = self.verify_publisher(
+                    &receipt.package,
+                    &receipt.provenance,
+                    package::StoreContents::TrustRegistered,
+                );
+                let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
+                if authorized.is_ok()
+                    && !pending
                     && fs::read_link(self.root(&receipt.id, "active"))
                         .is_ok_and(|path| path == receipt.package)
                     && self.units_matches_running(&report)?
                 {
                     self.firewall_apply(&report)?;
-                    self.selection(&receipt.id).settle(&receipt)?;
-                    return Ok(());
+                } else {
+                    // Stop first even when authority was revoked. Keep the
+                    // receipt and roots on denial; never restart revoked code.
+                    self.units_stop(&receipt.id, false)?;
+                    authorized?;
+                    self.units_start(&report)?;
                 }
+                self.selection(&receipt.id).settle(&receipt)?;
+                return Ok(Some((receipt, report)));
             }
-            self.restore_one(&receipt.id, package::StoreContents::TrustRegistered)?;
+            self.restore_one(&receipt.id)?;
         } else {
             // Install is always disabled. Without a committed receipt it
             // cannot have started a daemon. A completed removal also reaches
@@ -706,7 +734,7 @@ impl Host {
             storage::directory(&roots)?;
             SelectionStore::new(path.join("selection.json"), roots).remove()?;
         }
-        Ok(())
+        Ok(None)
     }
 
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
@@ -727,7 +755,7 @@ impl Host {
             }
         });
         if let Err(error) = result {
-            return match self.restore_one(id, package::StoreContents::Rehash) {
+            return match self.restore_one(id) {
                 Ok(()) => Err(format!("operation failed; committed selection restored: {error}")),
                 Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore-all")),
             };
@@ -755,7 +783,10 @@ impl Host {
     }
 
     fn publish_registry(&self) -> Result<(), String> {
-        let reports = self.enabled_packages()?;
+        self.write_registry(self.enabled_packages()?)
+    }
+
+    fn write_registry(&self, reports: Vec<Report>) -> Result<(), String> {
         let selections: Vec<_> = reports
             .into_iter()
             .map(|report| crate::plugin_installation::EnabledPackage {
@@ -826,6 +857,10 @@ impl Host {
         #[cfg(test)]
         let report = if let Some(runtime) = &self.test_runtime {
             runtime
+                .events
+                .borrow_mut()
+                .push(format!("load:{}", receipt.id));
+            runtime
                 .reports
                 .borrow()
                 .get(&receipt.package)
@@ -848,12 +883,14 @@ impl Host {
             .receipt(id)?
             .is_some_and(|r| matches!(r.desired, Desired::Removed { .. }));
         if pending || removed {
-            self.restore_one(id, package::StoreContents::Rehash)?;
+            self.restore_one(id)?;
         }
         Ok(())
     }
 
-    fn restore_one(&self, id: &str, contents: package::StoreContents) -> Result<(), String> {
+    /// Recovery for single-plugin operations. Boot restore handles enabled
+    /// plugins itself and reaches this only for disabled or removed ones.
+    fn restore_one(&self, id: &str) -> Result<(), String> {
         let receipt = self.receipt(id)?;
         match receipt {
             Some(receipt) => {
@@ -883,7 +920,11 @@ impl Host {
                     if matches!(receipt.desired, Desired::Enabled) {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
-                        self.verify_publisher(&receipt.package, &receipt.provenance, contents)?;
+                        self.verify_publisher(
+                            &receipt.package,
+                            &receipt.provenance,
+                            package::StoreContents::Rehash,
+                        )?;
                         self.units_start(&report)?;
                     }
                     selection.settle(&receipt)?;
@@ -1202,6 +1243,84 @@ mod tests {
         host.apply_release_update(review, &BTreeMap::new(), || Ok(()))
             .unwrap();
         assert!(host.status(&optional.id).unwrap().is_none());
+    }
+
+    fn published(host: &Host) -> (Vec<u8>, Vec<String>) {
+        let bytes = fs::read(&host.paths.registry_path).unwrap();
+        let ids = serde_json::from_slice::<Vec<crate::plugin_installation::EnabledPackage>>(&bytes)
+            .unwrap()
+            .into_iter()
+            .map(|selection| selection.id)
+            .collect();
+        (bytes, ids)
+    }
+
+    fn loads(runtime: &TestRuntime) -> Vec<String> {
+        let mut loads: Vec<_> = runtime
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.starts_with("load:"))
+            .cloned()
+            .collect();
+        loads.sort();
+        loads
+    }
+
+    #[test]
+    fn boot_restore_checks_each_plugin_once_and_publishes_the_list_an_enable_publishes() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let clock = report("@test:clock", "clock-boot");
+        let idle = report("@test:idle", "idle-boot");
+        let weather = report("@test:weather", "weather-boot");
+        let runtime = runtime(&[clock.clone(), idle.clone(), weather.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        for selected in [&clock, &idle, &weather] {
+            install(&host, selected.clone());
+        }
+        host.set_enabled(&clock.id, true).unwrap();
+        host.set_enabled(&weather.id, true).unwrap();
+        let (enable_list, ids) = published(&host);
+        assert_eq!(ids, ["@test:clock", "@test:weather"]);
+        runtime.events.borrow_mut().clear();
+
+        host.restore_all().unwrap();
+
+        assert_eq!(published(&host).0, enable_list);
+        assert_eq!(
+            loads(&runtime),
+            ["load:@test:clock", "load:@test:idle", "load:@test:weather"]
+        );
+    }
+
+    #[test]
+    fn boot_restore_finishes_an_interrupted_enabled_selection_and_lists_it() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let clock = report("@test:clock", "clock-pending");
+        let runtime = runtime(std::slice::from_ref(&clock));
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, clock.clone());
+        host.set_enabled(&clock.id, true).unwrap();
+        let (enable_list, _) = published(&host);
+        host.selection(&clock.id).stage(&clock.package).unwrap();
+        runtime.events.borrow_mut().clear();
+
+        host.restore_all().unwrap();
+
+        assert!(fs::symlink_metadata(host.root(&clock.id, "pending")).is_err());
+        assert_eq!(published(&host).0, enable_list);
+        assert_eq!(loads(&runtime), ["load:@test:clock"]);
+        assert_eq!(
+            runtime
+                .events
+                .borrow()
+                .iter()
+                .filter(|event| event.starts_with("start:"))
+                .collect::<Vec<_>>(),
+            ["start:@test:clock"]
+        );
     }
 
     #[test]
