@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -86,6 +87,10 @@ in
   };
 
   hardware = {
+    # The installer-wide list includes PC drivers removed from Linux 7.2
+    # (pata_qdi failed the 7.2 initrd, as on the RG DS). The initrd modules
+    # above name this board's early drivers explicitly.
+    enableAllHardware = lib.mkForce false;
     # Upstream RGXX3 U-Boot detects the RG353M and selects the RG353P DTB.
     deviceTree = {
       enable = true;
