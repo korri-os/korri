@@ -242,6 +242,18 @@ describe("leaving", () => {
     expect(host.calls).toEqual(["dismissGameplayOverlay"])
   })
 
+  test("a held change not yet sent is sent before the overlay goes", () => {
+    for (const action of ["back", "menu", "system"] as const) {
+      const host = open()
+      act(() => volume().focus())
+      direction(volume(), "left")
+      expect(host.calls).toEqual([])
+      act(() => host.press(action))
+      expect(host.calls).toEqual(["gameplayControl:vol:range:70", "dismissGameplayOverlay"])
+      cleanup()
+    }
+  })
+
   test("menu and system dismiss it too", () => {
     const host = open()
     act(() => host.press("menu"))

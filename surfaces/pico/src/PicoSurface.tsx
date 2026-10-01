@@ -101,7 +101,14 @@ function PicoOverlaySurface({
   const [asking, setAsking] = useState<PicoOverlayControlView | undefined>(undefined)
 
   useEffect(() => {
-    const dismiss = () => host.dismissGameplayOverlay()
+    /* A range may hold a step it has not sent yet: it waits up to two
+     * seconds for the release (use-pico-range.ts), and it sends on blur.
+     * Blur first, so that step reaches Korri before the overlay goes. */
+    const dismiss = () => {
+      const focused = document.activeElement
+      if (focused instanceof HTMLElement) focused.blur()
+      host.dismissGameplayOverlay()
+    }
     const offBack = host.input.on("back", () => {
       setAsking((question) => {
         if (question === undefined) dismiss()
