@@ -281,21 +281,26 @@ impl Host {
     }
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
-        self.verify_publisher(selected, &provenance)?;
+        self.verify_publisher(selected, &provenance, package::StoreContents::Rehash)?;
         package::load(&self.nix, selected, provenance)
     }
 
-    fn verify_publisher(&self, selected: &Path, provenance: &Provenance) -> Result<(), String> {
+    fn verify_publisher(
+        &self,
+        selected: &Path,
+        provenance: &Provenance,
+        contents: package::StoreContents,
+    ) -> Result<(), String> {
         #[cfg(test)]
         if self.test_runtime.is_some() {
-            let _ = (selected, provenance);
+            let _ = (selected, provenance, contents);
             return Ok(());
         }
         let cache = match provenance {
             Provenance::RawCache { cache_url } => Some(cache_url.as_str()),
             Provenance::Repository { .. } => None,
         };
-        package::verify_publisher(&self.nix, selected, cache, &self.publishers)?;
+        package::verify_publisher(&self.nix, selected, cache, &self.publishers, contents)?;
         Ok(())
     }
 
@@ -506,7 +511,11 @@ impl Host {
         self.approved(&current)?;
         let candidate = current.rollback()?;
         self.approved(&candidate)?;
-        self.verify_publisher(&candidate.package, &candidate.provenance)?;
+        self.verify_publisher(
+            &candidate.package,
+            &candidate.provenance,
+            package::StoreContents::Rehash,
+        )?;
         self.recover_one(id)?;
         self.apply(candidate)
     }
@@ -535,7 +544,7 @@ impl Host {
         if matches!(receipt.desired, Desired::Removed { .. }) {
             // A prior removal keeps its original purge choice. Retrying the
             // command resumes that request instead of replacing it.
-            self.restore_one(id)?;
+            self.restore_one(id, package::StoreContents::Rehash)?;
             return self.publish_registry();
         }
         // Do not restore a pending enabled selection before stopping it. The
@@ -546,7 +555,7 @@ impl Host {
         receipt.desired = desired;
         self.invalidate_registry()?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
-        self.restore_one(id)?;
+        self.restore_one(id, package::StoreContents::Rehash)?;
         self.publish_registry()
     }
 
@@ -577,7 +586,11 @@ impl Host {
                 ));
             }
             let report = self.approved(&receipt)?;
-            self.verify_publisher(&receipt.package, &receipt.provenance)?;
+            self.verify_publisher(
+                &receipt.package,
+                &receipt.provenance,
+                package::StoreContents::TrustRegistered,
+            )?;
             reports.push(report);
         }
         Ok(reports)
@@ -659,7 +672,11 @@ impl Host {
             if !pending && matches!(receipt.desired, Desired::Enabled) {
                 let report = self.approved(&receipt)?;
                 if self
-                    .verify_publisher(&receipt.package, &receipt.provenance)
+                    .verify_publisher(
+                        &receipt.package,
+                        &receipt.provenance,
+                        package::StoreContents::TrustRegistered,
+                    )
                     .is_ok()
                     && fs::read_link(self.root(&receipt.id, "active"))
                         .is_ok_and(|path| path == receipt.package)
@@ -670,7 +687,7 @@ impl Host {
                     return Ok(());
                 }
             }
-            self.restore_one(&receipt.id)?;
+            self.restore_one(&receipt.id, package::StoreContents::TrustRegistered)?;
         } else {
             // Install is always disabled. Without a committed receipt it
             // cannot have started a daemon. A completed removal also reaches
@@ -695,7 +712,11 @@ impl Host {
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
-        self.verify_publisher(&candidate.package, &candidate.provenance)?;
+        self.verify_publisher(
+            &candidate.package,
+            &candidate.provenance,
+            package::StoreContents::Rehash,
+        )?;
         self.invalidate_registry()?;
         self.selection(id).stage(&candidate.package)?;
         let result = self.units_stop(id, false).and_then(|_| {
@@ -706,7 +727,7 @@ impl Host {
             }
         });
         if let Err(error) = result {
-            return match self.restore_one(id) {
+            return match self.restore_one(id, package::StoreContents::Rehash) {
                 Ok(()) => Err(format!("operation failed; committed selection restored: {error}")),
                 Err(recovery) => Err(format!("operation failed: {error}; recovery failed: {recovery}; package remains pinned; run restore-all")),
             };
@@ -827,12 +848,12 @@ impl Host {
             .receipt(id)?
             .is_some_and(|r| matches!(r.desired, Desired::Removed { .. }));
         if pending || removed {
-            self.restore_one(id)?;
+            self.restore_one(id, package::StoreContents::Rehash)?;
         }
         Ok(())
     }
 
-    fn restore_one(&self, id: &str) -> Result<(), String> {
+    fn restore_one(&self, id: &str, contents: package::StoreContents) -> Result<(), String> {
         let receipt = self.receipt(id)?;
         match receipt {
             Some(receipt) => {
@@ -862,7 +883,7 @@ impl Host {
                     if matches!(receipt.desired, Desired::Enabled) {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
-                        self.verify_publisher(&receipt.package, &receipt.provenance)?;
+                        self.verify_publisher(&receipt.package, &receipt.provenance, contents)?;
                         self.units_start(&report)?;
                     }
                     selection.settle(&receipt)?;

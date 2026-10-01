@@ -369,26 +369,42 @@ fn signed_by(info: &NarInfo, fingerprint: &str, key: &[u8]) -> bool {
 /// Verify the exact package output, even when Nix reused a cached or
 /// content-addressed path. Dependencies may use other trusted Nix signers;
 /// they cannot claim the publisher's namespace for this output.
+/// Whether a publisher check rehashes the package's store contents.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoreContents {
+    /// Rehash the contents against Nix's registered hash. Install, enable,
+    /// update and rollback use this.
+    Rehash,
+    /// Trust contents the image build or an earlier install already
+    /// verified. Boot restore uses this (owner decision 2026-09-30): the
+    /// rehash cost about a minute of CPU per boot on an RK3566. The signature
+    /// over the registered hash is still checked.
+    TrustRegistered,
+}
+
 pub fn verify_publisher(
     nix: &Path,
     package: &Path,
     source: Option<&str>,
     bindings: &PublisherBindings,
+    contents: StoreContents,
 ) -> Result<String, String> {
     validate_store_path(package)?;
     let package_text = package.to_str().ok_or("invalid package path")?;
-    process::checked(
-        nix,
-        [
-            "--extra-experimental-features",
-            "nix-command",
-            "store",
-            "verify",
-            "--no-trust",
-            package_text,
-        ],
-        Duration::from_secs(180),
-    )?;
+    if contents == StoreContents::Rehash {
+        process::checked(
+            nix,
+            [
+                "--extra-experimental-features",
+                "nix-command",
+                "store",
+                "verify",
+                "--no-trust",
+                package_text,
+            ],
+            Duration::from_secs(180),
+        )?;
+    }
     let namespace = manifest_namespace(package)?;
     let binding = bindings
         .get(&namespace)
@@ -526,8 +542,7 @@ pub fn authority_warning(
                 unit.privileged_directives.join(", ")
             ));
             if unit.privileged_directives.iter().any(|directive| {
-                directive.starts_with("ExecStartPre=+")
-                    || directive.starts_with("ExecStopPost=+")
+                directive.starts_with("ExecStartPre=+") || directive.starts_with("ExecStopPost=+")
             }) {
                 report.push_str(" PRIVILEGED HELPER: + commands bypass the service sandbox and run with root authority.");
             }
@@ -556,7 +571,10 @@ pub fn authority_warning(
 fn native_rule_warning(files: &BTreeMap<String, PathBuf>) -> Result<String, String> {
     let mut warning = String::new();
     for (name, path) in files {
-        if path.file_name().is_some_and(|file| file.to_string_lossy().ends_with(".rules")) {
+        if path
+            .file_name()
+            .is_some_and(|file| file.to_string_lossy().ends_with(".rules"))
+        {
             let bytes = read_regular(path, 64 * 1024)?;
             let rules = std::str::from_utf8(&bytes)
                 .map_err(|_| format!("native udev rules {name} are not UTF-8"))?;
@@ -729,7 +747,11 @@ mod approval_tests {
     fn native_udev_rule_requests_are_named_in_the_approval_warning() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("99-z-korri-sunshine-input.rules");
-        fs::write(&path, "KERNEL==\"uinput\", GROUP=\"korri-sunshine-input-seat\"\n").unwrap();
+        fs::write(
+            &path,
+            "KERNEL==\"uinput\", GROUP=\"korri-sunshine-input-seat\"\n",
+        )
+        .unwrap();
         let warning = native_rule_warning(&BTreeMap::from([("input-rules".into(), path)])).unwrap();
         assert!(warning.contains("native udev rules input-rules"));
         assert!(warning.contains("uinput"));

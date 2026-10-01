@@ -109,7 +109,8 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
             Path::new(&program),
             Path::new(&path),
             Some(&cache),
-            &bindings
+            &bindings,
+            korri_plugin_host::package::StoreContents::Rehash,
         )
         .is_err(),
         "the other key signed a cached content-addressed path under the same signature label"
@@ -128,7 +129,8 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
             Path::new(&program),
             Path::new(&path),
             Some(&cache),
-            &bindings
+            &bindings,
+            korri_plugin_host::package::StoreContents::Rehash,
         )
         .unwrap(),
         "@example"
@@ -139,7 +141,8 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
             Path::new(&program),
             Path::new(&path),
             Some(&cache),
-            &bindings
+            &bindings,
+            korri_plugin_host::package::StoreContents::Rehash,
         )
         .unwrap(),
         "@example",
@@ -175,11 +178,19 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
         Path::new(&program),
         Path::new(&path),
         Some("https://other.example/cache"),
-        &bindings
+        &bindings,
+        korri_plugin_host::package::StoreContents::Rehash,
     )
     .is_err());
     let unbound = BTreeMap::new();
-    assert!(verify_publisher(Path::new(&program), Path::new(&path), None, &unbound).is_err());
+    assert!(verify_publisher(
+        Path::new(&program),
+        Path::new(&path),
+        None,
+        &unbound,
+        korri_plugin_host::package::StoreContents::Rehash
+    )
+    .is_err());
 
     // Even a signed package cannot introduce a second, self-declared key source.
     fs::write(package.join("manifest.json"), serde_json::to_vec(&serde_json::json!({"publisher": {"namespace": "@example", "publicKey": to_public(&other)},"entry":"plugin.ts","sources":["plugin.ts"]})).unwrap()).unwrap();
@@ -196,6 +207,7 @@ fn cached_output_requires_the_bound_full_key_not_a_second_trusted_signer_or_labe
         Path::new(&self_declared),
         None,
         &bindings,
+        korri_plugin_host::package::StoreContents::Rehash,
     )
     .unwrap_err();
     assert!(error.contains("unknown field `publicKey`"), "{error}");

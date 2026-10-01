@@ -479,7 +479,13 @@ fn release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix() {
     )]);
     let inspect = |path: &Path| {
         package::import(&configured_nix, &source, path)?;
-        package::verify_publisher(&configured_nix, path, Some(&source), &bindings)?;
+        package::verify_publisher(
+            &configured_nix,
+            path,
+            Some(&source),
+            &bindings,
+            korri_plugin_host::package::StoreContents::Rehash,
+        )?;
         package::load(
             &configured_nix,
             path,
@@ -518,7 +524,8 @@ fn release_evidence_selects_only_a_unique_bound_signed_package_with_real_nix() {
         &configured_nix,
         &first,
         Some("https://different.example/cache"),
-        &bindings
+        &bindings,
+        korri_plugin_host::package::StoreContents::Rehash,
     )
     .is_err());
     let missing = Path::new("/nix/store/00000000000000000000000000000000-unavailable");
