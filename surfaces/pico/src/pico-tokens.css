@@ -160,11 +160,19 @@
 	/* Left and right together: a plain plate, since the d-pad has no colour. */
 	--pico-key-lr: var(--p8-silver);
 	--pico-key-ink: var(--p8-navy);
+}
 
-	/* One face: Zep's PICO-8 glyphs, built by scripts/build-font.py. The em is
-	 * six glyph pixels, so a size of 6 × N device pixels draws every glyph
-	 * pixel as an N × N block. */
-	--pico-font: "Pico8", monospace;
+/**
+ * The face, when the root names none: Tiny5. Its em is seven glyph pixels
+ * (`--pico-font-rows`), so a size of 7 × N device pixels draws every glyph
+ * pixel as an N × N block. A root that names another face with
+ * data-pico-font gets that face's family and rows from pico-fonts.css, which
+ * scripts/build-fonts.py generates. Zero specificity, so the named face wins
+ * whatever order the stylesheets load in.
+ */
+:where(.pico-theme) {
+	--pico-font: "Pico Tiny5", monospace;
+	--pico-font-rows: 7;
 }
 
 /**
@@ -180,13 +188,14 @@
 	);
 	/* The layout unit: everything spaces in whole units or whole pixels. */
 	--pico-u: calc(var(--pico-px) * 4);
-	/* Type, as whole glyph pixels (font-size ÷ 6): 1, 1.5, 2.5 and 3.5 virtual
-	 * pixels, each rounded to a whole device pixel so the face stays crisp at
-	 * every scale. At 720p that is 2, 3, 5 and 7 device pixels per glyph pixel. */
-	--pico-text-sm: calc(var(--pico-px) * 6);
-	--pico-text: calc(round(calc(var(--pico-px) * 1.5), 1px) * 6);
-	--pico-text-lg: calc(round(calc(var(--pico-px) * 2.5), 1px) * 6);
-	--pico-text-xl: calc(round(calc(var(--pico-px) * 3.5), 1px) * 6);
+	/* Type, as whole glyph pixels (font-size ÷ the face's rows): 1, 1.5, 2.5
+	 * and 3.5 virtual pixels, each rounded to a whole device pixel so the face
+	 * stays crisp at every scale. At 720p that is 2, 3, 5 and 7 device pixels
+	 * per glyph pixel. A taller face draws taller lines at the same pixel. */
+	--pico-text-sm: calc(var(--pico-px) * var(--pico-font-rows));
+	--pico-text: calc(round(calc(var(--pico-px) * 1.5), 1px) * var(--pico-font-rows));
+	--pico-text-lg: calc(round(calc(var(--pico-px) * 2.5), 1px) * var(--pico-font-rows));
+	--pico-text-xl: calc(round(calc(var(--pico-px) * 3.5), 1px) * var(--pico-font-rows));
 	/* Hard shadows: the drop behind a small thing and behind a big one. */
 	--pico-drop-sm: calc(var(--pico-px) * 2);
 	--pico-drop: calc(var(--pico-px) * 3);

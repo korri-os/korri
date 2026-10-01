@@ -1,8 +1,8 @@
 # Pico
 
-Korri's fantasy-console surface: PICO-8's sixteen colours on black, Zep's
-PICO-8 glyphs, and a shelf of cartridges that take the shape of their art,
-with the chosen one large on a stage above them.
+Korri's fantasy-console surface: PICO-8's sixteen colours on black, pixel
+faces with real upper and lower case, and a shelf of cartridges that take the
+shape of their art, with the chosen one large on a stage above them.
 
 Pico is a **surface**, not a theme file. It owns its own layout, components, and
 stylesheet, and it is designed to be one of several — and eventually to live in
@@ -61,9 +61,12 @@ src/
   pico-tokens.css     the only file allowed a raw colour or pixel value; the
                       palette, the virtual pixel and every role
   pico-motion.css     stepped keyframes only; nothing in Pico eases
-  pico.css            global font, reset, screen scope and reduced motion
+  pico-fonts.css      generated: the faces, and what naming one sets
+  pico-fonts.ts       generated: the faces as data, and the default
+  pico.css            reset, screen scope and reduced motion
   PicoSurface.css     catalog-surface rules owned by the composition root
-  fonts/              pico8-glyphs.txt (the design) and pico8.woff2 (built)
+  fonts/              glyph tables, the built faces and their licences;
+                      see fonts/README.md
   fixtures/           the fixture host, and sample-art.ts (generated covers)
   PicoSurface.tsx     the composition root — the only file that reads the treaty
   pico-screen-view.ts what the screen shows, decided once: status outranks catalog
@@ -90,9 +93,10 @@ uses shared keyframes imports `pico-motion.css` itself. Do not use CSS `@import`
 Vite can read those files outside Caliper's take overlay. Explicit JS/TS imports
 keep stylesheet dependencies visible and let takes replace those files.
 
-`src/index.ts` imports tokens and global screen CSS. Import the public package
-entry to load the complete surface. The `./pico.css` export contains only the
-font, reset and screen scope; it does not load tokens or component styles alone.
+`src/index.ts` imports tokens, the faces and global screen CSS. Import the
+public package entry to load the complete surface. The `./pico.css` export
+contains only the reset and screen scope; it does not load tokens, faces or
+component styles alone.
 
 Parents can set documented custom properties on their own elements. For example,
 Notice and LocationPicker set `--pico-card-width`; Card owns the width rule.
@@ -104,19 +108,27 @@ such as `display: grid` need no abstraction.
 Import order now follows component dependencies. Verify browser output when
 changing ownership, since a hidden cascade dependency can change the result.
 
-`scripts/` holds the two generators. Both are deterministic Nix-shebang
-scripts, and their output is committed:
+`scripts/` holds the generators. They are deterministic Nix-shebang scripts,
+and their output is committed:
 
 ```sh
-./scripts/build-font.py         # src/fonts/pico8.woff2 from pico8-glyphs.txt
+./scripts/build-fonts.py        # src/fonts/*.woff2, pico-fonts.css, pico-fonts.ts
 ./scripts/draw-sample-art.py    # src/fixtures/sample-art.ts, original covers
 ```
+
+`fetch-font-sources.sh` and `extract-font-tables.py` read the upstream font
+files into the glyph tables; run them only to take a new upstream version.
 
 ## The look
 
 - **One virtual pixel.** `--pico-px` is the screen's short side divided by
   360, in whole device pixels, never below 2. Every size is a multiple of it,
   and type is a whole number of glyph pixels, so the face never blurs.
+- **Ten faces, Tiny5 by default.** Each is a free pixel font with real upper
+  and lower case, redrawn on the pixel grid. The root names one with
+  `data-pico-font` (`PicoSurface`'s `font` prop); with none named, the tokens
+  use Tiny5. A face's em is its rows of glyph pixels, so a taller face draws
+  taller lines at the same pixel, and every threshold below scales with it.
 - **Sixteen colours, nothing between them.** Under a question the screen goes
   solid; focus is a hard shadow that colour-cycles, the way PICO-8's cursor
   does.
@@ -126,7 +138,7 @@ scripts, and their output is committed:
 - **Cards say what they are by colour.** Yellow asks, red warns, blue tells.
 - **Layout answers the container, not the device.** The body, the stage, the
   shelf and the launch slot are size containers; thresholds are in em of the
-  small face, so they scale with the pixel. The ladder checked is 1920×1080,
+  small face, so they scale with the pixel and with the face's rows. The ladder checked is 1920×1080,
   1280×720, 640×480, 480×800, 1280×300 and 320×240. Every threshold is a
   guess until measured on the real panels.
 

@@ -7,6 +7,7 @@
  * file is Pico's business and may change without a host caring.
  */
 import "./pico-tokens.css"
+import "./pico-fonts.css"
 import "./pico.css"
 export { PicoSurface } from "./PicoSurface"
 export { picoSurface } from "./mount"

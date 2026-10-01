@@ -27,6 +27,7 @@ import { type PicoSessionReturn, picoSessionReturnFromModel, picoSessionReturnOn
 import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoInitialView } from "./pico-initial-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
+import type { PicoFontId } from "./pico-fonts"
 
 /**
  * Pico's composition root — the only component a host renders.
@@ -48,16 +49,20 @@ export function PicoSurface({
   model,
   host,
   initialView,
+  font,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
+  /** One of Pico's faces. Absent: the default face, Tiny5. */
+  readonly font?: PicoFontId
 }) {
   // `pico-theme` carries the palette and knobs; `pico-screen` is the size
   // container the virtual pixel is measured against. Both on the root, so the
-  // pixel derives from exactly the box the host gave Pico.
+  // pixel derives from exactly the box the host gave Pico. `data-pico-font`
+  // names a face; without it the tokens use the default.
   return (
-    <div className="pico-theme pico-screen">
+    <div className="pico-theme pico-screen" data-pico-font={font}>
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : (

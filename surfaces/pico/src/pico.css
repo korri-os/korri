@@ -1,13 +1,6 @@
-/** Global font, reset, screen scope and reduced motion only.
- * Tokens are imported by index.ts; components import their own styles. */
-/* Built from src/fonts/pico8-glyphs.txt by scripts/build-font.py. Vendored,
- * not fetched: a preview and a handheld both have to render with no network. */
-@font-face {
-	font-family: "Pico8";
-	src: url("./fonts/pico8.woff2") format("woff2");
-	font-display: block;
-}
-
+/** Reset, screen scope and reduced motion only. Tokens and the faces
+ * (pico-fonts.css) are imported by index.ts; components import their own
+ * styles. */
 /**
  * Padding counts inside a box, everywhere inside a screen.
  *
