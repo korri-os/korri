@@ -53,6 +53,7 @@ struct TestRuntime {
     reports: std::rc::Rc<std::cell::RefCell<BTreeMap<PathBuf, Report>>>,
     events: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     fail_stop: std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    fail_start: std::rc::Rc<std::cell::RefCell<Option<String>>>,
 }
 
 impl Drop for Host {
@@ -682,9 +683,11 @@ impl Host {
                 Err(error) => errors.push(error),
             }
         }
-        if !errors.is_empty() {
-            return Err(errors.join("; "));
-        }
+        // A plugin that failed to restore is left out of the list, and its
+        // error still fails the command. It must not take the others with it:
+        // one plugin service losing a boot-time race (Sunshine on the RG353M,
+        // 2026-10-01) left every plugin unavailable.
+        //
         // Restore already checked each enabled plugin's approval, declaration
         // and publisher signature. Publish those reports; checking them again
         // would repeat the slowest part of boot. Single-plugin operations
@@ -693,10 +696,17 @@ impl Host {
         enabled.sort_by(|(a, _), (b, _)| a.id.cmp(&b.id));
         let mut reports = Vec::new();
         for (receipt, report) in enabled {
-            self.settled(&receipt)?;
-            reports.push(report);
+            match self.settled(&receipt) {
+                Ok(()) => reports.push(report),
+                Err(error) => errors.push(error),
+            }
         }
-        self.write_registry(reports)
+        self.write_registry(reports)?;
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
     }
 
     /// Store metadata for every enabled plugin, read with one Nix call. Only a
@@ -729,6 +739,7 @@ impl Host {
 
     /// Restore one state directory. For an enabled plugin, return its checked
     /// report: boot publishes it without loading the plugin a second time.
+    /// An error names the plugin it belongs to.
     fn restore_directory(
         &self,
         path: &Path,
@@ -739,53 +750,64 @@ impl Host {
             if self.directory(&receipt.id) != path {
                 return Err("receipt identity does not match its directory".into());
             }
-            self.prepare(&receipt.id)?;
-            if matches!(receipt.desired, Desired::Enabled) {
-                let report = self.approved_in(&receipt, snapshot)?;
-                let authorized = self.verify_publisher_in(
-                    snapshot,
-                    &receipt.package,
-                    &receipt.provenance,
-                    package::StoreContents::TrustRegistered,
-                );
-                let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
-                if authorized.is_ok()
-                    && !pending
-                    && fs::read_link(self.root(&receipt.id, "active"))
-                        .is_ok_and(|path| path == receipt.package)
-                    && self.units_matches_running(&report)?
-                {
-                    self.firewall_apply(&report)?;
-                } else {
-                    // Stop first even when authority was revoked. Keep the
-                    // receipt and roots on denial; never restart revoked code.
-                    self.units_stop(&receipt.id, false)?;
-                    authorized?;
-                    self.units_start(&report)?;
-                }
-                self.selection(&receipt.id).settle(&receipt)?;
-                return Ok(Some((receipt, report)));
-            }
-            self.restore_one(&receipt.id)?;
-        } else {
-            // Install is always disabled. Without a committed receipt it
-            // cannot have started a daemon. A completed removal also reaches
-            // this state only after stop/cleanup succeeded.
-            let name = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .ok_or("invalid state directory")?;
-            if !name
-                .strip_prefix("korri-plugin-")
-                .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
-            {
-                return Err("unexpected entry in plugin state directory".into());
-            }
-            let roots = self.paths.roots.join(name);
-            storage::directory(&roots)?;
-            SelectionStore::new(path.join("selection.json"), roots).remove()?;
+            let id = receipt.id.clone();
+            return self
+                .restore_receipt(receipt, snapshot)
+                .map_err(|error| format!("plugin {id}: {error}"));
         }
+        // Install is always disabled. Without a committed receipt it
+        // cannot have started a daemon. A completed removal also reaches
+        // this state only after stop/cleanup succeeded.
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("invalid state directory")?;
+        if !name
+            .strip_prefix("korri-plugin-")
+            .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            return Err("unexpected entry in plugin state directory".into());
+        }
+        let roots = self.paths.roots.join(name);
+        storage::directory(&roots)?;
+        SelectionStore::new(path.join("selection.json"), roots).remove()?;
         Ok(None)
+    }
+
+    fn restore_receipt(
+        &self,
+        receipt: Receipt,
+        snapshot: Option<&package::StoreSnapshot>,
+    ) -> Result<Option<(Receipt, Report)>, String> {
+        self.prepare(&receipt.id)?;
+        if !matches!(receipt.desired, Desired::Enabled) {
+            self.restore_one(&receipt.id)?;
+            return Ok(None);
+        }
+        let report = self.approved_in(&receipt, snapshot)?;
+        let authorized = self.verify_publisher_in(
+            snapshot,
+            &receipt.package,
+            &receipt.provenance,
+            package::StoreContents::TrustRegistered,
+        );
+        let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
+        if authorized.is_ok()
+            && !pending
+            && fs::read_link(self.root(&receipt.id, "active"))
+                .is_ok_and(|path| path == receipt.package)
+            && self.units_matches_running(&report)?
+        {
+            self.firewall_apply(&report)?;
+        } else {
+            // Stop first even when authority was revoked. Keep the
+            // receipt and roots on denial; never restart revoked code.
+            self.units_stop(&receipt.id, false)?;
+            authorized?;
+            self.units_start(&report)?;
+        }
+        self.selection(&receipt.id).settle(&receipt)?;
+        Ok(Some((receipt, report)))
     }
 
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
@@ -881,6 +903,9 @@ impl Host {
                 .events
                 .borrow_mut()
                 .push(format!("start:{}", report.id));
+            if runtime.fail_start.borrow().as_deref() == Some(report.id.as_str()) {
+                return Err(format!("injected start failure for {}", report.id));
+            }
             return Ok(());
         }
         self.units.start(report)
@@ -1357,6 +1382,31 @@ mod tests {
             loads(&runtime),
             ["load:@test:clock", "load:@test:idle", "load:@test:weather"]
         );
+    }
+
+    #[test]
+    fn one_plugin_that_fails_to_start_at_boot_leaves_the_others_listed() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let clock = report("@test:clock", "clock-isolated");
+        let stream = report("@test:stream", "stream-isolated");
+        let runtime = runtime(&[clock.clone(), stream.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        for selected in [&clock, &stream] {
+            install(&host, selected.clone());
+            host.set_enabled(&selected.id, true).unwrap();
+        }
+        runtime.fail_start.replace(Some(stream.id.clone()));
+
+        let error = host.restore_all().unwrap_err();
+
+        assert!(error.contains("plugin @test:stream"), "{error}");
+        assert!(!error.contains("plugin @test:clock"), "{error}");
+        assert_eq!(published(&host).1, ["@test:clock"]);
+        assert!(matches!(
+            host.status(&stream.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        ));
     }
 
     #[test]
