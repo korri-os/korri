@@ -84,8 +84,11 @@ handoff without replacing the device's installed loader.
 
 ## Safety boundary and hardware evidence
 
-Korri configures no internal block-device writes. GRUB starts only from the
-SD's removable-media EFI path and does not update EFI variables. The native
+Korri configures no internal block-device writes. The product kernel can read
+internal UFS, and a udev rule marks UFS LUNs 1 to 5 read-only at boot. The one
+internal install on the owner's unit is recorded in [INTERNAL.md](INTERNAL.md).
+GRUB starts only from the removable-media EFI path of the ESP the loader
+selected, and does not update EFI variables. The native
 NixOS installer is disabled, and no Retroid flashing tools or internal firmware
 payloads are included. SD root selection is explicit. The normal first-boot
 expansion changes only the disk backing that root.

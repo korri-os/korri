@@ -14,13 +14,16 @@ The recovery system is hardware-verified. The Korri system is statically
 verified but still requires a coordinated physical display and controller
 acceptance pass. The product image seeds the key-only SSH plugin on TCP 2222;
 the recovery image does not start SSH. Neither image writes internal storage or
-includes a loader, Android, or firmware flashing path.
+includes a loader, Android, or firmware flashing path. The owner's unit now
+runs the product from internal UFS. That was a separate, guarded one-off
+install; see [internal UFS install](INTERNAL.md).
 
 Both kernels and their DTB build from the audited Linux 7.2 source and ROCKNIX
 patch queue. Hardware testing isolated the earlier black-screen build to GCC
 14.3; GCC 15.2 with Binutils 2.44 works. Recovery uses the 18.4 MB TTY trim. The
 product uses the full ROCKNIX configuration plus an explicit delta for the
-Nix toolchain, firewall, and internal UFS host removal. An exact resolved-config
+Nix toolchain, firewall, and a block-only internal UFS host (no UFS BSG
+query node). An exact resolved-config
 check rejects any unrecorded change before kernel compilation. Touch, grouped
 stick LEDs, PMIC temperature alarms and RTC stay enabled. The owner retained
 the RTC despite its observed 2066 clock jump before NTP synchronization.

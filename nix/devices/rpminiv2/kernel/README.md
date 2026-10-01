@@ -58,7 +58,9 @@ native recovery kernel export remains unchanged.
 
 The delta records the Nix GCC 15.2/Binutils 2.44 toolchain probes, inactive
 embedded-initramfs fields, nftables compatibility and reject/log dependencies,
-and removal of the internal UFS host. `NO_IOPORT_MAP` is not a netfilter
+and a block-only internal UFS host: the ROCKNIX host driver stays built in so
+the product can boot from internal UFS, and `SCSI_UFS_BSG` stays off so
+userspace has no UFS query path (2026-10-01). `NO_IOPORT_MAP` is not a netfilter
 symbol. ARM64 Kconfig enables it only when PCI is disabled. The product keeps
 PCI for Wi-Fi, so that old trim value cannot survive resolution. The separate
 NixOS initrd remains unchanged.
@@ -195,7 +197,8 @@ this Mini V2 alongside the `schedutil` CPU governor. They are not a measured
 safe charging or game-load thermal limit. At 40°C the fan remained at level 1
 after the runtime change; a new boot and step-down still need device checks.
 The new product kernel increases driver and network attack surface and module
-closure. No UFS or extra display driver is intentionally enabled. An SD EFI
+closure. The UFS host is enabled for the internal root; no extra display
+driver is intentionally enabled. An SD EFI
 boot, charger behavior, fan rotation, wireless association, media decode and
 controller input require physical tests before support claims. A cross build
 on the development host produced an `Image` with SHA-256
