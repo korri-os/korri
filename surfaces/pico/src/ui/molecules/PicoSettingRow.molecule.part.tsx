@@ -42,6 +42,12 @@ export function DestructiveAction() {
   return <PicoSettingRow onActivate={() => undefined} row={row} />
 }
 
+/** Pico's own row: a long list shown one choice at a time. */
+export function FontChoice() {
+  const row = picoSettingsViewFromModel(fixtureModel, { font: "m5x7" }).groups.at(-1)!.rows[0]!
+  return <PicoSettingRow onActivate={() => undefined} row={row} />
+}
+
 export function TextValue() {
   const row = picoSettingsViewFromModel(fixtureModel).groups[0]!.rows[0]!
   return <PicoSettingRow onActivate={() => undefined} row={row} />

@@ -2,6 +2,7 @@ import type {
   SurfaceModel,
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
+import { PICO_FONTS, type PicoFontId } from "./pico-fonts"
 
 /**
  * One settings row as the screen draws it.
@@ -12,11 +13,15 @@ import type {
  * `sensitiveText` are shown but not edited: Pico has no on-screen keyboard yet,
  * and a row that looks editable and is not would be a lie the user finds out
  * about with their thumb.
+ *
+ * `step` is a cycler for a long list: it shows only the current choice, as
+ * `◀ CHOICE ▶`, because ten face names side by side do not fit a row.
  */
 export type PicoSettingControl =
   | { readonly kind: "fact" }
   | { readonly kind: "action"; readonly actionId: string; readonly destructive: boolean; readonly confirmation?: PicoConfirmation }
   | { readonly kind: "cycle"; readonly next: string; readonly options: readonly string[]; readonly current: number }
+  | { readonly kind: "step"; readonly next: string; readonly current: string }
   | { readonly kind: "text" }
 
 export interface PicoConfirmation {
@@ -51,7 +56,39 @@ export interface PicoSettingsView {
   readonly buildLabel?: string
 }
 
-export function picoSettingsViewFromModel(model: SurfaceModel): PicoSettingsView {
+/** The id of Pico's own face row. Pico handles a change to it; Korri never sees it. */
+export const PICO_FONT_SETTING = "pico:font"
+
+/**
+ * Pico's own settings: things only this surface has, kept by Pico on this
+ * device. Listed after everything Korri published, under Pico's name, so they
+ * never read as Korri's.
+ */
+function picoGroup(font: PicoFontId): PicoSettingsGroupView {
+  const at = Math.max(0, PICO_FONTS.findIndex((candidate) => candidate.id === font))
+  const current = PICO_FONTS[at]
+  const next = PICO_FONTS[(at + 1) % PICO_FONTS.length]
+  return {
+    title: "PICO",
+    rows: [{
+      id: PICO_FONT_SETTING,
+      label: "Font",
+      description: "Kept on this device. Changes at once.",
+      control: { kind: "step", next: next?.id ?? font, current: current?.name ?? font },
+      state: "idle",
+    }],
+  }
+}
+
+/**
+ * The settings screen's view. `pico` carries Pico's own preferences; without
+ * it the view holds only what Korri published, as a preview of Korri's part
+ * shows it.
+ */
+export function picoSettingsViewFromModel(
+  model: SurfaceModel,
+  pico?: { readonly font: PicoFontId },
+): PicoSettingsView {
   const identity = model.identityManagement
   const identityRows: PicoSettingRowView[] = identity ? [
     ...(identity.localBackupAvailable ? [{
@@ -95,6 +132,7 @@ export function picoSettingsViewFromModel(model: SurfaceModel): PicoSettingsView
         rows: group.items.map((item) => rowFor(item, model)),
       })),
       ...(identityRows.length ? [{ title: "IDENTITY", rows: identityRows }] : []),
+      ...(pico === undefined ? [] : [picoGroup(pico.font)]),
     ],
     ...(model.buildLabel === undefined ? {} : { buildLabel: model.buildLabel }),
   }

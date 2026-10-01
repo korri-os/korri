@@ -28,6 +28,8 @@ import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-setting
 import type { PicoInitialView } from "./pico-initial-view"
 import type { PicoShelfGame } from "./pico-shelf-game"
 import type { PicoFontId } from "./pico-fonts"
+import { isPicoFont, readPicoFont, rememberPicoFont } from "./pico-font-preference"
+import { PICO_FONT_SETTING } from "./pico-settings-view"
 
 /**
  * Pico's composition root — the only component a host renders.
@@ -54,19 +56,28 @@ export function PicoSurface({
   readonly model: SurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
-  /** One of Pico's faces. Absent: the default face, Tiny5. */
+  /** Show this face whatever is stored, as a preview or a test does.
+   * Absent: the face this device chose in Settings, or Tiny5. */
   readonly font?: PicoFontId
 }) {
+  /* The face this device chose, read once and kept by Pico (pico-font-
+   * preference.ts). A change applies at once and is remembered. */
+  const [chosen, setChosen] = useState(readPicoFont)
+  const shown = font ?? chosen
+  const choose = useCallback((id: PicoFontId) => {
+    rememberPicoFont(id)
+    setChosen(id)
+  }, [])
   // `pico-theme` carries the palette and knobs; `pico-screen` is the size
   // container the virtual pixel is measured against. Both on the root, so the
   // pixel derives from exactly the box the host gave Pico. `data-pico-font`
-  // names a face; without it the tokens use the default.
+  // names the face shown.
   return (
-    <div className="pico-theme pico-screen" data-pico-font={font}>
+    <div className="pico-theme pico-screen" data-pico-font={shown}>
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
       ) : (
-        <PicoCatalogSurface host={host} initialView={initialView} model={model} />
+        <PicoCatalogSurface font={shown} host={host} initialView={initialView} model={model} onFont={choose} />
       )}
     </div>
   )
@@ -130,10 +141,14 @@ function PicoCatalogSurface({
   model,
   host,
   initialView,
+  font,
+  onFont,
 }: {
   readonly model: SurfaceModel
   readonly host: SurfaceHost
   readonly initialView?: PicoInitialView
+  readonly font: PicoFontId
+  readonly onFont: (font: PicoFontId) => void
 }) {
   const runner = model.runnerChoice
   const runnerOpen = runner !== undefined && runner._tag !== "Closed"
@@ -349,7 +364,14 @@ function PicoCatalogSurface({
           clockLabel={model.clockLabel}
           onAsk={(actionId, confirmation) => setAsking({ actionId, confirmation })}
           onCancel={() => setAsking(undefined)}
-          onChange={(settingId, value) => host.changeSetting(settingId, value)}
+          onChange={(settingId, value) => {
+            /* Pico's own row: Pico keeps it, and Korri is never asked. */
+            if (settingId === PICO_FONT_SETTING) {
+              if (isPicoFont(value)) onFont(value)
+            } else {
+              host.changeSetting(settingId, value)
+            }
+          }}
           onConfirm={() => {
             if (asking !== undefined) host.runAction(asking.actionId)
             setAsking(undefined)
@@ -359,7 +381,7 @@ function PicoCatalogSurface({
             if (actionId.startsWith("identity:")) setIdentityAction(actionId)
             else host.runAction(actionId)
           }}
-          settings={picoSettingsViewFromModel(model)}
+          settings={picoSettingsViewFromModel(model, { font })}
         />
       ) : finding && quiet && viewing === undefined ? (
         <PicoLibrary

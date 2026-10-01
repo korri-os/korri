@@ -169,6 +169,12 @@ test("destructive command has a description but no state arrows", () => {
   expect(view.container.querySelector(".pico-row-detail")).toBeNull()
 })
 
+test("Pico's font row shows only the face in use, between arrows", () => {
+  const view = render(<SettingRow.FontChoice />)
+  expect(view.getByRole("button", { name: /Font/ }).textContent).toContain("◀ M5X7 ▶")
+  expect(view.getByText("Kept on this device. Changes at once.")).toBeDefined()
+})
+
 test("range gameplay control is a slider with the supplied value", () => {
   const view = render(<ControlRow.RangeValue />)
   const slider = view.getByRole("slider", { name: "Volume" })

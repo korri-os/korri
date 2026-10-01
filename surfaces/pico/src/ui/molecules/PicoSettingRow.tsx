@@ -25,6 +25,8 @@ export function PicoSettingRow({
       {row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : null}
       {row.control.kind === "cycle" ? (
         <PicoSegments current={row.control.current} options={row.control.options} />
+      ) : row.control.kind === "step" ? (
+        <span>{`◀ ${row.control.current.toUpperCase()} ▶`}</span>
       ) : row.value === undefined ? null : (
         <span>{row.value}</span>
       )}

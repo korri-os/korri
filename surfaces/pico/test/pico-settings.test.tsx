@@ -8,10 +8,13 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
-import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
+import { createFixtureHost, fixtureModel, fixtureOverlay } from "../src/fixtures/fixture-host"
 import { PicoSurface } from "../src/PicoSurface"
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  window.localStorage.clear()
+})
 
 const model = (overrides: Partial<SurfaceModel> = {}): SurfaceModel => ({
   ...fixtureModel,
@@ -47,9 +50,82 @@ describe("opening settings", () => {
     expect(screen.queryByRole("tab", { name: "DISPLAY" })).toBeNull()
   })
 
-  test("says so when Korri has nothing to state", () => {
+  test("with nothing from Korri, Pico's own settings remain", () => {
     open({ settings: [] })
-    expect(screen.getByText("NOTHING TO SET")).toBeTruthy()
+    expect(screen.getByRole("tab", { name: "PICO" })).toBeTruthy()
+    expect(screen.queryByText("NOTHING TO SET")).toBeNull()
+  })
+})
+
+describe("choosing a face", () => {
+  const root = (view: ReturnType<typeof render>) => view.container.querySelector(".pico-theme")
+  const openPico = () => {
+    const opened = open()
+    fireEvent.click(screen.getByRole("tab", { name: "PICO" }))
+    return opened
+  }
+  const fontRow = () => screen.getByRole("button", { name: /^Font/ })
+
+  test("Pico lists its own group after Korri's, with the face in use", () => {
+    const { view } = openPico()
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent)
+    expect(tabs.at(-1)).toBe("PICO")
+    expect(fontRow().textContent).toContain("TINY5")
+    expect(root(view)?.getAttribute("data-pico-font")).toBe("tiny5")
+  })
+
+  test("shows only the face in use, not all ten side by side", () => {
+    openPico()
+    expect(fontRow().textContent).toContain("◀ TINY5 ▶")
+    expect(fontRow().textContent).not.toContain("MONOGRAM")
+  })
+
+  test("a press moves to the next face at once, stores it, and asks Korri nothing", () => {
+    const { host, view } = openPico()
+    fireEvent.click(fontRow())
+    expect(root(view)?.getAttribute("data-pico-font")).toBe("tom-thumb")
+    expect(fontRow().textContent).toContain("TOM THUMB")
+    expect(window.localStorage.getItem("pico.font")).toBe("tom-thumb")
+    expect(host.calls).toEqual([])
+  })
+
+  test("the last face wraps to the first", () => {
+    window.localStorage.setItem("pico.font", "kenney-pixel")
+    const { view } = openPico()
+    fireEvent.click(fontRow())
+    expect(root(view)?.getAttribute("data-pico-font")).toBe("tiny5")
+  })
+
+  test("a stored face is used from the first frame, over a game too", () => {
+    window.localStorage.setItem("pico.font", "m5x7")
+    const host = createFixtureHost()
+    const view = render(
+      <PicoSurface
+        host={host}
+        model={{ ...fixtureModel, presentation: fixtureOverlay, status: { _tag: "Running", kicker: "PLAYING" } }}
+      />,
+    )
+    expect(root(view)?.getAttribute("data-pico-font")).toBe("m5x7")
+  })
+
+  test("a value Pico does not know is ignored, not trusted", () => {
+    window.localStorage.setItem("pico.font", "comic-sans")
+    const { view } = openPico()
+    expect(root(view)?.getAttribute("data-pico-font")).toBe("tiny5")
+  })
+
+  test("storage that refuses still changes the face for this session", () => {
+    const setItem = window.localStorage.setItem
+    window.localStorage.setItem = () => {
+      throw new Error("quota")
+    }
+    try {
+      const { view } = openPico()
+      fireEvent.click(fontRow())
+      expect(root(view)?.getAttribute("data-pico-font")).toBe("tom-thumb")
+    } finally {
+      window.localStorage.setItem = setItem
+    }
   })
 })
 

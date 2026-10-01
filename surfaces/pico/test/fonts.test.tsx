@@ -204,10 +204,10 @@ describe("the root chooses the face", () => {
     }
   })
 
-  test("the surface names no face by default, and the one it is given", () => {
+  test("the surface names the default face, and the one it is given", () => {
     const host = createFixtureHost()
     const plain = render(<PicoSurface host={host} model={fixtureModel} />)
-    expect(plain.container.querySelector(".pico-theme")?.hasAttribute("data-pico-font")).toBe(false)
+    expect(plain.container.querySelector(".pico-theme")?.getAttribute("data-pico-font")).toBe(PICO_DEFAULT_FONT)
     cleanup()
     const named = render(<PicoSurface font="m5x7" host={host} model={fixtureModel} />)
     expect(named.container.querySelector(".pico-theme")?.getAttribute("data-pico-font")).toBe("m5x7")

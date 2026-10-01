@@ -22,6 +22,8 @@ What that forbids, deliberately:
   meter**, because the treaty states neither, and a plausible-looking invented
   battery is worse than none.
 - No interpreting failure codes: Korri hands Pico finished, user-facing copy.
+- One thing of its own is stored: the face, as `pico.font` in local storage
+  (`src/pico-font-preference.ts`). Nothing else Pico shows is kept by Pico.
 
 ## The gates are the specification
 
@@ -125,9 +127,11 @@ files into the glyph tables; run them only to take a new upstream version.
   360, in whole device pixels, never below 2. Every size is a multiple of it,
   and type is a whole number of glyph pixels, so the face never blurs.
 - **Ten faces, Tiny5 by default.** Each is a free pixel font with real upper
-  and lower case, redrawn on the pixel grid. The root names one with
-  `data-pico-font` (`PicoSurface`'s `font` prop); with none named, the tokens
-  use Tiny5. A face's em is its rows of glyph pixels, so a taller face draws
+  and lower case, redrawn on the pixel grid. A person picks one under
+  Settings › PICO › Font; Pico keeps the choice itself, in the browser's local
+  storage under `pico.font` (one face id), and never tells Korri. The root
+  names the face with `data-pico-font`; `PicoSurface`'s `font` prop forces one
+  for previews and tests. A face's em is its rows of glyph pixels, so a taller face draws
   taller lines at the same pixel, and every threshold below scales with it.
 - **Sixteen colours, nothing between them.** Under a question the screen goes
   solid; focus is a hard shadow that colour-cycles, the way PICO-8's cursor

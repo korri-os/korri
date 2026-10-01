@@ -49,6 +49,7 @@ export function PicoSettings({
       case "fact":
         return
       case "cycle":
+      case "step":
         onChange(row.id, row.control.next)
         return
       case "action":

@@ -1,7 +1,8 @@
 # Pico's faces
 
-Ten free pixel fonts with real upper and lower case. Pico uses Tiny5 unless its
-root names another face with `data-pico-font`.
+Ten free pixel fonts with real upper and lower case. Pico uses Tiny5 unless a
+person picks another under Settings › PICO › Font (kept as `pico.font` in local
+storage; see `../pico-font-preference.ts`).
 
 | File | What it is |
 |---|---|
