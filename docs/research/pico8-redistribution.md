@@ -4,13 +4,15 @@
 
 User decision: Korri will never be a commercial product. Noncommercial redistribution licenses therefore belong in the candidate list. The earlier four-game shortlist was not a count of eligible games, and its commercial-first recommendation did not match that decision.
 
-This catalogue records 28 gameplay titles with published noncommercial redistribution grants. Thirteen were in the first candidate table, 13 are new discoveries after the user's selection, and two have specific asset questions recorded separately. Nine games are selected. This is a checked sample, not an exhaustive catalogue. The unrestricted-license list is separate.
+This catalogue records 42 gameplay titles with published noncommercial redistribution grants. Each of the three batches contains 13 candidates. Three further games have specific third-party questions.
+
+Seventeen games are selected. New discoveries remain separate from that selection. This is a checked sample, not an exhaustive catalogue. The unrestricted-license list is separate.
 
 This research verifies permission declarations, not gameplay or Korri compatibility. No game was installed, played, or added to a release. A declaration is not a warranty that the developer controls every third-party right.
 
 ## User-selected shortlist
 
-Keep these nine games for Korri. This is a selection record, not a downloaded or installed game bundle.
+Keep these 17 games for Korri. This is a selection record, not a downloaded or installed game bundle.
 
 1. Celeste Classic 2: Lani's Trek.
 2. Combo Pool.
@@ -21,8 +23,16 @@ Keep these nine games for Korri. This is a selection record, not a downloaded or
 7. UFO Swamp Odyssey.
 8. Solais.
 9. pigments.
+10. High Stakes.
+11. Into Ruins.
+12. Air Delivery.
+13. Marble Merger.
+14. Proserpina's Quest.
+15. Cherry Bomb.
+16. Charge!.
+17. Witchbeat.
 
-The user's shortened names refer to the games in the previous list. In particular, "deamon" is recorded as Demon Castle and "Solaris" as Solais, the title of the linked cartridge.
+The user's shortened names refer to the games in the previous lists. In particular, "deamon" is recorded as Demon Castle, "Solaris" as Solais, "quest" as Proserpina's Quest, and "whitch" as Witchbeat.
 
 ## Noncommercial redistribution candidates
 
@@ -44,9 +54,9 @@ The user's shortened names refer to the games in the previous list. In particula
 | [Scrap Boy](https://www.lexaloffle.com/bbs/?pid=scrap_boy-6) | BoneVolt | Weapon-based action platformer | `scrap_boy-6`; CC BY-NC-SA 4.0. The older `scrap_boy-4.p8` page displays this newer cartridge; use the verified current version. |
 | [Solais](https://www.lexaloffle.com/bbs/?pid=d16solais-0) | DragonXVI | Platformer where the player keeps a torch lit | `d16solais-0`; CC BY-NC-SA 4.0. |
 
-## Further candidates, not selected
+## Second discovery batch
 
-These 13 are new discoveries after the nine-game selection. All display CC4-BY-NC-SA on their original BBS cartridge panels. Do not add them to the selected shortlist without the user's choice. Some are game-jam releases; the license grant does not establish production quality.
+These 13 were discovered after the first nine-game selection. The user subsequently selected eight of them, recorded in the shortlist above. All display CC4-BY-NC-SA on their original BBS cartridge panels. Do not add the other five without the user's choice. Some are game-jam releases; the license grant does not establish production quality.
 
 | Game and original source | Developer | Game type | Verified cartridge and license | Packaging or credit note |
 |---|---|---|---|---|
@@ -64,16 +74,37 @@ These 13 are new discoveries after the nine-game selection. All display CC4-BY-N
 | [Witchbeat 1.1](https://www.lexaloffle.com/bbs/?tid=31163) | DragonXVI | Rhythm-based dungeon adventure | `51894`; CC BY-NC-SA 4.0. | The post is in Work in Progress. The author warns of bugs and no input-lag calibration, potentially making it unplayable on some machines. Treat this as a lower-priority compatibility candidate. |
 | [Charge! 1.0](https://www.lexaloffle.com/bbs/?tid=29734) | DragonXVI | Science-fiction scavenging roguelike | `42930`; CC BY-NC-SA 4.0. | Explore derelict stations for supplies and ship power. The author says it was made from scratch in 48 hours; controls use directions and two action buttons. |
 
-## Published grants with specific asset questions
+## Third discovery batch, not selected
+
+These are further discoveries after the 17-game selection. Keep them separate until the user selects them. Twelve games have CC4-BY-NC-SA cartridge grants on their original developers' BBS posts. Caped Feline Arena publishes separate code and asset grants in the post body and on the developer's itch.io page. These are not inferences from free downloads. The BBS panel's `No License` label is not decisive when the developer also publishes explicit terms in the post.
+
+| Game and original source | Developer | Game type | Verified cartridge and license | Packaging or credit note |
+|---|---|---|---|---|
+| [Mai-Chan's Sweet Buns](https://www.lexaloffle.com/bbs/?pid=56576) | Krystman; music by Sebastian Haßler | Bakery pastry-matching puzzle | `56576`; CC BY-NC-SA 4.0. | D-pad moves the cursor; two action buttons select pastries and rotate the cursor. Preserve the credited Famicase cover author Louis Lloyd-Judson and the composer credit. |
+| [Spaceman 8 1.2](https://www.lexaloffle.com/bbs/?tid=28485) | kometbomb; graphics and sound by iLKke | Jetpack mining with oxygen and equipment upgrades | `37216`; CC BY-NC-SA 4.0. | Preserve both creator credits. No asset exclusion was identified in the inspected post. |
+| [PICORACER-2048 1.5.0](https://www.lexaloffle.com/bbs/?tid=2243) | impbox | Futuristic racing with looping tracks | `16305`; CC BY-NC-SA 4.0. | The latest notes call it a beta with some missing features. The documented menu key is Q, so verify menu access on handhelds. The post also advertises the later VEKTOR2089 game; that separate game's features and permission are not established here. |
+| [Worm Nom Nom 1.2](https://www.lexaloffle.com/bbs/?tid=3547) | kometbomb and iLKke / Tic Tac Toad | Snake-style arcade game with jumping | `23208`; CC BY-NC-SA 4.0. | Steer with directions and jump with either action button. Preserve both creator credits. |
+| [DeFacto](https://www.lexaloffle.com/bbs/?tid=30631) | NuSan | Factory automation | `48406`; CC BY-NC-SA 4.0. | Mouse or keyboard play is explicit. Saving uses the pause/main menu; verify access and persistence on handhelds. |
+| [SnowBall [LD45]](https://www.lexaloffle.com/bbs/?tid=35583) | NuSan | Rolling physics platformer | `snowballnusan-0`; CC BY-NC-SA 4.0. | Seven levels; directions move/jump and an action button resets. A short 48-hour jam game. |
+| [ROAD REX](https://www.lexaloffle.com/bbs/?tid=34526) | Powersaurus / Ben Jones | Dinosaur road action | `road_rex-0`; CC BY-NC-SA 4.0. | Directions drive, change lanes and aim; the two action buttons fire and charge/release a jump. The developer calls the scoring system opaque. |
+| [The Wizard Pig](https://www.lexaloffle.com/bbs/?tid=29180) | Powersaurus | Terrain-shaping god-game | `41233`; CC BY-NC-SA 4.0. | Directions and two action buttons. Use the displayed 2017-06-02 cart; the developer's update adds tutorials, music and proper endgame states. |
+| [allocation](https://www.lexaloffle.com/bbs/?tid=33693) | Mush | Metroidvania with a player-built world map | `allocation-0`; CC BY-NC-SA 4.0. | Directions and two action buttons cover movement, shooting and room placement. This is the original jam release, not a commenter's proposed save-enabled fork. |
+| [Vitreous](https://www.lexaloffle.com/bbs/?tid=36983) | Mush | Arcade shoot-em-up | `vitreous-0`; CC BY-NC-SA 4.0. | Three bosses and faster repeat loops. Directions and Z/X are documented. |
+| [Dungeon Solitaire](https://www.lexaloffle.com/bbs/?tid=36630) | Mush | Deck-building dungeon roguelike | `dungeonsolitaire-0`; CC BY-NC-SA 4.0. | A commenter reports a final-level move-check bug that can incorrectly end a winnable run. No developer fix was found in the inspected thread. Treat it as lower priority until tested. |
+| [Winter Golf](https://www.lexaloffle.com/bbs/?tid=31956) | 2darray | Snowball physics golf | `winter_golf_2darray-1`; CC BY-NC-SA 4.0. | Five courses. Aim with directions, hold/release an action button to shoot, hold the other to restart. Retain restart access when a ball leaves the course. |
+| [Caped Feline Arena V1.0](https://www.lexaloffle.com/bbs/?pid=78599) | Powersaurus / Ben Jones; music by Steve Jones / rych-t | Magical-cat first-person shooter | `caped_feline_arena-4`; BSD-2-Clause code and CC BY-NC-SA 4.0 assets. | The BBS panel says `No License`, but the original post explicitly licenses source and assets; [the developer's itch.io page](https://powersaurus.itch.io/caped-feline-arena) confirms both. Preserve both licenses and credits, including Lode Vandevenne, Morgan McGuire and 2DArray. Eight single-player maps and three botmatch maps. Mouse look is optional; keyboard controls are documented. |
+
+## Published grants with specific third-party questions
 
 | Game and source | Verified grant | Question to resolve before bundling |
 |---|---|---|
 | [Villager](https://www.lexaloffle.com/bbs/?pid=nano_villager-0.p8), by partnano / bernie wick | `nano_villager-0`; CC BY-NC-SA 4.0 for the cartridge. This corrects the earlier incomplete MIT-code-only check of its itch.io page. It is a relaxing city-builder. | The author credits inspiration from [Cluly's tileset](https://cluly.itch.io/pico-rpg-forest-tileset). Its page allows commercial use and says "Not for resale", but does not provide a CC license. Check whether assets were copied and whether redistribution inside this CC-licensed cartridge is covered. The BBS author also explains that the game intentionally has no save feature; assess that gameplay cost separately. |
 | [Barp the Balldragon 1.1](https://www.lexaloffle.com/bbs/?pid=kitkimero-0), by Saffith | `kitkimero-0`; CC BY-NC-SA 4.0. A platformer with three worlds of three levels. The older numeric thread `54395` now displays this version. | Two commenters compare the first level's music to Sonic 3. This is an unverified resemblance, not proof of copied music. Check the composition or ask the author before making a stronger rights-clearance claim. |
+| [Pico Racer](https://www.lexaloffle.com/bbs/?tid=3198), by kometbomb | `20068`; CC BY-NC-SA 4.0. Arcade road racing, distinct from impbox's PICORACER-2048. | The author explicitly credits a borrowed `ord()` helper from [YellowAfterlife's post](https://www.lexaloffle.com/bbs/?tid=2420). That inspected post offers the short function but states no explicit redistribution license. The publisher's cartridge grant is verified; the helper's upstream terms remain unchecked. This is a permission question, not a finding of infringement. |
 
 These questions do not negate the published cartridge grants. They are unresolved third-party-rights checks. No standalone tileset or external soundtrack is proposed for distribution.
 
-[Rainy Day Friends](https://www.lexaloffle.com/bbs/?pid=16886), by electricgryphon, also has a CC BY-NC-SA 4.0 grant on cartridge `16886`. It is an atmospheric art scene, not an additional verified gameplay title, so it is excluded from the 28-game count.
+[Rainy Day Friends](https://www.lexaloffle.com/bbs/?pid=16886), by electricgryphon, also has a CC BY-NC-SA 4.0 grant on cartridge `16886`. It is an atmospheric art scene, not an additional verified gameplay title, so it is excluded from the gameplay count.
 
 ## Commercial-friendly permission, separately
 
@@ -93,7 +124,7 @@ The [CC BY-NC 4.0 legal code](https://creativecommons.org/licenses/by-nc/4.0/leg
 
 Both licenses define NonCommercial as "not primarily intended for or directed towards commercial advantage or monetary compensation". Korri's stated noncommercial scope fits the intended candidate search. Third parties who sell devices with these games still need to satisfy that restriction or obtain separate permission.
 
-The [MIT text](https://opensource.org/license/mit) permits distribution and sale, subject to retaining its copyright and permission notice. Preserve the actual grant and complete credits for each selected version. Keep the licensing of bundled games separate from Korri's own license.
+The [MIT text](https://opensource.org/license/mit) permits distribution and sale, subject to retaining its copyright and permission notice. The [BSD-2-Clause text](https://opensource.org/license/bsd-2-clause) requires retention of the copyright notice, conditions and disclaimer. Caped Feline Arena's code grant does not remove its assets' noncommercial restriction. Preserve the actual grant and complete credits for each selected version. Keep the licensing of bundled games separate from Korri's own license.
 
 ## Candidates not cleared by inspected evidence
 
@@ -116,6 +147,8 @@ The [MIT text](https://opensource.org/license/mit) permits distribution and sale
 | Jack of Spades | [The original post](https://www.lexaloffle.com/bbs/?tid=34544) licenses title cart `jostitle-7`, but the author says the game is multi-cart and mouse-only. All four required cartridges and their grants were not verified. |
 | Other paranoidcactus games | [Captain Neat-O in the Time Nexus](https://www.lexaloffle.com/bbs/?tid=46707), `neatonexus-3`, and [Lava Joe](https://www.lexaloffle.com/bbs/?tid=36418), `lavajoe-0`, display `No License`. Do not extend UFO Swamp Odyssey's or X-Zero's grants to them. |
 | Other BoneVolt games | [RGB Zero](https://www.lexaloffle.com/bbs/?tid=39559), `rgbzero-1`; [Crowded Dungeon Crawler](https://www.lexaloffle.com/bbs/?tid=39865), `crowded_dungeon_crawler-3`; and [Stuck in the Sewers](https://www.lexaloffle.com/bbs/?tid=39830), `stuck_in_the_sewers-6`, display `No License`. Do not extend Scrap Boy's grant to them. |
+| Dank Tomb | [The developer's original post](https://www.lexaloffle.com/bbs/?tid=29709) marks `dank_tomb-0` as `No License`. Pay-what-you-want downloads and optional access to source code are not a redistribution grant. |
+| Mistigri | [The original post](https://www.lexaloffle.com/bbs/?tid=3421) marks cartridge `21603` as `No License`. Do not extend pigments' grant to this older benjamin_soule game. |
 
 ## Packaging and runtime limits
 
@@ -129,6 +162,6 @@ A cartridge license does not grant redistribution permission for the full offici
 
 ## Next step for noncommercial Korri
 
-The user-selected nine-game shortlist replaces the earlier proposed six-game starter bundle. Keep further discoveries as candidates until the user selects them. Compatibility testing and release packaging remain separate work.
+The user-selected 17-game shortlist replaces the earlier proposed six-game starter bundle. Keep further discoveries as candidates until the user selects them. Compatibility testing and release packaging remain separate work.
 
 Retain published permission and credits for the exact shipped versions. Do not exclude noncommercial licenses merely to preserve a commercial option the user has explicitly rejected. No release bundle changed in this research.
