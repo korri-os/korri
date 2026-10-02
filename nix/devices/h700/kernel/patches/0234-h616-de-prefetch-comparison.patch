@@ -1,0 +1,48 @@
+Subject: [PATCH DEBUG] compare H616 DE translation prefetch off
+
+Temporary comparison only. Preserve identical first-fault diagnostics and
+all DMA mappings, permissions, recovery, interrupt enables and other-master
+prefetch bits. H616 manual Table3-8 p207 assigns master0 to DE; pp226-227
+define its prefetch bit at0x70. H6 behavior is unchanged. Register readback
+must change from0x3f to0x3e. No translation bypass or fault masking.
+
+Disabling prediction can reduce translation throughput or change timing.
+A clean run proves sensitivity, not safe retirement. Remove this comparison
+before selecting a production correction.
+
+diff --git a/drivers/iommu/sun50i-iommu.c b/drivers/iommu/sun50i-iommu.c
+--- a/drivers/iommu/sun50i-iommu.c
++++ b/drivers/iommu/sun50i-iommu.c
+@@ -427,6 +427,7 @@
+ {
+ 	struct sun50i_iommu_domain *sun50i_domain;
+ 	unsigned long flags;
++	u32 prefetch;
+ 	int ret;
+ 
+ 	if (!iommu->domain)
+@@ -445,13 +446,17 @@
+ 	spin_lock_irqsave(&iommu->iommu_lock, flags);
+ 
+ 	iommu_write(iommu, IOMMU_TTB_REG, sun50i_domain->dt_dma);
+-	iommu_write(iommu, IOMMU_TLB_PREFETCH_REG,
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(0) |
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(1) |
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(2) |
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(3) |
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(4) |
+-		    IOMMU_TLB_PREFETCH_MASTER_ENABLE(5));
++	prefetch = IOMMU_TLB_PREFETCH_MASTER_ENABLE(0) |
++		   IOMMU_TLB_PREFETCH_MASTER_ENABLE(1) |
++		   IOMMU_TLB_PREFETCH_MASTER_ENABLE(2) |
++		   IOMMU_TLB_PREFETCH_MASTER_ENABLE(3) |
++		   IOMMU_TLB_PREFETCH_MASTER_ENABLE(4) |
++		   IOMMU_TLB_PREFETCH_MASTER_ENABLE(5);
++	/* Diagnostic comparison: H616 manual pp226-227, DE is master 0. */
++	if (of_device_is_compatible(iommu->dev->of_node,
++				    "allwinner,sun50i-h616-iommu"))
++		prefetch &= ~IOMMU_TLB_PREFETCH_MASTER_ENABLE(0);
++	iommu_write(iommu, IOMMU_TLB_PREFETCH_REG, prefetch);
+ 	iommu_write(iommu, IOMMU_BYPASS_REG, 0);
+ 	iommu_write(iommu, IOMMU_INT_ENABLE_REG, IOMMU_INT_MASK);
+ 	iommu_write(iommu, IOMMU_DM_AUT_CTRL_REG(SUN50I_IOMMU_ACI_NONE),
