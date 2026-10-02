@@ -83,9 +83,13 @@ Which plugin's title wins is still open.
 
 1. Decided above.
 2. Decided above, except which title wins when declarations disagree.
-3. How a hash-only runner such as Skate 3 links its hashes to a system. With
-   combined rules the hash would appear twice: once as a system rule and once
-   in the runner's `releases`. Unresolved.
+3. Resolved on 2026-10-02 by the user's correction. A recompilation is a
+   runner, like Dolphin. Runner `releases` only select routes. They do not
+   identify a system, and the Skate 3 plugin declares no system. The ISO's
+   system comes from system rules in other plugins. `linux_routes.rs` already
+   matches hash runners without checking the release's system. Still open:
+   what happens when no system rule identifies a file that a runner accepts
+   by hash.
 4. Field names and rule shapes.
 5. Which container readers are in the first slice: CHD, `.cue` tracks,
    ISO 9660 file lookup.
