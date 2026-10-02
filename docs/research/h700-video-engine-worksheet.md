@@ -1,12 +1,15 @@
 # H700 video-engine worksheet
 
-The user approved three checks on the RG35XX Pro. Software streaming is excluded. This worksheet records hardware decode and encoder feasibility, not a working streaming host.
+Correction: the clean display fix is insufficient. The exact landed kernel added a master-0 DMA fault during a later raw-display probe. The bounded clean acceptance below does not establish display safety.
 
-| Step | State | Required evidence |
+The user approved sustained 640x480 at 60 fps hardware-only Sunshine hosting on the RG35XX Pro. This revision restores the pre-VE kernel source for safety. It does not abandon that target or select C. Earlier sections record historical tests, not current deployment approval.
+
+| Step | Current state | Evidence or remaining work |
 |---|---|---|
-| 1. Add the H616 VE series. | Built and checked; not landed. | All 18 delta settings survived configuration. Cedrus and three board DTBs passed inspection. Runtime display faults block normal deployment. |
-| 2. Boot and decode H.264. | Decode verified; display-DMA issue open. | 120 hardware requests, 120 VE interrupts, and actual decoded bytes identical to the reference. |
-| 3. Compare encoding registers. | Checked. Verdict unresolved. | The H616 manual omits the encoding register interface. Bootlin's interface is now identified. |
+| 1. Add the H616 VE series. | Withdrawn pending a display fix. | The landed Image failed a later display-only probe after passing 13 clean cycles. The baseline kernel is restored on the Pro. |
+| 2. Boot and decode H.264. | Hardware decode proved historically; unavailable on the restored baseline. | 120 hardware requests, 120 VE interrupts, and copied decoded bytes identical to the reference. |
+| 3. Compare encoding registers. | Partial source grounding; H616 encoder compatibility unresolved. | Target BSP source establishes IRQ bank offsets. Actual encoder IP version, complete layouts and DMA address units still need grounding. |
+| 4. Deliver hardware-only Sunshine at 640x480 at 60 fps. | Authorized and unfinished. | No hardware-encoded frame or measured stream exists. Sunshine remains installed, approved and Disabled. |
 
 ## Baseline
 
@@ -218,3 +221,27 @@ The user approved the end-to-end plan and selected sustained **640×480 at 60 fp
 Finish the clean kernel and deploy its exact landed outputs first. Then ground an H616 encoder port in actual source or register evidence, produce a hardware-encoded H.264 frame, and implement continuous encoding and Sunshine integration. Bootlin's open encoder route, B, remains first choice. Actual pinned source uses kernel-side GOP/header state and ordinary MPEG controls. Its encoder supports media requests but does not require them: `cedrus_context.c:635–660`, `cedrus_enc_h264.h:71–79`, and `cedrus_enc_h264.c:1361–1400`. The earlier claim that this source requires a new stateless Sunshine backend was wrong. It conflated the 2023 encoder with the separate 2026 stateless-encode proposal. Audit and test the existing FFmpeg V4L2 M2M contract first; compatibility is not proved yet. Validate real gameplay with a hardware-decoding client, controls, audio, reconnects, lifecycle transitions and saved data.
 
 C remains conditional on a concrete B blocker and explicit approval after H616 support, Linux 7.2 compatibility and licensing checks. Missing manual pages do not establish that blocker. The encoder is unimplemented; there is no measured encoding rate or completion estimate yet.
+
+## 5. Clean acceptance withdrawn on the exact landed system
+
+The kernel slice landed at `f7ec9bf044a4dc720ca9203f36b19053ac164c27`. Its Image remained `/nix/store/ffag32rfrff9gvlh5hcrjzflriw8hrfb-linux-aarch64-unknown-linux-gnu-7.2/Image`. The exact landed system was `/nix/store/0xzj7fsazd5l289y23aygyfyrn4g16n9-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104`.
+
+Its first hot activation failed with `Chromium command timed out` and restored the tested generation. Activation of the already-copied closure succeeded on retry. The new landed boot was verified, then two boots passed eight actual on/off/on cycles with zero absolute DMA faults. This supports a startup-load hypothesis for the activation failure, but does not prove its cause.
+
+A subsequent reboot authenticated SSH but could not open command sessions within the test deadlines. Three fresh connections reproduced that symptom. The retained failed boot was `328a3a11-65c9-47b4-b257-9758f1596487`. Its journal records `pam_systemd` session-creation failures and repeated `systemd-logind` scope-start timeouts after key authentication. This identifies the stalled session path, not its underlying cause. Authentication, PAM account checks, plugin approval and permission checks were not disabled.
+
+The user restarted the Pro. Boot `cdfa9999-f970-4f01-b05d-f10cdf00139c` ran the exact landed system and Image. Five product services were active, save sizes and timestamps were unchanged, and the initial kernel fault count was zero.
+
+At 2026-10-02 15:40:32 UTC, `nix-shell /tmp/h700-ve/test-active-video.py` started its raw-display probe. The probe requests panel power on before local display. It does not capture the power state before that request. It used no decoder or encoder. The pipeline exited successfully, but the absolute DMA fault count changed from zero to one. The kernel logged:
+
+```text
+[  635.833353] sun50i-iommu 30f0000.iommu: Page fault for 0x00000000ffcac000 (master 0, dir rd)
+```
+
+This rejects the clean candidate. It does not yet distinguish the wake transition from first raw-frame submission. The test stopped before hardware decode. No later zero delta can qualify this boot. The 13 earlier clean cycles remain valid observations, not a complete regression gate. The next loop must capture the power state before the request, cover the configured idle interval, and reproduce this display-only trigger.
+
+Evidence is retained in `/tmp/h700-ve/landed-current-dma-failure-kernel.log`, `isolation-raw-display.log`, `isolation-raw-display-gst.log`, and `failed-landed-reboot-redacted.log`. The fault capture includes the full boot kernel journal and native DRM state, without custom instrumentation or enabled DRM debug.
+
+The safety rollback restored the original signed baseline. Boot `a4a02895-2cf0-4414-ac99-e409ac4acae5` runs `/nix/store/brww8qrskjz3bmzjnfpxckyzd5k3nshr-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104` and Image `/nix/store/b8kilc1kcy6ycdmvbmm2052c755l6cba-linux-aarch64-unknown-linux-gnu-7.2/Image`. Five product services were active, no failed units were reported, and the boot contained zero IOMMU faults. The selected bundle remained unchanged and Sunshine stayed inactive. No card image or firmware partition was written.
+
+This revision removes the newly carried `0224` through `0232` and `0235` patches and restores the configuration delta and module check to their pre-VE bytes at `cfe296339`. Linux 7.2 and the earlier ROCKNIX stack remain unchanged. Hardware decode is not available on that baseline. This is the cost of the temporary withdrawal. Experimental encoder source work continues separately, but no encoder probe kernel will be deployed until the display fault is resolved.
