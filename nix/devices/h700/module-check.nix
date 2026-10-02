@@ -55,6 +55,8 @@ let
     assert kernel.drvPath == crossKernel.drvPath;
     assert lib.versions.major kernel.stdenv.cc.cc.version == "15";
     assert kernel.config.isModule "JOYSTICK_ROCKNIX_SINGLEADC";
+    assert kernel.config.isYes "VIDEO_SUNXI";
+    assert kernel.config.isModule "VIDEO_SUNXI_CEDRUS";
     assert kernel.config.isYes "USB_CONFIGFS_ACM";
     assert kernel.config.isYes "NF_TABLES";
     assert kernel.config.isYes "NFT_COMPAT";

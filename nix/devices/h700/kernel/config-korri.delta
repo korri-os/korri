@@ -22,3 +22,8 @@ CONFIG_USB_U_SERIAL=y
 # The board trees bind the gamepad to rocknix-singleadc-joypad (patch 0211).
 # ROCKNIX ships it as a module; patch 0222 builds the same source in-tree.
 CONFIG_JOYSTICK_ROCKNIX_SINGLEADC=m
+# H616 VE decode: the v3 series in patches/0224..0230 supplies the compatible
+# and DT node. drivers/staging/media/sunxi/{Kconfig,cedrus/Kconfig} require
+# the family gate as well as the actual driver. Encoding is not implemented.
+CONFIG_VIDEO_SUNXI=y
+CONFIG_VIDEO_SUNXI_CEDRUS=m
