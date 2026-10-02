@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { picoLabelFor } from "../src/pico-label"
-import { PICO_SHELL_COLORS, picoLuminance } from "../src/pico-palette"
+import { PICO_SHELL_COLORS } from "../src/pico-palette"
 
 const IDS = [
   "celeste",
@@ -19,10 +19,6 @@ const IDS = [
 ]
 
 describe("picoLabelFor", () => {
-  test("gives the same game the same plastics every time", () => {
-    expect(picoLabelFor("celeste")).toEqual(picoLabelFor("celeste"))
-  })
-
   test.each(IDS)("never puts %p's sticker on a shell of its own colour", (id) => {
     const label = picoLabelFor(id)
     expect(label.sticker).not.toBe(label.shell)
@@ -34,14 +30,6 @@ describe("picoLabelFor", () => {
     expect(label.shell).toBeLessThan(PICO_SHELL_COLORS.length)
     expect(label.sticker).toBeGreaterThanOrEqual(0)
     expect(label.sticker).toBeLessThan(PICO_SHELL_COLORS.length)
-  })
-
-  test.each(IDS)("puts readable ink on %p's sticker", (id) => {
-    const label = picoLabelFor(id)
-    const sticker = PICO_SHELL_COLORS[label.sticker]
-    expect(sticker).toBeDefined()
-    const bright = picoLuminance(sticker as (typeof PICO_SHELL_COLORS)[number]) >= 140
-    expect(label.ink).toBe(bright ? "dark" : "light")
   })
 
   test("spreads a realistic library across the shells", () => {

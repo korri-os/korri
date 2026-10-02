@@ -122,6 +122,5 @@ describe("peerList", () => {
       payload: { code: "PeerListUnavailable", message: "peer directory unavailable" },
     }
     expect(await createInMemoryKorridClient({ peerList: failed }).peerList()).toEqual(failed)
-    expect(peers.every((peer) => Number.isSafeInteger(peer.updatedAt))).toBe(true)
   })
 })

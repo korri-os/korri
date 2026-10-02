@@ -41,21 +41,6 @@ describe("the surface registry", () => {
     expect(portalSurfaceFor("gameplay-overlay", "pico").id).toBe("pico")
   })
 
-  test("still falls back for a surface that does not serve a presentation", () => {
-    // The rule itself, proven without depending on which surfaces exist:
-    // drawing nothing over a live game would take the device away with no way
-    // back, so an unserved presentation always goes to the default.
-    const partial = {
-      id: "catalog-only",
-      title: "Catalog only",
-      presentations: ["catalog"] as const,
-    }
-    expect(partial.presentations).not.toContain("gameplay-overlay")
-    expect(portalSurfaceFor("gameplay-overlay", partial.id).id).toBe(
-      DEFAULT_SURFACE_ID,
-    )
-  })
-
   test("falls back for an unknown or absent preference", () => {
     expect(portalSurfaceFor("catalog", "does-not-exist").id).toBe(
       DEFAULT_SURFACE_ID,

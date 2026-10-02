@@ -1158,7 +1158,7 @@ describe("Shift library", () => {
 
     openLibrary()
 
-    expect(container.querySelector("[data-shift-library]")).toBeDefined()
+    expect(container.querySelector("[data-shift-library]")).not.toBeNull()
     expect(screen.getByRole("heading", { name: "Library" })).toBeDefined()
     expect(screen.getByRole("tab", { name: "All" })).toBeDefined()
     expect(screen.getByRole("tab", { name: "Favorites" })).toBeDefined()
@@ -1242,7 +1242,7 @@ describe("Shift library", () => {
 
     act(() => host.press("back"))
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(container.querySelector("[data-shift-detail]")).toBeDefined()
+    expect(container.querySelector("[data-shift-detail]")).not.toBeNull()
     expect(host.calls).toEqual([])
 
     fireEvent.click(screen.getByRole("button", { name: "▶ Play" }))
@@ -1539,7 +1539,7 @@ describe("Shift settings", () => {
 
     expect(screen.queryByRole("button", { name: "File access: Granted" })).toBeNull()
     expect(container.querySelector(".shift-setting-row[data-saving='true']"))
-      .toBeDefined()
+      .not.toBeNull()
   })
 
   test("back returns to the games without touching the host", () => {

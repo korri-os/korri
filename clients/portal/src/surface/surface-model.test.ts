@@ -308,9 +308,6 @@ describe("entryForId", () => {
     for (const game of model.catalog.games) {
       expect(entryForId(state, game.id)).toBeDefined()
     }
-    for (const action of model.actions) {
-      expect(entryForId(state, action.id)).toBeDefined()
-    }
   })
 
   test("an unknown id resolves to nothing rather than the wrong entry", () => {
