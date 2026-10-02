@@ -6,13 +6,13 @@ User decision: Korri will never be a commercial product. Noncommercial redistrib
 
 This catalogue records 42 gameplay titles with published noncommercial redistribution grants. Each of the three batches contains 13 candidates. Three further games have specific third-party questions.
 
-Seventeen games are selected. New discoveries remain separate from that selection. This is a checked sample, not an exhaustive catalogue. The unrestricted-license list is separate.
+Twenty-four games are selected. Unselected discoveries remain separate from that selection. This is a checked sample, not an exhaustive catalogue. The unrestricted-license list is separate.
 
 This research verifies permission declarations, not gameplay or Korri compatibility. No game was installed, played, or added to a release. A declaration is not a warranty that the developer controls every third-party right.
 
 ## User-selected shortlist
 
-Keep these 17 games for Korri. This is a selection record, not a downloaded or installed game bundle.
+Keep these 24 games for Korri. This is a selection record, not a downloaded or installed game bundle.
 
 1. Celeste Classic 2: Lani's Trek.
 2. Combo Pool.
@@ -31,8 +31,15 @@ Keep these 17 games for Korri. This is a selection record, not a downloaded or i
 15. Cherry Bomb.
 16. Charge!.
 17. Witchbeat.
+18. Mai-Chan's Sweet Buns.
+19. Spaceman 8.
+20. Worm Nom Nom.
+21. PICORACER-2048.
+22. DeFacto.
+23. Vitreous.
+24. Dungeon Solitaire.
 
-The user's shortened names refer to the games in the previous lists. In particular, "deamon" is recorded as Demon Castle, "Solaris" as Solais, "quest" as Proserpina's Quest, and "whitch" as Witchbeat.
+The user's shortened names refer to the games in the previous lists. In particular, "deamon" is recorded as Demon Castle, "Solaris" as Solais, "quest" as Proserpina's Quest, "whitch" as Witchbeat, and "racer" as PICORACER-2048. "Dungeon solitare" is recorded as Dungeon Solitaire.
 
 ## Noncommercial redistribution candidates
 
@@ -74,9 +81,11 @@ These 13 were discovered after the first nine-game selection. The user subsequen
 | [Witchbeat 1.1](https://www.lexaloffle.com/bbs/?tid=31163) | DragonXVI | Rhythm-based dungeon adventure | `51894`; CC BY-NC-SA 4.0. | The post is in Work in Progress. The author warns of bugs and no input-lag calibration, potentially making it unplayable on some machines. Treat this as a lower-priority compatibility candidate. |
 | [Charge! 1.0](https://www.lexaloffle.com/bbs/?tid=29734) | DragonXVI | Science-fiction scavenging roguelike | `42930`; CC BY-NC-SA 4.0. | Explore derelict stations for supplies and ship power. The author says it was made from scratch in 48 hours; controls use directions and two action buttons. |
 
-## Third discovery batch, not selected
+## Third discovery batch
 
-These are further discoveries after the 17-game selection. Keep them separate until the user selects them. Twelve games have CC4-BY-NC-SA cartridge grants on their original developers' BBS posts. Caped Feline Arena publishes separate code and asset grants in the post body and on the developer's itch.io page. These are not inferences from free downloads. The BBS panel's `No License` label is not decisive when the developer also publishes explicit terms in the post.
+These 13 were discovered after the 17-game selection. The user subsequently selected seven, recorded in the shortlist above. The other six remain unselected.
+
+Twelve games have CC4-BY-NC-SA cartridge grants on their original developers' BBS posts. Caped Feline Arena publishes separate code and asset grants in the post body and on the developer's itch.io page. These are not inferences from free downloads. The BBS panel's `No License` label is not decisive when the developer also publishes explicit terms in the post.
 
 | Game and original source | Developer | Game type | Verified cartridge and license | Packaging or credit note |
 |---|---|---|---|---|
@@ -150,6 +159,16 @@ The [MIT text](https://opensource.org/license/mit) permits distribution and sale
 | Dank Tomb | [The developer's original post](https://www.lexaloffle.com/bbs/?tid=29709) marks `dank_tomb-0` as `No License`. Pay-what-you-want downloads and optional access to source code are not a redistribution grant. |
 | Mistigri | [The original post](https://www.lexaloffle.com/bbs/?tid=3421) marks cartridge `21603` as `No License`. Do not extend pigments' grant to this older benjamin_soule game. |
 
+## Bundling in a Korri plugin
+
+The developers publish CC BY-NC-SA 4.0 cartridge grants for all seven latest selections. Those grants permit noncommercial reproduction and sharing, subject to the license conditions. A plugin can distribute the unchanged cartridges as separate works in a collection. This does not automatically apply ShareAlike to Korri's independent plugin or host code.
+
+[Creative Commons' collection guidance](https://creativecommons.org/faq/) states that a collection's license does not change its constituent works' licenses. Identify the games as separately licensed material. Preserve their creator credits, supplied notices, source links and license notices. A blanket plugin license must not replace the games' licenses or restrict recipients' licensed rights.
+
+If Korri distributes adapted games, apply the required ShareAlike license to those adaptations and identify changes. Merely packaging unchanged cartridges is different from adapting them. The noncommercial condition applies to the actual use and distribution, not merely to Korri's stated product status. Paid bundles, commercial promotion and preinstallation on products sold by third parties need separate assessment or permission.
+
+This is a reading of published permissions, not a formal legal opinion or proof of every contributor's rights. Game permissions do not authorize redistribution of the official PICO-8 application. No plugin or runtime was bundled or deployed.
+
 ## Packaging and runtime limits
 
 The itch.io PICO-8 source release of Mot's Grand Prix uses multiple cartridges. Preserve the full set and test it with the selected runtime. Do not mistake a single menu cartridge for an entire multi-cartridge game.
@@ -162,6 +181,6 @@ A cartridge license does not grant redistribution permission for the full offici
 
 ## Next step for noncommercial Korri
 
-The user-selected 17-game shortlist replaces the earlier proposed six-game starter bundle. Keep further discoveries as candidates until the user selects them. Compatibility testing and release packaging remain separate work.
+The user-selected 24-game shortlist replaces the earlier proposed six-game starter bundle. Keep further discoveries as candidates until the user selects them. Compatibility testing and release packaging remain separate work.
 
 Retain published permission and credits for the exact shipped versions. Do not exclude noncommercial licenses merely to preserve a commercial option the user has explicitly rejected. No release bundle changed in this research.
