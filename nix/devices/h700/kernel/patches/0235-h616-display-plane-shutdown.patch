@@ -1,0 +1,121 @@
+Subject: [PATCH EXPERIMENT] drm/sun4i: disable DE33 planes before stopping TCON
+
+Adapt the native plane-disable callbacks and pre-TCON disable/commit shape
+from Jernej Skrabec's upstream fix
+b3664d8d5ac63b823ab79c613ca579ddabe4a26a.
+LibreELEC carries it in commit12207af.
+That broader source also has RCQ sync and DE3 DBUFF support.
+Do not import those unrelated interfaces here.
+
+For the existing all-DE33 standard-tail selection only, disable the old
+CRTC's owned planes, commit their state and await one native vblank while
+TCON still runs. Existing normal-flip and non-DE33 tails stay unchanged.
+This tests whether a running timing consumer permits old fetches to retire
+before its clock stops. It does not assert an undocumented DE idle bit.
+
+The UI/VI callbacks match the existing atomic_update disable branch and
+accept the NULL transaction used by the native disable-planes helper.
+No mapping policy, prefetch, reset, retention or bypass change. Remove
+the DEBUG-h700-dma trace before any final production candidate.
+
+diff --git a/drivers/gpu/drm/sun4i/sun4i_crtc.c b/drivers/gpu/drm/sun4i/sun4i_crtc.c
+--- a/drivers/gpu/drm/sun4i/sun4i_crtc.c
++++ b/drivers/gpu/drm/sun4i/sun4i_crtc.c
+@@ -108,10 +108,29 @@
+ static void sun4i_crtc_atomic_disable(struct drm_crtc *crtc,
+ 				      struct drm_atomic_commit *state)
+ {
++	struct drm_crtc_state *old_state = drm_atomic_get_old_crtc_state(state, crtc);
+ 	struct drm_encoder *encoder = sun4i_crtc_get_encoder(crtc);
+ 	struct sun4i_crtc *scrtc = drm_crtc_to_sun4i_crtc(crtc);
+ 
+ 	DRM_DEBUG_DRIVER("Disabling the CRTC\n");
++
++	if (sun4i_crtc_uses_early_planes(crtc) && old_state->active) {
++		u64 before, after;
++		int ret;
++
++		/* Disable fetchers while their timing consumer still runs. */
++		drm_atomic_helper_disable_planes_on_crtc(old_state, false);
++		sunxi_engine_commit(scrtc->engine, crtc, state);
++		before = drm_crtc_vblank_count(crtc);
++		ret = drm_crtc_wait_one_vblank(crtc);
++		after = drm_crtc_vblank_count(crtc);
++		if (ret)
++			drm_err(crtc->dev, "DE33 scanout stop wait failed: %d\n", ret);
++		DRM_DEBUG_DRIVER(
++			"[DEBUG-h700-dma] DE33_QUIESCE crtc=%u wait=%d before=%llu after=%llu\n",
++			crtc->base.id, ret, (unsigned long long)before,
++			(unsigned long long)after);
++	}
+ 
+ 	drm_crtc_vblank_off(crtc);
+ 
+diff --git a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+--- a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+@@ -186,6 +186,22 @@
+ }
+ 
+ 
++static void sun8i_ui_layer_atomic_disable(struct drm_plane *plane,
++					  struct drm_atomic_commit *state)
++{
++	struct sun8i_layer *layer = plane_to_sun8i_layer(plane);
++	unsigned int attributes = 0;
++	int ret;
++
++	sun8i_ui_layer_disable(layer);
++	ret = regmap_read(layer->regs,
++		SUN8I_MIXER_CHAN_UI_LAYER_ATTR(sun8i_channel_base(layer), layer->overlay),
++		&attributes);
++	DRM_DEBUG_DRIVER(
++		"[DEBUG-h700-dma] PLANE_DISABLED plane=%u attr=%#x read_result=%d\n",
++		plane->base.id, attributes, ret);
++}
++
+ static void sun8i_ui_layer_atomic_update(struct drm_plane *plane,
+ 					 struct drm_atomic_commit *state)
+ {
+@@ -206,6 +222,7 @@
+ static const struct drm_plane_helper_funcs sun8i_ui_layer_helper_funcs = {
+ 	.atomic_check	= sun8i_ui_layer_atomic_check,
+ 	.atomic_update	= sun8i_ui_layer_atomic_update,
++	.atomic_disable	= sun8i_ui_layer_atomic_disable,
+ };
+ 
+ static const struct drm_plane_funcs sun8i_ui_layer_funcs = {
+diff --git a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+--- a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+@@ -265,6 +265,22 @@
+ 						   true, true);
+ }
+ 
++static void sun8i_vi_layer_atomic_disable(struct drm_plane *plane,
++					  struct drm_atomic_commit *state)
++{
++	struct sun8i_layer *layer = plane_to_sun8i_layer(plane);
++	unsigned int attributes = 0;
++	int ret;
++
++	sun8i_vi_layer_disable(layer);
++	ret = regmap_read(layer->regs,
++		SUN8I_MIXER_CHAN_VI_LAYER_ATTR(sun8i_channel_base(layer), layer->overlay),
++		&attributes);
++	DRM_DEBUG_DRIVER(
++		"[DEBUG-h700-dma] PLANE_DISABLED plane=%u attr=%#x read_result=%d\n",
++		plane->base.id, attributes, ret);
++}
++
+ static void sun8i_vi_layer_atomic_update(struct drm_plane *plane,
+ 					 struct drm_atomic_commit *state)
+ {
+@@ -286,6 +302,7 @@
+ static const struct drm_plane_helper_funcs sun8i_vi_layer_helper_funcs = {
+ 	.atomic_check	= sun8i_vi_layer_atomic_check,
+ 	.atomic_update	= sun8i_vi_layer_atomic_update,
++	.atomic_disable	= sun8i_vi_layer_atomic_disable,
+ };
+ 
+ static const struct drm_plane_funcs sun8i_vi_layer_funcs = {
