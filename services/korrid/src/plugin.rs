@@ -581,6 +581,29 @@ impl PluginRegistry {
         &self.file_release_discovery_claims
     }
 
+    /// Match declared suffixes, including the legacy PICO-8 .p8.png format.
+    /// Pick the longest suffix only within a claim, never between systems.
+    pub fn file_release_discovery_claims_for_filename(
+        &self,
+        file_name: &str,
+    ) -> Vec<(&FileReleaseDiscoveryClaim, &str)> {
+        let lower = file_name.to_ascii_lowercase();
+        self.file_release_discovery_claims
+            .values()
+            .filter_map(|claim| {
+                claim
+                    .extensions
+                    .iter()
+                    .filter(|extension| {
+                        let suffix = format!(".{extension}");
+                        lower.len() > suffix.len() && lower.ends_with(&suffix)
+                    })
+                    .max_by_key(|extension| extension.len())
+                    .map(|extension| (claim, extension.as_str()))
+            })
+            .collect()
+    }
+
     pub fn file_release_discovery_claims_for_extension(
         &self,
         extension: &str,
@@ -1202,10 +1225,12 @@ fn normalize_extension(value: &str) -> Result<String, String> {
     if normalized.is_empty() {
         return Err("extension must not be empty".to_owned());
     }
-    if normalized
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric())
-    {
+    if normalized.split('.').all(|part| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+    }) {
         Ok(normalized)
     } else {
         Err(format!("extension {value} contains unsupported characters"))

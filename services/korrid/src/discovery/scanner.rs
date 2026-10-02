@@ -347,23 +347,9 @@ impl<'a> FolderScanner<'a> {
             );
             return;
         };
-        let Some(extension) = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(str::to_owned)
-        else {
-            self.push_diag(
-                report,
-                DiscoveryDiagnosticCode::EntryUnclaimed,
-                Some(storage_id),
-                Some(relative_path),
-                "file is not claimed by an enabled plugin",
-            );
-            return;
-        };
         let claims = self
             .registry
-            .file_release_discovery_claims_for_extension(&extension);
+            .file_release_discovery_claims_for_filename(&file_name);
         if claims.is_empty() {
             self.push_diag(
                 report,
@@ -376,7 +362,10 @@ impl<'a> FolderScanner<'a> {
         }
         // Catalog releases own a system, not a launch route. Several claims
         // for that same system must not discard bytes or select an emulator.
-        if claims.iter().any(|claim| claim.system != claims[0].system) {
+        if claims
+            .iter()
+            .any(|(claim, _)| claim.system != claims[0].0.system)
+        {
             self.push_diag(
                 report,
                 DiscoveryDiagnosticCode::ClaimConflict,
@@ -396,7 +385,7 @@ impl<'a> FolderScanner<'a> {
             );
             return;
         }
-        let claim = claims[0];
+        let (claim, extension) = claims[0];
         let hash = match cache.hash_for(path) {
             Ok(value) => value,
             Err(_) => {
@@ -415,7 +404,7 @@ impl<'a> FolderScanner<'a> {
             storage_id: storage_id.to_owned(),
             canonical_path: path.to_owned(),
             relative_path,
-            title: title::fallback_title(&file_name, &extension),
+            title: title::fallback_title(&file_name, extension),
             hash: hash.value,
             size: hash.snapshot.size,
             system: claim.system.clone(),
@@ -563,6 +552,7 @@ fn is_strict_descendant(path: &Path, root: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::plugin::load_plugin_source;
+    use std::collections::BTreeSet;
 
     /// Discovery only reads file-release claims, so the fixture declares those
     /// and nothing else. A single self-contained module keeps the scanner tests
@@ -616,6 +606,113 @@ export const handlers = {
         let second = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
         assert_eq!(second.candidates.len(), 1);
         assert_eq!(second.hashed_bytes, 0);
+    }
+
+    #[test]
+    fn pico8_claims_compound_cart_suffix_without_claiming_ordinary_pngs() {
+        let source = GBA_CLAIM.replace("gba", "pico8").replace(
+            "extensions: [\"pico8\"]",
+            "extensions: [\"p8\", \"p8.png\"]",
+        );
+        let registry = PluginRegistry::new(
+            vec![load_plugin_source("@korri", &source).unwrap()],
+            vec!["@korri:core".into()],
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("Lani_Trek.P8.PNG"), b"png-cart").unwrap();
+        fs::write(root.path().join("Combo_Pool.p8"), b"text-cart").unwrap();
+        fs::write(root.path().join("cover.png"), b"ordinary-image").unwrap();
+        fs::write(root.path().join("not-a-cart.p8.png.backup"), b"backup").unwrap();
+        let mut cache = HashCache::default();
+        let scanner = FolderScanner::new(&registry, 20, 100);
+        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
+        assert_eq!(report.candidates.len(), 2);
+        assert!(report
+            .candidates
+            .iter()
+            .all(|candidate| candidate.system == "pico8"));
+        assert_eq!(
+            report
+                .candidates
+                .iter()
+                .map(|candidate| candidate.title.as_str())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Combo Pool", "Lani Trek"]),
+        );
+        assert_eq!(report.hashed_bytes, 17);
+        assert_eq!(
+            report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::EntryUnclaimed)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn longest_suffix_within_one_claim_does_not_create_two_candidates() {
+        let source =
+            GBA_CLAIM.replace("extensions: [\"gba\"]", "extensions: [\"png\", \"p8.png\"]");
+        let registry = PluginRegistry::new(
+            vec![load_plugin_source("@korri", &source).unwrap()],
+            vec!["@korri:core".into()],
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("Lani_Trek.p8.png"), b"cart").unwrap();
+        let mut cache = HashCache::default();
+        let scanner = FolderScanner::new(&registry, 20, 100);
+        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
+        assert_eq!(report.candidates.len(), 1);
+        assert_eq!(report.candidates[0].title, "Lani Trek");
+        assert_eq!(report.hashed_bytes, 4);
+    }
+
+    #[test]
+    fn overlapping_suffixes_do_not_hide_a_system_conflict() {
+        let pico8 = GBA_CLAIM
+            .replace("gba", "pico8")
+            .replace("extensions: [\"pico8\"]", "extensions: [\"p8.png\"]");
+        let png = GBA_CLAIM
+            .replace("@korri:core", "@test:image")
+            .replace("name = \"core\"", "name = \"image\"")
+            .replace("gba", "image")
+            .replace("extensions: [\"image\"]", "extensions: [\"png\"]");
+        let registry = PluginRegistry::new(
+            vec![
+                load_plugin_source("@korri", &pico8).unwrap(),
+                load_plugin_source("@test", &png).unwrap(),
+            ],
+            vec!["@korri:core".into(), "@test:image".into()],
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("Lani_Trek.p8.png"), b"cart").unwrap();
+        let mut cache = HashCache::default();
+        let scanner = FolderScanner::new(&registry, 20, 100);
+        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
+        assert!(report.candidates.is_empty());
+        assert_eq!(report.hashed_bytes, 0);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::ClaimConflict));
+    }
+
+    #[test]
+    fn rejects_empty_compound_extension_segments_and_path_patterns() {
+        for extension in ["p8..png", "p8/png", "p8.png.", "p8.*", "..p8.png"] {
+            let source = GBA_CLAIM.replace(
+                "extensions: [\"gba\"]",
+                &format!("extensions: [\"{extension}\"]"),
+            );
+            assert!(
+                load_plugin_source("@korri", &source).is_err(),
+                "accepted {extension}"
+            );
+        }
     }
 
     #[test]
