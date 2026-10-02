@@ -4,13 +4,17 @@
 {
   pkgs,
   hostPackage,
-  cacheUrl,
+  publishers,
   pluginPackages,
 }:
 let
+  bindings = pkgs.writeText "korri-image-publishers.json" (builtins.toJSON publishers);
   seed = pkgs.writeShellApplication {
     name = "korri-image-seed";
-    runtimeInputs = [ pkgs.coreutils pkgs.jq ];
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.jq
+    ];
     text = builtins.readFile ./image-seed.sh;
   };
 in
@@ -18,7 +22,7 @@ in
   storePaths = pluginPackages;
   populateRootCommands = ''
     ${seed}/bin/korri-image-seed ./files ${hostPackage}/bin/korri-plugin \
-      ${pkgs.lib.escapeShellArg cacheUrl} \
+      ${bindings} \
       ${pkgs.lib.escapeShellArgs (map toString pluginPackages)}
   '';
 }

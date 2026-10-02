@@ -32,6 +32,37 @@ fn main() -> ExitCode {
             }
         };
     }
+    // A product supplies its existing PublisherBindings and the complete exact
+    // selection, not a host configuration or an inherited dependency cache.
+    if let ["seed-graph", bindings, packages @ ..] = args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        let result = (|| {
+            if packages.is_empty() {
+                return Err("seed-graph requires at least one selected package".into());
+            }
+            let bindings = package::publisher_bindings(Path::new(bindings))?;
+            let selected = packages
+                .iter()
+                .map(std::path::PathBuf::from)
+                .collect::<Vec<_>>();
+            let receipts = package::load_graph_for_seed(&selected, &bindings)?
+                .iter()
+                .map(seed_selection)
+                .collect::<Vec<_>>();
+            print_json(&receipts)
+        })();
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("korri-plugin: {}", error.escape_default());
+                ExitCode::FAILURE
+            }
+        };
+    }
     // The image builder needs the same receipt directory and GC-root name as
     // the running host. Keep that name in one producer, not in a shell copy.
     if let ["unit-name", id] = args
@@ -65,15 +96,18 @@ fn seed_receipt(package: &str, cache_url: &str) -> Result<String, String> {
         cache_url: cache_url.into(),
     };
     let report = package::load_for_seed(Path::new(package), provenance.clone())?;
-    let receipt = Receipt {
+    serde_json::to_string_pretty(&seed_selection(&report)).map_err(|e| e.to_string())
+}
+
+fn seed_selection(report: &package::Report) -> Receipt {
+    Receipt {
         id: report.id.clone(),
         package: report.package.clone(),
-        provenance,
+        provenance: report.provenance.clone(),
         approval: report.approval.clone(),
         desired: Desired::Enabled,
         previous: None,
-    };
-    serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())
+    }
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
@@ -163,7 +197,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             println!("{}.service", package::unit_name(id));
             Ok(())
         }
-        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
+        _ => Err("usage: korri-plugin seed PACKAGE CACHE_URL | seed-graph PUBLISHER_BINDINGS PACKAGE... | inspect CACHE PACKAGE | install CACHE ID --release COMMIT (inspect, then approve the exact path) | install CACHE PACKAGE APPROVAL | update ID CACHE PACKAGE APPROVAL | enable ID | disable ID | remove ID [--purge] | status ID | unit ID | restore-all | restore ID | enabled-packages | repository COMMAND".into()),
     }
 }
 

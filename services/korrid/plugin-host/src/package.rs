@@ -639,8 +639,11 @@ pub fn load_graph(
     provenance: Provenance,
     mut dependency_provenance: impl FnMut(&Path) -> Result<Provenance, String>,
 ) -> Result<Report, String> {
-    let mut reports = BTreeMap::new();
-    let order = crate::dependencies::dependency_order([package.to_path_buf()], |path| {
+    let AssembledGraph {
+        order,
+        mut reports,
+        closures,
+    } = assemble_graph([package.to_path_buf()], |path| {
         let origin = if path == package {
             provenance.clone()
         } else {
@@ -650,7 +653,33 @@ pub fn load_graph(
             Some(snapshot) if snapshot.contains(path) => snapshot.closure(path)?,
             _ => closure_of(nix, path)?,
         };
-        let report = build_report(path, origin, Some(&closure))?;
+        build_report(path, origin, Some(&closure))
+    })?;
+    let mut report = reports.remove(package).unwrap();
+    report.brings = order
+        .iter()
+        .filter(|path| closures[package].contains(*path))
+        .map(|path| DependencyReport {
+            report: reports[path].clone(),
+            already_approved: false,
+        })
+        .collect();
+    Ok(report)
+}
+
+struct AssembledGraph {
+    order: Vec<PathBuf>,
+    reports: BTreeMap<PathBuf, Report>,
+    closures: BTreeMap<PathBuf, BTreeSet<PathBuf>>,
+}
+
+fn assemble_graph(
+    roots: impl IntoIterator<Item = PathBuf>,
+    mut load: impl FnMut(&Path) -> Result<Report, String>,
+) -> Result<AssembledGraph, String> {
+    let mut reports = BTreeMap::new();
+    let order = crate::dependencies::dependency_order(roots, |path| {
+        let report = load(path)?;
         let requires = report.requires.clone();
         reports.insert(path.clone(), report);
         Ok(requires)
@@ -692,19 +721,14 @@ pub fn load_graph(
                 serde_json::to_vec(&(&report.approval, summaries)).map_err(|e| e.to_string())?;
             report.approval = hex::encode(Sha256::digest(bytes));
         }
-        if path == package {
-            report.brings = dependencies
-                .iter()
-                .map(|path| DependencyReport {
-                    report: reports[*path].clone(),
-                    already_approved: false,
-                })
-                .collect();
-        }
         closures.insert(path.clone(), reachable);
         reports.insert(path.clone(), report);
     }
-    Ok(reports.remove(package).unwrap())
+    Ok(AssembledGraph {
+        order,
+        reports,
+        closures,
+    })
 }
 
 /// Digest-only report for image-time seeding.
@@ -715,6 +739,50 @@ pub fn load_graph(
 /// is the only reason this entry point exists.
 pub fn load_for_seed(package: &Path, provenance: Provenance) -> Result<Report, String> {
     leaf_report(build_report(package, provenance, None)?)
+}
+
+/// Digest-only image reports for an explicitly selected, closed graph.
+/// Each namespace uses its own product binding. No host state is read and no
+/// dependency is added implicitly. Runtime admission still verifies signatures,
+/// immutable closures and these approvals before activation, just as for `seed`.
+pub fn load_graph_for_seed(
+    packages: &[PathBuf],
+    bindings: &PublisherBindings,
+) -> Result<Vec<Report>, String> {
+    for package in packages {
+        validate_store_path(package)?;
+    }
+    let selected: BTreeSet<_> = packages.iter().cloned().collect();
+    if selected.len() != packages.len() {
+        return Err("duplicate selected plugin output".into());
+    }
+    let AssembledGraph {
+        order, mut reports, ..
+    } = assemble_graph(packages.iter().cloned(), |path| {
+        if !selected.contains(path) {
+            return Err(format!(
+                "missing exact selected dependency {}",
+                path.display()
+            ));
+        }
+        let namespace = manifest_namespace(path)?;
+        let binding = bindings
+            .get(&namespace)
+            .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
+        validate_cache_source(&binding.cache_url)?;
+        public_key_bytes(&binding.public_key)?;
+        build_report(
+            path,
+            Provenance::RawCache {
+                cache_url: binding.cache_url.clone(),
+            },
+            None,
+        )
+    })?;
+    Ok(order
+        .iter()
+        .map(|path| reports.remove(path).unwrap())
+        .collect())
 }
 
 fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {

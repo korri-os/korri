@@ -2960,6 +2960,28 @@ mod tests {
             "parent key must not authorize a dependency publisher"
         );
         assert!(host.status("@runtime:fake08").unwrap().is_none());
+        let unsigned_seed =
+            package::load_graph_for_seed(&[pack.clone(), runner.clone()], &host.publishers)
+                .unwrap();
+        for report in unsigned_seed {
+            let receipt = Receipt {
+                id: report.id,
+                package: report.package,
+                provenance: report.provenance,
+                approval: report.approval,
+                desired: Desired::Enabled,
+                previous: None,
+            };
+            assert!(
+                host.verify_report(
+                    &host.approved(&receipt).unwrap(),
+                    None,
+                    package::StoreContents::Rehash,
+                )
+                .is_err(),
+                "a seeded approval cannot bypass the dependency's full bound key"
+            );
+        }
         run(&[
             "store",
             "sign",
@@ -3038,6 +3060,59 @@ mod tests {
                 "@runtime:fake08"
             ]
         );
+        // Replace selections with the image producer's existing receipts and
+        // roots. Boot must re-derive the same approvals through the real store,
+        // publisher checks and closure checks, not activate on seed authority.
+        let seeded = package::load_graph_for_seed(
+            &[collection.package.clone(), pack.clone(), runner.clone()],
+            &host.publishers,
+        )
+        .unwrap();
+        let mut seed_receipts = Vec::new();
+        for report in seeded {
+            let receipt = Receipt {
+                id: report.id,
+                package: report.package,
+                provenance: report.provenance,
+                approval: report.approval,
+                desired: Desired::Enabled,
+                previous: None,
+            };
+            let installed = host.status(&receipt.id).unwrap().unwrap();
+            assert_eq!(receipt, installed);
+            host.selection(&receipt.id).commit(&receipt).unwrap();
+            let mut changed = receipt.clone();
+            changed.approval = "0".repeat(64);
+            assert!(host.approved(&changed).is_err());
+            changed = receipt.clone();
+            changed.provenance = Provenance::RawCache {
+                cache_url: "file:///unbound-cache".into(),
+            };
+            assert!(host.approved(&changed).is_err());
+            seed_receipts.push(receipt);
+        }
+        host.restore_all().unwrap();
+        assert_eq!(
+            published(&host).1,
+            [
+                "@games:collection",
+                "@games:starter-pack",
+                "@runtime:fake08"
+            ]
+        );
+        let mut corrupt = seed_receipts[0].clone();
+        corrupt.approval = "0".repeat(64);
+        host.selection(&corrupt.id).commit(&corrupt).unwrap();
+        assert!(host.restore_all().is_err());
+        assert!(published(&host).1.is_empty());
+        for receipt in seed_receipts {
+            assert_eq!(
+                fs::read_link(host.root(&receipt.id, "active")).unwrap(),
+                receipt.package
+            );
+            host.selection(&receipt.id).commit(&receipt).unwrap();
+        }
+        host.restore_all().unwrap();
         host.publishers.remove("@runtime");
         assert!(host.restore_all().is_err());
         assert_eq!(published(&host).1, Vec::<String>::new());
