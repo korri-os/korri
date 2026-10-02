@@ -70,13 +70,22 @@ library shows games this device cannot launch, so the UI needs an
 unavailable state. Today's rule that a claim needs an enabled runner does not
 carry over.
 
+## Decided: rules for one system ID combine
+
+On 2026-10-02 the user chose to combine identification rules from every
+enabled plugin that declares the same system ID. A catalog plugin can give
+`xbox-360` a content rule, and the Skate 3 plugin can add its ISO hash to the
+same system. Cost: one plugin's bad rule widens that system for every plugin.
+The evidence ranking turns a clash between two systems into a diagnostic.
+Which plugin's title wins is still open.
+
 ## Open questions
 
 1. Decided above.
-2. Several plugins declare the same system ID with rules. Are the rules
-   combined? Which title wins?
-3. How a hash-only runner such as Skate 3 links its hashes to a system once
-   claims are gone.
+2. Decided above, except which title wins when declarations disagree.
+3. How a hash-only runner such as Skate 3 links its hashes to a system. With
+   combined rules the hash would appear twice: once as a system rule and once
+   in the runner's `releases`. Unresolved.
 4. Field names and rule shapes.
 5. Which container readers are in the first slice: CHD, `.cue` tracks,
    ISO 9660 file lookup.
