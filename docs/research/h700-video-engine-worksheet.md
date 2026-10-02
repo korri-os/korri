@@ -4,7 +4,7 @@ The user approved three checks on the RG35XX Pro. Software streaming is excluded
 
 | Step | State | Required evidence |
 |---|---|---|
-| 1. Add the H616 VE series. | Built and checked. | All 18 delta settings survived configuration. Cedrus module and three board DTBs passed inspection. |
+| 1. Add the H616 VE series. | Built and checked; not landed. | All 18 delta settings survived configuration. Cedrus and three board DTBs passed inspection. Runtime display faults block normal deployment. |
 | 2. Boot and decode H.264. | Decode verified; display-DMA issue open. | 120 hardware requests, 120 VE interrupts, and actual decoded bytes identical to the reference. |
 | 3. Compare encoding registers. | Checked. Verdict unresolved. | The H616 manual omits the encoding register interface. Bootlin's interface is now identified. |
 
@@ -53,7 +53,21 @@ This is consistent with the display still using physical DMA addresses after the
 
 Source review approved patch `0231-h616-display-iommu.patch`: associate both display mixers with IOMMU port 0. The H616 manual's Table 3-8 on page 207 identifies port 0 as DE, port 1 as DI, and ports 2/3 as VE_R/VE. `sun8i_mixer_bind()` selects the first bound mixer as DRM's DMA device; GEM allocation and PRIME import use that device. The planes driver only owns MMIO and plane sharing. Both mixers must therefore join through port 0, not through the planes node or port 1. The IOMMU driver's `generic_single_device_group` shares one domain across them and the VE.
 
-This keeps the direct kernel-DT route and its no-overlay check. The two-line association changes display allocation/import to translated DMA. A corrected-kernel test must still check boot handoff, animated display use, and decode together with no new IOMMU faults. Source review cannot prove runtime safety.
+This keeps the direct kernel-DT route and its no-overlay check. The two-line association changes display allocation/import to translated DMA.
+
+#### Corrected candidate — decode verified, display blocker remains
+
+Commit `290d88ae` cross-built successfully on Zao in 500 seconds. All 18 configuration settings and all three DTBs passed inspection, including port 0 on both mixers. Fuji built and signed the Pro system in 46 seconds. The corrected system is `/nix/store/3maz0c9dh414q58w68af4d5zp0d1mgja-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104`; its Image is `/nix/store/aah8nm53kr0zm28jy1qxhdnml1jmxspl-linux-aarch64-unknown-linux-gnu-7.2/Image`.
+
+It booted at 03:20:33 UTC with ID `bc4f98d1-6371-49c0-9dc3-bf76b91a537b`. The original physical-address fault storm stopped. A subsequent test decoded the fixture and sent its frames to the existing Wayland compositor at the same time. Local NV12-to-BGRx conversion prepared the preview; this was neither software decoding nor streaming.
+
+The preview harness first failed because the sink's early fullscreen request had no window size. Its default window then displayed frames but timing/QoS dropped 16 decoded output frames. Turning off decoder and sink QoS produced all 55,296,000 bytes, which were copied from the Pro and compared byte-for-byte with the reference: identical.
+
+However, that concurrent run produced **18 new master-0 read faults at translated addresses `0xFFC49000` and `0xFFC00000`**, at uptime 365.313–365.578 s. The new fault is not the original unassociated-mixer physical-address fault. Its cause has not been isolated. The safety gate rejected the corrected kernel despite correct decoded pixels. Idle output and active services do not close this blocker.
+
+The second safety rollback completed. Boot ID `c6e1be8e-bb70-49f1-845e-63a4e0cc3da1` ran the baseline `b8kilc1kcy6ycdmvbmm2052c755l6cba` Image. All five product services were active, the selected bundle was unchanged, and the fresh kernel log contained zero IOMMU faults. The rollback stopped the user's new live game and recorded its 32,768-byte SRAM save and 45,687-byte automatic state at 03:30:46 UTC. Activation succeeded; an operator helper then tried to stop already-unloaded Sunshine units and failed before reboot. A verified reboot-only continuation completed the rollback. Neither candidate is accepted for normal use, and the kernel work has not landed on `main`. Further display-DMA diagnosis is beyond the three feasibility checks and needs a scope decision. Raw evidence remains in `/tmp/h700-ve/candidate-kernel-journal.log`, `hardware-decode.log`, `after-decode/h700-ve/`, and `decode-history/`.
+
+Before the corrected boot, the existing `korri-plugin disable @korri:sunshine` lifecycle operation changed its desired state to `Disabled`. The installed package `/nix/store/33w3ig2ilv4fhblc4gi4aa72l4y8xh06-korri-plugin` and approval stayed unchanged. This prevents an automatic software-encoder probe at future boots; it does not remove Sunshine or rule out later hardware hosting. The cost is that Sunshine will stay off until it is explicitly enabled after a hardware encoder route exists.
 
 The signed candidate system is `/nix/store/ppp31zj36a8dfpr7ma4rxkyi9kmk4kjb-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104`. Its kernel Image is `/nix/store/bcbdmv8qfabzb2jf6xn8yzvcryl1xdlj-linux-aarch64-unknown-linux-gnu-7.2/Image`.
 
