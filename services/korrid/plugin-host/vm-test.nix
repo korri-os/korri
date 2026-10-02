@@ -1218,24 +1218,28 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin enable @example:dependent-clock")
     dependent_pid = machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip()
     assert int(dependent_pid) > 0
-    # A corrupt unrelated receipt must not stop independently managed services.
-    # Restore reports the bad receipt independently.
+    # An unreadable receipt leaves dependency relationships unknown. Recovery
+    # removes registry authority but performs no native effects or repairs.
     corrupt = "/var/lib/korri-plugin-host/korri-plugin-" + "0" * 64
     machine.succeed("mkdir -m 700 " + corrupt + "; (umask 077; printf broken > " + corrupt + "/selection.json)")
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
     assert machine.succeed("systemctl show " + clock["unit"] + " --property=MainPID --value").strip() == pid
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
     machine.succeed("systemctl is-active " + unit)
-    # Interrupt one selection while another remains enabled. One restore
-    # repairs that receipt; the unrelated corrupt receipt is still reported.
+    # Interrupted recovery must wait until every receipt can disclose its
+    # graph. It must not restart a stopped selection against unknown edges.
     clock_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(clock)
     machine.succeed("ln -s ${alternate} " + clock_root + "/pending; systemctl stop " + clock["unit"])
     assert "invalid plugin receipt" in machine.fail("korri-plugin restore-all 2>&1")
+    machine.fail("systemctl is-active " + clock["unit"])
+    machine.succeed("test -L " + clock_root + "/pending")
+    assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
+    machine.fail("korri-plugin enabled-packages")
+    machine.succeed("rm " + corrupt + "/selection.json; rmdir " + corrupt + "; korri-plugin restore-all")
     machine.succeed("systemctl is-active " + clock["unit"])
     machine.fail("test -L " + clock_root + "/pending")
     assert machine.succeed("readlink " + clock_root + "/active").strip() == "${alternate}"
     assert machine.succeed("systemctl show " + dependent_clock["unit"] + " --property=MainPID --value").strip() == dependent_pid
-    machine.succeed("rm " + corrupt + "/selection.json; rmdir " + corrupt)
     assert dependent_clock["id"] in [p["id"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))]
     # Corrupt one receipt. Its independently managed peer remains running.
     # The all-or-error registry snapshot still refuses malformed authority.
@@ -1473,6 +1477,13 @@ pkgs.testers.runNixOSTest {
         machine.succeed("test -L " + revoked_root + "/previous")
         machine.fail("korri-plugin enabled-packages")
         machine.fail("korri-plugin enable @korri:tailscale")
+        assert json.loads(machine.succeed("korri-plugin status @korri:tailscale"))["desired"] == {"state": "Disabled"}
+        machine.fail("systemctl is-active " + revoked_unit)
+        # Failed enable denies the running selection. Restore legitimate start
+        # authority and enable normally before testing malformed stop approval.
+        write_bindings(bindings)
+        machine.succeed("korri-plugin enable @korri:tailscale")
+        write_bindings(changed_bindings)
         # Deactivation must not recover an Enabled receipt first, even when an
         # interrupted operation left a GC root. It still requires exact approval.
         receipt_path = "/var/lib/korri-plugin-host/" + managed_name(revoked) + "/selection.json"
@@ -1506,7 +1517,7 @@ pkgs.testers.runNixOSTest {
         # healthy-unit shortcut. Pending recovery must also refuse a new start.
         machine.fail("korri-plugin restore-all")
         machine.fail("systemctl is-active " + revoked_unit)
-        machine.succeed("ln -s " + revoked["package"] + " " + revoked_root + "/pending")
+        assert machine.succeed("readlink " + revoked_root + "/pending").strip() == revoked_update["package"]
         machine.fail("korri-plugin restore-all")
         machine.fail("systemctl is-active " + revoked_unit)
         machine.succeed("test -L " + revoked_root + "/pending")
