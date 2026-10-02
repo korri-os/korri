@@ -21,6 +21,13 @@ pub const BASE_POLICY: &str = "policy-v4: exact named native service and socket 
 pub const ROOT_POLICY: &str = "policy-root-v3: exact named native service and socket sets; explicit native User=root; collision-safe runtime ownership; device-wide root authority including account switching, host files, devices and network; host-owned lifecycle, private state and declared IPv4/IPv6 ports; no host module loading";
 
 #[derive(Clone, Serialize)]
+pub struct DependencyReport {
+    #[serde(flatten)]
+    pub report: Report,
+    pub already_approved: bool,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Report {
     pub id: String,
     pub package: PathBuf,
@@ -39,6 +46,9 @@ pub struct Report {
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
     pub sources: Vec<String>,
+    pub requires: Vec<PathBuf>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub brings: Vec<DependencyReport>,
 }
 
 pub fn validate_store_path(path: &Path) -> Result<(), String> {
@@ -189,6 +199,8 @@ struct Manifest {
     services: BTreeMap<String, PathBuf>,
     #[serde(default)]
     ports: crate::firewall::Ports,
+    #[serde(default)]
+    requires: Vec<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -253,6 +265,16 @@ fn manifest(package: &Path) -> Result<Manifest, String> {
         crate::native_unit::validate_names(&names.keys().cloned().collect::<Vec<_>>())?;
     }
     manifest.ports.validate()?;
+    if manifest.requires.len() > crate::dependencies::MAX_PLUGINS {
+        return Err("too many required plugins".into());
+    }
+    let mut requires = BTreeSet::new();
+    for path in &manifest.requires {
+        validate_store_path(path)?;
+        if !requires.insert(path) {
+            return Err("duplicate required plugin output".into());
+        }
+    }
     if manifest.entry != "plugin.ts" {
         return Err("plugin manifest entry must be plugin.ts".into());
     }
@@ -265,8 +287,12 @@ fn manifest(package: &Path) -> Result<Manifest, String> {
     Ok(manifest)
 }
 
-fn manifest_namespace(package: &Path) -> Result<String, String> {
+pub fn manifest_namespace(package: &Path) -> Result<String, String> {
     Ok(manifest(package)?.publisher.namespace)
+}
+
+pub fn manifest_requires(package: &Path) -> Result<Vec<PathBuf>, String> {
+    Ok(manifest(package)?.requires)
 }
 
 fn public_key_bytes(key: &str) -> Result<Vec<u8>, String> {
@@ -581,7 +607,16 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
 
 pub fn load(nix: &Path, package: &Path, provenance: Provenance) -> Result<Report, String> {
     let closure = closure_of(nix, package)?;
-    build_report(package, provenance, Some(&closure))
+    leaf_report(build_report(package, provenance, Some(&closure))?)
+}
+
+fn leaf_report(report: Report) -> Result<Report, String> {
+    if !report.requires.is_empty() {
+        return Err(
+            "required plugins need independent publisher bindings and closure inspection".into(),
+        );
+    }
+    Ok(report)
 }
 
 /// `load` with the closure taken from a snapshot instead of a Nix call.
@@ -591,7 +626,85 @@ pub fn load_from(
     provenance: Provenance,
 ) -> Result<Report, String> {
     let closure = snapshot.closure(package)?;
-    build_report(package, provenance, Some(&closure))
+    leaf_report(build_report(package, provenance, Some(&closure))?)
+}
+
+/// Load an exact graph using each dependency's own provenance. The caller
+/// resolves a selected receipt or the dependency publisher's bound raw cache.
+/// No parent repository identity or cache is inherited by another plugin.
+pub fn load_graph(
+    nix: &Path,
+    snapshot: Option<&StoreSnapshot>,
+    package: &Path,
+    provenance: Provenance,
+    mut dependency_provenance: impl FnMut(&Path) -> Result<Provenance, String>,
+) -> Result<Report, String> {
+    let mut reports = BTreeMap::new();
+    let order = crate::dependencies::dependency_order([package.to_path_buf()], |path| {
+        let origin = if path == package {
+            provenance.clone()
+        } else {
+            dependency_provenance(path)?
+        };
+        let closure = match snapshot {
+            Some(snapshot) if snapshot.contains(path) => snapshot.closure(path)?,
+            _ => closure_of(nix, path)?,
+        };
+        let report = build_report(path, origin, Some(&closure))?;
+        let requires = report.requires.clone();
+        reports.insert(path.clone(), report);
+        Ok(requires)
+    })?;
+    let mut identities = BTreeMap::new();
+    for report in reports.values() {
+        if identities
+            .insert(report.id.clone(), report.package.clone())
+            .is_some()
+        {
+            return Err(format!(
+                "conflicting exact versions for plugin {}",
+                report.id
+            ));
+        }
+    }
+    let mut closures: BTreeMap<PathBuf, BTreeSet<PathBuf>> = BTreeMap::new();
+    for path in &order {
+        let mut report = reports.remove(path).unwrap();
+        let mut reachable = BTreeSet::new();
+        for required in &report.requires {
+            reachable.insert(required.clone());
+            reachable.extend(closures[required].iter().cloned());
+        }
+        let dependencies: Vec<_> = order.iter().filter(|p| reachable.contains(*p)).collect();
+        // Keep one full report per node. Intermediate closures store only
+        // paths, not quadratic copies of every source/native authority report.
+        // Leaf approvals remain unchanged; non-leaf summaries preserve the
+        // f3aa66d91 ID/output/approval binding and dependency-first order.
+        if !dependencies.is_empty() {
+            let summaries: Vec<_> = dependencies
+                .iter()
+                .map(|path| {
+                    let dep = &reports[*path];
+                    (&dep.id, &dep.package, &dep.approval)
+                })
+                .collect();
+            let bytes =
+                serde_json::to_vec(&(&report.approval, summaries)).map_err(|e| e.to_string())?;
+            report.approval = hex::encode(Sha256::digest(bytes));
+        }
+        if path == package {
+            report.brings = dependencies
+                .iter()
+                .map(|path| DependencyReport {
+                    report: reports[*path].clone(),
+                    already_approved: false,
+                })
+                .collect();
+        }
+        closures.insert(path.clone(), reachable);
+        reports.insert(path.clone(), report);
+    }
+    Ok(reports.remove(package).unwrap())
 }
 
 /// Digest-only report for image-time seeding.
@@ -601,7 +714,7 @@ pub fn load_from(
 /// package the device would refuse to load. An image build has no nix, which
 /// is the only reason this entry point exists.
 pub fn load_for_seed(package: &Path, provenance: Provenance) -> Result<Report, String> {
-    build_report(package, provenance, None)
+    leaf_report(build_report(package, provenance, None)?)
 }
 
 fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
@@ -701,7 +814,7 @@ fn build_report(
     let unit = unit_name(&id);
     let manifest = manifest(package)?;
     if let Some(closure) = closure {
-        for path in manifest.packages.values() {
+        for path in manifest.packages.values().chain(&manifest.requires) {
             validate_store_path(path)?;
             if !closure.contains(path)
                 || fs::canonicalize(path).map_err(|e| e.to_string())? != *path
@@ -777,6 +890,8 @@ fn build_report(
         files: manifest.files,
         entry: manifest.entry,
         sources: manifest.sources,
+        requires: manifest.requires,
+        brings: Vec::new(),
     };
     report.unit_configuration = crate::unit::render(&report)?;
     report.approval = approval_digest(

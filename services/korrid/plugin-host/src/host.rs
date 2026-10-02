@@ -70,6 +70,8 @@ struct TestRuntime {
     events: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
     fail_stop: std::rc::Rc<std::cell::RefCell<Option<String>>>,
     fail_start: std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    fail_start_package: std::rc::Rc<std::cell::RefCell<Option<PathBuf>>>,
+    running: std::rc::Rc<std::cell::RefCell<std::collections::BTreeSet<String>>>,
 }
 
 impl Drop for Host {
@@ -298,17 +300,86 @@ impl Host {
     }
 
     fn load(&self, selected: &Path, provenance: Provenance) -> Result<Report, String> {
-        self.verify_publisher(selected, &provenance, package::StoreContents::Rehash)?;
-        package::load(&self.nix, selected, provenance)
+        let mut report = self.report_for_in(
+            selected,
+            provenance,
+            None,
+            Some(package::StoreContents::Rehash),
+        )?;
+        for dependency in &mut report.brings {
+            let dep = &dependency.report;
+            dependency.already_approved = self.receipt(&dep.id)?.is_some_and(|receipt| {
+                receipt.package == dep.package
+                    && receipt.approval == dep.approval
+                    && receipt.provenance == dep.provenance
+                    && !matches!(receipt.desired, Desired::Removed { .. })
+            });
+        }
+        Ok(report)
     }
 
-    fn verify_publisher(
+    fn report_for(
         &self,
         selected: &Path,
-        provenance: &Provenance,
+        provenance: Provenance,
+        snapshot: Option<&package::StoreSnapshot>,
+    ) -> Result<Report, String> {
+        self.report_for_in(selected, provenance, snapshot, None)
+    }
+
+    fn report_for_in(
+        &self,
+        selected: &Path,
+        provenance: Provenance,
+        snapshot: Option<&package::StoreSnapshot>,
+        contents: Option<package::StoreContents>,
+    ) -> Result<Report, String> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            return runtime
+                .reports
+                .borrow()
+                .get(selected)
+                .cloned()
+                .ok_or_else(|| format!("missing test report for {}", selected.display()));
+        }
+        if let Some(contents) = contents {
+            self.verify_publisher_in(snapshot, selected, &provenance, contents)?;
+        }
+        let receipts = if package::manifest_requires(selected)?.is_empty() {
+            Vec::new()
+        } else {
+            self.receipts()?
+        };
+        package::load_graph(&self.nix, snapshot, selected, provenance, |path| {
+            let provenance = dependency_provenance(path, &receipts, &self.publishers)?;
+            if let Some(contents) = contents {
+                self.verify_publisher_in(snapshot, path, &provenance, contents)?;
+            }
+            Ok(provenance)
+        })
+    }
+
+    fn verify_report(
+        &self,
+        report: &Report,
+        checks: Option<&BootChecks>,
         contents: package::StoreContents,
     ) -> Result<(), String> {
-        self.verify_publisher_in(None, selected, provenance, contents)
+        for report in report
+            .brings
+            .iter()
+            .map(|dep| &dep.report)
+            .chain(std::iter::once(report))
+        {
+            self.verify_publisher_in(
+                checks.map(|checks| &checks.snapshot),
+                &report.package,
+                &report.provenance,
+                contents,
+            )?;
+        }
+        Ok(())
     }
 
     fn verify_publisher_in(
@@ -370,9 +441,11 @@ impl Host {
     where
         F: FnOnce() -> Result<(), String>,
     {
-        let (required, _optional_ids) = review.into_parts();
-        let mut additions = Vec::new();
-        for report in &required {
+        let (roots, _optional_ids) = review.into_parts();
+        let mut required = Vec::<Report>::new();
+        // Root approval covers its disclosed closure. Keep the existing
+        // release rule: pre-existing selections are never replaced here.
+        for report in roots {
             let approval = approvals
                 .get(&report.id)
                 .ok_or_else(|| format!("required plugin {} was not approved", report.id))?;
@@ -382,6 +455,56 @@ impl Host {
                     report.id
                 ));
             }
+            let checked = self.load(&report.package, report.provenance.clone())?;
+            if checked.approval != report.approval {
+                return Err("release dependency closure no longer matches its approval".into());
+            }
+            if self.receipt(&report.id)?.is_none() {
+                for dep in &checked.brings {
+                    if let Some(receipt) = self.receipt(&dep.report.id)? {
+                        if receipt.package != dep.report.package
+                            || receipt.approval != dep.report.approval
+                            || receipt.provenance != dep.report.provenance
+                            || matches!(receipt.desired, Desired::Removed { .. })
+                        {
+                            return Err(format!(
+                                "conflicting exact selection for required plugin {}",
+                                dep.report.id
+                            ));
+                        }
+                        self.approved(&receipt)?;
+                    }
+                    if let Some(existing) = required.iter().find(|r| r.id == dep.report.id) {
+                        if existing.package != dep.report.package
+                            || existing.approval != dep.report.approval
+                            || existing.provenance != dep.report.provenance
+                        {
+                            return Err(format!(
+                                "conflicting exact selection for required plugin {}",
+                                dep.report.id
+                            ));
+                        }
+                    } else {
+                        required.push(dep.report.clone());
+                    }
+                }
+            }
+            if let Some(existing) = required.iter().find(|r| r.id == report.id) {
+                if existing.package != report.package
+                    || existing.approval != report.approval
+                    || existing.provenance != report.provenance
+                {
+                    return Err(format!(
+                        "conflicting exact selection for required plugin {}",
+                        report.id
+                    ));
+                }
+            } else {
+                required.push(report);
+            }
+        }
+        let mut additions = Vec::new();
+        for report in &required {
             report.provenance.validate(&report.id)?;
             match self.receipt(&report.id)? {
                 Some(receipt) if matches!(receipt.desired, Desired::Removed { .. }) => {
@@ -458,7 +581,14 @@ impl Host {
             rollback_errors.push(error);
         }
         for id in additions.iter().rev() {
-            if let Err(error) = self.selection(id).remove() {
+            let cleanup = match self.receipt(id) {
+                Ok(Some(_)) => self.deactivate(id, Desired::Removed { purge: false }),
+                Ok(None) => self
+                    .units_stop(id, false)
+                    .and_then(|_| self.selection(id).remove()),
+                Err(error) => Err(error),
+            };
+            if let Err(error) = cleanup {
                 rollback_errors.push(format!("{id}: {error}"));
             }
         }
@@ -476,6 +606,114 @@ impl Host {
     }
 
     pub fn install(
+        &self,
+        report: Report,
+        approval: &str,
+        intent: SelectionIntent<'_>,
+    ) -> Result<(), String> {
+        if report.approval != approval {
+            return Err(
+                "approval does not match this package and its execution policy; inspect it first"
+                    .into(),
+            );
+        }
+        let checked = self.load(&report.package, report.provenance.clone())?;
+        if checked.approval != approval || checked.id != report.id {
+            return Err("package dependency closure no longer matches its approval".into());
+        }
+        let old = self.receipt(&report.id)?;
+        intent.validate(
+            &report.id,
+            old.as_ref().map(|r| &r.provenance),
+            &report.provenance,
+        )?;
+        self.check_required_by(&report.id, false)?;
+        let enabled_graph_transition = match old.as_ref() {
+            Some(old) if matches!(old.desired, Desired::Enabled) => {
+                !checked.requires.is_empty() || !self.approved(old)?.requires.is_empty()
+            }
+            _ => false,
+        };
+        let mut additions = Vec::new();
+        // Refuse conflicting selections before the first receipt or daemon changes.
+        for dep in &checked.brings {
+            let dep = &dep.report;
+            match self.receipt(&dep.id)? {
+                Some(receipt) => {
+                    if receipt.package != dep.package
+                        || receipt.provenance != dep.provenance
+                        || receipt.approval != dep.approval
+                        || matches!(receipt.desired, Desired::Removed { .. })
+                    {
+                        return Err(format!(
+                            "conflicting exact selection for required plugin {}",
+                            dep.id
+                        ));
+                    }
+                    self.approved(&receipt)?;
+                }
+                None => additions.push(dep.id.clone()),
+            }
+        }
+        for dep in &checked.brings {
+            if !additions.contains(&dep.report.id) {
+                continue;
+            }
+            self.prepare(&dep.report.id)?;
+            self.selection(&dep.report.id).stage(&dep.report.package)?;
+        }
+        let result = (|| {
+            for dep in &checked.brings {
+                if additions.contains(&dep.report.id) {
+                    self.install_one(
+                        dep.report.clone(),
+                        &dep.report.approval,
+                        SelectionIntent::Install,
+                    )?;
+                }
+            }
+            if enabled_graph_transition {
+                // Stop the pack before a new dependency may be started. Keep
+                // the committed pack disabled on failure, never half-active.
+                self.deactivate(&report.id, Desired::Disabled)?;
+                self.activate_dependencies(&checked)?;
+                self.install_one(report.clone(), approval, intent)?;
+                self.set_enabled(&report.id, true)
+            } else {
+                self.install_one(report.clone(), approval, intent)
+            }
+        })();
+        if let Err(error) = result {
+            // An enabled committed pack may now require these additions. Never
+            // release them merely because registry publication failed.
+            let mut cleanup_errors = Vec::new();
+            for id in additions.iter().rev() {
+                if self.check_required_by_enabled(id).is_err() {
+                    continue;
+                }
+                let cleanup = if self.receipt(id)?.is_some() {
+                    self.deactivate(id, Desired::Removed { purge: false })
+                } else {
+                    self.units_stop(id, false)
+                        .and_then(|_| self.selection(id).remove())
+                };
+                if let Err(cleanup) = cleanup {
+                    cleanup_errors.push(format!("{id}: {cleanup}"));
+                }
+            }
+            return Err(format!(
+                "{error}{}",
+                if cleanup_errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("; dependency cleanup failed: {}", cleanup_errors.join("; "))
+                }
+            ));
+        }
+        self.release_download()
+    }
+
+    fn install_one(
         &self,
         report: Report,
         approval: &str,
@@ -542,14 +780,18 @@ impl Host {
         // Validate before recovery can start anything. A refused swap must
         // not disturb the installed graph or discard an interrupted operation.
         let current = self.receipt(id)?.ok_or("plugin is not installed")?;
-        self.approved(&current)?;
+        let current_report = self.approved(&current)?;
         let candidate = current.rollback()?;
-        self.approved(&candidate)?;
-        self.verify_publisher(
-            &candidate.package,
-            &candidate.provenance,
-            package::StoreContents::Rehash,
-        )?;
+        let report = self.approved(&candidate)?;
+        self.check_required_by(id, false)?;
+        self.check_dependencies(&report, false, None)?;
+        self.verify_report(&report, None, package::StoreContents::Rehash)?;
+        if matches!(candidate.desired, Desired::Enabled)
+            && (!report.requires.is_empty() || !current_report.requires.is_empty())
+        {
+            self.deactivate(id, Desired::Disabled)?;
+            self.activate_dependencies(&report)?;
+        }
         self.recover_one(id)?;
         self.apply(candidate)
     }
@@ -560,11 +802,165 @@ impl Host {
         if !enabled {
             return self.deactivate(id, Desired::Disabled);
         }
-        self.recover_one(id)?;
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
-        self.approved(&receipt)?;
+        if matches!(receipt.desired, Desired::Removed { .. }) {
+            return Err("plugin removal is unfinished".into());
+        }
+        let preflight = (|| {
+            let report = self.approved(&receipt)?;
+            self.verify_report(&report, None, package::StoreContents::Rehash)?;
+            self.check_dependencies(&report, false, None)?;
+            Ok::<_, String>(report)
+        })();
+        let report = match preflight {
+            Ok(report) => report,
+            Err(error) => {
+                if matches!(receipt.desired, Desired::Enabled) {
+                    self.stop_enabled_dependents(&receipt.package)?;
+                    self.deny_start(&receipt)?;
+                }
+                return Err(error);
+            }
+        };
+        self.check_required_by_enabled(id)?;
+        if matches!(receipt.desired, Desired::Enabled) && !report.requires.is_empty() {
+            self.deactivate(id, Desired::Disabled)?;
+            receipt.desired = Desired::Disabled;
+        }
+        self.activate_dependencies(&report)?;
+        self.recover_one(id)?;
         receipt.desired = Desired::Enabled;
         self.apply(receipt)
+    }
+
+    fn activate_dependencies(&self, report: &Report) -> Result<(), String> {
+        // brings is a checked dependency-first flat closure. All approvals and
+        // exact selections are checked before the first activation.
+        self.check_dependencies(report, false, None)?;
+        self.verify_report(report, None, package::StoreContents::Rehash)?;
+        for dependency in &report.brings {
+            let mut receipt = self
+                .receipt(&dependency.report.id)?
+                .ok_or("required plugin is not installed")?;
+            if matches!(receipt.desired, Desired::Enabled) {
+                if self.settled(&receipt).is_err()
+                    || !self.units_matches_running(&dependency.report)?
+                {
+                    self.stop_enabled_dependents(&dependency.report.package)?;
+                    self.restore_one(&receipt.id)?;
+                }
+            } else {
+                self.stop_enabled_dependents(&receipt.package)?;
+                self.recover_one(&receipt.id)?;
+                receipt.desired = Desired::Enabled;
+                self.apply(receipt)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_dependencies(
+        &self,
+        report: &Report,
+        enabled: bool,
+        checks: Option<&BootChecks>,
+    ) -> Result<(), String> {
+        for dep in &report.brings {
+            let dep = &dep.report;
+            let receipt = self.receipt(&dep.id)?.ok_or_else(|| {
+                format!(
+                    "{} requires installed plugin {} ({})",
+                    report.id,
+                    dep.id,
+                    dep.package.display()
+                )
+            })?;
+            if receipt.package != dep.package
+                || receipt.approval != dep.approval
+                || receipt.provenance != dep.provenance
+                || matches!(receipt.desired, Desired::Removed { .. })
+            {
+                return Err(format!(
+                    "required plugin {} has a stale or unapproved exact selection",
+                    dep.id
+                ));
+            }
+            self.approved_in(&receipt, checks)?;
+            if enabled {
+                if !matches!(receipt.desired, Desired::Enabled) {
+                    return Err(format!("{} requires enabled plugin {}", report.id, dep.id));
+                }
+                self.settled(&receipt)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_required_by_enabled(&self, id: &str) -> Result<(), String> {
+        self.check_required_by(id, true)
+    }
+
+    fn check_required_by(&self, id: &str, active_only: bool) -> Result<(), String> {
+        let Some(selected) = self.receipt(id)? else {
+            return Ok(());
+        };
+        for receipt in self.receipts()? {
+            if receipt.id == id || (active_only && !matches!(receipt.desired, Desired::Enabled)) {
+                continue;
+            }
+            if matches!(receipt.desired, Desired::Removed { .. })
+                && self.selection(&receipt.id).software_released()?
+            {
+                continue;
+            }
+            let report = self.report_for(&receipt.package, receipt.provenance.clone(), None)?;
+            if report.requires.contains(&selected.package)
+                || report.brings.iter().any(|dep| dep.report.id == id)
+            {
+                return Err(if matches!(receipt.desired, Desired::Enabled) {
+                    format!("plugin {id} is actively required by {}", receipt.id)
+                } else {
+                    format!("plugin {id} is required by installed plugin {}; remove or update that dependent first", receipt.id)
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn stop_enabled_dependents(&self, package: &Path) -> Result<(), String> {
+        let mut affected = BTreeMap::new();
+        for receipt in self.receipts()? {
+            if !matches!(receipt.desired, Desired::Enabled) || receipt.package == package {
+                continue;
+            }
+            let report = self.report_for(&receipt.package, receipt.provenance.clone(), None)?;
+            if report.requires.contains(&package.to_path_buf())
+                || report
+                    .brings
+                    .iter()
+                    .any(|dep| dep.report.package == package)
+            {
+                affected.insert(receipt.package.clone(), (receipt, report));
+            }
+        }
+        let order = crate::dependencies::dependency_order(affected.keys().cloned(), |path| {
+            Ok(affected
+                .get(path)
+                .map(|(_, report)| report.requires.clone())
+                .unwrap_or_default())
+        })?;
+        // Quiesce outer dependents before any required service can stop.
+        for path in order.into_iter().rev() {
+            let Some((mut receipt, _)) = affected.remove(&path) else {
+                continue;
+            };
+            self.invalidate_registry()?;
+            receipt.desired = Desired::Disabled;
+            storage::write_json(&self.receipt_path(&receipt.id), &receipt)?;
+            self.units_stop(&receipt.id, false)?;
+            self.selection(&receipt.id).settle(&receipt)?;
+        }
+        Ok(())
     }
 
     pub fn remove(&self, id: &str, purge: bool) -> Result<(), String> {
@@ -574,6 +970,7 @@ impl Host {
     }
 
     fn deactivate(&self, id: &str, desired: Desired) -> Result<(), String> {
+        self.check_required_by(id, !matches!(desired, Desired::Removed { .. }))?;
         let mut receipt = self.receipt(id)?.ok_or("plugin is not installed")?;
         if matches!(receipt.desired, Desired::Removed { .. }) {
             // A prior removal keeps its original purge choice. Retrying the
@@ -583,13 +980,26 @@ impl Host {
         }
         // Do not restore a pending enabled selection before stopping it. The
         // immutable approval still authorizes cleanup, not a new daemon start.
-        self.approved(&receipt)?;
+        let report = self.approved(&receipt)?;
         // Persist both disable and removal before cleanup: failure or a crash
         // must never roll back this intent into a (possibly revoked) start.
         receipt.desired = desired;
         self.invalidate_registry()?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
         self.restore_one(id)?;
+        // Restore the f3aa66d91 stop cascade: dependents stop first; an
+        // independent installed dependency stays selected, and stops only
+        // when no enabled plugin still requires it. Never hide cleanup failure.
+        for dep in report.brings.iter().rev() {
+            let dep = &dep.report;
+            if self
+                .receipt(&dep.id)?
+                .is_some_and(|r| matches!(r.desired, Desired::Enabled))
+                && self.check_required_by_enabled(&dep.id).is_ok()
+            {
+                self.deactivate(&dep.id, Desired::Disabled)?;
+            }
+        }
         self.publish_registry()
     }
 
@@ -610,11 +1020,8 @@ impl Host {
             }
             self.settled(&receipt)?;
             let report = self.approved(&receipt)?;
-            self.verify_publisher(
-                &receipt.package,
-                &receipt.provenance,
-                package::StoreContents::TrustRegistered,
-            )?;
+            self.check_dependencies(&report, true, None)?;
+            self.verify_report(&report, None, package::StoreContents::TrustRegistered)?;
             reports.push(report);
         }
         Ok(reports)
@@ -673,6 +1080,10 @@ impl Host {
     }
 
     pub fn restore_all(&self) -> Result<(), String> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            runtime.running.borrow_mut().clear();
+        }
         self.invalidate_registry()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
@@ -701,15 +1112,98 @@ impl Host {
                 Err(error) => errors.push(error),
             }
         }
-        // Start every stopped plugin with one systemd reload, not one each.
-        let started = {
-            let reports: Vec<&Report> = stopped.iter().map(|(_, report)| report).collect();
-            self.units_start_all(&reports)
-        };
-        for ((receipt, report), result) in stopped.into_iter().zip(started) {
-            match result.and_then(|()| self.selection(&receipt.id).settle(&receipt)) {
-                Ok(()) => enabled.push((receipt, report)),
-                Err(error) => errors.push(format!("plugin {}: {error}", receipt.id)),
+        // Start one dependency level per systemd batch. A failed node blocks
+        // only its dependents; unrelated leaf plugins retain the single batch.
+        let mut waiting: BTreeMap<_, _> = enabled
+            .drain(..)
+            .map(|(receipt, report)| (receipt.package.clone(), (receipt, report, true)))
+            .chain(
+                stopped
+                    .into_iter()
+                    .map(|(receipt, report)| (receipt.package.clone(), (receipt, report, false))),
+            )
+            .collect();
+        let mut outcomes = BTreeMap::new();
+        while !waiting.is_empty() {
+            let mut ready: Vec<_> = waiting
+                .iter()
+                .filter(|(_, (_, report, _))| {
+                    report
+                        .requires
+                        .iter()
+                        .all(|path| !waiting.contains_key(path))
+                })
+                .map(|(path, _)| path.clone())
+                .collect();
+            let cycle = ready.is_empty();
+            if cycle {
+                ready = waiting.keys().cloned().collect();
+            }
+            let mut start = Vec::new();
+            for path in ready {
+                let (receipt, report, running) = waiting.remove(&path).unwrap();
+                if cycle
+                    || report
+                        .requires
+                        .iter()
+                        .any(|path| outcomes.get(path) != Some(&true))
+                {
+                    let error = format!(
+                        "plugin {}: required plugin failed to restore or dependency cycle",
+                        receipt.id
+                    );
+                    errors.push(error);
+                    if let Err(error) = self.block_dependency_start(&receipt) {
+                        errors.push(error);
+                    }
+                    outcomes.insert(path, false);
+                } else if running {
+                    // Even healthy dependents must wait for dependency
+                    // authority before reopening their ports or settling roots.
+                    match self
+                        .firewall_apply(&report)
+                        .and_then(|()| self.selection(&receipt.id).settle(&receipt))
+                    {
+                        Ok(()) => {
+                            outcomes.insert(path, true);
+                            enabled.push((receipt, report));
+                        }
+                        Err(error) => {
+                            outcomes.insert(path, false);
+                            errors.push(format!("plugin {}: {error}", receipt.id));
+                            if !report.requires.is_empty() {
+                                if let Err(error) = self.block_dependency_start(&receipt) {
+                                    errors.push(error);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    start.push((receipt, report));
+                }
+            }
+            let reports: Vec<_> = start.iter().map(|(_, report)| report).collect();
+            let started = if reports.is_empty() {
+                Vec::new()
+            } else {
+                self.units_start_all(&reports)
+            };
+            for ((receipt, report), result) in start.into_iter().zip(started) {
+                match result.and_then(|()| self.selection(&receipt.id).settle(&receipt)) {
+                    Ok(()) => {
+                        outcomes.insert(receipt.package.clone(), true);
+                        enabled.push((receipt, report));
+                    }
+                    Err(error) => {
+                        outcomes.insert(receipt.package.clone(), false);
+                        errors.push(format!("plugin {}: {error}", receipt.id));
+                        if !report.requires.is_empty() {
+                            if let Err(error) = self.block_dependency_start(&receipt) {
+                                errors.push(error);
+                            }
+                        }
+                    }
+                }
             }
         }
         // A plugin that failed to restore is left out of the list, and its
@@ -764,8 +1258,30 @@ impl Host {
         }
         let packages: Vec<&Path> = receipts.iter().map(|r| r.package.as_path()).collect();
         let snapshot = package::StoreSnapshot::query(&self.nix, &packages).ok()?;
+        // A corrupt unrelated receipt must not prevent boot checks for an
+        // independent graph. Invalid state is still reported by restore_directory.
+        let selected: Vec<_> = fs::read_dir(self.state.root())
+            .ok()?
+            .flatten()
+            .filter_map(|entry| {
+                let receipt =
+                    storage::read_json::<Receipt>(&entry.path().join("selection.json")).ok()??;
+                (validate_id(&receipt.id).is_ok() && self.directory(&receipt.id) == entry.path())
+                    .then_some(receipt)
+            })
+            .collect();
+        let nix = &self.nix;
+        let publishers = &self.publishers;
         let loaded = crate::parallel::map(&receipts, |receipt| {
-            package::load_from(&snapshot, &receipt.package, receipt.provenance.clone())
+            // Each graph uses the same metadata snapshot and independently
+            // resolves dependency provenance from receipts or bound caches.
+            package::load_graph(
+                nix,
+                Some(&snapshot),
+                &receipt.package,
+                receipt.provenance.clone(),
+                |path| dependency_provenance(path, &selected, publishers),
+            )
         });
         let reports = receipts
             .into_iter()
@@ -822,7 +1338,14 @@ impl Host {
             self.restore_one(&receipt.id)?;
             return Ok(Restored::Nothing);
         }
-        let report = self.approved_in(&receipt, checks)?;
+        let report = match self.approved_in(&receipt, checks) {
+            Ok(report) => report,
+            Err(error) => {
+                // Corrupt approval is never a reason to leave old units running.
+                self.deny_start(&receipt)?;
+                return Err(error);
+            }
+        };
         let authorized = self.verify_publisher_in(
             checks.map(|checks| &checks.snapshot),
             &receipt.package,
@@ -836,8 +1359,6 @@ impl Host {
                 .is_ok_and(|path| path == receipt.package)
             && self.units_matches_running(&report)?
         {
-            self.firewall_apply(&report)?;
-            self.selection(&receipt.id).settle(&receipt)?;
             return Ok(Restored::Running(receipt, report));
         }
         // Stop first even when authority was revoked. Keep the receipt and
@@ -847,14 +1368,34 @@ impl Host {
         Ok(Restored::Stopped(receipt, report))
     }
 
+    fn deny_start(&self, receipt: &Receipt) -> Result<(), String> {
+        self.invalidate_registry()?;
+        let mut blocked = receipt.clone();
+        blocked.desired = Desired::Disabled;
+        storage::write_json(&self.receipt_path(&receipt.id), &blocked)?;
+        // Approval failure cannot authorize root repair. Keep all existing
+        // selection roots, including a pending candidate, until checked cleanup.
+        self.units_stop(&receipt.id, false)
+    }
+
+    fn block_dependency_start(&self, receipt: &Receipt) -> Result<(), String> {
+        self.deny_start(receipt)?;
+        let mut blocked = receipt.clone();
+        blocked.desired = Desired::Disabled;
+        self.selection(&receipt.id).settle(&blocked)
+    }
+
     fn apply(&self, candidate: Receipt) -> Result<(), String> {
         let id = &candidate.id;
         let report = self.approved(&candidate)?;
-        self.verify_publisher(
-            &candidate.package,
-            &candidate.provenance,
-            package::StoreContents::Rehash,
-        )?;
+        let changes_selection = self.receipt(id)?.is_some_and(|old| {
+            old.package != candidate.package
+                || old.provenance != candidate.provenance
+                || old.approval != candidate.approval
+        });
+        self.check_required_by(id, !changes_selection)?;
+        self.check_dependencies(&report, matches!(candidate.desired, Desired::Enabled), None)?;
+        self.verify_report(&report, None, package::StoreContents::Rehash)?;
         self.invalidate_registry()?;
         self.selection(id).stage(&candidate.package)?;
         let result = self.units_stop(id, false).and_then(|_| {
@@ -928,6 +1469,7 @@ impl Host {
             if runtime.fail_stop.borrow().as_deref() == Some(id) {
                 return Err(format!("injected stop failure for {id}"));
             }
+            runtime.running.borrow_mut().remove(id);
             return Ok(());
         }
         self.units.stop(id, purge)
@@ -940,9 +1482,12 @@ impl Host {
                 .events
                 .borrow_mut()
                 .push(format!("start:{}", report.id));
-            if runtime.fail_start.borrow().as_deref() == Some(report.id.as_str()) {
+            if runtime.fail_start.borrow().as_deref() == Some(report.id.as_str())
+                || runtime.fail_start_package.borrow().as_deref() == Some(report.package.as_path())
+            {
                 return Err(format!("injected start failure for {}", report.id));
             }
+            runtime.running.borrow_mut().insert(report.id.clone());
             return Ok(());
         }
         self.units.start(report)
@@ -966,9 +1511,8 @@ impl Host {
 
     fn units_matches_running(&self, report: &Report) -> Result<bool, String> {
         #[cfg(test)]
-        if self.test_runtime.is_some() {
-            let _ = report;
-            return Ok(false);
+        if let Some(runtime) = &self.test_runtime {
+            return Ok(runtime.running.borrow().contains(&report.id));
         }
         self.units.matches_running(report)
     }
@@ -998,15 +1542,11 @@ impl Host {
             {
                 return report.clone();
             }
-            match checks
-                .map(|checks| &checks.snapshot)
-                .filter(|snapshot| snapshot.contains(&receipt.package))
-            {
-                Some(snapshot) => {
-                    package::load_from(snapshot, &receipt.package, receipt.provenance.clone())
-                }
-                None => package::load(&self.nix, &receipt.package, receipt.provenance.clone()),
-            }
+            self.report_for(
+                &receipt.package,
+                receipt.provenance.clone(),
+                checks.map(|checks| &checks.snapshot),
+            )
         };
         #[cfg(test)]
         let report = if let Some(runtime) = &self.test_runtime {
@@ -1074,11 +1614,8 @@ impl Host {
                     if matches!(receipt.desired, Desired::Enabled) {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
-                        self.verify_publisher(
-                            &receipt.package,
-                            &receipt.provenance,
-                            package::StoreContents::Rehash,
-                        )?;
+                        self.check_dependencies(&report, true, None)?;
+                        self.verify_report(&report, None, package::StoreContents::Rehash)?;
                         self.units_start(&report)?;
                     }
                     selection.settle(&receipt)?;
@@ -1115,6 +1652,23 @@ impl Host {
     fn receipt(&self, id: &str) -> Result<Option<Receipt>, String> {
         self.selection(id).read()
     }
+}
+
+fn dependency_provenance(
+    path: &Path,
+    receipts: &[Receipt],
+    publishers: &package::PublisherBindings,
+) -> Result<Provenance, String> {
+    if let Some(receipt) = receipts.iter().find(|receipt| receipt.package == path) {
+        return Ok(receipt.provenance.clone());
+    }
+    let namespace = package::manifest_namespace(path)?;
+    let binding = publishers
+        .get(&namespace)
+        .ok_or_else(|| format!("publisher {namespace} is not bound on this device"))?;
+    Ok(Provenance::RawCache {
+        cache_url: binding.cache_url.clone(),
+    })
 }
 
 #[cfg(test)]
@@ -1168,6 +1722,8 @@ mod tests {
             files: BTreeMap::new(),
             entry: "plugin.ts".into(),
             sources: vec!["plugin.ts".into()],
+            requires: Vec::new(),
+            brings: Vec::new(),
         }
     }
 
@@ -1531,6 +2087,589 @@ mod tests {
                 .filter(|event| event.starts_with("start:"))
                 .collect::<Vec<_>>(),
             ["start:@test:clock"]
+        );
+    }
+
+    fn pack(id: &str, suffix: &str, dependencies: &[Report]) -> Report {
+        let mut pack = report(id, suffix);
+        pack.requires = dependencies.iter().map(|dep| dep.package.clone()).collect();
+        pack.brings = dependencies
+            .iter()
+            .map(|dep| package::DependencyReport {
+                report: dep.clone(),
+                already_approved: false,
+            })
+            .collect();
+        pack
+    }
+
+    #[test]
+    fn approved_pack_installs_independent_dependencies_disabled_then_enables_in_order() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let mut fake08 = report("@runtime:fake08", "fake08");
+        fake08.provenance = Provenance::RawCache {
+            cache_url: "https://runtime.example/cache".into(),
+        };
+        let pack = pack(
+            "@games:starter-pack",
+            "starter-pack",
+            std::slice::from_ref(&fake08),
+        );
+        let runtime = runtime(&[fake08.clone(), pack.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        assert!(host
+            .install(pack.clone(), "not-approved", SelectionIntent::Install)
+            .is_err());
+        assert!(host.status(&fake08.id).unwrap().is_none());
+        install(&host, pack.clone());
+        for selected in [&fake08, &pack] {
+            let receipt = host.status(&selected.id).unwrap().unwrap();
+            assert_eq!(receipt.provenance, selected.provenance);
+            assert_eq!(receipt.approval, selected.approval);
+            assert_eq!(receipt.desired, Desired::Disabled);
+            assert_eq!(
+                fs::read_link(host.root(&selected.id, "active")).unwrap(),
+                selected.package
+            );
+        }
+        runtime.events.borrow_mut().clear();
+        host.set_enabled(&pack.id, true).unwrap();
+        let starts: Vec<_> = runtime
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.starts_with("start:"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            starts,
+            ["start:@runtime:fake08", "start:@games:starter-pack"]
+        );
+        assert_eq!(
+            published(&host).1,
+            ["@games:starter-pack", "@runtime:fake08"]
+        );
+        assert!(host
+            .set_enabled(&fake08.id, false)
+            .unwrap_err()
+            .contains("actively required"));
+        assert!(host
+            .remove(&fake08.id, false)
+            .unwrap_err()
+            .contains("actively required"));
+        assert!(host.rollback(&fake08.id).is_err());
+        host.set_enabled(&pack.id, false).unwrap();
+        assert_eq!(
+            host.status(&fake08.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+    }
+
+    #[test]
+    fn shared_dependency_stays_enabled_until_the_last_pack_stops() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let fake08 = report("@runtime:fake08", "shared-fake08");
+        let a = pack("@games:a", "a", std::slice::from_ref(&fake08));
+        let b = pack("@games:b", "b", std::slice::from_ref(&fake08));
+        let runtime = runtime(&[fake08.clone(), a.clone(), b.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, a.clone());
+        install(&host, b.clone());
+        host.set_enabled(&a.id, true).unwrap();
+        host.set_enabled(&b.id, true).unwrap();
+        assert_eq!(
+            host.status(&a.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        );
+        host.set_enabled(&a.id, false).unwrap();
+        assert_eq!(
+            host.status(&fake08.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        );
+        host.set_enabled(&b.id, false).unwrap();
+        assert_eq!(
+            host.status(&fake08.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+    }
+
+    #[test]
+    fn conflicting_exact_dependency_is_refused_without_replacing_any_selection() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let first = report("@runtime:fake08", "fake08-first");
+        let second = report("@runtime:fake08", "fake08-second");
+        let pack = pack(
+            "@games:starter-pack",
+            "conflicting-pack",
+            std::slice::from_ref(&second),
+        );
+        let runtime = runtime(&[first.clone(), second, pack.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        install(&host, first.clone());
+        assert!(host
+            .install(pack.clone(), &pack.approval, SelectionIntent::Install)
+            .unwrap_err()
+            .contains("conflicting exact"));
+        assert_eq!(
+            host.status(&first.id).unwrap().unwrap().package,
+            first.package
+        );
+        assert!(host.status(&pack.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn failed_dependency_activation_never_enables_the_pack_and_boot_failure_blocks_only_dependents()
+    {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let fake08 = report("@runtime:fake08", "failing-fake08");
+        let pack = pack(
+            "@games:starter-pack",
+            "failing-pack",
+            std::slice::from_ref(&fake08),
+        );
+        let clock = report("@test:clock", "independent-clock");
+        let runtime = runtime(&[fake08.clone(), pack.clone(), clock.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, pack.clone());
+        install(&host, clock.clone());
+        runtime.fail_start.replace(Some(fake08.id.clone()));
+        assert!(host.set_enabled(&pack.id, true).is_err());
+        assert_eq!(
+            host.status(&pack.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert_eq!(
+            host.status(&fake08.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        runtime.fail_start.replace(None);
+        host.set_enabled(&pack.id, true).unwrap();
+        host.set_enabled(&clock.id, true).unwrap();
+        runtime.events.borrow_mut().clear();
+        host.restore_all().unwrap();
+        let starts: Vec<_> = runtime
+            .events
+            .borrow()
+            .iter()
+            .filter(|e| e.starts_with("start:"))
+            .cloned()
+            .collect();
+        assert!(
+            starts
+                .iter()
+                .position(|e| e == "start:@runtime:fake08")
+                .unwrap()
+                < starts
+                    .iter()
+                    .position(|e| e == "start:@games:starter-pack")
+                    .unwrap()
+        );
+        runtime.fail_start.replace(Some(fake08.id.clone()));
+        assert!(host.restore_all().is_err());
+        assert_eq!(published(&host).1, ["@test:clock"]);
+        assert_eq!(
+            host.status(&pack.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert!(!runtime.running.borrow().contains(&pack.id));
+    }
+
+    #[test]
+    fn corrupt_dependency_approval_is_never_reused_for_enable_or_boot_restore() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let fake08 = report("@runtime:fake08", "corrupt-fake08");
+        let pack = pack(
+            "@games:starter-pack",
+            "corrupt-pack",
+            std::slice::from_ref(&fake08),
+        );
+        let runtime = runtime(&[fake08.clone(), pack.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, pack.clone());
+        host.set_enabled(&pack.id, true).unwrap();
+        let mut corrupt = host.status(&fake08.id).unwrap().unwrap();
+        corrupt.approval = "not-the-approved-bytes".into();
+        storage::write_json(&host.receipt_path(&fake08.id), &corrupt).unwrap();
+        assert!(host.enabled_packages().is_err());
+        assert!(host.restore_all().is_err());
+        assert_eq!(published(&host).1, Vec::<String>::new());
+        assert_eq!(
+            host.status(&pack.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert!(!runtime.running.borrow().contains(&pack.id));
+        assert!(host.set_enabled(&pack.id, true).is_err());
+    }
+
+    #[test]
+    fn failed_enabled_leaf_update_still_restores_the_enabled_committed_selection() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let first = report("@test:clock", "leaf-before");
+        let second = report("@test:clock", "leaf-fails");
+        let runtime = runtime(&[first.clone(), second.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, first.clone());
+        host.set_enabled(&first.id, true).unwrap();
+        runtime
+            .fail_start_package
+            .replace(Some(second.package.clone()));
+        let error = host
+            .install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id },
+            )
+            .unwrap_err();
+        assert!(error.contains("committed selection restored"), "{error}");
+        let selected = host.status(&first.id).unwrap().unwrap();
+        assert_eq!(selected.package, first.package);
+        assert_eq!(selected.desired, Desired::Enabled);
+        assert!(selected.previous.is_none());
+        assert!(runtime.running.borrow().contains(&first.id));
+        assert!(fs::symlink_metadata(host.root(&first.id, "pending")).is_err());
+    }
+
+    #[test]
+    fn disabled_installed_pack_preserves_its_exact_dependency_selection_for_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let first = report("@runtime:fake08", "disabled-first");
+        let second = report("@runtime:fake08", "disabled-second");
+        let pack = pack(
+            "@games:starter-pack",
+            "disabled-pack",
+            std::slice::from_ref(&first),
+        );
+        let runtime = runtime(&[first.clone(), second.clone(), pack.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        install(&host, pack.clone());
+        assert!(host
+            .remove(&first.id, false)
+            .unwrap_err()
+            .contains("required by installed"));
+        assert!(host
+            .install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id }
+            )
+            .unwrap_err()
+            .contains("required by installed"));
+        assert_eq!(
+            host.status(&first.id).unwrap().unwrap().package,
+            first.package
+        );
+        host.remove(&pack.id, false).unwrap();
+        host.install(
+            second.clone(),
+            &second.approval,
+            SelectionIntent::Update { id: &first.id },
+        )
+        .unwrap();
+        assert_eq!(
+            host.status(&first.id).unwrap().unwrap().package,
+            second.package
+        );
+    }
+
+    #[test]
+    fn enabled_pack_update_and_rollback_activate_only_the_exact_approved_graph() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let a = report("@runtime:a", "update-a");
+        let b = report("@runtime:b", "update-b");
+        let first = pack(
+            "@games:starter-pack",
+            "pack-first",
+            std::slice::from_ref(&a),
+        );
+        let second = pack(
+            "@games:starter-pack",
+            "pack-second",
+            std::slice::from_ref(&b),
+        );
+        let runtime = runtime(&[a.clone(), b.clone(), first.clone(), second.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        install(&host, first.clone());
+        host.set_enabled(&first.id, true).unwrap();
+        host.install(
+            second.clone(),
+            &second.approval,
+            SelectionIntent::Update { id: &first.id },
+        )
+        .unwrap();
+        let selected = host.status(&first.id).unwrap().unwrap();
+        assert_eq!(selected.package, second.package);
+        assert_eq!(selected.previous.unwrap().package, first.package);
+        assert_eq!(selected.desired, Desired::Enabled);
+        assert_eq!(
+            host.status(&a.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert_eq!(
+            host.status(&b.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        );
+        host.rollback(&first.id).unwrap();
+        let selected = host.status(&first.id).unwrap().unwrap();
+        assert_eq!(selected.package, first.package);
+        assert_eq!(selected.previous.unwrap().package, second.package);
+        assert_eq!(selected.desired, Desired::Enabled);
+        assert_eq!(
+            host.status(&a.id).unwrap().unwrap().desired,
+            Desired::Enabled
+        );
+        assert_eq!(
+            host.status(&b.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+    }
+
+    #[test]
+    fn release_approval_covers_new_independent_dependencies_without_a_second_schema() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let fake08 = report("@runtime:fake08", "release-fake08");
+        let pack = pack(
+            "@games:starter-pack",
+            "release-pack",
+            std::slice::from_ref(&fake08),
+        );
+        let runtime = runtime(&[fake08.clone(), pack.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime).unwrap();
+        let approvals = BTreeMap::from([(pack.id.clone(), pack.approval.clone())]);
+        let review = host
+            .review_release_update(vec![pack.clone()], Vec::new())
+            .unwrap();
+        assert!(host
+            .apply_release_update(review, &approvals, || Err("selection refused".into()))
+            .is_err());
+        assert!(host.status(&pack.id).unwrap().is_none());
+        assert!(host.status(&fake08.id).unwrap().is_none());
+        let review = host
+            .review_release_update(vec![pack.clone()], Vec::new())
+            .unwrap();
+        host.apply_release_update(review, &approvals, || Ok(()))
+            .unwrap();
+        assert_eq!(
+            host.status(&pack.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+        assert_eq!(
+            host.status(&fake08.id).unwrap().unwrap().desired,
+            Desired::Disabled
+        );
+    }
+
+    #[test]
+    fn dependency_install_failure_retains_an_unfinished_cleanup_receipt() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 42");
+        let fake08 = report("@runtime:fake08", "retained-fake08");
+        let pack = pack(
+            "@games:starter-pack",
+            "retained-pack",
+            std::slice::from_ref(&fake08),
+        );
+        let runtime = runtime(&[fake08.clone(), pack.clone()]);
+        runtime.fail_stop.replace(Some(pack.id.clone()));
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        let error = host
+            .install(pack.clone(), &pack.approval, SelectionIntent::Install)
+            .unwrap_err();
+        assert!(error.contains("dependency cleanup failed"), "{error}");
+        let retained = host.status(&fake08.id).unwrap().unwrap();
+        assert_eq!(retained.desired, Desired::Removed { purge: false });
+        assert!(host.status(&pack.id).unwrap().is_none());
+        runtime.fail_stop.replace(None);
+        cleanup_program(root.path(), "exit 0");
+        host.restore_all().unwrap();
+        assert!(host.status(&fake08.id).unwrap().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires builder dependency fixtures and real build-machine Nix; no device or trust configuration"]
+    fn real_store_graph_keeps_each_publishers_full_key_cache_source_and_runner() {
+        use base64::Engine;
+        let fixtures = PathBuf::from(
+            std::env::var_os("KORRI_TEST_DEPENDENCY_FIXTURES")
+                .expect("built builder-check fixtures"),
+        );
+        let nix = PathBuf::from(std::env::var_os("KORRI_PUBLISH_NIX").expect("immutable Nix"));
+        let helper = package::tools(&PathBuf::from(
+            std::env::var_os("KORRI_TEST_TRUE").expect("immutable no-effect helper"),
+        ))
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let run = |args: &[&str]| {
+            let output = Command::new(&nix)
+                .args(["--extra-experimental-features", "nix-command"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        let games_secret = run(&["key", "generate-secret", "--key-name", "same-label"]);
+        let runtime_secret = run(&["key", "generate-secret", "--key-name", "same-label"]);
+        let public = |secret: &str| {
+            let (label, value) = secret.split_once(':').unwrap();
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(value)
+                .unwrap();
+            format!(
+                "{label}:{}",
+                base64::engine::general_purpose::STANDARD.encode(&bytes[32..])
+            )
+        };
+        let games_key = root.path().join("games.key");
+        let runtime_key = root.path().join("runtime.key");
+        fs::write(&games_key, &games_secret).unwrap();
+        fs::write(&runtime_key, &runtime_secret).unwrap();
+        let runner = fs::canonicalize(fixtures.join("runner")).unwrap();
+        let pack = fs::canonicalize(fixtures.join("pack")).unwrap();
+        // The pack's key also signs the runner under the SAME label. That
+        // cannot grant the runner's namespace, even in an already local store.
+        for output in [&pack, &runner] {
+            run(&[
+                "store",
+                "sign",
+                "--key-file",
+                games_key.to_str().unwrap(),
+                output.to_str().unwrap(),
+            ]);
+        }
+        let games_cache = format!("file://{}/games-cache", root.path().display());
+        let runtime_cache = format!("file://{}/runtime-cache", root.path().display());
+        let mut host = Host::for_test(
+            root.path(),
+            nix.clone(),
+            permitted_policy(),
+            TestRuntime::default(),
+        )
+        .unwrap();
+        host.test_runtime = None;
+        host.units.systemctl = helper.clone();
+        host.units.firewall.ipv4 = helper.clone();
+        host.units.firewall.ipv6 = helper;
+        host.publishers = BTreeMap::from([
+            (
+                "@games".into(),
+                package::PublisherBinding {
+                    public_key: public(&games_secret),
+                    cache_url: games_cache.clone(),
+                },
+            ),
+            (
+                "@runtime".into(),
+                package::PublisherBinding {
+                    public_key: public(&runtime_secret),
+                    cache_url: runtime_cache.clone(),
+                },
+            ),
+        ]);
+        let origin = Provenance::RawCache {
+            cache_url: games_cache.clone(),
+        };
+        assert!(
+            host.load(&pack, origin.clone()).is_err(),
+            "parent key must not authorize a dependency publisher"
+        );
+        assert!(host.status("@runtime:fake08").unwrap().is_none());
+        run(&[
+            "store",
+            "sign",
+            "--key-file",
+            runtime_key.to_str().unwrap(),
+            runner.to_str().unwrap(),
+        ]);
+        let inspected = host.load(&pack, origin.clone()).unwrap();
+        assert_eq!(inspected.requires.as_slice(), std::slice::from_ref(&runner));
+        assert!(inspected.files.is_empty());
+        assert_eq!(inspected.brings.len(), 1);
+        let dependency = &inspected.brings[0].report;
+        assert_eq!(dependency.id, "@runtime:fake08");
+        assert_eq!(
+            dependency.provenance,
+            Provenance::RawCache {
+                cache_url: runtime_cache.clone()
+            }
+        );
+        assert_eq!(dependency.sources, ["launch.ts", "plugin.ts"]);
+        assert!(dependency.files["fake08"].is_file());
+        assert!(
+            serde_json::to_value(&dependency.declaration).unwrap()["runners"]["fake08"].is_object()
+        );
+        let wrong_cache = Provenance::RawCache {
+            cache_url: games_cache.clone(),
+        };
+        assert!(host
+            .verify_publisher_in(None, &runner, &wrong_cache, package::StoreContents::Rehash)
+            .unwrap_err()
+            .contains("bound to cache"));
+        install(&host, inspected.clone());
+        let installed = host.status(&dependency.id).unwrap().unwrap();
+        assert_eq!(installed.provenance, dependency.provenance);
+        assert_eq!(installed.approval, dependency.approval);
+        assert_eq!(installed.desired, Desired::Disabled);
+        let reviewed_again = host.load(&pack, origin).unwrap();
+        assert!(reviewed_again.brings[0].already_approved);
+        assert_eq!(reviewed_again.approval, inspected.approval);
+        host.set_enabled(&inspected.id, true).unwrap();
+        assert_eq!(
+            published(&host).1,
+            ["@games:starter-pack", "@runtime:fake08"]
+        );
+        assert!(host.set_enabled(&dependency.id, false).is_err());
+        assert!(host.remove(&dependency.id, false).is_err());
+        host.selection(&dependency.id).stage(&runner).unwrap();
+        host.restore_all().unwrap();
+        assert!(fs::symlink_metadata(host.root(&dependency.id, "pending")).is_err());
+        assert_eq!(
+            published(&host).1,
+            ["@games:starter-pack", "@runtime:fake08"]
+        );
+        let collection = fs::canonicalize(fixtures.join("transitive")).unwrap();
+        run(&[
+            "store",
+            "sign",
+            "--key-file",
+            games_key.to_str().unwrap(),
+            collection.to_str().unwrap(),
+        ]);
+        let collection = host
+            .load(&collection, inspected.provenance.clone())
+            .unwrap();
+        assert_eq!(collection.brings.len(), 2);
+        assert_eq!(collection.brings[1].report.approval, inspected.approval);
+        install(&host, collection.clone());
+        host.set_enabled(&collection.id, true).unwrap();
+        assert!(host.set_enabled(&inspected.id, false).is_err());
+        host.restore_all().unwrap();
+        assert_eq!(
+            published(&host).1,
+            [
+                "@games:collection",
+                "@games:starter-pack",
+                "@runtime:fake08"
+            ]
+        );
+        host.publishers.remove("@runtime");
+        assert!(host.restore_all().is_err());
+        assert_eq!(published(&host).1, Vec::<String>::new());
+        assert_eq!(
+            host.status(&inspected.id).unwrap().unwrap().desired,
+            Desired::Disabled
         );
     }
 

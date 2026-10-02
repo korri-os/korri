@@ -16,6 +16,7 @@ let
   tailscalePackage = import ./tests/fixtures/tailscale/package.nix { inherit pkgs; };
   interface = import ./interface.nix;
   mkPlugin = interface.mkPlugin { inherit pkgs; };
+  builderCheck = interface.pluginBuilderCheck { inherit pkgs; };
   firstPartyPlugin =
     name:
     mkPlugin {
@@ -36,7 +37,7 @@ in
     # Test policy only. This output is never installed on a product device.
     korri-plugin-host-vm = vmHostPackage;
     korri-ssh-host-support = import ./ssh-support-check.nix { inherit pkgs hostModule hostPackage; };
-    korri-plugin-builder = interface.pluginBuilderCheck { inherit pkgs; };
+    korri-plugin-builder = builderCheck;
     korri-sunshine-plugin-native = import ./sunshine-native-check.nix {
       inherit pkgs sunshinePlugin;
     };
@@ -132,6 +133,11 @@ in
             cd "$root"
             nix develop .#plugin-host --command cargo fmt --manifest-path services/korrid/plugin-host/Cargo.toml -- --check
             nix develop .#plugin-host --command cargo clippy --manifest-path services/korrid/plugin-host/Cargo.toml --all-targets -- -D warnings
+            export KORRI_TEST_DEPENDENCY_FIXTURES=${builderCheck}
+            export KORRI_PUBLISH_NIX=${pkgs.nix}/bin/nix
+            export KORRI_TEST_TRUE=${pkgs.coreutils}/bin/true
+            nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --test dependencies -- --ignored
+            nix develop .#plugin-host --command cargo test --locked --manifest-path services/korrid/plugin-host/Cargo.toml --lib real_store_graph -- --ignored
             nix build --no-link .#checks.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host .#checks.${pkgs.stdenv.hostPlatform.system}.korri-runtime-plugin-host
           '';
         }

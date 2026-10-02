@@ -16,6 +16,7 @@ let
       packages ? { },
       files ? { },
       services ? { },
+      requires ? [ ],
       ports ? { },
     }:
     let
@@ -52,15 +53,20 @@ let
       # The build copies a closed source root and adds entry/sources after it
       # has inspected the exact files. Authors never maintain that inventory.
       manifestBase = pkgs.writeText "plugin-manifest-base.json" (
-        builtins.toJSON {
-          inherit
-            publisher
-            files
-            ports
-            ;
-          packages = lib.mapAttrs (_: toString) packages;
-          services = units;
-        }
+        builtins.toJSON (
+          {
+            inherit
+              publisher
+              files
+              ports
+              ;
+            packages = lib.mapAttrs (_: toString) packages;
+            services = units;
+          }
+          // lib.optionalAttrs (requires != [ ]) {
+            requires = map toString requires;
+          }
+        )
       );
       validName =
         name: builtins.match "[a-z0-9][a-z0-9_.-]*" name != null && builtins.stringLength name <= 64;
@@ -84,6 +90,15 @@ let
       builtins.attrNames packages ++ builtins.attrNames files ++ builtins.attrNames services
     );
     assert builtins.attrNames publisher == [ "namespace" ];
+    assert lib.assertMsg (
+      builtins.length requires <= 128
+      && builtins.length (lib.unique (map toString requires)) == builtins.length requires
+      && builtins.all (
+        path:
+        builtins.match "/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[^/]+" (toString path) != null
+        && !lib.hasSuffix ".drv" (toString path)
+      ) requires
+    ) "plugin requires must name at most 128 exact store outputs";
     pkgs.runCommand "korri-plugin"
       {
         nativeBuildInputs = [ pkgs.python3 ];
@@ -93,8 +108,9 @@ let
         ${lib.concatMapStringsSep "\n" (path: "test -e ${lib.escapeShellArg (toString path)}") (
           builtins.attrValues files
         )}
-        ${lib.concatMapStringsSep "\n" (path: "test -f ${lib.escapeShellArg path}") (
-          builtins.attrValues units
+        ${lib.concatStringsSep "\n" (
+          map (path: "test -f ${lib.escapeShellArg path}") (builtins.attrValues units)
+          ++ map (path: "test -f ${lib.escapeShellArg (toString path + "/manifest.json")}") requires
         )}
         python3 ${./source-package.py} "$pluginSource" "$out" ${manifestBase}
       '';
