@@ -18,6 +18,26 @@ on Mesa turnip and you must debug it.
 | Tune settings for a 1080p handheld | 0.5 to 1 day | Medium |
 | Korri plugin and delivery (not needed just to play) | Separate task | n/a |
 
+## Result of the fuji experiment (2026-10-02, verified)
+
+The build risk is closed. `simonwjackson/skate-3-flake` `13d4661` adds
+`aarch64-linux` outputs and four ARM-only patches: rexglue-sdk `d82ec28`,
+`85aa46b`, `96bee61`, and Buku313 `e99203e`. The x86_64 derivations are
+unchanged.
+
+| Check | Result |
+|---|---|
+| All patches apply to the pinned tree | Yes |
+| Compile and link errors on `fuji` | 0. A manual `ninja -k 0` run took 41 minutes on 4 cores |
+| Sandboxed `nix build .#packages.aarch64-linux.skate3-source` | Passes. About 39 minutes. Output `/nix/store/dsjk16fn…-skate3` |
+| Generated C++, ARM64 compared with x86_64 | All 151 files byte-identical (SHA-256) |
+| Libraries resolved with the binary's own glibc 2.44 loader | 73 resolved, none missing |
+| Start without a display | Stops at `Failed to initialize GTK+`, as expected |
+
+What remains is the on-device renderer risk on turnip. The output contains
+generated EA code. It is only in `fuji`'s store and in
+`fuji:~/build/s3arm/work`.
+
 ## Why it is small (verified)
 
 **The SDK supports linux-arm64.** `mchughalex/rexglue-skate3` at `7eb0faf` has
