@@ -161,5 +161,36 @@ pkgs.runCommand "korri-plugin-image-seed-check"
     grep -q 'duplicate seeded plugin' collision-error
     test "$(find collision/files/var/lib/korri-plugin-host -name selection.json | wc -l)" = 1
     test "$(cat "collision/files/var/lib/korri-plugin-host/$name/selection.json")" = retained
+    # Collection requires pack and runner, so its blocked parents occur after
+    # earlier selections in dependency order. Refuse before any image writes.
+    name=$(${hostPackage}/bin/korri-plugin unit-name '@games:collection')
+    for parent in "var/lib/korri-plugin-host/$name" "nix/var/nix/gcroots/korri-plugin-host/$name" \
+      var/lib nix/var/nix/gcroots; do
+      for kind in file symlink; do
+        case="parent-$kind-$(printf '%s' "$parent" | tr / -)"
+        blocked="$case/files/$parent"
+        mkdir -p "$(dirname "$blocked")" "$case/outside"
+        printf 'retained\n' > "$case/outside/sentinel"
+        if [[ "$kind" = file ]]; then
+          printf 'retained\n' > "$blocked"
+        else
+          ln -s "$PWD/$case/outside" "$blocked"
+        fi
+        find "$case" -printf '%P %y %m %l\n' | sort > "$case-before"
+        if (cd "$case"; ${image.populateRootCommands}) 2>"$case-error"; then
+          echo "image seed accepted a $kind destination parent: $parent" >&2
+          exit 1
+        fi
+        grep -q 'incompatible image seed directory' "$case-error"
+        find "$case" -printf '%P %y %m %l\n' | sort > "$case-after"
+        cmp "$case-before" "$case-after"
+        test "$(cat "$case/outside/sentinel")" = retained
+        if [[ "$kind" = file ]]; then
+          test "$(cat "$blocked")" = retained
+        else
+          test "$(readlink "$blocked")" = "$PWD/$case/outside"
+        fi
+      done
+    done
     touch "$out"
   ''
