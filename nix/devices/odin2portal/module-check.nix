@@ -33,6 +33,15 @@ assert lib.hasInfix "input type:touch map_to_output DSI-1"
   c.services.korriLinuxHost.compositor.extraConfig;
 assert builtins.elem "inputplumber-ayn-sm8550-data" inputDataNames;
 assert c.hardware.graphics.enable;
+# The firewall and the plugin host's port rules use iptables-nft. Without these
+# the firewall fails and the SSH and Sunshine plugins cannot open their ports.
+assert lib.all c.boot.kernelPackages.kernel.config.isEnabled [
+  "NFT_COMPAT"
+  "NFT_CT"
+  "NFT_LOG"
+  "NETFILTER_XT_MATCH_COMMENT"
+  "NETFILTER_XT_MATCH_PKTTYPE"
+];
 
 # Explicit hardware limits and safety policy stay device-owned.
 assert c.services.korri.clockGovernor.enable;
