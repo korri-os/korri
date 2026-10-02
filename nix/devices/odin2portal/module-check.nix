@@ -57,7 +57,7 @@ assert c.services.korriLinuxHost.runtimeUid == 1000;
 assert c.services.korriLinuxHost.validation.enable;
 assert c.services.korriLinuxHost.audio.enable;
 assert c.services.korri.webSurfaceHost.enable;
-assert c.services.korri.webSurfaceHost.surfaceId == "shift";
+assert c.services.korri.webSurfaceHost.surfaceId == "pico";
 assert c.services.korri.compositor.kiosk.enable;
 assert c.services.korri.pluginHost.enable;
 assert c.services.korriLinuxHost.compositor.neverFocusAppIds == [ "chromium-browser" ];
@@ -78,7 +78,7 @@ assert c.systemd.services.korrid.serviceConfig.LoadCredential == [ credential ];
 assert !(kiosk.environment ? KORRID_RPC_CAPABILITY);
 assert !(c.systemd.services.korrid.environment ? KORRID_RPC_CAPABILITY);
 assert kiosk.environment.KORRID_PORTAL_ORIGIN == "http://127.0.0.1:8099";
-assert kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=shift";
+assert kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
 assert kiosk.environment.WAYLAND_DISPLAY == compositor.environment.KORRI_WAYLAND_DISPLAY;
 assert
   kiosk.serviceConfig.BindReadOnlyPaths == [

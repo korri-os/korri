@@ -113,8 +113,12 @@ version. Do not manually delete profile generations still needed for rollback.
 The existing portal URL parameter selects a registered surface:
 `http://127.0.0.1:8099/?surface=pico` or `?surface=shift`.
 The portal remembers this non-sensitive preference in its browser profile.
-Normal kiosk startup uses the bare URL, so the remembered choice survives
-browser restart and reboot. No surface selector UI is added by this slice.
+Without `services.korri.webSurfaceHost.surfaceId`, kiosk startup uses the
+bare URL, so the remembered choice survives browser restart and reboot.
+Product devices set it (`surfaceId = "pico"` in
+`nix/product/requirements.nix`), so their kiosk opens `?surface=pico` at
+every start and a choice remembered from another URL does not survive a
+restart. No surface selector UI is added by this slice.
 
 Adding a surface still requires registering it and including its source in the
 portal build. It does not require another device server, kiosk, or update script.

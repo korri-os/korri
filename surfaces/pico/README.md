@@ -149,8 +149,9 @@ files into the glyph tables; run them only to take a new upstream version.
 ## Supported UI
 
 Pico renders the catalog (shelf/grid/hero), game detail and launch locations,
-Find, grouped settings, gameplay overlay and attract mode. The portal selects
-it with `?surface=pico`. A text setting opens Pico's editor: the keyboard
+Find, grouped settings, gameplay overlay and attract mode. Every product
+device opens it (`surfaceId` in `nix/product/requirements.nix`); a browser
+selects it with `?surface=pico`. A text setting opens Pico's editor: the keyboard
 adds a case key (lit while capitals are on) and a symbols key with every
 printable ASCII symbol; a secret is masked, and clearing a saved one asks
 first.
