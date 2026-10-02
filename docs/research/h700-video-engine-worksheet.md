@@ -155,13 +155,33 @@ On the third boot, raw local display, explicit hardware decode-only, and concurr
 
 A thirteenth wake after the animated preview/window teardown also passed with zero absolute faults. Evidence: `/tmp/h700-ve/diagnostic-display-cycle-1790928423249311726/`; decode artifacts: `/tmp/h700-ve/after-decode/h700-ve/`; isolation logs: `/tmp/h700-ve/isolation-{raw-display,decode-only,decode-display}.log`. Final health verified five active services, no failed units, unchanged Sunshine installation/approval in `Disabled` state, and zero boot faults. SRAM remained 32,768 bytes and automatic state 45,687 bytes, both dated 03:30:46 UTC.
 
-These results qualify the intervention for a clean production-candidate test. They do not permit landing an instrumented build. The production source now removes `0233` entirely and replaces diagnostic `0235` with the reviewed clean patch, SHA-256 `bc94326c4f668cfd1ad8f7ebea8c3389dabb4205049cfee98d71b18abdbbe833`. Rejected `0234` stays absent. The clean patch has no added reads, counter samples or traces. Source review found no blocker and approved uninstrumented testing only. The build and runtime tests are still pending.
+These results qualify the intervention for a clean production-candidate test. They do not permit landing an instrumented build. The production source now removes `0233` entirely and replaces diagnostic `0235` with the reviewed clean patch, SHA-256 `bc94326c4f668cfd1ad8f7ebea8c3389dabb4205049cfee98d71b18abdbbe833`. Rejected `0234` stays absent. The clean patch has no added reads, counter samples or traces. Source review found no blocker and approved uninstrumented testing. The following build and runtime tests passed.
 
-The physical request issue/drain time remains unknown. A failed native wait logs an error but does not stop shutdown or later buffer release. This is not a fail-closed retirement protocol. Runtime acceptance requires independent boots, actual panel transitions, zero absolute faults and no wait warnings. No production-safe or main-landing claim is made yet.
+The physical request issue/drain time remains unknown. A failed native wait logs an error but does not stop shutdown or later buffer release. This is not a fail-closed retirement protocol. Runtime acceptance requires independent boots, actual panel transitions, zero absolute faults and no wait warnings. A successful native vblank remains a measured ordering boundary, not proof of undocumented DE33 drain semantics.
+
+#### Clean production candidate: runtime acceptance passed
+
+Commit `0afe5b93caf86e027e2e8fe93f1143fccc2ff729` built on Zao in 470 seconds. All three module checks, 18 delta settings, three DTBs, and Cedrus alias/vermagic checks passed. Fuji built and signed its system in 32 seconds. The exact system `/nix/store/04l307r5xmbzkaq9ciz9jb7hzn290nyy-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104` booted Image `/nix/store/ffag32rfrff9gvlh5hcrjzflriw8hrfb-linux-aarch64-unknown-linux-gnu-7.2/Image`. Signature checks remained enabled. The Image contains none of the added diagnostic markers, and the custom IOMMU debugfs endpoint is absent. Native DRM debug remained zero during every acceptance cycle.
+
+Twelve actual on/off/on cycles passed across three independent boots. A thirteenth cycle passed after active-panel video/window teardown. Every cycle had zero absolute boot faults, no native wait warning, five active product services and no failed units.
+
+| Boot ID | Accepted clean cycles | Absolute faults |
+|---|---:|---:|
+| `758e6277-5275-4d53-9f37-1164a2d340eb` | 4 | 0 |
+| `a0ce3be9-5204-4adc-9938-15608321ea2a` | 4 | 0 |
+| `b1f76e9e-3677-494e-b421-47e7207be982` | 5 | 0 |
+
+The actual power JSON, native DRM states and full boot journals remain in thirteen evidence directories from `/tmp/h700-ve/clean-display-cycle-1790950644970205876/` through `/tmp/h700-ve/clean-display-cycle-1790951214369608031/`. `/tmp/h700-ve/summarize-clean-evidence.py` re-read those files and verified the three boots and thirteen transitions. Clean runs intentionally have no custom ATTR or counter samples.
+
+On the third boot, raw local display, explicit hardware decode-only, and concurrent decode/display passed with the panel verified on before and after each pipeline. The traced concurrent run had exactly 120 successful media requests, VE interrupts `240→360`, and 55,296,000 copied NV12 bytes identical to the reference. SHA-256 stayed `0c891fbb2e0740e006286f92c89aae79c19785f9e43439893ff5338c9ede6b53`. Actual trace/output files remain under `/tmp/h700-ve/after-decode/h700-ve/`; logs are `/tmp/h700-ve/hardware-decode.log` and `isolation-{raw-display,decode-only,decode-display}.log`. No software decoder fallback, encoder or stream ran.
+
+Final health verified the unchanged selected bundle, installed Sunshine package and approval, `Disabled` Sunshine state, five active services, no failed units and zero boot faults. Saves remained 32,768 and 45,687 bytes with their 03:30:46 UTC timestamps. Device policy stayed `max-jobs = 0`, `builders =`, `fallback = false`, and `require-sigs = true`.
+
+Final source review found no blocker. The clean runtime results now qualify the kernel slice for rebase and fast-forward onto `main`, followed by exact-landed deployment and verification. They do not establish encoding, streaming or sustained 60-fps performance. The native wait-failure limitation remains.
 
 Before the corrected boot, the existing `korri-plugin disable @korri:sunshine` lifecycle operation changed its desired state to `Disabled`. The installed package `/nix/store/33w3ig2ilv4fhblc4gi4aa72l4y8xh06-korri-plugin` and approval stayed unchanged. This prevents an automatic software-encoder probe at future boots; it does not remove Sunshine or rule out later hardware hosting. The cost is that Sunshine will stay off until it is explicitly enabled after a hardware encoder route exists.
 
-The signed candidate system is `/nix/store/ppp31zj36a8dfpr7ma4rxkyi9kmk4kjb-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104`. Its kernel Image is `/nix/store/bcbdmv8qfabzb2jf6xn8yzvcryl1xdlj-linux-aarch64-unknown-linux-gnu-7.2/Image`.
+The first experimental signed system was `/nix/store/ppp31zj36a8dfpr7ma4rxkyi9kmk4kjb-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104`. Its kernel Image was `/nix/store/bcbdmv8qfabzb2jf6xn8yzvcryl1xdlj-linux-aarch64-unknown-linux-gnu-7.2/Image`.
 
 The USB link disappeared before deployment. Wi-Fi at `192.168.1.163` presented the same pinned SSH host key, which the local connection script checked before using it.
 
@@ -195,6 +215,6 @@ Next required evidence is an H616/H700 encoder register specification or the reg
 
 The user approved the end-to-end plan and selected sustained **640×480 at 60 fps** as the required hardware-only stream performance. A slower stream does not count as finished. Software encoding and streaming remain excluded.
 
-Finish the clean kernel and deploy its exact landed outputs first. Then ground an H616 encoder port in actual source or register evidence, produce a hardware-encoded H.264 frame, and implement continuous encoding and Sunshine integration. Bootlin's open encoder route, B, remains first choice. Its stateless encoder needs a matching Sunshine backend, not an assumed stateful FFmpeg wrapper. Validate real gameplay with a hardware-decoding client, controls, audio, reconnects, lifecycle transitions and saved data.
+Finish the clean kernel and deploy its exact landed outputs first. Then ground an H616 encoder port in actual source or register evidence, produce a hardware-encoded H.264 frame, and implement continuous encoding and Sunshine integration. Bootlin's open encoder route, B, remains first choice. Actual pinned source uses kernel-side GOP/header state and ordinary MPEG controls. Its encoder supports media requests but does not require them: `cedrus_context.c:635–660`, `cedrus_enc_h264.h:71–79`, and `cedrus_enc_h264.c:1361–1400`. The earlier claim that this source requires a new stateless Sunshine backend was wrong. It conflated the 2023 encoder with the separate 2026 stateless-encode proposal. Audit and test the existing FFmpeg V4L2 M2M contract first; compatibility is not proved yet. Validate real gameplay with a hardware-decoding client, controls, audio, reconnects, lifecycle transitions and saved data.
 
 C remains conditional on a concrete B blocker and explicit approval after H616 support, Linux 7.2 compatibility and licensing checks. Missing manual pages do not establish that blocker. The encoder is unimplemented; there is no measured encoding rate or completion estimate yet.
