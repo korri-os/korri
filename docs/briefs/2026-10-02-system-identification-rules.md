@@ -1,0 +1,88 @@
+# System identification rules
+
+Status: direction chosen, schema not chosen, nothing implemented.
+
+## User requirements
+
+- A file extension never belongs exclusively to one system.
+- A game is not bound to a system folder. Folder names never decide anything.
+- Plugins have their say in how content is identified, for example lists of
+  regex patterns.
+- Korri is system-agnostic. Plugins define systems. Korri cannot know every
+  system in advance. A first-party plugin can ship a large list of known
+  systems.
+
+## Decision
+
+On 2026-10-02 the user chose to put identification rules on the **system
+record**, not on each plugin's discovery claim. "What makes a file a Wii disc"
+is written once. Dolphin, other Wii runners and recompilations share it.
+
+## Current state on main
+
+Checked at `f7ec9bf04`.
+
+| Fact | Source |
+| --- | --- |
+| Systems are plugin-declared string IDs. Production korrid code has no built-in system list. | `services/korrid/src/plugin.rs` `SystemRecord` (`id`, `title`, `aliases`) |
+| Discovery claims carry `extensions`, one `system` and `runners`. A claim registers only when its system and one of its runners are enabled. | `plugin.rs` `FileReleaseDiscoveryClaim`, registry construction |
+| Claims for different systems on one file give `ClaimConflict` before hashing. | `discovery/scanner.rs` |
+| Compound suffixes such as `.p8.png` match; the longest suffix wins within a claim, never between systems. | Commit `d6fdfbaae`, `file_release_discovery_claims_for_filename` |
+| Runners may list exact whole-file hashes in `releases` instead of `systems`. | Commit `13a074832` |
+
+Option A replaces `discovery.fileReleases`. Under the no-compatibility rule
+this is one clean cut, including the `korri-plugins` generator
+(`plugins/libretro/cores.nix`). The compound-suffix behavior must carry over.
+
+## Proposed evidence ranking
+
+Korri ranks evidence. Plugins supply rules but no priorities.
+
+1. Exact whole-file hash.
+2. Content rule: bytes at an offset, a file inside the disc image, or a regex
+   over such a file.
+3. File-name pattern. It matches the file name only, never folders.
+4. Extension, only when exactly one system claims it.
+
+Two systems matching at the same level give that one file a diagnostic. Korri
+never guesses.
+
+## Rule kinds and grounding
+
+| Kind | Example | Grounding |
+| --- | --- | --- |
+| Exact hash | Skate 3 ISO | Runner `releases` on main |
+| Bytes at offset | Wii `5d1c9ea3` at `0x18` | Dolphin `Volume.cpp`, RetroArch `task_database_cue.c` |
+| File inside disc, with regex | PS2 `SYSTEM.CNF` matches `^BOOT2\s*=` | RetroAchievements identification docs, rcheevos |
+| File exists inside disc | PSP `PSP_GAME/PARAM.SFO` | RetroAchievements identification docs |
+| File-name pattern | PICO-8 `.p8.png` | Commit `d6fdfbaae`, legacy classifier |
+| Extension | `.gba` | Existing claims |
+
+Prior art: `docs/research/shared-extension-content-identification.md`.
+
+## Open questions
+
+1. Does Korri identify content for a system that has no enabled runner?
+   Today a claim needs an enabled runner. A catalog plugin with rules would
+   identify every known system.
+2. Several plugins declare the same system ID with rules. Are the rules
+   combined? Which title wins?
+3. How a hash-only runner such as Skate 3 links its hashes to a system once
+   claims are gone.
+4. Field names and rule shapes.
+5. Which container readers are in the first slice: CHD, `.cue` tracks,
+   ISO 9660 file lookup.
+
+## Superseded
+
+Slice 1 (hash before deciding a disputed claim) was written against
+`fileReleases` claims. Fold it into this work instead of building it first.
+
+## Costs
+
+- korrid gains bounded readers for offsets, ISO 9660, CHD and `.cue`.
+- Regex rules add a direct dependency on the linear-time `regex` crate and
+  need length limits.
+- Shared system IDs are a convention. Aliases help only when declared.
+- One plugin's bad rule affects files other plugins see. The ranking turns
+  conflicts into diagnostics, not wrong labels.
