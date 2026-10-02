@@ -135,7 +135,29 @@ Patch `0235-h616-display-plane-shutdown.patch` implements this bounded intervent
 
 `0234` has been removed from the worktree. The next build restores prefetch `0x3F` and compares the new sequence with the unchanged-prefetch `b67bc289` diagnostic, not directly with the OFF arm. Until that build is deployed and read back, the parked device still runs the rejected `0x3E` artifact. The harness has no selected new Image and refuses execution until one is supplied.
 
-Cost: qualifying shutdowns/modesets gain one frame-boundary wait, with the native 1000-ms timeout on failure. The panel is already unprepared during this interval. Successful counter progress does not prove that every DE33 request drained; an already-pending IRQ limits that inference. Readbacks and logs can change timing. Require independent boots, actual on/off/on transitions, successful waits and zero absolute faults. Persistence rejects this intervention as sufficient. No runtime success is claimed.
+Cost: qualifying shutdowns/modesets gain one frame-boundary wait, with the native 1000-ms timeout on failure. The panel is already unprepared during this interval. Successful counter progress does not prove that every DE33 request drained; an already-pending IRQ limits that inference. Readbacks and logs can change timing. Require independent boots, actual on/off/on transitions, successful waits and zero absolute faults. Persistence rejects this intervention as sufficient.
+
+#### Instrumented shutdown candidate: runtime passed, production still open
+
+Commit `ac3d879c6857523f705ed7b3db7cd581346e55b3` built on Zao in 445 seconds. All three module checks, 18 delta settings, three DTBs, and Cedrus alias/vermagic checks passed. Fuji built and signed its system in 32 seconds. System `/nix/store/bhdpq3niacm50snigni77xippklyl8k0-nixos-system-rg35xxpro-sd-card-26.05.20251221.a653104` booted the exact `/nix/store/x003715ywarwbgf01v2i78lgcvfskkcy-linux-aarch64-unknown-linux-gnu-7.2/Image`. Closure signatures, selected bundle, root filesystem and disabled Sunshine state stayed intact. Readback verified restored prefetch `0x3F`.
+
+Twelve confirmed on/off/on cycles passed across three independent kernel boots. Every cycle had zero absolute faults, five active product services, ATTR-zero readback and a successful native vblank wait. Actual DRM state and kernel records showed a distinct old/new primary DMA range in all twelve cycles, with old backing-memory release complete before the first new address readback. Thus allocator address reuse does not explain these twelve clean wakes. This does not prove undocumented DE33 drain semantics.
+
+| Boot ID | Accepted cycles | Absolute faults |
+|---|---:|---:|
+| `7663525f-aeeb-463e-9215-655a65fc1150` | 4 | 0 |
+| `633bdb1f-89ed-4fba-b45e-f666d4285162` | 4 | 0 |
+| `60fe8591-58d4-4c74-ba21-5323837a2955` | 4 | 0 |
+
+Evidence runs start at `/tmp/h700-ve/diagnostic-display-cycle-1790927651902028555/` and end at `/tmp/h700-ve/diagnostic-display-cycle-1790928043475203590/`. `/tmp/h700-ve/summarize-quiesce-evidence.py` reads their actual DRM states and journals; it reported twelve distinct-range retirements, not merely twelve process exits.
+
+On the third boot, raw local display, explicit hardware decode-only, and concurrent hardware decode/display passed with the panel verified on before and after each pipeline. Both decode isolation outputs had 55,296,000 byte-identical NV12 bytes. The separate traced concurrent decode produced 120 successful media requests and increased VE interrupts from 240 to 360. Its copied 55,296,000 bytes matched the reference byte-for-byte, SHA-256 `0c891fbb2e0740e006286f92c89aae79c19785f9e43439893ff5338c9ede6b53`. No software decoder, encoder or stream ran. Local NV12-to-BGRx conversion prepared the preview only.
+
+A thirteenth wake after the animated preview/window teardown also passed with zero absolute faults. Evidence: `/tmp/h700-ve/diagnostic-display-cycle-1790928423249311726/`; decode artifacts: `/tmp/h700-ve/after-decode/h700-ve/`; isolation logs: `/tmp/h700-ve/isolation-{raw-display,decode-only,decode-display}.log`. Final health verified five active services, no failed units, unchanged Sunshine installation/approval in `Disabled` state, and zero boot faults. SRAM remained 32,768 bytes and automatic state 45,687 bytes, both dated 03:30:46 UTC.
+
+These results qualify the intervention for a clean production-candidate test. They do not permit landing an instrumented build. The production source now removes `0233` entirely and replaces diagnostic `0235` with the reviewed clean patch, SHA-256 `bc94326c4f668cfd1ad8f7ebea8c3389dabb4205049cfee98d71b18abdbbe833`. Rejected `0234` stays absent. The clean patch has no added reads, counter samples or traces. Source review found no blocker and approved uninstrumented testing only. The build and runtime tests are still pending.
+
+The physical request issue/drain time remains unknown. A failed native wait logs an error but does not stop shutdown or later buffer release. This is not a fail-closed retirement protocol. Runtime acceptance requires independent boots, actual panel transitions, zero absolute faults and no wait warnings. No production-safe or main-landing claim is made yet.
 
 Before the corrected boot, the existing `korri-plugin disable @korri:sunshine` lifecycle operation changed its desired state to `Disabled`. The installed package `/nix/store/33w3ig2ilv4fhblc4gi4aa72l4y8xh06-korri-plugin` and approval stayed unchanged. This prevents an automatic software-encoder probe at future boots; it does not remove Sunshine or rule out later hardware hosting. The cost is that Sunshine will stay off until it is explicitly enabled after a hardware encoder route exists.
 
@@ -168,3 +190,11 @@ All Bootlin offsets below are relative to its VE base. They are not verified H61
 Verified verdict: **unresolved**. The manual cannot establish matching registers for a port or incompatible registers for a rewrite. Missing documentation is not proof of incompatible hardware. Bootlin's inspected match table has no H616/H700 entry.
 
 Next required evidence is an H616/H700 encoder register specification or the register programming of a known-working vendor encoder. That costs documentation access or reverse engineering. Working decode does not close this gap. No encoder port, vendor library integration, or Sunshine backend was added. The detailed source-inspection notes remain in `/tmp/h700-ve/register-comparison-verified.md`.
+
+## 4. Approved hardware-hosting completion target
+
+The user approved the end-to-end plan and selected sustained **640×480 at 60 fps** as the required hardware-only stream performance. A slower stream does not count as finished. Software encoding and streaming remain excluded.
+
+Finish the clean kernel and deploy its exact landed outputs first. Then ground an H616 encoder port in actual source or register evidence, produce a hardware-encoded H.264 frame, and implement continuous encoding and Sunshine integration. Bootlin's open encoder route, B, remains first choice. Its stateless encoder needs a matching Sunshine backend, not an assumed stateful FFmpeg wrapper. Validate real gameplay with a hardware-decoding client, controls, audio, reconnects, lifecycle transitions and saved data.
+
+C remains conditional on a concrete B blocker and explicit approval after H616 support, Linux 7.2 compatibility and licensing checks. Missing manual pages do not establish that blocker. The encoder is unimplemented; there is no measured encoding rate or completion estimate yet.
