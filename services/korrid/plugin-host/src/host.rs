@@ -54,6 +54,14 @@ struct BootChecks {
     reports: BTreeMap<String, (PathBuf, Result<Report, String>)>,
 }
 
+/// Read-only live/cold restore assessment. This is not another journal.
+struct RestorePlan {
+    report: Option<Result<Report, String>>,
+    authorized: Result<(), String>,
+    healthy: bool,
+    owned: bool,
+}
+
 /// What boot restore did with one state directory.
 enum Restored {
     Nothing,
@@ -72,6 +80,12 @@ struct TestRuntime {
     fail_start: std::rc::Rc<std::cell::RefCell<Option<String>>>,
     fail_start_package: std::rc::Rc<std::cell::RefCell<Option<PathBuf>>>,
     running: std::rc::Rc<std::cell::RefCell<std::collections::BTreeSet<String>>>,
+    owned: std::rc::Rc<std::cell::RefCell<std::collections::BTreeSet<String>>>,
+    revoked: std::rc::Rc<std::cell::RefCell<std::collections::BTreeSet<PathBuf>>>,
+    fail_registry: std::rc::Rc<std::cell::Cell<bool>>,
+    fail_registry_after_rename: std::rc::Rc<std::cell::Cell<bool>>,
+    owned_packages: std::rc::Rc<std::cell::RefCell<BTreeMap<String, PathBuf>>>,
+    unsafe_stops: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
 }
 
 impl Drop for Host {
@@ -390,8 +404,14 @@ impl Host {
         contents: package::StoreContents,
     ) -> Result<(), String> {
         #[cfg(test)]
-        if self.test_runtime.is_some() {
-            let _ = (selected, provenance, contents);
+        if let Some(runtime) = &self.test_runtime {
+            let _ = (provenance, contents);
+            if runtime.revoked.borrow().contains(selected) {
+                return Err(format!(
+                    "injected publisher revocation for {}",
+                    selected.display()
+                ));
+            }
             return Ok(());
         }
         let cache = match provenance {
@@ -905,20 +925,34 @@ impl Host {
             return Ok(());
         };
         for receipt in self.receipts()? {
-            if receipt.id == id || (active_only && !matches!(receipt.desired, Desired::Enabled)) {
+            if receipt.id == id || (active_only && !self.cleanup_unfinished(&receipt)?) {
                 continue;
             }
             if matches!(receipt.desired, Desired::Removed { .. })
                 && self.selection(&receipt.id).software_released()?
+                && !self.cleanup_unfinished(&receipt)?
             {
                 continue;
             }
+            let runtime =
+                crate::dependencies::dependency_order([receipt.package.clone()], |path| {
+                    if *path == receipt.package {
+                        self.runtime_requires(&receipt)
+                    } else {
+                        self.selection_requires(path)
+                    }
+                })?;
             let report = self.report_for(&receipt.package, receipt.provenance.clone(), None)?;
-            if report.requires.contains(&selected.package)
+            if runtime.contains(&selected.package)
                 || report.brings.iter().any(|dep| dep.report.id == id)
             {
                 return Err(if matches!(receipt.desired, Desired::Enabled) {
                     format!("plugin {id} is actively required by {}", receipt.id)
+                } else if active_only {
+                    format!(
+                        "plugin {id} is actively required by {}; dependent cleanup is unfinished",
+                        receipt.id
+                    )
                 } else {
                     format!("plugin {id} is required by installed plugin {}; remove or update that dependent first", receipt.id)
                 });
@@ -927,26 +961,120 @@ impl Host {
         Ok(())
     }
 
-    fn stop_enabled_dependents(&self, package: &Path) -> Result<(), String> {
-        let mut affected = BTreeMap::new();
+    fn units_owned(&self, id: &str) -> Result<bool, String> {
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            return Ok(runtime.owned.borrow().contains(id));
+        }
+        self.units.has_owned_units(id)
+    }
+
+    fn cleanup_unfinished(&self, receipt: &Receipt) -> Result<bool, String> {
+        if matches!(receipt.desired, Desired::Enabled) || self.units_owned(&receipt.id)? {
+            return Ok(true);
+        }
+        match fs::symlink_metadata(self.root(&receipt.id, "pending")) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    fn journal_cleanup(&self, receipt: &Receipt) -> Result<(), String> {
+        match fs::symlink_metadata(self.root(&receipt.id, "pending")) {
+            Ok(_) => Ok(()), // Keep an interrupted candidate pinned through cleanup.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.selection(&receipt.id).stage(&receipt.package)
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    fn runtime_requires(&self, receipt: &Receipt) -> Result<Vec<PathBuf>, String> {
+        let mut requires = self.selection_requires(&receipt.package)?;
+        match fs::read_link(self.root(&receipt.id, "pending")) {
+            Ok(candidate) => requires.extend(self.selection_requires(&candidate)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        requires.sort();
+        requires.dedup();
+        Ok(requires)
+    }
+
+    fn selection_requires(&self, path: &Path) -> Result<Vec<PathBuf>, String> {
+        package::validate_store_path(path)?;
+        #[cfg(test)]
+        if let Some(runtime) = &self.test_runtime {
+            return runtime
+                .reports
+                .borrow()
+                .get(path)
+                .map(|r| r.requires.clone())
+                .ok_or_else(|| format!("cannot discover required plugins for {}", path.display()));
+        }
+        package::manifest_requires(path)
+    }
+
+    /// Stop may never use durable disable/removal intent as evidence that an
+    /// ancestor's effects finished. A restore pass can supply successful stop
+    /// proofs under the same exclusive host lock, not infer them from intent.
+    fn check_stop(
+        &self,
+        id: &str,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
+    ) -> Result<(), String> {
+        let Some(selected) = self.receipt(id)? else {
+            return Ok(());
+        };
         for receipt in self.receipts()? {
-            if !matches!(receipt.desired, Desired::Enabled) || receipt.package == package {
+            if receipt.id == id
+                || (quiesced.contains(&receipt.package) && !self.units_owned(&receipt.id)?)
+                || !self.cleanup_unfinished(&receipt)?
+            {
                 continue;
             }
-            let report = self.report_for(&receipt.package, receipt.provenance.clone(), None)?;
-            if report.requires.contains(&package.to_path_buf())
-                || report
-                    .brings
-                    .iter()
-                    .any(|dep| dep.report.package == package)
-            {
-                affected.insert(receipt.package.clone(), (receipt, report));
+            let order = crate::dependencies::dependency_order([receipt.package.clone()], |path| {
+                if *path == receipt.package {
+                    self.runtime_requires(&receipt)
+                } else {
+                    self.selection_requires(path)
+                }
+            })?;
+            if order.contains(&selected.package) {
+                return Err(format!(
+                    "plugin {id} is actively required by {}; dependent cleanup is unfinished",
+                    receipt.id
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn stop_enabled_dependents(&self, package: &Path) -> Result<(), String> {
+        // Discovery/size/cycle refusal must not leave a stale projection.
+        self.invalidate_registry()?;
+        let mut affected = BTreeMap::new();
+        for receipt in self.receipts()? {
+            if !self.cleanup_unfinished(&receipt)? || receipt.package == package {
+                continue;
+            }
+            let order = crate::dependencies::dependency_order([receipt.package.clone()], |path| {
+                if *path == receipt.package {
+                    self.runtime_requires(&receipt)
+                } else {
+                    self.selection_requires(path)
+                }
+            })?;
+            if order.contains(&package.to_path_buf()) {
+                let requires = self.runtime_requires(&receipt)?;
+                affected.insert(receipt.package.clone(), (receipt, requires));
             }
         }
         let order = crate::dependencies::dependency_order(affected.keys().cloned(), |path| {
             Ok(affected
                 .get(path)
-                .map(|(_, report)| report.requires.clone())
+                .map(|(_, requires)| requires.clone())
                 .unwrap_or_default())
         })?;
         // Quiesce outer dependents before any required service can stop.
@@ -954,11 +1082,12 @@ impl Host {
             let Some((mut receipt, _)) = affected.remove(&path) else {
                 continue;
             };
-            self.invalidate_registry()?;
-            receipt.desired = Desired::Disabled;
+            self.journal_cleanup(&receipt)?;
+            if matches!(receipt.desired, Desired::Enabled) {
+                receipt.desired = Desired::Disabled;
+            }
             storage::write_json(&self.receipt_path(&receipt.id), &receipt)?;
-            self.units_stop(&receipt.id, false)?;
-            self.selection(&receipt.id).settle(&receipt)?;
+            self.restore_one(&receipt.id)?;
         }
         Ok(())
     }
@@ -985,6 +1114,9 @@ impl Host {
         // must never roll back this intent into a (possibly revoked) start.
         receipt.desired = desired;
         self.invalidate_registry()?;
+        // Existing pending root journals unfinished cleanup even when unit
+        // shutdown succeeded but firewall cleanup or receipt settlement failed.
+        self.journal_cleanup(&receipt)?;
         storage::write_json(&self.receipt_path(id), &receipt)?;
         self.restore_one(id)?;
         // Restore the f3aa66d91 stop cascade: dependents stop first; an
@@ -1080,10 +1212,6 @@ impl Host {
     }
 
     pub fn restore_all(&self) -> Result<(), String> {
-        #[cfg(test)]
-        if let Some(runtime) = &self.test_runtime {
-            runtime.running.borrow_mut().clear();
-        }
         self.invalidate_registry()?;
         let mut errors = Vec::new();
         if let Err(error) = self.state.cleanup_staging() {
@@ -1093,6 +1221,117 @@ impl Host {
         let mut enabled = Vec::new();
         let mut stopped = Vec::new();
         let checks = self.boot_checks();
+        // Assess every selected graph before any native stop, denial or repair.
+        // Unknown relationships refuse the pass with authority removed;
+        // filesystem enumeration is never a native lifecycle order.
+        let receipts = self.receipts()?;
+        let mut released = std::collections::BTreeSet::new();
+        for receipt in &receipts {
+            if matches!(receipt.desired, Desired::Removed { .. })
+                && self.selection(&receipt.id).software_released()?
+                && !self.units_owned(&receipt.id)?
+            {
+                released.insert(receipt.package.clone());
+            }
+        }
+        let mut edges = BTreeMap::new();
+        let order = crate::dependencies::dependency_order(
+            receipts.iter().map(|r| r.package.clone()),
+            |path| {
+                let requires = if released.contains(path) {
+                    Vec::new()
+                } else if let Some(receipt) = receipts.iter().find(|r| r.package == *path) {
+                    self.runtime_requires(receipt)?
+                } else {
+                    self.selection_requires(path)?
+                };
+                edges.insert(path.clone(), requires.clone());
+                Ok(requires)
+            },
+        )?;
+        let mut plans = BTreeMap::new();
+        let mut stop = std::collections::BTreeSet::new();
+        for receipt in &receipts {
+            self.prepare(&receipt.id)?;
+            let report = if released.contains(&receipt.package) {
+                None
+            } else {
+                Some(self.approved_in(receipt, checks.as_ref()))
+            };
+            let authorized = if matches!(receipt.desired, Desired::Enabled) {
+                self.verify_publisher_in(
+                    checks.as_ref().map(|checks| &checks.snapshot),
+                    &receipt.package,
+                    &receipt.provenance,
+                    package::StoreContents::TrustRegistered,
+                )
+            } else {
+                Ok(())
+            };
+            let healthy = matches!(receipt.desired, Desired::Enabled)
+                && authorized.is_ok()
+                && self.settled(receipt).is_ok()
+                && match &report {
+                    Some(Ok(report)) => self.units_matches_running(report).unwrap_or(false),
+                    _ => false,
+                };
+            if !healthy {
+                stop.insert(receipt.package.clone());
+            }
+            plans.insert(
+                receipt.package.clone(),
+                RestorePlan {
+                    report,
+                    authorized,
+                    healthy,
+                    owned: self.units_owned(&receipt.id)?,
+                },
+            );
+        }
+        // Expand to live or unfinished ancestors. Reversed dependency order
+        // stops outer dependents first, including failed disable/removal intents.
+        for path in &order {
+            if edges[path].iter().any(|required| stop.contains(required)) {
+                if let Some(receipt) = receipts.iter().find(|r| r.package == *path) {
+                    if self.cleanup_unfinished(receipt)? {
+                        stop.insert(path.clone());
+                    }
+                }
+            }
+        }
+        let mut quiesced = std::collections::BTreeSet::new();
+        let mut blocked = std::collections::BTreeSet::new();
+        for path in order.iter().rev().filter(|path| stop.contains(*path)) {
+            let Some(receipt) = receipts.iter().find(|r| r.package == *path) else {
+                continue;
+            };
+            let plan = &plans[path];
+            let result = (|| {
+                self.check_stop(&receipt.id, &quiesced)?;
+                if !matches!(receipt.desired, Desired::Enabled) {
+                    if let Some(report) = &plan.report {
+                        report.as_ref().map_err(Clone::clone)?;
+                    }
+                }
+                if !released.contains(path) {
+                    self.journal_cleanup(receipt)?;
+                }
+                let purge = matches!(receipt.desired, Desired::Removed { purge: true });
+                self.units_stop(&receipt.id, purge)
+            })();
+            match result {
+                Ok(()) => {
+                    quiesced.insert(path.clone());
+                }
+                Err(error) => {
+                    blocked.insert(path.clone());
+                    errors.push(format!(
+                        "plugin {}: stop refused or cleanup failed: {error}",
+                        receipt.id
+                    ));
+                }
+            }
+        }
         for entry in fs::read_dir(self.state.root()).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             if entry.file_name() == "lock" {
@@ -1103,7 +1342,7 @@ impl Host {
             {
                 storage::directory(&entry.path()).map(|()| Restored::Nothing)
             } else {
-                self.restore_directory(&entry.path(), checks.as_ref())
+                self.restore_directory(&entry.path(), &plans, &quiesced, &blocked)
             };
             match result {
                 Ok(Restored::Running(receipt, report)) => enabled.push((receipt, report)),
@@ -1153,7 +1392,7 @@ impl Host {
                         receipt.id
                     );
                     errors.push(error);
-                    if let Err(error) = self.block_dependency_start(&receipt) {
+                    if let Err(error) = self.block_dependency_start(&receipt, &quiesced) {
                         errors.push(error);
                     }
                     outcomes.insert(path, false);
@@ -1172,7 +1411,8 @@ impl Host {
                             outcomes.insert(path, false);
                             errors.push(format!("plugin {}: {error}", receipt.id));
                             if !report.requires.is_empty() {
-                                if let Err(error) = self.block_dependency_start(&receipt) {
+                                if let Err(error) = self.block_dependency_start(&receipt, &quiesced)
+                                {
                                     errors.push(error);
                                 }
                             }
@@ -1181,6 +1421,10 @@ impl Host {
                 } else {
                     start.push((receipt, report));
                 }
+            }
+            // Successful stop proofs expire before new effects are attempted.
+            for (receipt, _) in &start {
+                quiesced.remove(&receipt.package);
             }
             let reports: Vec<_> = start.iter().map(|(_, report)| report).collect();
             let started = if reports.is_empty() {
@@ -1198,7 +1442,7 @@ impl Host {
                         outcomes.insert(receipt.package.clone(), false);
                         errors.push(format!("plugin {}: {error}", receipt.id));
                         if !report.requires.is_empty() {
-                            if let Err(error) = self.block_dependency_start(&receipt) {
+                            if let Err(error) = self.block_dependency_start(&receipt, &quiesced) {
                                 errors.push(error);
                             }
                         }
@@ -1297,7 +1541,9 @@ impl Host {
     fn restore_directory(
         &self,
         path: &Path,
-        checks: Option<&BootChecks>,
+        plans: &BTreeMap<PathBuf, RestorePlan>,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
+        blocked: &std::collections::BTreeSet<PathBuf>,
     ) -> Result<Restored, String> {
         storage::directory(path)?;
         if let Some(receipt) = storage::read_json::<Receipt>(&path.join("selection.json"))? {
@@ -1305,8 +1551,14 @@ impl Host {
                 return Err("receipt identity does not match its directory".into());
             }
             let id = receipt.id.clone();
+            if blocked.contains(&receipt.package) {
+                return Ok(Restored::Nothing);
+            }
+            let plan = plans
+                .get(&receipt.package)
+                .ok_or("selection changed during restore planning")?;
             return self
-                .restore_receipt(receipt, checks)
+                .restore_receipt(receipt, plan, quiesced)
                 .map_err(|error| format!("plugin {id}: {error}"));
         }
         // Install is always disabled. Without a committed receipt it
@@ -1331,55 +1583,70 @@ impl Host {
     fn restore_receipt(
         &self,
         receipt: Receipt,
-        checks: Option<&BootChecks>,
+        plan: &RestorePlan,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
     ) -> Result<Restored, String> {
         self.prepare(&receipt.id)?;
         if !matches!(receipt.desired, Desired::Enabled) {
-            self.restore_one(&receipt.id)?;
+            self.restore_one_in(&receipt.id, quiesced, Some(plan))?;
             return Ok(Restored::Nothing);
         }
-        let report = match self.approved_in(&receipt, checks) {
+        let report = match plan
+            .report
+            .as_ref()
+            .ok_or("enabled selection has no approval assessment")?
+            .clone()
+        {
             Ok(report) => report,
             Err(error) => {
                 // Corrupt approval is never a reason to leave old units running.
-                self.deny_start(&receipt)?;
+                self.deny_start_in(&receipt, quiesced)?;
                 return Err(error);
             }
         };
-        let authorized = self.verify_publisher_in(
-            checks.map(|checks| &checks.snapshot),
-            &receipt.package,
-            &receipt.provenance,
-            package::StoreContents::TrustRegistered,
-        );
-        let pending = fs::symlink_metadata(self.root(&receipt.id, "pending")).is_ok();
-        if authorized.is_ok()
-            && !pending
-            && fs::read_link(self.root(&receipt.id, "active"))
-                .is_ok_and(|path| path == receipt.package)
-            && self.units_matches_running(&report)?
-        {
+        if plan.healthy && !quiesced.contains(&receipt.package) {
             return Ok(Restored::Running(receipt, report));
         }
         // Stop first even when authority was revoked. Keep the receipt and
         // roots on denial; never restart revoked code.
-        self.units_stop(&receipt.id, false)?;
-        authorized?;
+        self.check_stop(&receipt.id, quiesced)?;
+        if !quiesced.contains(&receipt.package) {
+            self.units_stop(&receipt.id, false)?;
+        }
+        plan.authorized.clone()?;
         Ok(Restored::Stopped(receipt, report))
     }
 
     fn deny_start(&self, receipt: &Receipt) -> Result<(), String> {
+        self.deny_start_in(receipt, &std::collections::BTreeSet::new())
+    }
+
+    fn deny_start_in(
+        &self,
+        receipt: &Receipt,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
+    ) -> Result<(), String> {
         self.invalidate_registry()?;
+        self.check_stop(&receipt.id, quiesced)?;
+        self.journal_cleanup(receipt)?;
         let mut blocked = receipt.clone();
         blocked.desired = Desired::Disabled;
         storage::write_json(&self.receipt_path(&receipt.id), &blocked)?;
         // Approval failure cannot authorize root repair. Keep all existing
         // selection roots, including a pending candidate, until checked cleanup.
-        self.units_stop(&receipt.id, false)
+        if quiesced.contains(&receipt.package) {
+            Ok(())
+        } else {
+            self.units_stop(&receipt.id, false)
+        }
     }
 
-    fn block_dependency_start(&self, receipt: &Receipt) -> Result<(), String> {
-        self.deny_start(receipt)?;
+    fn block_dependency_start(
+        &self,
+        receipt: &Receipt,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
+    ) -> Result<(), String> {
+        self.deny_start_in(receipt, quiesced)?;
         let mut blocked = receipt.clone();
         blocked.desired = Desired::Disabled;
         self.selection(&receipt.id).settle(&blocked)
@@ -1448,11 +1715,43 @@ impl Host {
                 sources: report.sources,
             })
             .collect();
-        storage::write_atomic_mode(
-            &self.paths.registry_path,
-            &crate::plugin_installation::encode(&selections)?,
-            0o644,
-        )
+        #[cfg(test)]
+        let fail_before = self
+            .test_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.fail_registry.get());
+        #[cfg(not(test))]
+        let fail_before = false;
+        let result = if fail_before {
+            Err("injected enabled projection write failure".into())
+        } else {
+            storage::write_atomic_mode(
+                &self.paths.registry_path,
+                &crate::plugin_installation::encode(&selections)?,
+                0o644,
+            )
+        };
+        #[cfg(test)]
+        let result = result.and_then(|()| {
+            if self
+                .test_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.fail_registry_after_rename.get())
+            {
+                Err("injected projection durability failure after rename".into())
+            } else {
+                Ok(())
+            }
+        });
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => match self.invalidate_registry() {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(format!(
+                    "{error}; failed to withdraw enabled projection: {cleanup}"
+                )),
+            },
+        }
     }
 
     fn reclaim_software(&self) -> Result<(), String> {
@@ -1466,10 +1765,37 @@ impl Host {
                 .events
                 .borrow_mut()
                 .push(format!("stop:{id}:{purge}"));
+            // Model retained runtime ownership, not just whether a daemon is
+            // running. Failed ExecStopPost may need its required daemon too.
+            let target = runtime
+                .owned_packages
+                .borrow()
+                .get(id)
+                .cloned()
+                .or_else(|| self.receipt(id).ok().flatten().map(|r| r.package));
+            if let Some(target) = target {
+                for (parent, path) in runtime.owned_packages.borrow().iter() {
+                    if parent == id {
+                        continue;
+                    }
+                    let order = crate::dependencies::dependency_order([path.clone()], |path| {
+                        self.selection_requires(path)
+                    })
+                    .unwrap();
+                    if order.contains(&target) {
+                        runtime
+                            .unsafe_stops
+                            .borrow_mut()
+                            .push(format!("stop:{id} while {parent} owns effects"));
+                    }
+                }
+            }
             if runtime.fail_stop.borrow().as_deref() == Some(id) {
                 return Err(format!("injected stop failure for {id}"));
             }
             runtime.running.borrow_mut().remove(id);
+            runtime.owned.borrow_mut().remove(id);
+            runtime.owned_packages.borrow_mut().remove(id);
             return Ok(());
         }
         self.units.stop(id, purge)
@@ -1488,6 +1814,11 @@ impl Host {
                 return Err(format!("injected start failure for {}", report.id));
             }
             runtime.running.borrow_mut().insert(report.id.clone());
+            runtime.owned.borrow_mut().insert(report.id.clone());
+            runtime
+                .owned_packages
+                .borrow_mut()
+                .insert(report.id.clone(), report.package.clone());
             return Ok(());
         }
         self.units.start(report)
@@ -1585,16 +1916,33 @@ impl Host {
     /// Recovery for single-plugin operations. Boot restore handles enabled
     /// plugins itself and reaches this only for disabled or removed ones.
     fn restore_one(&self, id: &str) -> Result<(), String> {
+        self.restore_one_in(id, &std::collections::BTreeSet::new(), None)
+    }
+
+    fn restore_one_in(
+        &self,
+        id: &str,
+        quiesced: &std::collections::BTreeSet<PathBuf>,
+        plan: Option<&RestorePlan>,
+    ) -> Result<(), String> {
+        self.check_stop(id, quiesced)?;
         let receipt = self.receipt(id)?;
         match receipt {
             Some(receipt) => {
                 let selection = self.selection(id);
                 if let Desired::Removed { purge } = receipt.desired {
                     if !selection.software_released()? {
-                        let report = self.approved(&receipt)?;
-                        if purge && !self.units.has_owned_units(id)? {
+                        let report = match plan.and_then(|plan| plan.report.as_ref()) {
+                            Some(report) => report.clone()?,
+                            None => self.approved(&receipt)?,
+                        };
+                        let was_owned = match plan {
+                            Some(plan) => plan.owned,
+                            None => self.units_owned(id)?,
+                        };
+                        if purge && !was_owned {
                             self.units.purge_inactive(&report)?;
-                        } else {
+                        } else if !quiesced.contains(&receipt.package) {
                             self.units_stop(id, purge)?;
                         }
                         // Keep the receipt as the durable removal request while
@@ -1609,8 +1957,13 @@ impl Host {
                     self.reclaim_software()?;
                     selection.finish_removal()?;
                 } else {
-                    let report = self.approved(&receipt)?;
-                    self.units_stop(id, false)?;
+                    let report = match plan.and_then(|plan| plan.report.as_ref()) {
+                        Some(report) => report.clone()?,
+                        None => self.approved(&receipt)?,
+                    };
+                    if !quiesced.contains(&receipt.package) {
+                        self.units_stop(id, false)?;
+                    }
                     if matches!(receipt.desired, Desired::Enabled) {
                         // Stop first even when authority was revoked. Keep the
                         // receipt and roots on denial; never restart revoked code.
@@ -1740,6 +2093,13 @@ mod tests {
                 .insert(report.package.clone(), report.clone());
         }
         runtime
+    }
+
+    fn cold_boot(runtime: &TestRuntime) {
+        // Explicit power-off simulation: no live daemons or /run ownership.
+        runtime.running.borrow_mut().clear();
+        runtime.owned.borrow_mut().clear();
+        runtime.owned_packages.borrow_mut().clear();
     }
 
     fn cleanup_program(root: &Path, body: &str) -> PathBuf {
@@ -2018,6 +2378,7 @@ mod tests {
         }
         host.set_enabled(&clock.id, true).unwrap();
         host.set_enabled(&stream.id, true).unwrap();
+        cold_boot(&runtime);
         runtime.events.borrow_mut().clear();
 
         host.restore_all().unwrap();
@@ -2049,6 +2410,7 @@ mod tests {
             host.set_enabled(&selected.id, true).unwrap();
         }
         runtime.fail_start.replace(Some(stream.id.clone()));
+        cold_boot(&runtime);
 
         let error = host.restore_all().unwrap_err();
 
@@ -2093,13 +2455,23 @@ mod tests {
     fn pack(id: &str, suffix: &str, dependencies: &[Report]) -> Report {
         let mut pack = report(id, suffix);
         pack.requires = dependencies.iter().map(|dep| dep.package.clone()).collect();
-        pack.brings = dependencies
-            .iter()
-            .map(|dep| package::DependencyReport {
-                report: dep.clone(),
+        for dep in dependencies {
+            for nested in &dep.brings {
+                if !pack
+                    .brings
+                    .iter()
+                    .any(|entry| entry.report.package == nested.report.package)
+                {
+                    pack.brings.push(nested.clone());
+                }
+            }
+            let mut flat = dep.clone();
+            flat.brings.clear();
+            pack.brings.push(package::DependencyReport {
+                report: flat,
                 already_approved: false,
-            })
-            .collect();
+            });
+        }
         pack
     }
 
@@ -2249,6 +2621,7 @@ mod tests {
         runtime.fail_start.replace(None);
         host.set_enabled(&pack.id, true).unwrap();
         host.set_enabled(&clock.id, true).unwrap();
+        cold_boot(&runtime);
         runtime.events.borrow_mut().clear();
         host.restore_all().unwrap();
         let starts: Vec<_> = runtime
@@ -2269,6 +2642,7 @@ mod tests {
                     .unwrap()
         );
         runtime.fail_start.replace(Some(fake08.id.clone()));
+        cold_boot(&runtime);
         assert!(host.restore_all().is_err());
         assert_eq!(published(&host).1, ["@test:clock"]);
         assert_eq!(
@@ -2671,6 +3045,392 @@ mod tests {
             host.status(&inspected.id).unwrap().unwrap().desired,
             Desired::Disabled
         );
+    }
+
+    fn stops(runtime: &TestRuntime) -> Vec<String> {
+        runtime
+            .events
+            .borrow()
+            .iter()
+            .filter(|event| event.starts_with("stop:"))
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn unfinished_disabled_or_removed_parent_protects_dependency_and_shared_cascades() {
+        for removed in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let dependency = report("@runtime:live", "unfinished-dependency");
+            let parent = pack(
+                "@pack:failed",
+                "unfinished-parent",
+                std::slice::from_ref(&dependency),
+            );
+            let other = pack(
+                "@pack:other",
+                "unfinished-other",
+                std::slice::from_ref(&dependency),
+            );
+            let runtime = runtime(&[dependency.clone(), parent.clone(), other.clone()]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, parent.clone());
+            install(&host, other.clone());
+            host.set_enabled(&parent.id, true).unwrap();
+            host.set_enabled(&other.id, true).unwrap();
+            runtime.fail_stop.replace(Some(parent.id.clone()));
+            assert!(if removed {
+                host.remove(&parent.id, false)
+            } else {
+                host.set_enabled(&parent.id, false)
+            }
+            .is_err());
+            assert!(runtime.owned.borrow().contains(&parent.id));
+            assert!(fs::symlink_metadata(host.root(&parent.id, "pending")).is_ok());
+            // Even daemon exit does not establish that ExecStopPost finished.
+            runtime.running.borrow_mut().remove(&parent.id);
+            runtime.events.borrow_mut().clear();
+            assert!(host
+                .set_enabled(&dependency.id, false)
+                .unwrap_err()
+                .contains("cleanup is unfinished"));
+            // Service shutdown can release ownership while firewall/settlement
+            // still fails. The pending cleanup journal remains a stop guard.
+            runtime.owned.borrow_mut().remove(&parent.id);
+            runtime.owned_packages.borrow_mut().remove(&parent.id);
+            assert!(host.set_enabled(&dependency.id, false).is_err());
+            host.set_enabled(&other.id, false).unwrap();
+            assert!(!stops(&runtime)
+                .iter()
+                .any(|e| e == "stop:@runtime:live:false"));
+            assert_eq!(
+                host.status(&dependency.id).unwrap().unwrap().desired,
+                Desired::Enabled
+            );
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            runtime.fail_stop.replace(None);
+            if removed {
+                host.remove(&parent.id, false).unwrap();
+            } else {
+                host.set_enabled(&parent.id, false).unwrap();
+            }
+            host.set_enabled(&dependency.id, false).unwrap();
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn live_restore_quiesces_transitive_and_shared_parents_before_required_repair_or_revoke() {
+        for revoke in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let dependency = report("@runtime:d", "live-d");
+            let middle = pack(
+                "@pack:middle",
+                "live-middle",
+                std::slice::from_ref(&dependency),
+            );
+            let outer = pack("@pack:outer", "live-outer", std::slice::from_ref(&middle));
+            let shared = pack(
+                "@pack:shared",
+                "live-shared",
+                std::slice::from_ref(&dependency),
+            );
+            let leaf = report("@leaf:unrelated", "live-unrelated");
+            let runtime = runtime(&[
+                dependency.clone(),
+                middle.clone(),
+                outer.clone(),
+                shared.clone(),
+                leaf.clone(),
+            ]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, outer.clone());
+            install(&host, shared.clone());
+            install(&host, leaf.clone());
+            host.set_enabled(&outer.id, true).unwrap();
+            host.set_enabled(&shared.id, true).unwrap();
+            host.set_enabled(&leaf.id, true).unwrap();
+            if revoke {
+                runtime
+                    .revoked
+                    .borrow_mut()
+                    .insert(dependency.package.clone());
+            } else {
+                host.selection(&dependency.id)
+                    .stage(&dependency.package)
+                    .unwrap();
+            }
+            runtime.events.borrow_mut().clear();
+            let result = host.restore_all();
+            assert_eq!(result.is_err(), revoke);
+            let stopped = stops(&runtime);
+            let at = |id: &str| {
+                stopped
+                    .iter()
+                    .position(|event| event == &format!("stop:{id}:false"))
+                    .unwrap()
+            };
+            assert!(at(&outer.id) < at(&middle.id));
+            assert!(at(&middle.id) < at(&dependency.id));
+            assert!(at(&shared.id) < at(&dependency.id));
+            assert!(!stopped.iter().any(|e| e.contains(&leaf.id)));
+            assert!(
+                runtime.unsafe_stops.borrow().is_empty(),
+                "{:?}",
+                runtime.unsafe_stops.borrow()
+            );
+            if revoke {
+                assert_eq!(
+                    host.status(&outer.id).unwrap().unwrap().desired,
+                    Desired::Disabled
+                );
+                assert_eq!(
+                    host.status(&middle.id).unwrap().unwrap().desired,
+                    Desired::Disabled
+                );
+                assert_eq!(
+                    published(&host).1.as_slice(),
+                    std::slice::from_ref(&leaf.id)
+                );
+            } else {
+                for report in [&outer, &middle, &shared, &dependency] {
+                    assert_eq!(
+                        host.status(&report.id).unwrap().unwrap().desired,
+                        Desired::Enabled
+                    );
+                    assert!(runtime.running.borrow().contains(&report.id));
+                    assert!(fs::symlink_metadata(host.root(&report.id, "pending")).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn failed_live_parent_cleanup_refuses_required_stop_on_revoke_and_interruption() {
+        for revoke in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let dependency = report("@runtime:d", "refused-d");
+            let middle = pack(
+                "@pack:middle",
+                "refused-middle",
+                std::slice::from_ref(&dependency),
+            );
+            let outer = pack(
+                "@pack:outer",
+                "refused-outer",
+                std::slice::from_ref(&middle),
+            );
+            let runtime = runtime(&[dependency.clone(), middle.clone(), outer.clone()]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, outer.clone());
+            host.set_enabled(&outer.id, true).unwrap();
+            if revoke {
+                runtime
+                    .revoked
+                    .borrow_mut()
+                    .insert(dependency.package.clone());
+            } else {
+                host.selection(&dependency.id)
+                    .stage(&dependency.package)
+                    .unwrap();
+            }
+            runtime.fail_stop.replace(Some(outer.id.clone()));
+            runtime.events.borrow_mut().clear();
+            assert!(host.restore_all().unwrap_err().contains("cleanup failed"));
+            assert_eq!(stops(&runtime), ["stop:@pack:outer:false"]);
+            for report in [&dependency, &middle, &outer] {
+                assert!(runtime.running.borrow().contains(&report.id));
+                assert_eq!(
+                    fs::read_link(host.root(&report.id, "active")).unwrap(),
+                    report.package
+                );
+            }
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            assert!(published(&host).1.is_empty());
+            runtime.fail_stop.replace(None);
+            let result = host.restore_all();
+            assert_eq!(result.is_err(), revoke);
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn interrupted_candidate_dependencies_and_root_remain_protected_after_failed_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let old_dependency = report("@runtime:a", "candidate-a");
+        let new_dependency = report("@runtime:b", "candidate-b");
+        let old = pack(
+            "@pack:p",
+            "candidate-before",
+            std::slice::from_ref(&old_dependency),
+        );
+        let candidate = pack(
+            "@pack:p",
+            "candidate-after",
+            std::slice::from_ref(&new_dependency),
+        );
+        let runtime = runtime(&[
+            old_dependency.clone(),
+            new_dependency.clone(),
+            old.clone(),
+            candidate.clone(),
+        ]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, old.clone());
+        install(&host, new_dependency.clone());
+        host.set_enabled(&new_dependency.id, true).unwrap();
+        // Crash after an approved candidate's start, before receipt commit.
+        host.selection(&old.id).stage(&candidate.package).unwrap();
+        host.units_start(&candidate).unwrap();
+        runtime.fail_stop.replace(Some(old.id.clone()));
+        assert!(host.set_enabled(&old.id, false).is_err());
+        assert_eq!(
+            fs::read_link(host.root(&old.id, "pending")).unwrap(),
+            candidate.package
+        );
+        assert!(host.set_enabled(&new_dependency.id, false).is_err());
+        runtime.events.borrow_mut().clear();
+        assert!(host.restore_all().is_err());
+        assert!(!stops(&runtime)
+            .iter()
+            .any(|e| e.contains(&new_dependency.id)));
+        assert_eq!(
+            fs::read_link(host.root(&old.id, "pending")).unwrap(),
+            candidate.package
+        );
+        assert!(runtime.unsafe_stops.borrow().is_empty());
+        runtime.fail_stop.replace(None);
+        host.set_enabled(&old.id, false).unwrap();
+        host.set_enabled(&new_dependency.id, false).unwrap();
+        assert!(runtime.unsafe_stops.borrow().is_empty());
+    }
+
+    #[test]
+    fn projection_failures_withdraw_authority_but_retain_committed_graph_and_history() {
+        for after_rename in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let nix = cleanup_program(root.path(), "exit 0");
+            let first = report("@runtime:d", "projection-before");
+            let second = report("@runtime:d", "projection-after");
+            let parent = pack(
+                "@pack:p",
+                "projection-parent",
+                std::slice::from_ref(&second),
+            );
+            let runtime = runtime(&[first.clone(), second.clone(), parent.clone()]);
+            let host =
+                Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+            install(&host, first.clone());
+            host.install(
+                second.clone(),
+                &second.approval,
+                SelectionIntent::Update { id: &first.id },
+            )
+            .unwrap();
+            install(&host, parent.clone());
+            if after_rename {
+                runtime.fail_registry_after_rename.set(true);
+            } else {
+                runtime.fail_registry.set(true);
+            }
+            assert!(host.set_enabled(&parent.id, true).is_err());
+            assert!(!host.paths.registry_path.exists());
+            let receipt = host.status(&second.id).unwrap().unwrap();
+            assert_eq!(receipt.package, second.package);
+            assert_eq!(receipt.previous.unwrap().package, first.package);
+            assert_eq!(
+                fs::read_link(host.root(&second.id, "active")).unwrap(),
+                second.package
+            );
+            assert_eq!(
+                fs::read_link(host.root(&second.id, "previous")).unwrap(),
+                first.package
+            );
+            assert_eq!(
+                fs::read_link(host.root(&parent.id, "active")).unwrap(),
+                parent.package
+            );
+            assert!(host.restore_all().is_err());
+            assert!(!host.paths.registry_path.exists());
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+            runtime.fail_registry.set(false);
+            runtime.fail_registry_after_rename.set(false);
+            host.set_enabled(&parent.id, true).unwrap();
+            assert_eq!(published(&host).1, [parent.id.clone(), second.id.clone()]);
+            assert!(runtime.unsafe_stops.borrow().is_empty());
+        }
+    }
+
+    #[test]
+    fn live_restore_preserves_twenty_one_healthy_leaf_receipts_approvals_and_owned_effects() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let reports: Vec<_> = (0..21)
+            .map(|i| {
+                report(
+                    &format!("@korri:leaf-{i:02}"),
+                    &format!("healthy-leaf-{i:02}"),
+                )
+            })
+            .collect();
+        let runtime = runtime(&reports);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        for report in &reports {
+            install(&host, report.clone());
+            host.set_enabled(&report.id, true).unwrap();
+        }
+        let before = host.receipts().unwrap();
+        let registry = published(&host).0;
+        runtime.events.borrow_mut().clear();
+        host.restore_all().unwrap();
+        assert_eq!(host.receipts().unwrap(), before);
+        assert_eq!(published(&host).0, registry);
+        assert_eq!(runtime.running.borrow().len(), 21);
+        assert_eq!(runtime.owned.borrow().len(), 21);
+        assert!(stops(&runtime).is_empty());
+        assert!(!runtime
+            .events
+            .borrow()
+            .iter()
+            .any(|e| e.starts_with("start:")));
+        assert!(runtime.unsafe_stops.borrow().is_empty());
+    }
+
+    #[test]
+    fn unknown_restore_relationships_withdraw_projection_without_native_effects_or_root_loss() {
+        let root = tempfile::tempdir().unwrap();
+        let nix = cleanup_program(root.path(), "exit 0");
+        let dependency = report("@runtime:d", "unknown-d");
+        let parent = pack(
+            "@pack:p",
+            "unknown-parent",
+            std::slice::from_ref(&dependency),
+        );
+        let runtime = runtime(&[dependency.clone(), parent.clone()]);
+        let host = Host::for_test(root.path(), nix, permitted_policy(), runtime.clone()).unwrap();
+        install(&host, parent.clone());
+        host.set_enabled(&parent.id, true).unwrap();
+        runtime.reports.borrow_mut().remove(&parent.package);
+        runtime.events.borrow_mut().clear();
+        assert!(host.restore_all().unwrap_err().contains("cannot discover"));
+        assert!(!host.paths.registry_path.exists());
+        assert!(stops(&runtime).is_empty());
+        assert!(runtime.running.borrow().contains(&parent.id));
+        assert!(runtime.running.borrow().contains(&dependency.id));
+        for report in [&parent, &dependency] {
+            assert_eq!(
+                fs::read_link(host.root(&report.id, "active")).unwrap(),
+                report.package
+            );
+        }
+        assert!(runtime.unsafe_stops.borrow().is_empty());
     }
 
     #[test]
