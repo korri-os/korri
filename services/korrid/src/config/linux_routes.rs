@@ -11,6 +11,16 @@ pub fn linux_route_candidates(
     registry: &PluginRegistry,
     game_id: &str,
 ) -> Result<Vec<ResolvedRoute>, RouteUnavailable> {
+    linux_route_candidates_for_runner(root, snapshot, registry, game_id, None)
+}
+
+fn linux_route_candidates_for_runner(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    game_id: &str,
+    chosen_runner: Option<&str>,
+) -> Result<Vec<ResolvedRoute>, RouteUnavailable> {
     let failure = |message: String| RouteDiagnostic {
         code: RouteDiagnosticCode::LocalRouteUnavailable,
         message,
@@ -29,10 +39,12 @@ pub fn linux_route_candidates(
         };
         for runner in registry.runners().values().filter(|runner| {
             runner.program.is_some()
-                && runner
-                    .systems
-                    .as_ref()
-                    .is_some_and(|systems| systems.contains(&release.system.0))
+                && chosen_runner.is_none_or(|id| runner.id == id)
+                && match (&runner.releases, &runner.systems) {
+                    (Some(releases), _) => releases.iter().any(|candidate| candidate.0 == key.0),
+                    (None, Some(systems)) => systems.contains(&release.system.0),
+                    (None, None) => false,
+                }
         }) {
             if emitted.contains(&runner.id) {
                 continue;
@@ -138,7 +150,10 @@ pub fn resolve_linux_route(
     game_id: &str,
     chosen_runner: Option<&str>,
 ) -> Result<ResolvedRoute, RouteUnavailable> {
-    let candidates = linux_route_candidates(root, snapshot, registry, game_id)?;
+    // Listing keeps all usable alternatives. Explicit selection must retain
+    // this runner's missing-file diagnostic, even if another runner can play.
+    let candidates =
+        linux_route_candidates_for_runner(root, snapshot, registry, game_id, chosen_runner)?;
     let selected: Vec<_> = candidates
         .iter()
         .filter(|route| {

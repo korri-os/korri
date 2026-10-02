@@ -63,6 +63,9 @@ pub struct RunnerRecord {
     pub command: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub systems: Option<Vec<String>>,
+    /// Any one of these whole-file library identities admits the native runner.
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub releases: Option<Vec<crate::config::ArtifactIdString>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub android: Option<AndroidRunnerRecord>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -831,6 +834,26 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
             }
         }
         let native = runner.program.is_some();
+        if let Some(releases) = &runner.releases {
+            let invalid = |reason: &str| PluginError::InvalidContribution {
+                kind: "runner",
+                record_id: local_id.clone(),
+                reason: reason.to_owned(),
+            };
+            if !native {
+                return Err(invalid("releases require a native runner"));
+            }
+            if runner.systems.is_some() {
+                return Err(invalid("runner cannot declare both systems and releases"));
+            }
+            if releases.is_empty() {
+                return Err(invalid("releases must contain at least one hash"));
+            }
+            let mut seen = BTreeSet::new();
+            if releases.iter().any(|release| !seen.insert(release)) {
+                return Err(invalid("releases must not contain duplicate hashes"));
+            }
+        }
         let android = runner.command.is_some();
         if native == android
             || (native && runner.android.is_some())

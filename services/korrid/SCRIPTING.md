@@ -261,6 +261,32 @@ owns callback source and auxiliary files. The kind's default instance points
 to itself. Android retains its `app` and absolute `path` records; these are
 platform-specific declarations, not Linux fallback aliases.
 
+### Native runners for specific content
+
+A native runner can declare `releases` instead of `systems`. This is a
+non-empty list of distinct `sha256:<64 lowercase hex characters>` strings.
+Each string is an existing library release key. Discovery produces that key
+from the whole file in `discovery/scanner.rs`; `config/catalog.rs` already uses
+it in a game's `releases`. The user approved this runner field for recompilation
+launchers such as Skate 3, which play only specific disc images.
+
+Several entries mean any one accepted dump, not several required files. korrid
+matches the recorded release key, resolves its file location, and offers the
+runner beside any system-wide runners for the same content. A missing file
+still fails with `LocalRomMissing`. `launch.prepare` receives that file through
+the existing `contentPath`; no callback input or RPC schema changes.
+
+The registry rejects empty lists, duplicate hashes, malformed hashes, provider
+release keys, explicit `null`, and a runner with both `systems` and `releases`.
+Only native runners can declare `releases`. Declaration and callback source
+remain effect-free; plugins do not search or hash library files.
+
+Hash matching does not scan unclaimed extensions, inspect archives, or rehash
+a file at every launch. It uses the library's recorded identity. An enabled
+plugin must still claim the input's extension for discovery. Different systems
+claiming the same extension still fail with `ClaimConflict`. This field adds a
+launcher route to existing content, not a plugin-owned game or a locked tile.
+
 The RetroArch callback preserves the existing Linux settings and argv. It
 places savestates under `states/<full-runtime-id>/`. Raw configuration retains
 legacy `overrides.config.prepend/append`, after Korri's lines; `replace` and

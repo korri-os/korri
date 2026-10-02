@@ -20,6 +20,27 @@ fn game_packages_preserve_the_shipped_declaration_exports_without_a_service() {
 }
 
 #[test]
+fn game_admission_preserves_runner_release_hashes_without_calling_launch() {
+    let releases = serde_json::json!([
+        format!("sha256:{}", "a".repeat(64)),
+        format!("sha256:{}", "b".repeat(64)),
+    ]);
+    let source = format!(
+        "export const name = 'recomp';
+         export const runners = {{main: {{
+           id: '@example:recomp/main', program: 'game', releases: {releases}
+         }}}};
+         export const handlers = {{'launch.prepare': () => {{
+           throw new Error('admission must not launch');
+         }}}};"
+    );
+    let declaration = Declaration::evaluate("@example", &source).unwrap();
+    assert!(declaration.services.is_empty());
+    let retained = serde_json::to_value(declaration).unwrap();
+    assert_eq!(retained["runners"]["main"]["releases"], releases);
+}
+
+#[test]
 fn native_runner_admission_requires_launch_but_does_not_call_it() {
     let declaration = "export const name = 'game';
         export const runners = {game: {id:'@example:game/game', program:'game'}};";
