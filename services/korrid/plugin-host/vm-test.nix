@@ -915,7 +915,7 @@ pkgs.testers.runNixOSTest {
 
     # A self-contained game plugin is one independently managed selection.
     game_runtime = inspect("${gameRuntimePackage}")
-    assert "requires" not in game_runtime
+    assert game_runtime["requires"] == [], game_runtime
     assert "brings" not in game_runtime
     install("${gameRuntimePackage}")
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == []
