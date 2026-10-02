@@ -28,8 +28,7 @@ let
   seeded = import ../../../services/korrid/plugin-host/image-seed.nix {
     inherit pkgs;
     hostPackage = korri.packages.${pkgs.stdenv.hostPlatform.system}.korri-plugin-host;
-    cacheUrl =
-      (import ../../product/requirements.nix { inherit korri; }).constants.publishers."@korri".cacheUrl;
+    publishers = (import ../../product/requirements.nix { inherit korri; }).constants.publishers;
     pluginPackages = selected;
   };
 in

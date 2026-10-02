@@ -29,7 +29,7 @@ let
   closure = pkgs.closureInfo { rootPaths = paths; };
   image = import ./image-seed.nix {
     inherit pkgs hostPackage;
-    cacheUrl = binding.cacheUrl;
+    publishers."@korri" = binding;
     pluginPackages = paths;
   };
   # Run the existing image producer unchanged, including its host-generated

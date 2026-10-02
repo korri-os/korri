@@ -15,7 +15,7 @@ let
   seeded = import ../../services/korrid/plugin-host/image-seed.nix {
     inherit pkgs;
     hostPackage = korri.packages.${system}.korri-plugin-host;
-    cacheUrl = binding.cacheUrl;
+    publishers = (import ./requirements.nix { inherit korri; }).constants.publishers;
     pluginPackages = selection.${device};
   };
   checkedMetadata = import ./published-plugin-metadata.nix {
