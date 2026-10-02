@@ -60,11 +60,19 @@ never guesses.
 
 Prior art: `docs/research/shared-extension-content-identification.md`.
 
+## Decided: identify without a runner
+
+On 2026-10-02 the user chose to identify content for every system with rules,
+even when no enabled runner can play it. A Wii ISO shows as a Wii game on a
+device without a Wii emulator. This follows the federation rule: content
+declares what it needs, and devices supply the ability to play it. Cost: the
+library shows games this device cannot launch, so the UI needs an
+unavailable state. Today's rule that a claim needs an enabled runner does not
+carry over.
+
 ## Open questions
 
-1. Does Korri identify content for a system that has no enabled runner?
-   Today a claim needs an enabled runner. A catalog plugin with rules would
-   identify every known system.
+1. Decided above.
 2. Several plugins declare the same system ID with rules. Are the rules
    combined? Which title wins?
 3. How a hash-only runner such as Skate 3 links its hashes to a system once
