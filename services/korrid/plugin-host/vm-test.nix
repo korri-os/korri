@@ -928,6 +928,9 @@ pkgs.testers.runNixOSTest {
     assert json.loads(machine.succeed("korri-plugin enabled-packages")) == game_packages
     cache.succeed("systemctl start nix-serve.service")
     game_root = "/nix/var/nix/gcroots/korri-plugin-host/" + managed_name(game_runtime)
+    # Real updates import the candidate before creating its pending root.
+    # Graph recovery must read that candidate's immutable requirements.
+    inspect("${alternate}")
     machine.succeed("ln -s ${alternate} " + game_root + "/pending")
     assert "unfinished selection" in machine.fail("korri-plugin enabled-packages 2>&1")
     machine.succeed("korri-plugin restore-all")
