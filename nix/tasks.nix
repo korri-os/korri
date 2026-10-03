@@ -431,6 +431,8 @@ let
       script = ''
         cd "$KORRI_ROOT/surfaces/shift"
         bun install --frozen-lockfile --ignore-scripts
+        cd "$KORRI_ROOT/surfaces/boxbuster"
+        bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/clients/portal"
         bun install --frozen-lockfile --ignore-scripts
         bun run build
@@ -446,7 +448,20 @@ let
         bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
+        cd "$KORRI_ROOT/surfaces/boxbuster"
+        bun install --frozen-lockfile --ignore-scripts
         cd "$KORRI_ROOT/clients/portal"
+        bun install --frozen-lockfile --ignore-scripts
+        bun test
+        bun run typecheck
+      '';
+    };
+
+    boxbuster-check = {
+      description = "Run the Boxbuster surface unit tests, gates, and typecheck.";
+      runtimeInputs = [ pkgs.bun ];
+      script = ''
+        cd "$KORRI_ROOT/surfaces/boxbuster"
         bun install --frozen-lockfile --ignore-scripts
         bun test
         bun run typecheck

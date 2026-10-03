@@ -1,0 +1,58 @@
+/*
+ * The sign on the door while there is no store to walk into: loading, a
+ * catalog error, or an empty library. Store-blue board, trim-yellow rules,
+ * the same hard drop shadow the legacy in-store HUD used.
+ */
+.boxbuster-notice {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: var(--bb-space);
+}
+
+.boxbuster-notice-board {
+	display: grid;
+	gap: var(--bb-space);
+	justify-items: center;
+	max-width: min(100%, 36em);
+	padding: var(--bb-space) calc(var(--bb-space) * 2);
+	border-block: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-wall);
+	color: var(--bb-label);
+	font-family: monospace;
+	font-size: var(--bb-text-body);
+	text-align: center;
+}
+
+.boxbuster-notice-sign {
+	margin: 0;
+	color: var(--bb-trim);
+	font-size: var(--bb-text-sign);
+	line-height: 1.1;
+	text-shadow: 2px 2px 0 var(--bb-shadow);
+}
+
+.boxbuster-notice-detail {
+	margin: 0;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-notice-action {
+	min-height: 2.75em;
+	padding: 0 1.5em;
+	border: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-night);
+	color: var(--bb-trim);
+	font: inherit;
+	cursor: pointer;
+}
+
+.boxbuster-notice-action:focus-visible,
+.boxbuster-notice-action:focus {
+	outline: var(--bb-rule) solid var(--bb-label);
+	outline-offset: var(--bb-rule);
+	background: var(--bb-trim);
+	color: var(--bb-night);
+}

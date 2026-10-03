@@ -41,6 +41,15 @@ describe("the surface registry", () => {
     expect(portalSurfaceFor("gameplay-overlay", "pico").id).toBe("pico")
   })
 
+  test("Boxbuster serves the catalog and hands a running game to the default", () => {
+    // Boxbuster has no gameplay overlay yet; drawing nothing over a live game
+    // would take the device away from the user.
+    expect(portalSurfaceFor("catalog", "boxbuster").id).toBe("boxbuster")
+    expect(portalSurfaceFor("gameplay-overlay", "boxbuster").id).toBe(
+      DEFAULT_SURFACE_ID,
+    )
+  })
+
   test("falls back for an unknown or absent preference", () => {
     expect(portalSurfaceFor("catalog", "does-not-exist").id).toBe(
       DEFAULT_SURFACE_ID,

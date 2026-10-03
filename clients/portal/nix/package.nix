@@ -17,6 +17,9 @@ let
       ../../../surfaces/pico/package.json
       ../../../surfaces/pico/tsconfig.json
       ../../../surfaces/pico/src
+      ../../../surfaces/boxbuster/package.json
+      ../../../surfaces/boxbuster/tsconfig.json
+      ../../../surfaces/boxbuster/src
       ../../../contracts
       ../../../packages/intrinsic-design/package.json
       ../../../packages/intrinsic-design/intrinsic.css
@@ -38,6 +41,8 @@ let
         ../../../surfaces/shift/bun.lock
         ../../../surfaces/pico/package.json
         ../../../surfaces/pico/bun.lock
+        ../../../surfaces/boxbuster/package.json
+        ../../../surfaces/boxbuster/bun.lock
         ../../../packages/intrinsic-design/package.json
       ];
     };
@@ -62,6 +67,11 @@ let
         # Pico is built by Vite; do not fetch its Caliper-only dev dependencies.
         bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
       )
+      (
+        cd surfaces/boxbuster
+        # Boxbuster is built by Vite too; it needs only three and its renderer.
+        bun install --production --frozen-lockfile --ignore-scripts --os=linux --cpu='*'
+      )
       # Bun's local-file install must resolve to the build's source, not to a
       # temporary dependency-fetch directory or a stale copy in this output.
       # Only Shift uses the shared intrinsic package; Pico derives its own pixel.
@@ -71,7 +81,7 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      for project in surfaces/shift surfaces/pico clients/portal; do
+      for project in surfaces/shift surfaces/pico surfaces/boxbuster clients/portal; do
         mkdir -p "$out/$project"
         cp -R "$project/node_modules" "$out/$project/"
       done
@@ -79,7 +89,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-3THBRVMtrvLUGoO2c+SiiLsrC/fp5gKH1D4Epo6iLTc=";
+    outputHash = "sha256-O0EMI1tF4x5ar7nlp9iROxvfx+NdyY3GKx6YNCUFebg=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
@@ -99,7 +109,7 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
     export HOME="$TMPDIR/home"
     mkdir -p "$HOME"
-    for project in surfaces/shift surfaces/pico clients/portal; do
+    for project in surfaces/shift surfaces/pico surfaces/boxbuster clients/portal; do
       cp -R "${dependencies}/$project/node_modules" "$project/"
       chmod -R u+w "$project/node_modules"
     done

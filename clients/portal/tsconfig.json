@@ -15,7 +15,8 @@
     "paths": {
       "@contracts/*": ["../../contracts/*"],
       "@korri/shift": ["../../surfaces/shift/src/index.ts"],
-      "@korri/pico": ["../../surfaces/pico/src/index.ts"]
+      "@korri/pico": ["../../surfaces/pico/src/index.ts"],
+      "@korri/boxbuster": ["../../surfaces/boxbuster/src/index.ts"]
     }
   },
   "include": [
@@ -23,6 +24,7 @@
     "vite.config.ts",
     "../../contracts",
     "../../surfaces/shift/src",
-    "../../surfaces/pico/src"
+    "../../surfaces/pico/src",
+    "../../surfaces/boxbuster/src"
   ]
 }

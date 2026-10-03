@@ -4,7 +4,17 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { PicoSurface } from "@korri/pico"
 import { ShiftSurface } from "@korri/shift"
-import type { ReactNode } from "react"
+import { lazy, type ReactNode, Suspense } from "react"
+
+/**
+ * Boxbuster carries three.js. Loading it on demand keeps it off every device
+ * that never opens Boxbuster: the chunk is fetched on its first render only.
+ */
+const BoxbusterSurface = lazy(() =>
+  import("@korri/boxbuster").then(module => ({
+    default: module.BoxbusterSurface,
+  })),
+)
 
 /**
  * Which of the treaty's presentations a surface actually renders.
@@ -43,6 +53,16 @@ export const PORTAL_SURFACES: readonly PortalSurface[] = [
     title: "Pico",
     presentations: ["catalog", "gameplay-overlay"],
     render: ({ model, host }) => <PicoSurface host={host} model={model} />,
+  },
+  {
+    id: "boxbuster",
+    title: "Boxbuster",
+    presentations: ["catalog"],
+    render: ({ model, host }) => (
+      <Suspense fallback={null}>
+        <BoxbusterSurface host={host} model={model} />
+      </Suspense>
+    ),
   },
 ]
 

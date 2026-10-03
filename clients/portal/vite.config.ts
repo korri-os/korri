@@ -30,6 +30,10 @@ export default defineConfig({
       // thing that would change if Shift moved to its own package registry.
       "@korri/shift": resolve(__dirname, "../../surfaces/shift/src/index.ts"),
       "@korri/pico": resolve(__dirname, "../../surfaces/pico/src/index.ts"),
+      "@korri/boxbuster": resolve(
+        __dirname,
+        "../../surfaces/boxbuster/src/index.ts",
+      ),
     },
   },
   server: {
