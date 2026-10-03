@@ -2,10 +2,13 @@
 #
 # Provenance: ROCKNIX distribution rev 1178bc2238de782bf081c558c177d35bb3690021
 # (branch next, 2026-09-04), the same revision as the kernel queue. Every
-# file under this directory is byte-identical to its source there, with one
-# exception: gamescope 0006 is rebased onto nixpkgs gamescope 3.16.18 and
-# the ROCKNIX original sits next to it as .rocknix. Files ending in .rocknix
-# are not applied.
+# harvested file retains its source except for these adaptations:
+# - gamescope 0006 is rebased onto nixpkgs gamescope 3.16.18; the ROCKNIX
+#   original sits next to it as .rocknix. Those reference files are not applied.
+# - InputPlumber's composite matches the Portal's three observed sources,
+#   emits XB360 for inputd, and routes both volume keys through DBus. The
+#   ROCKNIX ayn_mcu capability map stays unchanged. inputplumber-check.py
+#   locks down that map and the Portal-specific adaptation.
 #
 #   gamescope/patches/       projects/ROCKNIX/packages/apps/gamescope/patches/
 #   mangohud/patches/        projects/ROCKNIX/packages/apps/mangohud/patches/{common,qualcomm,SM8550}/
@@ -97,6 +100,7 @@ in
       inherit pkgs inputplumber;
       name = "inputplumber-ayn-sm8550-data-2026-09-04";
       src = ./inputplumber;
+      deviceCheck = ./inputplumber-check.py;
     }).overrideAttrs
       {
         pname = "inputplumber-ayn-sm8550-data";
