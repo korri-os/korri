@@ -1,4 +1,5 @@
 import * as THREE from "three"
+import { STORE_LIGHTING_FRAGMENT, type StoreLighting } from "./store-lighting"
 
 // ---------------------------------------------------------------------------
 // PS1 look = a stack of *deliberate* degradations layered on a clean mesh:
@@ -35,9 +36,23 @@ const VERT = /* glsl */ `
   varying float vW;
   varying float vShade;
   varying float vFog;
+  #ifdef STORE_LIGHTING
+    varying vec3 vWorld;
+    varying vec3 vWorldNormal;
+  #endif
 
   void main() {
-    vec4 mv   = modelViewMatrix * vec4(position, 1.0);
+    vec4 local = vec4(position, 1.0);
+    vec3 localNormal = normal;
+    #ifdef USE_INSTANCING
+      local = instanceMatrix * local;
+      localNormal = mat3(instanceMatrix) * localNormal;
+    #endif
+    #ifdef STORE_LIGHTING
+      vWorld = (modelMatrix * local).xyz;
+      vWorldNormal = normalize(mat3(modelMatrix) * localNormal);
+    #endif
+    vec4 mv   = modelViewMatrix * local;
     vec4 clip = projectionMatrix * mv;
 
     // (1) vertex snapping — quantise NDC.xy to a coarse grid, then back to clip
@@ -51,7 +66,7 @@ const VERT = /* glsl */ `
     vW  = clip.w;
 
     // (3) cheap per-vertex diffuse, or full-bright when emissive
-    vec3 n = normalize(normalMatrix * normal);
+    vec3 n = normalize(normalMatrix * localNormal);
     float diff = max(dot(n, normalize(uLightDir)), 0.0);
     vShade = mix(uAmbient + (1.0 - uAmbient) * diff, 1.0, uEmissive);
 
@@ -74,6 +89,8 @@ const FRAG = /* glsl */ `
   varying float vShade;
   varying float vFog;
 
+  ${STORE_LIGHTING_FRAGMENT}
+
   // recursive 4x4 ordered (Bayer) dither, index-free so it's driver-safe
   float bayer2(vec2 a) {
     a = floor(a);
@@ -88,7 +105,14 @@ const FRAG = /* glsl */ `
     vec3 tex = texture2D(map, uv).rgb;
     vec3 col = mix(uColor, tex * uColor, uHasMap);
 
-    col *= vShade;
+    #ifdef STORE_LIGHTING
+      // Match the approved D study's response, including dark shelf wood and
+      // deck plastic. Sources remain local; the room's ambient is unchanged.
+      vec3 reflectance = sqrt(max(col, vec3(0.0))) * 0.55 + vec3(0.015);
+      col = col * vShade + reflectance * storeIllumination();
+    #else
+      col *= vShade;
+    #endif
 
     // (5) ordered dither then posterize to ~5 bits per channel
     float d = (bayer4(gl_FragCoord.xy) - 0.5) / 32.0;
@@ -106,6 +130,8 @@ export interface PS1Params {
   color?: THREE.ColorRepresentation
   emissive?: boolean
   side?: THREE.Side
+  /** Owned by the mounted store; emissive materials do not receive spill. */
+  lighting?: StoreLighting
 }
 
 const WHITE = new THREE.DataTexture(
@@ -119,12 +145,18 @@ WHITE.needsUpdate = true
 export function createPS1Material(
   params: PS1Params = {},
 ): THREE.ShaderMaterial {
+  const lighting = params.emissive ? undefined : params.lighting
+  // Compile the actual number of rows, rather than silently truncating to a
+  // preview-sized array. map.ts currently caps a store at 48 light spans.
+  const rows = lighting?.uniforms.uShelfLights.value.length ?? 0
   return new THREE.ShaderMaterial({
+    defines: rows > 0 ? { STORE_LIGHTING: 1, SHELF_LIGHT_COUNT: rows } : {},
     vertexShader: VERT,
     fragmentShader: FRAG,
     side: params.side ?? THREE.FrontSide,
     uniforms: {
       ...SHARED,
+      ...(lighting?.uniforms ?? {}),
       // SHARED holds shared *references*; clone the value objects so each
       // material keeps its own (they're never mutated, but be safe):
       uSnap: SHARED.uSnap,

@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber"
-import { useMemo, useRef } from "react"
+import { useLayoutEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 import type { HeldTape } from "./BoxbusterStore"
 import type { TvStatus } from "./boxbuster-store-view"
@@ -18,7 +18,13 @@ import {
   type WallSeg,
 } from "./map"
 import { createPS1Material } from "./ps1-material"
+import { ShelfLights } from "./shelf-lights"
 import { StepMarks } from "./step-marks"
+import {
+  createStoreLighting,
+  type StoreLighting,
+  updateTvSpill,
+} from "./store-lighting"
 import type { PlacedTape } from "./tape-placement"
 import {
   bannerTexture,
@@ -109,13 +115,19 @@ function Gondola({
 
 // The return cart by the door: a grey steel tray on legs and casters, with a
 // push handle at the end facing the entrance. Its tapes are VhsBoxes'.
-function ReturnCartFrame({ cart }: { cart: ReturnCart }) {
+function ReturnCartFrame({
+  cart,
+  lighting,
+}: {
+  cart: ReturnCart
+  lighting: StoreLighting
+}) {
   const mats = useMemo(
     () => ({
-      steel: createPS1Material({ color: SHELVING_ACCENTS.returns }),
-      caster: createPS1Material({ color: "#101218" }),
+      steel: createPS1Material({ color: SHELVING_ACCENTS.returns, lighting }),
+      caster: createPS1Material({ color: "#101218", lighting }),
     }),
-    [],
+    [lighting],
   )
   const W = 0.62 // tray width (x)
   const L = cart.half * 2 // tray length (z)
@@ -206,6 +218,12 @@ export function Scene({
   deckLabels?: readonly string[]
   tv: TvStatus
 }) {
+  const lighting = useMemo(() => createStoreLighting(map), [map])
+  const loaded = inDeck !== undefined
+  useLayoutEffect(() => {
+    updateTvSpill(lighting, tv, loaded)
+  }, [lighting, tv, loaded])
+
   // What has focus, as the room shows it.
   const target = targets.find(candidate => candidate.key === focused)
   const focusedTape = target?._tag === "Tape" ? target.tapeId : undefined
@@ -239,10 +257,16 @@ export function Scene({
     ceil.repeat.set(6, 6)
     const atlas = vhsAtlas(ATLAS_COLS, ATLAS_ROWS, games)
 
-    const floorMat = createPS1Material({ map: carpet, side: THREE.DoubleSide })
-    const wallMat = createPS1Material({ map: wall, side: THREE.DoubleSide })
-    const ceilMat = createPS1Material({ map: ceil, side: THREE.DoubleSide })
-    const boardMat = createPS1Material({ color: "#241a12" })
+    const floorMat = createPS1Material({
+      map: carpet, side: THREE.DoubleSide, lighting,
+    })
+    const wallMat = createPS1Material({
+      map: wall, side: THREE.DoubleSide, lighting,
+    })
+    const ceilMat = createPS1Material({
+      map: ceil, side: THREE.DoubleSide, lighting,
+    })
+    const boardMat = createPS1Material({ color: "#241a12", lighting })
     const lightMat = createPS1Material({ color: "#fff6da", emissive: true })
 
     return {
@@ -257,7 +281,7 @@ export function Scene({
       boardMat,
       lightMat,
     }
-  }, [map])
+  }, [map, lighting])
 
   return (
     <group>
@@ -298,6 +322,8 @@ export function Scene({
         </mesh>
       ))}
 
+      <ShelfLights tubes={lighting.tubes} />
+
       {/* gondolas across every room */}
       {map.gondolas.map(g => (
         <Gondola
@@ -312,7 +338,7 @@ export function Scene({
       ))}
 
       {map.returnCart === undefined ? null : (
-        <ReturnCartFrame cart={map.returnCart} />
+        <ReturnCartFrame cart={map.returnCart} lighting={lighting} />
       )}
 
       {/* VHS tapes — individual, pickable, across every room */}
@@ -321,6 +347,7 @@ export function Scene({
         games={built.games}
         map={map}
         placed={placed}
+        lighting={lighting}
         {...(held === undefined ? {} : { held })}
         {...(inDeck === undefined ? {} : { inDeck: inDeck.id })}
         {...(focusedTape === undefined ? {} : { focused: focusedTape })}
@@ -339,6 +366,7 @@ export function Scene({
           rotation={[0, b.rotY, 0]}
           width={Math.min(6, b.text.length * 0.42 + 1)}
           bg={b.accent}
+          lighting={lighting}
           fg="#0a0a12"
           lit={signLit(b.x, b.z)}
         />
@@ -347,12 +375,14 @@ export function Scene({
         text="◄ VIEWING ROOM"
         position={[0, 3.5, -21.9]}
         width={3.4}
+        lighting={lighting}
         lit={signLit(0, VIEWING_ROOM.zNear)}
       />
 
       {/* the viewing room + console (fixed, behind the hub) */}
-      <ViewingRoom built={built} />
+      <ViewingRoom built={built} lighting={lighting} />
       <Console
+        lighting={lighting}
         playing={inDeck ?? null}
         deckLabels={deckLabels ?? []}
         tv={tv}
@@ -364,7 +394,9 @@ export function Scene({
 
 function ViewingRoom({
   built,
+  lighting,
 }: {
+  lighting: StoreLighting
   built: {
     floorMat: THREE.Material
     ceilMat: THREE.Material
@@ -377,17 +409,17 @@ function ViewingRoom({
   const cz = (BACK_ROOM.zNear + BACK_ROOM.zFar) / 2 // -29.5
   const deco = useMemo(
     () => ({
-      fabric: createPS1Material({ color: "#43314f" }), // couch
-      wood: createPS1Material({ color: "#2a1d12" }), // table
-      rug: createPS1Material({ color: "#5a1f2a" }),
-      speaker: createPS1Material({ color: "#101218" }),
-      cone: createPS1Material({ color: "#2a2f3a" }),
-      pot: createPS1Material({ color: "#3a2614" }),
-      leaf: createPS1Material({ color: "#1f6e34" }),
-      snackA: createPS1Material({ color: "#c81d25" }),
-      snackB: createPS1Material({ color: "#f2a200" }),
+      fabric: createPS1Material({ color: "#43314f", lighting }), // couch
+      wood: createPS1Material({ color: "#2a1d12", lighting }), // table
+      rug: createPS1Material({ color: "#5a1f2a", lighting }),
+      speaker: createPS1Material({ color: "#101218", lighting }),
+      cone: createPS1Material({ color: "#2a2f3a", lighting }),
+      pot: createPS1Material({ color: "#3a2614", lighting }),
+      leaf: createPS1Material({ color: "#1f6e34", lighting }),
+      snackA: createPS1Material({ color: "#c81d25", lighting }),
+      snackB: createPS1Material({ color: "#f2a200", lighting }),
     }),
-    [],
+    [lighting],
   )
   return (
     <group>
@@ -521,21 +553,25 @@ function ViewingRoom({
 
       {/* posters on the side walls */}
       <Poster
+        lighting={lighting}
         seed={11}
         position={[-BACK_ROOM.halfX + 0.06, 2.2, cz + 3]}
         rotation={[0, Math.PI / 2, 0]}
       />
       <Poster
+        lighting={lighting}
         seed={12}
         position={[-BACK_ROOM.halfX + 0.06, 2.2, cz - 3]}
         rotation={[0, Math.PI / 2, 0]}
       />
       <Poster
+        lighting={lighting}
         seed={13}
         position={[BACK_ROOM.halfX - 0.06, 2.2, cz + 3]}
         rotation={[0, -Math.PI / 2, 0]}
       />
       <Poster
+        lighting={lighting}
         seed={14}
         position={[BACK_ROOM.halfX - 0.06, 2.2, cz - 3]}
         rotation={[0, -Math.PI / 2, 0]}
@@ -552,7 +588,9 @@ function Banner({
   bg,
   fg,
   lit = false,
+  lighting,
 }: {
+  lighting: StoreLighting
   text: string
   position: [number, number, number]
   rotation?: [number, number, number]
@@ -568,8 +606,9 @@ function Banner({
         map: bannerTexture(text, bg, fg),
         side: THREE.DoubleSide,
         emissive: lit,
+        lighting,
       }),
-    [text, bg, fg, lit],
+    [text, bg, fg, lit, lighting],
   )
   return (
     <mesh position={position} rotation={rotation} material={mat}>
@@ -585,7 +624,9 @@ function Console({
   deckLabels,
   tv,
   focusedDeck,
+  lighting,
 }: {
+  lighting: StoreLighting
   playing: StoreGame | null
   deckLabels: readonly string[]
   tv: TvStatus
@@ -594,12 +635,12 @@ function Console({
 }) {
   const mats = useMemo(
     () => ({
-      body: createPS1Material({ color: "#15171f" }),
-      stand: createPS1Material({ color: "#0e0f15" }),
+      body: createPS1Material({ color: "#15171f", lighting }),
+      stand: createPS1Material({ color: "#0e0f15", lighting }),
       slot: createPS1Material({ color: "#39507a", emissive: true }),
       slotLit: createPS1Material({ color: "#f2c100", emissive: true }),
     }),
-    [],
+    [lighting],
   )
   return (
     <>
@@ -631,6 +672,7 @@ function Console({
         </mesh>
         {deckLabels[i] === undefined ? null : (
           <Banner
+            lighting={lighting}
             text={deckLabels[i] ?? ""}
             position={[0, DECK.topY + 0.35, DECK.depth / 2]}
             width={deck.width}
@@ -648,14 +690,16 @@ function Poster({
   seed,
   position,
   rotation,
+  lighting,
 }: {
+  lighting: StoreLighting
   seed: number
   position: [number, number, number]
   rotation: [number, number, number]
 }) {
   const mat = useMemo(
-    () => createPS1Material({ map: posterTexture(seed) }),
-    [seed],
+    () => createPS1Material({ map: posterTexture(seed), lighting }),
+    [seed, lighting],
   )
   return (
     <mesh position={position} rotation={rotation} material={mat}>

@@ -6,6 +6,7 @@ import { ATLAS_COLS, ATLAS_ROWS, DECK, type MapGame, type StoreMap } from "./map
 import { createPS1Material } from "./ps1-material"
 import { COVER_RATIO, gameBackAtlas } from "./textures"
 import type { PlacedTape } from "./tape-placement"
+import type { StoreLighting } from "./store-lighting"
 import { getTopple, TOPPLE_SECS, toppledGondolas } from "./topple"
 
 // Where each tape rests comes from tape-placement.ts, which the focus targets
@@ -102,7 +103,9 @@ export function VhsBoxes({
   inDeck,
   focused,
   towardDeck = false,
+  lighting,
 }: {
+  lighting: StoreLighting
   atlas: THREE.Texture
   /** The library in atlas order: cell n belongs to games[n]. */
   games: readonly MapGame[]
@@ -121,13 +124,13 @@ export function VhsBoxes({
   const { mats, litMats } = useMemo(() => {
     const backAtlas = gameBackAtlas(ATLAS_COLS, ATLAS_ROWS, games)
     const set = (emissive: boolean) => {
-      const cover = createPS1Material({ map: atlas, emissive })
-      const back = createPS1Material({ map: backAtlas, emissive })
-      const edge = createPS1Material({ color: "#0d0d10" })
+      const cover = createPS1Material({ map: atlas, emissive, lighting })
+      const back = createPS1Material({ map: backAtlas, emissive, lighting })
+      const edge = createPS1Material({ color: "#0d0d10", lighting })
       return [cover, back, edge, edge, edge, edge]
     }
     return { mats: set(false), litMats: set(true) }
-  }, [atlas, games])
+  }, [atlas, games, lighting])
 
   const tapes = useMemo<Tape[]>(
     () =>
