@@ -41,3 +41,6 @@ wifi.env
 # must never be able to stage one.
 korri-state/
 *.key
+
+# Python bytecode caches from surface and tool scripts.
+__pycache__/
