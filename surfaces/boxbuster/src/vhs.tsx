@@ -1,21 +1,16 @@
 import { useFrame } from "@react-three/fiber"
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
-import {
-  ATLAS_COLS,
-  ATLAS_ROWS,
-  CART_PITCH,
-  type MapGame,
-  type StoreMap,
-} from "./map"
+import { ATLAS_COLS, ATLAS_ROWS, DECK, type MapGame, type StoreMap } from "./map"
 import { createPS1Material } from "./ps1-material"
 import { COVER_RATIO, gameBackAtlas } from "./textures"
+import type { PlacedTape } from "./tape-placement"
 import { getTopple, TOPPLE_SECS, toppledGondolas } from "./topple"
 
-// Legacy's pick-up, flip, carry, and load-into-console handling lived here,
-// bound to keys, mouse buttons, and a screen-centre raycast. That was the
-// first-person input model; Boxbuster on main is focus-driven, so the tapes
-// here only sit on their shelves (and spill when a shelf topples).
+// Where each tape rests comes from tape-placement.ts, which the focus targets
+// share. Picking up, carrying, and loading are the visit's (boxbuster-visit.ts);
+// this file only draws the result: a tape on its shelf, in your hand, or in
+// the deck.
 
 const SHELF_SPAN = 3.5 // how far a toppled shelf lies along the floor (≈ its height)
 const AXIS_Y = new THREE.Vector3(0, 1, 0)
@@ -41,16 +36,12 @@ function remapFace(
 }
 
 /** A tape's box, its cover cell mapped onto the front and back faces. */
-function tapeGeometry(game: MapGame) {
+function tapeGeometry(game: MapGame, height: number) {
   const ai = game.atlasIndex % (ATLAS_COLS * ATLAS_ROWS)
-  const rx = ai % ATLAS_COLS
-  const ry = (ai / ATLAS_COLS) | 0
-  const h = 0.6 + ((ai * 37) % 9) / 100
-  const w = h * COVER_RATIO // 2:3 cover face
-  const geo = new THREE.BoxGeometry(0.15, h, w)
-  remapFace(geo, 0, rx, ry) // front cover (+X)
-  remapFace(geo, 1, rx, ry) // back details (-X)
-  return { geo, h }
+  const geo = new THREE.BoxGeometry(0.15, height, height * COVER_RATIO)
+  remapFace(geo, 0, ai % ATLAS_COLS, (ai / ATLAS_COLS) | 0) // front cover (+X)
+  remapFace(geo, 1, ai % ATLAS_COLS, (ai / ATLAS_COLS) | 0) // back details (-X)
+  return geo
 }
 
 // Lying on the cart: +X (the cover) turned up, then the cover's top turned to
@@ -58,26 +49,46 @@ function tapeGeometry(game: MapGame) {
 const CART_QUAT = new THREE.Quaternion()
   .setFromAxisAngle(AXIS_Z, Math.PI / 2)
   .premultiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, -Math.PI / 2))
-const TAPE_THICKNESS = 0.15
+
+// Held up in front of you: the cover (+X) turned to the camera, or the back
+// (-X) when you have turned it over. Tilted a little, like a box in a hand.
+const HELD_FRONT = new THREE.Quaternion()
+  .setFromAxisAngle(AXIS_Y, -Math.PI / 2)
+  .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Z, 0.06))
+const HELD_BACK = new THREE.Quaternion()
+  .setFromAxisAngle(AXIS_Y, Math.PI / 2)
+  .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.06))
+/** Where the held tape sits, in the camera's own frame: low in the right
+ * corner, so it reads as in your hand and leaves the view to the store. */
+const HELD_OFFSET = new THREE.Vector3(0.62, -0.5, -1.25)
+
+// Pushed into the deck: lying flat, cover up, half of it still showing.
+const IN_DECK_QUAT = new THREE.Quaternion()
+  .setFromAxisAngle(AXIS_Z, Math.PI / 2)
+  .premultiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, -Math.PI / 2))
 
 interface Tape {
   geo: THREE.BoxGeometry
-  base: THREE.Vector3 // its shelf slot
-  game: MapGame
-  gi: number // which gondola this tape sits on; -1 on the return cart
-  // where the tape currently rests (shelf slot, or on the floor after a spill)
-  home: { pos: THREE.Vector3; quat: THREE.Quaternion; dropped: boolean }
+  placed: PlacedTape
+  // where the tape rests now: its slot, or the floor after a spill
+  home: { pos: THREE.Vector3; quat: THREE.Quaternion }
 }
 
 export function VhsBoxes({
   atlas,
   games,
   map,
+  placed,
+  held,
+  inDeck,
 }: {
   atlas: THREE.Texture
   /** The library in atlas order: cell n belongs to games[n]. */
   games: readonly MapGame[]
   map: StoreMap
+  placed: readonly PlacedTape[]
+  held?: { readonly tapeId: string; readonly face: "front" | "back" }
+  inDeck?: string
 }) {
   // [+X front cover, -X back details, +Y, -Y, +Z, -Z edges] — matches BoxGeometry groups
   const mats = useMemo(() => {
@@ -89,92 +100,26 @@ export function VhsBoxes({
     return [cover, back, edge, edge, edge, edge]
   }, [atlas, games])
 
-  // Individual boxes (not merged) so each tape is its own pickable object.
-  // Each shelf slot holds a tape facing EACH aisle (back-to-back), so you always
-  // see a front cover whichever side of the gondola you're on.
-  // Place tapes room by room: within each room, each game appears AT MOST ONCE,
-  // spread evenly across that room's shelves with a per-game jitter for natural,
-  // lived-in gaps. The atlas cell comes from the game's own `atlasIndex` so the
-  // cover always matches regardless of which room it landed in. Deterministic.
-  const tapes = useMemo<Tape[]>(() => {
-    const list: Tape[] = []
-    const spacing = 0.46
-
-    // the return cart: one row along the tray, a fresh layer on top when full
-    const cart = map.returnCart
-    if (cart !== undefined) {
-      const perLayer = Math.max(1, Math.floor((cart.half * 2) / CART_PITCH))
-      const pitch = (cart.half * 2) / perLayer
-      cart.games.forEach((game, k) => {
-        const { geo } = tapeGeometry(game)
-        const layer = Math.floor(k / perLayer)
-        const slot = k % perLayer
-        const base = new THREE.Vector3(
-          cart.x,
-          cart.topY + TAPE_THICKNESS / 2 + layer * TAPE_THICKNESS,
-          cart.zc - cart.half + pitch * (slot + 0.5),
-        )
-        list.push({
-          geo,
-          base,
-          game,
-          gi: -1,
-          home: { pos: base.clone(), quat: CART_QUAT.clone(), dropped: true },
-        })
-      })
-    }
-    type Slot = { gx: number; gi: number; ly: number; z: number; side: 1 | -1 }
-
-    for (const room of map.rooms) {
-      const roomGondolas = map.gondolas.filter(g => g.roomId === room.id)
-      const roomGames = map.roomGames[room.id] ?? []
-      if (roomGames.length === 0 || roomGondolas.length === 0) continue
-
-      const slots: Slot[] = []
-      for (const g of roomGondolas) {
-        for (const ly of g.levels) {
-          const count = Math.floor((g.half * 2) / spacing)
-          for (let i = 0; i < count; i++) {
-            const z = g.zc - g.half + spacing * 0.5 + i * spacing
-            for (const side of [1, -1] as const)
-              slots.push({ gx: g.x, gi: g.gi, ly, z, side })
-          }
-        }
-      }
-      const P = slots.length
-      if (P === 0) continue
-      const distinct = Math.min(roomGames.length, P)
-      const stride = P / distinct
-      const win = Math.max(1, Math.floor(stride))
-      for (let k = 0; k < distinct; k++) {
-        const jitter = ((k * 2654435761) >>> 0) % win
-        const slot = slots[(Math.floor(k * stride) + jitter) % P]
-        const game = roomGames[k]
-        if (!slot || !game) continue
-        const { geo, h } = tapeGeometry(game)
-        const base = new THREE.Vector3(
-          slot.gx + slot.side * 0.095,
-          slot.ly + h / 2,
-          slot.z,
-        )
-        // the -X-side tape is turned 180° so its front cover faces that aisle
+  const tapes = useMemo<Tape[]>(
+    () =>
+      placed.map(tape => {
         const quat = new THREE.Quaternion()
-        if (slot.side < 0) quat.setFromAxisAngle(AXIS_Y, Math.PI)
-        list.push({
-          geo,
-          base,
-          game,
-          gi: slot.gi,
-          home: { pos: base.clone(), quat, dropped: false },
-        })
-      }
-    }
-    return list
-  }, [map])
+        if (tape.rest._tag === "Cart") quat.copy(CART_QUAT)
+        // the west-facing tape is turned 180° so its cover faces that aisle
+        else if (tape.rest.side < 0) quat.setFromAxisAngle(AXIS_Y, Math.PI)
+        return {
+          geo: tapeGeometry(tape.game, tape.height),
+          placed: tape,
+          home: {
+            pos: new THREE.Vector3(tape.at.x, tape.at.y, tape.at.z),
+            quat,
+          },
+        }
+      }),
+    [placed],
+  )
 
   const meshes = useRef<THREE.Mesh[]>([])
-
-  // shelves already handled, and the tapes currently mid-spill to the floor
   const handledTopple = useRef(new Set<number>())
   const falling = useRef<
     {
@@ -187,18 +132,37 @@ export function VhsBoxes({
     }[]
   >([])
 
+  // Rest every tape where it belongs: in hand, in the deck, or at home.
+  // A held tape follows the camera each frame (below).
   useEffect(() => {
-    // apply each tape's resting transform (esp. the 180° turn on -X-side tapes)
-    tapes.forEach((tp, i) => {
-      const m = meshes.current[i]
-      if (m) {
-        m.position.copy(tp.home.pos)
-        m.quaternion.copy(tp.home.quat)
+    tapes.forEach((tape, i) => {
+      const mesh = meshes.current[i]
+      if (mesh === undefined) return
+      if (tape.placed.game.id === inDeck) {
+        mesh.position.set(0, DECK.topY + 0.02, DECK.z + DECK.depth / 2 - 0.15)
+        mesh.quaternion.copy(IN_DECK_QUAT)
+      } else {
+        mesh.position.copy(tape.home.pos)
+        mesh.quaternion.copy(tape.home.quat)
       }
     })
-  }, [tapes])
+  }, [tapes, inDeck, held?.tapeId])
 
-  useFrame((_state, dt) => {
+  const heldOffset = useMemo(() => new THREE.Vector3(), [])
+  useFrame((state, dt) => {
+    if (held !== undefined) {
+      const i = tapes.findIndex(tape => tape.placed.game.id === held.tapeId)
+      const mesh = meshes.current[i]
+      if (mesh !== undefined) {
+        const camera = state.camera
+        heldOffset.copy(HELD_OFFSET).applyQuaternion(camera.quaternion)
+        mesh.position.copy(camera.position).add(heldOffset)
+        mesh.quaternion
+          .copy(camera.quaternion)
+          .multiply(held.face === "front" ? HELD_FRONT : HELD_BACK)
+      }
+    }
+
     // --- a toppled shelf spills its tapes onto the floor ---
     for (const gi of toppledGondolas()) {
       if (handledTopple.current.has(gi)) continue
@@ -212,12 +176,12 @@ export function VhsBoxes({
         minZ: -37,
         maxZ: 4,
       }
-      tapes.forEach((tp, i) => {
-        if (tp.gi !== gi) return
+      tapes.forEach((tape, i) => {
+        const rest = tape.placed.rest
+        if (rest._tag !== "Shelf" || rest.gi !== gi) return
         const m = meshes.current[i]
         if (!m || !m.visible) return
-        // fling the games CLEAR — land them beyond where the toppled shelf
-        // comes to rest (it lies ≈ SHELF_SPAN deep), fanned along its length, so
+        // fling the games clear of where the toppled shelf comes to rest, so
         // they end up strewn in front of the fallen shelf instead of under it
         const beyond = SHELF_SPAN + 0.5 + Math.random() * 2.2
         const to = new THREE.Vector3(
@@ -228,7 +192,7 @@ export function VhsBoxes({
           ),
           0.09,
           THREE.MathUtils.clamp(
-            tp.base.z + (Math.random() - 0.5) * 3,
+            tape.placed.at.z + (Math.random() - 0.5) * 3,
             box.minZ + 0.7,
             box.maxZ - 0.7,
           ),
@@ -241,9 +205,8 @@ export function VhsBoxes({
               Math.random() * Math.PI * 2,
             ),
           )
-        tp.home.pos.copy(to)
-        tp.home.quat.copy(toQ)
-        tp.home.dropped = true
+        tape.home.pos.copy(to)
+        tape.home.quat.copy(toQ)
         falling.current.push({
           idx: i,
           t: 0,
@@ -264,7 +227,6 @@ export function VhsBoxes({
         m.position.lerpVectors(fo.from, fo.to, e)
         m.position.y += Math.sin(fo.t * Math.PI) * 0.7 // arc up and over the shelf
         m.quaternion.slerpQuaternions(fo.fromQ, fo.toQ, e)
-        m.scale.setScalar(1)
       }
       falling.current = falling.current.filter(fo => fo.t < 1)
     }
@@ -274,13 +236,14 @@ export function VhsBoxes({
     <group>
       {tapes.map((tape, i) => (
         <mesh
-          key={tape.game.id}
+          key={tape.placed.game.id}
           ref={el => {
             if (el) meshes.current[i] = el
           }}
           geometry={tape.geo}
           material={mats}
-          position={tape.base}
+          position={tape.home.pos}
+          quaternion={tape.home.quat}
         />
       ))}
     </group>

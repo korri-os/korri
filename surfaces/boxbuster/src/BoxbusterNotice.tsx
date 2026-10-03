@@ -2,6 +2,9 @@ import "./BoxbusterNotice.css"
 import type { ReactNode } from "react"
 import type { BoxbusterStoreView } from "./boxbuster-store-view"
 
+/** The store cannot be drawn here: this browser has no WebGL. */
+export const NO_STORE = { _tag: "NoStore" } as const
+
 /**
  * What the door says when there is no store to enter. Renders nothing once the
  * store is open.
@@ -10,12 +13,21 @@ export function BoxbusterNotice({
   view,
   onReload,
 }: {
-  view: BoxbusterStoreView
+  view: BoxbusterStoreView | typeof NO_STORE
   onReload: () => void
 }) {
   switch (view._tag) {
     case "Open":
       return null
+    case "NoStore":
+      // You play a game by carrying its tape to the deck. With no store to
+      // walk, there is no way to play here, and the sign says so plainly.
+      return (
+        <BoxbusterNoticeBoard
+          sign="The store cannot open on this device"
+          detail="Boxbuster draws the store in 3D, and this device's browser has no 3D graphics."
+        />
+      )
     case "Loading":
       return <BoxbusterNoticeBoard sign="Opening the store…" />
     case "Empty":

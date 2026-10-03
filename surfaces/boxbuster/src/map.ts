@@ -138,8 +138,31 @@ const ARCH = 2.0 // half-width of an archway opening
 
 // ── the fixed hub lobby (the anchor every room hangs off) ──────────────────────
 // z = -22 is pinned: the viewing room lives behind it and never moves.
-const HUB = { minX: -7, maxX: 7, minZ: -22, maxZ: -10 }
-const HUB_ZC = (HUB.minZ + HUB.maxZ) / 2 // -16
+export const HUB = { minX: -7, maxX: 7, minZ: -22, maxZ: -10 } as const
+export const HUB_ZC = (HUB.minZ + HUB.maxZ) / 2 // -16
+
+// ── the viewing room: fixed, behind the hub, never sized by the library ──────
+export const VIEWING_ROOM = { halfX: 7, zNear: -22, zFar: -37 } as const
+/** The TV stand's centre line, against the far wall. */
+export const CONSOLE_Z = VIEWING_ROOM.zFar + 1.4
+/** The deck you put a tape into, out in front of the TV. */
+export const DECK = { z: CONSOLE_Z + 1.7, topY: 0.75, depth: 1.0 } as const
+/** The TV screen's centre and size. */
+export const TV_SCREEN = { y: 2.0, z: CONSOLE_Z + 0.26, w: 2.6, h: 1.95 } as const
+
+/**
+ * The decks under the TV. One, unless Korri offers several places to play
+ * the tape in hand: then one deck per place, side by side, each signed with
+ * the place's name, so choosing where to play is choosing which slot.
+ */
+export function decksFor(count: number): { x: number; width: number }[] {
+  if (count <= 1) return [{ x: 0, width: 1.7 }]
+  const pitch = 1.4
+  return Array.from({ length: count }, (_, i) => ({
+    x: (i - (count - 1) / 2) * pitch,
+    width: 1.2,
+  }))
+}
 
 // ── sizing knobs ──────────────────────────────────────────────────────────────
 const SPACING = 0.46 // tape spacing along a shelf (matches vhs.tsx)

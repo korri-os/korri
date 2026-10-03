@@ -1,11 +1,8 @@
 /**
- * The counter view: the same treaty model the store is built from, turned into
- * what the counter shows — every tape in store order, and where a launch
- * stands.
- *
- * The counter is the legible half of Boxbuster. It must list exactly the tapes
- * the store shelves, in the order a walk through the store meets them, so the
- * index and the place never disagree.
+ * Tape facts and TV status: the same treaty model the store is built from,
+ * turned into what a tape says when you look at it, and what the TV says
+ * about a launch. The tapes keep the store's order, so a tape's facts and its
+ * place never disagree.
  */
 import { describe, expect, test } from "bun:test"
 import type {
@@ -15,8 +12,8 @@ import type {
   SurfaceStatus,
 } from "@contracts/surface/korri-surface"
 import {
-  counterStatusFrom,
-  counterTapesFrom,
+  tvStatusFrom,
+  tapeFactsFrom,
   storeViewFrom,
 } from "../src/boxbuster-store-view"
 
@@ -50,7 +47,7 @@ function played(id: string, daysAgo: number, playCount: number): SurfaceGame {
   }
 }
 
-describe("the counter's tapes", () => {
+describe("the tape facts", () => {
   test("list every tape in the order the store shelves them", () => {
     const games = [
       { id: "never", title: "Never" },
@@ -67,7 +64,7 @@ describe("the counter's tapes", () => {
       ...view.map.roomGames.classic!,
     ].map(game => game.id)
 
-    const tapes = counterTapesFrom(ready(games), NOW)
+    const tapes = tapeFactsFrom(ready(games), NOW)
     expect(tapes.map(tape => tape.id)).toEqual(storeOrder)
     expect(tapes.map(tape => tape.aisle)).toEqual([
       "returns",
@@ -78,25 +75,14 @@ describe("the counter's tapes", () => {
   })
 
   test("are empty until the catalog is ready", () => {
-    expect(counterTapesFrom(modelWith({ _tag: "Loading" }), NOW)).toEqual([])
+    expect(tapeFactsFrom(modelWith({ _tag: "Loading" }), NOW)).toEqual([])
     expect(
-      counterTapesFrom(modelWith({ _tag: "Error", message: "down" }), NOW),
+      tapeFactsFrom(modelWith({ _tag: "Error", message: "down" }), NOW),
     ).toEqual([])
   })
 
-  test("say Resume for a game Korri can continue and Play otherwise", () => {
-    const tapes = counterTapesFrom(
-      ready([
-        { ...played("resume", 0, 3), resumable: true },
-        { id: "fresh", title: "Fresh" },
-      ]),
-      NOW,
-    )
-    expect(tapes.map(tape => tape.verb)).toEqual(["Resume", "Play"])
-  })
-
   test("state only the play facts Korri gave", () => {
-    const [often, once, never] = counterTapesFrom(
+    const [often, once, never] = tapeFactsFrom(
       ready([
         {
           id: "often",
@@ -122,7 +108,7 @@ describe("the counter's tapes", () => {
   })
 
   test("launch where they are unless Korri offers a real choice", () => {
-    const [here, choose] = counterTapesFrom(
+    const [here, choose] = tapeFactsFrom(
       ready([
         { id: "here", title: "Here" },
         {
@@ -147,7 +133,7 @@ describe("the counter's tapes", () => {
   })
 
   test("carry the title, provenance line, and cover the store draws", () => {
-    const [tape] = counterTapesFrom(
+    const [tape] = tapeFactsFrom(
       ready([
         {
           id: "wario",
@@ -166,14 +152,14 @@ describe("the counter's tapes", () => {
   })
 })
 
-describe("the counter's launch status", () => {
+describe("the TV status", () => {
   test("is idle while browsing", () => {
-    expect(counterStatusFrom(ready([]))).toEqual({ _tag: "Idle" })
+    expect(tvStatusFrom(ready([]))).toEqual({ _tag: "Idle" })
   })
 
   test("names the work under way and the tape it belongs to", () => {
     expect(
-      counterStatusFrom(
+      tvStatusFrom(
         modelWith(
           { _tag: "Ready", games: [] },
           {
@@ -194,7 +180,7 @@ describe("the counter's launch status", () => {
 
   test("says a game is running", () => {
     expect(
-      counterStatusFrom(
+      tvStatusFrom(
         modelWith(
           { _tag: "Ready", games: [] },
           { _tag: "Running", kicker: "Playing", gameId: "wario" },
@@ -205,7 +191,7 @@ describe("the counter's launch status", () => {
 
   test("keeps Korri's words for a problem and whether it can be retried", () => {
     expect(
-      counterStatusFrom(
+      tvStatusFrom(
         modelWith(
           { _tag: "Ready", games: [] },
           {

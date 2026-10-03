@@ -4,12 +4,18 @@ import * as THREE from "three"
 import {
   ATLAS_COLS,
   ATLAS_ROWS,
+  CONSOLE_Z,
+  DECK,
+  decksFor,
   type ReturnCart,
   SHELVING_ACCENTS,
   type StoreGame,
   type StoreMap,
+  TV_SCREEN,
+  VIEWING_ROOM,
   type WallSeg,
 } from "./map"
+import type { PlacedTape } from "./tape-placement"
 import { createPS1Material } from "./ps1-material"
 import {
   bannerTexture,
@@ -25,13 +31,9 @@ import { VhsBoxes } from "./vhs"
 
 const ROOM_H = 4.2 // store + viewing-room ceiling height
 
-// A second room ("the viewing booth") behind the store's back wall, reached
-// through the hub's back archway. The store back wall is pinned at z = -22.
-const BACK_ROOM = {
-  halfX: 7,
-  zNear: -22, // store back wall is pinned here; the viewing room never scales with the library
-  zFar: -37,
-} // -22 .. -37
+// The viewing booth behind the store's back wall, reached through the hub's
+// back archway. Its geometry is fixed in map.ts, shared with the walk.
+const BACK_ROOM = VIEWING_ROOM
 
 // A gondola shelf. Once `startTopple` (topple.ts) marks it, it tips over about
 // its base edge; vhs.tsx spills this shelf's tapes onto the floor. Legacy's
@@ -180,11 +182,19 @@ function Wall({ seg, mat }: { seg: WallSeg; mat: THREE.Material }) {
 }
 
 export function Scene({
-  playing,
   map,
+  placed,
+  held,
+  inDeck,
+  deckLabels,
 }: {
-  playing?: StoreGame | null
   map: StoreMap
+  placed: readonly PlacedTape[]
+  held?: { readonly tapeId: string; readonly face: "front" | "back" }
+  /** The tape in the deck; its cover is on the TV. */
+  inDeck?: StoreGame
+  /** One sign per deck when Korri offers several places to play. */
+  deckLabels?: readonly string[]
 }) {
   const built = useMemo(() => {
     // Atlas cell n belongs to the tape computeMap gave atlasIndex n.
@@ -277,7 +287,14 @@ export function Scene({
       )}
 
       {/* VHS tapes — individual, pickable, across every room */}
-      <VhsBoxes atlas={built.atlas} games={built.games} map={map} />
+      <VhsBoxes
+        atlas={built.atlas}
+        games={built.games}
+        map={map}
+        placed={placed}
+        {...(held === undefined ? {} : { held })}
+        {...(inDeck === undefined ? {} : { inDeck: inDeck.id })}
+      />
 
       {/* room signage over each archway + the viewing-room sign */}
       {map.banners.map(b => (
@@ -295,7 +312,7 @@ export function Scene({
 
       {/* the viewing room + console (fixed, behind the hub) */}
       <ViewingRoom built={built} />
-      <Console playing={playing ?? null} />
+      <Console playing={inDeck ?? null} deckLabels={deckLabels ?? []} />
     </group>
   )
 }
@@ -512,9 +529,15 @@ function Banner({
   )
 }
 
-// TV + stand + the console you load tapes into, against the viewing room's far
+// TV + stand + the deck you load tapes into, against the viewing room's far
 // wall, facing the doorway. The screen lights up with the loaded game.
-function Console({ playing }: { playing: StoreGame | null }) {
+function Console({
+  playing,
+  deckLabels,
+}: {
+  playing: StoreGame | null
+  deckLabels: readonly string[]
+}) {
   const mats = useMemo(
     () => ({
       body: createPS1Material({ color: "#15171f" }),
@@ -524,7 +547,8 @@ function Console({ playing }: { playing: StoreGame | null }) {
     [],
   )
   return (
-    <group position={[0, 0, BACK_ROOM.zFar + 1.4]}>
+    <>
+    <group position={[0, 0, CONSOLE_Z]}>
       {/* TV stand */}
       <mesh position={[0, 0.55, 0]} material={mats.stand}>
         <boxGeometry args={[3, 1.1, 1.2]} />
@@ -534,16 +558,32 @@ function Console({ playing }: { playing: StoreGame | null }) {
         <boxGeometry args={[3.2, 2.2, 0.5]} />
       </mesh>
       <TvScreen playing={playing} />
-      {/* console deck out front, with a glowing slot facing the player */}
-      <group position={[0, 0, 1.7]}>
-        <mesh position={[0, 0.5, 0]} material={mats.body}>
-          <boxGeometry args={[1.7, 0.5, 1.0]} />
-        </mesh>
-        <mesh position={[0, 0.62, 0.51]} material={mats.slot}>
-          <boxGeometry args={[1.1, 0.07, 0.04]} />
-        </mesh>
-      </group>
     </group>
+    {/* the deck out front, with a glowing slot facing you; one per place to
+        play when Korri offers a choice, each signed with the place's name */}
+    {decksFor(Math.max(1, deckLabels.length)).map((deck, i) => (
+      <group key={deck.x} position={[deck.x, 0, DECK.z]}>
+        <mesh position={[0, DECK.topY - 0.25, 0]} material={mats.body}>
+          <boxGeometry args={[deck.width, 0.5, DECK.depth]} />
+        </mesh>
+        <mesh
+          position={[0, DECK.topY - 0.13, DECK.depth / 2 + 0.01]}
+          material={mats.slot}
+        >
+          <boxGeometry args={[deck.width * 0.65, 0.07, 0.04]} />
+        </mesh>
+        {deckLabels[i] === undefined ? null : (
+          <Banner
+            text={deckLabels[i] ?? ""}
+            position={[0, DECK.topY + 0.35, DECK.depth / 2]}
+            width={deck.width}
+            bg="#f2c100"
+            fg="#0a0a12"
+          />
+        )}
+      </group>
+    ))}
+    </>
   )
 }
 
@@ -640,8 +680,11 @@ function TvScreen({ playing }: { playing: StoreGame | null }) {
   }, [playing, gear])
 
   return (
-    <mesh position={[0, 2.0, 0.26]} material={gear.mat}>
-      <planeGeometry args={[2.6, 1.95]} />
+    <mesh
+      position={[0, TV_SCREEN.y, TV_SCREEN.z - CONSOLE_Z]}
+      material={gear.mat}
+    >
+      <planeGeometry args={[TV_SCREEN.w, TV_SCREEN.h]} />
     </mesh>
   )
 }

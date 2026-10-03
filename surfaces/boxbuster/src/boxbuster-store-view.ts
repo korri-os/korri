@@ -152,34 +152,32 @@ export function storeViewFrom(
     : source
 }
 
-// ── the counter ────────────────────────────────────────────────────────────────
-// The counter is where every decision happens: legible type, no dither, built
-// from the same placement as the store, so the index and the place agree. It
-// is converted apart from the store because it reads facts the store must not
-// rebuild for (launch locations, play counts, status).
+// ── what a tape says, and what the TV says ────────────────────────────────────
+// Read apart from the store, because these are facts the store must not
+// rebuild for: launch locations, play counts, and where a launch stands. The
+// tapes keep the store's placement order, so both agree on every tape.
 
 /** Somewhere a tape can be played. The id goes back to Korri unchanged. */
-export interface CounterLocation {
+export interface TapeLocation {
   readonly id: string
   readonly label: string
 }
 
-export type CounterLaunch =
+export type TapeLaunch =
   | { readonly _tag: "Here" }
-  /** Korri offers a real choice; the counter must ask, never pick one. */
-  | { readonly _tag: "Choose"; readonly locations: readonly CounterLocation[] }
+  /** Korri offers a real choice; the viewing room must ask, never pick one. */
+  | { readonly _tag: "Choose"; readonly locations: readonly TapeLocation[] }
 
-/** A tape as the counter presents it: the back of the box. */
-export interface CounterTape {
+/** A tape's readable facts: the back of the box. */
+export interface TapeFacts {
   readonly id: string
   readonly title: string
   readonly subtitle?: string
   readonly coverArtUrl?: string
   readonly aisle: BoxbusterAisle
-  readonly verb: "Resume" | "Play"
   /** Play facts Korri stated, as sentences. Empty when it stated none. */
   readonly facts: readonly string[]
-  readonly launch: CounterLaunch
+  readonly launch: TapeLaunch
 }
 
 function playtimeLabel(seconds: number): string {
@@ -208,10 +206,10 @@ function factsFor(game: SurfaceGame): string[] {
   return facts
 }
 
-function counterTapeFrom(
+function tapeFactsFromGame(
   game: SurfaceGame,
   aisle: BoxbusterAisle,
-): CounterTape {
+): TapeFacts {
   const locations = game.launchLocations ?? []
   return {
     id: game.id,
@@ -221,7 +219,6 @@ function counterTapeFrom(
       ? {}
       : { coverArtUrl: game.coverArtUrl }),
     aisle,
-    verb: game.resumable === true ? "Resume" : "Play",
     facts: factsFor(game),
     launch:
       locations.length === 0
@@ -234,19 +231,19 @@ function counterTapeFrom(
 }
 
 /** Every tape, in store order. Empty unless the catalog is ready. */
-export function counterTapesFrom(
+export function tapeFactsFrom(
   model: SurfaceModel,
   now: number,
-): readonly CounterTape[] {
+): readonly TapeFacts[] {
   if (model.catalog._tag !== "Ready") return []
   const placed = placedFrom(model.catalog.games, now)
   return AISLES.flatMap(aisle =>
-    placed[aisle].map(game => counterTapeFrom(game, aisle)),
+    placed[aisle].map(game => tapeFactsFromGame(game, aisle)),
   )
 }
 
 /** Where a launch stands, in Korri's own words. */
-export type CounterStatus =
+export type TvStatus =
   | { readonly _tag: "Idle" }
   | {
       readonly _tag: "Working"
@@ -264,7 +261,7 @@ export type CounterStatus =
       readonly title?: string
     }
 
-export function counterStatusFrom(model: SurfaceModel): CounterStatus {
+export function tvStatusFrom(model: SurfaceModel): TvStatus {
   const status: SurfaceStatus = model.status
   switch (status._tag) {
     case "Browsing":

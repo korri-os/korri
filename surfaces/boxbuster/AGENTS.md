@@ -15,18 +15,23 @@
 > Staff Picks, most played first; never played → Classics, catalog order.
 > `boxbuster-store-view.ts` owns the rule; `map.ts` only lays it out.
 >
-> **The counter** (`BoxbusterCounter*.tsx`) is the "never the only way in"
-> rule below, built: a DOM layer with readable type and no dither, drawn from
-> the same placement as the store, so its index lists every tape in store
-> order under its aisle. Every decision happens there: confirm on a tape picks
-> it up, confirm again plays it (asking where when Korri offers launch
-> locations), Back or "Put it back" puts it down, and a launch problem takes
-> focus with Try again. The fast path is a contract in `boxbuster-hand.ts`:
-> when a tape can be resumed, the store opens with it in your hand, so one
-> confirm resumes. `boxbuster-layout.ts` docks the counter beside or below the
-> store from the measured container; without WebGL, or with no readable room
-> for the store, the counter is the whole surface. The camera does not follow
-> the counter yet: the in-store focus model is undecided.
+> **To play, you carry the tape to the TV** (decided 2026-10-02). There is no
+> play menu: a launch panel beside the store was built and rejected, because
+> it makes the store decoration. You walk between fixed spots
+> (`boxbuster-spots.ts`): the door over the return cart, the lobby, each
+> room, each stretch of shelf, and the viewing room. The camera holds still at
+> a spot and cuts between spots, so focus targets pinned over the 3D view
+> (`boxbuster-targets.ts`, `BoxbusterTargets.tsx`) stay put and the host's
+> geometric focus works. Confirm on a tape picks it up; Options turns it over;
+> Back puts it back. In the viewing room, confirm on the deck puts the tape
+> in, and that is the only `launchGame` call. When Korri offers several places
+> to play, there is one signed deck per place. Korri's launch status is
+> printed on the TV. The fast path is a contract in `boxbuster-visit.ts`: a
+> resumable tape opens in your hand in the viewing room, so one confirm puts
+> it in. Words are crisp DOM type over the world, never drawn into the
+> framebuffer. Without WebGL there is no store, so the door says Boxbuster
+> cannot open on this device. The "fast index" in the rule below is not
+> built.
 
 `boxbuster` is the PS1-era 3D video-store browse surface (`@korri:boxbuster`). It is an
 attempt to make a game launcher that feels like **somewhere you go**, not **something you
