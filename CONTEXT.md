@@ -37,6 +37,14 @@ _Avoid_: login, account transfer, sign in
 The one exact game launch a device holds as active. Every session control names it and is refused for any other launch.
 _Avoid_: current game, running process
 
+**Controller seat**:
+A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game.
+_Avoid_: physical controller, game player
+
+**Seat reservation**:
+A controller's claim to its seat during a live session, including while it is disconnected or the person leaves the session.
+_Avoid_: connected controller
+
 **Leave**:
 Moving away from a live session without ending it. The session is frozen and Korri owns input until the user returns.
 _Avoid_: pause, minimise, background

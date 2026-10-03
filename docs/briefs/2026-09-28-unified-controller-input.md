@@ -8,6 +8,8 @@ Current parallel ownership: the receiver worker owns pool/receiver and the extra
 
 ## Approved behavior
 
+For game-visible seats, SDL behavior, and application assignment limits, see [Controller seat normalization](2026-10-03-controller-seat-normalization.md).
+
 The user approved native evdev input, authenticated WebSocket delivery through local korrid, and a persistent pool of `n` virtual gamepads. The default is four. Physical and remote controllers share that pool. Each connected controller can navigate the active portal.
 
 Inactive portal input does nothing. Access revocation is not required. Do not retain gameplay input for later portal delivery. Preserve the neutral-before-rearm guard and host-owned system shortcuts.

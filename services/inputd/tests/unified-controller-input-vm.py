@@ -5,6 +5,7 @@ The test supplies canonical coordinator/remote wire packets at their production
 socket boundaries. All device operations are confined to this named NixOS VM.
 """
 
+import ctypes
 import fcntl
 import hashlib
 import json
@@ -38,6 +39,85 @@ BUTTONS = {0x10: 0x13B, 0x20: 0x13A, 0x40: 0x13D, 0x80: 0x13E,
            0x100: 0x136, 0x200: 0x137, 0x400: 0x13C, 0x1000: 0x130,
            0x2000: 0x131, 0x4000: 0x133, 0x8000: 0x134}
 AXES = {0, 1, 2, 3, 4, 5, 16, 17}
+# SDL2 GameController / SDL3 Gamepad button enum order, using the existing
+# GamepadState/Sunshine mask. This tests semantic APIs, not kernel key ordering.
+SDL_BUTTON_MASKS = [0x1000, 0x2000, 0x4000, 0x8000, 0x20, 0x400, 0x10,
+                    0x40, 0x80, 0x100, 0x200, 0x1, 0x2, 0x4, 0x8]
+
+
+class SDLSeats:
+    """A real game's open gamepad handles, retained across source transitions."""
+
+    def __init__(self, version):
+        assert version in (2, 3)
+        self.version = version
+        self.library = ctypes.CDLL(os.environ[f"KORRI_SEAT_SDL{version}_LIBRARY"])
+        self.controllers = {}
+        pointer = ctypes.c_void_p
+        integer = ctypes.c_int
+        identifier = integer if version == 2 else ctypes.c_uint32
+        boolean = integer if version == 2 else ctypes.c_bool
+
+        def bind(names, arguments, result):
+            function = getattr(self.library, names[version - 2])
+            function.argtypes = arguments
+            function.restype = result
+            return function
+
+        self.error = bind(("SDL_GetError", "SDL_GetError"), [], ctypes.c_char_p)
+        hint = bind(("SDL_SetHint", "SDL_SetHint"), [ctypes.c_char_p, ctypes.c_char_p], boolean)
+        assert hint(b"SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", b"1")
+        self.quit = bind(("SDL_Quit", "SDL_Quit"), [], None)
+        initialize = bind(("SDL_Init", "SDL_Init"), [ctypes.c_uint32], boolean)
+        result = initialize(0x2000)  # SDL_INIT_GAMECONTROLLER / SDL_INIT_GAMEPAD.
+        assert (result == 0 if version == 2 else result), self.error()
+        self.pump = bind(("SDL_PumpEvents", "SDL_PumpEvents"), [], None)
+        self.recognized = bind(("SDL_IsGameController", "SDL_IsGamepad"), [identifier], boolean)
+        self.path = bind(("SDL_JoystickPathForIndex", "SDL_GetJoystickPathForID"), [identifier], ctypes.c_char_p)
+        self.open = bind(("SDL_GameControllerOpen", "SDL_OpenGamepad"), [identifier], pointer)
+        self.close = bind(("SDL_GameControllerClose", "SDL_CloseGamepad"), [pointer], None)
+        self.player = bind(("SDL_GameControllerGetPlayerIndex", "SDL_GetGamepadPlayerIndex"), [pointer], integer)
+        self.button = bind(("SDL_GameControllerGetButton", "SDL_GetGamepadButton"), [pointer, integer], ctypes.c_uint8 if version == 2 else ctypes.c_bool)
+        self.axis = bind(("SDL_GameControllerGetAxis", "SDL_GetGamepadAxis"), [pointer, integer], ctypes.c_int16)
+        if version == 2:
+            self.count = bind(("SDL_NumJoysticks", ""), [], integer)
+            self.instance = bind(("SDL_JoystickGetDeviceInstanceID", ""), [integer], integer)
+        else:
+            self.ids = bind(("", "SDL_GetJoysticks"), [ctypes.POINTER(integer)], ctypes.POINTER(ctypes.c_uint32))
+            self.free = bind(("", "SDL_free"), [pointer], None)
+
+    def sample(self):
+        self.pump()
+        if self.version == 2:
+            devices = [(index, self.instance(index)) for index in range(self.count())]
+        else:
+            count = ctypes.c_int()
+            identifiers = self.ids(ctypes.byref(count))
+            try:
+                devices = [(identifiers[index], identifiers[index]) for index in range(count.value)]
+            finally:
+                self.free(identifiers)
+        records = []
+        for index, instance in devices:
+            assert self.recognized(index), (self.version, index, self.error())
+            if instance not in self.controllers:
+                controller = self.open(index)
+                assert controller, self.error()
+                self.controllers[instance] = controller
+            controller = self.controllers[instance]
+            path = self.path(index)
+            assert path, self.error()
+            records.append(dict(path=path.decode(), instanceId=instance,
+                                playerIndex=self.player(controller),
+                                buttons=[int(self.button(controller, button)) for button in range(15)],
+                                axes=[self.axis(controller, axis) for axis in range(6)]))
+        return records
+
+    def stop(self):
+        for controller in self.controllers.values():
+            self.close(controller)
+        self.controllers.clear()
+        self.quit()
 
 
 def agent_main():
@@ -48,6 +128,7 @@ def agent_main():
     assert os.getgid() == os.getegid() == gid
     assert sorted(os.getgroups()) == sorted(groups)
     sockets = {}
+    sdl = None
     for line in sys.stdin:
         command = json.loads(line)
         try:
@@ -79,12 +160,20 @@ def agent_main():
             elif operation == "read-node":
                 fd = os.open(command["path"], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
                 os.close(fd)
+            elif operation == "sdl-open":
+                assert sdl is None
+                sdl = SDLSeats(command["version"])
+            elif operation == "sdl-sample":
+                assert sdl is not None
+                result = sdl.sample()
             else:
                 raise AssertionError("unknown helper operation")
             print(json.dumps({"ok": result}), flush=True)
         except OSError as error:
             # Never echo a command/packet/claim: it may contain a mirror token.
             print(json.dumps({"errno": error.errno}), flush=True)
+    if sdl is not None:
+        sdl.stop()
     for connection in sockets.values():
         connection.close()
 
@@ -395,6 +484,103 @@ def proof():
         first = driver.hello()
         assert first["count"] == 4 and first["session"] is None and first["recoveryRequired"]
         driver.request("beginSession", failure="notReady", launchId=LAUNCH)
+
+        # Four actual SDL gamepads exist with zero attached sources. Keep the
+        # same unprivileged readers and handles through source loss and pause.
+        driver.request("applyCount", count=4)
+        kernel = seats(4)
+        sdl_readers = []
+        for version in (2, 3):
+            helper = agent(1000, 1000)
+            driver.heartbeat()
+            helper.ok("sdl-open", version=version)
+            driver.wait(lambda: len(helper.ok("sdl-sample")) == 4)
+            baseline = helper.ok("sdl-sample")
+            assert [record["path"] for record in baseline] == [kernel.fingerprints[slot][0] for slot in range(1, 5)], baseline
+            assert [record["playerIndex"] for record in baseline] == [0, 1, 2, 3], baseline
+            assert all(not any(record["buttons"] + record["axes"]) for record in baseline), baseline
+            sdl_readers.append((version, helper, baseline))
+
+        def sdl_expect(active_slots=(), state=None):
+            state = pressed if state is None else state
+            expected_axes = [state[axis] for axis in ("left_stick_x", "left_stick_y", "right_stick_x", "right_stick_y")]
+            expected_axes += [state[axis] * 32767 // 255 for axis in ("left_trigger", "right_trigger")]
+            for version, helper, baseline in sdl_readers:
+                driver.heartbeat()
+                records = helper.ok("sdl-sample")
+                assert len(records) == 4, (version, records)
+                for slot, (before, record) in enumerate(zip(baseline, records), 1):
+                    assert {key: record[key] for key in ("path", "instanceId", "playerIndex")} == {key: before[key] for key in ("path", "instanceId", "playerIndex")}, (version, slot, record)
+                    expected = [int(bool(state["buttons"] & mask)) if slot in active_slots else 0 for mask in SDL_BUTTON_MASKS]
+                    assert record["buttons"] == expected, (version, slot, record)
+                    assert record["axes"] == (expected_axes if slot in active_slots else [0] * 6), (version, slot, record)
+            kernel.stable()
+
+        first_source, second_source = "sdl-first-source", "sdl-second-source"
+        pressed = dict(NEUTRAL, buttons=0x1000 | 0x10 | 0x8)
+        driver.request("beginSession", launchId=LAUNCH)
+        driver.request("route", launchId=LAUNCH)
+        assert driver.physical_connect(first_source) == 1
+        driver.physical_state(first_source, pressed)
+        sdl_expect((1,))
+        for mask in SDL_BUTTON_MASKS:
+            sample = dict(NEUTRAL, buttons=mask)
+            driver.physical_state(first_source, sample)
+            sdl_expect((1,), state=sample)
+        for sample in (
+            dict(NEUTRAL, left_stick_x=32767, left_stick_y=-32768,
+                 right_stick_x=-32768, right_stick_y=32767,
+                 left_trigger=255, right_trigger=0),
+            dict(NEUTRAL, left_stick_x=-32768, left_stick_y=32767,
+                 right_stick_x=32767, right_stick_y=-32768,
+                 left_trigger=0, right_trigger=255),
+        ):
+            driver.physical_state(first_source, sample)
+            sdl_expect((1,), state=sample)
+        driver.physical_disconnect(first_source)
+        sdl_expect()
+        assert driver.physical_connect(second_source) == 2
+        driver.physical_state(second_source, pressed)
+        sdl_expect((2,))
+        assert driver.physical_connect(first_source) == 1
+        driver.physical_state(first_source, pressed)
+        sdl_expect((1, 2))
+        driver.request("route", launchId=None)  # Pause keeps reservations/devices.
+        sdl_expect()
+        driver.request("route", launchId=LAUNCH)
+        driver.physical_state(first_source, NEUTRAL)
+        driver.physical_state(second_source, NEUTRAL)
+        driver.physical_state(first_source, pressed)
+        driver.physical_state(second_source, pressed)
+        sdl_expect((1, 2))
+        driver.physical_disconnect(first_source)
+        driver.physical_disconnect(second_source)
+        driver.request("endSession", launchId=LAUNCH)
+        sdl_expect()
+        print("SDL2 and SDL3: four neutral gamepads before attachment; ordered indices, all 15 buttons and six axes, routed P1/P2 input, reserved reconnect and pause, unchanged handles at session end", flush=True)
+        for _, helper, _ in sdl_readers:
+            helper.stop()
+            agents.remove(helper)
+        # Games using the Linux joystick API must reach the same four seats,
+        # without membership in the broad physical-input group.
+        joysticks = {}
+        for path in Path("/sys/class/input").glob("js*"):
+            name = (path / "device/name").read_text().strip()
+            match = re.fullmatch(r"Korri Seat P([1-9][0-9]*)", name)
+            if match:
+                slot = int(match[1])
+                assert slot not in joysticks
+                joysticks[slot] = Path("/dev/input") / path.name
+        assert set(joysticks) == {1, 2, 3, 4}, joysticks
+        for slot, node in joysticks.items():
+            metadata = node.stat()
+            result = reader.call("read-node", path=str(node))
+            assert result == {"ok": None}, ("gameplay user cannot open joystick seat", slot, str(node), result, metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode))
+            denied = unrelated.call("read-node", path=str(node))
+            assert denied == {"errno": 13}, ("unrelated user can open joystick seat", slot, str(node), denied, metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode))
+            assert (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) == (0, 1000, 0o660)
+        print("Linux joystick API: gameplay user can open all four seat nodes without physical-input group access; unrelated user denied", flush=True)
+        kernel.close()
         assert driver.request("applyCount", count=6)["count"] == 6
         kernel = seats(6)
         kernel.neutral()

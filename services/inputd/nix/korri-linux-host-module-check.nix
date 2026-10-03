@@ -229,6 +229,7 @@ pkgs.runCommand "korri-linux-host-module-check"
     rules = open(sys.argv[1]).read().splitlines()
     assert len(rules) == 255
     for slot, rule in enumerate(rules, 1):
+        assert 'KERNEL=="event*|js*"' in rule
         assert f'ATTRS{{name}}=="Korri Seat P{slot}"' in rule
         assert f'ATTRS{{phys}}=="korri/input-seat/p{slot}"' in rule
         for key, value in [('bustype', '0003'), ('vendor', '045e'), ('product', '028e'), ('version', '0001')]:

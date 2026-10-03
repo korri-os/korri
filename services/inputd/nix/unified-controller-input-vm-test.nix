@@ -32,7 +32,10 @@ pkgs.testers.runNixOSTest {
       cores = 2;
       qemu.options = [ "-smbios type=1,product=${proofName}" ];
     };
-    boot.kernelModules = [ "uinput" ];
+    boot.kernelModules = [
+      "uinput"
+      "joydev"
+    ];
     users.groups = {
       korrid.gid = 976;
       sunshine.gid = 980;
@@ -114,7 +117,8 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl is-active --quiet korri-input-seat-receiver.service")
     machine.succeed("systemctl start korri-input-seat-receiver.service")
     machine.wait_for_unit("korri-input-seat-receiver.service")
-    print(machine.succeed("${python}/bin/python3 ${proof}", timeout=180))
+    # Test the real gamepad APIs as the gameplay UID, without guest compilation.
+    print(machine.succeed("KORRI_SEAT_SDL2_LIBRARY=${pkgs.SDL2}/lib/libSDL2.so KORRI_SEAT_SDL3_LIBRARY=${pkgs.sdl3}/lib/libSDL3.so ${python}/bin/python3 ${proof}", timeout=180))
     machine.succeed("systemctl stop korri-input-seat-receiver.service")
     print(machine.succeed("${python}/bin/python3 ${proof} --assert-absent"))
   '';
