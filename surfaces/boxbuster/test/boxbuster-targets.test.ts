@@ -33,7 +33,6 @@ const tapes: TapeFacts[] = placed.map(tape => ({
   id: tape.game.id,
   title: tape.game.title,
   aisle: "classics",
-  facts: [],
   launch:
     tape.game.id === "return-1"
       ? {
@@ -72,7 +71,7 @@ describe("targets", () => {
   test("with a tape in hand, shelves offer no tapes, only the ways on", () => {
     const targets = at({
       ...empty,
-      hand: { _tag: "Holding", tapeId: "return-0", face: "front" },
+      hand: { _tag: "Holding", tapeId: "return-0", face: "front", pose: "carrying" },
     })
     expect(targets.some(t => t._tag === "Tape")).toBe(false)
     expect(targets.some(t => t._tag === "Exit")).toBe(true)
@@ -82,7 +81,7 @@ describe("targets", () => {
     const targets = at({
       ...empty,
       spot: spots.viewing,
-      hand: { _tag: "Holding", tapeId: "new-0", face: "front" },
+      hand: { _tag: "Holding", tapeId: "new-0", face: "front", pose: "carrying" },
     })
     expect(
       targets.flatMap(t => (t._tag === "Deck" ? [t.label] : [])),
@@ -93,13 +92,34 @@ describe("targets", () => {
     const decks = at({
       ...empty,
       spot: spots.viewing,
-      hand: { _tag: "Holding", tapeId: "return-1", face: "front" },
+      hand: { _tag: "Holding", tapeId: "return-1", face: "front", pose: "carrying" },
     }).filter(t => t._tag === "Deck")
     expect(decks.map(t => [t.label, t.locationId])).toEqual([
       ["Put return 1 in the This device deck", "copy-local"],
       ["Put return 1 in the zao deck", "copy-zao"],
     ])
     expect(decks[0]!.x).toBeLessThan(decks[1]!.x)
+  })
+
+  test("after a failed launch, the deck is pressed again to retry", () => {
+    const targets = targetsFor({
+      spots,
+      visit: { ...empty, spot: spots.viewing, deck: "new-0" },
+      tapes,
+      placed,
+      width: 640,
+      height: 480,
+      retry: true,
+    })
+    const decks = targets.filter(t => t._tag !== "Exit" && t._tag !== "Tape")
+    expect(decks.map(t => t._tag)).toEqual(["Retry"])
+    expect(landingFor(targets, { ...empty, spot: spots.viewing })).toBe("retry")
+  })
+
+  test("every way on is a mark on the floor", () => {
+    for (const spot of spots.byId.values()) {
+      for (const exit of spot.exits) expect(exit.anchor.y).toBeLessThan(0.1)
+    }
   })
 
   test("a loaded deck with empty hands can be ejected", () => {
@@ -135,7 +155,7 @@ describe("where focus lands", () => {
     const visit: Visit = {
       ...empty,
       spot: spots.viewing,
-      hand: { _tag: "Holding", tapeId: "new-0", face: "front" },
+      hand: { _tag: "Holding", tapeId: "new-0", face: "front", pose: "carrying" },
     }
     const targets = at(visit)
     expect(targets.find(t => t.key === landingFor(targets, visit))?._tag).toBe(

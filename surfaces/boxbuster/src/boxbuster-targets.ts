@@ -1,17 +1,18 @@
 /**
- * The focusable points over the store, for where you stand and what you hold.
+ * The focus points over the store, for where you stand and what you hold.
  *
  * The host moves focus between real buttons by their screen position. The
- * camera holds still at a spot, so each button can sit, fixed, over the thing
- * it stands for: a tape, a way on, a deck. Pure: positions come from the same
- * camera and the same tape placement the scene draws with.
+ * camera holds still at a spot, so each button can sit, fixed and unseen,
+ * over the thing it stands for: a tape, a place on the floor to step to, a
+ * deck. Nothing of a button is drawn; the scene shows what has focus. Pure:
+ * positions come from the same camera and tape placement the scene draws.
  */
 import * as THREE from "three"
 import { poseCamera, projectPoint } from "./boxbuster-camera"
 import type { SpotExit, StoreSpots } from "./boxbuster-spots"
 import type { TapeFacts } from "./boxbuster-store-view"
 import type { Visit } from "./boxbuster-visit"
-import { DECK, decksFor, TV_SCREEN } from "./map"
+import { DECK, decksFor } from "./map"
 import type { PlacedTape, Vec3 } from "./tape-placement"
 
 interface At {
@@ -19,9 +20,6 @@ interface At {
   readonly key: string
   readonly x: number
   readonly y: number
-  /** Which edge of a sign sits on the point: near a side of the container,
-   * the sign grows inward, so it is never cut off. */
-  readonly align: "start" | "center" | "end"
 }
 
 export type Target =
@@ -30,9 +28,13 @@ export type Target =
   | (At & {
       readonly _tag: "Deck"
       readonly label: string
+      /** Which deck, left to right, when there are several. */
+      readonly index: number
       readonly locationId?: string
     })
   | (At & { readonly _tag: "Eject"; readonly label: string })
+  /** Pressing play again on the deck after a launch failed. */
+  | (At & { readonly _tag: "Retry"; readonly label: string })
 
 /** How far in from the container's edges a pulled-in target sits. */
 const MARGIN = 28
@@ -46,6 +48,7 @@ export function targetsFor({
   placed,
   width,
   height,
+  retry = false,
 }: {
   spots: StoreSpots
   visit: Visit
@@ -53,18 +56,22 @@ export function targetsFor({
   placed: readonly PlacedTape[]
   width: number
   height: number
+  /** A launch failed and Korri can try it again. */
+  retry?: boolean
 }): Target[] {
   const spot = spots.byId.get(visit.spot)
   if (spot === undefined || width <= 0 || height <= 0) return []
   const camera = new THREE.PerspectiveCamera()
   poseCamera(camera, spot, width / height)
-  const project = (point: Vec3) =>
-    projectPoint(camera, point, width, height, MARGIN)
+  const project = (point: Vec3) => {
+    const { x, y } = projectPoint(camera, point, width, height, MARGIN)
+    return { x, y }
+  }
   const titleOf = (id: string) =>
     tapes.find(tape => tape.id === id)?.title ?? id
 
   const targets: Target[] = []
-  const place = (target: Unplaced) =>
+  const place = (target: Target) =>
     targets.push(spread(target, targets, width, height))
 
   if (visit.hand._tag === "Empty") {
@@ -79,19 +86,22 @@ export function targetsFor({
   if (spot.id === spots.viewing) {
     const deckAt = (x: number) =>
       project({ x, y: DECK.topY, z: DECK.z + DECK.depth / 2 })
-    if (visit.hand._tag === "Holding") {
+    if (retry) {
+      place({ _tag: "Retry", key: "retry", label: "Try again", ...deckAt(0) })
+    } else if (visit.hand._tag === "Holding") {
       const heldId = visit.hand.tapeId
       const title = titleOf(heldId)
       const launch = tapes.find(tape => tape.id === heldId)?.launch
       if (launch?._tag === "Choose") {
         const decks = decksFor(launch.locations.length)
-        launch.locations.forEach((location, i) => {
+        launch.locations.forEach((location, index) => {
           place({
             _tag: "Deck",
             key: `deck:${location.id}`,
             label: `Put ${title} in the ${location.label} deck`,
+            index,
             locationId: location.id,
-            ...deckAt(decks[i]?.x ?? 0),
+            ...deckAt(decks[index]?.x ?? 0),
           })
         })
       } else {
@@ -99,6 +109,7 @@ export function targetsFor({
           _tag: "Deck",
           key: "deck",
           label: `Put ${title} in the deck`,
+          index: 0,
           ...deckAt(0),
         })
       }
@@ -123,15 +134,8 @@ export function targetsFor({
  * land on one point. Move a later one up (or, at the top, across) until it
  * is a fingertip from every earlier one, staying inside the container.
  */
-/** A target before `spread` has settled where it sits. */
-type Unplaced = Target extends infer T
-  ? T extends Target
-    ? Omit<T, "align">
-    : never
-  : never
-
 function spread(
-  target: Unplaced,
+  target: Target,
   placed: readonly Target[],
   width: number,
   height: number,
@@ -146,77 +150,26 @@ function spread(
       x = x + MIN_GAP <= width - MARGIN ? x + MIN_GAP : MARGIN
     }
   }
-  const clampedX = Math.min(width - MARGIN, Math.max(MARGIN, x))
   return {
     ...target,
-    x: clampedX,
+    x: Math.min(width - MARGIN, Math.max(MARGIN, x)),
     y: Math.min(height - MARGIN, Math.max(MARGIN, y)),
-    align:
-      clampedX < width / 3 ? "start" : clampedX > (width * 2) / 3 ? "end" : "center",
-  }
-}
-
-export interface ScreenRect {
-  readonly left: number
-  readonly top: number
-  readonly width: number
-  readonly height: number
-}
-
-/**
- * The TV screen's rectangle on screen, when you stand in the viewing room.
- * Korri's words about a launch are printed there, in readable type, over
- * the low-res picture.
- */
-export function tvFrameFor({
-  spots,
-  visit,
-  width,
-  height,
-}: {
-  spots: StoreSpots
-  visit: Visit
-  width: number
-  height: number
-}): ScreenRect | undefined {
-  const spot = spots.byId.get(visit.spot)
-  if (spot === undefined || spot.id !== spots.viewing || height <= 0) {
-    return undefined
-  }
-  const camera = new THREE.PerspectiveCamera()
-  poseCamera(camera, spot, width / height)
-  const corner = (dx: number, dy: number) =>
-    projectPoint(
-      camera,
-      {
-        x: (dx * TV_SCREEN.w) / 2,
-        y: TV_SCREEN.y + (dy * TV_SCREEN.h) / 2,
-        z: TV_SCREEN.z,
-      },
-      width,
-      height,
-      0,
-    )
-  const topLeft = corner(-1, 1)
-  const bottomRight = corner(1, -1)
-  return {
-    left: topLeft.x,
-    top: topLeft.y,
-    width: bottomRight.x - topLeft.x,
-    height: bottomRight.y - topLeft.y,
   }
 }
 
 /**
  * Where focus lands when you arrive, or when the focused target goes away:
- * on the deck when you bring a tape to the TV; on the tape nearest the way
- * you came, so a step along a shelf continues where you were looking; on
- * the way back when there is nothing to pick up; otherwise on the first tape.
+ * on the retry when a launch failed; on the deck when you bring a tape to
+ * the TV; on the tape nearest the way you came, so a step along a shelf
+ * continues where you were looking; on the way back when there is nothing to
+ * pick up; otherwise on the first tape.
  */
 export function landingFor(
   targets: readonly Target[],
   visit: Visit,
 ): string | undefined {
+  const retry = targets.find(t => t._tag === "Retry")
+  if (retry !== undefined) return retry.key
   const deck = targets.find(t => t._tag === "Deck" || t._tag === "Eject")
   if (deck !== undefined && visit.hand._tag === "Holding") return deck.key
   const back = targets.find(

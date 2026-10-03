@@ -17,6 +17,9 @@ export type Hand =
       readonly tapeId: string
       /** Which side of the box faces you. */
       readonly face: "front" | "back"
+      /** Held up close to read, or lowered to carry. There is no label to
+       * read a tape by: you read the box. */
+      readonly pose: "reading" | "carrying"
     }
 
 export interface Visit {
@@ -79,7 +82,12 @@ export function visitAfterStore(
       ? {
           opened: true,
           spot: spots.viewing,
-          hand: { _tag: "Holding", tapeId: first.id, face: "front" },
+          hand: {
+            _tag: "Holding",
+            tapeId: first.id,
+            face: "front",
+            pose: "carrying",
+          },
         }
       : { opened: true, spot: spots.door, hand: EMPTY }
   }
@@ -97,6 +105,17 @@ export function visitAfterStore(
   }
 }
 
+function reading(tapeId: string): Hand {
+  return { _tag: "Holding", tapeId, face: "front", pose: "reading" }
+}
+
+/** The tape in the deck comes out into an empty hand, close enough to read. */
+function ejected(visit: Visit): Visit {
+  if (visit.deck === undefined || visit.hand._tag === "Holding") return visit
+  const { deck, ...rest } = visit
+  return { ...rest, hand: reading(deck) }
+}
+
 export function step(
   visit: Visit,
   event: VisitEvent,
@@ -104,7 +123,17 @@ export function step(
 ): Stepped {
   switch (event._tag) {
     case "Walk":
-      return { visit: { ...visit, spot: event.to, cameFrom: visit.spot } }
+      return {
+        visit: {
+          ...visit,
+          spot: event.to,
+          cameFrom: visit.spot,
+          hand:
+            visit.hand._tag === "Holding"
+              ? { ...visit.hand, pose: "carrying" }
+              : visit.hand,
+        },
+      }
     case "ProblemShown":
       return visit.spot === spots.viewing
         ? { visit }
@@ -116,7 +145,7 @@ export function step(
         visit: {
           ...rest,
           ...(deck === undefined || deck === event.tapeId ? {} : { deck }),
-          hand: { _tag: "Holding", tapeId: event.tapeId, face: "front" },
+          hand: reading(event.tapeId),
         },
       }
     }
@@ -128,6 +157,7 @@ export function step(
               hand: {
                 ...visit.hand,
                 face: visit.hand.face === "front" ? "back" : "front",
+                pose: "reading",
               },
             },
           }
@@ -143,17 +173,13 @@ export function step(
             : { _tag: "Launch", tapeId, locationId: event.locationId },
       }
     }
-    case "Eject": {
-      if (visit.deck === undefined || visit.hand._tag === "Holding") {
-        return { visit }
-      }
-      const { deck, ...rest } = visit
-      return {
-        visit: { ...rest, hand: { _tag: "Holding", tapeId: deck, face: "front" } },
-      }
-    }
+    case "Eject":
+      return { visit: ejected(visit) }
     case "Back":
-      if (event.problem) return { visit, command: { _tag: "Dismiss" } }
+      // Back on a problem is the eject button: the failed tape comes out.
+      if (event.problem) {
+        return { visit: ejected(visit), command: { _tag: "Dismiss" } }
+      }
       return visit.hand._tag === "Holding"
         ? { visit: { ...visit, hand: EMPTY } }
         : { visit }

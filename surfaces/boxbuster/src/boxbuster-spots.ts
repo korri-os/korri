@@ -19,7 +19,7 @@ import {
   type StoreMap,
   VIEWING_ROOM,
 } from "./map"
-import { type PlacedTape, SHELF_FACE_OFFSET, type Vec3 } from "./tape-placement"
+import type { PlacedTape, Vec3 } from "./tape-placement"
 
 export type SpotId = string
 
@@ -60,8 +60,16 @@ export const DOOR_SPOT: SpotId = "door"
 export const VIEWING_SPOT: SpotId = "viewing"
 
 export const EYE_HEIGHT = 1.7
+/** Just above the carpet, so a step mark never fights the floor. */
+export const FLOOR_MARK = 0.02
+/** How far out into the aisle the step mark in front of a shelf sits. */
+const AISLE_MARK = 1.0
 /** How far from a gondola's spine you stand to read its shelf face. */
-export const SHELF_STANDOFF = 2.4
+/** Far enough back that the aisle floor in front of the shelf, where the
+ * ways on are worn into the carpet, is in view below it. */
+export const SHELF_STANDOFF = 3.0
+/** A slight downward look at a shelf, for the same reason. */
+const SHELF_PITCH = -0.15
 /** The longest stretch of shelf one spot shows. A wider-than-80° view at
  * the standoff keeps all of it on screen at any aspect (boxbuster-camera). */
 export const SEGMENT_LENGTH = 2.8
@@ -163,9 +171,11 @@ export function spotsFrom(
   const viewing = add({
     id: VIEWING_SPOT,
     title: "Viewing room",
-    eye: { x: 0, y: EYE_HEIGHT, z: DECK.z + 3.4 },
+    // Close enough that the TV fills about half the view, so what Korri
+    // prints on it can be read; the deck is just below, within reach.
+    eye: { x: 0, y: EYE_HEIGHT, z: DECK.z + 2.4 },
     yaw: 0,
-    pitch: -0.15,
+    pitch: -0.18,
   })
 
   const roomSpot: Readonly<Record<string, Mutable>> = {
@@ -173,13 +183,15 @@ export function spotsFrom(
     staff: staffRoom,
     classic: classicRoom,
   }
+  // Every way on is a place on the floor: the worn carpet where you would
+  // step. The scene draws it there, and its focus target sits over it.
   const archway = {
-    new: { x: 0, y: 1.5, z: HUB.maxZ },
-    staff: { x: HUB.minX, y: 1.5, z: HUB_ZC },
-    classic: { x: HUB.maxX, y: 1.5, z: HUB_ZC },
-    viewing: { x: 0, y: 1.5, z: VIEWING_ROOM.zNear },
+    new: { x: 0, y: FLOOR_MARK, z: HUB.maxZ },
+    staff: { x: HUB.minX, y: FLOOR_MARK, z: HUB_ZC },
+    classic: { x: HUB.maxX, y: FLOOR_MARK, z: HUB_ZC },
+    viewing: { x: 0, y: FLOOR_MARK, z: VIEWING_ROOM.zNear },
   }
-  const at = (spot: Mutable): Vec3 => ({ ...spot.eye, y: 1.2 })
+  const at = (spot: Mutable): Vec3 => ({ ...spot.eye, y: FLOOR_MARK })
 
   link(door, hub, "Lobby", archway.new)
   link(hub, door, ROOM_NAMES.new ?? "New releases", archway.new)
@@ -217,7 +229,7 @@ export function spotsFrom(
           title: `${ROOM_NAMES[g.roomId] ?? g.roomId} shelf`,
           eye: { x: g.x + side * SHELF_STANDOFF, y: EYE_HEIGHT, z: z0 + length / 2 },
           yaw: side === 1 ? LOOK_WEST : LOOK_EAST,
-          pitch: 0,
+          pitch: SHELF_PITCH,
         })
         spot.tapeIds.push(...inSegment.map(tape => tape.game.id))
         segments.push({
@@ -236,9 +248,18 @@ export function spotsFrom(
 
   const faceOf = (seg: Segment) =>
     segments.filter(other => other.gi === seg.gi && other.side === seg.side)
-  const faceX = (seg: Segment) => {
+  /** The aisle floor in front of a stretch of shelf. */
+  const aisleFloor = (seg: Segment, z: number): Vec3 => {
     const g = map.gondolas.find(gondola => gondola.gi === seg.gi)
-    return (g?.x ?? 0) + seg.side * SHELF_FACE_OFFSET
+    return { x: (g?.x ?? 0) + seg.side * AISLE_MARK, y: FLOOR_MARK, z }
+  }
+
+  /** The aisle floor just past the end of a shelf, at the end nearer `z`. */
+  const aisleEnd = (seg: Segment, z: number): Vec3 => {
+    const g = map.gondolas.find(gondola => gondola.gi === seg.gi)
+    const north = (g?.zc ?? 0) - (g?.half ?? 0) - 0.8
+    const south = (g?.zc ?? 0) + (g?.half ?? 0) + 0.8
+    return aisleFloor(seg, Math.abs(z - north) < Math.abs(z - south) ? north : south)
   }
 
   for (const seg of segments) {
@@ -248,9 +269,9 @@ export function spotsFrom(
     const next = face[seg.index + 1]
     const previous = face[seg.index - 1]
     if (next !== undefined)
-      link(seg.spot, next.spot, "Further along", { x: faceX(seg), y: 1.6, z: next.zc }, true)
+      link(seg.spot, next.spot, "Further along", aisleFloor(seg, next.zc), true)
     if (previous !== undefined)
-      link(seg.spot, previous.spot, "Back along", { x: faceX(seg), y: 1.6, z: previous.zc }, true)
+      link(seg.spot, previous.spot, "Back along", aisleFloor(seg, previous.zc), true)
     // across the aisle: the face of the next gondola, looking back this way
     const g = map.gondolas.find(gondola => gondola.gi === seg.gi)
     const across = segments
@@ -272,7 +293,14 @@ export function spotsFrom(
       })[0]
     if (across !== undefined) link(seg.spot, across.spot, "Turn around", at(across.spot))
     if (room !== undefined) {
-      link(seg.spot, room, room === door ? "Front of the store" : room.title, at(room))
+      // Marked at the end of your own aisle, not at the room's spot, which
+      // can lie behind the shelf where you would never see the mark.
+      link(
+        seg.spot,
+        room,
+        room === door ? "Front of the store" : room.title,
+        aisleEnd(seg, room.eye.z),
+      )
     }
   }
 
@@ -291,11 +319,12 @@ export function spotsFrom(
           Math.hypot(b.spot.eye.x - room.eye.x, b.spot.eye.z - room.eye.z),
       )[0]
       if (nearest === undefined) continue
-      link(room, nearest.spot, `Shelf with ${nearest.firstTitle}`, {
-        x: faceX(nearest),
-        y: 1.6,
-        z: nearest.zc,
-      })
+      link(
+        room,
+        nearest.spot,
+        `Shelf with ${nearest.firstTitle}`,
+        aisleFloor(nearest, nearest.zc),
+      )
     }
   }
 

@@ -167,6 +167,7 @@ describe("the store view", () => {
         title: "Wario Land 4",
         subtitle: "GBA · This device",
         coverArtUrl: "http://127.0.0.1/art/wario.png",
+        sticker: "RENTED 3 TIMES",
         atlasIndex: 0,
       },
     ])

@@ -81,30 +81,26 @@ describe("the tape facts", () => {
     ).toEqual([])
   })
 
-  test("state only the play facts Korri gave", () => {
-    const [often, once, never] = tapeFactsFrom(
+  test("a box's rental sticker states only the play count Korri gave", () => {
+    const view = storeViewFrom(
       ready([
-        {
-          id: "often",
-          title: "Often",
-          lastPlayedAt: NOW - 30 * DAY,
-          playCount: 12,
-          totalPlaytimeSeconds: 4 * 3600 + 20 * 60,
-        },
-        {
-          id: "once",
-          title: "Once",
-          lastPlayedAt: NOW - 20 * DAY,
-          playCount: 1,
-          totalPlaytimeSeconds: 45 * 60,
-        },
+        { ...played("often", 30, 12) },
+        { ...played("once", 20, 1) },
         { id: "never", title: "Never" },
       ]),
       NOW,
     )
-    expect(often?.facts).toEqual(["Played 12 times", "4 h 20 min in all"])
-    expect(once?.facts).toEqual(["Played once", "45 min in all"])
-    expect(never?.facts).toEqual([])
+    if (view._tag !== "Open") throw new Error("expected an open store")
+    const stickers = Object.fromEntries(
+      Object.values(view.map.roomGames)
+        .flat()
+        .map(game => [game.id, game.sticker]),
+    )
+    expect(stickers).toEqual({
+      often: "RENTED 12 TIMES",
+      once: "RENTED ONCE",
+      never: undefined,
+    })
   })
 
   test("launch where they are unless Korri offers a real choice", () => {
@@ -132,7 +128,7 @@ describe("the tape facts", () => {
     })
   })
 
-  test("carry the title, provenance line, and cover the store draws", () => {
+  test("carry only what the visit needs: name, aisle, where to play", () => {
     const [tape] = tapeFactsFrom(
       ready([
         {
@@ -140,14 +136,17 @@ describe("the tape facts", () => {
           title: "Wario Land 4",
           subtitle: "GBA · This device",
           coverArtUrl: "http://127.0.0.1/art/wario.png",
+          playCount: 2,
+          lastPlayedAt: NOW - DAY,
         },
       ]),
       NOW,
     )
-    expect(tape).toMatchObject({
+    expect(tape).toEqual({
+      id: "wario",
       title: "Wario Land 4",
-      subtitle: "GBA · This device",
-      coverArtUrl: "http://127.0.0.1/art/wario.png",
+      aisle: "newReleases",
+      launch: { _tag: "Here" },
     })
   })
 })

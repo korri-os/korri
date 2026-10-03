@@ -34,6 +34,8 @@ export interface StoreGame {
   readonly title: string
   readonly subtitle?: string
   readonly coverArtUrl?: string
+  /** The rental sticker on the back of the box ("RENTED 3 TIMES"). */
+  readonly sticker?: string
 }
 
 /** The cover atlas grid. Tapes past 64 reuse cells (`atlasIndex % 64`). */

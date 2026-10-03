@@ -2,8 +2,9 @@
  * Boxbuster's root, and the only component that reads the treaty.
  *
  * It turns Korri's model into the store (rebuilt only when a tape changes
- * place or a drawn fact changes), each tape's readable facts, and what the TV
- * says about a launch. It owns the visit (boxbuster-visit.ts): where you
+ * place or a drawn fact changes), what the visit needs to know about each
+ * tape, and what the TV says about a launch. Nothing is laid over the room:
+ * the room shows focus, the box carries its own words, the TV prints Korri's. It owns the visit (boxbuster-visit.ts): where you
  * stand, what you hold, what is in the deck. You play a game by carrying its
  * tape to the viewing room and putting it in the deck; that is the only call
  * to `launchGame`. Everything below this file speaks in tapes and rooms.
@@ -24,7 +25,7 @@ import {
   tapeFactsFrom,
   tvStatusFrom,
 } from "./boxbuster-store-view"
-import { landingFor, targetsFor, tvFrameFor } from "./boxbuster-targets"
+import { landingFor, targetsFor } from "./boxbuster-targets"
 import {
   closedVisit,
   step,
@@ -117,6 +118,9 @@ export function BoxbusterSurface({
     if (status._tag === "Problem") dispatchRef.current({ _tag: "ProblemShown" })
   }, [status._tag])
 
+  // Which unseen target has focus, so the room can show it.
+  const [focused, setFocused] = useState<string | undefined>(undefined)
+
   const surface = useRef<HTMLDivElement>(null)
   const size = useBoxbusterSize(surface)
   const drawable = useMemo(() => drawing.available(), [drawing])
@@ -137,14 +141,17 @@ export function BoxbusterSurface({
   }
 
   const spot = store.spots.byId.get(visit.spot)
-  const placement = {
+  const targets = targetsFor({
     spots: store.spots,
     visit,
+    tapes,
+    placed: store.placed,
     width: size.width,
     height: size.height,
-  }
-  const targets = targetsFor({ ...placement, tapes, placed: store.placed })
-  const heldId = visit.hand._tag === "Holding" ? visit.hand.tapeId : undefined
+    retry: status._tag === "Problem" && status.canRetry,
+  })
+  const hand = visit.hand
+  const heldId = hand._tag === "Holding" ? hand.tapeId : undefined
   const heldTape =
     heldId === undefined ? undefined : tapes.find(tape => tape.id === heldId)
   const inDeck = store.placed.find(tape => tape.game.id === visit.deck)?.game
@@ -162,8 +169,19 @@ export function BoxbusterSurface({
           map={store.map}
           placed={store.placed}
           spot={spot}
-          {...(visit.hand._tag === "Holding"
-            ? { held: { tapeId: visit.hand.tapeId, face: visit.hand.face } }
+          width={size.width}
+          height={size.height}
+          targets={targets}
+          {...(focused === undefined ? {} : { focused })}
+          tv={status}
+          {...(hand._tag === "Holding"
+            ? {
+                held: {
+                  tapeId: hand.tapeId,
+                  face: hand.face,
+                  pose: hand.pose,
+                },
+              }
             : {})}
           {...(inDeck === undefined ? {} : { inDeck })}
           {...(heldTape?.launch._tag === "Choose" &&
@@ -183,9 +201,7 @@ export function BoxbusterSurface({
           size.width > 0 ? "sized" : "",
         ].join("|")}
         tapes={tapes}
-        heldId={heldId}
-        tvFrame={tvFrameFor(placement)}
-        status={status}
+        onFocusChange={setFocused}
         onTape={tapeId => dispatch({ _tag: "PickUp", tapeId })}
         onExit={exit => dispatch({ _tag: "Walk", to: exit.to })}
         onDeck={locationId =>
@@ -197,7 +213,6 @@ export function BoxbusterSurface({
         }
         onEject={() => dispatch({ _tag: "Eject" })}
         onRetry={() => host.retry()}
-        onDismiss={() => host.dismiss()}
       />
     </div>
   )

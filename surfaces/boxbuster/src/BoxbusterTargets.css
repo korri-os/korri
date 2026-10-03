@@ -1,166 +1,28 @@
 /*
- * The layer a controller moves through, over the store.
- *
- * A tape target is invisible until focused, then it is a hard yellow ring on
- * the tape. A way on is a small trim-yellow sign, like the room signs. Text is
- * crisp DOM type over the dithered world: the PS1 look is art on the walls and
- * a liability on words, so words are never drawn into the framebuffer.
+ * The unseen focus layer over the store. Its buttons are never drawn: the
+ * room itself shows what has focus. They keep a fingertip-sized hit area for
+ * touch (intrinsic-design rule 9), and stay in layout and the accessibility
+ * tree, so the host's focus and a screen reader both still reach them.
  */
 .boxbuster-targets {
 	position: absolute;
 	inset: 0;
 	pointer-events: none;
-	font-family: var(--bb-font);
-	font-size: var(--bb-text-body);
 }
 
 .boxbuster-target {
 	position: absolute;
-	/* A fingertip, whatever the drawn size (intrinsic-design rule 9). */
 	width: 44px;
 	height: 44px;
 	padding: 0;
 	border: 0;
 	background: none;
+	opacity: 0;
 	transform: translate(-50%, -50%);
 	pointer-events: auto;
 	cursor: pointer;
 }
 
-/* Controller focus is set in code, so :focus, not only :focus-visible. */
-.boxbuster-target[data-kind="Tape"]:focus {
-	outline: var(--bb-rule) solid var(--bb-trim);
-	outline-offset: 0;
-	box-shadow:
-		0 0 0 calc(var(--bb-rule) * 2) var(--bb-shadow),
-		inset 0 0 0 var(--bb-rule) var(--bb-shadow);
-}
-
-.boxbuster-target:not([data-kind="Tape"]) {
-	display: grid;
-	place-items: center;
-	width: auto;
-	min-width: 44px;
-}
-
-/* Near a side, a sign grows inward from its point, so it is never cut off. */
-.boxbuster-target:not([data-kind="Tape"])[data-align="start"] {
-	transform: translate(-22px, -50%);
-}
-
-.boxbuster-target:not([data-kind="Tape"])[data-align="end"] {
-	transform: translate(calc(-100% + 22px), -50%);
-}
-
-.boxbuster-target-sign {
-	display: block;
-	max-width: 14em;
-	padding: 0.25em 0.6em;
-	overflow: hidden;
-	border: 2px solid var(--bb-shadow);
-	background: var(--bb-wall);
-	color: var(--bb-trim);
-	box-shadow: 3px 3px 0 var(--bb-shadow);
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.boxbuster-target[data-kind="Deck"] .boxbuster-target-sign,
-.boxbuster-target[data-kind="Eject"] .boxbuster-target-sign {
-	max-width: 18em;
-	white-space: normal;
-}
-
-.boxbuster-target:not([data-kind="Tape"]):focus {
+.boxbuster-target:focus {
 	outline: none;
-}
-
-.boxbuster-target:not([data-kind="Tape"]):focus .boxbuster-target-sign {
-	background: var(--bb-trim);
-	color: var(--bb-night);
-	outline: var(--bb-rule) solid var(--bb-label);
-}
-
-/* The label on the tape you look at, or hold: always in the top-left corner,
- * where no way on is pulled to (their anchors sit below eye height), so it
- * never covers a target and never runs off the edge. */
-.boxbuster-tape-label {
-	position: absolute;
-	inset-block-start: var(--bb-space);
-	inset-inline-start: var(--bb-space);
-	max-width: min(22em, 60cqi);
-	padding: 0.4em 0.7em;
-	border: 2px solid var(--bb-shadow);
-	background: var(--bb-wall);
-	color: var(--bb-label);
-	box-shadow: 4px 4px 0 var(--bb-shadow);
-	pointer-events: none;
-}
-
-.boxbuster-tape-label-title {
-	margin: 0;
-	color: var(--bb-trim);
-	font-weight: bold;
-	text-shadow: 2px 2px 0 var(--bb-shadow);
-	overflow-wrap: break-word;
-}
-
-.boxbuster-tape-label-line {
-	margin: 0;
-	color: var(--bb-label-dim);
-}
-
-/* Korri's words, printed on the TV glass. */
-.boxbuster-tv {
-	position: absolute;
-	display: grid;
-	align-content: center;
-	justify-items: center;
-	gap: 0.3em;
-	padding: 0.5em;
-	overflow: hidden;
-	background: rgb(0 0 0 / 0.72);
-	color: var(--bb-label);
-	text-align: center;
-}
-
-.boxbuster-tv-kicker {
-	margin: 0;
-	color: var(--bb-trim);
-	font-size: 1.2em;
-	font-weight: bold;
-}
-
-.boxbuster-tv[data-status="Problem"] .boxbuster-tv-kicker {
-	color: var(--bb-alarm);
-}
-
-.boxbuster-tv-line {
-	margin: 0;
-	overflow-wrap: break-word;
-}
-
-.boxbuster-tv-actions {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 0.5em;
-	pointer-events: auto;
-}
-
-.boxbuster-tv-action {
-	min-height: 2.5em;
-	padding: 0 1em;
-	border: var(--bb-rule) solid var(--bb-trim);
-	background: var(--bb-night);
-	color: var(--bb-trim);
-	font: inherit;
-	cursor: pointer;
-}
-
-.boxbuster-tv-action:focus {
-	outline: var(--bb-rule) solid var(--bb-label);
-	outline-offset: var(--bb-rule);
-	background: var(--bb-trim);
-	color: var(--bb-night);
 }

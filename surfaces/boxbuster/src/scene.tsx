@@ -1,6 +1,9 @@
 import { useFrame } from "@react-three/fiber"
-import { useEffect, useMemo, useRef } from "react"
+import { useMemo, useRef } from "react"
 import * as THREE from "three"
+import type { HeldTape } from "./BoxbusterStore"
+import type { TvStatus } from "./boxbuster-store-view"
+import type { Target } from "./boxbuster-targets"
 import {
   ATLAS_COLS,
   ATLAS_ROWS,
@@ -11,22 +14,22 @@ import {
   SHELVING_ACCENTS,
   type StoreGame,
   type StoreMap,
-  TV_SCREEN,
   VIEWING_ROOM,
   type WallSeg,
 } from "./map"
-import type { PlacedTape } from "./tape-placement"
 import { createPS1Material } from "./ps1-material"
+import { StepMarks } from "./step-marks"
+import type { PlacedTape } from "./tape-placement"
 import {
   bannerTexture,
   carpetTexture,
   ceilingTexture,
-  loadCoverImage,
   posterTexture,
   vhsAtlas,
   wallTexture,
 } from "./textures"
 import { getStress, getTopple, TOPPLE_SECS } from "./topple"
+import { TvScreen } from "./tv-screen"
 import { VhsBoxes } from "./vhs"
 
 const ROOM_H = 4.2 // store + viewing-room ceiling height
@@ -184,18 +187,44 @@ function Wall({ seg, mat }: { seg: WallSeg; mat: THREE.Material }) {
 export function Scene({
   map,
   placed,
+  targets,
+  focused,
   held,
   inDeck,
   deckLabels,
+  tv,
 }: {
   map: StoreMap
   placed: readonly PlacedTape[]
-  held?: { readonly tapeId: string; readonly face: "front" | "back" }
+  /** The unseen focus targets; the scene shows which one has focus. */
+  targets: readonly Target[]
+  focused?: string
+  held?: HeldTape
   /** The tape in the deck; its cover is on the TV. */
   inDeck?: StoreGame
   /** One sign per deck when Korri offers several places to play. */
   deckLabels?: readonly string[]
+  tv: TvStatus
 }) {
+  // What has focus, as the room shows it.
+  const target = targets.find(candidate => candidate.key === focused)
+  const focusedTape = target?._tag === "Tape" ? target.tapeId : undefined
+  const focusedDeck =
+    target?._tag === "Deck"
+      ? target.index
+      : target?._tag === "Eject" || target?._tag === "Retry"
+        ? 0
+        : undefined
+  // A way on through an archway lights that archway's sign: its mark on the
+  // floor sits right under the sign.
+  const signLit = (x: number, z: number) =>
+    target?._tag === "Exit" &&
+    Math.hypot(target.exit.anchor.x - x, target.exit.anchor.z - z) < 0.5
+  const exits = targets.filter(
+    (candidate): candidate is Extract<Target, { _tag: "Exit" }> =>
+      candidate._tag === "Exit",
+  )
+
   const built = useMemo(() => {
     // Atlas cell n belongs to the tape computeMap gave atlasIndex n.
     const games = [
@@ -294,7 +323,12 @@ export function Scene({
         placed={placed}
         {...(held === undefined ? {} : { held })}
         {...(inDeck === undefined ? {} : { inDeck: inDeck.id })}
+        {...(focusedTape === undefined ? {} : { focused: focusedTape })}
+        towardDeck={focusedDeck !== undefined}
       />
+
+      {/* where you can step next, worn into the carpet */}
+      <StepMarks exits={exits} focused={focused} />
 
       {/* room signage over each archway + the viewing-room sign */}
       {map.banners.map(b => (
@@ -306,13 +340,24 @@ export function Scene({
           width={Math.min(6, b.text.length * 0.42 + 1)}
           bg={b.accent}
           fg="#0a0a12"
+          lit={signLit(b.x, b.z)}
         />
       ))}
-      <Banner text="◄ VIEWING ROOM" position={[0, 3.5, -21.9]} width={3.4} />
+      <Banner
+        text="◄ VIEWING ROOM"
+        position={[0, 3.5, -21.9]}
+        width={3.4}
+        lit={signLit(0, VIEWING_ROOM.zNear)}
+      />
 
       {/* the viewing room + console (fixed, behind the hub) */}
       <ViewingRoom built={built} />
-      <Console playing={inDeck ?? null} deckLabels={deckLabels ?? []} />
+      <Console
+        playing={inDeck ?? null}
+        deckLabels={deckLabels ?? []}
+        tv={tv}
+        {...(focusedDeck === undefined ? {} : { focusedDeck })}
+      />
     </group>
   )
 }
@@ -506,6 +551,7 @@ function Banner({
   width,
   bg,
   fg,
+  lit = false,
 }: {
   text: string
   position: [number, number, number]
@@ -513,14 +559,17 @@ function Banner({
   width: number
   bg?: string
   fg?: string
+  /** Lit up from inside: the way you are about to go. */
+  lit?: boolean
 }) {
   const mat = useMemo(
     () =>
       createPS1Material({
         map: bannerTexture(text, bg, fg),
         side: THREE.DoubleSide,
+        emissive: lit,
       }),
-    [text, bg, fg],
+    [text, bg, fg, lit],
   )
   return (
     <mesh position={position} rotation={rotation} material={mat}>
@@ -534,15 +583,21 @@ function Banner({
 function Console({
   playing,
   deckLabels,
+  tv,
+  focusedDeck,
 }: {
   playing: StoreGame | null
   deckLabels: readonly string[]
+  tv: TvStatus
+  /** The deck with focus: its slot glows, ready for a tape or a press. */
+  focusedDeck?: number
 }) {
   const mats = useMemo(
     () => ({
       body: createPS1Material({ color: "#15171f" }),
       stand: createPS1Material({ color: "#0e0f15" }),
       slot: createPS1Material({ color: "#39507a", emissive: true }),
+      slotLit: createPS1Material({ color: "#f2c100", emissive: true }),
     }),
     [],
   )
@@ -557,7 +612,7 @@ function Console({
       <mesh position={[0, 2.0, 0]} material={mats.body}>
         <boxGeometry args={[3.2, 2.2, 0.5]} />
       </mesh>
-      <TvScreen playing={playing} />
+      <TvScreen playing={playing} tv={tv} />
     </group>
     {/* the deck out front, with a glowing slot facing you; one per place to
         play when Korri offers a choice, each signed with the place's name */}
@@ -568,9 +623,11 @@ function Console({
         </mesh>
         <mesh
           position={[0, DECK.topY - 0.13, DECK.depth / 2 + 0.01]}
-          material={mats.slot}
+          material={i === focusedDeck ? mats.slotLit : mats.slot}
         >
-          <boxGeometry args={[deck.width * 0.65, 0.07, 0.04]} />
+          <boxGeometry
+            args={[deck.width * 0.65, i === focusedDeck ? 0.11 : 0.07, 0.04]}
+          />
         </mesh>
         {deckLabels[i] === undefined ? null : (
           <Banner
@@ -584,108 +641,6 @@ function Console({
       </group>
     ))}
     </>
-  )
-}
-
-function TvScreen({ playing }: { playing: StoreGame | null }) {
-  const gear = useMemo(() => {
-    const canvas = document.createElement("canvas")
-    canvas.width = 256
-    canvas.height = 192 // 4:3 CRT
-    const ctx = canvas.getContext("2d")
-    if (!ctx) throw new Error("boxbuster: 2d canvas context unavailable")
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.magFilter = THREE.NearestFilter
-    texture.minFilter = THREE.NearestFilter
-    texture.generateMipmaps = false
-    texture.colorSpace = THREE.SRGBColorSpace
-    const mat = createPS1Material({ map: texture, emissive: true })
-    return { canvas, ctx, texture, mat }
-  }, [])
-
-  useEffect(() => {
-    const { canvas, ctx, texture } = gear
-    const W = canvas.width
-    const H = canvas.height
-    const scan = () => {
-      ctx.fillStyle = "rgba(0,0,0,0.18)"
-      for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1)
-    }
-    if (!playing) {
-      // dark glassy CRT in standby: vertical gradient + reflection sheen + LED
-      const grad = ctx.createLinearGradient(0, 0, 0, H)
-      grad.addColorStop(0, "#0b121c")
-      grad.addColorStop(1, "#04060a")
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, W, H)
-      ctx.save()
-      ctx.globalAlpha = 0.1
-      ctx.fillStyle = "#9fc8ff" // diagonal glass reflection
-      ctx.beginPath()
-      ctx.moveTo(0, H * 0.18)
-      ctx.lineTo(W * 0.55, 0)
-      ctx.lineTo(W * 0.85, 0)
-      ctx.lineTo(0, H * 0.62)
-      ctx.closePath()
-      ctx.fill()
-      ctx.restore()
-      scan()
-      ctx.fillStyle = "#a01b1b" // red standby LED
-      ctx.fillRect(W - 14, H - 12, 6, 6)
-      texture.needsUpdate = true
-      return
-    }
-    ctx.fillStyle = "#000"
-    ctx.fillRect(0, 0, W, H)
-    ctx.fillStyle = "#22c55e"
-    ctx.font = "bold 14px monospace"
-    ctx.textBaseline = "alphabetic"
-    ctx.fillText("▶ LOADING…", 12, 26)
-    texture.needsUpdate = true
-    let alive = true
-    const imagePromise =
-      playing.coverArtUrl === undefined
-        ? Promise.resolve(null)
-        : loadCoverImage(playing.coverArtUrl)
-
-    imagePromise.then(img => {
-      if (!alive || !img) return
-      ctx.imageSmoothingEnabled = false
-      // cover-crop the cover to the 4:3 screen
-      const ar = W / H
-      const sar = img.width / img.height
-      let sw = img.width
-      let sh = img.height
-      let sx = 0
-      let sy = 0
-      if (sar > ar) {
-        sw = sh * ar
-        sx = (img.width - sw) / 2
-      } else {
-        sh = sw / ar
-        sy = (img.height - sh) / 2
-      }
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H)
-      ctx.fillStyle = "rgba(0,0,0,0.66)"
-      ctx.fillRect(0, H - 26, W, 26)
-      ctx.fillStyle = "#f2c100"
-      ctx.font = "bold 12px monospace"
-      ctx.fillText("▶ NOW PLAYING", 8, H - 9)
-      scan()
-      texture.needsUpdate = true
-    })
-    return () => {
-      alive = false
-    }
-  }, [playing, gear])
-
-  return (
-    <mesh
-      position={[0, TV_SCREEN.y, TV_SCREEN.z - CONSOLE_Z]}
-      material={gear.mat}
-    >
-      <planeGeometry args={[TV_SCREEN.w, TV_SCREEN.h]} />
-    </mesh>
   )
 }
 

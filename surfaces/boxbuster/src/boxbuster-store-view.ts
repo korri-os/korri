@@ -27,8 +27,20 @@ export type BoxbusterStoreView =
 /** How long a game stays on the New Releases wall after its last session. */
 export const NEW_RELEASE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000
 
+/**
+ * The rental sticker on the back of a box: how often Korri saw it played.
+ * Absent when Korri stated no play count, so the box never claims a figure
+ * it was not given. `lastPlayedAt` gets no words: the aisle already says how
+ * recent a tape is.
+ */
+export function rentalSticker(playCount: number | undefined): string | undefined {
+  if (playCount === undefined) return undefined
+  return playCount === 1 ? "RENTED ONCE" : `RENTED ${playCount} TIMES`
+}
+
 /** Only what the store draws, so no other fact can move a shelf. */
 function storeGameFrom(game: SurfaceGame): StoreGame {
+  const sticker = rentalSticker(game.playCount)
   return {
     id: game.id,
     title: game.title,
@@ -36,6 +48,7 @@ function storeGameFrom(game: SurfaceGame): StoreGame {
     ...(game.coverArtUrl === undefined
       ? {}
       : { coverArtUrl: game.coverArtUrl }),
+    ...(sticker === undefined ? {} : { sticker }),
   }
 }
 
@@ -168,42 +181,14 @@ export type TapeLaunch =
   /** Korri offers a real choice; the viewing room must ask, never pick one. */
   | { readonly _tag: "Choose"; readonly locations: readonly TapeLocation[] }
 
-/** A tape's readable facts: the back of the box. */
+/** What the visit needs to know about a tape: its name (for the controls'
+ * accessible labels), where it is shelved, and where it can be played. What
+ * you read about a tape is printed on the box itself (StoreGame). */
 export interface TapeFacts {
   readonly id: string
   readonly title: string
-  readonly subtitle?: string
-  readonly coverArtUrl?: string
   readonly aisle: BoxbusterAisle
-  /** Play facts Korri stated, as sentences. Empty when it stated none. */
-  readonly facts: readonly string[]
   readonly launch: TapeLaunch
-}
-
-function playtimeLabel(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  if (hours === 0) return `${rest} min`
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
-}
-
-/**
- * Only what Korri stated. `lastPlayedAt` is not turned into words: the aisle
- * already says how recent a tape is, and "2 days ago" would need a clock the
- * treaty deliberately keeps from the surface.
- */
-function factsFor(game: SurfaceGame): string[] {
-  const facts: string[] = []
-  if (game.playCount !== undefined) {
-    facts.push(
-      game.playCount === 1 ? "Played once" : `Played ${game.playCount} times`,
-    )
-  }
-  if (game.totalPlaytimeSeconds !== undefined) {
-    facts.push(`${playtimeLabel(game.totalPlaytimeSeconds)} in all`)
-  }
-  return facts
 }
 
 function tapeFactsFromGame(
@@ -214,12 +199,7 @@ function tapeFactsFromGame(
   return {
     id: game.id,
     title: game.title,
-    ...(game.subtitle === undefined ? {} : { subtitle: game.subtitle }),
-    ...(game.coverArtUrl === undefined
-      ? {}
-      : { coverArtUrl: game.coverArtUrl }),
     aisle,
-    facts: factsFor(game),
     launch:
       locations.length === 0
         ? { _tag: "Here" }

@@ -1,6 +1,7 @@
 import { useFrame } from "@react-three/fiber"
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
+import type { HeldTape } from "./BoxbusterStore"
 import { ATLAS_COLS, ATLAS_ROWS, DECK, type MapGame, type StoreMap } from "./map"
 import { createPS1Material } from "./ps1-material"
 import { COVER_RATIO, gameBackAtlas } from "./textures"
@@ -50,7 +51,7 @@ const CART_QUAT = new THREE.Quaternion()
   .setFromAxisAngle(AXIS_Z, Math.PI / 2)
   .premultiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, -Math.PI / 2))
 
-// Held up in front of you: the cover (+X) turned to the camera, or the back
+// Held in front of you: the cover (+X) turned to the camera, or the back
 // (-X) when you have turned it over. Tilted a little, like a box in a hand.
 const HELD_FRONT = new THREE.Quaternion()
   .setFromAxisAngle(AXIS_Y, -Math.PI / 2)
@@ -58,9 +59,27 @@ const HELD_FRONT = new THREE.Quaternion()
 const HELD_BACK = new THREE.Quaternion()
   .setFromAxisAngle(AXIS_Y, Math.PI / 2)
   .multiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Z, -0.06))
-/** Where the held tape sits, in the camera's own frame: low in the right
- * corner, so it reads as in your hand and leaves the view to the store. */
-const HELD_OFFSET = new THREE.Vector3(0.62, -0.5, -1.25)
+/** Tipped forward, nose toward the deck slot. */
+const TIP_TO_DECK = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0),
+  -0.55,
+)
+/**
+ * Where the held tape sits, in the camera's own frame. Reading: up close and
+ * nearly filling the view, because the box is the only place its title, back
+ * and rental sticker are written. Carrying: low in the right corner, leaving
+ * the view to the store. At the deck: lowered and tipped toward the slot.
+ */
+const HELD_AT = {
+  reading: new THREE.Vector3(0.08, -0.02, -0.62),
+  carrying: new THREE.Vector3(0.62, -0.5, -1.25),
+  towardDeck: new THREE.Vector3(0.48, -0.36, -1.1),
+} as const
+
+/** A focused tape slides this far out of its shelf, toward you. */
+const PULL_OUT = 0.16
+/** A focused tape on the cart lifts this far off the tray. */
+const LIFT_OFF = 0.12
 
 // Pushed into the deck: lying flat, cover up, half of it still showing.
 const IN_DECK_QUAT = new THREE.Quaternion()
@@ -81,23 +100,33 @@ export function VhsBoxes({
   placed,
   held,
   inDeck,
+  focused,
+  towardDeck = false,
 }: {
   atlas: THREE.Texture
   /** The library in atlas order: cell n belongs to games[n]. */
   games: readonly MapGame[]
   map: StoreMap
   placed: readonly PlacedTape[]
-  held?: { readonly tapeId: string; readonly face: "front" | "back" }
+  held?: HeldTape
   inDeck?: string
+  /** The tape with focus: it slides out and catches the light. */
+  focused?: string
+  /** A deck has focus: a carried tape tips toward its slot. */
+  towardDeck?: boolean
 }) {
-  // [+X front cover, -X back details, +Y, -Y, +Z, -Z edges] — matches BoxGeometry groups
-  const mats = useMemo(() => {
-    const cover = createPS1Material({ map: atlas })
-    const back = createPS1Material({
-      map: gameBackAtlas(ATLAS_COLS, ATLAS_ROWS, games),
-    })
-    const edge = createPS1Material({ color: "#0d0d10" })
-    return [cover, back, edge, edge, edge, edge]
+  // [+X front cover, -X back details, +Y, -Y, +Z, -Z edges] — matches
+  // BoxGeometry groups. The lit set draws full-bright, unshaded: the tape
+  // with focus, and the one up close to read.
+  const { mats, litMats } = useMemo(() => {
+    const backAtlas = gameBackAtlas(ATLAS_COLS, ATLAS_ROWS, games)
+    const set = (emissive: boolean) => {
+      const cover = createPS1Material({ map: atlas, emissive })
+      const back = createPS1Material({ map: backAtlas, emissive })
+      const edge = createPS1Material({ color: "#0d0d10" })
+      return [cover, back, edge, edge, edge, edge]
+    }
+    return { mats: set(false), litMats: set(true) }
   }, [atlas, games])
 
   const tapes = useMemo<Tape[]>(
@@ -132,8 +161,8 @@ export function VhsBoxes({
     }[]
   >([])
 
-  // Rest every tape where it belongs: in hand, in the deck, or at home.
-  // A held tape follows the camera each frame (below).
+  // Rest every tape where it belongs: in the deck, at home, or pulled half
+  // out when it has focus. A held tape follows the camera each frame (below).
   useEffect(() => {
     tapes.forEach((tape, i) => {
       const mesh = meshes.current[i]
@@ -141,12 +170,16 @@ export function VhsBoxes({
       if (tape.placed.game.id === inDeck) {
         mesh.position.set(0, DECK.topY + 0.02, DECK.z + DECK.depth / 2 - 0.15)
         mesh.quaternion.copy(IN_DECK_QUAT)
-      } else {
-        mesh.position.copy(tape.home.pos)
-        mesh.quaternion.copy(tape.home.quat)
+        return
       }
+      mesh.position.copy(tape.home.pos)
+      mesh.quaternion.copy(tape.home.quat)
+      if (tape.placed.game.id !== focused) return
+      const rest = tape.placed.rest
+      if (rest._tag === "Shelf") mesh.position.x += rest.side * PULL_OUT
+      else mesh.position.y += LIFT_OFF
     })
-  }, [tapes, inDeck, held?.tapeId])
+  }, [tapes, inDeck, held?.tapeId, focused])
 
   const heldOffset = useMemo(() => new THREE.Vector3(), [])
   useFrame((state, dt) => {
@@ -155,11 +188,19 @@ export function VhsBoxes({
       const mesh = meshes.current[i]
       if (mesh !== undefined) {
         const camera = state.camera
-        heldOffset.copy(HELD_OFFSET).applyQuaternion(camera.quaternion)
+        const at =
+          held.pose === "reading"
+            ? HELD_AT.reading
+            : towardDeck
+              ? HELD_AT.towardDeck
+              : HELD_AT.carrying
+        heldOffset.copy(at).applyQuaternion(camera.quaternion)
         mesh.position.copy(camera.position).add(heldOffset)
-        mesh.quaternion
-          .copy(camera.quaternion)
-          .multiply(held.face === "front" ? HELD_FRONT : HELD_BACK)
+        mesh.quaternion.copy(camera.quaternion)
+        if (held.pose === "carrying" && towardDeck) {
+          mesh.quaternion.multiply(TIP_TO_DECK)
+        }
+        mesh.quaternion.multiply(held.face === "front" ? HELD_FRONT : HELD_BACK)
       }
     }
 
@@ -241,7 +282,12 @@ export function VhsBoxes({
             if (el) meshes.current[i] = el
           }}
           geometry={tape.geo}
-          material={mats}
+          material={
+            tape.placed.game.id === focused ||
+            (tape.placed.game.id === held?.tapeId && held.pose === "reading")
+              ? litMats
+              : mats
+          }
           position={tape.home.pos}
           quaternion={tape.home.quat}
         />

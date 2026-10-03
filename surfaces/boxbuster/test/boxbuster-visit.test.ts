@@ -17,7 +17,7 @@ import {
 } from "../src/boxbuster-visit"
 
 function tape(id: string, aisle: TapeFacts["aisle"]): TapeFacts {
-  return { id, title: id, aisle, facts: [], launch: { _tag: "Here" } }
+  return { id, title: id, aisle, launch: { _tag: "Here" } }
 }
 
 const SPOTS: StoreSpots = {
@@ -54,7 +54,7 @@ describe("opening the store", () => {
     ).toEqual({
       opened: true,
       spot: "viewing",
-      hand: { _tag: "Holding", tapeId: "resume", face: "front" },
+      hand: { _tag: "Holding", tapeId: "resume", face: "front", pose: "carrying" },
     })
   })
 
@@ -70,7 +70,7 @@ describe("when Korri republishes the catalog", () => {
 
   test("an unchanged visit is the same value", () => {
     const visit = open({
-      hand: { _tag: "Holding", tapeId: "a", face: "front" },
+      hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "carrying" },
       deck: "b",
     })
     expect(visitAfterStore(visit, tapes, SPOTS)).toBe(visit)
@@ -80,7 +80,7 @@ describe("when Korri republishes the catalog", () => {
     expect(
       visitAfterStore(
         open({
-          hand: { _tag: "Holding", tapeId: "gone", face: "back" },
+          hand: { _tag: "Holding", tapeId: "gone", face: "back", pose: "carrying" },
           deck: "also-gone",
         }),
         tapes,
@@ -103,6 +103,15 @@ describe("walking", () => {
     })
   })
 
+  test("lowers a tape you were reading to carry it", () => {
+    const reading = open({
+      hand: { _tag: "Holding", tapeId: "a", face: "back", pose: "reading" },
+    })
+    expect(step(reading, { _tag: "Walk", to: "hub" }, SPOTS).visit.hand).toEqual(
+      { _tag: "Holding", tapeId: "a", face: "back", pose: "carrying" },
+    )
+  })
+
   test("a problem brings you to the TV", () => {
     expect(step(open(), { _tag: "ProblemShown" }, SPOTS).visit.spot).toBe(
       "viewing",
@@ -111,23 +120,37 @@ describe("walking", () => {
 })
 
 describe("a tape in hand", () => {
-  test("confirm on a tape picks it up, cover toward you", () => {
+  test("confirm on a tape picks it up and brings it close, cover toward you", () => {
     expect(step(open(), { _tag: "PickUp", tapeId: "a" }, SPOTS)).toEqual({
-      visit: open({ hand: { _tag: "Holding", tapeId: "a", face: "front" } }),
+      visit: open({
+        hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "reading" },
+      }),
     })
   })
 
-  test("Options turns it over to the back of the box, and back again", () => {
-    const held = open({ hand: { _tag: "Holding", tapeId: "a", face: "front" } })
+  test("Options brings it close and turns it over, and back again", () => {
+    const held = open({
+      hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "carrying" },
+    })
     const turned = step(held, { _tag: "Turn" }, SPOTS).visit
-    expect(turned.hand).toEqual({ _tag: "Holding", tapeId: "a", face: "back" })
-    expect(step(turned, { _tag: "Turn" }, SPOTS).visit.hand).toEqual(held.hand)
+    expect(turned.hand).toEqual({
+      _tag: "Holding",
+      tapeId: "a",
+      face: "back",
+      pose: "reading",
+    })
+    expect(step(turned, { _tag: "Turn" }, SPOTS).visit.hand).toEqual({
+      _tag: "Holding",
+      tapeId: "a",
+      face: "front",
+      pose: "reading",
+    })
   })
 
   test("Back puts it back on its shelf", () => {
     expect(
       step(
-        open({ hand: { _tag: "Holding", tapeId: "a", face: "back" } }),
+        open({ hand: { _tag: "Holding", tapeId: "a", face: "back", pose: "carrying" } }),
         { _tag: "Back", problem: false },
         SPOTS,
       ),
@@ -142,9 +165,23 @@ describe("a tape in hand", () => {
   })
 
   test("Back answers a problem before it puts anything down", () => {
-    const visit = open({ hand: { _tag: "Holding", tapeId: "a", face: "front" } })
+    const visit = open({
+      hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "carrying" },
+    })
     expect(step(visit, { _tag: "Back", problem: true }, SPOTS)).toEqual({
       visit,
+      command: { _tag: "Dismiss" },
+    })
+  })
+
+  test("Back on a problem ejects the tape that failed into your hand", () => {
+    expect(
+      step(open({ spot: "viewing", deck: "a" }), { _tag: "Back", problem: true }, SPOTS),
+    ).toEqual({
+      visit: open({
+        spot: "viewing",
+        hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "reading" },
+      }),
       command: { _tag: "Dismiss" },
     })
   })
@@ -153,7 +190,7 @@ describe("a tape in hand", () => {
 describe("the deck", () => {
   const holding = open({
     spot: "viewing",
-    hand: { _tag: "Holding", tapeId: "a", face: "front" },
+    hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "carrying" },
   })
 
   test("putting a tape in starts the game", () => {
@@ -180,13 +217,13 @@ describe("the deck", () => {
     expect(step(visit, { _tag: "Insert" }, SPOTS)).toEqual({ visit })
   })
 
-  test("ejecting puts the tape back in your hand", () => {
+  test("ejecting puts the tape back in your hand, close enough to read", () => {
     expect(
       step(open({ spot: "viewing", deck: "a" }), { _tag: "Eject" }, SPOTS),
     ).toEqual({
       visit: open({
         spot: "viewing",
-        hand: { _tag: "Holding", tapeId: "a", face: "front" },
+        hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "reading" },
       }),
     })
   })

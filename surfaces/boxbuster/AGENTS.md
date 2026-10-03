@@ -22,16 +22,26 @@
 > room, each stretch of shelf, and the viewing room. The camera holds still at
 > a spot and cuts between spots, so focus targets pinned over the 3D view
 > (`boxbuster-targets.ts`, `BoxbusterTargets.tsx`) stay put and the host's
-> geometric focus works. Confirm on a tape picks it up; Options turns it over;
-> Back puts it back. In the viewing room, confirm on the deck puts the tape
-> in, and that is the only `launchGame` call. When Korri offers several places
-> to play, there is one signed deck per place. Korri's launch status is
-> printed on the TV. The fast path is a contract in `boxbuster-visit.ts`: a
-> resumable tape opens in your hand in the viewing room, so one confirm puts
-> it in. Words are crisp DOM type over the world, never drawn into the
-> framebuffer. Without WebGL there is no store, so the door says Boxbuster
-> cannot open on this device. The "fast index" in the rule below is not
-> built.
+> geometric focus works. Confirm on a tape picks it up and brings it close
+> enough to read; Options turns it over; Back puts it back. In the viewing
+> room, confirm on the deck puts the tape in, and that is the only
+> `launchGame` call. When Korri offers several places to play, there is one
+> signed deck per place. The fast path is a contract in `boxbuster-visit.ts`:
+> a resumable tape opens in your hand in the viewing room, so one confirm
+> puts it in.
+>
+> **Nothing is laid over the room** (decided 2026-10-02). The focus targets
+> are never drawn; the room shows what has focus. A focused tape slides out
+> of its shelf and catches the light. Every way on is a worn patch in the
+> carpet (`step-marks.tsx`), and the focused one glows and lights its
+> archway's sign. A focused deck's slot glows. A box carries its own words:
+> the title on the cover, the back-of-box layout, and a rental sticker with
+> the play count. Korri's launch status is printed on the TV
+> (`tv-screen.tsx`); after a failure, the deck is pressed again to retry and
+> Back ejects the tape. The framebuffer is never smaller than 320x240, so
+> that text stays legible. This replaces the "never the only way in" rule
+> below, which is struck. Without WebGL there is no store, so the door says
+> Boxbuster cannot open on this device.
 
 `boxbuster` is the PS1-era 3D video-store browse surface (`@korri:boxbuster`). It is an
 attempt to make a game launcher that feels like **somewhere you go**, not **something you
@@ -102,7 +112,7 @@ resist each; do not reintroduce them in the name of consistency or velocity:
 
 | Shift the essay names | Our stance in this surface |
 |---|---|
-| **The browser flattened the frame** (tabs, chrome, back button) | boxbuster owns its full frame — a WebGL world, not a page. The 2D HUD is minimal and adapts via container queries (`boxbuster.css`), never standard web chrome. |
+| **The browser flattened the frame** (tabs, chrome, back button) | boxbuster owns its full frame — a WebGL world, not a page. There is no 2D HUD at all: every word is in the room. |
 | **Design systems flattened the inside** (Material/HIG/Tailwind sameness) | The scene is an opaque R3F-native leaf, deliberately *outside* the atoms/molecules catalog (see `config.tsx`). Keep it that way — shared components belong on the HUD edges, not in the world. |
 | **Feeds replaced pages** (a stream that regenerates each visit) | The store is a stable location, not a feed. This is why RNG seeding is a charter violation, not a rough edge. |
 | **Generation replaced arrangement** (answers synthesized, not authored) | Layout is *authored / deterministic arrangement*, so knowledge attaches to location — you remember the aisle, the endcap, the shelf. Do not make placement incidental. |
@@ -116,10 +126,10 @@ resist each; do not reintroduce them in the name of consistency or velocity:
   in three seconds must never be taxed by the world. Every ritual is a layer you may descend into,
   never a toll. (See the resume-first item:
   `work/items/parking-lot/01KVXYT670HYFHEX9K2C7QG8M1-resume-first-open-on-next-play.md`.)
-- **Never the only way in.** Diegetic browse is layered *over* a fast index and a legible,
-  reduced-motion, high-contrast fallback rendered from the same state — not instead of one. PS1
-  dithering is art in the world and a liability on text; zone it. (See
-  `work/items/parking-lot/01KVXYT670G29HW4P4PQ2BBD2K-zone-the-diegesis-ambient-world-functional-panel.md`.)
+- ~~**Never the only way in.**~~ Struck 2026-10-02. A readable panel beside the store, and
+  then text laid over it, were both built and rejected: they made the store decoration. The
+  room is the only way in; legibility comes from the 320x240 framebuffer floor and from
+  words printed on things (boxes, the TV), not from a fallback layer.
 - **Treat objects as stateful.** A tape carries *how you left it* — returned, rewound, worn,
   misfiled. Continuity lives in the user's treatment of the object, not in the media's content
   (this is also how the rewind ritual translates to games with no narrative).

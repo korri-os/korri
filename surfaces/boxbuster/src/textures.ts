@@ -245,7 +245,7 @@ function loadRealCovers(
 }
 
 // Word-wrap helper for canvas text.
-function wrap(
+export function wrap(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxW: number,
@@ -314,6 +314,21 @@ export function gameBackAtlas(
     ctx.fillStyle = "#5a6072"
     for (let k = 0; k < 6; k++)
       ctx.fillRect(ox + 7, y + k * 9, 30 + lines() * (cw - 44), 2)
+    // the store's rental sticker, slapped on crooked over the synopsis
+    if (g.sticker !== undefined) {
+      ctx.save()
+      ctx.translate(ox + 40, oy + ch - 34)
+      ctx.rotate(-0.12)
+      ctx.fillStyle = "#f2c100"
+      ctx.fillRect(-34, -11, 68, 22)
+      ctx.fillStyle = "#0a0a12"
+      ctx.font = "bold 9px monospace"
+      ctx.textAlign = "center"
+      const [first = "", ...rest] = g.sticker.split(" ")
+      ctx.fillText(first, 0, -4)
+      ctx.fillText(rest.join(" "), 0, 6)
+      ctx.restore()
+    }
     // barcode
     ctx.fillStyle = "#fff"
     ctx.fillRect(ox + cw - 50, oy + ch - 18, 44, 13)

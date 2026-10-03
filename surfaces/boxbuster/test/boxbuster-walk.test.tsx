@@ -106,10 +106,16 @@ describe("the fast path", () => {
       <BoxbusterSurface host={host} model={modelWith([kirby, resumable])} drawing={drawing} />,
     )
     expect(spotOf(container)).toBe("viewing")
-    expect(drawn.last?.held).toEqual({ tapeId: "wario", face: "front" })
+    expect(drawn.last?.held).toEqual({
+      tapeId: "wario",
+      face: "front",
+      pose: "carrying",
+    })
     expect(focused().getAttribute("aria-label")).toBe(
       "Put Wario Land 4 in the deck",
     )
+    // The room shows the deck has focus: its slot glows.
+    expect(drawn.last?.focused).toBe("deck")
     fireEvent.click(focused())
     expect(host.calls).toEqual(["launch:wario:"])
     expect(drawn.last?.inDeck?.id).toBe("wario")
@@ -184,24 +190,70 @@ describe("a tape in hand", () => {
     act(() => go("Classics"))
     act(() => go("Shelf with Kirby"))
     act(() => fireEvent.click(focused()))
+    // Picked up, it comes close enough to read the box.
+    expect(drawn.last?.held).toEqual({
+      tapeId: "kirby",
+      face: "front",
+      pose: "reading",
+    })
     act(() => host.press("options"))
-    expect(drawn.last?.held).toEqual({ tapeId: "kirby", face: "back" })
+    expect(drawn.last?.held).toEqual({
+      tapeId: "kirby",
+      face: "back",
+      pose: "reading",
+    })
     act(() => host.press("back"))
     expect(drawn.last?.held).toBeUndefined()
     expect(focused().getAttribute("aria-label")).toBe("Kirby")
     expect(host.calls).toEqual([])
   })
 
-  test("shows its title and play facts in readable type", () => {
+  test("is read from the box itself: its rental sticker is printed on it", () => {
+    const { drawing, drawn } = recordingDrawing()
     render(
       <BoxbusterSurface
         host={createRecordingHost()}
         model={modelWith([resumable])}
+        drawing={drawing}
+      />,
+    )
+    const box = drawn.last?.placed.find(tape => tape.game.id === "wario")
+    expect(box?.game.sticker).toBe("RENTED 3 TIMES")
+  })
+})
+
+describe("the room", () => {
+  test("has nothing laid over it: no text, only unseen focus targets", () => {
+    const { container } = render(
+      <BoxbusterSurface
+        host={createRecordingHost()}
+        model={modelWith([resumable, kirby], {
+          _tag: "Busy",
+          kicker: "Starting…",
+          detail: "Waking zao",
+        })}
         drawing={recordingDrawing().drawing}
       />,
     )
-    expect(screen.getByText("Wario Land 4")).toBeTruthy()
-    expect(screen.getByText("Played 3 times")).toBeTruthy()
+    expect(container.textContent).toBe("")
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.getAttribute("aria-label")).not.toBe("")
+    }
+  })
+
+  test("shows which tape has focus", () => {
+    const { drawing, drawn } = recordingDrawing()
+    render(
+      <BoxbusterSurface
+        host={createRecordingHost()}
+        model={modelWith([kirby])}
+        drawing={drawing}
+      />,
+    )
+    act(() => go("Lobby"))
+    act(() => go("Classics"))
+    act(() => go("Shelf with Kirby"))
+    expect(drawn.last?.focused).toBe("tape:kirby")
   })
 })
 
@@ -229,7 +281,7 @@ describe("walking a shelf", () => {
 describe("launch status on the TV", () => {
   test("a problem brings you to the TV, and one confirm retries", () => {
     const host = createRecordingHost()
-    const { drawing } = recordingDrawing()
+    const { drawing, drawn } = recordingDrawing()
     const { container, rerender } = render(
       <BoxbusterSurface host={host} model={modelWith([kirby])} drawing={drawing} />,
     )
@@ -247,8 +299,9 @@ describe("launch status on the TV", () => {
       />,
     )
     expect(spotOf(container)).toBe("viewing")
-    expect(screen.getByText("zao is asleep.")).toBeTruthy()
-    expect(focused().textContent).toBe("Try again")
+    // Korri's words are on the TV, and the deck is the retry button.
+    expect(drawn.last?.tv).toMatchObject({ reason: "zao is asleep." })
+    expect(focused().getAttribute("aria-label")).toBe("Try again")
     fireEvent.click(focused())
     expect(host.calls).toEqual(["retry"])
   })
@@ -268,13 +321,39 @@ describe("launch status on the TV", () => {
         drawing={drawing}
       />,
     )
-    expect(focused().textContent).toBe("Back to the store")
     act(() => host.press("back"))
     expect(host.calls).toEqual(["dismiss"])
     expect(drawn.last?.held?.tapeId).toBe("wario")
   })
 
-  test("work under way is printed on the TV", () => {
+  test("Back on a failed launch ejects the tape and clears the problem", () => {
+    const host = createRecordingHost()
+    const { drawing, drawn } = recordingDrawing()
+    const { rerender } = render(
+      <BoxbusterSurface host={host} model={modelWith([resumable])} drawing={drawing} />,
+    )
+    act(() => fireEvent.click(focused()))
+    expect(drawn.last?.inDeck?.id).toBe("wario")
+    rerender(
+      <BoxbusterSurface
+        host={host}
+        model={modelWith([resumable], {
+          _tag: "Problem",
+          kicker: "Could not start",
+          reason: "The game stopped.",
+          canRetry: true,
+        })}
+        drawing={drawing}
+      />,
+    )
+    act(() => host.press("back"))
+    expect(host.calls).toEqual(["launch:wario:", "dismiss"])
+    expect(drawn.last?.inDeck).toBeUndefined()
+    expect(drawn.last?.held?.tapeId).toBe("wario")
+  })
+
+  test("work under way goes to the TV", () => {
+    const { drawing, drawn } = recordingDrawing()
     render(
       <BoxbusterSurface
         host={createRecordingHost()}
@@ -283,11 +362,14 @@ describe("launch status on the TV", () => {
           kicker: "Starting…",
           detail: "Waking zao",
         })}
-        drawing={recordingDrawing().drawing}
+        drawing={drawing}
       />,
     )
-    expect(screen.getByText("Starting…")).toBeTruthy()
-    expect(screen.getByText("Waking zao")).toBeTruthy()
+    expect(drawn.last?.tv).toEqual({
+      _tag: "Working",
+      kicker: "Starting…",
+      detail: "Waking zao",
+    })
   })
 })
 
