@@ -22,13 +22,16 @@ export function BoxbusterSurface({
   model: SurfaceModel
   host: SurfaceHost
 }) {
-  // Korri republishes the whole model on any change, a clock tick included.
-  // The signature covers every fact the store view reads, so the store, its
-  // textures, and its cover requests rebuild only when the library changes.
-  const signature = storeSignature(model)
-  // `model` is deliberately absent from the dependencies: the signature
-  // stands in for it.
-  const view = useMemo(() => storeViewFrom(model), [signature])
+  // Korri republishes the whole model on any change, a clock tick included,
+  // so reading the time here re-checks the 14-day window at least once a
+  // minute. The signature covers every fact the store view reads, so the
+  // store, its textures, and its cover requests rebuild only when a tape
+  // changes place or a drawn fact changes.
+  const now = Date.now()
+  const signature = storeSignature(model, now)
+  // `model` and `now` are deliberately absent from the dependencies: the
+  // signature stands in for both.
+  const view = useMemo(() => storeViewFrom(model, now), [signature])
 
   return (
     <div className="boxbuster-surface" data-boxbuster-surface="">

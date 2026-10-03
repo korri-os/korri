@@ -1,7 +1,13 @@
 import { useFrame } from "@react-three/fiber"
 import { useEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
-import { ATLAS_COLS, ATLAS_ROWS, type MapGame, type StoreMap } from "./map"
+import {
+  ATLAS_COLS,
+  ATLAS_ROWS,
+  CART_PITCH,
+  type MapGame,
+  type StoreMap,
+} from "./map"
 import { createPS1Material } from "./ps1-material"
 import { COVER_RATIO, gameBackAtlas } from "./textures"
 import { getTopple, TOPPLE_SECS, toppledGondolas } from "./topple"
@@ -34,11 +40,31 @@ function remapFace(
   uv.needsUpdate = true
 }
 
+/** A tape's box, its cover cell mapped onto the front and back faces. */
+function tapeGeometry(game: MapGame) {
+  const ai = game.atlasIndex % (ATLAS_COLS * ATLAS_ROWS)
+  const rx = ai % ATLAS_COLS
+  const ry = (ai / ATLAS_COLS) | 0
+  const h = 0.6 + ((ai * 37) % 9) / 100
+  const w = h * COVER_RATIO // 2:3 cover face
+  const geo = new THREE.BoxGeometry(0.15, h, w)
+  remapFace(geo, 0, rx, ry) // front cover (+X)
+  remapFace(geo, 1, rx, ry) // back details (-X)
+  return { geo, h }
+}
+
+// Lying on the cart: +X (the cover) turned up, then the cover's top turned to
+// face into the store, so someone at the door reads it the right way up.
+const CART_QUAT = new THREE.Quaternion()
+  .setFromAxisAngle(AXIS_Z, Math.PI / 2)
+  .premultiply(new THREE.Quaternion().setFromAxisAngle(AXIS_Y, -Math.PI / 2))
+const TAPE_THICKNESS = 0.15
+
 interface Tape {
   geo: THREE.BoxGeometry
   base: THREE.Vector3 // its shelf slot
   game: MapGame
-  gi: number // which gondola this tape sits on
+  gi: number // which gondola this tape sits on; -1 on the return cart
   // where the tape currently rests (shelf slot, or on the floor after a spill)
   home: { pos: THREE.Vector3; quat: THREE.Quaternion; dropped: boolean }
 }
@@ -72,8 +98,31 @@ export function VhsBoxes({
   // cover always matches regardless of which room it landed in. Deterministic.
   const tapes = useMemo<Tape[]>(() => {
     const list: Tape[] = []
-    const ATLAS_N = ATLAS_COLS * ATLAS_ROWS
     const spacing = 0.46
+
+    // the return cart: one row along the tray, a fresh layer on top when full
+    const cart = map.returnCart
+    if (cart !== undefined) {
+      const perLayer = Math.max(1, Math.floor((cart.half * 2) / CART_PITCH))
+      const pitch = (cart.half * 2) / perLayer
+      cart.games.forEach((game, k) => {
+        const { geo } = tapeGeometry(game)
+        const layer = Math.floor(k / perLayer)
+        const slot = k % perLayer
+        const base = new THREE.Vector3(
+          cart.x,
+          cart.topY + TAPE_THICKNESS / 2 + layer * TAPE_THICKNESS,
+          cart.zc - cart.half + pitch * (slot + 0.5),
+        )
+        list.push({
+          geo,
+          base,
+          game,
+          gi: -1,
+          home: { pos: base.clone(), quat: CART_QUAT.clone(), dropped: true },
+        })
+      })
+    }
     type Slot = { gx: number; gi: number; ly: number; z: number; side: 1 | -1 }
 
     for (const room of map.rooms) {
@@ -102,14 +151,7 @@ export function VhsBoxes({
         const slot = slots[(Math.floor(k * stride) + jitter) % P]
         const game = roomGames[k]
         if (!slot || !game) continue
-        const ai = game.atlasIndex % ATLAS_N
-        const rx = ai % ATLAS_COLS
-        const ry = (ai / ATLAS_COLS) | 0
-        const h = 0.6 + ((ai * 37) % 9) / 100
-        const w = h * COVER_RATIO // 2:3 cover face
-        const geo = new THREE.BoxGeometry(0.15, h, w)
-        remapFace(geo, 0, rx, ry) // front cover (+X)
-        remapFace(geo, 1, rx, ry) // back details (-X)
+        const { geo, h } = tapeGeometry(game)
         const base = new THREE.Vector3(
           slot.gx + slot.side * 0.095,
           slot.ly + h / 2,

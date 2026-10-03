@@ -9,7 +9,8 @@
  *                │HUB│                 (lobby — see into every room)
  *                └─╥─┘
  *                  ‖ archway
- *            [ NEW RELEASES ]          (entrance — spawn here)
+ *            [ NEW RELEASES ]          (entrance — spawn here; return cart
+ *                                       just inside the door)
  *
  * Rooms-as-curation: the *place* tells you what you're looking at, no filters.
  * The HUB is a fixed lobby anchor. Each themed room shares one edge with the hub
@@ -20,7 +21,8 @@
  * (a lower target density) grow larger for the same count, so each room keeps its
  * own feel. Geometry is emitted as plain data (floors / wall segments / lights /
  * gondolas / nav rects) so the scene just renders it and controls just navigate
- * it. Same games in, same store out.
+ * it. Which tape belongs in which room arrives already decided (StoreShelving,
+ * from boxbuster-store-view.ts). Same shelving in, same store out.
  */
 
 /**
@@ -45,6 +47,27 @@ const DENSITY = {
   livedIn: 0.45,
   atmospheric: 0.3,
 } as const
+
+/**
+ * Which tapes go where, already decided. Each list is in shelf order. The
+ * store view decides it from the treaty; the map only gives it a floorplan.
+ */
+export interface StoreShelving {
+  /** On the return cart by the door. */
+  readonly returns: readonly StoreGame[]
+  readonly newReleases: readonly StoreGame[]
+  readonly staffPicks: readonly StoreGame[]
+  readonly classics: readonly StoreGame[]
+}
+
+/** A low rolling cart just inside the entrance, tapes lying face up on it. */
+export interface ReturnCart {
+  readonly x: number // world x of the cart's centre line
+  readonly zc: number // world z centre
+  readonly half: number // half-length along z
+  readonly topY: number // height of the tray the tapes lie on
+  readonly games: readonly MapGame[]
+}
 
 export interface MapGame extends StoreGame {
   atlasIndex: number // cover-atlas cell (its index in the input library)
@@ -79,6 +102,8 @@ export interface WallSeg {
 export interface StoreMap {
   rooms: RoomSpec[]
   roomGames: Record<string, MapGame[]>
+  /** Absent when nothing can be resumed. */
+  returnCart?: ReturnCart
   gondolas: Gondola[]
   floors: { cx: number; cz: number; w: number; d: number }[]
   walls: WallSeg[]
@@ -118,6 +143,18 @@ const NEW_MAX_HALF = 9.0 // longest before the entrance hall gets silly
 const GAMES_PER_AISLE = 12 // ~games that earn a side-room aisle at livedIn density
 const MAX_AISLES = 5
 
+// ── the return cart (inside the entrance, left of the centre lane) ──
+const CART_X = -1.9 // between the west aisle's shelf face and the centre lane
+const CART_BACK = 5.2 // its far end, measured in from the storefront wall
+const CART_MIN_HALF = 0.6
+// Longest the cart gets, so its near end stays 2.6 m in from the door, ahead
+// of the entrance view. A bigger load stacks in layers (vhs.tsx).
+const CART_MAX_HALF = 1.3
+const CART_TOP = 0.78
+/** Tray length per tape: tapes lie face up, cover top toward the store, so a
+ * tape's 0.6–0.69 m height runs along the cart. */
+export const CART_PITCH = 0.7
+
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v))
 
@@ -137,29 +174,24 @@ function sideAisles(sliceN: number, density: number): number {
   return clamp(Math.round(spread), 1, MAX_AISLES)
 }
 
-/** Split the library across the rooms in even thirds, in catalog order.
- *
- * Legacy sorted by release year first; the treaty carries no year, so this is
- * legacy's own behaviour for flat metadata. Which treaty facts should choose a
- * room is an open decision, not settled here. */
-function partition(games: readonly StoreGame[]): {
-  new: MapGame[]
-  staff: MapGame[]
-  classic: MapGame[]
-} {
-  const tagged: MapGame[] = games.map((g, i) => ({ ...g, atlasIndex: i }))
-  const n = tagged.length
-  const a = Math.ceil(n / 3)
-  const b = Math.ceil((2 * n) / 3)
+/** Give every tape its own cover-atlas cell, in a fixed order: cart, then
+ * New Releases, Staff Picks, Classics. */
+function tagged(shelving: StoreShelving) {
+  let next = 0
+  const tag = (games: readonly StoreGame[]): MapGame[] =>
+    games.map(game => ({ ...game, atlasIndex: next++ }))
   return {
-    new: tagged.slice(0, a),
-    staff: tagged.slice(a, b),
-    classic: tagged.slice(b),
+    returns: tag(shelving.returns),
+    roomGames: {
+      new: tag(shelving.newReleases),
+      staff: tag(shelving.staffPicks),
+      classic: tag(shelving.classics),
+    },
   }
 }
 
-export function computeMap(games: readonly StoreGame[]): StoreMap {
-  const roomGames = partition(games)
+export function computeMap(shelving: StoreShelving): StoreMap {
+  const { returns, roomGames } = tagged(shelving)
 
   // ── New Releases: south of the hub, hub width, grows deeper ──
   const nh = newHalf(roomGames.new.length, DENSITY.cozy)
@@ -339,9 +371,28 @@ export function computeMap(games: readonly StoreGame[]): StoreMap {
     { minX: -ARCH, maxX: ARCH, minZ: HUB.minZ - 1.5, maxZ: HUB.minZ + 1.5 }, // Hub↔Viewing
   ]
 
+  // the return cart: just inside the door, so resuming is the first thing you
+  // reach. It grows toward the door with its load, up to CART_MAX_HALF.
+  const cartHalf = clamp(
+    (returns.length * CART_PITCH) / 2,
+    CART_MIN_HALF,
+    CART_MAX_HALF,
+  )
+  const returnCart: ReturnCart | undefined =
+    returns.length === 0
+      ? undefined
+      : {
+          x: CART_X,
+          zc: NEW.maxZ - CART_BACK + cartHalf,
+          half: cartHalf,
+          topY: CART_TOP,
+          games: returns,
+        }
+
   return {
     rooms,
     roomGames,
+    ...(returnCart === undefined ? {} : { returnCart }),
     gondolas,
     floors,
     walls,

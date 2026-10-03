@@ -4,6 +4,7 @@ import * as THREE from "three"
 import {
   ATLAS_COLS,
   ATLAS_ROWS,
+  type ReturnCart,
   type StoreGame,
   type StoreMap,
   type WallSeg,
@@ -100,6 +101,66 @@ function Gondola({
   )
 }
 
+// The return cart by the door: a grey steel tray on legs and casters, with a
+// push handle at the end facing the entrance. Its tapes are VhsBoxes'.
+function ReturnCartFrame({ cart }: { cart: ReturnCart }) {
+  const mats = useMemo(
+    () => ({
+      steel: createPS1Material({ color: "#5d6572" }),
+      caster: createPS1Material({ color: "#101218" }),
+    }),
+    [],
+  )
+  const W = 0.62 // tray width (x)
+  const L = cart.half * 2 // tray length (z)
+  const legs = [
+    [-W / 2 + 0.04, -cart.half + 0.04],
+    [W / 2 - 0.04, -cart.half + 0.04],
+    [-W / 2 + 0.04, cart.half - 0.04],
+    [W / 2 - 0.04, cart.half - 0.04],
+  ] as const
+  return (
+    <group position={[cart.x, 0, cart.zc]}>
+      {/* tray and lower shelf */}
+      <mesh position={[0, cart.topY - 0.03, 0]} material={mats.steel}>
+        <boxGeometry args={[W, 0.06, L]} />
+      </mesh>
+      <mesh position={[0, 0.22, 0]} material={mats.steel}>
+        <boxGeometry args={[W, 0.04, L]} />
+      </mesh>
+      {/* tray lip along both long sides */}
+      {[-W / 2, W / 2].map(x => (
+        <mesh key={x} position={[x, cart.topY + 0.04, 0]} material={mats.steel}>
+          <boxGeometry args={[0.03, 0.08, L]} />
+        </mesh>
+      ))}
+      {legs.map(([x, z]) => (
+        <group key={`${x}:${z}`}>
+          <mesh position={[x, (cart.topY + 0.1) / 2, z]} material={mats.steel}>
+            <boxGeometry args={[0.04, cart.topY - 0.1, 0.04]} />
+          </mesh>
+          <mesh position={[x, 0.05, z]} material={mats.caster}>
+            <boxGeometry args={[0.08, 0.1, 0.1]} />
+          </mesh>
+        </group>
+      ))}
+      {/* push handle, facing the door */}
+      <mesh position={[0, cart.topY + 0.3, cart.half]} material={mats.steel}>
+        <boxGeometry args={[W, 0.04, 0.04]} />
+      </mesh>
+      {[-W / 2 + 0.02, W / 2 - 0.02].map(x => (
+        <mesh
+          key={x}
+          position={[x, cart.topY + 0.15, cart.half]}
+          material={mats.steel}
+        >
+          <boxGeometry args={[0.03, 0.3, 0.03]} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 // A single axis-aligned wall segment (a vertical plane) between two floor points.
 function Wall({ seg, mat }: { seg: WallSeg; mat: THREE.Material }) {
   const dx = seg.x2 - seg.x1
@@ -125,10 +186,11 @@ export function Scene({
   map: StoreMap
 }) {
   const built = useMemo(() => {
-    // Atlas cell n belongs to the nth game of the library computeMap was given.
-    const games = Object.values(map.roomGames)
-      .flat()
-      .sort((a, b) => a.atlasIndex - b.atlasIndex)
+    // Atlas cell n belongs to the tape computeMap gave atlasIndex n.
+    const games = [
+      ...(map.returnCart?.games ?? []),
+      ...Object.values(map.roomGames).flat(),
+    ].sort((a, b) => a.atlasIndex - b.atlasIndex)
     const carpet = carpetTexture()
     carpet.repeat.set(6, 6)
     const wall = wallTexture()
@@ -208,6 +270,10 @@ export function Scene({
           boardMat={built.boardMat}
         />
       ))}
+
+      {map.returnCart === undefined ? null : (
+        <ReturnCartFrame cart={map.returnCart} />
+      )}
 
       {/* VHS tapes — individual, pickable, across every room */}
       <VhsBoxes atlas={built.atlas} games={built.games} map={map} />

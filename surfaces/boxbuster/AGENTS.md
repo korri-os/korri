@@ -9,8 +9,11 @@
 > first-person WASD and mouse-look model does not apply. `BoxbusterSurface.tsx`
 > is the only component that reads the treaty, and `boxbuster-store-view.ts`
 > is the only conversion from it. `test/boundary-gate.test.ts` holds both rules.
-> Room partition currently splits the library into thirds in catalog order;
-> which treaty facts should choose a room is an open decision.
+> Rooms are chosen from play facts (decided 2026-10-02; legacy sorted by year,
+> which the treaty lacks): resumable → the return cart by the door; last
+> played within 14 days → New Releases, newest first; played before that →
+> Staff Picks, most played first; never played → Classics, catalog order.
+> `boxbuster-store-view.ts` owns the rule; `map.ts` only lays it out.
 
 `boxbuster` is the PS1-era 3D video-store browse surface (`@korri:boxbuster`). It is an
 attempt to make a game launcher that feels like **somewhere you go**, not **something you
