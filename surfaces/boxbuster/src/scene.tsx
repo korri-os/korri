@@ -5,6 +5,7 @@ import {
   ATLAS_COLS,
   ATLAS_ROWS,
   type ReturnCart,
+  SHELVING_ACCENTS,
   type StoreGame,
   type StoreMap,
   type WallSeg,
@@ -106,7 +107,7 @@ function Gondola({
 function ReturnCartFrame({ cart }: { cart: ReturnCart }) {
   const mats = useMemo(
     () => ({
-      steel: createPS1Material({ color: "#5d6572" }),
+      steel: createPS1Material({ color: SHELVING_ACCENTS.returns }),
       caster: createPS1Material({ color: "#101218" }),
     }),
     [],

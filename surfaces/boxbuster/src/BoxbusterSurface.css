@@ -11,11 +11,23 @@
 	--bb-trim: #f2c100;
 	--bb-label: #f4e9c1;
 	--bb-shadow: #000000;
+	/* Secondary text: a provenance line, an index that waits. 8:1 on the wall. */
+	--bb-label-dim: #a9b6d8;
+	/* A problem's headline. Brighter than the Classics red so it keeps 5.9:1
+	 * on the wall at the smallest title size. */
+	--bb-alarm: #ff7a72;
+
+	/* The counter's printed type: a label printer at a rental desk. */
+	--bb-font: monospace;
 
 	/* Fluid type, container-relative: the same notice reads on a 640x480
 	 * handheld and a 4K panel. Recipe: clamp(min, base + N·cqi, max). */
 	--bb-text-body: clamp(13px, calc(9px + 0.75cqi), 22px);
 	--bb-text-sign: clamp(20px, calc(12px + 2cqi), 44px);
+	/* Relative to the body size, not to a container: inside the counter, cqi
+	 * would measure the counter, and a title could end up smaller than its
+	 * own subtitle. */
+	--bb-text-title: 1.4em;
 	--bb-space: clamp(8px, 2.5cqi, 32px);
 	--bb-rule: clamp(2px, 0.4cqi, 6px);
 
@@ -34,6 +46,40 @@
 .boxbuster-surface *::before,
 .boxbuster-surface *::after {
 	box-sizing: border-box;
+}
+
+/*
+ * The store and the counter share the surface. Which way they split is decided
+ * from the measured container (boxbuster-layout.ts) and arrives as
+ * data-layout plus --bb-counter-size.
+ */
+.boxbuster-surface[data-layout] {
+	display: grid;
+	grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.boxbuster-surface[data-layout="Side"] {
+	grid-template-columns: minmax(0, 1fr) var(--bb-counter-size);
+}
+
+.boxbuster-surface[data-layout="Below"] {
+	grid-template-rows: minmax(0, 1fr) var(--bb-counter-size);
+}
+
+.boxbuster-surface-store {
+	position: relative;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* The counter's edge faces the store it is docked against. */
+.boxbuster-surface[data-layout="Side"] > .boxbuster-counter {
+	border-inline-start: var(--bb-rule) solid var(--bb-trim);
+}
+
+.boxbuster-surface[data-layout="Below"] > .boxbuster-counter {
+	border-block-start: var(--bb-rule) solid var(--bb-trim);
 }
 
 /* Nearest-neighbour upscale of the low-res WebGL framebuffer. */

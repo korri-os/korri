@@ -2,21 +2,39 @@
  * A whole treaty host in memory that records what the surface asked for.
  * Boxbuster must be testable with no Korri running.
  */
-import type { SurfaceHost } from "@contracts/surface/korri-surface"
+import type {
+  SurfaceHost,
+  SurfaceInputAction,
+} from "@contracts/surface/korri-surface"
 
 export interface RecordingHost extends SurfaceHost {
   /** Every command the surface issued, in order. */
   readonly calls: readonly string[]
+  /** Deliver a semantic action the way the portal's input system does. */
+  press(action: SurfaceInputAction): void
 }
 
 export function createRecordingHost(): RecordingHost {
   const calls: string[] = []
+  const handlers = new Map<SurfaceInputAction, Set<() => void>>()
   const record = (call: string) => () => {
     calls.push(call)
   }
   return {
     calls,
-    input: { on: () => () => {} },
+    press(action) {
+      for (const handler of handlers.get(action) ?? []) handler()
+    },
+    input: {
+      on(action, handler) {
+        const set = handlers.get(action) ?? new Set()
+        set.add(handler)
+        handlers.set(action, set)
+        return () => {
+          set.delete(handler)
+        }
+      },
+    },
     launchGame: (gameId, launchLocationId) =>
       calls.push(`launch:${gameId}:${launchLocationId ?? ""}`),
     runAction: actionId => calls.push(`action:${actionId}`),

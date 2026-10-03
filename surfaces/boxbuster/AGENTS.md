@@ -14,6 +14,19 @@
 > played within 14 days → New Releases, newest first; played before that →
 > Staff Picks, most played first; never played → Classics, catalog order.
 > `boxbuster-store-view.ts` owns the rule; `map.ts` only lays it out.
+>
+> **The counter** (`BoxbusterCounter*.tsx`) is the "never the only way in"
+> rule below, built: a DOM layer with readable type and no dither, drawn from
+> the same placement as the store, so its index lists every tape in store
+> order under its aisle. Every decision happens there: confirm on a tape picks
+> it up, confirm again plays it (asking where when Korri offers launch
+> locations), Back or "Put it back" puts it down, and a launch problem takes
+> focus with Try again. The fast path is a contract in `boxbuster-hand.ts`:
+> when a tape can be resumed, the store opens with it in your hand, so one
+> confirm resumes. `boxbuster-layout.ts` docks the counter beside or below the
+> store from the measured container; without WebGL, or with no readable room
+> for the store, the counter is the whole surface. The camera does not follow
+> the counter yet: the in-store focus model is undecided.
 
 `boxbuster` is the PS1-era 3D video-store browse surface (`@korri:boxbuster`). It is an
 attempt to make a game launcher that feels like **somewhere you go**, not **something you

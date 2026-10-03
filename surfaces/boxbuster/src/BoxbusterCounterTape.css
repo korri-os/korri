@@ -1,0 +1,121 @@
+/*
+ * The back of the box. The one bold thing at the counter is the tape in your
+ * hand: its cover sits tilted in a hard shadow, the way the door sign does.
+ * Covers are drawn crisp here; the dither belongs to the store, not to text.
+ */
+.boxbuster-counter-tape {
+	--bb-cover: clamp(3.5rem, 26cqi, 10rem);
+
+	display: grid;
+	grid-template-columns: var(--bb-cover) minmax(0, 1fr);
+	gap: var(--bb-space);
+	align-items: start;
+	padding: var(--bb-space);
+}
+
+/* A short counter keeps every control and fact; the cover gives up size. */
+@container bb-counter (max-height: 18rem) {
+	.boxbuster-counter-tape {
+		--bb-cover: 3rem;
+	}
+}
+
+.boxbuster-counter-tape-cover {
+	display: grid;
+	place-items: center;
+	aspect-ratio: 2 / 3;
+	overflow: hidden;
+	border: 2px solid var(--bb-shadow);
+	background: var(--bb-night);
+	box-shadow: 4px 4px 0 var(--bb-shadow);
+}
+
+/* Static, not animated: the tilt says "in hand" without moving. */
+.boxbuster-counter-tape[data-in-hand] .boxbuster-counter-tape-cover {
+	transform: rotate(-3deg);
+}
+
+.boxbuster-counter-tape-cover img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.boxbuster-counter-tape-sleeve {
+	padding: 0.3em;
+	color: var(--bb-trim);
+	font-size: 0.8em;
+	font-weight: bold;
+	text-align: center;
+	/* Break between words; only a word wider than the sleeve is split. */
+	overflow-wrap: break-word;
+}
+
+.boxbuster-counter-tape-label {
+	display: grid;
+	gap: 0.35em;
+	min-width: 0;
+}
+
+.boxbuster-counter-tape-title {
+	display: -webkit-box;
+	margin: 0;
+	overflow: hidden;
+	color: var(--bb-trim);
+	font-size: var(--bb-text-title);
+	line-height: 1.1;
+	text-shadow: 2px 2px 0 var(--bb-shadow);
+	overflow-wrap: anywhere;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+}
+
+.boxbuster-counter-tape-subtitle {
+	margin: 0;
+	color: var(--bb-label-dim);
+}
+
+.boxbuster-counter-tape-facts {
+	display: grid;
+	gap: 0.15em;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.boxbuster-counter-tape-actions {
+	grid-column: 1 / -1;
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+}
+
+.boxbuster-counter-tape-play,
+.boxbuster-counter-tape-put-down {
+	min-height: 2.75em;
+	padding: 0 1em;
+	border: var(--bb-rule) solid transparent;
+	font: inherit;
+	cursor: pointer;
+}
+
+.boxbuster-counter-tape-play {
+	border-color: var(--bb-trim);
+	background: var(--bb-night);
+	color: var(--bb-trim);
+	font-weight: bold;
+}
+
+.boxbuster-counter-tape-put-down {
+	background: transparent;
+	color: var(--bb-label);
+}
+
+/* Controller focus is set in code, so :focus, not only :focus-visible. */
+.boxbuster-counter-tape-play:focus,
+.boxbuster-counter-tape-put-down:focus {
+	outline: var(--bb-rule) solid var(--bb-label);
+	outline-offset: var(--bb-rule);
+	background: var(--bb-trim);
+	color: var(--bb-night);
+}

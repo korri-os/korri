@@ -1,0 +1,63 @@
+/*
+ * The index: every tape under its aisle's sign. Each sign carries its room's
+ * colour from the store (map.ts SHELVING_ACCENTS), so the list reads as a map.
+ * A scroll region: the cut-off last row shows that more tapes follow.
+ */
+.boxbuster-counter-index {
+	min-height: 0;
+	overflow-y: auto;
+	padding-block-end: var(--bb-space);
+}
+
+.boxbuster-counter-index-aisle {
+	margin-block-start: calc(var(--bb-space) / 2);
+}
+
+.boxbuster-counter-index-sign {
+	margin: 0;
+	padding: 0.2em var(--bb-space);
+	border-inline-start: 0.6em solid var(--bb-aisle);
+	background: var(--bb-night);
+	color: var(--bb-label);
+	font-size: inherit;
+	font-weight: bold;
+}
+
+.boxbuster-counter-index-shelf {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.boxbuster-counter-index-tape {
+	display: block;
+	width: 100%;
+	min-height: 2.5em;
+	padding: 0.4em var(--bb-space);
+	overflow: hidden;
+	border: 0;
+	background: none;
+	color: var(--bb-label);
+	font: inherit;
+	text-align: start;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.boxbuster-counter-index-tape:focus {
+	outline: var(--bb-rule) solid var(--bb-label);
+	outline-offset: calc(var(--bb-rule) * -1);
+	background: var(--bb-trim);
+	color: var(--bb-night);
+}
+
+/* While a tape is in hand the index waits, and still shows which tape left. */
+.boxbuster-counter-index[inert] .boxbuster-counter-index-tape {
+	color: var(--bb-label-dim);
+}
+
+.boxbuster-counter-index[inert] .boxbuster-counter-index-tape[data-focus-home] {
+	box-shadow: inset 0.4em 0 0 var(--bb-trim);
+	color: var(--bb-label);
+}

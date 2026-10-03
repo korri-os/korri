@@ -60,6 +60,19 @@ export interface StoreShelving {
   readonly classics: readonly StoreGame[]
 }
 
+/**
+ * Each place's colour: the room's sign and the counter's aisle heading use the
+ * same one, so the index reads as a map of the store. The return cart's is its
+ * steel.
+ */
+export const SHELVING_ACCENTS: Readonly<Record<keyof StoreShelving, string>> =
+  {
+    returns: "#5d6572",
+    newReleases: "#4a90ff",
+    staffPicks: "#f2c100",
+    classics: "#c83b3b",
+  }
+
 /** A low rolling cart just inside the entrance, tapes lying face up on it. */
 export interface ReturnCart {
   readonly x: number // world x of the cart's centre line
@@ -200,7 +213,7 @@ export function computeMap(shelving: StoreShelving): StoreMap {
   const newRoom: RoomSpec = {
     id: "new",
     title: "NEW RELEASES",
-    accent: "#4a90ff",
+    accent: SHELVING_ACCENTS.newReleases,
     density: DENSITY.cozy,
     box: NEW,
     aisleXs: [-AISLE_DX / 2, AISLE_DX / 2], // 2 aisles, symmetric, centre lane clear
@@ -222,7 +235,7 @@ export function computeMap(shelving: StoreShelving): StoreMap {
   const staffRoom: RoomSpec = {
     id: "staff",
     title: "STAFF PICKS",
-    accent: "#f2c100",
+    accent: SHELVING_ACCENTS.staffPicks,
     density: DENSITY.livedIn,
     box: STAFF,
     aisleXs: staffXs,
@@ -244,7 +257,7 @@ export function computeMap(shelving: StoreShelving): StoreMap {
   const classicRoom: RoomSpec = {
     id: "classic",
     title: "CLASSICS",
-    accent: "#c83b3b",
+    accent: SHELVING_ACCENTS.classics,
     density: DENSITY.atmospheric,
     box: CLASSIC,
     aisleXs: classicXs,

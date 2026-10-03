@@ -1,0 +1,69 @@
+/*
+ * Launch status at the counter. Work under way is a printed band above the
+ * tape. A problem takes the tape's place under an alarm rule.
+ */
+.boxbuster-counter-status {
+	padding: calc(var(--bb-space) / 2) var(--bb-space);
+	background: var(--bb-night);
+}
+
+.boxbuster-counter-status-kicker {
+	margin: 0;
+	color: var(--bb-trim);
+	font-weight: bold;
+}
+
+.boxbuster-counter-status-detail {
+	margin: 0;
+	color: var(--bb-label);
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-counter-problem {
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+	padding: var(--bb-space);
+	border-block-start: var(--bb-rule) solid var(--bb-alarm);
+}
+
+.boxbuster-counter-problem-kicker {
+	margin: 0;
+	color: var(--bb-alarm);
+	font-size: var(--bb-text-title);
+	line-height: 1.1;
+	text-shadow: 2px 2px 0 var(--bb-shadow);
+}
+
+.boxbuster-counter-problem-title {
+	margin: 0;
+	color: var(--bb-trim);
+	font-weight: bold;
+}
+
+.boxbuster-counter-problem-reason {
+	margin: 0;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.boxbuster-counter-problem-actions {
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+}
+
+.boxbuster-counter-problem-action {
+	min-height: 2.75em;
+	padding: 0 1em;
+	border: var(--bb-rule) solid var(--bb-trim);
+	background: var(--bb-night);
+	color: var(--bb-trim);
+	font: inherit;
+	cursor: pointer;
+}
+
+.boxbuster-counter-problem-action:focus {
+	outline: var(--bb-rule) solid var(--bb-label);
+	outline-offset: var(--bb-rule);
+	background: var(--bb-trim);
+	color: var(--bb-night);
+}
