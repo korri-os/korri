@@ -22,14 +22,16 @@ let
       metadata
       ;
   };
+  publishers = pkgs.writeText "published-plugin-publishers.json" (
+    builtins.toJSON { "@korri" = { inherit publicKey cacheUrl; }; }
+  );
   identityChecks = pkgs.lib.concatStringsSep "\n" (
     pkgs.lib.mapAttrsToList (name: package: ''
-      ${hostPackage}/bin/korri-plugin seed ${pkgs.lib.escapeShellArg package} ${pkgs.lib.escapeShellArg cacheUrl} \
-        | jq -e --arg id ${
-          pkgs.lib.escapeShellArg ("@korri:" + pkgs.lib.removePrefix "korri-plugin-" name)
-        } \
-            --arg path ${pkgs.lib.escapeShellArg package} \
-            '.id == $id and .package == $path and .desired.state == "Enabled" and .previous == null' >/dev/null
+      jq -e --arg id ${
+        pkgs.lib.escapeShellArg ("@korri:" + pkgs.lib.removePrefix "korri-plugin-" name)
+      } --arg path ${pkgs.lib.escapeShellArg package} \
+        '.[] | select(.id == $id) | .package == $path and .desired.state == "Enabled" and .previous == null' \
+        receipts.json >/dev/null
     '') published
   );
 in
@@ -44,6 +46,14 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
     set -euo pipefail
     test -f ${metadata}/nix-cache-info
     test -e ${proofCheck}
+    ${hostPackage}/bin/korri-plugin seed-graph ${publishers} \
+      ${pkgs.lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
+    jq -e 'length == ${toString (builtins.length (builtins.attrNames published))}' receipts.json >/dev/null
     ${identityChecks}
+    # Image selection must approve the exact dependency the pack names.
+    # Keeping another FAKE-08 version in the store is not sufficient.
+    jq -e --arg dependency ${pkgs.lib.escapeShellArg published.korri-plugin-fake08} \
+      '.publisher.namespace == "@korri" and .requires == [$dependency]' \
+      ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
     touch "$out"
   ''

@@ -11,15 +11,18 @@ let
     aarch64-linux = [
       "sha256-OlWpH0izwxlLfoKp4iPMv62WA35qrZhuHhcseOzXOso="
       "sha256-vgSXTEWZ0QhFi27/Z0tvcDBhYcGE+ya3zZHsj23xMb4="
+      "sha256-cp2Kao3nNfe3jONB1nGfDZgl2KJOG1PGZanHB42lmzg="
     ];
     x86_64-linux = [
       "sha256-hEG1+tYVEXRLAM0qsI8tn+V89d/wmXdc8YLNWh/2GSQ="
       "sha256-i8dr+p67hQv8/60UzKA233PZSE7XE98smlmouSLKDHg="
+      "sha256-8H0SKgcB80XLf8Rrw66n8JdVsnGYpoxIYSmMhpbF9xM="
     ];
   };
   batches = [
     "build-e5e27ed406f2"
     "build-9f946f33bd18"
+    "build-0febdc65ce51"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:
@@ -33,6 +36,7 @@ let
 in
 pkgs.runCommand "korri-image-plugin-offline-metadata"
   {
+    passthru = { inherit archives; };
     nativeBuildInputs = [
       pkgs.buildPackages.python3
       pkgs.buildPackages.nix

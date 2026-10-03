@@ -3,6 +3,7 @@
 """Merge pinned Nix proof archives and require the actual complete closure."""
 
 import argparse
+import io
 import tarfile
 from pathlib import Path
 
@@ -25,8 +26,28 @@ def merge(output: Path, closure: Path, archives: list[Path]) -> None:
                 assert stream is not None
                 data = stream.read()
                 target = output / name
-                if target.exists() and target.read_bytes() != data:
-                    raise ValueError(f"conflicting publisher proof: {name}")
+                if target.exists():
+                    previous = target.read_bytes()
+                    if previous != data:
+                        first = io.BytesIO(previous).readlines()
+                        current = io.BytesIO(data).readlines()
+                        ignored = (b"Deriver: ", b"Sig: ")
+                        if name == "nix-cache-info" or b"".join(
+                            line for line in first if not line.startswith(ignored)
+                        ) != b"".join(
+                            line for line in current if not line.startswith(ignored)
+                        ):
+                            raise ValueError(f"conflicting publisher proof: {name}")
+                        # Deriver is optional provenance: keep the first proof's.
+                        # Union native Sig lines; only Nix's full-key verification
+                        # can establish trust in any of these signatures.
+                        signatures = {
+                            line for line in [*first, *current]
+                            if line.startswith(b"Sig: ")
+                        }
+                        data = b"".join(
+                            line for line in first if not line.startswith(b"Sig: ")
+                        ) + b"".join(sorted(signatures))
                 target.write_bytes(data)
     for path in closure.read_text().splitlines():
         name = Path(path).name.split("-", 1)[0] + ".narinfo"

@@ -39,6 +39,146 @@ def reject_merge(work, label, closure, archives, message):
         raise AssertionError(f"{label}: merge accepted invalid publisher proofs")
 
 
+def equivalent_proofs(work, closure, archives):
+    originals = {}
+    for source_archive in archives:
+        with tarfile.open(source_archive) as source:
+            for entry in source.getmembers():
+                if entry.isfile():
+                    stream = source.extractfile(entry)
+                    assert stream is not None
+                    originals.setdefault(entry.name.removeprefix("./"), []).append(
+                        stream.read()
+                    )
+    good = work / "good"
+    merge(good, closure, archives)
+    differing = []
+    for name, proofs in originals.items():
+        expected = proofs[0]
+        if len(set(proofs)) > 1:
+            assert name.endswith(".narinfo"), name
+            differing.append((name, proofs))
+            signatures = {
+                line
+                for proof in proofs
+                for line in proof.splitlines(keepends=True)
+                if line.startswith(b"Sig: ")
+            }
+            expected = b"".join(
+                line
+                for line in proofs[0].splitlines(keepends=True)
+                if not line.startswith(b"Sig: ")
+            ) + b"".join(sorted(signatures))
+        assert (good / name).read_bytes() == expected, name
+
+    for name, proofs in differing:
+        first = proofs[0]
+        other = next(proof for proof in proofs if proof != first)
+        # Minimize to actual overlapping release proofs. Reversing their order
+        # must still union signatures, but retain only the first's Deriver.
+        pair = [
+            archive(work / f"{name}-{index}.tar.gz", {name: proof})
+            for index, proof in enumerate([first, other])
+        ]
+        one_path = work / f"{name}-closure"
+        one_path.write_bytes(
+            next(
+                line[len(b"StorePath: ") :]
+                for line in first.splitlines(keepends=True)
+                if line.startswith(b"StorePath: ")
+            )
+        )
+        signatures = sorted(
+            {
+                line
+                for proof in [first, other]
+                for line in proof.splitlines(keepends=True)
+                if line.startswith(b"Sig: ")
+            }
+        )
+        for label, ordered, retained in [
+            ("forward", pair, first),
+            ("reverse", list(reversed(pair)), other),
+        ]:
+            output = work / f"{name}-{label}"
+            merge(output, one_path, ordered)
+            expected = b"".join(
+                line
+                for line in retained.splitlines(keepends=True)
+                if not line.startswith(b"Sig: ")
+            ) + b"".join(signatures)
+            assert (output / name).read_bytes() == expected, (name, label)
+
+        # Keep the real Deriver/Sig differences while changing each other field.
+        for field in [
+            b"NarHash",
+            b"NarSize",
+            b"References",
+            b"StorePath",
+            b"URL",
+            b"Compression",
+            b"FileHash",
+            b"FileSize",
+        ]:
+            prefix = field + b": "
+            line = next(
+                line
+                for line in other.splitlines(keepends=True)
+                if line.startswith(prefix)
+            )
+            changed = other.replace(line, line.removesuffix(b"\n") + b"-conflict\n")
+            label = f"{name}-conflicting-{field.decode()}"
+            reject_merge(
+                work,
+                label,
+                one_path,
+                [pair[0], archive(work / f"{label}.tar.gz", {name: changed})],
+                "conflicting publisher proof",
+            )
+        label = f"{name}-conflicting-unknown-field"
+        reject_merge(
+            work,
+            label,
+            one_path,
+            [
+                pair[0],
+                archive(
+                    work / f"{label}.tar.gz",
+                    {name: other + b"UnknownField: conflict\n"},
+                ),
+            ],
+            "conflicting publisher proof",
+        )
+        # Native narinfo lines end at LF, not CR. A Sig-looking fragment inside
+        # another field must not become an ignored signature line.
+        embedded = []
+        for index, proof in enumerate([first, other]):
+            line = next(
+                line for line in io.BytesIO(proof).readlines()
+                if line.startswith(b"URL: ")
+            )
+            changed = proof.replace(
+                line,
+                line.removesuffix(b"\n") + f"\rSig: fragment-{index}\n".encode(),
+            )
+            embedded.append(
+                archive(work / f"{name}-embedded-{index}.tar.gz", {name: changed})
+            )
+        reject_merge(
+            work,
+            f"{name}-conflicting-embedded-prefix",
+            one_path,
+            embedded,
+            "conflicting publisher proof",
+        )
+    print(
+        f"PASS real-proof-merge: {len(differing)} equivalent overlapping proofs; "
+        "signature union, first Deriver, and strict field conflicts",
+        flush=True,
+    )
+    return good
+
+
 def run(command, env, *, input=None, succeeds=True):
     result = subprocess.run(
         command, input=input, text=True, capture_output=True, env=env
@@ -201,8 +341,7 @@ def main():
         work = Path(temporary)
         original = archive(work / "original.tar.gz", entries)
         archives = args.archives or [original]
-        good = work / "good"
-        merge(good, args.closure, archives)
+        good = equivalent_proofs(work, args.closure, archives)
         # Actual immutable release archives and the production output must agree.
         assert {p.name: p.read_bytes() for p in good.iterdir()} == entries
         merge(work / "identical-duplicate", args.closure, [*archives, original])

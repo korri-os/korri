@@ -44,18 +44,29 @@ let
     && !(lib.hasInfix "korri-image-seed" devices.rpminiv2.consoleConfiguration.config.sdImage.populateRootCommands);
 in
 assert lib.all exactImage names;
+# The pack and its runtime each need an approved receipt on every product
+# image. A transitive store reference alone does not install the runtime.
+assert lib.all (
+  name:
+  lib.all (package: lib.elem (toString package) (map toString selected.${name})) [
+    published.korri-plugin-starter-pack
+    published.korri-plugin-fake08
+  ]
+) names;
 assert recoveryWithoutDefaults;
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
 # Key-only SSH ships on every device (owner decision, 2026-09-30).
-assert lib.all (name: lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name})) [
-  "rg353m"
-  "rgds"
-  "r36tmax"
-  "rpminiv2"
-  "odin2portal"
-  "rg35xxsp"
-  "rg35xxpro"
-];
+assert lib.all
+  (name: lib.elem (toString published.korri-plugin-ssh) (map toString selected.${name}))
+  [
+    "rg353m"
+    "rgds"
+    "r36tmax"
+    "rpminiv2"
+    "odin2portal"
+    "rg35xxsp"
+    "rg35xxpro"
+  ];
 assert lib.all
   (name: lib.elem (toString published.korri-plugin-sunshine) (map toString selected.${name}))
   [

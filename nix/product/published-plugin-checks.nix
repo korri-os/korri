@@ -33,6 +33,8 @@ builtins.listToAttrs (
       publishedPaths = {
         ssh = published.korri-plugin-ssh;
         mgba = published.korri-plugin-mgba;
+        fake08 = published.korri-plugin-fake08;
+        starterPack = published.korri-plugin-starter-pack;
       };
       metadata = import ./published-plugin-metadata.nix {
         inherit pkgs system;

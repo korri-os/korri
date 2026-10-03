@@ -1,6 +1,6 @@
 # Acceptance consumes immutable outputs already substituted by the caller.
 # No plugin producers, test signing keys, NAR cache, or plugin derivations.
-# publishedPaths has the selected ssh and mgba exact store-path strings;
+# publishedPaths has the selected SSH, mGBA, FAKE-08 and Starter pack paths;
 # metadata is the checked union of the corresponding offline proof archives.
 {
   pkgs,
@@ -17,6 +17,8 @@ let
   paths = [
     publishedPaths.ssh
     publishedPaths.mgba
+    publishedPaths.fake08
+    publishedPaths.starterPack
   ];
   # Reject recipe-backed values even if their output exists in a warm store.
   exact =
@@ -177,7 +179,8 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("korrid.service")
     peer.wait_for_unit("multi-user.target")
     paths = ${builtins.toJSON (map builtins.unsafeDiscardStringContext paths)}
-    ssh_path, mgba_path = paths
+    ssh_path, mgba_path, fake08_path, pack_path = paths
+    expected_packages = {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path, "@korri:fake08": fake08_path, "@korri:starter-pack": pack_path}
     cache_url = ${builtins.toJSON binding.cacheUrl}
     package_args = " ".join(shlex.quote(path) for path in paths)
     generation = machine.succeed("readlink -f /run/current-system").strip()
@@ -256,6 +259,10 @@ pkgs.testers.runNixOSTest {
 
     ssh_receipt_path, ssh_receipt = seeded("@korri:ssh", ssh_path)
     mgba_receipt_path, mgba_receipt = seeded("@korri:mgba", mgba_path)
+    fake08_receipt_path, fake08_receipt = seeded("@korri:fake08", fake08_path)
+    pack_receipt_path, pack_receipt = seeded("@korri:starter-pack", pack_path)
+    pack_manifest = json.loads(machine.succeed("cat " + pack_path + "/manifest.json"))
+    assert pack_manifest["requires"] == [fake08_path], pack_manifest
     ssh_manifest = json.loads(machine.succeed("cat " + ssh_path + "/manifest.json"))
     assert len(ssh_manifest["services"]) == 1, ssh_manifest
     native_name, native_source = next(iter(ssh_manifest["services"].items()))
@@ -280,8 +287,9 @@ pkgs.testers.runNixOSTest {
     machine.fail("systemctl is-active " + ssh_unit)
     machine.fail("test -e /run/systemd/system/" + ssh_unit)
     assert machine.succeed("ss -ltnH 'sport = :2222'").strip() == ""
-    machine.fail("test -e /run/korri-plugin-host/enabled-packages.json")
-    machine.fail("korri-plugin enabled-packages")
+    remaining_packages = {id: package for id, package in expected_packages.items() if id != "@korri:ssh"}
+    assert {p["id"]: p["package"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))} == remaining_packages
+    assert {p["id"]: p["package"] for p in json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))} == remaining_packages
     # Repair from the original approved image producer bytes, not a migration
     # or a hand-authored receipt. The current host re-derives approval offline.
     original = "/run/published-image-stage/files" + ssh_receipt_path
@@ -289,16 +297,39 @@ pkgs.testers.runNixOSTest {
     machine.succeed("cmp " + original + " " + ssh_receipt_path)
     machine.succeed("systemctl start korri-plugin-host.service korrid.service")
     reports = {report["id"]: report for report in json.loads(machine.succeed("korri-plugin enabled-packages"))}
-    assert set(reports) == {"@korri:ssh", "@korri:mgba"}, reports
+    assert set(reports) == set(expected_packages), reports
     ssh = reports["@korri:ssh"]
     mgba = reports["@korri:mgba"]
-    for report, package in [(ssh, ssh_path), (mgba, mgba_path)]:
+    for id, package in expected_packages.items():
+        report = reports[id]
         assert report["package"] == package, report
         manifest = json.loads(machine.succeed("cat " + package + "/manifest.json"))
         for field in ["entry", "sources", "files"]:
             assert report[field] == manifest[field], (field, report, manifest)
     assert ssh["approval"] == ssh_receipt["approval"]
     assert mgba["approval"] == mgba_receipt["approval"]
+    assert reports["@korri:fake08"]["approval"] == fake08_receipt["approval"]
+    assert reports["@korri:starter-pack"]["approval"] == pack_receipt["approval"]
+    assert reports["@korri:starter-pack"]["native_units"] == {}
+    # The signed pack must recover through the same exact graph approval as
+    # ordinary installation. A changed seeded digest cannot authorize it.
+    machine.succeed("systemctl stop korrid.service korri-plugin-host.service")
+    corrupt_pack = dict(pack_receipt, approval="0" * 64)
+    machine.succeed("printf %s " + shlex.quote(json.dumps(corrupt_pack)) + " > " + pack_receipt_path)
+    refusal = machine.fail("korri-plugin restore-all 2>&1", timeout=300)
+    assert "no longer matches its approval" in refusal, refusal
+    remaining_packages = {id: package for id, package in expected_packages.items() if id != "@korri:starter-pack"}
+    assert {p["id"]: p["package"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))} == remaining_packages
+    assert {p["id"]: p["package"] for p in json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))} == remaining_packages
+    original_pack = "/run/published-image-stage/files" + pack_receipt_path
+    machine.succeed("cp -a " + original_pack + " " + pack_receipt_path + "; korri-plugin restore-all", timeout=300)
+    machine.succeed("cmp " + original_pack + " " + pack_receipt_path)
+    machine.succeed("systemctl start korri-plugin-host.service korrid.service")
+    refusal = machine.fail("korri-plugin disable @korri:fake08 2>&1", timeout=300)
+    assert "actively required by @korri:starter-pack" in refusal, refusal
+    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08")
+    machine.succeed("korri-plugin enable @korri:starter-pack; korri-plugin restore-all", timeout=300)
+    assert {p["id"]: p["package"] for p in json.loads(machine.succeed("korri-plugin enabled-packages"))} == expected_packages
     assert ssh["policy"].startswith("policy-root-v3:")
     assert "DEVICE-WIDE ROOT AUTHORITY" in ssh["warning"]
     assert len(ssh["native_units"]) == 1
@@ -336,7 +367,7 @@ pkgs.testers.runNixOSTest {
 
     machine.succeed("korri-plugin restore-all")
     enabled = json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json"))
-    assert {p["id"]: p["package"] for p in enabled} == {"@korri:ssh": ssh_path, "@korri:mgba": mgba_path}, enabled
+    assert {p["id"]: p["package"] for p in enabled} == expected_packages, enabled
     def games():
         request = json.dumps({"_tag": "app.local-games.list", "payload": {}})
         result = json.loads(machine.succeed("curl --fail --silent http://127.0.0.1:49117/rpc -H 'content-type: application/json' -H 'authorization: Bearer published-plugin-vm-capability' -d " + shlex.quote(request)))
@@ -356,7 +387,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("korri-plugin restore-all")
     assert json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json")) == enabled
     assert [game["id"] for game in games()] == ["01K4J6K8Y00000000000000002"]
-    machine.succeed("korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
+    machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
     ports(False)
     login(success=False)
     assert games() == []

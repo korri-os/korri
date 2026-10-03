@@ -30,6 +30,7 @@ pkgs.runCommand "korri-published-plugin-metadata-check-${system}"
       --closure ${closure}/store-paths \
       --registration ${closure}/registration \
       --public-key ${pkgs.lib.escapeShellArg publicKey} \
-      --roots ${pkgs.lib.escapeShellArgs pluginPackages}
+      --roots ${pkgs.lib.escapeShellArgs pluginPackages} \
+      --archives ${pkgs.lib.escapeShellArgs metadata.archives}
     touch "$out"
   ''

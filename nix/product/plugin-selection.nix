@@ -6,7 +6,12 @@
 { plugins }:
 let
   select = names: map (name: plugins."korri-plugin-${name}") names;
+  # Owner decision: Starter pack ships on every product device. Image seeding
+  # creates one receipt per selected package, so its exact FAKE-08 dependency
+  # must be selected too, not only retained in the cartridge pack's closure.
   shared = select [
+    "fake08"
+    "starter-pack"
     "retroarch"
     "nestopia"
     "snes9x"
@@ -24,7 +29,10 @@ let
     "fbneo"
     "pcsx-rearmed"
   ];
-  n64AndDreamcast = select [ "mupen64plus" "flycast" ];
+  n64AndDreamcast = select [
+    "mupen64plus"
+    "flycast"
+  ];
   ds = select [ "melonds" ];
   streamingHost = [ plugins.korri-plugin-sunshine ];
   # Key-only SSH on every device (owner decision, 2026-09-30): it is the copy
