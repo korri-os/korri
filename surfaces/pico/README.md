@@ -25,9 +25,38 @@ What that forbids, deliberately:
 - One thing of its own is stored: the face, as `pico.font` in local storage
   (`src/pico-font-preference.ts`). Nothing else Pico shows is kept by Pico.
 
+## State
+
+Pico runs the Elm architecture inside React. Where the player is lives in one
+value, one pure function changes it, and effects on Korri are data until one
+file performs them.
+
+| File | Holds |
+|---|---|
+| `src/state/navigation.ts` | `PicoNavigation`: home, Find, a game's screen and Settings as layers. Each layer owns the one question it can ask, so Back never withdraws a question the player cannot see. |
+| `src/state/messages.ts` | Every fact that can change navigation, named for what happened: `PressedBack`, `OpenedGame`. |
+| `src/state/update.ts` | `update(nav, message, korri)`: every navigation rule. It returns the next value and a list of `PicoRequest`s. |
+| `src/state/shown.ts` | What the screen draws, and whether attract may show. |
+| `src/state/overlay.ts` | The gameplay overlay's model and update. |
+| `src/pico-host.ts` | The one door to Korri: performs requests, delivers the host's buttons as messages. |
+| `src/use-pico-program.ts` | The runtime: holds a model, runs `update`, performs requests. |
+| `src/use-pico-navigation.ts` | The catalog's subscriptions: host buttons, Korri's model, the idle timer. |
+
+To change behaviour, add a message or a case in `update`, and test it in
+`test/pico-navigation-update.test.ts` with plain values. A page reports what
+happened through a callback; the composition root turns that into a message.
+
+Input acts on what is shown. Back acts on the top layer only. While Korri shows
+a launch, a running game or a failure, System, Options and Menu change nothing;
+Back acknowledges a failure. Menu cycles home's layout only on home.
+
+Leaf components may keep state that Back, the host buttons and Korri never
+change and no other screen reads: text being typed, a measured size, the
+cursor on the shelf. `.oxlintrc.json` lists each such file and says why.
+
 ## The gates are the specification
 
-Three test files hold the rules that prose cannot enforce. Read them before adding
+Four checks hold the rules that prose cannot enforce. Read them before adding
 a component; they will find what review misses.
 
 - `test/decomposition-gate.test.ts` — every rendered unit is a component with a
@@ -49,11 +78,23 @@ a component; they will find what review misses.
   selectors. Its ownership checks cover static class names, not every possible
   selector match.
 
+- `.oxlintrc.json`, run type-aware by `bun run lint`, holds the state rules:
+  `src/state` is pure (no React, DOM, timer, clock or storage); only
+  `src/pico-host.ts` calls the host or listens to its input; no component keeps
+  `useState` or `useReducer` unless its file is on the allow list; and every
+  `switch` over a union is exhaustive. `test/architecture-lint.test.ts` runs
+  oxlint over `test/lint-tripwires`, where each planted violation is marked
+  `// VIOLATION <rule>`, and requires exactly those reports. The host rule
+  matches the name `host`: a renamed host gets past it, so review must catch that.
+
+The gates parse source with oxc (`test/source-ast.ts`). TypeScript 7 no longer
+exports a compiler API from the `typescript` package.
+
 Every assertion has been observed failing against a deliberate tripwire. If you
 add one, break it once before you trust it.
 
 ```sh
-nix run .#pico-check      # gates, behaviour tests, and typecheck
+nix run .#pico-check      # gates, behaviour tests, typecheck, and lint
 ```
 
 ## Layout

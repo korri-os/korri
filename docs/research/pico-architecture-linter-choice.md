@@ -186,3 +186,22 @@ The Pico README asks that every gate be seen failing once before anyone trusts
 it. The tripwire copy does that job for lint rules. A real setup should keep
 it as a test fixture and assert that the linter reports each planted
 violation.
+
+## Outcome (2026-10-06)
+
+Adopted. `surfaces/pico/.oxlintrc.json` holds the four rules, with oxlint
+1.87.0 and oxlint-tsgolint 7.0.2003, and `bun run lint` runs them in
+`pico-check`. `test/architecture-lint.test.ts` requires each planted violation
+in `test/lint-tripwires` to be reported and nothing else.
+
+Three things changed from the reference config above:
+
+- Caliper parts and the fixture host may call the host. They are previews
+  wired to a fake host, and the product never runs them.
+- Rule 3 covers all of `src`, with an allow list of leaf files that keep local
+  state, each with its reason.
+- `importNames` on `react` also refuses `import * as React`, so
+  `React.useState` cannot get past rule 3.
+
+Pico's three compiler-API gates moved to oxc-parser and oxc-resolver
+(`test/source-ast.ts`) when Pico moved to TypeScript 7.0.2.
