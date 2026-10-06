@@ -94,9 +94,6 @@
       // - use-pico-range.ts: a range's value during a held press, before it is sent.
       // - use-pico-quantized-art.ts: the measured shape of loaded art.
       // - PicoHome.tsx: `aim`, the name of the focused MENU control, for the hint.
-      // - PicoSettingsPanel.tsx: which settings group is showing.
-      // - PicoCartShelf.tsx: the cart under the cursor. The owner keeps the
-      //   restore point (`selectedId`/`onSelect`); a preview has no owner.
       // - PicoTextField.tsx: whether the text overflows its box.
       // - PicoKeyboard.tsx: the capitals and symbols layers while typing.
       // - PicoTextEditor.tsx: the text being typed.
@@ -108,8 +105,6 @@
         "**/src/use-pico-range.ts",
         "**/src/use-pico-quantized-art.ts",
         "**/src/pages/PicoHome.tsx",
-        "**/src/pages/PicoSettingsPanel.tsx",
-        "**/src/ui/organisms/PicoCartShelf.tsx",
         "**/src/ui/molecules/PicoTextField.tsx",
         "**/src/ui/molecules/PicoKeyboard.tsx",
         "**/src/ui/organisms/PicoTextEditor.tsx",

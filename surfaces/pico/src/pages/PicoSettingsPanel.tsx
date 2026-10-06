@@ -1,5 +1,4 @@
 import "./PicoSettingsPanel.css"
-import { useState } from "react"
 import type { PicoSettingRowView, PicoSettingsView } from "../pico-settings-view"
 import { PicoRow } from "../ui/atoms/PicoRow"
 import { PicoSettingRow } from "../ui/molecules/PicoSettingRow"
@@ -9,23 +8,29 @@ import { PicoPanelScreen } from "../ui/templates/PicoPanelScreen"
  * Page content: Korri's settings groups fill the shared panel-screen template.
  * PicoSettings adds the screen shell and action handling around this instance.
  *
- * Owns which group is showing, because that is a fact about the screen and not
- * about the device. Owns nothing about values: a press hands the row to the
- * surface, which asks Korri, and Korri republishes.
+ * Holds no state. Which group shows is navigation (`Settings.group` in
+ * src/state/navigation.ts): the owner passes it in and hears about a new
+ * choice through `onGroup`. Owns nothing about values either: a press hands the
+ * row to the surface, which asks Korri, and Korri republishes.
  */
 export function PicoSettingsPanel({
   settings,
+  group,
+  onGroup,
   onActivate,
   onDismissProblem,
 }: {
   readonly settings: PicoSettingsView
+  /** The group showing. A group Korri stopped publishing shows the last one. */
+  readonly group: number
+  readonly onGroup: (index: number) => void
   readonly onActivate: (row: PicoSettingRowView) => void
   readonly onDismissProblem: () => void
 }) {
-  const [current, setCurrent] = useState(0)
-  const group = settings.groups[Math.min(current, settings.groups.length - 1)]
+  const current = Math.min(group, settings.groups.length - 1)
+  const shown = settings.groups[current]
 
-  if (group === undefined) {
+  if (shown === undefined) {
     return (
       <div className="pico-settings-panel-empty">
         <span className="pico-settings-panel-empty-kicker">NOTHING TO SET</span>
@@ -34,17 +39,17 @@ export function PicoSettingsPanel({
     )
   }
 
-  const problem = group.rows.find((row) => typeof row.state === "object")
+  const problem = shown.rows.find((row) => typeof row.state === "object")
 
   return (
     <PicoPanelScreen
       current={current}
-      onSelect={setCurrent}
+      onSelect={onGroup}
       tabs={settings.groups.map((candidate) => candidate.title)}
-      title={group.title}
+      title={shown.title}
     >
       <ul className="pico-settings-panel-rows">
-        {group.rows.map((row) => (
+        {shown.rows.map((row) => (
           <PicoSettingRow key={row.id} onActivate={() => onActivate(row)} row={row} />
         ))}
       </ul>

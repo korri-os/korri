@@ -72,6 +72,8 @@ export type SettingsQuestion =
 
 export interface Settings {
   readonly question: SettingsQuestion
+  /** Which settings group shows. Settings opens on the first; closing it forgets. */
+  readonly group: number
 }
 
 /** The attract screen. `activity` counts presses and focus moves; the idle
@@ -104,6 +106,8 @@ export function topLayer(nav: PicoNavigation): TopLayer {
   return "Home"
 }
 
+export const SETTINGS: Settings = { question: { _tag: "None" }, group: 0 }
+
 const HOME: Home = { mode: "shelf", selectedGameId: undefined, menu: "Closed", focusOnReturn: "None" }
 
 /** Where a fresh Pico starts. `initial` is for previews and tests; hosts omit it. */
@@ -112,7 +116,7 @@ export function initialNavigation(initial?: PicoInitialView): PicoNavigation {
     home: initial?._tag === "Home" ? { ...HOME, mode: initial.mode ?? "shelf" } : HOME,
     find: initial?._tag === "Find",
     detail: initial?._tag === "Detail" ? { gameId: initial.gameId, question: { _tag: "None" } } : undefined,
-    settings: initial?._tag === "Settings" ? { question: { _tag: "None" } } : undefined,
+    settings: initial?._tag === "Settings" ? SETTINGS : undefined,
     search: {
       query: "",
       section: initial?._tag === "Find" ? initial.section ?? PICO_ALL_SECTIONS : PICO_ALL_SECTIONS,

@@ -205,3 +205,7 @@ Three things changed from the reference config above:
 
 Pico's three compiler-API gates moved to oxc-parser and oxc-resolver
 (`test/source-ast.ts`) when Pico moved to TypeScript 7.0.2.
+
+Later the same day, `PicoCartShelf` and `PicoSettingsPanel` came off the allow
+list: the chosen cart and the settings group became props kept in the model.
+The leaves that remain hold typing in progress, secrets or measurements.

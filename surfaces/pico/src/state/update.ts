@@ -10,7 +10,7 @@ import { picoScreenViewFromModel } from "../pico-screen-view"
 import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-session-return"
 import { PICO_FONT_SETTING } from "../pico-settings-view"
 import { isHostButton, type PicoMessage } from "./messages"
-import { type Detail, type Home, type PicoNavigation, type Settings, topLayer } from "./navigation"
+import { type Detail, type Home, type PicoNavigation, SETTINGS, type Settings, type SettingsQuestion, topLayer } from "./navigation"
 import { ask, type PicoStep, stay } from "./requests"
 import { attractShowing, canAttract, runnerOpen } from "./shown"
 
@@ -53,7 +53,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       // Settings toggles. Closing it drops its question, identity dialog included.
       return stay(nav.settings !== undefined
         ? { ...nav, settings: undefined }
-        : { ...nav, settings: { question: { _tag: "None" } }, home: closeMenu(nav.home) })
+        : { ...nav, settings: SETTINGS, home: closeMenu(nav.home) })
 
     case "PressedOptions": {
       // Find opens from home and closes from Find. Over any other screen the
@@ -87,7 +87,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "ChoseMenuFind":
       return stay({ ...nav, find: true, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } })
     case "ChoseMenuSettings":
-      return stay({ ...nav, settings: { question: { _tag: "None" } }, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } })
+      return stay({ ...nav, settings: SETTINGS, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } })
     case "ChoseMenuView":
       return stay(cycleMode(nav))
     case "ReturnedFocus":
@@ -173,35 +173,35 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay(nav.detail === undefined ? nav : { ...nav, detail: { ...nav.detail, question: { _tag: "None" } } })
 
     // Settings
+    case "ChoseSettingsGroup":
+      return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
     case "PressedSettingAction":
       return message.actionId.startsWith("identity:")
-        ? stay(withSettings(nav, { question: { _tag: "Identity", actionId: message.actionId } }))
+        ? stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId }))
         : ask(nav, { _tag: "RunAction", actionId: message.actionId })
     case "AskedSettingConfirmation":
-      return stay(withSettings(nav, {
-        question: { _tag: "ConfirmingAction", actionId: message.actionId, confirmation: message.confirmation },
-      }))
+      return stay(withQuestion(nav, { _tag: "ConfirmingAction", actionId: message.actionId, confirmation: message.confirmation }))
     case "ConfirmedSettingAction": {
       const question = nav.settings?.question
       if (question?._tag !== "ConfirmingAction") return stay(nav)
-      return ask(withSettings(nav, { question: { _tag: "None" } }), { _tag: "RunAction", actionId: question.actionId })
+      return ask(withQuestion(nav, { _tag: "None" }), { _tag: "RunAction", actionId: question.actionId })
     }
     case "CancelledSettingAction":
     case "ClosedEditor":
     case "ClosedIdentity":
-      return stay(withSettings(nav, { question: { _tag: "None" } }))
+      return stay(withQuestion(nav, { _tag: "None" }))
     case "OpenedEditor":
-      return stay(withSettings(nav, { question: { _tag: "EditingText", settingId: message.settingId } }))
+      return stay(withQuestion(nav, { _tag: "EditingText", settingId: message.settingId }))
     case "AskedClear": {
       const question = nav.settings?.question
       return question?._tag === "EditingText"
-        ? stay(withSettings(nav, { question: { _tag: "ConfirmingClear", settingId: question.settingId } }))
+        ? stay(withQuestion(nav, { _tag: "ConfirmingClear", settingId: question.settingId }))
         : stay(nav)
     }
     case "CancelledClear": {
       const question = nav.settings?.question
       return question?._tag === "ConfirmingClear"
-        ? stay(withSettings(nav, { question: { _tag: "EditingText", settingId: question.settingId } }))
+        ? stay(withQuestion(nav, { _tag: "EditingText", settingId: question.settingId }))
         : stay(nav)
     }
     case "ChangedSetting":
@@ -264,11 +264,11 @@ function backInSettings(nav: PicoNavigation, settings: Settings): PicoNavigation
   const question = settings.question
   switch (question._tag) {
     case "ConfirmingClear":
-      return withSettings(nav, { question: { _tag: "EditingText", settingId: question.settingId } })
+      return withQuestion(nav, { _tag: "EditingText", settingId: question.settingId })
     case "ConfirmingAction":
     case "EditingText":
     case "Identity":
-      return withSettings(nav, { question: { _tag: "None" } })
+      return withQuestion(nav, { _tag: "None" })
     case "None":
       return { ...nav, settings: undefined }
   }
@@ -302,8 +302,8 @@ function settleIdle(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation {
 }
 
 const closeMenu = (home: Home): Home => (home.menu === "Closed" ? home : { ...home, menu: "Closed" })
-const withSettings = (nav: PicoNavigation, settings: Settings): PicoNavigation =>
-  nav.settings === undefined ? nav : { ...nav, settings }
+const withQuestion = (nav: PicoNavigation, question: SettingsQuestion): PicoNavigation =>
+  nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, question } }
 const cycleMode = (nav: PicoNavigation): PicoNavigation => ({
   ...nav,
   home: { ...nav.home, mode: nav.home.mode === "shelf" ? "grid" : nav.home.mode === "grid" ? "hero" : "shelf" },

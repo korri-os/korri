@@ -52,6 +52,8 @@ function findText(settings: PicoSettingsView, settingId: string) {
  */
 export function PicoSettings({
   settings,
+  group,
+  onGroup,
   asking,
   editing,
   onAsk,
@@ -67,6 +69,9 @@ export function PicoSettings({
   clockLabel,
 }: {
   readonly settings: PicoSettingsView
+  /** Which settings group shows, kept by the owner. */
+  readonly group: number
+  readonly onGroup: (index: number) => void
   /** A destructive action awaiting the user's yes, when one is. */
   readonly asking?: { readonly actionId: string; readonly confirmation: PicoConfirmation }
   readonly editing?: PicoSettingsEditing
@@ -117,7 +122,9 @@ export function PicoSettings({
     >
       <div className="pico-settings-list" hidden={edited !== undefined}>
         <PicoSettingsPanel
+          group={group}
           onActivate={activate}
+          onGroup={onGroup}
           onDismissProblem={onDismissProblem}
           settings={settings}
         />

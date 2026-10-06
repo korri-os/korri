@@ -106,11 +106,11 @@ export function PicoHome({
   /** The game whose launch location is being chosen, when one is. */
   readonly placing?: PicoShelfGame
   /** The shelf's chosen cart, kept by the owner so it survives home leaving. */
-  readonly selectedGameId?: string
+  readonly selectedGameId: string | undefined
   /** Put the cursor back on the chosen cart when the shelf appears. */
   readonly returnToCart?: boolean
   readonly onReturnedToCart?: () => void
-  readonly onSelectGame?: (gameId: string) => void
+  readonly onSelectGame: (gameId: string) => void
   /** Selecting a cart opens the game's own screen; launching happens there. */
   readonly onOpenGame: (gameId: string) => void
   readonly onChooseLocation: (locationId: string) => void

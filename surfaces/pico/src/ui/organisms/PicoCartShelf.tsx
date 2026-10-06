@@ -1,5 +1,5 @@
 import "./PicoCartShelf.css"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { picoStatsFor } from "../../pico-detail-view"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoTally } from "../atoms/PicoTally"
@@ -15,9 +15,10 @@ import { PicoGameStage } from "./PicoGameStage"
  * baseline. Focus is the selection: the stage follows the d-pad, and the
  * shelf scrolls only as far as it must to keep the chosen cart in view.
  *
- * The chosen cart is the shelf's own state. An owner that unmounts the shelf
- * and wants the same cart back later passes `selectedId` in and keeps what
- * `onSelect` reports; the shelf reads `selectedId` when it mounts.
+ * The shelf holds no state. The chosen cart is the owner's (`home.selectedGameId`
+ * in src/state/navigation.ts): the shelf draws `selectedId` and reports a
+ * cursor move through `onSelect`. With no `selectedId`, or one Korri stopped
+ * publishing, the first cart is chosen.
  *
  * The cursor coming onto the shelf from anywhere else lands on the chosen
  * cart, not on whichever cart is nearest. Up from a control below the shelf,
@@ -37,29 +38,27 @@ export function PicoCartShelf({
   onFocusClaimed,
 }: {
   readonly games: readonly PicoShelfGame[]
-  readonly selectedId?: string
-  readonly onSelect?: (gameId: string) => void
+  readonly selectedId: string | undefined
+  readonly onSelect: (gameId: string) => void
   readonly onOpen: (gameId: string) => void
   /** Put the cursor on the chosen cart when this shelf appears. */
   readonly claimFocus?: boolean
   readonly onFocusClaimed?: () => void
 }) {
-  const [chosenId, setChosenId] = useState(selectedId)
   const rackRef = useRef<HTMLUListElement>(null)
   /* Whether the cursor is on this shelf already, and whether the next focus
    * comes from a pointer. Refs, because both are read inside a focus event and
    * neither draws anything. */
   const holding = useRef(false)
   const pointing = useRef(false)
-  const found = games.findIndex((game) => game.id === chosenId)
+  const found = games.findIndex((game) => game.id === selectedId)
   const focusedIndex = found === -1 ? 0 : found
   const focused = games[focusedIndex]
 
   const choose = (index: number) => {
     const game = games[index]
-    if (game === undefined) return
-    setChosenId(game.id)
-    onSelect?.(game.id)
+    if (game === undefined || game.id === selectedId) return
+    onSelect(game.id)
   }
 
   /* Sets the rack's own scroll rather than calling scrollIntoView, which walks

@@ -231,3 +231,9 @@ test("a Korri push that changes nothing keeps the same navigation value", () => 
   const nav = initialNavigation()
   expect(update(nav, { _tag: "KorriPublished" }, fixtureModel).model).toBe(nav)
 })
+
+test("Settings keeps its group through a question, and opens on the first group again", () => {
+  const chose = story(fixtureModel, system, { _tag: "ChoseSettingsGroup", group: 2 }, { _tag: "OpenedEditor", settingId: "name" }, back)
+  expect(chose.nav.settings?.group).toBe(2)
+  expect(storyFrom(chose.nav, fixtureModel, back, system).nav.settings?.group).toBe(0)
+})

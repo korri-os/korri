@@ -209,6 +209,8 @@ function PicoCatalogSurface({
               : undefined}
             clockLabel={model.clockLabel}
             editing={settingsEditing(question)}
+            group={shown.settings.group}
+            onGroup={group => dispatch({ _tag: "ChoseSettingsGroup", group })}
             onAsk={(actionId, confirmation) => dispatch({ _tag: "AskedSettingConfirmation", actionId, confirmation })}
             onAskClear={() => dispatch({ _tag: "AskedClear" })}
             onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}

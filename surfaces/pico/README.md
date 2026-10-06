@@ -51,8 +51,16 @@ a launch, a running game or a failure, System, Options and Menu change nothing;
 Back acknowledges a failure. Menu cycles home's layout only on home.
 
 Leaf components may keep state that Back, the host buttons and Korri never
-change and no other screen reads: text being typed, a measured size, the
-cursor on the shelf. `.oxlintrc.json` lists each such file and says why.
+change and no other screen reads: text being typed, a secret, a measured
+size, the keyboard's layers. `.oxlintrc.json` lists each such file and says
+why. Any other state is a prop and a callback, kept in the model: the shelf's
+chosen cart is `home.selectedGameId`, and the settings group is
+`settings.group`.
+
+A part whose component is controlled this way renders it from props in its
+default preview, so Caliper's Inspector can set the value. A named
+`Selectable` state keeps the value in the part itself, so the preview follows
+the d-pad, a pointer and Tab (see `PicoCartShelf.organism.part.tsx`).
 
 ## The gates are the specification
 

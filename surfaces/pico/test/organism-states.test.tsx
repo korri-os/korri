@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test"
 import { cleanup, fireEvent, render, within } from "@testing-library/react"
 import * as attract from "../src/ui/organisms/PicoAttract.organism.part"
 import * as grid from "../src/ui/organisms/PicoCartGrid.organism.part"
-import * as shelf from "../src/ui/organisms/PicoCartShelf.organism.part"
 import * as actions from "../src/ui/organisms/PicoGameActions.organism.part"
 import * as detail from "../src/ui/organisms/PicoGameDetail.organism.part"
 import * as hero from "../src/ui/organisms/PicoGameHero.organism.part"
@@ -13,7 +12,9 @@ import * as locations from "../src/ui/organisms/PicoLocationPicker.organism.part
 import * as pause from "../src/ui/organisms/PicoPauseMenu.organism.part"
 import * as modal from "../src/ui/organisms/PicoModal.organism.part"
 import * as stage from "../src/ui/organisms/PicoGameStage.organism.part"
-import { backupText, longTitleGame } from "../src/fixtures/named-states"
+import { backupText, fixtureGame, fixtureShelfGames, longTitleGame } from "../src/fixtures/named-states"
+import { PicoCartShelf } from "../src/ui/organisms/PicoCartShelf"
+import * as shelfPart from "../src/ui/organisms/PicoCartShelf.organism.part"
 
 afterEach(cleanup)
 
@@ -29,12 +30,18 @@ test("ungrouped grid uses the product fallback caption and the long game title",
   expect(view.getByRole("button", { name: `${longTitleGame.title}, ${longTitleGame.subtitle}` })).toBeDefined()
 })
 
-test("resumable shelf starts on Hollow Knight and focus selects the next game", () => {
-  const view = render(<shelf.ResumableFirst />)
+test("resumable shelf starts on Hollow Knight; focus reports the next game, and the stage draws what the owner chose", () => {
+  const games = fixtureShelfGames([fixtureGame("hollow"), longTitleGame])
+  const chosen: string[] = []
+  const shelfOf = (selectedId: string | undefined) =>
+    <PicoCartShelf games={games} onOpen={() => undefined} onSelect={id => chosen.push(id)} selectedId={selectedId} />
+  const view = render(shelfOf(undefined))
   expect(view.getByRole("heading", { name: "Hollow Knight" })).toBeDefined()
   expect(view.getByText("RESUME")).toBeDefined()
   const buttons = within(view.getByRole("list", { name: "Shelf" })).getAllByRole("button")
   fireEvent.focus(buttons[1]!)
+  expect(chosen).toEqual([longTitleGame.id])
+  view.rerender(shelfOf(longTitleGame.id))
   expect(view.getByRole("heading", { name: longTitleGame.title })).toBeDefined()
   expect(view.queryByText("RESUME")).toBeNull()
 })
@@ -155,4 +162,12 @@ test("NIP-46 form cannot submit until input and confirmation are supplied", () =
   expect(submit.disabled).toBe(true)
   fireEvent.click(view.getByRole("checkbox"))
   expect(submit.disabled).toBe(false)
+})
+
+test("the shelf part's Selectable state keeps the chosen cart, so the stage follows focus", () => {
+  const view = render(<shelfPart.Selectable />)
+  const buttons = within(view.getByRole("list", { name: "Shelf" })).getAllByRole("button")
+  const before = view.getAllByRole("heading")[0]!.textContent
+  fireEvent.focus(buttons[2]!)
+  expect(view.getAllByRole("heading")[0]!.textContent).not.toBe(before)
 })

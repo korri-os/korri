@@ -27,8 +27,9 @@ function Settings({
 }) {
   const host = createFixtureHost()
   const [editing, setEditing] = useState(initialEditing)
+  const [group, setGroup] = useState(0)
   return <PicoSettings clockLabel={model.clockLabel} settings={picoSettingsViewFromModel(model)} asking={asking}
-    editing={editing}
+    editing={editing} group={group} onGroup={setGroup}
     onAsk={() => undefined} onCancel={host.dismiss} onChange={host.changeSetting}
     onConfirm={() => host.runAction(fixtureSettingsConfirmation().actionId)}
     onDismissProblem={host.dismissSettingsProblem} onRun={host.runAction}

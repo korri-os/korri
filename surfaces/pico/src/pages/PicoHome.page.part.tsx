@@ -1,4 +1,5 @@
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import { type ComponentProps, useState } from "react"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
 import { fixtureShelfGame, noArtworkGame } from "../fixtures/named-states"
 import { picoScreenViewFromModel } from "../pico-screen-view"
@@ -23,6 +24,13 @@ const closedMenu: PicoHomeMenu = {
   onReturned: () => undefined,
 }
 
+/* The surface keeps the chosen cart; here the part does, so the shelf still
+ * follows the d-pad in a preview. */
+function Home(props: Omit<ComponentProps<typeof PicoHome>, "selectedGameId" | "onSelectGame">) {
+  const [selected, setSelected] = useState<string | undefined>(undefined)
+  return <PicoHome {...props} onSelectGame={setSelected} selectedGameId={selected} />
+}
+
 function home(
   model: SurfaceModel,
   mode: PicoHomeMode = "shelf",
@@ -30,7 +38,7 @@ function home(
   menu: PicoHomeMenu = closedMenu,
 ) {
   const host = createFixtureHost()
-  return <PicoHome clockLabel={model.clockLabel} menu={menu} mode={mode} placing={placing}
+  return <Home clockLabel={model.clockLabel} menu={menu} mode={mode} placing={placing}
     onOpenGame={() => undefined} onChooseLocation={id => host.launchGame("tetris", id)}
     onRetry={host.retry} onDismiss={host.dismiss} view={picoScreenViewFromModel(model)} />
 }
@@ -63,7 +71,7 @@ export function Problem() {
 
 export default function PicoHomePart() {
   return (
-    <PicoHome
+    <Home
       clockLabel="10:24"
       menu={closedMenu}
       onChooseLocation={() => undefined}

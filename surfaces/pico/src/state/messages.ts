@@ -55,6 +55,7 @@ export type PicoMessage =
   | { readonly _tag: "ConfirmedGameAction" }
   | { readonly _tag: "CancelledGameAction" }
   // Settings
+  | { readonly _tag: "ChoseSettingsGroup"; readonly group: number }
   | { readonly _tag: "PressedSettingAction"; readonly actionId: string }
   | { readonly _tag: "AskedSettingConfirmation"; readonly actionId: string; readonly confirmation: PicoConfirmation }
   | { readonly _tag: "ConfirmedSettingAction" }
