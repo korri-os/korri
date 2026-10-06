@@ -1,5 +1,6 @@
 import "../../pico-motion.css"
 import "./PicoCart.css"
+import { memo } from "react"
 import { picoCartLookFor } from "../../pico-label"
 import { PicoCoverArt } from "../atoms/PicoCoverArt"
 
@@ -40,8 +41,13 @@ export type PicoCartProgress = "resume" | "new" | "played"
  * its cart would put each centre at a different height, and Down from a tall
  * cart would step sideways onto a short neighbour instead of leaving the row.
  * A button the height of its row gives every cart in the row one centre.
+ *
+ * A shelf can hold thousands of carts, so a cart is drawn again only when one
+ * of its values changes. Its callbacks are not compared: a caller must pass
+ * callbacks that do the same thing whenever the values are the same, by
+ * closing over stable functions or reading the latest state through a ref.
  */
-export function PicoCart({
+export const PicoCart = memo(function PicoCart({
   id,
   title,
   subtitle,
@@ -102,4 +108,16 @@ export function PicoCart({
       {cart}
     </button>
   )
+}, sameValues)
+
+/** Equal when every prop that is not a callback is equal. */
+function sameValues<Props extends object>(before: Props, after: Props): boolean {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  for (const key of keys) {
+    const a = (before as Record<string, unknown>)[key]
+    const b = (after as Record<string, unknown>)[key]
+    if (typeof a === "function" && typeof b === "function") continue
+    if (!Object.is(a, b)) return false
+  }
+  return true
 }

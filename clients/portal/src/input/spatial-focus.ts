@@ -115,25 +115,30 @@ export function focusInDirection(direction: Direction): boolean {
       : null
 
   const scope = scopeFor(active)
-  const candidates = Array.from(
-    scope.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-  ).filter(element => element !== active && isVisible(element))
-  if (candidates.length === 0) return false
+  const focusable = Array.from(scope.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
 
   // Match the legacy focus engine: initial focus uses the browser's native
   // reveal, while directional moves below explicitly own nearest-edge scroll.
   if (!active) {
-    candidates[0]?.focus()
+    const first = focusable.find(isVisible)
+    if (!first) return false
+    first.focus()
     return true
   }
 
+  // Score every candidate by geometry first, then check availability only in
+  // score order. Availability reads the computed style of every ancestor, so
+  // checking it for each of thousands of shelf carts on every press cost
+  // ~180 ms on the Mini V2. The winner is the same: the best-scoring
+  // available candidate, earliest in DOM order on a tie.
   const from = center(active)
-  let best: { element: HTMLElement; score: number } | null = null
-
-  for (const candidate of candidates) {
-    const to = center(candidate)
-    const dx = to.x - from.x
-    const dy = to.y - from.y
+  const scored: { element: HTMLElement; score: number }[] = []
+  for (const candidate of focusable) {
+    if (candidate === active) continue
+    const rect = candidate.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) continue
+    const dx = rect.left + rect.width / 2 - from.x
+    const dy = rect.top + rect.height / 2 - from.y
     const along =
       direction === "left" ? -dx
       : direction === "right" ? dx
@@ -146,9 +151,10 @@ export function focusInDirection(direction: Direction): boolean {
       direction === "left" || direction === "right"
         ? Math.abs(dy)
         : Math.abs(dx)
-    const score = along + across * OFF_AXIS_PENALTY
-    if (!best || score < best.score) best = { element: candidate, score }
+    scored.push({ element: candidate, score: along + across * OFF_AXIS_PENALTY })
   }
+  scored.sort((a, b) => a.score - b.score)
+  const best = scored.find(entry => isAvailable(entry.element))
 
   if (!best) return false
   // This is the legacy non-Mario-camera path. Suppress the browser's implicit

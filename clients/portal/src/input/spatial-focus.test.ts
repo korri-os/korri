@@ -108,6 +108,44 @@ describe("focusInDirection", () => {
     expect(document.activeElement).toBe(reachable)
   })
 
+  test("skips the nearest control when it is hidden, inert or not displayed, and takes the next", () => {
+    const origin = button("origin", { x: 0, y: 0 })
+    const inert = button("inert", { x: 200, y: 0 })
+    inert.setAttribute("inert", "")
+    const wrapper = document.createElement("div")
+    wrapper.style.display = "none"
+    document.body.appendChild(wrapper)
+    const undisplayed = button("undisplayed", { x: 300, y: 0 })
+    wrapper.appendChild(undisplayed)
+    const reachable = button("reachable", { x: 400, y: 0 })
+    button("farther", { x: 600, y: 0 })
+    origin.focus()
+
+    expect(focusInDirection("right")).toBe(true)
+    expect(document.activeElement).toBe(reachable)
+  })
+
+  test("checks availability only for the winner and the candidates ahead of it", () => {
+    const origin = button("origin", { x: 0, y: 0 })
+    const near = button("near", { x: 200, y: 0 })
+    const far = Array.from({ length: 50 }, (_, index) => button(`far-${index}`, { x: 400 + index * 100, y: 0 }))
+    let styleReads = 0
+    const read = window.getComputedStyle
+    window.getComputedStyle = ((element: Element) => {
+      styleReads += 1
+      return read(element)
+    }) as typeof window.getComputedStyle
+    try {
+      origin.focus()
+      expect(focusInDirection("right")).toBe(true)
+    } finally {
+      window.getComputedStyle = read
+    }
+    expect(document.activeElement).toBe(near)
+    // The winner's ancestors only: none of the 50 carts behind it is styled.
+    expect(styleReads).toBeLessThan(far.length)
+  })
+
   test("cannot leave a container that blocks exit", () => {
     const panel = document.createElement("div")
     panel.setAttribute("data-block-exit", "true")

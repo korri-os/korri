@@ -55,10 +55,16 @@ export function PicoCartShelf({
   const focusedIndex = found === -1 ? 0 : found
   const focused = games[focusedIndex]
 
-  const choose = (index: number) => {
-    const game = games[index]
-    if (game === undefined || game.id === selectedId) return
-    onSelect(game.id)
+  /* The carts' callbacks read the latest values here, so a cart drawn on an
+   * earlier press still chooses and opens the right game (PicoCart compares
+   * only its values). */
+  const latest = useRef({ games, selectedId, onSelect, onOpen })
+  latest.current = { games, selectedId, onSelect, onOpen }
+  /* By id: a memoized cart keeps the callback from the press it was drawn on,
+   * and its id cannot go stale where its index could. */
+  const choose = (gameId: string) => {
+    const now = latest.current
+    if (gameId !== now.selectedId) now.onSelect(gameId)
   }
 
   /* Sets the rack's own scroll rather than calling scrollIntoView, which walks
@@ -145,8 +151,8 @@ export function PicoCartShelf({
             <PicoCart
               artUrl={game.artUrl}
               id={game.id}
-              onActivate={() => onOpen(game.id)}
-              onFocus={() => choose(index)}
+              onActivate={() => latest.current.onOpen(game.id)}
+              onFocus={() => choose(game.id)}
               placement={index === focusedIndex ? "hero" : "side"}
               progress={
                 game.resumable === true

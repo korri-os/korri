@@ -23,6 +23,20 @@ export type PicoHomeView =
  * an empty strip to render and the user a screen that says nothing at all.
  */
 export function picoHomeViewFromCatalog(catalog: SurfaceCatalog): PicoHomeView {
+  // Korri replaces the catalog whole when it changes, and a library can hold
+  // thousands of games. One view per catalog object keeps every game's view
+  // the same object between renders, so a cart that did not change is not
+  // drawn again (PicoCart is memoized).
+  const cached = homeViews.get(catalog)
+  if (cached !== undefined) return cached
+  const view = homeViewFrom(catalog)
+  homeViews.set(catalog, view)
+  return view
+}
+
+const homeViews = new WeakMap<SurfaceCatalog, PicoHomeView>()
+
+function homeViewFrom(catalog: SurfaceCatalog): PicoHomeView {
   switch (catalog._tag) {
     case "Loading":
       return { _tag: "Loading" }
