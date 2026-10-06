@@ -12,6 +12,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware --deny-warnings src",
     "caliper": "vite"
   },
   "dependencies": {
@@ -31,6 +32,8 @@
     "@types/react-dom": "^19.3.0",
     "oxc-parser": "^0.153.0",
     "oxc-resolver": "^11.24.2",
+    "oxlint": "^1.87.0",
+    "oxlint-tsgolint": "^7.0.2003",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2",

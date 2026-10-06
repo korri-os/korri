@@ -1,35 +1,31 @@
 import "./PicoSurface.css"
 import type {
-  SurfaceAction,
   SurfaceGameplayOverlayPresentation,
   SurfaceHost,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
-import { PicoHome, type PicoHomeMode } from "./pages/PicoHome"
+import { PicoHome } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
-import { PICO_ATTRACT_AFTER_MS } from "./pico-attract"
-import {
-  PICO_ALL_SECTIONS,
-  picoLibraryViewFrom,
-  type PicoOrder,
-} from "./pico-library-view"
-import { type PicoOverlayControlView, picoOverlayViewFrom } from "./pico-overlay-view"
-import { picoScreenViewFromModel } from "./pico-screen-view"
-import { type PicoSessionReturn, picoSessionReturnFromModel, picoSessionReturnOnPlay } from "./pico-session-return"
-import { type PicoConfirmation, picoSettingsViewFromModel } from "./pico-settings-view"
+import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
+import { picoLibraryViewFrom } from "./pico-library-view"
+import { picoOverlayViewFrom } from "./pico-overlay-view"
+import { picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoInitialView } from "./pico-initial-view"
-import type { PicoShelfGame } from "./pico-shelf-game"
 import type { PicoFontId } from "./pico-fonts"
-import { isPicoFont, readPicoFont, rememberPicoFont } from "./pico-font-preference"
-import { PICO_FONT_SETTING } from "./pico-settings-view"
+import type { SettingsQuestion } from "./state/navigation"
+import { initialOverlay, updateOverlay } from "./state/overlay"
+import { attractShowing, identityAction, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
+import { usePicoFont } from "./use-pico-font"
+import { usePicoNavigation } from "./use-pico-navigation"
+import { usePicoProgram } from "./use-pico-program"
 
 /**
  * Pico's composition root — the only component a host renders.
@@ -38,10 +34,10 @@ import { PICO_FONT_SETTING } from "./pico-settings-view"
  * plain values, which is what lets any part mount in a preview or a test with
  * no Korri behind it.
  *
- * It also owns the one piece of state that is nobody else's: which game is
- * waiting on a launch-location answer. That lives here rather than in the page
- * because Back has to be able to withdraw the question, and Back arrives
- * through the host.
+ * It holds no state of its own. Navigation is one value, PicoNavigation, in
+ * src/state; `update` changes it and returns what to ask of Korri; and
+ * src/pico-host.ts performs those requests. Pages report what happened by
+ * dispatching a message. .oxlintrc.json enforces the split.
  *
  * The two presentations are two components with nothing in common but the
  * theme: a pause menu over a running game shares no state with a library, and
@@ -60,14 +56,8 @@ export function PicoSurface({
    * Absent: the face this device chose in Settings, or Tiny5. */
   readonly font?: PicoFontId
 }) {
-  /* The face this device chose, read once and kept by Pico (pico-font-
-   * preference.ts). A change applies at once and is remembered. */
-  const [chosen, setChosen] = useState(readPicoFont)
+  const [chosen, choose] = usePicoFont()
   const shown = font ?? chosen
-  const choose = useCallback((id: PicoFontId) => {
-    rememberPicoFont(id)
-    setChosen(id)
-  }, [])
   // `pico-theme` carries the palette and knobs; `pico-screen` is the size
   // container the virtual pixel is measured against. Both on the root, so the
   // pixel derives from exactly the box the host gave Pico. `data-pico-font`
@@ -83,12 +73,7 @@ export function PicoSurface({
   )
 }
 
-/**
- * Over a running game. Back, Menu and System all dismiss — legacy bound RESUME
- * to B, and the host's menu and system buttons are how the overlay was opened,
- * so pressing either again closes it. A destructive control asks first, and
- * Back withdraws that question before it dismisses anything.
- */
+/** Over a running game. The rules are in src/state/overlay.ts. */
 function PicoOverlaySurface({
   model,
   host,
@@ -98,47 +83,26 @@ function PicoOverlaySurface({
   readonly host: SurfaceHost
   readonly presentation: SurfaceGameplayOverlayPresentation
 }) {
-  const [asking, setAsking] = useState<PicoOverlayControlView | undefined>(undefined)
-
-  useEffect(() => {
-    /* A range may hold a step it has not sent yet: it waits up to two
-     * seconds for the release (use-pico-range.ts), and it sends on blur.
-     * Blur first, so that step reaches Korri before the overlay goes. */
-    const dismiss = () => {
-      const focused = document.activeElement
-      if (focused instanceof HTMLElement) focused.blur()
-      host.dismissGameplayOverlay()
-    }
-    const offBack = host.input.on("back", () => {
-      setAsking((question) => {
-        if (question === undefined) dismiss()
-        return undefined
-      })
-    })
-    const offMenu = host.input.on("menu", dismiss)
-    const offSystem = host.input.on("system", dismiss)
-    return () => {
-      offBack()
-      offMenu()
-      offSystem()
-    }
-  }, [host])
-
-  const invoke = (control: PicoOverlayControlView) =>
-    host.invokeGameplayControl(control.id, control.sends)
+  const { model: overlay, dispatch } = usePicoProgram(
+    () => initialOverlay,
+    updateOverlay,
+    undefined,
+    request => performPicoRequest(host, { chooseFont: () => undefined }, request),
+  )
+  useEffect(
+    () => subscribePicoHostButtons(host, dispatch, ["PressedBack", "PressedMenu", "PressedSystem"]),
+    [host, dispatch],
+  )
 
   return (
     <PicoOverlay
-      asking={asking}
-      onAsk={setAsking}
-      onCancel={() => setAsking(undefined)}
-      onConfirm={() => {
-        if (asking !== undefined) invoke(asking)
-        setAsking(undefined)
-      }}
-      onAdjust={(control, value) => host.invokeGameplayControl(control.id, { kind: "range", value })}
-      onInvoke={invoke}
-      onRetry={() => host.retry()}
+      asking={overlay.asking}
+      onAsk={control => dispatch({ _tag: "AskedControl", control })}
+      onCancel={() => dispatch({ _tag: "CancelledControl" })}
+      onConfirm={() => dispatch({ _tag: "ConfirmedControl" })}
+      onAdjust={(control, value) => dispatch({ _tag: "AdjustedControl", control, value })}
+      onInvoke={control => dispatch({ _tag: "InvokedControl", control })}
+      onRetry={() => dispatch({ _tag: "PressedRetry" })}
       overlay={picoOverlayViewFrom(presentation, model.status)}
     />
   )
@@ -157,356 +121,173 @@ function PicoCatalogSurface({
   readonly font: PicoFontId
   readonly onFont: (font: PicoFontId) => void
 }) {
+  const { nav, dispatch, attractShowingNow } = usePicoNavigation(model, host, onFont, initialView)
+  const screen = shownScreen(nav, model)
   const runner = model.runnerChoice
-  const runnerOpen = runner !== undefined && runner._tag !== "Closed"
-  const [placing, setPlacing] = useState<PicoShelfGame | undefined>(undefined)
-  /* The id of the game whose own screen is up, or nothing. An id rather than a
-   * game, so a catalog Korri republishes while the screen is open is what the
-   * screen shows — a copy taken on open would show the game as it was. */
-  const [viewingId, setViewingId] = useState<string | undefined>(initialView?._tag === "Detail" ? initialView.gameId : undefined)
-  const [settingsOpen, setSettingsOpen] = useState(initialView?._tag === "Settings")
-  const [identityAction, setIdentityAction] = useState<string | null>(null)
-  /* Finding a game: what has been typed and which collection is chosen. Both
-   * live here so Back can close the whole screen in one press rather than
-   * unwinding a query letter by letter. */
-  const [finding, setFinding] = useState(initialView?._tag === "Find")
-  /* How home lays the library out. View state, not device state: it is about
-   * this person in this chair, and Korri has no opinion on it. */
-  const [mode, setMode] = useState<PicoHomeMode>(initialView?._tag === "Home" ? initialView.mode ?? "shelf" : "shelf")
-  /* Home's MENU list, and whether Back from a screen it opened should put the
-   * cursor back on MENU. Here because Back closes the list and Back arrives
-   * through the host, and because the screens it opens replace home. */
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [returnToMenu, setReturnToMenu] = useState(false)
-  /* The shelf's chosen cart. Home unmounts behind every screen it opens, and
-   * coming back should find the game the player left the cursor on. */
-  const [shelfGameId, setShelfGameId] = useState<string | undefined>(undefined)
-  /* Whether the shelf, when it next appears, should take the cursor back to
-   * that cart: set when a game's screen opens from the shelf, so Back from it
-   * does not leave focus on nothing. */
-  const [returnToCart, setReturnToCart] = useState(false)
-  /* A destructive game action awaiting a yes. Korri's game actions carry no
-   * confirmation copy of their own, so the question is built from the label. */
-  const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
-  const [attracting, setAttracting] = useState(false)
-  /* Bumped by any activity; the idle timer restarts on every change. */
-  const [awake, setAwake] = useState(0)
-  /* A ref as well as state, because the input handlers are registered once and
-   * would otherwise close over whether attract was showing when they were made
-   * rather than whether it is showing when the button is actually pressed. */
+  const covered = runnerOpen(model)
+  /* Set when a pointer press woke the screen, so the click that ends the same
+   * press is swallowed too. DOM mechanics, not navigation. */
   const suppressWakeClick = useRef(false)
-  const attractingRef = useRef(false)
-  attractingRef.current = attracting
 
   /**
-   * Note the activity, and report whether it was spent waking the screen.
-   *
-   * A press that dismisses attract does nothing else. Picking a device up and
-   * touching it must not start a game, cycle a mode or open settings — the
-   * first press is how you get the screen back, and anything more is the device
-   * acting on an intention nobody had.
+   * The DOM half of waking attract. The press must be stopped now, before the
+   * browser delivers it to whatever is focused; `update` does the rest.
    */
-  const wake = useCallback(() => {
-    setAwake((count) => count + 1)
-    if (!attractingRef.current) return false
-    attractingRef.current = false
-    setAttracting(false)
-    return true
-  }, [])
-  const [query, setQuery] = useState("")
-  const [section, setSection] = useState<string>(initialView?._tag === "Find" ? initialView.section ?? PICO_ALL_SECTIONS : PICO_ALL_SECTIONS)
-  const [order, setOrder] = useState<PicoOrder>(initialView?._tag === "Find" ? initialView.order ?? "korri" : "korri")
-  /* A destructive setting action Korri asked to be confirmed, awaiting a yes. */
-  const [asking, setAsking] = useState<
-    { readonly actionId: string; readonly confirmation: PicoConfirmation } | undefined
-  >(undefined)
-  /* The text setting open in the editor, and whether clearing it is asked.
-   * Here, not in the editor, so Back reaches the question first, then the
-   * editor, then Settings. */
-  const [editing, setEditing] = useState<PicoSettingsEditing | undefined>(undefined)
-  /* Stable, because the editor closes itself through it from an effect. */
-  const closeEditor = useCallback(() => setEditing(undefined), [])
-  const view = picoScreenViewFromModel(model)
-  const sessionReturn = useRef<PicoSessionReturn>({ _tag: "Idle" })
-
-  useEffect(() => {
-    const next = picoSessionReturnFromModel(sessionReturn.current, viewingId, model)
-    sessionReturn.current = next
-    if (next._tag !== "ReturnToLibrary") return
-    sessionReturn.current = { _tag: "Idle" }
-    setViewingId(undefined)
-    setPlacing(undefined)
-    setAskingAction(undefined)
-    setAsking(undefined)
-    setEditing(undefined)
-    setSettingsOpen(false)
-    setFinding(false)
-    setMenuOpen(false)
-    setReturnToMenu(false)
-    setReturnToCart(false)
-    setMode("shelf")
-  }, [model.catalog, model.status, viewingId])
-
-  /* Attract shows only over a shelf that is sitting there: never over a running
-   * game, a launch, a failure, or a library Korri is still reading — those are
-   * all screens the user is waiting on, and hiding one behind decoration would
-   * lose the thing they are waiting for. */
-  const canAttract = !runnerOpen && view._tag === "Shelf" && !settingsOpen && !finding
-    && !menuOpen && viewingId === undefined && placing === undefined
-    && asking === undefined && askingAction === undefined && identityAction === null
-    && editing === undefined
-
-  useEffect(() => {
-    if (!canAttract) {
-      setAttracting(false)
-      return
+  const press = (event: { preventDefault(): void; stopPropagation(): void }) => {
+    const waking = attractShowingNow()
+    dispatch({ _tag: "PressedScreen" })
+    if (waking) {
+      event.preventDefault()
+      event.stopPropagation()
     }
-    const timer = setTimeout(() => setAttracting(true), PICO_ATTRACT_AFTER_MS)
-    return () => clearTimeout(timer)
-  }, [canAttract, awake])
-
-  const cycleMode = useCallback(() => {
-    setMode((current) =>
-      current === "shelf" ? "grid" : current === "grid" ? "hero" : "shelf",
-    )
-  }, [])
-
-  useEffect(() => {
-    const offBack = host.input.on("back", () => {
-      /* The visible status wins. Within browsing, Back withdraws the most
-       * local question/page first. Leaving the surface is the host's decision. */
-      if (runnerOpen) { host.runAction("runner:cancel"); return }
-      if (wake()) return
-      // Input follows the visible status, not the navigation hidden below it.
-      if (model.status._tag === "Problem") { host.dismiss(); return }
-      if (model.status._tag !== "Browsing") return
-      if (identityAction !== null) { setIdentityAction(null); return }
-      if (asking !== undefined) { setAsking(undefined); return }
-      if (editing?.clearing === true) { setEditing({ ...editing, clearing: false }); return }
-      if (editing !== undefined) { setEditing(undefined); return }
-      if (menuOpen) { setMenuOpen(false); return }
-      // Settings covers the game's screen, so it closes before that screen's questions.
-      if (settingsOpen) { setSettingsOpen(false); return }
-      if (askingAction !== undefined) { setAskingAction(undefined); return }
-      if (placing !== undefined) { setPlacing(undefined); return }
-      // The detail page sits above Find. Clear it first so the query survives.
-      if (viewingId !== undefined) { setViewingId(undefined); return }
-      if (finding) { setFinding(false); return }
-    })
-    const offSystem = host.input.on("system", () => {
-      if (runnerOpen || wake()) return
-      setMenuOpen(false)
-      setEditing(undefined)
-      setSettingsOpen((open) => !open)
-    })
-    const offOptions = host.input.on("options", () => {
-      if (runnerOpen || wake()) return
-      // Find opens from home and closes from Find. Over any other screen the
-      // toggle would change only what is hidden below it.
-      if (settingsOpen || viewingId !== undefined) return
-      setMenuOpen(false)
-      setFinding((open) => !open)
-    })
-    const offMenu = host.input.on("menu", () => {
-      if (runnerOpen || wake()) return
-      cycleMode()
-    })
-    return () => {
-      offBack()
-      offSystem()
-      offOptions()
-      offMenu()
-    }
-  }, [host, model.status._tag, identityAction, askingAction, asking, editing, placing, menuOpen, settingsOpen, viewingId, finding, wake, runnerOpen, cycleMode])
-
-  const launchGame = (gameId: string) => {
-    const game = view._tag === "Shelf"
-      ? view.games.find((candidate) => candidate.id === gameId)
-      : undefined
-    if (game === undefined) return
-    if (game.locations === undefined || game.locations.length === 0) {
-      sessionReturn.current = picoSessionReturnOnPlay(sessionReturn.current, game.id, model.catalog)
-      host.launchGame(game.id)
-      return
-    }
-    setPlacing(game)
+    return waking
   }
-
-  /* The game's own screen is drawn only while the shelf would be: status still
-   * outranks it, so a launch that starts from it takes the screen the same way
-   * a launch from the shelf does. It stays until Back or an observed session end. */
-  const viewing = view._tag === "Shelf" && viewingId !== undefined
-    && model.catalog._tag === "Ready"
-    ? model.catalog.games.find((game) => game.id === viewingId)
-    : undefined
-
-  const chooseLocation = (locationId: string) => {
-    if (placing === undefined) return
-    sessionReturn.current = picoSessionReturnOnPlay(sessionReturn.current, placing.id, model.catalog)
-    host.launchGame(placing.id, locationId)
-    setPlacing(undefined)
-  }
-
-  /* Status still outranks every screen the surface owns: while Korri is
-   * starting or running a game, that is the truth about this device. */
-  const quiet = model.status._tag === "Browsing"
-  const settings = settingsOpen && quiet
 
   return (
     <>
       <div
         className="pico-catalog-surface"
-        hidden={runnerOpen}
-        inert={runnerOpen}
+        hidden={covered}
+        inert={covered}
         /* The host moves the cursor with focus alone, with no key press the
          * surface can see, so a focus move is activity too. It only keeps the
          * screen awake: waking it stays with presses, which can be swallowed. */
-        onFocusCapture={() => setAwake((count) => count + 1)}
-        onKeyDownCapture={(event) => {
+        onFocusCapture={() => dispatch({ _tag: "MovedFocus" })}
+        onKeyDownCapture={event => {
           suppressWakeClick.current = false
-          if (wake()) {
-            event.preventDefault()
-            event.stopPropagation()
-          }
+          press(event)
         }}
-        onPointerDownCapture={(event) => {
+        onPointerDownCapture={event => {
+          suppressWakeClick.current = press(event)
+        }}
+        onPointerCancelCapture={() => {
           suppressWakeClick.current = false
-          if (wake()) {
-            suppressWakeClick.current = true
-            event.preventDefault()
-            event.stopPropagation()
-          }
         }}
-        onPointerCancelCapture={() => { suppressWakeClick.current = false }}
-        onClickCapture={(event) => {
-          if (suppressWakeClick.current) {
-            suppressWakeClick.current = false
-            event.preventDefault()
-            event.stopPropagation()
-          } else if (wake()) {
-            event.preventDefault()
-            event.stopPropagation()
+        onClickCapture={event => {
+          if (!suppressWakeClick.current) {
+            press(event)
+            return
           }
+          suppressWakeClick.current = false
+          event.preventDefault()
+          event.stopPropagation()
         }}
       >
-      {settings ? (
-        <PicoSettings
-          asking={asking}
-          clockLabel={model.clockLabel}
-          editing={editing}
-          onAsk={(actionId, confirmation) => setAsking({ actionId, confirmation })}
-          onAskClear={() => setEditing((open) => (open === undefined ? open : { ...open, clearing: true }))}
-          onCancel={() => setAsking(undefined)}
-          onCancelClear={() => setEditing((open) => (open === undefined ? open : { ...open, clearing: false }))}
-          onCloseEditor={closeEditor}
-          onEdit={(settingId) => setEditing({ settingId, clearing: false })}
-          onChange={(settingId, value) => {
-            /* Pico's own row: Pico keeps it, and Korri is never asked. */
-            if (settingId === PICO_FONT_SETTING) {
-              if (isPicoFont(value)) onFont(value)
-            } else {
-              host.changeSetting(settingId, value)
-            }
-          }}
-          onConfirm={() => {
-            if (asking !== undefined) host.runAction(asking.actionId)
-            setAsking(undefined)
-          }}
-          onDismissProblem={() => host.dismissSettingsProblem()}
-          onRun={(actionId) => {
-            if (actionId.startsWith("identity:")) setIdentityAction(actionId)
-            else host.runAction(actionId)
-          }}
-          settings={picoSettingsViewFromModel(model, { font })}
+        {renderScreen(screen)}
+        {attractShowing(nav, model) ? (
+          <PicoAttract games={screen._tag === "Home" && screen.view._tag === "Shelf" ? screen.view.games : []} />
+        ) : null}
+        <PicoIdentityDialog
+          action={identityAction(nav)}
+          identity={model.identityManagement}
+          onClose={() => dispatch({ _tag: "ClosedIdentity" })}
+          onExport={(password, retiredPublicKey) =>
+            dispatch({ _tag: "SubmittedIdentityExport", password, retiredPublicKey })}
+          onSwitchLocal={(encryptedSecret, password, disposition, trustLossConfirmed) =>
+            dispatch({ _tag: "SubmittedIdentityFromBackup", encryptedSecret, password, disposition, trustLossConfirmed })}
+          onSwitchNip46={(bunkerUri, disposition, trustLossConfirmed) =>
+            dispatch({ _tag: "SubmittedIdentityToNip46", bunkerUri, disposition, trustLossConfirmed })}
+          onDeleteRetired={(publicKey, backupConfirmed) =>
+            dispatch({ _tag: "SubmittedRetiredIdentityDeletion", publicKey, backupConfirmed })}
+          onDismissStatus={() => dispatch({ _tag: "DismissedIdentityStatus" })}
         />
-      ) : finding && quiet && viewing === undefined ? (
-        <PicoLibrary
-          clockLabel={model.clockLabel}
-          library={picoLibraryViewFrom(model.catalog, query, section, order)}
-          onBackspace={() => setQuery((current) => current.slice(0, -1))}
-          onClear={() => setQuery("")}
-          onOpen={setViewingId}
-          onOrder={setOrder}
-          onSection={setSection}
-          onType={(character) => setQuery((current) => current + character)}
-          order={order}
-          section={section}
-        />
-      ) : viewing !== undefined ? (
-        <PicoGameDetail
-          actions={host.gameActions(viewing.id)}
-          askingAction={askingAction}
-          clockLabel={model.clockLabel}
-          game={picoDetailViewFromGame(viewing)}
-          onCancelAction={() => setAskingAction(undefined)}
-          onChooseLocation={chooseLocation}
-          onConfirmAction={() => {
-            if (askingAction !== undefined) {
-              host.runGameAction(viewing.id, askingAction.id)
-            }
-            setAskingAction(undefined)
-          }}
-          onPlay={() => launchGame(viewing.id)}
-          onRunAction={(action) => {
-            if (action.destructive === true) setAskingAction(action)
-            else host.runGameAction(viewing.id, action.id)
-          }}
-          placing={placing}
-        />
-      ) : (
-        <PicoHome
-          clockLabel={model.clockLabel}
-          menu={{
-            open: menuOpen,
-            returning: returnToMenu,
-            onToggle: () => setMenuOpen((open) => !open),
-            onFind: () => {
-              setMenuOpen(false)
-              setReturnToMenu(true)
-              setFinding(true)
-            },
-            onSettings: () => {
-              setMenuOpen(false)
-              setReturnToMenu(true)
-              setSettingsOpen(true)
-            },
-            onView: cycleMode,
-            onReturned: () => setReturnToMenu(false),
-          }}
-          onChooseLocation={chooseLocation}
-          onDismiss={() => host.dismiss()}
-          mode={mode}
-          onOpenGame={(gameId) => {
-            setMenuOpen(false)
-            setReturnToCart(mode === "shelf")
-            setViewingId(gameId)
-          }}
-          onReturnedToCart={() => setReturnToCart(false)}
-          onRetry={() => (view._tag === "Problem" ? host.retry() : host.reload())}
-          onSelectGame={setShelfGameId}
-          placing={placing}
-          returnToCart={returnToCart}
-          selectedGameId={shelfGameId}
-          view={view}
-        />
-      )}
-      {attracting ? (
-        <PicoAttract games={view._tag === "Shelf" ? view.games : []} />
-      ) : null}
-      <PicoIdentityDialog
-        action={identityAction}
-        identity={model.identityManagement}
-        onClose={() => setIdentityAction(null)}
-        onExport={(password, retiredPublicKey) => host.exportIdentityBackup(password, retiredPublicKey)}
-        onSwitchLocal={(encryptedSecret, password, disposition, confirmed) =>
-          host.switchIdentityFromBackup(encryptedSecret, password, disposition, confirmed)}
-        onSwitchNip46={(bunkerUri, disposition, confirmed) =>
-          host.switchIdentityToNip46(bunkerUri, disposition, confirmed)}
-        onDeleteRetired={(publicKey, confirmed) => host.deleteRetiredIdentity(publicKey, confirmed)}
-        onDismissStatus={() => host.dismissIdentityStatus()}
-      />
       </div>
-      {runnerOpen ? <PicoRunnerPicker choice={runner} onAction={id => host.runAction(id)} /> : null}
+      {runner !== undefined && runner._tag !== "Closed" ? (
+        <PicoRunnerPicker choice={runner} onAction={actionId => dispatch({ _tag: "ChoseRunnerAction", actionId })} />
+      ) : null}
     </>
   )
+
+  function renderScreen(shown: PicoShown) {
+    switch (shown._tag) {
+      case "Settings": {
+        const question = shown.settings.question
+        return (
+          <PicoSettings
+            asking={question._tag === "ConfirmingAction"
+              ? { actionId: question.actionId, confirmation: question.confirmation }
+              : undefined}
+            clockLabel={model.clockLabel}
+            editing={settingsEditing(question)}
+            onAsk={(actionId, confirmation) => dispatch({ _tag: "AskedSettingConfirmation", actionId, confirmation })}
+            onAskClear={() => dispatch({ _tag: "AskedClear" })}
+            onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
+            onCancelClear={() => dispatch({ _tag: "CancelledClear" })}
+            onCloseEditor={() => dispatch({ _tag: "ClosedEditor" })}
+            onEdit={settingId => dispatch({ _tag: "OpenedEditor", settingId })}
+            onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
+            onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
+            onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
+            onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
+            settings={picoSettingsViewFromModel(model, { font })}
+          />
+        )
+      }
+      case "Find":
+        return (
+          <PicoLibrary
+            clockLabel={model.clockLabel}
+            library={picoLibraryViewFrom(model.catalog, shown.search.query, shown.search.section, shown.search.order)}
+            onBackspace={() => dispatch({ _tag: "PressedBackspace" })}
+            onClear={() => dispatch({ _tag: "ClearedQuery" })}
+            onOpen={gameId => dispatch({ _tag: "OpenedGame", gameId })}
+            onOrder={order => dispatch({ _tag: "ChoseOrder", order })}
+            onSection={section => dispatch({ _tag: "ChoseSection", section })}
+            onType={character => dispatch({ _tag: "TypedCharacter", character })}
+            order={shown.search.order}
+            section={shown.search.section}
+          />
+        )
+      case "Detail": {
+        const question = shown.detail.question
+        return (
+          <PicoGameDetail
+            actions={host.gameActions(shown.game.id)}
+            askingAction={question._tag === "ConfirmingAction" ? question.action : undefined}
+            clockLabel={model.clockLabel}
+            game={picoDetailViewFromGame(shown.game)}
+            onCancelAction={() => dispatch({ _tag: "CancelledGameAction" })}
+            onChooseLocation={locationId => dispatch({ _tag: "ChoseLocation", locationId })}
+            onConfirmAction={() => dispatch({ _tag: "ConfirmedGameAction" })}
+            onPlay={() => dispatch({ _tag: "PressedPlay" })}
+            onRunAction={action => dispatch({ _tag: "PressedGameAction", action })}
+            placing={question._tag === "ChoosingLocation" ? question.game : undefined}
+          />
+        )
+      }
+      case "Home":
+        return (
+          <PicoHome
+            clockLabel={model.clockLabel}
+            menu={{
+              open: shown.home.menu === "Open",
+              returning: shown.home.focusOnReturn === "MenuKey",
+              onToggle: () => dispatch({ _tag: "ToggledHomeMenu" }),
+              onFind: () => dispatch({ _tag: "ChoseMenuFind" }),
+              onSettings: () => dispatch({ _tag: "ChoseMenuSettings" }),
+              onView: () => dispatch({ _tag: "ChoseMenuView" }),
+              onReturned: () => dispatch({ _tag: "ReturnedFocus" }),
+            }}
+            /* A launch-location question belongs to a game's own screen. */
+            onChooseLocation={locationId => dispatch({ _tag: "ChoseLocation", locationId })}
+            onDismiss={() => dispatch({ _tag: "PressedDismiss" })}
+            mode={shown.home.mode}
+            onOpenGame={gameId => dispatch({ _tag: "OpenedGame", gameId })}
+            onReturnedToCart={() => dispatch({ _tag: "ReturnedFocus" })}
+            onRetry={() => dispatch({ _tag: "PressedRetry" })}
+            onSelectGame={gameId => dispatch({ _tag: "SelectedCart", gameId })}
+            returnToCart={shown.home.focusOnReturn === "Cart"}
+            selectedGameId={shown.home.selectedGameId}
+            view={shown.view}
+          />
+        )
+    }
+  }
+}
+
+/** A Settings question as the editor props PicoSettings takes. */
+function settingsEditing(question: SettingsQuestion): PicoSettingsEditing | undefined {
+  if (question._tag === "EditingText") return { settingId: question.settingId, clearing: false }
+  if (question._tag === "ConfirmingClear") return { settingId: question.settingId, clearing: true }
+  return undefined
 }

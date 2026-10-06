@@ -480,13 +480,14 @@ let
     };
 
     pico-check = {
-      description = "Run the Pico surface unit tests, gates, and typecheck.";
+      description = "Run the Pico surface unit tests, gates, typecheck, and architecture lint.";
       runtimeInputs = [ pkgs.bun ];
       script = ''
         cd "$KORRI_ROOT/surfaces/pico"
         bun install --frozen-lockfile --ignore-scripts
         bun test
         bun run typecheck
+        bun run lint
       '';
     };
 

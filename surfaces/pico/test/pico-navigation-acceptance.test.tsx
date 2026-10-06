@@ -162,3 +162,30 @@ test("Options on Settings does nothing", () => {
   expect(findShown()).toBe(false)
   expect(shelfShown()).toBe(true)
 })
+
+test("while Korri starts a game, System, Options and Menu change nothing hidden below", () => {
+  const host = createFixtureHost()
+  const view = render(<PicoSurface host={host} model={fixtureModel} />)
+  view.rerender(<PicoSurface host={host} model={{ ...fixtureModel,
+    status: { _tag: "Busy", kicker: "STARTING", gameId: "tetris" },
+  }} />)
+  act(() => host.press("system"))
+  act(() => host.press("options"))
+  act(() => host.press("menu"))
+  view.rerender(<PicoSurface host={host} model={fixtureModel} />)
+  expect(settingsShown()).toBe(false)
+  expect(findShown()).toBe(false)
+  expect(shelfShown()).toBe(true)
+})
+
+test("Menu changes home's layout only while home is shown", () => {
+  const host = createFixtureHost()
+  render(<PicoSurface host={host} model={fixtureModel} />)
+  act(() => host.press("system"))
+  act(() => host.press("menu"))
+  act(() => host.press("back"))
+  expect(shelfShown()).toBe(true)
+  act(() => host.press("menu"))
+  expect(shelfShown()).toBe(false)
+  expect(document.querySelector(".pico-cart-grid")).not.toBeNull()
+})
