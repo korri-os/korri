@@ -1,6 +1,5 @@
 import { mock } from "bun:test"
 import { createRequire } from "node:module"
-import { fileURLToPath } from "node:url"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 
 // Bun.serve requires native Response objects. Keep one native HTTP stack
@@ -48,9 +47,9 @@ for (const specifier of [
 ]) {
   const hostExports = requireFromPortal(specifier)
   for (const surface of ["@korri/shift", "@korri/pico"]) {
-    const peerPath = fileURLToPath(
-      new URL(`../node_modules/${specifier}`, import.meta.resolve(surface)),
-    )
-    mock.module(peerPath, () => hostExports)
+    const peerPath = createRequire(import.meta.resolve(surface)).resolve(specifier)
+    if (peerPath !== requireFromPortal.resolve(specifier)) {
+      mock.module(peerPath, () => hostExports)
+    }
   }
 }

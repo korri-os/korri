@@ -114,9 +114,9 @@ test("host.toml command games launch without installed runner records or runner 
   const prepared: string[] = []
   const view = await mount({
     ...korrid,
-    async sessionPrepare(id, host) {
-      prepared.push(id)
-      return korrid.sessionPrepare(id, host)
+    async sessionStart(request) {
+      prepared.push(request.gameId)
+      return korrid.sessionStart(request)
     },
   })
   expect(
@@ -136,8 +136,8 @@ test("selected acknowledgement survives failed status reads and keeps polling un
   let reads = 0
   const view = await mount({
     ...base,
-    async launchSelectedGame(id, runner) {
-      const result = await base.launchSelectedGame(id, runner)
+    async sessionStart(request) {
+      const result = await base.sessionStart(request)
       failed = true
       return result
     },
@@ -148,11 +148,11 @@ test("selected acknowledgement survives failed status reads and keeps polling un
   })
   await view.choose()
   expect(view.model().runnerChoice?._tag).toBe("Closed")
-  expect(view.current()).toMatchObject({ id: "now-playing:selected:wl4", subtitle: "This device" })
+  expect(view.current()).toMatchObject({ id: "now-playing:reserved:1:wl4", subtitle: "This device" })
   const before = reads
   await waitFor(() => reads > before)
-  expect(view.current()).toMatchObject({ id: "now-playing:selected:wl4", subtitle: "This device" })
-  await base.sessionStop("selected:wl4")
+  expect(view.current()).toMatchObject({ id: "now-playing:reserved:1:wl4", subtitle: "This device" })
+  await base.sessionStop("reserved:1:wl4")
   failed = false
   await waitFor(() => view.current() === undefined)
 })
@@ -160,7 +160,7 @@ test("selected acknowledgement survives failed status reads and keeps polling un
 test.each([
   "cancel",
   "different request",
-])("late selected acknowledgement preserves its own game after %s", async (mode) => {
+])("late cancelled selected acknowledgement never resurrects startup after %s", async (mode) => {
   const base = createInMemoryKorridClient({
     games: [game(), game("other")],
     gameRoutes: [routes(), routes("other")],
@@ -169,8 +169,8 @@ test.each([
   let failed = false
   const view = await mount({
     ...base,
-    async launchSelectedGame(id, runner) {
-      const result = await base.launchSelectedGame(id, runner)
+    async sessionStart(request) {
+      const result = await base.sessionStart(request)
       await ack.promise
       failed = true
       return result
@@ -180,11 +180,11 @@ test.each([
     },
   })
   await view.choose()
-  await invoke(() => view.host().runAction("runner:cancel"))
+  await invoke(() => view.host().runAction("cancel-launch"))
   if (mode === "different request")
     await invoke(() => view.host().runGameAction(view.id("other"), "runners"))
   await invoke(() => ack.resolve({ _tag: "Err", payload: { code: "Unused", message: "release" } }))
-  expect(view.current()).toMatchObject({ title: "wl4", subtitle: "This device" })
+  expect(view.current()).toBeUndefined()
   const choice = view.model().runnerChoice
   if (!choice) throw new Error("expected runner choice state")
   if (mode === "cancel") expect(choice._tag).toBe("Closed")
@@ -203,8 +203,8 @@ test("late acknowledgement cannot replace a newer observed active session", asyn
   let failed = false
   const view = await mount({
     ...base,
-    async launchSelectedGame(id, runner) {
-      const result = await base.launchSelectedGame(id, runner)
+    async sessionStart(request) {
+      const result = await base.sessionStart(request)
       await release.promise
       failed = true
       return result
@@ -214,8 +214,8 @@ test("late acknowledgement cannot replace a newer observed active session", asyn
     },
   })
   await view.choose()
-  await invoke(() => view.host().runAction("runner:cancel"))
-  await base.sessionStop("selected:wl4")
+  await invoke(() => view.host().runAction("cancel-launch"))
+  await base.sessionStop("reserved:1:wl4")
   await base.launchSelectedGame("other", "retroarch/mgba")
   await invoke(() => view.host().reload())
   expect(view.current()).toMatchObject({
@@ -241,8 +241,8 @@ test.each([
   let failed = false
   const view = await mount({
     ...base,
-    async launchSelectedGame(id, runner) {
-      const result = await base.launchSelectedGame(id, runner)
+    async sessionStart(request) {
+      const result = await base.sessionStart(request)
       await release.promise
       failed = true
       return result
@@ -252,13 +252,14 @@ test.each([
     },
   })
   await view.choose()
-  await invoke(() => view.host().runAction("runner:cancel"))
+  await invoke(() => view.host().runAction("cancel-launch"))
   if (observedGame === "other") {
-    await base.sessionStop("selected:wl4")
+    await base.sessionStop("reserved:1:wl4")
     await base.launchSelectedGame("other", "retroarch/mgba")
   }
   await invoke(() => view.host().reload())
-  expect(view.current()).toMatchObject({ id: `now-playing:selected:${observedGame}` })
+  if (observedGame === "other") expect(view.current()).toMatchObject({ id: "now-playing:selected:other" })
+  else expect(view.current()).toBeUndefined()
   await base.sessionStop(`selected:${observedGame}`)
   await invoke(() => view.host().reload())
   expect(view.current()).toBeUndefined()
@@ -267,7 +268,7 @@ test.each([
   expect(await base.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
 })
 
-test("same-game resume preserves acknowledgement without reading routes or selecting again", async () => {
+test("same-game Return uses exact thaw without reading routes or selecting again", async () => {
   const base = createInMemoryKorridClient({
     games: [game()],
     activeSession: { launchId: "existing", gameId: "wl4" },
@@ -276,17 +277,17 @@ test("same-game resume preserves acknowledgement without reading routes or selec
   const prepares: string[] = []
   const view = await mount({
     ...base,
-    async sessionPrepare(id, host) {
+    async sessionThaw(id) {
       prepares.push(id)
       failed = true
-      return base.sessionPrepare(id, host)
+      return base.sessionThaw(id)
     },
     async sessionStatus() {
       return failed ? unavailable : base.sessionStatus()
     },
   })
   await invoke(() => view.host().launchGame(view.id("wl4")))
-  expect(prepares).toEqual(["wl4"])
+  expect(prepares).toEqual(["existing"])
   expect(view.model().runnerChoice?._tag).toBe("Closed")
   expect(view.current()).toMatchObject({ title: "wl4", subtitle: "This device" })
   expect(await base.sessionStatus()).toMatchObject({

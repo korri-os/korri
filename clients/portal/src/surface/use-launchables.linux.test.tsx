@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import {
+  FocusOwnership,
+  InitialHandoff,
+  PendingLaunchPhase,
   SecretSettingStatus,
   SessionFreezerState,
   SessionStopPhase,
   type ActiveSession,
   type Game,
-  type SessionPrepareOutcome,
+  type SelectedGameLaunchOutcome,
   type SessionStatusOutcome,
   type SessionStopOutcome,
 } from "@contracts/generated/korrid"
@@ -45,11 +48,16 @@ const active: ActiveSession = {
   gameId: game.id,
   title: game.title,
   host: game.host,
+  focusOwnership: FocusOwnership.Launch,
+  initialHandoff: InitialHandoff.Observed,
 }
-const prepared: SessionPrepareOutcome = {
-  _tag: "Ok", payload: { gameId: game.id, launchId: active.launchId },
+const prepared: SelectedGameLaunchOutcome = {
+  _tag: "Ok", payload: { session: { gameId: game.id, launchId: active.launchId }, warnings: [] },
 }
 const idle: SessionStatusOutcome = { _tag: "Ok", payload: {} }
+const preparing: SessionStatusOutcome = { _tag: "Ok", payload: { pendingLaunches: [{
+  session: { gameId: game.id, launchId: active.launchId }, phase: PendingLaunchPhase.Preparing,
+}] } }
 
 function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
   const unavailable = async (): Promise<never> => {
@@ -69,7 +77,10 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
       }
     },
     async sessionStatus() { return idle },
-    async sessionPrepare() { return prepared },
+    async sessionReserve({ gameId }) { return { _tag: "Ok", payload: { gameId, launchId: active.launchId } } },
+    sessionPrepare: unavailable,
+    async sessionStart() { return prepared },
+    async sessionCancel() { return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
     async sessionStop() { return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
     /* korrid serves local games and folder discovery on Linux, so a load
      * reads both. Neither has content in this fixture. */
@@ -169,16 +180,17 @@ describe("Linux catalog execution without a native bridge", () => {
     ])
   })
 
-  it.each([undefined, game.host])("prepares once per frame and refreshes the session (host: %s)", async host => {
-    const pending = deferred<SessionPrepareOutcome>()
+  it.each([undefined, game.host])("starts once per frame and refreshes the session (host: %s)", async host => {
+    const pending = deferred<SelectedGameLaunchOutcome>()
     const calls: unknown[] = []
     let status = idle
     const harness = await mount(linuxClient({
       async catalogSnapshot() {
         return { _tag: "Ok", payload: { games: [{ ...game, host }] } }
       },
-      sessionPrepare(gameId, host) {
-        calls.push([gameId, host])
+      sessionStart(request) {
+        calls.push(request)
+        status = preparing
         return pending.promise
       },
       async sessionStatus() { return status },
@@ -188,8 +200,8 @@ describe("Linux catalog execution without a native bridge", () => {
       harness.current().confirmEntry(selected)
       harness.current().confirmEntry(selected)
     })
-    expect(harness.current().state._tag).toBe("Preparing")
-    expect(calls).toEqual([[game.id, host]])
+    expect(harness.current().state._tag).toBe("Starting")
+    expect(calls).toEqual([{ gameId: game.id, expectedLaunchId: active.launchId }])
     status = { _tag: "Ok", payload: { active } }
     await invoke(() => pending.resolve(prepared))
     expect(entry(harness.current(), "now-playing")).toMatchObject({
@@ -197,9 +209,9 @@ describe("Linux catalog execution without a native bridge", () => {
     })
   })
 
-  it("reports prepare failure for the selected game without claiming launch", async () => {
+  it("reports startup failure for the selected game without claiming launch", async () => {
     const harness = await mount(linuxClient({
-      async sessionPrepare() {
+      async sessionStart() {
         return { _tag: "Err", payload: { code: "HostLaunchFailed", message: "unit failed" } }
       },
     }))
@@ -213,7 +225,7 @@ describe("Linux catalog execution without a native bridge", () => {
     const thawed: string[] = []
     const harness = await mount(linuxClient({
       async sessionStatus() { return { _tag: "Ok", payload: { active } } },
-      sessionPrepare: async () => { throw new Error("resume must not prepare") },
+      sessionStart: async () => { throw new Error("resume must not prepare") },
       async sessionThaw(expectedLaunchId) {
         thawed.push(expectedLaunchId)
         return {
@@ -332,33 +344,39 @@ describe("Linux catalog execution without a native bridge", () => {
     })
   })
 
-  it("ignores an older prepare response after reload and a newer launch", async () => {
-    const first = deferred<SessionPrepareOutcome>()
-    const second = deferred<SessionPrepareOutcome>()
+  it("ignores an cancelled start response after reload and a newer launch", async () => {
+    const first = deferred<SelectedGameLaunchOutcome>()
+    const second = deferred<SelectedGameLaunchOutcome>()
     let calls = 0
+    let status = idle
     const harness = await mount(linuxClient({
-      sessionPrepare() { return ++calls === 1 ? first.promise : second.promise },
+      sessionStart() { status = preparing; return ++calls === 1 ? first.promise : second.promise },
+      async sessionStatus() { return status },
+      async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
     }))
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "game")))
+    await invoke(() => harness.current().cancelLaunch())
     await invoke(() => harness.current().reload())
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "game")))
     await invoke(() => first.resolve(prepared))
-    expect(harness.current().state._tag).toBe("Preparing")
+    expect(harness.current().state._tag).toBe("Starting")
+    status = { _tag: "Ok", payload: { active } }
     await invoke(() => second.resolve(prepared))
     expect(harness.current().state._tag).toBe("Ready")
   })
 
-  it("does not refresh or publish a prepare response after unmount", async () => {
-    const pending = deferred<SessionPrepareOutcome>()
+  it("does not refresh or publish a start response after unmount", async () => {
+    const pending = deferred<SelectedGameLaunchOutcome>()
     let reads = 0
     const harness = await mount(linuxClient({
-      sessionPrepare() { return pending.promise },
+      sessionStart() { return pending.promise },
       async sessionStatus() { reads += 1; return idle },
     }))
     await invoke(() => harness.current().confirmEntry(entry(harness.current(), "game")))
+    const readsBeforeUnmount = reads
     await harness.unmount()
     await invoke(() => pending.resolve(prepared))
-    expect(reads).toBe(1)
+    expect(reads).toBe(readsBeforeUnmount)
   })
 
   it("does not poll a stop response after unmount", async () => {

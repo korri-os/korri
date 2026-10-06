@@ -3,10 +3,9 @@ import type {
   GameRoutes,
   LaunchWarning,
   RpcFailure,
-  SessionPrepared,
 } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceRunnerChoice } from "@contracts/surface/korri-surface"
-import type { KorridClient } from "../korrid/client"
+import type { KorridClient, SessionStartResult } from "../korrid/client"
 import { isAuthoritativeSessionStatus } from "../launchables/state"
 
 const cancelAction: SurfaceAction = { id: "runner:cancel", label: "Cancel", enabled: true }
@@ -14,14 +13,15 @@ const warningText = (warning: LaunchWarning) =>
   `${warning.setting} · ${warning.runnerId} · ${warning.build}: ${warning.message}`
 
 export interface RunnerLaunchIntegration {
-  /** Capture the catalog source and launch ordering before the RPC starts. */
-  beginLaunch(gameId: string): (session: SessionPrepared) => void
+  /** Starts synchronously in shared Busy; the chooser owns choices, not startup. */
+  startLaunch(gameId: string, runnerId: string): Promise<SessionStartResult | undefined>
+  returnSession(session: ActiveSession): void
   reload(): void
 }
 
 /** Host-owned interaction boundary. No DOM, hardware, or surface dependency.
- * Each read/write has one generation. Cancel withdraws UI intent, not an RPC
- * already sent. In particular, it cannot undo an acknowledged save or launch. */
+ * Each chooser read/write has one generation. Dispatched startup belongs to
+ * the shared cancellable lifecycle. Panel Cancel only withdraws a choice/save. */
 export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunchIntegration) {
   let state: SurfaceRunnerChoice = { _tag: "Closed" }
   let generation = 0
@@ -108,7 +108,8 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
     const result = await korrid.sessionStatus()
     if (!current(operation)) return
     if (!isAuthoritativeSessionStatus(result)) {
-      if (result._tag === "Err") problem(result.payload)
+      const failure = result._tag === "Err" ? result.payload : result.payload.observationFailure
+      if (failure) problem(failure)
       return
     }
     active = result._tag === "Ok" ? result.payload.active : undefined
@@ -127,16 +128,11 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
     })
   }
   const launch = async (runnerId: string, operation: number) => {
-    publish({
-      _tag: "Busy",
-      ...blank("Launching… Cancel closes this panel; it cannot undo a launch already sent."),
-    })
     const requestedGameId = gameId
-    const acknowledge = launches.beginLaunch(requestedGameId)
-    const result = await korrid.launchSelectedGame(requestedGameId, runnerId)
-    // UI cancellation cannot discard a launch acknowledgement. Commit it with
-    // its captured source before an observational read can fail or race it.
-    if (result._tag === "Ok") acknowledge(result.payload.session)
+    // Shared startup and chooser dismissal happen in one synchronous dispatch.
+    publish({ _tag: "Closed" })
+    const result = await launches.startLaunch(requestedGameId, runnerId)
+    if (result === undefined) return // Cancelled/retired lifecycle; no panel resurrection.
     if (!current(operation)) return
     if (result._tag === "Err") {
       if (result.payload.code === "ActiveSessionConflict") await conflict(operation)
@@ -148,7 +144,7 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
         _tag: "Warnings",
         ...blank("Launched with settings warnings"),
         warnings: result.payload.warnings.map(warningText),
-        actions: [{ ...cancelAction, label: "Done" }],
+        actions: [action("dismiss", "Done")],
       })
     else cancel()
   }
@@ -164,19 +160,14 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
       const status = await korrid.sessionStatus(3000)
       if (!current(operation)) return
       if (!isAuthoritativeSessionStatus(status)) {
-        if (status._tag === "Err") problem(status.payload)
+        const failure = status._tag === "Err" ? status.payload : status.payload.observationFailure
+        if (failure) problem(failure)
         return
       }
       if (status._tag === "Ok" && status.payload.active?.gameId === id) {
-        // Ordinary prepare preserves same-game resume. Selected launch cannot:
-        // the existing recovery record has no runner identity.
-        publish({ _tag: "Busy", ...blank("Continuing the active game…") })
-        const acknowledge = launches.beginLaunch(id)
-        const resumed = await korrid.sessionPrepare(id)
-        if (resumed._tag === "Ok") acknowledge(resumed.payload)
-        if (!current(operation)) return
-        if (resumed._tag === "Err") problem(resumed.payload)
-        else cancel()
+        // Continue addresses the observed exact launch, never reserves a restart.
+        publish({ _tag: "Closed" })
+        launches.returnSession(status.payload.active)
         return
       }
     }
@@ -193,15 +184,22 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
   }
   const act = async (publishedId: string) => {
     if (state._tag === "Closed") return
-    // Only published actions are authority. Reject stale handlers and same-frame
-    // double confirms while Busy/Loading before issuing another mutation.
-    const actions = [...state.actions, ...state.routes.flatMap(route => route.actions)]
-    if (!actions.some(action => action.id === `runner:${publishedId}` && action.enabled)) return
+    // Closing an open panel withdraws a choice and mutates nothing, so a
+    // surface's own close gesture (Back, a close button, a scrim) always works,
+    // even on a panel whose only button is Done.
     if (publishedId === "cancel") {
       cancel()
       return
     }
+    // Only published actions are authority. Reject stale handlers and same-frame
+    // double confirms while Busy/Loading before issuing another mutation.
+    const actions = [...state.actions, ...state.routes.flatMap(route => route.actions)]
+    if (!actions.some(action => action.id === `runner:${publishedId}` && action.enabled)) return
     const id = publishedId.slice(publishedId.indexOf(":") + 1)
+    if (id === "dismiss") {
+      cancel()
+      return
+    }
     if (id === "reload") {
       await open(gameId, title, "inspect")
       return
@@ -224,7 +222,8 @@ export function createRunnerChooser(korrid: KorridClient, launches: RunnerLaunch
         const status = await korrid.sessionStatus(3000)
         if (!current(operation)) return
         if (!isAuthoritativeSessionStatus(status)) {
-          if (status._tag === "Err") problem(status.payload)
+          const failure = status._tag === "Err" ? status.payload : status.payload.observationFailure
+          if (failure) problem(failure)
           return
         }
         if (status._tag === "Err" || status.payload.active?.launchId !== launchId) {

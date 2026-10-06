@@ -96,6 +96,7 @@ export function PicoHome({
   onChooseLocation,
   onRetry,
   onDismiss,
+  onAction,
   clockLabel,
 }: {
   readonly view: PicoScreenView
@@ -115,6 +116,7 @@ export function PicoHome({
   readonly onChooseLocation: (locationId: string) => void
   readonly onRetry: () => void
   readonly onDismiss: () => void
+  readonly onAction?: (actionId: string) => void
   readonly clockLabel?: string
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
@@ -230,7 +232,18 @@ export function PicoHome({
       ) : null}
 
       {view._tag === "Busy" ? (
-        <PicoLaunchStage cart={view.cart} detail={view.detail} kicker={view.kicker} />
+        <PicoLaunchStage
+          cart={view.cart}
+          detail={view.detail}
+          kicker={view.kicker}
+          actions={view.actions?.map(action => ({
+            id: action.id,
+            label: action.label,
+            ...(action.description === undefined ? {} : { detail: action.description }),
+            disabled: !action.enabled,
+            onPress: () => onAction?.(action.id),
+          }))}
+        />
       ) : null}
 
       {view._tag === "Running" ? (

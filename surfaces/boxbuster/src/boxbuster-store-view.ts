@@ -230,6 +230,8 @@ export type TvStatus =
       readonly kicker: string
       readonly detail?: string
       readonly tapeId?: string
+      /** One line per action when Korri asks you to choose between them. */
+      readonly lines?: readonly string[]
     }
   | { readonly _tag: "Playing"; readonly kicker: string; readonly tapeId?: string }
   | {
@@ -252,6 +254,14 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
         ...(status.gameId === undefined ? {} : { tapeId: status.gameId }),
+        ...((status.actions?.length ?? 0) > 1
+          ? {
+              lines: (status.actions ?? []).map(action =>
+                action.description === undefined
+                  ? action.label
+                  : `${action.label}: ${action.description}`),
+            }
+          : {}),
       }
     case "Running":
       return {

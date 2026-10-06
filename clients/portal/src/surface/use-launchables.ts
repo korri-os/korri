@@ -19,12 +19,14 @@ import type {
   LocalGame,
   LocalGamesListOutcome,
   RpcFailure,
-  SessionPrepared,
+  ActiveSession,
 } from "@contracts/generated/korrid"
+import { SessionStopPhase } from "@contracts/generated/korrid"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   createDiscoverySnapshotPoller,
   type KorridClient,
+  type SessionStartResult,
 } from "../korrid/client"
 import type { DeviceFacts } from "./settings-model"
 import {
@@ -32,6 +34,7 @@ import {
   entryLabel,
   isAuthoritativeSessionStatus,
   isLocalCatalogSession,
+  launchSubjectForGame,
   LaunchablesState,
   type PortalEntry,
 } from "../launchables/state"
@@ -55,6 +58,8 @@ const discoveryActive = (snapshot: DiscoverySnapshot | undefined): boolean =>
 
 export interface Launchables {
   readonly state: LaunchablesState
+  /** Input precedence reads the synchronously published owner, not React's render. */
+  getState(): LaunchablesState
   /** What Korri knows about the device itself, as opposed to what it can play. */
   readonly facts: DeviceFacts
   readonly settingsStatus: SurfaceSettingsStatus
@@ -78,8 +83,11 @@ export interface Launchables {
   runDeviceAction(actionId: string): void
   /** Act on one entry: launch, resume, pair, or open a system screen. */
   confirmEntry(entry: PortalEntry): void
-  /** Capture source evidence and ordering for a chooser-owned catalog launch. */
-  beginCatalogLaunch(gameId: string): (session: SessionPrepared) => void
+  /** Both local paths enter the same owned lifecycle before the first await. */
+  startCatalogLaunch(gameId: string, runnerId?: string): Promise<SessionStartResult | undefined>
+  cancelLaunch(): void
+  cancelPendingLaunch(launchId: string): void
+  returnCatalogSession(session: ActiveSession): void
   /** Ask the host to stop the running session and wait for it to be gone. */
   stopSession(entry: PortalEntry): void
   /** Clear the current notice without re-reading anything. */
@@ -127,20 +135,38 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   const loadSeq = useRef(0)
   const actionSeq = useRef(0)
   const stopPollSeq = useRef(0)
-  const catalogLaunchSeq = useRef(0)
-  const acknowledgedCatalogLaunchSeq = useRef(0)
-  // Unlike the current banner, this evidence survives a later observed exit.
-  const sessionIdentityVersion = useRef(0)
+  const startupRef = useRef<{
+    operation: number
+    cancelled: boolean
+    launchId?: string
+    cancelInFlight: boolean
+  } | undefined>(undefined)
   const mountedRef = useRef(true)
 
   const publish = useCallback((next: LaunchablesState) => {
     // Update the ref synchronously: React may defer the render, but a repeated
     // confirm in the same frame must observe the input-locked case.
+    const previous = stateRef.current
+    if (previous._tag === "Launching" && previous.returnLaunchId !== undefined && next._tag !== "Launching") ++actionSeq.current
+    const nextLaunchId = next._tag === "Starting" ? next.launchId : undefined
+    const survivingChoice = previous._tag === "Choosing" && nextLaunchId !== undefined && previous.choices.some(choice => choice.launchId === nextLaunchId)
+    if (previous._tag === "Choosing" && next._tag !== "Choosing" && !survivingChoice) ++actionSeq.current
+    if (next._tag === "Starting" && next.cancelling && startupRef.current?.cancelInFlight) {
+      next = { ...next, cancelRetryAvailable: false }
+    }
     stateRef.current = next
+    if (next._tag === "Starting" && next.launchId !== undefined && startupRef.current?.launchId !== next.launchId) {
+      startupRef.current = {
+        // Choosing -> its surviving exact launch is one operation. A held
+        // choice-cancel reply must remain eligible for that single owner.
+        operation: survivingChoice ? actionSeq.current : ++actionSeq.current, launchId: next.launchId,
+        cancelled: next.cancelling, cancelInFlight: false,
+      }
+    } else if (next._tag !== "Starting" && startupRef.current) {
+      startupRef.current = undefined
+      ++actionSeq.current
+    }
     if (next._tag !== "Loading") {
-      const previous = lastEntriesRef.current.find(entry => entry.kind === "now-playing")?.session.launchId
-      const current = next.entries.find(entry => entry.kind === "now-playing")?.session.launchId
-      if (previous !== current) ++sessionIdentityVersion.current
       lastEntriesRef.current = next.entries
     }
     setState(next)
@@ -165,10 +191,11 @@ export function useLaunchables(korrid: KorridClient): Launchables {
 
   const load = useCallback(async (preserveAction = false) => {
     if (!mountedRef.current) return
-    const preservingStop = stateRef.current._tag === "Stopping"
-    if (!preserveAction && !preservingStop) {
+    const preservingCommand = stateRef.current._tag === "Stopping" || stateRef.current._tag === "Starting" || stateRef.current._tag === "Choosing"
+    if (stateRef.current._tag === "Starting" || stateRef.current._tag === "Choosing") preserveAction = true
+    if (!preserveAction && !preservingCommand) {
       // A normal full reload supersedes pending UI work. A reload while
-      // Stopping is observational only and must not cancel the stop poll.
+      // Stopping/Starting is observational and must not retire the exact operation.
       actionSeq.current += 1
       stopPollSeq.current += 1
       publish(LaunchablesState.loading())
@@ -211,22 +238,23 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     })
     const current = stateRef.current
     // Recovery reads must not replace a newer launch operation's visible lock.
-    if (
-      preserveAction &&
-      current._tag !== "Loading" &&
-      current._tag !== "Ready"
-    ) return
+    if (preserveAction && (current._tag === "Starting" || current._tag === "Choosing")) {
+      const observed = LaunchablesState.withSessionStatus(current, session)
+      if (observed._tag === "Ready") startupRef.current = undefined
+      publish(observed)
+      return
+    }
+    if (preserveAction && current._tag === "Launching" && current.returnLaunchId !== undefined) {
+      publish(LaunchablesState.withSessionStatus(current, session))
+      return
+    }
+    if (preserveAction && current._tag !== "Loading" && current._tag !== "Ready" && current._tag !== "Recovery") return
     const previousEntries = lastEntriesRef.current
-    const knownLocalSession = previousEntries.find(entry =>
-      entry.kind === "now-playing" &&
-      isLocalCatalogSession(entry.session, previousEntries),
-    )
     const loaded = LaunchablesState.fromSources(
       games,
-      // A failed refresh cannot prove that an acknowledged local launch ended.
-      !isAuthoritativeSessionStatus(session) && knownLocalSession?.kind === "now-playing"
-        ? { _tag: "Ok", payload: { active: knownLocalSession.session } }
-        : session,
+      // Keep the actual failed observation and every owned pending fact.
+      // fromSources retains last-known identity without fabricating Ok truth.
+      session,
       localGames,
       previousEntries,
     )
@@ -240,7 +268,8 @@ export function useLaunchables(korrid: KorridClient): Launchables {
       actionSeq.current += 1
       stopPollSeq.current += 1
     }
-    publish(loaded)
+    publish(preserveAction && current._tag === "Ready" && current.notice !== null && loaded._tag === "Ready"
+      ? { ...loaded, notice: current.notice } : loaded)
   }, [korrid, publish, sessionStatusWithTimeout])
 
   useEffect(() => {
@@ -292,25 +321,29 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     ? localSession.session.launchId
     : undefined
 
-  // Observe only the known local session, with at most one timed status read
-  // in flight. Focus alone misses games that exit before the browser blurs.
+  const observingStartup = state._tag === "Starting" || state._tag === "Recovery" || state._tag === "Choosing"
+  // Observe startup too, including while its reservation/command is pending.
+  // Without an exact identity the reducer deliberately cannot resolve it.
   useEffect(() => {
-    if (localLaunchId === undefined) return
+    if (localLaunchId === undefined && !observingStartup) return
     let disposed = false
     let timer: ReturnType<typeof setTimeout> | undefined
     const poll = async () => {
       const operation = actionSeq.current
       const loadOperation = loadSeq.current
-      if (stateRef.current._tag === "Ready") {
+      if (stateRef.current._tag === "Ready" || stateRef.current._tag === "Starting" || stateRef.current._tag === "Recovery" || stateRef.current._tag === "Choosing" ||
+        (stateRef.current._tag === "Launching" && stateRef.current.returnLaunchId !== undefined)) {
         const status = await sessionStatusWithTimeout()
         if (disposed || !mountedRef.current) return
         if (
           operation === actionSeq.current &&
           loadOperation === loadSeq.current
         ) {
-          publish(LaunchablesState.withSessionStatus(stateRef.current, status))
+          const observed = LaunchablesState.withSessionStatus(stateRef.current, status)
+          if (observed._tag === "Ready") startupRef.current = undefined
+          publish(observed)
           if (
-            isAuthoritativeSessionStatus(status) &&
+            observed._tag === "Ready" && isAuthoritativeSessionStatus(status) &&
             (status._tag === "Err" || status.payload.active?.launchId !== localLaunchId)
           ) {
             // Refresh play facts after exit. Recovery reads never cancel a
@@ -329,7 +362,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
       disposed = true
       clearTimeout(timer)
     }
-  }, [localLaunchId, load, publish, sessionStatusWithTimeout])
+  }, [localLaunchId, observingStartup, load, publish, sessionStatusWithTimeout])
 
   useEffect(() => {
     const previous = discoveryPoller.current
@@ -577,10 +610,163 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         : { ...current, status: { _tag: "Idle" } })
   }, [])
 
+  const cancelOwnedStartup = useCallback(async (owned: NonNullable<typeof startupRef.current>) => {
+    if (owned.launchId === undefined || owned.cancelInFlight) return
+    owned.cancelInFlight = true
+    publish(LaunchablesState.cancelStartup(stateRef.current))
+    const outcome = await korrid.sessionCancel({ expectedLaunchId: owned.launchId })
+    if (!mountedRef.current || startupRef.current !== owned || owned.operation !== actionSeq.current) return
+    owned.cancelInFlight = false
+    ++loadSeq.current // A status read issued before the cancel ACK cannot resurrect it.
+    if (outcome._tag === "Ok") {
+      if (outcome.payload.phase === SessionStopPhase.Stopped) {
+        const now = stateRef.current
+        if (now._tag === "Starting") {
+          startupRef.current = undefined
+          publish({ _tag: "Ready", notice: null,
+            entries: now.entries.filter(entry => entry.kind !== "now-playing" || entry.session.launchId !== owned.launchId),
+          })
+          void load(true)
+        }
+      }
+      return
+    }
+    // A transport failure does not prove that the exact cancel failed or that
+    // the session ended. Keep observing; do not expose another start.
+    if (outcome.payload.code === "BrainUnreachable") {
+      publish(LaunchablesState.startupProblem(stateRef.current, outcome.payload.message))
+      return
+    }
+    // A stale exact cancel must only observe a replacement, never End it.
+    if (["StaleLaunchIdentity", "NoActiveSession", "SessionCompleted"].includes(outcome.payload.code)) {
+      void load(true)
+    } else {
+      publish(LaunchablesState.startupProblem(stateRef.current, outcome.payload.message))
+    }
+  }, [korrid, load, publish])
+
+  const cancelPendingLaunch = useCallback((launchId: string) => {
+    if (!mountedRef.current) return
+    const current = stateRef.current
+    const sent = LaunchablesState.beginPendingCancellation(current, launchId)
+    if (sent === current) return
+    const operation = actionSeq.current
+    ++loadSeq.current // Reads begun before this exact user intent are obsolete.
+    publish(sent)
+    void korrid.sessionCancel({ expectedLaunchId: launchId }).then(outcome => {
+      if (!mountedRef.current || operation !== actionSeq.current) return
+      const now = stateRef.current
+      const stillOwned = (now._tag === "Choosing" && now.choices.some(choice => choice.launchId === launchId && choice.cancel === "sent")) ||
+        (now._tag === "Starting" && now.launchId === launchId && now.cancelling)
+      if (!stillOwned) return
+      ++loadSeq.current
+      publish(LaunchablesState.withPendingCancellationOutcome(now, launchId, outcome))
+      if (outcome._tag === "Ok" || ["StaleLaunchIdentity", "NoActiveSession", "SessionCompleted"].includes(outcome.payload.code)) void load(true)
+    })
+  }, [korrid, load, publish])
+
+  const cancelLaunch = useCallback(() => {
+    const owned = startupRef.current
+    if (!owned || stateRef.current._tag !== "Starting" ||
+      (owned.cancelled && !stateRef.current.cancelRetryAvailable) || owned.cancelInFlight) return
+    owned.cancelled = true
+    publish(LaunchablesState.cancelStartup(stateRef.current))
+    // Reserve may still be in flight. Its continuation cancels the returned
+    // server identity instead of ever dispatching start.
+    void cancelOwnedStartup(owned)
+  }, [cancelOwnedStartup, publish])
+
+  const startCatalogLaunch = useCallback(async (gameId: string, runnerId?: string): Promise<SessionStartResult | undefined> => {
+    const current = stateRef.current
+    if (!mountedRef.current || current._tag !== "Ready" || current.unavailableSessionStatus !== undefined) return
+    // Capture the local source before any effect. A later catalog failure is
+    // not authority to guess locality from a same-game replacement.
+    const game = current.entries.flatMap(entry => [
+      ...(entry.kind === "game" ? [entry.game] : []),
+      ...((entry.kind === "game" || entry.kind === "local-game")
+        ? (entry.alternatives ?? []).flatMap(copy => copy.kind === "remote" ? [copy.game] : []) : []),
+    ]).find(game => game.id === gameId && game.source.isLocal)
+    if (!game) return
+    const owned: NonNullable<typeof startupRef.current> = {
+      operation: ++actionSeq.current, cancelled: false, cancelInFlight: false,
+    }
+    startupRef.current = owned
+    ++loadSeq.current
+    publish(LaunchablesState.beginStartup(current, game))
+    const reservation = await korrid.sessionReserve({ gameId })
+    if (reservation._tag === "Err") {
+      if (!mountedRef.current || startupRef.current !== owned) return
+      startupRef.current = undefined
+      publish(owned.cancelled
+        ? { _tag: "Ready", entries: current.entries, notice: current.notice }
+        : LaunchablesState.failStartup(stateRef.current, `${reservation.payload.code}: ${reservation.payload.message}`))
+      void load(true)
+      return owned.cancelled ? undefined : reservation
+    }
+    owned.launchId = reservation.payload.launchId
+    // The server reservation is exact even when the requesting UI was retired.
+    if (!mountedRef.current || startupRef.current !== owned) {
+      // Browser unmount is not Cancel. The daemon's pending identity survives
+      // for another mount; only explicit user intent may cancel this token.
+      if (owned.cancelled) void korrid.sessionCancel({ expectedLaunchId: owned.launchId })
+      return
+    }
+    ++loadSeq.current
+    publish(LaunchablesState.withStartupReservation(stateRef.current, reservation.payload, game))
+    if (owned.cancelled) {
+      void cancelOwnedStartup(owned)
+      return
+    }
+    const outcome = await korrid.sessionStart({ gameId, expectedLaunchId: owned.launchId,
+      ...(runnerId === undefined ? {} : { runnerId }),
+    })
+    if (!mountedRef.current) return
+    if (startupRef.current !== owned || owned.operation !== actionSeq.current) {
+      // Initial handoff can precede the start reply. Presentation retirement is
+      // not launch retirement: retain warnings/errors only for the same live id.
+      const now = stateRef.current
+      if (!owned.cancelled && now._tag === "Ready" && now.entries.some(entry =>
+        entry.kind === "now-playing" && entry.session.launchId === owned.launchId)) {
+        if (outcome._tag === "Err") publish({ ...now, notice: {
+          _tag: "Launch",
+          message: `${outcome.payload.code}: ${outcome.payload.message}`,
+          subject: launchSubjectForGame(game, current.entries),
+        } })
+        return outcome
+      }
+      return
+    }
+    ++loadSeq.current
+    if (owned.cancelled) {
+      if (outcome._tag === "Err" && outcome.payload.code !== "LaunchCancelled" && outcome.payload.code !== "BrainUnreachable") {
+        publish(LaunchablesState.startupProblem(stateRef.current, outcome.payload.message))
+        void load(true)
+      }
+      return
+    }
+    if (outcome._tag === "Err") {
+      if (outcome.payload.code === "BrainUnreachable") {
+        // The request may have started successfully. Only observation/cancel
+        // can resolve it; never issue another start because its ACK was lost.
+        publish(LaunchablesState.startupProblem(stateRef.current, outcome.payload.message))
+        void load(true)
+        return
+      }
+      startupRef.current = undefined
+      publish(LaunchablesState.failStartup(stateRef.current, `${outcome.payload.code}: ${outcome.payload.message}`))
+      void load(true)
+      return outcome
+    }
+    // Do not clear Busy at ACK. Only exact window ownership (or authoritative
+    // recovery/exit) resolves the initial transition. Polling keeps running.
+    void load(true)
+    return outcome
+  }, [cancelOwnedStartup, korrid, load, publish])
+
   const confirmEntry = useCallback(
     (entry: PortalEntry) => {
       const current = stateRef.current
-      // Only Ready accepts new work; Preparing/Launching/Stopping are locked by
+      // Only Ready accepts new work; every in-flight command is locked by
       // the model rather than by a nullable flag convention.
       if (!mountedRef.current || current._tag !== "Ready") return
       // A retained caller selection is not authority to launch a removed game.
@@ -603,25 +789,36 @@ export function useLaunchables(korrid: KorridClient): Launchables {
           candidate.kind === "now-playing" &&
           isLocalCatalogSession(candidate.session, [entry]),
         )
-      ) return
+      ) {
+        const active = current.entries.find(candidate => candidate.kind === "now-playing" && isLocalCatalogSession(candidate.session, [entry]))
+        if (active) confirmEntry(active)
+        return
+      }
+      // Last-known identity permits exact Return/End, never replacement work.
+      if (current.unavailableSessionStatus !== undefined && entry.kind !== "now-playing") return
+      if (entry.kind === "game" && entry.game.source.isLocal) {
+        void startCatalogLaunch(entry.game.id)
+        return
+      }
       const operation = ++actionSeq.current
 
         if (entry.kind === "now-playing") {
         // Thaw names the exact launch, so a session that ended or was
         // replaced while the player was choosing is refused by korrid
         // instead of resuming whatever runs now.
-        const resuming = LaunchablesState.beginLaunching(
-          current,
-          entryLabel(entry),
-          { id: entry.session.gameId ?? entry.session.launchId, title: entryLabel(entry) },
-        )
+        const resuming = LaunchablesState.beginReturn(current, entry.session)
         publish(resuming)
         void korrid.sessionThaw(entry.session.launchId).then(outcome => {
           if (!mountedRef.current || operation !== actionSeq.current) return
           if (outcome._tag === "Ok") {
             // A resume says nothing about an unrelated failure, such as a
             // catalog read that could not reach the brain. Keep that notice.
-            publish({ _tag: "Ready", entries: current.entries, notice: current.notice })
+            // Do not restore captured entries after the effect's delayed reply.
+            // Read daemon truth again; concurrent observations remain active.
+            publish({ _tag: "Ready", entries: stateRef.current._tag === "Loading" ? [] : stateRef.current.entries, notice: current.notice,
+              ...(current.unavailableSessionStatus === undefined ? {} : { unavailableSessionStatus: current.unavailableSessionStatus }),
+            })
+            void load(true)
             return
           }
           publish(LaunchablesState.withResumeOutcome(resuming, outcome))
@@ -635,7 +832,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
       const preparing = LaunchablesState.beginPreparing(
         current,
         entry.game.title,
-        { id: entry.game.id, title: entry.game.title },
+        launchSubjectForGame(entry.game, current.entries),
       )
       publish(preparing)
       void korrid.sessionPrepare(entry.game.id, entry.game.host).then(async outcome => {
@@ -666,7 +863,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         }
       })
     },
-    [korrid, load, noticeOnReady, publish, sessionStatusWithTimeout],
+    [korrid, load, noticeOnReady, publish, sessionStatusWithTimeout, startCatalogLaunch],
   )
 
   const stopSession = useCallback(
@@ -723,10 +920,8 @@ export function useLaunchables(korrid: KorridClient): Launchables {
                 return
               }
             }
-            if (
-              status._tag === "Err" &&
-              status.payload.code !== "StatusTimeout"
-            ) {
+            const observationFailure = status._tag === "Err" ? status.payload : status.payload.observationFailure
+            if (!isAuthoritativeSessionStatus(status) && observationFailure?.code !== "StatusTimeout") {
               publish(
                 LaunchablesState.withStatusAfterStop(stateRef.current, status),
               )
@@ -756,47 +951,20 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     publish({ ...current, notice: null })
   }, [publish])
 
-  const beginCatalogLaunch = useCallback((gameId: string) => {
-    const entries = lastEntriesRef.current
-    const game = entries.flatMap(entry => [
-      ...(entry.kind === "game" ? [entry.game] : []),
-      ...((entry.kind === "game" || entry.kind === "local-game")
-        ? (entry.alternatives ?? []).flatMap(copy => copy.kind === "remote" ? [copy.game] : [])
-        : []),
-    ]).find(game => game.id === gameId && game.source.isLocal)
-    const identityVersion = sessionIdentityVersion.current
-    const request = ++catalogLaunchSeq.current
-    return (session: SessionPrepared) => {
-      if (!mountedRef.current || !game || session.gameId !== game.id) return
-      const current = stateRef.current
-      const currentEntries = current._tag === "Loading" ? lastEntriesRef.current : current.entries
-      const active = currentEntries.find(entry => entry.kind === "now-playing")?.session
-      // Cancellation withdraws UI intent, not the acknowledged process. But an
-      // old ACK cannot replace a newer ACK or a newly observed session.
-      if (request < acknowledgedCatalogLaunchSeq.current ||
-        (identityVersion !== sessionIdentityVersion.current && active?.launchId !== session.launchId)) {
-        // A fresh observation can still discover a genuinely later start. Do
-        // not resurrect an old banner merely because that observation fails.
-        void load(true)
-        return
-      }
-      acknowledgedCatalogLaunchSeq.current = request
-      ++loadSeq.current
-      publish(LaunchablesState.withLocalCatalogAcknowledgement(
-        current._tag === "Loading" ? { _tag: "Ready", entries: currentEntries, notice: null } : current,
-        session,
-        game,
-      ))
-      // Failure is not evidence that this exact launch ended. The normal
-      // observer retains the acknowledged source and continues its status poll.
-      void load(true)
-    }
-  }, [load, publish])
+  const returnCatalogSession = useCallback((session: ActiveSession) => {
+    const current = stateRef.current
+    if (current._tag !== "Ready") return
+    // The chooser obtained an authoritative exact-session snapshot.
+    if (current.unavailableSessionStatus !== undefined) return
+    publish(LaunchablesState.withSessionStatus(current, { _tag: "Ok", payload: { active: session } }))
+    confirmEntry({ kind: "now-playing", session })
+  }, [confirmEntry, publish])
 
   const reload = useCallback(() => void load(), [load])
 
   return {
     state,
+    getState: () => stateRef.current,
     facts,
     settingsStatus,
     ...(identityManagement === undefined ? {} : { identityManagement }),
@@ -809,7 +977,10 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     dismissIdentityStatus,
     runDeviceAction,
     confirmEntry,
-    beginCatalogLaunch,
+    startCatalogLaunch,
+    cancelLaunch,
+    cancelPendingLaunch,
+    returnCatalogSession,
     stopSession,
     dismissNotice,
     reload,

@@ -171,6 +171,30 @@ impl HostLauncher {
         )
     }
 
+    pub(super) fn prepare_reserved(
+        &self,
+        reservation: &super::launch_reservation::LaunchReservation,
+        runner_id: Option<&str>,
+        configured_command: &[String],
+    ) -> Result<SessionPrepared, RpcFailure> {
+        self.control.prepare_reserved(
+            reservation,
+            runner_id,
+            configured_command,
+            &self.environment,
+        )
+    }
+
+    pub(super) fn command(&self, game_id: &str) -> Result<&[String], RpcFailure> {
+        self.games
+            .get(game_id)
+            .map(|game| game.command.as_slice())
+            .ok_or_else(|| RpcFailure {
+                code: "HostGameNotFound".into(),
+                message: format!("host game {game_id:?} is not configured"),
+            })
+    }
+
     pub fn control(&self) -> &HostSessionControl {
         &self.control
     }

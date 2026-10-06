@@ -69,7 +69,15 @@ export function TvScreen({
       screen(ctx, "#1d3fa8", "#0f2470")
       let y = PAD + 22
       y = say(ctx, tv.kicker.toUpperCase(), y, 22, "#ffffff", 2)
-      if (tv.detail !== undefined) say(ctx, tv.detail, y + 6, 14, "#cfe0ff", 3)
+      if (tv.detail !== undefined) {
+        y = say(ctx, tv.detail, y + 6, 14, "#cfe0ff", tv.lines === undefined ? 3 : 2)
+      }
+      // A choice lists each piece of work in Korri's words, one line each,
+      // in the same order as the signed decks below the TV.
+      for (const line of tv.lines ?? []) {
+        if (y + 4 > H - PAD) break
+        y = say(ctx, line, y + 4, 12, "#f2c100", 1)
+      }
       done()
       return
     }

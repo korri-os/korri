@@ -40,6 +40,8 @@ export type PicoMessage =
   | { readonly _tag: "OpenedGame"; readonly gameId: string }
   | { readonly _tag: "PressedRetry" }
   | { readonly _tag: "PressedDismiss" }
+  /** One of the actions Korri published for its work under way, such as Cancel. */
+  | { readonly _tag: "PressedStatusAction"; readonly actionId: string }
   // Find
   | { readonly _tag: "TypedCharacter"; readonly character: string }
   | { readonly _tag: "PressedBackspace" }

@@ -25,6 +25,7 @@ import {
   isLocalCatalogSession,
   type LaunchablesState,
   type LaunchNotice,
+  type LaunchSubject,
   type PortalEntry,
 } from "../launchables/state"
 
@@ -230,7 +231,28 @@ export function gameActionsForEntry(
   ]
 }
 
+/** Surface status names an actual presented entry, never a raw Rust game id. */
+function statusGameId(state: LaunchablesState, subject: LaunchSubject | undefined): string | undefined {
+  if (state._tag === "Loading" || subject === undefined) return undefined
+  if (subject.entryId !== undefined) {
+    return state.entries.some(entry => entryKey(entry) === subject.entryId) ? subject.entryId : undefined
+  }
+  if (subject.id === undefined) return undefined
+  const local = state._tag === "Starting" || (state._tag === "Launching" && state.returnLaunchId !== undefined)
+  const matches = (copy: PortalGameCopy) => copy.game.id === subject.id && (!local || (copy.kind === "remote" && copy.game.source.isLocal))
+  const games = state.entries.filter(entry => (entry.kind === "game" || entry.kind === "local-game") &&
+    orderedCopiesForEntry(entry).some(matches))
+  if (games.length === 1) return entryKey(games[0]!)
+  if (games.length > 1) return undefined
+  const launchId = state._tag === "Starting" ? state.launchId : state._tag === "Launching" ? state.returnLaunchId : undefined
+  const live = state.entries.find(entry => entry.kind === "now-playing" && entry.session.launchId === launchId && entry.session.gameId === subject.id)
+  return live ? entryKey(live) : undefined
+}
+
 function statusFrom(state: LaunchablesState): SurfaceStatus {
+  const subject = "subject" in state ? state.subject
+    : state._tag === "Ready" && state.notice?._tag === "Launch" ? state.notice.subject : undefined
+  const gameId = statusGameId(state, subject)
   switch (state._tag) {
     case "Loading":
       return { _tag: "Browsing" }
@@ -239,14 +261,41 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
         _tag: "Busy",
         kicker: `Preparing ${state.title}…`,
         detail: "Opening your session",
-        ...(state.subject ? { gameId: state.subject.id } : {}),
+        ...(gameId === undefined ? {} : { gameId }),
       }
     case "Launching":
       return {
         _tag: "Busy",
-        kicker: `Starting ${state.title}…`,
+        kicker: state.returnLaunchId === undefined ? `Starting ${state.title}…` : `Returning to ${state.title}…`,
         detail: "Opening your session",
-        ...(state.subject ? { gameId: state.subject.id } : {}),
+        ...(gameId === undefined ? {} : { gameId }),
+      }
+    case "Choosing":
+      return {
+        _tag: "Busy", kicker: `${state.choices.length} launches are starting`,
+        detail: state.notice?.message ?? "Cancel each launch you do not want.",
+        actions: state.choices.map((choice, index) => {
+          const sameTitle = state.choices.filter(candidate => candidate.title === choice.title)
+          const number = state.choices.slice(0, index + 1).filter(candidate => candidate.title === choice.title).length
+          return {
+            id: `cancel-pending:${choice.launchId}`,
+            label: `Cancel ${choice.title}${sameTitle.length > 1 ? ` (${number})` : ""}`,
+            description: choice.cancel === "retry" ? "Cancel failed. Try again." : {
+              reserved: "Waiting to start", preparing: "Preparing", committing: "Starting",
+              waiting: "Waiting for its window", cancelling: "Cancelling",
+            }[choice.phase],
+            enabled: choice.cancel === "retry" || (choice.cancel === "idle" && choice.phase !== "cancelling"),
+          }
+        }),
+      }
+    case "Starting":
+      return {
+        _tag: "Busy",
+        kicker: state.cancelling ? "Cancelling launch…" : `Starting ${state.title}…`,
+        detail: state.notice?.message ?? (state.cancelling ? "Waiting for the exact launch to end" : "Opening your session"),
+        ...(gameId === undefined ? {} : { gameId }),
+        actions: [{ id: "cancel-launch", label: state.cancelling && state.cancelRetryAvailable ? "Retry Cancel" : "Cancel",
+          enabled: !state.cancelling || state.cancelRetryAvailable === true }],
       }
     case "Stopping":
       return {
@@ -254,12 +303,24 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
         kicker: "Stopping session…",
         detail: "Waiting for the host to finish",
       }
-    case "Ready":
-      return state.notice === null ? { _tag: "Browsing" } : problemFromNotice(state.notice)
+    case "Recovery":
+      return { _tag: "Problem", kicker: "Launch recovery needed", reason: state.notice.message, canRetry: true }
+    case "Ready": {
+      const observation = state.unavailableSessionStatus
+      const failure = observation?._tag === "Err" ? observation.payload : observation?.payload.observationFailure
+      if (failure) return {
+        _tag: "Problem", kicker: "Live session recovery needed",
+        reason: [state.notice?.message, `${failure.code}: ${failure.message}`].filter(Boolean).join(" · "), canRetry: true,
+      }
+      return state.notice === null ? { _tag: "Browsing" } : problemFromNotice(state.notice, gameId)
+    }
   }
 }
 
-function problemFromNotice(notice: LaunchNotice): SurfaceStatus {
+/** `gameId` is the presented entry for the notice's subject, never a raw Rust id. */
+function problemFromNotice(notice: LaunchNotice, gameId: string | undefined): SurfaceStatus {
+  // Nothing about the failure changed, so an immediate second attempt would
+  // fail identically; the user acknowledges instead.
   const problem = { _tag: "Problem", reason: notice.message, canRetry: false } as const
   switch (notice._tag) {
     case "Catalog":
@@ -269,10 +330,14 @@ function problemFromNotice(notice: LaunchNotice): SurfaceStatus {
     case "Action":
       return { ...problem, kicker: "Operation failed" }
     case "Launch":
+      // A failure that knows its game names that game, so the surface can
+      // never attribute it to whatever is currently in view.
       return {
         ...problem,
         kicker: notice.subject ? `Couldn't start ${notice.subject.title}` : "Couldn't start",
-        ...(notice.subject ? { gameId: notice.subject.id, gameTitle: notice.subject.title } : {}),
+        ...(notice.subject
+          ? { ...(gameId === undefined ? {} : { gameId }), gameTitle: notice.subject.title }
+          : {}),
       }
   }
 }

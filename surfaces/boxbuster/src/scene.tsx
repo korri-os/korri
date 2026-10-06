@@ -228,7 +228,7 @@ export function Scene({
   const target = targets.find(candidate => candidate.key === focused)
   const focusedTape = target?._tag === "Tape" ? target.tapeId : undefined
   const focusedDeck =
-    target?._tag === "Deck"
+    target?._tag === "Deck" || target?._tag === "Work"
       ? target.index
       : target?._tag === "Eject" || target?._tag === "Retry"
         ? 0

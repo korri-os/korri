@@ -160,6 +160,17 @@ describe("requests are data", () => {
     expect(requests.map(request => request._tag)).not.toContain("ChangeSetting")
   })
 
+  test("a work action goes to Korri only while Korri publishes it, enabled", () => {
+    const cancel = { id: "cancel-pending:a", label: "Cancel Tetris", enabled: true }
+    const working: SurfaceModel = { ...fixtureModel, status: { _tag: "Busy", kicker: "Starting…", actions: [cancel] } }
+    const pressed = { _tag: "PressedStatusAction", actionId: cancel.id } as const
+    expect(story(working, pressed).requests).toEqual([{ _tag: "RunAction", actionId: cancel.id }])
+    const inert: SurfaceModel = { ...working, status: { ...working.status, actions: [{ ...cancel, enabled: false }] } as SurfaceModel["status"] }
+    expect(story(inert, pressed).requests).toEqual([])
+    // A press that lands after Korri retired the work sends nothing.
+    expect(story(fixtureModel, pressed).requests).toEqual([])
+  })
+
   test("the runner picker's choices go to Korri unchanged", () => {
     const { requests } = story({ ...fixtureModel, runnerChoice }, { _tag: "ChoseRunnerAction", actionId: "runner:save" })
     expect(requests).toEqual([{ _tag: "RunAction", actionId: "runner:save" }])

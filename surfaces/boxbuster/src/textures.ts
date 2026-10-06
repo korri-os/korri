@@ -354,7 +354,14 @@ export function bannerTexture(
   ctx.fillStyle = fg
   ctx.fillRect(0, 6, 256, 4)
   ctx.fillRect(0, 54, 256, 4)
-  ctx.font = "bold 34px Arial, sans-serif"
+  // A long sign (a place or a launch named by Korri) gets smaller letters
+  // rather than losing its ends past the board's edges.
+  let size = 34
+  ctx.font = `bold ${size}px Arial, sans-serif`
+  while (size > 14 && ctx.measureText(text).width > 244) {
+    size -= 2
+    ctx.font = `bold ${size}px Arial, sans-serif`
+  }
   ctx.textBaseline = "middle"
   ctx.textAlign = "center"
   ctx.fillStyle = fg

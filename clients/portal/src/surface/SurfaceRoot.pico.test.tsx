@@ -117,9 +117,9 @@ test("Settings is reachable from Pico's home with the d-pad, A and B, and a game
         bus={bus}
         korrid={{
           ...korrid,
-          async sessionPrepare(id, host) {
-            prepared.push(id)
-            return korrid.sessionPrepare(id, host)
+          async sessionStart(request) {
+            prepared.push(request.gameId)
+            return korrid.sessionStart(request)
           },
         }}
         surface={surface}

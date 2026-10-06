@@ -33,6 +33,66 @@ const model = (overrides: Partial<SurfaceModel> = {}): SurfaceModel => ({
 afterEach(() => cleanup())
 
 describe("ShiftSurface", () => {
+  test("startup outranks the detail screen and offers the host's Cancel action", () => {
+    const host = createFixtureHost()
+    const { rerender } = render(<ShiftSurface model={model()} host={host} />)
+    const library = screen.getByRole("button", { name: "Library" })
+    fireEvent.focus(library)
+    fireEvent.click(library)
+    fireEvent.click(screen.getByRole("button", { name: "Wario Land 4" }))
+    rerender(<ShiftSurface host={host} model={model({ status: {
+      _tag: "Busy", kicker: "Starting Wario Land 4", gameId: "local-game:wl4",
+      actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+    } })} />)
+    expect(screen.getByText("Starting Wario Land 4")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Skate 3" }) === null).toBe(true)
+    expect(screen.queryByRole("button", { name: "Wario Land 4" }) === null).toBe(true)
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    expect(document.activeElement === cancel).toBe(true)
+    fireEvent.click(cancel)
+    expect(host.calls).toContain("action:cancel-launch")
+  })
+
+  test("names the focused pending launch in the hero and cancels only that one", () => {
+    const host = createFixtureHost()
+    render(<ShiftSurface host={host} model={model({ status: {
+      _tag: "Busy", kicker: "2 launches are starting",
+      detail: "Cancel each launch you do not want.",
+      actions: [
+        { id: "cancel-pending:a", label: "Cancel Neverball", description: "Preparing", enabled: true },
+        { id: "cancel-pending:b", label: "Cancel Skate 3", description: "Waiting for its window", enabled: true },
+      ],
+    } })} />)
+    const neverball = screen.getByRole("button", { name: "Cancel Neverball" })
+    const skate = screen.getByRole("button", { name: "Cancel Skate 3" })
+    expect(document.activeElement === neverball).toBe(true)
+    expect(screen.getByText("2 launches are starting")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Cancel Neverball" })).toBeTruthy()
+    expect(screen.getByText("Preparing")).toBeTruthy()
+    fireEvent.focus(skate)
+    expect(screen.getByRole("heading", { name: "Cancel Skate 3" })).toBeTruthy()
+    expect(screen.getByText("Waiting for its window")).toBeTruthy()
+    fireEvent.click(skate)
+    expect(host.calls).toEqual(["action:cancel-pending:b"])
+  })
+
+  test("startup from Library keeps its Cancel when the catalog becomes empty", () => {
+    const host = createFixtureHost()
+    const { rerender } = render(<ShiftSurface model={model()} host={host} />)
+    const library = screen.getByRole("button", { name: "Library" })
+    fireEvent.focus(library)
+    fireEvent.click(library)
+    rerender(<ShiftSurface host={host} model={model({
+      catalog: { _tag: "Empty" },
+      status: {
+        _tag: "Busy", kicker: "Starting live session",
+        actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+      },
+    })} />)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(host.calls).toContain("action:cancel-launch")
+  })
+
   test("keeps the full catalog in Library instead of pouring it onto Home", () => {
     render(<ShiftSurface model={model()} host={createFixtureHost()} />)
 

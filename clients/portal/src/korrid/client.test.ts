@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { SecretSettingStatus } from "@contracts/generated/korrid"
 import {
+  FocusOwnership,
   LaunchContributorKind,
   SessionControlFailureReason,
   SessionFreezerState,
@@ -69,15 +70,15 @@ describe("callKorrid", () => {
   })
 
   it("correlates in-memory overlay handoff to the exact frozen launch and clears it on return", async () => {
-    const active = { launchId: "launch-1", gameId: "one", phase: "running" }
+    const active = { launchId: "launch-1", gameId: "one", phase: "running", focusOwnership: FocusOwnership.Launch }
     const client = createInMemoryKorridClient({ activeSession: active })
 
     expect(await client.sessionFreeze("launch-1")).toMatchObject({ _tag: "Ok" })
     expect(await client.sessionStatus()).toEqual({
       _tag: "Ok",
       payload: {
-        active: { ...active, phase: "frozen" },
-        overlay: { ...active, phase: "frozen" },
+        active: { ...active, phase: "frozen", focusOwnership: FocusOwnership.Excluded },
+        overlay: { ...active, phase: "frozen", focusOwnership: FocusOwnership.Excluded },
       },
     })
 

@@ -271,6 +271,7 @@ function PicoCatalogSurface({
             /* A launch-location question belongs to a game's own screen. */
             onChooseLocation={locationId => dispatch({ _tag: "ChoseLocation", locationId })}
             onDismiss={() => dispatch({ _tag: "PressedDismiss" })}
+            onAction={actionId => dispatch({ _tag: "PressedStatusAction", actionId })}
             mode={shown.home.mode}
             onOpenGame={gameId => dispatch({ _tag: "OpenedGame", gameId })}
             onReturnedToCart={() => dispatch({ _tag: "ReturnedFocus" })}

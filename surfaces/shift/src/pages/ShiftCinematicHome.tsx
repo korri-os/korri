@@ -173,46 +173,59 @@ export function ShiftCinematicHome({
   onOptions,
 }: ShiftCinematicHomeProps) {
   const [index, setIndex] = useState(0)
+  const [actionIndex, setActionIndex] = useState(0)
   const [trackX, setTrackX] = useState(0)
   const stageRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const preloadedImageUrlsRef = useRef<Set<string>>(new Set())
-  const game = games[index]
+  const busy = surfaceStatus?._tag === "Busy"
+  const busyGameId = surfaceStatus?._tag === "Busy" ? surfaceStatus.gameId : undefined
+  // During startup, progress and its controls own the rail. Browsing tiles
+  // must not push Cancel beyond the container or keep the initial focus.
+  const railGames = useMemo(() => busy ? [] : games, [busy, games])
+  const game = busy
+    ? statusGames.find(candidate => candidate.id === busyGameId)
+    : games[index]
   const gameId = game?.id
   // Restore Library as Shift's dedicated destination, then append host-backed
   // actions such as Settings. Each occupies one focus slot past the games.
   const affordances = useMemo<readonly RailAffordance[]>(
-    () => [
-      ...(onOpenLibrary
-        ? [{ kind: "library" as const, onConfirm: onOpenLibrary }]
-        : []),
-      ...(actions ?? []).map(action => ({ kind: "action" as const, action })),
-    ],
-    [onOpenLibrary, actions],
+    () => surfaceStatus?._tag === "Busy"
+      ? (surfaceStatus.actions ?? []).map(action => ({ kind: "action" as const, action }))
+      : [
+          ...(onOpenLibrary
+            ? [{ kind: "library" as const, onConfirm: onOpenLibrary }]
+            : []),
+          ...(actions ?? []).map(action => ({ kind: "action" as const, action })),
+        ],
+    [onOpenLibrary, actions, surfaceStatus],
   )
+  const railIndex = busy
+    ? Math.min(actionIndex, Math.max(0, affordances.length - 1))
+    : index
   const activeAffordance =
-    index >= games.length ? affordances[index - games.length] : undefined
+    railIndex >= railGames.length ? affordances[railIndex - railGames.length] : undefined
   const [backdropArtUrl, setBackdropArtUrl] = useState(
     () => game?.wideArtUrl ?? "",
   )
   // Focusing an affordance keeps the last game's art as an ambient backdrop
   // instead of clearing it, so the scene stays cinematic while browsing off the
   // games.
-  const focusBackdropUrl = activeAffordance
-    ? backdropArtUrl
-    : (game?.wideArtUrl ?? "")
+  const focusBackdropUrl = busy
+    ? (game?.wideArtUrl ?? "")
+    : activeAffordance ? backdropArtUrl : (game?.wideArtUrl ?? "")
   const tileImageWindow = useMemo(
     () =>
       shiftImageWindow({
-        index,
-        total: games.length,
+        index: railIndex,
+        total: railGames.length,
         radius: TILE_IMAGE_RADIUS,
       }),
-    [index, games.length],
+    [railIndex, railGames.length],
   )
   const preloadImageUrls = useMemo(
-    () => shiftPreloadImageUrls(games, index),
-    [games, index],
+    () => shiftPreloadImageUrls(railGames, railIndex),
+    [railGames, railIndex],
   )
 
   useEffect(() => {
@@ -334,7 +347,7 @@ export function ShiftCinematicHome({
       const stage = stageRef.current
       if (!track || !stage) return
       const tile = track.querySelector<HTMLElement>(
-        `[data-cine-index="${index}"]`,
+        `[data-cine-index="${railIndex}"]`,
       )
       if (!tile) return
       setTrackX(
@@ -342,9 +355,14 @@ export function ShiftCinematicHome({
       )
     }
     recenter()
-    window.addEventListener("resize", recenter)
-    return () => window.removeEventListener("resize", recenter)
-  }, [index])
+    const observer = new ResizeObserver(recenter)
+    if (stageRef.current) observer.observe(stageRef.current)
+    const tile = trackRef.current?.querySelector<HTMLElement>(
+      `[data-cine-index="${railIndex}"]`,
+    )
+    if (tile) observer.observe(tile)
+    return () => observer.disconnect()
+  }, [railIndex, railGames.length, affordances.length])
 
   // Seed focus on the active tile at mount so the focus engine has a starting
   // point and confirm works immediately. Skipped when focus already lives
@@ -358,20 +376,21 @@ export function ShiftCinematicHome({
     )
       return
     trackRef.current
-      ?.querySelector<HTMLElement>('[data-cine-index="0"]')
+      ?.querySelector<HTMLElement>(`[data-cine-index="${railIndex}"]`)
       ?.focus({ preventScroll: true })
-  }, [])
+  }, [busy, railIndex, affordances])
 
   // With a trailing affordance a game may not sit under focus (the slot has no
   // game); only bail when neither a game nor an affordance is active.
-  if (!game && !activeAffordance) return null
+  if (!busy && !game && !activeAffordance) return null
   const resuming = Boolean(game?.resumable ?? game?.lastPlayedLabel)
 
   // The legend's hint set changes with focus and launch state: the Library slot
   // shows a single Open; browsing shows Play/Options/Favorite; a shown failure
   // shows Retry/Back; a non-actionable status (launching/launched) shows none.
   const legendHints: readonly ShiftCineHintSpec[] | null = activeAffordance
-    ? [{ glyph: "A", label: "Open", primary: true }]
+    ? [{ glyph: "A", label: busy && activeAffordance.kind === "action"
+        ? activeAffordance.action.label : "Open", primary: true }]
     : status
       ? showActions
         ? [
@@ -391,8 +410,24 @@ export function ShiftCinematicHome({
   // Hero info and the button-hint legend share one baseline band above the
   // rail (info left, actions right), so the actions sit with the game they
   // describe. Both nodes are hoisted here so the band composes them in one row.
+  // Several host actions during work are a choice between launches. The hero
+  // names the focused one in full, because a tile can only show part of it.
+  const busyChoice =
+    surfaceStatus?._tag === "Busy" && (surfaceStatus.actions?.length ?? 0) > 1 &&
+    activeAffordance?.kind === "action"
+      ? activeAffordance.action
+      : undefined
+  const busyChoiceNote = busyChoice?.description ?? (
+    surfaceStatus?._tag === "Busy" ? surfaceStatus.detail : undefined
+  )
   const heroNode =
-    activeAffordance?.kind === "library" ? (
+    surfaceStatus?._tag === "Busy" ? (
+      busyChoice ? <ShiftCineActionHero kicker={surfaceStatus.kicker} label={busyChoice.label}
+            {...(busyChoiceNote === undefined ? {} : { description: busyChoiceNote })} />
+      : statusGame ? <ShiftCineHero game={statusGame} status={status} resuming={resuming} />
+        : <ShiftCineActionHero label={surfaceStatus.kicker}
+            {...(surfaceStatus.detail === undefined ? {} : { description: surfaceStatus.detail })} />
+    ) : activeAffordance?.kind === "library" ? (
       <ShiftCineLibraryHero />
     ) : activeAffordance?.kind === "action" ? (
       <ShiftCineActionHero
@@ -428,23 +463,23 @@ export function ShiftCinematicHome({
         </div>
 
         <ShiftCineRail
-          games={games}
-          index={index}
+          games={railGames}
+          index={railIndex}
           trackX={trackX}
           trackRef={trackRef}
           imageWindow={tileImageWindow}
-          onTileFocus={setIndex}
+          onTileFocus={busy ? setActionIndex : setIndex}
           onTileActivate={activate}
           cap={
             affordances.length > 0
               ? affordances.map((affordance, i) => {
-                  const slot = games.length + i
+                  const slot = railGames.length + i
                   return affordance.kind === "library" ? (
                     <ShiftCineLibraryTile
                       key="library"
                       index={slot}
-                      focused={index === slot}
-                      onFocus={() => setIndex(slot)}
+                      focused={railIndex === slot}
+                      onFocus={() => (busy ? setActionIndex : setIndex)(slot)}
                       onActivate={() => activate(slot)}
                     />
                   ) : (
@@ -454,8 +489,8 @@ export function ShiftCinematicHome({
                       actionId={affordance.action.id}
                       label={affordance.action.label}
                       disabled={!affordance.action.enabled}
-                      focused={index === slot}
-                      onFocus={() => setIndex(slot)}
+                      focused={railIndex === slot}
+                      onFocus={() => (busy ? setActionIndex : setIndex)(slot)}
                       onActivate={() => activate(slot)}
                     />
                   )

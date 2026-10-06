@@ -875,6 +875,17 @@
 	font-size: var(--shift-text-body);
 	font-weight: 700;
 	letter-spacing: 0.02em;
+	/* A host label can be longer than the tile. The tile shows what fits; the
+	 * hero and the legend name the focused action in full. */
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	max-width: 100%;
+	padding-inline: var(--shift-space-1);
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	text-align: center;
 }
 
 /* "Fresh" marker: a small accent pill in a game tile's top-left corner, flagging

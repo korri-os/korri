@@ -26,6 +26,9 @@ impl PortalPermission {
             | RpcRequest::SessionControls(_) => true,
             RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
+            | RpcRequest::SessionReserve(_)
+            | RpcRequest::SessionStart(_)
+            | RpcRequest::SessionCancel(_)
             | RpcRequest::MoonlightCertificateAttest(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
@@ -63,7 +66,10 @@ impl PortalPermission {
                         | RpcRequest::SessionFreeze(_)
                         | RpcRequest::SessionThaw(_)
                         | RpcRequest::SessionControlInvoke(_)
-                        | RpcRequest::SelectedGameLaunch(_) => true,
+                        | RpcRequest::SelectedGameLaunch(_)
+                        | RpcRequest::SessionReserve(_)
+                        | RpcRequest::SessionStart(_)
+                        | RpcRequest::SessionCancel(_) => true,
                         _ => false,
                     }
             }
@@ -94,6 +100,11 @@ impl PortalAccess {
             allowed_origins: vec![origin],
             permission,
         }
+    }
+
+    /// Process-local caller binding only. Never serialize or log this value.
+    pub(crate) fn reservation_caller(&self) -> &str {
+        &self.capability
     }
 
     pub(crate) fn allowed_origins(&self) -> &[HeaderValue] {
@@ -468,7 +479,7 @@ mod tests {
         let open_menu_still_frozen = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(
             open_menu_still_frozen["outcome"]["payload"]["active"],
-            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen"}),
+            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"}),
             "a control executed after thaw must restore the exact frozen state"
         );
         let ignored_quit = rpc(
@@ -489,7 +500,7 @@ mod tests {
         let still_frozen = rpc(&app, "app.session.status", json!({})).await;
         assert_eq!(
             still_frozen["outcome"]["payload"]["active"],
-            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen"})
+            json!({"launchId":launch_id,"gameId":game_id,"phase":"frozen","focusOwnership":"excluded","initialHandoff":"waiting"})
         );
         let unknown = rpc(
             &app,

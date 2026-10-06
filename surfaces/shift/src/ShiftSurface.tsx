@@ -280,7 +280,8 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
 
   const runRailAction = useCallback((actionId: string) => {
     if (actionId === SHIFT_SETTINGS_ACTION_ID) setScreen("settings")
-  }, [])
+    else host.runAction(actionId)
+  }, [host])
 
   const sheetGame = allGames.find(game => game.id === sheetGameId)
   const launchSurfaceGame = surfaceGames.find(game => game.id === launchGameId)
@@ -302,9 +303,11 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
     model.catalog._tag === "Ready" &&
     model.catalog.games.some(game => host.gameActions(game.id).length > 0)
 
+  // Startup owns the screen even when it began from Library or Detail.
+  const shownScreen = model.status._tag === "Busy" ? "home" : screen
   const body =
     model.presentation.kind === "gameplay-overlay" ? null
-    : screen === "settings" ? (
+    : shownScreen === "settings" ? (
       <ShiftSettings
         groups={settingsGroups}
         status={model.settingsStatus}
@@ -317,16 +320,16 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         {...(model.clockLabel === undefined ? {} : { time: model.clockLabel })}
         onClose={() => setScreen("home")}
       />
-    ) : screen !== "home" && model.catalog._tag === "Loading" ? (
+    ) : shownScreen !== "home" && model.catalog._tag === "Loading" ? (
       <ShiftHomeLoadingBody />
-    ) : screen !== "home" && model.catalog._tag === "Error" ? (
+    ) : shownScreen !== "home" && model.catalog._tag === "Error" ? (
       <ShiftHomeLoadErrorBody
         message={model.catalog.message}
         onRetry={() => host.reload()}
       />
-    ) : screen !== "home" && model.catalog._tag === "Empty" ? (
+    ) : shownScreen !== "home" && model.catalog._tag === "Empty" ? (
       <ShiftHomeEmptyBody />
-    ) : screen === "library" ? (
+    ) : shownScreen === "library" ? (
       <ShiftLibraryLens
         games={libraryGames}
         onSelect={gameId => {
@@ -335,7 +338,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         }}
         onBack={() => setScreen("home")}
       />
-    ) : screen === "detail" && detailGame ? (
+    ) : shownScreen === "detail" && detailGame ? (
       <ShiftDetailSplit
         game={detailGame}
         onPlay={() => requestLaunch(detailGame.id)}
@@ -344,21 +347,21 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
           if (!runnerOpen && !launchChooserOpen && sheetGameId === null) setScreen("home")
         }}
       />
-    ) : screen === "detail" ? (
+    ) : shownScreen === "detail" ? (
       <main
         data-shift-home
         className="intrinsic relative flex h-full w-full flex-col items-center justify-center text-[color:var(--shift-ink)]"
       >
         <p className="opacity-70">Game not found.</p>
       </main>
-    ) : model.catalog._tag === "Loading" ? (
+    ) : model.catalog._tag === "Loading" && model.status._tag !== "Busy" ? (
       <ShiftHomeLoadingBody />
-    ) : model.catalog._tag === "Error" ? (
+    ) : model.catalog._tag === "Error" && model.status._tag !== "Busy" ? (
       <ShiftHomeLoadErrorBody
         message={model.catalog.message}
         onRetry={() => host.reload()}
       />
-    ) : model.catalog._tag === "Empty" && railActions.length > 0 ? (
+    ) : model.catalog._tag === "Empty" && railActions.length > 0 && model.status._tag !== "Busy" ? (
       // A plugin can make the playable catalog empty. Settings must remain
       // reachable so the user can turn it back on rather than trapping the
       // device on an empty page.
@@ -372,7 +375,7 @@ export function ShiftSurface({ model, host }: ShiftSurfaceProps) {
         onRetry={() => host.retry()}
         onDismiss={() => host.dismiss()}
       />
-    ) : model.catalog._tag === "Empty" ? (
+    ) : model.catalog._tag === "Empty" && model.status._tag !== "Busy" ? (
       <ShiftHomeEmptyBody />
     ) : (
       <ShiftCinematicHome

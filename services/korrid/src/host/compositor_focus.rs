@@ -144,12 +144,7 @@ pub(crate) struct FocusCandidate {
     pub(crate) pid: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FocusOwnership {
-    Launch,
-    Excluded,
-    Other,
-}
+pub(crate) use crate::FocusOwnership;
 
 /// What korrid may do with the compositor for one exact launch.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -64,4 +64,30 @@ describe("the Boxbuster door", () => {
     fireEvent.click(retry)
     expect(host.calls).toEqual(["reload"])
   })
+
+  test("offers Korri's actions for work under way even when the store cannot open", () => {
+    const host = createRecordingHost()
+    const choosing = (enabled: boolean): SurfaceModel => ({
+      ...modelWith({ _tag: "Empty" }),
+      status: {
+        _tag: "Busy", kicker: "2 launches are starting",
+        detail: "Cancel each launch you do not want.",
+        actions: [
+          { id: "cancel-pending:a", label: "Cancel Kirby", description: "Preparing", enabled },
+          { id: "cancel-pending:b", label: "Cancel Skate 3", description: "Starting", enabled: true },
+        ],
+      },
+    })
+    const { rerender } = render(<BoxbusterSurface host={host} model={choosing(true)} />)
+    expect(screen.getByRole("heading").textContent).toBe("2 launches are starting")
+    expect(screen.getByText("Preparing")).toBeTruthy()
+    const kirby = screen.getByRole("button", { name: /^Cancel Kirby/ })
+    expect(document.activeElement).toBe(kirby)
+    fireEvent.click(kirby)
+    expect(host.calls).toEqual(["action:cancel-pending:a"])
+    rerender(<BoxbusterSurface host={host} model={choosing(false)} />)
+    expect((screen.getByRole("button", { name: /^Cancel Kirby/ }) as HTMLButtonElement).disabled).toBe(true)
+    // The pressed row is now inert, so the cursor moves to one that still acts.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Cancel Skate 3/ }))
+  })
 })

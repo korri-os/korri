@@ -1968,12 +1968,16 @@ mod tests {
                 let phase = state.active_phase.lock().unwrap().clone();
                 RpcResponse::SessionStatus(SessionStatusOutcome::Ok(SessionStatus {
                     active: phase.map(|phase| ActiveSession {
+                        initial_handoff: None,
+                        focus_ownership: None,
                         launch_id: state.launch_id.clone(),
                         host: None,
                         game_id: Some("game".into()),
                         title: None,
                         phase: Some(phase),
                     }),
+                    pending_launches: None,
+                    observation_failure: None,
                     overlay: None,
                 }))
             }

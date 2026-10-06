@@ -1,4 +1,4 @@
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceModel } from "@contracts/surface/korri-surface"
 import { type PicoHomeView, picoHomeViewFromCatalog } from "./pico-home-view"
 
 /**
@@ -26,6 +26,7 @@ export type PicoScreenView =
       readonly _tag: "Busy"
       readonly kicker: string
       readonly detail?: string
+      readonly actions?: readonly SurfaceAction[]
       readonly cart?: PicoLaunchCart
     }
   | {
@@ -57,6 +58,7 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
         _tag: "Busy",
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(status.actions === undefined ? {} : { actions: status.actions }),
         ...(cart === undefined ? {} : { cart }),
       }
     }

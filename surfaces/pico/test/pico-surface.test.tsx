@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
-import type { SurfaceModel } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceModel } from "@contracts/surface/korri-surface"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { PicoSurface } from "../src/PicoSurface"
 
@@ -198,6 +198,95 @@ describe("when there is no shelf to show", () => {
 })
 
 describe("while Korri is doing something with a game", () => {
+  test("offers the host's real cancellation action during startup", () => {
+    const host = createFixtureHost()
+    render(
+      <PicoSurface host={host} model={model({ status: {
+        _tag: "Busy", kicker: "Starting Wario Land 4", gameId: "hollow",
+        actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+      } })} />,
+    )
+    const cancel = screen.getByRole("button", { name: "Cancel" })
+    fireEvent.click(cancel)
+    expect(host.calls).toEqual(["action:cancel-launch"])
+    expect(screen.queryByRole("button", { name: /Celeste Classic/ })).toBeNull()
+  })
+
+  test("lets you cancel each pending launch by name and shows where it stands", () => {
+    const host = createFixtureHost()
+    render(
+      <PicoSurface host={host} model={model({ status: {
+        _tag: "Busy", kicker: "2 launches are starting",
+        detail: "Cancel each launch you do not want.",
+        actions: [
+          { id: "cancel-pending:a", label: "Cancel Tetris", description: "Preparing", enabled: true },
+          { id: "cancel-pending:b", label: "Cancel Spelunky", description: "Cancelling", enabled: false },
+        ],
+      } })} />,
+    )
+    const tetris = screen.getByRole("button", { name: /^Cancel Tetris/ })
+    const spelunky = screen.getByRole("button", { name: /^Cancel Spelunky/ }) as HTMLButtonElement
+    // Where each launch stands sits under its own row, as Pico's control notes do.
+    expect(tetris.closest("li")?.textContent).toContain("Preparing")
+    expect(spelunky.closest("li")?.textContent).toContain("Cancelling")
+    expect(tetris.textContent).toBe("Cancel Tetris")
+    expect(document.activeElement === tetris).toBe(true)
+    expect(spelunky.disabled).toBe(true)
+    fireEvent.click(spelunky)
+    fireEvent.click(tetris)
+    expect(host.calls).toEqual(["action:cancel-pending:a"])
+  })
+
+  test("puts the cursor back on a row when the focused launch leaves the list", () => {
+    const host = createFixtureHost()
+    const busy = (actions: SurfaceAction[]): SurfaceModel => model({ status: {
+      _tag: "Busy", kicker: "2 launches are starting", actions,
+    } })
+    const tetris = { id: "cancel-pending:a", label: "Cancel Tetris", enabled: true }
+    const spelunky = { id: "cancel-pending:b", label: "Cancel Spelunky", enabled: true }
+    const { rerender } = render(<PicoSurface host={host} model={busy([tetris, spelunky])} />)
+    const second = screen.getByRole("button", { name: "Cancel Spelunky" })
+    second.focus()
+    rerender(<PicoSurface host={host} model={busy([tetris, spelunky])} />)
+    // Focus that is still on screen stays where the user put it.
+    expect(document.activeElement === second).toBe(true)
+    rerender(<PicoSurface host={host} model={busy([tetris])} />)
+    // Without a cursor, the host's next confirm would press an unseen row.
+    expect(document.activeElement === screen.getByRole("button", { name: "Cancel Tetris" })).toBe(true)
+    expect(host.calls).toEqual([])
+  })
+
+  test("moves the cursor to the next row, not the first, when the pressed row is disabled", () => {
+    const host = createFixtureHost()
+    const busy = (actions: SurfaceAction[]): SurfaceModel => model({ status: {
+      _tag: "Busy", kicker: "3 launches are starting", actions,
+    } })
+    const row = (id: string, label: string, enabled = true) => ({ id, label, enabled })
+    const { rerender } = render(<PicoSurface host={host} model={busy([
+      row("a", "Cancel Tetris"), row("b", "Cancel Spelunky"), row("c", "Cancel Celeste"),
+    ])} />)
+    fireEvent.focus(screen.getByRole("button", { name: "Cancel Spelunky" }))
+    screen.getByRole("button", { name: "Cancel Spelunky" }).focus()
+    rerender(<PicoSurface host={host} model={busy([
+      row("a", "Cancel Tetris"), row("b", "Cancel Spelunky", false), row("c", "Cancel Celeste"),
+    ])} />)
+    expect(document.activeElement === screen.getByRole("button", { name: "Cancel Celeste" })).toBe(true)
+  })
+
+  test("does not repeat cancellation when the host disables its action", () => {
+    const host = createFixtureHost()
+    render(
+      <PicoSurface host={host} model={model({ status: {
+        _tag: "Busy", kicker: "Cancelling Wario Land 4",
+        actions: [{ id: "cancel-launch", label: "Cancel", enabled: false }],
+      } })} />,
+    )
+    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement
+    expect(cancel.disabled).toBe(true)
+    fireEvent.click(cancel)
+    expect(host.calls).toEqual([])
+  })
+
   test("says what is happening instead of showing the shelf", () => {
     render(
       <PicoSurface

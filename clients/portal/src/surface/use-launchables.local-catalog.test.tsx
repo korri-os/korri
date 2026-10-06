@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import type { ActiveSession, Game, SessionPrepareOutcome, SessionStatusOutcome } from "@contracts/generated/korrid"
-import { SessionFreezerState, SessionStopPhase } from "@contracts/generated/korrid"
+import type { ActiveSession, Game, SelectedGameLaunchOutcome, SessionStatusOutcome } from "@contracts/generated/korrid"
+import { FocusOwnership, InitialHandoff, PendingLaunchPhase, SessionFreezerState, SessionStopPhase } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalEntry } from "../launchables/state"
 import { surfaceModelFrom } from "./surface-model"
@@ -41,10 +41,10 @@ const game: Game = {
 // Linux's host_session_status_outcome omits host and title even though the
 // catalog carries config.label as Game.host (services/korrid/src/lib.rs).
 const active: ActiveSession = {
-  launchId: "local-launch-1", gameId: game.id, phase: "running",
+  launchId: "local-launch-1", gameId: game.id, phase: "running", focusOwnership: FocusOwnership.Launch, initialHandoff: InitialHandoff.Observed,
 }
-const prepared: SessionPrepareOutcome = {
-  _tag: "Ok", payload: { gameId: game.id, launchId: active.launchId },
+const prepared: SelectedGameLaunchOutcome = {
+  _tag: "Ok", payload: { session: { gameId: game.id, launchId: active.launchId }, warnings: [] },
 }
 const idle: SessionStatusOutcome = {
   _tag: "Err", payload: { code: "NoActiveSession", message: "no host launch is active" },
@@ -53,18 +53,21 @@ const completed: SessionStatusOutcome = {
   _tag: "Err", payload: { code: "SessionCompleted", message: `host launch ${active.launchId} completed` },
 }
 const running: SessionStatusOutcome = { _tag: "Ok", payload: { active } }
+const preparing: SessionStatusOutcome = { _tag: "Ok", payload: { pendingLaunches: [{
+  session: { gameId: game.id, launchId: active.launchId }, phase: PendingLaunchPhase.Preparing,
+}] } }
 
 function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog = [game]) {
   let status = initial
   const calls: {
-    prepares: Parameters<KorridClient["sessionPrepare"]>[]
+    starts: Parameters<KorridClient["sessionStart"]>[]
     stops: Parameters<KorridClient["sessionStop"]>[]
     native: string[]
     statusReads: number
     catalogReads: number
     resumes: string[]
   } = {
-    prepares: [], stops: [], native: [], statusReads: 0, catalogReads: 0, resumes: [],
+    starts: [], stops: [], native: [], statusReads: 0, catalogReads: 0, resumes: [],
   }
   const base = createInMemoryKorridClient({ games: catalog })
   const korrid: KorridClient = {
@@ -73,13 +76,15 @@ function fixture(overrides: Partial<KorridClient> = {}, initial = idle, catalog 
       calls.catalogReads += 1
       return base.catalogSnapshot()
     },
-    async sessionPrepare(...args) {
-      calls.prepares.push(args)
+    async sessionReserve({ gameId }) { return { _tag: "Ok", payload: { gameId, launchId: active.launchId } } },
+    async sessionCancel() { status = idle; return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } } },
+    async sessionStart(...args) {
+      calls.starts.push(args)
       status = running
       return prepared
     },
     /* Confirming the banner resumes the exact launch through korrid. It does
-     * not prepare the game again, so it must not appear in calls.prepares. */
+     * not reserve or start the game again, so it must not appear in calls.starts. */
     async sessionThaw(expectedLaunchId) {
       calls.resumes.push(expectedLaunchId)
       return { _tag: "Ok", payload: { launchId: expectedLaunchId, state: SessionFreezerState.Running, changed: true } }
@@ -120,7 +125,7 @@ const hasSession = (value: Launchables) => value.state._tag !== "Loading" && val
 
 describe("source-local catalog orchestration", () => {
 
-  test("prepares once without a host or native launch, then exposes the exact active session", async () => {
+  test("starts once without a host or native launch, then exposes the exact active session", async () => {
     const config = fixture()
     const harness = await mount(config)
     const entry = harness.entry("game")
@@ -129,7 +134,7 @@ describe("source-local catalog orchestration", () => {
       harness.current().confirmEntry(entry)
     })
     await waitFor(() => harness.current().state._tag === "Ready" && hasSession(harness.current()))
-    expect(config.calls.prepares).toEqual([[game.id, game.host]])
+    expect(config.calls.starts).toEqual([[{ gameId: game.id, expectedLaunchId: active.launchId }]])
     expect(config.calls.native).toEqual([])
     expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
     const model = surfaceModelFrom(harness.current().state)
@@ -139,7 +144,7 @@ describe("source-local catalog orchestration", () => {
     // Neither the catalog entry nor the banner may restart or natively resume it.
     await invoke(() => harness.current().confirmEntry(entry))
     await invoke(() => harness.current().confirmEntry(harness.entry("now-playing")))
-    expect(config.calls.prepares).toHaveLength(1)
+    expect(config.calls.starts).toHaveLength(1)
     expect(config.calls.native).toEqual([])
     expect(surfaceModelFrom(harness.current().state).status._tag).toBe("Browsing")
   })
@@ -155,16 +160,16 @@ describe("source-local catalog orchestration", () => {
     if (!local) throw new Error("missing local copy")
     await invoke(() => harness.current().confirmEntry(local))
     await waitFor(() => config.calls.statusReads > 1)
-    expect(config.calls.prepares).toEqual([[game.id, game.host]])
+    expect(config.calls.starts).toEqual([[{ gameId: game.id, expectedLaunchId: active.launchId }]])
     expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
     await invoke(() => harness.current().confirmEntry(local))
-    expect(config.calls.prepares).toHaveLength(1)
+    expect(config.calls.starts).toHaveLength(1)
     expect(config.calls.native).toEqual([])
   })
 
-  test("reports prepare failure against its game and permits a later retry", async () => {
+  test("reports startup failure against its game and permits a later retry", async () => {
     let attempts = 0
-    const config = fixture({ async sessionPrepare() {
+    const config = fixture({ async sessionStart() {
       attempts += 1
       return { _tag: "Err", payload: { code: "LocalRomMissing", message: "ROM was removed" } }
     } })
@@ -234,8 +239,8 @@ describe("source-local catalog orchestration", () => {
     expect(surfaceModelFrom(harness.current().state).status._tag).toBe("Browsing")
   })
 
-  test("handles a game that exits before prepare returns without any blur", async () => {
-    const config = fixture({ async sessionPrepare() { config.setStatus(completed); return prepared } })
+  test("handles a game that exits before start returns without any blur", async () => {
+    const config = fixture({ async sessionStart() { config.setStatus(completed); return prepared } })
     const harness = await mount(config)
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
     await waitFor(() => harness.current().state._tag === "Ready" && !hasSession(harness.current()))
@@ -244,14 +249,14 @@ describe("source-local catalog orchestration", () => {
   })
 
   for (const event of ["focus", "visibilitychange"]) {
-    test(`${event} refreshes local session and catalog without cancelling pending prepare`, async () => {
-      const preparation = deferred<SessionPrepareOutcome>()
-      const config = fixture({ sessionPrepare: () => preparation.promise })
+    test(`${event} refreshes local session and catalog without cancelling pending start`, async () => {
+      const preparation = deferred<SelectedGameLaunchOutcome>()
+      const config = fixture({ sessionStart: () => { config.setStatus(preparing); return preparation.promise } })
       const harness = await mount(config)
       await invoke(() => harness.current().confirmEntry(harness.entry("game")))
-      expect(harness.current().state._tag).toBe("Preparing")
+      expect(harness.current().state._tag).toBe("Starting")
       await invoke(() => (event === "focus" ? window : document).dispatchEvent(new Event(event)))
-      expect(harness.current().state._tag).toBe("Preparing")
+      expect(harness.current().state._tag).toBe("Starting")
       config.setStatus(running)
       await invoke(() => preparation.resolve(prepared))
       await waitFor(() => harness.current().state._tag === "Ready" && hasSession(harness.current()))
@@ -273,7 +278,7 @@ describe("source-local catalog orchestration", () => {
     await waitFor(() => config.calls.statusReads > reads)
     expect(hasSession(harness.current())).toBe(true)
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
-    expect(config.calls.prepares).toHaveLength(1)
+    expect(config.calls.starts).toHaveLength(1)
     config.setStatus(completed)
     await waitFor(() => !hasSession(harness.current()))
   })
@@ -327,7 +332,7 @@ describe("source-local catalog orchestration", () => {
       expect(state.entries.some(entry => entry.kind === "game")).toBe(false)
       await invoke(() => harness.current().confirmEntry(harness.entry("now-playing")))
       await invoke(() => harness.current().confirmEntry(staleGame))
-      expect(config.calls.prepares).toEqual([])
+      expect(config.calls.starts).toEqual([])
       expect(config.calls.native).toEqual([])
       expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Catalog", message: "games: BrainUnreachable: disconnected" } })
       const reads = catalogReads
@@ -336,7 +341,7 @@ describe("source-local catalog orchestration", () => {
       config.setStatus(idle)
       await waitFor(() => !hasSession(harness.current()))
       await invoke(() => harness.current().confirmEntry(staleGame))
-      expect(config.calls.prepares).toEqual([])
+      expect(config.calls.starts).toEqual([])
     })
   }
 
@@ -355,18 +360,19 @@ describe("source-local catalog orchestration", () => {
     expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Catalog", message: "games: BrainUnreachable: disconnected" } })
   })
 
-  test("ignores a prepare failure superseded by reload and a newer prepare", async () => {
-    const first = deferred<SessionPrepareOutcome>()
-    const second = deferred<SessionPrepareOutcome>()
+  test("ignores a cancelled start failure after reload and a newer start", async () => {
+    const first = deferred<SelectedGameLaunchOutcome>()
+    const second = deferred<SelectedGameLaunchOutcome>()
     let attempts = 0
-    const config = fixture({ sessionPrepare: () => (++attempts === 1 ? first.promise : second.promise) })
+    const config = fixture({ sessionStart: () => { config.setStatus(preparing); return ++attempts === 1 ? first.promise : second.promise } })
     const harness = await mount(config)
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
+    await invoke(() => harness.current().cancelLaunch())
     await invoke(() => harness.current().reload())
     await waitFor(() => harness.current().state._tag === "Ready")
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
     await invoke(() => first.resolve({ _tag: "Err", payload: { code: "OldFailure", message: "old operation" } }))
-    expect(harness.current().state._tag).toBe("Preparing")
+    expect(harness.current().state._tag).toBe("Starting")
     config.setStatus(running)
     await invoke(() => second.resolve(prepared))
     await waitFor(() => harness.current().state._tag === "Ready" && hasSession(harness.current()))
@@ -392,11 +398,11 @@ describe("source-local catalog orchestration", () => {
   })
 
   test("a pre-ACK focus snapshot cannot erase an acknowledged launch", async () => {
-    const preparation = deferred<SessionPrepareOutcome>()
+    const preparation = deferred<SelectedGameLaunchOutcome>()
     const beforeAck = deferred<SessionStatusOutcome>()
     let reads = 0
     const config = fixture({
-      sessionPrepare: () => preparation.promise,
+      sessionStart: () => preparation.promise,
       sessionStatus() {
         reads += 1
         return reads === 1 ? Promise.resolve(idle) : reads === 2 ? beforeAck.promise : Promise.resolve(running)
@@ -405,24 +411,34 @@ describe("source-local catalog orchestration", () => {
     const harness = await mount(config)
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
     await invoke(() => window.dispatchEvent(new Event("focus")))
-    await waitFor(() => reads === 2)
+    await waitFor(() => reads >= 2)
     await invoke(() => preparation.resolve(prepared))
-    await waitFor(() => hasSession(harness.current()))
     await invoke(() => beforeAck.resolve(idle))
+    await waitFor(() => harness.current().state._tag === "Ready" && hasSession(harness.current()))
     expect(harness.entry("now-playing")).toMatchObject({ session: active })
   })
 
-  test("recovers a stale local success after the newer prepare conflicts, preserving its notice and polling", async () => {
-    const first = deferred<SessionPrepareOutcome>()
-    const second = deferred<SessionPrepareOutcome>()
+  test("recovers observed session truth after the newer start conflicts, preserving its notice and polling", async () => {
+    const first = deferred<SelectedGameLaunchOutcome>()
+    const second = deferred<SelectedGameLaunchOutcome>()
     const otherGame = { ...game, id: "other-gba", title: "Other GBA game" }
-    const config = fixture({ sessionPrepare(...args) {
-      config.calls.prepares.push(args)
-      return config.calls.prepares.length === 1 ? first.promise : second.promise
-    } }, idle, [game, otherGame])
+    const competing = { ...active, launchId: "external-launch" }
+    const otherIdentity = { gameId: otherGame.id, launchId: "local-launch-2" }
+    const config = fixture({
+      async sessionReserve({ gameId }) { return { _tag: "Ok", payload: gameId === otherGame.id ? otherIdentity : { gameId, launchId: active.launchId } } },
+      sessionStart(...args) {
+        config.calls.starts.push(args)
+        config.setStatus({ _tag: "Ok", payload: { pendingLaunches: [{
+          session: config.calls.starts.length === 1 ? { gameId: game.id, launchId: active.launchId } : otherIdentity,
+          phase: PendingLaunchPhase.Preparing,
+        }] } })
+        return config.calls.starts.length === 1 ? first.promise : second.promise
+      },
+    }, idle, [game, otherGame])
     const harness = await mount(config)
     const firstEntry = harness.entry("game")
     await invoke(() => harness.current().confirmEntry(firstEntry))
+    await invoke(() => harness.current().cancelLaunch())
     await invoke(() => harness.current().reload())
     await waitFor(() => harness.current().state._tag === "Ready")
     const state = harness.current().state
@@ -430,13 +446,15 @@ describe("source-local catalog orchestration", () => {
     const secondEntry = state.entries.find(entry => entry.kind === "game" && entry.game.id === otherGame.id)
     if (!secondEntry) throw new Error("missing second game")
     await invoke(() => harness.current().confirmEntry(secondEntry))
-    // A really runs, with Linux's hostless status, before B returns its conflict.
-    config.setStatus(running)
+    // A retired reply is not authority. A genuinely newer external live session
+    // can coexist with B's pending route, before B returns its conflict.
+    config.setStatus({ _tag: "Ok", payload: { active: competing, pendingLaunches: [{ session: otherIdentity, phase: PendingLaunchPhase.Preparing }] } })
     await invoke(() => first.resolve(prepared))
-    expect(config.calls.catalogReads).toBe(3)
-    expect(harness.current().state._tag).toBe("Preparing")
-    expect(hasSession(harness.current())).toBe(false)
+    expect(config.calls.catalogReads).toBeGreaterThanOrEqual(3)
+    expect(harness.current().state._tag).toBe("Starting")
+    expect(hasSession(harness.current())).toBe(true)
     await invoke(() => harness.current().confirmEntry(secondEntry))
+    config.setStatus({ _tag: "Ok", payload: { active: competing } })
     await invoke(() => second.resolve({ _tag: "Err", payload: {
       code: "ActiveSessionConflict", message: "one host game is already running or stopping",
     } }))
@@ -445,43 +463,43 @@ describe("source-local catalog orchestration", () => {
       message: "ActiveSessionConflict: one host game is already running or stopping",
       subject: { id: otherGame.id, title: otherGame.title },
     } })
-    expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: active })
+    expect(harness.entry("now-playing")).toEqual({ kind: "now-playing", session: competing })
     await invoke(() => harness.current().confirmEntry(firstEntry))
     await invoke(() => harness.current().confirmEntry(harness.entry("now-playing")))
-    expect(config.calls.prepares).toEqual([[game.id, game.host], [otherGame.id, otherGame.host]])
+    expect(config.calls.starts).toEqual([[{ gameId: game.id, expectedLaunchId: active.launchId }], [{ gameId: otherGame.id, expectedLaunchId: otherIdentity.launchId }]])
     expect(config.calls.native).toEqual([])
     config.setStatus(completed)
     await waitFor(() => !hasSession(harness.current()))
     expect(config.calls.catalogReads).toBeGreaterThan(3)
   })
 
-  test("a late prepare-failure recovery read cannot unlock a newer command", async () => {
+  test("a late startup-failure recovery read cannot unlock a newer command", async () => {
     const recovery = deferred<SessionStatusOutcome>()
-    const preparation = deferred<SessionPrepareOutcome>()
+    const preparation = deferred<SelectedGameLaunchOutcome>()
     const config = fixture({
-      sessionPrepare(...args) {
-        config.calls.prepares.push(args)
-        return config.calls.prepares.length === 1
+      sessionStart(...args) {
+        config.calls.starts.push(args)
+        return config.calls.starts.length === 1
           ? Promise.resolve({ _tag: "Err", payload: { code: "ActiveSessionConflict", message: "already running" } })
           : preparation.promise
       },
       sessionStatus() {
         config.calls.statusReads += 1
-        return config.calls.statusReads === 1 ? Promise.resolve(idle) : recovery.promise
+        return config.calls.statusReads === 1 ? Promise.resolve(idle) : config.calls.statusReads === 2 ? recovery.promise : Promise.resolve(preparing)
       },
     })
     const harness = await mount(config)
     const entry = harness.entry("game")
     await invoke(() => harness.current().confirmEntry(entry))
-    expect(config.calls.statusReads).toBe(2)
+    expect(config.calls.statusReads).toBeGreaterThanOrEqual(2)
     expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "ActiveSessionConflict: already running" } })
     await invoke(() => harness.current().confirmEntry(entry))
-    expect(harness.current().state._tag).toBe("Preparing")
+    expect(harness.current().state._tag).toBe("Starting")
     await invoke(() => recovery.resolve(running))
-    expect(harness.current().state._tag).toBe("Preparing")
-    expect(hasSession(harness.current())).toBe(false)
+    expect(harness.current().state._tag).toBe("Starting")
+    expect(hasSession(harness.current())).toBe(true)
     await invoke(() => harness.current().confirmEntry(entry))
-    expect(config.calls.prepares).toEqual([[game.id, game.host], [game.id, game.host]])
+    expect(config.calls.starts).toEqual([[{ gameId: game.id, expectedLaunchId: active.launchId }], [{ gameId: game.id, expectedLaunchId: active.launchId }]])
     expect(config.calls.native).toEqual([])
   })
 
@@ -526,9 +544,9 @@ describe("source-local catalog orchestration", () => {
     expect(config.calls.catalogReads).toBe(catalogReads)
   })
 
-  test("does not start reconciliation after an unmounted prepare completes", async () => {
-    const preparation = deferred<SessionPrepareOutcome>()
-    const config = fixture({ sessionPrepare: () => preparation.promise })
+  test("does not start reconciliation after an unmounted start completes", async () => {
+    const preparation = deferred<SelectedGameLaunchOutcome>()
+    const config = fixture({ sessionStart: () => preparation.promise })
     const harness = await mount(config)
     await invoke(() => harness.current().confirmEntry(harness.entry("game")))
     await harness.unmount()

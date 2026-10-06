@@ -30,6 +30,7 @@ export function BoxbusterTargets({
   onDeck,
   onEject,
   onRetry,
+  onWork,
 }: {
   targets: readonly Target[]
   /** The key of the target focus should land on. */
@@ -45,6 +46,8 @@ export function BoxbusterTargets({
   onDeck: (locationId?: string) => void
   onEject: () => void
   onRetry: () => void
+  /** Run Korri's action for the work under way, unchanged. */
+  onWork: (actionId: string) => void
 }) {
   const layer = useRef<HTMLDivElement>(null)
   const landingFocus = useRef(false)
@@ -85,6 +88,7 @@ export function BoxbusterTargets({
         <button
           key={target.key}
           type="button"
+          disabled={target.disabled}
           className="boxbuster-target"
           data-target={target.key}
           data-kind={target._tag}
@@ -118,6 +122,8 @@ export function BoxbusterTargets({
                 return onEject()
               case "Retry":
                 return onRetry()
+              case "Work":
+                return onWork(target.actionId)
             }
           }}
         />

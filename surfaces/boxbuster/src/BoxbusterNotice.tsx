@@ -1,5 +1,5 @@
 import "./BoxbusterNotice.css"
-import type { ReactNode } from "react"
+import { type ReactNode, useLayoutEffect, useRef } from "react"
 import type { BoxbusterStoreView } from "./boxbuster-store-view"
 
 /** The store cannot be drawn here: this browser has no WebGL. */
@@ -52,6 +52,64 @@ export function BoxbusterNotice({
         </BoxbusterNoticeBoard>
       )
   }
+}
+
+/**
+ * What the door says while Korri works and there is no store to walk into.
+ * Korri's actions for that work (such as Cancel) are still on the door: the
+ * deck is out of reach, so the door holds them, in Korri's words.
+ */
+/** One of Korri's actions as the door shows it: its words and whether it acts. */
+export interface DoorAction {
+  readonly id: string
+  readonly label: string
+  readonly description?: string
+  readonly enabled: boolean
+}
+
+export function BoxbusterWorkNotice({
+  kicker,
+  detail,
+  actions,
+  onAction,
+}: {
+  kicker: string
+  detail?: string
+  actions: readonly DoorAction[]
+  onAction: (actionId: string) => void
+}) {
+  const list = useRef<HTMLDivElement>(null)
+  // Focus is where the host's confirm lands. Seed it, and move it to a control
+  // that still acts when the focused one goes away or goes inert.
+  useLayoutEffect(() => {
+    const root = list.current
+    if (root === null) return
+    const active = root.ownerDocument.activeElement
+    const lost = active === null || active === root.ownerDocument.body ||
+      !active.isConnected || (root.contains(active) && active.matches(":disabled"))
+    if (lost) root.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus()
+  })
+  return (
+    <BoxbusterNoticeBoard sign={kicker} {...(detail === undefined ? {} : { detail })}>
+      <div className="boxbuster-notice-actions" ref={list}>
+        {actions.map(action => (
+          <div className="boxbuster-notice-work" key={action.id}>
+            <button
+              type="button"
+              className="boxbuster-notice-action"
+              disabled={!action.enabled}
+              onClick={() => onAction(action.id)}
+            >
+              {action.label}
+            </button>
+            {action.description === undefined ? null : (
+              <p className="boxbuster-notice-detail">{action.description}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </BoxbusterNoticeBoard>
+  )
 }
 
 function BoxbusterNoticeBoard({

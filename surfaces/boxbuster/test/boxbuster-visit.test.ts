@@ -117,6 +117,15 @@ describe("walking", () => {
       "viewing",
     )
   })
+
+  test("a choice brings you to the TV with free hands, so no tape hides a deck", () => {
+    const holding = open({
+      hand: { _tag: "Holding", tapeId: "a", face: "front", pose: "carrying" },
+    })
+    const called = step(holding, { _tag: "ChoiceShown" }, SPOTS).visit
+    expect(called.spot).toBe("viewing")
+    expect(called.hand).toEqual({ _tag: "Empty" })
+  })
 })
 
 describe("a tape in hand", () => {

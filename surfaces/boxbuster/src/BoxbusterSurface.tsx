@@ -15,7 +15,7 @@ import type {
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { BoxbusterNotice, NO_STORE } from "./BoxbusterNotice"
+import { BoxbusterNotice, BoxbusterWorkNotice, NO_STORE } from "./BoxbusterNotice"
 import { type BoxbusterStoreDrawing, webglStore } from "./BoxbusterStore"
 import { BoxbusterTargets } from "./BoxbusterTargets"
 import { DOOR_SPOT, spotsFrom } from "./boxbuster-spots"
@@ -69,6 +69,10 @@ export function BoxbusterSurface({
     [model.catalog, signature],
   )
   const status = tvStatusFrom(model)
+  // While Korri works, the decks run its actions. Several actions are a
+  // choice between launches, so Korri calls you to the TV to make it.
+  const work = model.status._tag === "Busy" ? (model.status.actions ?? []) : undefined
+  const choosing = (work?.length ?? 0) > 1
 
   const [held, setVisit] = useState<Visit>(() => closedVisit({ door: DOOR_SPOT }))
   // A republished catalog may have taken a tape away, rebuilt the store, or
@@ -118,6 +122,11 @@ export function BoxbusterSurface({
     if (status._tag === "Problem") dispatchRef.current({ _tag: "ProblemShown" })
   }, [status._tag])
 
+  // A choice is made at the TV too.
+  useEffect(() => {
+    if (choosing) dispatchRef.current({ _tag: "ChoiceShown" })
+  }, [choosing])
+
   // Which unseen target has focus, so the room can show it.
   const [focused, setFocused] = useState<string | undefined>(undefined)
 
@@ -125,17 +134,27 @@ export function BoxbusterSurface({
   const size = useBoxbusterSize(surface)
   const drawable = useMemo(() => drawing.available(), [drawing])
 
+  // Without a store, Korri's work and its actions still need a place: the door.
+  const doorWork =
+    model.status._tag === "Busy" && (work?.length ?? 0) > 0 ? (
+      <BoxbusterWorkNotice
+        kicker={model.status.kicker}
+        {...(model.status.detail === undefined ? {} : { detail: model.status.detail })}
+        actions={work ?? []}
+        onAction={actionId => host.runAction(actionId)}
+      />
+    ) : null
   if (view._tag !== "Open" || store === undefined) {
     return (
       <div className="boxbuster-surface" data-boxbuster-surface="" ref={surface}>
-        <BoxbusterNotice view={view} onReload={() => host.reload()} />
+        {doorWork ?? <BoxbusterNotice view={view} onReload={() => host.reload()} />}
       </div>
     )
   }
   if (!drawable) {
     return (
       <div className="boxbuster-surface" data-boxbuster-surface="" ref={surface}>
-        <BoxbusterNotice view={NO_STORE} onReload={() => host.reload()} />
+        {doorWork ?? <BoxbusterNotice view={NO_STORE} onReload={() => host.reload()} />}
       </div>
     )
   }
@@ -149,6 +168,7 @@ export function BoxbusterSurface({
     width: size.width,
     height: size.height,
     retry: status._tag === "Problem" && status.canRetry,
+    ...(work === undefined ? {} : { work }),
   })
   const hand = visit.hand
   const heldId = hand._tag === "Holding" ? hand.tapeId : undefined
@@ -184,10 +204,12 @@ export function BoxbusterSurface({
               }
             : {})}
           {...(inDeck === undefined ? {} : { inDeck })}
-          {...(heldTape?.launch._tag === "Choose" &&
-          visit.spot === store.spots.viewing
-            ? { deckLabels: heldTape.launch.locations.map(l => l.label) }
-            : {})}
+          {...((work?.length ?? 0) > 0
+            ? { deckLabels: (work ?? []).map(action => action.label) }
+            : heldTape?.launch._tag === "Choose" &&
+                visit.spot === store.spots.viewing
+              ? { deckLabels: heldTape.launch.locations.map(l => l.label) }
+              : {})}
         />
       )}
       <BoxbusterTargets
@@ -213,6 +235,7 @@ export function BoxbusterSurface({
         }
         onEject={() => dispatch({ _tag: "Eject" })}
         onRetry={() => host.retry()}
+        onWork={actionId => host.runAction(actionId)}
       />
     </div>
   )

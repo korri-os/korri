@@ -38,7 +38,11 @@
 > the title on the cover, the back-of-box layout, and a rental sticker with
 > the play count. Korri's launch status is printed on the TV
 > (`tv-screen.tsx`); after a failure, the deck is pressed again to retry and
-> Back ejects the tape. The framebuffer is never smaller than 320x240, so
+> Back ejects the tape. While Korri works, the decks run Korri's actions for
+> that work (decided 2026-10-06), such as Cancel. When Korri offers several
+> actions, such as one Cancel per pending launch, it calls you to the TV and
+> you put down what you carry: there is one deck per action, signed with Korri's label, and the TV lists
+> each one with where it stands. Back cancels nothing. The framebuffer is never smaller than 320x240, so
 > that text stays legible. This replaces the "never the only way in" rule
 > below, which is struck. Without WebGL there is no store, so the door says
 > Boxbuster cannot open on this device.

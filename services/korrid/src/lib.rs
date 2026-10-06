@@ -1,5 +1,8 @@
 //! Embedded-capable korrid server core: contracts, dispatch, and lifecycle.
 
+#[cfg(test)]
+mod launch_handoff_tests;
+
 use axum::{
     extract::State,
     http::{header, HeaderMap, Method, StatusCode},
@@ -149,6 +152,32 @@ pub struct SessionPrepared {
     pub game_id: String,
     /** Identity created by korrid while preparing this exact launch. */
     pub launch_id: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionReserveRequest {
+    pub game_id: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionStartRequest {
+    pub game_id: String,
+    pub expected_launch_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overrides: Option<launcher::plugin_launch::PluginLaunchOverrides>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionCancelRequest {
+    pub expected_launch_id: String,
 }
 
 #[typeshare]
@@ -510,9 +539,55 @@ pub fn validate_session_control_invocation(
 pub struct SessionStatusRequest {}
 
 #[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FocusOwnership {
+    Launch,
+    Excluded,
+    Other,
+}
+
+/// Initial window handoff history, separate from current focus ownership.
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum InitialHandoff {
+    /// This daemon accepted the launch but has not observed exact screen ownership.
+    Waiting,
+    /// Exact compositor ownership was observed in this daemon; later loss does not reset it.
+    Observed,
+    /// An existing live unit has no initial-startup history in this runtime.
+    /// Journal reconstruction must not manufacture a new startup or past focus proof.
+    Recovered,
+}
+
+/// Direct projection of the reservation producer's atomic phases.
+#[typeshare]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PendingLaunchPhase {
+    Reserved,
+    Preparing,
+    Committing,
+    Cancelling,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PendingLaunch {
+    pub session: SessionPrepared,
+    pub phase: PendingLaunchPhase,
+}
+
+#[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_handoff: Option<InitialHandoff>,
+    /** Exact compositor ownership observation, not a rendered-frame guarantee. */
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_ownership: Option<FocusOwnership>,
     pub launch_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
@@ -526,7 +601,15 @@ pub struct ActiveSession {
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionStatus {
+    /// All pending reservations owned by this authenticated portal caller; never a selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_launches: Option<Vec<PendingLaunch>>,
+    /// Pending identities remain observable when native state is unknown.
+    /// This failure is not idle, completion, cancellation, or handoff readiness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation_failure: Option<RpcFailure>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<ActiveSession>,
     /** Ephemeral exact launch authorized for browser overlay handoff. */
@@ -1050,6 +1133,12 @@ pub enum RpcRequest {
     MoonlightCertificateRevoke(MoonlightCertificateRevokeRequest),
     #[serde(rename = "app.session.prepare")]
     SessionPrepare(SessionPrepareRequest),
+    #[serde(rename = "app.session.reserve")]
+    SessionReserve(SessionReserveRequest),
+    #[serde(rename = "app.session.start")]
+    SessionStart(SessionStartRequest),
+    #[serde(rename = "app.session.cancel")]
+    SessionCancel(SessionCancelRequest),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusRequest),
     #[serde(rename = "app.session.controls")]
@@ -1121,6 +1210,12 @@ pub enum RpcResponse {
     MoonlightCertificateRevoke(MoonlightCertificateRevokeOutcome),
     #[serde(rename = "app.session.prepare")]
     SessionPrepare(SessionPrepareOutcome),
+    #[serde(rename = "app.session.reserve")]
+    SessionReserve(SessionPrepareOutcome),
+    #[serde(rename = "app.session.start")]
+    SessionStart(game_routes::SelectedGameLaunchOutcome),
+    #[serde(rename = "app.session.cancel")]
+    SessionCancel(SessionStopOutcome),
     #[serde(rename = "app.session.status")]
     SessionStatus(SessionStatusOutcome),
     #[serde(rename = "app.session.controls")]
@@ -1248,6 +1343,38 @@ impl AppState {
             .expect("overlay intent mutex poisoned");
         if expected_launch_id.is_none() || intent.as_deref() == expected_launch_id {
             intent.take();
+        }
+    }
+
+    fn reconcile_freeze_overlay_intent(
+        &self,
+        expected: Option<&str>,
+        outcome: &SessionFreezeOutcome,
+    ) {
+        match outcome {
+            SessionFreezeOutcome::Ok(_) if self.rpc_surface == RpcSurface::LocalControl => {
+                self.record_overlay_intent(outcome);
+            }
+            SessionFreezeOutcome::Err(failure)
+                if is_terminal_session_identity_code(&failure.code) =>
+            {
+                if let Some(expected) = expected {
+                    self.clear_overlay_intent(Some(expected));
+                }
+            }
+            SessionFreezeOutcome::Ok(_) | SessionFreezeOutcome::Err(_) => {}
+        }
+    }
+
+    fn reconcile_thaw_overlay_intent(
+        &self,
+        expected: Option<&str>,
+        outcome: &SessionFreezeOutcome,
+    ) {
+        if thaw_invalidates_overlay_intent(outcome) {
+            if let Some(expected) = expected {
+                self.clear_overlay_intent(Some(expected));
+            }
         }
     }
 
@@ -1418,12 +1545,16 @@ fn session_status_outcome(
         Ok(upstream::UpstreamSessionStatus::SessionStatus { active }) => {
             SessionStatusOutcome::Ok(SessionStatus {
                 active: active.map(|active| ActiveSession {
+                    initial_handoff: None,
+                    focus_ownership: None,
                     launch_id: active.launch_id,
                     host: active.host,
                     game_id: active.game_id,
                     title: active.title,
                     phase: active.phase,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
         }
@@ -1498,7 +1629,11 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("running".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
         }
@@ -1510,7 +1645,11 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("frozen".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
         }
@@ -1522,7 +1661,11 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("focus-failed".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
         }
@@ -1534,7 +1677,11 @@ fn host_session_status_outcome(
                     game_id,
                     title: None,
                     phase: Some("stopping".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
         }
@@ -1792,6 +1939,50 @@ fn peer_list(state: &AppState) -> PeerListOutcome {
     }
 }
 
+/// Preserve native observation results while projecting the real caller-owned
+/// reservation table. Unknown observation is never healthy idle or completion.
+fn with_pending_launches(
+    outcome: SessionStatusOutcome,
+    pending: Option<Vec<PendingLaunch>>,
+) -> SessionStatusOutcome {
+    let Some(pending) = pending else {
+        return outcome;
+    };
+    match outcome {
+        SessionStatusOutcome::Ok(mut status) => {
+            status.pending_launches = Some(pending);
+            SessionStatusOutcome::Ok(status)
+        }
+        SessionStatusOutcome::Err(failure) => {
+            let observation_failure =
+                (!is_terminal_session_identity_code(&failure.code)).then_some(failure);
+            SessionStatusOutcome::Ok(SessionStatus {
+                pending_launches: Some(pending),
+                observation_failure,
+                active: None,
+                overlay: None,
+            })
+        }
+    }
+}
+
+fn local_launch_caller<'a>(
+    state: &'a AppState,
+    context: &authorization::AuthorizationContext,
+) -> Result<&'a str, RpcFailure> {
+    if state.rpc_surface == RpcSurface::Lan
+        && matches!(context, authorization::AuthorizationContext::LocalBrowser)
+    {
+        if let Some(access) = &state.portal_access {
+            return Ok(access.reservation_caller());
+        }
+    }
+    Err(RpcFailure {
+        code: "OperationUnsupported".into(),
+        message: "launch reservations require the local portal capability".into(),
+    })
+}
+
 async fn dispatch(
     state: &AppState,
     authorization: &authorization::AuthorizationContext,
@@ -1974,6 +2165,61 @@ async fn dispatch(
             };
             RpcResponse::MoonlightCertificateRevoke(outcome)
         }
+        RpcRequest::SessionReserve(request) => {
+            let outcome = match (local_launch_caller(state, authorization), &state.mode) {
+                (Ok(caller), ServerMode::Host(host)) => host.reserve_launch(
+                    &request.game_id,
+                    caller,
+                    authorization.person_public_key(host.owner_public_key()),
+                ),
+                (Err(failure), _) => Err(failure),
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SessionReserve(
+                outcome
+                    .map(SessionPrepareOutcome::Ok)
+                    .unwrap_or_else(SessionPrepareOutcome::Err),
+            )
+        }
+        RpcRequest::SessionStart(request) => {
+            let outcome = match (local_launch_caller(state, authorization), &state.mode) {
+                (Ok(caller), ServerMode::Host(host)) => {
+                    host.start_launch(
+                        request,
+                        caller,
+                        authorization.person_public_key(host.owner_public_key()),
+                    )
+                    .await
+                }
+                (Err(failure), _) => Err(failure),
+                _ => Err(installed_routes_unsupported()),
+            };
+            RpcResponse::SessionStart(
+                outcome
+                    .map(game_routes::SelectedGameLaunchOutcome::Ok)
+                    .unwrap_or_else(game_routes::SelectedGameLaunchOutcome::Err),
+            )
+        }
+        RpcRequest::SessionCancel(request) => {
+            let outcome = match (local_launch_caller(state, authorization), &state.mode) {
+                (Ok(caller), ServerMode::Host(host)) => host_session_stop_outcome(
+                    host.cancel_launch(
+                        &request.expected_launch_id,
+                        caller,
+                        authorization.person_public_key(host.owner_public_key()),
+                    )
+                    .await,
+                ),
+                (Err(failure), _) => SessionStopOutcome::Err(failure),
+                _ => SessionStopOutcome::Err(installed_routes_unsupported()),
+            };
+            reconcile_stop_overlay_intent(
+                &state.overlay_intent,
+                Some(&request.expected_launch_id),
+                &outcome,
+            );
+            RpcResponse::SessionCancel(outcome)
+        }
         RpcRequest::SessionPrepare(request) => {
             let outcome = match (&state.mode, state.rpc_surface) {
                 (ServerMode::Brain(brain), RpcSurface::Lan) => brain
@@ -1999,9 +2245,6 @@ async fn dispatch(
                     })
                 }
             };
-            if matches!(&outcome, SessionPrepareOutcome::Ok(_)) {
-                state.clear_overlay_intent(None);
-            }
             RpcResponse::SessionPrepare(outcome)
         }
         RpcRequest::SessionStatus(_) => {
@@ -2012,12 +2255,48 @@ async fn dispatch(
                 ),
                 (ServerMode::Host(host), RpcSurface::Lan)
                 | (ServerMode::Host(host), RpcSurface::LocalControl) => {
-                    match host.session_status_with_recovered_overlay_intent().await {
-                        Ok((status, recovered)) => {
-                            (host_session_status_outcome(Ok(status)), recovered)
-                        }
-                        Err(failure) => (host_session_status_outcome(Err(failure)), None),
-                    }
+                    let observer = state.clone();
+                    let observed_host = host.clone();
+                    let caller = local_launch_caller(state, authorization)
+                        .ok()
+                        .map(str::to_owned);
+                    let person = authorization
+                        .person_public_key(host.owner_public_key())
+                        .map(str::to_owned);
+                    let observed_caller = caller.clone();
+                    let observed_person = person.clone();
+                    // Classify this authenticated caller before entering native
+                    // authority; the copied reservation snapshot holds no lock.
+                    let has_owned_pending = caller.as_deref().is_some_and(|caller| {
+                        host.pending_launches(caller, person.as_deref()).is_some()
+                    });
+                    let outcome = host
+                        .observe_session_status(has_owned_pending, move |status, ownership, handoff, recovered| {
+                            let mut outcome = host_session_status_outcome(Ok(status));
+                            if let SessionStatusOutcome::Ok(status) = &mut outcome {
+                                if let Some(active) = &mut status.active {
+                                    active.focus_ownership = ownership;
+                                    active.initial_handoff = handoff;
+                                }
+                            }
+                            let pending = observed_caller.as_deref().and_then(|caller| observed_host.pending_launches(caller, observed_person.as_deref()));
+                            let outcome = with_pending_launches(outcome, pending);
+                            if matches!(&outcome, SessionStatusOutcome::Ok(status) if status.observation_failure.is_some()) {
+                                return outcome;
+                            }
+                            // Local snapshot, restart intent and native Home/Return
+                            // publication share the exact-session transition lock.
+                            observer.record_recovered_overlay_intent(recovered);
+                            observer.correlate_overlay_status(outcome)
+                        })
+                        .await
+                        .unwrap_or_else(|failure| {
+                            // Busy/unavailable observation publishes owned identities
+                            // independently, with no Home correlation or effects.
+                            let pending = caller.as_deref().and_then(|caller| host.pending_launches(caller, person.as_deref()));
+                            with_pending_launches(host_session_status_outcome(Err(failure)), pending)
+                        });
+                    return Ok(RpcResponse::SessionStatus(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => (
                     session_status_outcome(brain.upstream.session_status().await),
@@ -2069,10 +2348,24 @@ async fn dispatch(
                         })
                         .map(|expected| expected.to_owned());
                     let outcome = match outcome {
-                        Ok(expected) => host.session_stop(&expected).await,
-                        Err(failure) => Err(failure),
+                        Ok(expected) => {
+                            let observer = state.clone();
+                            let observed_id = expected.clone();
+                            host.observe_session_stop(&expected, move |change| {
+                                let outcome = host_session_stop_outcome(Ok(change));
+                                reconcile_stop_overlay_intent(
+                                    &observer.overlay_intent,
+                                    Some(&observed_id),
+                                    &outcome,
+                                );
+                                outcome
+                            })
+                            .await
+                            .unwrap_or_else(|failure| host_session_stop_outcome(Err(failure)))
+                        }
+                        Err(failure) => SessionStopOutcome::Err(failure),
                     };
-                    host_session_stop_outcome(outcome)
+                    return Ok(RpcResponse::SessionStop(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_stop_outcome(
                     brain
@@ -2104,10 +2397,31 @@ async fn dispatch(
                     let outcome =
                         match exact_host_launch_id(request.expected_launch_id.as_deref(), "freeze")
                         {
-                            Ok(expected) => host.session_freeze(&expected).await,
-                            Err(failure) => Err(failure),
+                            Ok(expected) => {
+                                let observer = state.clone();
+                                let observed_id = expected.clone();
+                                host.observe_session_freeze(&expected, move |change| {
+                                    let outcome = host_session_freeze_outcome(
+                                        Ok(change),
+                                        SessionFreezerState::Frozen,
+                                    );
+                                    observer.reconcile_freeze_overlay_intent(
+                                        Some(&observed_id),
+                                        &outcome,
+                                    );
+                                    outcome
+                                })
+                                .await
+                                .unwrap_or_else(|failure| {
+                                    host_session_freeze_outcome(
+                                        Err(failure),
+                                        SessionFreezerState::Frozen,
+                                    )
+                                })
+                            }
+                            Err(failure) => SessionFreezeOutcome::Err(failure),
                         };
-                    host_session_freeze_outcome(outcome, SessionFreezerState::Frozen)
+                    return Ok(RpcResponse::SessionFreeze(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
                     brain
@@ -2116,19 +2430,7 @@ async fn dispatch(
                         .await,
                 ),
             };
-            match &outcome {
-                SessionFreezeOutcome::Ok(_) if state.rpc_surface == RpcSurface::LocalControl => {
-                    state.record_overlay_intent(&outcome);
-                }
-                SessionFreezeOutcome::Err(failure)
-                    if is_terminal_session_identity_code(&failure.code) =>
-                {
-                    if let Some(expected) = request.expected_launch_id.as_deref() {
-                        state.clear_overlay_intent(Some(expected));
-                    }
-                }
-                SessionFreezeOutcome::Ok(_) | SessionFreezeOutcome::Err(_) => {}
-            }
+            state.reconcile_freeze_overlay_intent(request.expected_launch_id.as_deref(), &outcome);
             RpcResponse::SessionFreeze(outcome)
         }
         RpcRequest::SessionThaw(request) => {
@@ -2143,10 +2445,31 @@ async fn dispatch(
                 | (ServerMode::Host(host), RpcSurface::LocalControl) => {
                     let outcome =
                         match exact_host_launch_id(request.expected_launch_id.as_deref(), "thaw") {
-                            Ok(expected) => host.session_thaw(&expected).await,
-                            Err(failure) => Err(failure),
+                            Ok(expected) => {
+                                let observer = state.clone();
+                                let observed_id = expected.clone();
+                                host.observe_session_thaw(&expected, move |change| {
+                                    let outcome = host_session_freeze_outcome(
+                                        Ok(change),
+                                        SessionFreezerState::Running,
+                                    );
+                                    observer.reconcile_thaw_overlay_intent(
+                                        Some(&observed_id),
+                                        &outcome,
+                                    );
+                                    outcome
+                                })
+                                .await
+                                .unwrap_or_else(|failure| {
+                                    host_session_freeze_outcome(
+                                        Err(failure),
+                                        SessionFreezerState::Running,
+                                    )
+                                })
+                            }
+                            Err(failure) => SessionFreezeOutcome::Err(failure),
                         };
-                    host_session_freeze_outcome(outcome, SessionFreezerState::Running)
+                    return Ok(RpcResponse::SessionThaw(outcome));
                 }
                 (ServerMode::Brain(brain), RpcSurface::LocalControl) => session_freeze_outcome(
                     brain
@@ -2155,11 +2478,7 @@ async fn dispatch(
                         .await,
                 ),
             };
-            if thaw_invalidates_overlay_intent(&outcome) {
-                if let Some(expected) = request.expected_launch_id.as_deref() {
-                    state.clear_overlay_intent(Some(expected));
-                }
-            }
+            state.reconcile_thaw_overlay_intent(request.expected_launch_id.as_deref(), &outcome);
             RpcResponse::SessionThaw(outcome)
         }
         RpcRequest::SourceStatus(request) => {
@@ -4056,7 +4375,11 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("focus-failed".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             }),
         );
@@ -4073,6 +4396,8 @@ mod tests {
     #[test]
     fn overlay_intent_never_retargets_after_a_exits_or_is_replaced_by_b() {
         let session = |launch_id: &str| ActiveSession {
+            initial_handoff: None,
+            focus_ownership: None,
             launch_id: launch_id.into(),
             host: None,
             game_id: Some(launch_id.into()),
@@ -4085,6 +4410,8 @@ mod tests {
             &replaced_intent,
             SessionStatusOutcome::Ok(SessionStatus {
                 active: Some(session("b")),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             }),
         );
@@ -4183,7 +4510,11 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("stopping".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             }),
         );
@@ -4202,7 +4533,11 @@ mod tests {
                     game_id: Some("one".into()),
                     title: None,
                     phase: Some("frozen".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             }),
         );
@@ -4249,6 +4584,8 @@ mod tests {
         for phase in ["frozen", "focus-failed"] {
             let intent = Mutex::new(Some("a".into()));
             let active = ActiveSession {
+                initial_handoff: None,
+                focus_ownership: None,
                 launch_id: "a".into(),
                 host: None,
                 game_id: Some("one".into()),
@@ -4259,6 +4596,8 @@ mod tests {
                 &intent,
                 SessionStatusOutcome::Ok(SessionStatus {
                     active: Some(active.clone()),
+                    pending_launches: None,
+                    observation_failure: None,
                     overlay: None,
                 }),
             );
@@ -4280,9 +4619,13 @@ mod tests {
                     launch_id: "launch-a".into(),
                     host: Some("peer".into()),
                     game_id: Some("wario".into()),
+                    initial_handoff: None,
+                    focus_ownership: None,
                     title: Some("Wario Land 4".into()),
                     phase: Some("frozen".into()),
                 }),
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             }),
             "launch-a",
@@ -4298,6 +4641,8 @@ mod tests {
             unavailable_remote_session_controls(
                 SessionStatusOutcome::Ok(SessionStatus {
                     active: None,
+                    pending_launches: None,
+                    observation_failure: None,
                     overlay: None,
                 }),
                 "launch-a",
@@ -4329,7 +4674,9 @@ mod tests {
             outcome,
             SessionStatusOutcome::Ok(SessionStatus {
                 active: None,
-                overlay: None
+                overlay: None,
+                pending_launches: None,
+                observation_failure: None
             })
         ));
     }
@@ -4339,6 +4686,8 @@ mod tests {
         assert_eq!(
             serde_json::to_value(SessionStatus {
                 active: None,
+                pending_launches: None,
+                observation_failure: None,
                 overlay: None,
             })
             .unwrap(),
@@ -4346,6 +4695,8 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(ActiveSession {
+                initial_handoff: None,
+                focus_ownership: None,
                 launch_id: "l1".into(),
                 host: None,
                 game_id: None,

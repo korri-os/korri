@@ -20,6 +20,8 @@ interface At {
   readonly key: string
   readonly x: number
   readonly y: number
+  /** A control remains visible while the host refuses repeated actions. */
+  readonly disabled?: boolean
 }
 
 export type Target =
@@ -33,6 +35,14 @@ export type Target =
       readonly locationId?: string
     })
   | (At & { readonly _tag: "Eject"; readonly label: string })
+  /** A deck that runs Korri's action for the work under way, such as
+   * cancelling one exact launch. One deck per action, left to right. */
+  | (At & {
+      readonly _tag: "Work"
+      readonly label: string
+      readonly index: number
+      readonly actionId: string
+    })
   /** Pressing play again on the deck after a launch failed. */
   | (At & { readonly _tag: "Retry"; readonly label: string })
 
@@ -49,6 +59,7 @@ export function targetsFor({
   width,
   height,
   retry = false,
+  work,
 }: {
   spots: StoreSpots
   visit: Visit
@@ -58,6 +69,13 @@ export function targetsFor({
   height: number
   /** A launch failed and Korri can try it again. */
   retry?: boolean
+  /** Korri is working and these are its actions. While Korri works, the
+   * decks run these actions and take no tape. */
+  work?: readonly {
+    readonly id: string
+    readonly label: string
+    readonly enabled: boolean
+  }[]
 }): Target[] {
   const spot = spots.byId.get(visit.spot)
   if (spot === undefined || width <= 0 || height <= 0) return []
@@ -86,7 +104,20 @@ export function targetsFor({
   if (spot.id === spots.viewing) {
     const deckAt = (x: number) =>
       project({ x, y: DECK.topY, z: DECK.z + DECK.depth / 2 })
-    if (retry) {
+    if (work !== undefined) {
+      const decks = decksFor(work.length)
+      work.forEach((action, index) => {
+        place({
+          _tag: "Work",
+          key: `work:${action.id}`,
+          label: action.label,
+          index,
+          actionId: action.id,
+          ...(action.enabled ? {} : { disabled: true }),
+          ...deckAt(decks[index]?.x ?? 0),
+        })
+      })
+    } else if (retry) {
       place({ _tag: "Retry", key: "retry", label: "Try again", ...deckAt(0) })
     } else if (visit.hand._tag === "Holding") {
       const heldId = visit.hand.tapeId
@@ -159,7 +190,8 @@ function spread(
 
 /**
  * Where focus lands when you arrive, or when the focused target goes away:
- * on the retry when a launch failed; on the deck when you bring a tape to
+ * on the first deck that can act while Korri works; on the retry when a
+ * launch failed; on the deck when you bring a tape to
  * the TV; on the tape nearest the way you came, so a step along a shelf
  * continues where you were looking; on the way back when there is nothing to
  * pick up; otherwise on the first tape.
@@ -168,6 +200,8 @@ export function landingFor(
   targets: readonly Target[],
   visit: Visit,
 ): string | undefined {
+  const work = targets.filter(t => t._tag === "Work")
+  if (work.length > 0) return (work.find(t => !t.disabled) ?? work[0])?.key
   const retry = targets.find(t => t._tag === "Retry")
   if (retry !== undefined) return retry.key
   const deck = targets.find(t => t._tag === "Deck" || t._tag === "Eject")

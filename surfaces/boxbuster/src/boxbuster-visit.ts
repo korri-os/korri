@@ -43,6 +43,9 @@ export type VisitEvent =
   | { readonly _tag: "Turn" }
   | { readonly _tag: "Back"; readonly problem: boolean }
   | { readonly _tag: "ProblemShown" }
+  /** Korri asks you to choose between pieces of its work, at the decks under
+   * the TV. You put down what you carry, so no tape stands in front of one. */
+  | { readonly _tag: "ChoiceShown" }
 
 export type VisitCommand =
   | {
@@ -134,6 +137,12 @@ export function step(
               : visit.hand,
         },
       }
+    case "ChoiceShown": {
+      const free = { ...visit, hand: EMPTY }
+      return visit.spot === spots.viewing
+        ? { visit: free }
+        : { visit: { ...free, spot: spots.viewing, cameFrom: visit.spot } }
+    }
     case "ProblemShown":
       return visit.spot === spots.viewing
         ? { visit }

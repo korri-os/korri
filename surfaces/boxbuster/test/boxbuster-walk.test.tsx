@@ -99,6 +99,63 @@ const go = (label: string | RegExp) =>
   fireEvent.click(screen.getByRole("button", { name: label }))
 
 describe("the fast path", () => {
+  test("the deck's startup action cancels the launch instead of only removing its tape", () => {
+    const host = createRecordingHost()
+    const { drawing, drawn } = recordingDrawing()
+    const { rerender } = render(
+      <BoxbusterSurface host={host} model={modelWith([resumable])} drawing={drawing} />,
+    )
+    fireEvent.click(focused())
+    const busy: SurfaceStatus = {
+      _tag: "Busy", kicker: "Starting Wario Land 4", gameId: "wario",
+      actions: [{ id: "cancel-launch", label: "Cancel", enabled: true }],
+    }
+    rerender(<BoxbusterSurface host={host} model={modelWith([resumable], busy)} drawing={drawing} />)
+    // Every word is in the room: the deck carries Korri's label for its action.
+    expect(drawn.last?.deckLabels).toEqual(["Cancel"])
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(host.calls).toEqual(["launch:wario:", "action:cancel-launch"])
+    expect(drawn.last?.inDeck?.id).toBe("wario")
+    rerender(<BoxbusterSurface host={host} model={modelWith([resumable], {
+      ...busy, actions: [{ id: "cancel-launch", label: "Cancel", enabled: false }],
+    })} drawing={drawing} />)
+    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement
+    expect(cancel.disabled).toBe(true)
+    fireEvent.click(cancel)
+    expect(host.calls).toEqual(["launch:wario:", "action:cancel-launch"])
+  })
+
+  test("several pending launches call you to the TV: one signed deck each, and Back cancels none", () => {
+    const host = createRecordingHost()
+    const { drawing, drawn } = recordingDrawing()
+    const choosing: SurfaceStatus = {
+      _tag: "Busy", kicker: "2 launches are starting",
+      detail: "Cancel each launch you do not want.",
+      actions: [
+        { id: "cancel-pending:a", label: "Cancel Kirby", description: "Preparing", enabled: true },
+        { id: "cancel-pending:b", label: "Cancel Skate 3", description: "Cancelling", enabled: false },
+      ],
+    }
+    const { container } = render(
+      <BoxbusterSurface host={host} model={modelWith([kirby], choosing)} drawing={drawing} />,
+    )
+    expect(spotOf(container)).toBe("viewing")
+    expect(drawn.last?.deckLabels).toEqual(["Cancel Kirby", "Cancel Skate 3"])
+    expect(drawn.last?.tv).toEqual({
+      _tag: "Working", kicker: "2 launches are starting",
+      detail: "Cancel each launch you do not want.",
+      lines: ["Cancel Kirby: Preparing", "Cancel Skate 3: Cancelling"],
+    })
+    expect(focused().getAttribute("aria-label")).toBe("Cancel Kirby")
+    const skate = screen.getByRole("button", { name: "Cancel Skate 3" }) as HTMLButtonElement
+    expect(skate.disabled).toBe(true)
+    act(() => host.press("back"))
+    fireEvent.click(skate)
+    expect(host.calls).toEqual([])
+    fireEvent.click(focused())
+    expect(host.calls).toEqual(["action:cancel-pending:a"])
+  })
+
   test("opens in the viewing room with the resumable tape in hand: one confirm plays it", () => {
     const host = createRecordingHost()
     const { drawing, drawn } = recordingDrawing()

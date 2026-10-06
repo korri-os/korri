@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
+import { FocusOwnership, type RpcFailure } from "@contracts/generated/korrid"
 import { createInMemoryKorridClient } from "../korrid/client"
 import { createRunnerChooser as createController } from "./runner-chooser"
 import { runnerRoutes as routes } from "./fixtures/runner-routes"
@@ -7,7 +8,17 @@ const client = () => createInMemoryKorridClient({ gameRoutes: [routes] })
 /** Press an action from the current published model, like a surface button.
  * Commands on the real controller are opaque and bound to one generation. */
 function createRunnerChooser(korrid: Parameters<typeof createController>[0], onAcknowledged: () => void) {
-  const controller = createController(korrid, { beginLaunch: () => onAcknowledged, reload: onAcknowledged })
+  const controller = createController(korrid, {
+    async startLaunch(gameId, runnerId) {
+      const reserved = await korrid.sessionReserve({ gameId })
+      if (reserved._tag === "Err") return reserved
+      const result = await korrid.sessionStart({ gameId, runnerId, expectedLaunchId: reserved.payload.launchId })
+      if (result._tag === "Ok") onAcknowledged()
+      return result
+    },
+    returnSession: session => { void korrid.sessionThaw(session.launchId) },
+    reload: onAcknowledged,
+  })
   return {
     ...controller,
     act(command: string) {
@@ -53,9 +64,49 @@ describe("runner chooser", () => {
     expect(await korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
     expect(acknowledged).toBe(0)
   })
+  for (const path of ["open", "conflict", "stop"] as const) {
+    it(`${path} reports Ok observationFailure instead of silently retaining its panel state`, async () => {
+      const failure: RpcFailure = { code: "HostSessionBusy", message: "Native session authority is busy" }
+      let blocked = false
+      const korrid = createInMemoryKorridClient({ gameRoutes: [routes],
+        activeSession: { launchId: "existing", gameId: "other" },
+        sessionObservationFailure: () => blocked ? failure : undefined,
+      })
+      const pending = await korrid.sessionReserve({ gameId: "wl4" })
+      if (pending._tag !== "Ok") throw new Error("reserve failed")
+      const starts = spyOn(korrid, "sessionStart")
+      const stops = spyOn(korrid, "sessionStop")
+      const thaws = spyOn(korrid, "sessionThaw")
+      const chooser = createRunnerChooser(korrid, () => {})
+      if (path === "open") {
+        blocked = true
+        expect(await korrid.sessionStatus()).toMatchObject({ _tag: "Ok", payload: { observationFailure: failure } })
+        await chooser.open("wl4", "Wario Land 4", "launch")
+      } else {
+        await chooser.open("wl4", "Wario Land 4", "inspect")
+        if (path === "conflict") blocked = true
+        await chooser.act("launch:0")
+        if (path === "stop") {
+          expect(chooser.getSnapshot()._tag).toBe("Conflict")
+          blocked = true
+          await chooser.act("stop")
+        }
+      }
+      expect(chooser.getSnapshot()).toMatchObject({ _tag: "Error", message: failure.message })
+      expect(starts).toHaveBeenCalledTimes(path === "open" ? 0 : 1)
+      expect(stops).toHaveBeenCalledTimes(path === "stop" ? 1 : 0)
+      expect(thaws).not.toHaveBeenCalled()
+      if (path === "stop") expect(stops).toHaveBeenCalledWith("existing")
+      blocked = false
+      await chooser.act("reload")
+      expect(chooser.getSnapshot()._tag).toBe("Stale")
+      expect(starts).toHaveBeenCalledTimes(path === "open" ? 0 : 1)
+      starts.mockRestore(); stops.mockRestore(); thaws.mockRestore()
+    })
+  }
   it("cannot apply an old button to a newer route read", async () => {
     const korrid = client()
-    const chooser = createController(korrid, { beginLaunch: () => () => {}, reload: () => {} })
+    const chooser = createController(korrid, { startLaunch: async () => undefined, returnSession: () => {}, reload: () => {} })
     await chooser.open("wl4", "Wario Land 4", "inspect")
     const state = chooser.getSnapshot()
     if (state._tag === "Closed") throw new Error("Expected chooser")
@@ -101,7 +152,7 @@ describe("runner chooser", () => {
     expect(await missing.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
   })
 
-  it("continues the same game using ordinary prepare without needing a route read", async () => {
+  it("continues the same game using exact thaw without needing a route read", async () => {
     const korrid = createInMemoryKorridClient({
       games: [
         { id: "wl4", title: "Wario Land 4", supportsRunnerSelection: true, source: { label: "This device", isLocal: true } },
@@ -113,7 +164,7 @@ describe("runner chooser", () => {
     expect(chooser.getSnapshot()._tag).toBe("Closed")
     expect(await korrid.sessionStatus()).toEqual({
       _tag: "Ok",
-      payload: { active: { launchId: "existing", gameId: "wl4" } },
+      payload: { active: { launchId: "existing", gameId: "wl4", phase: "running", focusOwnership: FocusOwnership.Launch } },
     })
   })
 
@@ -223,7 +274,7 @@ describe("runner chooser", () => {
   })
 
   it("late launch success refreshes session truth but never reopens a cancelled panel", async () => {
-    const korrid = createInMemoryKorridClient({ gameRoutes: [routes], routeMutationDelayMs: 10 })
+    const korrid = createInMemoryKorridClient({ gameRoutes: [routes], sessionStartGate: new Promise(resolve => setTimeout(resolve, 10)) })
     let refreshed = 0
     const chooser = createRunnerChooser(korrid, () => {
       refreshed++

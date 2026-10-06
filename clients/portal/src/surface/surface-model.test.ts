@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { LaunchablesState, type PortalEntry } from "../launchables/state"
+import { PendingLaunchPhase } from "@contracts/generated/korrid"
+import { LaunchablesState, launchSubjectForGame, type LaunchSubject, type PortalEntry } from "../launchables/state"
 import {
   entryForId,
   entryForLaunchLocation,
@@ -10,7 +11,7 @@ import {
 const ready = (
   entries: readonly PortalEntry[],
   notice: string | null = null,
-  subject?: { readonly id: string; readonly title: string },
+  subject?: LaunchSubject,
 ): LaunchablesState => ({
   _tag: "Ready",
   entries,
@@ -273,7 +274,7 @@ describe("surfaceModelFrom", () => {
       kicker: "Couldn't start Wario Land 4",
       reason: "ActiveSessionConflict: a session must end",
       canRetry: false,
-      gameId: "wl4",
+      gameId: "local-game:wl4",
       gameTitle: "Wario Land 4",
     })
   })
@@ -340,4 +341,63 @@ describe("entryForId", () => {
     expect(entryForId(ready([localGame]), "local-game:missing")).toBeUndefined()
     expect(entryForId(LaunchablesState.loading(), "anything")).toBeUndefined()
   })
+})
+
+describe("status entry identity", () => {
+  const peer: Extract<PortalEntry, { kind: "game" }> = {
+    kind: "game", game: { id: "same", title: "Peer title", host: "peer", supportsRunnerSelection: false, source: { label: "Peer", isLocal: false } },
+  }
+  const local: Extract<PortalEntry, { kind: "game" }> = {
+    kind: "game", game: { ...peer.game, title: "Local title", host: "device-label", source: { label: "This device", isLocal: true } },
+  }
+  test("Preparing, Launching and Problem retain the selected peer's actual entry key", () => {
+    const state = ready([local, peer])
+    const subject = launchSubjectForGame(peer.game, state._tag === "Loading" ? [] : state.entries)
+    const preparing = LaunchablesState.beginPreparing(state, peer.game.title, subject)
+    const launching = LaunchablesState.beginLaunching(state, peer.game.title, subject)
+    const problem = LaunchablesState.withPrepareOutcome(preparing, { _tag: "Err", payload: { code: "UpstreamFailure", message: "Peer refused start" } })
+    for (const result of [preparing, launching, problem]) {
+      expect(surfaceModelFrom(result).status).toHaveProperty("gameId", "game:peer:same")
+    }
+  })
+  test("a removed exact local subject is not renamed to the remaining same-id peer", () => {
+    const subject = launchSubjectForGame(local.game, [peer, local])
+    const model = surfaceModelFrom(ready([peer], "The local game was removed", subject))
+    expect(model.status).not.toHaveProperty("gameId")
+    expect(model.status).toMatchObject({ _tag: "Problem", gameTitle: "Local title" })
+  })
+  test("raw domain identity without exact copy provenance cannot choose between presented peers", () => {
+    const state = ready([peer, local])
+    const preparing = LaunchablesState.beginPreparing(state, "Known domain title", { id: "same", title: "Known domain title" })
+    expect(surfaceModelFrom(preparing).status).not.toHaveProperty("gameId")
+  })
+  test("a local route folded under a local inventory entry uses the existing primary presentation id", () => {
+    const folded: PortalEntry = { ...localGame, alternatives: [{ kind: "remote", game: local.game }] }
+    const state = ready([peer, folded])
+    const starting = LaunchablesState.beginStartup(state, local.game)
+    expect(surfaceModelFrom(starting).status).toHaveProperty("gameId", "local-game:wl4")
+  })
+})
+
+test("manual choices publish every exact phase, stable same-title labels, retry and no game attribution", () => {
+  const phases = [PendingLaunchPhase.Reserved, PendingLaunchPhase.Preparing, PendingLaunchPhase.Committing, "waiting", PendingLaunchPhase.Cancelling] as const
+  const state: LaunchablesState = { _tag: "Choosing", entries: [hostGame], notice: null, choices: [
+    ...phases.map((phase, index) => ({ launchId: `${index}`, gameId: "neverball", title: index < 2 ? "Same title" : `Title ${index}`, phase, cancel: "idle" as const })),
+    { launchId: "5", title: "Retry title", phase: PendingLaunchPhase.Reserved, cancel: "retry" },
+  ] }
+  const status = surfaceModelFrom(state).status
+  expect(status).toEqual({ _tag: "Busy", kicker: "6 launches are starting", detail: "Cancel each launch you do not want.", actions: [
+    { id: "cancel-pending:0", label: "Cancel Same title (1)", description: "Waiting to start", enabled: true },
+    { id: "cancel-pending:1", label: "Cancel Same title (2)", description: "Preparing", enabled: true },
+    { id: "cancel-pending:2", label: "Cancel Title 2", description: "Starting", enabled: true },
+    { id: "cancel-pending:3", label: "Cancel Title 3", description: "Waiting for its window", enabled: true },
+    { id: "cancel-pending:4", label: "Cancel Title 4", description: "Cancelling", enabled: false },
+    { id: "cancel-pending:5", label: "Cancel Retry title", description: "Cancel failed. Try again.", enabled: true },
+  ] })
+  expect(status).not.toHaveProperty("gameId")
+  const sent = surfaceModelFrom(LaunchablesState.beginPendingCancellation(state, "0")).status
+  if (sent._tag !== "Busy" || status._tag !== "Busy") throw new Error("expected Busy")
+  expect(sent.actions?.map(action => [action.id, action.label])).toEqual(status.actions?.map(action => [action.id, action.label]))
+  expect(sent.actions?.[0]?.enabled).toBe(false)
+  expect(surfaceModelFrom({ ...state, notice: { _tag: "Launch", message: "Exact cancellation failed" } }).status).toMatchObject({ _tag: "Busy", detail: "Exact cancellation failed" })
 })

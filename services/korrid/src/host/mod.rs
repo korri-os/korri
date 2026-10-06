@@ -6,6 +6,7 @@ pub(crate) mod control;
 mod identity;
 mod input_coordination;
 mod input_seat;
+mod launch_reservation;
 pub(crate) mod moonlight_certificate;
 pub(crate) mod play_log;
 mod prepare;
@@ -188,6 +189,10 @@ const MAX_CONCURRENT_CERTIFICATE_CONTROLS: usize = 4;
 /// Observe focus and completion even when no browser can poll.
 const PORTAL_WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Absorb brief watcher queries without hiding owned startup identity behind
+/// a committing helper that can hold transition authority for seconds.
+const PENDING_STATUS_LOCK_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
+
 fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) {
     let Some(identity) = DeviceIdentity::load_or_create(private_state_root).ok() else {
         return (None, None);
@@ -206,9 +211,16 @@ fn identity_keys(private_state_root: &Path) -> (Option<String>, Option<String>) 
 pub struct HostRuntime {
     private_state_root: PathBuf,
     route_write_lock: Arc<std::sync::Mutex<()>>,
+    launch_reservations: launch_reservation::LaunchReservations,
     // Tests can delay one response after the real setter releases its lock.
     #[cfg(test)]
     after_runner_choice_write: Option<Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
+    before_reserved_route: Option<Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
+    after_reserved_start: Option<Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
+    after_session_rpc: Option<Arc<dyn Fn(&str) + Send + Sync>>,
     config: Result<HostConfig, HostConfigError>,
     launcher: Option<HostLauncher>,
     dynamic: Option<DynamicHostSource>,
@@ -270,8 +282,15 @@ impl HostRuntime {
         Self {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            launch_reservations: launch_reservation::LaunchReservations::default(),
             #[cfg(test)]
             after_runner_choice_write: None,
+            #[cfg(test)]
+            before_reserved_route: None,
+            #[cfg(test)]
+            after_reserved_start: None,
+            #[cfg(test)]
+            after_session_rpc: None,
             config,
             launcher,
             dynamic,
@@ -307,7 +326,11 @@ impl HostRuntime {
         Self {
             private_state_root,
             route_write_lock: Arc::new(std::sync::Mutex::new(())),
+            launch_reservations: launch_reservation::LaunchReservations::default(),
             after_runner_choice_write: None,
+            before_reserved_route: None,
+            after_reserved_start: None,
+            after_session_rpc: None,
             config,
             launcher,
             dynamic,
@@ -497,7 +520,10 @@ impl HostRuntime {
         let game_id = game_id.to_owned();
         let person_public_key = person_public_key.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            runtime.prepare_blocking(&game_id, person_public_key.as_deref())
+            let outcome = runtime.prepare_blocking(&game_id, person_public_key.as_deref());
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.prepare");
+            outcome
         })
         .await
         .map_err(host_worker_failure)?
@@ -713,6 +739,167 @@ impl HostRuntime {
         .map_err(host_worker_failure)?
     }
 
+    pub(crate) fn reserve_launch(
+        &self,
+        game_id: &str,
+        caller: &str,
+        person: Option<&str>,
+    ) -> Result<SessionPrepared, RpcFailure> {
+        self.control()?;
+        Ok(self.launch_reservations.reserve(game_id, caller, person))
+    }
+
+    pub(crate) fn pending_launches(
+        &self,
+        caller: &str,
+        person: Option<&str>,
+    ) -> Option<Vec<crate::PendingLaunch>> {
+        let pending = self.launch_reservations.snapshot(caller, person);
+        (!pending.is_empty()).then_some(pending)
+    }
+
+    pub(crate) async fn start_launch(
+        &self,
+        request: crate::SessionStartRequest,
+        caller: &str,
+        person: Option<&str>,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        // Claim the exact caller-bound token before any route work. Cancel only
+        // touches the small reservation mutex, never the plugin preparation.
+        let reservation = self.launch_reservations.start(
+            &request.game_id,
+            &request.expected_launch_id,
+            caller,
+            person,
+        )?;
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime.start_reserved_blocking(&request, &reservation);
+            if let Some(committed) = runtime.launch_reservations.finish(&reservation) {
+                if !committed {
+                    return Err(launch_reservation::cancelled());
+                }
+                // Effects may have won the commit gate. End only this launch,
+                // never an active-game match or a replacement. StopPending is
+                // observed by the existing backend watcher.
+                match runtime.control()?.stop(&request.expected_launch_id) {
+                    HostSessionStop::RecoveryBlocked => {
+                        return Err(crate::RpcFailure {
+                            code: "HostRecoveryBlocked".into(),
+                            message: "cancelled launch requires host recovery".into(),
+                        })
+                    }
+                    _ => return Err(launch_reservation::cancelled()),
+                }
+            }
+            outcome
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_reserved_route_probe(mut self, probe: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.before_reserved_route = Some(probe);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_reserved_start_probe(mut self, probe: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.after_reserved_start = Some(probe);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_session_rpc_probe(mut self, probe: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
+        self.after_session_rpc = Some(probe);
+        self
+    }
+
+    #[cfg(test)]
+    fn session_rpc_probe(&self, method: &str) {
+        if let Some(probe) = &self.after_session_rpc {
+            probe(method);
+        }
+    }
+
+    fn start_reserved_blocking(
+        &self,
+        request: &crate::SessionStartRequest,
+        reservation: &launch_reservation::LaunchReservation,
+    ) -> Result<crate::game_routes::SelectedGameLaunch, RpcFailure> {
+        #[cfg(test)]
+        if let Some(probe) = &self.before_reserved_route {
+            probe();
+        }
+        let config = self.config.as_ref().map_err(config_failure)?;
+        let launcher = self.launcher.as_ref().expect("valid host config");
+        let (command, runner_id, warnings) =
+            if config.games.iter().any(|game| game.id == request.game_id) {
+                // Preserve the command producer's existing collision check.
+                if let Some(dynamic) = &self.dynamic {
+                    dynamic.load()?.validate_static_games(config)?;
+                }
+                if request.runner_id.is_some() || request.overrides.is_some() {
+                    return Err(dynamic_failure(
+                        "host command games do not accept installed runner choices or overrides",
+                    ));
+                }
+                (
+                    launcher.command(&request.game_id)?.to_vec(),
+                    None,
+                    Vec::new(),
+                )
+            } else {
+                let root = self.route_root()?;
+                let registry = self.route_registry()?;
+                let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
+                    .map_err(crate::game_routes::settings_failure)?;
+                let route = crate::config::resolver::resolve_linux_route(
+                    root,
+                    &snapshot,
+                    &registry,
+                    &request.game_id,
+                    request.runner_id.as_deref(),
+                )
+                .map_err(|error| crate::route_diagnostic_failure(&error))?;
+                let launch = linux_plugin::launch_route(
+                    root,
+                    &snapshot,
+                    &registry,
+                    &route,
+                    request.overrides.clone(),
+                )
+                .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
+                (launch.command, Some(route.runner_id), launch.warnings)
+            };
+        let session = launcher.prepare_reserved(reservation, runner_id.as_deref(), &command)?;
+        // Delay only after the session transition releases its lock, allowing
+        // native control to accept a newer Home before the start reply.
+        #[cfg(test)]
+        if let Some(probe) = &self.after_reserved_start {
+            probe();
+        }
+        Ok(crate::game_routes::SelectedGameLaunch { session, warnings })
+    }
+
+    pub(crate) async fn cancel_launch(
+        &self,
+        launch_id: &str,
+        caller: &str,
+        person: Option<&str>,
+    ) -> Result<HostSessionStop, RpcFailure> {
+        match self.launch_reservations.cancel(launch_id, caller, person)? {
+            Some(false) => Ok(HostSessionStop::Completed {
+                launch_id: launch_id.into(),
+            }),
+            Some(true) => Ok(HostSessionStop::AlreadyStopping {
+                launch_id: launch_id.into(),
+            }),
+            None => self.session_stop(launch_id).await,
+        }
+    }
+
     pub async fn prepare_selected(
         &self,
         request: crate::game_routes::SelectedGameLaunchRequest,
@@ -763,10 +950,63 @@ impl HostRuntime {
 
     pub async fn session_status_with_recovered_overlay_intent(
         &self,
-    ) -> Result<(HostSessionStatus, Option<String>), RpcFailure> {
+    ) -> Result<
+        (
+            HostSessionStatus,
+            Option<crate::FocusOwnership>,
+            Option<String>,
+        ),
+        RpcFailure,
+    > {
         let runtime = self.clone();
         tokio::task::spawn_blocking(move || {
-            Ok(runtime.control()?.status_with_recovered_overlay_intent())
+            let outcome = runtime.control()?.status_with_recovered_overlay_intent();
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.status");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn observe_session_status<T: Send + 'static>(
+        &self,
+        has_owned_pending: bool,
+        observe: impl FnOnce(
+                HostSessionStatus,
+                Option<crate::FocusOwnership>,
+                Option<crate::InitialHandoff>,
+                Option<String>,
+            ) -> T
+            + Send
+            + 'static,
+    ) -> Result<T, RpcFailure> {
+        let runtime = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let control = runtime.control()?;
+            let observe = |status, ownership, handoff, recovered| {
+                if let HostSessionStatus::Completed { launch_id } = &status {
+                    runtime.launch_reservations.retire_completed(launch_id);
+                }
+                observe(status, ownership, handoff, recovered)
+            };
+            let outcome = if has_owned_pending {
+                control.try_observe_status_with_recovered_overlay_intent(
+                    PENDING_STATUS_LOCK_WAIT,
+                    observe,
+                )
+            } else {
+                // Ordinary overlay/native/peer observations retain their
+                // blocking semantics; only owned startup needs a short bound.
+                Some(control.observe_status_with_recovered_overlay_intent(observe))
+            }
+            .ok_or_else(|| RpcFailure {
+                code: "HostSessionBusy".into(),
+                message: "native session observation is busy; live state is unknown".into(),
+            })?;
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.status");
+            Ok(outcome)
         })
         .await
         .map_err(host_worker_failure)?
@@ -829,9 +1069,33 @@ impl HostRuntime {
     ) -> Result<HostSessionStop, RpcFailure> {
         let runtime = self.clone();
         let expected_launch_id = expected_launch_id.to_owned();
-        tokio::task::spawn_blocking(move || Ok(runtime.control()?.stop(&expected_launch_id)))
-            .await
-            .map_err(host_worker_failure)?
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime.control()?.stop(&expected_launch_id);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.stop");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn observe_session_stop<T: Send + 'static>(
+        &self,
+        expected_launch_id: &str,
+        observe: impl FnOnce(HostSessionStop) -> T + Send + 'static,
+    ) -> Result<T, RpcFailure> {
+        let runtime = self.clone();
+        let expected_launch_id = expected_launch_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime
+                .control()?
+                .observe_stop(&expected_launch_id, observe);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.stop");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
     pub async fn session_freeze(
@@ -840,9 +1104,33 @@ impl HostRuntime {
     ) -> Result<HostSessionFreezeChange, RpcFailure> {
         let runtime = self.clone();
         let expected_launch_id = expected_launch_id.to_owned();
-        tokio::task::spawn_blocking(move || Ok(runtime.control()?.freeze(&expected_launch_id)))
-            .await
-            .map_err(host_worker_failure)?
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime.control()?.freeze(&expected_launch_id);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.freeze");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn observe_session_freeze<T: Send + 'static>(
+        &self,
+        expected_launch_id: &str,
+        observe: impl FnOnce(HostSessionFreezeChange) -> T + Send + 'static,
+    ) -> Result<T, RpcFailure> {
+        let runtime = self.clone();
+        let expected_launch_id = expected_launch_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime
+                .control()?
+                .observe_freeze(&expected_launch_id, observe);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.freeze");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
     pub async fn session_thaw(
@@ -851,9 +1139,33 @@ impl HostRuntime {
     ) -> Result<HostSessionFreezeChange, RpcFailure> {
         let runtime = self.clone();
         let expected_launch_id = expected_launch_id.to_owned();
-        tokio::task::spawn_blocking(move || Ok(runtime.control()?.thaw(&expected_launch_id)))
-            .await
-            .map_err(host_worker_failure)?
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime.control()?.thaw(&expected_launch_id);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.thaw");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
+    }
+
+    pub(crate) async fn observe_session_thaw<T: Send + 'static>(
+        &self,
+        expected_launch_id: &str,
+        observe: impl FnOnce(HostSessionFreezeChange) -> T + Send + 'static,
+    ) -> Result<T, RpcFailure> {
+        let runtime = self.clone();
+        let expected_launch_id = expected_launch_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let outcome = runtime
+                .control()?
+                .observe_thaw(&expected_launch_id, observe);
+            #[cfg(test)]
+            runtime.session_rpc_probe("app.session.thaw");
+            Ok(outcome)
+        })
+        .await
+        .map_err(host_worker_failure)?
     }
 
     pub async fn session_controls(

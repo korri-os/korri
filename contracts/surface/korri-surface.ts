@@ -181,8 +181,8 @@ export type SurfaceCatalog =
   | { readonly _tag: "Ready"; readonly games: readonly SurfaceGame[] }
 
 /**
- * Where the current launch stands. `Busy` and `Running` are informational;
- * `Problem` is the only state that offers the user a decision.
+ * Where the current launch stands. A cancellable `Busy` state carries its
+ * host-authorized actions. `Running` is informational; `Problem` offers recovery.
  */
 export type SurfaceStatus =
   /** Nothing is happening. The surface shows its normal browsing presentation. */
@@ -193,6 +193,9 @@ export type SurfaceStatus =
       readonly kicker: string
       /** Optional progress detail. Never an error code or raw output. */
       readonly detail?: string
+      /** Actions supplied by the host for this work, such as real cancellation.
+       * The surface renders them; it never infers cancellation from a label. */
+      readonly actions?: readonly SurfaceAction[]
       /** The game this work belongs to, when it belongs to exactly one. */
       readonly gameId?: string
     }

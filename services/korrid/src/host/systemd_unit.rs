@@ -355,16 +355,73 @@ impl Default for SystemdLaunchUnitBackend {
 }
 
 #[cfg(test)]
+#[derive(Clone)]
+struct StopBehavior {
+    completes: bool,
+    fails: bool,
+    probe: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+#[cfg(test)]
+impl Default for StopBehavior {
+    fn default() -> Self {
+        Self {
+            completes: true,
+            fails: false,
+            probe: None,
+        }
+    }
+}
+
+#[cfg(test)]
 #[derive(Default)]
 pub(crate) struct InMemoryLaunchUnitBackend {
     units: Mutex<BTreeMap<String, LaunchUnitState>>,
     runners: Mutex<BTreeMap<String, String>>,
     window_pids: Mutex<BTreeMap<String, BTreeSet<i32>>>,
     thawed: Mutex<Vec<String>>,
+    launch_probe: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    stop_behavior: Mutex<StopBehavior>,
+    state_unavailable: std::sync::atomic::AtomicBool,
+    launch_state: Mutex<Option<LaunchUnitState>>,
 }
 
 #[cfg(test)]
 impl InMemoryLaunchUnitBackend {
+    pub(crate) fn set_launch_probe(&self, probe: Arc<dyn Fn() + Send + Sync>) {
+        *self.launch_probe.lock().unwrap() = Some(probe);
+    }
+
+    pub(crate) fn configure_stop(
+        &self,
+        completes: bool,
+        fails: bool,
+        probe: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) {
+        *self.stop_behavior.lock().unwrap() = StopBehavior {
+            completes,
+            fails,
+            probe,
+        };
+    }
+
+    pub(crate) fn set_state_unavailable(&self, unavailable: bool) {
+        self.state_unavailable
+            .store(unavailable, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_launch_completed(&self, completed: bool) {
+        *self.launch_state.lock().unwrap() = completed.then_some(LaunchUnitState::Completed);
+    }
+
+    pub(crate) fn set_launch_stopping(&self) {
+        *self.launch_state.lock().unwrap() = Some(LaunchUnitState::Stopping);
+    }
+
+    pub(crate) fn launch_count(&self) -> usize {
+        self.units.lock().unwrap().len()
+    }
+
     pub(crate) fn set_window_pids(&self, launch_id: &str, pids: BTreeSet<i32>) {
         self.window_pids
             .lock()
@@ -405,10 +462,16 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         _command: &[String],
         environment: &BTreeMap<String, String>,
     ) -> Result<(), LaunchUnitError> {
-        self.units
-            .lock()
-            .unwrap()
-            .insert(launch_id.into(), LaunchUnitState::Running);
+        if let Some(probe) = self.launch_probe.lock().unwrap().clone() {
+            probe();
+        }
+        self.units.lock().unwrap().insert(
+            launch_id.into(),
+            self.launch_state
+                .lock()
+                .unwrap()
+                .unwrap_or(LaunchUnitState::Running),
+        );
         if let Some(runner_id) = environment.get(RUNNER_ID_ENV) {
             self.runners
                 .lock()
@@ -419,6 +482,15 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
+        if self
+            .state_unavailable
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "native unit observation unavailable",
+            ));
+        }
         Ok(self
             .units
             .lock()
@@ -438,8 +510,22 @@ impl LaunchUnitBackend for InMemoryLaunchUnitBackend {
         {
             units.insert(launch_id.into(), LaunchUnitState::Running);
         }
-        units.insert(launch_id.into(), LaunchUnitState::Completed);
-        Ok(())
+        let behavior = self.stop_behavior.lock().unwrap().clone();
+        if behavior.completes {
+            units.insert(launch_id.into(), LaunchUnitState::Completed);
+        }
+        drop(units);
+        if let Some(probe) = behavior.probe {
+            probe();
+        }
+        if behavior.fails {
+            Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                "stop helper failed",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {

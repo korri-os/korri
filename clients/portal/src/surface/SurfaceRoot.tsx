@@ -66,7 +66,8 @@ export function SurfaceRoot({
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
   const runner = useMemo(() => createRunnerChooser(korrid, {
-    beginLaunch: id => launchablesRef.current.beginCatalogLaunch(id),
+    startLaunch: (id, runnerId) => launchablesRef.current.startCatalogLaunch(id, runnerId),
+    returnSession: session => launchablesRef.current.returnCatalogSession(session),
     reload: () => launchablesRef.current.reload(),
   }), [korrid])
   const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
@@ -74,6 +75,14 @@ export function SurfaceRoot({
   useEffect(() => bus.on(action => {
     // One dispatch decision, before subscriber fanout: cancelling a chooser
     // must not deliver the same Back to the page underneath it.
+    if (launchablesRef.current.getState()._tag === "Choosing") return
+    if (launchablesRef.current.getState()._tag === "Starting") {
+      if (action.type === "back") {
+        runner.cancel()
+        launchablesRef.current.cancelLaunch()
+      }
+      return
+    }
     if (runner.getSnapshot()._tag !== "Closed") {
       if (action.type === "back") runner.cancel()
       return
@@ -99,11 +108,6 @@ export function SurfaceRoot({
     dismissNotice,
     reload,
   } = launchables
-
-  // Commands are issued against whatever is true when the user presses, not
-  // when the host object was built.
-  const stateRef = useRef(state)
-  stateRef.current = state
 
   const settings = useMemo(
     () => settingsFrom(facts),
@@ -133,11 +137,21 @@ export function SurfaceRoot({
           surfaceInput.onAction(action, handler),
       },
       launchGame: (id, launchLocationId) => {
-        if (runner.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
-        const entry = entryForId(stateRef.current, id)
+        const current = launchablesRef.current.getState()
+        if (runner.getSnapshot()._tag !== "Closed" || current._tag !== "Ready") return
+        const entry = entryForId(current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
           if (chosen.kind === "game" && chosen.game.source.isLocal && chosen.game.supportsRunnerSelection) {
+            const active = current.entries.find(entry =>
+              entry.kind === "now-playing" && entry.session.gameId === chosen.game.id &&
+              (entry.session.host === undefined || entry.session.host === chosen.game.host),
+            )
+            if (active?.kind === "now-playing") {
+              confirmEntry(active)
+              return
+            }
+            if (current.unavailableSessionStatus !== undefined) return
             void runner.open(chosen.game.id, chosen.game.title, "launch")
           } else confirmEntry(chosen)
         }
@@ -151,7 +165,16 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
-        if (id.startsWith("runner:")) void runner.act(id.slice("runner:".length))
+        if (id.startsWith("cancel-pending:")) {
+          launchablesRef.current.cancelPendingLaunch(id.slice("cancel-pending:".length))
+        }
+        // Only the published startup action cancels a launch. Closing a runner
+        // panel (runner:cancel, a sheet's close button or scrim) closes the panel.
+        else if (id === "cancel-launch") {
+          runner.cancel()
+          launchablesRef.current.cancelLaunch()
+        }
+        else if (id.startsWith("runner:")) void runner.act(id.slice("runner:".length))
         else if (runner.getSnapshot()._tag === "Closed") runDeviceAction(id)
       },
       changeSetting,
@@ -162,15 +185,18 @@ export function SurfaceRoot({
       deleteRetiredIdentity,
       dismissIdentityStatus,
       gameActions: id => {
-        const entry = entryForId(stateRef.current, id)
+        const current = launchablesRef.current.getState()
+        const entry = entryForId(current, id)
         return [...gameActionsForEntry(entry), ...(localRunnerEntry(entry) ? [{
-          id: "runners", label: "Runners on this device", enabled: stateRef.current._tag === "Ready",
+          id: "runners", label: "Runners on this device", enabled: current._tag === "Ready" && current.unavailableSessionStatus === undefined,
         }] : [])]
       },
       runGameAction: (gameId, actionId) => {
-        const entry = entryForId(stateRef.current, gameId)
-        if (!entry || runner.getSnapshot()._tag !== "Closed" || stateRef.current._tag !== "Ready") return
+        const current = launchablesRef.current.getState()
+        const entry = entryForId(current, gameId)
+        if (!entry || runner.getSnapshot()._tag !== "Closed" || current._tag !== "Ready") return
         if (actionId === "runners") {
+          if (current.unavailableSessionStatus !== undefined) return
           const local = localRunnerEntry(entry)
           if (local) void runner.open(local.game.id, local.game.title, "inspect")
           return

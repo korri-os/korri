@@ -4,6 +4,7 @@ import {
   Settings,
   Square,
   Wrench,
+  X,
 } from "lucide-react"
 import {
   SHIFT_DESIGN_PARTS,
@@ -25,7 +26,12 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   "background-notice": Settings,
   "shift:settings": Settings,
   stop: Square,
+  "cancel-launch": X,
 }
+
+/** Exact pending-launch cancellations carry the launch in their id. */
+const iconFor = (actionId: string): LucideIcon =>
+  ACTION_ICONS[actionId] ?? (actionId.startsWith("cancel-pending:") ? X : Wrench)
 
 export interface ShiftCineActionTileProps {
   readonly index: number
@@ -46,7 +52,7 @@ export function ShiftCineActionTile({
   onFocus,
   onActivate,
 }: ShiftCineActionTileProps) {
-  const Icon = ACTION_ICONS[actionId] ?? Wrench
+  const Icon = iconFor(actionId)
 
   return (
     <button

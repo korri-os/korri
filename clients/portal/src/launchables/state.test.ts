@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, test } from "bun:test"
 import type {
   CatalogSnapshotOutcome,
   LocalGamesListOutcome,
@@ -6,6 +6,9 @@ import type {
   SessionStopOutcome,
 } from "@contracts/generated/korrid"
 import {
+  FocusOwnership,
+  InitialHandoff,
+  PendingLaunchPhase,
   SessionStopPhase,
 } from "@contracts/generated/korrid"
 import { entryKey, entryLabel, isLocalCatalogSession, LaunchablesState } from "./state"
@@ -108,7 +111,9 @@ describe("catalog session locality", () => {
     const failedRead = LaunchablesState.withSessionStatus(acknowledged, {
       _tag: "Err", payload: { code: "StatusTimeout", message: "timeout" },
     })
-    expect(failedRead).toBe(acknowledged)
+    expect(failedRead).toMatchObject({ ...acknowledged, unavailableSessionStatus: {
+      _tag: "Err", payload: { code: "StatusTimeout", message: "timeout" },
+    } })
     expect(LaunchablesState.withSessionStatus(failedRead, { _tag: "Ok", payload: {} })).toEqual(ready)
   })
 
@@ -128,9 +133,8 @@ describe("catalog session locality", () => {
     expect(LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [catalogGame] } }, completed)).toEqual(stopped)
     const stopping = LaunchablesState.beginStopping(loaded, nowPlayingEntry(loaded))
     expect(LaunchablesState.withStatusAfterStop(stopping, completed)).toEqual(stopped)
-    expect(LaunchablesState.withSessionStatus(loaded, {
-      _tag: "Err", payload: { code: "BrainUnreachable", message: "disconnected" },
-    })).toBe(loaded)
+    const unavailable = { _tag: "Err", payload: { code: "BrainUnreachable", message: "disconnected" } } as const
+    expect(LaunchablesState.withSessionStatus(loaded, unavailable)).toMatchObject({ ...loaded, unavailableSessionStatus: unavailable })
   })
 
   it("retains source evidence only for the same launch without restoring stale catalog games", () => {
@@ -472,3 +476,183 @@ describe("storage access prompt", () => {
   const denied = { _tag: "Denied" } as const
 })
 
+
+describe("owned local startup observation", () => {
+  const game = {
+    id: "owned", title: "Owned game", supportsRunnerSelection: false,
+    source: { label: "This device", isLocal: true },
+  }
+  const reservation = { gameId: game.id, launchId: "exact-owned" }
+  const reserved = () => LaunchablesState.withStartupReservation(
+    LaunchablesState.beginStartup(LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [game] } }), game), reservation, game,
+  )
+  const active = { ...reservation, phase: "running", initialHandoff: InitialHandoff.Waiting }
+  const observed = (focusOwnership?: FocusOwnership) => ({
+    _tag: "Ok" as const, payload: { active: { ...active, initialHandoff: focusOwnership === FocusOwnership.Launch ? InitialHandoff.Observed : InitialHandoff.Waiting,
+      ...(focusOwnership === undefined ? {} : { focusOwnership }) } },
+  })
+  test.each([undefined, FocusOwnership.Excluded, FocusOwnership.Other])("ACK and focus %s do not prove readiness", focus => {
+    const state = reserved()
+    expect(LaunchablesState.withSessionStatus(state, observed(focus))._tag).toBe("Starting")
+  })
+  test("pending daemon preparation retains startup; exact initial handoff resolves without an ACK", () => {
+    const state = reserved()
+    const focused = observed(FocusOwnership.Launch)
+    expect(LaunchablesState.withSessionStatus(state, { _tag: "Ok", payload: { pendingLaunches: [{ session: reservation, phase: PendingLaunchPhase.Preparing }] } })._tag).toBe("Starting")
+    expect(LaunchablesState.withSessionStatus(state, focused)._tag).toBe("Ready")
+    const handedOff = LaunchablesState.withSessionStatus(state, focused)
+    expect(handedOff._tag).toBe("Ready")
+    expect(LaunchablesState.withSessionStatus(handedOff, observed())._tag).toBe("Ready")
+  })
+  test("observed exact exit retires a still-unacknowledged start", () => {
+    const pending = LaunchablesState.withSessionStatus(reserved(), observed())
+    expect(pending._tag).toBe("Starting")
+    expect(LaunchablesState.withSessionStatus(pending, { _tag: "Ok", payload: {} })._tag).toBe("Ready")
+  })
+  test.each(["frozen", "focus-failed"])("a missed final focus reply recovers on %s", phase => {
+    const state = reserved()
+    expect(LaunchablesState.withSessionStatus(state, { _tag: "Ok", payload: { active: { ...active, phase } } })._tag).toBe("Ready")
+  })
+  test("Pending cancellation ignores focus and observation failure until exact exit", () => {
+    const state = LaunchablesState.cancelStartup(reserved())
+    const focused = observed(FocusOwnership.Launch)
+    expect(LaunchablesState.withSessionStatus(state, focused)._tag).toBe("Starting")
+    expect(LaunchablesState.withSessionStatus(state, { _tag: "Err", payload: { code: "HostUnavailable", message: "offline" } })).toBe(state)
+    expect(LaunchablesState.withSessionStatus(state, { _tag: "Err", payload: { code: "SessionCompleted", message: "ended" } })._tag).toBe("Ready")
+    const replacement = LaunchablesState.withSessionStatus(state, { _tag: "Ok", payload: { active: { ...active, launchId: "replacement" } } })
+    expect(replacement).toMatchObject({ _tag: "Starting", launchId: "replacement", cancelling: false, entries: expect.arrayContaining([expect.objectContaining({ session: expect.objectContaining({ launchId: "replacement" }) })]) })
+  })
+})
+
+test("failed native status retains the actual pending/error payload, never synthesized healthy truth", () => {
+  const game = { id: "local", title: "Local game", supportsRunnerSelection: false, source: { label: "This device", isLocal: true } }
+  const catalog = { _tag: "Ok" as const, payload: { games: [game] } }
+  const known = LaunchablesState.fromSources(catalog, { _tag: "Ok", payload: { active: {
+    launchId: "A", gameId: game.id, phase: "frozen", initialHandoff: InitialHandoff.Observed,
+  } } })
+  if (known._tag !== "Ready") throw new Error("expected Ready")
+  const unavailable: SessionStatusOutcome = { _tag: "Ok", payload: {
+    pendingLaunches: [{ session: { gameId: game.id, launchId: "B" }, phase: PendingLaunchPhase.Preparing }],
+    observationFailure: { code: "HostRecoveryBlocked", message: "native observation failed" },
+  } }
+  const refreshed = LaunchablesState.fromSources(catalog, unavailable, undefined, known.entries)
+  expect(refreshed).toMatchObject({ _tag: "Ready", unavailableSessionStatus: unavailable })
+  expect(nowPlayingEntry(refreshed)).toEqual(nowPlayingEntry(known))
+  const polled = LaunchablesState.withSessionStatus(known, unavailable)
+  expect(polled).toMatchObject({ _tag: "Ready", unavailableSessionStatus: unavailable })
+  expect(nowPlayingEntry(polled)).toEqual(nowPlayingEntry(known))
+})
+
+describe("manual pending launch choices", () => {
+  const local = { id: "wl4", title: "Local title", supportsRunnerSelection: false, source: { label: "This device", isLocal: true } }
+  const ready = LaunchablesState.fromSources({ _tag: "Ok", payload: { games: [local] } })
+  if (ready._tag !== "Ready") throw new Error("expected Ready")
+  const status = (phase = PendingLaunchPhase.Reserved): SessionStatusOutcome => ({ _tag: "Ok", payload: { pendingLaunches: [
+    { session: { gameId: local.id, launchId: "B" }, phase },
+    { session: { gameId: local.id, launchId: "A" }, phase: PendingLaunchPhase.Preparing },
+  ] } })
+  test("candidate sorting and per-launch cancel intent survive reordered authoritative facts", () => {
+    const first = LaunchablesState.recoverStartup(ready, status())
+    expect(first._tag).toBe("Choosing")
+    if (first._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(first.choices).toEqual([
+      { launchId: "A", gameId: local.id, title: "Local title", phase: PendingLaunchPhase.Preparing, cancel: "idle" },
+      { launchId: "B", gameId: local.id, title: "Local title", phase: PendingLaunchPhase.Reserved, cancel: "idle" },
+    ])
+    const sent = LaunchablesState.beginPendingCancellation(LaunchablesState.beginPendingCancellation(first, "A"), "B")
+    const failed = LaunchablesState.withPendingCancellationOutcome(sent, "B", { _tag: "Err", payload: { code: "BrainUnreachable", message: "Exact cancel failed" } })
+    const snapshot = status()
+    if (snapshot._tag !== "Ok") throw new Error("expected Ok")
+    const reordered = LaunchablesState.withSessionStatus(failed, { ...snapshot, payload: { pendingLaunches: [...snapshot.payload.pendingLaunches!].reverse() } })
+    expect(reordered).toEqual(failed)
+    expect(LaunchablesState.beginPendingCancellation(reordered, "A")).toBe(reordered)
+    expect(LaunchablesState.beginPendingCancellation(reordered, "unknown")).toBe(reordered)
+    const cancelling = LaunchablesState.withSessionStatus(reordered, status(PendingLaunchPhase.Cancelling))
+    if (cancelling._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(cancelling.choices.map(choice => [choice.launchId, choice.cancel])).toEqual([["A", "sent"], ["B", "sent"]])
+    expect(LaunchablesState.beginPendingCancellation(cancelling, "B")).toBe(cancelling)
+  })
+  test("unknown observation retains every choice and actual failure; positive absence retires them", () => {
+    const choosing = LaunchablesState.recoverStartup(ready, status())
+    const failedStatus: SessionStatusOutcome = { _tag: "Ok", payload: { observationFailure: { code: "NativeQueryFailed", message: "Window unknown" } } }
+    const unknown = LaunchablesState.withSessionStatus(choosing, failedStatus)
+    if (choosing._tag !== "Choosing" || unknown._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(unknown.choices).toBe(choosing.choices)
+    expect(unknown.unavailableSessionStatus).toEqual(failedStatus)
+    expect(unknown.notice).toEqual({ _tag: "Launch", message: "Window unknown" })
+    expect(LaunchablesState.withSessionStatus(unknown, { _tag: "Ok", payload: {} })).toMatchObject({ _tag: "Ready", notice: null })
+    expect(LaunchablesState.recoverStartup(ready, failedStatus)._tag).toBe("Recovery")
+  })
+  test("a sent surviving choice enters single cancelling and accepts only its exact late reply", () => {
+    const sent = LaunchablesState.beginPendingCancellation(LaunchablesState.recoverStartup(ready, status()), "A")
+    const single = LaunchablesState.withSessionStatus(sent, { _tag: "Ok", payload: { pendingLaunches: [
+      { session: { gameId: local.id, launchId: "A" }, phase: PendingLaunchPhase.Preparing },
+    ] } })
+    expect(single).toMatchObject({ _tag: "Starting", launchId: "A", cancelling: true })
+    const failure = { _tag: "Err", payload: { code: "BrainUnreachable", message: "Exact retry" } } as const
+    expect(LaunchablesState.withPendingCancellationOutcome(single, "B", failure)).toBe(single)
+    expect(LaunchablesState.withPendingCancellationOutcome(single, "A", failure)).toMatchObject({ _tag: "Starting", launchId: "A", cancelling: true, cancelRetryAvailable: true, notice: { message: "Exact retry" } })
+  })
+  test("a waiting session without game metadata keeps it absent and uses its real title", () => {
+    const result = LaunchablesState.recoverStartup(ready, { _tag: "Ok", payload: {
+      active: { launchId: "A", title: "Real live title", phase: "running", initialHandoff: InitialHandoff.Waiting },
+      pendingLaunches: [{ session: { launchId: "B", gameId: "removed-game" }, phase: PendingLaunchPhase.Committing }],
+    } })
+    if (result._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(result.choices).toEqual([
+      { launchId: "A", title: "Real live title", phase: "waiting", cancel: "idle" },
+      { launchId: "B", gameId: "removed-game", title: "removed-game", phase: PendingLaunchPhase.Committing, cancel: "idle" },
+    ])
+    expect(result.choices[0]).not.toHaveProperty("gameId")
+  })
+  test("HostRecoveryBlocked enables only sent exact choices, preserves phases and healthy cancelling wins", () => {
+    const choosing: State = { _tag: "Choosing", entries: [], notice: null, choices: [
+      { launchId: "A", gameId: "wl4", title: "Wario", phase: PendingLaunchPhase.Cancelling, cancel: "sent" },
+      { launchId: "B", gameId: "wl4", title: "Wario", phase: PendingLaunchPhase.Reserved, cancel: "idle" },
+      { launchId: "C", gameId: "wl4", title: "Wario", phase: PendingLaunchPhase.Committing, cancel: "sent" },
+    ] }
+    const failed = LaunchablesState.withSessionStatus(choosing, { _tag: "Ok", payload: {
+      observationFailure: { code: "HostRecoveryBlocked", message: "Exact cleanup failed" },
+    } })
+    if (failed._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(failed.choices.map(choice => [choice.launchId, choice.cancel, choice.phase])).toEqual([
+      ["A", "retry", PendingLaunchPhase.Cancelling], ["B", "idle", PendingLaunchPhase.Reserved], ["C", "retry", PendingLaunchPhase.Committing],
+    ])
+    expect(failed.choices[1]).toBe(choosing.choices[1])
+    expect(failed.notice).toEqual({ _tag: "Launch", message: "Exact cleanup failed" })
+    const retry = LaunchablesState.beginPendingCancellation(failed, "A")
+    if (retry._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(retry.choices.map(choice => choice.cancel)).toEqual(["sent", "idle", "retry"])
+    expect(LaunchablesState.beginPendingCancellation(retry, "A")).toBe(retry)
+    const healthy = LaunchablesState.withSessionStatus(failed, { _tag: "Ok", payload: { pendingLaunches: choosing.choices.map(choice => ({
+      session: { launchId: choice.launchId, gameId: "wl4" },
+      phase: choice.launchId === "B" ? PendingLaunchPhase.Reserved : PendingLaunchPhase.Cancelling,
+    })) } })
+    if (healthy._tag !== "Choosing") throw new Error("expected Choosing")
+    expect(healthy.choices.map(choice => choice.cancel)).toEqual(["sent", "idle", "sent"])
+  })
+  test("stopping with waiting history is neither an active nor matching pending startup candidate", () => {
+    const active = { launchId: "A", gameId: "wl4", phase: "stopping", initialHandoff: InitialHandoff.Waiting }
+    const initial: Extract<State, { _tag: "Ready" }> = { _tag: "Ready", entries: [], notice: null }
+    expect(LaunchablesState.recoverStartup(initial, { _tag: "Ok", payload: { active } })).toBe(initial)
+    const pendingLaunches = [{ session: { launchId: "A", gameId: "wl4" }, phase: PendingLaunchPhase.Cancelling }]
+    expect(LaunchablesState.recoverStartup(initial, { _tag: "Ok", payload: { active, pendingLaunches } })).toBe(initial)
+    expect(LaunchablesState.recoverStartup(initial, { _tag: "Ok", payload: { active, pendingLaunches: [
+      ...pendingLaunches, { session: { launchId: "B", gameId: "wl4" }, phase: PendingLaunchPhase.Reserved },
+    ] } })).toMatchObject({ _tag: "Starting", launchId: "B", cancelling: false })
+  })
+  test("candidate exclusions remain unchanged for returned or already-handed-off sessions", () => {
+    for (const active of [
+      { phase: "frozen", initialHandoff: InitialHandoff.Waiting },
+      { phase: "focus-failed", initialHandoff: InitialHandoff.Waiting },
+      { phase: "running", initialHandoff: InitialHandoff.Observed },
+      { phase: "running", initialHandoff: InitialHandoff.Recovered },
+    ]) {
+      const snapshot = status()
+      if (snapshot._tag !== "Ok") throw new Error("expected Ok")
+      expect(LaunchablesState.recoverStartup(ready, { _tag: "Ok", payload: {
+        ...snapshot.payload, active: { ...active, launchId: "A", gameId: local.id },
+      } })).toMatchObject({ _tag: "Starting", launchId: "B", cancelling: false })
+    }
+  })
+})

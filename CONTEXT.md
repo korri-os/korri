@@ -41,6 +41,14 @@ _Avoid_: current game, running process
 A stable Korri input position to which a controller is bound. A seat is distinct from a physical controller and from a player inside a game.
 _Avoid_: physical controller, game player
 
+**Pending launch**:
+A launch Korri accepted to start that is not yet a live session. A device can hold several, and each one is named by its exact launch.
+_Avoid_: queued game, loading game
+
+**Cancel**:
+Stopping a launch before its game takes the screen. A pending launch never starts, and a live session that has not taken the screen yet is ended.
+_Avoid_: abort, kill, quit
+
 **Seat reservation**:
 A controller's claim to its seat during a live session, including while it is disconnected or the person leaves the session.
 _Avoid_: connected controller

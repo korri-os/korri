@@ -7,6 +7,8 @@
  */
 import type {
   ActiveSession,
+  PendingLaunch,
+  RpcFailure,
   GameRoutes,
   GameRoutesOutcome,
   GameRunnerSetRequest,
@@ -44,6 +46,9 @@ import type {
   PeerListOutcome,
 } from "@contracts/generated/korrid"
 import {
+  FocusOwnership,
+  InitialHandoff,
+  PendingLaunchPhase,
   LaunchContributorKind,
   SecretSettingStatus,
   SessionControlFailureReason,
@@ -57,6 +62,14 @@ export type RpcResponseFor<Request extends RpcRequest> = Extract<
   RpcResponse,
   { readonly _tag: Request["_tag"] }
 >
+
+// New lifecycle methods derive both arguments and outcomes from the wire tags.
+export type SessionReserveRequest = Extract<RpcRequest, { _tag: "app.session.reserve" }>["payload"]
+export type SessionStartRequest = Extract<RpcRequest, { _tag: "app.session.start" }>["payload"]
+export type SessionCancelRequest = Extract<RpcRequest, { _tag: "app.session.cancel" }>["payload"]
+export type SessionReserveResult = Extract<RpcResponse, { _tag: "app.session.reserve" }>["outcome"]
+export type SessionStartResult = Extract<RpcResponse, { _tag: "app.session.start" }>["outcome"]
+export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.cancel" }>["outcome"]
 
 export interface KorridClient {
   health(): Promise<HealthOutcome>
@@ -91,6 +104,9 @@ export interface KorridClient {
   gameRoutes(gameId: string): Promise<GameRoutesOutcome>
   setGameRunner(request: GameRunnerSetRequest): Promise<GameRunnerSetOutcome>
   launchSelectedGame(gameId: string, runnerId: string): Promise<SelectedGameLaunchOutcome>
+  sessionReserve(request: SessionReserveRequest): Promise<SessionReserveResult>
+  sessionStart(request: SessionStartRequest): Promise<SessionStartResult>
+  sessionCancel(request: SessionCancelRequest): Promise<SessionCancelResult>
   sessionPrepare(gameId: string, host?: string): Promise<SessionPrepareOutcome>
   sessionStatus(timeoutMs?: number): Promise<SessionStatusOutcome>
   /** Existing SessionStopRequest field; callers must name the displayed launch. */
@@ -444,6 +460,27 @@ export function createHttpKorridClient(
         })).outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async sessionReserve(payload) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.session.reserve", payload,
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async sessionStart(payload) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.session.start", payload,
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async sessionCancel(payload) {
+      try {
+        return (await callKorrid(baseUrl, capability, {
+          _tag: "app.session.cancel", payload,
+        })).outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
     async sessionPrepare(gameId, host) {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -572,6 +609,24 @@ export interface InMemoryKorridClientConfig {
     | "stop-fail"
   readonly games?: readonly Game[]
   readonly gameRoutes?: readonly GameRoutes[]
+  /** Browser/test startup gates preserve the real reserve/start/cancel ordering. */
+  readonly sessionReserveGate?: Promise<void>
+  readonly sessionStartGate?: Promise<void>
+  /** Route preparation runs after claim, before native commit/unit creation. */
+  readonly sessionPreparationGate?: Promise<void>
+  /** Native commit has begun; exact Cancel returns Pending until cleanup. */
+  readonly sessionCommitGate?: Promise<void>
+  readonly sessionCleanupFailure?: RpcFailure
+  /** Native observation may fail while caller-owned pending facts remain visible. */
+  readonly sessionObservationFailure?: () => RpcFailure | undefined
+  /** Current compositor fact, independent of the latched initial handoff. */
+  readonly sessionFocusOwnership?: () => FocusOwnership | undefined
+  /** Zero gives immediate focus; absent focus remains unknown until this delay. */
+  readonly sessionFocusDelayMs?: number
+  /** Pending cancellation leaves the exact session alive until sessionStop. */
+  readonly sessionCancelPending?: boolean
+  /** Browser/test observation failures can recover without replacing this client. */
+  readonly sessionStatusUnavailable?: () => boolean
   readonly routeDelayMs?: number
   readonly routeMutationDelayMs?: number
   readonly routePermission?: "Full" | "LocalSessions" | "ReadOnly"
@@ -673,6 +728,9 @@ export function createInMemoryKorridClient(
   const localGames = config.localGames ?? []
   const localFailures = config.localFailures
   let activeSession = config.activeSession
+  const reservations = new Map<string, PendingLaunch>()
+  let launchSequence = 0
+  let focusAt = Infinity
   let overlayIntent: string | undefined
   const routeRecords = structuredClone([...(config.gameRoutes ?? [])])
   const routePermission = config.routePermission ?? "Full"
@@ -703,7 +761,11 @@ export function createInMemoryKorridClient(
     }
     const phase = state === SessionFreezerState.Frozen ? "frozen" : "running"
     const changed = activeSession.phase !== phase
-    activeSession = { ...activeSession, phase }
+    activeSession = { ...activeSession, phase,
+      focusOwnership: state === SessionFreezerState.Frozen ? FocusOwnership.Excluded : FocusOwnership.Launch,
+      ...(state === SessionFreezerState.Running && activeSession.initialHandoff === InitialHandoff.Waiting
+        ? { initialHandoff: InitialHandoff.Observed } : {}),
+    }
     if (state === SessionFreezerState.Frozen) overlayIntent = expectedLaunchId
     else overlayIntent = undefined
     return {
@@ -974,6 +1036,79 @@ export function createInMemoryKorridClient(
       activeSession = { gameId, launchId: `selected:${gameId}` }
       return { _tag: "Ok", payload: { session: { gameId, launchId: activeSession.launchId }, warnings: [...route.warnings] } }
     },
+    async sessionReserve({ gameId }) {
+      if (routePermission === "ReadOnly") return routeFailure("PermissionDenied", "Launching requires session access")
+      if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
+        return routeFailure("GameNotFound", "Game is not available")
+      }
+      const owned = { gameId, launchId: `reserved:${++launchSequence}:${gameId}` }
+      reservations.set(owned.launchId, { session: owned, phase: PendingLaunchPhase.Reserved })
+      await config.sessionReserveGate
+      return { _tag: "Ok", payload: owned }
+    },
+    async sessionStart({ gameId, expectedLaunchId, runnerId }) {
+      const pending = reservations.get(expectedLaunchId)
+      if (!pending || pending.phase !== PendingLaunchPhase.Reserved || pending.session.gameId !== gameId) {
+        return routeFailure("StaleLaunchIdentity", "The launch reservation changed")
+      }
+      const owned = pending.session
+      pending.phase = PendingLaunchPhase.Preparing
+      await config.sessionPreparationGate
+      if (reservations.get(expectedLaunchId) !== pending) return routeFailure("LaunchCancelled", "The exact startup was cancelled")
+      const route = runnerId === undefined ? undefined : routeRecords.find(record => record.gameId === gameId)?.routes.find(route => route.runnerId === runnerId)
+      if (runnerId !== undefined && !route) {
+        reservations.delete(expectedLaunchId)
+        return routeFailure("RunnerUnavailable", "Runtime is no longer installed")
+      }
+      if (behavior === "prepare-fail" || behavior === "local-launch-fail" || activeSession) {
+        reservations.delete(expectedLaunchId)
+        return activeSession ? routeFailure("ActiveSessionConflict", "End the live session before starting")
+          : routeFailure("UpstreamFailure", `cannot start ${gameId}`)
+      }
+      pending.phase = PendingLaunchPhase.Committing
+      const isCancelling = () => pending.phase === PendingLaunchPhase.Cancelling
+      await config.sessionCommitGate
+      // Commit may be cancelled while effects are in progress. Cleanup is exact.
+      if (isCancelling()) {
+        reservations.delete(expectedLaunchId)
+        if (config.sessionCleanupFailure) {
+          activeSession = { ...owned, phase: "running", initialHandoff: InitialHandoff.Waiting }
+          return { _tag: "Err", payload: config.sessionCleanupFailure }
+        }
+        return routeFailure("LaunchCancelled", "The exact startup was cancelled")
+      }
+      if (reservations.get(expectedLaunchId) !== pending) return routeFailure("LaunchCancelled", "The exact startup was cancelled")
+      activeSession = { ...owned, phase: "running", initialHandoff: InitialHandoff.Waiting }
+      focusAt = Date.now() + (config.sessionFocusDelayMs ?? 0)
+      await config.sessionStartGate
+      reservations.delete(expectedLaunchId)
+      if (isCancelling() && activeSession?.launchId === expectedLaunchId) {
+        if (config.sessionCleanupFailure) return { _tag: "Err", payload: config.sessionCleanupFailure }
+        activeSession = undefined
+        overlayIntent = undefined
+        return routeFailure("LaunchCancelled", "The exact startup was cancelled")
+      }
+      // A late ACK cannot recreate a cancelled, completed or replaced launch.
+      return { _tag: "Ok", payload: { session: owned, warnings: [...(route?.warnings ?? [])] } }
+    },
+    async sessionCancel({ expectedLaunchId }) {
+      const pending = reservations.get(expectedLaunchId)
+      if (pending) {
+        if (pending.phase === PendingLaunchPhase.Reserved || pending.phase === PendingLaunchPhase.Preparing) {
+          reservations.delete(expectedLaunchId)
+          return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+        }
+        pending.phase = PendingLaunchPhase.Cancelling
+        if (config.sessionCancelPending || config.sessionCommitGate) return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
+        // The ordinary active cancel seam can complete immediately.
+        reservations.delete(expectedLaunchId)
+      }
+      if (activeSession?.launchId !== expectedLaunchId) return routeFailure("StaleLaunchIdentity", "The gameplay session changed")
+      if (config.sessionCancelPending) return { _tag: "Ok", payload: { phase: SessionStopPhase.Pending } }
+      activeSession = undefined
+      overlayIntent = undefined
+      return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }
+    },
     async sessionPrepare(gameId, host) {
       if (
         behavior === "prepare-fail" ||
@@ -994,6 +1129,13 @@ export function createInMemoryKorridClient(
       }
     },
     async sessionStatus(): Promise<SessionStatusOutcome> {
+      if (config.sessionStatusUnavailable?.()) return routeFailure("BrainUnreachable", "Session status is unavailable")
+      const pendingLaunches = [...reservations.values()].map(pending => structuredClone(pending))
+      const pendingFacts = pendingLaunches.length ? { pendingLaunches } : {}
+      const observationFailure = config.sessionObservationFailure?.()
+      if (observationFailure) return pendingLaunches.length
+        ? { _tag: "Ok", payload: { ...pendingFacts, observationFailure } }
+        : { _tag: "Err", payload: observationFailure }
       if (behavior === "status-fail") {
         return {
           _tag: "Err",
@@ -1002,7 +1144,15 @@ export function createInMemoryKorridClient(
       }
       if (activeSession === undefined) {
         overlayIntent = undefined
-        return { _tag: "Ok", payload: {} }
+        return { _tag: "Ok", payload: pendingFacts }
+      }
+      if (activeSession.phase === "running") {
+        const ownership = config.sessionFocusOwnership ? config.sessionFocusOwnership()
+          : Date.now() >= focusAt ? FocusOwnership.Launch : activeSession.focusOwnership
+        activeSession = { ...activeSession, focusOwnership: ownership,
+          ...(ownership === FocusOwnership.Launch && activeSession.initialHandoff === InitialHandoff.Waiting
+            ? { initialHandoff: InitialHandoff.Observed } : {}),
+        }
       }
       const overlay =
         overlayIntent === activeSession.launchId &&
@@ -1013,7 +1163,8 @@ export function createInMemoryKorridClient(
       return {
         _tag: "Ok",
         payload: {
-          active: activeSession,
+          ...pendingFacts,
+          active: structuredClone(activeSession),
           ...(overlay === undefined ? {} : { overlay }),
         },
       }
@@ -1043,6 +1194,7 @@ export function createInMemoryKorridClient(
           },
         }
       }
+      reservations.delete(expectedLaunchId)
       activeSession = undefined
       overlayIntent = undefined
       return { _tag: "Ok", payload: { phase: SessionStopPhase.Stopped } }

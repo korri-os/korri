@@ -39,6 +39,25 @@
 	overflow-wrap: anywhere;
 }
 
+/* Korri's actions for the work under way, one row each, its state beneath. */
+.boxbuster-notice-actions {
+	display: grid;
+	gap: var(--bb-space);
+	max-height: 100%;
+	overflow-y: auto;
+}
+
+.boxbuster-notice-work {
+	display: grid;
+	gap: calc(var(--bb-space) / 2);
+	justify-items: center;
+}
+
+.boxbuster-notice-action:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
 .boxbuster-notice-action {
 	min-height: 2.75em;
 	padding: 0 1.5em;

@@ -15,7 +15,29 @@ export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" 
 
 export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
 
+/** Initial window handoff history, separate from current focus ownership. */
+export enum InitialHandoff {
+	/** This daemon accepted the launch but has not observed exact screen ownership. */
+	Waiting = "waiting",
+	/** Exact compositor ownership was observed in this daemon; later loss does not reset it. */
+	Observed = "observed",
+	/**
+	 * An existing live unit has no initial-startup history in this runtime.
+	 * Journal reconstruction must not manufacture a new startup or past focus proof.
+	 */
+	Recovered = "recovered",
+}
+
+export enum FocusOwnership {
+	Launch = "launch",
+	Excluded = "excluded",
+	Other = "other",
+}
+
 export interface ActiveSession {
+	initialHandoff?: InitialHandoff;
+	/** Exact compositor ownership observation, not a rendered-frame guarantee. */
+	focusOwnership?: FocusOwnership;
 	launchId: string;
 	host?: string;
 	gameId?: string;
@@ -406,6 +428,25 @@ export interface PeerList {
 export interface PeerListRequest {
 }
 
+export interface SessionPrepared {
+	gameId: string;
+	/** Identity created by korrid while preparing this exact launch. */
+	launchId: string;
+}
+
+/** Direct projection of the reservation producer's atomic phases. */
+export enum PendingLaunchPhase {
+	Reserved = "reserved",
+	Preparing = "preparing",
+	Committing = "committing",
+	Cancelling = "cancelling",
+}
+
+export interface PendingLaunch {
+	session: SessionPrepared;
+	phase: PendingLaunchPhase;
+}
+
 export interface PlayEntry {
 	/** When the session occurred (its end time, in UTC ISO 8601). */
 	occurredAt: string;
@@ -477,12 +518,6 @@ export interface RunnerConfig {
 	config?: LaunchConfigOverrides;
 }
 
-export interface SessionPrepared {
-	gameId: string;
-	/** Identity created by korrid while preparing this exact launch. */
-	launchId: string;
-}
-
 export interface SelectedGameLaunch {
 	session: SessionPrepared;
 	warnings: LaunchWarning[];
@@ -501,6 +536,10 @@ export enum SecretSettingStatus {
 
 export interface SensitiveSettingResult {
 	status: SecretSettingStatus;
+}
+
+export interface SessionCancelRequest {
+	expectedLaunchId: string;
 }
 
 export type SessionControlInteraction =
@@ -605,7 +644,25 @@ export interface SessionPrepareRequest {
 	host?: string;
 }
 
+export interface SessionReserveRequest {
+	gameId: string;
+}
+
+export interface SessionStartRequest {
+	gameId: string;
+	expectedLaunchId: string;
+	runnerId?: string;
+	overrides?: PluginLaunchOverrides;
+}
+
 export interface SessionStatus {
+	/** All pending reservations owned by this authenticated portal caller; never a selection. */
+	pendingLaunches?: PendingLaunch[];
+	/**
+	 * Pending identities remain observable when native state is unknown.
+	 * This failure is not idle, completion, cancellation, or handoff readiness.
+	 */
+	observationFailure?: RpcFailure;
 	active?: ActiveSession;
 	/** Ephemeral exact launch authorized for browser overlay handoff. */
 	overlay?: ActiveSession;
@@ -753,6 +810,9 @@ export type RpcRequest =
 	| { _tag: "app.moonlight.certificate.provision", payload: MoonlightCertificateProvisionRequest }
 	| { _tag: "app.moonlight.certificate.revoke", payload: MoonlightCertificateRevokeRequest }
 	| { _tag: "app.session.prepare", payload: SessionPrepareRequest }
+	| { _tag: "app.session.reserve", payload: SessionReserveRequest }
+	| { _tag: "app.session.start", payload: SessionStartRequest }
+	| { _tag: "app.session.cancel", payload: SessionCancelRequest }
 	| { _tag: "app.session.status", payload: SessionStatusRequest }
 	| { _tag: "app.session.controls", payload: SessionControlsRequest }
 	| { _tag: "app.session.control.invoke", payload: SessionControlInvokeRequest }
@@ -787,6 +847,9 @@ export type RpcResponse =
 	| { _tag: "app.moonlight.certificate.provision", outcome: MoonlightCertificateProvisionOutcome }
 	| { _tag: "app.moonlight.certificate.revoke", outcome: MoonlightCertificateRevokeOutcome }
 	| { _tag: "app.session.prepare", outcome: SessionPrepareOutcome }
+	| { _tag: "app.session.reserve", outcome: SessionPrepareOutcome }
+	| { _tag: "app.session.start", outcome: SelectedGameLaunchOutcome }
+	| { _tag: "app.session.cancel", outcome: SessionStopOutcome }
 	| { _tag: "app.session.status", outcome: SessionStatusOutcome }
 	| { _tag: "app.session.controls", outcome: SessionControlsOutcome }
 	| { _tag: "app.session.control.invoke", outcome: SessionControlInvokeOutcome }
