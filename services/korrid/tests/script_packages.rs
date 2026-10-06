@@ -71,8 +71,8 @@ fn native_snapshot_with_files(
         let metadata: serde_json::Value =
             serde_json::from_slice(&fs::read(path.join("package.json")).unwrap()).unwrap();
         let version = match *name {
-            "effect" => "4.0.0-beta.78",
-            "fast-check" => "4.9.0",
+            "effect" => "4.0.1",
+            "fast-check" => "4.10.2",
             "pure-rand" => "8.4.2",
             "@kayahr/text-encoding" => "2.2.0",
             "whatwg-url" => "17.1.1",
@@ -155,7 +155,7 @@ fn exports_preserve_native_condition_order_and_wildcard_specificity() {
     }
     for path in [
         "effect/internal/core",
-        "effect/unstable/cli/internal/help",
+        "effect/cli/internal/help",
         "effect/Option/index",
     ] {
         let graph = native_snapshot(
@@ -484,14 +484,7 @@ fn require_of_esm_is_lazy_and_shares_native_namespace_identity() {
 #[test]
 fn full_schema_and_url_graphs_prepare_without_running_missing_platform_apis() {
     for (name, packages) in [
-        (
-            "effect/Schema",
-            vec![
-                (RETROARCH, "effect"),
-                (RETROARCH, "fast-check"),
-                (RETROARCH, "pure-rand"),
-            ],
-        ),
+        ("effect/Schema", vec![(RETROARCH, "effect")]),
         (
             "whatwg-url",
             vec![

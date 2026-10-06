@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
-import ts from "typescript"
+import { parseModule, visitNodes } from "./source-ast"
 
 const SRC = join(import.meta.dir, "..", "src")
 function walk(dir: string): string[] {
@@ -26,26 +26,22 @@ const ownedFiles = cssFiles.filter(file => ![...globalFiles, motionFile].include
 const read = (file: string) => readFileSync(file, "utf8")
 const rel = (file: string) => relative(SRC, file)
 const css = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "")
-const sources = new Map(modules.map(file => [file, ts.createSourceFile(
-  file, read(file), ts.ScriptTarget.Latest, true,
-)]))
+const sources = new Map(modules.map(file => [file, parseModule(file, read(file))]))
 function imports(file: string): string[] {
-  return sources.get(file)!.statements.flatMap(statement => {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return []
-    const specifier = statement.moduleSpecifier.text
+  return sources.get(file)!.body.flatMap(statement => {
+    if (statement.type !== "ImportDeclaration") return []
+    const specifier = statement.source.value
     return specifier.endsWith(".css") ? [resolve(dirname(file), specifier)] : []
   })
 }
 function classesRenderedBy(file: string): Set<string> {
   const classes = new Set<string>()
-  function visit(node: ts.Node) {
-    if (ts.isJsxAttribute(node) && node.name.getText() === "className"
-      && node.initializer && ts.isStringLiteral(node.initializer)) {
-      for (const name of node.initializer.text.split(/\s+/)) classes.add(name)
+  visitNodes(sources.get(file)!, node => {
+    if (node.type === "JSXAttribute" && node.name.type === "JSXIdentifier"
+      && node.name.name === "className" && node.value?.type === "Literal") {
+      for (const name of String(node.value.value).split(/\s+/)) classes.add(name)
     }
-    ts.forEachChild(node, visit)
-  }
-  visit(sources.get(file)!)
+  })
   return classes
 }
 

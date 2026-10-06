@@ -13,7 +13,8 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
-import ts from "typescript"
+import { ResolverFactory } from "oxc-resolver"
+import { parseModule, visitNodes, type Program } from "./source-ast"
 
 const SRC = join(import.meta.dir, "..", "src")
 
@@ -112,30 +113,28 @@ describe("every rendered unit is a component with a part beside it", () => {
 })
 
 /** Type-only imports describe data, not composition. Keep runtime edges only. */
-function runtimeImports(source: ts.SourceFile): string[] {
+function runtimeImports(program: Program): string[] {
   const imports: string[] = []
-  function visit(node: ts.Node) {
-    if (ts.isImportDeclaration(node)) {
-      const clause = node.importClause
-      if (clause?.isTypeOnly) return
-      const bindings = clause?.namedBindings
-      if (!clause?.name && bindings && ts.isNamedImports(bindings)
-        && bindings.elements.length > 0 && bindings.elements.every(item => item.isTypeOnly)) return
-      if (ts.isStringLiteral(node.moduleSpecifier)) imports.push(node.moduleSpecifier.text)
-    } else if (ts.isExportDeclaration(node)) {
-      if (node.isTypeOnly) return
-      if (node.exportClause && ts.isNamedExports(node.exportClause)
-        && node.exportClause.elements.every(item => item.isTypeOnly)) return
-      if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) imports.push(node.moduleSpecifier.text)
-    } else if (ts.isCallExpression(node)
-      && (node.expression.kind === ts.SyntaxKind.ImportKeyword
-        || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
+  visitNodes(program, node => {
+    if (node.type === "ImportDeclaration") {
+      if (node.importKind === "type") return
+      const specifiers = node.specifiers
+      if (specifiers.length > 0 && specifiers.every(item =>
+        item.type === "ImportSpecifier" && item.importKind === "type")) return
+      imports.push(node.source.value)
+    } else if (node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") {
+      if (node.exportKind === "type" || !node.source) return
+      if (node.type === "ExportNamedDeclaration" && node.specifiers.length > 0
+        && node.specifiers.every(item => item.exportKind === "type")) return
+      imports.push(node.source.value)
+    } else if (node.type === "ImportExpression") {
+      if (node.source.type === "Literal" && typeof node.source.value === "string") imports.push(node.source.value)
+    } else if (node.type === "CallExpression"
+      && node.callee.type === "Identifier" && node.callee.name === "require") {
       const argument = node.arguments[0]
-      if (argument && ts.isStringLiteral(argument)) imports.push(argument.text)
+      if (argument?.type === "Literal" && typeof argument.value === "string") imports.push(argument.value)
     }
-    ts.forEachChild(node, visit)
-  }
-  visit(source)
+  })
   return imports
 }
 
@@ -173,24 +172,24 @@ describe("composition imports stay at the same layer or point down", () => {
     ['const page = import("./Page")', ["./Page"]],
     ['const page = require("./Page")', ["./Page"]],
   ] as const)("classifies runtime dependencies in %s", (text, expected) => {
-    expect(runtimeImports(ts.createSourceFile("example.tsx", text, ts.ScriptTarget.Latest, true)))
+    expect(runtimeImports(parseModule("example.tsx", text)))
       .toEqual([...expected])
   })
 
   test("no component imports a higher-layer component at runtime", () => {
-    const configPath = join(SRC, "..", "tsconfig.json")
-    const config = ts.readConfigFile(configPath, ts.sys.readFile)
-    expect(config.error).toBeUndefined()
-    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath))
-    expect(parsed.errors).toEqual([])
+    // Resolve through Pico's tsconfig so path aliases cannot evade the gate.
+    const resolver = new ResolverFactory({
+      tsconfig: { configFile: join(SRC, "..", "tsconfig.json") },
+      extensions: [".tsx", ".ts", ".js"],
+      extensionAlias: { ".js": [".tsx", ".ts", ".js"] },
+    })
     const offenders = componentFiles.flatMap(file => {
       const from = componentLayer(file)
       if (from === undefined) return [`${relative(SRC, file)}: no layer`]
-      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
-      return runtimeImports(source).flatMap(specifier => {
-        // Use the product's resolver so path aliases cannot evade the gate.
-        const target = ts.resolveModuleName(specifier, file, parsed.options, ts.sys).resolvedModule
-        const to = target && componentLayer(target.resolvedFileName)
+      const program = parseModule(file, readFileSync(file, "utf8"))
+      return runtimeImports(program).flatMap(specifier => {
+        const target = resolver.sync(dirname(file), specifier).path
+        const to = target === undefined ? undefined : componentLayer(target)
         return to !== undefined && LAYERS.indexOf(to) < LAYERS.indexOf(from)
           ? [`${relative(SRC, file)} (${from}) -> ${specifier} (${to})`] : []
       })

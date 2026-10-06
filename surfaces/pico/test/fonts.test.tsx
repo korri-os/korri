@@ -14,7 +14,7 @@ import { cleanup, render } from "@testing-library/react"
 import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
-import ts from "typescript"
+import { parseModule, renderedText, visitNodes } from "./source-ast"
 import { createFixtureHost, fixtureModel } from "../src/fixtures/fixture-host"
 import { PICO_DEFAULT_FONT, PICO_FONTS } from "../src/pico-fonts"
 import { PicoSurface } from "../src/PicoSurface"
@@ -158,18 +158,12 @@ describe("every character Pico writes itself has a glyph", () => {
       .filter((file) => /\.tsx?$/.test(file) && !file.endsWith(".part.tsx") && !file.startsWith("fixtures"))
     const missing = new Set<string>()
     for (const file of files) {
-      const source = ts.createSourceFile(file, read(join(SRC, file)), ts.ScriptTarget.Latest, true)
-      const visit = (node: ts.Node) => {
-        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node)
-          || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isJsxText(node)) {
-          for (const character of node.text) {
-            const code = character.codePointAt(0) ?? 0
-            if (code > 0x7e && !symbols.glyphs.has(code)) missing.add(`${character} in ${file}`)
-          }
+      visitNodes(parseModule(file, read(join(SRC, file))), node => {
+        for (const character of renderedText(node) ?? "") {
+          const code = character.codePointAt(0) ?? 0
+          if (code > 0x7e && !symbols.glyphs.has(code)) missing.add(`${character} in ${file}`)
         }
-        ts.forEachChild(node, visit)
-      }
-      visit(source)
+      })
     }
     expect([...missing].sort()).toEqual([])
   })

@@ -24,6 +24,9 @@ export default defineConfig({
     ),
   },
   resolve: {
+    // Each surface installs its own React for its tests, but the portal must
+    // ship one. @vitejs/plugin-react 4 deduplicated React; 6 does not.
+    dedupe: ["react", "react-dom"],
     alias: {
       "@contracts": resolve(__dirname, "../../contracts"),
       // Surfaces are compiled from source by their host. The alias is the only

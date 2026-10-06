@@ -89,7 +89,7 @@ let
     '';
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-O0EMI1tF4x5ar7nlp9iROxvfx+NdyY3GKx6YNCUFebg=";
+    outputHash = "sha256-Gi6xES5VZFyQRcMMnFcUmZaTR9N6XmGxs0dV311nr+M=";
   };
 in
 pkgs.stdenvNoCC.mkDerivation {
