@@ -276,13 +276,14 @@ function PicoCatalogSurface({
       if (model.status._tag === "Problem") { host.dismiss(); return }
       if (model.status._tag !== "Browsing") return
       if (identityAction !== null) { setIdentityAction(null); return }
-      if (askingAction !== undefined) { setAskingAction(undefined); return }
       if (asking !== undefined) { setAsking(undefined); return }
       if (editing?.clearing === true) { setEditing({ ...editing, clearing: false }); return }
       if (editing !== undefined) { setEditing(undefined); return }
-      if (placing !== undefined) { setPlacing(undefined); return }
       if (menuOpen) { setMenuOpen(false); return }
+      // Settings covers the game's screen, so it closes before that screen's questions.
       if (settingsOpen) { setSettingsOpen(false); return }
+      if (askingAction !== undefined) { setAskingAction(undefined); return }
+      if (placing !== undefined) { setPlacing(undefined); return }
       // The detail page sits above Find. Clear it first so the query survives.
       if (viewingId !== undefined) { setViewingId(undefined); return }
       if (finding) { setFinding(false); return }
