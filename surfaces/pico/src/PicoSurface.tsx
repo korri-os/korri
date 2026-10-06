@@ -296,6 +296,9 @@ function PicoCatalogSurface({
     })
     const offOptions = host.input.on("options", () => {
       if (runnerOpen || wake()) return
+      // Find opens from home and closes from Find. Over any other screen the
+      // toggle would change only what is hidden below it.
+      if (settingsOpen || viewingId !== undefined) return
       setMenuOpen(false)
       setFinding((open) => !open)
     })

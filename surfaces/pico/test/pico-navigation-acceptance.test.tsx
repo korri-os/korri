@@ -74,7 +74,9 @@ test("Back dismisses the visible failure before touching navigation underneath",
 })
 
 const settingsShown = () => document.querySelector(".pico-panel-screen") !== null
+const findShown = () => document.querySelector(".pico-library-browser") !== null
 const detailShown = () => document.querySelector(".pico-game-detail") !== null
+const shelfShown = () => document.querySelector(".pico-cart-shelf") !== null
 
 test("Back on Settings closes Settings before the location question on the game below it", () => {
   const host = createFixtureHost()
@@ -100,4 +102,26 @@ test("Back on Settings closes Settings before the action question on the game be
   expect(settingsShown()).toBe(false)
   expect(screen.getByText("REMOVE FROM DEVICE?")).toBeTruthy()
   expect(host.calls).toEqual([])
+})
+
+test("Options on a game's own screen does nothing", () => {
+  const host = createFixtureHost()
+  render(<PicoSurface host={host} model={fixtureModel} />)
+  fireEvent.click(screen.getByRole("button", { name: /Tetris/ }))
+  act(() => host.press("options"))
+  expect(detailShown()).toBe(true)
+  act(() => host.press("back"))
+  expect(findShown()).toBe(false)
+  expect(shelfShown()).toBe(true)
+})
+
+test("Options on Settings does nothing", () => {
+  const host = createFixtureHost()
+  render(<PicoSurface host={host} model={fixtureModel} />)
+  act(() => host.press("system"))
+  act(() => host.press("options"))
+  expect(settingsShown()).toBe(true)
+  act(() => host.press("back"))
+  expect(findShown()).toBe(false)
+  expect(shelfShown()).toBe(true)
 })
