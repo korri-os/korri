@@ -1,5 +1,4 @@
 import "./PicoHome.css"
-import { useState } from "react"
 import { picoStatsFor } from "../pico-detail-view"
 import { picoCollectionsFrom, picoHeroPick } from "../pico-library-view"
 import type { PicoScreenView } from "../pico-screen-view"
@@ -61,6 +60,9 @@ export interface PicoHomeMenu {
   readonly onSettings: () => void
   readonly onView: () => void
   readonly onReturned: () => void
+  /** The name of the focused MENU key or menu line, for the A hint. */
+  readonly aim: string | undefined
+  readonly onAim: (label: string | undefined) => void
 }
 
 /** "9 carts · 2 resumable": what the shelf holds, in the footer's quiet ink. */
@@ -120,8 +122,7 @@ export function PicoHome({
   readonly clockLabel?: string
 }) {
   const asking = placing !== undefined && view._tag === "Shelf"
-  /* The name of the focused MENU key or menu line, for the A hint. */
-  const [aim, setAim] = useState<string | undefined>(undefined)
+  const aim = menu?.aim
   /* MENU stands wherever home is the library: on the shelf in every layout,
    * and while the library is read, empty or unreadable, when Settings is most
    * needed. Not over a launch, a running game or a question. */
@@ -151,7 +152,7 @@ export function PicoHome({
             { detail: `◀ ${VIEW_WORDS[mode]} ▶`, label: "VIEW", onPress: menu.onView },
           ]}
           label={MENU_LABEL}
-          onAim={setAim}
+          onAim={menu.onAim}
           onFocusClaimed={menu.onReturned}
           onToggle={menu.onToggle}
           open={open}

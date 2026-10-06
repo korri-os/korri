@@ -37,7 +37,7 @@ export function PicoCoverArt({
   readonly subtitle?: string
   readonly artUrl?: string
 }) {
-  const { ref, ratio } = usePicoQuantizedArt({ src: artUrl, cells: CELLS })
+  const ref = usePicoQuantizedArt({ src: artUrl, cells: CELLS })
 
   if (artUrl === undefined || artUrl === "") {
     const label = picoCartLookFor(id, subtitle)
@@ -56,7 +56,6 @@ export function PicoCoverArt({
     <canvas
       aria-hidden
       className="pico-cover-art-canvas"
-      data-ratio={ratio}
       height={1}
       ref={ref}
       width={1}

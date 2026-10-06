@@ -1,5 +1,5 @@
 import "./PicoPauseMenu.css"
-import type { PicoOverlayControlView, PicoOverlayView } from "../../pico-overlay-view"
+import type { PicoOverlayControlView, PicoOverlayView, PicoRanging } from "../../pico-overlay-view"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoCard } from "../molecules/PicoCard"
 import { PicoControlRow } from "../molecules/PicoControlRow"
@@ -19,15 +19,25 @@ import { PicoControlRow } from "../molecules/PicoControlRow"
 export function PicoPauseMenu({
   overlay,
   onActivate,
-  onAdjust,
+  ranging,
   onRetry,
 }: {
   readonly overlay: PicoOverlayView
   readonly onActivate: (control: PicoOverlayControlView) => void
-  /** A range settled on a new value. */
-  readonly onAdjust: (control: PicoOverlayControlView, value: number) => void
+  readonly ranging: PicoRanging
   readonly onRetry: () => void
 }) {
+  const row = (control: PicoOverlayControlView) => (
+    <PicoControlRow
+      control={control}
+      key={control.id}
+      onActivate={() => onActivate(control)}
+      onLeave={() => ranging.onLeave(control)}
+      onRelease={(ended) => ranging.onRelease(control, ended)}
+      onStep={(request) => ranging.onStep(control, request)}
+      value={ranging.valueOf(control)}
+    />
+  )
   return (
     <PicoCard kicker="PAUSED" title={overlay.title} tone="tell">
       {overlay.problem === undefined ? null : (
@@ -38,27 +48,13 @@ export function PicoPauseMenu({
         </section>
       )}
       <ul className="pico-pause-menu-list">
-        {overlay.controls.map((control) => (
-          <PicoControlRow
-            control={control}
-            key={control.id}
-            onActivate={() => onActivate(control)}
-            onAdjust={(value) => onAdjust(control, value)}
-          />
-        ))}
+        {overlay.controls.map(row)}
       </ul>
       {overlay.groups.map((group) => (
         <section aria-label={group.label} className="pico-pause-menu-group" key={group.id}>
           <h3 className="pico-pause-menu-group-label">{group.label}</h3>
           <ul className="pico-pause-menu-list">
-            {group.controls.map((control) => (
-              <PicoControlRow
-                control={control}
-                key={control.id}
-                onActivate={() => onActivate(control)}
-                onAdjust={(value) => onAdjust(control, value)}
-              />
-            ))}
+            {group.controls.map(row)}
           </ul>
         </section>
       ))}

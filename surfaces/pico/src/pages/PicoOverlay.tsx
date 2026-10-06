@@ -1,4 +1,4 @@
-import type { PicoOverlayControlView, PicoOverlayView } from "../pico-overlay-view"
+import type { PicoOverlayControlView, PicoOverlayView, PicoRanging } from "../pico-overlay-view"
 import { PicoModal } from "../ui/organisms/PicoModal"
 import { PicoPauseMenu } from "../ui/organisms/PicoPauseMenu"
 import { PicoGameOverlay } from "../ui/templates/PicoGameOverlay"
@@ -28,7 +28,7 @@ export function PicoOverlay({
   onConfirm,
   onCancel,
   onInvoke,
-  onAdjust,
+  ranging,
   onRetry,
 }: {
   readonly overlay: PicoOverlayView
@@ -37,8 +37,7 @@ export function PicoOverlay({
   readonly onConfirm: () => void
   readonly onCancel: () => void
   readonly onInvoke: (control: PicoOverlayControlView) => void
-  /** A range settled on a new value. */
-  readonly onAdjust: (control: PicoOverlayControlView, value: number) => void
+  readonly ranging: PicoRanging
   readonly onRetry: () => void
 }) {
   const activate = (control: PicoOverlayControlView) => {
@@ -49,7 +48,7 @@ export function PicoOverlay({
     .some((control) => control.range !== undefined && control.enabled)
   return (
     <PicoGameOverlay hints={adjustable ? [ADJUST_HINT, ...HINTS] : HINTS} label={overlay.title}>
-      <PicoPauseMenu onActivate={activate} onAdjust={onAdjust} onRetry={onRetry} overlay={overlay} />
+      <PicoPauseMenu onActivate={activate} onRetry={onRetry} overlay={overlay} ranging={ranging} />
       {asking === undefined ? null : (
         <PicoModal
           confirmLabel={asking.label.toUpperCase()}

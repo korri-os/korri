@@ -3,8 +3,9 @@
  * subscriptions.
  *
  * - The host's four buttons, registered once per host.
- * - Korri's model: a new catalog, status or runner choice is a message, so
- *   `update` can notice that a played game ended.
+ * - Korri's model: every model Korri publishes is a message, so `update` can
+ *   notice that a played game ended, a save finished or a backup is ready.
+ *   Korri replaces its model whole, so a new object means news.
  * - The idle timer, running only while attract is allowed and restarted by
  *   every press and focus move.
  */
@@ -36,13 +37,14 @@ export function usePicoNavigation(
   initial?: PicoInitialView,
 ): PicoNavigationProgram {
   const perform = (request: PicoRequest) => performPicoRequest(host, { chooseFont }, request)
-  const { model: nav, dispatch, latest } = usePicoProgram(() => initialNavigation(initial), update, korri, perform)
+  const { model: nav, dispatch, latest } = usePicoProgram<PicoNavigation, PicoMessage, SurfaceModel>(
+    () => initialNavigation(initial), update, korri, perform)
 
   useEffect(() => subscribePicoHostButtons(host, dispatch), [host, dispatch])
 
   useEffect(() => {
     dispatch({ _tag: "KorriPublished" })
-  }, [korri.catalog, korri.status, korri.runnerChoice, dispatch])
+  }, [korri, dispatch])
 
   const allowed = nav.idle._tag === "Awake" && canAttract(nav, korri)
   useEffect(() => {

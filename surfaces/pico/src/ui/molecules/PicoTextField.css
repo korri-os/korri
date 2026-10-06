@@ -38,6 +38,11 @@
 	color: var(--pico-ink-quiet);
 }
 
+/* The mark shows only when the text's start is cut (data-cut, set after layout). */
+.pico-text-field:not([data-cut]) .pico-text-field-cut {
+	display: none;
+}
+
 .pico-text-field-caret {
 	flex: none;
 	color: var(--pico-accent);

@@ -1,10 +1,12 @@
 import "./PicoSettings.css"
-import type {
-  PicoConfirmation,
-  PicoSettingRowView,
-  PicoSettingsView,
-  PicoTextSettingRowView,
+import {
+  type PicoConfirmation,
+  type PicoSettingRowView,
+  type PicoSettingsView,
+  picoTextSettingFrom,
 } from "../pico-settings-view"
+import type { PicoTextDraft } from "../pico-text-draft"
+import type { PicoTyping } from "../ui/molecules/PicoKeyboard"
 import { PicoModal } from "../ui/organisms/PicoModal"
 import { PicoTextEditor } from "../ui/organisms/PicoTextEditor"
 import { PicoSettingsPanel } from "./PicoSettingsPanel"
@@ -20,21 +22,11 @@ const EDITOR_HINTS = [
   { hintKey: "b", label: "CANCEL" },
 ] as const
 
-/** The text setting being changed, and whether clearing it is being asked. */
+/** The text setting being changed, what is typed, and whether clearing it is being asked. */
 export interface PicoSettingsEditing {
   readonly settingId: string
   readonly clearing: boolean
-}
-
-function findText(settings: PicoSettingsView, settingId: string) {
-  for (const group of settings.groups) {
-    for (const row of group.rows) {
-      if (row.id === settingId && row.control.kind === "text") {
-        return { group: group.title, row: row as PicoTextSettingRowView }
-      }
-    }
-  }
-  return undefined
+  readonly draft: PicoTextDraft
 }
 
 /**
@@ -65,6 +57,9 @@ export function PicoSettings({
   onCloseEditor,
   onAskClear,
   onCancelClear,
+  onConfirmClear,
+  onSaveText,
+  typing,
   onDismissProblem,
   clockLabel,
 }: {
@@ -84,6 +79,11 @@ export function PicoSettings({
   readonly onCloseEditor: () => void
   readonly onAskClear: () => void
   readonly onCancelClear: () => void
+  readonly onConfirmClear: () => void
+  /** Save what is typed in the editor. */
+  readonly onSaveText: () => void
+  /** The editor's keys. */
+  readonly typing: PicoTyping
   readonly onDismissProblem: () => void
   readonly clockLabel?: string
 }) {
@@ -109,7 +109,7 @@ export function PicoSettings({
   }
 
   /* A row Korri stopped publishing closes its editor. */
-  const edited = editing === undefined ? undefined : findText(settings, editing.settingId)
+  const edited = editing === undefined ? undefined : picoTextSettingFrom(settings, editing.settingId)
   const clearLabel = edited?.row.control.clearLabel
 
   return (
@@ -129,15 +129,17 @@ export function PicoSettings({
           settings={settings}
         />
       </div>
-      {edited === undefined ? null : (
+      {edited === undefined || editing === undefined ? null : (
         <PicoTextEditor
+          draft={editing.draft}
           group={edited.group}
           key={edited.row.id}
           onAskClear={onAskClear}
           onClose={onCloseEditor}
           onDismissProblem={onDismissProblem}
-          onSave={(value) => onChange(edited.row.id, value)}
+          onSave={onSaveText}
           row={edited.row}
+          typing={typing}
         />
       )}
       {editing?.clearing === true && clearLabel !== undefined && edited !== undefined ? (
@@ -145,10 +147,7 @@ export function PicoSettings({
           confirmLabel={clearLabel.toUpperCase()}
           message="To use it again, you must type it again."
           onCancel={onCancelClear}
-          onConfirm={() => {
-            onCancelClear()
-            onChange(edited.row.id, "")
-          }}
+          onConfirm={onConfirmClear}
           title={`${clearLabel.toUpperCase()}?`}
         />
       ) : null}

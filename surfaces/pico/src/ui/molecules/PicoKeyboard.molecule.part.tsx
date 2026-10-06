@@ -33,3 +33,14 @@ export function TextSetting() {
     <PicoKeyboard charset="text" onBackspace={() => undefined} onClear={() => undefined} onType={() => undefined} />
   )
 }
+
+// The surface keeps the layers; here the part does, so the mode keys work.
+export function TextSettingLayers() {
+  const [capitals, setCapitals] = useState(false)
+  const [symbols, setSymbols] = useState(false)
+  return (
+    <PicoKeyboard capitals={capitals} charset="text" onBackspace={() => undefined} onClear={() => undefined}
+      onToggleCapitals={() => setCapitals(on => !on)} onToggleSymbols={() => setSymbols(on => !on)}
+      onType={() => undefined} symbols={symbols} />
+  )
+}

@@ -14,14 +14,12 @@
     //    question added later then fails where it is not handled.
     "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
 
-    // 3. No component state outside the models. Navigation is PicoNavigation,
-    //    the overlay's question is the overlay model, and both run in
-    //    usePicoProgram. The files allowed below keep state that Back, the
-    //    host buttons and Korri never change and no other screen reads.
-    //    Refs for DOM mechanics stay allowed everywhere. A namespace import
+    // 3. No component state. Every value is in a model in src/state (the
+    //    face, the catalog's navigation, the gameplay overlay), run by
+    //    usePicoProgram. Refs for DOM mechanics stay allowed everywhere. A namespace import
     //    of React is refused too, so `React.useState` cannot slip past.
     "no-restricted-imports": ["error", { "paths": [
-      { "name": "react", "importNames": ["useState", "useReducer"], "message": "State lives in the src/state models, run by usePicoProgram. A leaf that must keep its own state is listed, with its reason, in .oxlintrc.json." }
+      { "name": "react", "importNames": ["useState", "useReducer"], "message": "State lives in the src/state models, run by usePicoProgram. A component takes the value as a prop and reports changes through a callback." }
     ] }],
 
     // 2. One door to Korri. Only src/pico-host.ts calls a host command or
@@ -86,29 +84,13 @@
       }
     },
     {
-      // 3, the allowed state. Each file keeps state that Back, the host
-      // buttons and Korri never change and no other screen reads:
-      // - use-pico-program.ts: the runtime that holds every program's model.
-      // - use-pico-font.ts: the face this device chose. Pico stores it itself,
-      //   and it outlives both presentations.
-      // - use-pico-range.ts: a range's value during a held press, before it is sent.
-      // - use-pico-quantized-art.ts: the measured shape of loaded art.
-      // - PicoHome.tsx: `aim`, the name of the focused MENU control, for the hint.
-      // - PicoTextField.tsx: whether the text overflows its box.
-      // - PicoKeyboard.tsx: the capitals and symbols layers while typing.
-      // - PicoTextEditor.tsx: the text being typed.
-      // - PicoIdentityDialog.tsx: the form being filled in, and its QR code.
-      // - *.part.tsx: Caliper previews, which have no model behind them.
+      // 3, the allowed state. Only the runtime holds React state: it keeps
+      // each program's model. Everything else is a model in src/state, a
+      // measurement written to the DOM, or a ref for DOM mechanics.
+      // *.part.tsx: Caliper previews, which have no model behind them; their
+      // named states may keep a value so the preview answers input.
       "files": [
         "**/src/use-pico-program.ts",
-        "**/src/use-pico-font.ts",
-        "**/src/use-pico-range.ts",
-        "**/src/use-pico-quantized-art.ts",
-        "**/src/pages/PicoHome.tsx",
-        "**/src/ui/molecules/PicoTextField.tsx",
-        "**/src/ui/molecules/PicoKeyboard.tsx",
-        "**/src/ui/organisms/PicoTextEditor.tsx",
-        "**/src/ui/organisms/PicoIdentityDialog.tsx",
         "**/src/**/*.part.tsx"
       ],
       "rules": { "no-restricted-imports": "off" }

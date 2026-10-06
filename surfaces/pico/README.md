@@ -27,9 +27,9 @@ What that forbids, deliberately:
 
 ## State
 
-Pico runs the Elm architecture inside React. Where the player is lives in one
-value, one pure function changes it, and effects on Korri are data until one
-file performs them.
+Pico runs the Elm architecture inside React. Every value Pico keeps lives in a
+model, one pure function changes each model, and effects are data until one
+file performs them. No component holds React state.
 
 | File | Holds |
 |---|---|
@@ -37,9 +37,11 @@ file performs them.
 | `src/state/messages.ts` | Every fact that can change navigation, named for what happened: `PressedBack`, `OpenedGame`. |
 | `src/state/update.ts` | `update(nav, message, korri)`: every navigation rule. It returns the next value and a list of `PicoRequest`s. |
 | `src/state/shown.ts` | What the screen draws, and whether attract may show. |
-| `src/state/overlay.ts` | The gameplay overlay's model and update. |
+| `src/state/overlay.ts` | The gameplay overlay's model and update, including a range's value while the player moves it and the waits before Korri hears it. |
+| `src/state/font.ts` | The face this device shows: read once at start, stored again through a request. |
+| `src/state/requests.ts` | What an update may ask for. A request that answers (a wait, a drawn QR code) comes back as a message. |
 | `src/pico-host.ts` | The one door to Korri: performs requests, delivers the host's buttons as messages. |
-| `src/use-pico-program.ts` | The runtime: holds a model, runs `update`, performs requests. |
+| `src/use-pico-program.ts` | The runtime: holds a model, runs `update`, performs requests, delivers their replies. The only file with React state. |
 | `src/use-pico-navigation.ts` | The catalog's subscriptions: host buttons, Korri's model, the idle timer. |
 
 To change behaviour, add a message or a case in `update`, and test it in
@@ -50,12 +52,19 @@ Input acts on what is shown. Back acts on the top layer only. While Korri shows
 a launch, a running game or a failure, System, Options and Menu change nothing;
 Back acknowledges a failure. Menu cycles home's layout only on home.
 
-Leaf components may keep state that Back, the host buttons and Korri never
-change and no other screen reads: text being typed, a secret, a measured
-size, the keyboard's layers. `.oxlintrc.json` lists each such file and says
-why. Any other state is a prop and a callback, kept in the model: the shelf's
-chosen cart is `home.selectedGameId`, and the settings group is
-`settings.group`.
+Components are controlled: a value comes in as a prop and a change goes out
+through a callback. The shelf's chosen cart, the settings group, the text in
+the editor and the keyboard's layers, the identity form and its QR code, the
+MENU hint and a range's held value are all fields of a model.
+
+Two measurements are not state, so they are written to the DOM after layout
+and CSS reads them: whether a text field's start is cut (`data-cut`), and a
+cover's shape once its art has loaded (`data-ratio`). Focus and the click that
+woke attract are refs. This is where Elm would use a port or a custom element.
+
+Secrets typed into the editor or the identity dialog sit in the model while
+the dialog is open, as they would in Elm. A message log for development must
+not print them.
 
 A part whose component is controlled this way renders it from props in its
 default preview, so Caliper's Inspector can set the value. A named

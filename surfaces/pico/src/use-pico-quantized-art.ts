@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { quantizePico8 } from "./pico8-remap"
 
 /**
@@ -14,9 +14,10 @@ import { quantizePico8 } from "./pico8-remap"
  *
  * The canvas stays tiny and CSS upscales it crisp. Its backing size is its
  * intrinsic size, so CSS that sets only one axis gets the other from the art.
- * `ratio` is width ÷ height once the image has loaded, for CSS that has to fit
- * the art inside a box on both axes; it is undefined before then and when
- * there is no image.
+ * Once the image has loaded, its width ÷ height is written to the canvas as
+ * `data-ratio`, for CSS that has to fit the art inside a box on both
+ * axes. It is absent before then. A measurement drawn into the DOM, so no
+ * state: the canvas is the only thing that changes.
  */
 export function usePicoQuantizedArt({
   src,
@@ -26,7 +27,6 @@ export function usePicoQuantizedArt({
   readonly cells: number
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const [ratio, setRatio] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     const canvas = ref.current
@@ -56,7 +56,7 @@ export function usePicoQuantizedArt({
          * downsampled draw survives, so the image stays pixelated and merely
          * keeps its own colours — worse than a remap, far better than nothing. */
       }
-      setRatio(Math.round((width / height) * 1000) / 1000)
+      canvas.setAttribute("data-ratio", String(Math.round((width / height) * 1000) / 1000))
     }
     image.src = src
     return () => {
@@ -64,5 +64,5 @@ export function usePicoQuantizedArt({
     }
   }, [src, cells])
 
-  return { ref, ratio: src === undefined || src === "" ? undefined : ratio }
+  return ref
 }

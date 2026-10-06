@@ -22,13 +22,17 @@ const closedMenu: PicoHomeMenu = {
   onSettings: () => undefined,
   onView: () => undefined,
   onReturned: () => undefined,
+  aim: undefined,
+  onAim: () => undefined,
 }
 
 /* The surface keeps the chosen cart; here the part does, so the shelf still
  * follows the d-pad in a preview. */
 function Home(props: Omit<ComponentProps<typeof PicoHome>, "selectedGameId" | "onSelectGame">) {
   const [selected, setSelected] = useState<string | undefined>(undefined)
-  return <PicoHome {...props} onSelectGame={setSelected} selectedGameId={selected} />
+  const [aim, setAim] = useState<string | undefined>(undefined)
+  const menu = props.menu === undefined ? undefined : { ...props.menu, aim, onAim: setAim }
+  return <PicoHome {...props} menu={menu} onSelectGame={setSelected} selectedGameId={selected} />
 }
 
 function home(

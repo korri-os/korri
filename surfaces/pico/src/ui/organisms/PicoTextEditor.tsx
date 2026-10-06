@@ -1,9 +1,10 @@
 import "./PicoTextEditor.css"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import type { PicoTextSettingRowView } from "../../pico-settings-view"
+import type { PicoTextDraft } from "../../pico-text-draft"
 import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoRow } from "../atoms/PicoRow"
-import { PicoKeyboard } from "../molecules/PicoKeyboard"
+import { PicoKeyboard, type PicoTyping } from "../molecules/PicoKeyboard"
 import { PicoTextField } from "../molecules/PicoTextField"
 
 /**
@@ -20,12 +21,17 @@ import { PicoTextField } from "../molecules/PicoTextField"
  * editor closes onto the new value. A refusal is shown in Korri's words with
  * the typing kept, so a second try does not start over.
  *
- * The editor owns only what is typed. Opening, closing and the question
- * before clearing belong to the screen, because Back has to reach them.
+ * The editor holds no state. What is typed and the keyboard's layers are the
+ * owner's (`draft`), and every key reports through `typing`. The owner decides
+ * what a key does while Korri saves, at the length limit, and when the save is
+ * done (src/state/update.ts). Opening, closing and the question before
+ * clearing belong to the screen, because Back has to reach them.
  */
 export function PicoTextEditor({
   row,
   group,
+  draft,
+  typing,
   onSave,
   onClose,
   onAskClear,
@@ -34,29 +40,19 @@ export function PicoTextEditor({
   readonly row: PicoTextSettingRowView
   /** The settings group the row belongs to, named in the wide layout. */
   readonly group: string
-  readonly onSave: (value: string) => void
+  readonly draft: PicoTextDraft
+  readonly typing: PicoTyping
+  readonly onSave: () => void
   readonly onClose: () => void
   readonly onAskClear: () => void
   readonly onDismissProblem: () => void
 }) {
   const { sensitive, placeholder, maxLength, clearLabel } = row.control
-  /* Seeded once: a republished model must not throw away what is typed. */
-  const [text, setText] = useState(sensitive ? "" : (row.value ?? ""))
+  const { text } = draft
   const saving = row.state === "saving"
   const problem = typeof row.state === "object" ? row.state.problem : undefined
   const length = [...text].length
   const full = maxLength !== undefined && length >= maxLength
-
-  /* Korri saved: it said Saving, and now it is idle again. */
-  const wasSaving = useRef(false)
-  useEffect(() => {
-    if (saving) {
-      wasSaving.current = true
-    } else if (wasSaving.current) {
-      wasSaving.current = false
-      if (row.state === "idle") onClose()
-    }
-  }, [saving, row.state, onClose])
 
   /* The cursor starts on the first key and goes back to the row on close.
    * The row is read before the browser can drop focus from the hidden list
@@ -75,11 +71,6 @@ export function PicoTextEditor({
       row.focus()
     }
   }, [])
-
-  const type = (character: string) => {
-    if (saving) return
-    setText((current) => (maxLength !== undefined && [...current].length >= maxLength ? current : current + character))
-  }
 
   return (
     <form
@@ -114,14 +105,14 @@ export function PicoTextEditor({
         </div>
         <div className="pico-text-editor-keys">
           <PicoKeyboard
+            capitals={draft.capitals}
             charset="text"
-            onBackspace={() => {
-              if (!saving) setText((current) => [...current].slice(0, -1).join(""))
-            }}
-            onClear={() => {
-              if (!saving) setText("")
-            }}
-            onType={type}
+            onBackspace={typing.onBackspace}
+            onClear={typing.onClear}
+            onToggleCapitals={typing.onToggleCapitals}
+            onToggleSymbols={typing.onToggleSymbols}
+            onType={typing.onType}
+            symbols={draft.symbols}
           />
         </div>
         <div className="pico-text-editor-heading">
@@ -136,9 +127,7 @@ export function PicoTextEditor({
               detail={saving ? <PicoBadge text="SAVING" tone="info" /> : undefined}
               disabled={text.trim() === ""}
               label="SAVE"
-              onPress={() => {
-                if (!saving) onSave(text)
-              }}
+              onPress={onSave}
             />
           </div>
           <div className="pico-text-editor-action">
@@ -146,9 +135,7 @@ export function PicoTextEditor({
           </div>
           {sensitive && clearLabel !== undefined ? (
             <div className="pico-text-editor-action" data-role="clear">
-              <PicoRow danger label={clearLabel.toUpperCase()} onPress={() => {
-                if (!saving) onAskClear()
-              }} />
+              <PicoRow danger label={clearLabel.toUpperCase()} onPress={onAskClear} />
             </div>
           ) : null}
         </div>

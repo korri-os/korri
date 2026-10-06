@@ -9,7 +9,8 @@ export const note = "A scrim, a panel, hints; no status bar because the game sti
 
 export function PauseMenu() {
   return <PicoGameOverlay hints={[{ hintKey: "a", label: "SELECT" }, { hintKey: "b", label: "RESUME" }]} label="Hollow Knight">
-    <PicoPauseMenu overlay={picoOverlayViewFrom(fixtureOverlay, fixtureModel.status)} onActivate={() => undefined} onAdjust={() => undefined} onRetry={() => undefined} />
+    <PicoPauseMenu overlay={picoOverlayViewFrom(fixtureOverlay, fixtureModel.status)} onActivate={() => undefined} onRetry={() => undefined}
+      ranging={{ valueOf: control => control.range?.value, onStep: () => undefined, onRelease: () => undefined, onLeave: () => undefined }} />
   </PicoGameOverlay>
 }
 

@@ -4,91 +4,71 @@ import type {
   SurfaceIdentityDisposition,
   SurfaceIdentityManagement,
 } from "@contracts/surface/korri-surface"
-import * as QRCode from "qrcode"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import {
   PICO_IDENTITY_BACKUP_ACTION,
   PICO_IDENTITY_SWITCH_LOCAL_ACTION,
   PICO_IDENTITY_SWITCH_NIP46_ACTION,
+  picoIdentityRetiredKey,
 } from "../../pico-settings-view"
+
+/** What the player has filled in. The owner keeps it; a new action starts it empty. */
+export interface PicoIdentityFormView {
+  readonly password: string
+  readonly secret: string
+  readonly bunkerUri: string
+  readonly disposition: SurfaceIdentityDisposition
+  readonly confirmed: boolean
+}
 
 interface PicoIdentityDialogProps {
   readonly action: string | null
   readonly identity?: SurfaceIdentityManagement
+  readonly form: PicoIdentityFormView
+  /** The backup Korri made, drawn as a QR code, once it is drawn. */
+  readonly qr?: string
+  readonly onEdit: (field: "password" | "secret" | "bunkerUri", value: string) => void
+  readonly onDisposition: (disposition: SurfaceIdentityDisposition) => void
+  readonly onConfirmed: (confirmed: boolean) => void
+  /** Send what the form holds for this action. */
+  readonly onSubmit: () => void
   readonly onClose: () => void
-  readonly onExport: (password: string, retiredPublicKey?: string) => void
-  readonly onSwitchLocal: (
-    encryptedSecret: string,
-    password: string,
-    disposition: SurfaceIdentityDisposition,
-    confirmed: boolean,
-  ) => void
-  readonly onSwitchNip46: (
-    bunkerUri: string,
-    disposition: SurfaceIdentityDisposition,
-    confirmed: boolean,
-  ) => void
-  readonly onDeleteRetired: (publicKey: string, confirmed: boolean) => void
-  readonly onDismissStatus: () => void
 }
 
-const retiredKey = (action: string | null, operation: "export" | "delete") => {
-  const prefix = `identity:retired:${operation}:`
-  return action?.startsWith(prefix) ? action.slice(prefix.length) : undefined
-}
-
+/**
+ * Back up, switch or retire this device's person identity.
+ *
+ * The dialog holds no state. The form, the QR code and when Korri's status is
+ * cleared are the owner's (src/state/update.ts): a new action starts an empty
+ * form, and a re-render or a republished model changes neither.
+ */
 export function PicoIdentityDialog({
   action,
   identity,
+  form,
+  qr,
+  onEdit,
+  onDisposition,
+  onConfirmed,
+  onSubmit,
   onClose,
-  onExport,
-  onSwitchLocal,
-  onSwitchNip46,
-  onDeleteRetired,
-  onDismissStatus,
 }: PicoIdentityDialogProps) {
-  const [password, setPassword] = useState("")
-  const [secret, setSecret] = useState("")
-  const [bunkerUri, setBunkerUri] = useState("")
-  const [disposition, setDisposition] = useState<SurfaceIdentityDisposition>("transfer")
-  const [confirmed, setConfirmed] = useState(false)
-  const [qr, setQr] = useState<string>()
+  const { password, secret, bunkerUri, disposition, confirmed } = form
   const dialogRef = useRef<HTMLDivElement>(null)
   const status = identity?.status
-  const exportKey = retiredKey(action, "export")
-  const deleteKey = retiredKey(action, "delete")
+  const exportKey = picoIdentityRetiredKey(action, "export")
+  const deleteKey = picoIdentityRetiredKey(action, "delete")
   const working = status?._tag === "Working"
-  // Callers pass a new callback on every render. Only a new action resets the
-  // dialog; a render alone must not clear input, dismiss status or move focus.
-  const dismissStatus = useRef(onDismissStatus)
-  dismissStatus.current = onDismissStatus
 
+  // A new action puts the cursor on its first control. DOM mechanics only.
   useEffect(() => {
-    setPassword("")
-    setSecret("")
-    setBunkerUri("")
-    setDisposition("transfer")
-    setConfirmed(false)
-    setQr(undefined)
-    dismissStatus.current()
     requestAnimationFrame(() => {
       dialogRef.current?.querySelector<HTMLElement>("button, input, textarea, select")?.focus()
     })
   }, [action])
 
-  useEffect(() => {
-    if (status?._tag !== "BackupReady") {
-      setQr(undefined)
-      return
-    }
-    let current = true
-    void QRCode.toDataURL(status.encryptedSecret, { width: 384, margin: 2 })
-      .then(value => { if (current) setQr(value) })
-    return () => { current = false }
-  }, [status])
-
   if (action === null) return null
-  const close = () => { onDismissStatus(); onClose() }
+  const close = onClose
   const switching = action === PICO_IDENTITY_SWITCH_LOCAL_ACTION || action === PICO_IDENTITY_SWITCH_NIP46_ACTION
   const title = action === PICO_IDENTITY_BACKUP_ACTION ? "BACK UP IDENTITY"
     : action === PICO_IDENTITY_SWITCH_LOCAL_ACTION ? "SWITCH FROM BACKUP"
@@ -114,41 +94,39 @@ export function PicoIdentityDialog({
           <>
             {(action === PICO_IDENTITY_BACKUP_ACTION || exportKey) ? (
               <>
-                <label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
-                <button type="button" disabled={working || !password.trim()} onClick={() => onExport(password, exportKey)}>
+                <label>Password<input type="password" value={password} onChange={event => onEdit("password", event.target.value)} /></label>
+                <button type="button" disabled={working || !password.trim()} onClick={onSubmit}>
                   {working && status?._tag === "Working" ? status.operation : "CREATE BACKUP"}
                 </button>
               </>
             ) : null}
             {action === PICO_IDENTITY_SWITCH_LOCAL_ACTION ? (
               <>
-                <label>Encrypted backup<textarea value={secret} onChange={event => setSecret(event.target.value)} placeholder="ncryptsec…" /></label>
-                <label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+                <label>Encrypted backup<textarea value={secret} onChange={event => onEdit("secret", event.target.value)} placeholder="ncryptsec…" /></label>
+                <label>Password<input type="password" value={password} onChange={event => onEdit("password", event.target.value)} /></label>
               </>
             ) : null}
             {action === PICO_IDENTITY_SWITCH_NIP46_ACTION ? (
-              <label>Bunker URI<textarea value={bunkerUri} onChange={event => setBunkerUri(event.target.value)} placeholder="bunker://…" /></label>
+              <label>Bunker URI<textarea value={bunkerUri} onChange={event => onEdit("bunkerUri", event.target.value)} placeholder="bunker://…" /></label>
             ) : null}
             {switching ? (
               <>
-                <label>Local records<select value={disposition} onChange={event => setDisposition(event.target.value as SurfaceIdentityDisposition)}><option value="transfer">Transfer</option><option value="delete">Delete</option></select></label>
-                <label className="pico-identity-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>I understand that peer pairings and stream-client trust will be cleared.</span></label>
+                <label>Local records<select value={disposition} onChange={event => onDisposition(event.target.value as SurfaceIdentityDisposition)}><option value="transfer">Transfer</option><option value="delete">Delete</option></select></label>
+                <label className="pico-identity-check"><input type="checkbox" checked={confirmed} onChange={event => onConfirmed(event.target.checked)} /><span>I understand that peer pairings and stream-client trust will be cleared.</span></label>
                 <p>Save files and save states stay under the plugin account.</p>
                 <button
                   type="button"
                   className="danger"
                   disabled={working || !confirmed || (action === PICO_IDENTITY_SWITCH_LOCAL_ACTION ? !secret.trim() || !password.trim() : !bunkerUri.trim())}
-                  onClick={() => action === PICO_IDENTITY_SWITCH_LOCAL_ACTION
-                    ? onSwitchLocal(secret, password, disposition, confirmed)
-                    : onSwitchNip46(bunkerUri, disposition, confirmed)}
+                  onClick={onSubmit}
                 >{working && status?._tag === "Working" ? status.operation : "SWITCH IDENTITY"}</button>
               </>
             ) : null}
             {deleteKey ? (
               <>
                 <p>Delete this private key only after its encrypted backup is stored elsewhere.</p>
-                <label className="pico-identity-check"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>I have stored a recovery backup.</span></label>
-                <button type="button" className="danger" disabled={working || !confirmed} onClick={() => onDeleteRetired(deleteKey, confirmed)}>DELETE KEY</button>
+                <label className="pico-identity-check"><input type="checkbox" checked={confirmed} onChange={event => onConfirmed(event.target.checked)} /><span>I have stored a recovery backup.</span></label>
+                <button type="button" className="danger" disabled={working || !confirmed} onClick={onSubmit}>DELETE KEY</button>
               </>
             ) : null}
           </>

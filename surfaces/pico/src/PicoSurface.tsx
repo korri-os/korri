@@ -4,7 +4,7 @@ import type {
   SurfaceHost,
   SurfaceModel,
 } from "@contracts/surface/korri-surface"
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { PicoGameDetail } from "./pages/PicoGameDetail"
 import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
 import { PicoHome } from "./pages/PicoHome"
@@ -16,14 +16,16 @@ import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
 import { picoDetailViewFromGame } from "./pico-detail-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
 import { picoLibraryViewFrom } from "./pico-library-view"
-import { picoOverlayViewFrom } from "./pico-overlay-view"
+import { type PicoRanging, picoOverlayViewFrom } from "./pico-overlay-view"
 import { picoSettingsViewFromModel } from "./pico-settings-view"
 import type { PicoInitialView } from "./pico-initial-view"
+import { readPicoFont } from "./pico-font-preference"
 import type { PicoFontId } from "./pico-fonts"
-import type { SettingsQuestion } from "./state/navigation"
-import { initialOverlay, updateOverlay } from "./state/overlay"
+import type { PicoTyping } from "./ui/molecules/PicoKeyboard"
+import { type PicoFontMessage, updateFont } from "./state/font"
+import { IDENTITY_FORM, type SettingsQuestion } from "./state/navigation"
+import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "./state/overlay"
 import { attractShowing, identityAction, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
-import { usePicoFont } from "./use-pico-font"
 import { usePicoNavigation } from "./use-pico-navigation"
 import { usePicoProgram } from "./use-pico-program"
 
@@ -34,10 +36,11 @@ import { usePicoProgram } from "./use-pico-program"
  * plain values, which is what lets any part mount in a preview or a test with
  * no Korri behind it.
  *
- * It holds no state of its own. Navigation is one value, PicoNavigation, in
- * src/state; `update` changes it and returns what to ask of Korri; and
- * src/pico-host.ts performs those requests. Pages report what happened by
- * dispatching a message. .oxlintrc.json enforces the split.
+ * It holds no state of its own. There are three small programs, each a model
+ * and a pure update in src/state run by usePicoProgram: the face this device
+ * shows, the catalog's navigation, and the gameplay overlay. Updates return
+ * what to ask of Korri, and src/pico-host.ts performs it. Pages report what
+ * happened by dispatching a message. .oxlintrc.json enforces the split.
  *
  * The two presentations are two components with nothing in common but the
  * theme: a pause menu over a running game shares no state with a library, and
@@ -56,7 +59,16 @@ export function PicoSurface({
    * Absent: the face this device chose in Settings, or Tiny5. */
   readonly font?: PicoFontId
 }) {
-  const [chosen, choose] = usePicoFont()
+  const { model: chosen, dispatch: dispatchFont } = usePicoProgram<PicoFontId, PicoFontMessage, undefined>(
+    readPicoFont,
+    updateFont,
+    undefined,
+    // The face's only request is to store it; nothing replies.
+    request => {
+      void performPicoRequest(host, { chooseFont: () => undefined }, request)
+    },
+  )
+  const choose = useCallback((next: PicoFontId) => dispatchFont({ _tag: "ChoseFont", font: next }), [dispatchFont])
   const shown = font ?? chosen
   // `pico-theme` carries the palette and knobs; `pico-screen` is the size
   // container the virtual pixel is measured against. Both on the root, so the
@@ -83,16 +95,27 @@ function PicoOverlaySurface({
   readonly host: SurfaceHost
   readonly presentation: SurfaceGameplayOverlayPresentation
 }) {
-  const { model: overlay, dispatch } = usePicoProgram(
+  const view = picoOverlayViewFrom(presentation, model.status)
+  const { model: overlay, dispatch } = usePicoProgram<PicoOverlayState, PicoOverlayMessage, typeof view>(
     () => initialOverlay,
     updateOverlay,
-    undefined,
+    view,
     request => performPicoRequest(host, { chooseFont: () => undefined }, request),
   )
   useEffect(
     () => subscribePicoHostButtons(host, dispatch, ["PressedBack", "PressedMenu", "PressedSystem"]),
     [host, dispatch],
   )
+  // Korri republished the overlay: a range it changed drops the player's edit.
+  useEffect(() => {
+    dispatch({ _tag: "KorriPublished" })
+  }, [presentation, model.status, dispatch])
+  const ranging: PicoRanging = {
+    valueOf: control => rangeValue(overlay, control),
+    onStep: (control, request) => dispatch({ _tag: "SteppedRange", control, request }),
+    onRelease: (control, ended) => dispatch({ _tag: "ReleasedRange", control, ended }),
+    onLeave: control => dispatch({ _tag: "LeftRange", control }),
+  }
 
   return (
     <PicoOverlay
@@ -100,10 +123,10 @@ function PicoOverlaySurface({
       onAsk={control => dispatch({ _tag: "AskedControl", control })}
       onCancel={() => dispatch({ _tag: "CancelledControl" })}
       onConfirm={() => dispatch({ _tag: "ConfirmedControl" })}
-      onAdjust={(control, value) => dispatch({ _tag: "AdjustedControl", control, value })}
       onInvoke={control => dispatch({ _tag: "InvokedControl", control })}
       onRetry={() => dispatch({ _tag: "PressedRetry" })}
-      overlay={picoOverlayViewFrom(presentation, model.status)}
+      overlay={view}
+      ranging={ranging}
     />
   )
 }
@@ -123,6 +146,14 @@ function PicoCatalogSurface({
 }) {
   const { nav, dispatch, attractShowingNow } = usePicoNavigation(model, host, onFont, initialView)
   const screen = shownScreen(nav, model)
+  const identityQuestion = nav.settings?.question._tag === "Identity" ? nav.settings.question : undefined
+  const typing: PicoTyping = {
+    onType: character => dispatch({ _tag: "TypedText", character }),
+    onBackspace: () => dispatch({ _tag: "PressedTextBackspace" }),
+    onClear: () => dispatch({ _tag: "ClearedText" }),
+    onToggleCapitals: () => dispatch({ _tag: "ToggledCapitals" }),
+    onToggleSymbols: () => dispatch({ _tag: "ToggledSymbols" }),
+  }
   const runner = model.runnerChoice
   const covered = runnerOpen(model)
   /* Set when a pointer press woke the screen, so the click that ends the same
@@ -179,17 +210,14 @@ function PicoCatalogSurface({
         ) : null}
         <PicoIdentityDialog
           action={identityAction(nav)}
+          form={identityQuestion?.form ?? IDENTITY_FORM}
           identity={model.identityManagement}
           onClose={() => dispatch({ _tag: "ClosedIdentity" })}
-          onExport={(password, retiredPublicKey) =>
-            dispatch({ _tag: "SubmittedIdentityExport", password, retiredPublicKey })}
-          onSwitchLocal={(encryptedSecret, password, disposition, trustLossConfirmed) =>
-            dispatch({ _tag: "SubmittedIdentityFromBackup", encryptedSecret, password, disposition, trustLossConfirmed })}
-          onSwitchNip46={(bunkerUri, disposition, trustLossConfirmed) =>
-            dispatch({ _tag: "SubmittedIdentityToNip46", bunkerUri, disposition, trustLossConfirmed })}
-          onDeleteRetired={(publicKey, backupConfirmed) =>
-            dispatch({ _tag: "SubmittedRetiredIdentityDeletion", publicKey, backupConfirmed })}
-          onDismissStatus={() => dispatch({ _tag: "DismissedIdentityStatus" })}
+          onConfirmed={confirmed => dispatch({ _tag: "CheckedIdentityConfirmation", confirmed })}
+          onDisposition={disposition => dispatch({ _tag: "ChoseIdentityDisposition", disposition })}
+          onEdit={(field, value) => dispatch({ _tag: "EditedIdentity", field, value })}
+          onSubmit={() => dispatch({ _tag: "SubmittedIdentity" })}
+          qr={identityQuestion?.qr?.dataUrl}
         />
       </div>
       {runner !== undefined && runner._tag !== "Closed" ? (
@@ -215,6 +243,9 @@ function PicoCatalogSurface({
             onAskClear={() => dispatch({ _tag: "AskedClear" })}
             onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
             onCancelClear={() => dispatch({ _tag: "CancelledClear" })}
+            onConfirmClear={() => dispatch({ _tag: "ConfirmedClear" })}
+            onSaveText={() => dispatch({ _tag: "SavedText" })}
+            typing={typing}
             onCloseEditor={() => dispatch({ _tag: "ClosedEditor" })}
             onEdit={settingId => dispatch({ _tag: "OpenedEditor", settingId })}
             onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
@@ -269,6 +300,8 @@ function PicoCatalogSurface({
               onSettings: () => dispatch({ _tag: "ChoseMenuSettings" }),
               onView: () => dispatch({ _tag: "ChoseMenuView" }),
               onReturned: () => dispatch({ _tag: "ReturnedFocus" }),
+              aim: shown.home.aim,
+              onAim: label => dispatch({ _tag: "AimedMenu", label }),
             }}
             /* A launch-location question belongs to a game's own screen. */
             onChooseLocation={locationId => dispatch({ _tag: "ChoseLocation", locationId })}
@@ -290,7 +323,8 @@ function PicoCatalogSurface({
 
 /** A Settings question as the editor props PicoSettings takes. */
 function settingsEditing(question: SettingsQuestion): PicoSettingsEditing | undefined {
-  if (question._tag === "EditingText") return { settingId: question.settingId, clearing: false }
-  if (question._tag === "ConfirmingClear") return { settingId: question.settingId, clearing: true }
+  if (question._tag === "EditingText" || question._tag === "ConfirmingClear") {
+    return { settingId: question.settingId, clearing: question._tag === "ConfirmingClear", draft: question.draft }
+  }
   return undefined
 }

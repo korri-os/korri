@@ -7,16 +7,23 @@
  * is visible in one switch.
  */
 import type { SurfaceHost } from "@contracts/surface/korri-surface"
+import * as QRCode from "qrcode"
+import { rememberPicoFont } from "./pico-font-preference"
 import type { PicoFontId } from "./pico-fonts"
 import type { PicoHostButton } from "./state/messages"
-import type { PicoRequest } from "./state/requests"
+import type { PicoReply, PicoRequest } from "./state/requests"
 
 /** Effects Pico performs on its own device, not through Korri. */
 export interface PicoLocalEffects {
   readonly chooseFont: (font: PicoFontId) => void
 }
 
-export function performPicoRequest(host: SurfaceHost, local: PicoLocalEffects, request: PicoRequest): void {
+/** Perform one request. A request that answers returns its reply. */
+export function performPicoRequest(
+  host: SurfaceHost,
+  local: PicoLocalEffects,
+  request: PicoRequest,
+): Promise<PicoReply> | void {
   switch (request._tag) {
     case "LaunchGame":
       return request.locationId === undefined
@@ -44,14 +51,9 @@ export function performPicoRequest(host: SurfaceHost, local: PicoLocalEffects, r
       return host.dismissIdentityStatus()
     case "InvokeGameplayControl":
       return host.invokeGameplayControl(request.controlId, request.value)
-    case "DismissGameplayOverlay": {
-      /* A range may hold a step it has not sent yet: it waits up to two
-       * seconds for the release (use-pico-range.ts), and it sends on blur.
-       * Blur first, so that step reaches Korri before the overlay goes. */
-      const focused = document.activeElement
-      if (focused instanceof HTMLElement) focused.blur()
+    case "DismissGameplayOverlay":
+      // The overlay's update sends any step a range still holds first.
       return host.dismissGameplayOverlay()
-    }
     case "Retry":
       return host.retry()
     case "DismissProblem":
@@ -60,6 +62,15 @@ export function performPicoRequest(host: SurfaceHost, local: PicoLocalEffects, r
       return host.reload()
     case "ChooseFont":
       return local.chooseFont(request.font)
+    case "RememberFont":
+      return rememberPicoFont(request.font)
+    case "RenderQr":
+      return QRCode.toDataURL(request.text, { width: 384, margin: 2 })
+        .then(dataUrl => ({ _tag: "RenderedQr", text: request.text, dataUrl }) as const)
+    case "Wait":
+      return new Promise(resolve => {
+        setTimeout(() => resolve({ _tag: "Waited", token: request.token }), request.ms)
+      })
   }
 }
 

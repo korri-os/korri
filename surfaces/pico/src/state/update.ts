@@ -8,15 +8,38 @@ import type { SurfaceModel } from "@contracts/surface/korri-surface"
 import { isPicoFont } from "../pico-font-preference"
 import { picoScreenViewFromModel } from "../pico-screen-view"
 import { picoSessionReturnFromModel, picoSessionReturnOnPlay } from "../pico-session-return"
-import { PICO_FONT_SETTING } from "../pico-settings-view"
+import {
+  PICO_FONT_SETTING,
+  PICO_IDENTITY_BACKUP_ACTION,
+  PICO_IDENTITY_SWITCH_LOCAL_ACTION,
+  PICO_IDENTITY_SWITCH_NIP46_ACTION,
+  picoIdentityRetiredKey,
+  picoSettingsViewFromModel,
+  picoTextSettingFrom,
+  type PicoTextSettingRowView,
+} from "../pico-settings-view"
+import { picoDraftBackspace, picoDraftType, picoTextDraft, type PicoTextDraft } from "../pico-text-draft"
 import { isHostButton, type PicoMessage } from "./messages"
-import { type Detail, type Home, type PicoNavigation, SETTINGS, type Settings, type SettingsQuestion, topLayer } from "./navigation"
-import { ask, type PicoStep, stay } from "./requests"
-import { attractShowing, canAttract, runnerOpen } from "./shown"
+import {
+  type Detail,
+  type Home,
+  IDENTITY_FORM,
+  type IdentityForm,
+  type PicoNavigation,
+  SETTINGS,
+  type Settings,
+  type SettingsQuestion,
+  type TextEditor,
+  topLayer,
+} from "./navigation"
+import { ask, type PicoRequest, type PicoStep, stay } from "./requests"
+import { attractShowing, canAttract, identityAction, runnerOpen } from "./shown"
 
 export function update(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
   const result = step(nav, message, korri)
-  return { model: settleIdle(settleSession(result.model, korri), korri), requests: result.requests }
+  const settled = settleIdle(settleEditor(settleSession(result.model, korri), korri), korri)
+  const identity = settleIdentity(nav, settled, korri)
+  return { model: identity.model, requests: [...result.requests, ...identity.requests] }
 }
 
 function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
@@ -90,6 +113,8 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay({ ...nav, settings: SETTINGS, home: { ...closeMenu(nav.home), focusOnReturn: "MenuKey" } })
     case "ChoseMenuView":
       return stay(cycleMode(nav))
+    case "AimedMenu":
+      return stay(nav.home.aim === message.label ? nav : { ...nav, home: { ...nav.home, aim: message.label } })
     case "ReturnedFocus":
       return stay({ ...nav, home: { ...nav.home, focusOnReturn: "None" } })
     case "SelectedCart":
@@ -177,7 +202,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
     case "PressedSettingAction":
       return message.actionId.startsWith("identity:")
-        ? stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId }))
+        ? stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId, form: IDENTITY_FORM, qr: undefined }))
         : ask(nav, { _tag: "RunAction", actionId: message.actionId })
     case "AskedSettingConfirmation":
       return stay(withQuestion(nav, { _tag: "ConfirmingAction", actionId: message.actionId, confirmation: message.confirmation }))
@@ -190,20 +215,6 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "ClosedEditor":
     case "ClosedIdentity":
       return stay(withQuestion(nav, { _tag: "None" }))
-    case "OpenedEditor":
-      return stay(withQuestion(nav, { _tag: "EditingText", settingId: message.settingId }))
-    case "AskedClear": {
-      const question = nav.settings?.question
-      return question?._tag === "EditingText"
-        ? stay(withQuestion(nav, { _tag: "ConfirmingClear", settingId: question.settingId }))
-        : stay(nav)
-    }
-    case "CancelledClear": {
-      const question = nav.settings?.question
-      return question?._tag === "ConfirmingClear"
-        ? stay(withQuestion(nav, { _tag: "EditingText", settingId: question.settingId }))
-        : stay(nav)
-    }
     case "ChangedSetting":
       // Pico's own row: Pico keeps it, and Korri is never asked.
       if (message.settingId === PICO_FONT_SETTING) {
@@ -213,28 +224,68 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "DismissedSettingsProblem":
       return ask(nav, { _tag: "DismissSettingsProblem" })
 
+    // The text editor. Text starts from the value Korri published; a secret
+    // starts empty. Typing is the editor's alone: a republished model keeps it.
+    case "OpenedEditor": {
+      const row = textRow(korri, message.settingId)
+      if (row === undefined) return stay(nav)
+      const draft = picoTextDraft(row.control.sensitive ? "" : (row.value ?? ""))
+      return stay(withQuestion(nav, { _tag: "EditingText", settingId: row.id, draft, sawSaving: false }))
+    }
+    case "AskedClear": {
+      const editor = openEditor(nav)
+      return editor?._tag === "EditingText" && !saving(korri, editor)
+        ? stay(withQuestion(nav, { ...editor, _tag: "ConfirmingClear" }))
+        : stay(nav)
+    }
+    case "CancelledClear": {
+      const editor = openEditor(nav)
+      return editor?._tag === "ConfirmingClear" ? stay(withQuestion(nav, { ...editor, _tag: "EditingText" })) : stay(nav)
+    }
+    case "ConfirmedClear": {
+      const editor = openEditor(nav)
+      if (editor?._tag !== "ConfirmingClear") return stay(nav)
+      return ask(withQuestion(nav, { ...editor, _tag: "EditingText" }), { _tag: "ChangeSetting", settingId: editor.settingId, value: "" })
+    }
+    case "TypedText":
+      return stay(editDraft(nav, korri, (draft, row) => picoDraftType(draft, message.character, row.control.maxLength)))
+    case "PressedTextBackspace":
+      return stay(editDraft(nav, korri, draft => picoDraftBackspace(draft)))
+    case "ClearedText":
+      return stay(editDraft(nav, korri, draft => ({ ...draft, text: "" })))
+    case "ToggledCapitals":
+      return stay(editDraft(nav, korri, draft => ({ ...draft, capitals: !draft.capitals })))
+    case "ToggledSymbols":
+      return stay(editDraft(nav, korri, draft => ({ ...draft, symbols: !draft.symbols })))
+    case "SavedText": {
+      // Save sends exactly what was typed, never an empty value: emptying a
+      // secret is the clear action's job.
+      const editor = openEditor(nav)
+      if (editor?._tag !== "EditingText" || saving(korri, editor) || editor.draft.text.trim() === "") return stay(nav)
+      return ask(nav, { _tag: "ChangeSetting", settingId: editor.settingId, value: editor.draft.text })
+    }
+
     // The identity dialog
-    case "SubmittedIdentityExport":
-      return ask(nav, { _tag: "ExportIdentityBackup", password: message.password, retiredPublicKey: message.retiredPublicKey })
-    case "SubmittedIdentityFromBackup":
-      return ask(nav, {
-        _tag: "SwitchIdentityFromBackup",
-        encryptedSecret: message.encryptedSecret,
-        password: message.password,
-        disposition: message.disposition,
-        trustLossConfirmed: message.trustLossConfirmed,
-      })
-    case "SubmittedIdentityToNip46":
-      return ask(nav, {
-        _tag: "SwitchIdentityToNip46",
-        bunkerUri: message.bunkerUri,
-        disposition: message.disposition,
-        trustLossConfirmed: message.trustLossConfirmed,
-      })
-    case "SubmittedRetiredIdentityDeletion":
-      return ask(nav, { _tag: "DeleteRetiredIdentity", publicKey: message.publicKey, backupConfirmed: message.backupConfirmed })
-    case "DismissedIdentityStatus":
-      return ask(nav, { _tag: "DismissIdentityStatus" })
+    case "EditedIdentity":
+      return stay(editIdentity(nav, form => ({ ...form, [message.field]: message.value })))
+    case "ChoseIdentityDisposition":
+      return stay(editIdentity(nav, form => ({ ...form, disposition: message.disposition })))
+    case "CheckedIdentityConfirmation":
+      return stay(editIdentity(nav, form => ({ ...form, confirmed: message.confirmed })))
+    case "SubmittedIdentity": {
+      const question = nav.settings?.question
+      if (question?._tag !== "Identity" || korri.identityManagement?.status._tag === "Working") return stay(nav)
+      const request = identityRequest(question.actionId, question.form)
+      return request === undefined ? stay(nav) : ask(nav, request)
+    }
+    case "RenderedQr": {
+      const question = nav.settings?.question
+      return question?._tag === "Identity" && question.qr?.text === message.text
+        ? stay(withQuestion(nav, { ...question, qr: { text: message.text, dataUrl: message.dataUrl } }))
+        : stay(nav)
+    }
+    case "Waited":
+      return stay(nav)
   }
 }
 
@@ -264,7 +315,7 @@ function backInSettings(nav: PicoNavigation, settings: Settings): PicoNavigation
   const question = settings.question
   switch (question._tag) {
     case "ConfirmingClear":
-      return withQuestion(nav, { _tag: "EditingText", settingId: question.settingId })
+      return withQuestion(nav, { ...question, _tag: "EditingText" })
     case "ConfirmingAction":
     case "EditingText":
     case "Identity":
@@ -292,6 +343,100 @@ function settleSession(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation
     settings: undefined,
     session: { _tag: "Idle" },
   }
+}
+
+/**
+ * Korri reports a save. The editor closes when the row it saw saving is idle
+ * again; a refusal keeps it open with the typing kept, so a second try does
+ * not start over.
+ */
+function settleEditor(nav: PicoNavigation, korri: SurfaceModel): PicoNavigation {
+  const editor = openEditor(nav)
+  if (editor === undefined) return nav
+  const state = textRow(korri, editor.settingId)?.state
+  if (state === "saving") return editor.sawSaving ? nav : withQuestion(nav, { ...editor, sawSaving: true })
+  if (!editor.sawSaving) return nav
+  return withQuestion(nav, state === "idle" ? { _tag: "None" } : { ...editor, sawSaving: false })
+}
+
+/**
+ * The identity dialog. Opening, changing or closing it clears the status Korri
+ * shows for the last identity operation, so an old result never greets a new
+ * one. A backup Korri made is drawn as a QR code.
+ */
+function settleIdentity(before: PicoNavigation, nav: PicoNavigation, korri: SurfaceModel): PicoStep<PicoNavigation> {
+  const requests: PicoRequest[] = []
+  if (identityAction(before) !== identityAction(nav)) requests.push({ _tag: "DismissIdentityStatus" })
+  const question = nav.settings?.question
+  if (question?._tag !== "Identity") return { model: nav, requests }
+  const status = korri.identityManagement?.status
+  const text = status?._tag === "BackupReady" ? status.encryptedSecret : undefined
+  if (text === question.qr?.text) return { model: nav, requests }
+  if (text === undefined) return { model: withQuestion(nav, { ...question, qr: undefined }), requests }
+  requests.push({ _tag: "RenderQr", text })
+  return { model: withQuestion(nav, { ...question, qr: { text, dataUrl: undefined } }), requests }
+}
+
+/** What a submitted identity form asks Korri to do, when the form is complete. */
+function identityRequest(actionId: string, form: IdentityForm): PicoRequest | undefined {
+  const exportKey = picoIdentityRetiredKey(actionId, "export")
+  const deleteKey = picoIdentityRetiredKey(actionId, "delete")
+  if (actionId === PICO_IDENTITY_BACKUP_ACTION || exportKey !== undefined) {
+    return form.password.trim() === "" ? undefined
+      : { _tag: "ExportIdentityBackup", password: form.password, retiredPublicKey: exportKey }
+  }
+  if (actionId === PICO_IDENTITY_SWITCH_LOCAL_ACTION) {
+    return !form.confirmed || form.secret.trim() === "" || form.password.trim() === "" ? undefined : {
+      _tag: "SwitchIdentityFromBackup",
+      encryptedSecret: form.secret,
+      password: form.password,
+      disposition: form.disposition,
+      trustLossConfirmed: form.confirmed,
+    }
+  }
+  if (actionId === PICO_IDENTITY_SWITCH_NIP46_ACTION) {
+    return !form.confirmed || form.bunkerUri.trim() === "" ? undefined : {
+      _tag: "SwitchIdentityToNip46",
+      bunkerUri: form.bunkerUri,
+      disposition: form.disposition,
+      trustLossConfirmed: form.confirmed,
+    }
+  }
+  if (deleteKey !== undefined) {
+    return form.confirmed ? { _tag: "DeleteRetiredIdentity", publicKey: deleteKey, backupConfirmed: form.confirmed } : undefined
+  }
+  return undefined
+}
+
+const textRow = (korri: SurfaceModel, settingId: string): PicoTextSettingRowView | undefined =>
+  picoTextSettingFrom(picoSettingsViewFromModel(korri), settingId)?.row
+
+type OpenEditor = Extract<SettingsQuestion, { readonly _tag: "EditingText" | "ConfirmingClear" }>
+
+const openEditor = (nav: PicoNavigation): OpenEditor | undefined => {
+  const question = nav.settings?.question
+  return question?._tag === "EditingText" || question?._tag === "ConfirmingClear" ? question : undefined
+}
+
+const saving = (korri: SurfaceModel, editor: TextEditor): boolean =>
+  textRow(korri, editor.settingId)?.state === "saving"
+
+/** Change what is typed. Keys do nothing while Korri saves, or behind the clear question. */
+function editDraft(
+  nav: PicoNavigation,
+  korri: SurfaceModel,
+  change: (draft: PicoTextDraft, row: PicoTextSettingRowView) => PicoTextDraft,
+): PicoNavigation {
+  const editor = openEditor(nav)
+  if (editor?._tag !== "EditingText") return nav
+  const row = textRow(korri, editor.settingId)
+  if (row === undefined || row.state === "saving") return nav
+  return withQuestion(nav, { ...editor, draft: change(editor.draft, row) })
+}
+
+function editIdentity(nav: PicoNavigation, change: (form: IdentityForm) => IdentityForm): PicoNavigation {
+  const question = nav.settings?.question
+  return question?._tag === "Identity" ? withQuestion(nav, { ...question, form: change(question.form) }) : nav
 }
 
 /** Attract leaves as soon as the screen no longer allows it. */

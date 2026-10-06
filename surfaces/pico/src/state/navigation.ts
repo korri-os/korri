@@ -15,13 +15,14 @@
  * Korri's SurfaceModel is not stored here. Korri owns it and replaces it
  * whole; `update` receives it beside this value.
  */
-import type { SurfaceAction } from "@contracts/surface/korri-surface"
+import type { SurfaceAction, SurfaceIdentityDisposition } from "@contracts/surface/korri-surface"
 import type { PicoHomeMode } from "../pages/PicoHome"
 import { PICO_ALL_SECTIONS, type PicoOrder } from "../pico-library-view"
 import type { PicoInitialView } from "../pico-initial-view"
 import type { PicoSessionReturn } from "../pico-session-return"
 import type { PicoConfirmation } from "../pico-settings-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
+import type { PicoTextDraft } from "../pico-text-draft"
 
 export interface Home {
   /** How home lays the library out. About this person in this chair: Korri
@@ -35,6 +36,8 @@ export interface Home {
    * screen MENU opened, back to the cart after its game's own screen, or
    * wherever the shelf puts it. */
   readonly focusOnReturn: "None" | "Cart" | "MenuKey"
+  /** The name of the focused MENU key or menu line, for the A hint. */
+  readonly aim: string | undefined
 }
 
 /** What Find has typed and chosen. Outlives Find: reopening it keeps them. */
@@ -64,11 +67,36 @@ export type SettingsQuestion =
   /** A destructive setting action Korri asked to be confirmed. */
   | { readonly _tag: "ConfirmingAction"; readonly actionId: string; readonly confirmation: PicoConfirmation }
   /** A text setting open in the editor. */
-  | { readonly _tag: "EditingText"; readonly settingId: string }
-  /** The editor asking whether to clear its text. */
-  | { readonly _tag: "ConfirmingClear"; readonly settingId: string }
+  | ({ readonly _tag: "EditingText" } & TextEditor)
+  /** The editor asking whether to clear its text. The typing stays. */
+  | ({ readonly _tag: "ConfirmingClear" } & TextEditor)
   /** The identity dialog, opened by an `identity:` action. */
-  | { readonly _tag: "Identity"; readonly actionId: string }
+  | { readonly _tag: "Identity"; readonly actionId: string; readonly form: IdentityForm; readonly qr: IdentityQr | undefined }
+
+export interface TextEditor {
+  readonly settingId: string
+  readonly draft: PicoTextDraft
+  /** Korri said this row was saving. When it goes back to idle, the save is
+   * done and the editor closes. */
+  readonly sawSaving: boolean
+}
+
+/** The identity dialog's form. A new action starts a new, empty form. */
+export interface IdentityForm {
+  readonly password: string
+  readonly secret: string
+  readonly bunkerUri: string
+  readonly disposition: SurfaceIdentityDisposition
+  readonly confirmed: boolean
+}
+
+export const IDENTITY_FORM: IdentityForm = { password: "", secret: "", bunkerUri: "", disposition: "transfer", confirmed: false }
+
+/** The QR code of a backup Korri made: the text it encodes, and the image once drawn. */
+export interface IdentityQr {
+  readonly text: string
+  readonly dataUrl: string | undefined
+}
 
 export interface Settings {
   readonly question: SettingsQuestion
@@ -108,7 +136,7 @@ export function topLayer(nav: PicoNavigation): TopLayer {
 
 export const SETTINGS: Settings = { question: { _tag: "None" }, group: 0 }
 
-const HOME: Home = { mode: "shelf", selectedGameId: undefined, menu: "Closed", focusOnReturn: "None" }
+const HOME: Home = { mode: "shelf", selectedGameId: undefined, menu: "Closed", focusOnReturn: "None", aim: undefined }
 
 /** Where a fresh Pico starts. `initial` is for previews and tests; hosts omit it. */
 export function initialNavigation(initial?: PicoInitialView): PicoNavigation {

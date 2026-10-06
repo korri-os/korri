@@ -57,7 +57,7 @@ describe("Back acts on the top layer only", () => {
   })
 
   test("in Settings it unwinds the clearing question, the editor, then Settings", () => {
-    let { nav } = story(fixtureModel, system, { _tag: "OpenedEditor", settingId: "name" }, { _tag: "AskedClear" })
+    let { nav } = story(fixtureModel, system, { _tag: "OpenedEditor", settingId: "device-name" }, { _tag: "AskedClear" })
     const seen: string[] = []
     for (let press = 0; press < 3; press += 1) {
       nav = update(nav, back, fixtureModel).model
@@ -233,7 +233,7 @@ test("a Korri push that changes nothing keeps the same navigation value", () => 
 })
 
 test("Settings keeps its group through a question, and opens on the first group again", () => {
-  const chose = story(fixtureModel, system, { _tag: "ChoseSettingsGroup", group: 2 }, { _tag: "OpenedEditor", settingId: "name" }, back)
+  const chose = story(fixtureModel, system, { _tag: "ChoseSettingsGroup", group: 2 }, { _tag: "OpenedEditor", settingId: "device-name" }, back)
   expect(chose.nav.settings?.group).toBe(2)
   expect(storyFrom(chose.nav, fixtureModel, back, system).nav.settings?.group).toBe(0)
 })

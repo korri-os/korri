@@ -1,6 +1,14 @@
 import "./PicoKeyboard.css"
-import { useState } from "react"
 import { PicoKey } from "../atoms/PicoKey"
+
+/** What the text keyboard's keys report. The owner keeps the text and the layers. */
+export interface PicoTyping {
+  readonly onType: (character: string) => void
+  readonly onBackspace: () => void
+  readonly onClear: () => void
+  readonly onToggleCapitals: () => void
+  readonly onToggleSymbols: () => void
+}
 
 const SEARCH_ROWS = ["ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ0123", "456789"] as const
 const LETTER_ROWS = ["abcdefghij", "klmnopqrst", "uvwxyz0123", "456789"] as const
@@ -25,20 +33,29 @@ const SLOTS = [10, 10, 10, 6] as const
  * Space, backspace and clear sit at the end of the last character row so the
  * characters stay a rectangle the thumb can learn. Keys keep their places when
  * a mode changes, so the cursor stays on the key it was on.
+ *
+ * The keyboard holds no state: the owner says which layers are on and hears
+ * the mode keys through `onToggleCapitals` and `onToggleSymbols`.
  */
 export function PicoKeyboard({
   charset = "search",
+  capitals = false,
+  symbols = false,
   onType,
   onBackspace,
   onClear,
+  onToggleCapitals,
+  onToggleSymbols,
 }: {
   readonly charset?: "search" | "text"
+  readonly capitals?: boolean
+  readonly symbols?: boolean
   readonly onType: (character: string) => void
   readonly onBackspace: () => void
   readonly onClear: () => void
+  readonly onToggleCapitals?: () => void
+  readonly onToggleSymbols?: () => void
 }) {
-  const [capitals, setCapitals] = useState(false)
-  const [symbols, setSymbols] = useState(false)
   const rows = charset === "search"
     ? SEARCH_ROWS
     : symbols
@@ -72,8 +89,8 @@ export function PicoKeyboard({
       </div>
       {charset === "text" ? (
         <div className="pico-keyboard-row pico-keyboard-modes">
-          <PicoKey cap="↑ CAPS" label="Capitals" lit={capitals} onPress={() => setCapitals((on) => !on)} wide />
-          <PicoKey cap={symbols ? "abc" : "#+="} label="Symbols" lit={symbols} onPress={() => setSymbols((on) => !on)} wide />
+          <PicoKey cap="↑ CAPS" label="Capitals" lit={capitals} onPress={() => onToggleCapitals?.()} wide />
+          <PicoKey cap={symbols ? "abc" : "#+="} label="Symbols" lit={symbols} onPress={() => onToggleSymbols?.()} wide />
         </div>
       ) : null}
     </div>

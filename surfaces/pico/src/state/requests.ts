@@ -38,6 +38,18 @@ export type PicoRequest =
   | { readonly _tag: "Reload" }
   /** Pico's own setting: stored by Pico on this device, never sent to Korri. */
   | { readonly _tag: "ChooseFont"; readonly font: PicoFontId }
+  /** Store the chosen face on this device. */
+  | { readonly _tag: "RememberFont"; readonly font: PicoFontId }
+  /** Draw `text` as a QR code. Replies with RenderedQr. */
+  | { readonly _tag: "RenderQr"; readonly text: string }
+  /** Wait `ms`. Replies with Waited and the same token, so a newer wait can
+   * make an older one stale. */
+  | { readonly _tag: "Wait"; readonly ms: number; readonly token: number }
+
+/** What a request answers with, delivered to the program as a message. */
+export type PicoReply =
+  | { readonly _tag: "RenderedQr"; readonly text: string; readonly dataUrl: string }
+  | { readonly _tag: "Waited"; readonly token: number }
 
 /** One step of a program: the next model, and what to ask for. */
 export interface PicoStep<Model> {

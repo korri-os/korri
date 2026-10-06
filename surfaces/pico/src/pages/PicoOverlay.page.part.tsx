@@ -1,6 +1,9 @@
 import type { ComponentProps } from "react"
 import { createFixtureHost, fixtureModel, fixtureOverlay } from "../fixtures/fixture-host"
-import { picoOverlayViewFrom } from "../pico-overlay-view"
+import { performPicoRequest } from "../pico-host"
+import { type PicoOverlayView, picoOverlayViewFrom } from "../pico-overlay-view"
+import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "../state/overlay"
+import { usePicoProgram } from "../use-pico-program"
 import { PicoOverlay } from "./PicoOverlay"
 
 export const name = "Gameplay Overlay"
@@ -50,13 +53,36 @@ export const checks = {
   },
 }
 
-function overlay(extra: Partial<ComponentProps<typeof PicoOverlay>> = {}) {
+/* The surface's overlay program, run against the fixture host, so a range in
+ * the preview moves and settles exactly as on the device. */
+function Overlay({
+  view = picoOverlayViewFrom(fixtureOverlay, fixtureModel.status),
+  asking,
+}: {
+  readonly view?: PicoOverlayView
+  readonly asking?: ComponentProps<typeof PicoOverlay>["asking"]
+}) {
   const host = createFixtureHost()
-  return <PicoOverlay overlay={picoOverlayViewFrom(fixtureOverlay, fixtureModel.status)}
-    onAsk={() => undefined} onCancel={host.dismiss} onConfirm={() => host.invokeGameplayControl("quit")}
-    onInvoke={control => host.invokeGameplayControl(control.id, control.sends)}
-    onAdjust={(control, value) => host.invokeGameplayControl(control.id, { kind: "range", value })}
-    onRetry={host.retry} {...extra} />
+  const { model, dispatch } = usePicoProgram<PicoOverlayState, PicoOverlayMessage, PicoOverlayView>(
+    () => ({ ...initialOverlay, asking }), updateOverlay, view,
+    request => performPicoRequest(host, { chooseFont: () => undefined }, request),
+  )
+  return <PicoOverlay overlay={view} asking={model.asking}
+    onAsk={control => dispatch({ _tag: "AskedControl", control })}
+    onCancel={() => dispatch({ _tag: "CancelledControl" })}
+    onConfirm={() => dispatch({ _tag: "ConfirmedControl" })}
+    onInvoke={control => dispatch({ _tag: "InvokedControl", control })}
+    onRetry={() => dispatch({ _tag: "PressedRetry" })}
+    ranging={{
+      valueOf: control => rangeValue(model, control),
+      onStep: (control, request) => dispatch({ _tag: "SteppedRange", control, request }),
+      onRelease: (control, ended) => dispatch({ _tag: "ReleasedRange", control, ended }),
+      onLeave: control => dispatch({ _tag: "LeftRange", control }),
+    }} />
+}
+
+function overlay(extra: { readonly overlay?: PicoOverlayView; readonly asking?: ComponentProps<typeof PicoOverlay>["asking"] } = {}) {
+  return <Overlay asking={extra.asking} view={extra.overlay} />
 }
 
 export function ConfirmQuit() {
@@ -78,15 +104,5 @@ export function NoPluginControls() {
 }
 
 export default function PicoOverlayPagePart() {
-  return (
-    <PicoOverlay
-      onAsk={() => undefined}
-      onCancel={() => undefined}
-      onAdjust={() => undefined}
-      onConfirm={() => undefined}
-      onInvoke={() => undefined}
-      onRetry={() => undefined}
-      overlay={picoOverlayViewFrom(fixtureOverlay, fixtureModel.status)}
-    />
-  )
+  return <Overlay />
 }

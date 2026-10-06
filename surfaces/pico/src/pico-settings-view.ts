@@ -52,6 +52,21 @@ export type PicoTextSettingRowView = PicoSettingRowView & {
   readonly control: Extract<PicoSettingControl, { readonly kind: "text" }>
 }
 
+/** The text setting `settingId` and the title of its group, when Korri publishes one. */
+export function picoTextSettingFrom(
+  settings: PicoSettingsView,
+  settingId: string,
+): { readonly group: string; readonly row: PicoTextSettingRowView } | undefined {
+  for (const group of settings.groups) {
+    for (const row of group.rows) {
+      if (row.id === settingId && row.control.kind === "text") {
+        return { group: group.title, row: row as PicoTextSettingRowView }
+      }
+    }
+  }
+  return undefined
+}
+
 export interface PicoSettingsGroupView {
   readonly title: string
   readonly rows: readonly PicoSettingRowView[]
@@ -62,6 +77,11 @@ export const PICO_IDENTITY_SWITCH_LOCAL_ACTION = "identity:switch:local"
 export const PICO_IDENTITY_SWITCH_NIP46_ACTION = "identity:switch:nip46"
 export const picoIdentityRetiredExportAction = (key: string) => `identity:retired:export:${key}`
 export const picoIdentityRetiredDeleteAction = (key: string) => `identity:retired:delete:${key}`
+/** The retired key a retired-key action names, when `action` is one for `operation`. */
+export function picoIdentityRetiredKey(action: string | null, operation: "export" | "delete"): string | undefined {
+  const prefix = `identity:retired:${operation}:`
+  return action?.startsWith(prefix) === true ? action.slice(prefix.length) : undefined
+}
 
 export interface PicoSettingsView {
   readonly groups: readonly PicoSettingsGroupView[]

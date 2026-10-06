@@ -55,6 +55,31 @@ export function picoRangeLabel(value: number, range: Pick<PicoOverlayRange, "min
 }
 
 /** One of Korri's steps down (-1) or up (1), clamped to min and max. */
+/** One step on a range: which way, and whether the input will report a release. */
+export interface PicoRangeStepRequest {
+  readonly way: -1 | 1
+  readonly releaseExpected: boolean
+  readonly gestureId?: number
+  readonly source?: string
+}
+
+/** The release of a held direction, matched against the step it ended. */
+export interface PicoRangeRelease {
+  readonly way: -1 | 1
+  readonly gestureId?: number
+  readonly source?: string
+}
+
+/** How the pause menu's ranges move. The owner keeps each value until Korri hears it. */
+export interface PicoRanging {
+  /** The value a range shows: the player's, ahead of Korri, or Korri's. */
+  readonly valueOf: (control: PicoOverlayControlView) => number | undefined
+  readonly onStep: (control: PicoOverlayControlView, request: PicoRangeStepRequest) => void
+  readonly onRelease: (control: PicoOverlayControlView, ended: PicoRangeRelease) => void
+  /** The cursor left the range. */
+  readonly onLeave: (control: PicoOverlayControlView) => void
+}
+
 export function picoRangeStep(range: PicoOverlayRange, way: -1 | 1): number {
   const next = Number((range.value + way * range.step).toFixed(placesOf(range)))
   return Math.min(range.max, Math.max(range.min, next))

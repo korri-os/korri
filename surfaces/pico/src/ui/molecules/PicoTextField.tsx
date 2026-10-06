@@ -1,6 +1,6 @@
 import "../../pico-motion.css"
 import "./PicoTextField.css"
-import { useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useRef } from "react"
 
 /**
  * A value being typed on Pico's keyboard, with the blinking block caret.
@@ -13,6 +13,10 @@ import { useLayoutEffect, useRef, useState } from "react"
  * It is not an `<input>`: the keys are Pico's own buttons, and a native field
  * would summon the device's keyboard or steal the cursor. It still says what
  * it is, a text box named for its setting.
+ *
+ * Whether the start is cut is a measurement of the drawn text, not a decision,
+ * so it is written to the DOM (`data-cut`) after layout and CSS shows the mark.
+ * No state: a measurement that re-rendered would draw twice per key.
  */
 export function PicoTextField({
   label,
@@ -27,20 +31,20 @@ export function PicoTextField({
   readonly placeholder?: string
 }) {
   const line = useRef<HTMLSpanElement>(null)
-  const [cut, setCut] = useState(false)
   const shown = masked ? "*".repeat([...text].length) : text
   useLayoutEffect(() => {
     const node = line.current
     const content = node?.firstElementChild
-    if (!node || !(content instanceof HTMLElement)) return
+    const field = node?.parentElement
+    if (!node || !field || !(content instanceof HTMLElement)) return
     // The line packs its content to the end, so a cut start overflows to the
     // left, where scrollWidth does not count it. Compare the content itself.
-    const over = content.offsetWidth > node.clientWidth
-    if (over !== cut) setCut(over)
+    if (content.offsetWidth > node.clientWidth) field.dataset.cut = "true"
+    else delete field.dataset.cut
   })
   return (
     <div aria-label={label} className="pico-text-field" role="textbox">
-      {cut ? <span aria-hidden className="pico-text-field-cut">…</span> : null}
+      <span aria-hidden className="pico-text-field-cut">…</span>
       <span className="pico-text-field-line" ref={line}>
         {shown === "" ? (
           <span className="pico-text-field-placeholder">{placeholder ?? ""}</span>

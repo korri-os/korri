@@ -1,7 +1,7 @@
 import "../../pico-motion.css"
 import "./PicoSlider.css"
 import { useEffect, useRef } from "react"
-import type { PicoRangeRelease, PicoRangeStepRequest } from "../../use-pico-range"
+import type { PicoRangeRelease, PicoRangeStepRequest } from "../../pico-overlay-view"
 
 /* The portal delivers left and right to the focused element marked
  * data-korri-horizontal-control as these DOM events instead of moving focus
