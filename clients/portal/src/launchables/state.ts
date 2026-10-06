@@ -111,11 +111,11 @@ export interface LaunchSubject {
  * A notice always states what it is about. Attributing a launch failure to
  * whatever the surface happens to be showing would name the wrong game.
  */
-export interface LaunchNotice {
-  readonly message: string
-  /** Absent only for notices that belong to no single game. */
-  readonly subject?: LaunchSubject
-}
+export type LaunchNotice =
+  | { readonly _tag: "Catalog"; readonly message: string }
+  | { readonly _tag: "Launch"; readonly message: string; readonly subject?: LaunchSubject }
+  | { readonly _tag: "Stop"; readonly message: string }
+  | { readonly _tag: "Action"; readonly message: string }
 
 interface LaunchablesContent {
   readonly entries: readonly PortalEntry[]
@@ -165,10 +165,9 @@ const readyFrom = (
 ): ReadyState => ({
   _tag: "Ready",
   entries: state.entries,
-  notice: {
-    message,
-    ...("subject" in state && state.subject ? { subject: state.subject } : {}),
-  },
+  notice: state._tag === "Stopping"
+    ? { _tag: "Stop", message }
+    : { _tag: "Launch", message, ...(state.subject ? { subject: state.subject } : {}) },
 })
 
 export const entryKey = (entry: PortalEntry): string => {
@@ -236,7 +235,7 @@ export const LaunchablesState = {
 
     if (localGames?._tag === "Ok") {
       for (const failure of localGames.payload.failures ?? []) {
-        failures.push(`local games: ${failure.code}`)
+        failures.push(`local games: ${failure.code}: ${failure.message}`)
       }
     } else if (
       localGames?._tag === "Err" &&
@@ -244,29 +243,29 @@ export const LaunchablesState = {
     ) {
       // An absent inventory capability is not a failed read. The catalog
       // remains authoritative; no local inventory count is invented.
-      failures.push(`local games: ${localGames.payload.code}`)
+      failures.push(`local games: ${localGames.payload.code}: ${localGames.payload.message}`)
     }
 
     if (korrid._tag === "Ok") {
       for (const failure of korrid.payload.failures ?? []) {
-        failures.push(`${failure.host}: ${failure.code}`)
+        failures.push(`${failure.host}: ${failure.code}: ${failure.message}`)
       }
     } else {
-      failures.push(`games: ${korrid.payload.code}`)
+      failures.push(`games: ${korrid.payload.code}: ${korrid.payload.message}`)
     }
 
     return {
       _tag: "Ready",
       entries,
       notice:
-        failures.length > 0 ? { message: failures.join(" · ") } : null,
+        failures.length > 0 ? { _tag: "Catalog", message: failures.join(" · ") } : null,
     }
   },
 
   /** Replace the notice on a Ready state, leaving its entries alone. */
   withNotice: (state: ReadyState, message: string): ReadyState => ({
     ...state,
-    notice: { message },
+    notice: { _tag: "Action", message },
   }),
 
   /** Confirm on a game: enter an input-locked case until activity swap. */

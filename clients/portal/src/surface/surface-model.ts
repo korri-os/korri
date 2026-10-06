@@ -24,6 +24,7 @@ import {
   entryKey,
   isLocalCatalogSession,
   type LaunchablesState,
+  type LaunchNotice,
   type PortalEntry,
 } from "../launchables/state"
 
@@ -254,26 +255,25 @@ function statusFrom(state: LaunchablesState): SurfaceStatus {
         detail: "Waiting for the host to finish",
       }
     case "Ready":
-      return state.notice === null
-        ? { _tag: "Browsing" }
-        : {
-            _tag: "Problem",
-            // A failure that knows its game names that game, so the surface
-            // can never attribute it to whatever is currently in view.
-            kicker: state.notice.subject
-              ? `Couldn't start ${state.notice.subject.title}`
-              : "Couldn't start",
-            reason: state.notice.message,
-            // Nothing about the failure changed, so an immediate second
-            // attempt would fail identically; the user acknowledges instead.
-            canRetry: false,
-            ...(state.notice.subject
-              ? {
-                  gameId: state.notice.subject.id,
-                  gameTitle: state.notice.subject.title,
-                }
-              : {}),
-          }
+      return state.notice === null ? { _tag: "Browsing" } : problemFromNotice(state.notice)
+  }
+}
+
+function problemFromNotice(notice: LaunchNotice): SurfaceStatus {
+  const problem = { _tag: "Problem", reason: notice.message, canRetry: false } as const
+  switch (notice._tag) {
+    case "Catalog":
+      return { ...problem, kicker: "Catalog problem" }
+    case "Stop":
+      return { ...problem, kicker: "Couldn't end the session" }
+    case "Action":
+      return { ...problem, kicker: "Operation failed" }
+    case "Launch":
+      return {
+        ...problem,
+        kicker: notice.subject ? `Couldn't start ${notice.subject.title}` : "Couldn't start",
+        ...(notice.subject ? { gameId: notice.subject.id, gameTitle: notice.subject.title } : {}),
+      }
   }
 }
 

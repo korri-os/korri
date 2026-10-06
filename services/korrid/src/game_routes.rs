@@ -110,9 +110,16 @@ pub fn list(
     let (snapshot, revisions) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
     let candidates = resolver::linux_route_candidates(root, &snapshot, registry, game_id)
         .map_err(|error| crate::route_diagnostic_failure(&error))?;
-    let selection = resolver::resolve_linux_route(root, &snapshot, registry, game_id, None)
-        .map(|route| GameRouteSelection::Selected(route.runner_id))
-        .unwrap_or(GameRouteSelection::Choose);
+    let selection = match resolver::linux_route_selection(&snapshot, &candidates, None)
+        .map_err(|error| crate::route_diagnostic_failure(&error))?
+    {
+        resolver::LinuxRouteSelection::Selected(id) => GameRouteSelection::Selected(id),
+        resolver::LinuxRouteSelection::Choose
+        | resolver::LinuxRouteSelection::UnavailableSavedChoice(_) => GameRouteSelection::Choose,
+    };
+    // Only the structurally identified stale preference becomes repairable
+    // Choose. The saved IDs and revisions below let the caller clear or replace
+    // it explicitly; every candidate still has to pass the normal preflight.
     let mut routes = Vec::new();
     let mut system_runners = std::collections::HashMap::new();
     for route in candidates {
@@ -156,16 +163,34 @@ pub fn selected_launch(
     registry: &PluginRegistry,
     request: &SelectedGameLaunchRequest,
 ) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
-    let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
-    let route = resolver::resolve_linux_route(
+    prepare_launch(
         root,
-        &snapshot,
         registry,
         &request.game_id,
         Some(&request.runner_id),
+        request.overrides.clone(),
     )
-    .map_err(|error| crate::route_diagnostic_failure(&error))?;
-    linux_plugin::launch_route(root, &snapshot, registry, &route, request.overrides.clone())
+}
+
+pub(crate) fn default_launch(
+    root: &Path,
+    registry: &PluginRegistry,
+    game_id: &str,
+) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
+    prepare_launch(root, registry, game_id, None, None)
+}
+
+fn prepare_launch(
+    root: &Path,
+    registry: &PluginRegistry,
+    game_id: &str,
+    runner_id: Option<&str>,
+    overrides: Option<PluginLaunchOverrides>,
+) -> Result<linux_plugin::LinuxLaunchSpec, RpcFailure> {
+    let (snapshot, _) = settings::runner_choice_snapshot(root).map_err(settings_failure)?;
+    let route = resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
+        .map_err(|error| crate::route_diagnostic_failure(&error))?;
+    linux_plugin::launch_route(root, &snapshot, registry, &route, overrides)
         .map_err(|error| unavailable(error.to_string()))
 }
 

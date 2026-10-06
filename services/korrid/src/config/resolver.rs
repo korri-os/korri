@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{plugin::PluginRegistry, GameIdentity};
 
 pub use super::linux_routes::{linux_route_candidates, resolve_linux_route, stored_runner};
+pub(crate) use super::linux_routes::{linux_route_selection, LinuxRouteSelection};
 use super::ConfigSnapshot;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

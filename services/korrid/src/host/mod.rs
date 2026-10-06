@@ -11,6 +11,8 @@ pub(crate) mod play_log;
 mod prepare;
 mod private_input;
 pub(crate) mod retroarch_control;
+#[cfg(test)]
+mod route_state_tests;
 mod session_state;
 mod systemd_unit;
 
@@ -50,7 +52,6 @@ struct DynamicHostGame {
     id: String,
     title: String,
     identity: Option<GameIdentity>,
-    command: Result<Vec<String>, RpcFailure>,
 }
 
 #[derive(Clone)]
@@ -110,40 +111,41 @@ impl DynamicHostRuntime {
             .map(crate::route_diagnostic_failure)
             .collect();
         let mut games = Vec::new();
-        let mut emitted = std::collections::BTreeSet::new();
-        for candidate in catalog.routes {
-            if !emitted.insert(candidate.playable_id.clone()) {
-                continue;
+        let mut by_game = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for route in catalog.routes {
+            by_game
+                .entry(route.playable_id.clone())
+                .or_default()
+                .push(route);
+        }
+        for candidates in by_game.into_values() {
+            let candidate = &candidates[0];
+            // Discovery validates availability without requiring one chosen
+            // command. A stale saved choice is still a real configuration error.
+            match crate::config::resolver::linux_route_selection(&state.snapshot, &candidates, None)
+            {
+                Ok(crate::config::resolver::LinuxRouteSelection::UnavailableSavedChoice(error))
+                | Err(error) => failures.push(crate::route_diagnostic_failure(&error)),
+                Ok(_) => {}
             }
-            let command = crate::config::resolver::resolve_linux_route(
-                root,
-                &state.snapshot,
-                registry,
-                &candidate.playable_id,
-                None,
-            )
-            .map_err(|error| crate::route_diagnostic_failure(&error))
-            .and_then(|route| {
-                linux_plugin::launch_route(root, &state.snapshot, registry, &route, None)
-                    .map(|launch| {
+            for route in &candidates {
+                match linux_plugin::launch_route(root, &state.snapshot, registry, route, None) {
+                    Ok(launch) => {
                         failures.extend(launch.warnings.into_iter().map(|warning| RpcFailure {
                             code: "LaunchSettingUnsupported".into(),
                             message: warning.message,
-                        }));
-                        launch.command
-                    })
-                    .map_err(|error| dynamic_failure(error.to_string()))
-            });
-            // A game needing a chooser stays in the catalog. Its command is
-            // unavailable until an explicit or stored runtime resolves it.
-            if let Err(error) = &command {
-                failures.push(error.clone());
+                        }))
+                    }
+                    Err(error) => failures.push(crate::game_routes::unavailable(error.to_string())),
+                }
             }
             games.push(DynamicHostGame {
-                id: candidate.playable_id,
-                title: candidate.title.unwrap_or(candidate.release_id),
-                identity: candidate.identity,
-                command,
+                id: candidate.playable_id.clone(),
+                title: candidate
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| candidate.release_id.clone()),
+                identity: candidate.identity.clone(),
             });
         }
         Ok(Self {
@@ -512,11 +514,17 @@ impl HostRuntime {
         if let Some(dynamic) = &self.dynamic {
             let dynamic = dynamic.load()?;
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
-            if let Some(game) = dynamic.games.iter().find(|game| game.id == game_id) {
+            if dynamic.declared_ids.contains(game_id) {
+                let command = self.route_root().and_then(|root| {
+                    crate::game_routes::default_launch(root, &self.route_registry()?, game_id)
+                        .map(|launch| launch.command)
+                });
+                // The session executor returns to an existing same-game live
+                // session before requiring a fresh, revalidated launch command.
                 return launcher.prepare_command(
                     game_id,
                     person_public_key,
-                    game.command.as_deref().map_err(Clone::clone),
+                    command.as_deref().map_err(Clone::clone),
                 );
             }
         }
@@ -1736,7 +1744,8 @@ mod tests {
         assert_eq!(&runtime.games[0].id, game_id);
         assert_eq!(runtime.games[0].title, game.title);
         assert!(runtime.failures.is_empty(), "{:?}", runtime.failures);
-        let command = runtime.games[0].command.as_ref().unwrap();
+        let launch = crate::game_routes::default_launch(root.path(), &registry, game_id).unwrap();
+        let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
@@ -1803,7 +1812,10 @@ mod tests {
                 "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414".into()
             ))
         );
-        let command = runtime.games[0].command.as_ref().unwrap();
+        let launch =
+            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id)
+                .unwrap();
+        let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&command[3]).unwrap();
@@ -1826,8 +1838,11 @@ mod tests {
             1,
             "explicit copy must also materialize on Linux"
         );
+        let launch =
+            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id)
+                .unwrap();
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
-            serde_json::from_str(&runtime.games[0].command.as_ref().unwrap()[3]).unwrap();
+            serde_json::from_str(&launch.command[3]).unwrap();
         assert_eq!(
             input.content_path,
             explicit.path().join("wl4.gba").display().to_string()

@@ -17,7 +17,7 @@ const ready = (
   notice:
     notice === null
       ? null
-      : { message: notice, ...(subject ? { subject } : {}) },
+      : { _tag: "Launch", message: notice, ...(subject ? { subject } : {}) },
 })
 
 const source = (label: string) => ({ label, isLocal: false }) as const
@@ -42,6 +42,32 @@ const nowPlaying: PortalEntry = {
 }
 
 describe("surfaceModelFrom", () => {
+  test("catalog failures keep their cause and are not labelled as attempted launches", () => {
+    const state = LaunchablesState.fromSources({
+      _tag: "Ok",
+      payload: {
+        games: [hostGame.game],
+        failures: [{ host: "rpminiv2", code: "LocalRomMissing", message: "The ROM file is missing" }],
+      },
+    })
+    const model = surfaceModelFrom(state)
+    expect(model.status).toEqual({
+      _tag: "Problem",
+      kicker: "Catalog problem",
+      reason: "rpminiv2: LocalRomMissing: The ROM file is missing",
+      canRetry: false,
+    })
+    if (model.catalog._tag !== "Ready") throw new Error("expected Ready")
+    expect(model.catalog.games[0]?.title).toBe(hostGame.game.title)
+  })
+
+  test("stop failures are not labelled as attempted launches", () => {
+    const state = LaunchablesState.stopTimedOut({
+      _tag: "Stopping", launchId: "L1", entries: [nowPlaying], notice: null,
+    })
+    const model = surfaceModelFrom(state)
+    expect(model.status).toMatchObject({ _tag: "Problem", kicker: "Couldn't end the session" })
+  })
   test("labels a source-local catalog route as This device without converting its identity", () => {
     const localCatalog: PortalEntry = {
       kind: "game",

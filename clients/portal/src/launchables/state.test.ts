@@ -229,7 +229,7 @@ describe("LaunchablesState.fromSources", () => {
       })
     expect(state).toMatchObject({
       _tag: "Ready",
-      notice: { message: "local games: LocalStorageUnavailable" },
+      notice: { _tag: "Catalog", message: "local games: LocalStorageUnavailable: storage denied" },
     })
   })
 
@@ -250,7 +250,7 @@ describe("LaunchablesState.fromSources", () => {
       })
     expect(state).toMatchObject({
       _tag: "Ready",
-      notice: { message: "local games: LocalConfigReloadFailed" },
+      notice: { _tag: "Catalog", message: "local games: LocalConfigReloadFailed: library.yaml is malformed" },
     })
     if (state._tag !== "Ready") throw new Error("unreachable")
     expect(state.entries[0]).toMatchObject({
@@ -263,7 +263,7 @@ describe("LaunchablesState.fromSources", () => {
     const state = LaunchablesState.fromSources(gamesErr)
     expect(state).toMatchObject({
       _tag: "Ready",
-      notice: { message: "games: UpstreamUnreachable" },
+      notice: { _tag: "Catalog", message: "games: UpstreamUnreachable: host offline" },
     })
   })
 
@@ -291,7 +291,7 @@ describe("LaunchablesState.fromSources", () => {
     })
     expect(state).toMatchObject({
       _tag: "Ready",
-      notice: { message: "zao: UpstreamUnreachable" },
+      notice: { _tag: "Catalog", message: "zao: UpstreamUnreachable: connection refused" },
     })
   })
 
@@ -435,7 +435,7 @@ describe("LaunchablesState now playing", () => {
     const timedOut = LaunchablesState.stopTimedOut(stopping)
     expect(timedOut).toMatchObject({
       _tag: "Ready",
-      notice: { message: "StopPending: session is still stopping" },
+      notice: { _tag: "Stop", message: "StopPending: session is still stopping" },
     })
   })
 })

@@ -413,9 +413,11 @@ mod tests {
         let set = json!({"scope":{"_tag":"Game","id":game_id},"runnerId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
         let saved = rpc(&app, "app.local-games.runner.set", set.clone()).await;
         assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
+        let saved_preferences = std::fs::read(root.path().join("catalog/games.yaml")).unwrap();
         let conflict = rpc(&app, "app.local-games.runner.set", set).await;
         assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        assert_eq!(list["outcome"]["_tag"], "Ok", "{list}");
         assert_eq!(list["outcome"]["payload"]["selection"]["_tag"], "Choose");
         assert_eq!(
             list["outcome"]["payload"]["gameRunner"],
@@ -570,8 +572,14 @@ mod tests {
             "explicit runner launch must not claim it changed an already running route"
         );
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
+        assert_eq!(list["outcome"]["_tag"], "Ok", "{list}");
         assert_eq!(
-            list["outcome"]["payload"]["gameRunner"], "@missing:build/core",
+            list["outcome"]["payload"]["gameRunner"],
+            "@missing:build/core"
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("catalog/games.yaml")).unwrap(),
+            saved_preferences,
             "explicit launch must not rewrite preference"
         );
 

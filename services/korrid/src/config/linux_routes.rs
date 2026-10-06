@@ -143,17 +143,19 @@ pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) ->
         .map(|id| id.0.as_str())
 }
 
-pub fn resolve_linux_route(
-    root: &Path,
+/// A stale saved choice keeps its diagnostic without hiding valid repair
+/// candidates. Actual route failures remain the separate error outcome.
+pub(crate) enum LinuxRouteSelection {
+    Selected(String),
+    Choose,
+    UnavailableSavedChoice(RouteDiagnostic),
+}
+
+pub(crate) fn linux_route_selection(
     snapshot: &ConfigSnapshot,
-    registry: &PluginRegistry,
-    game_id: &str,
+    candidates: &[ResolvedRoute],
     chosen_runner: Option<&str>,
-) -> Result<ResolvedRoute, RouteUnavailable> {
-    // Listing keeps all usable alternatives. Explicit selection must retain
-    // this runner's missing-file diagnostic, even if another runner can play.
-    let candidates =
-        linux_route_candidates_for_runner(root, snapshot, registry, game_id, chosen_runner)?;
+) -> Result<LinuxRouteSelection, RouteUnavailable> {
     let selected: Vec<_> = candidates
         .iter()
         .filter(|route| {
@@ -165,18 +167,65 @@ pub fn resolve_linux_route(
         })
         .collect();
     if let [route] = selected.as_slice() {
-        return Ok((*route).clone());
+        return Ok(LinuxRouteSelection::Selected(route.runner_id.clone()));
     }
-    Err(RouteDiagnostic {
-        code: RouteDiagnosticCode::LocalRouteUnavailable,
-        message: format!(
-            "choose a runner for game {game_id}: {}",
-            candidates
-                .iter()
-                .map(|route| route.runner_id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        playable_id: Some(game_id.into()),
-    })
+    // Independently valid system preferences can leave more than one route.
+    // They require an explicit choice, not a stale-preference diagnostic.
+    if chosen_runner.is_none() && selected.len() > 1 {
+        return Ok(LinuxRouteSelection::Choose);
+    }
+    let game_id = &candidates
+        .first()
+        .expect("available route candidates")
+        .playable_id;
+    if chosen_runner.is_some()
+        || candidates
+            .iter()
+            .any(|route| stored_runner(snapshot, route).is_some())
+    {
+        let diagnostic = RouteDiagnostic {
+            code: RouteDiagnosticCode::LocalRouteUnavailable,
+            message: format!(
+                "runner choice for game {game_id} does not select one available route"
+            ),
+            playable_id: Some(game_id.clone()),
+        };
+        if chosen_runner.is_none() && selected.is_empty() {
+            return Ok(LinuxRouteSelection::UnavailableSavedChoice(diagnostic));
+        }
+        return Err(diagnostic);
+    }
+    Ok(LinuxRouteSelection::Choose)
+}
+
+pub fn resolve_linux_route(
+    root: &Path,
+    snapshot: &ConfigSnapshot,
+    registry: &PluginRegistry,
+    game_id: &str,
+    chosen_runner: Option<&str>,
+) -> Result<ResolvedRoute, RouteUnavailable> {
+    // Explicit selection retains its missing-file diagnostic even when another
+    // runner can play. Catalog discovery does not require this single route.
+    let candidates =
+        linux_route_candidates_for_runner(root, snapshot, registry, game_id, chosen_runner)?;
+    match linux_route_selection(snapshot, &candidates, chosen_runner)? {
+        LinuxRouteSelection::Selected(id) => Ok(candidates
+            .into_iter()
+            .find(|route| route.runner_id == id)
+            .expect("selection names an available route")),
+        LinuxRouteSelection::UnavailableSavedChoice(diagnostic) => Err(diagnostic),
+        LinuxRouteSelection::Choose => Err(RouteDiagnostic {
+            code: RouteDiagnosticCode::LocalRouteUnavailable,
+            message: format!(
+                "choose a runner for game {game_id}: {}",
+                candidates
+                    .iter()
+                    .map(|route| route.runner_id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            playable_id: Some(game_id.into()),
+        }),
+    }
 }

@@ -292,7 +292,7 @@ describe("source-local catalog orchestration", () => {
     expect(hasSession(harness.current())).toBe(true)
     const banner = harness.entry("now-playing")
     await invoke(() => harness.current().confirmEntry(banner))
-    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "games: BrainUnreachable" } })
+    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Catalog", message: "games: BrainUnreachable: disconnected" } })
     expect(config.calls.native).toEqual([])
     const reads = config.calls.statusReads
     config.setStatus(completed)
@@ -329,7 +329,7 @@ describe("source-local catalog orchestration", () => {
       await invoke(() => harness.current().confirmEntry(staleGame))
       expect(config.calls.prepares).toEqual([])
       expect(config.calls.native).toEqual([])
-      expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "games: BrainUnreachable" } })
+      expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Catalog", message: "games: BrainUnreachable: disconnected" } })
       const reads = catalogReads
       await invoke(() => window.dispatchEvent(new Event("focus")))
       expect(catalogReads).toBeGreaterThan(reads)
@@ -352,7 +352,7 @@ describe("source-local catalog orchestration", () => {
     config.setStatus(completed)
     await invoke(() => window.dispatchEvent(new Event("focus")))
     expect(hasSession(harness.current())).toBe(false)
-    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { message: "games: BrainUnreachable" } })
+    expect(harness.current().state).toMatchObject({ _tag: "Ready", notice: { _tag: "Catalog", message: "games: BrainUnreachable: disconnected" } })
   })
 
   test("ignores a prepare failure superseded by reload and a newer prepare", async () => {

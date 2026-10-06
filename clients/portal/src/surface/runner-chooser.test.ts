@@ -23,6 +23,36 @@ function createRunnerChooser(korrid: Parameters<typeof createController>[0], onA
 }
 
 describe("runner chooser", () => {
+  it.each(["clear-game", "game:0"])("a repairable stale route read exposes %s without automatically launching", async command => {
+    // The real host RPC regression returns Choose, saved IDs, current revisions,
+    // and valid candidates together. Err would hide these repair actions.
+    const stale = { ...routes, gameRunner: "@korri:removed/core", systemRunners: {} }
+    const korrid = createInMemoryKorridClient({ gameRoutes: [stale] })
+    let acknowledged = 0
+    const chooser = createRunnerChooser(korrid, () => { acknowledged++ })
+    await chooser.open(stale.gameId, "Wario Land 4", "launch")
+    const state = chooser.getSnapshot()
+    expect(state._tag).toBe("Stale")
+    if (state._tag === "Closed") throw new Error("Expected chooser")
+    expect(state.saved).toEqual([{ label: "This game", runnerId: stale.gameRunner }])
+    const published = [...state.actions, ...state.routes.flatMap(route => route.actions)]
+    expect(published.some(action => action.enabled && action.id.endsWith(`:${command}`))).toBe(true)
+    expect(await korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
+    const before = await korrid.gameRoutes(stale.gameId)
+    if (before._tag !== "Ok") throw new Error("Expected repairable routes")
+    expect(before.payload.selection).toEqual({ _tag: "Choose" })
+    await chooser.act(command)
+    const corrected = await korrid.gameRoutes(stale.gameId)
+    if (corrected._tag !== "Ok") throw new Error("Expected repaired routes")
+    expect(corrected.payload.selection).toEqual(command === "clear-game"
+      ? { _tag: "Choose" }
+      : { _tag: "Selected", runnerId: stale.routes[0]!.runnerId })
+    expect(corrected.payload.gameRunner).toBe(command === "clear-game" ? undefined : stale.routes[0]!.runnerId)
+    expect(corrected.payload.revisions.games).not.toBe(before.payload.revisions.games)
+    expect(chooser.getSnapshot()._tag).toBe("Ready")
+    expect(await korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
+    expect(acknowledged).toBe(0)
+  })
   it("cannot apply an old button to a newer route read", async () => {
     const korrid = client()
     const chooser = createController(korrid, { beginLaunch: () => () => {}, reload: () => {} })
