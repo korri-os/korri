@@ -24,17 +24,25 @@ import { PicoGameStage } from "./PicoGameStage"
  * or the first press on a screen with nothing focused, otherwise picks a cart
  * by position and moves the stage away from the game the player left it on.
  * A pointer chooses the cart it touches.
+ *
+ * With `claimFocus`, the shelf puts the cursor on the chosen cart when it
+ * appears, for an owner returning the player to the cart they left.
  */
 export function PicoCartShelf({
   games,
   selectedId,
   onSelect,
   onOpen,
+  claimFocus = false,
+  onFocusClaimed,
 }: {
   readonly games: readonly PicoShelfGame[]
   readonly selectedId?: string
   readonly onSelect?: (gameId: string) => void
   readonly onOpen: (gameId: string) => void
+  /** Put the cursor on the chosen cart when this shelf appears. */
+  readonly claimFocus?: boolean
+  readonly onFocusClaimed?: () => void
 }) {
   const [chosenId, setChosenId] = useState(selectedId)
   const rackRef = useRef<HTMLUListElement>(null)
@@ -75,6 +83,13 @@ export function PicoCartShelf({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: The rack follows the chosen cart only.
   useEffect(() => reveal(focusedIndex), [focusedIndex])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The claim is read when the shelf appears.
+  useEffect(() => {
+    if (!claimFocus) return
+    rackRef.current?.children[focusedIndex]?.querySelector("button")?.focus({ preventScroll: true })
+    onFocusClaimed?.()
+  }, [claimFocus])
 
   /* Any focus that lands off the shelf means the cursor has left it. */
   useEffect(() => {

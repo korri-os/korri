@@ -115,6 +115,43 @@ test("Options on a game's own screen does nothing", () => {
   expect(shelfShown()).toBe(true)
 })
 
+const shelfCarts = () => [...document.querySelectorAll<HTMLButtonElement>(".pico-cart-shelf button.pico-cart-button")]
+
+// The host's spatial focus moves the cursor with element.focus() and sends no
+// key press to the surface. Moving along the shelf that way is still activity.
+test("attract stays away while focus moves along the shelf without key presses", () => {
+  jest.useFakeTimers()
+  render(<PicoSurface host={createFixtureHost()} model={fixtureModel} />)
+  const steps = 4
+  for (let step = 0; step < steps; step += 1) {
+    act(() => jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS / 2))
+    expect(screen.queryByRole("img", { name: "Attract" }) === null).toBe(true)
+    const carts = shelfCarts()
+    act(() => carts[step % carts.length]!.focus())
+  }
+  act(() => jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS / 2))
+  expect(screen.queryByRole("img", { name: "Attract" }) === null).toBe(true)
+  act(() => jest.advanceTimersByTime(PICO_ATTRACT_AFTER_MS / 2 + 1))
+  expect(screen.queryByRole("img", { name: "Attract" }) === null).toBe(false)
+})
+
+test("Back from a game's screen opened on the shelf puts the cursor on that cart", () => {
+  const host = createFixtureHost()
+  render(<PicoSurface host={host} model={fixtureModel} />)
+  // The cursor enters the shelf on its chosen cart, then moves one along.
+  act(() => shelfCarts()[0]!.focus())
+  const cart = shelfCarts()[1]!
+  const label = cart.getAttribute("aria-label")
+  act(() => cart.focus())
+  expect(document.activeElement === cart).toBe(true)
+  fireEvent.click(cart)
+  expect(detailShown()).toBe(true)
+  act(() => host.press("back"))
+  expect(shelfShown()).toBe(true)
+  expect(document.activeElement === shelfCarts()[1]).toBe(true)
+  expect(document.activeElement?.getAttribute("aria-label")).toBe(label)
+})
+
 test("Options on Settings does nothing", () => {
   const host = createFixtureHost()
   render(<PicoSurface host={host} model={fixtureModel} />)

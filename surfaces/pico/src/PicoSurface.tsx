@@ -181,6 +181,10 @@ function PicoCatalogSurface({
   /* The shelf's chosen cart. Home unmounts behind every screen it opens, and
    * coming back should find the game the player left the cursor on. */
   const [shelfGameId, setShelfGameId] = useState<string | undefined>(undefined)
+  /* Whether the shelf, when it next appears, should take the cursor back to
+   * that cart: set when a game's screen opens from the shelf, so Back from it
+   * does not leave focus on nothing. */
+  const [returnToCart, setReturnToCart] = useState(false)
   /* A destructive game action awaiting a yes. Korri's game actions carry no
    * confirmation copy of their own, so the question is built from the label. */
   const [askingAction, setAskingAction] = useState<SurfaceAction | undefined>(undefined)
@@ -239,6 +243,7 @@ function PicoCatalogSurface({
     setFinding(false)
     setMenuOpen(false)
     setReturnToMenu(false)
+    setReturnToCart(false)
     setMode("shelf")
   }, [model.catalog, model.status, viewingId])
 
@@ -353,6 +358,10 @@ function PicoCatalogSurface({
         className="pico-catalog-surface"
         hidden={runnerOpen}
         inert={runnerOpen}
+        /* The host moves the cursor with focus alone, with no key press the
+         * surface can see, so a focus move is activity too. It only keeps the
+         * screen awake: waking it stays with presses, which can be swallowed. */
+        onFocusCapture={() => setAwake((count) => count + 1)}
         onKeyDownCapture={(event) => {
           suppressWakeClick.current = false
           if (wake()) {
@@ -469,11 +478,14 @@ function PicoCatalogSurface({
           mode={mode}
           onOpenGame={(gameId) => {
             setMenuOpen(false)
+            setReturnToCart(mode === "shelf")
             setViewingId(gameId)
           }}
+          onReturnedToCart={() => setReturnToCart(false)}
           onRetry={() => (view._tag === "Problem" ? host.retry() : host.reload())}
           onSelectGame={setShelfGameId}
           placing={placing}
+          returnToCart={returnToCart}
           selectedGameId={shelfGameId}
           view={view}
         />

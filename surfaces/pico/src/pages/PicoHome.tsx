@@ -89,6 +89,8 @@ export function PicoHome({
   menu,
   placing,
   selectedGameId,
+  returnToCart = false,
+  onReturnedToCart,
   onSelectGame,
   onOpenGame,
   onChooseLocation,
@@ -104,6 +106,9 @@ export function PicoHome({
   readonly placing?: PicoShelfGame
   /** The shelf's chosen cart, kept by the owner so it survives home leaving. */
   readonly selectedGameId?: string
+  /** Put the cursor back on the chosen cart when the shelf appears. */
+  readonly returnToCart?: boolean
+  readonly onReturnedToCart?: () => void
   readonly onSelectGame?: (gameId: string) => void
   /** Selecting a cart opens the game's own screen; launching happens there. */
   readonly onOpenGame: (gameId: string) => void
@@ -162,7 +167,9 @@ export function PicoHome({
 
       {view._tag === "Shelf" && !asking && mode === "shelf" ? (
         <PicoCartShelf
+          claimFocus={returnToCart}
           games={view.games}
+          onFocusClaimed={onReturnedToCart}
           onOpen={onOpenGame}
           onSelect={onSelectGame}
           selectedId={selectedGameId}
