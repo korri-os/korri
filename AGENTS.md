@@ -18,6 +18,13 @@ the `legacy` branch apply here unless this file says so.
   `android-final` marks the last commit that carried it, and
   `docs/briefs/2026-09-16-android-removal-scope.md` records what went.
 - Read before you touch. Do exactly what was asked. No bonus refactors.
+- Backlog work lives in GitHub issues on `korri-os/korri`, not in
+  `work/items/` (moved 2026-10-07; `work/items/.archive/` is history). Label
+  every new issue from the existing labels only: one kind (`bug`,
+  `enhancement`, `documentation`, `design`, `maintenance`), one
+  `priority: …`, then any `device: …`, `area: …`, `performance`,
+  `security`, `needs-hardware`, `upstream` that apply. Never create a label;
+  propose one in the issue text instead.
 
 ## Map
 
