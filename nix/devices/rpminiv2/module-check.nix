@@ -302,7 +302,7 @@ assert lib.hasInfix "output DSI-1 transform 90 scale 1"
   c.services.korriLinuxHost.compositor.extraConfig;
 assert lib.hasInfix ''input "0:0:generic_ft5x06_(8d)" map_to_output DSI-1''
   c.services.korriLinuxHost.compositor.extraConfig;
-assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
+assert c.services.korri.compositor.kiosk.extraChromiumArgs == [ ];
 assert
   map lib.getName c.services.korriLinuxInput.provider.extraDataPackages == [
     "rpminiv2-inputplumber-data"

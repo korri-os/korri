@@ -82,8 +82,9 @@ in
     };
   };
 
-  # Recorded limit: Chromium's GPU path has not been accepted on this device.
-  services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
+  # Chromium draws on the Adreno through Mesa (accepted 2026-10-06: the GPU
+  # process loads libgallium, holds renderD128 and stays up across restarts).
+  # No --disable-gpu here; the product default passes no extra arguments.
 
   # Capture one bounded, read-only snapshot before the product session. This
   # service does not stop a hot boot; the owner chose no automatic power-off.
