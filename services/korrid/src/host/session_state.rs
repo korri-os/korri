@@ -5584,12 +5584,16 @@ mod tests {
         )
         .unwrap();
         fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        // The backend kills the helper when this timeout ends, so the helper
+        // must start a shell and write its pid file inside it. A loaded machine
+        // missed a 30 ms window about one run in five.
+        let helper_timeout = Duration::from_millis(500);
         let backend = SystemdLaunchUnitBackend::with_timeout(
             helper.clone(),
             helper,
             1000,
             1000,
-            Duration::from_millis(30),
+            helper_timeout,
         )
         .unwrap();
 
@@ -5599,8 +5603,20 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error.kind, LaunchUnitErrorKind::Timeout);
-        assert!(started.elapsed() < Duration::from_secs(2));
-        let pid: i32 = fs::read_to_string(pid_file).unwrap().parse().unwrap();
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < helper_timeout + Duration::from_secs(5),
+            "backend took {elapsed:?} to kill a helper with a {helper_timeout:?} timeout"
+        );
+        let pid = fs::read_to_string(&pid_file).unwrap_or_else(|error| {
+            panic!(
+                "the helper did not write {} before the backend killed it at the \
+                 {helper_timeout:?} helper timeout ({error}); the helper side timed \
+                 out, so the machine is too loaded for this margin",
+                pid_file.display()
+            )
+        });
+        let pid: i32 = pid.parse().unwrap();
         assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
         assert_eq!(
             std::io::Error::last_os_error().raw_os_error(),
