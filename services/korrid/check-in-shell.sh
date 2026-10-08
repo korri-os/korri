@@ -30,10 +30,10 @@ sed -i -e 's/[[:space:]]\+$//' -e '${/^$/d;}' "$GENERATED_TS"
 
 cd "$ROOT/clients/portal"
 bun install --frozen-lockfile --ignore-scripts
-# Both registered surfaces compile from source and must share the portal's
+# Every registered surface compiles from source and must share the portal's
 # React instance. A missing local dependency must not fall through to a parent
 # checkout when this check runs in a worktree.
-for surface in shift pico; do
+for surface in shift pico boxbuster; do
   cd "$ROOT/surfaces/$surface"
   bun install --frozen-lockfile --ignore-scripts
   for package in react react-dom; do
