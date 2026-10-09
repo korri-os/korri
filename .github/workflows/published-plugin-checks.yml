@@ -35,25 +35,27 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Test Nix cache preparation
         run: python3 .github/workflows/test_prepare_nix_cache.py
-      # PRs can restore main's store. Each run saves a new snapshot so a
-      # failed cold run does not freeze an incomplete cache under a shared key.
+      # PRs can restore main's store. A successful check saves a complete
+      # snapshot per commit. Failed runs use separate keys so a partial store
+      # cannot freeze the commit's complete cache.
       - name: Restore the Nix store
         id: nix-store
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: published-plugins-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          primary-key: published-plugins-${{ runner.os }}-${{ github.sha }}
           restore-prefixes-first-match: |
-            published-plugins-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}-
+            published-plugins-${{ runner.os }}-${{ github.sha }}-
             published-plugins-${{ runner.os }}-
       - name: Read existing signed Core outputs
         run: .github/workflows/trust-korri-cache.sh
       # Leave time to save partial downloads before the job's 60-minute limit.
       - name: Test Core without rebuilding or publishing plugins
+        id: published-plugins-check
         timeout-minutes: 40
         run: nix run .#korri-published-plugins-check
       - name: Prepare the Nix store for caching
         id: prepare-nix-store
-        if: always() && steps.nix-store.outcome == 'success'
+        if: always() && steps.nix-store.outcome == 'success' && steps.nix-store.outputs.hit-primary-key != 'true'
         timeout-minutes: 3
         run: python3 .github/workflows/prepare-nix-cache.py
       # Preserve downloaded paths even after a failed check. Do not run GC:
@@ -62,4 +64,4 @@ jobs:
         if: always() && steps.prepare-nix-store.outcome == 'success'
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: ${{ steps.nix-store.outputs.primary-key }}
+          primary-key: ${{ steps.published-plugins-check.outcome == 'success' && steps.nix-store.outputs.primary-key || format('{0}-{1}-{2}', steps.nix-store.outputs.primary-key, github.run_id, github.run_attempt) }}
