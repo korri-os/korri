@@ -8,6 +8,16 @@ import shutil
 import subprocess
 
 
+def registered_paths(store="local", privileged=False):
+    prefix = ["sudo"] if privileged else []
+    return set(
+        subprocess.check_output(
+            [*prefix, shutil.which("nix"), "--store", store, "path-info", "--all"],
+            text=True,
+        ).splitlines()
+    )
+
+
 def build_remnants(store, registered):
     # Interrupted builds leave unreadable locks and sandbox directories. Never
     # remove a registered output, even if its name has one of these suffixes.
@@ -25,8 +35,7 @@ def main():
     ):
         raise SystemExit("This cleanup runs only on a disposable GitHub-hosted runner.")
 
-    nix_store = shutil.which("nix-store")
-    if nix_store is None:
+    if shutil.which("nix") is None:
         raise SystemExit("Nix must be installed before preparing its cache.")
 
     # Stopping only the daemon can leave its workers alive. Kill the service's
@@ -45,11 +54,7 @@ def main():
     )
     subprocess.run(["sudo", "systemctl", "stop", "nix-daemon.service"], check=True)
     try:
-        registered = set(
-            subprocess.check_output(
-                ["sudo", nix_store, "--store", "local", "--query", "--all"], text=True
-            ).splitlines()
-        )
+        registered = registered_paths(privileged=True)
         remnants = build_remnants(Path("/nix/store"), registered)
         for offset in range(0, len(remnants), 100):
             subprocess.run(

@@ -23,8 +23,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Test Nix cache preparation
-        run: python3 .github/workflows/test_prepare_nix_cache.py
       - name: Enable the disposable lifecycle VM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -35,6 +33,8 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test Nix cache preparation
+        run: python3 .github/workflows/test_prepare_nix_cache.py
       # PRs can restore main's store. Each run saves a new snapshot so a
       # failed cold run does not freeze an incomplete cache under a shared key.
       - name: Restore the Nix store

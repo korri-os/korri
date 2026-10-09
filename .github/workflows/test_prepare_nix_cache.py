@@ -16,6 +16,18 @@ spec.loader.exec_module(prepare)
 
 
 class BuildRemnantsTest(unittest.TestCase):
+    def test_queries_registered_paths_from_a_real_local_nix_store(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "registered-output.lock"
+            source.write_text("a real registered Nix output")
+            store = str(root / "store")
+            registered = subprocess.check_output(
+                ["nix", "--store", store, "store", "add-path", str(source)],
+                text=True,
+            ).strip()
+            self.assertEqual(prepare.registered_paths(store), {registered})
+
     def test_refuses_cleanup_outside_a_disposable_github_hosted_runner(self):
         result = subprocess.run(
             [sys.executable, str(Path(__file__).with_name("prepare-nix-cache.py"))],
