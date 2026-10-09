@@ -37,20 +37,29 @@ jobs:
       # runner's release downloads. A Nix store kept in the Actions cache means
       # most paths never need a release download. A pull request restores the
       # cache that main saved.
+      #
+      # Every run saves under its own key and restores the newest earlier
+      # store. A shared key would freeze the first store saved, even one from
+      # a run that downloaded almost nothing.
       - name: Restore the Nix store
         id: nix-store
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: published-plugins-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}
-          restore-prefixes-first-match: published-plugins-${{ runner.os }}-
+          primary-key: published-plugins-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-prefixes-first-match: |
+            published-plugins-${{ runner.os }}-${{ hashFiles('flake.lock', 'nix/**') }}-
+            published-plugins-${{ runner.os }}-
       - name: Read existing signed Core outputs
         run: .github/workflows/trust-korri-cache.sh
+      # The step limit leaves the save step time to run when downloads stall;
+      # a job that hits its own limit skips every remaining step.
       - name: Test Core without rebuilding or publishing plugins
-        run: .github/workflows/retry-refused-downloads.sh nix run .#korri-published-plugins-check
+        timeout-minutes: 40
+        run: .github/workflows/retry-github-downloads.sh nix run .#korri-published-plugins-check
       # Save even when the check fails: the paths a failed run did download
       # are still paths the next run need not download again.
       - name: Save the Nix store
-        if: always() && steps.nix-store.outputs.hit-primary-key != 'true'
+        if: always()
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: ${{ steps.nix-store.outputs.primary-key }}
