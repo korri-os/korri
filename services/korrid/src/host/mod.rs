@@ -985,7 +985,9 @@ impl HostRuntime {
         tokio::task::spawn_blocking(move || {
             let control = runtime.control()?;
             let observe = |status, ownership, handoff, recovered| {
-                if let HostSessionStatus::Completed { launch_id } = &status {
+                if let HostSessionStatus::Completed { launch_id }
+                | HostSessionStatus::Failed { launch_id, .. } = &status
+                {
                     runtime.launch_reservations.retire_completed(launch_id);
                 }
                 observe(status, ownership, handoff, recovered)
@@ -1459,6 +1461,7 @@ fn exact_live_session(
         | Ok(HostSessionStatus::FocusFailed { .. })
         | Ok(HostSessionStatus::Stopping { .. })
         | Ok(HostSessionStatus::Completed { .. })
+        | Ok(HostSessionStatus::Failed { .. })
         | Ok(HostSessionStatus::NoActive) => Err(stale_controls()),
         Ok(HostSessionStatus::RecoveryBlocked) => Err(unavailable_controls(
             "Host recovery identity requires administrator resolution.",
@@ -1531,6 +1534,352 @@ mod tests {
         ));
         runtime.control().unwrap().initialize_input(4).unwrap();
         runtime
+    }
+
+    struct GameUnitFixture {
+        root: tempfile::TempDir,
+        properties: PathBuf,
+        backend: Arc<systemd_unit::SystemdLaunchUnitBackend>,
+        runtime: HostRuntime,
+        router: axum::Router,
+    }
+
+    impl GameUnitFixture {
+        fn new() -> Self {
+            use std::os::unix::fs::PermissionsExt;
+
+            let root = tempfile::tempdir().unwrap();
+            let config = root.path().join("host.toml");
+            fs::write(&config, "label = \"startup-test\"\n[[games]]\nid = \"one\"\ntitle = \"One\"\ncommand = [\"game\"]\n").unwrap();
+            let properties = root.path().join("unit-properties");
+            let helper = root.path().join("systemctl");
+            fs::write(&helper, format!(r#"#!/bin/sh
+case "$3" in
+    --quiet)
+        if test -e '{launch_refused}'; then
+            echo 'job failed' >&2
+            exit 1
+        fi
+        ;;
+    show)
+        cat '{properties}'
+        if test -e '{fail_after_query}'; then
+            printf 'LoadState=loaded\nActiveState=failed\nFreezerState=running\nExecMainCode=1\nExecMainStatus=1\n' > '{properties}'
+        fi
+        ;;
+    reset-failed)
+        if test -e '{reset_refused}'; then exit 3; fi
+        printf 'LoadState=not-found\n' > '{properties}'
+        ;;
+    list-units) exit 0;;
+esac
+"#,
+                launch_refused = root.path().join("launch-refused").display(),
+                properties = properties.display(),
+                fail_after_query = root.path().join("fail-after-query").display(),
+                reset_refused = root.path().join("reset-refused").display(),
+            )).unwrap();
+            fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+            let backend = Arc::new(
+                systemd_unit::SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 1000)
+                    .unwrap(),
+            );
+            let runtime = HostRuntime::from_paths_with_backend(
+                &config,
+                None,
+                root.path().join("private"),
+                backend.clone(),
+            );
+            let (router, _) = crate::plain_host_routers_for_tests(runtime.clone());
+            let fixture = Self {
+                root,
+                properties,
+                backend,
+                runtime,
+                router,
+            };
+            fixture.state("active", 0, 0);
+            fixture
+        }
+
+        fn portal() -> Self {
+            let mut fixture = Self::new();
+            let (lan, _) = crate::app_states(fixture.runtime.clone());
+            fixture.router = crate::portal_router_for(
+                &lan,
+                Some(crate::PortalAccess::new(
+                    "startup-test-capability",
+                    "http://korrid.test",
+                    crate::PortalPermission::Full,
+                )),
+            )
+            .unwrap();
+            fixture
+        }
+
+        fn state(&self, active: &str, code: i32, status: i32) {
+            // These are native systemctl properties, read by the real bounded
+            // subprocess adapter. Exact reset-failed collects the failed unit.
+            fs::write(&self.properties, format!("LoadState=loaded\nActiveState={active}\nFreezerState=running\nExecMainCode={code}\nExecMainStatus={status}\n")).unwrap();
+        }
+
+        fn restart(&mut self) {
+            let runtime = HostRuntime::from_paths_with_backend(
+                &self.root.path().join("host.toml"),
+                None,
+                self.root.path().join("private"),
+                self.backend.clone(),
+            );
+            self.runtime = runtime.clone();
+            self.router = crate::plain_host_routers_for_tests(runtime).0;
+        }
+
+        async fn rpc(&self, body: &str) -> serde_json::Value {
+            use axum::{body::Body, http::Request};
+            use tower::ServiceExt;
+
+            let response = self
+                .router
+                .clone()
+                .oneshot(
+                    Request::post("/rpc")
+                        .header("content-type", "application/json")
+                        .header("authorization", "Bearer startup-test-capability")
+                        .header("origin", "http://korrid.test")
+                        .body(Body::from(body.to_owned()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice(&bytes).unwrap()
+        }
+
+        async fn prepare(&self) -> serde_json::Value {
+            self.rpc(r#"{"_tag":"app.session.prepare","payload":{"gameId":"one"}}"#)
+                .await
+        }
+
+        async fn status(&self) -> serde_json::Value {
+            self.rpc(r#"{"_tag":"app.session.status","payload":{}}"#)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_reports_exit_status_instead_of_completion() {
+        let fixture = GameUnitFixture::new();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        let before = fixture.status().await;
+        assert_eq!(
+            before["outcome"]["payload"]["active"]["initialHandoff"],
+            "waiting"
+        );
+
+        fixture.state("failed", 1, 1);
+        let failed = fixture.status().await;
+        assert_eq!(failed["outcome"]["_tag"], "Err", "{failed}");
+        assert_eq!(failed["outcome"]["payload"]["code"], "HostLaunchFailed");
+        assert!(failed["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+        // The next poll must retain the failure after native unit collection.
+        assert_eq!(fixture.status().await, failed);
+
+        fixture.state("active", 0, 0);
+        let next = fixture.prepare().await;
+        assert_eq!(next["outcome"]["_tag"], "Ok", "{next}");
+        assert_ne!(
+            next["outcome"]["payload"]["launchId"],
+            prepared["outcome"]["payload"]["launchId"]
+        );
+        fixture.state("inactive", 1, 0);
+        let completed = fixture.status().await;
+        assert_eq!(
+            completed["outcome"]["payload"]["code"], "SessionCompleted",
+            "{completed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_already_observed_during_prepare_reports_exit_status() {
+        let fixture = GameUnitFixture::new();
+        fixture.state("failed", 1, 1);
+        let prepared = fixture.prepare().await;
+        assert_eq!(
+            prepared["outcome"]["payload"]["code"], "HostLaunchFailed",
+            "{prepared}"
+        );
+        assert!(prepared["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+        fixture.state("active", 0, 0);
+        let next = fixture.prepare().await;
+        assert_eq!(next["outcome"]["_tag"], "Ok", "{next}");
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_survives_executor_restart_until_observed() {
+        let mut fixture = GameUnitFixture::new();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        fixture.state("failed", 1, 1);
+        fixture.restart();
+        let failed = fixture.status().await;
+        assert_eq!(
+            failed["outcome"]["payload"]["code"], "HostLaunchFailed",
+            "{failed}"
+        );
+        assert!(failed["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+        fixture.state("active", 0, 0);
+        let next = fixture.prepare().await;
+        assert_eq!(next["outcome"]["_tag"], "Ok", "{next}");
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_when_native_start_job_fails_reports_exit_status() {
+        let fixture = GameUnitFixture::new();
+        fs::write(fixture.root.path().join("launch-refused"), "").unwrap();
+        fixture.state("failed", 1, 203);
+        let prepared = fixture.prepare().await;
+        assert_eq!(
+            prepared["outcome"]["payload"]["code"], "HostLaunchFailed",
+            "{prepared}"
+        );
+        assert!(
+            prepared["outcome"]["payload"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("exit status 203"),
+            "{prepared}"
+        );
+        fs::remove_file(fixture.root.path().join("launch-refused")).unwrap();
+        fixture.state("active", 0, 0);
+        let next = fixture.prepare().await;
+        assert_eq!(next["outcome"]["_tag"], "Ok", "{next}");
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_observed_by_freeze_retains_failed_status() {
+        let fixture = GameUnitFixture::new();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        fs::write(fixture.root.path().join("fail-after-query"), "").unwrap();
+        let request = serde_json::json!({"_tag": "app.session.freeze", "payload": {"expectedLaunchId": prepared["outcome"]["payload"]["launchId"]}});
+        fixture.rpc(&request.to_string()).await;
+        let failed = fixture.status().await;
+        assert_eq!(
+            failed["outcome"]["payload"]["code"], "HostLaunchFailed",
+            "{failed}"
+        );
+        assert!(failed["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_is_not_dropped_when_an_owned_launch_is_pending() {
+        let fixture = GameUnitFixture::portal();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        let reserved = fixture
+            .rpc(r#"{"_tag":"app.session.reserve","payload":{"gameId":"one"}}"#)
+            .await;
+        assert_eq!(reserved["outcome"]["_tag"], "Ok", "{reserved}");
+        fixture.state("failed", 1, 1);
+        let failed = fixture.status().await;
+        assert_eq!(failed["outcome"]["_tag"], "Ok", "{failed}");
+        let payload = &failed["outcome"]["payload"];
+        assert_eq!(
+            payload["pendingLaunches"][0]["session"]["launchId"],
+            reserved["outcome"]["payload"]["launchId"]
+        );
+        assert_eq!(
+            payload["observationFailure"]["code"], "HostLaunchFailed",
+            "{failed}"
+        );
+        assert!(payload["observationFailure"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_with_refused_native_cleanup_blocks_the_next_launch() {
+        let fixture = GameUnitFixture::new();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        fs::write(fixture.root.path().join("reset-refused"), "").unwrap();
+        fixture.state("failed", 1, 1);
+        let failed = fixture.status().await;
+        assert_eq!(
+            failed["outcome"]["payload"]["code"], "HostRecoveryBlocked",
+            "{failed}"
+        );
+        let next = fixture.prepare().await;
+        assert_eq!(
+            next["outcome"]["payload"]["code"], "HostRecoveryBlocked",
+            "{next}"
+        );
+    }
+
+    #[tokio::test]
+    async fn game_startup_failure_recovery_precedes_input_initialization() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let fixture = GameUnitFixture::new();
+        let prepared = fixture.prepare().await;
+        assert_eq!(prepared["outcome"]["_tag"], "Ok", "{prepared}");
+        fixture.state("failed", 1, 1);
+
+        // UnixInputSeatManager::route calls ready(), which rejects input before
+        // initialize(). Configure that same startup order at the RPC boundary.
+        let initialized = Arc::new(AtomicBool::new(false));
+        let pool = Arc::new(input_seat::RecordingInputPool::default());
+        let ready = initialized.clone();
+        *pool.on_route.lock().unwrap() = Some(Box::new(move |_| {
+            if ready.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err("input pool is not reconciled".into())
+            }
+        }));
+        let ready = initialized.clone();
+        *pool.on_apply.lock().unwrap() = Some(Box::new(move |_| {
+            ready.store(true, Ordering::SeqCst);
+        }));
+        let config = HostConfig::read(&fixture.root.path().join("host.toml")).unwrap();
+        let mut runtime = fixture.runtime.clone();
+        runtime.launcher = Some(HostLauncher::with_backends(
+            &config,
+            &fixture.root.path().join("private"),
+            fixture.backend.clone(),
+            pool,
+        ));
+        let initialization = runtime.control().unwrap().initialize_input(4);
+        let mut recovered = fixture;
+        recovered.runtime = runtime.clone();
+        recovered.router = crate::plain_host_routers_for_tests(runtime).0;
+        let failed = recovered.status().await;
+        assert_eq!(
+            failed["outcome"]["payload"]["code"], "HostLaunchFailed",
+            "{failed}"
+        );
+        assert!(failed["outcome"]["payload"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("exit status 1"));
+        assert!(initialization.is_ok(), "{initialization:?}");
+        assert!(initialized.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
