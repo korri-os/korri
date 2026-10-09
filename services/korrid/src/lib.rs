@@ -1685,6 +1685,12 @@ fn host_session_status_outcome(
                 overlay: None,
             })
         }
+        Ok(HostSessionStatus::Failed { launch_id, message }) => {
+            SessionStatusOutcome::Err(RpcFailure {
+                code: "HostLaunchFailed".into(),
+                message: format!("host launch {launch_id} failed: {message}"),
+            })
+        }
         Ok(HostSessionStatus::Completed { launch_id }) => SessionStatusOutcome::Err(RpcFailure {
             code: "SessionCompleted".into(),
             message: format!("host launch {launch_id} completed"),

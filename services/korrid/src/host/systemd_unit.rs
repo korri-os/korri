@@ -53,6 +53,8 @@ pub enum LaunchUnitErrorKind {
     Spawn,
     Timeout,
     Failed,
+    /// The game unit ended unsuccessfully, not a failed observation helper.
+    UnitFailed,
     Protocol,
     OutputLimit,
 }
@@ -1037,7 +1039,8 @@ impl SystemdLaunchUnitBackend {
             "--system".into(),
             "--no-ask-password".into(),
             "--quiet".into(),
-            "--collect".into(),
+            // Default CollectMode=inactive retains failed-unit exit metadata.
+            // The controller stops and resets the exact failed unit after reading it.
             "--service-type=exec".into(),
             format!("--unit={unit}"),
             format!("--uid={}", self.runtime_uid),
@@ -1090,6 +1093,10 @@ impl SystemdLaunchUnitBackend {
         Self::unit_verb_arguments("stop", launch_id)
     }
 
+    pub(super) fn reset_failed_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
+        Self::unit_verb_arguments("reset-failed", launch_id)
+    }
+
     pub(super) fn freeze_arguments(launch_id: &str) -> Result<Vec<String>, LaunchUnitError> {
         Self::unit_verb_arguments("freeze", launch_id)
     }
@@ -1116,6 +1123,8 @@ impl SystemdLaunchUnitBackend {
             "--property=LoadState".into(),
             "--property=ActiveState".into(),
             "--property=FreezerState".into(),
+            "--property=ExecMainCode".into(),
+            "--property=ExecMainStatus".into(),
         ])
     }
 
@@ -1322,7 +1331,34 @@ impl SystemdLaunchUnitBackend {
                 }
             }
             Some("deactivating") => Ok(LaunchUnitState::Stopping),
-            Some("inactive" | "failed" | "dead") => Ok(LaunchUnitState::Completed),
+            Some("failed") => {
+                let property = |name| {
+                    values
+                        .get(name)
+                        .and_then(|value| value.parse::<i32>().ok())
+                        .filter(|value| *value >= 0)
+                        .ok_or_else(|| {
+                            LaunchUnitError::new(
+                                LaunchUnitErrorKind::Protocol,
+                                format!("failed unit has no valid {name}"),
+                            )
+                        })
+                };
+                let code = property("ExecMainCode")?;
+                let status = property("ExecMainStatus")?;
+                let message = match code {
+                    libc::CLD_EXITED => format!("game unit failed with exit status {status}"),
+                    libc::CLD_KILLED | libc::CLD_DUMPED => {
+                        format!("game unit failed with signal {status}")
+                    }
+                    _ => format!("game unit failed: ExecMainCode={code}, ExecMainStatus={status}"),
+                };
+                Err(LaunchUnitError::new(
+                    LaunchUnitErrorKind::UnitFailed,
+                    message,
+                ))
+            }
+            Some("inactive" | "dead") => Ok(LaunchUnitState::Completed),
             Some(other) => Err(LaunchUnitError::new(
                 LaunchUnitErrorKind::Protocol,
                 format!("unit has unknown ActiveState {other:?}"),
@@ -1425,7 +1461,12 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
     /// know the unit completed tolerate the `Failed` result by re-reading
     /// state, as before.
     fn stop(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
-        if self.state(launch_id)?.needs_thaw_before_stop() {
+        let (needs_thaw, failed) = match self.state(launch_id) {
+            Ok(state) => (state.needs_thaw_before_stop(), false),
+            Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => (false, true),
+            Err(error) => return Err(error),
+        };
+        if needs_thaw {
             self.thaw(launch_id).map_err(|error| {
                 LaunchUnitError::new(
                     LaunchUnitErrorKind::Failed,
@@ -1434,8 +1475,13 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             })?;
         }
         let arguments = Self::stop_arguments(launch_id)?;
-        self.require_success(&self.systemctl, &arguments)
-            .map(|_| ())
+        self.require_success(&self.systemctl, &arguments)?;
+        // Stop does not reset a failed service. Release its retained exit
+        // metadata only after the caller captured the failure.
+        if failed {
+            self.require_success(&self.systemctl, &Self::reset_failed_arguments(launch_id)?)?;
+        }
+        Ok(())
     }
 
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {

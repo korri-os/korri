@@ -26,10 +26,11 @@ use super::input_seat::{InputSeatLease, InputSeatManager};
 use super::play_log::{PlayHistoryKey, PlayLogStore};
 #[cfg(test)]
 use super::systemd_unit::{
-    read_unit_pids, LaunchUnitError, LaunchUnitErrorKind, RecordingPortalUnit,
-    SystemdLaunchUnitBackend,
+    read_unit_pids, LaunchUnitError, RecordingPortalUnit, SystemdLaunchUnitBackend,
 };
-use super::systemd_unit::{LaunchUnitBackend, LaunchUnitState, PortalUnit, RUNNER_ID_ENV};
+use super::systemd_unit::{
+    LaunchUnitBackend, LaunchUnitErrorKind, LaunchUnitState, PortalUnit, RUNNER_ID_ENV,
+};
 
 /// Wall-clock seam. Production reads the system clock; tests supply
 /// deterministic instants so recorded durations are exact.
@@ -68,6 +69,10 @@ pub enum HostSessionStatus {
     },
     Completed {
         launch_id: String,
+    },
+    Failed {
+        launch_id: String,
+        message: String,
     },
     NoActive,
     RecoveryBlocked,
@@ -151,6 +156,10 @@ enum ActiveState {
     },
     Completed {
         launch_id: String,
+    },
+    Failed {
+        launch_id: String,
+        message: String,
     },
     NoActive,
     RecoveryPending,
@@ -330,7 +339,9 @@ impl HostSessionControl {
             | ActiveState::Frozen { launch_id, .. }
             | ActiveState::FocusFailed { launch_id, .. }
             | ActiveState::Stopping { launch_id, .. } => Some(launch_id.as_str()),
-            ActiveState::NoActive | ActiveState::Completed { .. } => None,
+            ActiveState::NoActive | ActiveState::Completed { .. } | ActiveState::Failed { .. } => {
+                None
+            }
             _ => return Err("host session authority is unresolved".into()),
         };
         self.input_seats.initialize(count, session)
@@ -575,7 +586,7 @@ impl HostSessionControl {
             ActiveState::NoActive => {
                 handoff.take();
             }
-            ActiveState::Completed { launch_id }
+            ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. }
                 if handoff
                     .as_ref()
                     .is_some_and(|(exact, _)| exact == launch_id) =>
@@ -990,6 +1001,7 @@ impl HostSessionControl {
             ActiveState::RecoveryBlocked => return Err(recovery_blocked_failure()),
             ActiveState::RecoveryPending
             | ActiveState::Completed { .. }
+            | ActiveState::Failed { .. }
             | ActiveState::NoActive => {}
         }
         let live = self
@@ -1109,7 +1121,7 @@ impl HostSessionControl {
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
                 return Err(recovery_blocked_failure());
             }
-            ActiveState::Completed { .. } | ActiveState::NoActive => {}
+            ActiveState::Completed { .. } | ActiveState::Failed { .. } | ActiveState::NoActive => {}
         }
         // Stored route choices apply to new launches, not the running game.
         // Resolve failures only after resume and conflicts under the same lock.
@@ -1190,9 +1202,30 @@ impl HostSessionControl {
             .backend
             .launch(&launch_id, configured_command, &launch_environment)
         {
-            let _ = seat_lease.stop(&launch_id);
+            let seats_stopped = seat_lease.stop(&launch_id).is_ok();
             match self.backend.live_launch_ids() {
                 Ok(live) if !live.iter().any(|id| id == &launch_id) => {
+                    match self.backend.state(&launch_id) {
+                        Err(unit_error) if unit_error.kind == LaunchUnitErrorKind::UnitFailed => {
+                            if !seats_stopped
+                                || self.clear_failed_unit(&launch_id).is_err()
+                                || self.discard_active().is_err()
+                            {
+                                *state = ActiveState::RecoveryBlocked;
+                                return Err(recovery_blocked_failure());
+                            }
+                            *state = ActiveState::Failed {
+                                launch_id,
+                                message: unit_error.message.clone(),
+                            };
+                            return Err(failure("HostLaunchFailed", unit_error.message));
+                        }
+                        Ok(LaunchUnitState::Completed) => {}
+                        _ => {
+                            *state = ActiveState::RecoveryBlocked;
+                            return Err(recovery_blocked_failure());
+                        }
+                    }
                     if let Err(message) = self.discard_active() {
                         *state = ActiveState::RecoveryBlocked;
                         return Err(failure("HostRecoveryBlocked", message));
@@ -1269,6 +1302,20 @@ impl HostSessionControl {
                     format!("host game {game_id:?} exited before prepare completed"),
                 ))
             }
+            Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                if seat_lease.stop(&launch_id).is_err()
+                    || self.clear_failed_unit(&launch_id).is_err()
+                    || self.discard_active().is_err()
+                {
+                    *state = ActiveState::RecoveryBlocked;
+                    return Err(recovery_blocked_failure());
+                }
+                *state = ActiveState::Failed {
+                    launch_id,
+                    message: error.message.clone(),
+                };
+                Err(failure("HostLaunchFailed", error.message))
+            }
             Err(_) => {
                 let _ = seat_lease.stop(&launch_id);
                 *state = ActiveState::RecoveryBlocked;
@@ -1304,6 +1351,7 @@ impl HostSessionControl {
             | ActiveState::FocusFailed { launch_id, .. }
             | ActiveState::Stopping { launch_id, .. } => Some(launch_id.clone()),
             ActiveState::Completed { .. }
+            | ActiveState::Failed { .. }
             | ActiveState::NoActive
             | ActiveState::RecoveryPending
             | ActiveState::RecoveryBlocked => None,
@@ -1345,6 +1393,9 @@ impl HostSessionControl {
                         *state = ActiveState::RecoveryBlocked;
                     }
                 }
+                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                    let _ = self.fail_active(&mut state, launch_id, error.message);
+                }
                 Err(_) => *state = ActiveState::RecoveryBlocked,
             }
         }
@@ -1372,6 +1423,48 @@ impl HostSessionControl {
             ownership,
             self.initial_handoff_for(&state),
         )
+    }
+
+    /// A failed unit retains exit metadata until its exact stop. If another
+    /// observer collected it first, prove absence before clearing the journal.
+    fn clear_failed_unit(&self, launch_id: &str) -> Result<(), ()> {
+        if self.backend.stop(launch_id).is_ok()
+            || matches!(
+                self.backend.state(launch_id),
+                Ok(LaunchUnitState::Completed)
+            )
+        {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn fail_active(
+        &self,
+        state: &mut ActiveState,
+        launch_id: String,
+        message: String,
+    ) -> Result<(), ()> {
+        if self.stop_seats(&launch_id).is_err()
+            || self.clear_failed_unit(&launch_id).is_err()
+            || self.complete_active().is_err()
+        {
+            *state = ActiveState::RecoveryBlocked;
+            return Err(());
+        }
+        *state = ActiveState::Failed { launch_id, message };
+        Ok(())
+    }
+
+    fn recover_failed_unit(&self, launch_id: String, message: String) -> ActiveState {
+        // Input is not initialized during recovery. As with normal completion,
+        // input initialization later reconciles the receiver's retained lease.
+        if self.clear_failed_unit(&launch_id).is_err() || self.complete_active().is_err() {
+            ActiveState::RecoveryBlocked
+        } else {
+            ActiveState::Failed { launch_id, message }
+        }
     }
 
     /// Removes the active record for a launch that never reached the
@@ -1438,17 +1531,22 @@ impl HostSessionControl {
                 return Err(HostSessionEffectFailure::Stopping)
             }
             ActiveState::Stopping { .. } => return Err(HostSessionEffectFailure::StaleIdentity),
-            ActiveState::Completed { .. } | ActiveState::NoActive => {
+            ActiveState::Completed { .. } | ActiveState::Failed { .. } | ActiveState::NoActive => {
                 return Err(HostSessionEffectFailure::NoActive)
             }
             ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
                 return Err(HostSessionEffectFailure::RecoveryBlocked)
             }
         };
-        let observed = self
-            .backend
-            .state(&launch_id)
-            .map_err(|_| HostSessionEffectFailure::RecoveryBlocked)?;
+        let observed = match self.backend.state(&launch_id) {
+            Ok(observed) => observed,
+            Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                self.fail_active(&mut state, launch_id, error.message)
+                    .map_err(|()| HostSessionEffectFailure::RecoveryBlocked)?;
+                return Err(HostSessionEffectFailure::NoActive);
+            }
+            Err(_) => return Err(HostSessionEffectFailure::RecoveryBlocked),
+        };
         let observed_frozen = matches!(
             observed,
             LaunchUnitState::Frozen | LaunchUnitState::FreezerTransition
@@ -1575,6 +1673,11 @@ impl HostSessionControl {
                     | LaunchUnitState::Frozen
                     | LaunchUnitState::FreezerTransition,
                 ) => {}
+                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                    self.fail_active(state, launch_id, error.message)
+                        .map_err(|()| HostSessionEffectFailure::RecoveryBlocked)?;
+                    return Ok(());
+                }
                 Err(_) => {
                     *state = ActiveState::RecoveryBlocked;
                     return Err(HostSessionEffectFailure::RecoveryBlocked);
@@ -1649,7 +1752,9 @@ impl HostSessionControl {
                         launch_id: launch_id.clone(),
                     };
                 }
-                ActiveState::Completed { .. } | ActiveState::NoActive => {
+                ActiveState::Completed { .. }
+                | ActiveState::Failed { .. }
+                | ActiveState::NoActive => {
                     return HostSessionFreezeChange::NoActive;
                 }
                 ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
@@ -1663,6 +1768,16 @@ impl HostSessionControl {
             // Query the unit so a change made outside korrid is observed first.
             let observed = match self.backend.state(&launch_id) {
                 Ok(observed) => observed,
+                Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                    return if self
+                        .fail_active(&mut state, launch_id, error.message)
+                        .is_ok()
+                    {
+                        HostSessionFreezeChange::NoActive
+                    } else {
+                        HostSessionFreezeChange::RecoveryBlocked
+                    };
+                }
                 Err(_) => {
                     *state = ActiveState::RecoveryBlocked;
                     return HostSessionFreezeChange::RecoveryBlocked;
@@ -1737,6 +1852,16 @@ impl HostSessionControl {
                             launch_id,
                             message: error.message,
                         },
+                        Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                            if self
+                                .fail_active(&mut state, launch_id, error.message)
+                                .is_ok()
+                            {
+                                HostSessionFreezeChange::NoActive
+                            } else {
+                                HostSessionFreezeChange::RecoveryBlocked
+                            }
+                        }
                         Err(_) => {
                             *state = ActiveState::RecoveryBlocked;
                             HostSessionFreezeChange::RecoveryBlocked
@@ -1883,14 +2008,16 @@ impl HostSessionControl {
                 ActiveState::Stopping { launch_id, .. } => Err(HostSessionStop::StaleIdentity {
                     active_launch_id: Some(launch_id.clone()),
                 }),
-                ActiveState::Completed { launch_id } if launch_id == expected_launch_id => {
+                ActiveState::Completed { launch_id } | ActiveState::Failed { launch_id, .. }
+                    if launch_id == expected_launch_id =>
+                {
                     Err(HostSessionStop::Completed {
                         launch_id: launch_id.clone(),
                     })
                 }
-                ActiveState::Completed { .. } | ActiveState::NoActive => {
-                    Err(HostSessionStop::NoActive)
-                }
+                ActiveState::Completed { .. }
+                | ActiveState::Failed { .. }
+                | ActiveState::NoActive => Err(HostSessionStop::NoActive),
                 ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
                     Err(HostSessionStop::RecoveryBlocked)
                 }
@@ -1921,7 +2048,10 @@ impl HostSessionControl {
                 ActiveState::Stopping {
                     launch_id: active, ..
                 } if active == &launch_id => {}
-                ActiveState::Completed { launch_id: active } if active == &launch_id => {
+                ActiveState::Completed { launch_id: active }
+                | ActiveState::Failed {
+                    launch_id: active, ..
+                } if active == &launch_id => {
                     return HostSessionStop::Completed { launch_id };
                 }
                 ActiveState::Running {
@@ -1936,7 +2066,10 @@ impl HostSessionControl {
                 | ActiveState::Stopping {
                     launch_id: active, ..
                 }
-                | ActiveState::Completed { launch_id: active } => {
+                | ActiveState::Completed { launch_id: active }
+                | ActiveState::Failed {
+                    launch_id: active, ..
+                } => {
                     return HostSessionStop::StaleIdentity {
                         active_launch_id: Some(active.clone()),
                     };
@@ -2044,6 +2177,10 @@ fn status_from_state(state: &ActiveState) -> HostSessionStatus {
         ActiveState::Completed { launch_id } => HostSessionStatus::Completed {
             launch_id: launch_id.clone(),
         },
+        ActiveState::Failed { launch_id, message } => HostSessionStatus::Failed {
+            launch_id: launch_id.clone(),
+            message: message.clone(),
+        },
         ActiveState::NoActive => HostSessionStatus::NoActive,
         ActiveState::RecoveryPending | ActiveState::RecoveryBlocked => {
             HostSessionStatus::RecoveryBlocked
@@ -2115,6 +2252,9 @@ impl HostSessionControl {
                         ActiveState::NoActive
                     }
                     Ok(LaunchUnitState::Completed) => ActiveState::RecoveryBlocked,
+                    Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                        self.recover_failed_unit(record.launch_id().to_owned(), error.message)
+                    }
                     Err(_) => ActiveState::RecoveryPending,
                 }
             }
@@ -2130,6 +2270,9 @@ impl HostSessionControl {
                         | LaunchUnitState::FreezerTransition
                         | LaunchUnitState::Stopping,
                     ) => ActiveState::RecoveryBlocked,
+                    Err(error) if error.kind == LaunchUnitErrorKind::UnitFailed => {
+                        self.recover_failed_unit(record.launch_id().to_owned(), error.message)
+                    }
                     Err(_) => ActiveState::RecoveryPending,
                 }
             }
@@ -3207,6 +3350,8 @@ mod tests {
                 "--property=LoadState",
                 "--property=ActiveState",
                 "--property=FreezerState",
+                "--property=ExecMainCode",
+                "--property=ExecMainStatus",
             ]
         );
     }
@@ -3341,7 +3486,7 @@ mod tests {
         let id = "0123456789abcdef0123456789abcdef";
         let unit = format!("korri-game-{id}.service");
         let show = format!(
-            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState\n"
+            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus\n"
         );
 
         // Running: no thaw is issued.
@@ -3415,7 +3560,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(log).unwrap(),
             format!(
-                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState\n"
+                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus\n"
             )
         );
     }
