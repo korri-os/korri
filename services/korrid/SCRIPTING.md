@@ -75,7 +75,7 @@ between parses cannot interrupt one parse. Hard preparation memory and cancellat
 Preparation stays inside korrid. A pathological parse can stall or crash the
 process, even with approved source. Keep the source-admission checks; no helper
 process, parser fork or hard preparation watchdog is implied. QuickJS stays at
-16 MiB / 250 ms. This decision adds no platform APIs, timers, policy integration,
+16 MiB / 1000 ms. This decision adds no platform APIs, timers, policy integration,
 device operations or deployment.
 
 ### First U1 slice: implemented interface and verification
@@ -371,7 +371,7 @@ delays truncate. There are no intervals, strings or browser background-timer
 policies. Queued callbacks and arguments stay in the existing limited JS heap;
 the research probe's 256-callback limit is not adopted.
 
-The existing 250 ms deadline starts before context and timer initialization.
+The existing 1000 ms deadline starts before context and timer initialization.
 It includes module evaluation, output extraction, promise jobs, timer waits,
 callbacks and final serialization. Source preparation stays outside it under
 the explicitly accepted stall/crash risk.
@@ -575,7 +575,7 @@ TypeScript, so compact source cannot expand past it. The aggregate prepared grap
 is bounded to 4 MiB. Both checks run after Oxc allocates; they bound retained and
 executed code, not preparation time or host memory. Each QuickJS runtime
 has a 16 MiB memory limit, a 512 KiB stack limit,
-and a 250 ms interrupt deadline. The existing empty I/O sandbox remains.
+and a 1000 ms interrupt deadline. The existing empty I/O sandbox remains.
 `plugin-host/tests/declaration.rs` exercises nonterminating and memory-growing
 source through the real evaluator. Launch inputs are bounded to 512 KiB.
 Data conversion permits 8,192 nodes, 64 nesting levels, and 512 KiB of copied

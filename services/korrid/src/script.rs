@@ -153,8 +153,11 @@ fn evaluate_module(
     let rejections = completion::Rejections::install(&runtime);
     // Preparation has finished. One deadline includes context initialization,
     // extraction, queued jobs and timers. It never resets between phases.
+    // The combined Effect and URL fixture graph needs 60-160 ms on a desktop
+    // and went over 250 ms on CI runners, so the budget has room for slow
+    // devices and loaded hosts.
     let started = Instant::now();
-    let deadline = started + Duration::from_millis(250);
+    let deadline = started + Duration::from_millis(1000);
     runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
