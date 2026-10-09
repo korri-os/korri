@@ -23,6 +23,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Test Nix cache preparation
+        run: python3 .github/workflows/test_prepare_nix_cache.py
       - name: Enable the disposable lifecycle VM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -33,14 +35,8 @@ jobs:
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # Korri's Nix caches are GitHub releases, and GitHub sometimes refuses a
-      # runner's release downloads. A Nix store kept in the Actions cache means
-      # most paths never need a release download. A pull request restores the
-      # cache that main saved.
-      #
-      # Every run saves under its own key and restores the newest earlier
-      # store. A shared key would freeze the first store saved, even one from
-      # a run that downloaded almost nothing.
+      # PRs can restore main's store. Each run saves a new snapshot so a
+      # failed cold run does not freeze an incomplete cache under a shared key.
       - name: Restore the Nix store
         id: nix-store
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
@@ -51,16 +47,19 @@ jobs:
             published-plugins-${{ runner.os }}-
       - name: Read existing signed Core outputs
         run: .github/workflows/trust-korri-cache.sh
-      # The step limit leaves the save step time to run when downloads stall;
-      # a job that hits its own limit skips every remaining step.
+      # Leave time to save partial downloads before the job's 60-minute limit.
       - name: Test Core without rebuilding or publishing plugins
         timeout-minutes: 40
-        run: .github/workflows/retry-github-downloads.sh nix run .#korri-published-plugins-check
-      # Save even when the check fails: the paths a failed run did download
-      # are still paths the next run need not download again.
+        run: nix run .#korri-published-plugins-check
+      - name: Prepare the Nix store for caching
+        id: prepare-nix-store
+        if: always() && steps.nix-store.outcome == 'success'
+        timeout-minutes: 3
+        run: python3 .github/workflows/prepare-nix-cache.py
+      # Preserve downloaded paths even after a failed check. Do not run GC:
+      # --no-link checks leave useful outputs unrooted after they finish.
       - name: Save the Nix store
-        if: always()
+        if: always() && steps.prepare-nix-store.outcome == 'success'
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: ${{ steps.nix-store.outputs.primary-key }}
-          gc-max-store-size-linux: 8G
