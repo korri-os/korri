@@ -309,6 +309,90 @@ export type SurfaceRunnerChoice =
   | { readonly _tag: "Closed" }
   | ({ readonly _tag: "Loading" | "Ready" | "Stale" | "Conflict" | "Error" | "Busy" | "Warnings" } & SurfaceRunnerChoiceContent)
 
+/**
+ * How this device reaches the network right now. Grounded in legacy
+ * `DeviceNetworkState` (`product/platform/device/device-facts.ts`: kind
+ * wifi/ethernet, name, strengthPercent) and NetworkManager's primary
+ * connection. `Wired` covers any non-Wi-Fi link NetworkManager reports as up.
+ */
+export type SurfaceNetworkConnection =
+  | { readonly _tag: "Offline" }
+  | { readonly _tag: "Wired" }
+  | {
+      readonly _tag: "Wifi"
+      readonly ssid: string
+      /** NetworkManager `AccessPoint.Strength`, 0 to 100. */
+      readonly strengthPercent?: number
+    }
+
+/**
+ * One Wi-Fi network as NetworkManager's scan reports it. Access points that
+ * share an SSID appear once, at their strongest. `id` is opaque: hand it back
+ * unchanged to `connectWifi`.
+ */
+export interface SurfaceWifiNetwork {
+  readonly id: string
+  readonly ssid: string
+  /** NetworkManager `AccessPoint.Strength`, 0 to 100. */
+  readonly strengthPercent: number
+  /** True when the access point asks for a key (WPA/RSN flags set). */
+  readonly secured: boolean
+  /** True when NetworkManager already holds a saved profile for this SSID,
+   * so connecting needs no password. */
+  readonly known: boolean
+}
+
+/** The last connection attempt. Korri hands finished, user-facing copy. */
+export type SurfaceWifiAttempt =
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Connecting"; readonly ssid: string }
+  | {
+      readonly _tag: "Failed"
+      readonly ssid: string
+      readonly message: string
+      /** NetworkManager rejected the key (state reason no-secrets or
+       * supplicant failure). The surface may offer to type it again. */
+      readonly passwordRejected: boolean
+    }
+
+export type SurfaceWifi =
+  /** NetworkManager reports no Wi-Fi device on this machine. */
+  | { readonly _tag: "NoAdapter" }
+  | {
+      readonly _tag: "Available"
+      /** A scan Korri asked for is still running. */
+      readonly scanning: boolean
+      /** Strongest first. Empty when the last scan found nothing. */
+      readonly networks: readonly SurfaceWifiNetwork[]
+      readonly attempt: SurfaceWifiAttempt
+    }
+
+/** Present only when this host can read and change the device's network. */
+export interface SurfaceNetwork {
+  readonly connection: SurfaceNetworkConnection
+  readonly wifi: SurfaceWifi
+}
+
+/**
+ * A controller the host can see. Grounded in the native input stream's
+ * `device-added` (`deviceId`, `name`, class `gamepad`).
+ */
+export interface SurfaceController {
+  readonly id: string
+  readonly name: string
+  /** The host has received input from it since onboarding began. */
+  readonly heard: boolean
+}
+
+/**
+ * Present only while this device has not finished first-boot setup. The
+ * surface owns the steps and their order; it ends setup with
+ * `SurfaceHost.finishOnboarding`, after which Korri omits this field.
+ */
+export interface SurfaceOnboarding {
+  readonly controllers: readonly SurfaceController[]
+}
+
 /** Everything Korri publishes to the surface. Replaced wholesale on change. */
 export interface SurfaceModel {
   readonly presentation: SurfacePresentation
@@ -327,6 +411,10 @@ export interface SurfaceModel {
   readonly identityManagement?: SurfaceIdentityManagement
   /** Free-form build/identity stamp a surface may display. */
   readonly buildLabel?: string
+  /** Absent in hosts that cannot manage the device's network. */
+  readonly network?: SurfaceNetwork
+  /** Absent once first-boot setup is finished, and in hosts without it. */
+  readonly onboarding?: SurfaceOnboarding
 }
 
 /** Everything the surface may ask Korri to do. */
@@ -375,6 +463,19 @@ export interface SurfaceHost {
   dismiss(): void
   /** Ask Korri to re-read everything (used by error recovery). */
   reload(): void
+  /** Ask for a fresh Wi-Fi scan. Results arrive in `model.network`. */
+  scanWifi(): void
+  /**
+   * Join a listed network. `password` is required for a secured network that
+   * is not `known`, and is passed straight to NetworkManager: Korri never
+   * stores, logs, or republishes it.
+   */
+  connectWifi(networkId: string, password?: string): void
+  /** Join a network that does not broadcast its name. With a password Korri
+   * asks for WPA-PSK; without one it joins an open network. */
+  connectHiddenWifi(ssid: string, password?: string): void
+  /** Record that first-boot setup is finished on this device. */
+  finishOnboarding(): void
 }
 
 /**
