@@ -38,7 +38,8 @@
 	overflow-wrap: anywhere;
 }
 
-/* Korri's refusal, in its words, on a red plate. */
+/* Korri's refusal, in its words, on a red plate, in the note ink red takes
+ * for small text (white read 3.5:1 there). */
 .pico-identity-setup-problem {
 	justify-self: start;
 	max-width: calc(var(--pico-px) * 280);
@@ -46,7 +47,7 @@
 	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 4);
 	font-size: var(--pico-text-sm);
 	line-height: 1.5;
-	color: var(--pico-warn-ink);
+	color: var(--pico-shell-warn-note);
 	background: var(--pico-warn);
 	overflow-wrap: anywhere;
 }

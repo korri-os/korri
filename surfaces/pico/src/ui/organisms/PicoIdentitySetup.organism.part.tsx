@@ -23,7 +23,7 @@ export function Created() {
 }
 
 export function Restored() {
-  return <PicoIdentitySetup actions={none} view={{ _tag: "Ready", origin: "restored", canBackUp: true }} />
+  return <PicoIdentitySetup actions={none} view={{ _tag: "Ready", origin: "restored", canBackUp: false }} />
 }
 
 export function Restore() {

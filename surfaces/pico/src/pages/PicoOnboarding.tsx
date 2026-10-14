@@ -4,6 +4,7 @@ import type { PicoOnboardingScreen } from "../pico-onboarding-view"
 import { IDENTITY_FORM } from "../state/navigation"
 import { PICO_IDENTITY_BACKUP_ACTION } from "../pico-settings-view"
 import type { IdentityOrigin } from "../state/onboarding"
+import { PicoBadge } from "../ui/atoms/PicoBadge"
 import { type PicoStep, PicoStepTrack } from "../ui/atoms/PicoStepTrack"
 import type { PicoButtonBarHint } from "../ui/molecules/PicoButtonBar"
 import type { PicoTyping } from "../ui/molecules/PicoKeyboard"
@@ -115,7 +116,12 @@ export function PicoOnboarding({
           {screen._tag === "Wifi" ? <PicoWifiSetup actions={actions.wifi} view={screen.view} /> : null}
           {screen._tag === "Entry" ? (
             <PicoTextEditor
-              actions={[{ label: screen.entry.submitLabel, disabled: !screen.entry.ready, onPress: actions.onSubmitText }]}
+              actions={[{
+                label: screen.entry.submitLabel,
+                detail: screen.entry.busy ? <PicoBadge text="SAVING" tone="info" /> : undefined,
+                disabled: !screen.entry.ready,
+                onPress: actions.onSubmitText,
+              }]}
               busy={screen.entry.busy}
               draft={screen.entry.draft}
               formLabel={screen.entry.fieldLabel}

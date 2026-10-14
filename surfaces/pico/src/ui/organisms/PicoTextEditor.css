@@ -155,17 +155,15 @@
 	background: var(--pico-warn);
 }
 
+/* Korri's refusal on a red plate, in the note ink red takes for text this
+ * small: white read 3.5:1 there, and peach 2.7:1 (WCAG asks 4.5:1). */
 .pico-text-editor-problem {
 	--pico-row-plate: var(--pico-ink-dark);
 	display: grid;
 	gap: var(--pico-px);
 	padding: calc(var(--pico-px) * 3) calc(var(--pico-px) * 4);
-	color: var(--pico-warn-ink);
+	color: var(--pico-shell-warn-note);
 	background: var(--pico-warn);
-}
-
-.pico-text-editor-problem-kicker {
-	color: var(--pico-shell-warn-kicker);
 }
 
 .pico-text-editor-problem-reason {
@@ -174,9 +172,10 @@
 	line-height: 1.4;
 }
 
-/* Saving: the keys go quiet. They keep focus, so the cursor never jumps. */
+/* Saving: the keys go quiet, to the dim ink, which still reads on the
+ * plate. They keep focus, so the cursor never jumps. */
 .pico-text-editor[data-busy] .pico-text-editor-keys {
-	--pico-ink: var(--pico-ink-quiet);
+	--pico-ink: var(--pico-ink-dim);
 }
 
 /* ---- Wide: two columns, the right one level with the left ---- */

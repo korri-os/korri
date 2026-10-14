@@ -12,8 +12,12 @@
 	padding-bottom: calc(var(--pico-drop-lg) + var(--pico-px));
 }
 
+/* The card's words take its note ink: the darkest that is not the card's
+ * own and reaches 4.5:1 on every shell. White on the red shell read 3.5:1
+ * at this size. */
 .pico-wifi-setup-message {
 	margin: 0;
+	color: var(--pico-card-note);
 	overflow-wrap: anywhere;
 }
 

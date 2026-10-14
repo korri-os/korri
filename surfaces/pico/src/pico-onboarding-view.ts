@@ -251,7 +251,13 @@ function identityView(identity: IdentityStep, korri: SurfaceModel): PicoIdentity
         signer: choice(korri, "NIP-46: the key stays in your signer app."),
       }
     case "Ready":
-      return { _tag: "Ready", origin: identity.origin, canBackUp: korri.identityManagement?.localBackupAvailable === true }
+      // A restored or signer identity is already kept elsewhere; a new one
+      // is offered its backup now.
+      return {
+        _tag: "Ready",
+        origin: identity.origin,
+        canBackUp: identity.origin === "created" && korri.identityManagement?.localBackupAvailable === true,
+      }
     case "Restore": {
       if (identity.sent && status?._tag === "Working") return { _tag: "Working", label: status.operation }
       const problem = identity.sent && status?._tag === "Problem" ? status.message : undefined

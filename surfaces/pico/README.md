@@ -18,9 +18,10 @@ enforces both; there is no runtime dependency in either direction.
 What that forbids, deliberately:
 
 - No Effect, no atoms, no router, no `@platform` module, no other surface.
-- No device facts Korri does not publish. Pico shows **no battery and no signal
-  meter**, because the treaty states neither, and a plausible-looking invented
-  battery is worse than none.
+- No device facts Korri does not publish. Pico shows **no battery**, because
+  the treaty states none, and a plausible-looking invented battery is worse
+  than none. Signal bars appear only for Wi-Fi networks, from the
+  `strengthPercent` Korri publishes in `SurfaceModel.network`.
 - No interpreting failure codes: Korri hands Pico finished, user-facing copy.
 - One thing of its own is stored: the face, as `pico.font` in local storage
   (`src/pico-font-preference.ts`). Nothing else Pico shows is kept by Pico.
@@ -39,13 +40,18 @@ file performs them. No component holds React state.
 | `src/state/shown.ts` | What the screen draws, and whether attract may show. |
 | `src/state/overlay.ts` | The gameplay overlay's model and update, including a range's value while the player moves it and the waits before Korri hears it. |
 | `src/state/font.ts` | The face this device shows: read once at start, stored again through a request. |
+| `src/state/onboarding.ts` | `OnboardingNav`: first-boot setup's step, what is being typed, a question the player opened, and whether the player went on offline. Nothing in it is stored. |
+| `src/state/onboarding-update.ts` | `updateOnboarding(setup, message, korri)`: every setup rule, including Wi-Fi being required and Back going back one step. |
+| `src/state/wifi.ts` | Joining a network, shared by setup and Settings: when a password is asked, what a confirm sends, and when a typed password is dropped. |
 | `src/state/requests.ts` | What an update may ask for. A request that answers (a wait, a drawn QR code) comes back as a message. |
 | `src/pico-host.ts` | The one door to Korri: performs requests, delivers the host's buttons as messages. |
 | `src/use-pico-program.ts` | The runtime: holds a model, runs `update`, performs requests, delivers their replies. The only file with React state. |
 | `src/use-pico-navigation.ts` | The catalog's subscriptions: host buttons, Korri's model, the idle timer. |
+| `src/use-pico-onboarding.ts` | Setup's subscriptions: the host's Back and Korri's model. |
 
 To change behaviour, add a message or a case in `update`, and test it in
-`test/pico-navigation-update.test.ts` with plain values. A page reports what
+`test/pico-navigation-update.test.ts` with plain values. Setup's rules are
+tested the same way in `test/pico-onboarding-update.test.ts`. A page reports what
 happened through a callback; the composition root turns that into a message.
 
 Input acts on what is shown. Back acts on the top layer only. While Korri shows
@@ -63,8 +69,10 @@ cover's shape once its art has loaded (`data-ratio`). Focus and the click that
 woke attract are refs. This is where Elm would use a port or a custom element.
 
 Secrets typed into the editor or the identity dialog sit in the model while
-the dialog is open, as they would in Elm. A message log for development must
-not print them.
+the dialog is open, as they would in Elm. A Wi-Fi password leaves the model
+when its editor closes and when the connect is sent. A message log for
+development must not print them, and a part's fixture never shows one
+unmasked in its default state.
 
 A part whose component is controlled this way renders it from props in its
 default preview, so Caliper's Inspector can set the value. A named
@@ -131,6 +139,9 @@ src/
   PicoSurface.tsx     the composition root — the only file that reads the treaty
   pico-screen-view.ts what the screen shows, decided once: status outranks catalog
   pico-home-view.ts   catalog -> the home's own tagged state, converted once
+  pico-onboarding-view.ts  setup state + model -> the setup screen, the step
+                      track and where the cursor starts
+  pico-wifi-view.ts   network -> rows, signal bars (PICO_SIGNAL_BAR_ABOVE)
   ui/atoms|molecules|organisms|templates
   pages/
 ```
@@ -206,13 +217,26 @@ files into the glyph tables; run them only to take a new upstream version.
 
 ## Supported UI
 
-Pico renders the catalog (shelf/grid/hero), game detail and launch locations,
-Find, grouped settings, gameplay overlay and attract mode. Every product
+Pico renders first-boot setup, the catalog (shelf/grid/hero), game detail and
+launch locations, Find, grouped settings with Wi-Fi, gameplay overlay and
+attract mode.
+
+While Korri publishes `onboarding` and the presentation is the catalog, Pico
+shows setup instead of home: Hello, Wi-Fi, Name, You, Pads, Games, Play.
+Wi-Fi is required unless the device is on a cable or has no Wi-Fi; "Continue
+offline" appears only where no network worked, and asks first. GO TO GAMES
+calls `finishOnboarding`, and home appears once Korri drops `onboarding`.
+
+Settings shows a WI-FI group whenever Korri publishes `network`: the
+connection and Korri's words for a failed attempt, a scan, every network the
+scan found, and a hidden network by name. There is no "forget": the treaty
+has no command for it. Every product
 device opens it (`surfaceId` in `nix/product/requirements.nix`); a browser
 selects it with `?surface=pico`. A text setting opens Pico's editor: the keyboard
 adds a case key (lit while capitals are on) and a symbols key with every
 printable ASCII symbol; a secret is masked, and clearing a saved one asks
-first.
+first. The same editor (`PicoTextEditor`) takes the caller's actions, so a
+Wi-Fi password gets CONNECT and SHOW, and setup's name gets NEXT.
 
 Everything is reachable with the d-pad, A and B alone, because many handhelds
 send the surface no `system`, `options` or `menu` button. Home's MENU key on
@@ -234,7 +258,7 @@ bun install
 bun run caliper   # then open http://localhost:5173/__caliper/
 ```
 
-Caliper finds everything else from the source: the 55 `*.part.tsx` files, the
+Caliper finds everything else from the source: the 73 `*.part.tsx` files, the
 entry (`package.json` `exports["."]`), stylesheets and the wrapper
 (`<div className="pico-theme pico-screen">` in `src/PicoSurface.tsx`). Its Setup
 panel shows where each came from.
@@ -255,7 +279,7 @@ meaningful alternate inputs of the same real component. Caliper lists these
 states under the part; **All states** shows them together. Fixtures use the
 existing surface treaty and component props, with no backend or request swapping.
 
-The audit covers all 57 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
+The audit covers all 73 parts. `PicoPaletteBar` and `PicoPixelDisc` have no inputs,
 so their default examples are their only states. A second export would duplicate
 the same output. Other parts include alternate inputs such as missing artwork,
 long content, disabled actions, loading, errors, and empty collections where
@@ -267,6 +291,11 @@ return nothing for valid inputs; an `Empty` preview for those documented cases
 is not a loading failure. Internal interaction states still require interaction
 with the real component. These examples are not an exhaustive combination of
 all props and do not prove that every layout fits every size.
+
+`src/pages/PicoOnboarding.page.part.tsx` runs setup's real update against a
+fixture Korri (`fixtures/onboarding.ts`) that answers each request, so every
+state can be walked on: arrows are the d-pad, Enter is A and Escape is B
+(`fixtures/fixture-dpad.ts`, fixture code only).
 
 `fixtures/PicoPartFrame.tsx` supplies the documented art-size properties and
 space for the hero cart's lift in two isolated examples. It changes only the

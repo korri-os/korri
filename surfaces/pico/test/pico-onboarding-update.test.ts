@@ -277,7 +277,7 @@ describe("who you are", () => {
     })
     expect(JSON.stringify(nav)).not.toContain("hunter22")
     const switched = { ...online, identityManagement: { localBackupAvailable: true, retiredPublicKeys: [], status: { _tag: "Switched", ownerPublicKey: "k" } } } as const
-    expect(storyFrom(nav, switched, published).screen).toEqual({ _tag: "Identity", view: { _tag: "Ready", origin: "restored", canBackUp: true } })
+    expect(storyFrom(nav, switched, published).screen).toEqual({ _tag: "Identity", view: { _tag: "Ready", origin: "restored", canBackUp: false } })
   })
 
   test("a signer is asked through NIP-46", () => {

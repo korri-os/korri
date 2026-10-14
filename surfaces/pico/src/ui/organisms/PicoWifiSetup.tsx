@@ -28,8 +28,6 @@ interface Shown {
   readonly tone: PicoCardTone
   readonly title: string
   readonly message?: string
-  /** A second line, Pico's own hint under Korri's words. */
-  readonly hint?: string
   readonly busy?: string
 }
 
@@ -48,7 +46,8 @@ function shown(view: PicoWifiView): Shown {
       return { tone: "tell", title: "Connected", message: `This device is online through ${view.ssid}.` }
     case "Failed":
       return view.passwordRejected
-        ? { tone: "warn", title: "Wrong password", message: view.message, hint: "Capitals count: turn on SHOW to check it." }
+        // Korri's words, then Pico's own hint about the keyboard.
+        ? { tone: "warn", title: "Wrong password", message: `${view.message} Capitals count: turn on SHOW to check it.` }
         : { tone: "warn", title: "Could not connect", message: view.message }
     case "NoNetworks":
       return {
@@ -99,12 +98,11 @@ export function PicoWifiSetup({
   readonly view: PicoWifiView
   readonly actions: PicoWifiActions
 }) {
-  const { tone, title, message, hint, busy } = shown(view)
+  const { tone, title, message, busy } = shown(view)
   return (
     <section aria-label="Wi-Fi" className="pico-wifi-setup" data-state={view._tag}>
       <PicoCard title={title} tone={tone}>
         {message === undefined ? null : <p className="pico-wifi-setup-message">{message}</p>}
-        {hint === undefined ? null : <p className="pico-wifi-setup-message">{hint}</p>}
         {busy === undefined ? null : <PicoBusyMeter label={busy} />}
         {view._tag === "Networks" ? (
           <ul className="pico-wifi-setup-networks">

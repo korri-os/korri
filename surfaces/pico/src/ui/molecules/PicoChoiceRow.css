@@ -1,4 +1,7 @@
+/* The value a choice shows is what it says, so it takes the dim ink: the
+ * quiet ink reads 3.3:1 on the ground's plate. */
 .pico-choice-row {
+	--pico-row-quiet: var(--pico-ink-dim);
 	display: grid;
 	gap: var(--pico-px);
 	list-style: none;

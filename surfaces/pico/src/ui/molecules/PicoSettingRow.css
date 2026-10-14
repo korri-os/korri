@@ -11,13 +11,14 @@
 	line-height: 1.5;
 }
 
-/* A failure is Korri's own copy on a red plate, so it reads on any card. */
+/* A failure is Korri's own copy on a red plate, so it reads on any card. Its
+ * ink is the note ink red takes for text this small: white read 3.5:1. */
 .pico-setting-row-problem {
 	justify-self: start;
 	margin: 0;
 	padding: 0 calc(var(--pico-px) * 3);
 	font-size: var(--pico-text-sm);
 	line-height: 1.5;
-	color: var(--pico-warn-ink);
+	color: var(--pico-shell-warn-note);
 	background: var(--pico-warn);
 }

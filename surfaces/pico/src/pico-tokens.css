@@ -112,7 +112,9 @@
 	/* A chosen row inside a coloured card. */
 	--pico-pick: var(--p8-white);
 	--pico-pick-ink: var(--p8-black);
-	--pico-pick-mark: var(--p8-brown);
+	/* Maroon: brown read 4.3:1 on the yellow cursor; maroon reads 7.6:1 on
+	 * it and 8.6:1 on the white one. */
+	--pico-pick-mark: var(--p8-maroon);
 	--pico-ok: var(--p8-lime);
 	/* A step passed without being done, such as Wi-Fi left offline. */
 	--pico-skip: var(--p8-orange);
