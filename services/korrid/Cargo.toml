@@ -43,6 +43,7 @@ url = "2.5"
 tower-http = { version = "0.6", features = ["cors"] }
 typeshare = "1"
 zeroize = "1"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 rquickjs = { version = "0.9", features = ["macro", "bindgen", "loader"] }
 oxc = { version = "0.142.0", features = ["transformer", "codegen", "semantic"] }
@@ -51,6 +52,7 @@ proseql-formats = { path = ".cache/proseql/crates/proseql-formats" }
 proseql-storage = { path = ".cache/proseql/crates/proseql-storage" }
 
 [dev-dependencies]
+zbus = { version = "5", default-features = false, features = ["tokio", "p2p"] }
 secp256k1 = { version = "0.30", features = ["global-context"] }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }

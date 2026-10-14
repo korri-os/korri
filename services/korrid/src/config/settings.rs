@@ -25,6 +25,7 @@ use crate::plugin_policy;
 
 pub const DEVICE_NAME_SETTING_ID: &str = "device-name";
 pub const PLAYER_COUNT_SETTING_ID: &str = "host.preferences.playerCount";
+pub(crate) const ONBOARDING_FINISHED_FILE_NAME: &str = "onboarding-finished";
 const STEAMGRIDDB_CREDENTIAL_FILE_NAME: &str = "steamgriddb.credential";
 
 #[typeshare::typeshare]

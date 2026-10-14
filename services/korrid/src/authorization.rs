@@ -150,6 +150,7 @@ pub enum AuthorizationContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerPolicy {
+    LocalPortalOnly,
     LocalOnly,
     OwnerDeviceOnly,
     ExplicitScope(Scope),
@@ -172,6 +173,12 @@ pub enum AuthorizationError {
 /// until this mapping receives an explicit policy.
 pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
     match request {
+        RpcRequest::NetworkStatus(_)
+        | RpcRequest::WifiScan(_)
+        | RpcRequest::WifiConnect(_)
+        | RpcRequest::WifiConnectHidden(_)
+        | RpcRequest::OnboardingStatus(_)
+        | RpcRequest::OnboardingFinish(_) => PeerPolicy::LocalPortalOnly,
         RpcRequest::CatalogSnapshot(_) => PeerPolicy::CatalogOrStreamScope,
         RpcRequest::MoonlightCertificateAttest(_) => PeerPolicy::ExplicitScope(Scope::StreamLaunch),
         RpcRequest::MoonlightCertificateProvision(_) => {
@@ -226,15 +233,24 @@ pub fn authorize(
     request: &RpcRequest,
 ) -> Result<(), AuthorizationDenied> {
     let allowed = match context {
-        AuthorizationContext::LocalBrowser | AuthorizationContext::LocalUnixControl => true,
-        AuthorizationContext::TrustReconciliation => policy_for(request) != PeerPolicy::LocalOnly,
-        AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => {
-            policy_for(request) != PeerPolicy::LocalOnly
+        AuthorizationContext::LocalBrowser => true,
+        AuthorizationContext::LocalUnixControl => {
+            policy_for(request) != PeerPolicy::LocalPortalOnly
         }
+        AuthorizationContext::TrustReconciliation => !matches!(
+            policy_for(request),
+            PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
+        ),
+        AuthorizationContext::Peer(Principal::OwnerDevice { .. }) => !matches!(
+            policy_for(request),
+            PeerPolicy::LocalOnly | PeerPolicy::LocalPortalOnly
+        ),
         AuthorizationContext::Peer(principal @ Principal::Household { .. })
         | AuthorizationContext::Peer(principal @ Principal::Guest { .. }) => {
             match policy_for(request) {
-                PeerPolicy::LocalOnly | PeerPolicy::OwnerDeviceOnly => false,
+                PeerPolicy::LocalOnly
+                | PeerPolicy::LocalPortalOnly
+                | PeerPolicy::OwnerDeviceOnly => false,
                 PeerPolicy::ExplicitScope(scope) => principal.has_scope(scope),
                 PeerPolicy::CatalogOrStreamScope => {
                     principal.has_scope(Scope::CatalogRead)
@@ -250,7 +266,11 @@ pub fn authorize(
 pub fn is_security_mutation(request: &RpcRequest) -> bool {
     matches!(
         request,
-        RpcRequest::SessionStop(_)
+        RpcRequest::WifiScan(_)
+            | RpcRequest::WifiConnect(_)
+            | RpcRequest::WifiConnectHidden(_)
+            | RpcRequest::OnboardingFinish(_)
+            | RpcRequest::SessionStop(_)
             | RpcRequest::SessionControlInvoke(_)
             | RpcRequest::SessionFreeze(_)
             | RpcRequest::SessionThaw(_)
@@ -1281,6 +1301,63 @@ mod tests {
         assert_eq!(cases.len(), 31);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
+        }
+    }
+
+    #[test]
+    fn network_and_onboarding_require_the_local_portal_and_deny_every_peer() {
+        let owner = AuthorizationContext::Peer(Principal::OwnerDevice {
+            device_public_key: DEVICE.into(),
+            owner_statement: "event".into(),
+            owner_public_key: OWNER.into(),
+        });
+        for (tag, payload) in [
+            ("system.network.status", serde_json::json!({})),
+            ("system.wifi.scan", serde_json::json!({})),
+            (
+                "system.wifi.connect",
+                serde_json::json!({"networkId":"ap","password":"test-passphrase"}),
+            ),
+            (
+                "system.wifi.connectHidden",
+                serde_json::json!({"ssid":"Hidden"}),
+            ),
+            ("system.onboarding.status", serde_json::json!({})),
+            ("system.onboarding.finish", serde_json::json!({})),
+        ] {
+            let request = request(serde_json::json!({"_tag":tag,"payload":payload}));
+            assert_eq!(policy_for(&request), PeerPolicy::LocalPortalOnly);
+            assert!(authorize(&AuthorizationContext::LocalBrowser, &request).is_ok());
+            for denied in [
+                &owner,
+                &AuthorizationContext::LocalUnixControl,
+                &AuthorizationContext::TrustReconciliation,
+                &AuthorizationContext::Peer(Principal::Unknown {
+                    device_public_key: DEVICE.into(),
+                }),
+            ] {
+                assert!(authorize(denied, &request).is_err(), "{tag}");
+            }
+            for tier in ["guest", "household"] {
+                let local_owner = Keys::parse(OWNER).unwrap();
+                let device_owner = Keys::parse(OTHER_OWNER).unwrap();
+                let statement = owner_statement(&device_owner, DEVICE, "owned", NOW);
+                let root = tempfile::tempdir().unwrap();
+                let authority = Authorization::load(root.path()).unwrap();
+                let pass = pass(
+                    &local_owner,
+                    tier,
+                    &[STREAM_LAUNCH_SCOPE, CATALOG_READ_SCOPE],
+                    NOW + 60,
+                );
+                let attempt = authority
+                    .attempt(&local(), DEVICE, Some(&statement), Some(&pass), &[], NOW)
+                    .unwrap();
+                assert!(
+                    authorize(attempt.context(), &request).is_err(),
+                    "{tag}: {tier}"
+                );
+            }
         }
     }
 

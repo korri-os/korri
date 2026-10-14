@@ -14,7 +14,9 @@ pub enum PortalPermission {
 impl PortalPermission {
     fn permits(self, request: &RpcRequest) -> bool {
         let initial_read = match request {
-            RpcRequest::GameRoutes(_)
+            RpcRequest::NetworkStatus(_)
+            | RpcRequest::OnboardingStatus(_)
+            | RpcRequest::GameRoutes(_)
             | RpcRequest::CatalogSnapshot(_)
             | RpcRequest::Health(_)
             | RpcRequest::LocalGamesList(_)
@@ -25,7 +27,11 @@ impl PortalPermission {
             | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_)
             | RpcRequest::SessionControls(_) => true,
-            RpcRequest::GameRunnerSet(_)
+            RpcRequest::WifiScan(_)
+            | RpcRequest::WifiConnect(_)
+            | RpcRequest::WifiConnectHidden(_)
+            | RpcRequest::OnboardingFinish(_)
+            | RpcRequest::GameRunnerSet(_)
             | RpcRequest::SelectedGameLaunch(_)
             | RpcRequest::SessionReserve(_)
             | RpcRequest::SessionStart(_)

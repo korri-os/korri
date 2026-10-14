@@ -233,6 +233,9 @@ pub struct HostRuntime {
 }
 
 impl HostRuntime {
+    pub(crate) fn private_state_root(&self) -> &Path {
+        &self.private_state_root
+    }
     pub fn from_path(path: &Path) -> Self {
         Self::from_paths(path, None)
     }

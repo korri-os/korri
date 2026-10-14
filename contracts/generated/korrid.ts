@@ -447,6 +447,40 @@ export interface NativeInputSuspend {
 	requestId: string;
 }
 
+export type NetworkConnection =
+	| { _tag: "Offline", payload?: undefined }
+	| { _tag: "Wired", payload?: undefined }
+	| { _tag: "Wifi", payload: {
+	ssid: string;
+	strengthPercent?: number;
+}};
+
+export type Wifi =
+	| { _tag: "NoAdapter", payload?: undefined }
+	| { _tag: "Available", payload: {
+	scanning: boolean;
+	networks: WifiNetwork[];
+	attempt: WifiAttempt;
+}};
+
+export interface NetworkSnapshot {
+	connection: NetworkConnection;
+	wifi: Wifi;
+}
+
+export interface NetworkStatusRequest {
+}
+
+export interface OnboardingFinishRequest {
+}
+
+export interface OnboardingStatus {
+	needed: boolean;
+}
+
+export interface OnboardingStatusRequest {
+}
+
 export enum PeerListState {
 	Loading = "loading",
 	Ready = "ready",
@@ -787,6 +821,27 @@ export interface SteamGridDbCredentialSetRequest {
 	token: string;
 }
 
+export interface WifiConnectHiddenRequest {
+	ssid: string;
+	password?: string;
+}
+
+export interface WifiConnectRequest {
+	networkId: string;
+	password?: string;
+}
+
+export interface WifiNetwork {
+	id: string;
+	ssid: string;
+	strengthPercent: number;
+	secured: boolean;
+	known: boolean;
+}
+
+export interface WifiScanRequest {
+}
+
 export type AttentionOutcome =
 	| { _tag: "Ok", payload: AttentionList }
 	| { _tag: "Err", payload: RpcFailure };
@@ -843,11 +898,25 @@ export type MoonlightCertificateRevokeOutcome =
 	| { _tag: "Ok", payload: MoonlightCertificateRevoked }
 	| { _tag: "Err", payload: RpcFailure };
 
+export type NetworkStatusOutcome =
+	| { _tag: "Ok", payload: NetworkSnapshot }
+	| { _tag: "Err", payload: RpcFailure };
+
+export type OnboardingStatusOutcome =
+	| { _tag: "Ok", payload: OnboardingStatus }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type PeerListOutcome =
 	| { _tag: "Ok", payload: PeerList }
 	| { _tag: "Err", payload: RpcFailure };
 
 export type RpcRequest =
+	| { _tag: "system.onboarding.finish", payload: OnboardingFinishRequest }
+	| { _tag: "system.onboarding.status", payload: OnboardingStatusRequest }
+	| { _tag: "system.wifi.connectHidden", payload: WifiConnectHiddenRequest }
+	| { _tag: "system.wifi.connect", payload: WifiConnectRequest }
+	| { _tag: "system.wifi.scan", payload: WifiScanRequest }
+	| { _tag: "system.network.status", payload: NetworkStatusRequest }
 	| { _tag: "app.local-games.routes", payload: GameRoutesRequest }
 	| { _tag: "app.local-games.runner.set", payload: GameRunnerSetRequest }
 	| { _tag: "app.local-games.launch.selected", payload: SelectedGameLaunchRequest }
@@ -889,6 +958,12 @@ export type RpcRequest =
 	| { _tag: "system.identity.retired.delete", payload: IdentityRetiredDeleteRequest };
 
 export type RpcResponse =
+	| { _tag: "system.onboarding.finish", outcome: OnboardingStatusOutcome }
+	| { _tag: "system.onboarding.status", outcome: OnboardingStatusOutcome }
+	| { _tag: "system.wifi.connectHidden", outcome: NetworkStatusOutcome }
+	| { _tag: "system.wifi.connect", outcome: NetworkStatusOutcome }
+	| { _tag: "system.wifi.scan", outcome: NetworkStatusOutcome }
+	| { _tag: "system.network.status", outcome: NetworkStatusOutcome }
 	| { _tag: "app.local-games.routes", outcome: GameRoutesOutcome }
 	| { _tag: "app.local-games.runner.set", outcome: GameRunnerSetOutcome }
 	| { _tag: "app.local-games.launch.selected", outcome: SelectedGameLaunchOutcome }
@@ -972,3 +1047,14 @@ export type SettingsUpdateOutcome =
 export type SourceStatusOutcome =
 	| { _tag: "Ok", payload: SourceStatus }
 	| { _tag: "Err", payload: RpcFailure };
+
+export type WifiAttempt =
+	| { _tag: "Idle", payload?: undefined }
+	| { _tag: "Connecting", payload: {
+	ssid: string;
+}}
+	| { _tag: "Failed", payload: {
+	ssid: string;
+	message: string;
+	passwordRejected: boolean;
+}};

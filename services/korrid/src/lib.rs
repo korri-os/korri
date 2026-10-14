@@ -37,6 +37,8 @@ pub mod identity_switch;
 pub mod linux_viewer;
 pub mod local_signer;
 pub mod native_input;
+pub mod network;
+pub mod onboarding;
 mod peer_rpc;
 pub mod play_log;
 pub mod portal_access;
@@ -1185,6 +1187,18 @@ pub enum IdentityRetiredDeleteOutcome {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "payload")]
 pub enum RpcRequest {
+    #[serde(rename = "system.onboarding.finish")]
+    OnboardingFinish(onboarding::OnboardingFinishRequest),
+    #[serde(rename = "system.onboarding.status")]
+    OnboardingStatus(onboarding::OnboardingStatusRequest),
+    #[serde(rename = "system.wifi.connectHidden")]
+    WifiConnectHidden(network::WifiConnectHiddenRequest),
+    #[serde(rename = "system.wifi.connect")]
+    WifiConnect(network::WifiConnectRequest),
+    #[serde(rename = "system.wifi.scan")]
+    WifiScan(network::WifiScanRequest),
+    #[serde(rename = "system.network.status")]
+    NetworkStatus(network::NetworkStatusRequest),
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesRequest),
     #[serde(rename = "app.local-games.runner.set")]
@@ -1269,6 +1283,18 @@ pub enum RpcRequest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag", content = "outcome")]
 pub enum RpcResponse {
+    #[serde(rename = "system.onboarding.finish")]
+    OnboardingFinish(onboarding::OnboardingStatusOutcome),
+    #[serde(rename = "system.onboarding.status")]
+    OnboardingStatus(onboarding::OnboardingStatusOutcome),
+    #[serde(rename = "system.wifi.connectHidden")]
+    WifiConnectHidden(network::NetworkStatusOutcome),
+    #[serde(rename = "system.wifi.connect")]
+    WifiConnect(network::NetworkStatusOutcome),
+    #[serde(rename = "system.wifi.scan")]
+    WifiScan(network::NetworkStatusOutcome),
+    #[serde(rename = "system.network.status")]
+    NetworkStatus(network::NetworkStatusOutcome),
     #[serde(rename = "app.local-games.routes")]
     GameRoutes(game_routes::GameRoutesOutcome),
     #[serde(rename = "app.local-games.runner.set")]
@@ -1398,6 +1424,7 @@ enum RpcSurface {
 
 #[derive(Clone)]
 struct AppState {
+    network: network::NetworkService,
     // Retain the actual shared directory for snapshot-only B5 consumers.
     federation: Option<federation::FederationDirectory>,
     federation_wake: Option<DiscoveryControl>,
@@ -1411,6 +1438,12 @@ struct AppState {
 }
 
 impl AppState {
+    fn private_state_root(&self) -> &Path {
+        match &self.mode {
+            ServerMode::Brain(brain) => &brain.private_state_root,
+            ServerMode::Host(host) => host.private_state_root(),
+        }
+    }
     fn record_overlay_intent(&self, outcome: &SessionFreezeOutcome) {
         if let SessionFreezeOutcome::Ok(result) = outcome {
             *self
@@ -2080,6 +2113,26 @@ async fn dispatch(
 ) -> Result<RpcResponse, authorization::AuthorizationDenied> {
     authorization::authorize(authorization, &request)?;
     let mut response = match request {
+        RpcRequest::NetworkStatus(_) => RpcResponse::NetworkStatus(state.network.status().await),
+        RpcRequest::WifiScan(_) => RpcResponse::WifiScan(state.network.scan().await),
+        RpcRequest::WifiConnect(request) => RpcResponse::WifiConnect(
+            state
+                .network
+                .connect(&request.network_id, false, request.password.as_deref())
+                .await,
+        ),
+        RpcRequest::WifiConnectHidden(request) => RpcResponse::WifiConnectHidden(
+            state
+                .network
+                .connect(&request.ssid, true, request.password.as_deref())
+                .await,
+        ),
+        RpcRequest::OnboardingStatus(_) => {
+            RpcResponse::OnboardingStatus(onboarding::status(state.private_state_root()))
+        }
+        RpcRequest::OnboardingFinish(_) => {
+            RpcResponse::OnboardingFinish(onboarding::finish(state.private_state_root()))
+        }
         RpcRequest::GameRoutes(request) => RpcResponse::GameRoutes(match &state.mode {
             ServerMode::Host(host) => host
                 .game_routes(request.game_id)
@@ -3512,6 +3565,7 @@ fn brain_app_state(
     let local_owner_public_key = brain_owner_public_key(&private_state_root);
     let portal_access = PortalAccess::new(rpc_capability, allowed_origin, PortalPermission::Full);
     let state = AppState {
+        network: network::NetworkService::default(),
         federation: resources.map(|resources| resources.directory),
         federation_wake,
         identity_switch: None,
@@ -3708,7 +3762,9 @@ fn secure_host_router_with_in_memory_units_at(
 
 fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
     let overlay_intent = Arc::new(Mutex::new(None));
+    let network = network::NetworkService::default();
     let lan = AppState {
+        network: network.clone(),
         federation: None,
         federation_wake: None,
         identity_switch: None,
@@ -3718,6 +3774,7 @@ fn app_states(runtime: host::HostRuntime) -> (AppState, AppState) {
         overlay_intent: overlay_intent.clone(),
     };
     let local = AppState {
+        network,
         federation: None,
         federation_wake: None,
         identity_switch: None,
