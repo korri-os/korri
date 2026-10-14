@@ -35,6 +35,11 @@ const TEXTLESS = new Set([
   "ui/atoms/PicoPaletteBar.atom.part.tsx",
   "ui/atoms/PicoPixelDisc.atom.part.tsx",
   "ui/molecules/PicoCart.molecule.part.tsx",
+  // A meter, a padlock and signal bars are shapes named by aria-label, like
+  // the disc above. Verified by eye in Caliper.
+  "ui/atoms/PicoBusyMeter.atom.part.tsx",
+  "ui/atoms/PicoPixelLock.atom.part.tsx",
+  "ui/atoms/PicoSignalBars.atom.part.tsx",
 ])
 
 afterEach(() => cleanup())

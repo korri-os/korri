@@ -1,0 +1,42 @@
+/* One card in the middle of the step's room. A long list scrolls inside the
+ * card, which is how a card already behaves; the focused row scrolls into
+ * view and the cut row below it says there is more. */
+.pico-wifi-setup {
+	--pico-card-width: min(100%, calc(var(--pico-px) * 280));
+	container: pico-wifi / size;
+	display: grid;
+	place-items: center;
+	height: 100%;
+	min-height: 0;
+	/* Room for the card's hard shadow, so the card never ends on the floor row. */
+	padding-bottom: calc(var(--pico-drop-lg) + var(--pico-px));
+}
+
+.pico-wifi-setup-message {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.pico-wifi-setup-networks,
+.pico-wifi-setup-actions {
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	margin: 0;
+	padding: 0;
+}
+
+/* The list's own two actions share one line under the networks, so a short
+ * room spends its height on networks. */
+.pico-wifi-setup[data-state="Networks"] .pico-wifi-setup-actions {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	padding-top: calc(var(--pico-px) * 2);
+}
+
+/* A short room: the card's title steps down and its padding yields first. */
+@container pico-wifi (height < 26em) {
+	.pico-wifi-setup {
+		--pico-title-xl: var(--pico-text-lg);
+		--pico-card-gap: calc(var(--pico-px) * 3);
+		--pico-card-pad: calc(var(--pico-px) * 6) calc(var(--pico-px) * 5) calc(var(--pico-px) * 4);
+	}
+}

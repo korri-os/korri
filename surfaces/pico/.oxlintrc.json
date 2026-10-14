@@ -42,7 +42,11 @@
       { "object": "host", "property": "dismissGameplayOverlay", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
       { "object": "host", "property": "retry", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
       { "object": "host", "property": "dismiss", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
-      { "object": "host", "property": "reload", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." }
+      { "object": "host", "property": "reload", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
+      { "object": "host", "property": "scanWifi", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
+      { "object": "host", "property": "connectWifi", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
+      { "object": "host", "property": "connectHiddenWifi", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." },
+      { "object": "host", "property": "finishOnboarding", "message": "Return a PicoRequest; only src/pico-host.ts calls the host." }
     ]
   },
   "overrides": [

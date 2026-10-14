@@ -39,7 +39,9 @@ export function PicoSettingsPanel({
     )
   }
 
-  const problem = shown.rows.find((row) => typeof row.state === "object")
+  /* Only a settings problem is dismissed here. A failed Wi-Fi attempt is
+   * Korri's record of the last try, and stays until the next one. */
+  const problem = shown.rows.find((row) => typeof row.state === "object" && "problem" in row.state)
 
   return (
     <PicoPanelScreen

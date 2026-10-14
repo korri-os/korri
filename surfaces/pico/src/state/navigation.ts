@@ -23,6 +23,7 @@ import type { PicoSessionReturn } from "../pico-session-return"
 import type { PicoConfirmation } from "../pico-settings-view"
 import type { PicoShelfGame } from "../pico-shelf-game"
 import type { PicoTextDraft } from "../pico-text-draft"
+import type { WifiEntry } from "./wifi"
 
 export interface Home {
   /** How home lays the library out. About this person in this chair: Korri
@@ -72,6 +73,9 @@ export type SettingsQuestion =
   | ({ readonly _tag: "ConfirmingClear" } & TextEditor)
   /** The identity dialog, opened by an `identity:` action. */
   | { readonly _tag: "Identity"; readonly actionId: string; readonly form: IdentityForm; readonly qr: IdentityQr | undefined }
+  /** A Wi-Fi network being joined on the keyboard. A password lives here
+   * only while the editor is open (src/state/wifi.ts). */
+  | { readonly _tag: "Wifi"; readonly entry: WifiEntry }
 
 export interface TextEditor {
   readonly settingId: string

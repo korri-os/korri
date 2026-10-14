@@ -1,8 +1,9 @@
 /**
  * The editor's plan. The root is the size container; as in Find, heights are
  * in em (lines of its small face) and widths in ch (the face's glyphs). Four
- * parts: the field, the keys, a heading (Korri's group and description), and
- * the actions.
+ * parts: the field (with its prompt, when the caller gives one), the keys, a
+ * heading (a settings group and its description, when there is one), and the
+ * actions.
  *
  *   wide    (w >= 135ch)          field over keys on the left; heading over
  *                                actions on the right, level with them.
@@ -12,12 +13,15 @@
  *   short   (w < 135ch, h < 26em) field and count on one line, then the
  *                                actions, then the keys, which scroll on
  *                                their own and show a cut row. Save never
- *                                leaves the screen. NOW yields; keys take the
- *                                small face.
+ *                                leaves the screen. NOW and the note yield;
+ *                                keys take the small face.
  *
- * The status bar already names the setting (SETTINGS › NAME), so the editor
+ * The status bar already names the value (SETTINGS › NAME), so the editor
  * never repeats it; the wide column names only the group it came from.
  * Every threshold is a guess until measured on the real panels.
+ *
+ * A parent that already insets its content sets --pico-text-editor-inset
+ * (the sides' padding) on its own element; setup sets it to nothing.
  */
 .pico-text-editor {
 	--pico-key-ratio: 1.1;
@@ -37,7 +41,7 @@
 	gap: calc(var(--pico-u) * 1.5);
 	height: 100%;
 	min-height: 0;
-	padding: var(--pico-u) calc(var(--pico-u) * 2);
+	padding: var(--pico-u) var(--pico-text-editor-inset, calc(var(--pico-u) * 2));
 	overflow-y: auto;
 	scrollbar-width: none;
 	/* Keys scrolled into view land below the pinned field, not under it. */
@@ -56,6 +60,15 @@
 	padding: var(--pico-u) 0 calc(var(--pico-px) * 2);
 	margin-top: calc(var(--pico-u) * -1);
 	background: var(--pico-bg);
+}
+
+/* What to type, above the field. */
+.pico-text-editor-prompt {
+	min-width: 0;
+	overflow: hidden;
+	color: var(--pico-ink-dim);
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 /* The keys keep their whole height here: the page scrolls instead. A zero
@@ -87,8 +100,11 @@
 	color: var(--pico-ink-dim);
 }
 
-/* Save and Cancel side by side; Clear on its own line below them. */
+/* Two actions side by side; one marked alone (Clear) on its own line. */
 .pico-text-editor-actions {
+	/* A value an action shows (SHOW's OFF ON) is what it says, so it takes
+	 * the dim ink: the quiet ink reads 3.3:1 on the plate. */
+	--pico-row-quiet: var(--pico-ink-dim);
 	grid-area: actions;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -97,7 +113,11 @@
 	min-width: 0;
 }
 
-.pico-text-editor-action[data-role="clear"] {
+.pico-text-editor-action {
+	min-width: 0;
+}
+
+.pico-text-editor-action[data-alone] {
 	grid-column: 1 / -1;
 }
 
@@ -110,7 +130,8 @@
 	color: var(--pico-ink-quiet);
 }
 
-.pico-text-editor-now {
+.pico-text-editor-now,
+.pico-text-editor-note {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -221,7 +242,18 @@
 		grid-column: 2;
 	}
 
-	.pico-text-editor-now {
+	/* A prompt takes the first line whole; the count stays level with the
+	 * value under it. */
+	.pico-text-editor-prompt {
+		grid-column: 1 / -1;
+	}
+
+	.pico-text-editor-field[data-prompt] .pico-text-editor-count {
+		grid-row: 2;
+	}
+
+	.pico-text-editor-now,
+	.pico-text-editor-note {
 		display: none;
 	}
 

@@ -7,8 +7,20 @@ import {
   secretSettingModel,
 } from "../fixtures/named-states"
 import { createFixtureHost, fixtureModel } from "../fixtures/fixture-host"
+import {
+  connectingNetwork,
+  noAdapterNetwork,
+  scanningNetwork,
+  wifiSettingsModel,
+  wrongPasswordNetwork,
+} from "../fixtures/onboarding"
 import { performPicoRequest } from "../pico-host"
-import { picoSettingsViewFromModel } from "../pico-settings-view"
+import {
+  PICO_WIFI_HIDDEN_ACTION,
+  picoSettingsViewFromModel,
+  picoWifiNetworkAction,
+} from "../pico-settings-view"
+import { picoWifiEntryView } from "../pico-wifi-view"
 import type { PicoMessage } from "../state/messages"
 import { initialNavigation, type PicoNavigation } from "../state/navigation"
 import { update } from "../state/update"
@@ -48,6 +60,9 @@ function Settings({
     onAsk={(actionId, confirmation) => dispatch({ _tag: "AskedSettingConfirmation", actionId, confirmation })}
     onCancel={() => dispatch({ _tag: "CancelledSettingAction" })}
     onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
+    onSubmitWifi={() => dispatch({ _tag: "SubmittedWifi" })}
+    onToggleShown={() => dispatch({ _tag: "ToggledShown" })}
+    wifi={question._tag === "Wifi" ? picoWifiEntryView(question.entry) : undefined}
     onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
     onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
     onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}
@@ -90,6 +105,30 @@ export function ConfirmClearSecret() {
   return <Settings model={secretSettingModel} opening={[edit("steamgriddb-credential"), { _tag: "AskedClear" }]} />
 }
 // Identity disposition and backup dialogs belong to the surface, not this page.
+
+// Wi-Fi, from Korri's network: on Home-5G, the last scan listed.
+export function Wifi() {
+  return <Settings model={wifiSettingsModel} />
+}
+export function WifiScanning() {
+  return <Settings model={{ ...wifiSettingsModel, network: scanningNetwork }} />
+}
+// A secured network with no saved profile asks for its password.
+export function WifiPassword() {
+  return <Settings model={wifiSettingsModel} opening={[{ _tag: "PressedSettingAction", actionId: picoWifiNetworkAction("ap-netgear") }]} />
+}
+export function WifiHiddenNetwork() {
+  return <Settings model={wifiSettingsModel} opening={[{ _tag: "PressedSettingAction", actionId: PICO_WIFI_HIDDEN_ACTION }]} />
+}
+export function WifiConnecting() {
+  return <Settings model={{ ...wifiSettingsModel, network: connectingNetwork }} />
+}
+export function WifiFailed() {
+  return <Settings model={{ ...wifiSettingsModel, network: wrongPasswordNetwork }} />
+}
+export function WifiNoAdapter() {
+  return <Settings model={{ ...wifiSettingsModel, network: noAdapterNetwork }} />
+}
 
 export default function PicoSettingsPagePart() {
   return <Settings model={fixtureModel} />

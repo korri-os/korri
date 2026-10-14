@@ -1,0 +1,31 @@
+.pico-setup-done {
+	display: grid;
+	align-content: center;
+	gap: calc(var(--pico-u) * 2);
+	height: 100%;
+	min-height: 0;
+	padding-bottom: var(--pico-u);
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+/* Facts are statements on the plate, tight, so five of them stay short. */
+.pico-setup-done-facts {
+	/* The values are what this screen says, so they take the dim ink, which
+	 * reads on the plate, rather than the row's quiet default. */
+	--pico-row-quiet: var(--pico-ink-dim);
+	display: grid;
+	gap: var(--pico-px);
+	max-width: calc(var(--pico-px) * 280);
+	margin: 0;
+	padding: 0;
+}
+
+.pico-setup-done-fact {
+	display: grid;
+	list-style: none;
+}
+
+.pico-setup-done-go {
+	display: flex;
+}

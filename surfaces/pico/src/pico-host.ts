@@ -60,6 +60,19 @@ export function performPicoRequest(
       return host.dismiss()
     case "Reload":
       return host.reload()
+    case "ScanWifi":
+      return host.scanWifi()
+    // A password goes straight to the host and nowhere else: never logged.
+    case "ConnectWifi":
+      return request.password === undefined
+        ? host.connectWifi(request.networkId)
+        : host.connectWifi(request.networkId, request.password)
+    case "ConnectHiddenWifi":
+      return request.password === undefined
+        ? host.connectHiddenWifi(request.ssid)
+        : host.connectHiddenWifi(request.ssid, request.password)
+    case "FinishOnboarding":
+      return host.finishOnboarding()
     case "ChooseFont":
       return local.chooseFont(request.font)
     case "RememberFont":

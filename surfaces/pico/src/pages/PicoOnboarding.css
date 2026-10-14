@@ -1,0 +1,26 @@
+/* The track across the top of the body, the step's room under it. The room
+ * is the only part that gives way on a short screen. */
+.pico-onboarding {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	gap: var(--pico-u);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-u) calc(var(--pico-u) * 2) 0;
+}
+
+/* The step's room is already inset, so the keyboard editor adds no sides. */
+.pico-onboarding-step {
+	--pico-text-editor-inset: 0;
+	position: relative;
+	min-width: 0;
+	min-height: 0;
+}
+
+/* A short body spends its height on the step: the track keeps its bars and
+ * drops its words (PicoStepTrack.css). */
+@container pico-body (height < 30em) {
+	.pico-onboarding {
+		--pico-step-track-names: none;
+	}
+}

@@ -1,58 +1,95 @@
 import "./PicoTextEditor.css"
-import { useEffect, useLayoutEffect, useRef } from "react"
-import type { PicoTextSettingRowView } from "../../pico-settings-view"
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react"
 import type { PicoTextDraft } from "../../pico-text-draft"
-import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoRow } from "../atoms/PicoRow"
+import { PicoSegments } from "../atoms/PicoSegments"
 import { PicoKeyboard, type PicoTyping } from "../molecules/PicoKeyboard"
 import { PicoTextField } from "../molecules/PicoTextField"
 
+/** One action beside the keys: what it says, what it shows now, what it does. */
+export interface PicoTextEditorAction {
+  readonly label: string
+  readonly onPress: () => void
+  /** What the action shows on its right, such as SAVING. */
+  readonly detail?: ReactNode
+  readonly disabled?: boolean
+  /** Cannot be undone, such as clearing a saved key. */
+  readonly danger?: boolean
+  /** On its own line under the others, where the layout has lines. */
+  readonly alone?: boolean
+}
+
 /**
- * Change one text setting with Pico's keyboard.
+ * Type one value with Pico's keyboard: a text setting in Settings, a Wi-Fi
+ * password, a device's name during setup.
  *
- * Shift's sheet is the reference: text starts from the value Korri published,
- * a secret starts empty, Save sends exactly what was typed, and Cancel sends
- * nothing. Save never sends an empty value; emptying a secret is the clear
- * action's job, and only when Korri publishes a label for it. Korri's limit
- * on length is enforced at the keys, and the count turns red when it is hit.
+ * The caller says what the value is and what can be done with it: the
+ * actions (SAVE and CANCEL in Settings, CONNECT for a network, NEXT for a
+ * name), whether it is a secret, and whether that secret can be shown. A
+ * secret is masked; given `reveal`, a SHOW action draws it in clear while it
+ * is on. Korri's limit on length is enforced at the keys by the owner, and
+ * the count turns red when it is hit.
  *
- * Korri reports the save. While it is saving the editor says so and ignores
- * presses but keeps the cursor where it is; when Korri goes back to idle the
- * editor closes onto the new value. A refusal is shown in Korri's words with
- * the typing kept, so a second try does not start over.
+ * `busy` is Korri saving: the keys go quiet but keep the cursor where it is.
+ * A `problem` is Korri's refusal in its own words, with the typing kept.
  *
- * The editor holds no state. What is typed and the keyboard's layers are the
- * owner's (`draft`), and every key reports through `typing`. The owner decides
- * what a key does while Korri saves, at the length limit, and when the save is
- * done (src/state/update.ts). Opening, closing and the question before
- * clearing belong to the screen, because Back has to reach them.
+ * The editor holds no state. What is typed, the keyboard's layers and
+ * whether a secret shows are the owner's, and every key reports through
+ * `typing`. The cursor starts on the first key, and goes back to whatever
+ * opened the editor when it closes, if that is still on screen.
  */
 export function PicoTextEditor({
-  row,
-  group,
+  label,
+  formLabel,
+  prompt,
+  heading,
+  now,
+  note,
   draft,
   typing,
-  onSave,
-  onClose,
-  onAskClear,
-  onDismissProblem,
+  secret = false,
+  reveal,
+  placeholder,
+  maxLength,
+  busy = false,
+  problem,
+  actions,
 }: {
-  readonly row: PicoTextSettingRowView
-  /** The settings group the row belongs to, named in the wide layout. */
-  readonly group: string
+  /** The field's name, for assistive technology. */
+  readonly label: string
+  /** The form's name: what is being done, such as "Change Name". */
+  readonly formLabel: string
+  /** A line above the field that says what to type. */
+  readonly prompt?: string
+  /** Where the value comes from and what it is for, in the wide layout's
+   * second column: a settings group and Korri's description. */
+  readonly heading?: { readonly group: string; readonly description?: string }
+  /** The value saved now, under the field. */
+  readonly now?: string
+  /** A hint under the field, where there is room for it. */
+  readonly note?: string
   readonly draft: PicoTextDraft
   readonly typing: PicoTyping
-  readonly onSave: () => void
-  readonly onClose: () => void
-  readonly onAskClear: () => void
-  readonly onDismissProblem: () => void
+  readonly secret?: boolean
+  /** A secret that may be shown: whether it is, and the SHOW key. */
+  readonly reveal?: { readonly shown: boolean; readonly onToggle: () => void }
+  readonly placeholder?: string
+  readonly maxLength?: number
+  readonly busy?: boolean
+  readonly problem?: { readonly message: string; readonly onDismiss: () => void }
+  readonly actions: readonly PicoTextEditorAction[]
 }) {
-  const { sensitive, placeholder, maxLength, clearLabel } = row.control
   const { text } = draft
-  const saving = row.state === "saving"
-  const problem = typeof row.state === "object" ? row.state.problem : undefined
   const length = [...text].length
   const full = maxLength !== undefined && length >= maxLength
+  const masked = secret && reveal?.shown !== true
+  const all: readonly PicoTextEditorAction[] = secret && reveal !== undefined
+    ? [...actions, {
+        label: "SHOW",
+        detail: <PicoSegments current={reveal.shown ? 1 : 0} options={["OFF", "ON"]} />,
+        onPress: reveal.onToggle,
+      }]
+    : actions
 
   /* The cursor starts on the first key and goes back to the row on close.
    * The row is read before the browser can drop focus from the hidden list
@@ -74,21 +111,24 @@ export function PicoTextEditor({
 
   return (
     <form
-      aria-label={`Change ${row.label}`}
+      aria-label={formLabel}
       className="pico-text-editor"
-      data-busy={saving ? "true" : undefined}
+      data-busy={busy ? "true" : undefined}
       onSubmit={(event) => event.preventDefault()}
       ref={root}
     >
       <div className="pico-text-editor-layout">
-        <div className="pico-text-editor-field">
-          <PicoTextField label={row.label} masked={sensitive} placeholder={placeholder} text={text} />
+        <div className="pico-text-editor-field" data-prompt={prompt === undefined ? undefined : "true"}>
+          {prompt === undefined ? null : <span className="pico-text-editor-prompt">{prompt}</span>}
+          <PicoTextField label={label} masked={masked} placeholder={placeholder} text={text} />
           <div className="pico-text-editor-foot">
-            {row.value === undefined ? <span /> : (
+            {now !== undefined ? (
               <span className="pico-text-editor-now">
-                NOW <b>{row.value}</b>
+                NOW <b>{now}</b>
               </span>
-            )}
+            ) : note !== undefined ? (
+              <span className="pico-text-editor-note">{note}</span>
+            ) : <span />}
             {maxLength === undefined ? null : (
               <span className="pico-text-editor-count" data-full={full ? "true" : undefined}>
                 {`${length}/${maxLength}`}
@@ -98,8 +138,8 @@ export function PicoTextEditor({
           {problem === undefined ? null : (
             <section aria-label="COULD NOT SAVE" className="pico-text-editor-problem">
               <span className="pico-text-editor-problem-kicker">COULD NOT SAVE</span>
-              <p className="pico-text-editor-problem-reason">{problem}</p>
-              <PicoRow label="OK" onPress={onDismissProblem} />
+              <p className="pico-text-editor-problem-reason">{problem.message}</p>
+              <PicoRow label="OK" onPress={problem.onDismiss} />
             </section>
           )}
         </div>
@@ -115,29 +155,26 @@ export function PicoTextEditor({
             symbols={draft.symbols}
           />
         </div>
-        <div className="pico-text-editor-heading">
-          <span className="pico-text-editor-group">{group}</span>
-          {row.description === undefined ? null : (
-            <p className="pico-text-editor-description">{row.description}</p>
-          )}
-        </div>
+        {heading === undefined ? null : (
+          <div className="pico-text-editor-heading">
+            <span className="pico-text-editor-group">{heading.group}</span>
+            {heading.description === undefined ? null : (
+              <p className="pico-text-editor-description">{heading.description}</p>
+            )}
+          </div>
+        )}
         <div className="pico-text-editor-actions">
-          <div className="pico-text-editor-action">
-            <PicoRow
-              detail={saving ? <PicoBadge text="SAVING" tone="info" /> : undefined}
-              disabled={text.trim() === ""}
-              label="SAVE"
-              onPress={onSave}
-            />
-          </div>
-          <div className="pico-text-editor-action">
-            <PicoRow label="CANCEL" onPress={onClose} />
-          </div>
-          {sensitive && clearLabel !== undefined ? (
-            <div className="pico-text-editor-action" data-role="clear">
-              <PicoRow danger label={clearLabel.toUpperCase()} onPress={onAskClear} />
+          {all.map((action) => (
+            <div className="pico-text-editor-action" data-alone={action.alone === true ? "true" : undefined} key={action.label}>
+              <PicoRow
+                danger={action.danger}
+                detail={action.detail}
+                disabled={action.disabled}
+                label={action.label}
+                onPress={action.onPress}
+              />
             </div>
-          ) : null}
+          ))}
         </div>
       </div>
     </form>

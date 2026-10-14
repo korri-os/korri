@@ -10,6 +10,7 @@ import { PicoRunnerPicker } from "./pages/PicoRunnerPicker"
 import { PicoHome } from "./pages/PicoHome"
 import { PicoAttract } from "./ui/organisms/PicoAttract"
 import { PicoLibrary } from "./pages/PicoLibrary"
+import { PicoOnboarding, type PicoOnboardingActions } from "./pages/PicoOnboarding"
 import { PicoOverlay } from "./pages/PicoOverlay"
 import { PicoSettings, type PicoSettingsEditing } from "./pages/PicoSettings"
 import { PicoIdentityDialog } from "./ui/organisms/PicoIdentityDialog"
@@ -17,7 +18,9 @@ import { picoDetailViewFromGame } from "./pico-detail-view"
 import { performPicoRequest, subscribePicoHostButtons } from "./pico-host"
 import { picoLibraryViewFrom } from "./pico-library-view"
 import { type PicoRanging, picoOverlayViewFrom } from "./pico-overlay-view"
+import { picoOnboardingScreen, picoSetupCursor, picoSetupPlace, picoSetupTrack } from "./pico-onboarding-view"
 import { picoSettingsViewFromModel } from "./pico-settings-view"
+import { picoWifiEntryView } from "./pico-wifi-view"
 import type { PicoInitialView } from "./pico-initial-view"
 import { readPicoFont } from "./pico-font-preference"
 import type { PicoFontId } from "./pico-fonts"
@@ -27,6 +30,7 @@ import { IDENTITY_FORM, type SettingsQuestion } from "./state/navigation"
 import { initialOverlay, type PicoOverlayMessage, type PicoOverlayState, rangeValue, updateOverlay } from "./state/overlay"
 import { attractShowing, identityAction, type PicoShown, runnerOpen, shownScreen } from "./state/shown"
 import { usePicoNavigation } from "./use-pico-navigation"
+import { usePicoOnboarding } from "./use-pico-onboarding"
 import { usePicoProgram } from "./use-pico-program"
 
 /**
@@ -36,15 +40,18 @@ import { usePicoProgram } from "./use-pico-program"
  * plain values, which is what lets any part mount in a preview or a test with
  * no Korri behind it.
  *
- * It holds no state of its own. There are three small programs, each a model
+ * It holds no state of its own. There are four small programs, each a model
  * and a pure update in src/state run by usePicoProgram: the face this device
- * shows, the catalog's navigation, and the gameplay overlay. Updates return
+ * shows, first-boot setup, the catalog's navigation, and the gameplay
+ * overlay. Updates return
  * what to ask of Korri, and src/pico-host.ts performs it. Pages report what
  * happened by dispatching a message. .oxlintrc.json enforces the split.
  *
  * The two presentations are two components with nothing in common but the
  * theme: a pause menu over a running game shares no state with a library, and
  * one component holding both would have to guard every hook against the other.
+ * While Korri publishes `onboarding`, the catalog presentation is first-boot
+ * setup instead of home; home appears once Korri drops it.
  */
 export function PicoSurface({
   model,
@@ -78,6 +85,8 @@ export function PicoSurface({
     <div className="pico-theme pico-screen" data-pico-font={shown}>
       {model.presentation.kind === "gameplay-overlay" ? (
         <PicoOverlaySurface host={host} model={model} presentation={model.presentation} />
+      ) : model.onboarding !== undefined ? (
+        <PicoOnboardingSurface host={host} model={model} />
       ) : (
         <PicoCatalogSurface font={shown} host={host} initialView={initialView} model={model} onFont={choose} />
       )}
@@ -127,6 +136,73 @@ function PicoOverlaySurface({
       onRetry={() => dispatch({ _tag: "PressedRetry" })}
       overlay={view}
       ranging={ranging}
+    />
+  )
+}
+
+/** First-boot setup. The rules are in src/state/onboarding-update.ts. */
+function PicoOnboardingSurface({
+  model,
+  host,
+}: {
+  readonly model: SurfaceModel
+  readonly host: SurfaceHost
+}) {
+  const { nav, dispatch } = usePicoOnboarding(model, host)
+  const screen = picoOnboardingScreen(nav, model)
+  const seats = screen._tag === "Pads" ? screen.view.seats : undefined
+  const actions: PicoOnboardingActions = {
+    onStart: () => dispatch({ _tag: "Started" }),
+    onContinue: () => dispatch({ _tag: "Continued" }),
+    wifi: {
+      onPick: networkId => dispatch({ _tag: "PickedNetwork", networkId }),
+      onHidden: () => dispatch({ _tag: "ChoseHiddenNetwork" }),
+      onScan: () => dispatch({ _tag: "ScannedNetworks" }),
+      onContinue: () => dispatch({ _tag: "Continued" }),
+      onTryAgain: () => dispatch({ _tag: "TriedAgain" }),
+      onPickAnother: () => dispatch({ _tag: "PickedAnotherNetwork" }),
+      onStay: () => dispatch({ _tag: "StayedConnected" }),
+      onSetUpWifi: () => dispatch({ _tag: "ChoseWifiToo" }),
+      onOffline: () => dispatch({ _tag: "ChoseOffline" }),
+      onConfirmOffline: () => dispatch({ _tag: "ConfirmedOffline" }),
+      onBackToWifi: () => dispatch({ _tag: "ReturnedToWifi" }),
+    },
+    typing: {
+      onType: character => dispatch({ _tag: "TypedText", character }),
+      onBackspace: () => dispatch({ _tag: "PressedTextBackspace" }),
+      onClear: () => dispatch({ _tag: "ClearedText" }),
+      onToggleCapitals: () => dispatch({ _tag: "ToggledCapitals" }),
+      onToggleSymbols: () => dispatch({ _tag: "ToggledSymbols" }),
+    },
+    onToggleShown: () => dispatch({ _tag: "ToggledShown" }),
+    onSubmitText: () => dispatch({ _tag: "SubmittedText" }),
+    onDismissProblem: () => dispatch({ _tag: "DismissedSettingsProblem" }),
+    identity: {
+      onChoose: how => dispatch({ _tag: "ChoseIdentity", how }),
+      onEdit: field => dispatch({ _tag: "EditedIdentityField", field }),
+      onSubmit: () => dispatch({ _tag: "SubmittedIdentity" }),
+      onBackUp: () => dispatch({ _tag: "OpenedBackup" }),
+    },
+    backup: {
+      onEdit: password => dispatch({ _tag: "EditedBackupPassword", password }),
+      onSubmit: () => dispatch({ _tag: "SubmittedBackup" }),
+      onClose: () => dispatch({ _tag: "ClosedBackup" }),
+    },
+    onSeats: () => {
+      if (seats?.control.kind === "step" || seats?.control.kind === "cycle") {
+        dispatch({ _tag: "ChangedSetting", settingId: seats.id, value: seats.control.next })
+      }
+    },
+    onScanGames: () => dispatch({ _tag: "ScannedGames" }),
+    onFinish: () => dispatch({ _tag: "Finished" }),
+  }
+  return (
+    <PicoOnboarding
+      actions={actions}
+      cursor={picoSetupCursor(nav.step, screen)}
+      place={picoSetupPlace(nav.step, screen)}
+      screen={screen}
+      track={picoSetupTrack(nav, model)}
     />
   )
 }
@@ -249,6 +325,9 @@ function PicoCatalogSurface({
             onCloseEditor={() => dispatch({ _tag: "ClosedEditor" })}
             onEdit={settingId => dispatch({ _tag: "OpenedEditor", settingId })}
             onChange={(settingId, value) => dispatch({ _tag: "ChangedSetting", settingId, value })}
+            onSubmitWifi={() => dispatch({ _tag: "SubmittedWifi" })}
+            onToggleShown={() => dispatch({ _tag: "ToggledShown" })}
+            wifi={question._tag === "Wifi" ? picoWifiEntryView(question.entry) : undefined}
             onConfirm={() => dispatch({ _tag: "ConfirmedSettingAction" })}
             onDismissProblem={() => dispatch({ _tag: "DismissedSettingsProblem" })}
             onRun={actionId => dispatch({ _tag: "PressedSettingAction", actionId })}

@@ -1,0 +1,22 @@
+/* The lamp stands on the ground left of the row: dark until heard, then lit. */
+.pico-controller-row {
+	/* The row's word (READY, PRESS A BUTTON) is what it says, so it takes the
+	 * dim ink: the quiet ink reads 3.3:1 on the plate, under WCAG's 4.5:1. */
+	--pico-row-quiet: var(--pico-ink-dim);
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: calc(var(--pico-px) * 4);
+	list-style: none;
+}
+
+.pico-controller-row-lamp {
+	display: block;
+	width: calc(var(--pico-px) * 8);
+	height: calc(var(--pico-px) * 8);
+	color: var(--pico-plate);
+}
+
+.pico-controller-row[data-heard] .pico-controller-row-lamp {
+	color: var(--pico-ok);
+}

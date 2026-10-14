@@ -114,6 +114,8 @@
 	--pico-pick-ink: var(--p8-black);
 	--pico-pick-mark: var(--p8-brown);
 	--pico-ok: var(--p8-lime);
+	/* A step passed without being done, such as Wi-Fi left offline. */
+	--pico-skip: var(--p8-orange);
 	--pico-warn: var(--p8-red);
 	--pico-warn-ink: var(--p8-white);
 	/* The floor carts stand on, and the slot a launching cart seats into. */

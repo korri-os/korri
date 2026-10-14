@@ -114,6 +114,20 @@ export function createFixtureHost(): FixtureHost {
     reload() {
       calls.push("reload")
     },
+    scanWifi() {
+      calls.push("scanWifi")
+    },
+    /* A password is recorded only as whether one was sent, so a test or a
+     * preview never prints it. */
+    connectWifi(networkId, password) {
+      calls.push(password === undefined ? `connectWifi:${networkId}` : `connectWifi:${networkId}:password`)
+    },
+    connectHiddenWifi(ssid, password) {
+      calls.push(password === undefined ? `connectHiddenWifi:${ssid}` : `connectHiddenWifi:${ssid}:password`)
+    },
+    finishOnboarding() {
+      calls.push("finishOnboarding")
+    },
   }
 }
 

@@ -1,0 +1,63 @@
+/* Seven segments across the width. Each segment is its own inline-size
+ * container in the small face, so its word shows only where the segment
+ * holds it; the bar under it always shows. A short screen may drop the
+ * words and numbers altogether (--pico-step-track-names: none): the status
+ * bar names the step, and the bars still say where it stands.
+ *
+ * A skipped step's bar is broken into dashes: its border goes clear and a
+ * hard-stop stripe is drawn in the border's place. A stripe, not a blend. */
+.pico-step-track {
+	display: grid;
+	grid-auto-columns: minmax(0, 1fr);
+	grid-auto-flow: column;
+	gap: calc(var(--pico-px) * 2);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+}
+
+.pico-step-track-step {
+	container: pico-step / inline-size;
+	min-width: 0;
+	padding-bottom: calc(var(--pico-px) * 2);
+	border-bottom: calc(var(--pico-px) * 2) solid var(--pico-plate);
+	color: var(--pico-ink-quiet);
+}
+
+.pico-step-track-step[data-state="done"] {
+	border-bottom-color: var(--pico-ok);
+	color: var(--pico-ink-dim);
+}
+
+/* Passed, not done: dashes of three pixels with gaps of two. */
+.pico-step-track-step[data-state="skipped"] {
+	border-bottom-color: transparent;
+	color: var(--pico-ink-dim);
+	background: repeating-linear-gradient(
+			90deg,
+			var(--pico-skip) 0 calc(var(--pico-px) * 3),
+			var(--pico-bg) calc(var(--pico-px) * 3) calc(var(--pico-px) * 5)
+		)
+		bottom / 100% calc(var(--pico-px) * 2) no-repeat border-box;
+}
+
+.pico-step-track-step[data-state="now"] {
+	border-bottom-color: var(--pico-accent);
+	color: var(--pico-accent);
+}
+
+.pico-step-track-name {
+	display: var(--pico-step-track-names, flex);
+	gap: calc(var(--pico-px) * 2);
+	white-space: nowrap;
+}
+
+.pico-step-track-number {
+	font-weight: normal;
+}
+
+/* A segment narrower than its longest word keeps only the number. */
+@container pico-step (width < 8ch) {
+	.pico-step-track-label {
+		display: none;
+	}
+}

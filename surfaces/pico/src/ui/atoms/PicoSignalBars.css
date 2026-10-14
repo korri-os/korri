@@ -1,0 +1,22 @@
+/* Bars two pixels wide, two to eight tall, standing on one line. */
+.pico-signal-bars {
+	display: inline-flex;
+	flex: none;
+	align-items: flex-end;
+	gap: var(--pico-px);
+	height: calc(var(--pico-px) * 8);
+}
+
+.pico-signal-bars-bar {
+	width: calc(var(--pico-px) * 2);
+	background: var(--pico-plate);
+}
+
+.pico-signal-bars-bar[data-lit] {
+	background: currentColor;
+}
+
+.pico-signal-bars-bar[data-bar="1"] { height: calc(var(--pico-px) * 2); }
+.pico-signal-bars-bar[data-bar="2"] { height: calc(var(--pico-px) * 4); }
+.pico-signal-bars-bar[data-bar="3"] { height: calc(var(--pico-px) * 6); }
+.pico-signal-bars-bar[data-bar="4"] { height: calc(var(--pico-px) * 8); }

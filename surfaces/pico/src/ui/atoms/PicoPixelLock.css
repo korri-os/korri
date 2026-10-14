@@ -1,0 +1,7 @@
+/* Eight virtual pixels square, like a hint's disc. */
+.pico-pixel-lock {
+	display: block;
+	flex: none;
+	width: calc(var(--pico-px) * 8);
+	height: calc(var(--pico-px) * 8);
+}

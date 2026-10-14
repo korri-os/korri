@@ -1,0 +1,13 @@
+.pico-choice-row {
+	display: grid;
+	gap: var(--pico-px);
+	list-style: none;
+}
+
+.pico-choice-row-note {
+	margin: 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-card-note, var(--pico-ink-quiet));
+}

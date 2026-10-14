@@ -1,0 +1,30 @@
+/* The plate shows between and behind the cells; a lit cell is green. Each
+ * cell is hidden for half of the beat, offset by one twelfth, so six lit
+ * cells walk to the right. */
+.pico-busy-meter {
+	display: grid;
+	grid-template-columns: repeat(12, minmax(0, 1fr));
+	gap: var(--pico-px);
+	width: min(100%, calc(var(--pico-px) * 120));
+	height: calc(var(--pico-px) * 6);
+	padding: var(--pico-px);
+	background: var(--pico-plate);
+}
+
+.pico-busy-meter-cell {
+	background: var(--pico-ok);
+	animation: pico-blink 1200ms steps(1, end) infinite;
+}
+
+.pico-busy-meter-cell[data-cell="0"] { animation-delay: -1100ms; }
+.pico-busy-meter-cell[data-cell="1"] { animation-delay: -1000ms; }
+.pico-busy-meter-cell[data-cell="2"] { animation-delay: -900ms; }
+.pico-busy-meter-cell[data-cell="3"] { animation-delay: -800ms; }
+.pico-busy-meter-cell[data-cell="4"] { animation-delay: -700ms; }
+.pico-busy-meter-cell[data-cell="5"] { animation-delay: -600ms; }
+.pico-busy-meter-cell[data-cell="6"] { animation-delay: -500ms; }
+.pico-busy-meter-cell[data-cell="7"] { animation-delay: -400ms; }
+.pico-busy-meter-cell[data-cell="8"] { animation-delay: -300ms; }
+.pico-busy-meter-cell[data-cell="9"] { animation-delay: -200ms; }
+.pico-busy-meter-cell[data-cell="10"] { animation-delay: -100ms; }
+.pico-busy-meter-cell[data-cell="11"] { animation-delay: 0ms; }

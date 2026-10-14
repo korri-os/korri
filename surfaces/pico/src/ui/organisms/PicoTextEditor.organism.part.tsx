@@ -4,10 +4,11 @@ import { fixtureModel } from "../../fixtures/fixture-host"
 import { failedSettingsModel, savingSettingsModel, secretSettingModel } from "../../fixtures/named-states"
 import { type PicoTextSettingRowView, picoSettingsViewFromModel, picoTextSettingFrom } from "../../pico-settings-view"
 import { picoDraftBackspace, picoDraftType, picoTextDraft, type PicoTextDraft } from "../../pico-text-draft"
+import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoTextEditor } from "./PicoTextEditor"
 
 export const name = "Text Editor"
-export const note = "A text setting on Pico's keyboard: case and symbol keys, Korri's limit, its save and refusal"
+export const note = "One value on Pico's keyboard, with the caller's actions: a setting's save and refusal, a Wi-Fi password with SHOW, a name during setup"
 
 /** Fail at the fixture lookup, rather than silently previewing another row. */
 function found(model: SurfaceModel, settingId: string): { readonly group: string; readonly row: PicoTextSettingRowView } {
@@ -20,43 +21,62 @@ const seed = (row: PicoTextSettingRowView) => picoTextDraft(row.control.sensitiv
 const still = { onType: () => undefined, onBackspace: () => undefined, onClear: () => undefined,
   onToggleCapitals: () => undefined, onToggleSymbols: () => undefined }
 
-function editor(model: SurfaceModel, settingId: string, draft?: PicoTextDraft) {
+/* A Korri setting in the editor, with the actions Settings gives it. */
+function setting(model: SurfaceModel, settingId: string, draft?: PicoTextDraft) {
   const { group, row } = found(model, settingId)
+  const text = draft ?? seed(row)
+  const saving = row.state === "saving"
+  const clear = row.control.clearLabel
   return (
     <PicoTextEditor
-      draft={draft ?? seed(row)}
-      group={group}
-      onAskClear={() => undefined}
-      onClose={() => undefined}
-      onDismissProblem={() => undefined}
-      onSave={() => undefined}
-      row={row}
+      actions={[
+        { label: "SAVE", detail: saving ? <PicoBadge text="SAVING" tone="info" /> : undefined,
+          disabled: text.text.trim() === "", onPress: () => undefined },
+        { label: "CANCEL", onPress: () => undefined },
+        ...(row.control.sensitive && clear !== undefined
+          ? [{ label: clear.toUpperCase(), danger: true, alone: true, onPress: () => undefined }]
+          : []),
+      ]}
+      busy={saving}
+      draft={text}
+      formLabel={`Change ${row.label}`}
+      heading={{ group, ...(row.description === undefined ? {} : { description: row.description }) }}
+      label={row.label}
+      maxLength={row.control.maxLength}
+      now={row.value}
+      placeholder={row.control.placeholder}
+      problem={typeof row.state === "object" && "problem" in row.state
+        ? { message: row.state.problem, onDismiss: () => undefined }
+        : undefined}
+      secret={row.control.sensitive}
       typing={still}
     />
   )
 }
 
 // What is typed and the layers are props: the default shows Korri's value,
-// and the Inspector or a named state can set any draft.
+// and a named state can set any draft.
 export default function PicoTextEditorPart() {
-  return editor(fixtureModel, "device-name")
+  return setting(fixtureModel, "device-name")
 }
 
 export function Capitals() {
-  return editor(fixtureModel, "device-name", { text: "Pocket", capitals: true, symbols: false })
+  return setting(fixtureModel, "device-name", { text: "Pocket", capitals: true, symbols: false })
 }
 
 export function Symbols() {
-  return editor(fixtureModel, "device-name", { text: "Pocket", capitals: false, symbols: true })
+  return setting(fixtureModel, "device-name", { text: "Pocket", capitals: false, symbols: true })
 }
 
-// The surface keeps the draft; here the part does, so the keys type.
+// The owner keeps the draft; here the part does, so the keys type.
 export function Typing() {
-  const { group, row } = found(fixtureModel, "device-name")
+  const { row } = found(fixtureModel, "device-name")
   const [draft, setDraft] = useState(seed(row))
   return (
-    <PicoTextEditor draft={draft} group={group} row={row}
-      onAskClear={() => undefined} onClose={() => undefined} onDismissProblem={() => undefined} onSave={() => undefined}
+    <PicoTextEditor
+      actions={[{ label: "SAVE", disabled: draft.text.trim() === "", onPress: () => undefined },
+        { label: "CANCEL", onPress: () => undefined }]}
+      draft={draft} formLabel={`Change ${row.label}`} label={row.label} maxLength={row.control.maxLength} now={row.value}
       typing={{
         onType: character => setDraft(current => picoDraftType(current, character, row.control.maxLength)),
         onBackspace: () => setDraft(picoDraftBackspace),
@@ -68,13 +88,56 @@ export function Typing() {
 }
 
 export function Secret() {
-  return editor(secretSettingModel, "steamgriddb-credential")
+  return setting(secretSettingModel, "steamgriddb-credential")
 }
 
 export function Saving() {
-  return editor(savingSettingsModel, "device-name")
+  return setting(savingSettingsModel, "device-name")
 }
 
 export function Refused() {
-  return editor(failedSettingsModel, "device-name")
+  return setting(failedSettingsModel, "device-name")
+}
+
+/* A Wi-Fi password: masked, with SHOW. The text is a stand-in, never a real key. */
+function password(shown: boolean) {
+  return (
+    <PicoTextEditor
+      actions={[{ label: "CONNECT", onPress: () => undefined }, { label: "CANCEL", onPress: () => undefined }]}
+      draft={picoTextDraft("pixel-Party8")}
+      formLabel="Password for Home-5G"
+      label="Password for Home-5G"
+      maxLength={63}
+      placeholder="Password"
+      prompt="Password for Home-5G"
+      reveal={{ shown, onToggle: () => undefined }}
+      secret
+      typing={still}
+    />
+  )
+}
+
+export function WifiPassword() {
+  return password(false)
+}
+
+export function WifiPasswordShown() {
+  return password(true)
+}
+
+// During setup: a prompt and a note, one action, no settings group.
+export function SetupName() {
+  return (
+    <PicoTextEditor
+      actions={[{ label: "NEXT", onPress: () => undefined }]}
+      draft={picoTextDraft("")}
+      formLabel="Device name"
+      label="Device name"
+      maxLength={64}
+      note="Your other Korri devices show this name."
+      placeholder="This device"
+      prompt="Name this device"
+      typing={still}
+    />
+  )
 }

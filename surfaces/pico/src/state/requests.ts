@@ -36,6 +36,14 @@ export type PicoRequest =
   | { readonly _tag: "Retry" }
   | { readonly _tag: "DismissProblem" }
   | { readonly _tag: "Reload" }
+  /** Ask Korri for a fresh Wi-Fi scan. */
+  | { readonly _tag: "ScanWifi" }
+  /** Join a listed network. `password` only for a secured network Korri holds no profile for. */
+  | { readonly _tag: "ConnectWifi"; readonly networkId: string; readonly password?: string }
+  /** Join a network that does not broadcast its name; no password joins an open one. */
+  | { readonly _tag: "ConnectHiddenWifi"; readonly ssid: string; readonly password?: string }
+  /** First-boot setup is done. Korri drops `onboarding` from its model. */
+  | { readonly _tag: "FinishOnboarding" }
   /** Pico's own setting: stored by Pico on this device, never sent to Korri. */
   | { readonly _tag: "ChooseFont"; readonly font: PicoFontId }
   /** Store the chosen face on this device. */

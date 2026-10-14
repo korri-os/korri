@@ -6,6 +6,8 @@ import {
   picoTextSettingFrom,
 } from "../pico-settings-view"
 import type { PicoTextDraft } from "../pico-text-draft"
+import type { PicoWifiEntryView } from "../pico-wifi-view"
+import { PicoBadge } from "../ui/atoms/PicoBadge"
 import type { PicoTyping } from "../ui/molecules/PicoKeyboard"
 import { PicoModal } from "../ui/organisms/PicoModal"
 import { PicoTextEditor } from "../ui/organisms/PicoTextEditor"
@@ -41,6 +43,9 @@ export interface PicoSettingsEditing {
  * the cursor came from are still there when the editor closes. Clearing a
  * saved secret asks first: Korri publishes no confirmation for it, so the
  * question is Pico's, in Korri's label.
+ *
+ * Joining a Wi-Fi network types in the same editor (`wifi`): a password with
+ * SHOW, or a hidden network's name and then its password. CONNECT sends it.
  */
 export function PicoSettings({
   settings,
@@ -48,6 +53,7 @@ export function PicoSettings({
   onGroup,
   asking,
   editing,
+  wifi,
   onAsk,
   onConfirm,
   onCancel,
@@ -60,6 +66,8 @@ export function PicoSettings({
   onConfirmClear,
   onSaveText,
   typing,
+  onSubmitWifi,
+  onToggleShown,
   onDismissProblem,
   clockLabel,
 }: {
@@ -70,6 +78,8 @@ export function PicoSettings({
   /** A destructive action awaiting the user's yes, when one is. */
   readonly asking?: { readonly actionId: string; readonly confirmation: PicoConfirmation }
   readonly editing?: PicoSettingsEditing
+  /** A Wi-Fi network being joined, when one is. */
+  readonly wifi?: PicoWifiEntryView
   readonly onAsk: (actionId: string, confirmation: PicoConfirmation) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
@@ -84,6 +94,10 @@ export function PicoSettings({
   readonly onSaveText: () => void
   /** The editor's keys. */
   readonly typing: PicoTyping
+  /** CONNECT, or NEXT after a hidden network's name. */
+  readonly onSubmitWifi: () => void
+  /** SHOW on a Wi-Fi password. */
+  readonly onToggleShown: () => void
   readonly onDismissProblem: () => void
   readonly clockLabel?: string
 }) {
@@ -105,22 +119,27 @@ export function PicoSettings({
       case "text":
         onEdit(row.id)
         return
+      case "network":
+        onRun(row.control.actionId)
+        return
     }
   }
 
   /* A row Korri stopped publishing closes its editor. */
   const edited = editing === undefined ? undefined : picoTextSettingFrom(settings, editing.settingId)
   const clearLabel = edited?.row.control.clearLabel
+  const typingOpen = edited !== undefined || wifi !== undefined
+  const place = wifi?.place ?? edited?.row.label.toUpperCase()
 
   return (
     <PicoScreenShell
       clockLabel={clockLabel}
-      hints={edited === undefined ? HINTS : EDITOR_HINTS}
-      label={edited === undefined ? "SETTINGS" : edited.row.label.toUpperCase()}
+      hints={typingOpen ? EDITOR_HINTS : HINTS}
+      label={place ?? "SETTINGS"}
       readout={settings.buildLabel}
-      {...(edited === undefined ? {} : { place: "SETTINGS" })}
+      {...(place === undefined ? {} : { place: "SETTINGS" })}
     >
-      <div className="pico-settings-list" hidden={edited !== undefined}>
+      <div className="pico-settings-list" hidden={typingOpen}>
         <PicoSettingsPanel
           group={group}
           onActivate={activate}
@@ -131,14 +150,53 @@ export function PicoSettings({
       </div>
       {edited === undefined || editing === undefined ? null : (
         <PicoTextEditor
+          actions={[
+            {
+              label: "SAVE",
+              detail: edited.row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : undefined,
+              disabled: editing.draft.text.trim() === "",
+              onPress: onSaveText,
+            },
+            { label: "CANCEL", onPress: onCloseEditor },
+            ...(edited.row.control.sensitive && clearLabel !== undefined
+              ? [{ label: clearLabel.toUpperCase(), danger: true, alone: true, onPress: onAskClear }]
+              : []),
+          ]}
+          busy={edited.row.state === "saving"}
           draft={editing.draft}
-          group={edited.group}
+          formLabel={`Change ${edited.row.label}`}
+          heading={{
+            group: edited.group,
+            ...(edited.row.description === undefined ? {} : { description: edited.row.description }),
+          }}
           key={edited.row.id}
-          onAskClear={onAskClear}
-          onClose={onCloseEditor}
-          onDismissProblem={onDismissProblem}
-          onSave={onSaveText}
-          row={edited.row}
+          label={edited.row.label}
+          maxLength={edited.row.control.maxLength}
+          now={edited.row.value}
+          placeholder={edited.row.control.placeholder}
+          problem={typeof edited.row.state === "object" && "problem" in edited.row.state
+            ? { message: edited.row.state.problem, onDismiss: onDismissProblem }
+            : undefined}
+          secret={edited.row.control.sensitive}
+          typing={typing}
+        />
+      )}
+      {wifi === undefined ? null : (
+        <PicoTextEditor
+          actions={[
+            { label: wifi.submitLabel, disabled: !wifi.ready, onPress: onSubmitWifi },
+            { label: "CANCEL", onPress: onCloseEditor },
+          ]}
+          draft={wifi.draft}
+          formLabel={wifi.fieldLabel}
+          heading={{ group: "WI-FI", ...(wifi.note === undefined ? {} : { description: wifi.note }) }}
+          key={`${wifi.place}:${wifi.prompt}`}
+          label={wifi.fieldLabel}
+          maxLength={wifi.maxLength}
+          placeholder={wifi.placeholder}
+          prompt={wifi.prompt}
+          reveal={wifi.secret ? { shown: wifi.shown, onToggle: onToggleShown } : undefined}
+          secret={wifi.secret}
           typing={typing}
         />
       )}

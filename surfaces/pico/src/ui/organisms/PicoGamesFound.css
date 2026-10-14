@@ -1,0 +1,51 @@
+.pico-games-found {
+	--pico-shelf-art-w: calc(var(--pico-px) * 24);
+	--pico-shelf-art-h: calc(var(--pico-px) * 40);
+	display: grid;
+	align-content: start;
+	gap: calc(var(--pico-u) * 1.5);
+	height: 100%;
+	min-height: 0;
+	padding: var(--pico-u) var(--pico-drop) var(--pico-drop) 0;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+
+/* Carts stand on a floor line, as on the shelf. A narrow room shows fewer:
+ * the strip clips at its edge, and the count still says how many there are. */
+.pico-games-found-strip {
+	display: flex;
+	align-items: flex-end;
+	gap: calc(var(--pico-px) * 4);
+	min-width: 0;
+	padding: calc(var(--pico-px) * 4) 0 calc(var(--pico-px) * 2);
+	border-bottom: calc(var(--pico-px) * 3) solid var(--pico-floor);
+	overflow: hidden;
+}
+
+.pico-games-found-more {
+	flex: none;
+	padding: 0 calc(var(--pico-px) * 2) calc(var(--pico-px) * 2);
+	font-size: var(--pico-text-sm);
+	color: var(--pico-ink-quiet);
+	white-space: nowrap;
+}
+
+.pico-games-found-actions {
+	display: grid;
+	gap: calc(var(--pico-px) * 3);
+	max-width: calc(var(--pico-px) * 280);
+}
+
+/* Korri's refusal to rescan, in its words, on a red plate. */
+.pico-games-found-problem {
+	justify-self: start;
+	max-width: calc(var(--pico-px) * 280);
+	margin: 0;
+	padding: calc(var(--pico-px) * 2) calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-warn-ink);
+	background: var(--pico-warn);
+	overflow-wrap: anywhere;
+}

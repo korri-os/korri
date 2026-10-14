@@ -3,6 +3,7 @@ import type {
   SurfaceSettingItem,
 } from "@contracts/surface/korri-surface"
 import { PICO_FONTS, type PicoFontId } from "./pico-fonts"
+import { picoConnectionLabel, picoNetworksFrom, type PicoNetworkView } from "./pico-wifi-view"
 
 /**
  * One settings row as the screen draws it.
@@ -15,7 +16,11 @@ import { PICO_FONTS, type PicoFontId } from "./pico-fonts"
  * Korri's word about the saved one ("Configured"), never the secret.
  *
  * `step` is a cycler for a long list: it shows only the current choice, as
- * `◀ CHOICE ▶`, because ten face names side by side do not fit a row.
+ * `◀ CHOICE ▶`, because ten face names side by side do not fit a row. A
+ * Korri choice with more than PICO_SEGMENTS_MAX values is one too: Player
+ * seats offers 255.
+ *
+ * `network` is one Wi-Fi network from Korri's scan; pressing it joins it.
  */
 export type PicoSettingControl =
   | { readonly kind: "fact" }
@@ -30,6 +35,7 @@ export type PicoSettingControl =
       /** Korri's words for clearing a saved secret, only when there is one to clear. */
       readonly clearLabel?: string
     }
+  | { readonly kind: "network"; readonly actionId: string; readonly network: PicoNetworkView }
 
 export interface PicoConfirmation {
   readonly title: string
@@ -43,8 +49,10 @@ export interface PicoSettingRowView {
   readonly value?: string
   readonly description?: string
   readonly control: PicoSettingControl
-  /** What Korri says about this row right now. */
-  readonly state: "idle" | "saving" | { readonly problem: string }
+  /** What Korri says about this row right now. A `problem` is a settings
+   * failure the player dismisses; `failed` is Korri's record of the last
+   * attempt, which stays until the next one. */
+  readonly state: "idle" | "saving" | { readonly problem: string } | { readonly failed: string }
 }
 
 /** A row Pico's text editor can open. */
@@ -90,6 +98,72 @@ export interface PicoSettingsView {
 
 /** The id of Pico's own face row. Pico handles a change to it; Korri never sees it. */
 export const PICO_FONT_SETTING = "pico:font"
+
+/** A choice with more values than this shows only the current one (`step`). */
+export const PICO_SEGMENTS_MAX = 4
+
+/** Pico's Wi-Fi rows. Pico handles them through the Wi-Fi host commands. */
+export const PICO_WIFI_SCAN_ACTION = "pico:wifi:scan"
+export const PICO_WIFI_HIDDEN_ACTION = "pico:wifi:hidden"
+const WIFI_NETWORK_PREFIX = "pico:wifi:network:"
+export const picoWifiNetworkAction = (networkId: string) => `${WIFI_NETWORK_PREFIX}${networkId}`
+/** The network a Wi-Fi row's action names, when it names one. */
+export function picoWifiNetworkId(actionId: string): string | undefined {
+  return actionId.startsWith(WIFI_NETWORK_PREFIX) ? actionId.slice(WIFI_NETWORK_PREFIX.length) : undefined
+}
+
+/**
+ * Korri's network as a settings group: the connection and the last attempt,
+ * a scan, every network the scan found, and a hidden network by name. Absent
+ * when Korri cannot manage this device's network. There is no "forget": the
+ * treaty has no command for it.
+ */
+function wifiGroup(model: SurfaceModel): PicoSettingsGroupView | undefined {
+  const network = model.network
+  if (network === undefined) return undefined
+  const wifi = network.wifi
+  const attempt = wifi._tag === "Available" ? wifi.attempt : undefined
+  const connection: PicoSettingRowView = {
+    id: "pico:wifi:connection",
+    label: "Connection",
+    value: attempt?._tag === "Connecting" ? `Joining ${attempt.ssid}…` : picoConnectionLabel(network.connection),
+    control: { kind: "fact" },
+    state: attempt?._tag === "Failed" ? { failed: attempt.message } : "idle",
+  }
+  if (wifi._tag === "NoAdapter") {
+    return {
+      title: "WI-FI",
+      rows: [connection, { id: "pico:wifi:adapter", label: "Wi-Fi", value: "None on this device", control: { kind: "fact" }, state: "idle" }],
+    }
+  }
+  const networks = picoNetworksFrom(model)
+  return {
+    title: "WI-FI",
+    rows: [
+      connection,
+      {
+        id: PICO_WIFI_SCAN_ACTION,
+        label: "Scan for networks",
+        value: wifi.scanning ? "Scanning…" : `${networks.length} found`,
+        control: { kind: "action", actionId: PICO_WIFI_SCAN_ACTION, destructive: false },
+        state: "idle",
+      },
+      ...networks.map((item): PicoSettingRowView => ({
+        id: picoWifiNetworkAction(item.id),
+        label: item.ssid,
+        control: { kind: "network", actionId: picoWifiNetworkAction(item.id), network: item },
+        state: "idle",
+      })),
+      {
+        id: PICO_WIFI_HIDDEN_ACTION,
+        label: "Hidden network",
+        description: "Join a network that does not show its name.",
+        control: { kind: "action", actionId: PICO_WIFI_HIDDEN_ACTION, destructive: false },
+        state: "idle",
+      },
+    ],
+  }
+}
 
 /**
  * Pico's own settings: things only this surface has, kept by Pico on this
@@ -157,12 +231,14 @@ export function picoSettingsViewFromModel(
       }]
     }),
   ] : []
+  const wifi = wifiGroup(model)
   return {
     groups: [
       ...model.settings.map((group) => ({
         title: group.title.toUpperCase(),
         rows: group.items.map((item) => rowFor(item, model)),
       })),
+      ...(wifi === undefined ? [] : [wifi]),
       ...(identityRows.length ? [{ title: "IDENTITY", rows: identityRows }] : []),
       ...(pico === undefined ? [] : [picoGroup(pico.font)]),
     ],
@@ -203,6 +279,9 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
       const labels = interaction.choices.map((choice) => choice.label)
       const current = Math.max(0, interaction.choices.findIndex((choice) => choice.label === item.value))
       const nextChoice = interaction.choices[(current + 1) % interaction.choices.length]
+      if (labels.length > PICO_SEGMENTS_MAX) {
+        return { kind: "step", next: nextChoice?.value ?? "", current: labels[current] ?? "" }
+      }
       return {
         kind: "cycle",
         next: nextChoice?.value ?? "",

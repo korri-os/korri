@@ -13,7 +13,10 @@ import {
   PICO_IDENTITY_BACKUP_ACTION,
   PICO_IDENTITY_SWITCH_LOCAL_ACTION,
   PICO_IDENTITY_SWITCH_NIP46_ACTION,
+  PICO_WIFI_HIDDEN_ACTION,
+  PICO_WIFI_SCAN_ACTION,
   picoIdentityRetiredKey,
+  picoWifiNetworkId,
   picoSettingsViewFromModel,
   picoTextSettingFrom,
   type PicoTextSettingRowView,
@@ -34,6 +37,16 @@ import {
 } from "./navigation"
 import { ask, type PicoRequest, type PicoStep, stay } from "./requests"
 import { attractShowing, canAttract, identityAction, runnerOpen } from "./shown"
+import {
+  editEntry,
+  entryMaxLength,
+  HIDDEN_NAME_ENTRY,
+  pickNetwork,
+  submitEntry,
+  toggleShown,
+  type WifiEntry,
+  type WifiNext,
+} from "./wifi"
 
 export function update(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): PicoStep<PicoNavigation> {
   const result = step(nav, message, korri)
@@ -200,10 +213,20 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     // Settings
     case "ChoseSettingsGroup":
       return stay(nav.settings === undefined ? nav : { ...nav, settings: { ...nav.settings, group: message.group } })
-    case "PressedSettingAction":
-      return message.actionId.startsWith("identity:")
-        ? stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId, form: IDENTITY_FORM, qr: undefined }))
-        : ask(nav, { _tag: "RunAction", actionId: message.actionId })
+    case "PressedSettingAction": {
+      if (message.actionId.startsWith("identity:")) {
+        return stay(withQuestion(nav, { _tag: "Identity", actionId: message.actionId, form: IDENTITY_FORM, qr: undefined }))
+      }
+      // Pico's own Wi-Fi rows go to the Wi-Fi commands, never to runAction.
+      if (message.actionId === PICO_WIFI_SCAN_ACTION) {
+        const wifi = korri.network?.wifi
+        return wifi?._tag === "Available" && !wifi.scanning ? ask(nav, { _tag: "ScanWifi" }) : stay(nav)
+      }
+      if (message.actionId === PICO_WIFI_HIDDEN_ACTION) return stay(withQuestion(nav, { _tag: "Wifi", entry: HIDDEN_NAME_ENTRY }))
+      const networkId = picoWifiNetworkId(message.actionId)
+      if (networkId !== undefined) return joinFromSettings(nav, pickNetwork(korri, networkId))
+      return ask(nav, { _tag: "RunAction", actionId: message.actionId })
+    }
     case "AskedSettingConfirmation":
       return stay(withQuestion(nav, { _tag: "ConfirmingAction", actionId: message.actionId, confirmation: message.confirmation }))
     case "ConfirmedSettingAction": {
@@ -248,7 +271,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return ask(withQuestion(nav, { ...editor, _tag: "EditingText" }), { _tag: "ChangeSetting", settingId: editor.settingId, value: "" })
     }
     case "TypedText":
-      return stay(editDraft(nav, korri, (draft, row) => picoDraftType(draft, message.character, row.control.maxLength)))
+      return stay(editDraft(nav, korri, (draft, maxLength) => picoDraftType(draft, message.character, maxLength)))
     case "PressedTextBackspace":
       return stay(editDraft(nav, korri, draft => picoDraftBackspace(draft)))
     case "ClearedText":
@@ -257,6 +280,14 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
       return stay(editDraft(nav, korri, draft => ({ ...draft, capitals: !draft.capitals })))
     case "ToggledSymbols":
       return stay(editDraft(nav, korri, draft => ({ ...draft, symbols: !draft.symbols })))
+    case "ToggledShown": {
+      const entry = wifiEntry(nav)
+      return entry === undefined ? stay(nav) : stay(withQuestion(nav, { _tag: "Wifi", entry: toggleShown(entry) }))
+    }
+    case "SubmittedWifi": {
+      const entry = wifiEntry(nav)
+      return entry === undefined ? stay(nav) : joinFromSettings(nav, submitEntry(entry))
+    }
     case "SavedText": {
       // Save sends exactly what was typed, never an empty value: emptying a
       // secret is the clear action's job.
@@ -319,6 +350,7 @@ function backInSettings(nav: PicoNavigation, settings: Settings): PicoNavigation
     case "ConfirmingAction":
     case "EditingText":
     case "Identity":
+    case "Wifi":
       return withQuestion(nav, { _tag: "None" })
     case "None":
       return { ...nav, settings: undefined }
@@ -421,17 +453,43 @@ const openEditor = (nav: PicoNavigation): OpenEditor | undefined => {
 const saving = (korri: SurfaceModel, editor: TextEditor): boolean =>
   textRow(korri, editor.settingId)?.state === "saving"
 
-/** Change what is typed. Keys do nothing while Korri saves, or behind the clear question. */
+/**
+ * Change what is typed: a text setting's value, or what joins a Wi-Fi
+ * network. A setting's keys do nothing while Korri saves, or behind the clear
+ * question. `maxLength` is the limit the keys enforce.
+ */
 function editDraft(
   nav: PicoNavigation,
   korri: SurfaceModel,
-  change: (draft: PicoTextDraft, row: PicoTextSettingRowView) => PicoTextDraft,
+  change: (draft: PicoTextDraft, maxLength: number | undefined) => PicoTextDraft,
 ): PicoNavigation {
+  const entry = wifiEntry(nav)
+  if (entry !== undefined) {
+    return withQuestion(nav, { _tag: "Wifi", entry: editEntry(entry, draft => change(draft, entryMaxLength(entry))) })
+  }
   const editor = openEditor(nav)
   if (editor?._tag !== "EditingText") return nav
   const row = textRow(korri, editor.settingId)
   if (row === undefined || row.state === "saving") return nav
-  return withQuestion(nav, { ...editor, draft: change(editor.draft, row) })
+  return withQuestion(nav, { ...editor, draft: change(editor.draft, row.control.maxLength) })
+}
+
+const wifiEntry = (nav: PicoNavigation): WifiEntry | undefined => {
+  const question = nav.settings?.question
+  return question?._tag === "Wifi" ? question.entry : undefined
+}
+
+/** A Wi-Fi press answered: an editor opens, or the connect goes and the
+ * editor closes, taking any password with it. */
+function joinFromSettings(nav: PicoNavigation, next: WifiNext): PicoStep<PicoNavigation> {
+  switch (next._tag) {
+    case "Edit":
+      return stay(withQuestion(nav, { _tag: "Wifi", entry: next.entry }))
+    case "Send":
+      return ask(withQuestion(nav, { _tag: "None" }), next.request)
+    case "Nothing":
+      return stay(nav)
+  }
 }
 
 function editIdentity(nav: PicoNavigation, change: (form: IdentityForm) => IdentityForm): PicoNavigation {

@@ -3,6 +3,7 @@ import type { PicoSettingRowView } from "../../pico-settings-view"
 import { PicoBadge } from "../atoms/PicoBadge"
 import { PicoRow } from "../atoms/PicoRow"
 import { PicoSegments } from "../atoms/PicoSegments"
+import { PicoNetworkMarks } from "./PicoNetworkMarks"
 
 /**
  * One setting: its label on the left, its state on the right, as a button when
@@ -10,7 +11,7 @@ import { PicoSegments } from "../atoms/PicoSegments"
  *
  * A fact row is not a disabled button. Disabled reads as "you cannot", and the
  * truth is "there is nothing to do" — the software version is a fact, not a
- * locked control.
+ * locked control. The Wi-Fi network this device is on is a fact too.
  */
 export function PicoSettingRow({
   row,
@@ -20,10 +21,14 @@ export function PicoSettingRow({
   readonly onActivate: () => void
 }) {
   const interactive = row.control.kind !== "fact"
+    && !(row.control.kind === "network" && row.control.network.connected)
+  const failure = typeof row.state !== "object" ? undefined : "problem" in row.state ? row.state.problem : row.state.failed
   const detail = (
     <>
       {row.state === "saving" ? <PicoBadge text="SAVING" tone="info" /> : null}
-      {row.control.kind === "cycle" ? (
+      {row.control.kind === "network" ? (
+        <PicoNetworkMarks network={row.control.network} />
+      ) : row.control.kind === "cycle" ? (
         <PicoSegments current={row.control.current} options={row.control.options} />
       ) : row.control.kind === "step" ? (
         <span>{`◀ ${row.control.current.toUpperCase()} ▶`}</span>
@@ -45,9 +50,7 @@ export function PicoSettingRow({
       {row.description === undefined ? null : (
         <p className="pico-setting-row-description">{row.description}</p>
       )}
-      {typeof row.state === "object" ? (
-        <p className="pico-setting-row-problem">{row.state.problem}</p>
-      ) : null}
+      {failure === undefined ? null : <p className="pico-setting-row-problem">{failure}</p>}
     </li>
   )
 }

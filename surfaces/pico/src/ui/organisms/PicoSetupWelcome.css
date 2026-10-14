@@ -1,0 +1,27 @@
+/* Words and the button sit together in the middle of the room, left-aligned,
+ * the way the hero sets a game's facts. */
+.pico-setup-welcome {
+	display: grid;
+	align-content: center;
+	gap: calc(var(--pico-u) * 3);
+	height: 100%;
+	min-height: 0;
+	padding-bottom: var(--pico-u);
+}
+
+.pico-setup-welcome-words {
+	display: grid;
+	gap: calc(var(--pico-u) * 1.5);
+}
+
+.pico-setup-welcome-message {
+	margin: 0;
+	max-width: 40ch;
+	font-size: var(--pico-text);
+	line-height: 1.4;
+	color: var(--pico-ink-dim);
+}
+
+.pico-setup-welcome-start {
+	display: flex;
+}

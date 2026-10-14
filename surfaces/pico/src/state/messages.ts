@@ -76,6 +76,11 @@ export type PicoMessage =
   | { readonly _tag: "ToggledCapitals" }
   | { readonly _tag: "ToggledSymbols" }
   | { readonly _tag: "SavedText" }
+  // Joining a Wi-Fi network in Settings, on the same keys
+  /** SHOW on a password. */
+  | { readonly _tag: "ToggledShown" }
+  /** CONNECT, or NEXT after a hidden network's name. */
+  | { readonly _tag: "SubmittedWifi" }
   | { readonly _tag: "ChangedSetting"; readonly settingId: string; readonly value: string }
   | { readonly _tag: "DismissedSettingsProblem" }
   // The identity dialog. The form is in the model; a submission sends what it holds.
