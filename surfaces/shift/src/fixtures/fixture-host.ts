@@ -28,6 +28,10 @@ export function createFixtureHost(
 
   return {
     calls,
+    scanWifi() {},
+    connectWifi() {},
+    connectHiddenWifi() {},
+    finishOnboarding() {},
     press(action) {
       for (const listener of [...(listeners.get(action) ?? [])]) listener()
     },

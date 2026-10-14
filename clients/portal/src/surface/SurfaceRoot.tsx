@@ -12,6 +12,7 @@ import type {
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createRunnerChooser } from "./runner-chooser"
+import { createControllers, type Controllers } from "../input/controllers"
 import type { PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
 import type { KorridClient } from "../korrid/client"
@@ -51,6 +52,7 @@ function formatClock(): string {
 }
 
 export interface SurfaceRootProps {
+  readonly controllers?: Controllers
   readonly bus: InputBus
   readonly korrid: KorridClient
   readonly surface: PortalSurface
@@ -60,7 +62,10 @@ export function SurfaceRoot({
   bus,
   korrid,
   surface,
+  controllers,
 }: SurfaceRootProps) {
+  const controllerSource = useMemo(() => controllers ?? createControllers(), [controllers])
+  const controllerList = useSyncExternalStore(controllerSource.subscribe, controllerSource.snapshot)
   const launchables = useLaunchables(korrid)
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
@@ -92,6 +97,13 @@ export function SurfaceRoot({
   useEffect(() => () => runner.cancel(), [runner])
   const {
     state,
+    network,
+    onboardingNeeded,
+    networkProblem,
+    scanWifi,
+    connectWifi,
+    connectHiddenWifi,
+    finishOnboarding,
     facts,
     settingsStatus,
     identityManagement,
@@ -119,9 +131,12 @@ export function SurfaceRoot({
       clockLabel,
       settings,
       settingsStatus,
+      network,
+      onboarding: onboardingNeeded === true ? { controllers: controllerList } : undefined,
+      systemProblem: networkProblem,
       ...(identityManagement === undefined ? {} : { identityManagement }),
     }),
-    [state, clockLabel, settings, settingsStatus, identityManagement],
+    [state, clockLabel, settings, settingsStatus, identityManagement, network, onboardingNeeded, controllerList, networkProblem],
   )
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
@@ -177,6 +192,10 @@ export function SurfaceRoot({
         else if (id.startsWith("runner:")) void runner.act(id.slice("runner:".length))
         else if (runner.getSnapshot()._tag === "Closed") runDeviceAction(id)
       },
+      scanWifi,
+      connectWifi,
+      connectHiddenWifi,
+      finishOnboarding,
       changeSetting,
       dismissSettingsProblem,
       exportIdentityBackup,
@@ -217,6 +236,10 @@ export function SurfaceRoot({
     [
       surfaceInput,
       runner,
+      scanWifi,
+      connectWifi,
+      connectHiddenWifi,
+      finishOnboarding,
       changeSetting,
       confirmEntry,
       dismissNotice,

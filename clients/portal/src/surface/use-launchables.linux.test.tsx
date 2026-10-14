@@ -14,7 +14,7 @@ import {
   type SessionStatusOutcome,
   type SessionStopOutcome,
 } from "@contracts/generated/korrid"
-import { createHttpKorridClient, type KorridClient } from "../korrid/client"
+import { createHttpKorridClient, createInMemoryKorridClient, type KorridClient } from "../korrid/client"
 import type { PortalEntry } from "../launchables/state"
 import { settingsFrom } from "./settings-model"
 import { useLaunchables } from "./use-launchables"
@@ -64,6 +64,7 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     throw new Error("Linux catalog must not call native/local-game discovery")
   }
   return {
+    ...createInMemoryKorridClient(),
     async health() { return { _tag: "Ok", payload: { version: "korrid-test" } } },
     async catalogSnapshot() { return { _tag: "Ok", payload: { games: [game] } } },
     async settingsSnapshot() {

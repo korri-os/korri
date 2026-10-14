@@ -1,9 +1,11 @@
 import type { LinuxRuntimeConfig } from "../runtime-config"
 import { connectNativeInput, type NativeInputConnectionOptions } from "./native-connection"
 import { createNativeGamepadMapper } from "./native-gamepad-mapper"
+import type { Controllers } from "./controllers"
 import type { InputAdapter } from "./types"
 
 export interface NativeInputAdapterOptions {
+  readonly controllers?: Controllers
   readonly isActive?: () => boolean
   readonly page?: EventTarget
   readonly visibility?: EventTarget
@@ -24,6 +26,7 @@ export function createNativeInputAdapter(runtime: LinuxRuntimeConfig, options: N
       const request = options.requestFrame ?? requestAnimationFrame
       const cancel = options.cancelFrame ?? cancelAnimationFrame
       const mapper = createNativeGamepadMapper(emit, { isActive: active, now: options.now })
+      const initialized = new Set<string>()
       let disposed = false
       let frame = 0
       const retire = () => {
@@ -37,14 +40,27 @@ export function createNativeInputAdapter(runtime: LinuxRuntimeConfig, options: N
       const connection = connectNativeInput(runtime, {
         initiallyActive: active(),
         reconnect: options.reconnect,
-        onDisconnect: () => mapper.reset(),
-        onInitialized: () => { if (active()) mapper.initialize(); else retire() },
-        onDeviceInitialized: id => { if (active()) mapper.initialize(id); else retire() },
+        onDisconnect: () => { mapper.reset(); initialized.clear(); options.controllers?.disconnected() },
+        onInitialized: () => {
+          if (active()) {
+            for (const controller of options.controllers?.snapshot() ?? []) initialized.add(controller.id)
+            mapper.initialize()
+          } else retire()
+        },
+        onDeviceInitialized: id => { if (active()) { initialized.add(id); mapper.initialize(id) } else retire() },
         onEvent: event => {
           if (disposed || !active()) { retire(); return }
-          if (event.kind === "device-added") mapper.configureDevice(event.device)
-          else if (event.kind === "device-removed") mapper.clearDevice(event.deviceId)
-          else if (event.kind === "input" && event.class === "gamepad") mapper.handle(event)
+          if (event.kind === "device-added") {
+            mapper.configureDevice(event.device)
+            if (event.device.class === "gamepad") options.controllers?.added(event.device.deviceId, event.device.name)
+          } else if (event.kind === "device-removed") {
+            mapper.clearDevice(event.deviceId)
+            initialized.delete(event.deviceId)
+            options.controllers?.removed(event.deviceId)
+          } else if (event.kind === "input" && event.class === "gamepad") {
+            if (initialized.has(event.deviceId)) options.controllers?.input(event.deviceId)
+            mapper.handle(event)
+          }
           // Host owns action/system handling. Browser authentication grants
           // receipt only, never controller injection or host shortcut authority.
         },

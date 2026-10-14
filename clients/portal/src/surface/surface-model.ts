@@ -355,6 +355,9 @@ function catalogFrom(state: LaunchablesState): SurfaceCatalog {
 export function surfaceModelFrom(
   state: LaunchablesState,
   options: {
+    readonly network?: SurfaceModel["network"]
+    readonly onboarding?: SurfaceModel["onboarding"]
+    readonly systemProblem?: string
     readonly clockLabel?: string
     readonly buildLabel?: string
     readonly settings?: readonly SurfaceSettingGroup[]
@@ -372,7 +375,9 @@ export function surfaceModelFrom(
   return {
     presentation: { kind: "catalog" },
     catalog: catalogFrom(state),
-    status: statusFrom(state),
+    status: options.systemProblem === undefined ? statusFrom(state) : { _tag: "Problem", kicker: "Setup needs attention", reason: options.systemProblem, canRetry: true },
+    ...(options.network === undefined ? {} : { network: options.network }),
+    ...(options.onboarding === undefined ? {} : { onboarding: options.onboarding }),
     actions,
     settings: options.settings ?? [],
     settingsStatus: options.settingsStatus ?? { _tag: "Idle" },

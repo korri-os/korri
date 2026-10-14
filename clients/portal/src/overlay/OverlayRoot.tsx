@@ -43,6 +43,10 @@ export function OverlayRoot({
         on: (action: SurfaceInputAction, handler: () => void) =>
           bus.onAction(action, handler),
       },
+      scanWifi: () => {},
+      connectWifi: () => {},
+      connectHiddenWifi: () => {},
+      finishOnboarding: () => {},
       launchGame: () => {},
       runAction: () => {},
       changeSetting: () => {},

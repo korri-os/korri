@@ -1,9 +1,11 @@
+import type { Controllers } from "./controllers"
 import type { Direction, InputAdapter, InputListener } from "./types"
 
 /** Browser-owned W3C Gamepad fields. Hardware data stops at this adapter. */
 export type GamepadSnapshot = Pick<Gamepad, "id" | "index" | "mapping" | "connected" | "buttons" | "axes">
 
 export interface GamepadAdapterOptions {
+  readonly controllers?: Controllers
   readonly readGamepads?: () => readonly (GamepadSnapshot | null)[]
   readonly isActive?: () => boolean
   readonly requestFrame?: (callback: FrameRequestCallback) => number
@@ -53,6 +55,7 @@ export function createGamepadAdapter(options: GamepadAdapterOptions = {}): Input
         if (!("gamepad" in event)) return
         const pad = event.gamepad
         if (typeof pad !== "object" || pad === null || !("index" in pad) || typeof pad.index !== "number") return
+        options.controllers?.removed(`${pad.index}:${"id" in pad && typeof pad.id === "string" ? pad.id : ""}`)
         const state = states.get(pad.index)
         if (!state) return
         states.delete(pad.index)
@@ -69,6 +72,7 @@ export function createGamepadAdapter(options: GamepadAdapterOptions = {}): Input
           // existing keyboard/native input paths usable and retire held input.
           let pads: readonly (GamepadSnapshot | null)[]
           try { pads = read() } catch { pads = [] }
+          options.controllers?.gamepads(pads)
           for (const pad of pads) {
             if (disposed || !active()) break
             if (!pad?.connected || pad.mapping !== "standard") continue
@@ -130,6 +134,7 @@ export function createGamepadAdapter(options: GamepadAdapterOptions = {}): Input
         page.removeEventListener("gamepaddisconnected", onDisconnect)
         visibility.removeEventListener("visibilitychange", onVisibility)
         retire()
+        options.controllers?.disconnected()
       }
     },
   }

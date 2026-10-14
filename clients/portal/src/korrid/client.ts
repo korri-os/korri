@@ -26,6 +26,9 @@ import type {
   IdentitySwitchOutcome,
   LocalGame,
   LocalGamesListOutcome,
+  NetworkSnapshot,
+  NetworkStatusOutcome,
+  OnboardingStatusOutcome,
   RpcRequest,
   RpcResponse,
   SessionControl,
@@ -72,6 +75,12 @@ export type SessionStartResult = Extract<RpcResponse, { _tag: "app.session.start
 export type SessionCancelResult = Extract<RpcResponse, { _tag: "app.session.cancel" }>["outcome"]
 
 export interface KorridClient {
+  networkStatus(): Promise<NetworkStatusOutcome>
+  scanWifi(): Promise<NetworkStatusOutcome>
+  connectWifi(networkId: string, password?: string): Promise<NetworkStatusOutcome>
+  connectHiddenWifi(ssid: string, password?: string): Promise<NetworkStatusOutcome>
+  onboardingStatus(): Promise<OnboardingStatusOutcome>
+  finishOnboarding(): Promise<OnboardingStatusOutcome>
   health(): Promise<HealthOutcome>
   settingsSnapshot(): Promise<SettingsSnapshotOutcome>
   updateSetting(
@@ -254,11 +263,39 @@ function isSessionControls(value: unknown): value is SessionControls {
       group.controls.every(isSessionControl))
 }
 
+// Never propagate transport/dependency text on a password-carrying path.
+const networkUnavailable = () => ({ _tag: "Err" as const, payload: { code: "NetworkUnavailable", message: "Could not reach network controls. Try again." } })
+const onboardingUnavailable = () => ({ _tag: "Err" as const, payload: { code: "OnboardingUnavailable", message: "Could not save setup progress. Try again." } })
+
 export function createHttpKorridClient(
   baseUrl: string,
   capability: string,
 ): KorridClient {
   return {
+    async networkStatus() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.network.status", payload: {} })).outcome }
+      catch { return networkUnavailable() }
+    },
+    async scanWifi() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.wifi.scan", payload: {} })).outcome }
+      catch { return networkUnavailable() }
+    },
+    async connectWifi(networkId, password) {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.wifi.connect", payload: { networkId, password } }, 50_000)).outcome }
+      catch { return networkUnavailable() }
+    },
+    async connectHiddenWifi(ssid, password) {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.wifi.connectHidden", payload: { ssid, password } }, 50_000)).outcome }
+      catch { return networkUnavailable() }
+    },
+    async onboardingStatus() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.status", payload: {} })).outcome }
+      catch { return onboardingUnavailable() }
+    },
+    async finishOnboarding() {
+      try { return (await callKorrid(baseUrl, capability, { _tag: "system.onboarding.finish", payload: {} })).outcome }
+      catch { return onboardingUnavailable() }
+    },
     async health() {
       try {
         const response = await callKorrid(baseUrl, capability, {
@@ -838,7 +875,44 @@ export function createInMemoryKorridClient(
     }, 0)
     return scanning
   }
+  // The first-boot prototype is the browser preview's real in-memory source.
+  let onboardingNeeded = true
+  let network: NetworkSnapshot = {
+    connection: { _tag: "Offline" },
+    wifi: { _tag: "Available", payload: { scanning: false, attempt: { _tag: "Idle" }, networks: [
+      { id: "home-5g", ssid: "Home-5G", strengthPercent: 100, secured: true, known: false },
+      { id: "home-24", ssid: "Home-2.4", strengthPercent: 75, secured: true, known: false },
+      { id: "netgear", ssid: "NETGEAR-7B21", strengthPercent: 50, secured: true, known: false },
+      { id: "cafe", ssid: "Corner Cafe Free", strengthPercent: 50, secured: false, known: false },
+      { id: "printer", ssid: "DIRECT-4F-LaserJet", strengthPercent: 25, secured: true, known: false },
+    ] } },
+  }
+  const connectNetwork = async (ssid: string): Promise<NetworkStatusOutcome> => {
+    if (network.wifi._tag !== "Available") return networkUnavailable()
+    network = { ...network, wifi: { _tag: "Available", payload: { ...network.wifi.payload, attempt: { _tag: "Connecting", payload: { ssid } } } } }
+    await new Promise(resolve => setTimeout(resolve, 20))
+    if (network.wifi._tag !== "Available") return networkUnavailable()
+    const strengthPercent = network.wifi.payload.networks.find(item => item.ssid === ssid)?.strengthPercent
+    const rejected = ssid === "NETGEAR-7B21" || ssid === "DIRECT-4F-LaserJet"
+    network = {
+      connection: rejected ? network.connection : { _tag: "Wifi", payload: { ssid, ...(strengthPercent === undefined ? {} : { strengthPercent }) } },
+      wifi: { _tag: "Available", payload: { ...network.wifi.payload,
+        networks: network.wifi.payload.networks.map(item => item.ssid === ssid && !rejected ? { ...item, known: true } : item),
+        attempt: rejected ? { _tag: "Failed", payload: { ssid, message: "The network did not accept the password. Try again.", passwordRejected: true } } : { _tag: "Idle" },
+      } },
+    }
+    return { _tag: "Ok", payload: structuredClone(network) }
+  }
   return {
+    async networkStatus() { return { _tag: "Ok", payload: structuredClone(network) } },
+    async scanWifi() { return { _tag: "Ok", payload: structuredClone(network) } },
+    async connectWifi(networkId) {
+      const found = network.wifi._tag === "Available" ? network.wifi.payload.networks.find(item => item.id === networkId) : undefined
+      return found ? connectNetwork(found.ssid) : networkUnavailable()
+    },
+    async connectHiddenWifi(ssid) { return connectNetwork(ssid) },
+    async onboardingStatus() { return { _tag: "Ok", payload: { needed: onboardingNeeded } } },
+    async finishOnboarding() { onboardingNeeded = false; return { _tag: "Ok", payload: { needed: false } } },
     async health() {
       return { _tag: "Ok", payload: { version: "korrid-in-memory" } }
     },

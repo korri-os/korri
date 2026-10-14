@@ -1,6 +1,7 @@
 import type { ActiveSession } from "@contracts/generated/korrid"
 import type { KorriRpcBridgeSurface } from "@contracts/bridge/korri-rpc-bridge"
 import ReactDOM from "react-dom/client"
+import { createControllers } from "./input/controllers"
 import { createInputBus } from "./input/bus"
 import { createGamepadAdapter } from "./input/gamepad-adapter"
 import { createKeyboardAdapter } from "./input/keyboard-adapter"
@@ -83,7 +84,8 @@ async function mountPortal() {
   const bus = createInputBus()
   bus.use(createKeyboardAdapter())
   // One controller transport: Linux native evdev, browser development Gamepad.
-  bus.use(linuxRuntime ? createNativeInputAdapter(linuxRuntime) : createGamepadAdapter())
+  const controllers = createControllers()
+  bus.use(linuxRuntime ? createNativeInputAdapter(linuxRuntime, { controllers }) : createGamepadAdapter({ controllers }))
   createSpatialFocusController(bus)
 
   let presentation: "catalog" | "gameplay-overlay" = "catalog"
@@ -101,6 +103,7 @@ async function mountPortal() {
       <SurfaceRoot
         bus={bus}
         korrid={korrid}
+        controllers={controllers}
         surface={portalSurfaceFor("catalog", preferredSurfaceId)}
       />,
     )

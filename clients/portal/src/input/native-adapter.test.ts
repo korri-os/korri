@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { ServerWebSocket } from "bun"
+import { createControllers } from "./controllers"
 import { createNativeInputAdapter } from "./native-adapter"
 import type { InputAction } from "./types"
 
@@ -67,8 +68,9 @@ function session(held = false) {
   let now = 0
   let nextFrame = 0
   const frames = new Map<number, FrameRequestCallback>()
+  const controllers = createControllers()
   const adapter = createNativeInputAdapter({ korridPort: server.port!, korridCapability: CAPABILITY }, {
-    page, visibility, isActive: () => active, now: () => now,
+    controllers, page, visibility, isActive: () => active, now: () => now,
     requestFrame: callback => { frames.set(++nextFrame, callback); return nextFrame },
     cancelFrame: id => { frames.delete(id) },
     reconnect: { initialDelayMs: 10, maxDelayMs: 20 },
@@ -76,7 +78,7 @@ function session(held = false) {
   const stop = adapter.start(action => actions.push(action))
   disposers.push(() => { stop(); server.stop(true) })
   return {
-    actions, acknowledgements, releases, sockets, stop,
+    actions, acknowledgements, releases, sockets, stop, controllers,
     get liveAttachments() { return live.size },
     async ready(count = 1) { await waitFor(() => sockets.length >= count && sockets[count - 1]!.data.frames >= 2); await Bun.sleep(20) },
     send(message: unknown, index = sockets.length - 1, report = true) {
@@ -96,6 +98,18 @@ function session(held = false) {
 }
 
 describe("native adapter with actual local WebSockets", () => {
+  it("tracks gamepad presence, ignores the held baseline, and hears live input by device id", async () => {
+    const s = session(true); await s.ready()
+    expect(s.controllers.snapshot()).toEqual([{ id: "pad", name: "Pad", heard: false }])
+    s.send(input(0x131, 1))
+    await waitFor(() => s.controllers.snapshot()[0]?.heard === true)
+    s.send({ kind: "device-added", device: { deviceId: "keys", class: "keyboard", name: "Keyboard", capabilities: [] } })
+    await Bun.sleep(10)
+    expect(s.controllers.snapshot()).toHaveLength(1)
+    s.send({ kind: "device-removed", deviceId: "pad" })
+    await waitFor(() => s.controllers.snapshot().length === 0)
+  })
+
   it("attaches a silent baseline then delivers live semantic button actions", async () => {
     const s = session(true); await s.ready()
     expect(s.actions).toEqual([])

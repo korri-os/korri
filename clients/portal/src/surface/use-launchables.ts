@@ -12,6 +12,7 @@ import type {
   SurfaceIdentityDisposition,
   SurfaceIdentityManagement,
   SurfaceSettingsStatus,
+  SurfaceNetwork,
 } from "@contracts/surface/korri-surface"
 import type {
   DiscoverySnapshot,
@@ -22,12 +23,13 @@ import type {
   ActiveSession,
 } from "@contracts/generated/korrid"
 import { SessionStopPhase } from "@contracts/generated/korrid"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   createDiscoverySnapshotPoller,
   type KorridClient,
   type SessionStartResult,
 } from "../korrid/client"
+import { createNetworkOnboarding } from "./network-onboarding"
 import type { DeviceFacts } from "./settings-model"
 import {
   entryKey,
@@ -57,6 +59,13 @@ const discoveryActive = (snapshot: DiscoverySnapshot | undefined): boolean =>
   snapshot?.state._tag === "Scanning" || snapshot?.state._tag === "Enriching"
 
 export interface Launchables {
+  readonly network?: SurfaceNetwork
+  readonly onboardingNeeded?: boolean
+  readonly networkProblem?: string
+  scanWifi(): void
+  connectWifi(networkId: string, password?: string): void
+  connectHiddenWifi(ssid: string, password?: string): void
+  finishOnboarding(): void
   readonly state: LaunchablesState
   /** Input precedence reads the synchronously published owner, not React's render. */
   getState(): LaunchablesState
@@ -107,6 +116,9 @@ export type LocalGamesListOutcomeWithCoverUrls =
   | { readonly _tag: "Err"; readonly payload: RpcFailure }
 
 export function useLaunchables(korrid: KorridClient): Launchables {
+  const networkOnboarding = useMemo(() => createNetworkOnboarding(korrid), [korrid])
+  const networkState = useSyncExternalStore(networkOnboarding.subscribe, networkOnboarding.snapshot)
+  useEffect(() => networkOnboarding.start(), [networkOnboarding])
   const [state, setState] = useState<LaunchablesState>(LaunchablesState.loading)
   // Device facts ride along with each load but are deliberately not part of
   // the launchables ADT: settings is not a thing you can play, and folding it
@@ -946,10 +958,11 @@ export function useLaunchables(korrid: KorridClient): Launchables {
   )
 
   const dismissNotice = useCallback(() => {
+    networkOnboarding.dismissProblem()
     const current = stateRef.current
     if (current._tag !== "Ready" || current.notice === null) return
     publish({ ...current, notice: null })
-  }, [publish])
+  }, [publish, networkOnboarding])
 
   const returnCatalogSession = useCallback((session: ActiveSession) => {
     const current = stateRef.current
@@ -960,9 +973,16 @@ export function useLaunchables(korrid: KorridClient): Launchables {
     confirmEntry({ kind: "now-playing", session })
   }, [confirmEntry, publish])
 
-  const reload = useCallback(() => void load(), [load])
+  const reload = useCallback(() => { void load(); networkOnboarding.dismissProblem(); void networkOnboarding.refresh() }, [load, networkOnboarding])
 
   return {
+    network: networkState.network,
+    onboardingNeeded: networkState.onboardingNeeded,
+    networkProblem: networkState.problem,
+    scanWifi: networkOnboarding.scanWifi,
+    connectWifi: networkOnboarding.connectWifi,
+    connectHiddenWifi: networkOnboarding.connectHiddenWifi,
+    finishOnboarding: networkOnboarding.finishOnboarding,
     state,
     getState: () => stateRef.current,
     facts,

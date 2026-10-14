@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { createControllers } from "./controllers"
 import { createInputBus } from "./bus"
 import { createGamepadAdapter, type GamepadSnapshot } from "./gamepad-adapter"
 import { createSpatialFocusController } from "./spatial-focus"
@@ -24,7 +25,9 @@ function session() {
   const page = new EventTarget()
   const visibility = new EventTarget()
   const actions: InputAction[] = []
+  const controllers = createControllers()
   const adapter = createGamepadAdapter({
+    controllers,
     readGamepads: () => {
       readCount++
       if (readBlocked) throw new DOMException("blocked", "SecurityError")
@@ -37,7 +40,7 @@ function session() {
   })
   const stop = adapter.start(action => actions.push(action))
   return {
-    adapter, actions, stop,
+    adapter, actions, stop, controllers,
     get reads() { return readCount },
     get pending() { return frames.size },
     setPads(value: readonly (GamepadSnapshot | null)[]) { pads = value },
@@ -59,6 +62,17 @@ function session() {
 }
 
 describe("browser Gamepad adapter", () => {
+  it("publishes API id and index, hears the first input and removes disconnected controllers", () => {
+    const s = session()
+    s.tick(0)
+    expect(s.controllers.snapshot()).toEqual([{ id: "0:controller", name: "controller", heard: false }])
+    s.setPads([pad([7])]); s.tick(1)
+    expect(s.controllers.snapshot()[0]?.heard).toBe(true)
+    s.setPads([]); s.tick(2)
+    expect(s.controllers.snapshot()).toEqual([])
+    s.stop()
+  })
+
   it("emits one direction gesture, bounded repeats, and a matching release", () => {
     const s = session()
     s.tick(0)
