@@ -182,6 +182,7 @@ function PicoOnboardingSurface({
       onEdit: field => dispatch({ _tag: "EditedIdentityField", field }),
       onSubmit: () => dispatch({ _tag: "SubmittedIdentity" }),
       onBackUp: () => dispatch({ _tag: "OpenedBackup" }),
+      onConfirm: () => dispatch({ _tag: "ToggledTrustLoss" }),
     },
     backup: {
       onEdit: password => dispatch({ _tag: "EditedBackupPassword", password }),

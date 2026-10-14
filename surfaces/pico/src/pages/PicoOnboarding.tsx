@@ -31,6 +31,7 @@ export interface PicoOnboardingActions {
   readonly identity: {
     readonly onChoose: (how: IdentityOrigin) => void
     readonly onEdit: (field: "backup" | "password" | "uri") => void
+    readonly onConfirm: () => void
     readonly onSubmit: () => void
     readonly onBackUp: () => void
   }

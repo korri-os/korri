@@ -51,3 +51,21 @@
 	background: var(--pico-warn);
 	overflow-wrap: anywhere;
 }
+
+/* The trust-loss statement: a long label that wraps beside its OFF ON, and
+ * a note under it in the dim ink, which reads on the ground. Its values take
+ * the dim ink too: the quiet ink reads 3.3:1 on the plate. */
+.pico-identity-setup-confirm {
+	--pico-row-quiet: var(--pico-ink-dim);
+	display: grid;
+	gap: var(--pico-px);
+	list-style: none;
+}
+
+.pico-identity-setup-confirm-note {
+	margin: 0;
+	padding: 0 calc(var(--pico-px) * 4);
+	font-size: var(--pico-text-sm);
+	line-height: 1.5;
+	color: var(--pico-ink-dim);
+}

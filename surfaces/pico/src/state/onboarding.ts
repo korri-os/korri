@@ -81,15 +81,24 @@ export interface RestoreField {
 export type IdentityStep =
   | { readonly _tag: "Choose" }
   | { readonly _tag: "Ready"; readonly origin: IdentityOrigin }
-  /** `sent`: Korri was asked to switch, and its status now speaks for it. */
+  /** `confirmed`: the player's own answer to the trust-loss question, the
+   * same one Settings asks. Pico never answers it. `sent`: Korri was asked
+   * to switch, and its status now speaks for it. */
   | {
       readonly _tag: "Restore"
       readonly backup: string
       readonly password: string
       readonly editing: RestoreField | undefined
+      readonly confirmed: boolean
       readonly sent: boolean
     }
-  | { readonly _tag: "Signer"; readonly uri: string; readonly editing: PicoTextDraft | undefined; readonly sent: boolean }
+  | {
+      readonly _tag: "Signer"
+      readonly uri: string
+      readonly editing: PicoTextDraft | undefined
+      readonly confirmed: boolean
+      readonly sent: boolean
+    }
 
 /** The backup dialog, over the identity step. */
 export interface BackupDialog {
@@ -163,6 +172,8 @@ export type OnboardingMessage =
   // Identity
   | { readonly _tag: "ChoseIdentity"; readonly how: IdentityOrigin }
   | { readonly _tag: "EditedIdentityField"; readonly field: "backup" | "password" | "uri" }
+  /** The trust-loss statement on the restore or signer form, turned on or off. */
+  | { readonly _tag: "ToggledTrustLoss" }
   | { readonly _tag: "SubmittedIdentity" }
   | { readonly _tag: "OpenedBackup" }
   | { readonly _tag: "EditedBackupPassword"; readonly password: string }

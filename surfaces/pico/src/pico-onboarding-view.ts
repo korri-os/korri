@@ -84,15 +84,24 @@ export type PicoIdentityView =
   | { readonly _tag: "Working"; readonly label: string }
   /** `canBackUp`: Korri holds a key here that the backup dialog can export. */
   | { readonly _tag: "Ready"; readonly origin: IdentityOrigin; readonly canBackUp: boolean }
-  /** `backup` is shown cut; the password only as its length. */
+  /** `backup` is shown cut; the password only as its length. `confirmed`:
+   * the player's answer to the trust-loss question. `ready`: the form is
+   * filled and confirmed. */
   | {
       readonly _tag: "Restore"
       readonly backup: string
       readonly passwordLength: number
+      readonly confirmed: boolean
       readonly ready: boolean
       readonly problem?: string
     }
-  | { readonly _tag: "Signer"; readonly uri: string; readonly ready: boolean; readonly problem?: string }
+  | {
+      readonly _tag: "Signer"
+      readonly uri: string
+      readonly confirmed: boolean
+      readonly ready: boolean
+      readonly problem?: string
+    }
   /** The signer was asked; it waits for the player to approve there. */
   | { readonly _tag: "Approving"; readonly uri: string }
 
@@ -265,7 +274,8 @@ function identityView(identity: IdentityStep, korri: SurfaceModel): PicoIdentity
         _tag: "Restore",
         backup: cut(identity.backup, 18),
         passwordLength: [...identity.password].length,
-        ready: identity.backup.trim() !== "" && identity.password !== "",
+        confirmed: identity.confirmed,
+        ready: identity.confirmed && identity.backup.trim() !== "" && identity.password !== "",
         ...(problem === undefined ? {} : { problem }),
       }
     }
@@ -275,7 +285,8 @@ function identityView(identity: IdentityStep, korri: SurfaceModel): PicoIdentity
       return {
         _tag: "Signer",
         uri: cut(identity.uri, 22),
-        ready: identity.uri.trim() !== "",
+        confirmed: identity.confirmed,
+        ready: identity.confirmed && identity.uri.trim() !== "",
         ...(problem === undefined ? {} : { problem }),
       }
     }

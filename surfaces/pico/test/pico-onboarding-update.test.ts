@@ -266,12 +266,31 @@ describe("who you are", () => {
     expect(screen.view.signer).toEqual({ enabled: false, note: "Needs a connection." })
   })
 
-  test("restore sends the backup and password, forgets the password, and is ready when Korri switched", () => {
-    const { nav, requests } = storyFrom(onYou(online), online,
-      { _tag: "ChoseIdentity", how: "restored" },
-      { _tag: "EditedIdentityField", field: "backup" }, ...typed("ncryptsec1abc"), submit,
-      { _tag: "EditedIdentityField", field: "password" }, ...typed("hunter22"), submit,
-      { _tag: "SubmittedIdentity" })
+  const restoreFilled: OnboardingMessage[] = [
+    { _tag: "ChoseIdentity", how: "restored" },
+    { _tag: "EditedIdentityField", field: "backup" }, ...typed("ncryptsec1abc"), submit,
+    { _tag: "EditedIdentityField", field: "password" }, ...typed("hunter22"), submit,
+  ]
+
+  test("a switch waits for the player to confirm the trust loss; Pico never answers it", () => {
+    const { requests, screen } = storyFrom(onYou(online), online, ...restoreFilled, { _tag: "SubmittedIdentity" })
+    expect(requests.some(request => request._tag === "SwitchIdentityFromBackup")).toBe(false)
+    if (screen._tag !== "Identity" || screen.view._tag !== "Restore") throw new Error("Expected the restore form")
+    expect([screen.view.confirmed, screen.view.ready]).toEqual([false, false])
+    const signer = storyFrom(onYou(online), online, { _tag: "ChoseIdentity", how: "signer" },
+      { _tag: "EditedIdentityField", field: "uri" }, ...typed("bunker://k"), submit, { _tag: "SubmittedIdentity" })
+    expect(signer.requests.some(request => request._tag === "SwitchIdentityToNip46")).toBe(false)
+  })
+
+  test("turned on and off again, the statement still holds the switch", () => {
+    const { requests } = storyFrom(onYou(online), online, ...restoreFilled,
+      { _tag: "ToggledTrustLoss" }, { _tag: "ToggledTrustLoss" }, { _tag: "SubmittedIdentity" })
+    expect(requests.some(request => request._tag === "SwitchIdentityFromBackup")).toBe(false)
+  })
+
+  test("restore sends the backup, the password and the player's yes, forgets the password, and is ready when Korri switched", () => {
+    const { nav, requests } = storyFrom(onYou(online), online, ...restoreFilled,
+      { _tag: "ToggledTrustLoss" }, { _tag: "SubmittedIdentity" })
     expect(requests.at(-1)).toEqual({
       _tag: "SwitchIdentityFromBackup", encryptedSecret: "ncryptsec1abc", password: "hunter22", disposition: "transfer", trustLossConfirmed: true,
     })
@@ -284,7 +303,7 @@ describe("who you are", () => {
     const { requests } = storyFrom(onYou(online), online,
       { _tag: "ChoseIdentity", how: "signer" },
       { _tag: "EditedIdentityField", field: "uri" }, ...typed("bunker://k"), submit,
-      { _tag: "SubmittedIdentity" })
+      { _tag: "ToggledTrustLoss" }, { _tag: "SubmittedIdentity" })
     expect(requests.at(-1)).toEqual({ _tag: "SwitchIdentityToNip46", bunkerUri: "bunker://k", disposition: "transfer", trustLossConfirmed: true })
   })
 })

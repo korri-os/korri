@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { createFixtureHost } from "../src/fixtures/fixture-host"
-import { onboardingModel, wifiSettingsModel, wrongPasswordNetwork } from "../src/fixtures/onboarding"
+import { onboardingModel, onlineNetwork, wifiSettingsModel, wrongPasswordNetwork } from "../src/fixtures/onboarding"
 import { PicoSurface } from "../src/PicoSurface"
 
 afterEach(() => cleanup())
@@ -48,6 +48,33 @@ describe("setup takes the screen while Korri publishes onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue offline" }))
     expect(screen.getByText("Continue offline?")).toBeTruthy()
     expect(document.activeElement?.textContent).toBe("Back to Wi-Fi")
+  })
+})
+
+describe("switching identity during setup", () => {
+  test("asks Settings' trust-loss question, and RESTORE waits for the player's yes", () => {
+    const host = createFixtureHost()
+    // A device already named "usu": NEXT keeps the name and goes straight on.
+    const named = {
+      ...onboardingModel,
+      network: onlineNetwork,
+      settings: onboardingModel.settings.map(group => ({
+        ...group,
+        items: group.items.map(item => (item.id === "device-name" ? { ...item, value: "usu" } : item)),
+      })),
+    }
+    render(<PicoSurface host={host} model={named} />)
+    fireEvent.click(screen.getByRole("button", { name: "▶ START" }))
+    fireEvent.click(screen.getByRole("button", { name: "NEXT" }))
+    fireEvent.click(screen.getByRole("button", { name: /^NEXT/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Restore from backup/ }))
+    const statement = screen.getByRole("button", { name: /I understand that peer pairings and stream-client trust will be cleared\./ })
+    expect(statement.textContent).toContain("OFF")
+    expect(screen.getByText("Save files and save states stay under the plugin account.")).toBeTruthy()
+    expect((screen.getByRole("button", { name: "RESTORE" }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(statement)
+    expect(screen.getByRole("button", { name: /I understand/ }).querySelector("[data-lit]")?.textContent).toBe("ON")
+    expect(host.calls).toEqual(["scanWifi"])
   })
 })
 

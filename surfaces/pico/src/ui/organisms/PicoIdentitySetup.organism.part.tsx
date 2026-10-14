@@ -4,7 +4,7 @@ export const name = "Identity Setup"
 export const note = "Keep the key Korri made, restore one from a backup, or connect a signer"
 
 const none: PicoIdentityActions = {
-  onChoose: () => undefined, onEdit: () => undefined, onSubmit: () => undefined, onBackUp: () => undefined, onContinue: () => undefined,
+  onChoose: () => undefined, onEdit: () => undefined, onConfirm: () => undefined, onSubmit: () => undefined, onBackUp: () => undefined, onContinue: () => undefined,
 }
 const on = { enabled: true, note: "You have an ncryptsec backup and its password." }
 const signer = { enabled: true, note: "NIP-46: the key stays in your signer app." }
@@ -27,18 +27,23 @@ export function Restored() {
 }
 
 export function Restore() {
-  return <PicoIdentitySetup actions={none} view={{ _tag: "Restore", backup: "ncryptsec1qgg9947r…", passwordLength: 12, ready: true }} />
+  return <PicoIdentitySetup actions={none} view={{ _tag: "Restore", backup: "ncryptsec1qgg9947r…", passwordLength: 12, confirmed: true, ready: true }} />
+}
+
+// Filled in, the trust loss not yet confirmed: RESTORE waits for it.
+export function RestoreUnconfirmed() {
+  return <PicoIdentitySetup actions={none} view={{ _tag: "Restore", backup: "ncryptsec1qgg9947r…", passwordLength: 12, confirmed: false, ready: false }} />
 }
 
 export function RestoreEmpty() {
-  return <PicoIdentitySetup actions={none} view={{ _tag: "Restore", backup: "", passwordLength: 0, ready: false }} />
+  return <PicoIdentitySetup actions={none} view={{ _tag: "Restore", backup: "", passwordLength: 0, confirmed: false, ready: false }} />
 }
 
 export function RestoreRefused() {
   return (
     <PicoIdentitySetup
       actions={none}
-      view={{ _tag: "Restore", backup: "ncryptsec1qgg9947r…", passwordLength: 0, ready: false, problem: "That password does not open this backup." }}
+      view={{ _tag: "Restore", backup: "ncryptsec1qgg9947r…", passwordLength: 0, confirmed: true, ready: false, problem: "That password does not open this backup." }}
     />
   )
 }
@@ -48,7 +53,7 @@ export function Working() {
 }
 
 export function Signer() {
-  return <PicoIdentitySetup actions={none} view={{ _tag: "Signer", uri: "bunker://7e1f0c3a9b?rel…", ready: true }} />
+  return <PicoIdentitySetup actions={none} view={{ _tag: "Signer", uri: "bunker://7e1f0c3a9b?rel…", confirmed: true, ready: true }} />
 }
 
 export function Approving() {

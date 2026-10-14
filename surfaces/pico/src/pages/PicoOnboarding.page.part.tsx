@@ -120,6 +120,7 @@ function Walk({ start = onboardingModel, beats = [] }: { readonly start?: Surfac
       onEdit: field => dispatch({ _tag: "EditedIdentityField", field }),
       onSubmit: () => dispatch({ _tag: "SubmittedIdentity" }),
       onBackUp: () => dispatch({ _tag: "OpenedBackup" }),
+      onConfirm: () => dispatch({ _tag: "ToggledTrustLoss" }),
     },
     backup: {
       onEdit: password => dispatch({ _tag: "EditedBackupPassword", password }),
@@ -166,6 +167,8 @@ const restoring: readonly Beat[] = [
   ...typed("preview-only"),
   { _tag: "SubmittedText" },
 ]
+/* The player's own yes to the trust-loss question. */
+const confirmed: Beat = { _tag: "ToggledTrustLoss" }
 const signing: readonly Beat[] = [
   ...choosing,
   { _tag: "ChoseIdentity", how: "signer" },
@@ -291,17 +294,22 @@ export function IdentityBackup() {
   return <Walk beats={[...created, { _tag: "OpenedBackup" }]} />
 }
 
+// Filled in; RESTORE waits for the trust-loss question to be answered.
 export function IdentityRestore() {
   return <Walk beats={restoring} />
 }
 
+export function IdentityRestoreConfirmed() {
+  return <Walk beats={[...restoring, confirmed]} />
+}
+
 export function IdentityRestoreWorking() {
-  return <Walk beats={[...restoring, { _tag: "SubmittedIdentity" }]} />
+  return <Walk beats={[...restoring, confirmed, { _tag: "SubmittedIdentity" }]} />
 }
 
 export function IdentityRestoreRefused() {
   return (
-    <Walk beats={[...restoring, { _tag: "SubmittedIdentity" }, {
+    <Walk beats={[...restoring, confirmed, { _tag: "SubmittedIdentity" }, {
       change: model => model.identityManagement === undefined ? model : {
         ...model,
         identityManagement: { ...model.identityManagement, status: { _tag: "Problem", message: "That password does not open this backup." } },
@@ -311,15 +319,19 @@ export function IdentityRestoreRefused() {
 }
 
 export function IdentityRestored() {
-  return <Walk beats={[...restoring, { _tag: "SubmittedIdentity" }, "answer"]} />
+  return <Walk beats={[...restoring, confirmed, { _tag: "SubmittedIdentity" }, "answer"]} />
 }
 
 export function IdentitySigner() {
   return <Walk beats={signing} />
 }
 
+export function IdentitySignerConfirmed() {
+  return <Walk beats={[...signing, confirmed]} />
+}
+
 export function IdentityApproving() {
-  return <Walk beats={[...signing, { _tag: "SubmittedIdentity" }]} />
+  return <Walk beats={[...signing, confirmed, { _tag: "SubmittedIdentity" }]} />
 }
 
 export function Controllers() {

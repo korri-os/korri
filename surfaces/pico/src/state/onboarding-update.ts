@@ -126,6 +126,8 @@ function step(nav: OnboardingNav, message: OnboardingMessage, korri: SurfaceMode
       return chooseIdentity(nav, korri, message.how)
     case "EditedIdentityField":
       return editIdentityField(nav, message.field)
+    case "ToggledTrustLoss":
+      return toggleTrustLoss(nav)
     case "SubmittedIdentity":
       return submitIdentity(nav, korri)
     case "OpenedBackup":
@@ -403,8 +405,8 @@ function chooseIdentity(nav: OnboardingNav, korri: SurfaceModel, how: "created" 
   if (korri.identityManagement === undefined || isOffline(korri)) return stay(nav)
   return ask(
     withIdentity(nav, how === "restored"
-      ? { _tag: "Restore", backup: "", password: "", editing: undefined, sent: false }
-      : { _tag: "Signer", uri: "", editing: undefined, sent: false }),
+      ? { _tag: "Restore", backup: "", password: "", editing: undefined, confirmed: false, sent: false }
+      : { _tag: "Signer", uri: "", editing: undefined, confirmed: false, sent: false }),
     { _tag: "DismissIdentityStatus" },
   )
 }
@@ -427,29 +429,41 @@ function editIdentityField(nav: OnboardingNav, field: "backup" | "password" | "u
 }
 
 /**
- * RESTORE or CONNECT. A fresh device has no pairings or stream trust to
- * lose, so local records transfer and the loss is confirmed for the player.
+ * The player's answer to the trust-loss question. Setup also runs on a
+ * device that has been in use, with pairings to lose, so only the player
+ * may answer it; korrid refuses a switch without it.
+ */
+function toggleTrustLoss(nav: OnboardingNav): PicoStep<OnboardingNav> {
+  const identity = nav.identity
+  if (nav.step !== "you" || (identity._tag !== "Restore" && identity._tag !== "Signer")
+    || identity.editing !== undefined || identity.sent) return stay(nav)
+  return stay(withIdentity(nav, { ...identity, confirmed: !identity.confirmed }))
+}
+
+/**
+ * RESTORE or CONNECT, as Settings sends them: only once the player has
+ * confirmed the trust loss, and with that answer. Local records transfer.
  * The password goes with the request and leaves the form.
  */
 function submitIdentity(nav: OnboardingNav, korri: SurfaceModel): PicoStep<OnboardingNav> {
   const identity = nav.identity
   if (korri.identityManagement === undefined || korri.identityManagement.status._tag === "Working") return stay(nav)
-  if (identity._tag === "Restore" && identity.editing === undefined
+  if (identity._tag === "Restore" && identity.editing === undefined && identity.confirmed
     && identity.backup.trim() !== "" && identity.password !== "") {
     return ask(withIdentity(nav, { ...identity, password: "", sent: true }), {
       _tag: "SwitchIdentityFromBackup",
       encryptedSecret: identity.backup.trim(),
       password: identity.password,
       disposition: "transfer",
-      trustLossConfirmed: true,
+      trustLossConfirmed: identity.confirmed,
     })
   }
-  if (identity._tag === "Signer" && identity.editing === undefined && identity.uri !== "") {
+  if (identity._tag === "Signer" && identity.editing === undefined && identity.confirmed && identity.uri !== "") {
     return ask(withIdentity(nav, { ...identity, sent: true }), {
       _tag: "SwitchIdentityToNip46",
       bunkerUri: identity.uri,
       disposition: "transfer",
-      trustLossConfirmed: true,
+      trustLossConfirmed: identity.confirmed,
     })
   }
   return stay(nav)

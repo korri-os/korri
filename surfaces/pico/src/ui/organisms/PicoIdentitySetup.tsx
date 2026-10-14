@@ -3,12 +3,15 @@ import type { PicoIdentityView } from "../../pico-onboarding-view"
 import type { IdentityOrigin } from "../../state/onboarding"
 import { PicoBusyMeter } from "../atoms/PicoBusyMeter"
 import { PicoRow } from "../atoms/PicoRow"
+import { PicoSegments } from "../atoms/PicoSegments"
 import { PicoChoiceRow } from "../molecules/PicoChoiceRow"
 import { PicoSetupHeading } from "../molecules/PicoSetupHeading"
 
 export interface PicoIdentityActions {
   readonly onChoose: (how: IdentityOrigin) => void
   readonly onEdit: (field: "backup" | "password" | "uri") => void
+  /** The trust-loss statement, turned on or off. */
+  readonly onConfirm: () => void
   readonly onSubmit: () => void
   readonly onBackUp: () => void
   readonly onContinue: () => void
@@ -46,6 +49,20 @@ function heading(view: PicoIdentityView): { readonly title: string; readonly mes
   }
 }
 
+/** Settings' trust-loss checkbox, as a row the d-pad can turn on and off. */
+function trustLoss(confirmed: boolean, onConfirm: () => void) {
+  return (
+    <li className="pico-identity-setup-confirm">
+      <PicoRow
+        detail={<PicoSegments current={confirmed ? 1 : 0} options={["OFF", "ON"]} />}
+        label="I understand that peer pairings and stream-client trust will be cleared."
+        onPress={onConfirm}
+      />
+      <p className="pico-identity-setup-confirm-note">Save files and save states stay under the plugin account.</p>
+    </li>
+  )
+}
+
 /**
  * Who this device belongs to: keep the identity Korri made for it, bring one
  * back from a backup, or hand the key to a NIP-46 signer. Drawn the way the
@@ -57,6 +74,10 @@ function heading(view: PicoIdentityView): { readonly title: string; readonly mes
  * With no connection, restoring and connecting a signer stay in the list,
  * disabled, saying why; a new identity still works. A refusal from Korri
  * shows in its words on a red plate, with the form kept.
+ *
+ * Switching asks the trust-loss question Settings asks, in the same words:
+ * the player turns the statement on, and only then does RESTORE or CONNECT
+ * work. A device in use may have pairings to lose, so Pico never answers it.
  *
  * The backup itself is the real PicoIdentityDialog; the page opens it.
  */
@@ -106,6 +127,7 @@ export function PicoIdentitySetup({
         <ul className="pico-identity-setup-list">
           <PicoChoiceRow detail={view.backup === "" ? "EMPTY" : view.backup} label="Backup" onPress={() => actions.onEdit("backup")} />
           <PicoChoiceRow detail={view.passwordLength === 0 ? "EMPTY" : "*".repeat(view.passwordLength)} label="Password" onPress={() => actions.onEdit("password")} />
+          {trustLoss(view.confirmed, actions.onConfirm)}
           <li className="pico-identity-setup-submit">
             <PicoRow disabled={!view.ready} label="RESTORE" onPress={actions.onSubmit} />
           </li>
@@ -114,6 +136,7 @@ export function PicoIdentitySetup({
       {view._tag === "Signer" ? (
         <ul className="pico-identity-setup-list">
           <PicoChoiceRow detail={view.uri === "" ? "EMPTY" : view.uri} label="Address" note="Your signer app shows a bunker:// address." onPress={() => actions.onEdit("uri")} />
+          {trustLoss(view.confirmed, actions.onConfirm)}
           <li className="pico-identity-setup-submit">
             <PicoRow disabled={!view.ready} label="CONNECT" onPress={actions.onSubmit} />
           </li>
