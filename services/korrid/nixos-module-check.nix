@@ -471,6 +471,12 @@ assert service.serviceConfig.ProtectProc == "invisible";
 assert service.serviceConfig.ProcSubset == "pid";
 assert lib.hasInfix "action.id == \"org.freedesktop.systemd1.manage-units\"" polkit;
 assert lib.hasInfix "subject.user == \"korrid\"" polkit;
+assert lib.hasInfix ''subject.user == "korrid" &&
+      (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
+       action.id == "org.freedesktop.NetworkManager.network-control" ||
+       action.id == "org.freedesktop.NetworkManager.settings.modify.system")'' polkit;
+assert !(builtins.elem "networkmanager" (enabled.config.users.users.korrid.extraGroups or [ ]));
+assert !(builtins.elem "/run/dbus" service.serviceConfig.InaccessiblePaths);
 assert !(lib.hasInfix "subject.system_unit" polkit);
 assert lib.hasInfix ''/^korri-game-[0-9a-f]{32}\.service$/'' polkit;
 assert !(lib.hasInfix ''/^korri-game-[0-9a-f]{32}\\.service$/'' polkit);

@@ -837,6 +837,8 @@ in
         NoNewPrivileges = true;
         CapabilityBoundingSet = [ ];
         AmbientCapabilities = [ ];
+        # /run/dbus/system_bus_socket stays visible. ProtectSystem makes the
+        # filesystem read-only but does not block connecting to Unix sockets.
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_INET"
@@ -872,6 +874,14 @@ in
 
     security.polkit.enable = true;
     security.polkit.extraConfig = ''
+      polkit.addRule(function(action, subject) {
+        if (subject.user == "korrid" &&
+            (action.id == "org.freedesktop.NetworkManager.wifi.scan" ||
+             action.id == "org.freedesktop.NetworkManager.network-control" ||
+             action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
+          return polkit.Result.YES;
+        }
+      });
       polkit.addRule(function(action, subject) {
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
