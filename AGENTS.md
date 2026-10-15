@@ -202,3 +202,17 @@ permission expansion.
 - Peer korrids speak the native tagged `/rpc` wire. The Effect-RPC envelope
   client in `services/korrid/src/upstream.rs` exists only for aka until it is
   migrated; it dies at switchover. Do not grow abstractions around it.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues on `korri-os/korri`, through `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), in addition to the kind and priority labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
