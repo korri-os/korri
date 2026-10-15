@@ -163,3 +163,52 @@ async fn network_and_onboarding_rpc_round_trip_uses_portal_authority_and_real_ma
     ));
     task.abort();
 }
+
+#[tokio::test]
+async fn local_sessions_wifi_scan_reaches_network_manager_through_host_http_router() {
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("host.toml");
+    std::fs::write(&config, "label = \"wifi-device\"\ngames = []\n").unwrap();
+    let private = root.path().join("private");
+    let runtime = crate::host::HostRuntime::from_paths_with_backend(
+        &config,
+        None,
+        private.clone(),
+        Arc::new(crate::host::control::InMemoryLaunchUnitBackend::default()),
+    );
+    let (mut lan, _) = crate::app_states(runtime);
+    lan.network = service(None);
+    let portal = crate::portal_router_for(
+        &lan,
+        Some(crate::PortalAccess::new(
+            "wifi-test-capability",
+            "http://portal.test",
+            crate::PortalPermission::LocalSessions,
+        )),
+    );
+    let app = crate::peer_rpc::PeerRpcServer::new(lan, &private)
+        .unwrap()
+        .router(portal);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/rpc", listener.local_addr().unwrap());
+    let task = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+    let response = reqwest::Client::new()
+        .post(url)
+        .bearer_auth("wifi-test-capability")
+        .header("Origin", "http://portal.test")
+        .json(&serde_json::json!({"_tag":"system.wifi.scan","payload":{}}))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = response.text().await.unwrap();
+    task.abort();
+    assert_eq!(status, reqwest::StatusCode::OK, "{body}");
+    let response: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(response["_tag"], "system.wifi.scan");
+    assert_eq!(response["outcome"]["_tag"], "Ok", "{response}");
+    assert_eq!(
+        response["outcome"]["payload"]["wifi"]["payload"]["networks"][0]["ssid"],
+        "Home"
+    );
+}

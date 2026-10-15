@@ -79,7 +79,13 @@ impl PortalPermission {
                         | RpcRequest::SelectedGameLaunch(_)
                         | RpcRequest::SessionReserve(_)
                         | RpcRequest::SessionStart(_)
-                        | RpcRequest::SessionCancel(_) => true,
+                        | RpcRequest::SessionCancel(_)
+                        // The kiosk on this device drives first-boot setup and Settings Wi-Fi.
+                        // NetworkManager polkit limits korrid to three actions.
+                        | RpcRequest::WifiScan(_)
+                        | RpcRequest::WifiConnect(_)
+                        | RpcRequest::WifiConnectHidden(_)
+                        | RpcRequest::OnboardingFinish(_) => true,
                         _ => false,
                     }
             }
@@ -293,6 +299,66 @@ mod tests {
             assert!(!PortalPermission::ReadOnly.permits(&request));
             assert!(!PortalPermission::LocalSessions.permits(&request));
         }
+    }
+
+    #[test]
+    fn local_sessions_authorize_wifi_and_onboarding_without_full_admin_access() {
+        let local = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::LocalSessions);
+        let read_only = PortalAccess::new(TOKEN, ORIGIN, PortalPermission::ReadOnly);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {TOKEN}").parse().unwrap(),
+        );
+        headers.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        for (tag, payload) in [
+            ("system.wifi.scan", json!({})),
+            (
+                "system.wifi.connect",
+                json!({"networkId":"ap", "password":"test-passphrase"}),
+            ),
+            (
+                "system.wifi.connectHidden",
+                json!({"ssid":"Hidden", "password":"test-passphrase"}),
+            ),
+            ("system.onboarding.finish", json!({})),
+        ] {
+            let request: RpcRequest =
+                serde_json::from_value(json!({"_tag":tag,"payload":payload})).unwrap();
+            assert_eq!(local.authorize(&headers, &request), Ok(()), "{tag}");
+            assert_eq!(
+                read_only.authorize(&headers, &request),
+                Err(StatusCode::FORBIDDEN),
+                "{tag}"
+            );
+            let mut foreign = headers.clone();
+            foreign.insert(header::ORIGIN, "https://foreign.example".parse().unwrap());
+            assert_eq!(
+                local.authorize(&foreign, &request),
+                Err(StatusCode::FORBIDDEN),
+                "{tag}"
+            );
+            let mut missing = headers.clone();
+            missing.remove(header::AUTHORIZATION);
+            assert_eq!(
+                local.authorize(&missing, &request),
+                Err(StatusCode::UNAUTHORIZED),
+                "{tag}"
+            );
+        }
+        for tag in ["system.network.status", "system.onboarding.status"] {
+            let request: RpcRequest =
+                serde_json::from_value(json!({"_tag":tag,"payload":{}})).unwrap();
+            assert_eq!(read_only.authorize(&headers, &request), Ok(()));
+        }
+        let admin_write =
+            RpcRequest::SteamGridDbCredentialSet(crate::SteamGridDbCredentialSetRequest {
+                token: "test-token".into(),
+            });
+        assert_eq!(
+            local.authorize(&headers, &admin_write),
+            Err(StatusCode::FORBIDDEN)
+        );
     }
 
     #[test]
