@@ -434,6 +434,37 @@ let
     invalid = withoutProductModule;
   };
   productConfig = standalone.config;
+  ownerPublisher = {
+    publicKey = "review-owner-1:4SchQgTMNU3syZ2ZzN/cJXPMigc/PIt+EaqHAStgJs8=";
+    cacheUrl = "file:///var/lib/review-owner/cache";
+  };
+  withOwnerPublisher = standalone.extendModules {
+    modules = [ { services.korri.pluginHost.publishers."@review-owner" = ownerPublisher; } ];
+  };
+  publisherRequirement = builtins.head (
+    builtins.filter (
+      requirement: requirement.name == "official plugin publisher binding"
+    ) requirements.settings
+  );
+  invalidPublisherMaps = [
+    { "@review-owner" = ownerPublisher; }
+    (
+      requirements.constants.publishers
+      // {
+        "@korri" = requirements.constants.publishers."@korri" // {
+          publicKey = ownerPublisher.publicKey;
+        };
+      }
+    )
+    (
+      requirements.constants.publishers
+      // {
+        "@korri" = requirements.constants.publishers."@korri" // {
+          cacheUrl = ownerPublisher.cacheUrl;
+        };
+      }
+    )
+  ];
   productPluginHost = productConfig.services.korri.pluginHost;
   productPluginRestore = productConfig.systemd.services.korri-plugin-host;
   productPluginPublicKey = requirements.constants.publishers."@korri".publicKey;
@@ -667,6 +698,23 @@ assert kernelPinHolds (unpinnedKernel null).config == [ false ];
 assert kernelPinHolds (unpinnedKernel "review-test board needs 6.12").config == [ true ];
 assert (unpinnedKernel null).config.services.korriProduct.kernel.series == "7.2";
 assert check.validate "standalone" standalone == [ ];
+assert check.validate "owner-publisher" withOwnerPublisher == [ ];
+assert
+  withOwnerPublisher.config.services.korri.pluginHost.publishers
+  == (requirements.constants.publishers // { "@review-owner" = ownerPublisher; });
+assert builtins.elem ownerPublisher.publicKey
+  withOwnerPublisher.config.nix.settings.trusted-public-keys;
+assert lib.all (
+  publishers:
+  builtins.elem (check.settingFailure "changed-official-publisher" publisherRequirement) (
+    check.validate "changed-official-publisher" (
+      forceAt [ "services" "korri" "pluginHost" "publishers" ] publishers
+    )
+  )
+) invalidPublisherMaps;
+assert
+  builtins.fromJSON withOwnerPublisher.config.environment.etc."korri-plugin-host/publishers.json".text
+  == (requirements.constants.publishers // { "@review-owner" = ownerPublisher; });
 assert check.validate nativeName nativeProduct == [ ];
 assert check.validate nativeName korri.nixosConfigurations.rpminiv2 == [ ];
 assert

@@ -221,9 +221,10 @@ in
         "korri"
         "pluginHost"
         "publishers"
+        "@korri"
       ]
-      constants.publishers
-      (constants.publishers // { "@review-test" = constants.publishers."@korri"; })
+      constants.publishers."@korri"
+      (constants.publishers."@korri" // { cacheUrl = "https://invalid.example/"; })
     )
   ];
 }
