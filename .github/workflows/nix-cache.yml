@@ -152,6 +152,8 @@ jobs:
       # kernel's dev output, which no device installs and no closure therefore
       # carries, so a cold runner rebuilt the whole kernel to obtain it: 1 h 50 m
       # for one output it could not download.
+      # No device installs korrid's Rust dependency artifacts either. Publish
+      # them so builders can substitute them again after garbage collection.
       - name: Publish the device closure
         env:
           KORRI_CACHE_SECRET_KEY: ${{ runner.temp }}/cache-key.secret
@@ -161,4 +163,5 @@ jobs:
           GH_TOKEN: ${{ secrets.KORRI_CACHE_GITHUB_TOKEN }}
         run: |
           nix run .#korri-nix-cache-publish -- "${{ matrix.device }}" \
-            --package "nixosConfigurations.${{ matrix.device }}.config.boot.kernelPackages.kernel"
+            --package "nixosConfigurations.${{ matrix.device }}.config.boot.kernelPackages.kernel" \
+            --package packages.aarch64-linux.korrid.cargoArtifacts
