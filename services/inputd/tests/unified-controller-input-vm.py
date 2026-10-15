@@ -43,6 +43,18 @@ AXES = {0, 1, 2, 3, 4, 5, 16, 17}
 # GamepadState/Sunshine mask. This tests semantic APIs, not kernel key ordering.
 SDL_BUTTON_MASKS = [0x1000, 0x2000, 0x4000, 0x8000, 0x20, 0x400, 0x10,
                     0x40, 0x80, 0x100, 0x200, 0x1, 0x2, 0x4, 0x8]
+# Games such as Solarus and OpenGOAL bundle the community SDL_GameControllerDB
+# and load it at startup. Its Linux row for 045e:028e version 0x0001 (the
+# InputPlumber virtual pad identity) swaps all four D-pad directions:
+# mdqinc/SDL_GameControllerDB 3cd8565, added in c6d4acd. Seats must not match
+# it, so every proof loads it the way those games do.
+COMMUNITY_DB_SWAPPED_DPAD = (
+    b"030000005e0400008e02000001000000,Microsoft Xbox 360 Controller,a:b0,b:b1,"
+    b"back:b6,dpdown:h0.1,dpleft:h0.2,dpright:h0.8,dpup:h0.4,leftshoulder:b4,"
+    b"leftstick:b9,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,"
+    b"rightstick:b10,righttrigger:a5,rightx:a3,righty:a4,start:b7,x:b2,y:b3,"
+    b"platform:Linux,"
+)
 
 
 class SDLSeats:
@@ -71,6 +83,8 @@ class SDLSeats:
         initialize = bind(("SDL_Init", "SDL_Init"), [ctypes.c_uint32], boolean)
         result = initialize(0x2000)  # SDL_INIT_GAMECONTROLLER / SDL_INIT_GAMEPAD.
         assert (result == 0 if version == 2 else result), self.error()
+        add_mapping = bind(("SDL_GameControllerAddMapping", "SDL_AddGamepadMapping"), [ctypes.c_char_p], integer)
+        assert add_mapping(COMMUNITY_DB_SWAPPED_DPAD) >= 0, self.error()
         self.pump = bind(("SDL_PumpEvents", "SDL_PumpEvents"), [], None)
         self.recognized = bind(("SDL_IsGameController", "SDL_IsGamepad"), [identifier], boolean)
         self.path = bind(("SDL_JoystickPathForIndex", "SDL_GetJoystickPathForID"), [identifier], ctypes.c_char_p)
@@ -267,7 +281,7 @@ class KernelSeats:
             assert (sysfs / "dev").read_text().strip() == f"{os.major(after.st_rdev)}:{os.minor(after.st_rdev)}"
             assert (sysfs / "device/phys").read_text().strip() == f"korri/input-seat/p{slot}"
             assert (sysfs / "device/uniq").read_text().strip() == ""
-            assert struct.unpack("HHHH", ioctl_bytes(fd, 0x02, 8)) == (3, 0x045E, 0x028E, 1)
+            assert struct.unpack("HHHH", ioctl_bytes(fd, 0x02, 8)) == (3, 0x045E, 0x028E, 0x0114)
             assert ioctl_bytes(fd, 0x06, 128).split(b"\0", 1)[0] == f"Korri Seat P{slot}".encode()
             assert ioctl_bytes(fd, 0x07, 128).split(b"\0", 1)[0] == f"korri/input-seat/p{slot}".encode()
             assert bits(ioctl_bytes(fd, 0x21, 96)) == set(BUTTONS.values())

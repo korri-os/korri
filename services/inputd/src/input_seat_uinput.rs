@@ -29,6 +29,12 @@ const BUTTONS: &[(u32, KeyCode)] = &[
 /// coldplug the RG353M's udev queue measured over 2 s behind; the old 2 s budget
 /// failed three times there and tripped the unit's start limit.
 const EVENT_NODE_BUDGET: Duration = Duration::from_secs(15);
+/// A wired Xbox 360 pad's USB version. Version 0x0001, the InputPlumber virtual
+/// pad identity, matches a community SDL_GameControllerDB row that swaps all
+/// four D-pad directions; games that bundle that database load it. Real pads
+/// report this version, and both SDL's built-in and the community mappings for
+/// it are correct. See korri-os/korri#82.
+const SEAT_USB_VERSION: u16 = 0x0114;
 const DPAD_UP: u32 = 0x0001;
 const DPAD_DOWN: u32 = 0x0002;
 const DPAD_LEFT: u32 = 0x0004;
@@ -88,7 +94,12 @@ impl UinputSeatBackend {
         let mut builder = VirtualDevice::builder()
             .map_err(display)?
             .name(&spec.name)
-            .input_id(InputId::new(BusType::BUS_USB, 0x045e, 0x028e, 1))
+            .input_id(InputId::new(
+                BusType::BUS_USB,
+                0x045e,
+                0x028e,
+                SEAT_USB_VERSION,
+            ))
             .with_phys(&physical)
             .map_err(display)?
             .with_keys(&keys)

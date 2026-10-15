@@ -566,7 +566,7 @@ remote_canonical_seat_slot() {
   [[ "$name" =~ ^Korri\ Seat\ P([1-9][0-9]{0,2})$ ]] || return 1
   slot="${BASH_REMATCH[1]}"
   ((slot <= 255)) || return 1
-  [[ "$phys" == "korri/input-seat/p$slot" && "$identity" == '0003:045e:028e:0001' ]] || return 1
+  [[ "$phys" == "korri/input-seat/p$slot" && "$identity" == '0003:045e:028e:0114' ]] || return 1
   printf '%s\n' "$slot"
 }
 

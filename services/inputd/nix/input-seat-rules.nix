@@ -14,7 +14,7 @@ pkgs.writeTextFile {
       # udev refuses GROUP= for normal-user GIDs. Preserve the receiver's exact
       # GID/mode readiness contract with the existing chgrp/chmod mechanism.
       # Never mutate a vanished or reused node from a delayed remove event.
-      ''ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*|js*", ATTRS{name}=="Korri Seat P${number}", ATTRS{phys}=="korri/input-seat/p${number}", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", TAG-="uaccess", OWNER="root", MODE="0600", RUN+="${pkgs.coreutils}/bin/chgrp ${toString eventGid} $env{DEVNAME}", RUN+="${pkgs.coreutils}/bin/chmod 0660 $env{DEVNAME}"''
+      ''ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*|js*", ATTRS{name}=="Korri Seat P${number}", ATTRS{phys}=="korri/input-seat/p${number}", ATTRS{id/bustype}=="0003", ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0114", TAG-="uaccess", OWNER="root", MODE="0600", RUN+="${pkgs.coreutils}/bin/chgrp ${toString eventGid} $env{DEVNAME}", RUN+="${pkgs.coreutils}/bin/chmod 0660 $env{DEVNAME}"''
     ) (pkgs.lib.range 1 255)
     + "\n";
 }

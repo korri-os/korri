@@ -232,7 +232,7 @@ pkgs.runCommand "korri-linux-host-module-check"
         assert 'KERNEL=="event*|js*"' in rule
         assert f'ATTRS{{name}}=="Korri Seat P{slot}"' in rule
         assert f'ATTRS{{phys}}=="korri/input-seat/p{slot}"' in rule
-        for key, value in [('bustype', '0003'), ('vendor', '045e'), ('product', '028e'), ('version', '0001')]:
+        for key, value in [('bustype', '0003'), ('vendor', '045e'), ('product', '028e'), ('version', '0114')]:
             assert f'ATTRS{{id/{key}}}=="{value}"' in rule
         assert 'GROUP=' not in rule
         assert 'TAG-="uaccess"' in rule

@@ -388,7 +388,7 @@ def prepare(stage, args):
     expected_rules = "".join(
         f'ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{{name}}=="Korri Seat P{slot}", '
         f'ATTRS{{phys}}=="korri/input-seat/p{slot}", ATTRS{{id/bustype}}=="0003", '
-        'ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0001", '
+        'ATTRS{id/vendor}=="045e", ATTRS{id/product}=="028e", ATTRS{id/version}=="0114", '
         f'TAG-="uaccess", OWNER="root", MODE="0600", RUN+="{tool}/bin/chgrp {r_gid} $env{{DEVNAME}}", '
         f'RUN+="{tool}/bin/chmod 0660 $env{{DEVNAME}}"\n' for slot in range(1, 256))
     require(seat_rules == expected_rules, "seat descriptor/GID/rules differ from exact producer")

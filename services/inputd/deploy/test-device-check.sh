@@ -840,13 +840,13 @@ source_gate_function remote_canonical_seat_slot
 source_gate_function remote_candidate_input_acceptance
 source_gate_function remote_native_input_acceptance
 for slot in 1 4 6 255; do
-  [[ "$(remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0001)" == "$slot" ]]
+  [[ "$(remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0114)" == "$slot" ]]
 done
 for slot in 0 01 256 999 1000; do
-  assert_fails remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0001
+  assert_fails remote_canonical_seat_slot "Korri Seat P$slot" "korri/input-seat/p$slot" 0003:045e:028e:0114
 done
-assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p2' 0003:045e:028e:0001
-assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p1' 0003:045e:028e:0002
+assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p2' 0003:045e:028e:0114
+assert_fails remote_canonical_seat_slot 'Korri Seat P1' 'korri/input-seat/p1' 0003:045e:028e:0001
 assert_fails_with 'configured-seat-count=unverified' remote_native_input_acceptance
 assert_fails_with 'native-delivery=unverified' remote_native_input_acceptance
 seat_generation="$TMP/core-seat-generation"
