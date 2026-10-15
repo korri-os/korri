@@ -4,6 +4,7 @@ let
   imageWorkflowPath = ../../../.github/workflows/device-images.yml;
   cacheWorkflowPath = ../../../.github/workflows/nix-cache.yml;
   trustScriptPath = ../../../.github/workflows/trust-korri-cache.sh;
+  fetchScriptPath = ../../../.github/workflows/fetch-image-plugins.sh;
   imageWorkflow = builtins.readFile imageWorkflowPath;
   cacheWorkflow = builtins.readFile cacheWorkflowPath;
   trustScript = builtins.readFile trustScriptPath;
@@ -39,10 +40,12 @@ pkgs.runCommand "rpminiv2-delivery-check"
     nativeBuildInputs = [
       pkgs.actionlint
       pkgs.shellcheck
+      (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
     ];
   }
   ''
     actionlint ${imageWorkflowPath} ${cacheWorkflowPath}
-    shellcheck ${trustScriptPath}
+    shellcheck --shell=bash ${trustScriptPath} ${fetchScriptPath}
+    python3 ${./delivery-workflow-check.py} ${cacheWorkflowPath}
     touch "$out"
   ''

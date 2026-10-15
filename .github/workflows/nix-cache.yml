@@ -124,6 +124,11 @@ jobs:
       - name: Trust Korri's cache
         run: .github/workflows/trust-korri-cache.sh
 
+      # Device evaluation needs the pinned publisher outputs even before a
+      # build starts. Keep both caches in NIX_CONFIG for checks and publishing.
+      - name: Fetch only signed default plugin packages
+        run: bash .github/workflows/fetch-image-plugins.sh "${{ matrix.device }}"
+
       - name: Stage the signing key
         env:
           SIGNING_KEY: ${{ secrets.KORRI_CACHE_SECRET_KEY }}
