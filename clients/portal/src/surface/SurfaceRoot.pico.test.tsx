@@ -96,6 +96,8 @@ test("Settings is reachable from Pico's home with the d-pad, A and B, and a game
   const korrid = createInMemoryKorridClient({
     games: [game("wl4", "Wario Land 4"), game("tetris", "Tetris")],
   })
+  // This navigation test starts in the library after first-boot setup.
+  await korrid.finishOnboarding()
   const prepared: string[] = []
   const { PicoSurface } = await import("@korri/pico")
   const { SurfaceRoot } = await import("./SurfaceRoot")

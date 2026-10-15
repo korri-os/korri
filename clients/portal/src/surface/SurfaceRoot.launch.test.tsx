@@ -38,6 +38,8 @@ async function mount(selected: boolean, config: InMemoryKorridClientConfig = {})
     gameRoutes: [{ ...runnerRoutes, gameRunner: undefined, systemRunners: {}, routes: runnerRoutes.routes.slice(0, 1) }],
     ...config,
   })
+  // Launch acceptance starts after first-boot setup, not on the setup screen.
+  await korrid.finishOnboarding()
   let model!: SurfaceModel
   let host!: SurfaceHost
   const bus = createInputBus()

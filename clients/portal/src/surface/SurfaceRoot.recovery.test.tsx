@@ -38,6 +38,8 @@ const seed = (selected: boolean) => ({
   gameRoutes: [{ ...runnerRoutes, gameRunner: undefined, systemRunners: {}, routes: runnerRoutes.routes.slice(0, 1) }],
 })
 async function mount(korrid: KorridClient, options: { presentation?: "pico" | "shift"; initialGameId?: string } = {}) {
+  // Session recovery starts on a device whose first-boot setup is complete.
+  await korrid.finishOnboarding()
   let model!: SurfaceModel
   let host!: SurfaceHost
   const bus = createInputBus()

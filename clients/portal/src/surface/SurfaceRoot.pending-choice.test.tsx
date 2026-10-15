@@ -36,6 +36,8 @@ async function reserve(client: KorridClient, gameId = game.id) {
   return result.payload.launchId
 }
 async function mount(korrid: KorridClient) {
+  // Pending-launch controls are tested after first-boot setup is complete.
+  await korrid.finishOnboarding()
   let model!: SurfaceModel
   let host!: SurfaceHost
   const bus = createInputBus()
