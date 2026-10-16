@@ -67,7 +67,6 @@ fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
         "controls",
         "games",
         "groups",
-        "android",
         "config",
     ] {
         let declaration = Declaration::evaluate(
@@ -97,12 +96,10 @@ fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
 fn host_admission_preserves_data_and_never_invokes_the_launch_callback() {
     let source = "export const name = 'game';
         export const config = {runners: {}};
-        export const android = {packageName: 'org.example.game'};
         export const handlers = {'launch.prepare': function (input) { return {command: input.program, args: [input.runtime.id]}; }}";
     let declaration = Declaration::evaluate("@example", source).unwrap();
     let data = serde_json::to_value(declaration).unwrap();
     assert_eq!(data["config"], serde_json::json!({"runners": {}}));
-    assert_eq!(data["android"]["packageName"], "org.example.game");
     assert!(data.get("handlers").is_none());
     let launch: serde_json::Value = serde_json::from_str(
         &call_plugin_operation_ts(

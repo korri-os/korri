@@ -2680,7 +2680,7 @@ async fn dispatch(
             ServerMode::Host(_) => {
                 RpcResponse::LocalGamesList(LocalGamesListOutcome::Err(RpcFailure {
                     code: "OperationUnsupported".into(),
-                    message: "local games are available only from the Android brain".into(),
+                    message: "local games are available only from the brain server".into(),
                 }))
             }
         },
@@ -2858,7 +2858,7 @@ async fn dispatch(
             ServerMode::Host(_) => {
                 RpcResponse::SteamGridDbCredentialSet(SensitiveSettingOutcome::Err(RpcFailure {
                     code: "OperationUnsupported".into(),
-                    message: "settings are available only from the Android brain".into(),
+                    message: "settings are available only from the brain server".into(),
                 }))
             }
         },
@@ -2889,7 +2889,7 @@ async fn dispatch(
                 ServerMode::Host(_) => RpcResponse::SteamGridDbCredentialClear(
                     SensitiveSettingOutcome::Err(RpcFailure {
                         code: "OperationUnsupported".into(),
-                        message: "settings are available only from the Android brain".into(),
+                        message: "settings are available only from the brain server".into(),
                     }),
                 ),
             }
@@ -3429,8 +3429,7 @@ pub fn router_with_capability_and_local_root(
     )
 }
 
-/** Test-only Android router. Production selects this platform only through
- * the Android-gated JNI server entrypoint. */
+/// Test router with an explicitly selected plugin registry.
 #[cfg(test)]
 fn test_router_with_capability_and_local_root(
     rpc_capability: &str,
@@ -3924,22 +3923,6 @@ pub fn start_local_server(
     )
 }
 
-/** Android production reaches Artemis only through this target-gated JNI
- * entrypoint, never through caller-provided platform data. */
-#[cfg(target_os = "android")]
-pub(crate) fn start_embedded_android_server(
-    allowed_origin: &str,
-    local_storage_root: &str,
-    private_state_root: &str,
-) -> Result<u16, ServerError> {
-    start_local_server_for_platform(
-        allowed_origin,
-        local_storage_root,
-        private_state_root,
-        plugin_policy::RegistrySource::Installed,
-    )
-}
-
 fn start_local_server_for_platform(
     allowed_origin: &str,
     local_storage_root: &str,
@@ -3996,7 +3979,7 @@ fn start_local_server_for_platform(
     let (federation_wake, discovery) = Discovery::new(
         federation.directory.clone(),
         federation.credentials.clone(),
-        Arc::new(move || DiscoveryInputs::android(&relay_config)),
+        Arc::new(move || DiscoveryInputs::query_only(&relay_config)),
         Arc::new(relay::WebSocketRelayTransport::new()),
         DiscoveryTiming::default(),
         Arc::new(peer_rpc::unix_time),
@@ -4273,9 +4256,6 @@ mod tests {
 
     fn write_wl4_plugin_config(root: &Path) {
         config::test_fixtures::gba(root);
-    }
-    fn write_checkpoint_android_config(root: &Path) {
-        config::test_fixtures::android(root);
     }
 
     fn control(interaction: SessionControlInteraction) -> SessionControl {

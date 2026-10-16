@@ -47,8 +47,8 @@ pub struct DiscoveryInputs {
 }
 impl DiscoveryInputs {
     /// Never consume the coordinator's initially empty or retained unauthorized
-    /// snapshot. Android has no reachable peer listener, so it is query-only.
-    pub fn android(config: &ConfigSnapshotCoordinator) -> Result<Self, FederationError> {
+    /// snapshot. Query-only discovery has no reachable peer listener.
+    pub fn query_only(config: &ConfigSnapshotCoordinator) -> Result<Self, FederationError> {
         let state = config.reload();
         if state.authorization != SnapshotAuthorization::Authorized {
             return Err(FederationError::Identity);

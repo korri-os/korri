@@ -184,8 +184,8 @@ fn evaluate_module(
             let (name, value) = property.map_err(|error| error.to_string())?;
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "families"
-                | "runners" | "transports" | "controls" | "groups" | "games" | "android"
-                | "services" | "config" => {
+                | "runners" | "transports" | "controls" | "groups" | "games" | "services"
+                | "config" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
                 // Handlers are callable operation code, never declaration data.

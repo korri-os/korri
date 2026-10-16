@@ -254,7 +254,7 @@ async fn partial_announcements_retry_and_restart_wins_same_second_replacement() 
 }
 
 #[test]
-fn android_inputs_reload_actual_config_and_reject_retained_unauthorized_authority() {
+fn query_only_inputs_reload_actual_config_and_reject_retained_unauthorized_authority() {
     let root = tempfile::tempdir().unwrap();
     fs::write(
         root.path().join("device.yaml"),
@@ -263,21 +263,21 @@ fn android_inputs_reload_actual_config_and_reject_retained_unauthorized_authorit
     .unwrap();
     let config = crate::config::snapshot::ConfigSnapshotCoordinator::new(root.path());
     assert!(config.current_snapshot().host.is_none());
-    let inputs = DiscoveryInputs::android(&config).unwrap();
+    let inputs = DiscoveryInputs::query_only(&config).unwrap();
     assert_eq!(inputs.relays.unwrap().as_slice(), &["ws://localhost:7001"]);
     assert!(inputs.advertised_endpoints.is_empty());
-    // Query-only Android does not publish metadata, so the endpoint metadata
+    // Query-only discovery does not publish metadata, so the endpoint metadata
     // bounds must not add a constraint to existing readable host.title.
     fs::write(
         root.path().join("device.yaml"),
         "host:\n  title: ''\n  relays: [ws://localhost:7001]\n",
     )
     .unwrap();
-    DiscoveryInputs::android(&config)
+    DiscoveryInputs::query_only(&config)
         .unwrap()
         .validate()
         .unwrap();
     fs::remove_file(root.path().join("device.yaml")).unwrap();
     fs::create_dir(root.path().join("device.yaml")).unwrap();
-    assert!(DiscoveryInputs::android(&config).is_err());
+    assert!(DiscoveryInputs::query_only(&config).is_err());
 }

@@ -16,7 +16,6 @@ let
     builtins.readFile ownerBindingFile
   );
   peerPublicKey = builtins.concatStringsSep "" (lib.replicate 64 "2");
-  androidUpstreamsTemplate = ./deploy/upstreams.android.json;
   base = {
     users.groups.korri.gid = 1000;
     users.users.korri = {
@@ -555,14 +554,6 @@ assert evaluationRejected missingMoonlightAddress;
 assert evaluationRejected wrongPackage;
 assert evaluationRejected secretOwnerBinding;
 assert evaluationRejected secretFieldOwnerBinding;
-pkgs.runCommand "korrid-linux-device-module-check" { nativeBuildInputs = [ pkgs.jq ]; } ''
-  jq -e '
-    length == 1
-    and .[0].label == "zao"
-    and .[0].kind == "native"
-    and .[0].baseUrl == "http://zao:43117"
-    and .[0].moonlightAddress == "zao:47989"
-    and .[0].devicePublicKey == "__ZAO_DEVICE_PUBLIC_KEY_FROM_IDENTITY_STATUS__"
-  ' ${androidUpstreamsTemplate} >/dev/null
+pkgs.runCommand "korrid-linux-device-module-check" { } ''
   touch "$out"
 ''

@@ -57,9 +57,6 @@ secp256k1 = { version = "0.30", features = ["global-context"] }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
-
 # Match the embedded interpreter's release optimization in budgeted VM tests.
 # Keep the Rust tests debuggable and leave the sandbox limits unchanged.
 [profile.dev.package.rquickjs-sys]

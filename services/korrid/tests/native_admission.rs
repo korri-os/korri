@@ -73,13 +73,13 @@ fn native_runners_require_a_callable_launch_prepare_handler_without_invocation()
 }
 
 #[test]
-fn android_runners_do_not_require_a_native_launch_callback() {
+fn command_runners_do_not_require_a_native_launch_callback() {
     let root = tempfile::tempdir().unwrap();
-    let android = package(
+    let command = package(
         root.path(),
-        "android",
-        "export const runners = {main: {id:'@test:android/main', command:'retroarch', systems:['gba'], android:{packageName:'com.korri.retroarch', className:'com.retroarch.browser.retroactivity.RetroActivityFuture'}}};",
+        "command",
+        "export const runners = {main: {id:'@test:command/main', command:'retroarch', systems:['gba']}};",
         &[],
     );
-    PluginRegistry::from_installed(vec![android]).unwrap();
+    PluginRegistry::from_installed(vec![command]).unwrap();
 }

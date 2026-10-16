@@ -98,7 +98,7 @@ async fn relay_config_reload_wake_uses_new_authorized_source_without_waiting_for
     let task = Discovery::new(
         f.directory().unwrap(),
         f.credentials.clone(),
-        Arc::new(move || coordinator::DiscoveryInputs::android(&config)),
+        Arc::new(move || coordinator::DiscoveryInputs::query_only(&config)),
         network.clone(),
         coordinator::DiscoveryTiming::default(),
         Arc::new(|| 1000),

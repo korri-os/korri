@@ -156,13 +156,6 @@ pub enum PairingTarget<'a> {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AndroidRunnerRecord {
-    pub package_name: String,
-    pub class_name: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct FamilyRecord {
     pub id: String,
@@ -184,40 +177,15 @@ pub struct RunnerRecord {
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub releases: Option<Vec<crate::config::ArtifactIdString>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub android: Option<AndroidRunnerRecord>,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub program: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub core: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum AndroidTransportImplementation {
-    Artemis,
-}
-
-impl AndroidTransportImplementation {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Artemis => "artemis",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AndroidTransportRecord {
-    pub implementation: AndroidTransportImplementation,
-    pub sunshine_app: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TransportRecord {
     pub id: String,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub android: Option<AndroidTransportRecord>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
@@ -319,7 +287,6 @@ pub struct SessionControlRecord {
 pub struct Plugin {
     id: String,
     config: Option<BTreeMap<String, serde_json::Value>>,
-    android: Option<BTreeMap<String, serde_json::Value>>,
     title: String,
     description: Option<String>,
     providers: BTreeMap<String, ProviderRecord>,
@@ -347,9 +314,6 @@ impl Plugin {
 
     pub fn config(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
         self.config.as_ref()
-    }
-    pub fn android(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
-        self.android.as_ref()
     }
 }
 
@@ -803,8 +767,6 @@ struct PluginDeclaration {
     games: BTreeMap<String, DeclaredGameContribution>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     config: Option<BTreeMap<String, serde_json::Value>>,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    android: Option<BTreeMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -969,18 +931,6 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 reason: "command and named file keys must not be empty".to_owned(),
             });
         }
-        if let Some(android) = &runner.android {
-            if !is_android_identifier(&android.package_name, false)
-                || !is_android_identifier(&android.class_name, true)
-            {
-                return Err(PluginError::InvalidContribution {
-                    kind: "runner",
-                    record_id: local_id.clone(),
-                    reason: "Android package and class names must be fully qualified identifiers"
-                        .to_owned(),
-                });
-            }
-        }
         let native = runner.program.is_some();
         if let Some(releases) = &runner.releases {
             let invalid = |reason: &str| PluginError::InvalidContribution {
@@ -1002,17 +952,11 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 return Err(invalid("releases must not contain duplicate hashes"));
             }
         }
-        let android = runner.command.is_some();
-        if native == android
-            || (native && runner.android.is_some())
-            || (runner.android.is_some() && !android)
-        {
+        if native == runner.command.is_some() {
             return Err(PluginError::InvalidContribution {
                 kind: "runner",
                 record_id: local_id.clone(),
-                reason:
-                    "runner must declare exactly one native program or Android component/command"
-                        .to_owned(),
+                reason: "runner must declare exactly one program or command".to_owned(),
             });
         }
     }
@@ -1027,17 +971,6 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 kind: "transport",
                 record_id: local_id.clone(),
                 reason: format!("record id {} must be {expected_id}", transport.id),
-            });
-        }
-        if transport
-            .android
-            .as_ref()
-            .is_some_and(|android| android.sunshine_app.trim().is_empty())
-        {
-            return Err(PluginError::InvalidContribution {
-                kind: "transport",
-                record_id: local_id.clone(),
-                reason: "Android Sunshine app must not be empty".to_owned(),
             });
         }
     }
@@ -1187,7 +1120,6 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
 
     Ok(Plugin {
         config: declaration.config,
-        android: declaration.android,
         id,
         title,
         description: declaration.description,
@@ -1455,18 +1387,6 @@ fn is_provider_segment(value: &str) -> bool {
                 || character.is_ascii_digit()
                 || matches!(character, '.' | '_' | '-')
         })
-}
-
-fn is_android_identifier(value: &str, allow_dollar: bool) -> bool {
-    value.split('.').all(|segment| {
-        let mut chars = segment.chars();
-        matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
-            && chars.all(|character| {
-                character.is_ascii_alphanumeric()
-                    || character == '_'
-                    || (allow_dollar && character == '$')
-            })
-    }) && value.contains('.')
 }
 
 fn deserialize_optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
