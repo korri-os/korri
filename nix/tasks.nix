@@ -171,6 +171,20 @@ let
       '';
     };
 
+    korri-nix-cache-check = {
+      description = "Test prepared-cache filtering offline with shared NARs, signatures, and an empty receiving store.";
+      runtimeInputs = [
+        pkgs.nix
+        pkgs.python3
+        pkgs.curl
+        pkgs.shellcheck
+      ];
+      script = ''
+        shellcheck -s bash "$KORRI_ROOT/nix/cache/publish.sh" "$KORRI_ROOT/nix/cache/filter-published.sh"
+        exec python3 "$KORRI_ROOT/nix/cache/filter-published.test.py"
+      '';
+    };
+
     korri-nix-cache-publish = {
       description = "Build what named devices install and publish the paths no cache they trust already serves.";
       usageSuffix = " -- [--dry-run] <device>...";
