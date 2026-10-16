@@ -113,6 +113,15 @@ whole-process memory or cancellation guarantees.
 The runtime-user launch process's separate source-path read is not migrated by
 this slice; U4 must carry source admission through that consumer as well.
 
+Development and test builds optimize `rquickjs-sys` at level 3, the release
+default. The Rust tests keep their normal debug profile. The package graph tests
+must meet the same 250 ms VM deadline as release builds. An unoptimized C
+interpreter can spend that entire budget compiling a valid graph. This costs
+more compilation work when that C dependency rebuilds. It does not change the
+guards or test parallelism. It also does not reserve CPU time: host contention
+can still exhaust the wall deadline even when the VM uses less than 250 ms of
+CPU time.
+
 Native package tests use the two existing frozen fixture locks. The normal
 `korrid-check` task provisions them before the Rust tests. For focused package
 tests, run `services/korrid/script-fixtures-setup.sh` first, or

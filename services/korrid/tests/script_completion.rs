@@ -29,6 +29,44 @@ fn interruption_releases_a_queued_module_resolver_before_disposal() {
 }
 
 #[test]
+fn non_tail_recursion_hits_the_stack_guard_and_leaves_fresh_evaluations_usable() {
+    let source = r#"
+        export const name = 'stack';
+        function recurse(depth) { return depth + recurse(depth + 1); }
+        export const handlers = {'launch.prepare': function () {
+            try {
+                recurse(0);
+                return { bounded: false };
+            } catch (error) {
+                return { bounded: error instanceof RangeError && error.message.includes('stack') };
+            }
+        }};
+    "#;
+    assert_eq!(
+        call_plugin_operation_ts(source, "launch.prepare", "null").unwrap(),
+        r#"{"bounded":true}"#
+    );
+    assert!(eval_plugin_ts(&format!("{source}\nrecurse(0);")).is_err());
+    assert_eq!(
+        eval_plugin_ts("export const name = 'fresh';").unwrap(),
+        r#"{"name":"fresh"}"#
+    );
+}
+
+#[test]
+fn oversized_allocation_is_rejected_and_leaves_fresh_evaluations_usable() {
+    assert_eq!(
+        eval_plugin_ts("export const name = 'allocation'; const bytes = new ArrayBuffer(1024); export const config = { bytes: bytes.byteLength };").unwrap(),
+        r#"{"config":{"bytes":1024},"name":"allocation"}"#
+    );
+    assert!(eval_plugin_ts("export const name = 'allocation'; const bytes = new ArrayBuffer(32 * 1024 * 1024); export const config = { bytes: bytes.byteLength };").is_err());
+    assert_eq!(
+        eval_plugin_ts("export const name = 'fresh';").unwrap(),
+        r#"{"name":"fresh"}"#
+    );
+}
+
+#[test]
 fn positive_delay_uses_the_real_clock_and_finishes_before_launch() {
     let started = std::time::Instant::now();
     let source = "export const name = 'clock'; let fired = false; setTimeout(() => fired = true, 20); export const handlers = {'launch.prepare': function () { return { fired }; }}";
