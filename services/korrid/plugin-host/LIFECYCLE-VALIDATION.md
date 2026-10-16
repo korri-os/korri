@@ -1,8 +1,7 @@
 # Current/previous lifecycle verification — 2026-09-10
 
 Implemented against `bde07bff` and the approved authoring brief's gaps 3 and 7.
-The supplied worktree `context.md` and `plan.md` did not exist. The explicit
-assignment and versioned brief defined the scope.
+The explicit assignment and versioned brief defined the scope.
 
 ## Verified without a VM
 

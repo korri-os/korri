@@ -1,8 +1,7 @@
 # AISLPC R36T Max
 
 Standalone NixOS on SD. The device sources now live here. Stock-firmware SSH
-reconnaissance remains under `nix/spikes/rk3326-stock-shell`; no device
-configuration imports that spike.
+reconnaissance is in git history at `a568dc44fadcbc7267cd4cd2e6ea76efc79a20de`.
 
 ## Acceptance state
 

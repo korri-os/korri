@@ -1,5 +1,4 @@
-# Package choices recorded in
-# .scratch/consistent-korri-product/evidence/rocknix-recommendations.md.
+# Package choices follow the curated ROCKNIX recommendations.
 # Simon removed PSP, DraStic, YabaSanshiro, Dolphin, Azahar and AetherSX2
 # from this release's defaults. These are build-time choices, not a persisted
 # plugin schema or proof that a device can run each selected game.
@@ -46,8 +45,8 @@ in
   r36tmax = shared ++ ssh;
   rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
-  # The two H700 boards use ROCKNIX's H700 table (evidence/rocknix-
-  # recommendations.md). No streaming host until an encoder result exists.
+  # The two H700 boards use ROCKNIX's H700 table.
+  # No streaming host until an encoder result exists.
   rg35xxsp = shared ++ ssh;
   rg35xxpro = shared ++ ssh;
 }

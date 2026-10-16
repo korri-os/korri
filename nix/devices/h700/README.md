@@ -12,8 +12,7 @@ devices with the Allwinner H700:
 Status: development images. No H700 board has booted this kernel yet. Every
 display, input, audio and Wi-Fi value comes from the device trees, the ROCKNIX
 sources and the driver sources, and each file names its source. Physical
-acceptance (`.scratch/korri-product-build/issues/18-*.md`) still decides
-support.
+acceptance still decides support.
 
 ## Hardware summary
 

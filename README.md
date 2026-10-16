@@ -2,8 +2,9 @@
 
 Korri is being rebuilt from an empty mainline, one end-to-end slice at a time.
 
-The first target is Android, built around the Artemis streaming client
-(`~/code/sandbox/artemis`). Each slice brings in only the code it needs.
+Korri targets Linux devices. Each device runs its own korrid; the local
+portal mounts a surface. Devices are peers, not fixed hosts and clients.
+Each slice brings in only the code it needs.
 
 ## Branches
 
