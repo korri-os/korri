@@ -44,8 +44,7 @@ pub enum LaunchError {
     RouteCollision(String),
 }
 
-/// Static local playable ids owned outside configuration. First-party Android
-/// integrations are plugin routes, so this is intentionally empty.
+/// Static local playable ids owned outside configuration. There are none.
 pub fn static_playable_ids() -> Vec<&'static str> {
     Vec::new()
 }

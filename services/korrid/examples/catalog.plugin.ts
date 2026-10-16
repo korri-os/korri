@@ -1,5 +1,4 @@
 // A module is source, evaluated at load time in an empty sandbox.
-// These system records use the same contract as plugins/mgba/plugin.ts.
 // The host supplies publisher identity, never this file.
 interface SystemRecord {
   id: string

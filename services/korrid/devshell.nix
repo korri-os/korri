@@ -26,12 +26,10 @@ pkgs.mkShell {
 
   # bindgen drives libclang directly and inherits none of the compiler
   # wrapper's include path, so it must be told where the host libc headers
-  # live. This used to point at the Android NDK sysroot; the host sysroot is
-  # the same need for a host-only build.
+  # live.
   BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.stdenv.cc.libc.dev}/include";
 
   shellHook = ''
-    # The Android devshell used to export this before korrid's hook ran.
     export KORRI_ROOT="''${KORRI_ROOT:-$(git rev-parse --show-toplevel)}"
     ${proseqlSource.hydrateShell}
     export CARGO_TARGET_DIR="$KORRI_ROOT/.cache/korrid-target"

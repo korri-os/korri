@@ -1,5 +1,5 @@
 //! Emulator-only fixture: real host, one federation authority, joined discovery.
-//! The fixed person signer is clients/android/signer-test/Bip340EventSigner (secret 3).
+//! The fixed person signer uses secret 3.
 //! Only the test process can restart this fixture. No live service is used.
 use korrid::{
     federation::coordinator::{Discovery, DiscoveryInputs, DiscoveryTiming, FederationResources},

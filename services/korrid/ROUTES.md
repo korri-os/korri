@@ -10,8 +10,8 @@ runner records require an explicit operational cutover, not a fallback reader.
 ## Portal API
 
 Use the local korrid tagged `/rpc` treaty in `contracts/generated/korrid.ts`.
-These three methods apply to installed Linux games. Android and peer launch
-methods are unchanged. No surface or chooser UI is implemented here.
+These three methods apply to installed Linux games. Peer launch methods are
+unchanged. No surface or chooser UI is implemented here.
 
 | Method | Payload | Success |
 |---|---|---|

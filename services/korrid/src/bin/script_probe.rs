@@ -1,9 +1,6 @@
 //! Run a plugin file and print its declaration.
 //!
-//! Built for whichever target you point it at, so the same tool answers "does
-//! this plugin work here?" on a Linux device and on an Android device (pushed
-//! to /data/local/tmp and run over adb). `script-device-check.sh` uses it to
-//! keep the arm64 path honest without costing the app anything.
+//! Run this probe on Linux to inspect runtime transpilation and evaluation.
 
 use std::time::Instant;
 

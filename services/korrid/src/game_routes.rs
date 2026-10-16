@@ -1,4 +1,4 @@
-//! Installed Linux runner choices. Android and peer launch contracts remain separate.
+//! Installed Linux runner choices. Peer launch contracts remain separate.
 use crate::{
     config::{
         resolver,

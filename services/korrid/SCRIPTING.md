@@ -6,8 +6,7 @@ korrid performs any resulting effects itself. Completion values, default exports
 `namespace` exports, and the old `contributes` wrapper are rejected.
 
 Plugin source is evaluated at runtime rather than compiled into native code.
-Bundled first-party source still ships through the normal korrid build. The
-Linux administrator CLI in `plugin-host/` imports independently packaged
+The Linux administrator CLI in `plugin-host/` imports independently packaged
 services and games. It uses this same interpreter and requires exact-package
 approval before native execution. Linux discovery and launching read only the
 committed enabled selection projection. They never invoke the administrator CLI.
@@ -24,7 +23,7 @@ not register the research probe's graph or authorize a Nix closure as code.
 | `Report.approval` | The existing approval digest covers policy, package, provenance, declaration, effective unit, complete `plugin.ts` bytes and manifest bytes. Evaluation and source approval must consume the **same** snapshot, not reopen source for hashing. No new receipt field or preparation cache is needed for the current single-file producer. |
 | `plugin-host/src/host.rs::publish_registry` and `plugin_installation.rs` | The owner-protected registry projects the existing Report fields `id`, `package`, `files`, `requires`. `package` selects the previously approved immutable output; `id` supplies the approved namespace. The reader does not verify a second signature or infer source grants from native files or required packages. |
 | `PluginRegistry::from_installed` | Read only the registered `plugin.ts` through bounded snapshot admission, then evaluate those bytes and verify the resulting ID. Do not use an independent unbounded source read. The filesystem adapter relies on the administrator's immutable-output authority; a temporary directory in a test is not installation authority. |
-| `plugin_policy.rs` | `include_str!` and explicit `@korri` composition own bundled Android source and namespace. Those bytes enter the same snapshot interface. Linux receipts and Android PackageManager do not authorize external Android plugin source. |
+| `plugin_policy.rs` | Reads installed packages through `plugin_installation.rs`. No plugin source is compiled into korrid. |
 | `services/korrid/tests/fixtures/script-packages/retroarch/package.json` and `bun.lock` | These core-owned fixtures pin the native package sources used by evaluator tests (`effect` is `4.0.1`; `fast-check` is listed directly because Effect 4.0.1 no longer depends on it). The plugin repository owns the production RetroArch source. These fixture packages are not registered runtime resolution inputs. |
 
 The first U1 slice supplies an in-memory, closed byte snapshot, not a resolver.
@@ -183,17 +182,7 @@ plugin.ts  ──(oxc: transpile in-process)──▶  JS  ──(QuickJS: evalu
 | Layer | Crate | Why this one |
 |---|---|---|
 | TS → JS | `oxc` | Full transpile, not just type-stripping — `enum`, decorators, parameter properties all work |
-| Execute | `rquickjs` (QuickJS) | An interpreter, so Android's restrictions on generating executable code never come into play; also small |
-
-Both cross-compile to `aarch64-linux-android` and `x86_64-linux`. The same
-plugin file runs on every device: **source is portable where binaries are not.**
-
-The first bundled production source is `plugins/android-app.plugin.ts`. It is
-byte-for-byte pinned to the reviewed checkpoint copy under
-`docs/research/android-app-plugin-schema-checkpoint/`, and parity is part of the
-check suite so either copy changing alone fails. Bundled mGBA and RetroArch
-sources come from their `android/plugin.ts` files. The Linux packages use their
-parent `plugin.ts` files; no environment-based Linux implementation remains.
+| Execute | `rquickjs` (QuickJS) | A small in-process interpreter |
 
 ## Named exports and publisher identity
 
@@ -202,18 +191,17 @@ JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
 `systems`, `groups`, `games`, `families`, `runners`, `transports`, and
-`controls`. Android record shapes are retained; native launcher/runtime fields
-follow the instance/kind model described below. `discovery` and
-`sessionControls` are unknown exports and fail admission. `services` names native
-units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates
-the names but does not activate them or change its existing records. `android`
-remains reserved for its platform consumer. `daemons` and the old `contributes`
+`controls`. Native launcher/runtime fields follow the instance/kind model
+described below. `discovery` and `sessionControls` are unknown exports and fail
+admission. `services` names native units packaged by `plugin.nix`. The Linux
+host selects those units; the data registry validates the names but does not
+activate them or change its existing records. `daemons` and the old `contributes`
 wrapper are rejected. No TypeScript export encodes systemd directives.
 
 `plugin::load_plugin_source(namespace, source)` and
 `decode_plugin_declaration(namespace, json)` receive publisher identity from
-the caller. Bundled sources receive `@korri` explicitly in `plugin_policy.rs`.
-Nothing infers it from a filename or trusts a namespace inside plugin source.
+the caller. Nothing infers it from a filename or trusts a namespace inside
+plugin source.
 External daemon packages instead carry a generated `manifest.json` with
 `publisher.namespace`. The host verifies the selected NAR against the device's
 bound full public key before using that claim. See `plugin-host/README.md`.
@@ -267,8 +255,7 @@ Native instances use the approved `{ id, kind, program }` fields. A runtime
 uses `launcher` and its existing `path` field as a manifest file key. The
 instance owns the program key, the runtime owns the core key, and the kind
 owns callback source and auxiliary files. The kind's default instance points
-to itself. Android retains its `app` and absolute `path` records; these are
-platform-specific declarations, not Linux fallback aliases.
+to itself.
 
 ### Native runners for specific content
 
@@ -406,13 +393,8 @@ survives into another evaluation.
 
 ## Local announcement registry
 
-korrid strictly decodes evaluated declarations into the narrow legacy plugin
-seam proven by the Android application schema checkpoint. Bundled plugins are
-registered from repository-owned source, and generic policy layers keyed by
-plugin ID decide enablement. The built-in layer enables `@korri:android-app`,
-`@korri:mgba`, and `@korri:retroarch` by default; a later layer can disable any
-ID without changing registry code or adding an integration-specific switch. The
-user policy layer is intentionally empty for these slices.
+korrid decodes declarations from installed packages and reads their committed
+enabled selection. No plugin source is bundled into the daemon.
 
 An enabled plugin can contribute providers, systems with content rules, groups,
 declared games, families, runners, transports, and contextual controls. Disabled
@@ -505,8 +487,8 @@ label and optional description, one of `command`, `toggle`, `choice`, or bounded
 `range`, presentation flags, and one opaque allowlisted effect ID. Choice options
 and range metadata are validated while the plugin is loaded. An effect is a
 closed identifier such as `@korri:retroarch/open-menu` or an existing Moonlight
-gameplay operation; it cannot contain a process, URL, Android intent, socket
-address, Java method, or other payload.
+gameplay operation; it cannot contain a process, URL, socket address, or other
+payload.
 
 ### Effects are a closed first-party vocabulary
 
@@ -544,103 +526,7 @@ Registration and enablement still do not prove that a control can run. korrid
 resolves enabled declarations only against the active route's ordered
 contributions, the current platform, and live executor availability for that
 exact session. Unrelated, disabled, unsupported-platform, and unavailable-
-executor controls are omitted. The Android launch/session seam will publish that
-live context; until it does, the list and invoke RPCs return the tagged
-`Unavailable` outcome rather than inferring a route from titles or game IDs.
-
-Both review commands that explained this boundary are gone. They read korrid's
-bundled plugin sources and the Android checkpoint route, and korrid now ships
-no plugin at all. Read the registry tests instead: `services/korrid/tests/`
-holds the registry, resolver and DIY-runner cases that cover the same ground.
-
-## Earlier script evaluator measured on hardware
-
-These measurements predate the named-module cut. This slice has not been run
-on Android hardware.
-
-Tablet SM-X930 (Android 16, aarch64), running the example plugin: transpile
-1.78 ms, evaluate 1.22 ms. Runtime transpilation is not a performance concern
-at plugin size.
-
-`nix run .#korrid-script-device -- <adb-serial>` re-runs that check any time. It uses the
-standalone `script_probe` binary, so it verifies the arm64 path without adding
-anything to the APK.
-
-An earlier in-app proof (since removed, see "Not wired into the app yet") ran
-the same plugin inside the Korri app process at 1.06 ms, and picked up an
-edited plugin pushed to the running app with no rebuild and no reinstall.
-
-## Cost, if the app carries it
-
-Measured per APK entry, compressed:
-
-| APK entry | without | with | delta |
-|---|---|---|---|
-| `lib/arm64-v8a/libkorrid.so` | 2,190,553 | 3,694,948 | +1,504,395 |
-| `lib/arm64-v8a/liboxc_sourcemap-*.so` | — | 166,186 | +166,186 |
-| **total** | | | **+1,670,581 (~1.59 MB)** |
-
-Note that oxc emits a **second** native library beyond `libkorrid.so` — easy to
-miss when estimating. Roughly: QuickJS ≈ 0.45 MB, oxc ≈ 1.1 MB compressed.
-JavaScript-only plugins (no runtime TypeScript) would save about two thirds.
-
-Do not compare whole-APK totals across different checkouts to derive this. A
-baseline APK measured that way showed ~3.35 MB of unexplained slack, which made
-the build *with* the runtime look smaller — nonsense. Per-entry comparison is
-the trustworthy measure.
-
-## Android app route source of truth
-
-The Android plugin-backed route is wired into production. On each local-games
-list or launch, korrid reloads the two fixed readable documents under the
-existing local storage root (`config.yaml` and `library.yaml`), composes the
-bundled default-enabled `@korri:android-app` plugin, resolves the route, signs
-the unchanged `LaunchSpec`, and leaves installed-package/activity truth to the
-Android shell's `PackageManager` edge.
-
-The checkpoint files under `docs/research/android-app-plugin-schema-checkpoint/`
-are review fixtures, not install defaults. Device proof copies those exact bytes
-into the existing Android storage root before starting the brain; a fresh empty
-root still initializes to empty readable documents and must not invent TMNT.
-
-`command: android-app` is only the allowlisted integration token for this route.
-It never falls through to generic process execution.
-
-Review the installed surface with an explicit adb target and an already
-installed TMNT package:
-
-```sh
-nix run .#android-app-route-check -- <adb-serial>
-```
-
-That gate verifies protected RPC shape/signature, launches the portal-selected
-local game through the native bridge, asserts `com.playdigious.tmnt` from
-Android's top-resumed activity field (`topResumedActivity` or Android 12
-`mResumedActivity`), checks process evidence, verifies the embedded brain still
-answers RPC while the game is foreground, and proves the measured
-Home/task-switch relaunch/resume path. It does not install, uninstall, clear, or
-otherwise mutate the game package.
-
-## Traps, for the next person who touches the build
-
-Fixed in `devshell.nix`, but they return on a new machine or a version bump.
-
-1. **QuickJS ships no ready-made Rust bindings for Android.** They exist for
-   common systems but not this target, so the build generates them — which
-   needs `libclang` present in the dev shell.
-2. **The Android build hands the phone's compiler to jobs meant for this
-   computer.** `cargo-ndk` sets the C compiler globally, so host-side build
-   steps get the phone's compiler and cannot find local system headers. Fixed
-   by pinning `HOST_CC` / `CC_x86_64_unknown_linux_gnu`.
-3. **The binding generator doesn't inherit the "building for Android"
-   settings.** It runs libclang directly and needs the sysroot spelled out via
-   `BINDGEN_EXTRA_CLANG_ARGS`. The Android-scoped spelling of that variable
-   silently did nothing; the general one worked. The dashed form cannot be
-   exported from bash at all.
-4. **TypeScript `enum` panics the transpiler unless scoping is built with
-   `with_enum_eval(true)`.** The panic message names the setting.
-5. **Network adb targets drop between runs** — reconnect and `wait-for-device`
-   before any device step, or a gate fails halfway through.
+executor controls are omitted.
 
 ## Open questions
 
