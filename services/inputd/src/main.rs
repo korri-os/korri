@@ -888,7 +888,7 @@ mod tests {
                 OsString::from("development"),
             ),
             (
-                OsString::from(action_entry(ActionId::WorkspaceNext).legacy_environment_name),
+                OsString::from(action_entry(ActionId::WorkspaceNext).environment_name),
                 OsString::from(command.to_string()),
             ),
         ]);

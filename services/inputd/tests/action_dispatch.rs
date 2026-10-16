@@ -132,14 +132,14 @@ fn identity_requiring_privilege_drop() -> ActionIdentity {
 }
 
 #[test]
-fn legacy_action_vocabulary_has_stable_configuration_names() {
+fn action_catalog_has_stable_environment_names() {
     assert_eq!(ACTION_CATALOG.len(), 19);
     assert_eq!(
-        action_entry(ActionId::SystemPanel).legacy_environment_name,
+        action_entry(ActionId::SystemPanel).environment_name,
         "KORRI_INPUTD_SYSTEM_PANEL"
     );
     assert_eq!(
-        action_entry(ActionId::ToggleBottomKeyboard).legacy_environment_name,
+        action_entry(ActionId::ToggleBottomKeyboard).environment_name,
         "KORRI_INPUTD_BOTTOM_KEYBOARD"
     );
     assert!(ActionId::try_from("unknown").is_err());
@@ -246,7 +246,7 @@ fn configured_action_matrix_accepts_only_currently_reachable_routes() {
             )
         {
             environment.insert(
-                OsString::from(entry.legacy_environment_name),
+                OsString::from(entry.environment_name),
                 OsString::from(&command),
             );
         }
@@ -270,7 +270,7 @@ fn configured_action_matrix_accepts_only_currently_reachable_routes() {
     ] {
         let entry = action_entry(id);
         let rejected = BTreeMap::from([(
-            OsString::from(entry.legacy_environment_name),
+            OsString::from(entry.environment_name),
             OsString::from(&command),
         )]);
         assert!(matches!(

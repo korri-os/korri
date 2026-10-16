@@ -103,7 +103,7 @@ pub enum Trigger {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ActionCatalogEntry {
     pub id: ActionId,
-    pub legacy_environment_name: &'static str,
+    pub environment_name: &'static str,
     pub trigger: Trigger,
     pub dispatch_mode: DispatchMode,
 }
@@ -298,13 +298,13 @@ pub const ACTION_CATALOG: &[ActionCatalogEntry] = &[
 
 const fn entry(
     id: ActionId,
-    legacy_environment_name: &'static str,
+    environment_name: &'static str,
     trigger: Trigger,
     dispatch_mode: DispatchMode,
 ) -> ActionCatalogEntry {
     ActionCatalogEntry {
         id,
-        legacy_environment_name,
+        environment_name,
         trigger,
         dispatch_mode,
     }
@@ -326,11 +326,6 @@ impl ActionRoutes {
     pub fn from_environment(
         environment: &BTreeMap<OsString, OsString>,
     ) -> Result<Self, ActionConfigError> {
-        if environment.contains_key(OsStr::new("KORRI_INPUTD_KEY_F24_ACTION")) {
-            return Err(ActionConfigError::UnsupportedTriggerConfiguration(
-                "KORRI_INPUTD_KEY_F24_ACTION".into(),
-            ));
-        }
         let back_tap = match environment
             .get(OsStr::new("KORRI_INPUTD_BACK_TAP_ACTION"))
             .and_then(|value| value.to_str())
@@ -534,7 +529,7 @@ pub fn commands_from_environment(
     environment: &BTreeMap<OsString, OsString>,
 ) -> Result<(ActionCommands, ActionRoutes), ActionConfigError> {
     if environment.contains_key(OsStr::new(
-        action_entry(ActionId::KillCurrentGame).legacy_environment_name,
+        action_entry(ActionId::KillCurrentGame).environment_name,
     )) {
         return Err(ActionConfigError::DestructiveCommandOverride);
     }
@@ -544,7 +539,7 @@ pub fn commands_from_environment(
         if entry.dispatch_mode == DispatchMode::ExactStop {
             continue;
         }
-        let Some(raw) = environment.get(OsStr::new(entry.legacy_environment_name)) else {
+        let Some(raw) = environment.get(OsStr::new(entry.environment_name)) else {
             continue;
         };
         if !routes.is_reachable(entry) {
