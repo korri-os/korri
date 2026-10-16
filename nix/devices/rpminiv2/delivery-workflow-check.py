@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep signed plugin fetching ahead of device closure evaluation in CI."""
+"""Keep cache prerequisites ahead of device closure evaluation in CI."""
 
 from pathlib import Path
 import sys
@@ -29,4 +29,26 @@ assert trust < fetch, "configure the device cache before adding the plugin cache
 for command in (".#rpminiv2-check", ".#r36tmax-check", ".#korri-nix-cache-publish"):
     assert fetch < step_running(command), f"fetch signed plugins before {command}"
 
-print("PASS: every device fetches signed plugins before checks and publication")
+cross_steps = workflow["jobs"]["cross"]["steps"]
+cross_publish = [
+    index
+    for index, step in enumerate(cross_steps)
+    if ".#korri-nix-cache-publish" in step.get("run", "")
+]
+assert len(cross_publish) == 1, "expected one cross publication step"
+publish = cross_publish[0]
+assert (
+    "--package packages.x86_64-linux.rpminiv2-recovery-kernel"
+    in cross_steps[publish]["run"]
+), "RP Mini V2 checks need the recovery kernel as well as the product kernel"
+cache_checks = [
+    index
+    for index, step in enumerate(cross_steps)
+    if step.get("run", "").strip() == "nix run .#korri-nix-cache-check"
+]
+assert len(cache_checks) == 1, "run the publisher regressions in the cross job"
+check = cache_checks[0]
+assert "if" not in cross_steps[check], "always check the cache publisher"
+assert check < publish, "check the cache publisher before signing and publication"
+
+print("PASS: cache prerequisites precede device checks and publication")

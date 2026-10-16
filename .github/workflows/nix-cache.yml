@@ -49,6 +49,9 @@ jobs:
       - name: Trust Korri's cache
         run: .github/workflows/trust-korri-cache.sh
 
+      - name: Check the signed cache publisher
+        run: nix run .#korri-nix-cache-check
+
       - name: Stage the signing key
         env:
           SIGNING_KEY: ${{ secrets.KORRI_CACHE_SECRET_KEY }}
@@ -63,12 +66,15 @@ jobs:
 
       # The one list here that is not derived, so check it rather than trust it.
       # An attribute belongs here only if its derivation appears in a device's
-      # build closure; today Odin 2 Portal, RP Mini V2 and the H700 devices
+      # build or check closure; today Odin 2 Portal, RP Mini V2 and the H700 devices
       # cross-build inputs, while the other exported device kernels are native
       # aarch64. h700-uboot is in the H700 image derivation, not the toplevel:
       #
       #   nix derivation show -r .#nixosConfigurations.<device>.config.system.build.toplevel \
       #     | jq -r '.derivations | has("<drv name>")'
+      #
+      # RP Mini V2's module check also reads the recovery kernel's DTB. Its
+      # derivation differs from the product kernel, so publish both packages.
       #
       # korri-chromium-aarch64 is deliberately absent. It is a cross-build no
       # device uses — every device closure carries an aarch64 chromium — and
@@ -87,6 +93,7 @@ jobs:
             --package packages.x86_64-linux.odin2portal-rescue-kernel \
             --package packages.x86_64-linux.odin2portal-firmware \
             --package packages.x86_64-linux.rpminiv2-kernel \
+            --package packages.x86_64-linux.rpminiv2-recovery-kernel \
             --package packages.x86_64-linux.rpminiv2-firmware \
             --package packages.x86_64-linux.rpminiv2-rocknix-baseline \
             --package packages.x86_64-linux.h700-kernel \
