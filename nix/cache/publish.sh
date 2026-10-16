@@ -196,23 +196,9 @@ python3 "$publisher" prepare "$store" "$work/prepared" \
   --nar-base-url "$download_base$batch_tag/" \
   "${upstreams[@]}"
 
-# Drop what Korri's cache already serves, so a second publish of the same
-# generation uploads only what changed. A narinfo is named after the store path
-# hash, so its presence identifies the exact path; compare StorePath anyway,
-# because a published narinfo is the claim being relied on.
+bash "$KORRI_ROOT/nix/cache/filter-published.sh" "$work/prepared" "$ours"
+
 shopt -s nullglob
-republished=0
-for narinfo in "$work/prepared/metadata"/*.narinfo; do
-  hash="$(basename "$narinfo" .narinfo)"
-  curl -fsSL --max-time 60 -o "$work/remote.narinfo" "$ours$hash.narinfo" || continue
-  if grep -qxF "$(grep '^StorePath: ' "$narinfo")" "$work/remote.narinfo"; then
-    rm -f "$work/prepared/nars/$(sed -n 's|^URL: .*/||p' "$narinfo")" "$narinfo"
-    republished=$((republished + 1))
-  fi
-done
-if [ "$republished" -gt 0 ]; then
-  echo "korri-cache: $republished paths are already published, so they are not uploaded again"
-fi
 
 prepared=("$work/prepared/metadata"/*.narinfo)
 staged=("$store"/*.narinfo)

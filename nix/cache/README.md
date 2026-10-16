@@ -44,7 +44,9 @@ download answers with a redirect to a signed URL carrying a query string, and
 reasonable rule for a tool that treats cache URLs as trusted input. So `publish.sh`
 hands `prepare` the caches it can read, and applies Korri's own cache to
 `prepare`'s output itself, comparing `StorePath` in the published narinfo before
-dropping a path.
+dropping a path. `filter-published.sh` removes matching metadata first, then removes
+only NARs that no retained metadata references. Distinct store paths can share
+one compressed NAR, so dropping a path must not immediately delete its payload.
 
 `prepare` does not take the list on faith either: it fetches each upstream's
 `nix-cache-info` and every candidate `.narinfo`, and verifies the hash before dropping
@@ -173,6 +175,16 @@ repositories, so core uses `upload` and accepts the weaker provenance: the
 signature still binds the bytes to a builder.
 
 ## Verification
+
+Run the offline publisher regression checks without a device build or upload:
+
+```sh
+nix run .#korri-nix-cache-check
+```
+
+The checks use real signed file caches and shared compressed NARs. They cover
+partial and complete filtering, unavailable and mismatched metadata, preserved
+signatures, and downloads into an empty local store with builds disabled.
 
 Proven on 2026-09-11 from zao against an empty chroot store, `require-sigs =
 true`, `max-jobs = 0`, `fallback = false`:
