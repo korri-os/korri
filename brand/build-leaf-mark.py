@@ -48,8 +48,7 @@ def knockout(fill):
 
 def mark_svg(body, size=1024, leaf_frac=0.62):
     """Leaf centred on a square canvas. At 62% of the canvas the leaf sits
-    inside both the PWA maskable safe circle (80%) and Android's adaptive
-    safe square (66/108)."""
+    inside the PWA maskable safe circle (80%)."""
     s = size * leaf_frac / LEAF_H
     tx, ty = size / 2 - LEAF_CX * s, size / 2 - LEAF_CY * s
     return (

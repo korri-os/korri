@@ -423,7 +423,7 @@ let
     };
 
     brand-assets = {
-      description = "Regenerate the PWA and Android icons from brand/*.svg.";
+      description = "Regenerate the PWA icons and canonical brand SVGs.";
       runtimeInputs = [
         pkgs.bash
         pkgs.coreutils

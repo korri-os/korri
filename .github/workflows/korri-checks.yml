@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   check:
-    name: Host, portal, surface, and Android JVM
+    name: Host, portal, and surface
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -33,5 +33,5 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run host, portal, surface, and Android JVM checks
+      - name: Run host, portal, and surface checks
         run: nix run .#korrid-check
