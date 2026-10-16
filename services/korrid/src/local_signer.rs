@@ -42,8 +42,8 @@ pub enum LocalSignerError {
     InvalidKey,
     #[error("local signer has no active local key")]
     NoActiveKey,
-    #[error("legacy local signer storage requires the explicit migration tool")]
-    LegacyKey,
+    #[error("local signer storage contains an unexpected entry: {0}")]
+    UnexpectedEntry(PathBuf),
     #[error("local signer key conflicts with the requested keyring operation")]
     KeyConflict,
     #[error("local signer retired key was not found")]
@@ -333,9 +333,6 @@ impl LocalSignerKeyring {
 
     fn validate_top_level(&self) -> Result<(), LocalSignerError> {
         validate_private_directory(&self.identity_directory, &self.private_state_root)?;
-        if path_kind(&self.identity_directory.join(PERSON_KEY_FILE))?.is_some() {
-            return Err(LocalSignerError::LegacyKey);
-        }
         let mut seen_active = false;
         let mut seen_retired = false;
         for entry in
@@ -345,8 +342,7 @@ impl LocalSignerKeyring {
             match entry.file_name().to_str() {
                 Some(ACTIVE_DIRECTORY) => seen_active = true,
                 Some(RETIRED_DIRECTORY) => seen_retired = true,
-                Some(PERSON_KEY_FILE) => return Err(LocalSignerError::LegacyKey),
-                _ => return Err(LocalSignerError::Storage),
+                _ => return Err(LocalSignerError::UnexpectedEntry(entry.path())),
             }
         }
         if !seen_active || !seen_retired {
@@ -1902,7 +1898,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_person_key_is_refused_even_when_the_active_key_exists() {
+    fn unexpected_identity_entry_is_rejected_without_modifying_it() {
         let root = tempfile::tempdir().unwrap();
         let device = tempfile::tempdir().unwrap();
         let expected_device = device_public_key(device.path());
@@ -1911,10 +1907,13 @@ mod tests {
         fs::write(&legacy, "0".repeat(64) + "\n").unwrap();
         fs::set_permissions(&legacy, fs::Permissions::from_mode(0o600)).unwrap();
 
-        assert!(matches!(
-            LocalPersonSigner::load_or_create(root.path(), &expected_device),
-            Err(LocalSignerError::LegacyKey)
-        ));
+        let before = fs::read(&legacy).unwrap();
+        let error = LocalPersonSigner::load_or_create(root.path(), &expected_device)
+            .err()
+            .expect("unexpected identity entry must fail closed");
+        assert!(matches!(&error, LocalSignerError::UnexpectedEntry(path) if path == &legacy));
+        assert!(error.to_string().contains(legacy.to_str().unwrap()));
+        assert_eq!(fs::read(&legacy).unwrap(), before);
     }
 
     #[test]
