@@ -57,6 +57,7 @@ cd "$CRATE"
 cargo build --release --bin korrid --bin korri-local-signer
 export KORRID_MODE="brain"
 export KORRID_RPC_CAPABILITY="check-capability"
+export KORRID_PORTAL_ORIGIN="http://127.0.0.1:8099"
 export KORRID_ADDRESS="127.0.0.1:49117"
 export KORRID_SPIKE_URL="http://$KORRID_ADDRESS"
 local_storage_root="$(mktemp -d)"

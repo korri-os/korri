@@ -172,6 +172,7 @@ pkgs.testers.runNixOSTest {
           KORRID_MODE = lib.mkForce "brain";
           KORRID_ADDRESS = lib.mkForce "127.0.0.1:49117";
           KORRID_RPC_CAPABILITY = "published-plugin-vm-capability";
+          KORRID_PORTAL_ORIGIN = "http://127.0.0.1:8099";
           KORRI_LOCAL_STORAGE_ROOT = "/var/lib/published-plugin-storage";
         };
         system.activationScripts.publishedPluginStorage.text = ''

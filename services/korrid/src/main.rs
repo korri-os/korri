@@ -329,7 +329,7 @@ fn brain_router(
     let capability = std::env::var("KORRID_RPC_CAPABILITY")
         .expect("KORRID_RPC_CAPABILITY must be set for the brain server");
     let allowed_origin = std::env::var("KORRID_PORTAL_ORIGIN")
-        .unwrap_or_else(|_| "https://appassets.androidplatform.net".into());
+        .expect("KORRID_PORTAL_ORIGIN must be set for the brain server");
     korrid::router_with_capability_and_federation(
         &capability,
         &allowed_origin,
