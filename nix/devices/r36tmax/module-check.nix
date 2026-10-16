@@ -10,6 +10,7 @@ let
   inherit (pkgs) lib;
   c = configuration.config;
   console = consoleConfiguration.config;
+  compositor = c.systemd.services.korri-compositor;
   sanity = pkgs.callPackage ./session-sanity.nix { };
   gameButtons = import ./dts/game-buttons-check.nix { inherit pkgs; };
   speakerUcm = import ./audio/check.nix { inherit pkgs; };
@@ -101,7 +102,17 @@ assert c.services.korriLinuxHost.compositor.outputName == "DSI-1";
 assert c.services.korriLinuxHost.compositor.mode == "720x720@61Hz";
 assert c.services.korriLinuxHost.compositor.renderer == "gles2";
 assert !c.services.korriLinuxHost.compositor.localInput.enable;
-assert c.services.korriLinuxHost.compositor.allowedInputIdentifiers == [ ];
+# The shared product admits only reviewed plugin-created virtual inputs, even
+# while this device has no physical input mapping.
+assert
+  c.services.korriLinuxHost.compositor.allowedInputIdentifiers == [
+    "48879:57005:Mouse_passthrough"
+    "48879:57005:Mouse_passthrough_(absolute)"
+    "48879:57005:Keyboard_passthrough"
+    "48879:57005:Touch_passthrough"
+    "48879:57005:Pen_passthrough"
+  ];
+assert compositor.environment.WLR_BACKENDS == "drm,libinput";
 assert !(c.systemd.services ? sunshine);
 assert !(c.systemd.sockets ? korri-certificate-control);
 assert lib.hasInfix "Recorded limit: the normal image has no integrated H.264 encoder."
@@ -123,6 +134,11 @@ pkgs.runCommand "r36tmax-module-check"
   ''
     test -f ${gameButtons}/rockchip/rk3326-aislpc-r36t-max.dtb
     test -f ${speakerUcm}
+    # Check the real generated policy, not just its input options.
+    grep -Fx 'input "*" events disabled' ${compositor.environment.KORRI_SWAY_CONFIG}
+    for identifier in ${lib.escapeShellArgs c.services.korriLinuxHost.compositor.allowedInputIdentifiers}; do
+      grep -Fx "input \"$identifier\" events enabled" ${compositor.environment.KORRI_SWAY_CONFIG}
+    done
     cp ${./boot-media-check.py} boot-media-check.py
     cp ${./check-boot-media.sh} check-boot-media.sh
     mkdir payload
