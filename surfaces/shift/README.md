@@ -14,7 +14,7 @@ Shift depends on exactly one thing from Korri: the treaty in
 runtime dependency in either direction.
 
 ```
-Korri services (Rust korrid, Android bridge)
+Local korrid (Rust)
               ↓
       portal host adapter
               ↓
@@ -25,7 +25,7 @@ Korri services (Rust korrid, Android bridge)
 
 What that forbids, deliberately:
 
-- No korrid client, no generated Rust types, no Android bridge.
+- No korrid client, no generated Rust types, no Linux shell binding.
 - No host state, routing, or service calls.
 - No interpreting failure codes: the host hands Shift finished, user-facing copy.
 

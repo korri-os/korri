@@ -3,7 +3,7 @@
  *
  * A surface is a self-contained front end (Shift is the first). It renders what
  * Korri can currently do and asks Korri to do things; it never reaches into
- * korrid, the Android bridge, portal state, or any Rust-generated type. That
+ * korrid, the Linux shell, portal state, or any Rust-generated type. That
  * one-way dependency is what lets a surface live in its own repository — or
  * eventually ship as an installable theme — without dragging Korri with it.
  *

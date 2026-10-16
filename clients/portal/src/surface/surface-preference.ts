@@ -10,12 +10,12 @@ const STORAGE_KEY = "korri.surface"
  *
  * The storage seam, stated plainly: this is a display preference and nothing
  * else — no identity, no capability, no secret — so it lives in local storage
- * where the device keeps it across restarts of a WebView that has no other
- * memory. A tampered value cannot do more than pick a different theme, and an
- * unrecognised one is ignored rather than trusted.
+ * in the Chromium profile across browser restarts. A tampered value cannot do
+ * more than pick a different surface. An unrecognised one is ignored rather
+ * than trusted.
  *
- * The query parameter wins and persists, so setting a surface once on a device
- * that can only load a fixed URL survives the next boot.
+ * A valid query parameter wins and persists. Without one, the remembered
+ * surface survives browser restart and reboot.
  */
 export function resolveSurfacePreference(
   location: { readonly search: string },

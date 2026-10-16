@@ -45,7 +45,5 @@ export default defineConfig({
       allow: [resolve(__dirname, "../..")],
     },
   },
-  // The Android WebView loads from file:///android_asset/portal/, where
-  // absolute /assets/... URLs would miss. Relative base keeps it working.
   base: "./",
 })

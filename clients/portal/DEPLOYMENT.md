@@ -4,10 +4,11 @@ The device runs one local web server and one Chromium kiosk. The portal bundle
 contains every registered surface. A web update replaces neither the operating
 system nor the streaming services.
 
-The device portal uses the same RPC client, token authentication and RPC
-handlers as Android. Linux currently receives read-only permission. It reads
-actual korrid responses. It does not launch games or change settings. An empty
-device catalog stays empty. Unsupported native actions do not simulate success.
+The device portal uses capability-bound RPC to its local korrid. The Linux
+shell supplies the port and capability through the private `window.KorriRpc`
+binding. Korrid grants portal access to sessions, Wi-Fi setup and player-seat
+changes; it rejects other settings changes. An empty device catalog stays empty.
+Unsupported native actions do not simulate success.
 Browser development without a native credential binding still uses offline
 fixtures.
 
@@ -142,13 +143,14 @@ rollback, invalid bundles, failed restarts, stale HTTP and rejection history.
 The module check evaluates actual NixOS units, including disabled and
 non-loopback configurations, private credentials, user isolation and startup
 ordering. Device acceptance must inspect the actual browser, token rejection,
-read-only enforcement, Wayland access, streaming, reboot and rollback.
+permission enforcement, Wayland access, streaming, reboot and rollback.
 
 `nix/browser-check.py` is the historical fixture-preview check. It expects sample
 games and no backend requests, so it is not the live-data acceptance gate. Do not
 add a debugging port to the production kiosk to run it. The native shell tests
-use actual sandboxed Chromium and its private pipe. The Android bridge gate uses
-an isolated emulator. The older [RG353M acceptance](../../docs/acceptance/rg353m-portal-2026-09-06.md) remains evidence for the prior preview only.
+use actual sandboxed Chromium and its private pipe. The older
+[RG353M acceptance](../../docs/acceptance/rg353m-portal-2026-09-06.md) remains
+evidence for the prior preview only.
 
 If an update reports failure, inspect the selected generation and service logs.
 A restored bundle does not repair an unavailable compositor.
@@ -158,9 +160,9 @@ pruned. Normal web updates do not touch extlinux.
 
 ## Grounding
 
-`KorriRpc` extracts the existing `korridPort()` and `korridCapability()` methods
-from the Android bridge treaty. Systemd's credential ID uses korrid's existing
-`KORRID_RPC_CAPABILITY` name. The isolated user, home and runtime directory use
+`KorriRpc` implements `korridPort()` and `korridCapability()` from
+`contracts/bridge/korri-rpc-bridge.ts` through the Linux shell's private Chromium
+pipe. Systemd's credential ID uses korrid's existing `KORRID_RPC_CAPABILITY` name. The isolated user, home and runtime directory use
 the existing `korri-portal` package namespace. No user library schema changes.
 
 The names `services.korri.webSurfaceHost`, `services.korri.compositor.kiosk`,

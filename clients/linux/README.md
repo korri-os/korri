@@ -3,7 +3,7 @@
 `korri-portal-shell` starts Chromium and supplies the existing `window.KorriRpc`
 bridge before the trusted portal loads. It implements
 [`contracts/bridge/korri-rpc-bridge.ts`](../../contracts/bridge/korri-rpc-bridge.ts).
-It does not implement RPC, hardware operations, or an Android bridge.
+It does not implement RPC or hardware operations.
 
 ## Startup contract
 
