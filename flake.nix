@@ -212,6 +212,7 @@
           rpminiv2-kernel-source-gcc15 = rpminiv2.kernelSourceGcc15;
           rpminiv2-firmware = rpminiv2.firmwareCross;
           rpminiv2-rocknix-baseline = rpminiv2.rocknixBaseline;
+          rpminiv2-dt-driver-check = rpminiv2.dtDriverCheck;
           rgds-kernel = rgds.kernelCross;
           r36tmax-kernel = r36tmax.kernelCross;
           rgds-uboot = rgds.ubootCross;

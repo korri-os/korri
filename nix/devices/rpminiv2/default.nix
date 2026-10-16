@@ -79,6 +79,7 @@ in
   inherit
     configuration
     consoleConfiguration
+    dtDriverCheck
     kernelCross
     recoveryKernel
     recoveryKernelCross
