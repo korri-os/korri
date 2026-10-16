@@ -110,8 +110,8 @@ test("settings and panel publish real empty, saving and failure rows", () => {
 })
 
 test("settings confirmation reuses the fixture copy; text settings open the editor", () => {
-  const confirming = render(<Settings.ConfirmForget />)
-  expect(confirming.getByRole("dialog", { name: "FORGET EVERYTHING?" })).toBeDefined()
+  const confirming = render(<Settings.ConfirmRemoveFolder />)
+  expect(confirming.getByRole("dialog", { name: "Remove game folder?" })).toBeDefined()
   confirming.unmount()
   const name = render(<Settings.EditName />)
   expect(name.getByRole("textbox", { name: "Name" }).textContent).toContain("usu")

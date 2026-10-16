@@ -86,7 +86,7 @@ const edit = (settingId: string): PicoMessage => ({ _tag: "OpenedEditor", settin
 export function Empty() { return <Settings model={emptySettingsModel} /> }
 export function Saving() { return <Settings model={savingSettingsModel} /> }
 export function Error() { return <Settings model={failedSettingsModel} /> }
-export function ConfirmForget() {
+export function ConfirmRemoveFolder() {
   const { actionId, confirmation } = fixtureSettingsConfirmation()
   return <Settings model={fixtureModel} opening={[{ _tag: "AskedSettingConfirmation", actionId, confirmation }]} />
 }

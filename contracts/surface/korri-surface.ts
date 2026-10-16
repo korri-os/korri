@@ -79,7 +79,7 @@ export interface SurfaceGame {
 }
 
 /**
- * A non-game thing the user can do (pair a device, grant storage access, stop
+ * A non-game thing the user can do (open settings, cancel a launch, stop
  * the running game). Korri owns which of these exist and whether they apply;
  * the surface only renders and reports selection.
  */

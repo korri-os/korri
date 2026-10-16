@@ -313,7 +313,7 @@ export const fixtureModel: SurfaceModel = {
   clockLabel: "10:24",
   actions: [],
   /* Real shapes from korrid: a fact, an editable name, a two-value choice,
-   * a described fact, and an action a permission is granted through. */
+   * a folder scan action, and a destructive folder removal. */
   settings: [
     {
       title: "Device",
@@ -345,26 +345,26 @@ export const fixtureModel: SurfaceModel = {
       ],
     },
     {
-      title: "Permissions",
+      title: "Games",
       items: [
         {
-          id: "file-access",
-          label: "File access",
-          value: "Granted",
-          description: "Managed by Android",
-          interaction: { kind: "action", actionId: "storage-access" },
+          id: "game-folder-rescan",
+          label: "Rescan game folders",
+          value: "1 folder",
+          interaction: { kind: "action", actionId: "game-folder-rescan" },
         },
         {
-          id: "reset",
-          label: "Forget this device",
+          id: "game-folder:loc-a",
+          label: "GBA",
+          value: "Registered",
           interaction: {
             kind: "action",
-            actionId: "factory-reset",
+            actionId: "game-folder-remove:loc-a",
             destructive: true,
             confirmation: {
-              title: "FORGET EVERYTHING?",
-              message: "Every game, save and setting on this device is removed.",
-              confirmLabel: "FORGET",
+              title: "Remove game folder?",
+              message: "Korri will remove games it added from this folder. Edited or hand-authored games stay.",
+              confirmLabel: "Remove folder",
             },
           },
         },

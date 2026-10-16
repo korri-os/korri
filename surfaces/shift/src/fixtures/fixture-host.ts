@@ -162,17 +162,11 @@ export const fixtureModel: SurfaceModel = {
           value: "1 game",
           description: "Declared in catalog/games.yaml",
         },
-      ],
-    },
-    {
-      title: "Permissions",
-      items: [
         {
-          id: "file-access",
-          label: "File access",
-          value: "Granted",
-          description: "Managed by Android",
-          interaction: { kind: "action", actionId: "storage-access" },
+          id: "game-folder-rescan",
+          label: "Rescan game folders",
+          value: "1 folder",
+          interaction: { kind: "action", actionId: "game-folder-rescan" },
         },
       ],
     },

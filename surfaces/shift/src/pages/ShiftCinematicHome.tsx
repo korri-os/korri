@@ -67,7 +67,7 @@ export interface ShiftCinematicGame {
 
 /**
  * A trailing non-game rail entry (a "destination"). The host declares these —
- * pair a device, grant storage access, stop what is running — so the rail grows
+ * open settings, stop what is running — so the rail grows
  * a new end cap without Shift learning what the action means.
  */
 type RailAffordance =

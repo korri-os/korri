@@ -268,9 +268,9 @@ test("saving and failed settings show feedback beside the existing value", () =>
   expect(view.getByText("ON").getAttribute("data-lit")).toBe("true")
 })
 
-test("destructive setting is an action without a fabricated value", () => {
+test("registered folder removal is a destructive action", () => {
   const view = render(<SettingRow.DestructiveAction />)
-  expect(view.getByRole("button", { name: "Forget this device" }).getAttribute("data-danger")).toBe("true")
+  expect(view.getByRole("button", { name: "GBA Registered" }).getAttribute("data-danger")).toBe("true")
   expect(view.getByText("▶").getAttribute("aria-hidden")).toBe("true")
   expect(view.container.querySelector(".pico-segments")).toBeNull()
 })

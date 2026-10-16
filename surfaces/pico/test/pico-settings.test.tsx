@@ -44,7 +44,7 @@ describe("opening settings", () => {
 
   test("lists exactly the groups Korri published, as categories", () => {
     open()
-    for (const title of ["DEVICE", "PLUGINS", "PERMISSIONS"]) {
+    for (const title of ["DEVICE", "PLUGINS", "GAMES"]) {
       expect(screen.getByRole("tab", { name: title })).toBeTruthy()
     }
     expect(screen.queryByRole("tab", { name: "DISPLAY" })).toBeNull()
@@ -159,9 +159,9 @@ describe("reading a group", () => {
 
   test("moving to another category shows its items", () => {
     open()
-    fireEvent.click(screen.getByRole("tab", { name: "PERMISSIONS" }))
-    expect(screen.getByText("File access")).toBeTruthy()
-    expect(screen.getByText("Managed by Android")).toBeTruthy()
+    fireEvent.click(screen.getByRole("tab", { name: "GAMES" }))
+    expect(screen.getByText("Rescan game folders")).toBeTruthy()
+    expect(screen.getByText("1 folder")).toBeTruthy()
     expect(screen.queryByText("Software")).toBeNull()
   })
 
@@ -203,30 +203,30 @@ describe("changing a choice", () => {
 describe("running an action", () => {
   test("runs a plain action at once", () => {
     const { host } = open()
-    fireEvent.click(screen.getByRole("tab", { name: "PERMISSIONS" }))
-    fireEvent.click(screen.getByRole("button", { name: /File access/ }))
-    expect(host.calls).toEqual(["action:storage-access"])
+    fireEvent.click(screen.getByRole("tab", { name: "GAMES" }))
+    fireEvent.click(screen.getByRole("button", { name: /Rescan game folders/ }))
+    expect(host.calls).toEqual(["action:game-folder-rescan"])
   })
 
   test("asks before a destructive one, in Korri's words", () => {
     const { host } = open()
-    fireEvent.click(screen.getByRole("tab", { name: "PERMISSIONS" }))
-    fireEvent.click(screen.getByRole("button", { name: /Forget this device/ }))
+    fireEvent.click(screen.getByRole("tab", { name: "GAMES" }))
+    fireEvent.click(screen.getByRole("button", { name: /GBA/ }))
 
     expect(host.calls).toEqual([])
-    expect(screen.getByText("FORGET EVERYTHING?")).toBeTruthy()
-    expect(screen.getByText(/Every game, save and setting/)).toBeTruthy()
+    expect(screen.getByText("Remove game folder?")).toBeTruthy()
+    expect(screen.getByText(/Korri will remove games it added from this folder/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "FORGET" }))
-    expect(host.calls).toEqual(["action:factory-reset"])
+    fireEvent.click(screen.getByRole("button", { name: "Remove folder" }))
+    expect(host.calls).toEqual(["action:game-folder-remove:loc-a"])
   })
 
   test("back withdraws the question without running anything", () => {
     const { host } = open()
-    fireEvent.click(screen.getByRole("tab", { name: "PERMISSIONS" }))
-    fireEvent.click(screen.getByRole("button", { name: /Forget this device/ }))
+    fireEvent.click(screen.getByRole("tab", { name: "GAMES" }))
+    fireEvent.click(screen.getByRole("button", { name: /GBA/ }))
     act(() => host.press("back"))
-    expect(screen.queryByText("FORGET EVERYTHING?")).toBeNull()
+    expect(screen.queryByText("Remove game folder?")).toBeNull()
     expect(screen.getByText("SETTINGS")).toBeTruthy()
     expect(host.calls).toEqual([])
   })

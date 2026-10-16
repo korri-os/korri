@@ -1413,8 +1413,8 @@ describe("Shift settings", () => {
 
     expect(screen.getByText("Software")).toBeDefined()
     expect(screen.getByText("korrid 0.4.1")).toBeDefined()
-    expect(screen.getByText("File access")).toBeDefined()
-    expect(screen.getByText("Granted")).toBeDefined()
+    expect(screen.getByText("Rescan game folders")).toBeDefined()
+    expect(screen.getByText("1 folder")).toBeDefined()
   })
 
   test("only settings backed by a real interaction become buttons", () => {
@@ -1551,14 +1551,14 @@ describe("Shift settings", () => {
     expect(host.calls).toEqual(["setting:@korri:mgba:false"])
   })
 
-  test("an Android-owned row runs its native action", () => {
+  test("a folder scan row runs its host action", () => {
     const host = createFixtureHost()
     render(<ShiftSurface model={model()} host={host} />)
     openSettings()
 
-    fireEvent.click(screen.getByRole("button", { name: "File access: Granted" }))
+    fireEvent.click(screen.getByRole("button", { name: "Rescan game folders: 1 folder" }))
 
-    expect(host.calls).toEqual(["action:storage-access"])
+    expect(host.calls).toEqual(["action:game-folder-rescan"])
   })
 
   test("a page-level settings problem is visible and dismissible", () => {
@@ -1568,8 +1568,8 @@ describe("Shift settings", () => {
         model={model({
           settingsStatus: {
             _tag: "Problem",
-            settingId: "storage-access",
-            message: "Android settings could not open",
+            settingId: "game-folder-rescan",
+            message: "Game folders could not be scanned",
           },
         })}
         host={host}
@@ -1579,7 +1579,7 @@ describe("Shift settings", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull()
     fireEvent.click(
-      screen.getByRole("button", { name: "Android settings could not open" }),
+      screen.getByRole("button", { name: "Game folders could not be scanned" }),
     )
 
     expect(host.calls).toEqual(["settings-dismiss"])
@@ -1590,14 +1590,14 @@ describe("Shift settings", () => {
     const { container } = render(
       <ShiftSurface
         model={model({
-          settingsStatus: { _tag: "Saving", settingId: "file-access" },
+          settingsStatus: { _tag: "Saving", settingId: "game-folder-rescan" },
         })}
         host={host}
       />,
     )
     openSettings()
 
-    expect(screen.queryByRole("button", { name: "File access: Granted" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Rescan game folders: 1 folder" })).toBeNull()
     expect(container.querySelector(".shift-setting-row[data-saving='true']"))
       .not.toBeNull()
   })

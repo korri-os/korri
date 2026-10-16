@@ -69,7 +69,7 @@ export const secretSettingModel: SurfaceModel = {
 
 export function fixtureSettingsConfirmation() {
   const row = picoSettingsViewFromModel(fixtureModel).groups
-    .flatMap(group => group.rows).find(row => row.id === "reset")
+    .flatMap(group => group.rows).find(row => row.id === "game-folder:loc-a")
   if (row?.control.kind !== "action" || row.control.confirmation === undefined) {
     throw new Error("Missing fixture confirmation")
   }
