@@ -41,6 +41,10 @@ assert (
     "--package packages.x86_64-linux.rpminiv2-recovery-kernel"
     in cross_steps[publish]["run"]
 ), "RP Mini V2 checks need the recovery kernel as well as the product kernel"
+assert (
+    "--package packages.x86_64-linux.rpminiv2-dt-driver-check"
+    in cross_steps[publish]["run"]
+), "RP Mini V2 module and image checks need the x86 DT-driver audit output"
 cache_checks = [
     index
     for index, step in enumerate(cross_steps)
