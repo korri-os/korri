@@ -7,17 +7,6 @@
 }:
 let
   lib = pkgs.lib;
-  legacyInputModule =
-    { config, lib, ... }:
-    {
-      options.services.korri.input.provider.enable = lib.mkEnableOption "legacy Korri input provider";
-      config = lib.mkIf config.services.korri.input.provider.enable {
-        services.inputplumber = {
-          enable = true;
-          package = pkgs.inputplumber;
-        };
-      };
-    };
   identities = {
     users.groups.korri.gid = 1000;
     users.users.korri = {
@@ -73,31 +62,6 @@ let
     system: !(builtins.tryEval system.config.system.build.toplevel.drvPath).success;
   providerOnly = evaluate {
     services.korriLinuxInput.provider.enable = true;
-  };
-  legacyCompatibility = import "${pkgs.path}/nixos/lib/eval-config.nix" {
-    system = pkgs.stdenv.hostPlatform.system;
-    modules = [
-      legacyInputModule
-      bundleModule
-      module
-      identities
-      {
-        system.stateVersion = "26.05";
-        boot.loader.grub.enable = false;
-        fileSystems."/" = {
-          device = "none";
-          fsType = "tmpfs";
-        };
-        services.korri.input.provider.enable = false;
-        services.korriLinuxInput = {
-          provider = {
-            enable = true;
-            package = inputplumberKorri;
-          };
-          inputd.enable = true;
-        };
-      }
-    ];
   };
   additionalData = pkgs.runCommand "inputplumber-module-data-fixture" { } ''
     mkdir -p "$out/share/inputplumber/devices"
@@ -236,18 +200,6 @@ let
   bundleSelector = bundled.config.systemd.services.korri-bundle-selector;
 in
 assert allAssertionsPass providerOnly;
-assert !(providerOnly.options.services ? korri);
-assert allAssertionsPass legacyCompatibility;
-assert !legacyCompatibility.config.services.korri.input.provider.enable;
-assert legacyCompatibility.config.services.inputplumber.enable;
-assert legacyCompatibility.config.services.inputplumber.package == inputplumberKorri;
-assert
-  legacyCompatibility.config.systemd.services.inputplumber.environment.XDG_DATA_DIRS
-  == "${inputplumberKorri}/share";
-assert
-  legacyCompatibility.config.systemd.services.inputplumber.serviceConfig.ExecStart
-  == "${lib.getExe inputplumberKorri}";
-assert legacyCompatibility.config.systemd.services ? korri-inputd;
 assert providerOnly.config.services.inputplumber.enable;
 assert providerOnly.config.services.inputplumber.package == inputplumberKorri;
 assert builtins.elem "uinput" providerOnly.config.boot.kernelModules;

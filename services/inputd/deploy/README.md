@@ -135,7 +135,7 @@ Delete the private ledger after the final evidence has been transferred to the w
 
 Obtain the expected identity from a separate trusted device inventory. Do not copy it from a failed gate run.
 
-Build the candidate through the consuming NixOS configuration. Import `nixosModules.korri-input` and configure the module through `services.korriLinuxInput`. The flake output name stays `nixosModules.korri-input`; the option namespace does not reuse the legacy `services.korri.input` tree. Enable `services.korriLinuxInput.provider` and `services.korriLinuxInput.inputd` independently for the device capabilities in the candidate.
+Build the candidate through the consuming NixOS configuration. Import `nixosModules.korri-input` and configure the module through `services.korriLinuxInput`. Enable `services.korriLinuxInput.provider` and `services.korriLinuxInput.inputd` independently for the device capabilities in the candidate.
 
 Keep the active pre-rollout system closure as the rollback generation. Both paths must contain `bin/switch-to-configuration` and remain available until all reboot gates pass.
 
