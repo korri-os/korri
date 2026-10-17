@@ -44,6 +44,11 @@ in
     # z runs after directory creation; group:: stays empty, other:: stays empty.
     "z ${root} 0710 korrid korrid -"
     "a+ ${root}/roms - - - - u:${user}:--x"
+    # Paired discovery sources (one folder per system or group, written by
+    # `korrid catalog migrate` and `pair`). The game reads and traverses the
+    # whole tree; new folders and files inherit that access.
+    "d ${root}/games 0710 korrid korrid -"
+    "A+ ${root}/games - - - - u:${user}:rX,d:u:${user}:rX"
     "d ${root}/users 2710 korrid ${group} -"
     "a+ ${root}/users - - - - u:${user}:--x"
     "d ${account} 2770 korrid ${group} -"
