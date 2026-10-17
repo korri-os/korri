@@ -60,6 +60,7 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         linux_runner: None,
         core_path: None,
         file_target: None,
+        provider_target: None,
     };
     let result = cascade::resolve(&snapshot, &route, None);
     assert_eq!(

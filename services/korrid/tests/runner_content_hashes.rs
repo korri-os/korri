@@ -219,14 +219,15 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
             .path()
             .join("roms")
             .join(format!("{}.gba", std::str::from_utf8(bytes).unwrap()));
-        assert_eq!(input.content_path, path.display().to_string());
+        assert_eq!(input.content_path, Some(path.display().to_string()));
+        assert!(input.provider_ref.is_none());
         let package = registry.installed_package("@test:content/main").unwrap();
         let source =
             SourceSnapshot::package_plugin(&package.package, &package.entry, &package.sources)
                 .unwrap();
         let plan = evaluate_snapshot(&source, &input).unwrap();
         assert_eq!(plan.command, input.program);
-        assert_eq!(plan.args, [input.content_path]);
+        assert_eq!(plan.args, [input.content_path.unwrap()]);
     }
 }
 

@@ -67,6 +67,21 @@ pub(super) fn validate(snapshot: &ConfigSnapshot) -> Result<(), ConfigSchemaErro
                     {
                         return Err(invalid(&path, "hash identity must be SHA-256 or SHA-1"))
                     }
+                    LibraryIdentity::Provider { value } => {
+                        if !value.starts_with('@') {
+                            return Err(invalid(&path, "provider identity must be @ns:name/ref"));
+                        }
+                        if snapshot.locations.get(value).is_some_and(|locations| {
+                            locations
+                                .iter()
+                                .any(|location| !matches!(location, Location::ProviderRef { .. }))
+                        }) {
+                            return Err(invalid(
+                                &path,
+                                "provider identity requires provider locations",
+                            ));
+                        }
+                    }
                     LibraryIdentity::Chd { value } if !value.starts_with("sha1:") => {
                         return Err(invalid(&path, "CHD identity must be SHA-1"))
                     }

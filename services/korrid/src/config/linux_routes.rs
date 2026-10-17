@@ -75,73 +75,92 @@ fn linux_route_candidates_for_runner(
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
             for location in snapshot.locations.get(key).into_iter().flatten() {
-                let (storage, path, paths, discovery) = match location {
-                    Location::File {
-                        storage,
-                        path,
-                        discovery,
-                    } => (storage, path.0.clone(), vec![path.0.clone()], discovery),
-                    Location::FileSet {
-                        storage,
-                        root,
-                        files,
-                        discovery,
-                    } => {
-                        let paths: Vec<_> = files
-                            .0
-                            .iter()
-                            .map(|p| {
-                                root.as_ref()
-                                    .map(|r| format!("{}/{}", r.0, p.path.0))
-                                    .unwrap_or_else(|| p.path.0.clone())
-                            })
-                            .collect();
-                        let primary = files
-                            .0
-                            .iter()
-                            .position(|p| p.role.as_ref().is_some_and(|r| r.0 == "descriptor"))
-                            .unwrap_or(0);
-                        (storage, paths[primary].clone(), paths, discovery)
-                    }
-                    _ => continue,
-                };
-                if discovery
-                    .as_ref()
-                    .is_some_and(|d| d.missing_since.is_some())
-                {
-                    last_error = RouteDiagnostic {
-                        code: RouteDiagnosticCode::LocalRomMissing,
-                        message: format!("release {key} location is missing"),
-                        playable_id: Some(game_id.into()),
-                    };
-                    continue;
-                }
-                let target = ResolvedFileTarget {
-                    storage_id: storage.0.clone(),
-                    path: path.clone(),
-                };
-                if let Some(error) = paths.iter().find_map(|path| {
-                    crate::config::storage::resolve_file_target(
-                        root,
-                        snapshot,
-                        &ResolvedFileTarget {
+                let (file_target, provider_target, flattened_target) =
+                    if let Location::ProviderRef {
+                        provider,
+                        provider_ref,
+                    } = location
+                    {
+                        (
+                            None,
+                            Some(crate::GameProviderIdentity {
+                                provider: provider.0.clone(),
+                                provider_ref: provider_ref.0.clone(),
+                            }),
+                            format!("{}/{}", provider.0, provider_ref.0),
+                        )
+                    } else {
+                        let (storage, path, paths, discovery) = match location {
+                            Location::File {
+                                storage,
+                                path,
+                                discovery,
+                            } => (storage, path.0.clone(), vec![path.0.clone()], discovery),
+                            Location::FileSet {
+                                storage,
+                                root,
+                                files,
+                                discovery,
+                            } => {
+                                let paths: Vec<_> = files
+                                    .0
+                                    .iter()
+                                    .map(|p| {
+                                        root.as_ref()
+                                            .map(|r| format!("{}/{}", r.0, p.path.0))
+                                            .unwrap_or_else(|| p.path.0.clone())
+                                    })
+                                    .collect();
+                                let primary = files
+                                    .0
+                                    .iter()
+                                    .position(|p| {
+                                        p.role.as_ref().is_some_and(|r| r.0 == "descriptor")
+                                    })
+                                    .unwrap_or(0);
+                                (storage, paths[primary].clone(), paths, discovery)
+                            }
+                            _ => continue,
+                        };
+                        if discovery
+                            .as_ref()
+                            .is_some_and(|d| d.missing_since.is_some())
+                        {
+                            last_error = RouteDiagnostic {
+                                code: RouteDiagnosticCode::LocalRomMissing,
+                                message: format!("release {key} location is missing"),
+                                playable_id: Some(game_id.into()),
+                            };
+                            continue;
+                        }
+                        let target = ResolvedFileTarget {
                             storage_id: storage.0.clone(),
                             path: path.clone(),
-                        },
-                    )
-                    .err()
-                }) {
-                    last_error = RouteDiagnostic {
-                        code: if error.is_missing_target() {
-                            RouteDiagnosticCode::LocalRomMissing
-                        } else {
-                            RouteDiagnosticCode::LocalRouteUnavailable
-                        },
-                        message: error.to_string(),
-                        playable_id: Some(game_id.into()),
+                        };
+                        if let Some(error) = paths.iter().find_map(|path| {
+                            crate::config::storage::resolve_file_target(
+                                root,
+                                snapshot,
+                                &ResolvedFileTarget {
+                                    storage_id: storage.0.clone(),
+                                    path: path.clone(),
+                                },
+                            )
+                            .err()
+                        }) {
+                            last_error = RouteDiagnostic {
+                                code: if error.is_missing_target() {
+                                    RouteDiagnosticCode::LocalRomMissing
+                                } else {
+                                    RouteDiagnosticCode::LocalRouteUnavailable
+                                },
+                                message: error.to_string(),
+                                playable_id: Some(game_id.into()),
+                            };
+                            continue;
+                        }
+                        (Some(target), None, format!("{}:{}", storage.0, path))
                     };
-                    continue;
-                }
                 emitted.insert(runner.id.clone());
                 candidates.push(ResolvedRoute {
                     playable_id: game_id.into(),
@@ -157,12 +176,13 @@ fn linux_route_candidates_for_runner(
                     runner_id: runner.id.clone(),
                     family_id: runner.family.clone(),
                     integration_token: String::new(),
-                    flattened_target: format!("{}:{}", storage.0, path),
+                    flattened_target,
                     linux_runner: Some(ResolvedLinuxRunner {
                         program: program.display().to_string(),
                     }),
                     core_path: core_path.clone(),
-                    file_target: Some(target),
+                    file_target,
+                    provider_target,
                 });
                 break;
             }

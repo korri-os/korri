@@ -96,19 +96,23 @@ pub struct LibraryReleasePayload {
     pub inheritable: InheritableLayer,
 }
 
-/// Legacy `{ kind: hash, value }`, plus `parts` and `chd` (ADR 0005).
+/// Legacy content identities (ADR 0005), plus existing provider release keys.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum LibraryIdentity {
     Hash { value: String },
     Parts { value: String, parts: Vec<String> },
     Chd { value: String },
+    Provider { value: String },
 }
 
 impl LibraryIdentity {
     pub fn value(&self) -> &str {
         match self {
-            Self::Hash { value } | Self::Parts { value, .. } | Self::Chd { value } => value,
+            Self::Hash { value }
+            | Self::Parts { value, .. }
+            | Self::Chd { value }
+            | Self::Provider { value } => value,
         }
     }
 }

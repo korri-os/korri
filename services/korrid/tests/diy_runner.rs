@@ -95,6 +95,18 @@ fn the_hand_written_runner_refuses_what_it_has_not_implemented() {
         "files": { "ppsspp": "/nix/store/exact-ppsspp/bin/ppsspp" },
     });
 
+    // Provider-backed content is not a PSP image.
+    let mut without_content = base.clone();
+    without_content
+        .as_object_mut()
+        .unwrap()
+        .remove("contentPath");
+    without_content["ref"] = serde_json::json!("401710");
+    assert!(
+        call_plugin_operation_ts(PPSSPP_PLUGIN, LAUNCH_PREPARE, &without_content.to_string())
+            .is_err()
+    );
+
     // A core path means the caller mistook this for a libretro frontend.
     let mut with_core = base.clone();
     with_core["corePath"] = serde_json::json!("/nix/store/exact/mgba_libretro.so");

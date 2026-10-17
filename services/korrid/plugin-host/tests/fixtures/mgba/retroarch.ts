@@ -90,6 +90,7 @@ function quoteSetting(key: string, value: string): string {
 }
 
 function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
+  if (!input.contentPath) throw new Error("RetroArch runner requires a content path")
   const root = input.accountRoot
   if (!input.corePath) throw new Error("RetroArch runner requires a core path")
   const corePath = input.corePath

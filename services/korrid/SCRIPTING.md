@@ -223,7 +223,10 @@ undefined is rejected.
 The evaluator performs no effects. `launcher/plugin_launch.rs` defines the
 Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
 contains the selected full launcher/kind/runtime IDs, program and core file paths,
-content path, existing account root, and kind-owned manifest files. Output
+existing account root, and kind-owned manifest files. A file route supplies
+`contentPath`; a provider location supplies `ref` instead, named after
+`GameProviderIdentity.ref`. Neither path invents a file for provider content.
+Output
 preserves legacy `command`, `args`, `env`, `envUnset`, and `cwd`, plus the
 existing directory and provisioned-file declarations.
 

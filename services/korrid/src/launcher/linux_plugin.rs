@@ -39,19 +39,27 @@ pub fn launch_route(
         .linux_runner
         .as_ref()
         .ok_or_else(|| error("native route has no program".into()))?;
-    let target = route
-        .file_target
-        .as_ref()
-        .ok_or_else(|| error("native route has no file".into()))?;
-    let content = storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
-        if storage.is_missing_target() {
-            LaunchError::RomMissing(storage.to_string())
-        } else if storage.is_storage_access() {
-            LaunchError::StorageAccess(storage.to_string())
-        } else {
-            error(storage.to_string())
+    let (content_path, provider_ref) = match (&route.file_target, &route.provider_target) {
+        (Some(target), None) => {
+            let content =
+                storage::resolve_file_target(root, snapshot, target).map_err(|storage| {
+                    if storage.is_missing_target() {
+                        LaunchError::RomMissing(storage.to_string())
+                    } else if storage.is_storage_access() {
+                        LaunchError::StorageAccess(storage.to_string())
+                    } else {
+                        error(storage.to_string())
+                    }
+                })?;
+            (Some(content.path.display().to_string()), None)
         }
-    })?;
+        (None, Some(target)) => (None, Some(target.provider_ref.clone())),
+        _ => {
+            return Err(error(
+                "native route must have one file or provider target".into(),
+            ))
+        }
+    };
     let overrides = overrides.map(|value| crate::config::cascade::RunnerConfig {
         settings: value.settings,
         config: value.config,
@@ -75,7 +83,8 @@ pub fn launch_route(
         family_id: route.family_id.clone(),
         program: native.program.clone(),
         core_path: route.core_path.clone(),
-        content_path: content.path.display().to_string(),
+        content_path,
+        provider_ref,
         account_root: root.join("users/default").display().to_string(),
         files: package
             .files

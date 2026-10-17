@@ -39,7 +39,11 @@ pub struct PluginLaunchInput {
     pub program: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub core_path: Option<String>,
-    pub content_path: String,
+    /// File routes supply contentPath; provider locations supply ref instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_path: Option<String>,
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub provider_ref: Option<String>,
     pub account_root: String,
     pub files: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -41,6 +41,7 @@ pub struct ResolvedRoute {
     pub linux_runner: Option<ResolvedLinuxRunner>,
     pub core_path: Option<String>,
     pub file_target: Option<ResolvedFileTarget>,
+    pub provider_target: Option<crate::GameProviderIdentity>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -97,8 +97,14 @@ fn discovery_registered_gba_launches_from_its_snapshot_storage_root() {
         serde_json::from_str::<PluginLaunchInput>(&launch.command[3])
             .unwrap()
             .content_path,
-        game.rom().canonicalize().unwrap().display().to_string()
+        Some(game.rom().canonicalize().unwrap().display().to_string())
     );
+    let wire: serde_json::Value = serde_json::from_str(&launch.command[3]).unwrap();
+    assert!(
+        wire.get("ref").is_none(),
+        "file launch keeps its existing wire shape"
+    );
+    assert!(game.route.provider_target.is_none());
     assert!(
         !game.root.path().join("users").exists(),
         "no daemon-owned runtime artifacts"
@@ -157,7 +163,7 @@ fn configured_root_and_internal_target_symlinks_use_the_canonical_file() {
         serde_json::from_str::<PluginLaunchInput>(&game.launch().unwrap().command[3])
             .unwrap()
             .content_path,
-        canonical.canonicalize().unwrap().display().to_string()
+        Some(canonical.canonicalize().unwrap().display().to_string())
     );
 }
 

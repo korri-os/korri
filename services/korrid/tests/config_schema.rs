@@ -301,3 +301,74 @@ fn unsupported_populated_behavior_is_reported_explicitly() {
         .to_string()
         .contains("host.moonlight"));
 }
+
+const PROVIDER_LIBRARY: &str = "library:
+  flinthook:
+    title: Flinthook
+    releases:
+      - id: steam
+        system: steam
+        identity: {kind: provider, value: '@korri:steam/401710'}
+";
+const PROVIDER_DEVICE: &str = "locations:
+  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]
+";
+
+#[test]
+fn provider_identity_decodes_and_keeps_its_game_identity() {
+    let snapshot = decode_config_documents(PROVIDER_DEVICE, PROVIDER_LIBRARY).unwrap();
+    assert_eq!(
+        snapshot.library["flinthook"].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        "@korri:steam/401710"
+    );
+    assert_eq!(
+        snapshot.game_identity("flinthook"),
+        Some(korrid::GameIdentity::Provider(
+            korrid::GameProviderIdentity {
+                provider: "@korri:steam".into(),
+                provider_ref: "401710".into(),
+            }
+        ))
+    );
+}
+
+#[test]
+fn provider_identity_rejects_hashes_invalid_keys_and_duplicate_identities() {
+    for key in [
+        format!("sha256:{}", "a".repeat(64)),
+        format!("sha1:{}", "a".repeat(40)),
+        "steam/401710".into(),
+        "@korri:steam/".into(),
+        "@korri/401710".into(),
+    ] {
+        let library = PROVIDER_LIBRARY.replace("@korri:steam/401710", &key);
+        assert!(decode_config_documents("{}", &library).is_err(), "{key}");
+    }
+    let duplicate = format!(
+        "{PROVIDER_LIBRARY}      - id: duplicate\n        identity: {{kind: provider, value: '@korri:steam/401710'}}\n"
+    );
+    assert!(decode_config_documents(PROVIDER_DEVICE, &duplicate).is_err());
+}
+
+#[test]
+fn provider_identity_requires_a_matching_provider_location() {
+    for location in [
+        "{storage: roms, path: game.rom}",
+        "{storage: roms, files: [{id: game, path: game.rom}]}",
+        "{path: /bin/game}",
+        "{value: 'https://example.invalid/game'}",
+        "{provider: '@korri:steam', ref: 'other'}",
+    ] {
+        let device = format!("locations: {{'@korri:steam/401710': [{location}]}}");
+        assert!(
+            decode_config_documents(&device, PROVIDER_LIBRARY).is_err(),
+            "{location}"
+        );
+    }
+    // A catalog entry need not have an available device location yet.
+    decode_config_documents("{}", PROVIDER_LIBRARY).unwrap();
+}

@@ -31,6 +31,9 @@ export const runners = {
 // vocabulary".
 
 function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
+  if (!input.contentPath) {
+    throw new Error("PPSSPP requires a content path")
+  }
   if (input.corePath !== undefined) {
     throw new Error("PPSSPP is a whole emulator and loads no core")
   }

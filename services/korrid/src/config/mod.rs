@@ -96,7 +96,16 @@ impl ConfigSnapshot {
             .first()?
             .identity
             .as_ref()
-            .map(|identity| crate::GameIdentity::Hash(identity.value().into()))
+            .and_then(|identity| match identity {
+                LibraryIdentity::Provider { value } => {
+                    let (provider, provider_ref) = value.split_once('/')?;
+                    Some(crate::GameIdentity::Provider(crate::GameProviderIdentity {
+                        provider: provider.into(),
+                        provider_ref: provider_ref.into(),
+                    }))
+                }
+                _ => Some(crate::GameIdentity::Hash(identity.value().into())),
+            })
     }
     /// Device-owned pool size; launch and catalog opinions never participate.
     pub fn player_count(&self) -> u8 {

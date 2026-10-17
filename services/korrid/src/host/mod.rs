@@ -2421,7 +2421,7 @@ esac
         );
         assert_eq!(
             input.content_path,
-            rom.canonicalize().unwrap().display().to_string()
+            Some(rom.canonicalize().unwrap().display().to_string())
         );
         assert!(
             !root.path().join("users").exists(),
@@ -2500,7 +2500,7 @@ esac
             serde_json::from_str(&launch.command[3]).unwrap();
         assert_eq!(
             input.content_path,
-            explicit.path().join("wl4.gba").display().to_string()
+            Some(explicit.path().join("wl4.gba").display().to_string())
         );
         let config = root.path().join("host.toml");
         fs::write(&config, "label = \"zao\"\n[[games]]\nid = \"static\"\ntitle = \"Static game\"\ncommand = [\"game\"]\n").unwrap();

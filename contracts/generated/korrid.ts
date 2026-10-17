@@ -551,7 +551,9 @@ export interface PluginLaunchInput {
 	familyId?: string;
 	program: string;
 	corePath?: string;
-	contentPath: string;
+	/** File routes supply contentPath; provider locations supply ref instead. */
+	contentPath?: string;
+	ref?: string;
 	accountRoot: string;
 	files: Record<string, string>;
 	overrides?: PluginLaunchOverrides;
