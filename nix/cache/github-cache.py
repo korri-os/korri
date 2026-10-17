@@ -4,6 +4,8 @@
 
 Nix owns cache metadata, closure export and signatures. Only URL changes when
 splitting a cache between a NAR release and the shared metadata release.
+
+Korri vendor delta: reconcile failed POSTs against verified concurrent uploads.
 """
 
 import argparse
@@ -427,19 +429,48 @@ def upload_files(repo, tag, paths):
             raise ValueError("release changed during upload")
         if current.get("immutable"):
             raise ValueError("release is immutable and lacks a required asset")
-        raw = run(
-            "gh",
-            "api",
-            "--hostname",
-            "github.com",
-            "--method",
-            "POST",
-            f"https://uploads.github.com/repos/{repo}/releases/{identity}/assets?name={quote(path.name, safe='')}",
-            "--header",
-            "Content-Type: application/octet-stream",
-            "--input",
-            str(path),
-        )
+        try:
+            raw = run(
+                "gh",
+                "api",
+                "--hostname",
+                "github.com",
+                "--method",
+                "POST",
+                f"https://uploads.github.com/repos/{repo}/releases/{identity}/assets?name={quote(path.name, safe='')}",
+                "--header",
+                "Content-Type: application/octet-stream",
+                "--input",
+                str(path),
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            # Another publisher can win after our snapshot, or a response can
+            # be lost. Reconcile bytes without retrying or replacing anything.
+            try:
+                current = release(repo, tag)
+                if (
+                    current["id"] == identity
+                    and current["draft"] == selected["draft"]
+                    and not current.get("immutable")
+                ):
+                    asset = assets(repo, identity).get(path.name)
+                    if asset is not None:
+                        if matches(asset, path):
+                            continue
+                        if equivalent_metadata(repo, asset, path):
+                            retained[path.name] = asset
+                            continue
+            except (
+                ValueError,
+                KeyError,
+                TypeError,
+                OSError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ):
+                # A failed read or invalid remote metadata proves nothing.
+                pass
+            raise
         if not matches(json.loads(raw), path):
             raise ValueError(
                 "GitHub upload digest mismatch; inspect the partial release"
