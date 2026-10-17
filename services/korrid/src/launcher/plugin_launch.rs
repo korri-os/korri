@@ -217,8 +217,14 @@ pub fn prepare(
                         "plugin launch.compose failed (details redacted because config.append is present)".into()
                     } else { failure.to_string() }
                 })?;
-            let output: PluginLaunchOutput = serde_json::from_str(&result)
-                .map_err(|e| format!("invalid compose result: {e}"))?;
+            let output: PluginLaunchOutput = serde_json::from_str(&result).map_err(|error| {
+                if modifier.config.append.is_some() {
+                    "invalid compose result (details redacted because config.append is present)"
+                        .into()
+                } else {
+                    format!("invalid compose result: {error}")
+                }
+            })?;
             validate_plan(&output)?;
             Ok(output)
         };
@@ -226,7 +232,7 @@ pub fn prepare(
             format!(
                 "modifier {}: {}",
                 modifier.modifier_id,
-                redact_append(&reason, &modifier.config)
+                launch_refusal(&reason)
             )
         })?;
     }
@@ -256,20 +262,9 @@ fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
     Ok(())
 }
 
-fn redact_append(reason: &str, config: &crate::config::modifiers::ModifierConfigAppend) -> String {
-    // Raw native text is opaque to korrid. Do not echo any of its words on
-    // refusals, even if the plugin includes one in its exception message.
-    let mut reason = reason.to_owned();
-    if let Some(append) = &config.append {
-        if !append.is_empty() {
-            reason = reason.replace(append, "[redacted]");
-        }
-        for word in append.split(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | '=')) {
-            if !word.is_empty() {
-                reason = reason.replace(word, "[redacted]");
-            }
-        }
-    }
+fn launch_refusal(reason: &str) -> String {
+    // Dynamic plugin exceptions/decoder messages are withheld above whenever
+    // append is present. Static host reasons contain no authored native text.
     reason
         .chars()
         .filter(|c| !c.is_control())

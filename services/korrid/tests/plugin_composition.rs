@@ -36,6 +36,7 @@ export function compose(input) {
  if (input.settings.requireDisplay && (input.display?.width !== 1240 || input.display?.height !== 1080)) throw new Error('missing logical display');
  if (input.settings.invalid) throw new Error('width must be a positive integer');
  if (input.settings.fail) throw new Error('compose refused');
+ if (input.settings.invalidOutput) return {...input.plan, [input.config.append.split(' ').join('')]: true};
  if (input.settings.invalidPlan) return {...input.plan, command: ''};
  if (input.config.append) throw new Error('append rejected: ' + input.config.append);
  return {...input.plan, command: input.files.program, args:['-c','printf wrapped > wrapped; exec "$@"','wrapper',input.plan.command,...input.plan.args]};
@@ -164,6 +165,10 @@ fn compose_refusals_missing_sources_files_and_invalid_plans_stop_before_all_effe
         (
             "{enabled: true, settings: {invalidPlan: true}}",
             "launch command must be non-empty",
+        ),
+        (
+            "{enabled: true, settings: {invalidOutput: true}, config: {append: 'n e v e r - p u b l i s h'}}",
+            "invalid compose result",
         ),
         (
             "{enabled: true, config: {append: '--secret=never-publish'}}",
