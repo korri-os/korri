@@ -9,9 +9,10 @@ override. Every layer held records keyed by runner or family
   and `families:`. It is the device layer, and it selects which modifiers apply
   to every launch. Enabling the Gamescope plugin alone does not turn it on, so a
   device can have the plugin installed but off.
-- The same `modifiers` map also appears in `systems.<id>`, in `games.<id>` in
-  `catalog/games.yaml`, and in the top-level `runners.<id>` record in
-  `device.yaml`, but not under `systems.<id>.runners` or `games.<id>.runners`.
+- The same `modifiers` map also appears in `systems.<id>`, in `library.<id>` in
+  `catalog/library.yaml`, and in the top-level `runners.<id>` record in
+  `device.yaml`, but not under `systems.<id>.runners` or `library.<id>.runners`.
+  Discovery-v2 replaced the games schema with library records.
 - Records are keyed by contribution ID, as runner records are, for example
   `'@korri:gamescope/gamescope'`.
 - A record holds `enabled` (on or off), `settings` (typed values named after
