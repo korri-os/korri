@@ -104,3 +104,30 @@ its approved callback. This slice adds no callback-output validation.
 `typeshare.toml` only teaches the generator how to print Serde's untagged
 scalar union. It is not a device configuration schema. Regenerate with
 `nix run .#korrid-check -- --types-only`.
+
+## Launch modifiers
+
+ADR 0004 adds a separate contribution-ID cascade: device `modifiers` →
+top-level runner `modifiers` → system `modifiers` → library item `modifiers`.
+Each scalar setting, `enabled`, and `config.append` is last-wins. An absent
+`enabled` means off. Runner subrecords cannot contain modifiers. Modifier
+records reject `config.prepend` and `config.replace`.
+
+`plugin-launch` evaluates the runner's `launch.prepare`, then each enabled
+modifier's `launch.compose`, from each package's own manifest-selected source
+snapshot. All callbacks finish before file, directory or exec effects. A
+refusal never falls back to the unmodified plan. `PluginComposeInput` is the
+Rust/Typeshare treaty. For now, several modifiers compose in device key order.
+
+`display` comes from Sway `get_outputs`: the focused active output's logical
+`rect`, or the sole active output. This includes rotation and scaling. Without
+that producer or an unambiguous output, the fact is absent; the modifier owns
+any refusal. No panel-size configuration was added.
+
+Modifier launches alone receive the compositor's published Wayland socket,
+bound into a private unit runtime directory. Other game units remain X11-only.
+Sway's client protocols can grant more access than X11, including screencopy
+and virtual-keyboard unless restricted. The control socket stays hidden.
+Plugin-launch failures use native systemd `STATUS=` and reach the existing
+unit-failure reason through `StatusText`. Logs redact all argument and environment
+values; compose exception details are withheld when raw append text is present.

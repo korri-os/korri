@@ -165,6 +165,12 @@ pub struct FamilyRecord {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct ModifierRecord {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RunnerRecord {
     pub id: String,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -293,6 +299,7 @@ pub struct Plugin {
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
+    modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
     groups: BTreeMap<String, GroupRecord>,
@@ -326,12 +333,14 @@ pub struct PluginRegistry {
     registered_system_ids: BTreeSet<String>,
     registered_family_ids: BTreeSet<String>,
     registered_runner_ids: BTreeSet<String>,
+    registered_modifier_ids: BTreeSet<String>,
     registered_transport_ids: BTreeSet<String>,
     registered_session_controls: BTreeMap<String, SessionControlRecord>,
     providers: BTreeMap<String, ProviderRecord>,
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
+    modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
     content_rules: BTreeMap<String, ContentRules>,
@@ -359,12 +368,14 @@ impl PluginRegistry {
         let mut registered_system_ids = BTreeSet::new();
         let mut registered_family_ids = BTreeSet::new();
         let mut registered_runner_ids = BTreeSet::new();
+        let mut registered_modifier_ids = BTreeSet::new();
         let mut registered_transport_ids = BTreeSet::new();
         let mut registered_session_controls = BTreeMap::new();
         let mut providers = BTreeMap::new();
         let mut systems = BTreeMap::new();
         let mut families = BTreeMap::new();
         let mut runners = BTreeMap::new();
+        let mut modifiers = BTreeMap::new();
         let mut transports = BTreeMap::new();
         let mut session_controls = BTreeMap::new();
         let mut content_rules: BTreeMap<String, ContentRules> = BTreeMap::new();
@@ -377,6 +388,8 @@ impl PluginRegistry {
             registered_system_ids.extend(plugin.systems.values().map(|record| record.id.clone()));
             registered_family_ids.extend(plugin.families.values().map(|record| record.id.clone()));
             registered_runner_ids.extend(plugin.runners.values().map(|record| record.id.clone()));
+            registered_modifier_ids
+                .extend(plugin.modifiers.values().map(|record| record.id.clone()));
             registered_transport_ids
                 .extend(plugin.transports.values().map(|record| record.id.clone()));
             for record in plugin.session_controls.values() {
@@ -412,6 +425,9 @@ impl PluginRegistry {
                     plugin_record_id(plugin_id, local_id),
                     record.clone(),
                 )?;
+            }
+            for record in plugin.modifiers.values() {
+                insert_unique(&mut modifiers, record.id.clone(), record.clone())?;
             }
             for (local_id, record) in &plugin.runners {
                 insert_unique(
@@ -490,12 +506,14 @@ impl PluginRegistry {
             registered_system_ids,
             registered_family_ids,
             registered_runner_ids,
+            registered_modifier_ids,
             registered_transport_ids,
             registered_session_controls,
             providers,
             systems,
             families,
             runners,
+            modifiers,
             transports,
             session_controls,
             content_rules,
@@ -583,6 +601,15 @@ impl PluginRegistry {
         Ok(runner)
     }
 
+    pub fn enabled_modifier(&self, id: &str) -> Result<(), PluginError> {
+        if !self.modifiers.contains_key(id) {
+            return Err(PluginError::Evaluation(format!(
+                "modifier {id} is not declared by an installed, enabled package"
+            )));
+        }
+        self.installed_package(id).map(|_| ())
+    }
+
     pub fn installed_package(
         &self,
         contribution: &str,
@@ -617,6 +644,10 @@ impl PluginRegistry {
 
     pub fn owns_registered_runner_id(&self, id: &str) -> bool {
         self.registered_runner_ids.contains(id)
+    }
+
+    pub fn owns_registered_modifier_id(&self, id: &str) -> bool {
+        self.registered_modifier_ids.contains(id)
     }
 
     pub fn owns_registered_family_id(&self, id: &str) -> bool {
@@ -758,6 +789,8 @@ struct PluginDeclaration {
     #[serde(default)]
     runners: BTreeMap<String, RunnerRecord>,
     #[serde(default)]
+    modifiers: BTreeMap<String, ModifierRecord>,
+    #[serde(default)]
     transports: BTreeMap<String, TransportRecord>,
     #[serde(default, rename = "controls")]
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -897,6 +930,20 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 reason: format!(
                     "family id {} is outside the publisher namespace {}",
                     family.id, declaration.namespace
+                ),
+            });
+        }
+    }
+
+    for (local_id, modifier) in &declaration.modifiers {
+        let expected = plugin_record_id(&id, local_id);
+        if !is_provider_segment(local_id) || modifier.id != expected {
+            return Err(PluginError::InvalidContribution {
+                kind: "modifier",
+                record_id: local_id.clone(),
+                reason: format!(
+                    "modifier id {} must be {expected} with a valid local key",
+                    modifier.id
                 ),
             });
         }
@@ -1127,6 +1174,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         systems: declaration.systems,
         families: declaration.families,
         runners: declaration.runners,
+        modifiers: declaration.modifiers,
         transports: declaration.transports,
         session_controls: declaration.session_controls,
         groups: declaration.groups,

@@ -594,3 +594,82 @@ mod tests {
         );
     }
 }
+
+/// The same producer used by korri-compositor-readiness.nix. rect is already
+/// logical/post-transform (including scale), unlike current_mode's panel size.
+pub(crate) fn launch_display() -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+    // Standalone/headless korrid may have no configured compositor or output.
+    // Leave the fact absent; a modifier that needs it must refuse, not guess.
+    let control = SwaymsgCompositorControl::new(
+        std::env::var_os("KORRID_SWAYMSG")?.into(),
+        std::env::var_os("KORRID_COMPOSITOR_CONTROL_SOCKET")?.into(),
+        Duration::from_secs(1),
+    )?;
+    display_from_outputs(&control.run(&["-r", "-t", "get_outputs"]).ok()?)
+}
+
+fn display_from_outputs(json: &str) -> Option<crate::launcher::plugin_launch::PluginDisplay> {
+    #[derive(Deserialize)]
+    struct Output {
+        active: bool,
+        #[serde(default)]
+        focused: bool,
+        rect: Rect,
+    }
+    #[derive(Deserialize)]
+    struct Rect {
+        width: u32,
+        height: u32,
+    }
+    let outputs: Vec<Output> = serde_json::from_str(json).ok()?;
+    let active: Vec<_> = outputs.into_iter().filter(|output| output.active).collect();
+    let output = if active.len() == 1 {
+        &active[0]
+    } else {
+        let focused: Vec<_> = active.iter().filter(|v| v.focused).collect();
+        if focused.len() != 1 {
+            return None;
+        }
+        focused[0]
+    };
+    (output.rect.width > 0 && output.rect.height > 0).then_some(
+        crate::launcher::plugin_launch::PluginDisplay {
+            width: output.rect.width,
+            height: output.rect.height,
+        },
+    )
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+    #[test]
+    fn display_uses_logical_post_transform_geometry_not_panel_mode() {
+        let output = r#"[{"active":true,"current_mode":{"width":1080,"height":1240},"transform":"90","rect":{"x":0,"y":0,"width":1240,"height":1080}}]"#;
+        assert_eq!(
+            display_from_outputs(output),
+            Some(crate::launcher::plugin_launch::PluginDisplay {
+                width: 1240,
+                height: 1080
+            })
+        );
+        assert!(display_from_outputs("[]").is_none());
+        assert!(display_from_outputs("bad JSON").is_none());
+        assert!(
+            display_from_outputs(r#"[{"active":true,"rect":{"width":0,"height":1080}}]"#).is_none()
+        );
+        assert!(
+            display_from_outputs(r#"[{"active":false,"rect":{"width":1240,"height":1080}}]"#)
+                .is_none()
+        );
+    }
+    #[test]
+    fn display_never_guesses_between_active_outputs() {
+        let outputs = r#"[{"active":true,"focused":false,"rect":{"width":1920,"height":1080}},{"active":true,"focused":true,"rect":{"width":1240,"height":1080}}]"#;
+        assert_eq!(display_from_outputs(outputs).unwrap().width, 1240);
+        assert!(
+            display_from_outputs(&outputs.replace("\"focused\":true", "\"focused\":false"))
+                .is_none()
+        );
+    }
+}

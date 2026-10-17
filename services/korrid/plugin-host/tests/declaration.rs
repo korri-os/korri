@@ -89,3 +89,13 @@ fn empty_service_packages_remain_valid_for_the_game_only_cutover() {
             .is_empty()
     );
 }
+
+#[test]
+fn modifier_data_is_retained_without_adding_effect_authority() {
+    let declaration = Declaration::evaluate("@example", "export const name='wrapper'; export const modifiers={main:{id:'@example:wrapper/main'}}; export const handlers={'launch.compose': input => input.plan};").unwrap();
+    assert_eq!(
+        declaration.modifiers.as_ref().unwrap()["main"]["id"],
+        "@example:wrapper/main"
+    );
+    assert!(declaration.services.is_empty());
+}

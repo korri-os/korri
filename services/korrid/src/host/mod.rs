@@ -1,4 +1,4 @@
-mod compositor_focus;
+pub(crate) mod compositor_focus;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
 mod config;

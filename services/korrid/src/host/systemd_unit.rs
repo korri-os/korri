@@ -347,6 +347,7 @@ pub struct SystemdLaunchUnitBackend {
     stream_private_state_root: PathBuf,
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
+    compositor_wayland_socket: Option<PathBuf>,
     helper_timeout: Duration,
 }
 
@@ -730,6 +731,7 @@ impl SystemdLaunchUnitBackend {
             stream_private_state_root,
             compositor_control_directory,
             certificate_control_directory,
+            compositor_wayland_socket: None,
             helper_timeout,
         })
     }
@@ -787,8 +789,17 @@ impl SystemdLaunchUnitBackend {
             stream_private_state_root,
             compositor_control_directory,
             certificate_control_directory,
+            compositor_wayland_socket: None,
             helper_timeout: DEFAULT_HELPER_TIMEOUT,
         })
+        .with_compositor_wayland_socket(
+            std::env::var_os("KORRID_COMPOSITOR_WAYLAND_SOCKET").map(PathBuf::from),
+        )
+    }
+
+    pub(super) fn with_compositor_wayland_socket(mut self, socket: Option<PathBuf>) -> Self {
+        self.compositor_wayland_socket = socket;
+        self
     }
 
     fn validate(&self) -> Result<(), LaunchUnitError> {
@@ -1035,6 +1046,32 @@ impl SystemdLaunchUnitBackend {
                 self.runtime_uid
             ));
         }
+        let modifier_runtime = if crate::launcher::plugin_launch::has_modifiers(configured_command)
+        {
+            let socket = self
+                .compositor_wayland_socket
+                .as_ref()
+                .filter(|path| valid_protected_path(path))
+                .ok_or_else(|| {
+                    LaunchUnitError::new(
+                        LaunchUnitErrorKind::InvalidConfiguration,
+                        "launch modifiers require the published compositor Wayland socket",
+                    )
+                })?;
+            let runtime = format!("korri-game-{launch_id}");
+            // A Wayland client of Sway can reach protocols unavailable to X11
+            // clients (for example screencopy and virtual-keyboard, unless Sway
+            // restricts them). Limit this access to resolved modifier launches.
+            // Bind only korri-publish-wayland-socket's single published socket;
+            // all control sockets and the rest of /run/user remain inaccessible.
+            read_only_binds.push_str(&format!(
+                " {}:/run/{runtime}/wayland-parent",
+                socket.display()
+            ));
+            Some(runtime)
+        } else {
+            None
+        };
         let mut arguments = vec![
             "--system".into(),
             "--no-ask-password".into(),
@@ -1046,6 +1083,8 @@ impl SystemdLaunchUnitBackend {
             format!("--uid={}", self.runtime_uid),
             format!("--gid={}", self.runtime_gid),
             "--property=KillMode=control-group".into(),
+            // STATUS= retains a plugin-launch refusal in the existing unit failure path.
+            "--property=NotifyAccess=main".into(),
             "--property=NoNewPrivileges=yes".into(),
             "--property=CapabilityBoundingSet=".into(),
             "--property=AmbientCapabilities=".into(),
@@ -1073,6 +1112,14 @@ impl SystemdLaunchUnitBackend {
             ),
             "--property=RestrictSUIDSGID=yes".into(),
         ];
+        if let Some(runtime) = modifier_runtime {
+            arguments.extend([
+                format!("--property=RuntimeDirectory={runtime}"),
+                "--property=RuntimeDirectoryMode=0700".into(),
+                format!("--setenv=XDG_RUNTIME_DIR=/run/{runtime}"),
+                "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
+            ]);
+        }
         arguments.extend(
             environment
                 .iter()
@@ -1125,6 +1172,7 @@ impl SystemdLaunchUnitBackend {
             "--property=FreezerState".into(),
             "--property=ExecMainCode".into(),
             "--property=ExecMainStatus".into(),
+            "--property=StatusText".into(),
         ])
     }
 
@@ -1352,6 +1400,13 @@ impl SystemdLaunchUnitBackend {
                         format!("game unit failed with signal {status}")
                     }
                     _ => format!("game unit failed: ExecMainCode={code}, ExecMainStatus={status}"),
+                };
+                let message = match values
+                    .get("StatusText")
+                    .filter(|text| text.starts_with("plugin-launch: "))
+                {
+                    Some(reason) => format!("{message}: {reason}"),
+                    None => message,
                 };
                 Err(LaunchUnitError::new(
                     LaunchUnitErrorKind::UnitFailed,

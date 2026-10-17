@@ -34,19 +34,24 @@ fn modifiers_refuse_runner_subrecords_and_unsafe_config_parts() {
         .is_err());
     }
     let record = format!("{{'{MODIFIER}': {{enabled: true}}}}");
-    assert!(decode_config_documents(
-        &format!("systems:\n  gba:\n    runners:\n      core:\n        modifiers: {record}"),
-        "{}"
-    )
-    .is_err());
-    assert!(decode_config_documents(
-        "{}",
-        &format!(
-            "{}    runners: {{core: {{modifiers: {record}}}}}\n",
-            readable::gba_library()
-        )
-    )
-    .is_err());
+    for (device, library) in [
+        (
+            format!("systems:\n  gba:\n    runners:\n      core:\n        modifiers: {record}"),
+            "{}".into(),
+        ),
+        (
+            "{}".into(),
+            format!(
+                "{}    runners: {{core: {{modifiers: {record}}}}}\n",
+                readable::gba_library()
+            ),
+        ),
+    ] {
+        let error = decode_config_documents(&device, &library)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown field `modifiers`"), "{error}");
+    }
 }
 
 #[test]

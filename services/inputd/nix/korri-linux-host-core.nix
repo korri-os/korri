@@ -529,6 +529,10 @@ in
       allowedTCPPorts = [ cfg.apiPort ];
     });
 
+    # Existing published socket, not a second compositor configuration.
+    systemd.services.korrid.environment.KORRID_COMPOSITOR_WAYLAND_SOCKET =
+      "${runtimeDir}/${waylandDisplay}";
+
     systemd.services.korri-compositor = {
       description = "Korri Sway compositor";
       wantedBy = [ "multi-user.target" ];

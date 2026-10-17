@@ -35,6 +35,9 @@ use rquickjs::{function::This, Context, Filter, Function, Object, Runtime, Type,
 /// A runner that korrid must start needs this handler and nothing else.
 pub const LAUNCH_PREPARE: &str = "launch.prepare";
 
+/// Compose a modifier around the preceding plan, before any launch effects.
+pub const LAUNCH_COMPOSE: &str = "launch.compose";
+
 /// The runner's own settings schema, valid for the build that answered.
 pub const SETTINGS_DESCRIBE: &str = "settings.describe";
 
@@ -184,8 +187,8 @@ fn evaluate_module(
             let (name, value) = property.map_err(|error| error.to_string())?;
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "families"
-                | "runners" | "transports" | "controls" | "groups" | "games" | "services"
-                | "config" => {
+                | "runners" | "modifiers" | "transports" | "controls" | "groups" | "games"
+                | "services" | "config" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
                 // Handlers are callable operation code, never declaration data.
@@ -242,9 +245,21 @@ fn evaluate_module(
             let argument = ctx
                 .json_parse(invocation.input)
                 .map_err(|error| error.to_string())?;
-            let value: Value = handler
-                .call((argument,))
-                .map_err(|error| format!("plugin {operation} failed: {error}"))?;
+            let value: Value = handler.call((argument,)).map_err(|error| {
+                // QuickJS's generic exception text drops the plugin's reason.
+                // Read only Error.message, not a plugin-defined toString hook.
+                let reason = if error.is_exception() {
+                    ctx.catch()
+                        .as_object()
+                        .and_then(|object| object.get::<_, String>("message").ok())
+                } else {
+                    None
+                };
+                format!(
+                    "plugin {operation} failed: {}",
+                    reason.unwrap_or_else(|| error.to_string())
+                )
+            })?;
             json_data_from_js(
                 &value,
                 "$.result",

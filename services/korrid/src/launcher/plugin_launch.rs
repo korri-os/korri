@@ -70,6 +70,51 @@ pub struct PluginLaunchOutput {
     pub files: Vec<ProvisionedFile>,
 }
 
+/// The compositor's logical output size, after transform and scaling.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PluginDisplay {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// ADR 0002 and the first launch.compose treaty. Modifiers own their settings.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginComposeInput {
+    pub modifier_id: String,
+    pub runner_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family_id: Option<String>,
+    pub plan: PluginLaunchOutput,
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    pub config: crate::config::modifiers::ModifierConfigAppend,
+    pub files: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<PluginDisplay>,
+}
+
+/// Private CLI handoff, not a plugin declaration or persisted configuration.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolvedLaunchModifier {
+    pub modifier_id: String,
+    pub manifest: std::path::PathBuf,
+    pub entry: String,
+    pub settings: HashMap<String, crate::config::cascade::LaunchSettingValue>,
+    pub config: crate::config::modifiers::ModifierConfigAppend,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LaunchComposition {
+    pub modifiers: Vec<ResolvedLaunchModifier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<PluginDisplay>,
+}
+
 pub fn evaluate(source: &str, input: &PluginLaunchInput) -> Result<PluginLaunchOutput, String> {
     evaluate_snapshot(
         &crate::script::source::SourceSnapshot::plugin(source)?,
@@ -95,25 +140,28 @@ pub fn evaluate_snapshot(
 struct LaunchManifest {
     entry: String,
     sources: Vec<String>,
+    #[serde(default)]
+    files: HashMap<String, String>,
 }
 
-/// CLI-only entrypoint. Refuse root even when invoked outside the unit.
-pub fn execute(source: &Path, input: &str) -> Result<(), String> {
-    if unsafe { libc::geteuid() } == 0 {
-        return Err("plugin launch effects require an unprivileged runtime user".into());
-    }
-    let input: PluginLaunchInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
-    let package = source
+fn package_snapshot(
+    manifest: &Path,
+    entry: &str,
+) -> Result<(crate::script::source::SourceSnapshot, LaunchManifest), String> {
+    let package = manifest
         .parent()
-        .ok_or("plugin source has no package directory")?;
-    // The packaged manifest is the only source authority. There is no
-    // single-file fallback: an unpackaged path cannot name its module graph.
-    let manifest = fs::read(package.join("manifest.json")).map_err(|e| e.to_string())?;
-    if manifest.len() > 512 * 1024 {
+        .ok_or("plugin manifest has no package directory")?;
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    fs::File::open(manifest)
+        .and_then(|file| file.take(512 * 1024 + 1).read_to_end(&mut bytes))
+        .map_err(|e| format!("cannot read plugin manifest {}: {e}", manifest.display()))?;
+    if bytes.len() > 512 * 1024 {
         return Err("plugin manifest exceeds 512 KiB".into());
     }
-    let manifest: LaunchManifest = serde_json::from_slice(&manifest).map_err(|e| e.to_string())?;
-    if source.file_name().and_then(|name| name.to_str()) != Some(manifest.entry.as_str()) {
+    let manifest: LaunchManifest =
+        serde_json::from_slice(&bytes).map_err(|e| format!("invalid plugin manifest: {e}"))?;
+    if entry != manifest.entry {
         return Err("launch source is not the packaged plugin entry".into());
     }
     let snapshot = crate::script::source::SourceSnapshot::package_plugin(
@@ -121,7 +169,143 @@ pub fn execute(source: &Path, input: &str) -> Result<(), String> {
         &manifest.entry,
         &manifest.sources,
     )?;
-    let output = evaluate_snapshot(&snapshot, &input)?;
+    Ok((snapshot, manifest))
+}
+
+/// All preparation and composition must finish before any declared effect.
+pub fn prepare(
+    source: &Path,
+    input: &PluginLaunchInput,
+    composition: &LaunchComposition,
+) -> Result<PluginLaunchOutput, String> {
+    let package = source
+        .parent()
+        .ok_or("plugin source has no package directory")?;
+    let entry = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("invalid plugin entry")?;
+    let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
+    let mut plan = evaluate_snapshot(&snapshot, input)?;
+    validate_plan(&plan)?;
+    for modifier in &composition.modifiers {
+        let compose = || -> Result<PluginLaunchOutput, String> {
+            let (snapshot, manifest) = package_snapshot(&modifier.manifest, &modifier.entry)?;
+            for (key, path) in &manifest.files {
+                if !Path::new(path).is_absolute() || !Path::new(path).exists() {
+                    return Err(format!(
+                        "modifier file {key} is missing or not absolute: {path}"
+                    ));
+                }
+            }
+            let request = PluginComposeInput {
+                modifier_id: modifier.modifier_id.clone(),
+                runner_id: input.runner_id.clone(),
+                family_id: input.family_id.clone(),
+                plan: plan.clone(),
+                settings: modifier.settings.clone(),
+                config: modifier.config.clone(),
+                files: manifest.files,
+                display: composition.display.clone(),
+            };
+            let result = crate::script::call_plugin_operation_snapshot(&snapshot, crate::script::LAUNCH_COMPOSE, &serde_json::to_string(&request).map_err(|e| e.to_string())?)
+                .map_err(|failure| {
+                    // Native text may contain credentials, and an exception can
+                    // echo it after quote removal or other transformations.
+                    // Only the operation failure class is safe in that case.
+                    if modifier.config.append.is_some() {
+                        "plugin launch.compose failed (details redacted because config.append is present)".into()
+                    } else { failure.to_string() }
+                })?;
+            let output: PluginLaunchOutput = serde_json::from_str(&result)
+                .map_err(|e| format!("invalid compose result: {e}"))?;
+            validate_plan(&output)?;
+            Ok(output)
+        };
+        plan = compose().map_err(|reason| {
+            format!(
+                "modifier {}: {}",
+                modifier.modifier_id,
+                redact_append(&reason, &modifier.config)
+            )
+        })?;
+    }
+    Ok(plan)
+}
+
+fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
+    if plan.command.is_empty() || plan.command.contains('\0') {
+        return Err("launch command must be non-empty and contain no NUL".into());
+    }
+    if plan.args.iter().any(|v| v.contains('\0'))
+        || plan.cwd.as_ref().is_some_and(|v| v.contains('\0'))
+    {
+        return Err("launch arguments and cwd must contain no NUL".into());
+    }
+    if plan
+        .env
+        .iter()
+        .any(|(key, value)| key.is_empty() || key.contains(['=', '\0']) || value.contains('\0'))
+        || plan
+            .env_unset
+            .iter()
+            .any(|key| key.is_empty() || key.contains(['=', '\0']))
+    {
+        return Err("launch environment contains an invalid name or NUL".into());
+    }
+    Ok(())
+}
+
+fn redact_append(reason: &str, config: &crate::config::modifiers::ModifierConfigAppend) -> String {
+    // Raw native text is opaque to korrid. Do not echo any of its words on
+    // refusals, even if the plugin includes one in its exception message.
+    let mut reason = reason.to_owned();
+    if let Some(append) = &config.append {
+        if !append.is_empty() {
+            reason = reason.replace(append, "[redacted]");
+        }
+        for word in append.split(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | '=')) {
+            if !word.is_empty() {
+                reason = reason.replace(word, "[redacted]");
+            }
+        }
+    }
+    reason
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(1024)
+        .collect()
+}
+
+/// Used by the host before the unit starts. The handoff is authored only by korrid.
+pub(crate) fn has_modifiers(command: &[String]) -> bool {
+    command.get(1).is_some_and(|v| v == "plugin-launch")
+        && command
+            .get(4)
+            .and_then(|v| serde_json::from_str::<LaunchComposition>(v).ok())
+            .is_some_and(|v| !v.modifiers.is_empty())
+}
+
+/// CLI-only entrypoint. Refuse root even when invoked outside the unit.
+pub fn execute(source: &Path, input: &str, composition: &str) -> Result<(), String> {
+    if unsafe { libc::geteuid() } == 0 {
+        return Err("plugin launch effects require an unprivileged runtime user".into());
+    }
+    let input: PluginLaunchInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
+    let composition: LaunchComposition =
+        serde_json::from_str(composition).map_err(|e| e.to_string())?;
+    let output = prepare(source, &input, &composition)?;
+    // Arguments can contain raw native credentials, including positional ones.
+    // Log the final shape without trusting plugins to identify secret values.
+    eprintln!(
+        "korrid plugin-launch plan: {}",
+        serde_json::json!({
+            "command": output.command,
+            "args": output.args.iter().map(|_| "[redacted]").collect::<Vec<_>>(),
+            "env": output.env.keys().map(|key| (key, "[redacted]")).collect::<std::collections::BTreeMap<_,_>>(),
+            "envUnset": output.env_unset, "cwd": output.cwd,
+        })
+    );
     for directory in &output.directories {
         fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     }
@@ -165,7 +349,41 @@ pub fn execute(source: &Path, input: &str) -> Result<(), String> {
     if unsafe { libc::getpid() } == 1 {
         std::process::exit(run_as_namespace_init(command)?);
     }
-    Err(command.exec().to_string())
+    Err(format!("cannot exec composed launch: {}", command.exec()))
+}
+
+/// Native systemd status survives this process's early exit. It is then read
+/// by the same UnitFailed path as ExecMainStatus, without reading the journal.
+pub fn notify_failure(reason: &str) {
+    use std::os::{
+        linux::net::SocketAddrExt,
+        unix::{
+            ffi::OsStrExt,
+            net::{SocketAddr, UnixDatagram},
+        },
+    };
+    let Some(socket) = std::env::var_os("NOTIFY_SOCKET") else {
+        return;
+    };
+    let send = || -> std::io::Result<()> {
+        let socket = socket.as_bytes();
+        let address = match socket.strip_prefix(b"@") {
+            Some(name) => SocketAddr::from_abstract_name(name)?,
+            None => SocketAddr::from_pathname(std::ffi::OsStr::from_bytes(socket))?,
+        };
+        let datagram = UnixDatagram::unbound()?;
+        datagram.connect_addr(&address)?;
+        let reason: String = reason
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(1024)
+            .collect();
+        datagram.send(format!("STATUS=plugin-launch: {reason}").as_bytes())?;
+        Ok(())
+    };
+    if let Err(error) = send() {
+        eprintln!("korrid plugin-launch: cannot report failure status: {error}");
+    }
 }
 
 /// Run the game as an ordinary process and wait for it, reaping orphans.

@@ -1,5 +1,7 @@
 use super::{
-    plugin_launch::{PluginLaunchInput, PluginLaunchOverrides},
+    plugin_launch::{
+        LaunchComposition, PluginLaunchInput, PluginLaunchOverrides, ResolvedLaunchModifier,
+    },
     LaunchError,
 };
 use crate::{
@@ -105,6 +107,28 @@ pub fn launch_route(
     {
         return Err(error(refusal));
     }
+    let mut composition = LaunchComposition::default();
+    for (id, record) in crate::config::modifiers::resolve(snapshot, route).iter() {
+        if record.enabled != Some(true) {
+            continue;
+        }
+        registry
+            .enabled_modifier(id)
+            .map_err(|cause| error(cause.to_string()))?;
+        let modifier_package = registry
+            .installed_package(id)
+            .map_err(|cause| error(cause.to_string()))?;
+        composition.modifiers.push(ResolvedLaunchModifier {
+            modifier_id: id.clone(),
+            manifest: modifier_package.package.join("manifest.json"),
+            entry: modifier_package.entry.clone(),
+            settings: record.settings.clone(),
+            config: record.config.clone().unwrap_or_default(),
+        });
+    }
+    if !composition.modifiers.is_empty() {
+        composition.display = crate::host::compositor_focus::launch_display();
+    }
     Ok(LinuxLaunchSpec {
         warnings,
         command: vec![
@@ -115,6 +139,8 @@ pub fn launch_route(
             "plugin-launch".into(),
             package.package.join(&package.entry).display().to_string(),
             serde_json::to_string(&input).map_err(|error_value| error(error_value.to_string()))?,
+            serde_json::to_string(&composition)
+                .map_err(|error_value| error(error_value.to_string()))?,
         ],
     })
 }

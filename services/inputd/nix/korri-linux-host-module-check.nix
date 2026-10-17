@@ -163,6 +163,7 @@ assert builtins.elem "korri-compositor.service" korrid.requires;
 assert builtins.elem "korri-compositor.service" korrid.after;
 assert cfg.services.korridLinuxDevice.compositorControlDirectory == "/run/korri-compositor";
 assert korrid.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-compositor";
+assert korrid.environment.KORRID_COMPOSITOR_WAYLAND_SOCKET == "/run/user/1000/korri-wayland";
 assert korrid.environment.KORRID_RELAYS == ''["wss://relay.example.com"]'';
 assert korrid.environment.HOSTNAME == "consumer";
 assert builtins.elem "/var/lib/korrid" korrid.serviceConfig.ReadWritePaths;

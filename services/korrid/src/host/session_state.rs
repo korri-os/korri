@@ -3321,6 +3321,64 @@ mod tests {
                 "game launch exposed {withheld}: {launch:?}"
             );
         }
+        let command = vec![
+            "/bin/korrid".into(),
+            "plugin-launch".into(),
+            "/pkg/plugin.ts".into(),
+            "{}".into(),
+            serde_json::to_string(&crate::launcher::plugin_launch::LaunchComposition {
+                modifiers: vec![crate::launcher::plugin_launch::ResolvedLaunchModifier {
+                    modifier_id: "@test:wrapper/main".into(),
+                    manifest: "/pkg/manifest.json".into(),
+                    entry: "plugin.ts".into(),
+                    settings: Default::default(),
+                    config: Default::default(),
+                }],
+                display: None,
+            })
+            .unwrap(),
+        ];
+        assert!(backend
+            .launch_arguments(id, &command, &BTreeMap::new())
+            .is_err());
+        let with_modifiers = backend
+            .clone()
+            .with_compositor_wayland_socket(Some("/run/user/1001/korri-wayland".into()))
+            .launch_arguments(
+                id,
+                &command,
+                &BTreeMap::from([
+                    (
+                        "SWAYSOCK".into(),
+                        "/run/korri-compositor/sway-ipc.sock".into(),
+                    ),
+                    ("XDG_RUNTIME_DIR".into(), "/run/user/1001".into()),
+                    ("WAYLAND_DISPLAY".into(), "untrusted-other-socket".into()),
+                ]),
+            )
+            .unwrap();
+        for expected in [
+            format!("--property=RuntimeDirectory=korri-game-{id}"),
+            "--property=RuntimeDirectoryMode=0700".into(),
+            format!("--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/user/1001/korri-wayland:/run/korri-game-{id}/wayland-parent"),
+            format!("--setenv=XDG_RUNTIME_DIR=/run/korri-game-{id}"),
+            "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
+        ] { assert!(with_modifiers.contains(&expected), "{with_modifiers:?}"); }
+        assert!(!with_modifiers
+            .iter()
+            .any(|arg| arg.starts_with("--setenv=SWAYSOCK=")
+                || arg.contains("untrusted-other-socket")));
+        assert_eq!(
+            with_modifiers
+                .iter()
+                .find(|arg| arg.starts_with("--property=InaccessiblePaths=")),
+            launch
+                .iter()
+                .find(|arg| arg.starts_with("--property=InaccessiblePaths="))
+        );
+        assert!(!launch
+            .iter()
+            .any(|arg| arg.starts_with("--property=RuntimeDirectory=")));
         assert_eq!(
             launch[launch.len() - 3..],
             ["--", "/games/retroarch", "rom.gba"]
@@ -3352,8 +3410,20 @@ mod tests {
                 "--property=FreezerState",
                 "--property=ExecMainCode",
                 "--property=ExecMainStatus",
+                "--property=StatusText",
             ]
         );
+    }
+
+    #[test]
+    fn systemd_failed_compose_exposes_the_plugin_refusal_as_unit_failure() {
+        let error = SystemdLaunchUnitBackend::parse_unit_state(&BTreeMap::from([
+            ("ActiveState", "failed"), ("ExecMainCode", "1"), ("ExecMainStatus", "1"),
+            ("StatusText", "plugin-launch: modifier @test:wrapper/main: plugin launch.compose failed: width must be a positive integer"),
+        ])).unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
+        assert!(error.message.contains("@test:wrapper/main"));
+        assert!(error.message.contains("width must be a positive integer"));
     }
 
     #[test]
@@ -3486,7 +3556,7 @@ mod tests {
         let id = "0123456789abcdef0123456789abcdef";
         let unit = format!("korri-game-{id}.service");
         let show = format!(
-            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus\n"
+            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText\n"
         );
 
         // Running: no thaw is issued.
@@ -3560,7 +3630,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(log).unwrap(),
             format!(
-                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus\n"
+                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText\n"
             )
         );
     }
