@@ -146,10 +146,35 @@ wait_for_steam_ready() {
   check_login
   fail 126 'Steam failed: readiness timeout'
 }
+retry_appid() {
+  (( reforwards < 3 )) || fail 126 'Steam failed: restart re-forward limit (3) exceeded'
+  reforwards=$((reforwards + 1))
+  say "restart: re-forwarding AppID ($reforwards/3)"
+  wait_for_steam_ready
+}
 forward_appid() {
-  say "launch: forwarding AppID $appid"
-  timeout 15 @fhs@/bin/steam-arm64-fhs "${flags[@]}" -applaunch "$appid" \
-    >>"$STEAM_HOME/logs/session_log.txt" 2>&1 || fail 126 'Steam failed: AppID forward failed or timed out'
+  local forward_generation status
+  while true; do
+    forward_generation="$generation"
+    status=0
+    say "launch: forwarding AppID $appid"
+    timeout 15 @fhs@/bin/steam-arm64-fhs "${flags[@]}" -applaunch "$appid" \
+      >>"$STEAM_HOME/logs/session_log.txt" 2>&1 || status=$?
+    # A forwarding stub can itself return 42, or report another IPC failure
+    # after the managed client exited 42. Both need the same bounded recovery
+    # as a restart first noticed by the observation loop.
+    check_client
+    if (( status == 0 && generation == forward_generation )); then
+      launch_generation="$generation"
+      launch_deadline=$((SECONDS + 180))
+      return 0
+    fi
+    if (( status == 42 || generation != forward_generation )); then
+      retry_appid
+    else
+      fail 126 'Steam failed: AppID forward failed or timed out'
+    fi
+  done
 }
 app_process_present() {
   local environ
@@ -189,10 +214,8 @@ wait_for_steam_ready
 # Login can first happen during the warm gate. Apply userdata seeds only on
 # the next launch: Steam is now running, and its files must not be edited.
 mark_logs
-forward_appid
-launch_deadline=$((SECONDS + 180))
-launch_generation="$generation"
 reforwards=0
+forward_appid
 saw_added=0
 saw_removed=0
 say "watch: waiting for AppID $appid"
@@ -212,13 +235,8 @@ while true; do
     exit 0
   fi
   if (( saw_added == 0 && launch_generation != generation )); then
-    (( reforwards < 3 )) || fail 126 'Steam failed: restart re-forward limit (3) exceeded'
-    reforwards=$((reforwards + 1))
-    say "restart: re-forwarding AppID ($reforwards/3)"
-    wait_for_steam_ready
+    retry_appid
     forward_appid
-    launch_generation="$generation"
-    launch_deadline=$((SECONDS + 180))
   fi
   if (( saw_added == 0 && SECONDS >= launch_deadline )); then
     fail 124 "no game process for AppID $appid within 180 s"

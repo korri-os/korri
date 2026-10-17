@@ -24,6 +24,19 @@ if "-applaunch" in sys.argv:
     count.write_text(str(forwards))
     if behavior == "forward-error":
         sys.exit(1)
+    if behavior in ("forward-restart", "forward-client-restart", "forward-restart-always") and (
+            forwards == 1 or behavior == "forward-restart-always"):
+        restart = home / "restart"
+        restart.touch()
+        if behavior == "forward-client-restart":
+            # The forwarding error is not 42, but the managed client has
+            # independently exited 42 before this invocation returns.
+            deadline = time.monotonic() + 5
+            while restart.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            time.sleep(0.1)
+            sys.exit(1)
+        sys.exit(42)
     if behavior == "update" and not (home / "update-complete").exists():
         sys.exit(70)
     (home / ("restart" if behavior == "restart" and forwards == 1 else "launch")).touch()

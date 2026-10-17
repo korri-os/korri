@@ -58,6 +58,26 @@ class SteamSessionTests(unittest.TestCase):
         self.assertEqual((home / "forwards").read_text(), "2")
         self.assertTrue((home / "shutdown").exists())
 
+    def test_forward_exit_42_restarts_and_reforwards_appid(self):
+        result, home, _ = self.run_session("forward-restart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((home / "forwards").read_text(), "2")
+        self.assertIn("re-forwarding AppID (1/3)", result.stderr)
+        self.assertTrue((home / "shutdown").exists())
+
+    def test_forward_error_recovers_when_the_client_also_restarted(self):
+        result, home, _ = self.run_session("forward-client-restart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((home / "forwards").read_text(), "2")
+        self.assertTrue((home / "shutdown").exists())
+
+    def test_forward_restarts_stop_after_three_reforwards(self):
+        result, home, _ = self.run_session("forward-restart-always")
+        self.assertEqual(result.returncode, 126, result.stderr)
+        self.assertEqual((home / "forwards").read_text(), "4")
+        self.assertIn("restart re-forward limit (3) exceeded", result.stderr)
+        self.assertTrue((home / "shutdown").exists())
+
     def test_update_blocks_forward_even_when_a_ready_line_is_present(self):
         result, home, _ = self.run_session("update")
         self.assertEqual(result.returncode, 0, result.stderr)
