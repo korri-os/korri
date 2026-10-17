@@ -93,7 +93,7 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root, &snapshot, &registry, &route, None).unwrap();
+    let spec = launch_route(root, &snapshot, &registry, &route, None, None).unwrap();
     let input = serde_json::from_str(&spec.command[3]).unwrap();
     let composition = serde_json::from_str(&spec.command[4]).unwrap();
     (spec.command, input, composition)
@@ -268,7 +268,7 @@ fn enabled_modifiers_require_their_exact_installed_contribution() {
             Some("@korri:mgba/mgba"),
         )
         .unwrap();
-        let result = launch_route(root.path(), &snapshot, &registry, &route, None);
+        let result = launch_route(root.path(), &snapshot, &registry, &route, None, None);
         assert_eq!(result.is_ok(), success, "{id}: {result:?}");
         if let Err(error) = result {
             assert!(error.to_string().contains(id));
@@ -305,7 +305,7 @@ fn multiple_modifiers_compose_the_previous_plan_in_device_key_order() {
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &route, None).unwrap();
+    let spec = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
     let input = serde_json::from_str(&spec.command[3]).unwrap();
     let composition: LaunchComposition = serde_json::from_str(&spec.command[4]).unwrap();
     assert_eq!(

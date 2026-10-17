@@ -79,7 +79,7 @@ fn launch(
         Some(RUNNER_ID),
     )
     .unwrap();
-    launch_route(root, &snapshot, &registry, &route, None)
+    launch_route(root, &snapshot, &registry, &route, None, None)
 }
 
 #[test]
@@ -182,6 +182,7 @@ fn the_person_sees_the_refusal_through_the_existing_route_error() {
             runner_id: RUNNER_ID.into(),
             overrides: None,
         },
+        None,
     )
     .expect_err("the launch must fail");
     assert_eq!(failure.code, "LocalRouteUnavailable");

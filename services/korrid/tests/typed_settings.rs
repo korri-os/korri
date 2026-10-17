@@ -275,6 +275,7 @@ fn an_unsupported_setting_is_reported_once_and_never_reaches_the_native_config()
         &registry,
         &route,
         Some(overrides.clone()),
+        None,
     )
     .unwrap();
     // korrid hands the runner exactly what the person authored, and reports

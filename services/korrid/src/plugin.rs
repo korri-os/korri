@@ -333,7 +333,6 @@ pub struct PluginRegistry {
     registered_system_ids: BTreeSet<String>,
     registered_family_ids: BTreeSet<String>,
     registered_runner_ids: BTreeSet<String>,
-    registered_modifier_ids: BTreeSet<String>,
     registered_transport_ids: BTreeSet<String>,
     registered_session_controls: BTreeMap<String, SessionControlRecord>,
     providers: BTreeMap<String, ProviderRecord>,
@@ -368,7 +367,6 @@ impl PluginRegistry {
         let mut registered_system_ids = BTreeSet::new();
         let mut registered_family_ids = BTreeSet::new();
         let mut registered_runner_ids = BTreeSet::new();
-        let mut registered_modifier_ids = BTreeSet::new();
         let mut registered_transport_ids = BTreeSet::new();
         let mut registered_session_controls = BTreeMap::new();
         let mut providers = BTreeMap::new();
@@ -388,8 +386,6 @@ impl PluginRegistry {
             registered_system_ids.extend(plugin.systems.values().map(|record| record.id.clone()));
             registered_family_ids.extend(plugin.families.values().map(|record| record.id.clone()));
             registered_runner_ids.extend(plugin.runners.values().map(|record| record.id.clone()));
-            registered_modifier_ids
-                .extend(plugin.modifiers.values().map(|record| record.id.clone()));
             registered_transport_ids
                 .extend(plugin.transports.values().map(|record| record.id.clone()));
             for record in plugin.session_controls.values() {
@@ -506,7 +502,6 @@ impl PluginRegistry {
             registered_system_ids,
             registered_family_ids,
             registered_runner_ids,
-            registered_modifier_ids,
             registered_transport_ids,
             registered_session_controls,
             providers,
@@ -644,10 +639,6 @@ impl PluginRegistry {
 
     pub fn owns_registered_runner_id(&self, id: &str) -> bool {
         self.registered_runner_ids.contains(id)
-    }
-
-    pub fn owns_registered_modifier_id(&self, id: &str) -> bool {
-        self.registered_modifier_ids.contains(id)
     }
 
     pub fn owns_registered_family_id(&self, id: &str) -> bool {

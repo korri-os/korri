@@ -97,6 +97,7 @@ fn published_mgba_route_and_launch_prepare() {
         &registry,
         &resolved,
         Some(overrides),
+        None,
     )
     .expect("current Core must construct a route against the published runner");
     assert_eq!(spec.command[1], "plugin-launch");

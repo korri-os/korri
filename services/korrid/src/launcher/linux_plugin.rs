@@ -1,6 +1,7 @@
 use super::{
     plugin_launch::{
-        LaunchComposition, PluginLaunchInput, PluginLaunchOverrides, ResolvedLaunchModifier,
+        LaunchComposition, PluginDisplay, PluginLaunchInput, PluginLaunchOverrides,
+        ResolvedLaunchModifier,
     },
     LaunchError,
 };
@@ -28,6 +29,7 @@ pub fn launch_route(
     registry: &PluginRegistry,
     route: &ResolvedRoute,
     overrides: Option<PluginLaunchOverrides>,
+    display: Option<PluginDisplay>,
 ) -> Result<LinuxLaunchSpec, LaunchError> {
     let error = |message| LaunchError::RouteUnavailable(message);
     // The route must still name a native runner this registry admits.
@@ -107,7 +109,10 @@ pub fn launch_route(
     {
         return Err(error(refusal));
     }
-    let mut composition = LaunchComposition::default();
+    let mut composition = LaunchComposition {
+        display,
+        ..Default::default()
+    };
     for (id, record) in crate::config::modifiers::resolve(snapshot, route).iter() {
         if record.enabled != Some(true) {
             continue;
@@ -125,9 +130,6 @@ pub fn launch_route(
             settings: record.settings.clone(),
             config: record.config.clone().unwrap_or_default(),
         });
-    }
-    if !composition.modifiers.is_empty() {
-        composition.display = crate::host::compositor_focus::launch_display();
     }
     Ok(LinuxLaunchSpec {
         warnings,

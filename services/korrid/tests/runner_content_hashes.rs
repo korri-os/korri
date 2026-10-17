@@ -212,6 +212,7 @@ fn each_accepted_dump_offers_the_launcher_beside_the_system_runner() {
                 runner_id: "@test:content/main".into(),
                 overrides: None,
             },
+            None,
         )
         .unwrap();
         let input: PluginLaunchInput = serde_json::from_str(&launch.command[3]).unwrap();
@@ -259,6 +260,7 @@ fn an_unlisted_hash_keeps_only_the_system_runner_and_refuses_the_content_launche
             runner_id: "@test:content/main".into(),
             overrides: None,
         },
+        None,
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRouteUnavailable");
@@ -298,6 +300,7 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
             runner_id: "@test:content/main".into(),
             overrides: None,
         },
+        None,
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRomMissing");
@@ -320,6 +323,7 @@ fn an_accepted_hash_with_a_missing_file_is_not_playable() {
             runner_id: "@test:content/main".into(),
             overrides: None,
         },
+        None,
     )
     .unwrap_err();
     assert_eq!(error.code, "LocalRomMissing");

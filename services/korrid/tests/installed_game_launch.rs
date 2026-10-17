@@ -84,7 +84,7 @@ fn selected_runner_owns_frontend_core_callback_and_named_files() {
         Some("@korri:mgba/mgba"),
     )
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &resolved, None).unwrap();
+    let spec = launch_route(root.path(), &snapshot, &registry, &resolved, None, None).unwrap();
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
     assert_eq!(input.runner_id, "@korri:mgba/mgba");
     assert_eq!(input.family_id.as_deref(), Some("@korri:retroarch"));
@@ -118,7 +118,15 @@ fn runner_callback_preserves_raw_native_override_semantics() {
         "config": {"append": "video_vsync = true"}
     }))
     .unwrap();
-    let spec = launch_route(root.path(), &snapshot, &registry, &route, Some(overrides)).unwrap();
+    let spec = launch_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        &route,
+        Some(overrides),
+        None,
+    )
+    .unwrap();
     let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
     let package = registry.installed_package("@korri:mgba/mgba").unwrap();
     let source =

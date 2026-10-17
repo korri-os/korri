@@ -77,6 +77,7 @@ impl DiscoveredGame {
             &self.registry,
             &self.route,
             None,
+            None,
         )
     }
 
@@ -174,4 +175,30 @@ fn implicit_roms_root_cannot_escape_korri_through_a_symlink() {
     std::os::unix::fs::symlink(game.folder.path(), game.root.path().join("roms")).unwrap();
     game.route.file_target.as_mut().unwrap().storage_id = "roms".into();
     game.assert_unavailable();
+}
+
+#[test]
+fn launch_preparation_takes_the_display_fact_as_plain_input() {
+    let game = DiscoveredGame::new();
+    let display = PluginDisplay {
+        width: 1240,
+        height: 1080,
+    };
+    let launch = launch_route(
+        game.root.path(),
+        &game.snapshot,
+        &game.registry,
+        &game.route,
+        None,
+        Some(display.clone()),
+    )
+    .unwrap();
+    let input: LaunchComposition = serde_json::from_str(&launch.command[4]).unwrap();
+    assert_eq!(input.display, Some(display));
+    assert!(
+        serde_json::from_str::<LaunchComposition>(&game.launch().unwrap().command[4])
+            .unwrap()
+            .display
+            .is_none()
+    );
 }

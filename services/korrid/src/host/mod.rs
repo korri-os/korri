@@ -130,7 +130,8 @@ impl DynamicHostRuntime {
                 Ok(_) => {}
             }
             for route in &candidates {
-                match linux_plugin::launch_route(root, &state.snapshot, registry, route, None) {
+                match linux_plugin::launch_route(root, &state.snapshot, registry, route, None, None)
+                {
                     Ok(launch) => {
                         failures.extend(launch.warnings.into_iter().map(|warning| RpcFailure {
                             code: "LaunchSettingUnsupported".into(),
@@ -545,8 +546,13 @@ impl HostRuntime {
             dynamic.validate_static_games(self.config.as_ref().map_err(config_failure)?)?;
             if dynamic.declared_ids.contains(game_id) {
                 let command = self.route_root().and_then(|root| {
-                    crate::game_routes::default_launch(root, &self.route_registry()?, game_id)
-                        .map(|launch| launch.command)
+                    crate::game_routes::default_launch(
+                        root,
+                        &self.route_registry()?,
+                        game_id,
+                        compositor_focus::launch_display(),
+                    )
+                    .map(|launch| launch.command)
                 });
                 // The session executor returns to an existing same-game live
                 // session before requiring a fresh, revalidated launch command.
@@ -872,6 +878,7 @@ impl HostRuntime {
                     &registry,
                     &route,
                     request.overrides.clone(),
+                    compositor_focus::launch_display(),
                 )
                 .map_err(|error| crate::game_routes::unavailable(error.to_string()))?;
                 (launch.command, Some(route.runner_id), launch.warnings)
@@ -917,7 +924,12 @@ impl HostRuntime {
             if config.games.iter().any(|game| game.id == request.game_id) {
                 return Err(dynamic_failure("installed game collides with host.toml"));
             }
-            let launch = crate::game_routes::selected_launch(root, &registry, &request)?;
+            let launch = crate::game_routes::selected_launch(
+                root,
+                &registry,
+                &request,
+                compositor_focus::launch_display(),
+            )?;
             let session = runtime
                 .launcher
                 .as_ref()
@@ -2409,7 +2421,8 @@ esac
         assert_eq!(&runtime.games[0].id, game_id);
         assert_eq!(Some(&runtime.games[0].title), game.title.as_ref());
         assert!(runtime.failures.is_empty(), "{:?}", runtime.failures);
-        let launch = crate::game_routes::default_launch(root.path(), &registry, game_id).unwrap();
+        let launch =
+            crate::game_routes::default_launch(root.path(), &registry, game_id, None).unwrap();
         let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
@@ -2468,7 +2481,7 @@ esac
             ))
         );
         let launch =
-            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id)
+            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id, None)
                 .unwrap();
         let command = &launch.command;
         assert_eq!(command[1], "plugin-launch");
@@ -2494,7 +2507,7 @@ esac
             "explicit copy must also materialize on Linux"
         );
         let launch =
-            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id)
+            crate::game_routes::default_launch(root.path(), &registry, &runtime.games[0].id, None)
                 .unwrap();
         let input: crate::launcher::plugin_launch::PluginLaunchInput =
             serde_json::from_str(&launch.command[3]).unwrap();
