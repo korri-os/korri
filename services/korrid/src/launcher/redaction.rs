@@ -39,6 +39,16 @@ impl LaunchRedaction {
     pub(crate) fn text(&self, text: &str) -> String {
         redact_text(text, &self.words())
     }
+    pub(crate) fn operation_failure(&self, failure: &crate::script::OperationFailure) -> String {
+        match failure {
+            crate::script::OperationFailure::Plugin(error) => format!(
+                "{} ({})",
+                status_text(&self.text(&error.message), 300),
+                self.text(&error.code)
+            ),
+            other => status_text(&self.text(&other.to_string()), 300),
+        }
+    }
     pub(crate) fn argv(&self, args: &[String], runner: &[String]) -> Vec<String> {
         let mut result = args.to_vec();
         // The runner argv is the untouched suffix, not native append. Choose
@@ -93,10 +103,10 @@ pub(crate) fn redact_text(text: &str, words: &[String]) -> String {
     result
 }
 
-pub(crate) fn status_text(text: &str) -> String {
+pub(crate) fn status_text(text: &str, limit: usize) -> String {
     text.chars()
         .filter(|ch| !ch.is_control())
-        .take(300)
+        .take(limit)
         .collect()
 }
 
@@ -212,5 +222,21 @@ mod tests {
                 REDACTED
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod error_bound_tests {
+    use super::*;
+    #[test]
+    fn a_long_message_keeps_its_structured_error_code_after_redaction() {
+        let failure =
+            crate::script::OperationFailure::Plugin(crate::script::PluginOperationError {
+                code: "setting-range".into(),
+                message: "x".repeat(500),
+                retryable: Some(false),
+            });
+        let shown = LaunchRedaction::default().operation_failure(&failure);
+        assert_eq!(shown, format!("{} (setting-range)", "x".repeat(300)));
     }
 }

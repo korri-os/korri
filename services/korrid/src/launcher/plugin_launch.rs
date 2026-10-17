@@ -235,9 +235,13 @@ fn prepare_with_diagnostics(
                 crate::script::LAUNCH_COMPOSE,
                 &serde_json::to_string(&request).map_err(|e| e.to_string())?,
             )
-            .map_err(|failure| redaction.text(&failure.to_string()))?;
-            let output: PluginLaunchOutput = serde_json::from_str(&result)
-                .map_err(|error| redaction.text(&format!("invalid compose result: {error}")))?;
+            .map_err(|failure| redaction.operation_failure(&failure))?;
+            let output: PluginLaunchOutput = serde_json::from_str(&result).map_err(|error| {
+                status_text(
+                    &redaction.text(&format!("invalid compose result: {error}")),
+                    300,
+                )
+            })?;
             validate_plan(&output)?;
             Ok(output)
         };
@@ -245,7 +249,7 @@ fn prepare_with_diagnostics(
             format!(
                 "modifier {}: {}",
                 modifier.modifier_id,
-                status_text(&reason)
+                status_text(&reason, 1024)
             )
         })?;
     }
@@ -387,7 +391,7 @@ pub fn notify_failure(reason: &str) {
         };
         let datagram = UnixDatagram::unbound()?;
         datagram.connect_addr(&address)?;
-        let reason = status_text(reason);
+        let reason = status_text(reason, 1024);
         datagram.send(format!("STATUS=plugin-launch: {reason}").as_bytes())?;
         Ok(())
     };
