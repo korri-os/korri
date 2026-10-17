@@ -337,6 +337,10 @@ export interface LocalGames {
 export interface LocalGamesListRequest {
 }
 
+export interface ModifierConfigAppend {
+	append?: string;
+}
+
 export interface MoonlightCertificateAttestRequest {
 	hostUuid: string;
 }
@@ -540,25 +544,6 @@ export interface PlayLog {
 	entries: PlayEntry[];
 }
 
-export interface PluginLaunchOverrides {
-	settings?: Record<string, LaunchSettingValue>;
-	config?: LaunchConfigOverrides;
-}
-
-/** Selected runner facts and named files for launch preparation. */
-export interface PluginLaunchInput {
-	runnerId: string;
-	familyId?: string;
-	program: string;
-	corePath?: string;
-	/** File routes supply contentPath; provider locations supply ref instead. */
-	contentPath?: string;
-	ref?: string;
-	accountRoot: string;
-	files: Record<string, string>;
-	overrides?: PluginLaunchOverrides;
-}
-
 export interface ProvisionedFile {
 	path: string;
 	content: string;
@@ -576,6 +561,43 @@ export interface PluginLaunchOutput {
 	cwd?: string;
 	directories?: string[];
 	files?: ProvisionedFile[];
+}
+
+/** The compositor's logical output size, after transform and scaling. */
+export interface PluginDisplay {
+	width: number;
+	height: number;
+}
+
+/** ADR 0002 and the first launch.compose treaty. Modifiers own their settings. */
+export interface PluginComposeInput {
+	modifierId: string;
+	runnerId: string;
+	familyId?: string;
+	plan: PluginLaunchOutput;
+	settings: Record<string, LaunchSettingValue>;
+	config: ModifierConfigAppend;
+	files: Record<string, string>;
+	display?: PluginDisplay;
+}
+
+export interface PluginLaunchOverrides {
+	settings?: Record<string, LaunchSettingValue>;
+	config?: LaunchConfigOverrides;
+}
+
+/** Selected runner facts and named files for launch preparation. */
+export interface PluginLaunchInput {
+	runnerId: string;
+	familyId?: string;
+	program: string;
+	corePath?: string;
+	/** File routes supply contentPath; provider locations supply ref instead. */
+	contentPath?: string;
+	ref?: string;
+	accountRoot: string;
+	files: Record<string, string>;
+	overrides?: PluginLaunchOverrides;
 }
 
 export interface PluginSetting {
