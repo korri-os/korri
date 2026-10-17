@@ -5,7 +5,7 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     os::{
         fd::AsRawFd,
-        unix::fs::{OpenOptionsExt, PermissionsExt},
+        unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::Path,
 };
@@ -54,14 +54,15 @@ fn grant_user(file: &File, owner: u16, user: u32, permission: u16) -> io::Result
         Err(io::Error::last_os_error())
     }
 }
-fn regular(path: &Path, write: bool) -> io::Result<File> {
+fn regular(path: &Path, write: bool, owner: u32) -> io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
         .write(write)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(io::Error::other("launch diagnostics must be regular files"));
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != owner {
+        return Err(io::Error::other("launch diagnostic type or owner mismatch"));
     }
     Ok(file)
 }
@@ -73,7 +74,9 @@ pub(super) fn create(directory: &Path, runtime_uid: u32) -> io::Result<()> {
     fs::create_dir_all(parent)?;
     fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
     fs::create_dir(directory)?;
-    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    // Sticky protects korrid-owned stderr from unlink/rename by the runtime
+    // uid, while still allowing that uid to create its own words file.
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o1700))?;
     // The source lives under korrid's private runtime. A game gets only its
     // own directory bind. Named runtime uid rwx is needed to create its words
     // file; neither the owning group nor other users can enter this directory.
@@ -121,7 +124,7 @@ pub(super) fn write_words(directory: &Path, reader: u32, words: &[String]) -> io
 }
 
 pub(super) fn maintain(directory: &Path) -> io::Result<()> {
-    match regular(&directory.join(STDERR), true) {
+    match regular(&directory.join(STDERR), true, unsafe { libc::geteuid() }) {
         Ok(mut file) => retain_tail(&mut file),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -150,19 +153,19 @@ fn retain_tail(file: &mut File) -> io::Result<()> {
     file.set_len(tail.len() as u64)
 }
 
-pub(super) fn failure_reason(directory: &Path) -> io::Result<Option<String>> {
+pub(super) fn failure_reason(directory: &Path, runtime_uid: u32) -> io::Result<Option<String>> {
     if !directory.exists() {
         return Ok(None);
     }
     let mut bytes = Vec::new();
-    regular(&directory.join(WORDS), false)?
+    regular(&directory.join(WORDS), false, runtime_uid)?
         .take(MAX_WORDS_BYTES + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_WORDS_BYTES {
         return Err(io::Error::other("redaction words exceed 1 MiB"));
     }
     let words: Vec<String> = serde_json::from_slice(&bytes)?;
-    let mut file = regular(&directory.join(STDERR), false)?;
+    let mut file = regular(&directory.join(STDERR), false, unsafe { libc::geteuid() })?;
     let size = file.metadata()?.len();
     let offset = size.saturating_sub(MAX_STDERR_BYTES);
     file.seek(SeekFrom::Start(offset))?;
@@ -213,7 +216,6 @@ pub(super) fn cleanup(directory: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::MetadataExt;
     fn acl(file: &File) -> Vec<u8> {
         let mut bytes = vec![0; 44];
         let count = unsafe {
@@ -237,6 +239,7 @@ mod tests {
             acl(&File::open(&directory).unwrap()),
             private_acl(7, runtime_uid, 7)
         );
+        assert_eq!(fs::metadata(&directory).unwrap().mode() & 0o7777, 0o1770);
         let stderr = File::open(directory.join(STDERR)).unwrap();
         assert_eq!(acl(&stderr), private_acl(6, runtime_uid, 4));
         assert_eq!(stderr.metadata().unwrap().mode() & 0o777, 0o640);
@@ -305,7 +308,9 @@ mod tests {
             ),
         )
         .unwrap();
-        let reason = failure_reason(&directory).unwrap().unwrap();
+        let reason = failure_reason(&directory, unsafe { libc::geteuid() })
+            .unwrap()
+            .unwrap();
         assert_eq!(
             reason,
             "first\nsecond [redacted]\nunknown option [redacted]"
@@ -315,13 +320,32 @@ mod tests {
             format!("{} env-secret", "界".repeat(500)),
         )
         .unwrap();
-        let reason = failure_reason(&directory).unwrap().unwrap();
+        let reason = failure_reason(&directory, unsafe { libc::geteuid() })
+            .unwrap()
+            .unwrap();
         assert!(reason.chars().count() <= 300);
         assert!(!reason.contains("env-secret"));
         fs::remove_file(directory.join(WORDS)).unwrap();
         std::os::unix::fs::symlink(directory.join(STDERR), directory.join(WORDS)).unwrap();
-        assert!(failure_reason(&directory).is_err());
+        assert!(failure_reason(&directory, unsafe { libc::geteuid() }).is_err());
         cleanup(&directory).unwrap();
         assert!(!directory.exists());
+    }
+}
+
+#[cfg(test)]
+mod owner_hardening_tests {
+    use super::*;
+    #[test]
+    fn either_regular_file_with_the_wrong_owner_is_rejected_before_reading() {
+        let root = tempfile::tempdir().unwrap();
+        let wrong_owner = unsafe { libc::geteuid() } + 1;
+        for filename in [STDERR, WORDS] {
+            let path = root.path().join(filename);
+            fs::write(&path, "DO_NOT_READ_PRIVATE_CONTENT").unwrap();
+            let error = regular(&path, false, wrong_owner).unwrap_err();
+            assert!(error.to_string().contains("owner mismatch"));
+            assert!(!error.to_string().contains("DO_NOT_READ"));
+        }
     }
 }

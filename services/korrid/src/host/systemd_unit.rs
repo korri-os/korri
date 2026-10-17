@@ -1555,16 +1555,19 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             .get("Environment")
             .and_then(|value| Self::parse_systemd_environment(value).ok())
             .is_some_and(|values| values.contains(&marker));
-        if captures_stderr {
+        let diagnostics_available = if captures_stderr {
             // spawn_portal_watch already observes the live session every second,
             // including when the portal cannot poll. No new maintenance thread.
-            super::launch_diagnostics::maintain(&directory).map_err(|error| {
-                LaunchUnitError::new(
-                    LaunchUnitErrorKind::Failed,
-                    format!("could not bound game stderr: {error}"),
-                )
-            })?;
-        }
+            match super::launch_diagnostics::maintain(&directory) {
+                Ok(()) => true,
+                Err(error) => {
+                    eprintln!("korrid game stderr diagnostics for {launch_id}: {error}");
+                    false
+                }
+            }
+        } else {
+            false
+        };
         let state = if values.get("LoadState").copied() == Some("not-found") {
             Ok(LaunchUnitState::Completed)
         } else if !output.status.success() {
@@ -1582,17 +1585,17 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         match state {
             Err(mut error)
                 if error.kind == LaunchUnitErrorKind::UnitFailed
-                    && captures_stderr
+                    && diagnostics_available
                     && values
                         .get("StatusText")
                         .is_none_or(|value| value.trim().is_empty()) =>
             {
-                match super::launch_diagnostics::failure_reason(&directory) {
+                match super::launch_diagnostics::failure_reason(&directory, self.runtime_uid) {
                     Ok(Some(reason)) => error.message.push_str(&format!(": {reason}")),
                     Ok(None) => {}
-                    Err(cause) => error
-                        .message
-                        .push_str(&format!(": startup stderr unavailable: {cause}")),
+                    Err(cause) => {
+                        eprintln!("korrid game stderr diagnostics for {launch_id}: {cause}")
+                    }
                 }
                 Err(error)
             }
@@ -1980,8 +1983,13 @@ mod startup_diagnostic_tests {
         .unwrap();
         fs::write(&helper, format!("#!/bin/sh\ncat '{}'\n", reply.display())).unwrap();
         fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-        let mut backend =
-            SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 1000).unwrap();
+        let mut backend = SystemdLaunchUnitBackend::new(
+            helper.clone(),
+            helper,
+            unsafe { libc::geteuid() },
+            unsafe { libc::getegid() },
+        )
+        .unwrap();
         backend.diagnostics_root = root.path().join("launches");
         let id = "0123456789abcdef0123456789abcdef";
         let directory = backend.diagnostics_root.join(id);
@@ -2018,5 +2026,58 @@ mod startup_diagnostic_tests {
         fs::write(&reply, "LoadState=loaded\nActiveState=inactive\n").unwrap();
         assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Completed);
         assert!(!directory.exists());
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_file_hardening_tests {
+    use super::*;
+    use std::{
+        fs,
+        os::unix::fs::{symlink, PermissionsExt},
+    };
+
+    #[test]
+    fn diagnostic_file_tampering_keeps_only_the_generic_unit_exit_reason() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let id = "0123456789abcdef0123456789abcdef";
+        fs::write(&helper, format!("#!/bin/sh\nprintf 'LoadState=loaded\\nActiveState=failed\\nExecMainCode=1\\nExecMainStatus=1\\nStatusText=\\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}\\n'\n")).unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let mut backend =
+            SystemdLaunchUnitBackend::new(helper.clone(), helper, uid, unsafe { libc::getegid() })
+                .unwrap();
+        backend.diagnostics_root = root.path().join("launches");
+        let directory = backend.diagnostics_root.join(id);
+        let outside = root.path().join("must-not-read");
+        fs::write(&outside, "DO_NOT_READ_PRIVATE_CONTENT").unwrap();
+        for target in ["stderr", "redaction-words.json", "wrong-words-owner"] {
+            super::super::launch_diagnostics::create(&directory, uid + 1).unwrap();
+            super::super::launch_diagnostics::write_words(&directory, uid + 1, &[]).unwrap();
+            fs::write(directory.join("stderr"), "valid native failure cause").unwrap();
+            backend.runtime_uid = uid;
+            assert!(backend
+                .state(id)
+                .unwrap_err()
+                .message
+                .contains("valid native failure cause"));
+            if target == "wrong-words-owner" {
+                // No chown privilege is needed: make the trusted expected uid
+                // differ from the actual file owner, as a replaced file would.
+                backend.runtime_uid = uid + 1;
+            } else {
+                fs::remove_file(directory.join(target)).unwrap();
+                symlink(&outside, directory.join(target)).unwrap();
+            }
+            let error = backend.state(id).unwrap_err();
+            assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
+            assert_eq!(
+                error.message, "game unit failed with exit status 1",
+                "{target}"
+            );
+            assert!(!error.message.contains("DO_NOT_READ"));
+            super::super::launch_diagnostics::cleanup(&directory).unwrap();
+        }
     }
 }

@@ -146,9 +146,12 @@ behavior. Standard output is unchanged.
 Before exec, plugin-launch writes `redaction-words.json` in that directory,
 containing native append words and final environment values. Files start at
 0600. Named-user ACLs allow only the runtime uid and korrid to read them;
-group/other entries remain zero. A displayed mode of 0640 is the ACL mask,
-not owning-group access. The game can rewrite its words file and spoil its
-own error text. Readers refuse symlinks/special files and cap metadata reads.
+group/other entries remain zero. The directory has the sticky bit, so the
+runtime uid cannot remove or rename korrid-owned stderr. A displayed file mode
+of 0640 is the ACL mask, not owning-group access. The game can rewrite its words file and spoil its
+own error text. Readers check the opened fd's regular-file type and expected
+owner, refuse symlinks, and cap metadata reads. A mismatch is logged and leaves
+the generic exit-status reason; its contents are never used.
 
 Without `StatusText`, a failed unit's reason includes at most three stderr
 lines and 300 characters, with those private values redacted. The existing
