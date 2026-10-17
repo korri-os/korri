@@ -129,5 +129,32 @@ bound into a private unit runtime directory. Other game units remain X11-only.
 Sway's client protocols can grant more access than X11, including screencopy
 and virtual-keyboard unless restricted. The control socket stays hidden.
 Plugin-launch failures use native systemd `STATUS=` and reach the existing
-unit-failure reason through `StatusText`. Logs redact all argument and environment
-values; compose exception details are withheld when raw append text is present.
+unit-failure reason through `StatusText`. Logs retain fixed/typed flags and the
+runner argv, and redact native append words and environment values. Structured plugin error codes and safe causes
+remain readable. Empty/whitespace-only append text has no private words;
+malformed quoting refuses with a fixed message without echoing authored text.
+
+### Native startup stderr
+
+korrid has no system journal group or journal ACL. Only modifier launches use
+systemd `StandardError=append:` into `/run/korrid/launches/<launch-id>/stderr`.
+The game sees that exact directory at `/run/korri-game-<launch-id>`, not the
+rest of `/run/korrid`. There is no wrapper process. **Wrapped games no longer
+send stderr to the journal**; other game units keep their previous journal
+behavior. Standard output is unchanged.
+
+Before exec, plugin-launch writes `redaction-words.json` in that directory,
+containing native append words and final environment values. Files start at
+0600. Named-user ACLs allow only the runtime uid and korrid to read them;
+group/other entries remain zero. A displayed mode of 0640 is the ACL mask,
+not owning-group access. The game can rewrite its words file and spoil its
+own error text. Readers refuse symlinks/special files and cap metadata reads.
+
+Without `StatusText`, a failed unit's reason includes at most three stderr
+lines and 300 characters, with those private values redacted. The existing
+one-second session watcher checks stderr size: over 64 KiB, korrid keeps at
+most the last 32 KiB of complete lines in the same file. A partial first line
+is discarded to avoid leaking a truncated credential. The file can briefly
+exceed 64 KiB between observations. No new thread or game file-size limit is
+used. Normal completion/stop removes the directory; a daemon restart retains
+it so the watcher can resume maintenance.

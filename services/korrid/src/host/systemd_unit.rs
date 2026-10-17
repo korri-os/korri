@@ -348,6 +348,7 @@ pub struct SystemdLaunchUnitBackend {
     compositor_control_directory: PathBuf,
     certificate_control_directory: PathBuf,
     compositor_wayland_socket: Option<PathBuf>,
+    diagnostics_root: PathBuf,
     helper_timeout: Duration,
 }
 
@@ -732,6 +733,7 @@ impl SystemdLaunchUnitBackend {
             compositor_control_directory,
             certificate_control_directory,
             compositor_wayland_socket: None,
+            diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout,
         })
     }
@@ -790,6 +792,7 @@ impl SystemdLaunchUnitBackend {
             compositor_control_directory,
             certificate_control_directory,
             compositor_wayland_socket: None,
+            diagnostics_root: PathBuf::from("/run/korrid/launches"),
             helper_timeout: DEFAULT_HELPER_TIMEOUT,
         })
         .with_compositor_wayland_socket(
@@ -1116,6 +1119,29 @@ impl SystemdLaunchUnitBackend {
             arguments.extend([
                 format!("--property=RuntimeDirectory={runtime}"),
                 "--property=RuntimeDirectoryMode=0700".into(),
+                format!(
+                    "--property=BindPaths={}:/run/{runtime}",
+                    self.diagnostics_root.join(launch_id).display()
+                ),
+                // systemd opens stdio before applying mount namespaces
+                // (exec-invoke.c setup_output precedes apply_mount_namespace).
+                // Use the host source, not the still-unmounted runtime bind.
+                format!(
+                    "--property=StandardError=append:{}",
+                    self.diagnostics_root
+                        .join(launch_id)
+                        .join(super::launch_diagnostics::STDERR)
+                        .display()
+                ),
+                format!(
+                    "--setenv={}=/run/{runtime}",
+                    super::launch_diagnostics::DIRECTORY_ENV
+                ),
+                format!(
+                    "--setenv={}={}",
+                    super::launch_diagnostics::READER_ENV,
+                    unsafe { libc::geteuid() }
+                ),
                 format!("--setenv=XDG_RUNTIME_DIR=/run/{runtime}"),
                 "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
             ]);
@@ -1126,7 +1152,11 @@ impl SystemdLaunchUnitBackend {
                 .filter(|(key, _)| {
                     !matches!(
                         key.as_str(),
-                        "WAYLAND_DISPLAY" | "SWAYSOCK" | "XDG_RUNTIME_DIR"
+                        "WAYLAND_DISPLAY"
+                            | "SWAYSOCK"
+                            | "XDG_RUNTIME_DIR"
+                            | super::launch_diagnostics::DIRECTORY_ENV
+                            | super::launch_diagnostics::READER_ENV
                     )
                 })
                 .map(|(key, value)| format!("--setenv={key}={value}")),
@@ -1173,6 +1203,7 @@ impl SystemdLaunchUnitBackend {
             "--property=ExecMainCode".into(),
             "--property=ExecMainStatus".into(),
             "--property=StatusText".into(),
+            "--property=Environment".into(),
         ])
     }
 
@@ -1489,12 +1520,93 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         environment: &BTreeMap<String, String>,
     ) -> Result<(), LaunchUnitError> {
         let arguments = self.launch_arguments(launch_id, configured_command, environment)?;
+        if crate::launcher::plugin_launch::has_modifiers(configured_command) {
+            super::launch_diagnostics::create(
+                &self.diagnostics_root.join(launch_id),
+                self.runtime_uid,
+            )
+            .map_err(|error| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    format!("cannot prepare game stderr: {error}"),
+                )
+            })?;
+        }
         self.require_success(&self.systemd_run, &arguments)
             .map(|_| ())
     }
 
     fn state(&self, launch_id: &str) -> Result<LaunchUnitState, LaunchUnitError> {
-        self.observe_state(&Self::state_arguments(launch_id)?)
+        let arguments = Self::state_arguments(launch_id)?;
+        let directory = self.diagnostics_root.join(launch_id);
+        let output = self.run(&self.systemctl, &arguments)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let values: BTreeMap<_, _> = stdout
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .collect();
+        // Only the host-injected exact-unit environment marker grants access
+        // to these files. It survives daemon restarts without a second cache.
+        let marker = format!(
+            "{}=/run/korri-game-{launch_id}",
+            super::launch_diagnostics::DIRECTORY_ENV
+        );
+        let captures_stderr = values
+            .get("Environment")
+            .and_then(|value| Self::parse_systemd_environment(value).ok())
+            .is_some_and(|values| values.contains(&marker));
+        if captures_stderr {
+            // spawn_portal_watch already observes the live session every second,
+            // including when the portal cannot poll. No new maintenance thread.
+            super::launch_diagnostics::maintain(&directory).map_err(|error| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    format!("could not bound game stderr: {error}"),
+                )
+            })?;
+        }
+        let state = if values.get("LoadState").copied() == Some("not-found") {
+            Ok(LaunchUnitState::Completed)
+        } else if !output.status.success() {
+            return Err(LaunchUnitError::new(
+                LaunchUnitErrorKind::Failed,
+                format!(
+                    "systemctl show failed with {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            ));
+        } else {
+            Self::parse_unit_state(&values)
+        };
+        match state {
+            Err(mut error)
+                if error.kind == LaunchUnitErrorKind::UnitFailed
+                    && captures_stderr
+                    && values
+                        .get("StatusText")
+                        .is_none_or(|value| value.trim().is_empty()) =>
+            {
+                match super::launch_diagnostics::failure_reason(&directory) {
+                    Ok(Some(reason)) => error.message.push_str(&format!(": {reason}")),
+                    Ok(None) => {}
+                    Err(cause) => error
+                        .message
+                        .push_str(&format!(": startup stderr unavailable: {cause}")),
+                }
+                Err(error)
+            }
+            Ok(LaunchUnitState::Completed) => {
+                super::launch_diagnostics::cleanup(&directory).map_err(|error| {
+                    LaunchUnitError::new(
+                        LaunchUnitErrorKind::Failed,
+                        format!("cannot clean game stderr: {error}"),
+                    )
+                })?;
+                Ok(LaunchUnitState::Completed)
+            }
+            other => other,
+        }
     }
 
     fn runner_id(&self, launch_id: &str) -> Result<Option<String>, LaunchUnitError> {
@@ -1536,7 +1648,14 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         if failed {
             self.require_success(&self.systemctl, &Self::reset_failed_arguments(launch_id)?)?;
         }
-        Ok(())
+        super::launch_diagnostics::cleanup(&self.diagnostics_root.join(launch_id)).map_err(
+            |error| {
+                LaunchUnitError::new(
+                    LaunchUnitErrorKind::Failed,
+                    format!("cannot clean game stderr: {error}"),
+                )
+            },
+        )
     }
 
     fn freeze(&self, launch_id: &str) -> Result<(), LaunchUnitError> {
@@ -1841,5 +1960,63 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.kind, LaunchUnitErrorKind::InvalidConfiguration);
+    }
+}
+
+#[cfg(test)]
+mod startup_diagnostic_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn failed_unit_uses_only_its_own_bounded_redacted_stderr_and_cleans_normal_completion() {
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let reply = root.path().join("reply");
+        fs::write(
+            &reply,
+            "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-0123456789abcdef0123456789abcdef\n",
+        )
+        .unwrap();
+        fs::write(&helper, format!("#!/bin/sh\ncat '{}'\n", reply.display())).unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut backend =
+            SystemdLaunchUnitBackend::new(helper.clone(), helper, 1000, 1000).unwrap();
+        backend.diagnostics_root = root.path().join("launches");
+        let id = "0123456789abcdef0123456789abcdef";
+        let directory = backend.diagnostics_root.join(id);
+        super::super::launch_diagnostics::create(&directory, unsafe { libc::geteuid() } + 1)
+            .unwrap();
+        super::super::launch_diagnostics::write_words(
+            &directory,
+            unsafe { libc::geteuid() } + 1,
+            &["--no-such-reviewed-flag".into(), "private-env-value".into()],
+        )
+        .unwrap();
+        fs::write(
+            directory.join("stderr"),
+            "old message\ncontext\nstartup refused --no-such-reviewed-flag private-env-value\n",
+        )
+        .unwrap();
+        let error = backend.state(id).unwrap_err();
+        assert_eq!(error.kind, LaunchUnitErrorKind::UnitFailed);
+        assert!(
+            error
+                .message
+                .contains("startup refused [redacted] [redacted]"),
+            "{}",
+            error.message
+        );
+        assert!(!error.message.contains("private-env-value"));
+        assert!(!error.message.contains("--no-such-reviewed-flag"));
+        fs::write(&reply, "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=plugin-launch: specific compose refusal\n").unwrap();
+        assert!(!backend
+            .state(id)
+            .unwrap_err()
+            .message
+            .contains("startup refused"));
+        fs::write(&reply, "LoadState=loaded\nActiveState=inactive\n").unwrap();
+        assert_eq!(backend.state(id).unwrap(), LaunchUnitState::Completed);
+        assert!(!directory.exists());
     }
 }

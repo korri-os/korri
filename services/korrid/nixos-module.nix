@@ -832,6 +832,9 @@ in
         StateDirectoryMode = "0700";
         RuntimeDirectory = "korrid";
         RuntimeDirectoryMode = "0700";
+        # Live game units keep their private diagnostic binds across a korrid
+        # restart. Preserve the source so the watcher can resume bounded reads.
+        RuntimeDirectoryPreserve = "restart";
         Restart = "on-failure";
         RestartSec = 1;
         NoNewPrivileges = true;

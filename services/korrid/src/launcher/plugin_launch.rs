@@ -206,6 +206,7 @@ fn prepare_with_diagnostics(
     let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
     let mut plan = evaluate_snapshot(&snapshot, input)?;
     validate_plan(&plan)?;
+    redaction.add_env(plan.env.values().cloned());
     let runner_argv = std::iter::once(plan.command.clone())
         .chain(plan.args.clone())
         .collect();
@@ -299,8 +300,15 @@ pub fn execute(source: &Path, input: &str, composition: &str) -> Result<(), Stri
     let PreparedLaunch {
         plan: output,
         runner_argv,
-        redaction,
+        mut redaction,
     } = prepare_with_diagnostics(source, &input, &composition)?;
+    let mut environment: std::collections::BTreeMap<_, _> = std::env::vars().collect();
+    for key in &output.env_unset {
+        environment.remove(key);
+    }
+    environment.extend(output.env.clone());
+    redaction.add_env(environment.into_values());
+    crate::host::launch_diagnostics::write_redaction_words(&redaction.words())?;
     // Only native append words and environment values are private. Keep the
     // fixed/typed flags and the runner command/arguments useful for diagnosis.
     eprintln!(

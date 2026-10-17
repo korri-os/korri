@@ -1,4 +1,5 @@
 pub(crate) mod compositor_focus;
+pub(crate) mod launch_diagnostics;
 #[cfg(test)]
 pub(crate) use compositor_focus::CompositorControl;
 mod config;

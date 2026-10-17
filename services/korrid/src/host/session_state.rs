@@ -3378,6 +3378,20 @@ mod tests {
         );
         assert!(!launch
             .iter()
+            .any(|arg| arg.starts_with("--property=StandardError=")
+                || arg.starts_with("--property=BindPaths=")
+                || arg.contains("KORRI_LAUNCH_DIAGNOSTICS")));
+        assert!(with_modifiers.contains(&format!(
+            "--property=StandardError=append:/run/korrid/launches/{id}/stderr"
+        )));
+        assert!(with_modifiers.contains(&format!(
+            "--property=BindPaths=/run/korrid/launches/{id}:/run/korri-game-{id}"
+        )));
+        assert!(with_modifiers.contains(&format!(
+            "--setenv=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}"
+        )));
+        assert!(!launch
+            .iter()
             .any(|arg| arg.starts_with("--property=RuntimeDirectory=")));
         assert_eq!(
             launch[launch.len() - 3..],
@@ -3411,6 +3425,7 @@ mod tests {
                 "--property=ExecMainCode",
                 "--property=ExecMainStatus",
                 "--property=StatusText",
+                "--property=Environment",
             ]
         );
     }
@@ -3556,7 +3571,7 @@ mod tests {
         let id = "0123456789abcdef0123456789abcdef";
         let unit = format!("korri-game-{id}.service");
         let show = format!(
-            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText\n"
+            "--system --no-ask-password show {unit} --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText --property=Environment\n"
         );
 
         // Running: no thaw is issued.
@@ -3630,7 +3645,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(log).unwrap(),
             format!(
-                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText\n"
+                "--system --no-ask-password show korri-game-{id}.service --property=LoadState --property=ActiveState --property=FreezerState --property=ExecMainCode --property=ExecMainStatus --property=StatusText --property=Environment\n"
             )
         );
     }

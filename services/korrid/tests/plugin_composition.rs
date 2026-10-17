@@ -39,6 +39,7 @@ export function compose(input) {
  if (input.settings.fail) throw new Error('compose refused');
  if (input.settings.invalidOutput) return {...input.plan, [input.config.append.split(' ').join('')]: true};
  if (input.settings.invalidPlan) return {...input.plan, command: ''};
+ if (input.settings.nativeFailure) return {...input.plan, command:'/bin/sh',args:['-c', 'printf "native startup failure $PASSWORD $INHERITED_SECRET\n" >&2; exit 1']};
  if (input.settings.logPlan) return {...input.plan, command:'/bin/sh',args:['-c','exit 0','wrapper','--backend','wayland','--sharpness','20','--raw','private value','--',input.plan.command,...input.plan.args]};
  if (input.config.append) throw new Error('append rejected: ' + input.config.append);
  return {...input.plan, command: input.files.program, args:['-c','printf wrapped > wrapped; exec "$@"','wrapper',input.plan.command,...input.plan.args]};
@@ -398,4 +399,46 @@ fn the_final_plan_log_keeps_fixed_typed_and_runner_argv_visible() {
     assert!(plan["args"][12].as_str().unwrap().contains("printf game"));
     assert!(!stderr.contains("private value"));
     assert!(!stderr.contains("very-private"));
+}
+
+#[test]
+fn plugin_launch_records_native_words_and_final_environment_before_exec() {
+    let root = tempfile::tempdir().unwrap();
+    let (command, _, _) = setup(root.path(), "{enabled: true, settings: {nativeFailure: true}, config: {append: '--native private-value'}}");
+    let diagnostics = root.path().join("diagnostics");
+    fs::create_dir(&diagnostics).unwrap();
+    let result = cli(&command)
+        .env("KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY", &diagnostics)
+        .env(
+            "KORRI_LAUNCH_DIAGNOSTICS_READER_UID",
+            (unsafe { libc::geteuid() } + 1).to_string(),
+        )
+        .env("INHERITED_SECRET", "inherited-private")
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(1));
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(
+        stderr.contains("native startup failure very-private inherited-private"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("cannot record launch redaction"),
+        "{stderr}"
+    );
+    let words: Vec<String> =
+        serde_json::from_slice(&fs::read(diagnostics.join("redaction-words.json")).unwrap())
+            .unwrap();
+    for private in [
+        "--native",
+        "private-value",
+        "very-private",
+        "inherited-private",
+    ] {
+        assert!(words.contains(&private.to_string()), "{words:?}");
+    }
+    assert!(
+        !words.contains(&"must disappear".to_string()),
+        "envUnset is not in the final environment"
+    );
 }

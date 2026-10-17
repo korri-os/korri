@@ -365,6 +365,7 @@ assert service.environment.KORRID_COMPOSITOR_CONTROL_DIRECTORY == "/run/korri-co
 assert !(service.environment ? KORRID_COMPOSITOR_CONTROL_SOCKET);
 assert !(service.environment ? KORRID_SWAYMSG);
 assert service.serviceConfig.SupplementaryGroups == [ ];
+assert service.serviceConfig.RuntimeDirectoryPreserve == "restart";
 assert
   (focusEnabled.config.systemd.services.korrid.environment.KORRID_COMPOSITOR_CONTROL_SOCKET)
   == "/run/korri-test/compositor-control/sway-ipc.sock";
