@@ -2,6 +2,8 @@
 //! not appear in diagnostics. This module has no filesystem or process effects.
 use super::plugin_launch::LaunchComposition;
 
+pub(crate) const MAX_REASON_CHARS: usize = 300;
+pub(crate) const MAX_REASON_LINES: usize = 3;
 pub(crate) const REDACTED: &str = "[redacted]";
 pub(crate) const APPEND_SPLIT_ERROR: &str = "config.append could not be split into words";
 
@@ -28,25 +30,35 @@ impl LaunchRedaction {
             .extend(values.into_iter().filter(|value| !value.is_empty()));
     }
     pub(crate) fn words(&self) -> Vec<String> {
-        self.append
+        let mut words: Vec<_> = self
+            .append
             .iter()
             .flatten()
             .chain(&self.env)
             .filter(|v| !v.is_empty())
             .cloned()
-            .collect()
+            .collect();
+        words.sort_unstable();
+        words.dedup();
+        words
     }
     pub(crate) fn text(&self, text: &str) -> String {
         redact_text(text, &self.words())
     }
     pub(crate) fn operation_failure(&self, failure: &crate::script::OperationFailure) -> String {
         match failure {
-            crate::script::OperationFailure::Plugin(error) => format!(
-                "{} ({})",
-                status_text(&self.text(&error.message), 300),
-                self.text(&error.code)
-            ),
-            other => status_text(&self.text(&other.to_string()), 300),
+            crate::script::OperationFailure::Plugin(error) => {
+                // Reserve the code and punctuation within the total cause
+                // budget. An oversized code cannot bypass the same bound.
+                let code = status_text(&self.text(&error.code), MAX_REASON_CHARS - 3);
+                let suffix = format!(" ({code})");
+                let message = status_text(
+                    &self.text(&error.message),
+                    MAX_REASON_CHARS - suffix.chars().count(),
+                );
+                format!("{message}{suffix}")
+            }
+            other => status_text(&self.text(&other.to_string()), MAX_REASON_CHARS),
         }
     }
     pub(crate) fn argv(&self, args: &[String], runner: &[String]) -> Vec<String> {
@@ -80,27 +92,65 @@ impl LaunchRedaction {
 }
 
 pub(crate) fn redact_text(text: &str, words: &[String]) -> String {
-    // Longest first: a short overlapping value must not leave part of a longer
-    // credential visible. Replace in one pass so tokens cannot alter markers.
-    let mut words: Vec<_> = words
+    redact_with_prefix(text, words, 0)
+}
+
+fn redact_with_prefix(text: &str, words: &[String], prefix: usize) -> String {
+    let mut words: Vec<&str> = words
         .iter()
         .filter(|v| !v.is_empty())
         .map(String::as_str)
         .collect();
+    words.sort_unstable();
+    words.dedup();
     words.sort_by_key(|word| std::cmp::Reverse(word.len()));
-    let mut result = String::new();
-    let mut rest = text;
-    while !rest.is_empty() {
+    let mut result = if prefix > 0 {
+        REDACTED.to_owned()
+    } else {
+        String::new()
+    };
+    let mut covered_until = prefix;
+    // Continue checking covered positions: another word can overlap a match
+    // (or the masked cut prefix) and extend past it. Skipping those positions
+    // would expose that word's trailing characters.
+    for (index, ch) in text.char_indices() {
+        let rest = &text[index..];
         if let Some(word) = words.iter().find(|word| rest.starts_with(**word)) {
-            result.push_str(REDACTED);
-            rest = &rest[word.len()..];
-        } else {
-            let ch = rest.chars().next().expect("nonempty text");
+            if index >= covered_until {
+                result.push_str(REDACTED);
+            }
+            covered_until = covered_until.max(index + word.len());
+        }
+        if index >= covered_until {
             result.push(ch);
-            rest = &rest[ch.len_utf8()..];
         }
     }
     result
+}
+
+/// The caller has already selected at most three lines / 300 characters and
+/// validated at most 256 words / 16 KiB. Simple matching is negligible within
+/// these bounds; no matcher is ever run over the stderr file itself.
+pub(crate) fn redact_display_tail(text: &str, words: &[String], truncated_start: bool) -> String {
+    // Normal debug tests must also catch moving the display limit after the
+    // matcher: even accepted word lists must never scan the stored 64 KiB.
+    debug_assert!(text.chars().count() <= MAX_REASON_CHARS);
+    debug_assert!(text.split_inclusive('\n').count() <= MAX_REASON_LINES);
+    // Selecting the display window can cut inside a private word (including a
+    // multiline env value). Mask any matching suffix at the window's start,
+    // rather than scanning preceding stderr or showing a partial credential.
+    let prefix = if truncated_start {
+        words
+            .iter()
+            .flat_map(|word| word.char_indices().map(|(index, _)| &word[index..]))
+            .filter(|suffix| text.starts_with(suffix))
+            .map(str::len)
+            .max()
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    redact_with_prefix(text, words, prefix)
 }
 
 pub(crate) fn status_text(text: &str, limit: usize) -> String {
@@ -237,6 +287,51 @@ mod error_bound_tests {
                 retryable: Some(false),
             });
         let shown = LaunchRedaction::default().operation_failure(&failure);
-        assert_eq!(shown, format!("{} (setting-range)", "x".repeat(300)));
+        assert_eq!(shown.chars().count(), 300);
+        assert_eq!(
+            shown,
+            format!(
+                "{} (setting-range)",
+                "x".repeat(300 - " (setting-range)".len())
+            )
+        );
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    #[test]
+    fn producer_words_are_deduplicated_without_changing_native_argv_order() {
+        let redaction = LaunchRedaction {
+            append: vec![vec!["private".into(), "private".into()]],
+            env: vec!["private".into(), "environment".into()],
+        };
+        assert_eq!(redaction.words(), ["environment", "private"]);
+        assert_eq!(redaction.append[0], ["private", "private"]);
+    }
+    #[test]
+    fn clipping_and_overlapping_words_do_not_expose_private_suffixes() {
+        let words = vec!["prefix-abc".into(), "bcdef".into()];
+        assert_eq!(redact_display_tail("abcdef", &words, true), REDACTED);
+        assert_eq!(redact_text("prefix-abcdef", &words), REDACTED);
+        assert_eq!(
+            redact_text("bcdefbcdef", &words),
+            format!("{REDACTED}{REDACTED}")
+        );
+    }
+    #[test]
+    fn total_cause_limit_counts_unicode_and_oversized_codes() {
+        for code in ["range-界".to_owned(), "界".repeat(500)] {
+            let failure =
+                crate::script::OperationFailure::Plugin(crate::script::PluginOperationError {
+                    code: code.clone(),
+                    message: "🙂".repeat(500),
+                    retryable: Some(false),
+                });
+            let cause = LaunchRedaction::default().operation_failure(&failure);
+            assert_eq!(cause.chars().count(), MAX_REASON_CHARS);
+            assert!(cause.ends_with(&format!(" ({})", status_text(&code, MAX_REASON_CHARS - 3))));
+        }
     }
 }

@@ -1481,6 +1481,25 @@ impl SystemdLaunchUnitBackend {
         Self::parse_unit_state(&values)
     }
 
+    // This is the diagnostic part of an already-observed UnitFailed result.
+    // Keep it separate from the systemctl subprocess so its lock-held work can
+    // be regression-tested independently of process scheduling and IPC.
+    // This remains synchronous under session control's transition guard:
+    // moving the observation outside it requires revalidating the exact live
+    // launch and cleanup after relocking. Instead the reader bounds metadata,
+    // words and matched text; the debug timing tests cover that critical work.
+    fn failure_with_stderr(&self, launch_id: &str, mut error: LaunchUnitError) -> LaunchUnitError {
+        match super::launch_diagnostics::failure_reason(
+            &self.diagnostics_root.join(launch_id),
+            self.runtime_uid,
+        ) {
+            Ok(Some(reason)) => error.message.push_str(&format!(": {reason}")),
+            Ok(None) => {}
+            Err(cause) => eprintln!("korrid game stderr diagnostics for {launch_id}: {cause}"),
+        }
+        error
+    }
+
     fn require_success(
         &self,
         program: &Path,
@@ -1583,21 +1602,14 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
             Self::parse_unit_state(&values)
         };
         match state {
-            Err(mut error)
+            Err(error)
                 if error.kind == LaunchUnitErrorKind::UnitFailed
                     && diagnostics_available
                     && values
                         .get("StatusText")
                         .is_none_or(|value| value.trim().is_empty()) =>
             {
-                match super::launch_diagnostics::failure_reason(&directory, self.runtime_uid) {
-                    Ok(Some(reason)) => error.message.push_str(&format!(": {reason}")),
-                    Ok(None) => {}
-                    Err(cause) => {
-                        eprintln!("korrid game stderr diagnostics for {launch_id}: {cause}")
-                    }
-                }
-                Err(error)
+                Err(self.failure_with_stderr(launch_id, error))
             }
             Ok(LaunchUnitState::Completed) => {
                 super::launch_diagnostics::cleanup(&directory).map_err(|error| {
@@ -2078,6 +2090,82 @@ mod diagnostic_file_hardening_tests {
             );
             assert!(!error.message.contains("DO_NOT_READ"));
             super::super::launch_diagnostics::cleanup(&directory).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_cost_tests {
+    use super::*;
+    use std::fs;
+
+    const ID: &str = "0123456789abcdef0123456789abcdef";
+    const GENERIC: &str = "game unit failed with exit status 1";
+
+    fn fixture(words: &[String], stderr: &str) -> (tempfile::TempDir, SystemdLaunchUnitBackend) {
+        let root = tempfile::tempdir().unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let mut backend = SystemdLaunchUnitBackend::new(
+            PathBuf::from("/unused/systemd-run"),
+            PathBuf::from("/unused/systemctl"),
+            uid,
+            unsafe { libc::getegid() },
+        )
+        .unwrap();
+        backend.diagnostics_root = root.path().to_path_buf();
+        let directory = root.path().join(ID);
+        fs::create_dir(&directory).unwrap();
+        // Simulate the game rewriting its own file, bypassing the producer.
+        fs::write(
+            directory.join("redaction-words.json"),
+            serde_json::to_vec(words).unwrap(),
+        )
+        .unwrap();
+        fs::write(directory.join("stderr"), stderr).unwrap();
+        (root, backend)
+    }
+
+    fn timed_failure(backend: &SystemdLaunchUnitBackend) -> (LaunchUnitError, Duration) {
+        let started = Instant::now();
+        // Time the complete local diagnostic work executed under the session
+        // guard, not the unrelated systemctl IPC. Both are real file reads.
+        super::super::launch_diagnostics::maintain(&backend.diagnostics_root.join(ID)).unwrap();
+        let result = backend.failure_with_stderr(
+            ID,
+            LaunchUnitError::new(LaunchUnitErrorKind::UnitFailed, GENERIC),
+        );
+        (result, started.elapsed())
+    }
+
+    #[test]
+    fn startup_diagnostics_rejects_200000_words_with_generic_reason_under_50ms() {
+        let (_root, backend) = fixture(&vec!["a".into(); 200_000], &"b".repeat(65_536));
+        let (result, elapsed) = timed_failure(&backend);
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "diagnostics took {elapsed:?}"
+        );
+        assert_eq!(result.kind, LaunchUnitErrorKind::UnitFailed);
+        assert_eq!(result.message, GENERIC);
+        eprintln!("200,000-word rejection: {elapsed:?}");
+    }
+
+    #[test]
+    fn startup_diagnostics_at_both_word_caps_finishes_under_50ms() {
+        let words: Vec<String> = (0..256)
+            .map(|n| format!("{}{:03}", "a".repeat(61), n))
+            .collect();
+        assert_eq!(words.iter().map(String::len).sum::<usize>(), 16_384);
+        for stored_bytes in [300, 65_536] {
+            let text = "a".repeat(stored_bytes);
+            let (_root, backend) = fixture(&words, &text);
+            let (result, elapsed) = timed_failure(&backend);
+            assert!(
+                elapsed < Duration::from_millis(50),
+                "diagnostics took {elapsed:?}"
+            );
+            assert_eq!(result.message, format!("{GENERIC}: {}", "a".repeat(300)));
+            eprintln!("256-word / 16 KiB / {stored_bytes}-byte stored stderr: {elapsed:?}");
         }
     }
 }

@@ -130,8 +130,10 @@ Sway's client protocols can grant more access than X11, including screencopy
 and virtual-keyboard unless restricted. The control socket stays hidden.
 Plugin-launch failures use native systemd `STATUS=` and reach the existing
 unit-failure reason through `StatusText`. Logs retain fixed/typed flags and the
-runner argv, and redact native append words and environment values. Structured plugin error codes and safe causes
-remain readable. Empty/whitespace-only append text has no private words;
+runner argv, and redact native append words and environment values. Structured
+plugin error codes and safe causes remain readable. The total
+`<message> (<code>)` is capped at 300 characters, reserving the code first.
+Empty/whitespace-only append text has no private words;
 malformed quoting refuses with a fixed message without echoing authored text.
 
 ### Native startup stderr
@@ -150,12 +152,18 @@ group/other entries remain zero. The directory has the sticky bit, so the
 runtime uid cannot remove or rename korrid-owned stderr. A displayed file mode
 of 0640 is the ACL mask, not owning-group access. The game can rewrite its words file and spoil its
 own error text. Readers check the opened fd's regular-file type and expected
-owner, refuse symlinks, and cap metadata reads. A mismatch is logged and leaves
-the generic exit-status reason; its contents are never used.
+owner and refuse symlinks. Metadata has a 99,074-byte JSON budget (the
+worst-case escaped encoding of the allowed words), with at most one extra byte
+read to detect overflow. More than 256 supplied
+words or 16 KiB of decoded word bytes leaves the generic exit-status reason,
+without scanning stderr. Accepted words are deduplicated. A mismatch is logged
+and its contents are never used.
 
 Without `StatusText`, a failed unit's reason includes at most three stderr
-lines and 300 characters, with those private values redacted. The existing
-one-second session watcher checks stderr size: over 64 KiB, korrid keeps at
+lines and 300 characters, with those private values redacted. Matching uses
+only that display window, read from at most 1,203 UTF-8 bytes at the file end,
+not the stored 64 KiB. A cut private-word suffix is masked at the window start.
+The existing one-second session watcher checks stderr size: over 64 KiB, korrid keeps at
 most the last 32 KiB of complete lines in the same file. A partial first line
 is discarded to avoid leaking a truncated credential. The file can briefly
 exceed 64 KiB between observations. No new thread or game file-size limit is

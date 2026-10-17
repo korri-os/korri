@@ -1,5 +1,5 @@
 //! Runtime-only diagnostics for one exact modifier launch. No journal authority.
-use crate::launcher::redaction::redact_text;
+use crate::launcher::redaction::{redact_display_tail, MAX_REASON_CHARS, MAX_REASON_LINES};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
@@ -18,7 +18,16 @@ const WORDS: &str = "redaction-words.json";
 // The existing one-second session watcher checks this, retaining the last 32 KiB.
 pub(crate) const MAX_STDERR_BYTES: u64 = 64 * 1024;
 const RETAIN_STDERR_BYTES: u64 = 32 * 1024;
-const MAX_WORDS_BYTES: u64 = 1024 * 1024;
+// Keep the pre-exec write guard: exceeding display quotas must degrade failure
+// detail to a generic reason, not refuse a launch with a large environment.
+const MAX_WRITTEN_WORDS_BYTES: u64 = 1024 * 1024;
+const MAX_WORD_COUNT: usize = 256;
+const MAX_WORD_BYTES: usize = 16 * 1024;
+// JSON may escape each decoded byte as six ASCII bytes, plus quotes/commas.
+// This accepts the complete permitted word budget without a 1 MiB read/parse.
+const MAX_READ_WORDS_BYTES: u64 = (6 * MAX_WORD_BYTES + 3 * MAX_WORD_COUNT + 2) as u64;
+// Read only enough UTF-8 for the displayed tail, plus a cut codepoint prefix.
+const MAX_REASON_READ_BYTES: u64 = (4 * MAX_REASON_CHARS + 3) as u64;
 
 /// Linux's native five-entry ACL shape is also used by systemd credentials
 /// (main.rs). Group and other have no access; mask bits are not group grants.
@@ -108,7 +117,7 @@ pub(crate) fn write_redaction_words(words: &[String]) -> Result<(), String> {
 }
 pub(super) fn write_words(directory: &Path, reader: u32, words: &[String]) -> io::Result<()> {
     let bytes = serde_json::to_vec(words)?;
-    if bytes.len() as u64 > MAX_WORDS_BYTES {
+    if bytes.len() as u64 > MAX_WRITTEN_WORDS_BYTES {
         return Err(io::Error::other("launch redaction words exceed 1 MiB"));
     }
     let mut file = OpenOptions::new()
@@ -157,48 +166,104 @@ pub(super) fn failure_reason(directory: &Path, runtime_uid: u32) -> io::Result<O
     if !directory.exists() {
         return Ok(None);
     }
-    let mut bytes = Vec::new();
-    regular(&directory.join(WORDS), false, runtime_uid)?
-        .take(MAX_WORDS_BYTES + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_WORDS_BYTES {
-        return Err(io::Error::other("redaction words exceed 1 MiB"));
+    let source = regular(&directory.join(WORDS), false, runtime_uid)?;
+    if source.metadata()?.len() > MAX_READ_WORDS_BYTES {
+        return Err(io::Error::other(
+            "redaction words exceed the diagnostic read budget",
+        ));
     }
-    let words: Vec<String> = serde_json::from_slice(&bytes)?;
+    let mut bytes = Vec::new();
+    source
+        .take(MAX_READ_WORDS_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_READ_WORDS_BYTES {
+        return Err(io::Error::other(
+            "redaction words exceed the diagnostic read budget",
+        ));
+    }
+    // Count supplied entries while decoding, before deduplication. Even a
+    // compact array of empty/duplicate words must not allocate a large list.
+    // Reject before opening stderr or attempting any match.
+    let mut words = bounded_words(&bytes)?;
+    words.retain(|word| !word.is_empty());
+    words.sort_unstable();
+    words.dedup();
     let mut file = regular(&directory.join(STDERR), false, unsafe { libc::geteuid() })?;
     let size = file.metadata()?.len();
-    let offset = size.saturating_sub(MAX_STDERR_BYTES);
+    let offset = size.saturating_sub(MAX_REASON_READ_BYTES);
     file.seek(SeekFrom::Start(offset))?;
     let mut bytes = Vec::new();
-    file.take(MAX_STDERR_BYTES).read_to_end(&mut bytes)?;
-    // Do not show a word cut at the bounded read's start: it could be a partial
-    // credential that no complete-word redactor could recognize.
-    let mut tail = String::from_utf8_lossy(&bytes).into_owned();
-    if offset != 0 {
-        tail = tail
-            .split_once('\n')
-            .map(|(_, tail)| tail.to_owned())
-            .unwrap_or_default();
-    }
-    let redacted = redact_text(&tail, &words);
-    let lines = redacted
-        .lines()
-        .rev()
-        .take(3)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("\n");
-    let mut chars = lines
+    file.take(MAX_REASON_READ_BYTES).read_to_end(&mut bytes)?;
+    // Skip a UTF-8 codepoint fragment so boundary redaction sees complete
+    // characters. Decoding and matching never touch the 64 KiB stored file.
+    let start = if offset > 0 {
+        bytes
+            .iter()
+            .take_while(|byte| (**byte & 0xc0) == 0x80)
+            .count()
+    } else {
+        0
+    };
+    let tail = String::from_utf8_lossy(&bytes[start..]);
+    let (display, clipped) = display_tail(&tail);
+    let redacted = redact_display_tail(display, &words, offset > 0 || clipped);
+    // Replacement markers can expand the selected window. Reapply only the
+    // display limit; never match the discarded file context or the markers.
+    let (reason, _) = display_tail(&redacted);
+    let reason: String = reason
         .chars()
         .filter(|ch| !ch.is_control() || *ch == '\n')
-        .rev()
-        .take(300)
-        .collect::<Vec<_>>();
-    chars.reverse();
-    let reason: String = chars.into_iter().collect();
+        .collect();
     Ok((!reason.trim().is_empty()).then_some(reason))
+}
+
+fn bounded_words(bytes: &[u8]) -> io::Result<Vec<String>> {
+    struct Words;
+    impl<'de> serde::de::Visitor<'de> for Words {
+        type Value = Vec<String>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a bounded redaction word list")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            use serde::de::Error;
+            let mut words = Vec::new();
+            let mut bytes = 0;
+            while let Some(word) = seq.next_element::<String>()? {
+                if words.len() == MAX_WORD_COUNT || word.len() > MAX_WORD_BYTES - bytes {
+                    return Err(A::Error::custom("redaction word budget exceeded"));
+                }
+                bytes += word.len();
+                words.push(word);
+            }
+            Ok(words)
+        }
+    }
+    let mut decoder = serde_json::Deserializer::from_slice(bytes);
+    let error = |_| io::Error::other("invalid redaction words: 256 entries or 16 KiB limit");
+    let words = serde::Deserializer::deserialize_seq(&mut decoder, Words).map_err(error)?;
+    decoder.end().map_err(error)?;
+    Ok(words)
+}
+
+fn display_tail(text: &str) -> (&str, bool) {
+    let bytes = text
+        .split_inclusive('\n')
+        .rev()
+        .take(MAX_REASON_LINES)
+        .map(str::len)
+        .sum::<usize>();
+    let lines = &text[text.len() - bytes..];
+    let start = lines
+        .char_indices()
+        .rev()
+        .take(MAX_REASON_CHARS)
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    (&lines[start..], bytes < text.len() || start > 0)
 }
 
 pub(super) fn cleanup(directory: &Path) -> io::Result<()> {
@@ -347,5 +412,91 @@ mod owner_hardening_tests {
             assert!(error.to_string().contains("owner mismatch"));
             assert!(!error.to_string().contains("DO_NOT_READ"));
         }
+    }
+}
+
+#[cfg(test)]
+mod redaction_budget_tests {
+    use super::*;
+
+    fn words_only(words: &[String]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("unit");
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join(WORDS), serde_json::to_vec(words).unwrap()).unwrap();
+        (root, directory)
+    }
+
+    #[test]
+    fn excessive_count_and_word_bytes_fail_before_stderr_is_opened() {
+        for words in [vec!["duplicate".into(); 257], vec!["x".repeat(16_385)]] {
+            let (_root, directory) = words_only(&words);
+            // There is deliberately no stderr file. Reject the budget first,
+            // not an eventual file read error or a partially redacted reason.
+            let error = failure_reason(&directory, unsafe { libc::geteuid() }).unwrap_err();
+            assert!(
+                error.to_string().contains("256 entries or 16 KiB"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_smaller_wire_budget_rejects_padded_json_before_stderr_is_opened() {
+        let (_root, directory) = words_only(&[]);
+        // Valid JSON with no words, below the old 1 MiB limit. Neither a word
+        // quota nor a syntax error can stand in for the smaller file bound.
+        let mut encoded = b"[]".to_vec();
+        encoded.resize(99_075, b' ');
+        fs::write(directory.join(WORDS), encoded).unwrap();
+        let error = failure_reason(&directory, unsafe { libc::geteuid() }).unwrap_err();
+        assert!(
+            error.to_string().contains("diagnostic read budget"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn escaped_words_at_the_byte_limit_fit_the_smaller_wire_read_budget() {
+        let word = "\u{1}".repeat(MAX_WORD_BYTES);
+        let (_root, directory) = words_only(&[word]);
+        assert!(fs::metadata(directory.join(WORDS)).unwrap().len() <= MAX_READ_WORDS_BYTES);
+        fs::write(directory.join(STDERR), "native failure cause").unwrap();
+        assert_eq!(
+            failure_reason(&directory, unsafe { libc::geteuid() })
+                .unwrap()
+                .as_deref(),
+            Some("native failure cause")
+        );
+    }
+
+    #[test]
+    fn selecting_the_display_window_does_not_expose_cut_private_words() {
+        for word in [
+            "private".repeat(100),
+            "private\n".repeat(100),
+            "秘密".repeat(250),
+        ] {
+            let (_root, directory) = words_only(std::slice::from_ref(&word));
+            fs::write(directory.join(STDERR), format!("{}\nnative cause", word)).unwrap();
+            let reason = failure_reason(&directory, unsafe { libc::geteuid() })
+                .unwrap()
+                .unwrap();
+            assert_eq!(reason, "[redacted]\nnative cause");
+        }
+    }
+
+    #[test]
+    fn replacement_expansion_still_respects_the_display_character_bound() {
+        let (_root, directory) = words_only(&["a".into()]);
+        fs::write(directory.join(STDERR), "a".repeat(MAX_REASON_CHARS)).unwrap();
+        let reason = failure_reason(&directory, unsafe { libc::geteuid() })
+            .unwrap()
+            .unwrap();
+        assert!(reason.chars().count() <= MAX_REASON_CHARS);
+        assert_eq!(
+            reason,
+            "[redacted]".repeat(MAX_REASON_CHARS / "[redacted]".len())
+        );
     }
 }
