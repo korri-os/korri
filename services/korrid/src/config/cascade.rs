@@ -46,7 +46,7 @@ pub fn resolve(
                 .get(&route.system_id)
                 .and_then(|v| v.families.get(family))
         }),
-        snapshot.runners.get(id),
+        snapshot.runners.get(id).map(|v| &v.runner),
         snapshot
             .systems
             .get(&route.system_id)

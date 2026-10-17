@@ -33,20 +33,17 @@ devices:
 ---
 library:
   "<game-id>":
-    launch:
-      use: "@korri:mgba/mgba"
+    runner: "@korri:mgba/mgba"
     runners:
       "@korri:mgba/mgba":
         settings:
           video:
             integer-scale: false
-        launch:
-          overrides:
-            config:
-              # Use an actual native key supported by your selected build.
-              # This illustrates placement; it is not validated RetroArch input.
-              append: |
-                example_native_key = "value"
+        config:
+          # Use an actual native key supported by your selected build.
+          # This illustrates placement; it is not validated RetroArch input.
+          append: |
+            example_native_key = "value"
 
 # Final integer-scale: false from game scope.
 # Final skip-bios on the selected device: false from person-device runner scope.

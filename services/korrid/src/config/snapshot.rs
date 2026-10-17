@@ -47,6 +47,7 @@ const ALL_SECTIONS: &[&str] = &[
     "systems",
     "families",
     "runners",
+    "modifiers",
     "profiles",
     "hooks",
     "locations",
@@ -218,7 +219,7 @@ impl ConfigSnapshotCoordinator {
                 .map_err(|error| storage_error(&path, error))?;
             documents.push(yaml);
         }
-        decode_config_documents(&documents[0], &documents[1])
+        let decoded = decode_config_documents(&documents[0], &documents[1])
             .map_err(|error| content_error(&root, error))?;
 
         let formats = FormatRegistry::with_builtins();
@@ -237,7 +238,8 @@ impl ConfigSnapshotCoordinator {
         .map_err(|error| CandidateLoadError::Content {
             message: sanitize_message(&root, &error.to_string()),
         })?;
-        let snapshot = snapshot_from_graph(&graph).map_err(|error| content_error(&root, error))?;
+        let snapshot = snapshot_from_graph(&graph, decoded.modifiers)
+            .map_err(|error| content_error(&root, error))?;
         classify_snapshot_support(&snapshot).map_err(|error| CandidateLoadError::Unsupported {
             message: sanitize_message(&root, &error.to_string()),
         })?;
@@ -246,9 +248,15 @@ impl ConfigSnapshotCoordinator {
     }
 }
 
-fn snapshot_from_graph(graph: &LoadedDocumentGraph) -> Result<ConfigSnapshot, ConfigSchemaError> {
+fn snapshot_from_graph(
+    graph: &LoadedDocumentGraph,
+    modifiers: super::modifiers::ModifierConfigs,
+) -> Result<ConfigSnapshot, ConfigSchemaError> {
     Ok(ConfigSnapshot {
         host: decode_graph_host(graph)?,
+        // Graph collection IDs are sorted. Retain the device document's key
+        // order for modifier composition rather than reordering its records.
+        modifiers,
         storage: decode_graph_collection(graph, "storage")?,
         providers: decode_graph_collection(graph, "providers")?,
         systems: decode_graph_collection(graph, "systems")?,

@@ -112,9 +112,6 @@ pub(super) fn validate(snapshot: &ConfigSnapshot) -> Result<(), ConfigSchemaErro
                     _ => {}
                 }
             }
-            if release.inheritable.launch.is_some() {
-                return Err(invalid(&path, "launch opinions are not catalog content"));
-            }
             if release.inheritable.hooks.as_ref().is_some_and(|hooks| {
                 hooks.before.as_ref().is_some_and(|v| !v.is_empty())
                     || hooks.after.as_ref().is_some_and(|v| !v.is_empty())

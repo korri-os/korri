@@ -35,7 +35,7 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         .unwrap()
     };
     snapshot.families.insert(family.into(), config(1));
-    snapshot.runners.insert(runner.into(), config(3));
+    snapshot.runners.insert(runner.into(), config(3).into());
     let system = snapshot
         .systems
         .entry("gba".into())

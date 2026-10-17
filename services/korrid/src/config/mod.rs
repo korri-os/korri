@@ -2,6 +2,7 @@ pub mod cascade;
 mod catalog;
 pub use catalog::ReleaseKey;
 pub mod library;
+pub mod modifiers;
 pub use library::{
     LibraryIdentity, LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload, SourcePayload,
 };
@@ -31,6 +32,7 @@ pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "systems",
     "families",
     "runners",
+    "modifiers",
     "profiles",
     "hooks",
     "locations",
@@ -61,6 +63,7 @@ pub struct ConfigSnapshot {
     pub systems: BTreeMap<String, SystemPayload>,
     pub families: BTreeMap<String, FamilyPayload>,
     pub runners: BTreeMap<String, RunnerPayload>,
+    pub modifiers: modifiers::ModifierConfigs,
     pub profiles: BTreeMap<String, ProfilePayload>,
     pub hooks: BTreeMap<String, HookProfilePayload>,
     pub library: BTreeMap<String, LibraryItemPayload>,
@@ -133,6 +136,8 @@ struct RawDocument {
     families: SectionRecords<FamilyPayload>,
     #[serde(default)]
     runners: SectionRecords<RunnerPayload>,
+    #[serde(default, deserialize_with = "optional_non_null")]
+    modifiers: Option<modifiers::ModifierConfigs>,
     #[serde(default)]
     profiles: SectionRecords<ProfilePayload>,
     #[serde(default)]
@@ -241,6 +246,7 @@ pub fn decode_config_documents(
         systems: device.systems.records,
         families: device.families.records,
         runners: device.runners.records,
+        modifiers: device.modifiers.unwrap_or_default(),
         profiles: device.profiles.records,
         hooks: device.hooks.records,
         locations: device.locations.records,
@@ -266,6 +272,7 @@ impl RawDocument {
             "systems" => self.systems.present,
             "families" => self.families.present,
             "runners" => self.runners.present,
+            "modifiers" => self.modifiers.is_some(),
             "profiles" => self.profiles.present,
             "hooks" => self.hooks.present,
             "library" => self.library.present,
@@ -418,12 +425,6 @@ pub struct HostPayload {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
-    pub launch: Option<LaunchPolicy>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
     pub moonlight: Option<BTreeMap<String, Value>>,
     #[serde(
         default,
@@ -478,13 +479,6 @@ pub struct HostPayload {
 
 impl HostPayload {
     fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.launch.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.launch"),
-                "host launch policy is not executable in this slice",
-            );
-        }
         if self.moonlight.is_some() {
             push_issue(
                 issues,
@@ -586,6 +580,8 @@ pub struct ProviderPayload {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
+    #[serde(default)]
+    pub modifiers: modifiers::ModifierConfigs,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -629,7 +625,22 @@ pub struct SystemPayload {
 }
 
 pub type FamilyPayload = cascade::RunnerConfig;
-pub type RunnerPayload = cascade::RunnerConfig;
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunnerPayload {
+    #[serde(flatten)]
+    pub runner: cascade::RunnerConfig,
+    #[serde(default)]
+    pub modifiers: modifiers::ModifierConfigs,
+}
+impl From<cascade::RunnerConfig> for RunnerPayload {
+    fn from(runner: cascade::RunnerConfig) -> Self {
+        Self {
+            runner,
+            modifiers: Default::default(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -772,12 +783,6 @@ pub struct InheritableLayer {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
-    pub launch: Option<LaunchPolicy>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
     pub moonlight: Option<BTreeMap<String, Value>>,
     #[serde(
         default,
@@ -826,13 +831,6 @@ pub struct InheritableLayer {
 
 impl InheritableLayer {
     fn collect_support_issues(&self, path: &str, issues: &mut Vec<SupportIssue>) {
-        if self.launch.is_some() {
-            push_issue(
-                issues,
-                &format!("{path}.launch"),
-                "inheritable launch policy is not executable in this slice",
-            );
-        }
         if self.moonlight.is_some() {
             push_issue(
                 issues,
@@ -890,18 +888,6 @@ impl InheritableLayer {
             );
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchPolicy {
-    #[serde(
-        default,
-        rename = "with",
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "optional_non_null"
-    )]
-    pub with_policy: Option<ProviderValueMap>,
 }
 
 pub type ProviderValueMap = BTreeMap<ProviderIdString, Value>;

@@ -344,6 +344,7 @@ fn add_unit(
             next.library.insert(
                 id.clone(),
                 LibraryItemPayload {
+                    modifiers: Default::default(),
                     title: Some(title.into()),
                     version_of: None,
                     relation: None,

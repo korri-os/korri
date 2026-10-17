@@ -16,6 +16,8 @@ pub const LIBRARY_FILE_NAME: &str = "catalog/library.yaml";
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryItemPayload {
+    #[serde(default)]
+    pub modifiers: super::modifiers::ModifierConfigs,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
