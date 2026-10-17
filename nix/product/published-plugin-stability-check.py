@@ -88,13 +88,13 @@ def main() -> None:
         )
         assert expected[-1] != actual[-1], "the Core runtime derivation did not change"
         for packages, contexts, *_ in actual[:-1]:
-            assert len(packages) == 23
+            assert len(packages) == 24
             for name, path in packages.items():
                 assert contexts[name] == {path: {"path": True}}, (
                     "plugin recipes entered image dependencies"
                 )
         print(
-            "Both architectures: 23 exact outputs, proof derivations, and admission checks unchanged while the Core runtime derivation changes."
+            "Both architectures: 24 exact outputs, proof derivations, and admission checks unchanged while the Core runtime derivation changes."
         )
 
 

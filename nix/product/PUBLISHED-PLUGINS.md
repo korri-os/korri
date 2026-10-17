@@ -15,17 +15,21 @@ does not make a plugin required.
 
 ## Current producer evidence
 
-The pins come from immutable publisher batches `build-e5e27ed406f2`,
-`build-9f946f33bd18` and `build-0febdc65ce51`. Each batch supplies `revision.txt`, architecture-specific
-path lists, and `offline-metadata-SYSTEM.tar.gz`. Current host seed reports
-establish the declaration IDs of the selected packages. Path names and lists
-alone establish no identity or trust.
+The pins come from the immutable publisher batches `build-9514b1b382d3` and
+`build-9514b1b382d3-solarus`. Each batch supplies `revision.txt`, architecture-specific path lists, and
+`offline-metadata-SYSTEM.tar.gz`. Current host seed reports establish the
+declaration IDs of the selected packages. Path names and lists alone establish
+no identity or trust.
 
-Both architecture maps contain 23 outputs. Batch `build-9f946f33bd18` supplies
-Sunshine and the unchanged SSH output. Batch `build-0febdc65ce51` supplies
-`@korri:starter-pack` and its exact `@korri:fake08` dependency from source
-`0febdc65ce511bb3bf2862002839a9f2873ce50f`. The other 21 output pins are unchanged.
-`published-plugin-metadata.nix` pins the
+Both architecture maps contain 24 outputs, all from source
+`9514b1b382d3b963674628308d6a5770987a4bc0`. The first batch republished 23
+selected plugins for the discovery v2 plugin contract (system content rules,
+groups and `controls`; no `discovery` export), which the current host requires.
+The second batch adds `@korri:solarus`, which the Starter pack requires next to
+`@korri:fake08`; `plugin-selection.nix` selects it on every product device.
+Each pinned path was checked against the batch's `paths-SYSTEM.txt` by
+evaluating the publisher at that commit. Earlier batches remain published but
+are no longer pinned. `published-plugin-metadata.nix` pins the
 matching ARM and x86 archive hashes. It checks every path in the actual
 closure, not only top-level packages. It rejects conflicting proof metadata.
 Equivalent records can differ in optional `Deriver` provenance and signature

@@ -50,10 +50,11 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
       ${pkgs.lib.escapeShellArgs (builtins.attrValues published)} > receipts.json
     jq -e 'length == ${toString (builtins.length (builtins.attrNames published))}' receipts.json >/dev/null
     ${identityChecks}
-    # Image selection must approve the exact dependency the pack names.
-    # Keeping another FAKE-08 version in the store is not sufficient.
-    jq -e --arg dependency ${pkgs.lib.escapeShellArg published.korri-plugin-fake08} \
-      '.publisher.namespace == "@korri" and .requires == [$dependency]' \
+    # Image selection must approve the exact dependencies the pack names.
+    # Keeping another FAKE-08 or Solarus version in the store is not sufficient.
+    jq -e --arg fake08 ${pkgs.lib.escapeShellArg published.korri-plugin-fake08} \
+      --arg solarus ${pkgs.lib.escapeShellArg published.korri-plugin-solarus} \
+      '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus]' \
       ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
     touch "$out"
   ''

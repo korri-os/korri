@@ -51,6 +51,7 @@ assert lib.all (
   lib.all (package: lib.elem (toString package) (map toString selected.${name})) [
     published.korri-plugin-starter-pack
     published.korri-plugin-fake08
+    published.korri-plugin-solarus
   ]
 ) names;
 assert recoveryWithoutDefaults;

@@ -9,20 +9,17 @@
 let
   hashes = {
     aarch64-linux = [
-      "sha256-OlWpH0izwxlLfoKp4iPMv62WA35qrZhuHhcseOzXOso="
-      "sha256-vgSXTEWZ0QhFi27/Z0tvcDBhYcGE+ya3zZHsj23xMb4="
-      "sha256-cp2Kao3nNfe3jONB1nGfDZgl2KJOG1PGZanHB42lmzg="
+      "sha256-BjC9CnvTh+ODlO7S1/V8HhSyhpuGUlJamctrzd5Yayo="
+      "sha256-n/gfhZ4CWD30VvXquUBQkTW6JTuKXT/f/CzldOPi35Y="
     ];
     x86_64-linux = [
-      "sha256-hEG1+tYVEXRLAM0qsI8tn+V89d/wmXdc8YLNWh/2GSQ="
-      "sha256-i8dr+p67hQv8/60UzKA233PZSE7XE98smlmouSLKDHg="
-      "sha256-8H0SKgcB80XLf8Rrw66n8JdVsnGYpoxIYSmMhpbF9xM="
+      "sha256-nJZ+40Y/QRYy2ke3Th22b8g872uYFjH/c4ps2/IBrAE="
+      "sha256-qgeu2GC3SdJNtJ+BZkpEwIn28Gjvp2ZQb3o1rQ+Lj+o="
     ];
   };
   batches = [
-    "build-e5e27ed406f2"
-    "build-9f946f33bd18"
-    "build-0febdc65ce51"
+    "build-9514b1b382d3"
+    "build-9514b1b382d3-solarus"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:
