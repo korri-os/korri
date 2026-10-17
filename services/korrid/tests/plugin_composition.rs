@@ -33,11 +33,13 @@ export const handlers = {'launch.compose': compose};
 const COMPOSE: &str = r#"
 export function compose(input) {
  if (input.modifierId !== '@test:wrapper/main' || input.runnerId !== '@korri:mgba/mgba') throw new Error('wrong selection');
- if (input.settings.requireDisplay && (input.display?.width !== 1240 || input.display?.height !== 1080)) throw new Error('missing logical display');
+ if (input.settings.requireDisplay && (input.display?.width !== 1240 || input.display?.height !== 1080)) throw Object.assign(new Error('missing logical display'), {code:'display-unavailable',retryable:false});
+ if (input.settings.sharpness > 20) throw Object.assign(new Error('setting sharpness must be an integer 0..20'), {code:'setting-range',retryable:false});
  if (input.settings.invalid) throw new Error('width must be a positive integer');
  if (input.settings.fail) throw new Error('compose refused');
  if (input.settings.invalidOutput) return {...input.plan, [input.config.append.split(' ').join('')]: true};
  if (input.settings.invalidPlan) return {...input.plan, command: ''};
+ if (input.settings.logPlan) return {...input.plan, command:'/bin/sh',args:['-c','exit 0','wrapper','--backend','wayland','--sharpness','20','--raw','private value','--',input.plan.command,...input.plan.args]};
  if (input.config.append) throw new Error('append rejected: ' + input.config.append);
  return {...input.plan, command: input.files.program, args:['-c','printf wrapped > wrapped; exec "$@"','wrapper',input.plan.command,...input.plan.args]};
 }
@@ -100,7 +102,10 @@ fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchCo
 }
 fn cli(command: &[String]) -> Command {
     let mut process = Command::new(env!("CARGO_BIN_EXE_korrid"));
-    process.args(&command[1..]).env("REMOVED", "must disappear");
+    process
+        .env_clear()
+        .args(&command[1..])
+        .env("REMOVED", "must disappear");
     process
 }
 #[test]
@@ -167,12 +172,8 @@ fn compose_refusals_missing_sources_files_and_invalid_plans_stop_before_all_effe
             "launch command must be non-empty",
         ),
         (
-            "{enabled: true, settings: {invalidOutput: true}, config: {append: 'n e v e r - p u b l i s h'}}",
-            "invalid compose result",
-        ),
-        (
             "{enabled: true, config: {append: '--secret=never-publish'}}",
-            "details redacted because config.append is present",
+            "append rejected",
         ),
     ] {
         let root = tempfile::tempdir().unwrap();
@@ -318,4 +319,83 @@ fn multiple_modifiers_compose_the_previous_plan_in_device_key_order() {
     );
     let plan = prepare(Path::new(&spec.command[2]), &input, &composition).unwrap();
     assert_eq!(&plan.args[plan.args.len() - 2..], ["z", "a"]);
+}
+
+#[test]
+fn compose_causes_survive_empty_and_nonempty_native_append() {
+    for append in ["", "   \t", "--native-option 'private value'"] {
+        let record = serde_json::json!({"enabled":true,"settings":{"sharpness":21},"config":{"append":append}}).to_string();
+        let root = tempfile::tempdir().unwrap();
+        let (command, _, _) = setup(root.path(), &record);
+        let result = cli(&command).output().unwrap();
+        let reason = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            reason.contains("setting sharpness must be an integer 0..20 (setting-range)"),
+            "{reason}"
+        );
+        assert!(!reason.contains("private value"), "{reason}");
+    }
+    let root = tempfile::tempdir().unwrap();
+    let (command, _, _) = setup(
+        root.path(),
+        "{enabled: true, settings: {requireDisplay: true}, config: {append: '--native-option'}}",
+    );
+    let result = cli(&command).output().unwrap();
+    let reason = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        reason.contains("missing logical display (display-unavailable)"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn malformed_append_refuses_with_a_fixed_message_without_echoing_words() {
+    let root = tempfile::tempdir().unwrap();
+    let record =
+        serde_json::json!({"enabled":true,"config":{"append":"--native 'private unfinished"}})
+            .to_string();
+    let (command, _, _) = setup(root.path(), &record);
+    let result = cli(&command).output().unwrap();
+    let reason = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        reason.contains("config.append could not be split into words"),
+        "{reason}"
+    );
+    assert!(!reason.contains("private"), "{reason}");
+}
+
+#[test]
+fn the_final_plan_log_keeps_fixed_typed_and_runner_argv_visible() {
+    let root = tempfile::tempdir().unwrap();
+    let (command, _, _) = setup(
+        root.path(),
+        "{enabled: true, settings: {logPlan: true}, config: {append: \"--raw 'private value'\"}}",
+    );
+    let result = cli(&command).output().unwrap();
+    assert!(result.status.success());
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    let logged = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("korrid plugin-launch plan: "))
+        .unwrap();
+    let plan: serde_json::Value = serde_json::from_str(logged).unwrap();
+    assert_eq!(
+        plan["args"].as_array().unwrap()[3..12],
+        serde_json::json!([
+            "--backend",
+            "wayland",
+            "--sharpness",
+            "20",
+            "[redacted]",
+            "[redacted]",
+            "--",
+            "/bin/sh",
+            "-c"
+        ])
+        .as_array()
+        .unwrap()[..]
+    );
+    assert!(plan["args"][12].as_str().unwrap().contains("printf game"));
+    assert!(!stderr.contains("private value"));
+    assert!(!stderr.contains("very-private"));
 }

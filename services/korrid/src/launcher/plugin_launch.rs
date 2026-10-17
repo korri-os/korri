@@ -1,6 +1,9 @@
 //! The callback and all declared effects run inside the game unit, after
 //! systemd has selected the runtime user and applied its existing sandbox.
-use super::ProvisionedFile;
+use super::{
+    redaction::{status_text, LaunchRedaction},
+    ProvisionedFile,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, os::unix::process::CommandExt, path::Path, process::Command};
 use typeshare::typeshare;
@@ -178,6 +181,21 @@ pub fn prepare(
     input: &PluginLaunchInput,
     composition: &LaunchComposition,
 ) -> Result<PluginLaunchOutput, String> {
+    prepare_with_diagnostics(source, input, composition).map(|prepared| prepared.plan)
+}
+
+struct PreparedLaunch {
+    plan: PluginLaunchOutput,
+    runner_argv: Vec<String>,
+    redaction: LaunchRedaction,
+}
+
+fn prepare_with_diagnostics(
+    source: &Path,
+    input: &PluginLaunchInput,
+    composition: &LaunchComposition,
+) -> Result<PreparedLaunch, String> {
+    let mut redaction = LaunchRedaction::from_composition(composition)?;
     let package = source
         .parent()
         .ok_or("plugin source has no package directory")?;
@@ -188,6 +206,9 @@ pub fn prepare(
     let (snapshot, _) = package_snapshot(&package.join("manifest.json"), entry)?;
     let mut plan = evaluate_snapshot(&snapshot, input)?;
     validate_plan(&plan)?;
+    let runner_argv = std::iter::once(plan.command.clone())
+        .chain(plan.args.clone())
+        .collect();
     for modifier in &composition.modifiers {
         let compose = || -> Result<PluginLaunchOutput, String> {
             let (snapshot, manifest) = package_snapshot(&modifier.manifest, &modifier.entry)?;
@@ -208,23 +229,14 @@ pub fn prepare(
                 files: manifest.files,
                 display: composition.display.clone(),
             };
-            let result = crate::script::call_plugin_operation_snapshot(&snapshot, crate::script::LAUNCH_COMPOSE, &serde_json::to_string(&request).map_err(|e| e.to_string())?)
-                .map_err(|failure| {
-                    // Native text may contain credentials, and an exception can
-                    // echo it after quote removal or other transformations.
-                    // Only the operation failure class is safe in that case.
-                    if modifier.config.append.is_some() {
-                        "plugin launch.compose failed (details redacted because config.append is present)".into()
-                    } else { failure.to_string() }
-                })?;
-            let output: PluginLaunchOutput = serde_json::from_str(&result).map_err(|error| {
-                if modifier.config.append.is_some() {
-                    "invalid compose result (details redacted because config.append is present)"
-                        .into()
-                } else {
-                    format!("invalid compose result: {error}")
-                }
-            })?;
+            let result = crate::script::call_plugin_operation_snapshot(
+                &snapshot,
+                crate::script::LAUNCH_COMPOSE,
+                &serde_json::to_string(&request).map_err(|e| e.to_string())?,
+            )
+            .map_err(|failure| redaction.text(&failure.to_string()))?;
+            let output: PluginLaunchOutput = serde_json::from_str(&result)
+                .map_err(|error| redaction.text(&format!("invalid compose result: {error}")))?;
             validate_plan(&output)?;
             Ok(output)
         };
@@ -232,11 +244,16 @@ pub fn prepare(
             format!(
                 "modifier {}: {}",
                 modifier.modifier_id,
-                launch_refusal(&reason)
+                status_text(&reason)
             )
         })?;
     }
-    Ok(plan)
+    redaction.add_env(plan.env.values().cloned());
+    Ok(PreparedLaunch {
+        plan,
+        runner_argv,
+        redaction,
+    })
 }
 
 fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
@@ -262,16 +279,6 @@ fn validate_plan(plan: &PluginLaunchOutput) -> Result<(), String> {
     Ok(())
 }
 
-fn launch_refusal(reason: &str) -> String {
-    // Dynamic plugin exceptions/decoder messages are withheld above whenever
-    // append is present. Static host reasons contain no authored native text.
-    reason
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(1024)
-        .collect()
-}
-
 /// Used by the host before the unit starts. The handoff is authored only by korrid.
 pub(crate) fn has_modifiers(command: &[String]) -> bool {
     command.get(1).is_some_and(|v| v == "plugin-launch")
@@ -289,14 +296,18 @@ pub fn execute(source: &Path, input: &str, composition: &str) -> Result<(), Stri
     let input: PluginLaunchInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
     let composition: LaunchComposition =
         serde_json::from_str(composition).map_err(|e| e.to_string())?;
-    let output = prepare(source, &input, &composition)?;
-    // Arguments can contain raw native credentials, including positional ones.
-    // Log the final shape without trusting plugins to identify secret values.
+    let PreparedLaunch {
+        plan: output,
+        runner_argv,
+        redaction,
+    } = prepare_with_diagnostics(source, &input, &composition)?;
+    // Only native append words and environment values are private. Keep the
+    // fixed/typed flags and the runner command/arguments useful for diagnosis.
     eprintln!(
         "korrid plugin-launch plan: {}",
         serde_json::json!({
             "command": output.command,
-            "args": output.args.iter().map(|_| "[redacted]").collect::<Vec<_>>(),
+            "args": redaction.argv(&output.args, &runner_argv),
             "env": output.env.keys().map(|key| (key, "[redacted]")).collect::<std::collections::BTreeMap<_,_>>(),
             "envUnset": output.env_unset, "cwd": output.cwd,
         })
@@ -368,11 +379,7 @@ pub fn notify_failure(reason: &str) {
         };
         let datagram = UnixDatagram::unbound()?;
         datagram.connect_addr(&address)?;
-        let reason: String = reason
-            .chars()
-            .filter(|c| !c.is_control())
-            .take(1024)
-            .collect();
+        let reason = status_text(reason);
         datagram.send(format!("STATUS=plugin-launch: {reason}").as_bytes())?;
         Ok(())
     };

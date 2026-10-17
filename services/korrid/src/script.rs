@@ -57,6 +57,26 @@ pub const RUNTIME_RESOLVE: &str = "runtime.resolve";
 pub enum OperationFailure {
     Unimplemented { operation: String },
     Failed(String),
+    Plugin(PluginOperationError),
+}
+
+/// Existing structured plugin error (OPERATIONS.md §1/§6).
+#[derive(Debug)]
+pub struct PluginOperationError {
+    pub code: String,
+    pub message: String,
+    pub retryable: Option<bool>,
+}
+
+impl From<String> for OperationFailure {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+impl From<&str> for OperationFailure {
+    fn from(message: &str) -> Self {
+        Self::Failed(message.into())
+    }
 }
 
 impl std::fmt::Display for OperationFailure {
@@ -66,6 +86,7 @@ impl std::fmt::Display for OperationFailure {
                 write!(formatter, "plugin does not implement {operation}")
             }
             Self::Failed(message) => formatter.write_str(message),
+            Self::Plugin(error) => write!(formatter, "{} ({})", error.message, error.code),
         }
     }
 }
@@ -90,6 +111,7 @@ pub fn eval_plugin(source: &str) -> Result<String, String> {
         preparation::PreparedGraph::new(&snapshot, "plugin.js")?,
         None,
     )
+    .map_err(|failure| failure.to_string())
 }
 
 /// One operation call: an operation name from the plugin operation contract
@@ -132,21 +154,20 @@ pub fn call_plugin_operation_snapshot(
             input: input_json,
         }),
     )
-    .map_err(|error| {
-        if error == unimplemented_message(operation) {
+    .map_err(|failure| match failure {
+        OperationFailure::Failed(message) if message == unimplemented_message(operation) => {
             OperationFailure::Unimplemented {
-                operation: operation.to_owned(),
+                operation: operation.into(),
             }
-        } else {
-            OperationFailure::Failed(error)
         }
+        other => other,
     })
 }
 
 fn evaluate_module(
     graph: preparation::PreparedGraph,
     invocation: Option<Invocation<'_>>,
-) -> Result<String, String> {
+) -> Result<String, OperationFailure> {
     let runtime = Runtime::new().map_err(|error| error.to_string())?;
     // External declarations run before permission approval. Resource limits
     // therefore belong to the empty interpreter, not to the installed payload.
@@ -164,7 +185,7 @@ fn evaluate_module(
     runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
     let context = Context::full(&runtime).map_err(|error| error.to_string())?;
 
-    context.with(|ctx| {
+    context.with(|ctx| -> Result<String, OperationFailure> {
         // Own all module roots inside this scope. Loader/native callbacks retain
         // only Weak references and cannot keep the interpreter alive on errors.
         let mut installed = installed;
@@ -193,7 +214,7 @@ fn evaluate_module(
                 }
                 // Handlers are callable operation code, never declaration data.
                 "handlers" => validate_handlers(&value)?,
-                _ => return Err(format!("unsupported plugin export: {name}")),
+                _ => return Err(format!("unsupported plugin export: {name}").into()),
             }
         }
         let name: Value = data.get("name").map_err(|error| error.to_string())?;
@@ -246,19 +267,23 @@ fn evaluate_module(
                 .json_parse(invocation.input)
                 .map_err(|error| error.to_string())?;
             let value: Value = handler.call((argument,)).map_err(|error| {
-                // QuickJS's generic exception text drops the plugin's reason.
-                // Read only Error.message, not a plugin-defined toString hook.
-                let reason = if error.is_exception() {
-                    ctx.catch()
-                        .as_object()
-                        .and_then(|object| object.get::<_, String>("message").ok())
-                } else {
-                    None
-                };
-                format!(
-                    "plugin {operation} failed: {}",
-                    reason.unwrap_or_else(|| error.to_string())
-                )
+                // Preserve the producer's code/message/retryable fields. Do not
+                // invoke toJSON/toString hooks while inspecting a thrown value.
+                let exception = error.is_exception().then(|| ctx.catch());
+                let object = exception.as_ref().and_then(Value::as_object);
+                let message = object
+                    .and_then(|v| v.get::<_, String>("message").ok())
+                    .unwrap_or_else(|| error.to_string());
+                match object.and_then(|v| v.get::<_, String>("code").ok()) {
+                    Some(code) => OperationFailure::Plugin(PluginOperationError {
+                        code,
+                        message,
+                        retryable: object.and_then(|v| v.get::<_, bool>("retryable").ok()),
+                    }),
+                    None => {
+                        OperationFailure::Failed(format!("plugin {operation} failed: {message}"))
+                    }
+                }
             })?;
             json_data_from_js(
                 &value,
@@ -491,6 +516,7 @@ pub fn eval_plugin_snapshot(snapshot: &source::SourceSnapshot) -> Result<String,
         preparation::PreparedGraph::new(snapshot, "plugin.ts")?,
         None,
     )
+    .map_err(|failure| failure.to_string())
 }
 
 #[cfg(test)]
@@ -652,5 +678,29 @@ mod tests {
         }
         assert!(eval_plugin_ts("export const name = 'clock'; while (true) {}").is_err());
         assert!(eval_plugin_ts(&" ".repeat(128 * 1024 + 1)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod operation_error_tests {
+    use super::*;
+    #[test]
+    fn structured_plugin_errors_keep_the_producers_code_message_and_retryability() {
+        let source = "export const name='errors'; export const handlers={'launch.compose': () => { throw Object.assign(new Error('setting sharpness must be an integer 0..20'), {code:'setting-range',retryable:false}); }};";
+        let failure = call_plugin_operation_ts(source, LAUNCH_COMPOSE, "{}").unwrap_err();
+        assert_eq!(
+            failure.to_string(),
+            "setting sharpness must be an integer 0..20 (setting-range)"
+        );
+        match failure {
+            OperationFailure::Plugin(error) => {
+                assert_eq!(error.code, "setting-range");
+                assert_eq!(error.retryable, Some(false));
+            }
+            other => panic!("lost the structured error: {other:?}"),
+        }
+        let failure = call_plugin_operation_ts("export const name='errors'; export const handlers={'launch.compose': () => { throw new Error('ordinary error'); }};", LAUNCH_COMPOSE, "{}").unwrap_err();
+        assert!(matches!(failure, OperationFailure::Failed(_)));
+        assert!(failure.to_string().contains("ordinary error"));
     }
 }
