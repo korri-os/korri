@@ -82,7 +82,7 @@ pub struct PluginDisplay {
     pub height: u32,
 }
 
-/// ADR 0002 and the first launch.compose treaty. Modifiers own their settings.
+/// ADR 0007 and the first launch.compose treaty. Modifiers own their settings.
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

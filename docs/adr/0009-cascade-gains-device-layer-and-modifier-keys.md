@@ -23,7 +23,7 @@ override. Every layer held records keyed by runner or family
 
 The names are taken from the existing runner record (`settings`, `config`) and
 from plugin enablement in `config/settings.rs` (`enabled`). They are not taken
-from legacy's `launch.with` policy (ADR 0001). The same change removes the
+from legacy's `launch.with` policy (ADR 0006). The same change removes the
 legacy `launch.with` map from `HostPayload.launch` and `InheritableLayer.launch`.
 main read those fields only to reject them, and they would otherwise be a
 second, dead home for Gamescope policy.

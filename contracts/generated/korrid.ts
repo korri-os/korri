@@ -569,7 +569,7 @@ export interface PluginDisplay {
 	height: number;
 }
 
-/** ADR 0002 and the first launch.compose treaty. Modifiers own their settings. */
+/** ADR 0007 and the first launch.compose treaty. Modifiers own their settings. */
 export interface PluginComposeInput {
 	modifierId: string;
 	runnerId: string;

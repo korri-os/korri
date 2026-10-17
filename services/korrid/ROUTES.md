@@ -107,7 +107,7 @@ scalar union. It is not a device configuration schema. Regenerate with
 
 ## Launch modifiers
 
-ADR 0004 adds a separate contribution-ID cascade: device `modifiers` →
+ADR 0009 adds a separate contribution-ID cascade: device `modifiers` →
 top-level runner `modifiers` → system `modifiers` → library item `modifiers`.
 Each scalar setting, `enabled`, and `config.append` is last-wins. An absent
 `enabled` means off. Runner subrecords cannot contain modifiers. Modifier

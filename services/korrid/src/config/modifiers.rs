@@ -1,4 +1,4 @@
-//! ADR 0004: device → runner → system → library item, independent of runner settings.
+//! ADR 0009: device → runner → system → library item, independent of runner settings.
 use super::{
     cascade::LaunchSettingValue, optional_non_null, resolver::ResolvedRoute, ConfigSnapshot,
 };
