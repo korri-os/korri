@@ -27,7 +27,7 @@ bootstrap_mark=0
 new_console=""
 new_bootstrap=""
 generation=0
-login_deadline=$((SECONDS + 600))
+login_deadline=0
 
 login_present() {
   local user
@@ -182,6 +182,8 @@ done
 say 'settings: merging Proton, Steam Input and first-launch seeds'
 @settings@/bin/steam-vdf-settings "$STEAM_HOME" "$appid"
 if ! login_present; then say 'login: Steam sign-in required; waiting up to 600 s for manual sign-in'; fi
+# Client/runtime downloads must not consume the manual sign-in window.
+login_deadline=$((SECONDS + 600))
 start_steam
 wait_for_steam_ready
 # Login can first happen during the warm gate. Apply userdata seeds only on
