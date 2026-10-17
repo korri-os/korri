@@ -118,7 +118,6 @@ run ln -sfn "$STEAM_HOME/linuxarm64" "$STEAM_DOT/sdkarm64"
 
 printf '%s\n' "$STEAM_BETA" | atomic_write "$STEAM_HOME/package/beta"
 atomic_copy "$resource_dir/compatibilitytool.vdf" "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
-run rm -f "$STEAM_HOME/compatibilitytools.d/Proton11ARM"
 atomic_copy "$resource_dir/registry.vdf" "$STEAM_DOT/registry.vdf"
 
 manifest_file="$STEAM_HOME/package/steam_client_${STEAM_BETA}_linuxarm64.manifest"

@@ -167,7 +167,6 @@ install_client() {
 
 install_links_and_metadata() {
   run mkdir -p "$STEAM_GAMES_ROOT" "$STEAM_DOT" "$STEAM_HOME/compatibilitytools.d"
-  run rm -f "$STEAM_HOME/compatibilitytools.d/Proton11ARM"
   run ln -sfn "$PROTON_SOURCE/" "$PROTON_LINK"
   STEAM_BETA="$STEAM_BETA" "$script_dir/steam-arm64-bootstrap" "--$mode"
 }

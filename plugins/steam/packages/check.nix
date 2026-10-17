@@ -22,6 +22,7 @@ pkgs.runCommand "steam-session-check"
     cp -r ${../session} session
     mkdir -p packages/steam-korri
     cp -r ${./steam-korri/resources} packages/steam-korri/resources
+    cp -r ${./steam-korri/scripts} packages/steam-korri/scripts
     chmod -R u+w session
     python3 -m unittest discover -s session -p 'test_*.py'
     for script in ${../session/steam-session.sh} ${./steam-korri/scripts}/*; do
