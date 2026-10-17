@@ -2,7 +2,7 @@
 let
   proton = pkgs.callPackage ./proton-cachyos-arm64 { };
   rootfs = import ./fex-rootfs.nix { inherit pkgs; };
-  native = import ./steam-korri { inherit pkgs proton; };
+  native = import ./steam-korri { inherit pkgs proton settings; };
   settings = pkgs.writeShellApplication {
     name = "steam-vdf-settings";
     runtimeInputs = [ pkgs.python3 ];

@@ -1,0 +1,23 @@
+// Existing registry comments and user choices must survive seeding.
+"Registry"
+{
+    "Unrelated" "keep this value"
+    "HKLM" { "Software" { "Valve" { "Steam"
+    {
+        "SteamPID" "12345"
+        "ClientLauncherType" "2"
+        "SteamDeckOOBEComplete" "0"
+    } } } }
+    "HKCU" { "Software" { "Valve"
+    {
+        "Steamsteamglobal" { "language" "german" }
+        "Steam"
+        {
+            "language" "german"
+            "CompletedOOBEStage1" "0"
+            "CompletedOOBE" "0"
+            "SourceModInstallPath" "/games/custom-mods"
+            "AlreadyRetriedOfflineMode" "1"
+        }
+    } } }
+}

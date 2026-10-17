@@ -159,9 +159,29 @@ def write(change):
             os.unlink(temporary)
 
 
+def seed_registry(path: Path) -> int:
+    # Only the three OOBE flags from the legacy native registry fixture are
+    # required in an existing registry. PIDs, language and paths belong to Steam
+    # and its user, not to this seed.
+    desired = {"Registry": {
+        "HKLM": {"Software": {"Valve": {"Steam": {"SteamDeckOOBEComplete": "1"}}}},
+        "HKCU": {"Software": {"Valve": {"Steam": {
+            "CompletedOOBEStage1": "1", "CompletedOOBE": "1",
+        }}}},
+    }}
+    try:
+        write(prepare(path, desired))
+    except (OSError, ValueError) as error:
+        print(f"steam-session: registry settings failed: {error}", file=sys.stderr)
+        return 126
+    return 0
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--registry":
+        return seed_registry(Path(sys.argv[2]))
     if len(sys.argv) != 3 or not re.fullmatch(r"[1-9][0-9]*", sys.argv[2]):
-        print("usage: steam-vdf-settings <steam-home> <appid>", file=sys.stderr)
+        print("usage: steam-vdf-settings <steam-home> <appid> | --registry <path>", file=sys.stderr)
         return 2
     home, appid = Path(sys.argv[1]), sys.argv[2]
     mapping = {key: {"name": TOOL, "config": "", "priority": "250"} for key in ("0", appid)}

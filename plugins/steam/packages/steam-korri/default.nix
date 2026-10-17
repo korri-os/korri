@@ -1,4 +1,8 @@
-{ pkgs, proton }:
+{
+  pkgs,
+  proton,
+  settings,
+}:
 let
   guard = pkgs.stdenv.mkDerivation {
     pname = "korri-steam-input-guard";
@@ -33,6 +37,8 @@ let
       done
       substituteInPlace "$out/bin/steam-arm64-seed" \
         --replace-fail '@korriProtonCachyosArm64@' '${proton}/share/korri/proton-cachyos-arm64/dist'
+      substituteInPlace "$out/bin/steam-arm64-bootstrap" \
+        --replace-fail '@vdfSettings@' '${settings}'
       substituteInPlace "$out/bin/steam-guest-run" \
         --replace-fail '@inputGuard@' '${guard}/lib/libkorri-steam-input-guard.so'
       wrapProgram "$out/bin/steam-arm64-seed" \

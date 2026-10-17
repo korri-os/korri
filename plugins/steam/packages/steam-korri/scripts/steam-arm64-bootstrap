@@ -118,7 +118,11 @@ run ln -sfn "$STEAM_HOME/linuxarm64" "$STEAM_DOT/sdkarm64"
 
 printf '%s\n' "$STEAM_BETA" | atomic_write "$STEAM_HOME/package/beta"
 atomic_copy "$resource_dir/compatibilitytool.vdf" "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
-atomic_copy "$resource_dir/registry.vdf" "$STEAM_DOT/registry.vdf"
+if [ -e "$STEAM_DOT/registry.vdf" ]; then
+  run @vdfSettings@/bin/steam-vdf-settings --registry "$STEAM_DOT/registry.vdf"
+else
+  atomic_copy "$resource_dir/registry.vdf" "$STEAM_DOT/registry.vdf"
+fi
 
 manifest_file="$STEAM_HOME/package/steam_client_${STEAM_BETA}_linuxarm64.manifest"
 manifest_url="https://client-update.fastly.steamstatic.com/steam_client_${STEAM_BETA}_linuxarm64"

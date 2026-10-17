@@ -5,6 +5,7 @@ let
     (import ./steam-korri {
       inherit pkgs;
       proton = null;
+      settings = null;
     }).guard;
 in
 pkgs.runCommand "steam-session-check"
