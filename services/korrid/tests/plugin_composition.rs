@@ -46,6 +46,21 @@ export function compose(input) {
 }
 "#;
 fn package(root: &Path, owner: &str, source: &str, extra: Option<(&str, &str)>) -> EnabledPackage {
+    package_with_files(
+        root,
+        owner,
+        source,
+        extra,
+        BTreeMap::from([("program".into(), Path::new("/bin/sh").to_path_buf())]),
+    )
+}
+fn package_with_files(
+    root: &Path,
+    owner: &str,
+    source: &str,
+    extra: Option<(&str, &str)>,
+    files: BTreeMap<String, std::path::PathBuf>,
+) -> EnabledPackage {
     let dir = root.join(owner.split(':').nth(1).unwrap());
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("plugin.ts"), source).unwrap();
@@ -55,7 +70,6 @@ fn package(root: &Path, owner: &str, source: &str, extra: Option<(&str, &str)>) 
         sources.push(name.into());
         sources.sort();
     }
-    let files = BTreeMap::from([("program".into(), Path::new("/bin/sh").to_path_buf())]);
     fs::write(
         dir.join("manifest.json"),
         serde_json::to_vec(
@@ -160,6 +174,74 @@ fn plugin_launch_execs_the_composed_plan_and_preserves_runner_effects() {
     );
     assert!(!String::from_utf8_lossy(&result.stderr).contains("very-private"));
 }
+#[test]
+fn steam_provider_launch_composes_the_prepared_session_before_native_exec() {
+    let root = tempfile::tempdir().unwrap();
+    // The provider identity and location are upstream's Flinthook case. The
+    // shipped handler still produces steam-session <ref> without a contentPath.
+    // /bin/sh reads the numeric ref fixture without executing a fresh script
+    // inode, avoiding the existing generated-executable ETXTBSY fixture race.
+    let runner = package_with_files(
+        root.path(),
+        "@korri:steam",
+        include_str!("../../../plugins/steam/plugin.ts"),
+        None,
+        BTreeMap::from([("steam-session".into(), Path::new("/bin/sh").to_path_buf())]),
+    );
+    let modifier = package(
+        root.path(),
+        "@test:wrapper",
+        r#"
+export const name = 'wrapper';
+export const modifiers = {main: {id: '@test:wrapper/main'}};
+export const handlers = {'launch.compose': input => {
+  if (!input.plan.env.STEAM_HOME || input.plan.args.length !== 1) throw new Error('runner preparation must precede compose');
+  return {...input.plan, command:input.files.program,
+    args:['-c', 'printf wrapped > "$STEAM_HOME/wrapped"; exec "$@"', 'wrapper', input.plan.command, ...input.plan.args]};
+}};
+"#,
+        None,
+    );
+    let registry = PluginRegistry::from_installed(vec![runner, modifier]).unwrap();
+    let snapshot = decode_config_documents(
+        "locations:\n  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]\nmodifiers: {'@test:wrapper/main': {enabled: true}}\n",
+        "library:\n  flinthook:\n    title: Flinthook\n    releases:\n      - id: steam\n        system: steam\n        identity: {kind: provider, value: '@korri:steam/401710'}\n",
+    ).unwrap();
+    let route = korrid::config::resolver::resolve_linux_route(
+        root.path(),
+        &snapshot,
+        &registry,
+        "flinthook",
+        Some("@korri:steam/steam"),
+    )
+    .unwrap();
+    let spec = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
+    assert_eq!(spec.command[1], "plugin-launch");
+    let input: PluginLaunchInput = serde_json::from_str(&spec.command[3]).unwrap();
+    assert!(input.content_path.is_none());
+    assert_eq!(input.provider_ref.as_deref(), Some("401710"));
+    let composition: LaunchComposition = serde_json::from_str(&spec.command[4]).unwrap();
+    assert_eq!(composition.modifiers.len(), 1);
+    let plan = prepare(Path::new(&spec.command[2]), &input, &composition).unwrap();
+    assert_eq!(plan.args[3..], ["/bin/sh", "401710"]);
+    let home = root.path().join("users/default/steam");
+    assert_eq!(plan.env["STEAM_HOME"], home.display().to_string());
+    assert_eq!(plan.directories, [home.display().to_string()]);
+    assert!(!home.exists(), "prepare and compose have no effects");
+    fs::write(root.path().join("401710"), "test -f \"$STEAM_HOME/wrapped\" || exit 81\nprintf '%s' \"$0\" > \"$STEAM_HOME/game-ran\"\n").unwrap();
+    let result = cli(&spec.command)
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read_to_string(home.join("wrapped")).unwrap(), "wrapped");
+    assert_eq!(fs::read_to_string(home.join("game-ran")).unwrap(), "401710");
+}
+
 #[test]
 fn compose_refusals_missing_sources_files_and_invalid_plans_stop_before_all_effects() {
     for (record, expected) in [

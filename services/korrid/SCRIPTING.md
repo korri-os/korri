@@ -247,12 +247,15 @@ is its own package declares no handler and proceeds; a runner that needs
 something else refuses in its own words, and korrid spawns nothing. The refusal
 reaches the person through the existing `LocalRouteUnavailable` failure.
 
-`launcher/linux_plugin.rs` builds a `korrid plugin-launch SOURCE INPUT_JSON`
-command. The existing systemd game unit starts this command as the runtime
-user, with its existing sandbox. That process calls the callback, writes the
-files atomically, applies environment/cwd, and replaces itself with the
-program. It refuses root. The daemon never writes callback-selected paths.
-Approval authorizes output; the runner adds no path or argument policy.
+`launcher/linux_plugin.rs` builds a
+`korrid plugin-launch SOURCE INPUT_JSON COMPOSITION_JSON` command. The existing
+systemd game unit starts this command as the runtime user, with its existing
+sandbox. That process calls `launch.prepare`, then each enabled modifier's
+`launch.compose`, before writing files atomically or applying environment/cwd.
+In a private PID namespace it stays as PID 1 and supervises the composed command
+as its child; otherwise it replaces itself with that command. It refuses root.
+The daemon never writes callback-selected paths. Approval authorizes output;
+runners and modifiers add no path or argument policy.
 
 Native instances use the approved `{ id, kind, program }` fields. A runtime
 uses `launcher` and its existing `path` field as a manifest file key. The

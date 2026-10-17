@@ -141,7 +141,10 @@ malformed quoting refuses with a fixed message without echoing authored text.
 korrid has no system journal group or journal ACL. Only modifier launches use
 systemd `StandardError=append:` into `/run/korrid/launches/<launch-id>/stderr`.
 The game sees that exact directory at `/run/korri-game-<launch-id>`, not the
-rest of `/run/korrid`. There is no wrapper process. **Wrapped games no longer
+rest of `/run/korrid`. No stderr-capture wrapper is added. In a private PID
+namespace, plugin-launch stays as PID 1 and runs the composed command as its
+child; otherwise it execs that command directly.
+**Wrapped games no longer
 send stderr to the journal**; other game units keep their previous journal
 behavior. Standard output is unchanged.
 

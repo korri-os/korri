@@ -115,7 +115,7 @@ fn provider_launch_passes_ref_and_no_content_path_to_the_installed_runner() {
     let route = linux_route_candidates(root.path(), &snapshot, &registry, "flinthook")
         .unwrap()
         .remove(0);
-    let launch = launch_route(root.path(), &snapshot, &registry, &route, None).unwrap();
+    let launch = launch_route(root.path(), &snapshot, &registry, &route, None, None).unwrap();
     let wire: serde_json::Value = serde_json::from_str(&launch.command[3]).unwrap();
     assert_eq!(wire["ref"], "401710");
     assert!(wire.get("contentPath").is_none());
@@ -165,6 +165,7 @@ fn provider_release_reaches_the_portals_selected_launch_path() {
             runner_id: RUNNER_ID.into(),
             overrides: None,
         },
+        None,
     )
     .unwrap();
     let input: serde_json::Value = serde_json::from_str(&launch.command[3]).unwrap();

@@ -67,6 +67,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed(
             "${unit "game"} ${korrid}/bin/korrid plugin-launch ${plugin}/plugin.ts "
             + shlex.quote(${builtins.toJSON (input "SCRIPT")}.replace("SCRIPT", script))
+            + " " + shlex.quote('{"modifiers":[]}')
         )
         machine.wait_until_succeeds("systemctl is-active game")
         machine.wait_until_succeeds("pgrep -f '^/nix/store/[^ ]*/bin/sleep 1000$'", timeout=30)
@@ -90,6 +91,7 @@ pkgs.testers.runNixOSTest {
         machine.succeed(
             "${unit "status"} ${korrid}/bin/korrid plugin-launch ${plugin}/plugin.ts "
             + shlex.quote(${builtins.toJSON (input "exit 7")})
+            + " " + shlex.quote('{"modifiers":[]}')
         )
         machine.wait_until_succeeds("test \"$(systemctl show status -p ExecMainStatus --value)\" = 7")
   '';
