@@ -52,6 +52,7 @@ assert lib.all (
     published.korri-plugin-starter-pack
     published.korri-plugin-fake08
     published.korri-plugin-solarus
+    published.korri-plugin-zquest-classic
   ]
 ) names;
 assert recoveryWithoutDefaults;

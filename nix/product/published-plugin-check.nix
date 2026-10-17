@@ -51,10 +51,11 @@ pkgs.runCommand "korri-published-plugin-acceptance-${system}" { nativeBuildInput
     jq -e 'length == ${toString (builtins.length (builtins.attrNames published))}' receipts.json >/dev/null
     ${identityChecks}
     # Image selection must approve the exact dependencies the pack names.
-    # Keeping another FAKE-08 or Solarus version in the store is not sufficient.
+    # Keeping another FAKE-08, Solarus or ZQuest version in the store is not sufficient.
     jq -e --arg fake08 ${pkgs.lib.escapeShellArg published.korri-plugin-fake08} \
       --arg solarus ${pkgs.lib.escapeShellArg published.korri-plugin-solarus} \
-      '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus]' \
+      --arg zquest ${pkgs.lib.escapeShellArg published.korri-plugin-zquest-classic} \
+      '.publisher.namespace == "@korri" and .requires == [$fake08, $solarus, $zquest]' \
       ${published.korri-plugin-starter-pack}/manifest.json >/dev/null
     touch "$out"
   ''

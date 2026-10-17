@@ -6,12 +6,13 @@
 let
   select = names: map (name: plugins."korri-plugin-${name}") names;
   # Owner decision: Starter pack ships on every product device. Image seeding
-  # creates one receipt per selected package, so its exact FAKE-08 and Solarus
-  # dependencies must be selected too, not only retained in the cartridge
-  # pack's closure.
+  # creates one receipt per selected package, so its exact FAKE-08, Solarus
+  # and ZQuest Classic dependencies must be selected too, not only retained in
+  # the cartridge pack's closure.
   shared = select [
     "fake08"
     "solarus"
+    "zquest-classic"
     "starter-pack"
     "retroarch"
     "nestopia"
