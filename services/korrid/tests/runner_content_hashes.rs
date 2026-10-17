@@ -1,6 +1,9 @@
 use korrid::{
     config::{resolver, snapshot::ConfigSnapshotCoordinator},
-    discovery::{DiscoveryCoordinator, DiscoveryOptions},
+    discovery::{
+        identify::{ContentIdentity, EvidenceLevel, FoundUnit, ScanReport, SourceScan},
+        DiscoveryCoordinator, DiscoveryOptions,
+    },
     game_routes::{self, GameRouteSelection, SelectedGameLaunchRequest},
     launcher::plugin_launch::{evaluate_snapshot, PluginLaunchInput},
     plugin::{load_plugin_source, PluginRegistry},
@@ -83,14 +86,10 @@ fn release_hash_matching_is_a_native_runner_contract() {
 
 const SYSTEM_SOURCE: &str = "
     export const name = 'system';
-    export const systems = {gba: {id: 'gba', title: 'Game Boy Advance'}};
+    export const systems = {gba: {id: 'gba', title: 'Game Boy Advance', content: {extensions: ['gba']}}};
     export const runners = {main: {
       id: '@test:system/main', program: 'program', systems: ['gba']
     }};
-    export const discovery = {fileReleases: {gba: {
-      id: '@test:system/gba', extensions: ['gba'], system: 'gba',
-      runners: ['@test:system/main']
-    }}};
     export const handlers = {'launch.prepare': input => ({
       command: input.program, args: [input.contentPath]
     })};
@@ -132,9 +131,36 @@ fn setup(root: &Path) -> (korrid::config::ConfigSnapshot, PluginRegistry) {
     fs::write(roms.join("first.gba"), b"first").unwrap();
     fs::write(roms.join("second.gba"), b"second").unwrap();
     fs::write(roms.join("unlisted.gba"), b"unlisted").unwrap();
+    fs::write(root.join("device.yaml"), format!("storage: {{gba: {{root: '{}'}}}}\nsources: {{gba: {{kind: [files], storage: gba, system: gba}}}}\n", roms.display())).unwrap();
+    let scan = ScanReport {
+        scanned: vec![SourceScan {
+            source_id: "gba".into(),
+            units: ["first", "second", "unlisted"]
+                .into_iter()
+                .map(|name| FoundUnit {
+                    source_id: "gba".into(),
+                    storage_id: "gba".into(),
+                    path: format!("{name}.gba"),
+                    parts: vec![format!("{name}.gba")],
+                    tracks: Vec::new(),
+                    system: "gba".into(),
+                    title: name.into(),
+                    version: None,
+                    region: None,
+                    identity: ContentIdentity::Hash {
+                        sha256: hash(name.as_bytes()),
+                        sha1: format!("sha1:{}", "a".repeat(40)),
+                    },
+                    evidence: EvidenceLevel::Extension,
+                })
+                .collect(),
+            ..SourceScan::default()
+        }],
+        ..ScanReport::default()
+    };
     let report = DiscoveryCoordinator::new(root, root.join("private"))
         .with_registry_source(RegistrySource::Selected(Arc::new(registry.clone())))
-        .add_location(&roms, &DiscoveryOptions::default())
+        .run(&scan, &DiscoveryOptions::default())
         .unwrap();
     assert!(
         report.scan.diagnostics.is_empty(),
@@ -147,7 +173,19 @@ fn setup(root: &Path) -> (korrid::config::ConfigSnapshot, PluginRegistry) {
 }
 
 fn game_id(snapshot: &korrid::config::ConfigSnapshot, bytes: &[u8]) -> String {
-    snapshot.releases[&hash(bytes)].game.0.clone()
+    snapshot
+        .library
+        .iter()
+        .find(|(_, game)| {
+            game.releases.iter().any(|r| {
+                r.identity
+                    .as_ref()
+                    .is_some_and(|i| i.value() == hash(bytes))
+            })
+        })
+        .unwrap()
+        .0
+        .clone()
 }
 
 #[test]
@@ -231,25 +269,21 @@ fn a_missing_accepted_dump_keeps_its_diagnostic_when_another_release_can_play() 
     let (snapshot, registry) = setup(root.path());
     let id = game_id(&snapshot, b"first");
     let other_id = game_id(&snapshot, b"unlisted");
-    // Put two discovered releases under one catalog game, using the existing
-    // bidirectional game/releases links rather than creating another schema.
-    let games_path = root.path().join("catalog/games.yaml");
-    let releases_path = root.path().join("catalog/releases.yaml");
-    let mut games: serde_yaml::Value =
-        serde_yaml::from_str(&fs::read_to_string(&games_path).unwrap()).unwrap();
-    let mut releases: serde_yaml::Value =
-        serde_yaml::from_str(&fs::read_to_string(&releases_path).unwrap()).unwrap();
-    games["games"]
+    let path = root.path().join("catalog/library.yaml");
+    let mut library: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let mut other = library["library"]
         .as_mapping_mut()
         .unwrap()
-        .remove(serde_yaml::Value::String(other_id));
-    games["games"][&id]["releases"]
+        .remove(serde_yaml::Value::String(other_id))
+        .unwrap()["releases"][0]
+        .clone();
+    other["id"] = "gba-2".into();
+    library["library"][&id]["releases"]
         .as_sequence_mut()
         .unwrap()
-        .push(serde_yaml::Value::String(hash(b"unlisted")));
-    releases["releases"][hash(b"unlisted")]["game"] = serde_yaml::Value::String(id.clone());
-    fs::write(games_path, serde_yaml::to_string(&games).unwrap()).unwrap();
-    fs::write(releases_path, serde_yaml::to_string(&releases).unwrap()).unwrap();
+        .push(other);
+    fs::write(path, serde_yaml::to_string(&library).unwrap()).unwrap();
     fs::remove_file(root.path().join("roms/first.gba")).unwrap();
 
     let routes = game_routes::list(root.path(), &registry, &id).unwrap();

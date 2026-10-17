@@ -1,15 +1,11 @@
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::Read,
-    path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+use crate::discovery::identify::HashCache;
+use crate::discovery::{
+    attention::{AttentionDecisions, AttentionFinding, AttentionKind},
+    identify::{self, AccountRoot, DeclaredScan, ScanReport, SourceInput, SourceScan, SourceView},
+    sources::overlaps,
 };
-
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-use crate::{discovery::title, plugin::PluginRegistry};
+use crate::plugin::PluginRegistry;
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiscoveryDiagnosticCode {
@@ -33,50 +29,6 @@ pub struct DiscoveryDiagnostic {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ScanCandidate {
-    pub storage_id: String,
-    pub canonical_path: PathBuf,
-    pub relative_path: String,
-    pub title: String,
-    pub hash: String,
-    pub size: u64,
-    pub system: String,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ScanReport {
-    pub candidates: Vec<ScanCandidate>,
-    pub diagnostics: Vec<DiscoveryDiagnostic>,
-    pub hashed_bytes: u64,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct HashCache {
-    #[serde(default)]
-    entries: BTreeMap<String, HashCacheEntry>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct HashCacheEntry {
-    size: u64,
-    modified_nanos: Option<u128>,
-    hash: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct HashFileSnapshot {
-    size: u64,
-    modified_nanos: Option<u128>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct HashOutcome {
-    value: String,
-    read_bytes: u64,
-    snapshot: HashFileSnapshot,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TraversalBudget {
     pub max_entries: usize,
@@ -96,716 +48,297 @@ impl Default for TraversalBudget {
     }
 }
 
-#[derive(Default)]
-struct TraversalState {
-    entries: usize,
-    directories: usize,
-    traversal_exhausted: bool,
+trait Identification {
+    fn known(&self, system: &str) -> bool;
+    fn source(
+        &self,
+        input: &SourceInput<'_>,
+        decisions: &AttentionDecisions,
+        cache: &mut HashCache,
+        budget: &TraversalBudget,
+    ) -> SourceScan;
+    fn declared(&self, accounts: &[AccountRoot], cache: &mut HashCache) -> DeclaredScan;
 }
 
-pub struct FolderScanner<'a> {
-    registry: &'a PluginRegistry,
-    max_diagnostics: usize,
-    max_candidates: usize,
-    budget: TraversalBudget,
+impl Identification for PluginRegistry {
+    fn known(&self, system: &str) -> bool {
+        self.pairing_target(system).is_some()
+    }
+    fn source(
+        &self,
+        input: &SourceInput<'_>,
+        decisions: &AttentionDecisions,
+        cache: &mut HashCache,
+        budget: &TraversalBudget,
+    ) -> SourceScan {
+        identify::identify_source(input, self, decisions, cache, budget)
+    }
+    fn declared(&self, accounts: &[AccountRoot], cache: &mut HashCache) -> DeclaredScan {
+        identify::resolve_declared(accounts, self, cache)
+    }
 }
 
-impl<'a> FolderScanner<'a> {
-    pub fn new(
-        registry: &'a PluginRegistry,
-        max_diagnostics: usize,
-        max_candidates: usize,
-    ) -> Self {
-        Self::with_budget(
-            registry,
-            max_diagnostics,
-            max_candidates,
-            TraversalBudget::default(),
-        )
-    }
+pub fn scan(
+    sources: &[SourceView],
+    accounts: &[AccountRoot],
+    excluded_roots: &[PathBuf],
+    registry: &PluginRegistry,
+    decisions: &AttentionDecisions,
+    cache: &mut HashCache,
+    budget: &TraversalBudget,
+) -> ScanReport {
+    let mut report = scan_with(
+        sources,
+        accounts,
+        excluded_roots,
+        registry,
+        decisions,
+        cache,
+        budget,
+    );
+    report.declared_games = registry.declared_games().clone();
+    report
+}
 
-    pub fn with_budget(
-        registry: &'a PluginRegistry,
-        max_diagnostics: usize,
-        max_candidates: usize,
-        budget: TraversalBudget,
-    ) -> Self {
-        Self {
-            registry,
-            max_diagnostics,
-            max_candidates,
-            budget,
+fn scan_with(
+    sources: &[SourceView],
+    accounts: &[AccountRoot],
+    excluded_roots: &[PathBuf],
+    identify: &impl Identification,
+    decisions: &AttentionDecisions,
+    cache: &mut HashCache,
+    budget: &TraversalBudget,
+) -> ScanReport {
+    let mut report = ScanReport {
+        accounts: accounts.to_vec(),
+        ..ScanReport::default()
+    };
+    // Resolve paths again on each pass: hand edits and symlink changes must not use stale roots.
+    let roots: Vec<_> = sources
+        .iter()
+        .map(|source| source.root.canonicalize().ok())
+        .collect();
+    for (index, source) in sources.iter().enumerate() {
+        if !source.scans_files {
+            continue;
         }
-    }
-
-    pub fn scan(&self, storages: &[(String, PathBuf)], cache: &mut HashCache) -> ScanReport {
-        let mut report = ScanReport::default();
-        let mut state = TraversalState::default();
-        for (storage_id, root) in storages {
-            let canonical_root = match root.canonicalize() {
-                Ok(path) => path,
-                Err(_) => {
-                    self.push_diag(
-                        &mut report,
-                        DiscoveryDiagnosticCode::StorageUnavailable,
-                        Some(storage_id),
-                        None,
-                        "selected folder is unavailable",
-                    );
-                    continue;
-                }
-            };
-            match fs::metadata(&canonical_root) {
-                Ok(metadata) if metadata.is_dir() => {}
-                _ => {
-                    self.push_diag(
-                        &mut report,
-                        DiscoveryDiagnosticCode::StorageUnavailable,
-                        Some(storage_id),
-                        None,
-                        "selected folder is not readable",
-                    );
-                    continue;
-                }
-            }
-            self.scan_directory(
-                storage_id,
-                &canonical_root,
-                &canonical_root,
-                0,
-                cache,
-                &mut report,
-                &mut state,
-            );
-        }
-        report
-    }
-
-    fn scan_directory(
-        &self,
-        storage_id: &str,
-        root: &Path,
-        directory: &Path,
-        depth: usize,
-        cache: &mut HashCache,
-        report: &mut ScanReport,
-        state: &mut TraversalState,
-    ) {
-        if state.traversal_exhausted {
-            return;
-        }
-        if depth > self.budget.max_depth {
-            self.push_traversal_exhausted(report, Some(storage_id), safe_relative(root, directory));
-            state.traversal_exhausted = true;
-            return;
-        }
-        if state.directories >= self.budget.max_directories {
-            self.push_traversal_exhausted(report, Some(storage_id), safe_relative(root, directory));
-            state.traversal_exhausted = true;
-            return;
-        }
-        state.directories += 1;
-        let read_dir = match fs::read_dir(directory) {
-            Ok(entries) => entries,
-            Err(_) => {
-                self.push_diag(
-                    report,
-                    DiscoveryDiagnosticCode::EntryUnavailable,
-                    Some(storage_id),
-                    safe_relative(root, directory),
-                    "folder entry is unreadable",
-                );
-                return;
-            }
-        };
-        let mut entries = Vec::new();
-        for entry in read_dir {
-            if entries.len() >= self.budget.max_sortable_entries {
-                self.push_traversal_exhausted(
-                    report,
-                    Some(storage_id),
-                    safe_relative(root, directory),
-                );
-                state.traversal_exhausted = true;
-                return;
-            }
-            match entry {
-                Ok(entry) => entries.push(entry),
-                Err(_) => self.push_diag(
-                    report,
-                    DiscoveryDiagnosticCode::EntryUnavailable,
-                    Some(storage_id),
-                    safe_relative(root, directory),
-                    "folder entry is unreadable",
-                ),
-            }
-        }
-        entries.sort_by_key(|entry| entry.file_name());
-
-        for entry in entries {
-            if state.traversal_exhausted {
-                return;
-            }
-            if state.entries >= self.budget.max_entries {
-                self.push_traversal_exhausted(
-                    report,
-                    Some(storage_id),
-                    safe_relative(root, directory),
-                );
-                state.traversal_exhausted = true;
-                return;
-            }
-            state.entries += 1;
-            let original_path = entry.path();
-            let canonical = match original_path.canonicalize() {
-                Ok(path) => path,
-                Err(_) => {
-                    self.push_diag(
-                        report,
-                        DiscoveryDiagnosticCode::EntryUnavailable,
-                        Some(storage_id),
-                        safe_relative(root, &original_path),
-                        "folder entry disappeared or is unavailable",
-                    );
-                    continue;
-                }
-            };
-            if !is_strict_descendant(&canonical, root) {
-                self.push_diag(
-                    report,
-                    DiscoveryDiagnosticCode::EntryEscaped,
-                    Some(storage_id),
-                    safe_relative(root, &original_path),
-                    "folder entry escapes the selected folder",
-                );
-                continue;
-            }
-            let metadata = match fs::metadata(&canonical) {
-                Ok(metadata) => metadata,
-                Err(_) => {
-                    self.push_diag(
-                        report,
-                        DiscoveryDiagnosticCode::EntryUnavailable,
-                        Some(storage_id),
-                        safe_relative(root, &original_path),
-                        "folder entry is unavailable",
-                    );
-                    continue;
-                }
-            };
-            if metadata.is_dir() {
-                self.scan_directory(
-                    storage_id,
-                    root,
-                    &canonical,
-                    depth + 1,
-                    cache,
-                    report,
-                    state,
-                );
-                continue;
-            }
-            if !metadata.is_file() {
-                continue;
-            }
-            self.scan_file(storage_id, root, &canonical, cache, report);
-        }
-    }
-
-    fn scan_file(
-        &self,
-        storage_id: &str,
-        root: &Path,
-        path: &Path,
-        cache: &mut HashCache,
-        report: &mut ScanReport,
-    ) {
-        let relative_path = match relative_path(root, path) {
-            Some(path) => path,
-            None => {
-                self.push_diag(
-                    report,
-                    DiscoveryDiagnosticCode::PathUnsupported,
-                    Some(storage_id),
-                    None,
-                    "file path is not representable in the library",
-                );
-                return;
-            }
-        };
-        let Some(file_name) = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(str::to_owned)
-        else {
-            self.push_diag(
-                report,
-                DiscoveryDiagnosticCode::PathUnsupported,
-                Some(storage_id),
-                Some(relative_path),
-                "file name is not representable in the library",
-            );
-            return;
-        };
-        let claims = self
-            .registry
-            .file_release_discovery_claims_for_filename(&file_name);
-        if claims.is_empty() {
-            self.push_diag(
-                report,
-                DiscoveryDiagnosticCode::EntryUnclaimed,
-                Some(storage_id),
-                Some(relative_path),
-                "file is not claimed by an enabled plugin",
-            );
-            return;
-        }
-        // Catalog releases own a system, not a launch route. Several claims
-        // for that same system must not discard bytes or select an emulator.
-        if claims
-            .iter()
-            .any(|(claim, _)| claim.system != claims[0].0.system)
-        {
-            self.push_diag(
-                report,
-                DiscoveryDiagnosticCode::ClaimConflict,
-                Some(storage_id),
-                Some(relative_path),
-                "enabled plugins disagree about this file's system",
-            );
-            return;
-        }
-        if report.candidates.len() >= self.max_candidates {
-            self.push_diag(
-                report,
-                DiscoveryDiagnosticCode::DiagnosticLimitReached,
-                Some(storage_id),
-                Some(relative_path),
-                "additional discovery candidates were omitted",
-            );
-            return;
-        }
-        let (claim, extension) = claims[0];
-        let hash = match cache.hash_for(path) {
-            Ok(value) => value,
-            Err(_) => {
-                self.push_diag(
-                    report,
-                    DiscoveryDiagnosticCode::HashUnavailable,
-                    Some(storage_id),
-                    Some(relative_path),
-                    "file could not be read for identity hashing",
-                );
-                return;
-            }
-        };
-        report.hashed_bytes += hash.read_bytes;
-        report.candidates.push(ScanCandidate {
-            storage_id: storage_id.to_owned(),
-            canonical_path: path.to_owned(),
-            relative_path,
-            title: title::fallback_title(&file_name, extension),
-            hash: hash.value,
-            size: hash.snapshot.size,
-            system: claim.system.clone(),
+        let root = roots[index].as_deref();
+        let overlapping = root.is_some_and(|root| {
+            roots.iter().enumerate().any(|(other, path)| {
+                index != other && path.as_deref().is_some_and(|path| overlaps(root, path))
+            })
         });
-    }
-
-    fn push_traversal_exhausted(
-        &self,
-        report: &mut ScanReport,
-        storage_id: Option<&str>,
-        path: Option<String>,
-    ) {
-        if report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::TraversalLimitReached)
-        {
-            return;
-        }
-        self.push_diag(
-            report,
-            DiscoveryDiagnosticCode::TraversalLimitReached,
-            storage_id,
-            path,
-            "discovery traversal budget was exhausted; additional entries were omitted",
-        );
-    }
-
-    fn push_diag(
-        &self,
-        report: &mut ScanReport,
-        code: DiscoveryDiagnosticCode,
-        storage_id: Option<&str>,
-        path: Option<String>,
-        message: &str,
-    ) {
-        if report.diagnostics.len() >= self.max_diagnostics {
-            if !report
-                .diagnostics
+        let blocked = root.is_some_and(|root| {
+            excluded_roots
                 .iter()
-                .any(|d| d.code == DiscoveryDiagnosticCode::DiagnosticLimitReached)
-            {
-                report.diagnostics.push(DiscoveryDiagnostic {
-                    code: DiscoveryDiagnosticCode::DiagnosticLimitReached,
-                    storage_id: None,
-                    path: None,
-                    message: "additional discovery diagnostics were omitted".into(),
-                });
-            }
-            return;
-        }
-        report.diagnostics.push(DiscoveryDiagnostic {
-            code,
-            storage_id: storage_id.map(str::to_owned),
-            path,
-            message: message.into(),
+                .any(|excluded| overlaps(root, excluded))
         });
-    }
-}
-
-impl HashCache {
-    fn hash_for(&mut self, path: &Path) -> Result<HashOutcome, std::io::Error> {
-        let snapshot = hash_file_snapshot(path)?;
-        let key = path.to_string_lossy().into_owned();
-        if let Some(entry) = self.entries.get(&key) {
-            if entry.size == snapshot.size && entry.modified_nanos == snapshot.modified_nanos {
-                return Ok(HashOutcome {
-                    value: entry.hash.clone(),
-                    read_bytes: 0,
-                    snapshot,
-                });
-            }
-        }
-        let mut file = File::open(path)?;
-        let mut hasher = Sha256::new();
-        let mut total = 0u64;
-        let mut buffer = [0u8; 64 * 1024];
-        loop {
-            let read = file.read(&mut buffer)?;
-            if read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..read]);
-            total += read as u64;
-        }
-        let hash = format!("sha256:{}", hex::encode(hasher.finalize()));
-        self.entries.insert(
-            key,
-            HashCacheEntry {
-                size: snapshot.size,
-                modified_nanos: snapshot.modified_nanos,
-                hash: hash.clone(),
-            },
-        );
-        Ok(HashOutcome {
-            value: hash,
-            read_bytes: total,
-            snapshot,
-        })
-    }
-}
-
-fn hash_file_snapshot(path: &Path) -> Result<HashFileSnapshot, std::io::Error> {
-    let metadata = fs::metadata(path)?;
-    Ok(HashFileSnapshot {
-        size: metadata.len(),
-        modified_nanos: metadata.modified().ok().and_then(|time| {
-            time.duration_since(UNIX_EPOCH)
-                .ok()
-                .map(|duration| duration.as_nanos())
-        }),
-    })
-}
-
-fn safe_relative(root: &Path, path: &Path) -> Option<String> {
-    relative_path(root, path).or_else(|| {
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .map(str::to_owned)
-    })
-}
-
-fn relative_path(root: &Path, path: &Path) -> Option<String> {
-    let relative = path.strip_prefix(root).ok()?;
-    let mut parts = Vec::new();
-    for component in relative.components() {
-        let std::path::Component::Normal(part) = component else {
-            return None;
+        let kind = if overlapping {
+            Some(AttentionKind::Overlap)
+        } else if !identify.known(&source.system) {
+            Some(AttentionKind::SystemUnavailable)
+        } else if blocked || root.is_none() || !root.is_some_and(|path| path.is_dir()) {
+            Some(AttentionKind::Unreadable)
+        } else {
+            None
         };
-        parts.push(part.to_str()?.to_owned());
+        if let Some(kind) = kind {
+            report.skipped.push(source.source_id.clone());
+            report.attention.push(AttentionFinding {
+                kind,
+                source_id: source.source_id.clone(),
+                path: None,
+                identity: None,
+                candidates: Vec::new(),
+                message: match kind {
+                    AttentionKind::Overlap => "source overlaps another source",
+                    AttentionKind::SystemUnavailable => "paired system or group is unavailable",
+                    _ => "source is unavailable or holds plugin data",
+                }
+                .into(),
+            });
+            continue;
+        }
+        let input = SourceInput {
+            source_id: &source.source_id,
+            storage_id: &source.storage_id,
+            system: &source.system,
+            root: root.expect("ready source has a root"),
+            excluded_roots,
+        };
+        let source_scan = identify.source(&input, decisions, cache, budget);
+        if incomplete(&source_scan) {
+            // Reconciliation may remove unseen paths only after a complete walk.
+            report.skipped.push(source.source_id.clone());
+            report.attention.extend(source_scan.attention);
+            report.diagnostics.extend(source_scan.diagnostics);
+        } else {
+            report.scanned.push(source_scan);
+        }
     }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("/"))
-    }
+    report.declared = identify.declared(accounts, cache);
+    report
 }
 
-fn is_strict_descendant(path: &Path, root: &Path) -> bool {
-    path.parent()
-        .is_some_and(|parent| parent == root || parent.starts_with(root))
+pub(crate) fn incomplete(scan: &SourceScan) -> bool {
+    scan.diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.code,
+            DiscoveryDiagnosticCode::TraversalLimitReached
+                | DiscoveryDiagnosticCode::StorageUnavailable
+                | DiscoveryDiagnosticCode::EntryUnavailable
+        )
+    })
+}
+
+pub fn attention_findings(report: &ScanReport) -> Vec<AttentionFinding> {
+    report
+        .attention
+        .iter()
+        .chain(report.scanned.iter().flat_map(|scan| scan.attention.iter()))
+        .chain(report.declared.attention.iter())
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::load_plugin_source;
-    use std::collections::BTreeSet;
-
-    /// Discovery only reads file-release claims, so the fixture declares those
-    /// and nothing else. A single self-contained module keeps the scanner tests
-    /// independent of any real plugin's module graph.
-    const GBA_CLAIM: &str = r#"
-export const name = "core";
-export const title = "GBA Core";
-export const systems = { gba: { id: "gba", title: "Game Boy Advance" } };
-export const runners = {
-  core: { id: "@korri:core/core", program: "retroarch", systems: ["gba"] },
-};
-export const discovery = {
-  fileReleases: {
-    gba: {
-      id: "@korri:core/gba",
-      title: "Game Boy Advance files",
-      extensions: ["gba"],
-      system: "gba",
-      runners: ["@korri:core/core"],
-    },
-  },
-};
-// A runner that names a program must be able to build a launch plan, so the
-// fixture supplies the smallest honest one. Discovery never calls it.
-export const handlers = {
-  "launch.prepare": () => ({ command: "retroarch", args: [] }),
-};
-"#;
-
-    fn registry() -> PluginRegistry {
-        PluginRegistry::new(
-            vec![load_plugin_source("@korri", GBA_CLAIM).unwrap()],
-            vec!["@korri:core".into()],
-        )
-        .unwrap()
+    use std::cell::RefCell;
+    #[derive(Default)]
+    struct RecordingIdentification {
+        calls: RefCell<Vec<String>>,
+        diagnostics: Vec<DiscoveryDiagnostic>,
     }
-
+    impl Identification for RecordingIdentification {
+        fn known(&self, system: &str) -> bool {
+            system == "gb"
+        }
+        fn source(
+            &self,
+            source: &SourceInput<'_>,
+            _: &AttentionDecisions,
+            _: &mut HashCache,
+            _: &TraversalBudget,
+        ) -> SourceScan {
+            assert_eq!(source.excluded_roots.len(), 2);
+            self.calls.borrow_mut().push(source.source_id.into());
+            SourceScan {
+                source_id: source.source_id.into(),
+                diagnostics: self.diagnostics.clone(),
+                ..SourceScan::default()
+            }
+        }
+        fn declared(&self, accounts: &[AccountRoot], _: &mut HashCache) -> DeclaredScan {
+            self.calls
+                .borrow_mut()
+                .extend(accounts.iter().map(|account| account.storage_id.clone()));
+            DeclaredScan::default()
+        }
+    }
+    fn source(id: &str, root: PathBuf, system: &str) -> SourceView {
+        SourceView {
+            source_id: id.into(),
+            storage_id: id.into(),
+            title: None,
+            system: system.into(),
+            canonical_root: root.canonicalize().ok(),
+            root,
+            scans_files: true,
+        }
+    }
     #[test]
-    fn claims_uppercase_gba_and_reuses_hash_cache_for_unchanged_files() {
+    fn skips_both_overlapping_sources_and_unknown_system_but_checks_declared_accounts() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("Wario_Land_4 (USA).GBA"), b"rom-bytes").unwrap();
-        let mut cache = HashCache::default();
-        let registry = registry();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-
-        let first = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert_eq!(first.candidates.len(), 1);
-        assert_eq!(first.candidates[0].title, "Wario Land 4");
-        assert_eq!(first.hashed_bytes, 9);
-
-        let second = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert_eq!(second.candidates.len(), 1);
-        assert_eq!(second.hashed_bytes, 0);
-    }
-
-    #[test]
-    fn pico8_claims_compound_cart_suffix_without_claiming_ordinary_pngs() {
-        let source = GBA_CLAIM.replace("gba", "pico8").replace(
-            "extensions: [\"pico8\"]",
-            "extensions: [\"p8\", \"p8.png\"]",
+        for path in ["a/inner", "b", "c", "d"] {
+            std::fs::create_dir_all(root.path().join(path)).unwrap();
+        }
+        let sources = vec![
+            source("a", root.path().join("a"), "gb"),
+            source("nested", root.path().join("a/inner"), "gb"),
+            source("unknown", root.path().join("b"), "missing"),
+            source("ready", root.path().join("c"), "gb"),
+        ];
+        let identify = RecordingIdentification::default();
+        let accounts = vec![AccountRoot {
+            user: "default".into(),
+            storage_id: "account-default".into(),
+            root: root.path().join("users/default"),
+        }];
+        let report = scan_with(
+            &sources,
+            &accounts,
+            &[root.path().join("users"), root.path().join("private")],
+            &identify,
+            &AttentionDecisions::default(),
+            &mut HashCache::default(),
+            &TraversalBudget::default(),
         );
-        let registry = PluginRegistry::new(
-            vec![load_plugin_source("@korri", &source).unwrap()],
-            vec!["@korri:core".into()],
-        )
-        .unwrap();
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("Lani_Trek.P8.PNG"), b"png-cart").unwrap();
-        fs::write(root.path().join("Combo_Pool.p8"), b"text-cart").unwrap();
-        fs::write(root.path().join("cover.png"), b"ordinary-image").unwrap();
-        fs::write(root.path().join("not-a-cart.p8.png.backup"), b"backup").unwrap();
-        let mut cache = HashCache::default();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert_eq!(report.candidates.len(), 2);
-        assert!(report
-            .candidates
-            .iter()
-            .all(|candidate| candidate.system == "pico8"));
+        assert_eq!(report.skipped, ["a", "nested", "unknown"]);
         assert_eq!(
             report
-                .candidates
+                .attention
                 .iter()
-                .map(|candidate| candidate.title.as_str())
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from(["Combo Pool", "Lani Trek"]),
+                .map(|item| item.kind)
+                .collect::<Vec<_>>(),
+            [
+                AttentionKind::Overlap,
+                AttentionKind::Overlap,
+                AttentionKind::SystemUnavailable
+            ]
         );
-        assert_eq!(report.hashed_bytes, 17);
-        assert_eq!(
-            report
-                .diagnostics
-                .iter()
-                .filter(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::EntryUnclaimed)
-                .count(),
-            2
-        );
+        assert_eq!(*identify.calls.borrow(), ["ready", "account-default"]);
+        assert_eq!(report.accounts, accounts);
+        assert!(report.paths.is_empty());
     }
-
     #[test]
-    fn longest_suffix_within_one_claim_does_not_create_two_candidates() {
-        let source =
-            GBA_CLAIM.replace("extensions: [\"gba\"]", "extensions: [\"png\", \"p8.png\"]");
-        let registry = PluginRegistry::new(
-            vec![load_plugin_source("@korri", &source).unwrap()],
-            vec!["@korri:core".into()],
-        )
-        .unwrap();
+    fn truncated_or_partly_unreadable_sources_are_skipped_to_preserve_unseen_locations() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("Lani_Trek.p8.png"), b"cart").unwrap();
-        let mut cache = HashCache::default();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].title, "Lani Trek");
-        assert_eq!(report.hashed_bytes, 4);
-    }
-
-    #[test]
-    fn overlapping_suffixes_do_not_hide_a_system_conflict() {
-        let pico8 = GBA_CLAIM
-            .replace("gba", "pico8")
-            .replace("extensions: [\"pico8\"]", "extensions: [\"p8.png\"]");
-        let png = GBA_CLAIM
-            .replace("@korri:core", "@test:image")
-            .replace("name = \"core\"", "name = \"image\"")
-            .replace("gba", "image")
-            .replace("extensions: [\"image\"]", "extensions: [\"png\"]");
-        let registry = PluginRegistry::new(
-            vec![
-                load_plugin_source("@korri", &pico8).unwrap(),
-                load_plugin_source("@test", &png).unwrap(),
-            ],
-            vec!["@korri:core".into(), "@test:image".into()],
-        )
-        .unwrap();
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("Lani_Trek.p8.png"), b"cart").unwrap();
-        let mut cache = HashCache::default();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert!(report.candidates.is_empty());
-        assert_eq!(report.hashed_bytes, 0);
-        assert!(report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::ClaimConflict));
-    }
-
-    #[test]
-    fn rejects_empty_compound_extension_segments_and_path_patterns() {
-        for extension in ["p8..png", "p8/png", "p8.png.", "p8.*", "..p8.png"] {
-            let source = GBA_CLAIM.replace(
-                "extensions: [\"gba\"]",
-                &format!("extensions: [\"{extension}\"]"),
+        let games = root.path().join("games");
+        std::fs::create_dir(&games).unwrap();
+        for code in [
+            DiscoveryDiagnosticCode::TraversalLimitReached,
+            DiscoveryDiagnosticCode::EntryUnavailable,
+        ] {
+            let diagnostic = DiscoveryDiagnostic {
+                code,
+                storage_id: Some("gb".into()),
+                path: None,
+                message: "walk incomplete".into(),
+            };
+            let identify = RecordingIdentification {
+                diagnostics: vec![diagnostic.clone()],
+                ..RecordingIdentification::default()
+            };
+            let report = scan_with(
+                &[source("gb", games.clone(), "gb")],
+                &[],
+                &[root.path().join("users"), root.path().join("private")],
+                &identify,
+                &AttentionDecisions::default(),
+                &mut HashCache::default(),
+                &TraversalBudget::default(),
             );
-            assert!(
-                load_plugin_source("@korri", &source).is_err(),
-                "accepted {extension}"
-            );
+            assert_eq!(report.skipped, ["gb"]);
+            assert!(report.scanned.is_empty());
+            assert_eq!(report.diagnostics, [diagnostic]);
         }
     }
 
     #[test]
-    fn multiple_claims_for_one_system_make_one_candidate_not_a_route_choice() {
-        let conflict = r#"
-
-export const name = "conflict";
-export const title = "Conflicting GBA Claim";
-export const discovery = {
-      fileReleases: {
-        gba: {
-          id: "@test:conflict/gba",
-          extensions: ["gba"],
-          system: "gba",
-          runners: ["@korri:core/core"],
-        },
-      },
-    };
-"#;
-        let registry = PluginRegistry::new(
-            vec![
-                load_plugin_source("@korri", GBA_CLAIM).unwrap(),
-                load_plugin_source("@test", conflict).unwrap(),
-            ],
-            vec!["@korri:core".into(), "@test:conflict".into()],
-        )
-        .unwrap();
+    fn hand_edited_plugin_data_source_is_never_traversed() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("game.gba"), b"rom").unwrap();
-        let mut cache = HashCache::default();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].system, "gba");
-        assert_eq!(report.hashed_bytes, 3);
-        assert!(!report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::ClaimConflict));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn diagnoses_unreadable_directories_without_aborting_siblings() {
-        use std::os::unix::fs::PermissionsExt;
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("ok.gba"), b"rom").unwrap();
-        fs::create_dir(root.path().join("closed")).unwrap();
-        fs::set_permissions(
-            root.path().join("closed"),
-            fs::Permissions::from_mode(0o000),
-        )
-        .unwrap();
-        let registry = registry();
-        let mut cache = HashCache::default();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        let _ = fs::set_permissions(
-            root.path().join("closed"),
-            fs::Permissions::from_mode(0o700),
+        let identify = RecordingIdentification::default();
+        let report = scan_with(
+            &[source("bad", root.path().into(), "gb")],
+            &[],
+            &[root.path().join("users"), root.path().join("private")],
+            &identify,
+            &AttentionDecisions::default(),
+            &mut HashCache::default(),
+            &TraversalBudget::default(),
         );
-        assert_eq!(report.candidates.len(), 1);
-        assert!(report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == DiscoveryDiagnosticCode::EntryUnavailable));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn diagnoses_symlink_escapes_without_hashing_target() {
-        use std::os::unix::fs::symlink;
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        fs::write(outside.path().join("escape.gba"), b"secret").unwrap();
-        symlink(
-            outside.path().join("escape.gba"),
-            root.path().join("escape.gba"),
-        )
-        .unwrap();
-        let mut cache = HashCache::default();
-        let registry = registry();
-        let scanner = FolderScanner::new(&registry, 20, 100);
-
-        let report = scanner.scan(&[("selected".into(), root.path().to_owned())], &mut cache);
-        assert!(report.candidates.is_empty());
-        assert_eq!(report.hashed_bytes, 0);
-        assert!(report
-            .diagnostics
-            .iter()
-            .any(|d| d.code == DiscoveryDiagnosticCode::EntryEscaped
-                && !d.message.contains(outside.path().to_str().unwrap())));
+        assert_eq!(report.skipped, ["bad"]);
+        assert!(identify.calls.borrow().is_empty());
     }
 }

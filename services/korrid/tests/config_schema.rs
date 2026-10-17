@@ -4,30 +4,37 @@ use korrid::config::{classify_snapshot_support, decode_config_documents};
 use readable::*;
 
 #[test]
-fn checkpoint_documents_decode_as_supported_readable_contract() {
-    let snapshot =
-        decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap();
-    assert_eq!(snapshot.host.unwrap().title.as_deref(), Some("usu"));
-    assert_eq!(snapshot.games[ANDROID_ID].title, "TMNT: Shredder's Revenge");
-    assert_eq!(snapshot.releases[ANDROID_RELEASE].game.0, ANDROID_ID);
-    classify_snapshot_support(
-        &decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap(),
-    )
-    .unwrap();
+fn library_decodes_as_supported_readable_contract() {
+    let snapshot = decode_config_documents(DEVICE, LIBRARY).unwrap();
+    assert_eq!(
+        snapshot.host.as_ref().unwrap().title.as_deref(),
+        Some("usu")
+    );
+    assert_eq!(
+        snapshot.library[GBA_ID].title.as_deref(),
+        Some("Wario Land 4")
+    );
+    assert_eq!(
+        snapshot.library[GBA_ID].releases[0]
+            .identity
+            .as_ref()
+            .unwrap()
+            .value(),
+        GBA_RELEASE
+    );
+    classify_snapshot_support(&snapshot).unwrap();
 }
-
 #[test]
 fn empty_documents_decode_as_the_initial_snapshot() {
-    let snapshot = decode_config_documents("{}", "{}", "{}").unwrap();
-    assert_eq!(snapshot, korrid::config::ConfigSnapshot::default());
+    assert_eq!(
+        decode_config_documents("{}", "{}").unwrap(),
+        korrid::config::ConfigSnapshot::default()
+    );
 }
-
 #[test]
 fn readable_sections_keep_non_executable_opinions_decodable() {
-    let readable = include_str!("fixtures/readable-sections/device-all-sections.yaml");
-    // Executable runners come only from installed contributions. These records
-    // are settings opinions and cannot redeclare commands or native files.
-    let snapshot = decode_config_documents(readable, "{}", "{}").unwrap();
+    let device = include_str!("fixtures/readable-sections/device-all-sections.yaml");
+    let snapshot = decode_config_documents(device, "{}").unwrap();
     assert_eq!(snapshot.storage.len(), 2);
     assert_eq!(snapshot.providers.len(), 2);
     assert_eq!(snapshot.systems.len(), 2);
@@ -37,185 +44,152 @@ fn readable_sections_keep_non_executable_opinions_decodable() {
     assert_eq!(snapshot.hooks.len(), 1);
     assert!(classify_snapshot_support(&snapshot).is_err());
 }
-
 #[test]
-fn unknown_top_level_and_nested_fields_fail() {
+fn unknown_fields_old_sections_and_wrong_document_sections_fail() {
     for device in [
         "unexpected: {}",
-        "host:\n  hooks:\n    before:\n      - run: 'true'\n        comand: typo",
+        "games: {}",
+        "releases: {}",
+        "library: {}",
+        "host: {typo: true}",
     ] {
-        assert!(decode_config_documents(device, "{}", "{}").is_err());
+        assert!(decode_config_documents(device, "{}").is_err(), "{device}");
     }
-    for section in ["library", "users", "provider-links", "retired", "aliases"] {
-        assert!(decode_config_documents(&format!("{section}: {{}}"), "{}", "{}").is_err());
+    for library in [
+        "host: {}",
+        "locations: {}",
+        "sources: {}",
+        "games: {}",
+        "releases: {}",
+    ] {
+        assert!(decode_config_documents("{}", library).is_err(), "{library}");
     }
     for field in [
         "target: {}",
-        "launch: {use: '@korri:retroarch/retroarch'}",
         "launch: {}",
-        "id: gba",
         "app: retroarch",
         "runner: mgba",
+        "typo: true",
     ] {
-        let releases = format!("{}    {field}\n", gba_releases());
-        assert!(
-            decode_config_documents("{}", &gba_games(), &releases).is_err(),
-            "{field}"
-        );
+        let library = format!("{}        {field}\n", gba_library());
+        assert!(decode_config_documents("{}", &library).is_err(), "{field}");
     }
 }
-
 #[test]
 fn catalog_releases_cannot_carry_hook_commands() {
-    for hook in [
-        "hooks:\n      before:\n        - run: 'true'",
-        "hooks:\n      after:\n        - run: 'true'",
-    ] {
-        let releases = format!("{}    {hook}\n", gba_releases());
-        let error = decode_config_documents("{}", &gba_games(), &releases).unwrap_err();
-        assert!(error.to_string().contains("commands"), "{error}");
-    }
-    decode_config_documents(
-        "hooks:\n  device-check:\n    before:\n      - run: 'true'",
-        "{}",
-        "{}",
-    )
-    .unwrap();
+    let library = format!(
+        "{}        hooks:\n          before:\n            - run: 'true'\n",
+        gba_library()
+    );
+    let error = decode_config_documents("{}", &library).unwrap_err();
+    assert!(error.to_string().contains("commands"), "{error}");
+    decode_config_documents("hooks: {device-check: {before: [{run: 'true'}]}}", "{}").unwrap();
 }
-
 #[test]
 fn explicit_null_is_not_absence() {
-    assert!(decode_config_documents("host:\n  title: null", "{}", "{}")
-        .unwrap_err()
-        .to_string()
-        .contains("explicit null"));
-    for releases in [
-        gba_releases().replace("identity: file", "identity: null"),
-        gba_releases().replace("system: gba", "system: null"),
+    for device in [
+        "host: {title: null}",
+        "sources: null",
+        "provider-links: null",
     ] {
-        assert!(
-            decode_config_documents("{}", &gba_games(), &releases).is_err(),
-            "{releases}"
-        );
+        assert!(decode_config_documents(device, "{}").is_err());
+    }
+    for library in [
+        gba_library().replace("system: gba", "system: null"),
+        gba_library().replace("identity: {", "identity: null # {"),
+    ] {
+        assert!(decode_config_documents("{}", &library).is_err());
     }
 }
-
 #[test]
-fn identity_syntax_and_payload_identity_mismatches_fail() {
-    assert!(decode_config_documents("providers:\n  android-app: {}", "{}", "{}").is_err());
-    assert!(decode_config_documents(
-        "providers:\n  '@korri:android-app':\n    id: '@korri:other'",
-        "{}",
-        "{}"
-    )
-    .is_err());
+fn ids_are_readable_local_segments_not_ulids() {
+    for id in ["wario", "wario-land-4-2", "game.v1", "game_alt"] {
+        decode_config_documents("{}", &gba_library().replace(GBA_ID, id)).unwrap();
+    }
     for id in [
         "Bad Id",
-        "wl4",
-        "81K4J6K8Y00000000000000002",
-        "01k4j6k8y00000000000000002",
-    ] {
-        assert!(decode_config_documents(
-            "{}",
-            &gba_games().replace(GBA_ID, id),
-            &gba_releases().replace(GBA_ID, id)
-        )
-        .is_err());
-    }
-}
-
-#[test]
-fn fixed_file_ownership_is_enforced_even_for_empty_sections() {
-    for (device, games, releases) in [
-        ("games: {}", "{}", "{}"),
-        ("releases: {}", "{}", "{}"),
-        ("{}", "host: {}", "{}"),
-        ("{}", "locations: {}", "{}"),
-        ("{}", "{}", "games: {}"),
-        ("{}", "releases: {}", "{}"),
-    ] {
-        assert!(decode_config_documents(device, games, releases)
-            .unwrap_err()
-            .to_string()
-            .contains("not allowed"));
-    }
-}
-
-#[test]
-fn duplicate_record_keys_and_release_lists_fail() {
-    assert!(decode_config_documents(
-        "providers:\n  '@korri:android-app': {}\n  '@korri:android-app': {}",
-        "{}",
-        "{}"
-    )
-    .unwrap_err()
-    .to_string()
-    .contains("duplicate record key"));
-    let games = gba_games().replace(
-        &format!("['{GBA_RELEASE}']"),
-        &format!("['{GBA_RELEASE}', '{GBA_RELEASE}']"),
-    );
-    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
-    let games = gba_games().replace(&format!("['{GBA_RELEASE}']"), "[]");
-    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
-}
-
-#[test]
-fn artifact_keys_require_lowercase_sha256_or_provider_ref() {
-    decode_config_documents("{}", &gba_games(), &gba_releases()).unwrap();
-    decode_config_documents(ANDROID_DEVICE, ANDROID_GAMES, ANDROID_RELEASES).unwrap();
-    for key in [
-        GBA_RELEASE.to_uppercase(),
-        GBA_RELEASE.replace("sha256:", "crc32:"),
-        "sha1:deadbeef".into(),
-        "@korri:android-app/".into(),
-        "android-app/com.playdigious.tmnt".into(),
+        "01K4J6K8Y00000000000000002",
+        "../game",
+        "game/part",
+        "-game",
     ] {
         assert!(
-            decode_config_documents(
-                "{}",
-                &gba_games().replace(GBA_RELEASE, &key),
-                &gba_releases().replace(GBA_RELEASE, &key)
-            )
-            .is_err(),
-            "{key}"
+            decode_config_documents("{}", &gba_library().replace(GBA_ID, id)).is_err(),
+            "{id}"
         );
     }
 }
-
 #[test]
-fn catalog_links_must_agree_in_both_directions() {
-    assert!(decode_config_documents("{}", &gba_games(), "{}").is_err());
-    assert!(decode_config_documents("{}", "{}", &gba_releases()).is_err());
+fn duplicate_keys_release_ids_and_empty_release_lists_fail() {
+    assert!(decode_config_documents("storage: {a: {root: /a}, a: {root: /b}}", "{}").is_err());
+    let mut library: serde_yaml::Value = serde_yaml::from_str(&gba_library()).unwrap();
+    let releases = library["library"][GBA_ID]["releases"]
+        .as_sequence_mut()
+        .unwrap();
+    releases.push(releases[0].clone());
+    assert!(decode_config_documents("{}", &serde_yaml::to_string(&library).unwrap()).is_err());
+    library["library"][GBA_ID]["releases"] = serde_yaml::Value::Sequence(vec![]);
+    assert!(decode_config_documents("{}", &serde_yaml::to_string(&library).unwrap()).is_err());
+}
+#[test]
+fn content_keys_validate_sha256_sha1_chd_and_parts() {
+    decode_config_documents("{}", &gba_library()).unwrap();
+    for key in [
+        GBA_RELEASE.to_uppercase(),
+        "sha1:deadbeef".into(),
+        "crc32:abc".into(),
+    ] {
+        assert!(decode_config_documents("{}", &gba_library().replace(GBA_RELEASE, &key)).is_err());
+    }
+    let chd = gba_library()
+        .replace("kind: hash", "kind: chd")
+        .replace(GBA_RELEASE, &format!("sha1:{}", "a".repeat(40)));
+    decode_config_documents("{}", &chd).unwrap();
+    assert!(
+        decode_config_documents("{}", &gba_library().replace("kind: hash", "kind: chd")).is_err()
+    );
+}
+#[test]
+fn sources_and_provider_links_are_device_data_and_have_valid_references() {
+    let device = format!("storage: {{gba: {{root: /games}}}}\nsources: {{gba: {{kind: [files], storage: gba, system: gba}}}}\nprovider-links:\n  '@test:games/wario':\n    provider: '@test:games'\n    playable: {GBA_ID}\n    refs: [{{kind: provider-item-id, value: wario}}]\n");
+    let snapshot = decode_config_documents(&device, &gba_library()).unwrap();
+    assert_eq!(snapshot.sources["gba"].system.0, "gba");
+    assert_eq!(
+        snapshot.provider_links["@test:games/wario"].playable.0,
+        GBA_ID
+    );
     assert!(decode_config_documents(
-        "{}",
-        &gba_games(),
-        &gba_releases().replace(GBA_ID, OTHER_ID)
+        &device.replace("storage: gba", "storage: missing"),
+        &gba_library()
+    )
+    .is_err());
+    assert!(decode_config_documents(
+        &device.replace(&format!("playable: {GBA_ID}"), "playable: missing"),
+        &gba_library()
     )
     .is_err());
 }
-
 #[test]
-fn locations_keep_legacy_fields_but_reject_kind_and_unknown_fields() {
+fn locations_keep_legacy_fields_and_validate_discovery_times() {
     let good = gba_locations("roms", "wl4.gba", true);
-    decode_config_documents(&good, &gba_games(), &gba_releases()).unwrap();
+    decode_config_documents(&good, &gba_library()).unwrap();
     for device in [
         good.replace("storage: roms", "storage: null"),
         good.replace("path: wl4.gba", "path: null"),
+        good.replace("2026-08-05T00:00:00Z", "yesterday"),
     ] {
-        assert!(decode_config_documents(&device, &gba_games(), &gba_releases()).is_err());
+        assert!(decode_config_documents(&device, &gba_library()).is_err());
     }
     for field in ["kind: file", "typo: true", "discovery: null"] {
-        let device = format!("{}      {field}\n", gba_locations("roms", "wl4.gba", false));
-        assert!(
-            decode_config_documents(&device, &gba_games(), &gba_releases()).is_err(),
-            "{field}"
-        );
+        assert!(decode_config_documents(
+            &format!("{}      {field}\n", gba_locations("roms", "wl4.gba", false)),
+            &gba_library()
+        )
+        .is_err());
     }
     assert!(decode_config_documents(
         &ANDROID_DEVICE.replace("ref: com.playdigious.tmnt", "ref: wrong.package"),
-        ANDROID_GAMES,
-        ANDROID_RELEASES
+        ANDROID_LIBRARY
     )
     .is_err());
 }
@@ -229,13 +203,13 @@ fn player_count_defaults_only_from_device_configuration() {
         "host: {title: handheld}",
         "host: {preferences: {}}",
     ] {
-        let snapshot = decode_config_documents(device, "{}", "{}").unwrap();
+        let snapshot = decode_config_documents(device, "{}").unwrap();
         assert_eq!(snapshot.player_count(), 4, "{device}");
         classify_snapshot_support(&snapshot).unwrap();
     }
     for count in [1, 6, 255] {
         let device = format!("host: {{preferences: {{playerCount: {count}}}}}");
-        let snapshot = decode_config_documents(&device, &gba_games(), &gba_releases()).unwrap();
+        let snapshot = decode_config_documents(&device, &gba_library()).unwrap();
         assert_eq!(snapshot.player_count(), count);
         classify_snapshot_support(&snapshot).unwrap();
     }
@@ -247,10 +221,7 @@ fn player_count_rejects_non_positive_out_of_range_and_non_integer_values() {
         "0", "-1", "256", "1.5", "6.0", "null", "'6'", "true", "false", "[]", "{}",
     ] {
         let device = format!("host: {{preferences: {{playerCount: {value}}}}}");
-        assert!(
-            decode_config_documents(&device, "{}", "{}").is_err(),
-            "{value}"
-        );
+        assert!(decode_config_documents(&device, "{}").is_err(), "{value}");
     }
     for device in [
         "host: {preferences: null}",
@@ -258,10 +229,7 @@ fn player_count_rejects_non_positive_out_of_range_and_non_integer_values() {
         "host: {preferences: {player_count: 6}}",
         "host: {playerCount: 6}",
     ] {
-        assert!(
-            decode_config_documents(device, "{}", "{}").is_err(),
-            "{device}"
-        );
+        assert!(decode_config_documents(device, "{}").is_err(), "{device}");
     }
 }
 
@@ -273,26 +241,18 @@ fn player_count_is_not_an_inheritable_or_catalog_preference() {
         "families: {'@korri:retroarch': {preferences: {playerCount: 6}}}",
         "runners: {'@korri:mgba/mgba': {preferences: {playerCount: 6}}}",
     ] {
-        assert!(
-            decode_config_documents(device, "{}", "{}").is_err(),
-            "{device}"
-        );
+        assert!(decode_config_documents(device, "{}").is_err(), "{device}");
     }
-    let games = format!("{}    preferences: {{playerCount: 6}}\n", gba_games());
-    assert!(decode_config_documents("{}", &games, &gba_releases()).is_err());
-    let releases = format!("{}    preferences: {{playerCount: 6}}\n", gba_releases());
-    assert!(decode_config_documents("{}", &gba_games(), &releases).is_err());
+    let games = format!("{}    preferences: {{playerCount: 6}}\n", gba_library());
+    assert!(decode_config_documents("{}", &games).is_err());
+    let releases = format!("{}    preferences: {{playerCount: 6}}\n", gba_library());
+    assert!(decode_config_documents("{}", &releases).is_err());
     assert!(serde_yaml::from_str::<korrid::config::Preferences>("playerCount: 6").is_err());
     assert!(serde_yaml::from_str::<korrid::config::InheritableLayer>(
         "preferences: {playerCount: 6}"
     )
     .is_err());
-    for (games, releases) in [
-        ("host: {preferences: {playerCount: 6}}", "{}"),
-        ("{}", "host: {preferences: {playerCount: 6}}"),
-    ] {
-        assert!(decode_config_documents("{}", games, releases).is_err());
-    }
+    assert!(decode_config_documents("{}", "host: {preferences: {playerCount: 6}}").is_err());
 }
 
 #[test]
@@ -304,7 +264,7 @@ fn player_count_does_not_enable_unsupported_launch_preferences() {
     ] {
         for count in ["", "playerCount: 6, "] {
             let device = format!("host: {{preferences: {{{count}launch: {launch}}}}}");
-            let snapshot = decode_config_documents(&device, "{}", "{}").unwrap();
+            let snapshot = decode_config_documents(&device, "{}").unwrap();
             assert!(classify_snapshot_support(&snapshot)
                 .unwrap_err()
                 .to_string()
@@ -318,21 +278,14 @@ fn player_count_does_not_enable_unsupported_launch_preferences() {
         "{video: {fullscreen: null}}",
     ] {
         let device = format!("host: {{preferences: {{playerCount: 6, launch: {launch}}}}}");
-        assert!(
-            decode_config_documents(&device, "{}", "{}").is_err(),
-            "{launch}"
-        );
+        assert!(decode_config_documents(&device, "{}").is_err(), "{launch}");
     }
     let releases = format!(
-        "{}    preferences: {{launch: {{audio: {{volume: 75}}}}}}\n",
-        gba_releases()
+        "{}        preferences: {{launch: {{audio: {{volume: 75}}}}}}\n",
+        gba_library()
     );
-    let snapshot = decode_config_documents(
-        "host: {preferences: {playerCount: 6}}",
-        &gba_games(),
-        &releases,
-    )
-    .unwrap();
+    let snapshot =
+        decode_config_documents("host: {preferences: {playerCount: 6}}", &releases).unwrap();
     assert!(classify_snapshot_support(&snapshot).is_err());
 }
 
@@ -340,7 +293,6 @@ fn player_count_does_not_enable_unsupported_launch_preferences() {
 fn unsupported_populated_behavior_is_reported_explicitly() {
     let snapshot = decode_config_documents(
         "host:\n  moonlight:\n    platform:\n      name: v4l2m2m",
-        "{}",
         "{}",
     )
     .unwrap();

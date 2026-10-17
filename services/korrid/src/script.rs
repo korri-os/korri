@@ -184,7 +184,7 @@ fn evaluate_module(
             let (name, value) = property.map_err(|error| error.to_string())?;
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "families"
-                | "runners" | "transports" | "sessionControls" | "discovery" | "android"
+                | "runners" | "transports" | "controls" | "groups" | "games" | "android"
                 | "services" | "config" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn named_module_exports_are_the_only_declaration_source() {
-        let json = eval_plugin_ts("export const name: string = 'clock'; export const transports = {}; export const sessionControls = {};").expect("named module");
+        let json = eval_plugin_ts("export const name: string = 'clock'; export const transports = {}; export const controls = {};").expect("named module");
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&json).unwrap()["name"],
             "clock"

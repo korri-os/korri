@@ -19,7 +19,7 @@ use serde_yaml::{Mapping, Value};
 
 use super::{
     classify_snapshot_support, decode_config_documents,
-    snapshot::{DEVICE_FILE_NAME, FILE_NAMES, GAMES_FILE_NAME, RELEASES_FILE_NAME},
+    snapshot::{DEVICE_FILE_NAME, FILE_NAMES, LIBRARY_FILE_NAME},
 };
 use crate::plugin_policy;
 
@@ -106,8 +106,8 @@ pub fn read_player_count(root: &Path) -> Result<u8, SettingsError> {
 fn read_device_documents(root: &Path) -> Result<(String, super::ConfigSnapshot), SettingsError> {
     ensure_fixed_files(root)?;
     let config = read_fixed(root, DEVICE_FILE_NAME)?;
-    let games = read_fixed(root, GAMES_FILE_NAME)?;
-    let snapshot = decode_config_documents(&config, &games, &read_fixed(root, RELEASES_FILE_NAME)?)
+    let games = read_fixed(root, LIBRARY_FILE_NAME)?;
+    let snapshot = decode_config_documents(&config, &games)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     // Existing unsupported content is still reported rather than presenting a
     // settings page that would be unable to save it safely.
@@ -283,7 +283,7 @@ pub fn update_with_registry_source(
     if revision(&config) != expected_revision {
         return Err(SettingsError::Conflict);
     }
-    let games = read_fixed(root, GAMES_FILE_NAME)?;
+    let games = read_fixed(root, LIBRARY_FILE_NAME)?;
     let mut document = parse_mapping(&config)?;
 
     match change {
@@ -302,9 +302,8 @@ pub fn update_with_registry_source(
 
     let candidate = serde_yaml::to_string(&Value::Mapping(document))
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
-    let snapshot =
-        decode_config_documents(&candidate, &games, &read_fixed(root, RELEASES_FILE_NAME)?)
-            .map_err(|error| SettingsError::Candidate(error.to_string()))?;
+    let snapshot = decode_config_documents(&candidate, &games)
+        .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     source
@@ -344,8 +343,8 @@ pub fn runner_choice_snapshot(
 ) -> Result<(super::ConfigSnapshot, RunnerChoiceRevisions), SettingsError> {
     ensure_fixed_files(root)?;
     let device = read_fixed(root, DEVICE_FILE_NAME)?;
-    let games = read_fixed(root, GAMES_FILE_NAME)?;
-    let snapshot = decode_config_documents(&device, &games, &read_fixed(root, RELEASES_FILE_NAME)?)
+    let games = read_fixed(root, LIBRARY_FILE_NAME)?;
+    let snapshot = decode_config_documents(&device, &games)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
@@ -368,7 +367,7 @@ pub fn set_runner_choice(
 ) -> Result<RunnerChoiceRevisions, SettingsError> {
     if let Some(id) = runner_id {
         // The same fully-qualified contribution syntax as release provider refs.
-        if !id.starts_with('@') || serde_json::from_value::<super::ReleaseKey>(id.into()).is_err() {
+        if !id.starts_with('@') || super::catalog::validate_release_key(id).is_err() {
             return Err(SettingsError::Invalid(
                 "runner must be a fully-qualified contribution ID".into(),
             ));
@@ -384,17 +383,17 @@ pub fn set_runner_choice(
         }
     })?;
     let mut device = read_fixed(root, DEVICE_FILE_NAME)?;
-    let mut games = read_fixed(root, GAMES_FILE_NAME)?;
-    let releases = read_fixed(root, RELEASES_FILE_NAME)?;
-    let current = decode_config_documents(&device, &games, &releases)
+    let mut games = read_fixed(root, LIBRARY_FILE_NAME)?;
+    let current = decode_config_documents(&device, &games)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     let (file, section, id, text) = match scope {
         RunnerChoiceScope::System(id) => {
             // Installed systems need no local record until their first opinion.
             if !current
-                .releases
+                .library
                 .values()
-                .any(|release| &release.system.0 == id)
+                .flat_map(|game| &game.releases)
+                .any(|release| release.system.as_ref().is_some_and(|s| &s.0 == id))
                 && !current.systems.contains_key(id)
             {
                 return Err(SettingsError::Invalid(format!("unknown system {id}")));
@@ -402,10 +401,10 @@ pub fn set_runner_choice(
             (DEVICE_FILE_NAME, "systems", id, &mut device)
         }
         RunnerChoiceScope::Game(id) => {
-            if !current.games.contains_key(id) {
+            if !current.library.contains_key(id) {
                 return Err(SettingsError::Invalid(format!("unknown game {id}")));
             }
-            (GAMES_FILE_NAME, "games", id, &mut games)
+            (LIBRARY_FILE_NAME, "library", id, &mut games)
         }
     };
     if revision(text) != expected_revision {
@@ -422,7 +421,7 @@ pub fn set_runner_choice(
     *text = serde_yaml::to_string(&Value::Mapping(document))
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     let candidate = text.clone();
-    let snapshot = decode_config_documents(&device, &games, &releases)
+    let snapshot = decode_config_documents(&device, &games)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
     classify_snapshot_support(&snapshot)
         .map_err(|error| SettingsError::Candidate(error.to_string()))?;
@@ -639,13 +638,12 @@ mod tests {
     fn root(config: &str) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join(DEVICE_FILE_NAME), config).unwrap();
-        crate::config::test_fixtures::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join(RELEASES_FILE_NAME), "{}\n").unwrap();
+        crate::config::test_fixtures::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
         root
     }
 
     #[test]
-    fn first_read_creates_only_the_three_fixed_empty_documents() {
+    fn first_read_creates_only_the_two_fixed_empty_documents() {
         let root = tempfile::tempdir().unwrap();
 
         let settings = read(root.path()).unwrap();
@@ -657,11 +655,7 @@ mod tests {
             b"{}\n"
         );
         assert_eq!(
-            fs::read(root.path().join(GAMES_FILE_NAME)).unwrap(),
-            b"{}\n"
-        );
-        assert_eq!(
-            fs::read(root.path().join(RELEASES_FILE_NAME)).unwrap(),
+            fs::read(root.path().join(LIBRARY_FILE_NAME)).unwrap(),
             b"{}\n"
         );
     }
@@ -752,7 +746,7 @@ mod tests {
         let device_path = root.path().join(DEVICE_FILE_NAME);
         let original = fs::read_to_string(&device_path).unwrap();
         let mut expected: Value = serde_yaml::from_str(&original).unwrap();
-        let catalog_before: Vec<_> = [GAMES_FILE_NAME, RELEASES_FILE_NAME]
+        let catalog_before: Vec<_> = [LIBRARY_FILE_NAME]
             .map(|name| fs::read(root.path().join(name)).unwrap())
             .into();
         let private = tempfile::tempdir().unwrap();
@@ -781,10 +775,7 @@ mod tests {
             .unwrap();
             preferences.insert(Value::String("playerCount".into()), Value::from(count));
             assert_eq!(actual, expected);
-            for (name, bytes) in [GAMES_FILE_NAME, RELEASES_FILE_NAME]
-                .iter()
-                .zip(&catalog_before)
-            {
+            for (name, bytes) in [LIBRARY_FILE_NAME].iter().zip(&catalog_before) {
                 assert_eq!(&fs::read(root.path().join(name)).unwrap(), bytes);
             }
             assert_eq!(read(root.path()).unwrap(), settings);
@@ -889,10 +880,9 @@ mod tests {
             ),
             (DEVICE_FILE_NAME, "host: {env: {EXAMPLE: value}}"),
             (
-                GAMES_FILE_NAME,
+                LIBRARY_FILE_NAME,
                 "games: {bad: {title: broken, releases: []}}",
             ),
-            (RELEASES_FILE_NAME, "releases: {bad: {}}"),
         ] {
             let root = root("host: {preferences: {playerCount: 1}}");
             fs::write(root.path().join(file), content).unwrap();

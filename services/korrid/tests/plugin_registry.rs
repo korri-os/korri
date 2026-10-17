@@ -44,13 +44,12 @@ fn standalone_core() -> String {
 }
 
 #[test]
-fn discovery_runner_order_is_explicit_and_unknown_ids_fail() {
-    let source = standalone_core().replace(
-        "runners: [\"@korri:mgba/mgba\"]",
-        "runners: [\"@korri:missing/runner\", \"@korri:mgba/mgba\"]",
-    );
-    let mgba = load_plugin_source("@korri", &source).unwrap();
-    assert!(PluginRegistry::new(vec![mgba], ["@korri:mgba".into()]).is_err());
+fn content_rules_are_independent_of_runners() {
+    let source = "export const name = 'content'; export const systems = { gba: { id: 'gba', content: { extensions: ['gba'] } } };";
+    let plugin = load_plugin_source("@korri", source).unwrap();
+    let registry = PluginRegistry::new(vec![plugin], ["@korri:content".into()]).unwrap();
+    assert_eq!(registry.content_rules("gba").unwrap().extensions, ["gba"]);
+    assert!(registry.runners().is_empty());
 }
 
 #[test]
@@ -180,15 +179,9 @@ fn two_cores_of_one_family_coexist() {
             .unwrap()
     );
 
-    // Discovery keeps each system pointed at its own core.
-    assert_eq!(
-        registry.file_release_discovery_claims_for_extension(".GBA")[0].runners,
-        ["@korri:mgba/mgba"]
-    );
-    assert_eq!(
-        registry.file_release_discovery_claims_for_extension(".SFC")[0].runners,
-        ["@korri:snes9x2010/snes9x2010"]
-    );
+    // Systems identify content independently of runner availability.
+    assert_eq!(registry.content_rules("gba").unwrap().extensions, ["gba"]);
+    assert_eq!(registry.content_rules("snes").unwrap().extensions, ["sfc"]);
 
     // Both cores declare the same closed RetroArch effects; neither can
     // supply an arbitrary command through the declaration.
@@ -215,7 +208,7 @@ fn two_cores_of_one_family_coexist() {
 fn malformed_runner_shapes_fail_without_legacy_fields() {
     for source in [
         MGBA_PLUGIN.replace("id: \"@korri:mgba/mgba\"", "id: \"@korri:mgba/other\""),
-        MGBA_PLUGIN.replace("runners: [", "runtimes: ["),
+        MGBA_PLUGIN.replace("systems: [", "runtimes: ["),
         MGBA_PLUGIN.replace("owner: { kind: \"runner\"", "owner: { kind: \"runtime\""),
     ] {
         assert!(load_plugin_source("@korri", &source).is_err());

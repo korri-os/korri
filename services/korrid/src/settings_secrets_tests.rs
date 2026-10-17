@@ -7,7 +7,7 @@ use axum::{
 use korrid::config::settings::{
     clear_steamgriddb_credential, read_sensitive, set_steamgriddb_credential, SecretSettingStatus,
 };
-use korrid::config::snapshot::{DEVICE_FILE_NAME, GAMES_FILE_NAME};
+use korrid::config::snapshot::{DEVICE_FILE_NAME, LIBRARY_FILE_NAME};
 use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 use tower::ServiceExt;
@@ -28,7 +28,7 @@ fn local_router(readable: &std::path::Path, private: &std::path::Path) -> axum::
 fn readable_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join(DEVICE_FILE_NAME), "host:\n  title: usu\n").unwrap();
-    readable::write(root.path().join(GAMES_FILE_NAME), "{}\n").unwrap();
+    readable::write(root.path().join(LIBRARY_FILE_NAME), "{}\n").unwrap();
     root
 }
 
@@ -134,7 +134,7 @@ async fn sensitive_rpc_actions_never_return_or_write_the_token_to_readable_confi
             .contains("sgdb-secret-token")
     );
     assert!(
-        !std::fs::read_to_string(readable.path().join(GAMES_FILE_NAME))
+        !std::fs::read_to_string(readable.path().join(LIBRARY_FILE_NAME))
             .unwrap()
             .contains("sgdb-secret-token")
     );

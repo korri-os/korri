@@ -10,15 +10,12 @@ fn settings_only_family_and_runner_overrides_decode_without_executable_redeclara
     let snapshot = decode_config_documents(
         "families:\n  '@korri:retroarch':\n    settings: {video-vsync: false}\nrunners:\n  '@korri:mgba/mgba':\n    settings: {video-vsync: true}\n",
         "{}",
-        "{}",
     )
     .unwrap();
     korrid::config::classify_snapshot_support(&snapshot).unwrap();
     assert_eq!(snapshot.families.len(), 1);
     assert_eq!(snapshot.runners.len(), 1);
-    assert!(
-        decode_config_documents("runners: {core: {program: /bin/program}}", "{}", "{}").is_err()
-    );
+    assert!(decode_config_documents("runners: {core: {program: /bin/program}}", "{}").is_err());
 }
 
 #[test]
@@ -45,7 +42,7 @@ fn family_then_system_then_runner_then_game_then_override_is_explainable() {
         .or_insert_with(|| serde_yaml::from_str("{}").unwrap());
     system.families.insert(family.into(), config(2));
     system.runners.insert(runner.into(), config(4));
-    let game = snapshot.games.get_mut(readable::GBA_ID).unwrap();
+    let game = snapshot.library.get_mut(readable::GBA_ID).unwrap();
     game.families.insert(family.into(), config(5));
     game.runners.insert(runner.into(), config(6));
     let route = korrid::config::resolver::ResolvedRoute {

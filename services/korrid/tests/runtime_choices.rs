@@ -47,8 +47,8 @@ fn runner_choices_use_existing_records_preserve_fields_and_reject_stale_writes()
         state.snapshot.systems["gba"].runner.as_ref().unwrap().0,
         "@test:build/core"
     );
-    let game = &state.snapshot.games[readable::GBA_ID];
-    assert_eq!(game.title, "Wario Land 4");
+    let game = &state.snapshot.library[readable::GBA_ID];
+    assert_eq!(game.title.as_deref(), Some("Wario Land 4"));
     assert_eq!(game.runner.as_ref().unwrap().0, "@missing:build/core");
     assert_eq!(game.releases.len(), 1);
     let revisions = settings::runner_choice_revisions(root.path()).unwrap();
@@ -62,7 +62,7 @@ fn runner_choices_use_existing_records_preserve_fields_and_reject_stale_writes()
     )
     .unwrap();
     let state = korrid::config::snapshot::ConfigSnapshotCoordinator::new(root.path()).reload();
-    assert!(state.snapshot.games[readable::GBA_ID].runner.is_none());
+    assert!(state.snapshot.library[readable::GBA_ID].runner.is_none());
     assert!(state.snapshot.systems["gba"].runner.is_some());
     assert!(matches!(
         settings::set_runner_choice(

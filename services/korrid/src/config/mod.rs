@@ -1,6 +1,10 @@
 pub mod cascade;
 mod catalog;
-pub use catalog::{GameId, GamePayload, ReleaseIdentity, ReleaseKey, ReleasePayload};
+pub use catalog::ReleaseKey;
+pub mod library;
+pub use library::{
+    LibraryIdentity, LibraryItemPayload, LibraryReleasePayload, ProviderLinkPayload, SourcePayload,
+};
 mod linux_routes;
 pub mod resolver;
 pub mod settings;
@@ -13,7 +17,7 @@ use std::num::NonZeroU8;
 
 use serde::{
     de::{Error as DeError, MapAccess, Visitor},
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -30,9 +34,10 @@ pub(crate) const DEVICE_SECTIONS: &[&str] = &[
     "profiles",
     "hooks",
     "locations",
+    "sources",
+    "provider-links",
 ];
-pub(crate) const GAMES_SECTIONS: &[&str] = &["games"];
-pub(crate) const RELEASES_SECTIONS: &[&str] = &["releases"];
+pub(crate) const LIBRARY_SECTIONS: &[&str] = &["library"];
 
 #[derive(Debug, Error)]
 pub enum ConfigSchemaError {
@@ -48,7 +53,7 @@ pub enum ConfigSchemaError {
     Invalid { path: String, message: String },
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ConfigSnapshot {
     pub host: Option<HostPayload>,
     pub storage: BTreeMap<String, StoragePayload>,
@@ -58,12 +63,41 @@ pub struct ConfigSnapshot {
     pub runners: BTreeMap<String, RunnerPayload>,
     pub profiles: BTreeMap<String, ProfilePayload>,
     pub hooks: BTreeMap<String, HookProfilePayload>,
-    pub games: BTreeMap<String, GamePayload>,
-    pub releases: BTreeMap<String, ReleasePayload>,
+    pub library: BTreeMap<String, LibraryItemPayload>,
+    pub sources: BTreeMap<String, SourcePayload>,
+    #[serde(rename = "provider-links")]
+    pub provider_links: BTreeMap<String, ProviderLinkPayload>,
     pub locations: BTreeMap<String, Vec<Location>>,
 }
 
 impl ConfigSnapshot {
+    /// Provider links take precedence over the first release's content identity.
+    pub fn game_identity(&self, game_id: &str) -> Option<crate::GameIdentity> {
+        if let Some(link) = self
+            .provider_links
+            .values()
+            .find(|link| link.playable.0 == game_id)
+        {
+            if let Some(reference) = link
+                .refs
+                .iter()
+                .find(|r| r.kind == library::ProviderLinkRefKind::ProviderItemId)
+                .or_else(|| link.refs.first())
+            {
+                return Some(crate::GameIdentity::Provider(crate::GameProviderIdentity {
+                    provider: link.provider.0.clone(),
+                    provider_ref: reference.value.0.clone(),
+                }));
+            }
+        }
+        self.library
+            .get(game_id)?
+            .releases
+            .first()?
+            .identity
+            .as_ref()
+            .map(|identity| crate::GameIdentity::Hash(identity.value().into()))
+    }
     /// Device-owned pool size; launch and catalog opinions never participate.
     pub fn player_count(&self) -> u8 {
         self.host
@@ -95,9 +129,11 @@ struct RawDocument {
     #[serde(default)]
     hooks: SectionRecords<HookProfilePayload>,
     #[serde(default)]
-    games: SectionRecords<GamePayload>,
+    library: SectionRecords<LibraryItemPayload>,
     #[serde(default)]
-    releases: SectionRecords<ReleasePayload>,
+    sources: SectionRecords<SourcePayload>,
+    #[serde(default, rename = "provider-links")]
+    provider_links: SectionRecords<ProviderLinkPayload>,
     #[serde(default)]
     locations: SectionRecords<Vec<Location>>,
 }
@@ -167,25 +203,18 @@ where
     }
 }
 
-/// The minimum layer has exactly three documents. No legacy paths or opinions are read.
+/// Only device data and the library are read. No legacy paths are consulted.
 pub fn decode_config_documents(
     device_yaml: &str,
-    games_yaml: &str,
-    releases_yaml: &str,
+    library_yaml: &str,
 ) -> Result<ConfigSnapshot, ConfigSchemaError> {
     let device = decode_document("device.yaml", device_yaml)?;
-    let games = decode_document("catalog/games.yaml", games_yaml)?;
-    let releases = decode_document("catalog/releases.yaml", releases_yaml)?;
+    let library = decode_document("catalog/library.yaml", library_yaml)?;
     for (file, document, allowed) in [
         ("device.yaml", &device, DEVICE_SECTIONS),
-        ("catalog/games.yaml", &games, GAMES_SECTIONS),
-        ("catalog/releases.yaml", &releases, RELEASES_SECTIONS),
+        ("catalog/library.yaml", &library, LIBRARY_SECTIONS),
     ] {
-        for section in DEVICE_SECTIONS
-            .iter()
-            .chain(GAMES_SECTIONS)
-            .chain(RELEASES_SECTIONS)
-        {
+        for section in DEVICE_SECTIONS.iter().chain(LIBRARY_SECTIONS) {
             if !allowed.contains(section) && document.has_section(section) {
                 return Err(ConfigSchemaError::WrongFileSection {
                     file,
@@ -206,8 +235,9 @@ pub fn decode_config_documents(
         profiles: device.profiles.records,
         hooks: device.hooks.records,
         locations: device.locations.records,
-        games: games.games.records,
-        releases: releases.releases.records,
+        sources: device.sources.records,
+        provider_links: device.provider_links.records,
+        library: library.library.records,
     };
     catalog::validate(&snapshot)?;
     Ok(snapshot)
@@ -229,8 +259,9 @@ impl RawDocument {
             "runners" => self.runners.present,
             "profiles" => self.profiles.present,
             "hooks" => self.hooks.present,
-            "games" => self.games.present,
-            "releases" => self.releases.present,
+            "library" => self.library.present,
+            "sources" => self.sources.present,
+            "provider-links" => self.provider_links.present,
             "locations" => self.locations.present,
             _ => false,
         }
@@ -340,7 +371,11 @@ pub fn classify_snapshot_support(snapshot: &ConfigSnapshot) -> Result<(), Unsupp
             "hook profiles are not executable in this slice",
         );
     }
-    for (id, release) in &snapshot.releases {
+    for (id, release) in snapshot
+        .library
+        .iter()
+        .flat_map(|(id, game)| game.releases.iter().map(move |release| (id, release)))
+    {
         release
             .inheritable
             .collect_support_issues(&format!("releases.{id}"), &mut issues);
@@ -360,30 +395,75 @@ fn push_issue(issues: &mut Vec<SupportIssue>, path: &str, message: &str) {
     });
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub launch: Option<LaunchPolicy>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub moonlight: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub preferences: Option<HostPreferences>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub plugin: Option<ProviderValueMap>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub relays: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub env: Option<BTreeMap<String, String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub cwd: Option<String>,
-    #[serde(default, rename = "argsAppend", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "argsAppend",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub args_append: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub patches: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub hooks: Option<HostHooksPolicy>,
 }
 
@@ -465,81 +545,147 @@ impl HostPayload {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoragePayload {
     pub root: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub path: Option<BTreeMap<String, NonEmptyString>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     kind: Option<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SystemPayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub runner: Option<NonEmptyString>,
     #[serde(default)]
     pub families: cascade::RunnerConfigs,
     #[serde(default)]
     pub runners: cascade::RunnerConfigs,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub manufacturer: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub aliases: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub metadata: Option<BTreeMap<String, Value>>,
 }
 
 pub type FamilyPayload = cascade::RunnerConfig;
 pub type RunnerPayload = cascade::RunnerConfig;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub runner: Option<NonEmptyString>,
     #[serde(flatten)]
     pub inheritable: InheritableLayer,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookProfilePayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub before: Option<Vec<HookBeforeStep>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub after: Option<Vec<HookAfterStep>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum Location {
     File {
         storage: NonEmptyString,
         path: TargetString,
-        #[serde(default, deserialize_with = "optional_non_null")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional_non_null"
+        )]
         discovery: Option<FileTargetDiscovery>,
     },
     FileSet {
         storage: NonEmptyString,
-        #[serde(default, deserialize_with = "optional_non_null")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional_non_null"
+        )]
         root: Option<TargetString>,
         files: NonEmptyUniqueFileSetParts,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "optional_non_null"
+        )]
+        discovery: Option<FileTargetDiscovery>,
     },
     Executable {
         path: TargetString,
@@ -554,14 +700,22 @@ pub enum Location {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileTargetDiscovery {
     #[serde(rename = "first-seen-at")]
     pub first_seen_at: NonEmptyString,
+    #[serde(
+        default,
+        rename = "missing-since",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
+    pub missing_since: Option<NonEmptyString>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct NonEmptyUniqueFileSetParts(pub Vec<FileSetPart>);
 
 impl<'de> Deserialize<'de> for NonEmptyUniqueFileSetParts {
@@ -588,35 +742,76 @@ impl<'de> Deserialize<'de> for NonEmptyUniqueFileSetParts {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileSetPart {
     pub id: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub role: Option<NonEmptyString>,
     pub path: TargetString,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct InheritableLayer {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub launch: Option<LaunchPolicy>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub moonlight: Option<BTreeMap<String, Value>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub preferences: Option<Preferences>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub plugin: Option<ProviderValueMap>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub env: Option<BTreeMap<String, String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub cwd: Option<String>,
-    #[serde(default, rename = "argsAppend", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "argsAppend",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub args_append: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub patches: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub hooks: Option<HooksPolicy>,
 }
 
@@ -688,132 +883,216 @@ impl InheritableLayer {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchPolicy {
-    #[serde(default, rename = "with", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "with",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub with_policy: Option<ProviderValueMap>,
 }
 
 pub type ProviderValueMap = BTreeMap<ProviderIdString, Value>;
 
 /// Unlike inheritable preferences, this record may set the device's pool size.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostPreferences {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub launch: Option<LaunchPreferences>,
     #[serde(
         default,
         rename = "playerCount",
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
     pub player_count: Option<NonZeroU8>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub launch: Option<LaunchPreferences>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchPreferences {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub video: Option<LaunchVideoPreferences>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub audio: Option<LaunchAudioPreferences>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchVideoPreferences {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub fullscreen: Option<bool>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub resolution: Option<LaunchResolutionPreferences>,
     #[serde(
         default,
         rename = "aspect-ratio",
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
     pub aspect_ratio: Option<NonEmptyString>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchResolutionPreferences {
     pub width: PositiveInt,
     pub height: PositiveInt,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchAudioPreferences {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub volume: Option<Volume>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HooksPolicy {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub before: Option<Vec<HookBeforeStep>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub after: Option<Vec<HookAfterStep>>,
-    #[serde(default, rename = "use", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "use",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub use_profiles: Option<Vec<NonEmptyString>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostHooksPolicy {
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub before: Option<Vec<HookBeforeStep>>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub after: Option<Vec<HookAfterStep>>,
-    #[serde(default, rename = "use", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "use",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub use_profiles: Option<Vec<NonEmptyString>>,
     #[serde(
         default,
         rename = "trust-removable",
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "optional_non_null"
     )]
     pub trust_removable: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookBeforeStep {
     pub run: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub name: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub timeout: Option<PositiveInt>,
-    #[serde(default, rename = "on-failure", deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        rename = "on-failure",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub on_failure: Option<HookBeforeFailurePolicy>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HookBeforeFailurePolicy {
     Abort,
     Warn,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HookAfterStep {
     pub run: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub name: Option<NonEmptyString>,
-    #[serde(default, deserialize_with = "optional_non_null")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_non_null"
+    )]
     pub timeout: Option<PositiveInt>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct NonEmptyString(pub String);
 
 impl<'de> Deserialize<'de> for NonEmptyString {
@@ -832,7 +1111,8 @@ impl<'de> Deserialize<'de> for NonEmptyString {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct TargetString(pub String);
 
 impl<'de> Deserialize<'de> for TargetString {
@@ -850,7 +1130,8 @@ impl<'de> Deserialize<'de> for TargetString {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct AbsolutePathString(pub String);
 
 impl<'de> Deserialize<'de> for AbsolutePathString {
@@ -866,7 +1147,8 @@ impl<'de> Deserialize<'de> for AbsolutePathString {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct ProviderIdString(pub String);
 
 impl<'de> Deserialize<'de> for ProviderIdString {
@@ -880,7 +1162,8 @@ impl<'de> Deserialize<'de> for ProviderIdString {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct SafeRefValue(pub String);
 
 impl<'de> Deserialize<'de> for SafeRefValue {
@@ -906,7 +1189,8 @@ impl<'de> Deserialize<'de> for SafeRefValue {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct ArtifactIdString(pub String);
 
 impl<'de> Deserialize<'de> for ArtifactIdString {
@@ -930,7 +1214,8 @@ impl<'de> Deserialize<'de> for ArtifactIdString {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct PositiveInt(pub u64);
 
 impl<'de> Deserialize<'de> for PositiveInt {
@@ -946,7 +1231,8 @@ impl<'de> Deserialize<'de> for PositiveInt {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct Volume(pub f64);
 
 impl<'de> Deserialize<'de> for Volume {

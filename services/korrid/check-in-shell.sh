@@ -67,8 +67,7 @@ mkdir -p "$local_storage_root/catalog"
 # writes as root. The listing proof lives in that host's VM test, where a plugin
 # is installed and enabled the way a device installs one.
 cp "$ROOT/docs/research/retroarch-plugin-route/device.yaml" "$local_storage_root/device.yaml"
-cp "$ROOT/docs/research/retroarch-plugin-route/catalog/games.yaml" "$local_storage_root/catalog/games.yaml"
-cp "$ROOT/docs/research/retroarch-plugin-route/catalog/releases.yaml" "$local_storage_root/catalog/releases.yaml"
+cp "$ROOT/services/korrid/tests/fixtures/check-library.yaml" "$local_storage_root/catalog/library.yaml"
 export KORRI_LOCAL_STORAGE_ROOT="$local_storage_root"
 export KORRID_PRIVATE_STATE_ROOT="$local_storage_root/private"
 export KORRID_LOCAL_SIGNER_SOCKET="$local_storage_root/signer.sock"

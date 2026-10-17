@@ -1,0 +1,14 @@
+library:
+  tmnt-shredders-revenge:
+    title: "TMNT: Shredder's Revenge"
+    releases:
+      - id: android
+        system: android
+  wario-land-4:
+    title: Wario Land 4
+    releases:
+      - id: gba
+        system: gba
+        identity:
+          kind: hash
+          value: sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414

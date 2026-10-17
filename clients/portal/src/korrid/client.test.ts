@@ -413,19 +413,20 @@ describe("in-memory source status", () => {
 })
 
 describe("discovery", () => {
-  it("serializes receipt registration through the generated tag", async () => {
+  it("serializes source pairing through the generated tag", async () => {
     let body: unknown
     globalThis.fetch = (async (_input, init) => {
       body = JSON.parse(String(init?.body))
       return new Response(
         JSON.stringify({
-          _tag: "app.discovery.registerReceipt",
+          _tag: "app.discovery.pair",
           outcome: {
             _tag: "Ok",
             payload: {
               generation: "g1",
               state: { _tag: "Scanning", payload: {} },
-              locations: [],
+              sources: [],
+              attention: 0,
               diagnostics: [],
             },
           },
@@ -437,16 +438,32 @@ describe("discovery", () => {
     const outcome = await createHttpKorridClient(
       "http://127.0.0.1:43117",
       "capability",
-    ).registerDiscoveryReceipt("receipt-1")
+    ).pairDiscoverySource("receipt-1", "gba")
 
     expect(outcome).toMatchObject({
       _tag: "Ok",
       payload: { state: { _tag: "Scanning" } },
     })
     expect(body).toEqual({
-      _tag: "app.discovery.registerReceipt",
-      payload: { receipt: "receipt-1" },
+      _tag: "app.discovery.pair",
+      payload: { receipt: "receipt-1", system: "gba" },
     })
+  })
+
+  it("serializes source changes and unpairing without exposing paths", async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body))
+      bodies.push(body)
+      return new Response(JSON.stringify({ _tag: body._tag, outcome: { _tag: "Ok", payload: { generation: "g2", state: { _tag: "Idle", payload: {} }, sources: [], attention: 0, diagnostics: [] } } }))
+    }) as typeof fetch
+    const client = createHttpKorridClient("http://127.0.0.1:43117", "capability")
+    await client.changeDiscoverySource("gb", "gbc")
+    await client.unpairDiscoverySource("gb")
+    expect(bodies).toEqual([
+      { _tag: "app.discovery.change", payload: { source: "gb", system: "gbc" } },
+      { _tag: "app.discovery.unpair", payload: { source: "gb" } },
+    ])
   })
 
   it("browser memory exposes the discovery lifecycle without raw paths", async () => {
@@ -458,11 +475,11 @@ describe("discovery", () => {
       _tag: "Ok",
       payload: { generation: "in-memory-0", state: { _tag: "Idle" } },
     })
-    expect(await client.registerDiscoveryReceipt("receipt-1")).toMatchObject({
+    expect(await client.pairDiscoverySource("receipt-1", "gba")).toMatchObject({
       _tag: "Ok",
       payload: { state: { _tag: "Scanning" } },
     })
-    expect(await client.registerDiscoveryReceipt("receipt-1")).toMatchObject({
+    expect(await client.pairDiscoverySource("receipt-1", "gba")).toMatchObject({
       _tag: "Err",
       payload: { code: "FolderSelectionReceiptUnknown" },
     })
@@ -471,6 +488,14 @@ describe("discovery", () => {
       _tag: "Ok",
       payload: { state: { _tag: "Idle" } },
     })
+  })
+
+  it("browser memory changes and unpairs one paired source", async () => {
+    const client = createInMemoryKorridClient({ discoveryReceipts: ["source-1"] })
+    await client.pairDiscoverySource("source-1", "gb")
+    expect(await client.changeDiscoverySource("source-1", "gbc")).toMatchObject({ _tag: "Ok", payload: { sources: [{ id: "source-1", system: "gbc" }] } })
+    expect(await client.unpairDiscoverySource("source-1")).toMatchObject({ _tag: "Ok", payload: { sources: [] } })
+    expect(await client.unpairDiscoverySource("source-1")).toMatchObject({ _tag: "Err", payload: { code: "UnknownSource" } })
   })
 
   it("polling publishes changed generations once and never overlaps requests", async () => {
@@ -490,7 +515,8 @@ describe("discovery", () => {
             payload: {
               generation: `g${generation}`,
               state: { _tag: "Idle", payload: {} },
-              locations: [],
+              sources: [],
+              attention: 0,
               diagnostics: [],
             },
           }
@@ -522,7 +548,8 @@ describe("discovery", () => {
             payload: {
               generation: "late",
               state: { _tag: "Idle", payload: {} },
-              locations: [],
+              sources: [],
+              attention: 0,
               diagnostics: [],
             },
           }

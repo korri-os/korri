@@ -161,15 +161,19 @@ function buildKorrid(sources: Sources, calls: Calls): KorridClient {
         payload: {
           generation: "discovery-0",
           state: { _tag: "Idle" as const, payload: {} },
-          locations: [],
+          sources: [],
+          attention: 0,
           diagnostics: [],
         },
       }
     },
-    async registerDiscoveryReceipt() {
+    async pairDiscoverySource() {
       return this.discoverySnapshot()
     },
-    async removeDiscoveryLocation() {
+    async changeDiscoverySource() {
+      throw new Error("unavailable")
+    },
+    async unpairDiscoverySource() {
       return this.discoverySnapshot()
     },
     async rescanDiscovery() {

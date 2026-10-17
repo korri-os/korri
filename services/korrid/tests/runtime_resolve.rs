@@ -28,9 +28,8 @@ fn plugin_source(runtime_resolve: Option<&str>) -> String {
     format!(
         r#"
 export const name = "mgba"
-export const systems = {{ gba: {{ id: "gba", title: "Game Boy Advance" }} }}
+export const systems = {{ gba: {{ id: "gba", title: "Game Boy Advance", content: {{ extensions: ["gba"] }} }} }}
 export const runners = {{ mgba: {{ id: "{RUNNER_ID}", program: "retroarch", core: "mgba", systems: ["gba"] }} }}
-export const discovery = {{ fileReleases: {{ "gba-files": {{ id: "@korri:mgba/gba-files", title: "Game Boy Advance files", extensions: ["gba"], system: "gba", runners: ["{RUNNER_ID}"] }} }} }}
 export const handlers = {{
   "launch.prepare": () => ({{ command: "retroarch", args: [] }}),
   {resolve}

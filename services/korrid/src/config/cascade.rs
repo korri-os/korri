@@ -52,11 +52,11 @@ pub fn resolve(
             .get(&route.system_id)
             .and_then(|v| v.runners.get(id)),
         snapshot
-            .games
+            .library
             .get(&route.playable_id)
             .and_then(|v| v.families.get(family.unwrap_or(""))),
         snapshot
-            .games
+            .library
             .get(&route.playable_id)
             .and_then(|v| v.runners.get(id)),
         overrides,

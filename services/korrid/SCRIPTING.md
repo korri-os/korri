@@ -192,11 +192,11 @@ parent `plugin.ts` files; no environment-based Linux implementation remains.
 JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
-`systems`, `families`, `runners`, `transports`, `sessionControls`, and
-`discovery`. Android record shapes are retained; native launcher/runtime fields
-follow the instance/kind model described below. Discovery remains the shipped
-`fileReleases` map, never a callback. `services` names native units packaged by
-`plugin.nix`. The Linux host selects those units; the data registry validates
+`systems`, `groups`, `games`, `families`, `runners`, `transports`, and
+`controls`. Android record shapes are retained; native launcher/runtime fields
+follow the instance/kind model described below. `discovery` and
+`sessionControls` are unknown exports and fail admission. `services` names native
+units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates
 the names but does not activate them or change its existing records. `android`
 remains reserved for its platform consumer. `daemons` and the old `contributes`
 wrapper are rejected. No TypeScript export encodes systemd directives.
@@ -282,10 +282,10 @@ Only native runners can declare `releases`. Declaration and callback source
 remain effect-free; plugins do not search or hash library files.
 
 Hash matching does not scan unclaimed extensions, inspect archives, or rehash
-a file at every launch. It uses the library's recorded identity. An enabled
-plugin must still claim the input's extension for discovery. Different systems
-claiming the same extension still fail with `ClaimConflict`. This field adds a
-launcher route to existing content, not a plugin-owned game or a locked tile.
+a file at every launch. It uses the library's recorded identity. A source must
+be paired with a system or group whose content rules match the input. A group resolves shared extensions by evidence, or asks the
+person to resolve a clash. This field adds a launcher route to existing content;
+`games` is the separate declaration for plugin-owned games.
 
 The RetroArch callback preserves the existing Linux settings and argv. It
 places savestates under `states/<full-runtime-id>/`. Raw configuration retains
@@ -405,16 +405,90 @@ plugin ID decide enablement. The built-in layer enables `@korri:android-app`,
 ID without changing registry code or adding an integration-specific switch. The
 user policy layer is intentionally empty for these slices.
 
-An enabled plugin can contribute provider, system, family, runner, transport,
-file-release discovery, and contextual session-control records. Disabled plugins
-remain registered but contribute nothing while still reserving every declared
-identity, including control identities. Discovery records are data-only extension
-claims that name existing system and runner records. They never
-receive filesystem handles or executable callbacks; the scanner performs
-traversal and asks the enabled registry which normalized file extensions are
-claimed. Unsupported declaration fields and explicit `null` values fail rather
-than disappearing. As in legacy, contribution keys retain the contributing
-plugin's identity; records retain strict schema IDs for route resolution.
+An enabled plugin can contribute providers, systems with content rules, groups,
+declared games, families, runners, transports, and contextual controls. Disabled
+plugins contribute no rules, groups or games. Unsupported declaration fields and
+explicit `null` values fail rather than disappearing. Contribution keys retain
+the contributing plugin's identity; records retain strict IDs for route resolution.
+
+### Content, groups and declared games
+
+These are data exports, never callbacks. Content identification does not need an
+enabled runner. Discovery scans paired sources, never plugin data directories.
+
+```ts
+export const systems = {
+  nes: {
+    id: "nes", title: "NES", aliases: ["famicom"],
+    content: {
+      extensions: ["nes"],
+      layout: ["**/{title}.{ext}"],
+      evidence: {
+        bytes: [{ offset: 0, hex: "4e45531a" }],
+        names: ["^.*\\(Unl\\)"],
+      },
+      header: [{ size: 16, bytes: { offset: 0, hex: "4e45531a" } }],
+    },
+  },
+}
+export const groups = {
+  gameboy: { id: "gameboy", title: "Game Boy", systems: ["gb", "gbc"] },
+}
+```
+
+`content` is optional. Its extensions are lowercase suffixes without a leading
+dot. Compound suffixes such as `p8.png` are allowed. Matching ignores filename
+case and chooses the longest matching suffix within one system. Archive suffixes
+`zip`, `7z`, `rar`, `gz`, and `tar` are errors.
+
+Layouts are ordered patterns over the path relative to the source. Tokens are
+`{title}`, `{disc}`, `{version}`, `{region}`, and `{ext}`. `{title}` must occur
+exactly once. `{ext}` matches one of that system's extensions. `*` matches within
+one segment, and `**` occupies a whole segment and matches zero or more segments.
+Unknown tokens, unmatched braces and trailing `/` folder layouts are errors.
+The default layout is `**/{title}.{ext}` when no plugin supplies a layout.
+
+Byte evidence and header byte rules must fit within the first 64 KiB. Hex is
+non-empty, lowercase, even length, and at most 64 bytes. A header rule has `size`
+and exactly one of `bytes` or `remainder`. For example,
+`{ size: 512, remainder: { divisor: 1024, value: 512 } }` removes a copier header
+when file size modulo 1024 equals 512. The divisor must be positive and the value
+must be less than the divisor. The first applicable header rule wins before hashing.
+Name evidence is a regex over the filename, not the path.
+
+Enabled plugins sharing a system ID union extensions, evidence and header rules.
+Layouts concatenate in plugin-ID order with duplicates removed. Titles and
+header precedence follow that same order. Groups merge by ID, union their system
+members, and drop members no enabled plugin declares. A group ID must not also
+be a system ID. Group record IDs, like system record IDs, must equal their map keys.
+
+A `games` export declares known games and release hashes (ADR 0003):
+
+```ts
+export const games = {
+  jak1: {
+    title: "Jak and Daxter: The Precursor Legacy",
+    releases: {
+      prepared: {
+        hashes: ["sha256:…"], // replace with the release's full 64 hex digits
+        file: "opengoal/jak1/out/jak1/iso/GAME.CGO",
+      },
+    },
+  },
+}
+```
+
+Game and release keys use legacy local playable-ID segments:
+`[a-z0-9][a-z0-9._-]*`. The registry keys a game by `<plugin id>/<game key>` and
+sets its provider identity to `{ provider: <plugin id>, ref: <game key> }`.
+Each release has non-empty `hashes`, an optional `system`, and an optional `file`
+relative to an account root, without traversal. Hash hex digits accept either
+case and are stored in lowercase. A release without a system uses
+only runners whose `releases` accept its hash. No prepared-game system is invented.
+`declared_hash` returns all enabled declared releases that name a hash.
+
+`controls` keeps the previous session-control record shape. Only its export name
+changed; there is no alias for the old name.
 
 Session controls are declaration-only and attach to one runner or transport
 contribution owned by the same plugin. Their strict record contains a stable ID,

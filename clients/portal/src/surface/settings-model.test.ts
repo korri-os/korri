@@ -149,9 +149,10 @@ describe("settingsFrom", () => {
         discovery: {
           generation: "discovery-1",
           state: { _tag: "Idle", payload: {} },
-          locations: [
-            { id: "loc-a", label: "GBA" },
-            { id: "loc-b", label: "More games" },
+          attention: 0,
+          sources: [
+            { id: "loc-a", label: "GBA", system: "gba", status: { _tag: "Ready", payload: {} } },
+            { id: "loc-b", label: "More games", system: "gba", status: { _tag: "Ready", payload: {} } },
           ],
           diagnostics: [],
         },
@@ -161,7 +162,7 @@ describe("settingsFrom", () => {
     expect(games?.items[0]).toMatchObject({
       id: "local-games",
       value: "1 game",
-      description: "Declared in catalog/games.yaml",
+      description: "Declared in catalog/library.yaml",
     })
     expect(games?.items.map(item => [item.label, item.value])).toEqual([
       ["On this device", "1 game"],
@@ -185,7 +186,8 @@ describe("settingsFrom", () => {
           discovery: {
             generation: "discovery-1",
             state: { _tag: "Scanning", payload: {} },
-            locations: [],
+            attention: 0,
+            sources: [],
             diagnostics: [],
           },
         },
@@ -199,7 +201,8 @@ describe("settingsFrom", () => {
           discovery: {
             generation: "discovery-2",
             state: { _tag: "Problem", payload: {} },
-            locations: [],
+            attention: 0,
+            sources: [],
             diagnostics: [{ code: "Folder", message: "Folder is unavailable" }],
           },
         },

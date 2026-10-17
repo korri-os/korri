@@ -6,7 +6,7 @@ export const name = "mgba"
 export const title = "mGBA"
 export const description = "Runs Game Boy Advance content with the mGBA libretro core."
 export const systems = {
-  "gba": { id: "gba", title: "Game Boy Advance" },
+  "gba": { id: "gba", title: "Game Boy Advance", content: { extensions: ["gba"] } },
 }
 export const runners = {
   "mgba": {
@@ -17,7 +17,7 @@ export const runners = {
     systems: ["gba"],
   },
 }
-export const sessionControls = {
+export const controls = {
   openMenu: {
     order: 0,
     id: "@korri:mgba/open-menu",
@@ -36,10 +36,5 @@ export const sessionControls = {
     effect: "@korri:retroarch/quit",
     destructive: true,
     dismissOnSuccess: true,
-  },
-}
-export const discovery = {
-  fileReleases: {
-    "gba-files": { id: "@korri:mgba/gba-files", title: "Game Boy Advance files", extensions: ["gba"], system: "gba", runners: ["@korri:mgba/mgba"] },
   },
 }

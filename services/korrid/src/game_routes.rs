@@ -151,7 +151,7 @@ pub fn list(
         revisions,
         system_runners,
         game_runner: snapshot
-            .games
+            .library
             .get(game_id)
             .and_then(|game| game.runner.as_ref())
             .map(|id| id.0.clone()),

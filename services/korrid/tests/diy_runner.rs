@@ -44,8 +44,10 @@ fn a_hand_written_runner_needs_no_family_and_no_helper() {
     // No RetroArch family record is registered, and nothing asked for one.
     assert!(registry.families().is_empty());
 
-    let claim = &registry.file_release_discovery_claims_for_extension(".ISO")[0];
-    assert_eq!(claim.runners, ["@korri:ppsspp/ppsspp"]);
+    assert_eq!(
+        registry.content_rules("psp").unwrap().extensions,
+        ["iso", "cso", "pbp"]
+    );
 
     // Honest about what it does not get: effects are a closed first-party
     // vocabulary, so a DIY runner declares no session controls at all.

@@ -67,7 +67,7 @@ impl DynamicHostRuntime {
         for game in &config.games {
             if self.declared_ids.contains(&game.id) {
                 return Err(dynamic_failure(format!(
-                    "game id {:?} is declared by both host.toml and catalog/games.yaml",
+                    "game id {:?} is declared by both host.toml and catalog/library.yaml",
                     game.id
                 )));
             }
@@ -151,7 +151,7 @@ impl DynamicHostRuntime {
         }
         Ok(Self {
             games,
-            declared_ids: state.snapshot.games.keys().cloned().collect(),
+            declared_ids: state.snapshot.library.keys().cloned().collect(),
             failures,
         })
     }
@@ -2378,8 +2378,9 @@ esac
         let rom = folder.path().join("wl4.gba");
         fs::write(&rom, b"rom").unwrap();
         let report = crate::discovery::DiscoveryCoordinator::for_tests(root.path(), private.path())
-            .add_location(
-                folder.path(),
+            .pair(
+                folder.path().to_path_buf(),
+                "gba",
                 &crate::discovery::DiscoveryOptions {
                     first_seen_at: "2026-08-05T00:00:00Z".into(),
                     ..crate::discovery::DiscoveryOptions::default()
@@ -2390,7 +2391,7 @@ esac
         let snapshot = crate::config::snapshot::ConfigSnapshotCoordinator::new(root.path())
             .reload()
             .snapshot;
-        let (game_id, game) = snapshot.games.iter().next().unwrap();
+        let (game_id, game) = snapshot.library.iter().next().unwrap();
         let executable = root.path().join("retroarch");
         let core = root.path().join("mgba.so");
         let autoconfig = root.path().join("autoconfig");
@@ -2403,7 +2404,7 @@ esac
         assert_eq!(runtime.games.len(), 1);
         // Discovery mints the catalog game id; the route must carry it through.
         assert_eq!(&runtime.games[0].id, game_id);
-        assert_eq!(runtime.games[0].title, game.title);
+        assert_eq!(Some(&runtime.games[0].title), game.title.as_ref());
         assert!(runtime.failures.is_empty(), "{:?}", runtime.failures);
         let launch = crate::game_routes::default_launch(root.path(), &registry, game_id).unwrap();
         let command = &launch.command;
@@ -2442,23 +2443,13 @@ esac
         let registry = crate::plugin_test_fixtures::installed(root.path());
 
         // Retained catalog facts have no route after their last location is removed.
-        let games_path = root.path().join("catalog/games.yaml");
-        let releases_path = root.path().join("catalog/releases.yaml");
+        let games_path = root.path().join("catalog/library.yaml");
         let missing_sha = format!("sha256:{}", "a".repeat(64));
         fs::write(
             &games_path,
             format!(
-                "{}  {}:\n    title: Missing game\n    releases: ['{missing_sha}']\n",
+                "{}  {}:\n    title: Missing game\n    releases:\n      - id: gba\n        system: gba\n        identity: {{kind: hash, value: '{missing_sha}'}}\n",
                 fs::read_to_string(&games_path).unwrap(),
-                crate::config::test_fixtures::OTHER_ID
-            ),
-        )
-        .unwrap();
-        fs::write(
-            &releases_path,
-            format!(
-                "{}  '{missing_sha}':\n    game: {}\n    system: gba\n",
-                fs::read_to_string(&releases_path).unwrap(),
                 crate::config::test_fixtures::OTHER_ID
             ),
         )
@@ -2466,7 +2457,7 @@ esac
         let runtime = DynamicHostRuntime::from_root_with_registry(root.path(), &registry).unwrap();
 
         assert_eq!(runtime.games.len(), 1);
-        assert_eq!(runtime.games[0].id, "01K4J6K8Y00000000000000002");
+        assert_eq!(runtime.games[0].id, "wario-land-4");
         assert_eq!(
             runtime.games[0].identity,
             Some(GameIdentity::Hash(

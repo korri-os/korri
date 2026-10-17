@@ -91,7 +91,8 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
         payload: {
           generation: "d1",
           state: { _tag: "Idle", payload: {} },
-          locations: [],
+          sources: [],
+          attention: 0,
           diagnostics: [],
         },
       }
@@ -106,8 +107,9 @@ function linuxClient(overrides: Partial<KorridClient> = {}): KorridClient {
     switchIdentityFromBackup: unavailable,
     switchIdentityToNip46: unavailable,
     deleteRetiredIdentity: unavailable,
-    registerDiscoveryReceipt: unavailable,
-    removeDiscoveryLocation: unavailable,
+    pairDiscoverySource: unavailable,
+    changeDiscoverySource: unavailable,
+    unpairDiscoverySource: unavailable,
     rescanDiscovery: unavailable,
     gameRoutes: unavailable,
     setGameRunner: unavailable,
@@ -169,7 +171,8 @@ describe("Linux catalog execution without a native bridge", () => {
       discovery: {
         generation: "d1",
         state: { _tag: "Idle", payload: {} },
-        locations: [],
+        sources: [],
+        attention: 0,
         diagnostics: [],
       },
     })
@@ -178,6 +181,19 @@ describe("Linux catalog execution without a native bridge", () => {
       "device-name", "host.preferences.playerCount", "steamgriddb-credential", "local-games",
       "game-discovery-status", "game-folder-rescan", "korrid-version",
     ])
+  })
+
+  it("unpairs a discovery source through the existing device action", async () => {
+    const calls: string[] = []
+    const harness = await mount(linuxClient({
+      async unpairDiscoverySource(source) {
+        calls.push(source)
+        return { _tag: "Ok", payload: { generation: "d2", state: { _tag: "Idle", payload: {} }, sources: [], attention: 0, diagnostics: [] } }
+      },
+    }))
+    await invoke(() => harness.current().runDeviceAction("game-folder-remove:gba"))
+    expect(calls).toEqual(["gba"])
+    expect(harness.current().facts.discovery?.sources).toEqual([])
   })
 
   it.each([undefined, game.host])("starts once per frame and refreshes the session (host: %s)", async host => {

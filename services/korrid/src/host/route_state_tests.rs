@@ -54,10 +54,10 @@ async fn rpc(app: &Router, method: &str, payload: Value) -> Value {
 }
 
 fn save_runner(root: &Path, runner: &str) {
-    let path = root.join("catalog/games.yaml");
+    let path = root.join("catalog/library.yaml");
     let mut games: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    games["games"][GAME]["runner"] = runner.into();
+    games["library"][GAME]["runner"] = runner.into();
     fs::write(path, serde_yaml::to_string(&games).unwrap()).unwrap();
 }
 
@@ -105,7 +105,8 @@ async fn sole_and_saved_runners_resolve_to_selected_without_catalog_failures() {
 #[tokio::test]
 async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choice() {
     const OTHER_RUNNER: &str = "@korri:beetle-gba/beetle-gba";
-    const OTHER_RELEASE: &str = "@korri:beetle-gba/snes-files:wl4.sfc";
+    const OTHER_RELEASE: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     for chosen_runner in [RUNNER, OTHER_RUNNER] {
         let root = tempfile::tempdir().unwrap();
         crate::plugin_test_fixtures::write_gba_library(root.path());
@@ -125,38 +126,31 @@ async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choic
                 .replace("Game Boy Advance", "Super Nintendo"),
         )
         .unwrap();
-        // Extend the real fixture records using GamePayload.releases and
-        // ReleasePayload.system, not a new catalog or runner schema.
-        for (name, section) in [
-            ("catalog/games.yaml", "games"),
-            ("catalog/releases.yaml", "releases"),
-            ("device.yaml", "locations"),
-        ] {
-            let path = root.path().join(name);
-            let mut document: serde_yaml::Value =
-                serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-            if section == "games" {
-                document[section][GAME]["releases"]
-                    .as_sequence_mut()
-                    .unwrap()
-                    .push(OTHER_RELEASE.into());
-            } else {
-                let original = document[section]
-                    .as_mapping()
-                    .unwrap()
-                    .values()
-                    .next()
-                    .unwrap();
-                let mut other = original.clone();
-                if section == "releases" {
-                    other["system"] = "snes".into();
-                } else {
-                    other[0]["path"] = "wl4.sfc".into();
-                }
-                document[section][OTHER_RELEASE] = other;
-            }
-            fs::write(path, serde_yaml::to_string(&document).unwrap()).unwrap();
-        }
+        let path = root.path().join("catalog/library.yaml");
+        let mut library: serde_yaml::Value =
+            serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut other = library["library"][GAME]["releases"][0].clone();
+        other["id"] = "snes".into();
+        other["system"] = "snes".into();
+        other["identity"]["value"] = OTHER_RELEASE.into();
+        library["library"][GAME]["releases"]
+            .as_sequence_mut()
+            .unwrap()
+            .push(other);
+        fs::write(path, serde_yaml::to_string(&library).unwrap()).unwrap();
+        let path = root.path().join("device.yaml");
+        let mut device: serde_yaml::Value =
+            serde_yaml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut location = device["locations"]
+            .as_mapping()
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        location[0]["path"] = "wl4.sfc".into();
+        device["locations"][OTHER_RELEASE] = location;
+        fs::write(path, serde_yaml::to_string(&device).unwrap()).unwrap();
         let registry = crate::plugin::PluginRegistry::from_installed(packages.into()).unwrap();
         let app = library_router(root.path(), registry);
         let idle = rpc(&app, "app.session.status", json!({})).await;
@@ -178,7 +172,7 @@ async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choic
             revisions = saved["payload"].clone();
         }
         let device_preferences = fs::read(root.path().join("device.yaml")).unwrap();
-        let game_preferences = fs::read(root.path().join("catalog/games.yaml")).unwrap();
+        let game_preferences = fs::read(root.path().join("catalog/library.yaml")).unwrap();
         let routes = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
         assert_eq!(routes["_tag"], "Ok", "{routes}");
         assert_eq!(routes["payload"]["selection"], json!({"_tag": "Choose"}));
@@ -223,7 +217,7 @@ async fn valid_system_preferences_on_multiple_releases_require_an_explicit_choic
             device_preferences
         );
         assert_eq!(
-            fs::read(root.path().join("catalog/games.yaml")).unwrap(),
+            fs::read(root.path().join("catalog/library.yaml")).unwrap(),
             game_preferences
         );
         let unchanged = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
@@ -236,7 +230,7 @@ async fn a_stale_saved_runner_is_repairable_without_a_silent_fallback_or_launch(
     let root = tempfile::tempdir().unwrap();
     let app = library(root.path(), true);
     save_runner(root.path(), "@korri:removed/core");
-    let saved_preferences = fs::read(root.path().join("catalog/games.yaml")).unwrap();
+    let saved_preferences = fs::read(root.path().join("catalog/library.yaml")).unwrap();
     let idle = rpc(&app, "app.session.status", json!({})).await;
     let routes = rpc(&app, "app.local-games.routes", json!({"gameId": GAME})).await;
     assert_eq!(routes["_tag"], "Ok", "{routes}");
@@ -257,7 +251,7 @@ async fn a_stale_saved_runner_is_repairable_without_a_silent_fallback_or_launch(
     assert_eq!(launch["payload"]["code"], "LocalRouteUnavailable");
     assert_eq!(rpc(&app, "app.session.status", json!({})).await, idle);
     assert_eq!(
-        fs::read(root.path().join("catalog/games.yaml")).unwrap(),
+        fs::read(root.path().join("catalog/library.yaml")).unwrap(),
         saved_preferences
     );
 }

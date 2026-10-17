@@ -1,10 +1,8 @@
 //! Declaration-only plugins and their device-local registry.
 //!
-//! This is the narrow legacy plugin seam exercised by the Android application
-//! checkpoint: a plugin identifies itself and contributes provider, system,
-//! family, runner, transport, file-release discovery, and contextual session-control records. Plugins
-//! still perform no effects; this module only evaluates, validates, normalizes,
-//! and announces their declarations.
+//! Plugins declare systems and their content rules, groups, games, providers,
+//! families, runners, transports and contextual controls. Plugins perform no
+//! effects; this module evaluates, validates and combines their declarations.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,6 +34,125 @@ pub struct SystemRecord {
     pub title: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub aliases: Option<Vec<String>>,
+    /// What one game of this system looks like (ADR 0001, contract section 1).
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub content: Option<ContentRecord>,
+}
+
+/// `systems.<id>.content`: extensions, ordered layouts, evidence and header
+/// rules (ADR 0001, ADR 0005, contract section 1).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContentRecord {
+    pub extensions: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub layout: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub evidence: Option<EvidenceRecord>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub header: Option<Vec<HeaderRule>>,
+}
+
+/// Content evidence ranked below a declared hash (brief 2026-10-02 ranking).
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRecord {
+    #[serde(default)]
+    pub bytes: Vec<BytesRule>,
+    #[serde(default)]
+    pub names: Vec<String>,
+}
+
+/// Bytes at an offset in the first 64 KiB, lowercase hex.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BytesRule {
+    pub offset: u64,
+    pub hex: String,
+}
+
+/// A clrmamepro-style header rule (research note, ADR 0005). Exactly one of
+/// `bytes` or `remainder` is set.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderRule {
+    pub size: u64,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub bytes: Option<BytesRule>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub remainder: Option<RemainderRule>,
+}
+
+/// The rule applies when the file size modulo `divisor` equals `value`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RemainderRule {
+    pub divisor: u64,
+    pub value: u64,
+}
+
+/// Every enabled plugin's rules for one system id, combined (contract
+/// section 1: unions; layouts, title and header precedence by plugin id).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ContentRules {
+    pub system: String,
+    pub title: Option<String>,
+    pub extensions: Vec<String>,
+    /// Ordered; the default `**/{title}.{ext}` when no plugin gives one.
+    pub layouts: Vec<String>,
+    pub evidence: EvidenceRecord,
+    pub header: Vec<HeaderRule>,
+}
+
+/// `groups.<id>`: related systems one source can hold (ADR 0001). Only
+/// plugins declare groups; groups combine by id.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GroupRecord {
+    pub id: String,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub title: Option<String>,
+    pub systems: Vec<String>,
+}
+
+/// `games.<key>`: a declared game (ADR 0003). Its provider identity is
+/// `{ provider: <plugin id>, ref: <key> }` (ADR 0002).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeclaredGame {
+    pub provider: String,
+    pub key: String,
+    pub title: String,
+    pub releases: BTreeMap<String, DeclaredRelease>,
+}
+
+/// One declared release: hashes (`sha256:` or `sha1:`) and an optional
+/// prepared file relative to an account root.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DeclaredRelease {
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub system: Option<String>,
+    pub hashes: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub file: Option<String>,
+}
+
+/// A declared release found by one of its hashes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeclaredReleaseRef<'a> {
+    pub game: &'a DeclaredGame,
+    pub release_key: &'a str,
+    pub release: &'a DeclaredRelease,
+}
+
+/// What a source's `system` key names (ADR 0001).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PairingTarget<'a> {
+    System(&'a ContentRules),
+    Group {
+        group: &'a GroupRecord,
+        members: Vec<&'a ContentRules>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -72,26 +189,6 @@ pub struct RunnerRecord {
     pub program: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub core: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FileReleaseDiscoveryClaim {
-    pub id: String,
-    pub title: Option<String>,
-    pub extensions: Vec<String>,
-    pub system: String,
-    pub runners: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct FileReleaseDiscoveryContribution {
-    pub id: String,
-    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
-    pub title: Option<String>,
-    pub extensions: Vec<String>,
-    pub system: String,
-    pub runners: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -231,7 +328,8 @@ pub struct Plugin {
     runners: BTreeMap<String, RunnerRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
-    file_release_discovery_claims: BTreeMap<String, FileReleaseDiscoveryClaim>,
+    groups: BTreeMap<String, GroupRecord>,
+    declared_games: BTreeMap<String, DeclaredGame>,
 }
 
 impl Plugin {
@@ -272,7 +370,9 @@ pub struct PluginRegistry {
     runners: BTreeMap<String, RunnerRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
-    file_release_discovery_claims: BTreeMap<String, FileReleaseDiscoveryClaim>,
+    content_rules: BTreeMap<String, ContentRules>,
+    groups: BTreeMap<String, GroupRecord>,
+    declared_games: BTreeMap<String, DeclaredGame>,
 }
 
 impl PluginRegistry {
@@ -303,7 +403,9 @@ impl PluginRegistry {
         let mut runners = BTreeMap::new();
         let mut transports = BTreeMap::new();
         let mut session_controls = BTreeMap::new();
-        let mut file_release_discovery_claims = BTreeMap::new();
+        let mut content_rules: BTreeMap<String, ContentRules> = BTreeMap::new();
+        let mut groups: BTreeMap<String, GroupRecord> = BTreeMap::new();
+        let mut declared_games = BTreeMap::new();
 
         for plugin in by_id.values() {
             registered_provider_ids
@@ -359,47 +461,61 @@ impl PluginRegistry {
             }
         }
 
-        let enabled_system_ids: BTreeSet<String> =
-            systems.values().map(|record| record.id.clone()).collect();
+        // BTreeSet iteration supplies the contract's plugin-id precedence.
         for plugin_id in &enabled_plugin_ids {
-            let plugin = by_id
-                .get(plugin_id)
-                .expect("enabled plugin ids were validated above");
-            for claim in plugin.file_release_discovery_claims.values() {
-                validate_discovery_reference(
-                    &registered_system_ids,
-                    &claim.id,
-                    "system",
-                    &claim.system,
-                )?;
-                validate_discovery_reference(
-                    &registered_runner_ids,
-                    &claim.id,
-                    "runner",
-                    claim.runners.first().expect("validated runner list"),
-                )?;
-                for runner in &claim.runners[1..] {
-                    validate_discovery_reference(
-                        &registered_runner_ids,
-                        &claim.id,
-                        "runner",
-                        runner,
-                    )?;
+            let plugin = &by_id[plugin_id];
+            for system in plugin.systems.values() {
+                let rules =
+                    content_rules
+                        .entry(system.id.clone())
+                        .or_insert_with(|| ContentRules {
+                            system: system.id.clone(),
+                            ..ContentRules::default()
+                        });
+                if rules.title.is_none() {
+                    rules.title = system.title.clone();
                 }
-
-                let references_enabled = enabled_system_ids.contains(&claim.system)
-                    && claim
-                        .runners
-                        .iter()
-                        .any(|runner| runners.contains_key(runner));
-                if references_enabled {
-                    insert_unique(
-                        &mut file_release_discovery_claims,
-                        claim.id.clone(),
-                        claim.clone(),
-                    )?;
+                if let Some(content) = &system.content {
+                    union(&mut rules.extensions, &content.extensions);
+                    if let Some(layouts) = &content.layout {
+                        union(&mut rules.layouts, layouts);
+                    }
+                    if let Some(evidence) = &content.evidence {
+                        union(&mut rules.evidence.bytes, &evidence.bytes);
+                        union(&mut rules.evidence.names, &evidence.names);
+                    }
+                    if let Some(header) = &content.header {
+                        union(&mut rules.header, header);
+                    }
                 }
             }
+            for group in plugin.groups.values() {
+                let merged = groups
+                    .entry(group.id.clone())
+                    .or_insert_with(|| GroupRecord {
+                        id: group.id.clone(),
+                        title: None,
+                        systems: Vec::new(),
+                    });
+                if merged.title.is_none() {
+                    merged.title = group.title.clone();
+                }
+                union(&mut merged.systems, &group.systems);
+            }
+            declared_games.extend(plugin.declared_games.clone());
+        }
+        for rules in content_rules.values_mut() {
+            if rules.layouts.is_empty() {
+                rules.layouts.push("**/{title}.{ext}".into());
+            }
+        }
+        for group in groups.values_mut() {
+            if registered_system_ids.contains(&group.id) {
+                return Err(PluginError::GroupSystemCollision(group.id.clone()));
+            }
+            group
+                .systems
+                .retain(|system| content_rules.contains_key(system));
         }
 
         Ok(Self {
@@ -418,7 +534,9 @@ impl PluginRegistry {
             runners,
             transports,
             session_controls,
-            file_release_discovery_claims,
+            content_rules,
+            groups,
+            declared_games,
         })
     }
 
@@ -577,47 +695,53 @@ impl PluginRegistry {
         &self.session_controls
     }
 
-    pub fn file_release_discovery_claims(&self) -> &BTreeMap<String, FileReleaseDiscoveryClaim> {
-        &self.file_release_discovery_claims
+    /// Merged content rules for one enabled system, independent of runners.
+    pub fn content_rules(&self, system: &str) -> Option<&ContentRules> {
+        self.content_rules.get(system)
     }
 
-    /// Match declared suffixes, including the legacy PICO-8 .p8.png format.
-    /// Pick the longest suffix only within a claim, never between systems.
-    pub fn file_release_discovery_claims_for_filename(
-        &self,
-        file_name: &str,
-    ) -> Vec<(&FileReleaseDiscoveryClaim, &str)> {
-        let lower = file_name.to_ascii_lowercase();
-        self.file_release_discovery_claims
-            .values()
-            .filter_map(|claim| {
-                claim
-                    .extensions
-                    .iter()
-                    .filter(|extension| {
-                        let suffix = format!(".{extension}");
-                        lower.len() > suffix.len() && lower.ends_with(&suffix)
-                    })
-                    .max_by_key(|extension| extension.len())
-                    .map(|extension| (claim, extension.as_str()))
-            })
-            .collect()
+    pub fn groups(&self) -> &BTreeMap<String, GroupRecord> {
+        &self.groups
     }
 
-    pub fn file_release_discovery_claims_for_extension(
-        &self,
-        extension: &str,
-    ) -> Vec<&FileReleaseDiscoveryClaim> {
-        let Ok(extension) = normalize_extension(extension) else {
-            return Vec::new();
-        };
-        self.file_release_discovery_claims
+    pub fn group(&self, id: &str) -> Option<&GroupRecord> {
+        self.groups.get(id)
+    }
+
+    pub fn pairing_target(&self, id: &str) -> Option<PairingTarget<'_>> {
+        if let Some(rules) = self.content_rules(id) {
+            return Some(PairingTarget::System(rules));
+        }
+        self.group(id).map(|group| PairingTarget::Group {
+            group,
+            members: group
+                .systems
+                .iter()
+                .filter_map(|id| self.content_rules(id))
+                .collect(),
+        })
+    }
+
+    /// Enabled declared games keyed `<plugin id>/<game key>` (ADR 0003).
+    pub fn declared_games(&self) -> &BTreeMap<String, DeclaredGame> {
+        &self.declared_games
+    }
+
+    pub fn declared_hash(&self, hash: &str) -> Vec<DeclaredReleaseRef<'_>> {
+        self.declared_games
             .values()
-            .filter(|claim| {
-                claim
-                    .extensions
-                    .iter()
-                    .any(|candidate| candidate == &extension)
+            .flat_map(|game| {
+                game.releases.iter().filter_map(move |(key, release)| {
+                    release
+                        .hashes
+                        .iter()
+                        .any(|candidate| candidate.eq_ignore_ascii_case(hash))
+                        .then_some(DeclaredReleaseRef {
+                            game,
+                            release_key: key,
+                            release,
+                        })
+                })
             })
             .collect()
     }
@@ -645,12 +769,8 @@ pub enum PluginError {
     UnknownEnabledPlugin(String),
     #[error("duplicate contributed record id {0}")]
     DuplicateContribution(String),
-    #[error("discovery claim {claim_id} references unknown {kind} {referenced_id}")]
-    UnknownDiscoveryReference {
-        claim_id: String,
-        kind: &'static str,
-        referenced_id: String,
-    },
+    #[error("group id {0} is also a system id")]
+    GroupSystemCollision(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -675,21 +795,23 @@ struct PluginDeclaration {
     runners: BTreeMap<String, RunnerRecord>,
     #[serde(default)]
     transports: BTreeMap<String, TransportRecord>,
-    #[serde(default, rename = "sessionControls")]
+    #[serde(default, rename = "controls")]
     session_controls: BTreeMap<String, SessionControlRecord>,
     #[serde(default)]
-    discovery: PluginDiscoveryContributions,
+    groups: BTreeMap<String, GroupRecord>,
+    #[serde(default)]
+    games: BTreeMap<String, DeclaredGameContribution>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     config: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     android: Option<BTreeMap<String, serde_json::Value>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PluginDiscoveryContributions {
-    #[serde(default)]
-    file_releases: BTreeMap<String, FileReleaseDiscoveryContribution>,
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeclaredGameContribution {
+    title: String,
+    releases: BTreeMap<String, DeclaredRelease>,
 }
 
 /// The caller supplies publisher identity from verified packaging or trusted
@@ -784,6 +906,9 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                 record_id: local_id.clone(),
                 reason: format!("record id {} does not match its local key", system.id),
             });
+        }
+        if let Some(content) = &system.content {
+            validate_content(local_id, content)?;
         }
     }
 
@@ -993,65 +1118,69 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         control.local_id = local_id.clone();
     }
 
-    let mut file_release_discovery_claims = BTreeMap::new();
-    for (local_id, claim) in declaration.discovery.file_releases {
-        if local_id.is_empty() {
-            return Err(PluginError::EmptyContributionId {
-                kind: "discovery file release",
-            });
+    for (key, group) in &declaration.groups {
+        if key.is_empty() || group.id != *key {
+            return Err(invalid_contribution(
+                "group",
+                key,
+                "id must match a non-empty map key",
+            ));
         }
-        let expected_id = plugin_record_id(&id, &local_id);
-        if claim.id != expected_id {
-            return Err(PluginError::InvalidContribution {
-                kind: "discovery file release",
-                record_id: local_id,
-                reason: format!("record id {} must be {expected_id}", claim.id),
-            });
+    }
+    let mut declared_games = BTreeMap::new();
+    for (key, mut game) in declaration.games {
+        if !is_provider_segment(&key) {
+            return Err(invalid_contribution(
+                "game",
+                &key,
+                "key must be a local playable-id segment",
+            ));
         }
-        if claim.system.is_empty()
-            || claim.runners.is_empty()
-            || claim.runners.iter().any(String::is_empty)
-        {
-            return Err(PluginError::InvalidContribution {
-                kind: "discovery file release",
-                record_id: claim.id,
-                reason: "system and ordered runner references must be non-empty".to_owned(),
-            });
-        }
-        let mut extensions = Vec::new();
-        let mut seen_extensions = BTreeSet::new();
-        for extension in claim.extensions {
-            let normalized = normalize_extension(&extension).map_err(|reason| {
-                PluginError::InvalidContribution {
-                    kind: "discovery file release",
-                    record_id: claim.id.clone(),
-                    reason,
-                }
-            })?;
-            if !seen_extensions.insert(normalized.clone()) {
-                return Err(PluginError::InvalidContribution {
-                    kind: "discovery file release",
-                    record_id: claim.id,
-                    reason: format!("duplicate normalized extension {normalized}"),
-                });
+        for (release_key, release) in &mut game.releases {
+            if !is_provider_segment(release_key) {
+                return Err(invalid_contribution(
+                    "game",
+                    &key,
+                    "release key must be a local playable-id segment",
+                ));
             }
-            extensions.push(normalized);
+            if release.hashes.is_empty()
+                || release.hashes.iter().any(|hash| !is_declared_hash(hash))
+            {
+                return Err(invalid_contribution(
+                    "game",
+                    &key,
+                    "release requires sha256:<64 hex> or sha1:<40 hex> hashes",
+                ));
+            }
+            // Hash identity is case-independent. Store the same lowercase form
+            // that the scanner computes, including for uppercase published lists.
+            for hash in &mut release.hashes {
+                hash.make_ascii_lowercase();
+            }
+            if let Some(file) = &release.file {
+                if file.is_empty()
+                    || file.starts_with('/')
+                    || std::path::Path::new(file)
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir))
+                    || file.contains('\0')
+                {
+                    return Err(invalid_contribution(
+                        "game",
+                        &key,
+                        "file must be relative to an account root without traversal",
+                    ));
+                }
+            }
         }
-        if extensions.is_empty() {
-            return Err(PluginError::InvalidContribution {
-                kind: "discovery file release",
-                record_id: claim.id,
-                reason: "at least one extension is required".to_owned(),
-            });
-        }
-        file_release_discovery_claims.insert(
-            expected_id.clone(),
-            FileReleaseDiscoveryClaim {
-                id: expected_id,
-                title: claim.title,
-                extensions,
-                system: claim.system,
-                runners: claim.runners,
+        declared_games.insert(
+            plugin_record_id(&id, &key),
+            DeclaredGame {
+                provider: id.clone(),
+                key,
+                title: game.title,
+                releases: game.releases,
             },
         );
     }
@@ -1068,25 +1197,137 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         runners: declaration.runners,
         transports: declaration.transports,
         session_controls: declaration.session_controls,
-        file_release_discovery_claims,
+        groups: declaration.groups,
+        declared_games,
     })
 }
 
-fn validate_discovery_reference(
-    registered_ids: &BTreeSet<String>,
-    claim_id: &str,
-    kind: &'static str,
-    referenced_id: &str,
-) -> Result<(), PluginError> {
-    if registered_ids.contains(referenced_id) {
-        Ok(())
-    } else {
-        Err(PluginError::UnknownDiscoveryReference {
-            claim_id: claim_id.to_owned(),
-            kind,
-            referenced_id: referenced_id.to_owned(),
-        })
+fn union<T: PartialEq + Clone>(target: &mut Vec<T>, values: &[T]) {
+    for value in values {
+        if !target.contains(value) {
+            target.push(value.clone());
+        }
     }
+}
+
+fn invalid_contribution(kind: &'static str, id: &str, reason: &str) -> PluginError {
+    PluginError::InvalidContribution {
+        kind,
+        record_id: id.into(),
+        reason: reason.into(),
+    }
+}
+
+fn is_declared_hash(hash: &str) -> bool {
+    let Some((algorithm, value)) = hash.split_once(':') else {
+        return false;
+    };
+    let length = match algorithm {
+        "sha256" => 64,
+        "sha1" => 40,
+        _ => return false,
+    };
+    value.len() == length && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_content(id: &str, content: &ContentRecord) -> Result<(), PluginError> {
+    let invalid = |reason: &str| invalid_contribution("system content", id, reason);
+    for extension in &content.extensions {
+        if !extension.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        }) {
+            return Err(invalid(
+                "extensions must be lowercase suffixes without a leading dot",
+            ));
+        }
+        if matches!(
+            extension.rsplit('.').next(),
+            Some("zip" | "7z" | "rar" | "gz" | "tar")
+        ) {
+            return Err(invalid("archive extensions are not supported"));
+        }
+    }
+    if let Some(layouts) = &content.layout {
+        for layout in layouts {
+            validate_layout(layout, &content.extensions).map_err(invalid)?;
+        }
+    }
+    if let Some(evidence) = &content.evidence {
+        for bytes in &evidence.bytes {
+            validate_bytes(bytes).map_err(invalid)?;
+        }
+    }
+    if let Some(headers) = &content.header {
+        for rule in headers {
+            match (&rule.bytes, &rule.remainder) {
+                (Some(bytes), None) => validate_bytes(bytes).map_err(invalid)?,
+                (None, Some(remainder))
+                    if remainder.divisor > 0 && remainder.value < remainder.divisor => {}
+                (None, Some(_)) => {
+                    return Err(invalid(
+                        "header remainder requires a positive divisor and a value below it",
+                    ))
+                }
+                _ => return Err(invalid("header requires exactly one of bytes or remainder")),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_bytes(rule: &BytesRule) -> Result<(), &'static str> {
+    if rule.hex.is_empty()
+        || !rule.hex.len().is_multiple_of(2)
+        || rule.hex.len() > 128
+        || !rule
+            .hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("hex must be non-empty lowercase even-length hex of at most 64 bytes");
+    }
+    let size = (rule.hex.len() / 2) as u64;
+    if rule.offset >= 65536 || size > 65536 - rule.offset {
+        return Err("byte evidence must fit within the first 64 KiB");
+    }
+    Ok(())
+}
+
+fn validate_layout(layout: &str, extensions: &[String]) -> Result<(), &'static str> {
+    if layout.ends_with('/') {
+        return Err("folder layouts are not supported");
+    }
+    if layout
+        .split('/')
+        .any(|part| part.contains("**") && part != "**")
+    {
+        return Err("** must occupy a whole path segment");
+    }
+    let mut rest = layout;
+    let mut titles = 0;
+    while let Some(start) = rest.find(['{', '}']) {
+        if rest.as_bytes()[start] != b'{' {
+            return Err("unmatched layout brace");
+        }
+        let Some(end) = rest[start..].find('}') else {
+            return Err("unmatched layout brace");
+        };
+        match &rest[start + 1..start + end] {
+            "title" => titles += 1,
+            "disc" | "version" | "region" => {}
+            "ext" if !extensions.is_empty() => {}
+            "ext" => return Err("{ext} requires system extensions"),
+            _ => return Err("unknown layout token"),
+        }
+        rest = &rest[start + end + 1..];
+    }
+    if titles != 1 {
+        return Err("layout requires {title} exactly once");
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1216,27 +1457,6 @@ fn is_provider_segment(value: &str) -> bool {
         })
 }
 
-fn normalize_extension(value: &str) -> Result<String, String> {
-    let trimmed = value.trim();
-    let normalized = trimmed
-        .strip_prefix('.')
-        .unwrap_or(trimmed)
-        .to_ascii_lowercase();
-    if normalized.is_empty() {
-        return Err("extension must not be empty".to_owned());
-    }
-    if normalized.split('.').all(|part| {
-        !part.is_empty()
-            && part
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric())
-    }) {
-        Ok(normalized)
-    } else {
-        Err(format!("extension {value} contains unsupported characters"))
-    }
-}
-
 fn is_android_identifier(value: &str, allow_dollar: bool) -> bool {
     value.split('.').all(|segment| {
         let mut chars = segment.chars();
@@ -1269,4 +1489,373 @@ fn titleize(id: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn plugin(name: &str, exports: Value) -> Result<Plugin, PluginError> {
+        let mut declaration = exports.as_object().unwrap().clone();
+        declaration.insert("name".into(), json!(name));
+        decode_plugin_declaration("@test", &Value::Object(declaration).to_string())
+    }
+
+    fn content(value: Value) -> Result<Plugin, PluginError> {
+        plugin(
+            "rules",
+            json!({"systems": {"nes": {"id": "nes", "content": value}}}),
+        )
+    }
+
+    #[test]
+    fn exports_use_the_new_names_without_compatibility() {
+        load_plugin_source("@test", "export const name = 'rules'; export const groups = {}; export const games = {}; export const controls = {};").unwrap();
+        for export in ["discovery", "sessionControls"] {
+            let source = format!("export const name = 'rules'; export const {export} = {{}};");
+            assert!(load_plugin_source("@test", &source).is_err(), "{export}");
+            assert!(plugin("rules", json!({export: {}})).is_err(), "{export}");
+        }
+    }
+
+    #[test]
+    fn content_extensions_are_lowercase_compound_suffixes_not_archives() {
+        for extension in ["nes", "p8.png", "7abc"] {
+            content(json!({"extensions": [extension]})).unwrap();
+        }
+        for extension in [
+            "", ".nes", "NES", " nes", "p8..png", "p8/png", "p8.*", "zip", "7z", "rar", "gz", "tar",
+        ] {
+            assert!(
+                content(json!({"extensions": [extension]})).is_err(),
+                "{extension}"
+            );
+        }
+    }
+
+    #[test]
+    fn layouts_validate_tokens_titles_and_file_releases() {
+        for layout in [
+            "**/{title}.{ext}",
+            "{title} ({region})/{disc}-{version}.{ext}",
+            "*/{title}.nes",
+        ] {
+            content(json!({"extensions": ["nes"], "layout": [layout]})).unwrap();
+        }
+        for layout in [
+            "**/{name}.{ext}",
+            "{title}/{title}.{ext}",
+            "game.{ext}",
+            "{title}/",
+            "{title}.{unknown}",
+            "{title}.{ext",
+            "{title}.ext}",
+            "foo**/{title}.{ext}",
+        ] {
+            assert!(
+                content(json!({"extensions": ["nes"], "layout": [layout]})).is_err(),
+                "{layout}"
+            );
+        }
+        assert!(content(json!({"extensions": [], "layout": ["{title}.{ext}"]})).is_err());
+    }
+
+    #[test]
+    fn byte_rules_are_bounded_lowercase_even_hex() {
+        for (offset, hex) in [
+            (0, "4e45531a".to_owned()),
+            (65472, "ff".repeat(64)),
+            (65535, "ff".into()),
+        ] {
+            content(json!({"extensions": ["nes"], "evidence": {"bytes": [{"offset": offset, "hex": hex}]}})).unwrap();
+        }
+        for rule in [
+            json!({"offset": 0, "hex": ""}),
+            json!({"offset": 0, "hex": "AA"}),
+            json!({"offset": 0, "hex": "f"}),
+            json!({"offset": 0, "hex": "gg"}),
+            json!({"offset": 0, "hex": "ff".repeat(65)}),
+            json!({"offset": 65536, "hex": "ff"}),
+            json!({"offset": 65535, "hex": "ffff"}),
+            json!({"offset": u64::MAX, "hex": "ff"}),
+        ] {
+            for field in ["evidence", "header"] {
+                let value = if field == "evidence" {
+                    json!({"extensions": ["nes"], "evidence": {"bytes": [rule]}})
+                } else {
+                    json!({"extensions": ["nes"], "header": [{"size": 16, "bytes": rule}]})
+                };
+                assert!(content(value).is_err(), "{field}: {rule}");
+            }
+        }
+    }
+
+    #[test]
+    fn header_rules_have_exactly_one_condition() {
+        for rule in [
+            json!({"size": 16, "bytes": {"offset": 0, "hex": "4e45531a"}}),
+            json!({"size": 512, "remainder": {"divisor": 1024, "value": 512}}),
+        ] {
+            content(json!({"extensions": ["nes"], "header": [rule]})).unwrap();
+        }
+        for rule in [
+            json!({"size": 16}),
+            json!({"size": 16, "bytes": {"offset": 0, "hex": "00"}, "remainder": {"divisor": 1024, "value": 512}}),
+            json!({"size": 16, "remainder": {"divisor": 0, "value": 0}}),
+            json!({"size": 16, "remainder": {"divisor": 4, "value": 4}}),
+        ] {
+            assert!(
+                content(json!({"extensions": ["nes"], "header": [rule]})).is_err(),
+                "{rule}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_hashes_and_local_keys_are_validated() {
+        let declare = |game: &str, release: &str, hashes: Value| {
+            plugin(
+                "games",
+                json!({"games": {game: {"title": "Game", "releases": {release: {"hashes": hashes}}}}}),
+            )
+        };
+        for hash in [
+            format!("sha256:{}", "a".repeat(64)),
+            format!("sha1:{}", "f".repeat(40)),
+        ] {
+            declare("game-1.a_b", "release-1.a_b", json!([hash])).unwrap();
+        }
+        for hashes in [
+            json!([]),
+            json!(["sha256:a"]),
+            json!([format!("sha256:{}", "g".repeat(64))]),
+            json!([format!("sha1:{}", "a".repeat(41))]),
+            json!([format!("md5:{}", "a".repeat(32))]),
+            json!([null]),
+        ] {
+            assert!(
+                declare("game", "release", hashes.clone()).is_err(),
+                "{hashes}"
+            );
+        }
+        for key in [
+            "",
+            ".",
+            "..",
+            "_game",
+            "-game",
+            "Game",
+            "game/release",
+            "game space",
+        ] {
+            assert!(
+                declare(key, "release", json!([format!("sha1:{}", "f".repeat(40))])).is_err(),
+                "game {key}"
+            );
+            assert!(
+                declare("game", key, json!([format!("sha1:{}", "f".repeat(40))])).is_err(),
+                "release {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn registry_merges_enabled_content_in_plugin_id_order_without_runners() {
+        let a = plugin("a", json!({"systems": {"nes": {"id": "nes", "title": "First", "content": {"extensions": ["nes"], "layout": ["{title}.{ext}", "**/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}], "names": ["first"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}]}}, "gb": {"id": "gb"}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"nes": {"id": "nes", "title": "Second", "content": {"extensions": ["nes", "fds"], "layout": ["**/{title}.{ext}", "*/{title}.{ext}"], "evidence": {"bytes": [{"offset": 0, "hex": "00"}, {"offset": 1, "hex": "ff"}], "names": ["first", "second"]}, "header": [{"size": 16, "bytes": {"offset": 0, "hex": "00"}}, {"size": 512, "remainder": {"divisor": 1024, "value": 512}}]}}}})).unwrap();
+        let disabled = plugin(
+            "disabled",
+            json!({"systems": {"nes": {"id": "nes", "content": {"extensions": ["ignored"]}}}}),
+        )
+        .unwrap();
+        let registry =
+            PluginRegistry::new(vec![b, disabled, a], ["@test:b".into(), "@test:a".into()])
+                .unwrap();
+        let rules = registry.content_rules("nes").unwrap();
+        assert_eq!(rules.title.as_deref(), Some("First"));
+        assert_eq!(rules.extensions, ["nes", "fds"]);
+        assert_eq!(
+            rules.layouts,
+            ["{title}.{ext}", "**/{title}.{ext}", "*/{title}.{ext}"]
+        );
+        assert_eq!(rules.evidence.bytes.len(), 2);
+        assert_eq!(rules.evidence.names, ["first", "second"]);
+        assert_eq!(
+            rules.header.iter().map(|r| r.size).collect::<Vec<_>>(),
+            [16, 512]
+        );
+        assert_eq!(
+            registry.content_rules("gb").unwrap().layouts,
+            ["**/{title}.{ext}"]
+        );
+        assert!(registry.runners().is_empty());
+        assert!(matches!(
+            registry.pairing_target("nes"),
+            Some(PairingTarget::System(_))
+        ));
+        assert!(registry.content_rules("missing").is_none());
+        assert!(registry.pairing_target("missing").is_none());
+    }
+
+    #[test]
+    fn groups_merge_drop_undeclared_members_and_cannot_shadow_systems() {
+        let a = plugin("a", json!({"systems": {"gb": {"id": "gb"}}, "groups": {"gameboy": {"id": "gameboy", "title": "First", "systems": ["gb", "gbc", "missing"]}}})).unwrap();
+        let b = plugin("b", json!({"systems": {"gbc": {"id": "gbc", "content": {"extensions": ["gbc"]}}}, "groups": {"gameboy": {"id": "gameboy", "title": "Second", "systems": ["gbc", "gb"]}}})).unwrap();
+        let disabled = plugin(
+            "disabled",
+            json!({"systems": {"missing": {"id": "missing"}}}),
+        )
+        .unwrap();
+        let registry = PluginRegistry::new(
+            vec![b, a.clone(), disabled],
+            ["@test:b".into(), "@test:a".into()],
+        )
+        .unwrap();
+        let group = registry.group("gameboy").unwrap();
+        assert_eq!(group.title.as_deref(), Some("First"));
+        assert_eq!(group.systems, ["gb", "gbc"]);
+        assert!(
+            matches!(registry.pairing_target("gameboy"), Some(PairingTarget::Group { members, .. }) if members.len() == 2)
+        );
+        let conflict = plugin(
+            "conflict",
+            json!({"groups": {"gb": {"id": "gb", "systems": []}}}),
+        )
+        .unwrap();
+        assert!(PluginRegistry::new(
+            vec![a, conflict],
+            ["@test:a".into(), "@test:conflict".into()]
+        )
+        .is_err());
+        assert!(plugin(
+            "bad",
+            json!({"groups": {"gb": {"id": "other", "systems": []}}})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn new_exports_decode_real_module_records_and_canonicalize_hashes() {
+        let hash = format!("sha256:{}", "A".repeat(64));
+        let source = format!(
+            r#"
+            export const name = "games";
+            export const systems = {{nes: {{id: "nes", content: {{extensions: ["nes"], layout: ["**/{{title}}.{{ext}}"], evidence: {{names: ["^Game"]}}, header: [{{size: 16, bytes: {{offset: 0, hex: "4e45531a"}}}}]}}}}}};
+            export const groups = {{nintendo: {{id: "nintendo", systems: ["nes"]}}}};
+            export const games = {{game: {{title: "Game", releases: {{original: {{hashes: ["{hash}"], system: "nes"}}}}}}}};
+        "#
+        );
+        let plugin = load_plugin_source("@test", &source).unwrap();
+        let registry = PluginRegistry::new(vec![plugin], ["@test:games".into()]).unwrap();
+        assert_eq!(registry.groups().len(), 1);
+        assert_eq!(
+            registry.groups()["nintendo"],
+            *registry.group("nintendo").unwrap()
+        );
+        assert_eq!(registry.content_rules("nes").unwrap().header.len(), 1);
+        assert_eq!(registry.declared_hash(&hash.to_lowercase()).len(), 1);
+        assert_eq!(registry.declared_hash(&hash).len(), 1);
+    }
+
+    #[test]
+    fn default_layout_is_only_added_when_no_enabled_plugin_supplies_one() {
+        let a = plugin(
+            "a",
+            json!({"systems": {"nes": {"id": "nes", "content": {"extensions": ["nes"]}}}}),
+        )
+        .unwrap();
+        let b = plugin("b", json!({"systems": {"nes": {"id": "nes", "title": "NES", "content": {"extensions": ["fds"], "layout": ["{title}.{ext}"]}}}})).unwrap();
+        let default = PluginRegistry::new(vec![a.clone()], ["@test:a".into()]).unwrap();
+        assert_eq!(
+            default.content_rules("nes").unwrap().layouts,
+            ["**/{title}.{ext}"]
+        );
+        let merged = PluginRegistry::new(vec![b, a], ["@test:a".into(), "@test:b".into()]).unwrap();
+        assert_eq!(
+            merged.content_rules("nes").unwrap().layouts,
+            ["{title}.{ext}"]
+        );
+        assert_eq!(
+            merged.content_rules("nes").unwrap().title.as_deref(),
+            Some("NES")
+        );
+    }
+
+    #[test]
+    fn new_records_reject_unknown_fields_nulls_and_escaping_prepared_files() {
+        for value in [
+            json!({"extensions": ["nes"], "unknown": true}),
+            json!({"extensions": ["nes"], "layout": null}),
+            json!({"extensions": ["nes"], "evidence": {"bytes": null}}),
+            json!({"extensions": ["nes"], "header": [{"size": 16, "bytes": null}]}),
+        ] {
+            assert!(content(value.clone()).is_err(), "{value}");
+        }
+        let hash = format!("sha1:{}", "f".repeat(40));
+        for file in [
+            "",
+            "/outside/game",
+            "../game",
+            "safe/../../game",
+            "safe\0game",
+        ] {
+            assert!(plugin("games", json!({"games": {"game": {"title": "Game", "releases": {"prepared": {"hashes": [hash], "file": file}}}}})).is_err(), "{file}");
+        }
+        assert!(plugin(
+            "groups",
+            json!({"groups": {"gb": {"id": "gb", "systems": null}}})
+        )
+        .is_err());
+        assert!(plugin(
+            "games",
+            json!({"games": {"game": {"title": "Game", "unknown": true, "releases": {}}}})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn an_enabled_group_cannot_shadow_a_disabled_registered_system() {
+        let system = plugin("system", json!({"systems": {"gb": {"id": "gb"}}})).unwrap();
+        let group = plugin(
+            "group",
+            json!({"groups": {"gb": {"id": "gb", "systems": []}}}),
+        )
+        .unwrap();
+        assert!(matches!(
+            PluginRegistry::new(vec![system, group], ["@test:group".into()]),
+            Err(PluginError::GroupSystemCollision(_))
+        ));
+    }
+
+    #[test]
+    fn declared_games_keep_provider_and_hash_queries_return_every_release() {
+        let hash = format!("sha1:{}", "a".repeat(40));
+        let exports = json!({"games": {"jak1": {"title": "Jak", "releases": {"prepared": {"hashes": [hash], "file": "opengoal/GAME.CGO"}, "original": {"hashes": [hash], "system": "ps2"}}}}});
+        let a = plugin("a", exports.clone()).unwrap();
+        let b = plugin("b", exports.clone()).unwrap();
+        let disabled = plugin("disabled", exports).unwrap();
+        let registry =
+            PluginRegistry::new(vec![b, disabled, a], ["@test:b".into(), "@test:a".into()])
+                .unwrap();
+        assert_eq!(
+            registry
+                .declared_games()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["@test:a/jak1", "@test:b/jak1"]
+        );
+        let game = &registry.declared_games()["@test:a/jak1"];
+        assert_eq!(game.provider, "@test:a");
+        assert_eq!(game.key, "jak1");
+        assert_eq!(game.releases["prepared"].system, None);
+        assert_eq!(
+            game.releases["prepared"].file.as_deref(),
+            Some("opengoal/GAME.CGO")
+        );
+        assert_eq!(registry.declared_hash(&hash).len(), 4);
+        assert_eq!(registry.declared_hash(&hash)[0].release_key, "original");
+        assert!(registry.declared_hash("sha1:unknown").is_empty());
+    }
 }

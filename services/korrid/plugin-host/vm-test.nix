@@ -9,15 +9,39 @@
   gameRuntime ? null,
 }:
 let
-  # The reviewed Linux route checkpoint, plus the ROM file its device location
-  # names. Wario Land 4 is the one release an installed libretro runner can
-  # admit; the provider release beside it has no runner on this platform.
+  # A paired GBA source and a readable catalog id. The marker bytes are not
+  # game data, but their digest must agree with the discovery identity.
   smokeStorage = pkgs.runCommand "korri-brain-smoke-storage" { } ''
     mkdir -p "$out/catalog" "$out/roms"
-    cp ${../../../docs/research/retroarch-plugin-route/device.yaml} "$out/device.yaml"
-    cp ${../../../docs/research/retroarch-plugin-route/catalog/games.yaml} "$out/catalog/games.yaml"
-    cp ${../../../docs/research/retroarch-plugin-route/catalog/releases.yaml} "$out/catalog/releases.yaml"
-    printf rom > "$out/roms/wl4.gba"
+    cat > "$out/device.yaml" <<'YAML'
+    host:
+      title: plugin-test
+    storage:
+      gba:
+        root: /var/lib/korri-brain-smoke/roms
+    sources:
+      gba:
+        kind: [files]
+        storage: gba
+        system: gba
+    locations:
+      'sha256:${builtins.hashString "sha256" "rom"}':
+        - storage: gba
+          path: Wario Land 4.gba
+    YAML
+    cat > "$out/catalog/library.yaml" <<'YAML'
+    library:
+      wario-land-4:
+        title: Wario Land 4
+        releases:
+          - id: gba
+            system: gba
+            identity:
+              kind: hash
+              value: sha256:${builtins.hashString "sha256" "rom"}
+    YAML
+    # A route marker, not owned game data; its identity matches the seeded release.
+    printf rom > "$out/roms/Wario Land 4.gba"
   '';
   productDeviceConfig = pkgs.writeText "korri-product-vm-host.toml" ''
     label = "product-vm"
@@ -967,9 +991,8 @@ pkgs.testers.runNixOSTest {
     assert brain_rpc("system.health")["outcome"]["_tag"] == "Ok"
     listed = brain_rpc("app.local-games.list")["outcome"]
     assert listed["_tag"] == "Ok", listed
-    # Wario Land 4 is the reviewed GBA release the installed runner admits. The
-    # provider release in the same catalog has no runner here and stays unlisted.
-    assert [game["id"] for game in listed["payload"]["games"]] == ["01K4J6K8Y00000000000000002"], listed
+    # The seeded GBA release is listed only while its runner is enabled.
+    assert [game["id"] for game in listed["payload"]["games"]] == ["wario-land-4"], listed
     assert listed["payload"]["games"][0]["title"] == "Wario Land 4", listed
     machine.succeed("korri-plugin disable @korri:mgba")
     machine.succeed("korri-plugin remove @korri:mgba --purge")

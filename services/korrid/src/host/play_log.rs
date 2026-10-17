@@ -646,7 +646,7 @@ fn existing_private_directory(path: &Path) -> Result<bool, PlayLogError> {
     Ok(true)
 }
 
-fn ensure_private_directory(path: &Path) -> Result<(), PlayLogError> {
+pub(crate) fn ensure_private_directory(path: &Path) -> Result<(), PlayLogError> {
     if !path.exists() {
         match DirBuilder::new().mode(0o700).create(path) {
             Ok(()) => {

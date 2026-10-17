@@ -3,28 +3,16 @@
 use crate::{plugin::PluginRegistry, plugin_installation::EnabledPackage};
 use std::{collections::BTreeMap, fs, path::Path};
 
-/// A runner that claims `.gba` files and can build a launch plan. Discovery
-/// needs a claim to mint a game, and admission needs the handler, so this is
-/// the smallest declaration that satisfies both. It imports nothing, so it
-/// loads from source without a module graph.
+/// A system that identifies `.gba` files and a runner that builds a launch plan.
+/// It imports nothing, so it loads from source without a module graph.
 const GBA_CLAIM: &str = r#"
 export const name = "core";
 export const title = "GBA Core";
-export const systems = { gba: { id: "gba", title: "Game Boy Advance" } };
+export const systems = { gba: { id: "gba", title: "Game Boy Advance", content: { extensions: ["gba"] } } };
 export const runners = {
   core: { id: "@korri:core/core", program: "retroarch", systems: ["gba"] },
 };
-export const discovery = {
-  fileReleases: {
-    gba: {
-      id: "@korri:core/gba",
-      title: "Game Boy Advance files",
-      extensions: ["gba"],
-      system: "gba",
-      runners: ["@korri:core/core"],
-    },
-  },
-};
+
 export const handlers = {
   "launch.prepare": () => ({ command: "retroarch", args: [] }),
 };
@@ -43,8 +31,8 @@ pub fn claims_only_registry() -> PluginRegistry {
 
 /// A game id that both fixture runners admit, so a caller can prove how the
 /// library treats one game reachable by more than one runner.
-pub const GBA_ID: &str = "01K4J6K8Y00000000000000002";
-const GBA_RELEASE: &str = "@korri:mgba/gba-files:wl4.gba";
+pub const GBA_ID: &str = "wario-land-4";
+const GBA_RELEASE: &str = "sha256:d16c7bf6e62bb84049fff1b387108fbd1e6e2cd38ca994ab5310dd9cbf9ba414";
 
 /// The smallest readable library that resolves to `GBA_ID`: one game, one
 /// release on the `gba` system, one file location under `roms`.
@@ -59,14 +47,8 @@ pub fn write_gba_library(root: &Path) {
         format!("locations:\n  '{GBA_RELEASE}':\n    - storage: roms\n      path: wl4.gba\n"),
     );
     write(
-        "catalog/games.yaml",
-        format!("games:\n  {GBA_ID}:\n    title: Wario Land 4\n    releases: ['{GBA_RELEASE}']\n"),
-    );
-    write(
-        "catalog/releases.yaml",
-        format!(
-            "releases:\n  '{GBA_RELEASE}':\n    game: {GBA_ID}\n    system: gba\n    identity: file\n"
-        ),
+        "catalog/library.yaml",
+        format!("library:\n  {GBA_ID}:\n    title: Wario Land 4\n    releases:\n      - id: gba\n        system: gba\n        identity: {{kind: hash, value: '{GBA_RELEASE}'}}\n"),
     );
 }
 

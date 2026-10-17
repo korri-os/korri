@@ -56,17 +56,22 @@ pub struct Declaration {
     pub transports: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
-        rename = "sessionControls",
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub session_controls: Option<BTreeMap<String, serde_json::Value>>,
+    pub controls: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
-    pub discovery: Option<BTreeMap<String, serde_json::Value>>,
+    pub games: Option<BTreeMap<String, serde_json::Value>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub groups: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
         deserialize_with = "optional_non_null",

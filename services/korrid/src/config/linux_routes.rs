@@ -27,22 +27,23 @@ fn linux_route_candidates_for_runner(
         playable_id: Some(game_id.into()),
     };
     let game = snapshot
-        .games
+        .library
         .get(game_id)
         .ok_or_else(|| failure(format!("game {game_id} is unavailable")))?;
     let mut last_error = failure(format!("game {game_id} has no installed Linux runner"));
     let mut candidates = Vec::new();
     let mut emitted = BTreeSet::new();
-    for key in &game.releases {
-        let Some(release) = snapshot.releases.get(&key.0) else {
+    for release in &game.releases {
+        let Some(key) = release.identity.as_ref().map(|i| i.value()) else {
             continue;
         };
+        let system_id = release.system.as_ref().map(|s| s.0.as_str()).unwrap_or("");
         for runner in registry.runners().values().filter(|runner| {
             runner.program.is_some()
                 && chosen_runner.is_none_or(|id| runner.id == id)
                 && match (&runner.releases, &runner.systems) {
-                    (Some(releases), _) => releases.iter().any(|candidate| candidate.0 == key.0),
-                    (None, Some(systems)) => systems.contains(&release.system.0),
+                    (Some(releases), _) => releases.iter().any(|candidate| candidate.0 == key),
+                    (None, Some(systems)) => systems.iter().any(|s| s == system_id),
                     (None, None) => false,
                 }
         }) {
@@ -65,25 +66,71 @@ fn linux_route_candidates_for_runner(
             let system_title = registry
                 .systems()
                 .values()
-                .find(|system| system.id == release.system.0)
+                .find(|system| system.id == system_id)
                 .and_then(|system| system.title.clone())
                 .or_else(|| {
                     snapshot
                         .systems
-                        .get(&release.system.0)
+                        .get(system_id)
                         .and_then(|system| system.title.clone().or_else(|| system.name.clone()))
                 });
-            for location in snapshot.locations.get(&key.0).into_iter().flatten() {
-                let Location::File { storage, path, .. } = location else {
-                    continue;
+            for location in snapshot.locations.get(key).into_iter().flatten() {
+                let (storage, path, paths, discovery) = match location {
+                    Location::File {
+                        storage,
+                        path,
+                        discovery,
+                    } => (storage, path.0.clone(), vec![path.0.clone()], discovery),
+                    Location::FileSet {
+                        storage,
+                        root,
+                        files,
+                        discovery,
+                    } => {
+                        let paths: Vec<_> = files
+                            .0
+                            .iter()
+                            .map(|p| {
+                                root.as_ref()
+                                    .map(|r| format!("{}/{}", r.0, p.path.0))
+                                    .unwrap_or_else(|| p.path.0.clone())
+                            })
+                            .collect();
+                        let primary = files
+                            .0
+                            .iter()
+                            .position(|p| p.role.as_ref().is_some_and(|r| r.0 == "descriptor"))
+                            .unwrap_or(0);
+                        (storage, paths[primary].clone(), paths, discovery)
+                    }
+                    _ => continue,
                 };
+                if discovery
+                    .as_ref()
+                    .is_some_and(|d| d.missing_since.is_some())
+                {
+                    last_error = RouteDiagnostic {
+                        code: RouteDiagnosticCode::LocalRomMissing,
+                        message: format!("release {key} location is missing"),
+                        playable_id: Some(game_id.into()),
+                    };
+                    continue;
+                }
                 let target = ResolvedFileTarget {
                     storage_id: storage.0.clone(),
-                    path: path.0.clone(),
+                    path: path.clone(),
                 };
-                if let Err(error) =
-                    crate::config::storage::resolve_file_target(root, snapshot, &target)
-                {
+                if let Some(error) = paths.iter().find_map(|path| {
+                    crate::config::storage::resolve_file_target(
+                        root,
+                        snapshot,
+                        &ResolvedFileTarget {
+                            storage_id: storage.0.clone(),
+                            path: path.clone(),
+                        },
+                    )
+                    .err()
+                }) {
                     last_error = RouteDiagnostic {
                         code: if error.is_missing_target() {
                             RouteDiagnosticCode::LocalRomMissing
@@ -98,20 +145,19 @@ fn linux_route_candidates_for_runner(
                 emitted.insert(runner.id.clone());
                 candidates.push(ResolvedRoute {
                     playable_id: game_id.into(),
-                    title: Some(game.title.clone()),
-                    release_id: key.0.clone(),
-                    identity: (game.releases.len() == 1 && key.0.starts_with("sha256:"))
-                        .then(|| crate::GameIdentity::Hash(key.0.clone())),
+                    title: game.title.clone(),
+                    release_id: key.into(),
+                    identity: snapshot.game_identity(game_id),
                     provider_id: runner
                         .family
                         .clone()
                         .unwrap_or_else(|| runner.id.split_once('/').unwrap().0.into()),
-                    system_id: release.system.0.clone(),
+                    system_id: system_id.into(),
                     system_title,
                     runner_id: runner.id.clone(),
                     family_id: runner.family.clone(),
                     integration_token: String::new(),
-                    flattened_target: format!("{}:{}", storage.0, path.0),
+                    flattened_target: format!("{}:{}", storage.0, path),
                     linux_runner: Some(ResolvedLinuxRunner {
                         program: program.display().to_string(),
                     }),
@@ -131,7 +177,7 @@ fn linux_route_candidates_for_runner(
 
 pub fn stored_runner<'a>(snapshot: &'a ConfigSnapshot, route: &ResolvedRoute) -> Option<&'a str> {
     snapshot
-        .games
+        .library
         .get(&route.playable_id)
         .and_then(|game| game.runner.as_ref())
         .or_else(|| {

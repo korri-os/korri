@@ -64,8 +64,9 @@ fn empty_data_exports_are_not_silently_changed_to_absent_exports() {
         "families",
         "runners",
         "transports",
-        "sessionControls",
-        "discovery",
+        "controls",
+        "games",
+        "groups",
         "android",
         "config",
     ] {
@@ -118,4 +119,15 @@ fn host_admission_preserves_data_and_never_invokes_the_launch_callback() {
     );
     let never_call = "export const name = 'game'; export const handlers = {'launch.prepare': function () { throw new Error('not during approval'); }}";
     assert!(Declaration::evaluate("@example", never_call).is_ok());
+}
+
+#[test]
+fn retired_discovery_exports_fail_admission() {
+    for export in ["discovery", "sessionControls"] {
+        assert!(Declaration::evaluate(
+            "@example",
+            &format!("export const name='game'; export const {export}={{}};"),
+        )
+        .is_err());
+    }
 }

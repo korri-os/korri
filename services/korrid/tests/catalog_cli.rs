@@ -1,241 +1,148 @@
-use std::{ffi::OsString, fs, path::Path, process::Command};
+use korrid::{catalog_cli, config::snapshot::ConfigSnapshotCoordinator};
+use std::{ffi::OsString, fs, path::Path};
 
-use korrid::{
-    catalog_cli,
-    config::{
-        resolver::resolve_launchable_routes,
-        snapshot::{ConfigSnapshotCoordinator, DEVICE_FILE_NAME},
-        storage::resolve_file_target,
-    },
-    discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin, plugin_installation, GameIdentity,
-};
-use sha2::{Digest, Sha256};
-#[path = "../src/plugin_test_fixtures.rs"]
-mod native_packages;
-
-fn import(storage: &Path, private: &Path, selected: &Path) -> Result<String, String> {
+fn run(root: &Path, private: &Path, args: Vec<OsString>) -> Result<String, String> {
     catalog_cli::run_with_registry_source(
-        &["import".into(), selected.as_os_str().to_owned()],
-        Some(storage.as_os_str()),
+        &args,
+        Some(root.as_os_str()),
         Some(private.as_os_str()),
         korrid::plugin_policy::RegistrySource::Selected(
-            native_packages::installed(&private.join("packages")).into(),
+            korrid::plugin_test_fixtures::installed(root).into(),
         ),
     )
 }
-
 #[test]
-fn imports_actual_bytes_and_repeated_import_and_rescan_preserve_identity() {
-    let storage = tempfile::tempdir().unwrap();
+fn pair_rescan_and_unpair_use_sources_and_one_library_document() {
+    let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
     let selected = tempfile::tempdir().unwrap();
-    let bytes = b"GBA catalog import test content\0\x01\xff";
-    let file = selected.path().join("Wario Land 4.gba");
-    fs::write(&file, bytes).unwrap();
-
-    let first = import(storage.path(), private.path(), selected.path()).unwrap();
-    assert!(first.contains("Candidates: 1"), "{first}");
-    assert!(first.contains("Added games: 1"), "{first}");
-    assert!(first.contains(&format!("Hashed bytes: {}", bytes.len())));
-    let snapshot = ConfigSnapshotCoordinator::new(storage.path()).reload();
-    assert!(snapshot.diagnostic.is_none(), "{:?}", snapshot.diagnostic);
-    assert_eq!(snapshot.snapshot.storage.len(), 1);
-    assert_eq!(snapshot.snapshot.games.len(), 1);
-    assert_eq!(snapshot.snapshot.releases.len(), 1);
-    assert_eq!(snapshot.snapshot.locations.len(), 1);
-    let registry = native_packages::installed(&private.path().join("packages"));
-    let routes = resolve_launchable_routes(storage.path(), &snapshot.snapshot, &registry, []);
-    assert!(routes.diagnostics.is_empty(), "{:?}", routes.diagnostics);
-    assert_eq!(routes.routes.len(), 1);
-    let route = &routes.routes[0];
-    assert_eq!(route.title.as_deref(), Some("Wario Land 4"));
-    assert_eq!(
-        route.identity,
-        Some(GameIdentity::Hash(format!(
-            "sha256:{}",
-            hex::encode(Sha256::digest(bytes))
-        )))
-    );
-    let resolved = resolve_file_target(
-        storage.path(),
-        &snapshot.snapshot,
-        route.file_target.as_ref().unwrap(),
+    fs::write(selected.path().join("Wario Land 4.gba"), b"game").unwrap();
+    run(
+        root.path(),
+        private.path(),
+        vec![
+            "pair".into(),
+            selected.path().as_os_str().into(),
+            "gba".into(),
+        ],
     )
     .unwrap();
-    assert_eq!(resolved.path, file.canonicalize().unwrap());
-    assert_eq!(fs::read(&resolved.path).unwrap(), bytes);
-
-    let second = import(storage.path(), private.path(), selected.path()).unwrap();
-    assert!(second.contains("Added games: 0"), "{second}");
-    assert!(second.contains("Hashed bytes: 0"), "{second}");
-    let rescan = DiscoveryCoordinator::for_tests(storage.path(), private.path())
-        .rescan(&DiscoveryOptions::default())
-        .unwrap();
-    assert_eq!(rescan.added_games, 0);
-    assert_eq!(rescan.removed_locations, 0);
-    assert_eq!(rescan.scan.hashed_bytes, 0);
-    let after = ConfigSnapshotCoordinator::new(storage.path()).reload();
-    assert!(after.diagnostic.is_none());
-    assert_eq!(after.snapshot.games, snapshot.snapshot.games);
-    assert_eq!(after.snapshot.releases, snapshot.snapshot.releases);
-    assert_eq!(after.snapshot.locations, snapshot.snapshot.locations);
-    assert_eq!(after.snapshot.storage, snapshot.snapshot.storage);
-    assert_eq!(fs::read(&file).unwrap(), bytes);
+    let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+    assert!(state.diagnostic.is_none());
+    assert!(state.snapshot.sources.contains_key("gba"));
+    assert!(state.snapshot.library.contains_key("wario-land-4"));
+    assert!(!root.path().join("catalog/games.yaml").exists());
+    assert!(!root.path().join("catalog/releases.yaml").exists());
+    let before = fs::read(root.path().join("catalog/library.yaml")).unwrap();
+    run(root.path(), private.path(), vec!["rescan".into()]).unwrap();
+    assert_eq!(
+        fs::read(root.path().join("catalog/library.yaml")).unwrap(),
+        before
+    );
+    run(
+        root.path(),
+        private.path(),
+        vec!["unpair".into(), "gba".into()],
+    )
+    .unwrap();
+    let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+    assert!(state.snapshot.library.is_empty());
+    assert!(state.snapshot.sources.is_empty());
 }
-
 #[test]
-fn rejects_missing_unknown_and_extra_arguments_before_writes() {
-    let storage = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    for arguments in [
-        vec![],
-        vec!["import"],
-        vec!["rescan"],
-        vec!["unknown", "/tmp"],
-        vec!["import", ""],
-        vec!["import", "/tmp", "extra"],
-    ] {
-        let arguments: Vec<OsString> = arguments.into_iter().map(Into::into).collect();
-        let error = catalog_cli::run(
-            &arguments,
-            Some(storage.path().as_os_str()),
-            Some(private.path().as_os_str()),
-        )
-        .unwrap_err();
-        assert!(error.contains("usage: korrid catalog import <directory>"));
-    }
-    assert_eq!(fs::read_dir(storage.path()).unwrap().count(), 0);
-    assert_eq!(fs::read_dir(private.path()).unwrap().count(), 0);
-}
-
-#[test]
-fn requires_both_explicit_nonempty_existing_directory_roots() {
+fn superseded_import_and_remove_are_not_accepted() {
     let root = tempfile::tempdir().unwrap();
-    let arguments = ["import".into(), root.path().as_os_str().to_owned()];
-    let good = Some(root.path().as_os_str());
-    let missing = root.path().join("missing");
-    let file = root.path().join("file");
-    fs::write(&file, b"unchanged").unwrap();
-    for bad in [
-        None,
-        Some(std::ffi::OsStr::new("")),
-        Some(missing.as_os_str()),
-        Some(file.as_os_str()),
-    ] {
-        assert!(catalog_cli::run(&arguments, bad, good)
-            .unwrap_err()
-            .contains("KORRID_STORAGE_ROOT"));
-        assert!(catalog_cli::run(&arguments, good, bad)
-            .unwrap_err()
-            .contains("KORRID_PRIVATE_STATE_ROOT"));
+    let private = tempfile::tempdir().unwrap();
+    for command in ["import", "remove"] {
+        assert!(run(
+            root.path(),
+            private.path(),
+            vec![command.into(), "/tmp".into()]
+        )
+        .unwrap_err()
+        .contains("usage:"));
     }
-    assert!(!missing.exists());
-    assert_eq!(fs::read(&file).unwrap(), b"unchanged");
-    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    assert!(!root.path().join("device.yaml").exists());
+}
+#[test]
+fn pairing_refuses_unknown_systems_without_making_a_source() {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let selected = tempfile::tempdir().unwrap();
+    let error = run(
+        root.path(),
+        private.path(),
+        vec![
+            "pair".into(),
+            selected.path().as_os_str().into(),
+            "unknown".into(),
+        ],
+    )
+    .unwrap_err();
+    assert!(error.contains("unknown") || error.contains("declares"));
+    assert!(ConfigSnapshotCoordinator::new(root.path())
+        .reload()
+        .snapshot
+        .sources
+        .is_empty());
+}
+#[test]
+fn malformed_library_fails_without_echoing_private_document_content() {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("catalog")).unwrap();
+    fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
+    fs::write(
+        root.path().join("catalog/library.yaml"),
+        "private-secret-token: [broken\n",
+    )
+    .unwrap();
+    let error = run(root.path(), private.path(), vec!["rescan".into()]).unwrap_err();
+    assert!(!error.contains("private-secret-token"));
+    assert!(error.contains("validated"));
 }
 
 #[test]
-fn coordinator_rejects_missing_directory_and_regular_file() {
-    let storage = tempfile::tempdir().unwrap();
+fn only_paired_games_enter_catalog_not_build_trees_or_unpaired_folders() {
+    let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
-    let selected = tempfile::tempdir().unwrap();
-    let missing = selected.path().join("missing");
-    let file = selected.path().join("game.gba");
-    fs::write(&file, b"keep").unwrap();
-    assert!(import(storage.path(), private.path(), &missing)
-        .unwrap_err()
-        .contains("selected folder is unavailable"));
-    assert!(import(storage.path(), private.path(), &file)
-        .unwrap_err()
-        .contains("selected folder is not a directory"));
-    let snapshot = ConfigSnapshotCoordinator::new(storage.path()).reload();
-    assert!(snapshot.diagnostic.is_none());
-    assert!(snapshot.snapshot.storage.is_empty());
-    assert!(snapshot.snapshot.games.is_empty());
-    assert!(snapshot.snapshot.releases.is_empty());
-    assert!(snapshot.snapshot.locations.is_empty());
-    assert_eq!(fs::read(&file).unwrap(), b"keep");
-}
-
-#[test]
-fn reports_unclaimed_files_without_echoing_paths_or_file_contents() {
-    let storage = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let selected = tempfile::tempdir().unwrap();
-    let file = selected.path().join("secret-credential.txt");
-    fs::write(&file, b"secret-value").unwrap();
-    let output = import(storage.path(), private.path(), selected.path()).unwrap();
-    assert!(output.contains("Candidates: 0"), "{output}");
-    assert!(output.contains("Diagnostics: 1"), "{output}");
-    assert!(output.contains("EntryUnclaimed"), "{output}");
-    assert!(!output.contains("secret"));
-    assert_eq!(fs::read(&file).unwrap(), b"secret-value");
-}
-
-#[test]
-fn malformed_config_fails_without_echoing_its_contents() {
-    let storage = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let selected = tempfile::tempdir().unwrap();
-    // This is deliberately invalid syntax, not a hand-authored catalog schema.
-    let invalid = b"[secret-credential: [";
-    fs::write(storage.path().join(DEVICE_FILE_NAME), invalid).unwrap();
-    let error = import(storage.path(), private.path(), selected.path()).unwrap_err();
-    assert!(error.contains("discovery candidate"), "{error}");
-    assert!(!error.contains("secret-credential"));
+    for directory in ["users/default/build", "unpaired", "games/gba"] {
+        fs::create_dir_all(root.path().join(directory)).unwrap();
+        for (file, bytes) in [
+            ("compiler.o", b"object".as_slice()),
+            ("README.md", b"readme".as_slice()),
+            ("Game.gba", b"real game".as_slice()),
+        ] {
+            fs::write(root.path().join(directory).join(file), bytes).unwrap();
+        }
+    }
+    run(root.path(), private.path(), vec!["rescan".into()]).unwrap();
+    assert!(ConfigSnapshotCoordinator::new(root.path())
+        .reload()
+        .snapshot
+        .library
+        .is_empty());
+    run(
+        root.path(),
+        private.path(),
+        vec![
+            "pair".into(),
+            root.path().join("games/gba").into_os_string(),
+            "gba".into(),
+        ],
+    )
+    .unwrap();
+    let state = ConfigSnapshotCoordinator::new(root.path()).reload();
+    assert!(state.diagnostic.is_none());
+    assert_eq!(state.snapshot.library.len(), 1);
     assert_eq!(
-        fs::read(storage.path().join(DEVICE_FILE_NAME)).unwrap(),
-        invalid
+        state.snapshot.library["game"].title.as_deref(),
+        Some("Game")
     );
-}
-
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_korrid"));
-    command
-        .env_remove("KORRID_STORAGE_ROOT")
-        .env_remove("KORRID_PRIVATE_STATE_ROOT")
-        // Server startup would fail if the CLI accidentally fell through.
-        .env("KORRID_MODE", "not-a-server-mode")
-        .env("KORRID_ADDRESS", "not-a-listen-address");
-    command
-}
-
-#[test]
-fn binary_requires_the_administrator_registry_before_importing_linux_games() {
-    let storage = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let selected = tempfile::tempdir().unwrap();
-    fs::write(selected.path().join("game.gba"), b"game bytes").unwrap();
-    let output = command()
-        .args(["catalog", "import"])
-        .arg(selected.path())
-        .env("KORRID_STORAGE_ROOT", storage.path())
-        .env("KORRID_PRIVATE_STATE_ROOT", private.path())
-        .output()
-        .unwrap();
+    let locations: Vec<_> = state.snapshot.locations.values().flatten().collect();
+    assert_eq!(locations.len(), 1);
     assert!(
-        !output.status.success(),
-        "a missing admission snapshot must not fall back to bundled plugins: {output:?}"
+        matches!(locations[0], korrid::config::Location::File { storage, path, .. }
+        if storage.0 == "gba" && path.0 == "Game.gba")
     );
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("Added games: 1"));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("daemon must be stopped"));
-    assert_eq!(
-        ConfigSnapshotCoordinator::new(storage.path())
-            .reload()
-            .snapshot
-            .games
-            .len(),
-        0
-    );
-}
-
-#[test]
-fn binary_rejects_missing_arguments_and_environment_without_server_startup() {
-    let output = command().arg("catalog").output().unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: korrid catalog import"));
-    let output = command().args(["catalog", "import", "."]).output().unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("KORRID_STORAGE_ROOT must be set"));
 }

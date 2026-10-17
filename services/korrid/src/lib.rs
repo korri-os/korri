@@ -24,6 +24,7 @@ use typeshare::typeshare;
 
 pub mod authorization;
 pub mod catalog_cli;
+pub mod catalog_migrate;
 pub mod config;
 pub mod discovery;
 pub mod enrichment;
@@ -777,15 +778,70 @@ pub struct DiscoverySnapshotRequest {}
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryRegisterReceiptRequest {
+pub struct DiscoveryPairRequest {
     pub receipt: String,
+    pub system: String,
 }
 
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryRemoveLocationRequest {
-    pub location_id: String,
+pub struct DiscoveryUnpairRequest {
+    pub source: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryChangeRequest {
+    pub source: String,
+    pub system: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AttentionListRequest {}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttentionAssignRequest {
+    pub item: String,
+    pub system: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttentionIgnoreRequest {
+    pub item: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttentionItem {
+    pub id: String,
+    pub kind: String,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub candidates: Vec<String>,
+    pub message: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AttentionList {
+    pub items: Vec<AttentionItem>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum AttentionOutcome {
+    Ok(AttentionList),
+    Err(RpcFailure),
 }
 
 #[typeshare]
@@ -805,9 +861,20 @@ pub enum DiscoveryState {
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveryLocationSummary {
+pub struct DiscoverySource {
     pub id: String,
     pub label: String,
+    pub system: String,
+    pub status: DiscoverySourceStatus,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "_tag", content = "payload")]
+pub enum DiscoverySourceStatus {
+    Ready {},
+    Overlap {},
+    SystemUnavailable {},
 }
 
 #[typeshare]
@@ -826,7 +893,8 @@ pub struct DiscoveryDiagnostic {
 pub struct DiscoverySnapshot {
     pub generation: String,
     pub state: DiscoveryState,
-    pub locations: Vec<DiscoveryLocationSummary>,
+    pub sources: Vec<DiscoverySource>,
+    pub attention: u32,
     pub diagnostics: Vec<DiscoveryDiagnostic>,
 }
 
@@ -1161,10 +1229,18 @@ pub enum RpcRequest {
     Health(HealthRequest),
     #[serde(rename = "app.discovery.snapshot")]
     DiscoverySnapshot(DiscoverySnapshotRequest),
-    #[serde(rename = "app.discovery.registerReceipt")]
-    DiscoveryRegisterReceipt(DiscoveryRegisterReceiptRequest),
-    #[serde(rename = "app.discovery.removeLocation")]
-    DiscoveryRemoveLocation(DiscoveryRemoveLocationRequest),
+    #[serde(rename = "app.discovery.pair")]
+    DiscoveryPair(DiscoveryPairRequest),
+    #[serde(rename = "app.discovery.change")]
+    DiscoveryChange(DiscoveryChangeRequest),
+    #[serde(rename = "app.attention.list")]
+    AttentionList(AttentionListRequest),
+    #[serde(rename = "app.attention.assign")]
+    AttentionAssign(AttentionAssignRequest),
+    #[serde(rename = "app.attention.ignore")]
+    AttentionIgnore(AttentionIgnoreRequest),
+    #[serde(rename = "app.discovery.unpair")]
+    DiscoveryUnpair(DiscoveryUnpairRequest),
     #[serde(rename = "app.discovery.rescan")]
     DiscoveryRescan(DiscoveryRescanRequest),
     #[serde(rename = "system.settings.snapshot")]
@@ -1238,10 +1314,18 @@ pub enum RpcResponse {
     Health(HealthOutcome),
     #[serde(rename = "app.discovery.snapshot")]
     DiscoverySnapshot(DiscoverySnapshotOutcome),
-    #[serde(rename = "app.discovery.registerReceipt")]
-    DiscoveryRegisterReceipt(DiscoverySnapshotOutcome),
-    #[serde(rename = "app.discovery.removeLocation")]
-    DiscoveryRemoveLocation(DiscoverySnapshotOutcome),
+    #[serde(rename = "app.discovery.pair")]
+    DiscoveryPair(DiscoverySnapshotOutcome),
+    #[serde(rename = "app.discovery.change")]
+    DiscoveryChange(DiscoverySnapshotOutcome),
+    #[serde(rename = "app.attention.list")]
+    AttentionList(AttentionOutcome),
+    #[serde(rename = "app.attention.assign")]
+    AttentionAssign(AttentionOutcome),
+    #[serde(rename = "app.attention.ignore")]
+    AttentionIgnore(AttentionOutcome),
+    #[serde(rename = "app.discovery.unpair")]
+    DiscoveryUnpair(DiscoverySnapshotOutcome),
     #[serde(rename = "app.discovery.rescan")]
     DiscoveryRescan(DiscoverySnapshotOutcome),
     #[serde(rename = "system.settings.snapshot")]
@@ -2557,41 +2641,40 @@ async fn dispatch(
             ServerMode::Host(_) => {
                 RpcResponse::DiscoverySnapshot(DiscoverySnapshotOutcome::Err(RpcFailure {
                     code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the Android brain".into(),
+                    message: "discovery is available only from the local brain".into(),
                 }))
             }
         },
-        RpcRequest::DiscoveryRegisterReceipt(request) => match &state.mode {
-            ServerMode::Brain(brain) => RpcResponse::DiscoveryRegisterReceipt(
-                brain
-                    .discovery
-                    .register_receipt(&request.receipt)
-                    .map(discovery_snapshot)
-                    .map(DiscoverySnapshotOutcome::Ok)
-                    .unwrap_or_else(|error| {
-                        DiscoverySnapshotOutcome::Err(folder_selection_failure(error))
-                    }),
-            ),
-            ServerMode::Host(_) => {
-                RpcResponse::DiscoveryRegisterReceipt(DiscoverySnapshotOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the Android brain".into(),
-                }))
-            }
-        },
-        RpcRequest::DiscoveryRemoveLocation(request) => match &state.mode {
-            ServerMode::Brain(brain) => {
-                RpcResponse::DiscoveryRemoveLocation(DiscoverySnapshotOutcome::Ok(
-                    discovery_snapshot(brain.discovery.remove_location(request.location_id)),
-                ))
-            }
-            ServerMode::Host(_) => {
-                RpcResponse::DiscoveryRemoveLocation(DiscoverySnapshotOutcome::Err(RpcFailure {
-                    code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the Android brain".into(),
-                }))
-            }
-        },
+        RpcRequest::DiscoveryPair(request) => {
+            RpcResponse::DiscoveryPair(discovery_mutation(state, authorization, |brain| {
+                brain.discovery.pair(&request.receipt, &request.system)
+            }))
+        }
+        RpcRequest::DiscoveryChange(request) => {
+            RpcResponse::DiscoveryChange(discovery_mutation(state, authorization, |brain| {
+                brain.discovery.change(&request.source, &request.system)
+            }))
+        }
+        RpcRequest::DiscoveryUnpair(request) => {
+            RpcResponse::DiscoveryUnpair(discovery_mutation(state, authorization, |brain| {
+                brain.discovery.unpair(&request.source)
+            }))
+        }
+        RpcRequest::AttentionList(_) => {
+            RpcResponse::AttentionList(attention_operation(state, |brain| {
+                brain.discovery.attention()
+            }))
+        }
+        RpcRequest::AttentionAssign(request) => {
+            RpcResponse::AttentionAssign(attention_operation(state, |brain| {
+                brain.discovery.assign(&request.item, &request.system)
+            }))
+        }
+        RpcRequest::AttentionIgnore(request) => {
+            RpcResponse::AttentionIgnore(attention_operation(state, |brain| {
+                brain.discovery.ignore(&request.item)
+            }))
+        }
         RpcRequest::DiscoveryRescan(_) => match &state.mode {
             ServerMode::Brain(brain) => RpcResponse::DiscoveryRescan(DiscoverySnapshotOutcome::Ok(
                 discovery_snapshot(brain.discovery.rescan()),
@@ -2599,7 +2682,7 @@ async fn dispatch(
             ServerMode::Host(_) => {
                 RpcResponse::DiscoveryRescan(DiscoverySnapshotOutcome::Err(RpcFailure {
                     code: "OperationUnsupported".into(),
-                    message: "discovery is available only from the Android brain".into(),
+                    message: "discovery is available only from the local brain".into(),
                 }))
             }
         },
@@ -3005,14 +3088,23 @@ fn discovery_snapshot(snapshot: discovery::DiscoverySnapshot) -> DiscoverySnapsh
             discovery::DiscoveryPhase::Enriching => DiscoveryState::Enriching {},
             discovery::DiscoveryPhase::Problem => DiscoveryState::Problem {},
         },
-        locations: snapshot
-            .locations
+        sources: snapshot
+            .sources
             .into_iter()
-            .map(|location| DiscoveryLocationSummary {
-                id: location.id,
-                label: location.label,
+            .map(|source| DiscoverySource {
+                id: source.id,
+                label: source.label,
+                system: source.system,
+                status: match source.status {
+                    discovery::DiscoverySourceStatus::Ready => DiscoverySourceStatus::Ready {},
+                    discovery::DiscoverySourceStatus::Overlap => DiscoverySourceStatus::Overlap {},
+                    discovery::DiscoverySourceStatus::SystemUnavailable => {
+                        DiscoverySourceStatus::SystemUnavailable {}
+                    }
+                },
             })
             .collect(),
+        attention: snapshot.attention,
         diagnostics: snapshot
             .diagnostics
             .into_iter()
@@ -3022,6 +3114,110 @@ fn discovery_snapshot(snapshot: discovery::DiscoverySnapshot) -> DiscoverySnapsh
                 location_id: diagnostic.location_id,
             })
             .collect(),
+    }
+}
+
+fn discovery_mutation(
+    state: &AppState,
+    authorization: &authorization::AuthorizationContext,
+    operation: impl FnOnce(
+        &BrainRuntime,
+    ) -> Result<
+        discovery::DiscoverySnapshot,
+        discovery::coordinator::DiscoveryRequestError,
+    >,
+) -> DiscoverySnapshotOutcome {
+    match &state.mode {
+        ServerMode::Brain(brain) => {
+            match require_discovery_owner(brain_caller_is_owner(brain, authorization)) {
+                Ok(()) => operation(brain)
+                    .map(discovery_snapshot)
+                    .map(DiscoverySnapshotOutcome::Ok)
+                    .unwrap_or_else(|error| {
+                        DiscoverySnapshotOutcome::Err(discovery_request_failure(error))
+                    }),
+                Err(error) => DiscoverySnapshotOutcome::Err(error),
+            }
+        }
+        ServerMode::Host(_) => DiscoverySnapshotOutcome::Err(RpcFailure {
+            code: "OperationUnsupported".into(),
+            message: "discovery is available only from the local brain".into(),
+        }),
+    }
+}
+
+fn require_discovery_owner(is_owner: bool) -> Result<(), RpcFailure> {
+    if is_owner {
+        Ok(())
+    } else {
+        Err(RpcFailure {
+            code: "NotOwner".into(),
+            message: "only the device owner can change sources".into(),
+        })
+    }
+}
+
+fn attention_operation(
+    state: &AppState,
+    operation: impl FnOnce(
+        &BrainRuntime,
+    ) -> Result<
+        Vec<discovery::attention::AttentionFinding>,
+        discovery::coordinator::DiscoveryRequestError,
+    >,
+) -> AttentionOutcome {
+    match &state.mode {
+        ServerMode::Brain(brain) => operation(brain)
+            .map(|items| {
+                AttentionOutcome::Ok(AttentionList {
+                    items: items
+                        .into_iter()
+                        .map(|item| AttentionItem {
+                            id: item.item_id(),
+                            kind: item.kind.as_str().into(),
+                            source: item.source_id,
+                            path: item.path,
+                            candidates: item.candidates,
+                            message: item.message,
+                        })
+                        .collect(),
+                })
+            })
+            .unwrap_or_else(|error| AttentionOutcome::Err(discovery_request_failure(error))),
+        ServerMode::Host(_) => AttentionOutcome::Err(RpcFailure {
+            code: "OperationUnsupported".into(),
+            message: "attention is available only from the local brain".into(),
+        }),
+    }
+}
+
+fn discovery_request_failure(error: discovery::coordinator::DiscoveryRequestError) -> RpcFailure {
+    use discovery::{coordinator::DiscoveryRequestError as E, sources::PairingError as P};
+    match error {
+        E::Receipt(error) => folder_selection_failure(error),
+        E::Pairing(error) | E::Discovery(discovery::DiscoveryError::Pairing(error)) => RpcFailure {
+            code: match error {
+                P::SourceOverlap(_) => "SourceOverlap",
+                P::PluginData => "PluginData",
+                P::UnknownSystem(_) => "UnknownSystem",
+                P::UnknownSource(_) => "UnknownSource",
+                P::InvalidPath(_) => "FolderSelectionInvalid",
+            }
+            .into(),
+            message: "source pairing could not be changed".into(),
+        },
+        E::UnknownItem => RpcFailure {
+            code: "UnknownItem".into(),
+            message: "attention item is no longer available".into(),
+        },
+        E::NotACandidate => RpcFailure {
+            code: "NotACandidate".into(),
+            message: "choose one of this clash's candidate systems".into(),
+        },
+        _ => RpcFailure {
+            code: "DiscoveryStorageUnavailable".into(),
+            message: "discovery state is unavailable; inspect local files privately".into(),
+        },
     }
 }
 
@@ -3282,6 +3478,10 @@ fn brain_app_state(
     let local_storage_root = local_storage_root.as_ref().to_owned();
     let private_state_root = private_state_root.as_ref().to_owned();
     let settings_write_lock = Arc::new(Mutex::new(()));
+    #[cfg(not(test))]
+    let resources = resources.or_else(|| {
+        Some(FederationResources::open(&private_state_root).expect("open federation authority"))
+    });
     let discovery = discovery::DiscoveryLifecycleCoordinator::new_with_registry_source(
         &local_storage_root,
         &private_state_root,
@@ -3289,10 +3489,6 @@ fn brain_app_state(
         folder_selection_grants.clone(),
         registry_source.clone(),
     );
-    #[cfg(not(test))]
-    let resources = resources.or_else(|| {
-        Some(FederationResources::open(&private_state_root).expect("open federation authority"))
-    });
     let upstream = configured_upstream.unwrap_or_else(|| {
         if let Some(resources) = &resources {
             upstreams::UpstreamRegistry::from_env_or_file(
@@ -4830,7 +5026,167 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_register_receipt_reaches_idle_with_visible_game() {
+    async fn discovery_rpc_brain_only_methods_round_trip_through_http() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("host.toml");
+        std::fs::write(&config, "label = \"test\"\n").unwrap();
+        let app = host_router(&config);
+        for (tag, payload) in [
+            ("app.discovery.snapshot", serde_json::json!({})),
+            (
+                "app.discovery.pair",
+                serde_json::json!({"receipt":"opaque", "system":"gb"}),
+            ),
+            (
+                "app.discovery.change",
+                serde_json::json!({"source":"gb", "system":"gbc"}),
+            ),
+            ("app.discovery.unpair", serde_json::json!({"source":"gb"})),
+            ("app.discovery.rescan", serde_json::json!({})),
+            ("app.attention.list", serde_json::json!({})),
+            (
+                "app.attention.assign",
+                serde_json::json!({"item":"1234", "system":"gb"}),
+            ),
+            ("app.attention.ignore", serde_json::json!({"item":"1234"})),
+        ] {
+            let body = rpc_body(
+                app.clone(),
+                &serde_json::json!({"_tag": tag, "payload":payload}).to_string(),
+            )
+            .await;
+            assert_eq!(body["_tag"], tag);
+            assert_eq!(body["outcome"]["_tag"], "Err");
+            assert_eq!(body["outcome"]["payload"]["code"], "OperationUnsupported");
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_rpc_non_owner_cannot_pair_change_or_unpair_or_consume_receipt() {
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let games = tempfile::tempdir().unwrap();
+        let grants = discovery::FolderSelectionGrantStore::default();
+        let receipt = grants.issue_approved_path(games.path()).unwrap().token;
+        let (state, _) = brain_app_state(
+            "right-token",
+            "https://portal.example",
+            readable.path(),
+            private.path(),
+            plugin_policy::RegistrySource::Selected(Arc::new(
+                crate::plugin_test_fixtures::installed(readable.path()),
+            )),
+            config::snapshot::ConfigSnapshotCoordinator::new(readable.path()),
+            grants.clone(),
+            None,
+            None,
+            None,
+        );
+        for request in [
+            RpcRequest::DiscoveryPair(DiscoveryPairRequest {
+                receipt: receipt.clone(),
+                system: "gba".into(),
+            }),
+            RpcRequest::DiscoveryChange(DiscoveryChangeRequest {
+                source: "gba".into(),
+                system: "gb".into(),
+            }),
+            RpcRequest::DiscoveryUnpair(DiscoveryUnpairRequest {
+                source: "gba".into(),
+            }),
+        ] {
+            let response = dispatch(
+                &state,
+                &authorization::AuthorizationContext::TrustReconciliation,
+                request,
+            )
+            .await
+            .unwrap();
+            let body = serde_json::to_value(response).unwrap();
+            assert_eq!(body["outcome"]["payload"]["code"], "NotOwner");
+        }
+        assert!(grants.consume(&receipt).is_ok());
+    }
+
+    #[test]
+    fn discovery_rpc_round_trips_and_rejects_removed_calls() {
+        for (tag, payload) in [
+            ("app.discovery.snapshot", serde_json::json!({})),
+            (
+                "app.discovery.pair",
+                serde_json::json!({"receipt":"opaque", "system":"gb"}),
+            ),
+            (
+                "app.discovery.change",
+                serde_json::json!({"source":"gb", "system":"gbc"}),
+            ),
+            ("app.discovery.unpair", serde_json::json!({"source":"gb"})),
+            ("app.discovery.rescan", serde_json::json!({})),
+            ("app.attention.list", serde_json::json!({})),
+            (
+                "app.attention.assign",
+                serde_json::json!({"item":"1234", "system":"gb"}),
+            ),
+            ("app.attention.ignore", serde_json::json!({"item":"1234"})),
+        ] {
+            let wire = serde_json::json!({"_tag":tag, "payload":payload});
+            let request: RpcRequest = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(request).unwrap(), wire);
+        }
+        for removed in [
+            "app.discovery.registerReceipt",
+            "app.discovery.removeLocation",
+        ] {
+            assert!(serde_json::from_value::<RpcRequest>(
+                serde_json::json!({"_tag":removed, "payload":{}})
+            )
+            .is_err());
+        }
+        let response =
+            RpcResponse::DiscoverySnapshot(DiscoverySnapshotOutcome::Ok(DiscoverySnapshot {
+                generation: "g1".into(),
+                state: DiscoveryState::Idle {},
+                sources: vec![DiscoverySource {
+                    id: "gb".into(),
+                    label: "Game Boy".into(),
+                    system: "gb".into(),
+                    status: DiscoverySourceStatus::Ready {},
+                }],
+                attention: 1,
+                diagnostics: vec![],
+            }));
+        let wire = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            wire["outcome"]["payload"]["sources"][0]["status"]["_tag"],
+            "Ready"
+        );
+        assert_eq!(wire["outcome"]["payload"]["attention"], 1);
+        assert!(wire["outcome"]["payload"].get("locations").is_none());
+        let _: RpcResponse = serde_json::from_value(wire).unwrap();
+    }
+
+    #[test]
+    fn discovery_owner_gate_refuses_mutation_and_attention_outcome_is_tagged() {
+        assert!(require_discovery_owner(true).is_ok());
+        assert_eq!(require_discovery_owner(false).unwrap_err().code, "NotOwner");
+        let outcome = AttentionOutcome::Ok(AttentionList {
+            items: vec![AttentionItem {
+                id: "0123456789abcdef".into(),
+                kind: "overlap".into(),
+                source: "gb".into(),
+                path: None,
+                candidates: vec![],
+                message: "source overlaps".into(),
+            }],
+        });
+        let wire = serde_json::to_value(outcome).unwrap();
+        assert_eq!(wire["_tag"], "Ok");
+        assert!(wire["payload"]["items"][0].get("path").is_none());
+        let _: AttentionOutcome = serde_json::from_value(wire).unwrap();
+    }
+
+    #[tokio::test]
+    async fn discovery_pair_reaches_idle_with_visible_game() {
         let readable = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         let folder = tempfile::tempdir().unwrap();
@@ -4841,7 +5197,7 @@ mod tests {
 
         let body = rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": receipt}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -4851,7 +5207,7 @@ mod tests {
         let idle = wait_for_discovery_idle(app.clone()).await;
         assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
         assert_eq!(
-            idle["outcome"]["payload"]["locations"]
+            idle["outcome"]["payload"]["sources"]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -4869,7 +5225,7 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .len(),
-            26
+            "game".len()
         );
     }
 
@@ -4884,7 +5240,7 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": receipt}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -4922,10 +5278,10 @@ mod tests {
             assignment.asset_id
         );
 
-        let edited = std::fs::read_to_string(readable.path().join("catalog/games.yaml"))
+        let edited = std::fs::read_to_string(readable.path().join("catalog/library.yaml"))
             .unwrap()
             .replace("title: game", "title: Player Edited");
-        crate::config::test_fixtures::write(readable.path().join("catalog/games.yaml"), edited)
+        crate::config::test_fixtures::write(readable.path().join("catalog/library.yaml"), edited)
             .unwrap();
         let stale = rpc_body_authorized(
             app,
@@ -4957,7 +5313,7 @@ mod tests {
         ] {
             let body = rpc_body_authorized(
                 app.clone(),
-                &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": receipt}}).to_string(),
+                &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
                 Some("right-token"),
             )
             .await;
@@ -4969,7 +5325,7 @@ mod tests {
         let restarted_app = discovery_test_router(readable.path(), private.path(), restarted);
         let body = rpc_body_authorized(
             restarted_app,
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": replay}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": replay,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -4990,7 +5346,7 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": receipt}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
@@ -5013,7 +5369,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_invalid_location_reports_problem_without_erasing_catalog() {
+    async fn discovery_invalid_pair_is_refused_without_erasing_catalog() {
         let readable = tempfile::tempdir().unwrap();
         let private = tempfile::tempdir().unwrap();
         let good = tempfile::tempdir().unwrap();
@@ -5025,20 +5381,24 @@ mod tests {
         let app = discovery_test_router(readable.path(), private.path(), grants);
         rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": good_receipt}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": good_receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
         wait_for_discovery_idle(app.clone()).await;
         drop(bad);
-        rpc_body_authorized(
+        let refused = rpc_body_authorized(
             app.clone(),
-            &serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt": bad_receipt}}).to_string(),
+            &serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt": bad_receipt,"system":"gba"}}).to_string(),
             Some("right-token"),
         )
         .await;
-        let problem = wait_for_discovery_idle(app.clone()).await;
-        assert_eq!(problem["outcome"]["payload"]["state"]["_tag"], "Problem");
+        assert_eq!(
+            refused["outcome"]["payload"]["code"],
+            "FolderSelectionInvalid"
+        );
+        let idle = wait_for_discovery_idle(app.clone()).await;
+        assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
         let games = rpc_body_authorized(
             app,
             r#"{"_tag":"app.local-games.list","payload":{}}"#,
@@ -5051,7 +5411,7 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .len(),
-            26
+            "good".len()
         );
     }
 
@@ -5306,7 +5666,7 @@ command = ["sh", "-c", "sleep 1"]
     async fn brain_source_status_fails_closed_for_an_unconfigured_device_key() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
             .unwrap();
         let brain = router_with_capability_and_local_root(
             "right-token",
@@ -5719,7 +6079,7 @@ command = ["game-two"]
     async fn settings_rpc_round_trips_a_conflict_safe_device_name_write() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "host:\n  title: old\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
             .unwrap();
         let app = test_router_with_capability_and_local_root(
             "right-token",
@@ -6675,7 +7035,7 @@ command = ["game-two"]
     async fn brain_routes_certificate_mutation_to_one_attested_native_peer_only() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
             .unwrap();
 
         let first_config = root.path().join("first.toml");
@@ -6738,7 +7098,7 @@ command = ["game-two"]
     async fn brain_fails_closed_when_an_attestation_peer_is_unavailable() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
             .unwrap();
         let config = root.path().join("live.toml");
         std::fs::write(&config, "label = \"live\"\n").unwrap();
@@ -6784,7 +7144,7 @@ command = ["game-two"]
     async fn brain_rejects_a_host_uuid_change_between_attest_and_mutation() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-        crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+        crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
             .unwrap();
         let config = root.path().join("changing.toml");
         std::fs::write(&config, "label = \"changing\"\n").unwrap();
@@ -6827,7 +7187,7 @@ command = ["game-two"]
         for expected in ["none", "sunshine-host"] {
             let root = tempfile::tempdir().unwrap();
             std::fs::write(root.path().join("device.yaml"), "{}\n").unwrap();
-            crate::config::test_fixtures::write(root.path().join("catalog/games.yaml"), "{}\n")
+            crate::config::test_fixtures::write(root.path().join("catalog/library.yaml"), "{}\n")
                 .unwrap();
             let mut urls = Vec::new();
             let mut adapters = Vec::new();

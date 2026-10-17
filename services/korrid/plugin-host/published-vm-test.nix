@@ -46,11 +46,35 @@ let
   };
   storage = pkgs.runCommand "published-plugin-route-storage" { } ''
     mkdir -p "$out/catalog" "$out/roms"
-    cp ${../../../docs/research/retroarch-plugin-route/device.yaml} "$out/device.yaml"
-    cp ${../../../docs/research/retroarch-plugin-route/catalog/games.yaml} "$out/catalog/games.yaml"
-    cp ${../../../docs/research/retroarch-plugin-route/catalog/releases.yaml} "$out/catalog/releases.yaml"
-    # Only route resolution uses this marker. It is not executable game content.
-    printf route-only-marker > "$out/roms/wl4.gba"
+    cat > "$out/device.yaml" <<'YAML'
+    host:
+      title: plugin-test
+    storage:
+      gba:
+        root: /var/lib/published-plugin-storage/roms
+    sources:
+      gba:
+        kind: [files]
+        storage: gba
+        system: gba
+    locations:
+      'sha256:${builtins.hashString "sha256" "route-only-marker"}':
+        - storage: gba
+          path: Wario Land 4.gba
+    YAML
+    cat > "$out/catalog/library.yaml" <<'YAML'
+    library:
+      wario-land-4:
+        title: Wario Land 4
+        releases:
+          - id: gba
+            system: gba
+            identity:
+              kind: hash
+              value: sha256:${builtins.hashString "sha256" "route-only-marker"}
+    YAML
+    # A route marker, not owned game data; its identity matches the seeded release.
+    printf route-only-marker > "$out/roms/Wario Land 4.gba"
   '';
   deviceConfig = pkgs.writeText "published-plugin-vm.toml" ''
     label = "published-plugin-vm"
@@ -374,7 +398,7 @@ pkgs.testers.runNixOSTest {
         assert result["outcome"]["_tag"] == "Ok", result
         return result["outcome"]["payload"]["games"]
     machine.wait_for_open_port(49117)
-    assert [game["id"] for game in games()] == ["01K4J6K8Y00000000000000002"]
+    assert [game["id"] for game in games()] == ["wario-land-4"]
     machine.shutdown()
     machine.start()
     machine.wait_for_unit("korri-plugin-host.service")
@@ -386,7 +410,7 @@ pkgs.testers.runNixOSTest {
     assert login() == "0"
     machine.succeed("korri-plugin restore-all")
     assert json.loads(machine.succeed("cat /run/korri-plugin-host/enabled-packages.json")) == enabled
-    assert [game["id"] for game in games()] == ["01K4J6K8Y00000000000000002"]
+    assert [game["id"] for game in games()] == ["wario-land-4"]
     machine.succeed("korri-plugin disable @korri:starter-pack; korri-plugin disable @korri:fake08; korri-plugin disable @korri:ssh; korri-plugin disable @korri:mgba; korri-plugin restore-all")
     ports(False)
     login(success=False)

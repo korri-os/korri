@@ -11,7 +11,7 @@ export const title = "PPSSPP"
 export const description = "Runs PlayStation Portable content with PPSSPP."
 
 export const systems = {
-  psp: { id: "psp", title: "PlayStation Portable" },
+  psp: { id: "psp", title: "PlayStation Portable", content: { extensions: ["iso", "cso", "pbp"] } },
 }
 
 // No `family`. A family is a shared settings scope, and this runner shares its
@@ -24,19 +24,7 @@ export const runners = {
   },
 }
 
-export const discovery = {
-  fileReleases: {
-    "psp-files": {
-      id: "@korri:ppsspp/psp-files",
-      title: "PlayStation Portable files",
-      extensions: ["iso", "cso", "pbp"],
-      system: "psp",
-      runners: ["@korri:ppsspp/ppsspp"],
-    },
-  },
-}
-
-// No `sessionControls`. Effects are a closed first-party vocabulary, so a DIY
+// No `controls`. Effects are a closed first-party vocabulary, so a DIY
 // runner gets no in-game menu. Declaring a RetroArch effect here would be a
 // lie: PPSSPP does not answer the RetroArch network command protocol.
 // See services/korrid/SCRIPTING.md, "Effects are a closed first-party

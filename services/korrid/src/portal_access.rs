@@ -20,6 +20,7 @@ impl PortalPermission {
             | RpcRequest::LocalGamesList(_)
             | RpcRequest::SettingsSnapshot(_)
             | RpcRequest::IdentityStatus(_)
+            | RpcRequest::AttentionList(_)
             | RpcRequest::DiscoverySnapshot(_)
             | RpcRequest::PeerList(_)
             | RpcRequest::SessionStatus(_)
@@ -38,8 +39,11 @@ impl PortalPermission {
             | RpcRequest::SessionFreeze(_)
             | RpcRequest::SessionThaw(_)
             | RpcRequest::SourceStatus(_)
-            | RpcRequest::DiscoveryRegisterReceipt(_)
-            | RpcRequest::DiscoveryRemoveLocation(_)
+            | RpcRequest::DiscoveryPair(_)
+            | RpcRequest::DiscoveryChange(_)
+            | RpcRequest::AttentionAssign(_)
+            | RpcRequest::AttentionIgnore(_)
+            | RpcRequest::DiscoveryUnpair(_)
             | RpcRequest::DiscoveryRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::SteamGridDbCredentialSet(_)
@@ -257,6 +261,35 @@ mod tests {
     }
 
     #[test]
+    fn attention_reads_do_not_grant_discovery_mutation_permission() {
+        let list = RpcRequest::AttentionList(crate::AttentionListRequest {});
+        assert!(PortalPermission::ReadOnly.permits(&list));
+        assert!(PortalPermission::LocalSessions.permits(&list));
+        for request in [
+            RpcRequest::DiscoveryPair(crate::DiscoveryPairRequest {
+                receipt: "receipt".into(),
+                system: "gb".into(),
+            }),
+            RpcRequest::DiscoveryChange(crate::DiscoveryChangeRequest {
+                source: "gb".into(),
+                system: "gbc".into(),
+            }),
+            RpcRequest::DiscoveryUnpair(crate::DiscoveryUnpairRequest {
+                source: "gb".into(),
+            }),
+            RpcRequest::AttentionAssign(crate::AttentionAssignRequest {
+                item: "id".into(),
+                system: "gb".into(),
+            }),
+            RpcRequest::AttentionIgnore(crate::AttentionIgnoreRequest { item: "id".into() }),
+        ] {
+            assert!(PortalPermission::Full.permits(&request));
+            assert!(!PortalPermission::ReadOnly.permits(&request));
+            assert!(!PortalPermission::LocalSessions.permits(&request));
+        }
+    }
+
+    #[test]
     fn peer_list_reads_authenticated_peer_state_under_every_permission() {
         // The handler only reads the federation directory, and authorization
         // already limits it to the owner's own devices.
@@ -424,7 +457,7 @@ mod tests {
         let set = json!({"scope":{"_tag":"Game","id":game_id},"runnerId":"@missing:build/core","expectedRevision":listed["revisions"]["games"]});
         let saved = rpc(&app, "app.local-games.runner.set", set.clone()).await;
         assert_eq!(saved["outcome"]["_tag"], "Ok", "{saved}");
-        let saved_preferences = std::fs::read(root.path().join("catalog/games.yaml")).unwrap();
+        let saved_preferences = std::fs::read(root.path().join("catalog/library.yaml")).unwrap();
         let conflict = rpc(&app, "app.local-games.runner.set", set).await;
         assert_eq!(conflict["outcome"]["payload"]["code"], "SettingsConflict");
         let list = rpc(&app, "app.local-games.routes", json!({"gameId":game_id})).await;
@@ -589,7 +622,7 @@ mod tests {
             "@missing:build/core"
         );
         assert_eq!(
-            std::fs::read(root.path().join("catalog/games.yaml")).unwrap(),
+            std::fs::read(root.path().join("catalog/library.yaml")).unwrap(),
             saved_preferences,
             "explicit launch must not rewrite preference"
         );

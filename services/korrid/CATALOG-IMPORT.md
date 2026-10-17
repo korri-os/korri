@@ -1,71 +1,66 @@
-# Offline catalog import
+# Offline catalog discovery
 
-Stop the device's korrid daemon before import. Keep it stopped until the command
-exits. Do not run two imports at once. The coordinator's locks are in-process;
-this command does not detect or stop another process.
+Stop the device's korrid daemon before a catalog change. Keep it stopped until
+all commands exit. Run only one command at a time. The coordinator's lock is
+in-process; it does not stop another process.
 
-On Linux, first install and enable the approved game packages through the plugin
-host. Its committed registry snapshot must be readable by the catalog owner.
-There is no bundled Linux emulator or plugin-environment fallback.
+Install and enable the approved plugins first. Discovery uses their content
+rules, even when no enabled runner can play the identified system.
 
-Copy the GBA files into their intended persistent directory first. Run the command
-as the same account that owns the daemon's catalog and private state. Set both
-roots to the existing directories used by that daemon; no defaults are accepted.
+Run as the account that owns the daemon's readable and private roots. Both
+roots must exist. No defaults are accepted.
 
 ```sh
 : "${KORRID_STORAGE_ROOT:?Set the daemon's existing storage root}"
 : "${KORRID_PRIVATE_STATE_ROOT:?Set the daemon's existing private state root}"
 export KORRID_STORAGE_ROOT KORRID_PRIVATE_STATE_ROOT
-korrid catalog import /absolute/path/to/copied-gba-directory
+korrid catalog pair /absolute/path/to/gba-files gba
+korrid catalog rescan
+korrid catalog unpair gba
 ```
 
-The command calls production `DiscoveryCoordinator.add_location`. That producer
-owns the storage record, content hashes, library releases, and private discovery
-state. Do not author catalog YAML for this operation. The selected directory must
-exist. The command registers files in place; it does not copy, move, or delete
-them. Keep that directory available after import.
+`pair` registers a folder with one plugin-defined system or group. The returned
+source id starts with that system or group id and gains a numeric suffix on a
+clash. Use that id with `unpair`. Overlapping folders and plugin-data folders
+are refused. The folder's name never chooses its system.
 
-Import rescans **all configured locations**, not only the selected directory.
-Repeated import uses the coordinator's existing identity and hash-cache rules.
-It can reconcile discovery-owned records for other locations. Back up the
-catalog and private state before an operator import.
+Only paired sources are scanned. Declared prepared games are checked at their
+plugin-declared account-relative paths; discovery never walks `users/`.
+Pairing and rescanning publish `device.yaml`, `catalog/library.yaml`, and private
+discovery state through one conflict-checked coordinator. Unchanged rescans
+preserve document bytes. Unpair removes discovery-owned records, not game files
+or play logs. Back up both roots before operator changes.
 
-The report gives candidate, hashed-byte, added-game, removed-location, repair,
-and diagnostic counts from the coordinator. Diagnostics
-can mean that files were skipped; a successful exit does not mean every file was
-imported or that a launch route is available. Only enabled plugin claims are
-used. The command is not limited to GBA files.
+The report gives unit, hashed-byte, added-game, removed-location, repair, and
+diagnostic counts. A successful exit does not mean every file was identified or
+that a launch route is available. Inspect attention items through the local RPC.
+Configuration parse details are withheld because files can contain credentials.
 
-## Migrating a device from the superseded documents
+## One-off migration from games.yaml and releases.yaml
 
-A device that still holds `config.yaml` and `library.yaml` needs a one-off
-cut. Stop the daemon, back up the public and private roots, rename
-`config.yaml` to `device.yaml` so its storage records and host settings
-survive, and remove the backed-up `library.yaml`. Keep the private discovery
-state so storage ownership and the hash cache still match. Then run the import
-below; discovery writes `catalog/games.yaml` and `catalog/releases.yaml`.
+Back up both roots before apply. Dry run writes a private plan and does not move
+files or change the catalog:
 
-Game ids are minted again, so play counts and cover assignments recorded
-against the superseded ids no longer resolve. ROM files are untouched.
+```sh
+korrid catalog migrate --plan /private/path/discovery-plan.json
+# Review kept, dropped, unresolved, moves, sources, and play-log renames.
+korrid catalog migrate --apply --plan /private/path/discovery-plan.json
+```
+
+Apply moves files, pairs the planned sources, removes superseded catalog and
+private discovery records, scans once, carries titles through the catalog
+publisher, and renames play logs. Unresolved files remain in place. Any error
+stops before the next step. The report beside the plan lists completed moves
+for recovery. There is no runtime fallback to the retired documents or commands.
 
 ## Linux gameplay access
 
-Import runs as the catalog owner; it does not automatically make ROMs readable
-by the gameplay identity. Validate traversal, ROM reads and writable save paths
-separately. Keep configuration and private state inaccessible to games.
+These commands grant no gameplay access. Validate traversal, game reads, and
+writable saves separately. Keep readable configuration and private state
+inaccessible to games. Existing files can need explicit ACL changes; discovery
+does not make those changes.
 
-The shared product-module cut removes the old RG353M-only gameplay and ACL
-composition. Catalog import therefore grants no runtime access by itself. The
-integrated plugin/default-selection work must provide and verify traversal, ROM
-reads, and writable save paths before claiming local gameplay. Default ACLs do
-not retroactively protect existing trees; inspect those before deployment.
-Existing copied ROM files require explicit read ACLs.
-
-The RG353M hardware profile keeps schedutil and limits the CPU ceiling to the
-device-tested 1.104 GHz. No account migration or compatibility ACL is supplied.
-
-The command opens no HTTP listener, starts no daemon, and grants no browser
-folder-selection authority. Restart the daemon after reviewing the report. On
-failure, keep the same roots when retrying so the coordinator can use its existing
-repair state. Configuration parse details are withheld from output because they
-can contain credentials; inspect those files privately.
+The command opens no HTTP listener and grants no browser folder-selection
+authority. Restart the daemon after reviewing the report. On a publication
+failure, keep the same roots so the coordinator can recover its journal. Do not
+retry a failed migration without reviewing its completed moves and backups.

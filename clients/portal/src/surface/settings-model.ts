@@ -133,7 +133,7 @@ export function settingsFrom(
             id: "local-games",
             label: "On this device",
             value: countLabel(facts.localGameCount, "game"),
-            description: "Declared in catalog/games.yaml",
+            description: "Declared in catalog/library.yaml",
           },
       facts.discovery === undefined
         ? undefined
@@ -150,13 +150,13 @@ export function settingsFrom(
         : {
             id: "game-folder-rescan",
             label: "Rescan game folders",
-            value: countLabel(facts.discovery.locations.length, "folder"),
+            value: countLabel(facts.discovery.sources.length, "folder"),
             interaction: {
               kind: "action" as const,
               actionId: "game-folder-rescan",
             },
           },
-      ...(facts.discovery?.locations.map(location => ({
+      ...(facts.discovery?.sources.map(location => ({
         id: `game-folder:${location.id}`,
         label: location.label,
         value: "Registered",

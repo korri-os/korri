@@ -2922,7 +2922,6 @@ mod tests {
         let snapshot = crate::config::decode_config_documents(
             "host:\n  relays:\n    - wss://relay.example.com\n",
             "{}\n",
-            "{}\n",
         )
         .unwrap();
         assert_eq!(

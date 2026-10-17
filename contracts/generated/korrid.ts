@@ -45,6 +45,31 @@ export interface ActiveSession {
 	phase?: string;
 }
 
+export interface AttentionAssignRequest {
+	item: string;
+	system: string;
+}
+
+export interface AttentionIgnoreRequest {
+	item: string;
+}
+
+export interface AttentionItem {
+	id: string;
+	kind: string;
+	source: string;
+	path?: string;
+	candidates: string[];
+	message: string;
+}
+
+export interface AttentionList {
+	items: AttentionItem[];
+}
+
+export interface AttentionListRequest {
+}
+
 export interface CatalogHostFailure {
 	host: string;
 	code: string;
@@ -100,23 +125,20 @@ export interface CatalogSnapshot {
 export interface CatalogSnapshotRequest {
 }
 
+export interface DiscoveryChangeRequest {
+	source: string;
+	system: string;
+}
+
 export interface DiscoveryDiagnostic {
 	code: string;
 	message: string;
 	locationId?: string;
 }
 
-export interface DiscoveryLocationSummary {
-	id: string;
-	label: string;
-}
-
-export interface DiscoveryRegisterReceiptRequest {
+export interface DiscoveryPairRequest {
 	receipt: string;
-}
-
-export interface DiscoveryRemoveLocationRequest {
-	locationId: string;
+	system: string;
 }
 
 export interface DiscoveryRescanRequest {
@@ -132,14 +154,34 @@ export type DiscoveryState =
 	| { _tag: "Problem", payload: {
 }};
 
+export type DiscoverySourceStatus =
+	| { _tag: "Ready", payload: {
+}}
+	| { _tag: "Overlap", payload: {
+}}
+	| { _tag: "SystemUnavailable", payload: {
+}};
+
+export interface DiscoverySource {
+	id: string;
+	label: string;
+	system: string;
+	status: DiscoverySourceStatus;
+}
+
 export interface DiscoverySnapshot {
 	generation: string;
 	state: DiscoveryState;
-	locations: DiscoveryLocationSummary[];
+	sources: DiscoverySource[];
+	attention: number;
 	diagnostics: DiscoveryDiagnostic[];
 }
 
 export interface DiscoverySnapshotRequest {
+}
+
+export interface DiscoveryUnpairRequest {
+	source: string;
 }
 
 export interface GameProviderIdentity {
@@ -745,6 +787,10 @@ export interface SteamGridDbCredentialSetRequest {
 	token: string;
 }
 
+export type AttentionOutcome =
+	| { _tag: "Ok", payload: AttentionList }
+	| { _tag: "Err", payload: RpcFailure };
+
 export type CatalogSnapshotOutcome =
 	| { _tag: "Ok", payload: CatalogSnapshot }
 	| { _tag: "Err", payload: RpcFailure };
@@ -824,8 +870,12 @@ export type RpcRequest =
 	| { _tag: "app.local-games.list", payload: LocalGamesListRequest }
 	| { _tag: "system.health", payload: HealthRequest }
 	| { _tag: "app.discovery.snapshot", payload: DiscoverySnapshotRequest }
-	| { _tag: "app.discovery.registerReceipt", payload: DiscoveryRegisterReceiptRequest }
-	| { _tag: "app.discovery.removeLocation", payload: DiscoveryRemoveLocationRequest }
+	| { _tag: "app.discovery.pair", payload: DiscoveryPairRequest }
+	| { _tag: "app.discovery.change", payload: DiscoveryChangeRequest }
+	| { _tag: "app.attention.list", payload: AttentionListRequest }
+	| { _tag: "app.attention.assign", payload: AttentionAssignRequest }
+	| { _tag: "app.attention.ignore", payload: AttentionIgnoreRequest }
+	| { _tag: "app.discovery.unpair", payload: DiscoveryUnpairRequest }
 	| { _tag: "app.discovery.rescan", payload: DiscoveryRescanRequest }
 	| { _tag: "system.settings.snapshot", payload: SettingsSnapshotRequest }
 	| { _tag: "system.settings.update", payload: SettingsUpdateRequest }
@@ -861,8 +911,12 @@ export type RpcResponse =
 	| { _tag: "app.local-games.list", outcome: LocalGamesListOutcome }
 	| { _tag: "system.health", outcome: HealthOutcome }
 	| { _tag: "app.discovery.snapshot", outcome: DiscoverySnapshotOutcome }
-	| { _tag: "app.discovery.registerReceipt", outcome: DiscoverySnapshotOutcome }
-	| { _tag: "app.discovery.removeLocation", outcome: DiscoverySnapshotOutcome }
+	| { _tag: "app.discovery.pair", outcome: DiscoverySnapshotOutcome }
+	| { _tag: "app.discovery.change", outcome: DiscoverySnapshotOutcome }
+	| { _tag: "app.attention.list", outcome: AttentionOutcome }
+	| { _tag: "app.attention.assign", outcome: AttentionOutcome }
+	| { _tag: "app.attention.ignore", outcome: AttentionOutcome }
+	| { _tag: "app.discovery.unpair", outcome: DiscoverySnapshotOutcome }
 	| { _tag: "app.discovery.rescan", outcome: DiscoverySnapshotOutcome }
 	| { _tag: "system.settings.snapshot", outcome: SettingsSnapshotOutcome }
 	| { _tag: "system.settings.update", outcome: SettingsUpdateOutcome }

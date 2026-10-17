@@ -74,7 +74,7 @@ pub fn resolve_launchable_routes<'a>(
         routes: Vec::new(),
         diagnostics: Vec::new(),
     };
-    for id in snapshot.games.keys() {
+    for id in snapshot.library.keys() {
         if static_ids.contains(id.as_str()) {
             catalog.diagnostics.push(static_playable_collision(id));
             continue;

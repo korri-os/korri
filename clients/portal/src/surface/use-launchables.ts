@@ -421,8 +421,8 @@ export function useLaunchables(korrid: KorridClient): Launchables {
         return
       }
       if (actionId.startsWith("game-folder-remove:")) {
-        const locationId = actionId.slice("game-folder-remove:".length)
-        const settingId = `game-folder:${locationId}`
+        const source = actionId.slice("game-folder-remove:".length)
+        const settingId = `game-folder:${source}`
         if (
           settingsStatusRef.current._tag === "Saving" &&
           settingsStatusRef.current.settingId === settingId
@@ -430,7 +430,7 @@ export function useLaunchables(korrid: KorridClient): Launchables {
           return
         }
         publishSettingsStatus({ _tag: "Saving", settingId })
-        void korrid.removeDiscoveryLocation(locationId).then(result => {
+        void korrid.unpairDiscoverySource(source).then(result => {
           if (!mountedRef.current) return
           if (result._tag === "Err") {
             settingsProblem(settingId, result.payload.message)

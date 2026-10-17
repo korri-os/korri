@@ -96,8 +96,9 @@ export interface KorridClient {
   ): Promise<IdentitySwitchOutcome>
   deleteRetiredIdentity(publicKey: string, backupConfirmed: boolean): Promise<IdentityRetiredDeleteOutcome>
   discoverySnapshot(): Promise<DiscoverySnapshotOutcome>
-  registerDiscoveryReceipt(receipt: string): Promise<DiscoverySnapshotOutcome>
-  removeDiscoveryLocation(locationId: string): Promise<DiscoverySnapshotOutcome>
+  pairDiscoverySource(receipt: string, system: string): Promise<DiscoverySnapshotOutcome>
+  changeDiscoverySource(source: string, system: string): Promise<DiscoverySnapshotOutcome>
+  unpairDiscoverySource(source: string): Promise<DiscoverySnapshotOutcome>
   rescanDiscovery(): Promise<DiscoverySnapshotOutcome>
   catalogSnapshot(): Promise<CatalogSnapshotOutcome>
   localGames(): Promise<LocalGamesListOutcome>
@@ -384,22 +385,33 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async registerDiscoveryReceipt(receipt) {
+    async pairDiscoverySource(receipt, system) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.registerReceipt",
-          payload: { receipt },
+          _tag: "app.discovery.pair",
+          payload: { receipt, system },
         })
         return response.outcome
       } catch (error) {
         return unreachable(error)
       }
     },
-    async removeDiscoveryLocation(locationId) {
+    async changeDiscoverySource(source, system) {
       try {
         const response = await callKorrid(baseUrl, capability, {
-          _tag: "app.discovery.removeLocation",
-          payload: { locationId },
+          _tag: "app.discovery.change",
+          payload: { source, system },
+        })
+        return response.outcome
+      } catch (error) {
+        return unreachable(error)
+      }
+    },
+    async unpairDiscoverySource(source) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.discovery.unpair",
+          payload: { source },
         })
         return response.outcome
       } catch (error) {
@@ -798,7 +810,8 @@ export function createInMemoryKorridClient(
   let discovery: DiscoverySnapshot = config.discovery ?? {
     generation: "in-memory-0",
     state: { _tag: "Idle", payload: {} },
-    locations: [],
+    sources: [],
+    attention: 0,
     diagnostics: [],
   }
   let discoveryRevision = 0
@@ -935,7 +948,7 @@ export function createInMemoryKorridClient(
     async discoverySnapshot() {
       return { _tag: "Ok", payload: discovery }
     },
-    async registerDiscoveryReceipt(receipt) {
+    async pairDiscoverySource(receipt, system) {
       if (!availableDiscoveryReceipts.delete(receipt)) {
         return {
           _tag: "Err",
@@ -945,21 +958,31 @@ export function createInMemoryKorridClient(
           },
         }
       }
-      if (!discovery.locations.some(location => location.id === receipt)) {
+      if (!discovery.sources.some(location => location.id === receipt)) {
         discovery = {
           ...discovery,
-          locations: [
-            ...discovery.locations,
-            { id: receipt, label: `Selected folder ${discovery.locations.length + 1}` },
+          sources: [
+            ...discovery.sources,
+            { id: receipt, label: system, system, status: { _tag: "Ready", payload: {} } },
           ],
         }
       }
       return { _tag: "Ok", payload: scanningDiscovery() }
     },
-    async removeDiscoveryLocation(locationId) {
+    async changeDiscoverySource(source, system) {
+      if (!discovery.sources.some(item => item.id === source)) {
+        return { _tag: "Err", payload: { code: "UnknownSource", message: "Source is not available" } }
+      }
+      discovery = { ...discovery, sources: discovery.sources.map(item => item.id === source ? { ...item, system, label: system } : item) }
+      return { _tag: "Ok", payload: scanningDiscovery() }
+    },
+    async unpairDiscoverySource(source) {
+      if (!discovery.sources.some(item => item.id === source)) {
+        return { _tag: "Err", payload: { code: "UnknownSource", message: "Source is not available" } }
+      }
       discovery = {
         ...discovery,
-        locations: discovery.locations.filter(location => location.id !== locationId),
+        sources: discovery.sources.filter(location => location.id !== source),
       }
       return { _tag: "Ok", payload: scanningDiscovery() }
     },

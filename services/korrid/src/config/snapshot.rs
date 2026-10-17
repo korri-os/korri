@@ -34,13 +34,12 @@ use super::{
 };
 
 pub const DEVICE_FILE_NAME: &str = "device.yaml";
-pub const GAMES_FILE_NAME: &str = "catalog/games.yaml";
-pub const RELEASES_FILE_NAME: &str = "catalog/releases.yaml";
-pub const FILE_NAMES: [&str; 3] = [DEVICE_FILE_NAME, GAMES_FILE_NAME, RELEASES_FILE_NAME];
+pub use super::library::LIBRARY_FILE_NAME;
+pub const FILE_NAMES: [&str; 2] = [DEVICE_FILE_NAME, LIBRARY_FILE_NAME];
 pub const EMPTY_DOCUMENT_BYTES: &[u8] = b"{}\n";
 
 const TRANSFORM_CALLBACK_ID: &str = "korri.strict-readable";
-use super::{DEVICE_SECTIONS, GAMES_SECTIONS, RELEASES_SECTIONS};
+use super::{DEVICE_SECTIONS, LIBRARY_SECTIONS};
 const ALL_SECTIONS: &[&str] = &[
     "host",
     "storage",
@@ -51,8 +50,9 @@ const ALL_SECTIONS: &[&str] = &[
     "profiles",
     "hooks",
     "locations",
-    "games",
-    "releases",
+    "library",
+    "sources",
+    "provider-links",
 ];
 
 #[derive(Clone, Debug)]
@@ -218,7 +218,7 @@ impl ConfigSnapshotCoordinator {
                 .map_err(|error| storage_error(&path, error))?;
             documents.push(yaml);
         }
-        decode_config_documents(&documents[0], &documents[1], &documents[2])
+        decode_config_documents(&documents[0], &documents[1])
             .map_err(|error| content_error(&root, error))?;
 
         let formats = FormatRegistry::with_builtins();
@@ -256,8 +256,9 @@ fn snapshot_from_graph(graph: &LoadedDocumentGraph) -> Result<ConfigSnapshot, Co
         runners: decode_graph_collection(graph, "runners")?,
         profiles: decode_graph_collection(graph, "profiles")?,
         hooks: decode_graph_collection(graph, "hooks")?,
-        games: decode_graph_collection(graph, "games")?,
-        releases: decode_graph_collection(graph, "releases")?,
+        library: decode_graph_collection(graph, "library")?,
+        sources: decode_graph_collection(graph, "sources")?,
+        provider_links: decode_graph_collection(graph, "provider-links")?,
         locations: decode_graph_collection(graph, "locations")?,
     })
 }
@@ -351,8 +352,7 @@ fn graph_source_config(
                     optional: false,
                     include: Some(vec![
                         DEVICE_FILE_NAME.to_owned(),
-                        GAMES_FILE_NAME.to_owned(),
-                        RELEASES_FILE_NAME.to_owned(),
+                        LIBRARY_FILE_NAME.to_owned(),
                     ]),
                     exclude: Vec::new(),
                     collections: Some(SourceCollectionSelection::Named(
@@ -404,8 +404,7 @@ fn readable_document_to_graph(file_name: &str, document: &Value) -> Result<Value
     };
     let allowed = match file_name {
         DEVICE_FILE_NAME => DEVICE_SECTIONS,
-        "games.yaml" => GAMES_SECTIONS,
-        "releases.yaml" => RELEASES_SECTIONS,
+        "library.yaml" => LIBRARY_SECTIONS,
         other => return Err(format!("unexpected readable document {other}")),
     };
 
@@ -457,8 +456,7 @@ fn fixed_file_label(path: &str) -> &str {
     let name = Path::new(path).file_name().and_then(|value| value.to_str());
     match name {
         Some(DEVICE_FILE_NAME) => DEVICE_FILE_NAME,
-        Some("games.yaml") => GAMES_FILE_NAME,
-        Some("releases.yaml") => RELEASES_FILE_NAME,
+        Some("library.yaml") => LIBRARY_FILE_NAME,
         _ => "fixed local configuration",
     }
 }

@@ -1,173 +1,188 @@
-//! Catalog identity and links from the approved minimum-layer brief.
-//! Release content retains the existing readable release fields. Targets are
-//! device locations; launch opinions are not catalog content.
-use serde::{de::Error, Deserialize, Deserializer};
-use std::collections::{BTreeMap, BTreeSet};
+//! Library and device reference validation. No superseded catalog schema is read.
+use std::collections::BTreeSet;
 
-use super::{
-    optional_non_null, ConfigSchemaError, ConfigSnapshot, InheritableLayer, NonEmptyString,
-};
+use super::{invalid, library::LibraryIdentity, ConfigSchemaError, ConfigSnapshot, Location};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct GamePayload {
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub runner: Option<NonEmptyString>,
-    #[serde(default)]
-    pub families: super::cascade::RunnerConfigs,
-    #[serde(default)]
-    pub runners: super::cascade::RunnerConfigs,
-    #[serde(deserialize_with = "required_non_null")]
-    pub title: String,
-    pub releases: Vec<ReleaseKey>,
+pub(crate) fn valid_local_id(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'))
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ReleasePayload {
-    pub game: GameId,
-    #[serde(deserialize_with = "required_non_null")]
-    pub system: NonEmptyString,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub identity: Option<ReleaseIdentity>,
-    #[serde(default, deserialize_with = "optional_non_null")]
-    pub display: Option<BTreeMap<String, serde_json::Value>>,
-    #[serde(flatten)]
-    pub inheritable: InheritableLayer,
-}
-
-fn required_non_null<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    optional_non_null(deserializer)?.ok_or_else(|| D::Error::custom("required field is absent"))
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ReleaseIdentity {
-    File,
-    Manifest,
-    Chd,
-    Provider,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GameId(pub String);
-
-impl<'de> Deserialize<'de> for GameId {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        if !valid_game_id(&value) {
-            return Err(D::Error::custom("game ids must be canonical ULIDs"));
-        }
-        Ok(Self(value))
-    }
-}
-
-fn valid_game_id(value: &str) -> bool {
-    value.len() == 26
-        && value.as_bytes()[0] <= b'7'
-        && value
+pub(crate) fn validate_release_key(value: &str) -> Result<(), String> {
+    if let Some(digest) = value
+        .strip_prefix("sha256:")
+        .filter(|v| v.len() == 64)
+        .or_else(|| value.strip_prefix("sha1:").filter(|v| v.len() == 40))
+    {
+        if digest
             .bytes()
-            .all(|byte| b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(&byte))
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReleaseKey(pub String);
-
-impl<'de> Deserialize<'de> for ReleaseKey {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        validate_release_key(&value).map_err(D::Error::custom)?;
-        Ok(Self(value))
-    }
-}
-
-fn validate_release_key(value: &str) -> Result<(), String> {
-    if value.starts_with("sha256:") {
-        serde_json::from_value::<super::ArtifactIdString>(value.into())
-            .map_err(|error| error.to_string())?;
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+        {
+            return Ok(());
+        }
     } else if let Some((provider, reference)) = value.split_once('/') {
-        super::validate_provider_id("release key", provider).map_err(|error| error.to_string())?;
+        super::validate_provider_id("release key", provider).map_err(|e| e.to_string())?;
         serde_json::from_value::<super::SafeRefValue>(reference.into())
-            .map_err(|error| error.to_string())?;
-    } else {
-        return Err(
-            "release keys must be sha256:<64 lowercase hex characters> or @ns:name/ref".into(),
-        );
+            .map_err(|e| e.to_string())?;
+        return Ok(());
     }
-    Ok(())
+    Err(
+        "release keys must be sha256:<64 lowercase hex>, sha1:<40 lowercase hex> or @ns:name/ref"
+            .into(),
+    )
 }
 
 pub(super) fn validate(snapshot: &ConfigSnapshot) -> Result<(), ConfigSchemaError> {
-    let invalid = |path: String, message: &str| ConfigSchemaError::Invalid {
-        path,
-        message: message.into(),
-    };
-    for (id, game) in &snapshot.games {
-        let path = format!("catalog/games.yaml.games[{id}]");
-        if !valid_game_id(id) {
-            return Err(invalid(path, "game ids must be canonical ULIDs"));
+    let mut identities = BTreeSet::new();
+    for (id, item) in &snapshot.library {
+        let path = format!("catalog/library.yaml.library[{id}]");
+        if !valid_local_id(id) {
+            return Err(invalid(&path, "game ids must be readable local ids"));
         }
-        let mut seen = BTreeSet::new();
-        if game.releases.is_empty() {
-            return Err(invalid(path, "game must declare at least one release"));
+        if item.releases.is_empty() {
+            return Err(invalid(&path, "game must declare at least one release"));
         }
-        for key in &game.releases {
-            if !seen.insert(&key.0) {
-                return Err(invalid(path.clone(), "game release keys must be unique"));
-            }
-            if !snapshot
-                .releases
-                .get(&key.0)
-                .is_some_and(|release| release.game.0 == *id)
-            {
+        let mut ids = BTreeSet::new();
+        for release in &item.releases {
+            if !valid_local_id(&release.id.0) || !ids.insert(&release.id.0) {
                 return Err(invalid(
-                    path.clone(),
-                    "release must exist and link back to this game",
+                    &path,
+                    "release ids must be unique readable local ids",
                 ));
+            }
+            if let Some(identity) = &release.identity {
+                validate_release_key(identity.value())
+                    .map_err(|message| invalid(&path, &message))?;
+                if !identities.insert(identity.value()) {
+                    return Err(invalid(
+                        &path,
+                        "release identity must be unique in the library",
+                    ));
+                }
+                match identity {
+                    LibraryIdentity::Hash { value }
+                        if !value.starts_with("sha256:") && !value.starts_with("sha1:") =>
+                    {
+                        return Err(invalid(&path, "hash identity must be SHA-256 or SHA-1"))
+                    }
+                    LibraryIdentity::Chd { value } if !value.starts_with("sha1:") => {
+                        return Err(invalid(&path, "CHD identity must be SHA-1"))
+                    }
+                    LibraryIdentity::Parts { value, parts } => {
+                        if !value.starts_with("sha256:") || parts.is_empty() {
+                            return Err(invalid(
+                                &path,
+                                "parts identity needs SHA-256 and non-empty parts",
+                            ));
+                        }
+                        for part in parts {
+                            validate_release_key(part)
+                                .map_err(|message| invalid(&path, &message))?;
+                        }
+                        use sha2::{Digest, Sha256};
+                        if *value
+                            != format!(
+                                "sha256:{}",
+                                hex::encode(Sha256::digest(parts.join("\n").as_bytes()))
+                            )
+                        {
+                            return Err(invalid(
+                                &path,
+                                "parts identity must hash the ordered part values",
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if release.inheritable.launch.is_some() {
+                return Err(invalid(&path, "launch opinions are not catalog content"));
+            }
+            if release.inheritable.hooks.as_ref().is_some_and(|hooks| {
+                hooks.before.as_ref().is_some_and(|v| !v.is_empty())
+                    || hooks.after.as_ref().is_some_and(|v| !v.is_empty())
+            }) {
+                return Err(invalid(&path, "only device.yaml may carry commands"));
             }
         }
     }
-    for (key, release) in &snapshot.releases {
-        let path = format!("catalog/releases.yaml.releases[{key}]");
-        validate_release_key(key).map_err(|message| invalid(path.clone(), &message))?;
-        if release.inheritable.launch.is_some() {
-            return Err(invalid(path, "launch opinions are not catalog content"));
+    for (id, source) in &snapshot.sources {
+        if !valid_local_id(id) {
+            return Err(invalid(
+                "device.yaml.sources",
+                "source ids must be readable local ids",
+            ));
         }
-        if release.inheritable.hooks.as_ref().is_some_and(|hooks| {
-            hooks.before.as_ref().is_some_and(|steps| !steps.is_empty())
-                || hooks.after.as_ref().is_some_and(|steps| !steps.is_empty())
-        }) {
-            return Err(invalid(path, "only device.yaml may carry commands"));
+        if !snapshot.storage.contains_key(&source.storage.0) {
+            return Err(invalid(
+                &format!("device.yaml.sources[{id}]"),
+                "source storage must exist",
+            ));
         }
-        if !snapshot
-            .games
-            .get(&release.game.0)
-            .is_some_and(|game| game.releases.iter().any(|id| id.0 == *key))
-        {
-            return Err(invalid(path, "game must exist and list this release"));
+    }
+    for (id, link) in &snapshot.provider_links {
+        super::validate_provider_id(
+            &format!("device.yaml.provider-links[{id}]"),
+            &link.provider.0,
+        )?;
+        if !snapshot.library.contains_key(&link.playable.0) {
+            return Err(invalid(
+                &format!("device.yaml.provider-links[{id}]"),
+                "provider link game must exist",
+            ));
+        }
+        if link.refs.is_empty() {
+            return Err(invalid(
+                &format!("device.yaml.provider-links[{id}]"),
+                "provider link refs must be non-empty",
+            ));
         }
     }
     for (key, locations) in &snapshot.locations {
         let path = format!("device.yaml.locations[{key}]");
-        validate_release_key(key).map_err(|message| invalid(path.clone(), &message))?;
+        validate_release_key(key).map_err(|message| invalid(&path, &message))?;
         for location in locations {
-            if let super::Location::ProviderRef {
+            if let Location::ProviderRef {
                 provider,
                 provider_ref,
             } = location
             {
                 if key != &format!("{}/{}", provider.0, provider_ref.0) {
                     return Err(invalid(
-                        path.clone(),
+                        &path,
                         "provider location must match its release key",
                     ));
+                }
+            }
+            let discovery = match location {
+                Location::File { discovery, .. } | Location::FileSet { discovery, .. } => {
+                    discovery.as_ref()
+                }
+                _ => None,
+            };
+            if let Some(discovery) = discovery {
+                for time in
+                    std::iter::once(&discovery.first_seen_at).chain(discovery.missing_since.iter())
+                {
+                    // time is already in the dependency graph and accepts RFC 3339 only.
+                    chrono::DateTime::parse_from_rfc3339(&time.0)
+                        .map_err(|_| invalid(&path, "discovery times must be RFC 3339"))?;
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Content identity values and provider references used as device location keys.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleaseKey(pub String);
+impl<'de> serde::Deserialize<'de> for ReleaseKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        validate_release_key(&value).map_err(serde::de::Error::custom)?;
+        Ok(Self(value))
+    }
 }

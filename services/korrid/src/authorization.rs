@@ -200,8 +200,13 @@ pub fn policy_for(request: &RpcRequest) -> PeerPolicy {
         RpcRequest::LocalGamesList(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::Health(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::DiscoverySnapshot(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoveryRegisterReceipt(_) => PeerPolicy::OwnerDeviceOnly,
-        RpcRequest::DiscoveryRemoveLocation(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::DiscoveryPair(_) | RpcRequest::DiscoveryChange(_) => {
+            PeerPolicy::OwnerDeviceOnly
+        }
+        RpcRequest::AttentionList(_)
+        | RpcRequest::AttentionAssign(_)
+        | RpcRequest::AttentionIgnore(_) => PeerPolicy::OwnerDeviceOnly,
+        RpcRequest::DiscoveryUnpair(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::DiscoveryRescan(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SettingsSnapshot(_) => PeerPolicy::OwnerDeviceOnly,
         RpcRequest::SettingsUpdate(_) => PeerPolicy::OwnerDeviceOnly,
@@ -251,8 +256,11 @@ pub fn is_security_mutation(request: &RpcRequest) -> bool {
             | RpcRequest::SessionThaw(_)
             | RpcRequest::MoonlightCertificateProvision(_)
             | RpcRequest::MoonlightCertificateRevoke(_)
-            | RpcRequest::DiscoveryRegisterReceipt(_)
-            | RpcRequest::DiscoveryRemoveLocation(_)
+            | RpcRequest::DiscoveryPair(_)
+            | RpcRequest::DiscoveryChange(_)
+            | RpcRequest::AttentionAssign(_)
+            | RpcRequest::AttentionIgnore(_)
+            | RpcRequest::DiscoveryUnpair(_)
             | RpcRequest::DiscoveryRescan(_)
             | RpcRequest::SettingsUpdate(_)
             | RpcRequest::GameRunnerSet(_)
@@ -1179,14 +1187,34 @@ mod tests {
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"app.discovery.registerReceipt","payload":{"receipt":"r"}}),
+                    serde_json::json!({"_tag":"app.discovery.pair","payload":{"receipt":"r","system":"gb"}}),
                 ),
                 Owner,
             ),
             (
                 request(
-                    serde_json::json!({"_tag":"app.discovery.removeLocation","payload":{"locationId":"l"}}),
+                    serde_json::json!({"_tag":"app.discovery.unpair","payload":{"source":"gb"}}),
                 ),
+                Owner,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"app.discovery.change","payload":{"source":"gb","system":"gbc"}}),
+                ),
+                Owner,
+            ),
+            (
+                request(serde_json::json!({"_tag":"app.attention.list","payload":{}})),
+                Owner,
+            ),
+            (
+                request(
+                    serde_json::json!({"_tag":"app.attention.assign","payload":{"item":"id","system":"gb"}}),
+                ),
+                Owner,
+            ),
+            (
+                request(serde_json::json!({"_tag":"app.attention.ignore","payload":{"item":"id"}})),
                 Owner,
             ),
             (
@@ -1250,7 +1278,7 @@ mod tests {
                 Local,
             ),
         ];
-        assert_eq!(cases.len(), 27);
+        assert_eq!(cases.len(), 31);
         for (request, expected) in cases {
             assert_eq!(policy_for(&request), expected);
         }

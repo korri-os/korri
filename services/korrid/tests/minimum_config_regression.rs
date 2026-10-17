@@ -5,18 +5,18 @@ use korrid::{
         decode_config_documents, resolver,
         snapshot::{ConfigSnapshotCoordinator, FILE_NAMES},
     },
-    discovery::{DiscoveryCoordinator, DiscoveryOptions},
-    plugin, plugin_installation,
+    discovery::{
+        identify::{ContentIdentity, EvidenceLevel, FoundUnit, ScanReport, SourceScan},
+        DiscoveryCoordinator, DiscoveryOptions,
+    },
 };
-#[path = "../src/plugin_test_fixtures.rs"]
-mod native_packages;
 use serde_yaml::Value;
 use std::{fs, path::Path};
 
 fn documents(root: &Path) -> Vec<Vec<u8>> {
     FILE_NAMES
         .iter()
-        .map(|name| fs::read(root.join(name)).unwrap())
+        .map(|f| fs::read(root.join(f)).unwrap())
         .collect()
 }
 fn snapshot(root: &Path) -> std::sync::Arc<korrid::config::ConfigSnapshot> {
@@ -24,260 +24,172 @@ fn snapshot(root: &Path) -> std::sync::Arc<korrid::config::ConfigSnapshot> {
     assert!(state.diagnostic.is_none(), "{:?}", state.diagnostic);
     state.snapshot
 }
-
-#[test]
-fn all_copies_and_overlapping_roots_survive_restart_without_minting_new_games() {
+fn setup() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    DiscoveryCoordinator,
+    ScanReport,
+) {
     let root = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    let child = roms.path().join("child");
-    fs::create_dir(&child).unwrap();
-    fs::write(child.join("one.gba"), b"same").unwrap();
-    fs::write(child.join("two.gba"), b"same").unwrap();
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    let options = DiscoveryOptions::default();
-    let first = discovery
-        .add_location(&child, &options)
-        .unwrap()
-        .storage_id
-        .unwrap();
-    let second = discovery
-        .add_location(roms.path(), &options)
-        .unwrap()
-        .storage_id
-        .unwrap();
-    let state = snapshot(root.path());
-    assert_eq!(state.games.len(), 1);
-    assert_eq!(state.releases.len(), 1);
-    assert_eq!(state.locations.values().next().unwrap().len(), 4);
-    let before = documents(root.path());
-    let restarted = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    restarted.rescan(&options).unwrap();
-    assert_eq!(documents(root.path()), before);
-    restarted.remove_location(&first, &options).unwrap();
-    assert_eq!(
-        snapshot(root.path())
-            .locations
-            .values()
-            .next()
-            .unwrap()
-            .len(),
-        2
-    );
-    restarted.remove_location(&second, &options).unwrap();
-    let final_state = snapshot(root.path());
-    assert!(final_state.locations.is_empty());
-    assert!(final_state.storage.is_empty());
-    assert_eq!(final_state.games, state.games);
-    assert_eq!(final_state.releases, state.releases);
-    assert_eq!(&documents(root.path())[1..], &before[1..]);
-    restarted.add_location(&child, &options).unwrap();
-    assert_eq!(snapshot(root.path()).games, state.games);
+    fs::write(root.path().join("device.yaml"), format!("storage: {{gba: {{root: '{}'}}}}\nsources: {{gba: {{kind: [files], storage: gba, system: gba}}}}\n", root.path().display())).unwrap();
+    let scan = ScanReport {
+        // This fixture models the storage that pair created for its source.
+        created_storages: std::collections::BTreeSet::from(["gba".into()]),
+        scanned: vec![SourceScan {
+            source_id: "gba".into(),
+            units: vec![unit("game.gba", 'a')],
+            ..SourceScan::default()
+        }],
+        ..ScanReport::default()
+    };
+    let writer = DiscoveryCoordinator::new(root.path(), private.path());
+    (root, private, writer, scan)
 }
-
-#[test]
-fn same_release_copy_ownership_survives_rescan_and_cleanup() {
-    let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    for index in 0..256 {
-        fs::write(roms.path().join(format!("copy-{index}.gba")), b"same ROM").unwrap();
+fn key(c: char) -> String {
+    format!("sha256:{}", c.to_string().repeat(64))
+}
+fn unit(path: &str, c: char) -> FoundUnit {
+    FoundUnit {
+        source_id: "gba".into(),
+        storage_id: "gba".into(),
+        path: path.into(),
+        parts: vec![path.into()],
+        tracks: Vec::new(),
+        system: "gba".into(),
+        title: "Game".into(),
+        version: None,
+        region: None,
+        identity: ContentIdentity::Hash {
+            sha256: key(c),
+            sha1: format!("sha1:{}", c.to_string().repeat(40)),
+        },
+        evidence: EvidenceLevel::Extension,
     }
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    let options = DiscoveryOptions::default();
-    let storage = discovery
-        .add_location(roms.path(), &options)
-        .unwrap()
-        .storage_id
-        .unwrap();
-    let initial = snapshot(root.path());
-    assert_eq!(initial.games.len(), 1);
-    assert_eq!(initial.locations.values().next().unwrap().len(), 256);
-    discovery.rescan(&options).unwrap();
-    assert_eq!(*snapshot(root.path()), *initial);
-    discovery.remove_location(&storage, &options).unwrap();
-    let removed = snapshot(root.path());
-    assert!(removed.locations.is_empty());
-    assert!(removed.storage.is_empty());
-    assert_eq!(removed.games, initial.games);
 }
 
 #[test]
-fn byte_replacement_removes_only_the_owned_old_location_not_the_catalog() {
-    let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    let path = roms.path().join("game.gba");
-    fs::write(&path, b"old").unwrap();
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    discovery
-        .add_location(roms.path(), &DiscoveryOptions::default())
+fn copies_add_locations_and_restart_preserves_identity_and_bytes() {
+    let (root, private, writer, mut scan) = setup();
+    scan.scanned[0].units.push(unit("copy.gba", 'a'));
+    writer.run(&scan, &DiscoveryOptions::default()).unwrap();
+    let before = documents(root.path());
+    let state = snapshot(root.path());
+    assert_eq!(state.library.len(), 1);
+    assert_eq!(state.locations[&key('a')].len(), 2);
+    DiscoveryCoordinator::new(root.path(), private.path())
+        .run(&scan, &DiscoveryOptions::default())
         .unwrap();
-    let before = snapshot(root.path());
-    let old_sha = before.releases.keys().next().unwrap();
-    fs::write(&path, b"new longer bytes").unwrap();
-    discovery.rescan(&DiscoveryOptions::default()).unwrap();
-    let after = snapshot(root.path());
-    assert_eq!(after.games.len(), 2);
-    assert_eq!(after.releases[old_sha], before.releases[old_sha]);
-    assert!(!after.locations.contains_key(old_sha));
-    assert_eq!(after.locations.len(), 1);
+    assert_eq!(before, documents(root.path()));
 }
-
 #[test]
-fn catalog_title_edits_do_not_transfer_location_ownership() {
-    let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    fs::write(roms.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    let storage = discovery
-        .add_location(roms.path(), &DiscoveryOptions::default())
-        .unwrap()
-        .storage_id
-        .unwrap();
-    let path = root.path().join("catalog/games.yaml");
-    let authored = fs::read_to_string(&path)
-        .unwrap()
-        .replace("title: game", "title: Authored");
-    fs::write(&path, &authored).unwrap();
-    discovery
-        .remove_location(&storage, &DiscoveryOptions::default())
-        .unwrap();
-    let after = snapshot(root.path());
-    assert!(after.locations.is_empty());
-    assert!(after.storage.is_empty());
-    assert_eq!(fs::read_to_string(path).unwrap(), authored);
-}
-
-#[test]
-fn authored_release_content_and_location_survive_rescan_and_storage_removal() {
-    let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    fs::write(roms.path().join("game.gba"), b"rom").unwrap();
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    let storage = discovery
-        .add_location(roms.path(), &DiscoveryOptions::default())
-        .unwrap()
-        .storage_id
-        .unwrap();
-    let release_path = root.path().join("catalog/releases.yaml");
-    let authored_release = format!(
-        "{}    display:\n      title: Authored release\n",
-        fs::read_to_string(&release_path).unwrap()
-    );
-    fs::write(&release_path, &authored_release).unwrap();
-    let device_path = root.path().join("device.yaml");
-    let mut device: Value =
-        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
-    let location = device["locations"]
-        .as_mapping_mut()
-        .unwrap()
-        .values_mut()
-        .next()
-        .unwrap();
-    location[0]["discovery"]["first-seen-at"] = "authored-time".into();
-    fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
-    discovery.rescan(&DiscoveryOptions::default()).unwrap();
-    discovery
-        .remove_location(&storage, &DiscoveryOptions::default())
-        .unwrap();
-    let after = snapshot(root.path());
-    assert!(after.storage.contains_key(&storage));
-    assert_eq!(after.locations.values().next().unwrap().len(), 1);
-    assert_eq!(fs::read_to_string(release_path).unwrap(), authored_release);
-}
-
-#[test]
-fn ten_thousand_existing_locations_rescan_without_rewriting_or_minting_games() {
-    let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    for index in 0..10_000u32 {
-        fs::write(
-            roms.path().join(format!("{index:05}.gba")),
-            index.to_le_bytes(),
+fn byte_replacement_keeps_history_in_one_game_and_unpair_cleans_exclusive_history() {
+    let (root, _, writer, mut scan) = setup();
+    writer.run(&scan, &DiscoveryOptions::default()).unwrap();
+    scan.scanned[0].units[0] = unit("game.gba", 'b');
+    writer.run(&scan, &DiscoveryOptions::default()).unwrap();
+    let state = snapshot(root.path());
+    assert_eq!(state.library.len(), 1);
+    assert_eq!(state.library["game"].releases.len(), 2);
+    assert!(!state.locations.contains_key(&key('a')));
+    assert!(state.locations.contains_key(&key('b')));
+    writer
+        .run(
+            &ScanReport {
+                unpaired: vec!["gba".into()],
+                ..ScanReport::default()
+            },
+            &DiscoveryOptions::default(),
         )
         .unwrap();
-    }
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    let options = DiscoveryOptions::default();
-    let first = discovery.add_location(roms.path(), &options).unwrap();
-    assert_eq!(first.added_games, 10_000);
+    let state = snapshot(root.path());
+    assert!(state.library.is_empty());
+    assert!(state.locations.is_empty());
+    assert!(state.sources.is_empty());
+    assert!(state.storage.is_empty());
+}
+#[test]
+fn ten_thousand_locations_rescan_without_rewriting_or_minting_games() {
+    let (root, _, writer, mut scan) = setup();
+    scan.scanned[0].units = (0..10_000)
+        .map(|i| unit(&format!("copy-{i}.gba"), 'a'))
+        .collect();
+    assert_eq!(
+        writer
+            .run(&scan, &DiscoveryOptions::default())
+            .unwrap()
+            .added_games,
+        1
+    );
     let before = documents(root.path());
-    let again = discovery.rescan(&options).unwrap();
-    assert_eq!(again.scan.candidates.len(), 10_000);
-    assert_eq!(again.added_games, 0);
-    assert_eq!(again.scan.hashed_bytes, 0);
+    assert_eq!(snapshot(root.path()).locations[&key('a')].len(), 10_000);
+    assert_eq!(
+        writer
+            .run(&scan, &DiscoveryOptions::default())
+            .unwrap()
+            .added_games,
+        0
+    );
     assert_eq!(documents(root.path()), before);
 }
-
 #[test]
-fn any_complete_release_launches_in_catalog_order_without_a_preference_fold() {
+fn available_releases_route_in_catalog_order_and_keep_first_release_identity() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("roms")).unwrap();
     fs::write(root.path().join("roms/game.gba"), b"rom").unwrap();
     fs::write(root.path().join("roms/other.gba"), b"other").unwrap();
-    let other_sha = format!("sha256:{}", "a".repeat(64));
-    let games = readable::gba_games().replace(
-        &format!("['{}']", readable::GBA_RELEASE),
-        &format!("['{}', '{other_sha}']", readable::GBA_RELEASE),
-    );
-    let releases = format!(
-        "{}  '{other_sha}':\n    game: {}\n    system: gba\n",
-        readable::gba_releases(),
-        readable::GBA_ID
-    );
+    let mut library: Value = serde_yaml::from_str(&readable::gba_library()).unwrap();
+    let mut second = library["library"][readable::GBA_ID]["releases"][0].clone();
+    second["id"] = "gba-2".into();
+    second["identity"]["value"] = key('a').into();
+    library["library"][readable::GBA_ID]["releases"]
+        .as_sequence_mut()
+        .unwrap()
+        .push(second);
     let device = format!(
-        "{}  '{other_sha}':\n    - storage: roms\n      path: other.gba\n",
-        readable::gba_locations("roms", "game.gba", false)
+        "{}  '{}':\n    - storage: roms\n      path: other.gba\n",
+        readable::gba_locations("roms", "game.gba", false),
+        key('a')
     );
-    let state = decode_config_documents(&device, &games, &releases).unwrap();
+    let state =
+        decode_config_documents(&device, &serde_yaml::to_string(&library).unwrap()).unwrap();
     let registry = korrid::plugin_test_fixtures::installed(root.path());
     let route =
         resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap();
     assert_eq!(route.release_id, readable::GBA_RELEASE);
-
-    let reordered = games.replace(
-        &format!("['{}', '{other_sha}']", readable::GBA_RELEASE),
-        &format!("['{other_sha}', '{}']", readable::GBA_RELEASE),
-    );
-    let reordered = decode_config_documents(&device, &reordered, &releases).unwrap();
-    let route =
-        resolver::resolve_route(root.path(), &reordered, &registry, [], readable::GBA_ID).unwrap();
-    assert_eq!(route.release_id, other_sha);
-
     fs::remove_file(root.path().join("roms/game.gba")).unwrap();
     let route =
         resolver::resolve_route(root.path(), &state, &registry, [], readable::GBA_ID).unwrap();
-    assert_eq!(route.release_id, other_sha);
+    assert_eq!(route.release_id, key('a'));
+    assert_eq!(
+        route.identity,
+        Some(korrid::GameIdentity::Hash(readable::GBA_RELEASE.into()))
+    );
 }
-
 #[test]
-fn a_broken_catalog_link_retains_the_last_known_good_snapshot_until_restored() {
+fn malformed_library_retains_last_known_good_until_restored() {
     let root = tempfile::tempdir().unwrap();
     readable::android(root.path());
     let coordinator = ConfigSnapshotCoordinator::new(root.path());
     let good = coordinator.reload();
-    let releases = root.path().join("catalog/releases.yaml");
     fs::write(
-        &releases,
-        readable::ANDROID_RELEASES.replace(readable::ANDROID_ID, readable::OTHER_ID),
+        root.path().join("catalog/library.yaml"),
+        "library: {game: {releases: []}}\n",
     )
     .unwrap();
-    let broken = coordinator.reload();
-    assert!(broken.diagnostic.is_some());
-    assert_eq!(broken.generation, good.generation);
-    assert_eq!(broken.snapshot, good.snapshot);
-    fs::write(releases, readable::ANDROID_RELEASES).unwrap();
-    let restored = coordinator.reload();
-    assert!(restored.diagnostic.is_none());
-    assert!(restored.generation > good.generation);
+    let rejected = coordinator.reload();
+    assert!(rejected.diagnostic.is_some());
+    assert_eq!(rejected.generation, good.generation);
+    assert_eq!(rejected.snapshot.library, good.snapshot.library);
+    fs::write(
+        root.path().join("catalog/library.yaml"),
+        readable::ANDROID_LIBRARY,
+    )
+    .unwrap();
+    assert!(coordinator.reload().diagnostic.is_none());
 }
-
 #[test]
-fn snapshot_probe_exercises_the_three_document_loader_and_retained_snapshot() {
+fn snapshot_probe_exercises_the_two_document_loader_and_retained_snapshot() {
     let root = tempfile::tempdir().unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_config_snapshot_probe"))
         .arg(root.path())
@@ -289,55 +201,34 @@ fn snapshot_probe_exercises_the_three_document_loader_and_retained_snapshot() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("tmnt present: yes"), "{stdout}");
-    assert!(stdout.contains("retained tmnt: yes"), "{stdout}");
-    assert!(stdout.contains("release records: 1"), "{stdout}");
-    assert!(stdout.contains("LocalConfigReloadFailed"), "{stdout}");
+    for text in [
+        "tmnt present: yes",
+        "retained tmnt: yes",
+        "release records: 1",
+        "LocalConfigReloadFailed",
+    ] {
+        assert!(stdout.contains(text), "{stdout}");
+    }
 }
-
 #[test]
-fn authored_physical_file_is_protected_across_storage_aliases_after_byte_change() {
+fn superseded_documents_are_not_read_or_rewritten() {
     let root = tempfile::tempdir().unwrap();
-    let private = tempfile::tempdir().unwrap();
-    let roms = tempfile::tempdir().unwrap();
-    let path = roms.path().join("game.gba");
-    fs::write(&path, b"old").unwrap();
-    let discovery = DiscoveryCoordinator::for_tests(root.path(), private.path());
-    discovery
-        .add_location(roms.path(), &DiscoveryOptions::default())
-        .unwrap();
-    let device_path = root.path().join("device.yaml");
-    let mut device: Value =
-        serde_yaml::from_str(&fs::read_to_string(&device_path).unwrap()).unwrap();
-    device["storage"]["authored"]["root"] = roms.path().display().to_string().into();
-    let locations = device["locations"]
-        .as_mapping_mut()
-        .unwrap()
-        .values_mut()
-        .next()
-        .unwrap()
-        .as_sequence_mut()
-        .unwrap();
-    let mut authored = locations[0].clone();
-    authored["storage"] = "authored".into();
-    authored.as_mapping_mut().unwrap().remove("discovery");
-    locations.push(authored);
-    fs::write(&device_path, serde_yaml::to_string(&device).unwrap()).unwrap();
-    let before = documents(root.path());
-    fs::write(&path, b"changed bytes, new hash").unwrap();
-    discovery.rescan(&DiscoveryOptions::default()).unwrap();
-    assert_eq!(documents(root.path()), before);
-}
-
-#[test]
-fn old_document_paths_are_not_read_or_rewritten() {
-    let root = tempfile::tempdir().unwrap();
-    for name in ["config.yaml", "library.yaml"] {
+    fs::create_dir(root.path().join("catalog")).unwrap();
+    for name in [
+        "config.yaml",
+        "library.yaml",
+        "catalog/games.yaml",
+        "catalog/releases.yaml",
+    ] {
         fs::write(root.path().join(name), "not: [valid yaml").unwrap();
     }
-    let state = snapshot(root.path());
-    assert!(state.games.is_empty());
-    for name in ["config.yaml", "library.yaml"] {
+    assert!(snapshot(root.path()).library.is_empty());
+    for name in [
+        "config.yaml",
+        "library.yaml",
+        "catalog/games.yaml",
+        "catalog/releases.yaml",
+    ] {
         assert_eq!(
             fs::read_to_string(root.path().join(name)).unwrap(),
             "not: [valid yaml"

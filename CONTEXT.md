@@ -100,3 +100,57 @@ _Avoid_: standby, fake suspend, idle
 **Deep sleep**:
 Suspend to RAM. The frozen live session returns on wake, with no time limit.
 _Avoid_: S3, mem, real suspend
+
+### Content and discovery
+
+**System**:
+A kind of playable content, declared by plugins, with rules for what one game of that kind looks like. Korri knows no system of its own.
+_Avoid_: platform, console, core
+
+**System group**:
+A named set of related systems that one source can hold together, such as Game Boy and Game Boy Color. Only plugins declare system groups.
+_Avoid_: family, platform, collection
+
+**Source**:
+A folder on one device that discovery scans, paired with exactly one system or one system group.
+_Avoid_: game folder, entry point, ROM folder, library folder
+
+**Layout**:
+A pattern that says where one game sits inside a source and which values its path names.
+_Avoid_: shape, glob, folder structure
+
+**Game**:
+The thing a person plays, with every release of it on every device.
+_Avoid_: title, entry, ROM
+
+**Release**:
+One version of a game's content. A file release is identified by its content bytes, so new bytes make a new release; a multi-disc game's discs form one release. A folder release is identified by its source and path on one device, and stays one release until a person says otherwise. A replaced release stays in the game's history as unavailable.
+_Avoid_: ROM, build, file
+
+**Game identity**:
+What makes copies on different devices the same game: a provider reference, a hash list some plugin may contribute, or a link.
+_Avoid_: game ID, fold key
+
+**Link**:
+A statement, signed by one person, that two games are the same game. It holds for every person and device in the federation; only its author can undo it.
+_Avoid_: merge, match, personal link
+
+**Declared game**:
+A game a plugin states directly, naming its releases' hashes and any files it prepared, instead of one discovery found in a source. A hash list is a set of declared games.
+_Avoid_: prepared game, plugin game, hash database
+
+**Variant**:
+A game that is a port, edition or standalone mod of another game.
+_Avoid_: fork, remake
+
+**Add-on**:
+Content with its own identity that is applied to a release of another game when it starts, such as a mod, a patch or a texture pack. A plugin declares it or a person adds it, and a person ties it to its base game; discovery never finds one.
+_Avoid_: DLC, extension, mod (alone)
+
+**Profile**:
+A named set of launch settings a person chooses when a game starts. It is not content.
+_Avoid_: preset, mode, config
+
+**Attention list**:
+The files on one device that discovery could not identify or could not decide between, shown to everyone on that device to resolve.
+_Avoid_: errors, unmatched, inbox

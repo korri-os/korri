@@ -6,15 +6,11 @@
 
 use std::{env, fs, path::PathBuf, process};
 
-use korrid::config::snapshot::{
-    ConfigSnapshotCoordinator, DEVICE_FILE_NAME, GAMES_FILE_NAME, RELEASES_FILE_NAME,
-};
+use korrid::config::snapshot::{ConfigSnapshotCoordinator, DEVICE_FILE_NAME, LIBRARY_FILE_NAME};
 
 const CHECKPOINT_DEVICE: &str =
     include_str!("../../../../docs/research/android-app-plugin-schema-checkpoint/device.yaml");
-const CHECKPOINT_GAMES: &str = include_str!(
-    "../../../../docs/research/android-app-plugin-schema-checkpoint/catalog/games.yaml"
-);
+const CHECKPOINT_LIBRARY: &str = "library:\n  tmnt-shredders-revenge:\n    title: TMNT\n    releases:\n      - id: android\n        system: android\n";
 
 fn main() {
     if let Err(error) = run() {
@@ -41,22 +37,15 @@ fn run() -> Result<(), String> {
     );
     println!(
         "{} bytes: {:?}",
-        GAMES_FILE_NAME,
-        fs::read(root.join(GAMES_FILE_NAME)).map_err(|error| error.to_string())?
+        LIBRARY_FILE_NAME,
+        fs::read(root.join(LIBRARY_FILE_NAME)).map_err(|error| error.to_string())?
     );
 
     fs::write(root.join(DEVICE_FILE_NAME), CHECKPOINT_DEVICE)
         .map_err(|error| format!("cannot write checkpoint device: {error}"))?;
-    fs::write(root.join(GAMES_FILE_NAME), CHECKPOINT_GAMES)
+    fs::write(root.join(LIBRARY_FILE_NAME), CHECKPOINT_LIBRARY)
         .map_err(|error| format!("cannot write checkpoint games: {error}"))?;
 
-    fs::write(
-        root.join(RELEASES_FILE_NAME),
-        include_str!(
-            "../../../../docs/research/android-app-plugin-schema-checkpoint/catalog/releases.yaml"
-        ),
-    )
-    .map_err(|error| error.to_string())?;
     println!();
     println!("== exact checkpoint load ==");
     let checkpoint = coordinator.reload();
@@ -75,14 +64,14 @@ fn run() -> Result<(), String> {
         yes_no(
             checkpoint
                 .snapshot
-                .games
-                .contains_key("01K4J6K8Y00000000000000001")
+                .library
+                .contains_key("tmnt-shredders-revenge")
         )
     );
 
     fs::write(
-        root.join(GAMES_FILE_NAME),
-        "games:\n  bad id:\n    releases: []\n",
+        root.join(LIBRARY_FILE_NAME),
+        "library:\n  bad id:\n    releases: []\n",
     )
     .map_err(|error| format!("cannot write rejected edit: {error}"))?;
 
@@ -95,8 +84,8 @@ fn run() -> Result<(), String> {
         yes_no(
             rejected
                 .snapshot
-                .games
-                .contains_key("01K4J6K8Y00000000000000001")
+                .library
+                .contains_key("tmnt-shredders-revenge")
         )
     );
 
@@ -113,8 +102,16 @@ fn print_state(state: &korrid::config::snapshot::ConfigSnapshotState) {
         }
         None => println!("diagnostic: none"),
     }
-    println!("game records: {}", state.snapshot.games.len());
-    println!("release records: {}", state.snapshot.releases.len());
+    println!("game records: {}", state.snapshot.library.len());
+    println!(
+        "release records: {}",
+        state
+            .snapshot
+            .library
+            .values()
+            .map(|g| g.releases.len())
+            .sum::<usize>()
+    );
     println!("located releases: {}", state.snapshot.locations.len());
 }
 
