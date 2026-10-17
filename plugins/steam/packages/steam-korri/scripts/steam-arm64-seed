@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-arm64-seed [--dry-run|--apply]
+
+Seed the mutable ARM64 Steam client/runtime inside a caller-provided guest path.
+This helper is for guest-native Steam preparation: the resulting client is meant
+to run inside the NixOS guest, not on the ROCKNIX host.
+
+Required environment:
+  STEAM_HOME        Steam client home to prepare
+  STEAM_GAMES_ROOT  Steam library root to create
+  STEAM_DOT         Steam dot-directory for registry/sdk symlinks
+
+Optional environment:
+  STEAM_BETA        Steam client tracking channel to resolve (default: steamdeck_stable)
+
+Modes:
+  --dry-run         Print intended network/filesystem actions (default)
+  --apply           Download/extract Steam ARM64 runtime and client into STEAM_HOME
+EOF
+}
+
+mode=dry-run
+case "${1:-}" in
+  ""|--dry-run) mode=dry-run ;;
+  --apply) mode=apply ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  if [ -z "$value" ]; then
+    echo "error: $name must be set explicitly" >&2
+    exit 2
+  fi
+}
+
+for name in STEAM_HOME STEAM_GAMES_ROOT STEAM_DOT; do
+  require_env "$name"
+done
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+RUNTIME_DIR="$STEAM_HOME/steam-runtime-steamrt-arm64"
+CLIENT_DIR="$STEAM_HOME/steamrtarm64"
+RUNTIME_TAR_URL="https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
+STEAM_BETA="${STEAM_BETA:-steamdeck_stable}"
+STEAM_MANIFEST_URL="https://client-update.fastly.steamstatic.com/steam_client_${STEAM_BETA}_linuxarm64"
+STEAM_CDN="https://client-update.steamstatic.com"
+PROTON_TOOL_NAME="proton-cachyos-11.0-20260601-slr-arm64"
+PROTON_SOURCE="@korriProtonCachyosArm64@"
+PROTON_LINK="$STEAM_HOME/compatibilitytools.d/$PROTON_TOOL_NAME"
+
+say() { printf '%s\n' "$*"; }
+run() {
+  if [ "$mode" = dry-run ]; then
+    printf 'would: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+fetch() {
+  local url="$1" dest="$2"
+  if [ "$mode" = dry-run ]; then
+    printf 'would: curl -fL --retry 5 -o %s %s\n' "$dest" "$url"
+  else
+    curl -fL --retry 5 --retry-delay 2 -o "$dest" "$url"
+  fi
+}
+
+# Steam's ARM64 client zips have shipped entries whose names contain literal
+# backslashes (for example `steamrtarm64\libs\...`) instead of directory
+# separators. `unzip` preserves those backslashes as filename bytes on Linux,
+# which leaves the real `steamrtarm64/` tree incomplete. Normalize those entries
+# immediately after extraction so the mutable client layout matches what Steam's
+# launcher expects. Marker for the colocated package check:
+# korri-normalize-backslash-zip-entries
+normalize_backslash_zip_entries() {
+  local root="$1" path rel normalized dest dest_dir
+  [ "$mode" = apply ] || return 0
+
+  while IFS= read -r -d '' path; do
+    rel="${path#"$root/"}"
+    normalized="${rel//\\//}"
+    [ "$rel" != "$normalized" ] || continue
+    dest="$root/$normalized"
+    dest_dir="$(dirname -- "$dest")"
+    mkdir -p "$dest_dir"
+    if [ -e "$dest" ]; then
+      rm -rf -- "$path"
+    else
+      mv -- "$path" "$dest"
+    fi
+  done < <(find "$root" -depth -name '*\\*' -print0)
+
+  find "$root" -depth -type d -empty -delete 2>/dev/null || true
+}
+
+install_runtime() {
+  if [ -d "$RUNTIME_DIR" ]; then
+    say "runtime already present: $RUNTIME_DIR"
+    return 0
+  fi
+
+  local tar_path="$STEAM_HOME/steam-runtime-steamrt-arm64.tar.xz"
+  run mkdir -p "$STEAM_HOME"
+  fetch "$RUNTIME_TAR_URL" "$tar_path"
+  run tar -xf "$tar_path" -C "$STEAM_HOME"
+  run rm -f "$tar_path"
+}
+
+link_runtime_libibus() {
+  local target=""
+  if [ "$mode" = apply ]; then
+    target=$(find "$RUNTIME_DIR" -path '*/files/lib/aarch64-linux-gnu/libibus-1.0.so.5.*' -type f | sort | head -n 1)
+    if [ -z "$target" ]; then
+      echo "error: could not find runtime libibus under $RUNTIME_DIR" >&2
+      exit 1
+    fi
+  else
+    target="$RUNTIME_DIR/steamrt3c_platform_*/files/lib/aarch64-linux-gnu/libibus-1.0.so.5.*"
+  fi
+  run mkdir -p "$STEAM_HOME/lib/aarch64-linux-gnu"
+  run ln -sf "$target" "$STEAM_HOME/lib/aarch64-linux-gnu/libibus-1.0.so.5"
+}
+
+resolve_client_zip() {
+  local manifest target_file
+  manifest=$(curl -fsSL "$STEAM_MANIFEST_URL" | strings)
+  target_file=$(printf '%s\n' "$manifest" \
+    | grep -Eo 'bins_linuxarm64_linuxarm64\.zip\.[^"[:space:]]+' \
+    | grep -v '\.vz\.' \
+    | head -n 1)
+  if [ -z "$target_file" ]; then
+    echo "error: could not resolve ARM64 Steam client zip from $STEAM_MANIFEST_URL" >&2
+    exit 1
+  fi
+  printf '%s\n' "$target_file"
+}
+
+install_client() {
+  if [ -x "$CLIENT_DIR/steam" ]; then
+    say "client already present: $CLIENT_DIR/steam"
+    return 0
+  fi
+
+  local target_file zip_path
+  run mkdir -p "$STEAM_HOME"
+  if [ "$mode" = dry-run ]; then
+    say "would: resolve ARM64 client zip from $STEAM_MANIFEST_URL"
+    target_file="bins_linuxarm64_linuxarm64.zip.<resolved>"
+  else
+    target_file=$(resolve_client_zip)
+  fi
+  zip_path="$STEAM_HOME/linuxarm64.zip"
+  fetch "$STEAM_CDN/$target_file" "$zip_path"
+  run unzip -o "$zip_path" -d "$STEAM_HOME"
+  normalize_backslash_zip_entries "$STEAM_HOME"
+  run rm -f "$zip_path"
+  run chmod +x "$CLIENT_DIR/steam"
+}
+
+install_links_and_metadata() {
+  run mkdir -p "$STEAM_GAMES_ROOT" "$STEAM_DOT" "$STEAM_HOME/compatibilitytools.d"
+  run rm -f "$STEAM_HOME/compatibilitytools.d/Proton11ARM"
+  run ln -sfn "$PROTON_SOURCE/" "$PROTON_LINK"
+  STEAM_BETA="$STEAM_BETA" "$script_dir/steam-arm64-bootstrap" "--$mode"
+}
+
+say "steam-arm64-seed mode=$mode"
+say "STEAM_HOME=$STEAM_HOME"
+say "STEAM_GAMES_ROOT=$STEAM_GAMES_ROOT"
+say "STEAM_DOT=$STEAM_DOT"
+say "runtime-url=$RUNTIME_TAR_URL"
+say "STEAM_BETA=$STEAM_BETA"
+say "client-manifest-url=$STEAM_MANIFEST_URL"
+say "client-cdn-base=$STEAM_CDN"
+
+install_runtime
+link_runtime_libibus
+install_client
+install_links_and_metadata
+
+say "done"

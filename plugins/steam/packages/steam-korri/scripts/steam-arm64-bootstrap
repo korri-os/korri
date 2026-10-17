@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-arm64-bootstrap [--dry-run|--apply]
+
+Prepare package-owned Steam ARM64 metadata in caller-provided mutable paths.
+This is not a Steam launcher and does not start Steam, FEX, Gamescope, Sway, or
+system services.
+
+Required environment:
+  STEAM_HOME        Steam client home to prepare
+  STEAM_GAMES_ROOT  Steam library root to create
+  STEAM_DOT         Steam dot-directory for registry metadata
+
+Optional environment:
+  STEAM_BETA        Steam client tracking channel to write (default: steamdeck_stable)
+
+Modes:
+  --dry-run         Print intended actions without writing anything (default)
+  --apply           Perform metadata/resource writes
+EOF
+}
+
+mode=dry-run
+case "${1:-}" in
+  ""|--dry-run) mode=dry-run ;;
+  --apply) mode=apply ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  if [ -z "$value" ]; then
+    echo "error: $name must be set explicitly" >&2
+    exit 2
+  fi
+}
+
+for name in STEAM_HOME STEAM_GAMES_ROOT STEAM_DOT; do
+  require_env "$name"
+done
+
+STEAM_BETA="${STEAM_BETA:-steamdeck_stable}"
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+prefix=$(CDPATH='' cd -- "$script_dir/.." && pwd)
+resource_dir="$prefix/share/steam-rocknix-bootstrap/resources"
+
+for resource in compatibilitytool.vdf registry.vdf; do
+  if [ ! -f "$resource_dir/$resource" ]; then
+    echo "error: missing package resource: $resource_dir/$resource" >&2
+    exit 1
+  fi
+done
+
+say() { printf '%s\n' "$*"; }
+run() {
+  if [ "$mode" = dry-run ]; then
+    printf 'would: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+atomic_copy() {
+  local src="$1" dest="$2" tmp
+  tmp="$dest.tmp.$$"
+  if [ "$mode" = dry-run ]; then
+    printf 'would: install %s -> %s\n' "$src" "$dest"
+  else
+    mkdir -p "$(dirname -- "$dest")"
+    cp "$src" "$tmp"
+    mv -f "$tmp" "$dest"
+  fi
+}
+
+atomic_write() {
+  local dest="$1" tmp
+  tmp="$dest.tmp.$$"
+  if [ "$mode" = dry-run ]; then
+    printf 'would: write %s\n' "$dest"
+    cat
+  else
+    mkdir -p "$(dirname -- "$dest")"
+    cat > "$tmp"
+    mv -f "$tmp" "$dest"
+  fi
+}
+
+say "steam-arm64-bootstrap mode=$mode"
+say "STEAM_HOME=$STEAM_HOME"
+say "STEAM_GAMES_ROOT=$STEAM_GAMES_ROOT"
+say "STEAM_DOT=$STEAM_DOT"
+say "STEAM_BETA=$STEAM_BETA"
+say "runtime-url=https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
+say "client-manifest-url=https://client-update.fastly.steamstatic.com/steam_client_${STEAM_BETA}_linuxarm64"
+say "client-cdn-base=https://client-update.steamstatic.com"
+
+run mkdir -p \
+  "$STEAM_HOME/package" \
+  "$STEAM_HOME/compatibilitytools.d" \
+  "$STEAM_GAMES_ROOT" \
+  "$STEAM_DOT"
+
+# Keep the conventional ~/.steam layout pointing at the Korri-managed Steam
+# home. Proton/lsteamclient and Steam Runtime helpers still discover pieces via
+# these historic names even when STEAM_HOME is explicit.
+run ln -sfn "$STEAM_HOME" "$STEAM_DOT/root"
+run ln -sfn "$STEAM_HOME" "$STEAM_DOT/steam"
+run ln -sfn "$STEAM_HOME/ubuntu12_32" "$STEAM_DOT/bin32"
+run ln -sfn "$STEAM_HOME/ubuntu12_64" "$STEAM_DOT/bin64"
+run ln -sfn "$STEAM_HOME/linux32" "$STEAM_DOT/sdk32"
+run ln -sfn "$STEAM_HOME/linux64" "$STEAM_DOT/sdk64"
+run ln -sfn "$STEAM_HOME/linuxarm64" "$STEAM_DOT/sdkarm64"
+
+printf '%s\n' "$STEAM_BETA" | atomic_write "$STEAM_HOME/package/beta"
+atomic_copy "$resource_dir/compatibilitytool.vdf" "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
+run rm -f "$STEAM_HOME/compatibilitytools.d/Proton11ARM"
+atomic_copy "$resource_dir/registry.vdf" "$STEAM_DOT/registry.vdf"
+
+manifest_file="$STEAM_HOME/package/steam_client_${STEAM_BETA}_linuxarm64.manifest"
+manifest_url="https://client-update.fastly.steamstatic.com/steam_client_${STEAM_BETA}_linuxarm64"
+# Do not pin the client manifest to the locally-installed version. Doing so made
+# Steam re-install the stale seeded client every boot and never fetch the
+# current version, looping the updater. Seed the current server manifest when
+# reachable so Steam can self-update and converge; otherwise leave manifest
+# management to Steam / the launch-time repair.
+if [ "$mode" = apply ]; then
+  manifest_tmp="$manifest_file.tmp.$$"
+  if curl -fsSL --connect-timeout 10 --max-time 30 "$manifest_url" -o "$manifest_tmp" 2>/dev/null \
+    && grep -aq '"version"' "$manifest_tmp"; then
+    mv -f "$manifest_tmp" "$manifest_file"
+    say "seeded current server manifest -> $manifest_file"
+  else
+    rm -f "$manifest_tmp"
+    say "notice: server manifest unreachable; leaving client manifest to Steam/launch repair"
+  fi
+else
+  say "would: seed current server manifest from $manifest_url -> $manifest_file"
+fi
+
+say "done"

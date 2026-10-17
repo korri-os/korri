@@ -1,0 +1,5 @@
+"UserLocalConfigStore"
+{
+    "friends" { "PersonaName" "Keep Me" }
+    "Software" { "Valve" { "Steam" { "apps" { "999" { "LaunchOptions" "-keep" } } } } }
+}
