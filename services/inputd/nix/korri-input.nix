@@ -39,6 +39,8 @@ let
     "system-panel"
     "volume-up"
     "volume-down"
+    "brightness-up"
+    "brightness-down"
     "screen-switch"
     "toggle-bottom-screen"
     "toggle-top-screen"
@@ -55,6 +57,8 @@ let
     system-panel = "KORRI_INPUTD_SYSTEM_PANEL";
     volume-up = "KORRI_INPUTD_VOLUME_UP";
     volume-down = "KORRI_INPUTD_VOLUME_DOWN";
+    brightness-up = "KORRI_INPUTD_BRIGHTNESS_UP";
+    brightness-down = "KORRI_INPUTD_BRIGHTNESS_DOWN";
     screen-switch = "KORRI_INPUTD_SCREEN_SWITCH";
     toggle-bottom-screen = "KORRI_INPUTD_TOGGLE_BOTTOM_SCREEN";
     toggle-top-screen = "KORRI_INPUTD_TOGGLE_TOP_SCREEN";

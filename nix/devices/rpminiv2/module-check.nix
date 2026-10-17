@@ -367,6 +367,35 @@ assert
     "@DEFAULT_AUDIO_SINK@"
     "5%-"
   ];
+# Home+volume steps brightness by starting one root unit per direction.
+assert lib.all
+  (
+    { name, unit, step }:
+    c.services.korriLinuxInput.inputd.actions.${name}.command == [
+      "${c.systemd.package}/bin/systemctl"
+      "start"
+      "${unit}.service"
+    ]
+    && lib.hasSuffix "/bin/korri-backlight-step ${step}" c.systemd.services.${unit}.serviceConfig.ExecStart
+    && c.systemd.services.${unit}.serviceConfig.Type == "oneshot"
+    && c.systemd.services.${unit}.serviceConfig.CapabilityBoundingSet == ""
+    && !(c.systemd.services.${unit}.serviceConfig.ProtectKernelTunables or false)
+    && (c.systemd.services.${unit}.wantedBy or [ ]) == [ ]
+  )
+  [
+    {
+      name = "brightness-up";
+      unit = "korri-backlight-up";
+      step = "+5";
+    }
+    {
+      name = "brightness-down";
+      unit = "korri-backlight-down";
+      step = "-5";
+    }
+  ];
+assert lib.hasInfix ''["korri-backlight-down.service","korri-backlight-up.service"].indexOf(action.lookup("unit"))''
+  c.security.polkit.extraConfig;
 # wpctl may reach only its native PipeWire socket, not the runtime user's
 # home, user bus, or other runtime files. Audio absence must not block inputd.
 assert c.services.pipewire.socketActivation;

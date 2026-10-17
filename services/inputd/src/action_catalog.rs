@@ -94,10 +94,6 @@ pub enum Trigger {
     Activity,
     Tap(Control),
     Press(Control),
-    /// A bare press, or the same control inside one of the chords. The chord
-    /// consumes its other controls, so Home+volume never opens the system
-    /// panel when Home is released.
-    PressAndChords(Control, &'static [Chord]),
     Chords(&'static [Chord]),
     ChordsAndConfiguredBackTap(&'static [Chord]),
     ConfiguredBackTap,
@@ -146,11 +142,11 @@ const WORKSPACE_NEXT: &[Chord] = &[
         exact: false,
     },
 ];
-const VOLUME_UP: &[Chord] = &[Chord {
+const BRIGHTNESS_UP: &[Chord] = &[Chord {
     controls: HOME_VOLUME_UP,
     exact: false,
 }];
-const VOLUME_DOWN: &[Chord] = &[Chord {
+const BRIGHTNESS_DOWN: &[Chord] = &[Chord {
     controls: HOME_VOLUME_DOWN,
     exact: false,
 }];
@@ -205,25 +201,25 @@ pub const ACTION_CATALOG: &[ActionCatalogEntry] = &[
     entry(
         ActionId::VolumeUp,
         "KORRI_INPUTD_VOLUME_UP",
-        Trigger::PressAndChords(Control::VolumeUp, VOLUME_UP),
+        Trigger::Press(Control::VolumeUp),
         DispatchMode::Direct,
     ),
     entry(
         ActionId::VolumeDown,
         "KORRI_INPUTD_VOLUME_DOWN",
-        Trigger::PressAndChords(Control::VolumeDown, VOLUME_DOWN),
+        Trigger::Press(Control::VolumeDown),
         DispatchMode::Direct,
     ),
     entry(
         ActionId::BrightnessUp,
         "KORRI_INPUTD_BRIGHTNESS_UP",
-        Trigger::Unsupported,
+        Trigger::Chords(BRIGHTNESS_UP),
         DispatchMode::Direct,
     ),
     entry(
         ActionId::BrightnessDown,
         "KORRI_INPUTD_BRIGHTNESS_DOWN",
-        Trigger::Unsupported,
+        Trigger::Chords(BRIGHTNESS_DOWN),
         DispatchMode::Direct,
     ),
     entry(

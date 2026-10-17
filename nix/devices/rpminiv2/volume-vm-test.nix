@@ -1,4 +1,5 @@
-# Exercise the emitted inputd mount sandbox with real PipeWire and wpctl.
+# Exercise the emitted inputd mount sandbox with real PipeWire and wpctl, and
+# the brightness actions' polkit route to their root backlight units.
 # Only the executable/identity are replaced for this x86 test; ARM binaries,
 # controller devices and the board kernel are not needed to test this boundary.
 { pkgs, configuration }:
@@ -17,6 +18,25 @@ let
       ++ [ "${pkgs.wireplumber}/bin/wpctl" ]
       ++ builtins.tail actions.${name}.command
     );
+  systemctl = "${pkgs.systemd}/bin/systemctl";
+  brightnessCommand =
+    name: lib.escapeShellArgs ([ systemctl ] ++ builtins.tail actions.${name}.command);
+  # The production units with this system's script. A VM has no backlight, so
+  # the script steps a fake one; only the test adds that writable path.
+  backlightStep = import ../../product/backlight-step.nix { inherit pkgs; };
+  backlightUnit =
+    name:
+    let
+      unit = c.systemd.services.${name};
+    in
+    {
+      inherit (unit) description;
+      serviceConfig = unit.serviceConfig // {
+        ExecStart = "${lib.getExe backlightStep} ${lib.last (lib.splitString " " unit.serviceConfig.ExecStart)}";
+        Environment = "KORRI_BACKLIGHT_ROOT=/run/fake-backlight";
+        ReadWritePaths = [ "/run/fake-backlight" ];
+      };
+    };
 in
 pkgs.testers.runNixOSTest {
   name = "rpminiv2-volume";
@@ -79,6 +99,10 @@ pkgs.testers.runNixOSTest {
             Group = host.runtimeGroup;
           };
       };
+      security.polkit.enable = true;
+      security.polkit.extraConfig = c.security.polkit.extraConfig;
+      systemd.services.korri-backlight-up = backlightUnit "korri-backlight-up";
+      systemd.services.korri-backlight-down = backlightUnit "korri-backlight-down";
       environment.systemPackages = [
         pkgs.wireplumber
         pkgs.util-linux
@@ -138,6 +162,18 @@ pkgs.testers.runNixOSTest {
         volume("0.45")
         machine.succeed(sandbox(${builtins.toJSON (command "volume-down")}))
         volume("0.40")
+
+    with subtest("both production brightness actions start only their own root unit"):
+        panel = "/run/fake-backlight/panel"
+        machine.succeed(f"mkdir -p {panel} && echo 100 > {panel}/max_brightness && echo 50 > {panel}/brightness")
+        machine.succeed(sandbox(${builtins.toJSON (brightnessCommand "brightness-up")}))
+        assert machine.succeed(f"cat {panel}/brightness").strip() == "55"
+        machine.succeed(sandbox(${builtins.toJSON (brightnessCommand "brightness-down")}))
+        assert machine.succeed(f"cat {panel}/brightness").strip() == "50"
+        # The grant is start-only and names only the two backlight units.
+        machine.fail(sandbox("${systemctl} --no-ask-password stop korri-backlight-up.service"))
+        machine.fail(sandbox("${systemctl} --no-ask-password start volume-sandbox.service"))
+        assert machine.succeed(f"cat {panel}/brightness").strip() == "50"
 
     with subtest("socket activation preserves the bound inode across daemon restart"):
         inode = machine.succeed(f"stat -c %i {runtime}/pipewire-0").strip()

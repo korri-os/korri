@@ -1,5 +1,5 @@
-# Product control actions every device gets: volume keys, controller activity
-# keeping the screen awake, and display idle. Moved unchanged from the RP Mini V2
+# Product control actions every device gets: volume keys, Home+volume
+# brightness, controller activity keeping the screen awake, and display idle. Moved unchanged from the RP Mini V2
 # (portal.nix, 2daf0930c) so no device can ship without them.
 #
 # A device supplies only hardware facts: its InputPlumber data decides whether
@@ -31,6 +31,43 @@ let
     ];
     environment.XDG_RUNTIME_DIR = runtimeDir;
   };
+  # Inputd actions run as the runtime user with no capabilities, and inputd's
+  # own unit keeps /sys read-only. Each brightness action may only start its
+  # one root unit, which writes the root-owned sysfs brightness nodes.
+  backlightStep = import ./backlight-step.nix { inherit pkgs; };
+  backlightUnits = {
+    korri-backlight-up = "+5";
+    korri-backlight-down = "-5";
+  };
+  backlightUnit = step: {
+    description = "Korri backlight step ${step}%";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${lib.getExe backlightStep} ${step}";
+      # Root owns the brightness nodes, so writing them needs no capability.
+      # ProtectSystem=strict leaves /sys writable; ProtectKernelTunables would not.
+      CapabilityBoundingSet = "";
+      NoNewPrivileges = true;
+      PrivateNetwork = true;
+      RestrictAddressFamilies = "none";
+      PrivateTmp = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      ProtectKernelModules = true;
+      ProtectKernelLogs = true;
+      ProtectControlGroups = true;
+      LockPersonality = true;
+      MemoryDenyWriteExecute = true;
+      SystemCallArchitectures = "native";
+    };
+  };
+  backlight = unit: {
+    command = [
+      "${config.systemd.package}/bin/systemctl"
+      "start"
+      "${unit}.service"
+    ];
+  };
 in
 {
   # InputPlumber routes volume keys to inputd's direct actions. Run wpctl as
@@ -48,7 +85,25 @@ in
     ];
     volume-up = volume "5%+";
     volume-down = volume "5%-";
+    brightness-up = backlight "korri-backlight-up";
+    brightness-down = backlight "korri-backlight-down";
   };
+
+  systemd.services.korri-backlight-up = backlightUnit backlightUnits.korri-backlight-up;
+  systemd.services.korri-backlight-down = backlightUnit backlightUnits.korri-backlight-down;
+
+  # Only the runtime user (inputd's action identity) may start, and only start,
+  # the two backlight units.
+  security.polkit.extraConfig = ''
+    polkit.addRule(function(action, subject) {
+      if (action.id == "org.freedesktop.systemd1.manage-units" &&
+          subject.user == "${host.runtimeUser}" &&
+          action.lookup("verb") == "start" &&
+          ${builtins.toJSON (map (unit: "${unit}.service") (builtins.attrNames backlightUnits))}.indexOf(action.lookup("unit")) >= 0) {
+        return polkit.Result.YES;
+      }
+    });
+  '';
 
   # Keep home directories and the rest of /run/user hidden. Only wpctl's native
   # socket crosses inputd's mount namespace; no user bus is needed. The user
