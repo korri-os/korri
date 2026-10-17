@@ -34,7 +34,7 @@ The explicit, consented replacement of a device owner by a different person key.
 _Avoid_: login, account transfer, sign in
 
 **Live session**:
-The one exact game launch a device holds as active. Every session control names it and is refused for any other launch.
+The one exact game launch a device holds as active. Every session control names it and is refused for any other launch. Its launch modifiers belong to it: they freeze, return and end with the game.
 _Avoid_: current game, running process
 
 **Controller seat**:
@@ -48,6 +48,10 @@ _Avoid_: queued game, loading game
 **Cancel**:
 Stopping a launch before its game takes the screen. A pending launch never starts, and a live session that has not taken the screen yet is ended.
 _Avoid_: abort, kill, quit
+
+**Launch modifier**:
+A plugin that changes how another plugin's game launch runs, without being the game's runner. Gamescope is one.
+_Avoid_: wrapper, launch companion
 
 **Seat reservation**:
 A controller's claim to its seat during a live session, including while it is disconnected or the person leaves the session.
