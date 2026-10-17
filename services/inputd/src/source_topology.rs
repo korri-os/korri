@@ -4,7 +4,8 @@
 //! Mini V2 profile (`nix/devices/rpminiv2/inputplumber/devices/
 //! 01-retroid-pocket-mini-v2.yaml`) merges its gamepad with two keyboard-only
 //! volume-key devices. Only more than one gamepad-class source makes the
-//! composite ambiguous.
+//! composite ambiguous. The RG353M and RG DS profiles also merge an adc-keys
+//! device that carries only the Fn key as `BTN_MODE`, which they map to Guide.
 //!
 //! Inputd runs unprivileged and must not open raw `/dev/input` nodes. It reads
 //! the world-readable sysfs capability bitmaps instead:
@@ -17,7 +18,10 @@
 //! - the KEY bitmap sets no joystick or gamepad button: the `BTN_JOYSTICK`
 //!   and `BTN_GAMEPAD` blocks (0x120-0x13f, which contains `BTN_SOUTH`
 //!   0x130), `BTN_DPAD_UP` to `BTN_DPAD_RIGHT` (0x220-0x223), or
-//!   `BTN_TRIGGER_HAPPY1` to `BTN_TRIGGER_HAPPY40` (0x2c0-0x2e7);
+//!   `BTN_TRIGGER_HAPPY1` to `BTN_TRIGGER_HAPPY40` (0x2c0-0x2e7), with one
+//!   exception: `BTN_MODE` (0x13c) does not count. A device with only that
+//!   key is a lone Fn/Guide key, not a second gamepad. A gamepad that also
+//!   reports `BTN_MODE` still sets other bits in these ranges;
 //! - the ABS bitmap sets no axis at all.
 //!
 //! Zero gamepad-class sources means the gamepad is missing, even when
@@ -41,6 +45,7 @@ pub const SYSTEM_SYSFS_ROOT: &str = "/sys";
 
 const BITS_PER_WORD: usize = 64;
 const GAMEPAD_KEY_RANGES: [(usize, usize); 3] = [(0x120, 0x13f), (0x220, 0x223), (0x2c0, 0x2e7)];
+const BTN_MODE: usize = 0x13c;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceClass {
@@ -99,9 +104,9 @@ impl SysfsSourceClassifier {
         };
         let keys = read("key")?;
         let axes = read("abs")?;
-        let has_gamepad_key = GAMEPAD_KEY_RANGES
-            .iter()
-            .any(|&(first, last)| (first..=last).any(|bit| bitmap_has(&keys, bit)));
+        let has_gamepad_key = GAMEPAD_KEY_RANGES.iter().any(|&(first, last)| {
+            (first..=last).any(|bit| bit != BTN_MODE && bitmap_has(&keys, bit))
+        });
         let has_axis = axes.iter().any(|word| *word != 0);
         Some(!has_gamepad_key && !has_axis)
     }
@@ -326,6 +331,44 @@ mod tests {
                 "{event}"
             );
         }
+    }
+
+    // BTN_MODE (0x13c) only: the RG353M `adc-keys` and RG DS
+    // `adc-keys-home` devices in their upstream device trees.
+    const LONE_MODE_KEY: &str = "1000000000000000 0 0 0 0";
+
+    #[test]
+    fn a_lone_mode_key_is_not_gamepad_class() {
+        let root = mini_v2_sysfs();
+        write_source(root.path(), "event5", Some(LONE_MODE_KEY), Some(NO_AXES));
+        // BTN_MODE beside BTN_SOUTH is still a gamepad.
+        write_source(
+            root.path(),
+            "event6",
+            Some("1001000000000000 0 0 0 0"),
+            Some(NO_AXES),
+        );
+        let classifier = SysfsSourceClassifier::new(root.path());
+        assert_eq!(
+            classifier.classify("/dev/input/event5"),
+            SourceClass::NonGamepad
+        );
+        assert_eq!(
+            classifier.classify("/dev/input/event6"),
+            SourceClass::Gamepad
+        );
+        assert_eq!(
+            classifier.topology(&paths(&[
+                "/dev/input/event4",
+                "/dev/input/event3",
+                "/dev/input/event5",
+            ])),
+            SourceTopology::OneGamepad
+        );
+        assert_eq!(
+            classifier.topology(&paths(&["/dev/input/event3", "/dev/input/event5"])),
+            SourceTopology::MissingGamepad
+        );
     }
 
     #[test]

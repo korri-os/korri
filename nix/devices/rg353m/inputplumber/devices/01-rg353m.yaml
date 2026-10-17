@@ -16,8 +16,11 @@ matches:
           value: "anbernic,rg353p*"
 # One gamepad source keeps inputd's one-source ownership invariant. Sticks are
 # a separate device on this kernel and are deliberately not claimed. The
-# volume keys are a separate keyboard source, as on the RP Mini V2.
-maximum_sources: 2
+# volume keys are a separate keyboard source, as on the RP Mini V2. The F key
+# is a third source: adc-keys names its device after the DT node ("adc-keys")
+# and sets phys "adc-keys/input0". It carries only BTN_MODE, which inputd's
+# source topology does not count as a second gamepad.
+maximum_sources: 3
 source_devices:
   - group: gamepad
     evdev:
@@ -32,6 +35,12 @@ source_devices:
       phys_path: gpio-keys/input0
       handler: event*
     capability_map_id: anbernic_rg353m_volume
+  - group: gamepad
+    evdev:
+      name: adc-keys
+      phys_path: adc-keys/input0
+      handler: event*
+    capability_map_id: anbernic_rg353m_fn
 options:
   auto_manage: true
 # Same xb360 target selected by the legacy RK3566 composition. No keyboard

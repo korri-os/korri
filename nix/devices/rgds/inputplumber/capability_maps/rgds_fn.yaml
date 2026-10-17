@@ -1,0 +1,21 @@
+# The RG DS has no Guide button. rk3568-anbernic-rg-ds.dts puts its function
+# key (the Anbernic-logo button) alone on the adc-keys-home node: button-home,
+# linux,code BTN_MODE. Map it to Guide, as the H700 map does for its F key.
+# The Return key is KEY_HOME on gpio-keys-control and is not mapped here.
+version: 2
+kind: CapabilityMap
+name: RG DS Fn Key
+id: rgds_fn
+
+mapping:
+  - name: Guide Button
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: BTN_MODE
+          value_type: button
+    target_event:
+      gamepad:
+        button: Guide
+
+filtered_events: []

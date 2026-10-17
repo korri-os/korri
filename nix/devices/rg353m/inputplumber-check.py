@@ -45,8 +45,30 @@ assert profile["source_devices"] == [
         },
         "capability_map_id": "anbernic_rg353m_volume",
     },
+    {
+        "group": "gamepad",
+        "evdev": {
+            "name": "adc-keys",
+            "phys_path": "adc-keys/input0",
+            "handler": "event*",
+        },
+        "capability_map_id": "anbernic_rg353m_fn",
+    },
 ]
-assert profile["maximum_sources"] == 2
+assert profile["maximum_sources"] == 3
+# The F key is the only adc-keys button in rk3566-anbernic-rgxx3.dtsi and
+# sends BTN_MODE. It is the Guide button on this device.
+fn_key = load("capability_maps/anbernic_rg353m_fn.yaml")
+assert fn_key["id"] == profile["source_devices"][2]["capability_map_id"]
+assert [
+    (mapping["source_events"], mapping["target_event"]) for mapping in fn_key["mapping"]
+] == [
+    (
+        [{"evdev": {"event_type": "KEY", "event_code": "BTN_MODE", "value_type": "button"}}],
+        {"gamepad": {"button": "Guide"}},
+    )
+]
+assert fn_key["filtered_events"] == []
 # Grounded in the card's rk3566-anbernic-rg353p.dtb (2026-09-30): the
 # gpio-keys-vol node sends linux,code 0x73 and 0x72.
 volume = load("capability_maps/anbernic_rg353m_volume.yaml")

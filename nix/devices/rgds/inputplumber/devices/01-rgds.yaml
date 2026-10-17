@@ -5,6 +5,12 @@
 # /proc/device-tree/model reads "Anbernic RG DS". The analog stick is a
 # separate adc-joystick device and the lid switch is a separate gpio-keys
 # device; neither is claimed here.
+#
+# Read from rk3568-anbernic-rg-ds.dts, not yet observed on the device: the
+# volume keys are the gpio-keys-volume node, and the function key is the only
+# key on the adc-keys-home node (BTN_MODE). gpio_keys and adc-keys name each
+# device after its node; their phys paths are "gpio-keys/input0" and
+# "adc-keys/input0".
 version: 1
 kind: CompositeDevice
 name: Anbernic RG DS Layout
@@ -16,8 +22,10 @@ matches:
           value: "Anbernic RG DS"
         - name: compatible
           value: "anbernic,rg-ds*"
-# Keep inputd's one-source ownership invariant, as the RG353M layout does.
-maximum_sources: 1
+# One gamepad source keeps inputd's one-source ownership invariant, as the
+# RG353M layout does. The function key carries only BTN_MODE, which inputd's
+# source topology does not count as a second gamepad.
+maximum_sources: 3
 source_devices:
   - group: gamepad
     evdev:
@@ -25,6 +33,18 @@ source_devices:
       phys_path: gpio-keys/input0
       handler: event*
     capability_map_id: rgds_map
+  - group: keyboard
+    evdev:
+      name: gpio-keys-volume
+      phys_path: gpio-keys/input0
+      handler: event*
+    capability_map_id: rgds_volume
+  - group: gamepad
+    evdev:
+      name: adc-keys-home
+      phys_path: adc-keys/input0
+      handler: event*
+    capability_map_id: rgds_fn
 options:
   auto_manage: true
 # The browser Gamepad API reads this target directly; no keyboard translation

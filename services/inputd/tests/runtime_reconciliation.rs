@@ -290,6 +290,8 @@ fn send_dbus_at(
         Control::R1 => "ui_r1",
         Control::Start => "ui_option",
         Control::Select => "ui_select",
+        Control::VolumeUp => "ui_volume_up",
+        Control::VolumeDown => "ui_volume_down",
         _ => panic!("test helper has no DBus capability for {control:?}"),
     };
     let owner = runtime.dbus_owner().expect("DBus owner").to_owned();
@@ -442,6 +444,34 @@ fn duplicated_non_destructive_controls_dispatch_once_per_chord_lifecycle() {
     assert_eq!(second[0].id, ActionId::WorkspacePrev);
 }
 
+#[test]
+fn guide_with_volume_changes_volume_every_press_and_never_opens_the_panel() {
+    for (control, id) in [
+        (Control::VolumeUp, ActionId::VolumeUp),
+        (Control::VolumeDown, ActionId::VolumeDown),
+    ] {
+        let mut provider = InMemoryTargetProvider::with(vec![target("event10")]);
+        let mut runtime = ready_runtime(&mut provider);
+
+        assert!(send_dbus(&mut runtime, Control::Home, ControlTransition::Pressed).is_empty());
+        for _ in 0..3 {
+            let pressed = send_dbus(&mut runtime, control, ControlTransition::Pressed);
+            assert_eq!(pressed.len(), 1, "{control:?} fires once per press");
+            assert_eq!(pressed[0].id, id);
+            assert_eq!(pressed[0].dispatch_mode, DispatchMode::Direct);
+            assert!(send_dbus(&mut runtime, control, ControlTransition::Released).is_empty());
+        }
+        assert!(
+            send_dbus(&mut runtime, Control::Home, ControlTransition::Released).is_empty(),
+            "Home+volume consumes the Home tap"
+        );
+
+        let bare = send_dbus(&mut runtime, control, ControlTransition::Pressed);
+        assert_eq!(bare.len(), 1);
+        assert_eq!(bare[0].id, id);
+    }
+}
+
 fn press_control(
     runtime: &mut Runtime,
     control: Control,
@@ -502,6 +532,19 @@ fn legacy_controller_action_matrix_is_reachable_and_catalog_typed() {
                 emitted.extend(runtime.handle_evdev(1, code, 0));
             }
             Trigger::Press(control) => emitted.extend(press_control(&mut runtime, control)),
+            Trigger::PressAndChords(control, chords) => {
+                let bare = press_control(&mut runtime, control);
+                assert!(
+                    bare.iter().any(|action| action.id == entry.id),
+                    "bare press was unreachable: {}",
+                    entry.id
+                );
+                let mut provider = InMemoryTargetProvider::with(vec![target("event10")]);
+                let mut runtime = ready_runtime_with_routes(&mut provider, routes);
+                for control in chords[0].controls {
+                    emitted.extend(press_control(&mut runtime, *control));
+                }
+            }
             Trigger::Chords(chords) | Trigger::ChordsAndConfiguredBackTap(chords) => {
                 let chord = chords[0];
                 if entry.dispatch_mode == DispatchMode::ExactStop {

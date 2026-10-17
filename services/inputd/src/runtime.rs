@@ -87,6 +87,16 @@ impl Policies {
                 Trigger::Press(control) => {
                     direct_presses.insert(control, entry.id);
                 }
+                Trigger::PressAndChords(control, chords) => {
+                    direct_presses.insert(control, entry.id);
+                    for chord in chords {
+                        shortcuts.push(ShortcutDefinition::non_destructive(
+                            entry.id.as_str(),
+                            chord.controls.iter().copied(),
+                            chord.exact,
+                        ));
+                    }
+                }
                 Trigger::Chords(chords) | Trigger::ChordsAndConfiguredBackTap(chords) => {
                     for chord in chords {
                         if entry.dispatch_mode == DispatchMode::ExactStop {

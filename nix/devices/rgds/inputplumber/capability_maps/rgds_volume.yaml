@@ -1,0 +1,28 @@
+# rk3568-anbernic-rg-ds.dts has a gpio-keys-volume node: vol-up-key sends
+# KEY_VOLUMEUP and vol-down-key sends KEY_VOLUMEDOWN. Route these keys to
+# inputd's direct actions, the same shape as the RG353M and RP Mini V2 maps.
+version: 2
+kind: CapabilityMap
+name: RG DS Hardware Volume
+id: rgds_volume
+
+mapping:
+  - name: Volume Up
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEUP
+          value_type: button
+    target_event:
+      dbus: ui_volume_up
+
+  - name: Volume Down
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: KEY_VOLUMEDOWN
+          value_type: button
+    target_event:
+      dbus: ui_volume_down
+
+filtered_events: []

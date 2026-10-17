@@ -1,0 +1,21 @@
+# The RG353M has no Guide button. Its F (function) key is the only key on the
+# adc-keys node of the upstream rk3566-anbernic-rgxx3.dtsi, which the card's
+# rk3566-anbernic-rg353p.dtb includes: button-mode, label "MODE", linux,code
+# BTN_MODE. Map it to Guide, as the H700 map does for its F key.
+version: 2
+kind: CapabilityMap
+name: Anbernic RG353M Fn Key
+id: anbernic_rg353m_fn
+
+mapping:
+  - name: Guide Button
+    source_events:
+      - evdev:
+          event_type: KEY
+          event_code: BTN_MODE
+          value_type: button
+    target_event:
+      gamepad:
+        button: Guide
+
+filtered_events: []
