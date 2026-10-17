@@ -82,6 +82,9 @@ pub struct MigrationReport {
     pub plan: MigrationPlan,
     pub completed_steps: Vec<String>,
     pub moved: Vec<FileMove>,
+    /// Files copied out of the read-only Nix store. Undo deletes `to`.
+    #[serde(default)]
+    pub copied: Vec<FileMove>,
     pub error: Option<String>,
 }
 
@@ -1040,8 +1043,15 @@ fn apply_with_scan(
                 .parent()
                 .ok_or_else(|| step_error("move target"))?;
             fs::create_dir_all(parent).map_err(|_| step_error("create move directory"))?;
-            rename_no_replace(&movement.from, &movement.to)?;
-            report.moved.push(movement.clone());
+            if movement.from.starts_with(NIX_STORE) {
+                // A plugin's prepared file in the read-only store: copy it into
+                // its source and leave the store untouched.
+                copy_no_replace(&movement.from, &movement.to)?;
+                report.copied.push(movement.clone());
+            } else {
+                rename_no_replace(&movement.from, &movement.to)?;
+                report.moved.push(movement.clone());
+            }
             write_json(report_file, &report)?;
         }
         complete(&mut report, report_file, "move-files")?;
@@ -1381,6 +1391,40 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), MigrationError> {
     }
     result
 }
+const NIX_STORE: &str = "/nix/store";
+
+/// Copies one regular file to a new name, never replacing an existing file.
+/// The copy is written beside the target and then renamed into place.
+fn copy_no_replace(from: &Path, to: &Path) -> Result<(), MigrationError> {
+    let metadata = fs::symlink_metadata(from).map_err(|_| step_error("copy source"))?;
+    if !metadata.is_file() {
+        return Err(step_error(
+            "only regular files are copied out of the Nix store",
+        ));
+    }
+    let parent = to.parent().ok_or_else(|| step_error("copy target"))?;
+    let temporary = parent.join(format!(
+        ".migration-copy-{:016x}.tmp",
+        rand::random::<u64>()
+    ));
+    let result = (|| {
+        let mut source = fs::File::open(from).map_err(|_| step_error("open copy source"))?;
+        let mut target = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o644)
+            .open(&temporary)
+            .map_err(|_| step_error("create copy"))?;
+        std::io::copy(&mut source, &mut target).map_err(|_| step_error("write copy"))?;
+        target.sync_all().map_err(|_| step_error("sync copy"))?;
+        rename_no_replace(&temporary, to)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 fn rename_no_replace(from: &Path, to: &Path) -> Result<(), MigrationError> {
     use std::os::unix::ffi::OsStrExt;
     let from = std::ffi::CString::new(from.as_os_str().as_bytes())
@@ -1986,6 +2030,33 @@ mod tests {
         )
         .is_err());
         assert_eq!(fs::read(file).unwrap(), before);
+    }
+
+    #[test]
+    fn store_files_are_copied_without_replacing_and_leave_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("read-only/cart.p8.png");
+        put(&source, b"cartridge");
+        let mut readonly = fs::metadata(&source).unwrap().permissions();
+        readonly.set_readonly(true);
+        fs::set_permissions(&source, readonly).unwrap();
+        let target = root.path().join("games/pico8/cart.p8.png");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        copy_no_replace(&source, &target).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"cartridge");
+        assert_eq!(fs::read(&source).unwrap(), b"cartridge");
+        assert!(!fs::metadata(&target).unwrap().permissions().readonly());
+        put(&target, b"player edit");
+        assert!(copy_no_replace(&source, &target).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"player edit");
+        assert_eq!(
+            fs::read_dir(target.parent().unwrap()).unwrap().count(),
+            1,
+            "no temporary copy is left behind"
+        );
+        assert!(copy_no_replace(root.path(), &root.path().join("games/dir")).is_err());
+        assert!(Path::new("/nix/store/abc-x/cart.p8.png").starts_with(NIX_STORE));
+        assert!(!Path::new("/nix/storeish/cart.p8.png").starts_with(NIX_STORE));
     }
 
     #[test]
