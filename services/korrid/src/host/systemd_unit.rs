@@ -1039,7 +1039,17 @@ impl SystemdLaunchUnitBackend {
                 "configured command is empty",
             ));
         }
-        let mut read_only_binds = String::from("/tmp/.X11-unix/X0");
+        let modifiers = crate::launcher::plugin_launch::has_modifiers(configured_command);
+        // An unwrapped game draws through the compositor's Xwayland display.
+        // A modifier such as nested Gamescope runs its own Xwayland and must
+        // create a fresh socket in the unit's private /tmp/.X11-unix. A
+        // read-only bind of X0 there turns that directory read-only and
+        // Gamescope finds no free display (it then crashes at start).
+        let mut read_only_binds = if modifiers {
+            String::new()
+        } else {
+            String::from("/tmp/.X11-unix/X0")
+        };
         if environment.get("PULSE_SERVER").map(String::as_str)
             == Some("unix:/run/korri-game-audio/native")
         {
@@ -1049,8 +1059,7 @@ impl SystemdLaunchUnitBackend {
                 self.runtime_uid
             ));
         }
-        let modifier_runtime = if crate::launcher::plugin_launch::has_modifiers(configured_command)
-        {
+        let modifier_runtime = if modifiers {
             let socket = self
                 .compositor_wayland_socket
                 .as_ref()
@@ -1093,7 +1102,7 @@ impl SystemdLaunchUnitBackend {
             "--property=AmbientCapabilities=".into(),
             "--property=PrivateTmp=yes".into(),
             "--property=PrivatePIDs=yes".into(),
-            format!("--property=BindReadOnlyPaths={read_only_binds}"),
+            format!("--property=BindReadOnlyPaths={}", read_only_binds.trim_start()),
             "--property=ProtectKernelTunables=yes".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),

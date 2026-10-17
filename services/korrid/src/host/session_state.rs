@@ -3360,10 +3360,18 @@ mod tests {
         for expected in [
             format!("--property=RuntimeDirectory=korri-game-{id}"),
             "--property=RuntimeDirectoryMode=0700".into(),
-            format!("--property=BindReadOnlyPaths=/tmp/.X11-unix/X0 /run/user/1001/korri-wayland:/run/korri-game-{id}/wayland-parent"),
+            format!("--property=BindReadOnlyPaths=/run/user/1001/korri-wayland:/run/korri-game-{id}/wayland-parent"),
             format!("--setenv=XDG_RUNTIME_DIR=/run/korri-game-{id}"),
             "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
         ] { assert!(with_modifiers.contains(&expected), "{with_modifiers:?}"); }
+        // Nested Gamescope runs its own Xwayland in the private /tmp; the
+        // compositor's X0 must not be bound there (it makes .X11-unix read-only).
+        assert!(!with_modifiers
+            .iter()
+            .any(|arg| arg.contains("/tmp/.X11-unix/X0")));
+        assert!(launch
+            .iter()
+            .any(|arg| arg == "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0"));
         assert!(!with_modifiers
             .iter()
             .any(|arg| arg.starts_with("--setenv=SWAYSOCK=")
