@@ -154,5 +154,58 @@ pub fn execute(source: &Path, input: &str) -> Result<(), String> {
     if let Some(cwd) = output.cwd {
         command.current_dir(cwd);
     }
+    // The game unit sets PrivatePIDs=yes, so this process is PID 1 of the
+    // game's PID namespace. The kernel drops every signal sent to a namespace
+    // init that has no handler for it, so a game exec'd here without a SIGTERM
+    // handler ignores systemd's stop until the stop timeout and SIGKILL.
+    if unsafe { libc::getpid() } == 1 {
+        std::process::exit(run_as_namespace_init(command)?);
+    }
     Err(command.exec().to_string())
+}
+
+/// Run the game as an ordinary process and wait for it, reaping orphans.
+///
+/// The unit's KillMode=control-group delivers stop signals to every process
+/// in the unit, so the game receives SIGTERM itself; this init forwards none.
+/// Returns the game's exit status in the shell's encoding.
+fn run_as_namespace_init(mut command: Command) -> Result<i32, String> {
+    let game = command.spawn().map_err(|e| e.to_string())?.id() as libc::pid_t;
+    loop {
+        let mut status = 0;
+        let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
+        if pid == -1 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(format!("waiting for the game failed: {error}"));
+        }
+        if pid == game {
+            return Ok(exit_code(status));
+        }
+    }
+}
+
+fn exit_code(status: libc::c_int) -> i32 {
+    if libc::WIFEXITED(status) {
+        libc::WEXITSTATUS(status)
+    } else if libc::WIFSIGNALED(status) {
+        128 + libc::WTERMSIG(status)
+    } else {
+        1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exit_code;
+
+    #[test]
+    fn exit_code_keeps_the_game_status() {
+        assert_eq!(exit_code(0), 0);
+        assert_eq!(exit_code(7 << 8), 7);
+        assert_eq!(exit_code(libc::SIGTERM), 128 + libc::SIGTERM);
+        assert_eq!(exit_code(libc::SIGKILL | 0x80), 128 + libc::SIGKILL);
+    }
 }
