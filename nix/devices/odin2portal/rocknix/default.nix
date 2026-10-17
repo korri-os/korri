@@ -3,14 +3,11 @@
 # Provenance: ROCKNIX distribution rev 1178bc2238de782bf081c558c177d35bb3690021
 # (branch next, 2026-09-04), the same revision as the kernel queue. Every
 # harvested file retains its source except for these adaptations:
-# - gamescope 0006 is rebased onto nixpkgs gamescope 3.16.18; the ROCKNIX
-#   original sits next to it as .rocknix. Those reference files are not applied.
 # - InputPlumber's composite matches the Portal's three observed sources,
 #   emits XB360 for inputd, and routes both volume keys through DBus. The
 #   ROCKNIX ayn_mcu capability map stays unchanged. inputplumber-check.py
 #   locks down that map and the Portal-specific adaptation.
 #
-#   gamescope/patches/       projects/ROCKNIX/packages/apps/gamescope/patches/
 #   mangohud/patches/        projects/ROCKNIX/packages/apps/mangohud/patches/{common,qualcomm,SM8550}/
 #   pipewire/                projects/ROCKNIX/packages/audio/pipewire/patches/SM8550/
 #   alsa-lib/                projects/ROCKNIX/packages/audio/alsa-lib/patches/SM8550/
@@ -31,7 +28,6 @@
 #                    the same keys go through services.pipewire.extraConfig
 #                    on NixOS.
 #   alsaLib          alsa-lib with extended namehints on.
-#   gamescope        nixpkgs gamescope with the four ROCKNIX patches.
 #   mangohud         MangoHud pinned to ROCKNIX's commit (v0.8.4) with the
 #                    common, Qualcomm, and SM8550 patches. See mangohud/.
 #                    nixpkgs is at 0.8.2 and the patches do not apply there.
@@ -53,7 +49,6 @@
   writeTextDir,
   callPackage,
   alsa-lib,
-  gamescope,
 }:
 
 let
@@ -87,10 +82,6 @@ in
 
   alsaLib = alsa-lib.overrideAttrs (previous: {
     patches = (previous.patches or [ ]) ++ sortedPatches ./alsa-lib;
-  });
-
-  gamescope = gamescope.overrideAttrs (previous: {
-    patches = (previous.patches or [ ]) ++ sortedPatches ./gamescope/patches;
   });
 
   mangohud = callPackage ./mangohud { };
