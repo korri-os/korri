@@ -1103,11 +1103,14 @@ impl SystemdLaunchUnitBackend {
             "--property=PrivateTmp=yes".into(),
             "--property=PrivatePIDs=yes".into(),
             format!("--property=BindReadOnlyPaths={}", read_only_binds.trim_start()),
-            "--property=ProtectKernelTunables=yes".into(),
+            // Kernel tunables stay unwritable to the unprivileged runtime user
+            // without this. Steam's FHS and pressure-vessel run bubblewrap,
+            // which reads /proc/sys/kernel/overflowuid and mounts a new proc in
+            // its user namespace; both need a fully visible proc (no /proc/sys
+            // overmount, no pid-only subset). Other processes stay invisible.
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
             "--property=ProtectProc=invisible".into(),
-            "--property=ProcSubset=pid".into(),
             // The stream-host paths exist only when a stream-host plugin is
             // installed. systemd refuses to start the unit for a missing
             // path unless it has the "-" prefix.

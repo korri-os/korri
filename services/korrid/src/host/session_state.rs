@@ -3303,7 +3303,6 @@ mod tests {
             "--property=PrivateTmp=yes".into(),
             "--property=PrivatePIDs=yes".into(),
             "--property=BindReadOnlyPaths=/tmp/.X11-unix/X0".into(),
-            "--property=ProtectKernelTunables=yes".into(),
             "--property=ProtectKernelModules=yes".into(),
             "--property=ProtectControlGroups=yes".into(),
             "--property=InaccessiblePaths=/var/lib/korrid /run/korrid /run/korrid-browser /run/korrid-control/control.sock /run/korrid-control -/home/korri/.config/sunshine /run/korri-compositor -/run/korri-certificate-control /run/user/1001 -/run/korri-input-seat /dev/uinput /dev/inputplumber/sources".into(),
@@ -3312,6 +3311,17 @@ mod tests {
             assert!(
                 launch.contains(&expected),
                 "missing {expected:?} from {launch:?}"
+            );
+        }
+        // Bubblewrap inside the unit (Steam's FHS, pressure-vessel) needs a
+        // fully visible proc to start a user namespace.
+        for relaxed in [
+            "--property=ProtectKernelTunables=yes",
+            "--property=ProcSubset=pid",
+        ] {
+            assert!(
+                !launch.iter().any(|argument| argument == relaxed),
+                "unexpected {relaxed:?} in {launch:?}"
             );
         }
         for withheld in ["WAYLAND_DISPLAY", "SWAYSOCK", "XDG_RUNTIME_DIR"] {
