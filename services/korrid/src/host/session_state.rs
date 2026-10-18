@@ -3282,6 +3282,7 @@ mod tests {
                 &["/games/retroarch".into(), "rom.gba".into()],
                 &BTreeMap::from([
                     ("SAVE_ROOT".into(), "/saves".into()),
+                    ("DISPLAY".into(), ":0".into()),
                     ("WAYLAND_DISPLAY".into(), "korri-wayland".into()),
                     (
                         "SWAYSOCK".into(),
@@ -3354,9 +3355,16 @@ mod tests {
                     ),
                     ("XDG_RUNTIME_DIR".into(), "/run/user/1001".into()),
                     ("WAYLAND_DISPLAY".into(), "untrusted-other-socket".into()),
+                    ("DISPLAY".into(), ":0".into()),
                 ]),
             )
             .unwrap();
+        // The wrapped game uses Gamescope's own display. Passing the
+        // compositor's DISPLAY makes Gamescope 3.16.18 read the host cursor,
+        // and its GetX11HostCursor overreads a non-square cursor image.
+        assert!(!with_modifiers
+            .iter()
+            .any(|arg| arg.starts_with("--setenv=DISPLAY=")));
         for expected in [
             format!("--property=RuntimeDirectory=korri-game-{id}"),
             "--property=RuntimeDirectoryMode=0700".into(),
@@ -3364,6 +3372,7 @@ mod tests {
             format!("--setenv=XDG_RUNTIME_DIR=/run/korri-game-{id}"),
             "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
         ] { assert!(with_modifiers.contains(&expected), "{with_modifiers:?}"); }
+        assert!(launch.contains(&"--setenv=DISPLAY=:0".to_string()));
         // Nested Gamescope runs its own Xwayland in the private /tmp; the
         // compositor's X0 must not be bound there (it makes .X11-unix read-only).
         assert!(!with_modifiers

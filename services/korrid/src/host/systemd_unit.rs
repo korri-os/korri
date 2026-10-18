@@ -1166,7 +1166,7 @@ impl SystemdLaunchUnitBackend {
                             | "XDG_RUNTIME_DIR"
                             | super::launch_diagnostics::DIRECTORY_ENV
                             | super::launch_diagnostics::READER_ENV
-                    )
+                    ) && !(modifiers && key.as_str() == "DISPLAY")
                 })
                 .map(|(key, value)| format!("--setenv={key}={value}")),
         );
