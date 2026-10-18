@@ -7,6 +7,8 @@ let
     ];
     runtimeAccount = {
       user = "korri";
+      # The default. A device whose UID 1000 already belongs to another
+      # account sets services.korriProduct.runtimeAccount.uid instead.
       uid = 1000;
       group = "korri";
       gid = 1000;
@@ -31,6 +33,17 @@ let
     };
   };
   setting = name: path: expected: { inherit name path expected; };
+  # The expected value is the device's own choice at expectedAt. expected
+  # stays the product default, which the reference and hostile tests use.
+  deviceSetting =
+    name: path: expectedAt: expected:
+    (setting name path expected) // { inherit expectedAt; };
+  runtimeUidAt = [
+    "services"
+    "korriProduct"
+    "runtimeAccount"
+    "uid"
+  ];
   settingWithTestValue =
     name: path: expected: testValue:
     (setting name path expected) // { inherit testValue; };
@@ -99,7 +112,9 @@ in
 
     (setting "korri group gid" [ "users" "groups" "korri" "gid" ] constants.runtimeAccount.gid)
     (setting "korri normal user" [ "users" "users" "korri" "isNormalUser" ] true)
-    (setting "korri uid" [ "users" "users" "korri" "uid" ] constants.runtimeAccount.uid)
+    (deviceSetting "korri uid" [ "users" "users" "korri" "uid" ] runtimeUidAt
+      constants.runtimeAccount.uid
+    )
     (setting "korri primary group" [
       "users"
       "users"
@@ -115,11 +130,11 @@ in
       "korriLinuxHost"
       "runtimeUser"
     ] constants.runtimeAccount.user)
-    (setting "runtime uid" [
+    (deviceSetting "runtime uid" [
       "services"
       "korriLinuxHost"
       "runtimeUid"
-    ] constants.runtimeAccount.uid)
+    ] runtimeUidAt constants.runtimeAccount.uid)
     (setting "runtime group" [
       "services"
       "korriLinuxHost"

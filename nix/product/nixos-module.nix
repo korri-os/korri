@@ -45,6 +45,17 @@ in
       default = [ ];
       description = "Sleep states verified for this device. No state means the power button and lid shut down cleanly.";
     };
+    runtimeAccount.uid = lib.mkOption {
+      # systemd treats 1000-60000 as regular users, and the runtime account
+      # needs a regular user manager and /run/user directory.
+      type = lib.types.ints.between 1000 60000;
+      default = constants.runtimeAccount.uid;
+      description = ''
+        UID of the korri runtime account. A device changes it only when the
+        default is already taken, for example by a host that shares the
+        machine with other accounts.
+      '';
+    };
   };
 
   config = {
@@ -82,7 +93,7 @@ in
     users.groups.${constants.runtimeAccount.group}.gid = constants.runtimeAccount.gid;
     users.users.${constants.runtimeAccount.user} = {
       isNormalUser = true;
-      uid = constants.runtimeAccount.uid;
+      uid = config.services.korriProduct.runtimeAccount.uid;
       group = constants.runtimeAccount.group;
       home = constants.runtimeAccount.home;
       createHome = true;
@@ -91,7 +102,7 @@ in
     services.korriLinuxHost = {
       enable = true;
       runtimeUser = constants.runtimeAccount.user;
-      runtimeUid = constants.runtimeAccount.uid;
+      runtimeUid = config.services.korriProduct.runtimeAccount.uid;
       runtimeGroup = constants.runtimeAccount.group;
       runtimeGid = constants.runtimeAccount.gid;
       # Product discovery endpoints do not authorize publication. Ticket 05's

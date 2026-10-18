@@ -985,6 +985,20 @@ assert
   map lib.getName rg353m.services.korriLinuxInput.provider.extraDataPackages == [
     "rg353m-inputplumber-data"
   ];
+# A device may move the runtime account off the default UID. Every product
+# setting follows the choice, and the account and host agree on it.
+assert
+  let
+    chosen =
+      (standalone.extendModules {
+        modules = [ { services.korriProduct.runtimeAccount.uid = 43210; } ];
+      }).config;
+  in
+  chosen.users.users.korri.uid == 43210
+  && chosen.services.korriLinuxHost.runtimeUid == 43210
+  && chosen.systemd.services.korrid.environment.KORRID_RUNTIME_UID == "43210"
+  && lib.all (check.settingMatches chosen) requirements.settings;
+assert standalone.config.users.users.korri.uid == requirements.constants.runtimeAccount.uid;
 assert !(rg353m.users.users ? gameplay);
 assert !(rg353m.users.groups ? games);
 pkgs.runCommand "korri-product-module-check" { } ''

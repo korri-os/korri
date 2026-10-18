@@ -35,7 +35,15 @@ let
   dbusPackageFailure =
     name: package: "${name} omits required product D-Bus package contribution ${package}";
 
-  settingMatches = config: requirement: valueAt requirement.path null config == requirement.expected;
+  settingMatches =
+    config: requirement:
+    valueAt requirement.path null config
+    == (
+      if requirement ? expectedAt then
+        valueAt requirement.expectedAt null config
+      else
+        requirement.expected
+    );
   unitEnabled = unit: unit != null && (unit.enable or true);
   activeUnitNames =
     path: config:
