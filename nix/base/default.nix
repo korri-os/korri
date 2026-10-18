@@ -28,6 +28,9 @@ in
   # the Mini V2 it stalled the switch's job queue for minutes, so input and
   # Wi-Fi services never came back. Boot-time console setup is unchanged.
   systemd.services.reload-systemd-vconsole-setup.enable = lib.mkDefault false;
+  # A systemd update also changes the console setup unit itself; the switch
+  # would stop and start it, which hangs the same way.
+  systemd.services.systemd-vconsole-setup.restartIfChanged = lib.mkDefault false;
 
   # Keep physical recovery access, including the RG353M USB serial console.
   # Physical console access grants root. Network SSH is off for image releases;
