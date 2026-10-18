@@ -286,7 +286,9 @@ impl Host {
             &SourceUrl::parse(&record.archive_url)?,
             config.ca_bundle.as_deref(),
             &archive_path,
-            repository::TransferBounds::Unlimited,
+            repository::TransferBounds::Unlimited {
+                stall: repository::ARCHIVE_STALL,
+            },
         )?;
         repository::verify_archive_hash(&archive_path, &record.archive_sha256)?;
         let cache = stage.path().join("cache");

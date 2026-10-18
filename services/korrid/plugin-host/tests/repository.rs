@@ -347,10 +347,41 @@ fn archive_downloads_are_not_refused_for_size() {
         &server.url,
         Some(&server.ca),
         output.path(),
-        TransferBounds::Unlimited,
+        TransferBounds::Unlimited {
+            stall: korri_plugin_host::repository::ARCHIVE_STALL,
+        },
     )
     .unwrap();
     assert_eq!(std::fs::read(output.path()).unwrap(), expected);
+}
+
+#[test]
+fn a_stalled_archive_download_fails_without_a_total_time_limit() {
+    // The server answers nothing for four seconds. With a one-second stall
+    // window the transfer fails after about one second. Production uses the
+    // prepare programs' 1 KiB/s for 60 seconds.
+    let server = HttpsServer::start(|_, _| {
+        thread::sleep(Duration::from_secs(4));
+        ok(b"late")
+    });
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let start = Instant::now();
+    let error = korri_plugin_host::repository::download(
+        &curl(),
+        &server.url,
+        Some(&server.ca),
+        output.path(),
+        TransferBounds::Unlimited {
+            stall: Duration::from_secs(1),
+        },
+    )
+    .unwrap_err();
+    assert!(error.contains("too slow"), "{error}");
+    assert!(
+        start.elapsed() < Duration::from_secs(4),
+        "{:?}",
+        start.elapsed()
+    );
 }
 
 #[test]

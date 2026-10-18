@@ -5,14 +5,19 @@ use crate::{catalog::Catalog, process};
 use std::{path::Path, time::Duration};
 
 pub const MAX_CATALOG_BYTES: u64 = 4 * 1024 * 1024;
+/// An archive transfer slower than this for `ARCHIVE_STALL` has stalled. The
+/// plugin prepare programs use the same values.
+pub const STALL_BYTES_PER_SECOND: u32 = 1024;
+pub const ARCHIVE_STALL: Duration = Duration::from_secs(60);
 
 /// Catalogs and release evidence are small metadata with fixed bounds. Package
 /// archives have none: the archive SHA-256, content addressing and the bound
-/// publisher key establish integrity, not size or transfer time.
+/// publisher key establish integrity, not size or transfer time. A stalled
+/// archive transfer still fails, so it cannot hold the host lock forever.
 #[derive(Clone, Copy, Debug)]
 pub enum TransferBounds {
     Limited { max_bytes: u64, timeout: Duration },
-    Unlimited,
+    Unlimited { stall: Duration },
 }
 
 pub struct Configuration {
@@ -98,13 +103,19 @@ pub fn download(
         "--output".into(),
         output.to_str().ok_or("output path is not UTF-8")?.into(),
     ];
-    if let TransferBounds::Limited { max_bytes, timeout } = bounds {
-        args.extend([
+    match bounds {
+        TransferBounds::Limited { max_bytes, timeout } => args.extend([
             "--max-filesize".into(),
             max_bytes.to_string(),
             "--max-time".into(),
             timeout.as_secs_f64().to_string(),
-        ]);
+        ]),
+        TransferBounds::Unlimited { stall } => args.extend([
+            "--speed-limit".into(),
+            STALL_BYTES_PER_SECOND.to_string(),
+            "--speed-time".into(),
+            stall.as_secs().max(1).to_string(),
+        ]),
     }
     if let Some(ca) = ca {
         args.extend([
@@ -117,7 +128,7 @@ pub fn download(
         TransferBounds::Limited { timeout, .. } => {
             process::run(curl, args, timeout + Duration::from_secs(2))?
         }
-        TransferBounds::Unlimited => process::run_unbounded(curl, args)?,
+        TransferBounds::Unlimited { .. } => process::run_unbounded(curl, args)?,
     };
     if !result.success {
         return Err(format!(
