@@ -1,6 +1,6 @@
 {
   pkgs,
-  proton,
+  protonToolName,
   settings,
 }:
 let
@@ -30,13 +30,13 @@ let
     nativeBuildInputs = [ pkgs.makeWrapper ];
     installPhase = ''
       mkdir -p "$out/bin" "$out/share/steam-rocknix-bootstrap/resources"
-      cp ${resources}/share/{compatibilitytool,registry}.vdf "$out/share/steam-rocknix-bootstrap/resources/"
+      cp ${resources}/share/registry.vdf "$out/share/steam-rocknix-bootstrap/resources/"
       for helper in steam-arm64-seed steam-arm64-bootstrap steam-guest-run; do
         install -m755 "$helper" "$out/bin/$helper"
         patchShebangs "$out/bin/$helper"
       done
       substituteInPlace "$out/bin/steam-arm64-seed" \
-        --replace-fail '@korriProtonCachyosArm64@' '${proton}/share/korri/proton-cachyos-arm64/dist'
+        --replace-fail '@protonToolName@' ${pkgs.lib.escapeShellArg protonToolName}
       substituteInPlace "$out/bin/steam-arm64-bootstrap" \
         --replace-fail '@vdfSettings@' '${settings}'
       substituteInPlace "$out/bin/steam-guest-run" \

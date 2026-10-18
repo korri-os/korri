@@ -2,9 +2,30 @@
 
 The `@korri:steam/steam` runner admits system `steam` and passes the selected
 provider `ref` to the packaged `steam-session <appid>` program. It declares
-`STEAM_HOME=${accountRoot}/steam` and that directory. The native session program
-owns Steam, Proton and FEX; `plugin.ts` performs no effects and names no native
-artifact paths.
+`STEAM_HOME=${accountRoot}/steam` and that directory. `plugin.ts` performs no
+effects.
+
+`plugin.nix` requires the exact `@korri:fex` and `@korri:proton` outputs.
+`launch.prepare` refuses the launch unless korrid supplies `cacheRoot` and these
+required-plugin files. It passes them to the session program:
+
+| Variable | Launch input |
+|---|---|
+| `KORRI_CACHE_ROOT` | `cacheRoot` |
+| `KORRI_FEX_PREPARE` | `files["@korri:fex/fex-prepare"]` |
+| `KORRI_FEX_CONFIG` | `files["@korri:fex/config"]` |
+| `KORRI_PROTON_CACHYOS_PREPARE` | `files["@korri:proton/cachyos-prepare"]` |
+
+`steam-session` refuses with status 2 if one is missing. Before it seeds the
+Steam client, it runs both prepare programs with `KORRI_CACHE_ROOT`. The first
+run downloads the FEX rootfs and Proton-CachyOS into that cache; see
+`plugins/fex/README.md` and `plugins/proton/README.md`. A prepare failure exits
+126 with `runtime download failed`. The session sets `FEX_ROOTFS` to the printed
+rootfs directory and `FEX_APP_CONFIG_LOCATION` to the FEX plugin's `config`
+directory. It links `compatibilitytools.d/proton-cachyos-11.0-20260601-slr-arm64`
+to the printed Proton directory. The manual sign-in window starts after the
+prepare, seed and settings steps. The session program still owns the Steam
+client, its FHS environment and the Steam settings.
 
 Provisional slice decisions: Flinthook (401710), Valve's arm64 Steam client,
 Proton-CachyOS `proton-cachyos-11.0-20260601-slr-arm64` and FEX. Steam runs under

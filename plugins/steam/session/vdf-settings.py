@@ -14,7 +14,7 @@ import stat
 import sys
 import tempfile
 
-TOOL = "proton-cachyos-11.0-20260601-slr-arm64"
+TOOL = "@protonToolName@"  # Substituted from @korri:proton by packages/default.nix.
 ONCE = (
     "Intro", "NonVerifiedGame", "Gyro", "RemotePlayConfirm",
     "ExternalControllersAndSIAPI", "IntroToActionSets", "IntroToSteamInputGames",

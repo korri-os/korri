@@ -1,4 +1,5 @@
 """A subprocess fixture implementing client IPC and lifecycle log events."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -43,6 +44,8 @@ if "-applaunch" in sys.argv:
     sys.exit(0)
 
 (home / "shutdown").unlink(missing_ok=True)
+(home / "client-env.json").write_text(json.dumps(
+    {name: os.environ.get(name) for name in ("FEX_ROOTFS", "FEX_APP_CONFIG_LOCATION")}))
 if behavior == "update":
     event("Found pending update")
     event("Waiting for compat in post-logon")

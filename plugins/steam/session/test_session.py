@@ -1,7 +1,7 @@
 """Run the real session state machine with filesystem IPC and real processes."""
+import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,39 +9,88 @@ import time
 import unittest
 
 HERE = Path(__file__).parent
-RESOURCES = HERE.parent / "packages/steam-korri/resources"
+TOOL = "proton-cachyos-11.0-20260601-slr-arm64"
+
+
+def program(path, source):
+    path.write_text(f"#!{sys.executable}\n" + source)
+    path.chmod(0o755)
 
 
 class SteamSessionTests(unittest.TestCase):
-    def run_session(self, behavior):
+    def run_session(self, behavior, prepare="ready", seeded=True):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
+        self.root = root
         home = root / "steam"
         (home / "userdata/123/config").mkdir(parents=True)
-        (home / "steamrtarm64").mkdir()
-        client = home / "steamrtarm64/steam"
-        client.touch()
-        client.chmod(0o755)
+        if seeded:
+            (home / "steamrtarm64").mkdir()
+            client = home / "steamrtarm64/steam"
+            client.touch()
+            client.chmod(0o755)
         (root / "bin").mkdir()
-        runner = root / "bin/steam-arm64-fhs"
-        runner.write_text(f"#!{sys.executable}\n" + (HERE / "fixtures/session-client.py").read_text())
-        runner.chmod(0o755)
-        settings = root / "bin/steam-vdf-settings"
-        settings.write_text(f"#!{sys.executable}\n" + (HERE / "vdf-settings.py").read_text())
-        settings.chmod(0o755)
-        shutil.copytree(RESOURCES, root / "share")
+        (root / "cache").mkdir()
+        (root / "fex-config").mkdir()
+        program(root / "bin/steam-arm64-fhs", (HERE / "fixtures/session-client.py").read_text())
+        program(root / "bin/steam-arm64-seed", (HERE / "fixtures/seed.py").read_text())
+        for name in ("fex-prepare", "cachyos-prepare"):
+            program(root / "bin" / name, (HERE / "fixtures/prepare.py").read_text())
+        program(root / "bin/steam-vdf-settings",
+                (HERE / "vdf-settings.py").read_text().replace("@protonToolName@", TOOL))
         script = (HERE / "steam-session.sh").read_text()
-        for placeholder in ("rootfs", "fhs", "helpers", "proton", "resources", "settings"):
+        for placeholder in ("fhs", "helpers", "settings"):
             script = script.replace(f"@{placeholder}@", str(root))
+        script = script.replace("@protonToolName@", TOOL)
         path = root / "session.sh"
         path.write_text(script)
         started = time.monotonic()
         result = subprocess.run(
             ["bash", str(path), "401710"], timeout=30, capture_output=True, text=True,
-            env={**os.environ, "STEAM_HOME": str(home), "HOME": str(root), "CLIENT_BEHAVIOR": behavior},
+            env={
+                **os.environ, "STEAM_HOME": str(home), "HOME": str(root), "CLIENT_BEHAVIOR": behavior,
+                "PREPARE_BEHAVIOR": prepare,
+                "KORRI_CACHE_ROOT": str(root / "cache"),
+                "KORRI_FEX_PREPARE": str(root / "bin/fex-prepare"),
+                "KORRI_FEX_CONFIG": str(root / "fex-config"),
+                "KORRI_PROTON_CACHYOS_PREPARE": str(root / "bin/cachyos-prepare"),
+            },
         )
         return result, home, time.monotonic() - started
+
+    def test_prepares_run_before_seeding_and_configure_fex_and_proton(self):
+        result, home, _ = self.run_session("game", seeded=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rootfs = self.root / "cache/fex/rootfs/fixture"
+        proton = self.root / "cache/proton/cachyos/fixture"
+        # Prepare diagnostics reach the session's stderr; only the last stdout line counts.
+        self.assertIn("fex-prepare: fixture ready", result.stderr)
+        seed = json.loads((home / "seed.json").read_text())
+        self.assertEqual(seed, {"rootfs": True, "proton": True, "STEAM_PROTON_DIR": str(proton)})
+        client = json.loads((home / "client-env.json").read_text())
+        self.assertEqual(client["FEX_ROOTFS"], str(rootfs))
+        self.assertEqual(client["FEX_APP_CONFIG_LOCATION"], str(self.root / "fex-config") + "/")
+        self.assertEqual(os.readlink(home / "compatibilitytools.d" / TOOL), str(proton))
+        self.assertIn(f'"{TOOL}"', (home / "config/config.vdf").read_text())
+
+    def test_prepare_failure_exits_126_before_seeding_or_starting_steam(self):
+        for failing, label in (("fex-prepare", "FEX rootfs"), ("cachyos-prepare", "Proton-CachyOS")):
+            with self.subTest(failing=failing):
+                result, home, _ = self.run_session("game", prepare=f"fail:{failing}", seeded=False)
+                self.assertEqual(result.returncode, 126, result.stderr)
+                self.assertIn(f"runtime download failed: {label} (prepare exited with status 1)",
+                              result.stderr)
+                self.assertFalse((home / "seed.json").exists())
+                self.assertFalse((home / "config/config.vdf").exists())
+                self.assertFalse((home / "logs/session_log.txt").exists())
+
+    def test_prepare_without_a_ready_directory_exits_126(self):
+        result, home, _ = self.run_session("game", prepare="no-directory")
+        self.assertEqual(result.returncode, 126, result.stderr)
+        self.assertIn("runtime download failed: FEX rootfs (prepare exited with status 0)",
+                      result.stderr)
+        self.assertFalse((home / "logs/session_log.txt").exists())
 
     def test_game_exit_waits_for_process_and_stops_steam(self):
         result, home, duration = self.run_session("game")

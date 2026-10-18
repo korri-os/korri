@@ -19,6 +19,15 @@ export const runners = {
   },
 }
 
+// Files of the exact required @korri:fex and @korri:proton builds, as korrid
+// passes them under `<pluginId>/<key>`, and the variable that hands each one
+// to the session program.
+const runtimeFiles = {
+  KORRI_FEX_PREPARE: "@korri:fex/fex-prepare",
+  KORRI_FEX_CONFIG: "@korri:fex/config",
+  KORRI_PROTON_CACHYOS_PREPARE: "@korri:proton/cachyos-prepare",
+}
+
 function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   if (!input.ref) {
     throw new Error("Steam requires a provider ref")
@@ -33,11 +42,25 @@ function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   ) {
     throw new Error("Steam runner does not implement typed settings yet")
   }
+  if (!input.cacheRoot) {
+    throw new Error("Steam requires korrid's cache root for its runtime downloads")
+  }
   const steamHome = `${input.accountRoot}/steam`
+  const env: Record<string, string> = {
+    STEAM_HOME: steamHome,
+    KORRI_CACHE_ROOT: input.cacheRoot,
+  }
+  for (const [variable, key] of Object.entries(runtimeFiles)) {
+    const path = input.files[key]
+    if (!path) {
+      throw new Error(`Steam requires ${key} from its required plugin`)
+    }
+    env[variable] = path
+  }
   return {
     command: input.program,
     args: [input.ref],
-    env: { STEAM_HOME: steamHome },
+    env,
     directories: [steamHome],
     envUnset: [],
   }

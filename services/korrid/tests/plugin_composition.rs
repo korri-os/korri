@@ -182,13 +182,35 @@ fn steam_provider_launch_composes_the_prepared_session_before_native_exec() {
     // shipped handler still produces steam-session <ref> without a contentPath.
     // /bin/sh reads the numeric ref fixture without executing a fresh script
     // inode, avoiding the existing generated-executable ETXTBSY fixture race.
-    let runner = package_with_files(
+    // Steam's launch.prepare reads its exact required FEX and Proton files.
+    let fex = package_with_files(
+        root.path(),
+        "@korri:fex",
+        "export const name = 'fex'\n",
+        None,
+        BTreeMap::from([
+            ("fex-prepare".into(), root.path().join("fex-prepare")),
+            ("config".into(), root.path().join("fex-config")),
+        ]),
+    );
+    let proton = package_with_files(
+        root.path(),
+        "@korri:proton",
+        "export const name = 'proton'\n",
+        None,
+        BTreeMap::from([(
+            "cachyos-prepare".into(),
+            root.path().join("cachyos-prepare"),
+        )]),
+    );
+    let mut runner = package_with_files(
         root.path(),
         "@korri:steam",
         include_str!("../../../plugins/steam/plugin.ts"),
         None,
         BTreeMap::from([("steam-session".into(), Path::new("/bin/sh").to_path_buf())]),
     );
+    runner.requires = vec![fex.package.clone(), proton.package.clone()];
     let modifier = package(
         root.path(),
         "@test:wrapper",
@@ -203,7 +225,7 @@ export const handlers = {'launch.compose': input => {
 "#,
         None,
     );
-    let registry = PluginRegistry::from_installed(vec![runner, modifier]).unwrap();
+    let registry = PluginRegistry::from_installed(vec![runner, fex, proton, modifier]).unwrap();
     let snapshot = decode_config_documents(
         "locations:\n  '@korri:steam/401710': [{provider: '@korri:steam', ref: '401710'}]\nmodifiers: {'@test:wrapper/main': {enabled: true}}\n",
         "library:\n  flinthook:\n    title: Flinthook\n    releases:\n      - id: steam\n        system: steam\n        identity: {kind: provider, value: '@korri:steam/401710'}\n",

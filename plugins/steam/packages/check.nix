@@ -4,7 +4,7 @@ let
   guard =
     (import ./steam-korri {
       inherit pkgs;
-      proton = null;
+      protonToolName = null;
       settings = null;
     }).guard;
 in

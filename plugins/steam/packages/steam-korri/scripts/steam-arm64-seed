@@ -13,6 +13,7 @@ Required environment:
   STEAM_HOME        Steam client home to prepare
   STEAM_GAMES_ROOT  Steam library root to create
   STEAM_DOT         Steam dot-directory for registry/sdk symlinks
+  STEAM_PROTON_DIR  Prepared Proton-CachyOS directory to link as a compatibility tool
 
 Optional environment:
   STEAM_BETA        Steam client tracking channel to resolve (default: steamdeck_stable)
@@ -40,7 +41,7 @@ require_env() {
   fi
 }
 
-for name in STEAM_HOME STEAM_GAMES_ROOT STEAM_DOT; do
+for name in STEAM_HOME STEAM_GAMES_ROOT STEAM_DOT STEAM_PROTON_DIR; do
   require_env "$name"
 done
 
@@ -51,8 +52,8 @@ RUNTIME_TAR_URL="https://repo.steampowered.com/steamrt3c/images/latest-public-be
 STEAM_BETA="${STEAM_BETA:-steamdeck_stable}"
 STEAM_MANIFEST_URL="https://client-update.fastly.steamstatic.com/steam_client_${STEAM_BETA}_linuxarm64"
 STEAM_CDN="https://client-update.steamstatic.com"
-PROTON_TOOL_NAME="proton-cachyos-11.0-20260601-slr-arm64"
-PROTON_SOURCE="@korriProtonCachyosArm64@"
+PROTON_TOOL_NAME="@protonToolName@"
+PROTON_SOURCE="$STEAM_PROTON_DIR"
 PROTON_LINK="$STEAM_HOME/compatibilitytools.d/$PROTON_TOOL_NAME"
 
 say() { printf '%s\n' "$*"; }

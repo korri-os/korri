@@ -7,6 +7,8 @@ import unittest
 
 HELPER = Path(__file__).with_name("vdf-settings.py")
 FIXTURES = Path(__file__).with_name("fixtures")
+# packages/default.nix substitutes the name defined once by @korri:proton.
+TOOL = "proton-cachyos-11.0-20260601-slr-arm64"
 
 
 class SteamSettingsTests(unittest.TestCase):
@@ -17,10 +19,14 @@ class SteamSettingsTests(unittest.TestCase):
         self.config = self.home / "config/config.vdf"
         self.config.parent.mkdir()
         self.config.write_bytes((FIXTURES / "config.vdf").read_bytes())
+        program = tempfile.TemporaryDirectory()
+        self.addCleanup(program.cleanup)
+        self.helper = Path(program.name) / "vdf-settings.py"
+        self.helper.write_text(HELPER.read_text().replace("@protonToolName@", TOOL))
 
     def run_helper(self, appid="401710"):
         return subprocess.run(
-            [os.environ.get("PYTHON", "python3"), str(HELPER), str(self.home), appid],
+            [os.environ.get("PYTHON", "python3"), str(self.helper), str(self.home), appid],
             text=True, capture_output=True, check=False,
         )
 
@@ -33,7 +39,7 @@ class SteamSettingsTests(unittest.TestCase):
         self.assertIn('"999" { "name" "other-proton" }', config)
         self.assertIn('"401710"', config)
         self.assertIn('"0"', config)
-        self.assertEqual(config.count('"proton-cachyos-11.0-20260601-slr-arm64"'), 2)
+        self.assertEqual(config.count(f'"{TOOL}"'), 2)
         self.assertIn('"SteamController_XBoxSupport"\t\t"0"', config)
         self.assertIn('userdata seeds skipped', result.stderr)
 

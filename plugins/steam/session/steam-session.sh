@@ -1,5 +1,7 @@
 # Invoked once under dbus-run-session by the public steam-session command.
-# All native artifact paths are substituted by packages/default.nix.
+# Steam's own artifact paths and the Proton tool name are substituted by
+# packages/default.nix. The FEX and Proton runtime files come from the
+# required plugins through the KORRI_* environment checked by that command.
 set -Eeuo pipefail
 umask 077
 
@@ -11,8 +13,7 @@ appid="$1"
 export STEAM_GAMES_ROOT="$STEAM_HOME"
 export STEAM_DOT="$HOME/.steam"
 export STEAM_BETA=steamdeck_stable
-export FEX_ROOTFS=@rootfs@
-export FEX_APP_CONFIG_LOCATION="$STEAM_HOME/fex-config/"
+export FEX_APP_CONFIG_LOCATION="$KORRI_FEX_CONFIG/"
 export FEX_APP_DATA_LOCATION="$STEAM_HOME/fex-data/"
 export XDG_CURRENT_DESKTOP=sway
 export LANG=C.UTF-8
@@ -28,6 +29,8 @@ new_console=""
 new_bootstrap=""
 generation=0
 login_deadline=0
+fex_rootfs=""
+proton_dir=""
 
 login_present() {
   local user
@@ -185,8 +188,19 @@ app_process_present() {
   return 1
 }
 
-say 'seed: preparing ARM64 runtime and client'
-mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-config/AppConfig" "$STEAM_HOME/fex-data"
+# A prepare program prints its ready directory as the last stdout line. Its
+# diagnostics go to this session's stderr.
+run_prepare() {
+  local label="$1" program="$2" result="$3" output status=0
+  output=$("$program" "$KORRI_CACHE_ROOT" 9>&-) || status=$?
+  output="${output##*$'\n'}"
+  if (( status != 0 )) || [[ "$output" != /* || ! -d "$output" ]]; then
+    fail 126 "runtime download failed: $label (prepare exited with status $status)"
+  fi
+  printf -v "$result" '%s' "$output"
+}
+
+mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-data"
 # A lock spans settings and the client lifetime. Never edit Steam-owned VDF
 # concurrently with another launch of this session program.
 exec 9>"$STEAM_HOME/.korri-session.lock"
@@ -194,20 +208,22 @@ flock -n 9 || fail 126 'Steam failed: another Steam session owns STEAM_HOME'
 if pgrep -x steam >/dev/null; then fail 126 'Steam failed: client is already running before settings merge'; fi
 # bwrap enters its caller's cwd before the guest helper can change directory.
 cd "$STEAM_HOME"
+say 'runtime: preparing the FEX rootfs and Proton-CachyOS (first run downloads them)'
+run_prepare 'FEX rootfs' "$KORRI_FEX_PREPARE" fex_rootfs
+run_prepare 'Proton-CachyOS' "$KORRI_PROTON_CACHYOS_PREPARE" proton_dir
+export FEX_ROOTFS="$fex_rootfs"
+say 'seed: preparing ARM64 runtime and client'
 if [[ ! -x "$STEAM_HOME/steamrtarm64/steam" ]]; then
-  @helpers@/bin/steam-arm64-seed --apply >>"$STEAM_HOME/logs/session_log.txt" 2>&1 \
+  STEAM_PROTON_DIR="$proton_dir" @helpers@/bin/steam-arm64-seed --apply >>"$STEAM_HOME/logs/session_log.txt" 2>&1 \
     || fail 126 'Steam failed: ARM64 seed failed (see logs/session_log.txt)'
 fi
 mkdir -p "$STEAM_HOME/compatibilitytools.d"
-ln -sfn @proton@/share/korri/proton-cachyos-arm64/dist "$STEAM_HOME/compatibilitytools.d/proton-cachyos-11.0-20260601-slr-arm64"
-cp @resources@/share/compatibilitytool.vdf "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
-for resource in Config.json AppConfig/steamwebhelper.json; do
-  [[ -f "$STEAM_HOME/fex-config/$resource" ]] || cp "@resources@/share/fex-emu/$resource" "$STEAM_HOME/fex-config/$resource"
-done
+ln -sfn "$proton_dir" "$STEAM_HOME/compatibilitytools.d/@protonToolName@"
 say 'settings: merging Proton, Steam Input and first-launch seeds'
 @settings@/bin/steam-vdf-settings "$STEAM_HOME" "$appid"
 if ! login_present; then say 'login: Steam sign-in required; waiting up to 600 s for manual sign-in'; fi
-# Client/runtime downloads must not consume the manual sign-in window.
+# Runtime preparation and client/runtime downloads must not consume the
+# manual sign-in window.
 login_deadline=$((SECONDS + 600))
 start_steam
 wait_for_steam_ready

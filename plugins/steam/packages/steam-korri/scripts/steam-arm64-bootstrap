@@ -49,12 +49,10 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 prefix=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 resource_dir="$prefix/share/steam-rocknix-bootstrap/resources"
 
-for resource in compatibilitytool.vdf registry.vdf; do
-  if [ ! -f "$resource_dir/$resource" ]; then
-    echo "error: missing package resource: $resource_dir/$resource" >&2
-    exit 1
-  fi
-done
+if [ ! -f "$resource_dir/registry.vdf" ]; then
+  echo "error: missing package resource: $resource_dir/registry.vdf" >&2
+  exit 1
+fi
 
 say() { printf '%s\n' "$*"; }
 run() {
@@ -117,7 +115,6 @@ run ln -sfn "$STEAM_HOME/linux64" "$STEAM_DOT/sdk64"
 run ln -sfn "$STEAM_HOME/linuxarm64" "$STEAM_DOT/sdkarm64"
 
 printf '%s\n' "$STEAM_BETA" | atomic_write "$STEAM_HOME/package/beta"
-atomic_copy "$resource_dir/compatibilitytool.vdf" "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
 if [ -e "$STEAM_DOT/registry.vdf" ]; then
   run @vdfSettings@/bin/steam-vdf-settings --registry "$STEAM_DOT/registry.vdf"
 else
