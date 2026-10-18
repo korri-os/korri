@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Korri Workbench</title>
+<!--
+  Font: Spleen 5x8 by Frederic Cambus, BSD 2-Clause.
+  Copyright (c) 2018-2026, Frederic Cambus. Licence text in spleen-LICENSE.txt
+  beside this file. Inlined here as the Pico build of the face (woff2).
+-->
+<style>
+@font-face {
+  font-family: "Spleen";
+  src: url(data:font/woff2;base64,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) format("woff2");
+  font-display: block;
+}
+
+/* Workbench 2.x four-pen palette. Nothing else is drawn. */
+:root {
+  --grey:  #aaaaaa;  /* pen 0: the Workbench background */
+  --black: #000000;  /* pen 1: detail */
+  --white: #ffffff;  /* pen 2: shine */
+  --blue:  #6688bb;  /* pen 3: fill, the active window */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--black); overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: default; text-align: inherit; }
+button:focus { outline: none; }
+
+/* The stage is the container. plan() reads its size, nothing else. */
+#stage { position: fixed; inset: 0; display: grid; place-items: center; }
+
+#screen {
+  position: relative;
+  /* width, height and zoom come from plan(); all lengths below are screen pixels */
+  background: var(--grey);
+  color: var(--black);
+  font-family: "Spleen", monospace;
+  font-size: 8px;              /* one em = 8 glyph rows = 8 screen pixels */
+  line-height: 9px;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  overflow: hidden;
+  isolation: isolate;
+}
+svg.px { display: block; shape-rendering: crispEdges; }
+.c1 { fill: var(--black); } .c2 { fill: var(--white); } .c3 { fill: var(--blue); } .c0 { fill: var(--grey); }
+
+/* ---------- Screen title bar ---------- */
+.screenbar {
+  position: absolute; left: 0; right: 0; top: 0; height: 11px; z-index: 50;
+  display: flex; align-items: stretch; gap: 0;
+  background: var(--white); border-bottom: 1px solid var(--black);
+  white-space: nowrap;
+}
+.screenbar > * { padding: 1px 4px 0; }
+.sb-title { flex: 0 0 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sb-title .sb-ver { margin-left: 12px; }
+/* Spleen 5x8 as built for Pico draws U+00B7 empty, so the dot is painted: one pixel, mid x-height */
+.mdot { display: inline-block; width: 5px; height: 8px; color: transparent; vertical-align: top;
+  background: linear-gradient(var(--black), var(--black)) 2px 4px / 1px 1px no-repeat; }
+.sb-spacer { flex: 1 1 0; padding: 0; }
+.sb-tool { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; padding: 0 4px; }
+.sb-tool .ssid { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sb-tool svg { flex: none; }
+.sb-tool:focus, .sb-tool.is-focus { background: var(--black); color: var(--white); }
+.sb-tool:focus .c1 { fill: var(--white); } .sb-tool:focus .c3 { fill: var(--grey); }
+.sb-clock { flex: none; border-left: 1px solid var(--black); padding: 1px 5px 0 6px; }
+
+/* ---------- Bevels: two pens, never a blur ---------- */
+.raised   { border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white); }
+.recessed { border: 1px solid; border-color: var(--black) var(--white) var(--white) var(--black); }
+
+/* ---------- Icons (desktop, drawers, games) ---------- */
+.icon {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  gap: 2px; padding: 2px 1px 2px;
+}
+.icon .img {
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 1px; border: 1px solid transparent;
+}
+.icon .lbl {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; text-align: center; max-width: 100%;
+  overflow-wrap: anywhere; min-height: 9px;
+}
+.icon .lbl span { padding: 0 1px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.icon .sfx { display: block; text-align: center; }
+/* Selection the Workbench way: the image is complemented (pen n -> pen 3-n),
+   the frame sinks, the name inverts. This is also the controller focus. */
+.icon:focus .img { background: var(--blue); border-color: var(--black) var(--white) var(--white) var(--black); }
+.icon:focus .c1 { fill: var(--white); }
+.icon:focus .c2 { fill: var(--black); }
+.icon:focus .c3 { fill: var(--grey); }
+.icon:focus .c0 { fill: var(--blue); }
+.icon:focus .lbl span, .icon:focus .sfx span { background: var(--black); color: var(--white); }
+
+/* ---------- Desktop ---------- */
+.desk-icon { position: absolute; left: 10px; width: 60px; }
+.desk-icon[data-for="games"] { top: 20px; }
+.desk-icon[data-for="prefs"] { top: 72px; }
+.desk-icon.is-open .img { outline: 1px dotted var(--black); outline-offset: -1px; }  /* an open drawer's icon shows hatched, as on the Amiga */
+
+/* ---------- Windows ---------- */
+.win {
+  position: absolute; display: flex; flex-direction: column;
+  background: var(--grey);
+  border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white);
+}
+.win[hidden] { display: none; }
+.titlebar {
+  flex: none; height: 11px; display: flex; align-items: stretch;
+  background: var(--grey);
+  border-bottom: 1px solid var(--black);
+}
+.win.is-front .titlebar { background: var(--blue); }
+.wtitle {
+  flex: 1 1 auto; min-width: 0; padding: 1px 4px 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wtitle .wsub { margin-left: 8px; }
+.wtitle .wsub-item + .wsub-item { margin-left: 6px; }
+.wtitle:focus { background: var(--black); color: var(--white); }
+.gad {
+  flex: none; width: 18px; height: 10px; display: grid; place-items: center;
+  border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white);
+}
+.gad:focus { border-color: var(--black) var(--white) var(--white) var(--black); background: var(--grey); }
+.win:not(.is-front) .gad:focus { background: var(--blue); }
+.gad:focus .c1 { fill: var(--white); } .gad:focus .c2 { fill: var(--black); }
+.gad:active { border-color: var(--black) var(--white) var(--white) var(--black); }
+.gad[aria-disabled="true"] svg { opacity: 1; }
+.gad[aria-disabled="true"] .c1 { fill: var(--grey); }
+
+.wbody { flex: 1 1 auto; min-height: 0; display: flex; border-left: 3px solid var(--grey); }
+.pane { flex: 1 1 auto; min-width: 0; overflow: hidden; position: relative; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cell, 104px), 1fr));
+  grid-auto-rows: auto;
+  padding: 4px 0 4px;
+  row-gap: var(--rowgap, 6px);
+}
+.grid .icon .img { min-height: 40px; }
+.vscroll {
+  flex: none; width: var(--sbw, 15px); display: flex; flex-direction: column;
+  border-left: 1px solid var(--black); background: var(--grey);
+}
+.track { flex: 1 1 auto; margin: 2px; position: relative;
+  /* the proportional gadget's well: a two-pen stipple, as the period drew it */
+  background: repeating-conic-gradient(var(--blue) 0 25%, var(--grey) 0 50%) 0 0 / 2px 2px; }
+.knob { position: absolute; left: 1px; right: 1px; background: var(--grey); }
+.vscroll .gad { width: auto; height: 10px; border-top-color: var(--white); }
+.status {
+  flex: none; margin: 2px 3px 2px 3px; padding: 1px 3px 0;
+  display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 0;
+  min-height: 11px;
+}
+.status .st-name { color: var(--black); background: var(--white); padding: 0 2px; margin-left: -2px; }
+.status:empty::before { content: "\00a0"; }
+.sizegad { flex: none; align-self: flex-end; width: 15px; height: 10px; margin: 0 0 0 auto; }
+.foot { flex: none; display: flex; align-items: stretch; border-top: 1px solid var(--black); }
+.foot .status { flex: 1 1 auto; min-width: 0; }
+.foot .sizegad { margin: 0; align-self: stretch; height: auto; border-color: var(--white) var(--black) var(--black) var(--white); border-width: 1px; border-style: solid; display: grid; place-items: center; }
+
+/* Stack mode: one row of name under each icon; the status line carries the full name */
+[data-mode="stack"] .grid .icon { padding: 1px 0; }
+[data-mode="stack"] .grid .icon .img { min-height: 36px; }
+[data-mode="stack"] .grid .icon .lbl { -webkit-line-clamp: 1; }
+[data-mode="stack"] .grid .icon .lbl span { padding: 0; }
+[data-mode="stack"] .grid { padding: 2px 0; }
+
+/* Prefs window contents */
+.prefs-grid { display: flex; gap: 2px; padding: 6px 4px 6px; }
+.prefs-grid .icon { width: 50px; }
+.prefs-grid .icon .img { min-height: 24px; }
+
+/* Collapsed window (stack mode): the title bar alone, docked at the bottom edge */
+.win.is-collapsed { border-bottom-width: 0; }
+.win.is-collapsed > :not(.titlebar) { display: none; }
+.win.is-collapsed .titlebar { border-bottom: 0; }
+
+/* Workbench's zoom box: outlines that run from the icon to the window */
+.zoombox { position: absolute; z-index: 60; border: 1px solid var(--black); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .zoombox { display: none; } }
+
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="screen" data-mode="overlap">
+    <header class="screenbar" aria-label="Screen title bar">
+      <span class="sb-title"><span class="sb-name">Korri Workbench</span><span class="sb-ver">korri 0.4.1 <span class="mdot">·</span> 9a1fb22</span></span>
+      <span class="sb-spacer"></span>
+      <button class="sb-tool" data-nav data-act="wifi" aria-label="Wi-Fi: connected to hummingbird-lake, 72 percent. Opens Wi-Fi in Prefs.">
+        <svg class="px" width="11" height="8" viewBox="0 0 11 8" aria-hidden="true">
+          <rect class="c1" x="0" y="6" width="2" height="2"/><rect class="c1" x="3" y="4" width="2" height="4"/>
+          <rect class="c1" x="6" y="2" width="2" height="6"/><rect class="c3" x="9" y="0" width="2" height="8"/>
+        </svg>
+        <span class="ssid">hummingbird-lake</span><span class="pct">72%</span>
+      </button>
+      <span class="sb-clock" aria-label="Time 21:47">21:47</span>
+    </header>
+
+    <div class="desktop">
+      <button class="icon desk-icon" data-nav data-for="games" data-act="open" data-info="drawer:games"><span class="img" data-pix="drawer"></span><span class="lbl"><span>Games</span></span></button>
+      <button class="icon desk-icon" data-nav data-for="prefs" data-act="open" data-info="drawer:prefs"><span class="img" data-pix="drawer"></span><span class="lbl"><span>Prefs</span></span></button>
+    </div>
+
+    <section class="win" data-win="prefs" aria-label="Prefs drawer">
+      <div class="titlebar">
+        <button class="gad" data-nav data-act="close" aria-label="Close Prefs" data-pix="g-close"></button>
+        <button class="wtitle" data-act="front" tabindex="-1" aria-label="Prefs: Device, Wi-Fi, Identity. Bring to front">Prefs<span class="wsub"><span class="wsub-item">Device</span><span class="wsub-item">Wi-Fi</span><span class="wsub-item">Identity</span></span></button>
+        <button class="gad" data-nav data-act="zoom" aria-label="Zoom Prefs" data-pix="g-zoom"></button>
+        <button class="gad" data-nav data-act="depth" aria-label="Bring Prefs to front" data-pix="g-depth"></button>
+      </div>
+      <div class="wbody">
+        <div class="pane">
+          <div class="prefs-grid">
+            <button class="icon" data-nav data-act="pref" data-info="pref:device"><span class="img" data-pix="device"></span><span class="lbl"><span>Device</span></span></button>
+            <button class="icon" data-nav data-act="pref" data-info="pref:wifi"><span class="img" data-pix="wifi"></span><span class="lbl"><span>Wi-Fi</span></span></button>
+            <button class="icon" data-nav data-act="pref" data-info="pref:identity"><span class="img" data-pix="key"></span><span class="lbl"><span>Identity</span></span></button>
+          </div>
+        </div>
+        <div class="vscroll"><div class="track recessed"><div class="knob raised" style="top:0;bottom:0"></div></div></div>
+      </div>
+      <div class="foot"><div class="status"></div><span class="sizegad" data-pix="g-size"></span></div>
+    </section>
+
+    <section class="win" data-win="games" aria-label="Games drawer">
+      <div class="titlebar">
+        <button class="gad" data-nav data-act="close" aria-label="Close Games" data-pix="g-close"></button>
+        <button class="wtitle" data-act="front" tabindex="-1" aria-label="Games. Bring to front">Games</button>
+        <button class="gad" data-nav data-act="zoom" aria-label="Zoom Games" data-pix="g-zoom"></button>
+        <button class="gad" data-nav data-act="depth" aria-label="Send Games to back" data-pix="g-depth"></button>
+      </div>
+      <div class="wbody">
+        <div class="pane"><div class="grid" role="listbox" aria-label="Games"></div></div>
+        <div class="vscroll">
+          <div class="track recessed"><div class="knob raised"></div></div>
+          <button class="gad" data-nav data-act="scroll-up" aria-label="Scroll up" data-pix="g-up"></button>
+          <button class="gad" data-nav data-act="scroll-down" aria-label="Scroll down" data-pix="g-down"></button>
+        </div>
+      </div>
+      <div class="foot"><div class="status" aria-live="polite"></div><span class="sizegad" data-pix="g-size"></span></div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   Fixtures: the shared library, in catalog order. Nothing invented.
+   ====================================================================== */
+const LIBRARY = [
+  { title: "Celeste Classic", system: "PICO-8", places: ["This device"], last: "2 hours ago", plays: 41, resumable: true, cover: "celeste" },
+  { title: "Hollow Knight", system: "Switch", places: ["This device"], last: "Yesterday", plays: 18, cover: "hollow" },
+  { title: "Tetris", system: "GB", places: ["zao"], last: "3 days ago", plays: 112, cover: "tetris" },
+  { title: "Spelunky", system: "PC", places: ["This device", "zao"], last: "9 days ago", plays: 7, cover: "spelunky" },
+  { title: "Lantern Keep", system: "PC", places: ["This device"], last: "3 weeks ago", plays: 3, cover: "lantern" },
+  { title: "Tide Pool", system: "Mega Drive", places: ["zao"], last: null, plays: 0, cover: "tide" },
+  { title: "Comet Courier", system: "PC", places: ["This device"], last: "2 months ago", plays: 1, cover: null },
+  { title: "Bramble Run", system: "GBA", places: ["This device"], last: "6 weeks ago", plays: 5, cover: "bramble" },
+  { title: "Petal Quest", system: "PICO-8", places: ["This device"], last: null, plays: 0, cover: "petal" },
+  { title: "The Legend of Zelda: Oracle of Seasons", system: "GBC", places: ["This device"], last: "4 months ago", plays: 22, cover: "zelda" },
+  { title: "Wario Land 4", system: "GBA", places: ["This device", "zao"], last: "5 days ago", plays: 14, cover: "wario" },
+  { title: "Super Metroid", system: "SNES", places: ["This device"], last: "1 year ago", plays: 9, cover: "metroid" },
+];
+const PREFS = {
+  device:   "Device  Name: mini  Sleep after: 10 min  Brightness: 70%",
+  wifi:     "Wi-Fi  Connected to hummingbird-lake, 72%",
+  identity: "Identity  One person, backup available, no retired keys",
+};
+
+/* Stress fixtures for checking, chosen by ?fixture=empty, one, many or long */
+const FIXTURE = new URLSearchParams(location.search).get("fixture") || location.hash.slice(1);
+let games = LIBRARY;
+if (FIXTURE === "empty") games = [];
+if (FIXTURE === "one") games = [LIBRARY[3]];
+if (FIXTURE === "many") games = Array.from({ length: 60 }, (_, i) => ({ ...LIBRARY[i % 12] }));
+if (FIXTURE === "long") games = [...LIBRARY, { title: "Supercalifragilisticexpialidociousadventure", system: "PC", places: ["This device"], last: null, plays: 0, cover: null }];
+
+/* ======================================================================
+   Pixel drawing: pens '.' none, k black, w white, b blue, g grey
+   ====================================================================== */
+const PEN = { k: "c1", w: "c2", b: "c3", g: "c0" };
+function canvas(w, h) { return { w, h, d: Array.from({ length: h }, () => Array(w).fill(".")) }; }
+function rect(c, x, y, w, h, p) { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (c.d[j] && i >= 0 && i < c.w) c.d[j][i] = p; }
+function frame(c, x, y, w, h, p) { rect(c, x, y, w, 1, p); rect(c, x, y + h - 1, w, 1, p); rect(c, x, y, 1, h, p); rect(c, x + w - 1, y, 1, h, p); }
+function dot(c, x, y, p) { if (c.d[y] && x >= 0 && x < c.w) c.d[y][x] = p; }
+function rows(s) { const r = s.trim().split("\n").map(l => l.trim()); const w = Math.max(...r.map(l => l.length)); return r.map(l => l.padEnd(w, ".")); }
+function blit(c, art, x, y) { rows(art).forEach((l, j) => [...l].forEach((ch, i) => { if (ch !== ".") dot(c, x + i, y + j, ch); })); }
+function blitIn(c, art, a) { const r = rows(art); blit(c, art, a.x + Math.floor((a.w - r[0].length) / 2), a.y + Math.floor((a.h - r.length) / 2)); }
+function fromArt(art) { const r = rows(art); const c = canvas(r[0].length, r.length); blit(c, art, 0, 0); return c; }
+function svg(c, label) {
+  const paths = { c1: "", c2: "", c3: "", c0: "" };
+  c.d.forEach((row, y) => { let x = 0; while (x < c.w) { const p = row[x]; if (p === ".") { x++; continue; } let n = 1; while (row[x + n] === p) n++; paths[PEN[p]] += `M${x} ${y}h${n}v1h-${n}z`; x += n; } });
+  const body = Object.entries(paths).filter(([, d]) => d).map(([k, d]) => `<path class="${k}" d="${d}"/>`).join("");
+  return `<svg class="px" width="${c.w}" height="${c.h}" viewBox="0 0 ${c.w} ${c.h}" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>${body}</svg>`;
+}
+function shadow(c, fw, fh) { rect(c, fw, 2, 2, fh, "k"); rect(c, 2, fh, fw, 2, "k"); }
+
+/* Media shapes. Each returns [canvas, label area]. A cover is the medium the game came on. */
+const MEDIA = {
+  pc(bg) { const c = canvas(26, 34); rect(c, 0, 0, 24, 32, bg); frame(c, 0, 0, 24, 32, "k"); rect(c, 1, 1, 22, 6, "w"); rect(c, 3, 3, 12, 2, "k"); rect(c, 17, 3, 4, 2, "b"); rect(c, 1, 7, 22, 1, "k"); shadow(c, 24, 32); return [c, { x: 1, y: 8, w: 22, h: 23 }]; },
+  switch(bg) { const c = canvas(24, 36); rect(c, 0, 0, 22, 34, bg); frame(c, 0, 0, 22, 34, "k"); rect(c, 1, 1, 20, 4, "w"); rect(c, 2, 2, 5, 2, "b"); rect(c, 1, 5, 20, 1, "k"); shadow(c, 22, 34); return [c, { x: 1, y: 6, w: 20, h: 27 }]; },
+  md(bg) { const c = canvas(26, 36); rect(c, 0, 0, 24, 34, bg); frame(c, 0, 0, 24, 34, "k"); rect(c, 1, 1, 22, 6, "k"); for (let x = 2; x < 23; x += 3) rect(c, x, 1, 1, 6, "g"); rect(c, 1, 3, 22, 1, "g"); rect(c, 1, 7, 22, 1, "w"); shadow(c, 24, 34); return [c, { x: 1, y: 8, w: 22, h: 25 }]; },
+  snes(bg) { const c = canvas(40, 28); rect(c, 0, 0, 38, 26, bg); frame(c, 0, 0, 38, 26, "k"); rect(c, 1, 20, 36, 5, "g"); rect(c, 1, 20, 36, 1, "k"); rect(c, 3, 22, 14, 2, "k"); rect(c, 30, 22, 5, 2, "w"); shadow(c, 38, 26); return [c, { x: 1, y: 1, w: 36, h: 19 }]; },
+  gb(bg, body = "g") {
+    const c = canvas(24, 28); rect(c, 0, 0, 24, 28, body); frame(c, 0, 0, 24, 28, "k");
+    dot(c, 23, 0, "."); dot(c, 22, 0, "."); dot(c, 23, 1, "."); dot(c, 21, 0, "k"); dot(c, 22, 1, "k"); dot(c, 23, 2, "k");
+    rect(c, 3, 2, 15, 1, "k"); rect(c, 3, 4, 15, 1, "k");
+    rect(c, 3, 6, 18, 16, "k"); rect(c, 4, 7, 16, 14, bg);
+    rect(c, 10, 24, 4, 1, "k"); rect(c, 11, 25, 2, 1, "k");
+    return [c, { x: 4, y: 7, w: 16, h: 14 }];
+  },
+  gba(bg) {
+    const c = canvas(34, 22); rect(c, 0, 2, 34, 20, "g"); frame(c, 0, 2, 34, 20, "k"); rect(c, 5, 0, 24, 3, "g"); frame(c, 5, 0, 24, 3, "k"); rect(c, 6, 2, 22, 1, "g");
+    rect(c, 5, 5, 24, 14, "k"); rect(c, 6, 6, 22, 12, bg); rect(c, 2, 4, 1, 15, "w");
+    return [c, { x: 6, y: 6, w: 22, h: 12 }];
+  },
+  pico(bg) {
+    const c = canvas(22, 26); rect(c, 0, 0, 22, 26, "k"); dot(c, 21, 0, "."); dot(c, 20, 0, "."); dot(c, 21, 1, ".");
+    rect(c, 2, 3, 18, 16, "w"); rect(c, 3, 4, 16, 14, bg); rect(c, 4, 21, 14, 1, "g"); rect(c, 4, 23, 14, 1, "g");
+    return [c, { x: 3, y: 4, w: 16, h: 14 }];
+  },
+};
+
+const ART = {
+  celeste: ["pico", "b", `
+    ..w..........w..
+    .......w........
+    ......www.......
+    .....wwgww......
+    ....wwgggww.....
+    ...kgggggggk....
+    ..kgggggggggk...
+    .kgggggkgggggk..
+    kgggggkgkgggggk.
+    kkkkkkkkkkkkkkkk`],
+  petal: ["pico", "b", `
+    ....www....
+    ...wwwww...
+    .ww.www.ww.
+    wwwwkkkwwww
+    wwwwkgkwwww
+    wwwwkkkwwww
+    .ww.www.ww.
+    ...wwwww...
+    ....www....
+    .....k..kk.
+    .....kkk...
+    .....k.....`],
+  hollow: ["switch", "k", `
+    .w.........w.
+    .w.........w.
+    .ww.......ww.
+    ..ww.....ww..
+    ...wwwwwww...
+    ..wwwwwwwww..
+    .wwwwwwwwwww.
+    .wwkkwwwkkww.
+    .wkkkwwwkkkw.
+    .wkkkwwwkkkw.
+    .wwkkwwwkkww.
+    ..wwwwwwwww..
+    ...wwwwwww...
+    ....bbbbb....
+    ...bbbbbbb...
+    ..bbbbbbbbb..
+    ..bbbbbbbbb..
+    .bbbbbbbbbbb.
+    .bbb.bbb.bbb.`],
+  tetris: ["gb", "w", null, blocks(`
+    T...I
+    TT..I
+    TLLLI
+    .L..I`, { T: "b", L: "g", I: "w" })],
+  spelunky: ["pc", "b", `
+    ......kkkkkk......
+    .....kwwwwwwk.....
+    ....kwwwkkwwwk....
+    ....kwwwkwkwwk....
+    ..kkkkkkkkkkkkkk..
+    ....kggggggggk....
+    ....kgkkggkkgk....
+    ....kggggggggk....
+    ....kgwkkkkwgk....
+    .....kggggggk.....
+    ......kkkkkk......
+    .....kwwkkwwk.....
+    ....kwwwwwwwwk....
+    ....kwkwwwwkwk....
+    kk..kwkwwwwkwk..kk
+    kkkkkkkkkkkkkkkkkk`],
+  lantern: ["pc", "k", `
+    .........g..........
+    ........g.g.........
+    ......ggggggg.......
+    ......gwwwwwg.......
+    ......gwwbwwg.......
+    ......gwbwbwg.......
+    ......gwwbwwg.......
+    ......gwwwwwg.......
+    ......ggggggg.......
+    .......g...g........
+    ....................
+    g.g.g..........g.g.g
+    ggggg....g.....ggggg
+    ggggg...ggg....ggggg
+    ggggg..ggggg...ggggg
+    gggggggggggggggggggg`],
+  tide: ["md", "b", `
+    ....w.....w.........
+    ...www...www........
+    ....................
+    ...ww......ww.......
+    ..w..w....w..w......
+    ww....wwww....ww....
+    ....................
+    .....ww......ww.....
+    ....w..w....w..w....
+    wwww....wwww....wwww
+    ....................
+    ...kk.....kkk.......
+    ..kkkk...kkkkkk..kk.
+    kkkkkkkkkkkkkkkkkkkk`],
+  bramble: ["gba", "w", `
+    ...k...........k......
+    ..kbk.........kbk.....
+    .kbbbk...k...kbbbbk...
+    ..kbk...kbk...kbbk....
+    ...k...kbbbk...kk.....
+    kkkkkkkkkkkkkkkkkkkkkk`],
+  zelda: ["gb", "w", `
+    ....kkkkkk....
+    ..kkwwwbbbkk..
+    .kwwwwwbbbbbk.
+    kwwwkwwbbkbbbk
+    kwwwwwwbbbbbbk
+    .kwwwwwbbbbbk.
+    ..kkkkkkkkkk..
+    ......kk......
+    ......kk......
+    ....kkkkkk....`],
+  wario: ["gba", "b", `
+    ..w........k..........
+    ..........kwk.........
+    .........kwwwk........
+    ........kwwwwwk.......
+    .......kwwkkkwwk......
+    ......kwwwkgkwwwk.....
+    .....kwwwwkgkwwwwk....
+    ....kwwwwwwwwwwwwwk...
+    kkkkkkkkkkkkkkkkkkkkkk`],
+  metroid: ["snes", "k", `
+    w...........................w.
+    ...........wwwwww.............
+    .........wwbbbbbbww.......w...
+    ........wbbwwbbwwbbw..........
+    .......wbbwwwbbwwwbbw.........
+    ..w....wbbbwwbbwwbbbw.........
+    .......wbbbbbbbbbbbbw.........
+    ........wwwwwwwwwwww..........
+    .........w.w....w.w...........
+    .........w..w..w..w.......w...
+    ........w...w..w...w..........
+    ..............................
+    ggggg..................ggggggg
+    gggggggggg.......gggggggggggggg`],
+};
+
+function project() { /* Workbench's default project icon: a page with a turned corner */
+  const c = canvas(20, 26); rect(c, 0, 0, 20, 26, "w"); frame(c, 0, 0, 20, 26, "k");
+  for (let j = 0; j < 6; j++) for (let i = 14 + j; i < 20; i++) dot(c, i, j, ".");
+  for (let j = 0; j < 6; j++) dot(c, 14 + j, j, "k");
+  rect(c, 14, 0, 1, 6, "k"); rect(c, 14, 5, 6, 1, "k"); rect(c, 15, 1, 1, 4, "g"); rect(c, 16, 2, 1, 3, "g"); rect(c, 17, 3, 1, 2, "g"); rect(c, 18, 4, 1, 1, "g");
+  [[3, 9, 12], [3, 12, 14], [3, 15, 10], [3, 18, 13], [3, 21, 7]].forEach(([x, y, w]) => rect(c, x, y, w, 1, "g"));
+  rect(c, 3, 4, 8, 2, "k");
+  return c;
+}
+function drawer() {
+  const c = canvas(32, 22);
+  rect(c, 3, 0, 29, 5, "w"); rect(c, 3, 0, 29, 1, "k"); for (let j = 0; j < 4; j++) dot(c, 3 - j, j + 1, "k"), rect(c, 4 - j, j + 1, 1, 1, "w");
+  rect(c, 31, 0, 1, 5, "k");
+  rect(c, 0, 4, 32, 18, "g"); frame(c, 0, 4, 32, 18, "k");
+  rect(c, 3, 8, 26, 1, "w"); rect(c, 3, 8, 1, 11, "w"); rect(c, 3, 18, 26, 1, "k"); rect(c, 28, 8, 1, 11, "k");
+  rect(c, 11, 11, 10, 3, "k"); rect(c, 12, 12, 8, 1, "b");
+  rect(c, 5, 1, 9, 2, "b"); rect(c, 16, 2, 10, 1, "b");
+  return c;
+}
+function device() {
+  const c = canvas(26, 18); rect(c, 0, 0, 26, 18, "g"); frame(c, 0, 0, 26, 18, "k");
+  [[0, 0], [25, 0], [0, 17], [25, 17]].forEach(([x, y]) => dot(c, x, y, "."));
+  rect(c, 8, 3, 10, 9, "k"); rect(c, 9, 4, 8, 7, "b"); rect(c, 10, 5, 3, 1, "w");
+  rect(c, 2, 7, 5, 1, "k"); rect(c, 4, 5, 1, 5, "k");
+  rect(c, 21, 5, 2, 2, "k"); rect(c, 19, 8, 2, 2, "k");
+  rect(c, 10, 14, 2, 1, "k"); rect(c, 14, 14, 2, 1, "k"); rect(c, 1, 1, 24, 1, "w");
+  return c;
+}
+const WIFI = `
+  ....kkkkkkkkk....
+  ..kk.........kk..
+  .k...bbbbbbb...k.
+  k..bb.......bb..k
+  ..k...kkkkk...k..
+  .....k.....k.....
+  .......kkk.......
+  ........k........
+  ........k........
+  .......kgk.......
+  ......kgggk......
+  .....kgggggk.....
+  ....kkkkkkkkk....`;
+const KEY = `
+  ..kkkkk.............
+  .kwwwwwk............
+  kwwkkkwwkkkkkkkkkkk.
+  kwk...kwwwwwwwwwwwwk
+  kwwkkkwwkkkkkkwkkwk.
+  .kwwwwwk.....kwk.kk.
+  ..kkkkk.......k.....`;
+const GADGET = {
+  "g-close": `
+    kkkkkk
+    k....k
+    k.ww.k
+    k.ww.k
+    k....k
+    kkkkkk`,
+  "g-depth": `
+    kkkkkkk...
+    k.....k...
+    k...kkkkkk
+    k...kwwwwk
+    kkkkkwwwwk
+    ....kwwwwk
+    ....kkkkkk`,
+  "g-zoom": `
+    kkkkkkkkk
+    kwwwk...k
+    kwwwk...k
+    kkkkk...k
+    k.......k
+    kkkkkkkkk`,
+  "g-up": `
+    ...k...
+    ..kkk..
+    .kkkkk.
+    kkkkkkk`,
+  "g-down": `
+    kkkkkkk
+    .kkkkk.
+    ..kkk..
+    ...k...`,
+  "g-size": `
+    .....k
+    ....kk
+    ...kwk
+    ..kwwk
+    .kwwwk
+    kkkkkk`,
+};
+
+function blocks(coarse, fill) { /* Tetris pieces: each cell a 3x3 block with a black rim */
+  const r = rows(coarse), c = canvas(r[0].length * 3, r.length * 3);
+  r.forEach((l, j) => [...l].forEach((ch, i) => { if (ch !== ".") { frame(c, i * 3, j * 3, 3, 3, "k"); dot(c, i * 3 + 1, j * 3 + 1, fill[ch]); } }));
+  return c.d.map(row => row.join("")).join("\n");
+}
+function cover(g) {
+  if (!g.cover) return project();
+  const [media, bg, a, b] = ART[g.cover]; const art = a ?? b;
+  const [c, area] = MEDIA[media](bg);
+  blitIn(c, art, area);
+  return c;
+}
+
+/* Paint fixed icons */
+const FIXED = { drawer: drawer(), device: device(), wifi: fromArt(WIFI), key: fromArt(KEY) };
+for (const el of document.querySelectorAll("[data-pix]")) {
+  const k = el.dataset.pix;
+  el.innerHTML = FIXED[k] ? svg(FIXED[k]) : svg(fromArt(GADGET[k]));
+}
+
+/* ======================================================================
+   Games drawer contents
+   ====================================================================== */
+const grid = document.querySelector(".grid");
+if (!games.length) {
+  grid.outerHTML = `<p class="empty" style="padding:12px 8px;max-width:60ch">This drawer is empty. Games show here once Korri finds them on this device or on a device near it.</p>`;
+}
+games.forEach((g, i) => {
+  const b = document.createElement("button");
+  b.className = "icon";
+  b.dataset.nav = ""; b.dataset.act = "play"; b.dataset.game = i;
+  b.setAttribute("role", "option");
+  b.setAttribute("aria-label", `${g.title}, ${g.system}${g.resumable ? ", paused" : ""}. Plays on ${g.places.join(" or ")}.`);
+  b.innerHTML = `<span class="img">${svg(cover(g))}</span><span class="lbl"><span>${g.title}</span></span>${g.resumable ? '<span class="sfx"><span>(paused)</span></span>' : ""}`;
+  grid?.appendChild(b);
+});
+
+/* The status line: what Workbench's Info would say about the selected icon */
+function info(el) {
+  const st = el.closest(".win")?.querySelector(".status");
+  if (!st) return;
+  if (el.dataset.game != null) {
+    const g = games[+el.dataset.game];
+    const parts = [`<span class="st-name">${g.title}</span>`, `<span>${g.system}</span>`, `<span>Play on: ${g.places.join(", ")}</span>`];
+    if (g.resumable) parts.push(`<span>Paused, resumes where you left it</span>`);
+    if (!g.cover) parts.push(`<span>No cover</span>`);
+    parts.push(`<span>${g.last ? `Last played ${g.last}, ${g.plays} ${g.plays === 1 ? "play" : "plays"}` : "Never played"}</span>`);
+    st.innerHTML = parts.join("");
+  } else if (el.dataset.info?.startsWith("pref:")) {
+    const [name, ...rest] = PREFS[el.dataset.info.slice(5)].split("  ");
+    st.innerHTML = `<span class="st-name">${name}</span>` + rest.map(r => `<span>${r}</span>`).join("");
+  }
+}
+
+/* ======================================================================
+   plan(width, height): the whole layout decision, from the container only.
+   Thresholds are guesses until measured on the devices.
+   ====================================================================== */
+const MIN_W = 320, MIN_H = 240;          // smallest screen in Workbench pixels
+const OVERLAP_W = 560, OVERLAP_H = 340;  // room needed for windows to overlap
+function plan(W, H) {
+  const fits = k => W / k >= OVERLAP_W && H / k >= OVERLAP_H;
+  let s = Math.max(1, Math.floor(Math.min(W / MIN_W, H / MIN_H)));
+  if (!fits(s) && s > 2 && fits(s - 1)) s -= 1;   // give one step of scale back to buy overlap
+  const w = Math.floor(W / s), h = Math.floor(H / s);
+  const mode = fits(s) ? "overlap" : "stack";
+  return {
+    s, w, h, mode,
+    cell: mode === "overlap" ? 104 : 72,      // icon cell width
+    rowgap: mode === "overlap" ? 8 : 2,
+    sbw: mode === "overlap" ? 15 : 11,
+    rects: mode === "overlap" ? {
+      games: { x: Math.round(w * 0.235), y: 17, w: w - Math.round(w * 0.235) - 10, maxH: h - 17 - 8 },
+      prefs: { x: 14, y: Math.round(h * 0.655), w: Math.round(w * 0.47), maxH: h - Math.round(h * 0.655) - 6 },
+    } : null,
+  };
+}
+
+/* ======================================================================
+   State that survives any resize: open windows, depth order, focus.
+   ====================================================================== */
+const state = { open: { games: true, prefs: true }, order: ["prefs", "games"], zoomed: {}, lastFocus: {} };
+const screen = document.getElementById("screen");
+const stage = document.getElementById("stage");
+const wins = Object.fromEntries([...document.querySelectorAll(".win")].map(w => [w.dataset.win, w]));
+let P = null;
+
+function front() { return [...state.order].reverse().find(id => state.open[id]) || null; }
+
+function layout() {
+  P = plan(stage.clientWidth, stage.clientHeight);
+  Object.assign(screen.style, { width: P.w + "px", height: P.h + "px", zoom: P.s });
+  screen.dataset.mode = P.mode;
+  screen.style.setProperty("--cell", P.cell + "px");
+  screen.style.setProperty("--rowgap", P.rowgap + "px");
+  screen.style.setProperty("--sbw", P.sbw + "px");
+
+  const top = front();
+  document.querySelectorAll(".desk-icon").forEach(d => d.classList.toggle("is-open", !!state.open[d.dataset.for]));
+  const openIds = state.order.filter(id => state.open[id]);
+  const docked = P.mode === "stack" ? openIds.filter(id => id !== top) : [];
+
+  for (const [id, el] of Object.entries(wins)) {
+    el.hidden = !state.open[id];
+    el.classList.toggle("is-front", id === top);
+    el.classList.toggle("is-collapsed", docked.includes(id));
+    el.style.zIndex = 10 + state.order.indexOf(id);
+    const wt = el.querySelector(".wtitle");
+    if (id === top) delete wt.dataset.nav; else wt.dataset.nav = "";
+    if (id === "prefs") el.querySelector(".wsub").hidden = !docked.includes(id);
+    const s = el.style;
+    if (P.mode === "overlap") {
+      const r = P.rects[id];
+      const z = state.zoomed[id];
+      Object.assign(s, z ? { left: "0px", top: "11px", width: P.w + "px", height: P.h - 11 + "px", maxHeight: "" }
+                         : { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: "auto", maxHeight: r.maxH + "px" });
+    } else if (docked.includes(id)) {
+      const k = docked.length - 1 - docked.indexOf(id);
+      Object.assign(s, { left: "0px", width: P.w + "px", top: P.h - 12 * (k + 1) + "px", height: "12px", maxHeight: "" });
+    } else {
+      Object.assign(s, { left: "0px", width: P.w + "px", top: "11px", height: P.h - 11 - 12 * docked.length + "px", maxHeight: "" });
+    }
+    // depth gadget label follows position
+    const depth = el.querySelector('[data-act="depth"]');
+    depth.setAttribute("aria-label", (id === top ? "Send " : "Bring ") + (id === "games" ? "Games" : "Prefs") + (id === top ? " to back" : " to front"));
+  }
+  updateKnobs();
+  // keep focus somewhere visible after a re-layout
+  const a = document.activeElement;
+  if (!a || a === document.body || !navigable().includes(a)) restoreFocus();
+  else a.scrollIntoView({ block: "nearest" });
+}
+
+function updateKnobs() {
+  for (const el of Object.values(wins)) {
+    const pane = el.querySelector(".pane"), knob = el.querySelector(".knob"), track = el.querySelector(".track");
+    if (!pane || !knob) continue;
+    const ratio = pane.scrollHeight ? Math.min(1, pane.clientHeight / pane.scrollHeight) : 1;
+    const th = track.clientHeight;
+    const kh = Math.max(6, Math.round(th * ratio));
+    const max = pane.scrollHeight - pane.clientHeight;
+    const t = max > 0 ? Math.round((th - kh) * pane.scrollTop / max) : 0;
+    Object.assign(knob.style, { top: t + "px", height: kh + "px", bottom: "" });
+  }
+}
+document.querySelectorAll(".pane").forEach(p => p.addEventListener("scroll", updateKnobs));
+
+/* ======================================================================
+   Focus: d-pad moves between whatever is visible and reachable
+   ====================================================================== */
+function visible(el) {
+  if (el.closest("[hidden]")) return false;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return false;
+  const pane = el.closest(".pane");
+  if (pane) { const pr = pane.getBoundingClientRect(); if (r.bottom < pr.top + 2 || r.top > pr.bottom - 2) return "scroll"; }
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 6));
+  return hit && el.contains(hit);
+}
+function navigable() {
+  const top = front();
+  return [...document.querySelectorAll("[data-nav]")].filter(el => {
+    const w = el.closest(".win");
+    if (w && w.dataset.win !== top && !el.classList.contains("wtitle")) return false;
+    if (w && w.classList.contains("is-collapsed") && !el.classList.contains("wtitle")) return false;
+    return visible(el);
+  });
+}
+function center(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+function move(dir) {
+  const cur = document.activeElement;
+  const top = front();
+  // inside a scrolling grid, step through items in reading order so off-screen icons stay reachable
+  if (cur?.dataset.game != null) {
+    const items = [...grid.children];
+    const cols = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+    const i = items.indexOf(cur);
+    const j = { left: i - 1, right: i + 1, up: i - cols, down: i + cols }[dir];
+    const sameRow = Math.floor(j / cols) === Math.floor(i / cols);
+    if (items[j] && (dir === "up" || dir === "down" || sameRow)) return focus(items[j]);
+  }
+  const all = navigable().filter(el => el !== cur);
+  if (!cur || cur === document.body) return restoreFocus();
+  const c = center(cur.getBoundingClientRect());
+  let best = null, bestScore = Infinity;
+  for (const el of all) {
+    const p = center(el.getBoundingClientRect());
+    const dx = p.x - c.x, dy = p.y - c.y;
+    const along = { left: -dx, right: dx, up: -dy, down: dy }[dir];
+    const across = dir === "left" || dir === "right" ? Math.abs(dy) : Math.abs(dx);
+    if (along <= 1) continue;
+    const score = along + across * 2.5;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (best) focus(best);
+}
+function focus(el) {
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: "nearest" });
+  const w = el.closest(".win");
+  if (w && el.closest(".pane")) state.lastFocus[w.dataset.win] = el;  // the selected icon is what a drawer remembers
+  info(el);
+}
+function restoreFocus() {
+  const top = front();
+  const w = top && wins[top];
+  const remembered = top && state.lastFocus[top];
+  const el = (remembered && w.contains(remembered) && remembered) || (w && w.querySelector(".pane [data-nav]")) || document.querySelector(".desk-icon");
+  if (el) focus(el);
+}
+
+/* ======================================================================
+   Actions: confirm opens or activates; back closes the front window
+   ====================================================================== */
+function zoomBox(fromEl, toEl) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || !fromEl || !toEl) return;
+  const sr = screen.getBoundingClientRect(), z = P.s;
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  const rel = r => ({ x: (r.left - sr.left) / z, y: (r.top - sr.top) / z, w: r.width / z, h: r.height / z });
+  const A = rel(a), B = rel(b);
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 6, d = document.createElement("div");
+    d.className = "zoombox";
+    Object.assign(d.style, { left: Math.round(A.x + (B.x - A.x) * t) + "px", top: Math.round(A.y + (B.y - A.y) * t) + "px", width: Math.round(A.w + (B.w - A.w) * t) + "px", height: Math.round(A.h + (B.h - A.h) * t) + "px", opacity: 0 });
+    screen.appendChild(d);
+    d.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, delay: i * 25, fill: "forwards" }).onfinish = () => d.remove();
+  }
+}
+function raise(id) { state.open[id] = true; state.order = state.order.filter(x => x !== id).concat(id); }
+function activate(el) {
+  const act = el.dataset.act, w = el.closest(".win"), id = w?.dataset.win;
+  if (act === "open") { raise(el.dataset.for); layout(); zoomBox(el, wins[el.dataset.for]); restoreFocus(); }
+  else if (act === "close") { closeWin(id); }
+  else if (act === "front") { raise(id); layout(); restoreFocus(); }
+  else if (act === "depth") {
+    if (id === front()) state.order = [id, ...state.order.filter(x => x !== id)]; else raise(id);
+    layout(); restoreFocus();
+  }
+  else if (act === "zoom") { state.zoomed[id] = !state.zoomed[id]; layout(); focus(el); }
+  else if (act === "wifi") { raise("prefs"); layout(); focus(wins.prefs.querySelector('[data-info="pref:wifi"]')); }
+  else if (act === "scroll-up" || act === "scroll-down") { el.closest(".win").querySelector(".pane").scrollBy({ top: act === "scroll-up" ? -60 : 60 }); }
+  else if (act === "play") {
+    const g = games[+el.dataset.game];
+    const st = w.querySelector(".status");
+    zoomBox(el, screen);
+    st.innerHTML = g.places.length > 1
+      ? `<span class="st-name">${g.title}</span><span>Plays on ${g.places.join(" or ")}. A requester asks which.</span>`
+      : `<span class="st-name">${g.title}</span><span>${g.resumable ? "Resuming" : "Starting"} on ${g.places[0]}</span>`;
+  }
+  else if (act === "pref") { info(el); }
+}
+function closeWin(id) {
+  if (!id) return;
+  state.open[id] = false;
+  layout();
+  const icon = document.querySelector(`.desk-icon[data-for="${id}"]`);
+  if (front()) restoreFocus(); else focus(icon);
+}
+
+/* The host delivers semantic actions; in the browser the keyboard stands in. */
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "confirm", " ": "confirm", Escape: "back", Backspace: "back" };
+addEventListener("keydown", e => {
+  const a = KEYS[e.key]; if (!a) return;
+  e.preventDefault();
+  if (a === "confirm") activate(document.activeElement);
+  else if (a === "back") closeWin(front());
+  else move(a);
+});
+
+new ResizeObserver(layout).observe(stage);
+document.fonts.ready.then(() => {
+  layout();
+  const start = grid?.children[3] || document.querySelector(".desk-icon");
+  focus(start);
+  if (wins.prefs) state.lastFocus.prefs = wins.prefs.querySelector('[data-info="pref:wifi"]');
+  info(wins.prefs.querySelector('[data-info="pref:wifi"]'));
+  focus(start);
+});
+</script>
+</body>
+</html>

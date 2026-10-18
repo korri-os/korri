@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RELAY P200 Games</title>
+<style>
+/* monogram by datagoblin, CC0 1.0. A 6x9 bitmap face: 5-wide glyphs,
+   7-row capitals and 2-row descenders, the same proportions as the
+   SAA5050 teletext character generator. */
+@font-face {
+  font-family: "monogram";
+  src: url(data:font/woff2;base64,d09GMgABAAAAAAmgAAoAAAAAP7QAAAlSAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAhnwK4WzKWgE2AiQDg3YLggAABCAFgzkHihAbbjJFRm32oDQuilK5iSMqGCWCqqcEOY5W6QbPF0C2i+QIzcwZQsjysvCOMz9jGP/1v+/d03NFgtv9xZ2MkcugUFBdFVmz1OtYK55MNAVuuy8NNtjQYgjZZijZwXkxD4zkofYEhwF5bOxN7rcQA6yAkJ/+Lk3zRtP8oX2YnY5lBE6jMRapiQCo8fe0Z1zm933HvNTK/EWAbdulb2KYhFBojJtLHfNR8dK9dPgVznJckY8xXAvP17TpneQdtayitfEMxl4x7oSCn1xd1tHK+AxGJEcTpipbu5AYecJQPU5gLM5hHIP9u0zpyrbMUyqjNoBhSLY0bnvpqLIAFhQ0Gv17utUqvaKGQmgoaW9alWTa+2UJgxxyyBAGGSwsLCwscv9+U7qJyt8REcE+yie4r518apn7WXAzeTURd9x4MXogBMLGhlSBczmIfULNXicnPB7kJLUZ6y9gABcQhgsBYbi5WoK6CnInDf0tZBU7OMYFbnCPZ3zgO/8UqGhlVA7lr6QqqVn9W6SNuqtHeqeP+qY/JrVJb7LYMDvttreNObmvKREh0SOjt0fvjD4YG+o4gLWQRezgICe4xC0e8oJP/MJRiOKUVblURGVVVS1bqA06p/t6ro/6qp8Gk87EnFA77NqWJFf4xNPlPHIaOQeczVT9v47v7Yc1VVNFBWXlvv/sfov/8+1jt4/e3nerDQEAUJX62uttMGOZy3LWc56vcpOPwpROcSqt7vWsdzM1H7Raa7VZL/WaF9sjXrVFiSFBZ5CxrbXs8bkVbitKcUrrClSkuqq9GkFhkBilaPrRFCNG8cQ4SqYXrxQJSt+VqAxJypKsHNAZVNAZqaizUCUxK1VbslEtdXaqj8xJTXKrrfPIsMgWWRdNkcv2USBrQrRk/+yO0ksL2crayClHHZMdyB4hlnIcWUJADig3gG8A/kF/4fIH9x8A4AZAAwqFSefMKJVKZyjCQCVUGt30+FTFmYwYxoDhTTNu5g8Zp01fgitX5k6qvDsyXAmT/8rYoGkri5NysugUMaFNX6QqM32roNZ4PSOFWXaVh2DggmyZF4ZXaqxQY2BZqCc/bccX76USTsfFYVM4HtDKZc7BqBcWUIHEEfQ7nU9/OhuD1wghRt1RNi4qa/qvLBihPNlaL3yMUx+JOlGX9dMSfPQ8Sa1l5DVCjRcQ2iXEmC8WgbuzwViRCPMvmolTgdRILNWEEuHMbgpQI0VkVhAex2eY7V26t/EEnt287gRFQJCIWES45c4bqNlsPBSzpjNsBl9DprFQV4y2XWyWR2O2oy3pbLKJGgSUt6lE0IrSL+X3unWwLMyt/IEffvWiXdoHujJaq8ZPIYEQFegxSXt0Bg/GUenM6tmlT3sYykbh1PIPRVt0OQVwWcxpHQqjDDt6lplDSgYqzx2zUeYP7mRWMcXsTEyYSakr1XT09skC0AbzsT6YmCpHQ888tq5LVY32DMyI2j3gHMbS2iVmhbJAJUOWzA0EEuVqNd2r0+DVHOakzoIKzdNL8iDVOVqfzfVs6PgIgZIhUXKCAZ6DhtlNOGChOAJi057Do1nOfUXq8c7QUu83RAIslimVsau+Xu5gTlYcAxsuQU+dLD4bR8QvKzmIH3IBaGluQDL3Kqrs7v+zN0kYAFhg/lOi+QM26OZd5L+6wOrfUK8dxSGYou5hjjfvCPypZELuqLP36wMS4F1PATJHsP1oXVnbhDkMCyTT9xdgSK4rnNYw3QEKkicpek3zoInw+MTQgdc5kI+O6si0OROvJZe7puqJhAsig6MdgO/OsiFJcQgsaXiT6whgYwed7M+Z09ZpMUREOOGcCV79BjN1bh1D3/iINxowSg8sWlgU7mWzQYc3e1j4WagrYipW0eo+ACkhuxEtqJAs98ZjKU+KWP7NouZ4w6FrhGxoJX5DTO96QECiSWApVwgDx1gxfV0fraQsqw2vGuSYs1o7ZuzRJ1AFYucJzMTyQJ73RqkdUu1ZXmX0rB4qS2u0jRfZTerBgx35CwI7s75QYvTZQ6c8hwVPj16h0Ipi7StD1jYq7AYPPYPNk8Xez1jWK6IPDRoQahiQVZE6XTy4scMxRVrpdIFpXgVr0ng5iuROVb5hDzfMvD19pPAnIgOErDkrL23owajs6acSt8f5ebnoMMVFsWxb1av01oX0oOVoKItFWkd9G9DUHAzTMTSX3PaBw8qOhEFjUhjeadhFmJn1aiydUfUZufxuY+G7sXvG86QV+/5qPILIGeYIo/LEvrxIQnzsPdJKrQ06NXbLdMR4Ozih4FH7ytZsTj2v6KyOC8l6bvXKRvllTYS3NnfM5/MT63cW1y0JittVAwPfyAVr+mI1bWew+jUz2fVNzY1tPgEUK5fMfMOm2ShjhFsfcNJvk+MxSteqAifQW7H26yMV5OptMyJgx52nKxPrz7QkWg651hJKZvK4pnnc8RzwixIANYhwiug/O8q2TOe57XwE1IcqsENF6mHay5eCelNqVe7awGWg22aiHRfNIsTDZXJqIo840cDkr+NLah416PLbBoF5v3nJNRTg0fYGX+etTk59NXsBF0ZO5s3JsTWBpn1FDr+x+jYRTM281kRC5JJsOVJplnB6BQPISyBemUhg1Yvm6FHVfdKA8Kf6gMGTJsr/5tZcyM0bWEsn0oBIpbQDhgDlUP5rxdoJd/gdzgX7v+8LsfhXrU9wki1SZJsp5ZQqN3tJYTBaNekA75WS11/M5Q6dcRNrQp35h8k8bNZQ5iepGR1lQzsdtNdBC5010o7VWC9WU4101UgLHTTWVivtJbGKUISMWJlIkZEUVmWaaSov6KE923iOVZFWmuggli6sjlrpqZm2rG7dStOgDB10ZvFEc7KUfVk3nTXXSBPNpNBG90JcOlwL3bTVSGeXd2AA/osDQEYuucldHvKUl7zlI1/5yX9vlGRF1XTDZLZYbXaH0+X2vAAiTCjjQiptrAMQYUIZFzLElEttShvrfIgpl9r6mGvbj/O6n/frY659KG0sh56EmDKLUlsf09rnvn/f94f/I2w31uhksgBEmLA5lMvj4+f+LdwBAAAAAAAAAAAAhBBCCCGEEEIIIUIIIYQQQgghhBDGGGOMMcYYY4wxIYQQQgghhBBCbM1TSimllNrLZr58hx8TkM3huV/dWq7rcJy2zTOYLAfjGJ+8pL1zddeZbM0bC5kAAA==) format("woff2");
+  font-display: block;
+}
+
+:root {
+  /* The eight teletext colours. Nothing else is ever painted. */
+  --k: #000000; --r: #ff0000; --g: #00ff00; --y: #ffff00;
+  --b: #0000ff; --m: #ff00ff; --c: #00ffff; --w: #ffffff;
+}
+
+html, body { margin: 0; height: 100%; background: var(--k); }
+body {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* The page is 40 x 24 cells. Its height is the container's short side
+   (or the width that keeps 4:3), so it never reflows: only the cell
+   changes size. A cell is 8 x 10 units; one unit is one glyph pixel
+   tall, and glyphs are drawn 4/3 wide, as on a 4:3 set. */
+.page {
+  --ph: min(100cqh, 75cqw);
+  --rh: calc(var(--ph) / 24);
+  --u: calc(var(--rh) / 10);
+  --cw: calc(var(--u) * 8);
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(40, var(--cw));
+  grid-template-rows: repeat(24, var(--rh));
+  font-family: "monogram", monospace;
+  font-size: calc(var(--u) * 9);
+  line-height: calc(var(--u) * 9);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  user-select: none;
+}
+
+.c { position: relative; background: var(--bg); color: var(--fg); }
+.c > span {
+  position: absolute;
+  left: 0;
+  top: var(--u);
+  white-space: pre;
+  transform: scaleX(1.3333);
+  transform-origin: 0 0;
+}
+/* Double height: the glyph is stretched over this row and the next. */
+.c.dh > span { transform: scale(1.3333, 2); z-index: 2; }
+
+/* 2 x 3 block mosaic. Row heights 3:4:3, as the SAA5050 drew them. */
+.c.m {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 3fr 4fr 3fr;
+}
+.c.m > i { background: var(--bg); }
+.c.m > i.on { background: var(--fg); }
+
+.c > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Focus stops sit over the cells they own. The page itself draws focus
+   in reverse video, so these stay invisible. */
+.hit {
+  position: absolute;
+  margin: 0; padding: 0; border: 0;
+  background: transparent;
+  outline: none;
+  cursor: default;
+  z-index: 5;
+}
+</style>
+</head>
+<body>
+<main class="page" id="page" aria-label="RELAY teletext service, page 200, Games"></main>
+
+<script>
+"use strict";
+
+const ART = {
+  SUMMIT: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAwFBMVEX19f//+uv/5ni+38VGUG6FP39ePYM0PGBZOn9VOXxTOHtRN3lPNnhONndLNXVKNHRJNHNIM3NHM3JGM3FEMm9DMW9BMW5AMG0/MGwoMFCTID4+L2s9L2o8Lmo6Lmk5LWg4LWc3LGY2LGU1K2UzK2QzKmMyKmIwKWEvKWEuKGAsJ14rJ10pJlwoJlsmJVolJVklJFkkJFgjJFgiI1chI1YgIlUfIlUeIlQeIVQdIVMcIVMbIFIbIFEaIFEYH1AWHk6wIIyMAAADqklEQVR42uWa13LbMBBFLzQ7WafZ6QmcHttxSZzei/P/fxVSECVSooDFLiRMJmdGhkAR9x6z6UX4Uxnol7oyAhcBd2FGF4GLiji3JYHYscHvSrjZiF+Vwc/K4EcS92OT4Htl8K0y+LpZXGoHfNHgyi3C58rgU2Xw0YqzLbcLGMGHyuB9ZfCuMni7Hvd2C+CNHPdmA8Cy2Dm3bxY4N9AKNFgizvHawExgf9+QUUbA4IBXBvoCDaqMYgLaDJwZmAsYMkoInLmxz2QJZzg10AqcGrEKWFYHgRMDjcCJlfoCxwYagWNTQANe2gCMCfUFjvJwwylajizgMBM3mE0FDi0YV8NsgIO1uIMkM4EDA3hhAB2WjPjHTtRvMcBzPT0BQ8gzNeijT3mqZiCgT8nZ2a3t1xvgiRIsE9nXxXLiH5cRiEnhsQ6sogx6pGNEoN3s8oOK9UMXhYcqRgV0SQ80jLRT84qscGuj7isY66fWQJOlFpg29gVonYCLZt3LpyukYX87V4Q5jQDRUIC6DblR7h7uZjOvmxv0NuSn3cmGaMmgvyE7Dab+YEAWA9zOhFYElrZk5lkFaLk/W+BWHpQmL3CrAm5M4GYWJCGa4JbmuJGFSCArEXsBtyeBZOxlgJydicobYHeK25UgFtiVg4x9iTZggOtyMgTkodhIf4ZBfYFrUigPaSyuCqFchLlbE2CjAJHNgHmNAa7IUAj0lzf9PB6MjfX3DZjXGiQEfEmBUQNcjuG9n46ko4uZ9fNYBRL9UwMikwFzxGALAswxA+ysxwd2SE+TwgNWSpDs994kwGoB74sYcMIAgn6LAXPCAJJ+vQGbBZoQgwBz0gDpC1B/CJjTBrg0hl8R8OX6eVCFeP9CwBfrHxog2j/7dYTOgEUGiP7/AwFfrF8sMP+BiEKAWWYAwQHQHAJmoQEi/SsCvlj/wgCR/uVrQG7AagGfEPDFBHhUwK8wrBcaMMsNUgIrFOsfE/C+hAFzjgFy+5MGzFkGEPZPGsLfyYSofbV08/CumzN3Y5aAFwv4UgLcF0jUh1tyMgn3ZTuG2m5O1I7dlm67wKCwAKsFUicgPA7CiQjzxYFfnAqeCoRTILwOIboBhAKcL8AQ3YALgfBkHp6C9l047AsB0QmYC/jKApKnz+A27D0PFiNxX0B8EsoJsFpA+AQOB7/7fg5juPm6MSSGUXgbtgK+soC3oPkGKirgzf1WAW/t//cFvLHfLuBt/QUEuLIAVxbg/12AKwvY+/kvaIQ5eYFu/bAAAAAASUVORK5CYII=",
+  KNIGHT: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFUAAACACAMAAABN2NX0AAAAwFBMVEX/+tLr8P//ylR4blA8WpaqMkaWKDwtOV0kNWIjNGAiM14hMVogL1cgLlYfLVQeLFIeK1AdKk8dKU0cKUweKFocKEwcKEscKEocJ0obJ0kbJkgbJkcaJUYaJUUaJEUaJEQZJEQZI0MZI0IcIjwZIkEYIkAYIT8YIT4XID0XIDwXHzwXHzsWHzsWHjoWHjkWHTkVHTgVHTcVHDYVHDUUGzUUGzQUGjMUGjITGjITGTEWGCgSGC8SFy0RFisQFSkUEB4UVkMFAAADnUlEQVR42u3UiXLTMBAG4E2tatJyg7lvxN0GaHqkIU78/m+FVoclWZIj21ELTP/BOlbarykEA+vIBtPrQAWuSd30OUhQN7HmzTWp6/jZWiX9ILfqnq0Tmtfb1apy9ribTORTVRMeHOWZnu26rnlqFVGrnamVVMtSPtgp10zV5WzquuarFauMWm1VqwR1xcNWeosbNhExXapzZc8JqrDyqSulul1xVf50D13BUkVs5SqsLpdKWG5Vl93qZLJc6m5UzWzqV6AqBi51+K5Z4M2yvLwsSxzlzFdMza26pSoGFjp82yykulhgD5Zk90Kp7bqlKgYudPi2WbBm05y6dy6cNvWIQzHCuQ7fmlWzdhOoY0k94lCMYJ3rhXxr4IyjnM0KR/1g2LmjCgbOmjC9kCrOOMrZrHDUj1B5J2NnQtUMnPpx/wfoilgzOctH109PGf+Dwbs4wNyPq+qKWDuqrs/njN/haCOEVf57zdvdepTnbsVTT/xgz8mJUbFiRnnuVjBcbYSwipqeXTVUD6i//MguPZelXMXrMlxtBPjpx38TYrDuvs3lTd3F1UaAH37CKtZdVd5s2pgRYBYI//7MZu6DsWf56FF2GSCozkarx6Gw43GBo1DY0bjA9xyBbzkCX3Mkk/olR+BzjmRSP+VIJvVjjmRSP+RIJvV9jsC7HIG3OQJvcgRe5wi8Sgmxk3Af+omJMrzsjAXtY6x9VxukmfsmKS68iIYEUefzxlrheSQkhjosCTdDfzSBhWehuP/gnSohgX54GkgQrTFB1gfgiR8SUuvaYls3PAH6oYksPG6HhNS6dtn2pZYBj1ohg1TiIvDQDQmqdd1i/WuOAttQpe7tCRGnsOqw8MAOGaESy0lVt/4NxNXgq5QE1PBFS71vQqLqfsJH5WmkBJV4KumhEpLyYTs+qmHhXhOSwnaiRFOQgBLqvLMo2cqmqdR6udIU9a4K6VSpgsWq66rEUlTaznWpd2TIjlQitASV0j7sv6feFumHdrLI/VPqLZGeKLJFpAG5wWpRFMNVSrvZQmZnqgbb7kg1wiaolCZ/2MJWD0WGqCjtqVgscsPVwlOLRJVetVooFXi0WrTUw52ph1tV+pepBzJ90agqNK0eDFXt70Ch0FzqVKUnGvu+SqxRp4PU9ptgOlalAdRXpz1RjzXoKJV6L8KAOu2t0ggaV2lanDd2UJ0OUO0WA8HvcGhqgt3/gUrpKPZK1ZG5UW/UGzWP+gdxKDWmkoUVTwAAAABJRU5ErkJggg==",
+  BLOCKS: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAACACAMAAADDApyIAAAAwFBMVEX/+ub86J760jzwyHjwx3jvx3fvxnfvxXbuxHbuxHXuw3XtwnTtwXPtwHPsv3LsvnHrvXHrvHDqu2/qum/puW7puG7puG3ot23otmzntWvntGvns2rNv5VQyHjppqjlrmfkrWbjqmThpmHgo1/eoF3cnFvbmVnal1fZlFbYklTXj1LWjFDUiE3ShUzRg0rQgEjPfkfOe0XNeUTMd0LLdUHKcj/JcT7JcD3Jbz3IbzxGlvDIbjzmPFC0WsgoHjweHjLOLbtKAAACLElEQVR42u2YC1PTQBSFD4oPsLWt8hBEERRUQAEFFNDl//8rXe+kzUmy3STc23bifjO7m9ttzzezk9sXHhqDZWPwyBg8NgZPjMFTY7BiDFaNwbMQ7h/xVa6CMfaCXhjn8BeZgXztx6Tu9WS/EvTDsCBf+zGp+33ZrwTPw/gAPztXruUqq7NnVGAvGITxATIDXDs3qQcDObJACIZh/MtkBrh2blIPhyIIhNQReIoCP+RxmcOCURgf42dPvs4LZH80QigIL6YByOzJ19mQx7Pd6ghzwUtjsGYM1o3BhjHYNAavjLEXbBmDbWPw2piC4E6DJGgo2CVUBJSYBHHBO0JFQIkdEOwRKgJKbCF4K5RWNcEvobR2VrBPqAgo8b8URNESlO7/asF7oomgdDQZlJgEccEHQkVAiYssCFJXEH3fv6/gt1BaGwoOCBUBJSbBAggOCZU+oMQGgtp90FZQ+4hmLPhIqAgosQOCT4SKgBIbCGozY8FnQkVAiUkQFxwRKgJKTIK44JhQEVBiEiyA4IRQEVDiPARtfxcsCXFB9K+CAA+EmQu+ECoCSkyCuOArodIHlDhFELv/b4TxOu6DuoLY0RQF4yNiwSmhIqDEDgjOCBUBJc5T0Jq2gh0h3gcsOCemCd4I8SOixA4IvhEqAkrsgOA7odIHlNhAkPVBsR9K34vaCrIjKh5V6SOTBReEioASkyAuuCRUBJTYQFCbGQuujMEPY/DTGFwbg1tj/gDqLZh1gRhpWAAAAABJRU5ErkJggg==",
+  CAVERN: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAAA8CAMAAACZ6EL3AAAAkFBMVEX/+sj/3Fr/1yj/vjzSlm6gWih4UChaOCRaHhQ8JBg7JBg7Ixg6Ixc5Ihc4Ihc4IRY3IRY2IBY1IBU0HxUzHxUzHhQyHhQxHRQwHRMvHBMuGxMtGxIsGhIrGhEqGREpGBEoGBAnFxAmFw8lFg8kFQ8jFQ4iFA4eFA4dEQwcEQwcEAsbEAsaDwsZDwoZDgoYDgqBxl/sAAACyUlEQVR42u2U63LTMBCF5QRsLgFap0lpm6RAW6C58f5vh3VbHa9kSaZh1B85M7GP12dXn62JReP0voQXUPxQwiPAxxIeAWYlfA5A1Ukfq2pmzvJ6Zu5qr6vWu3oK4FNacrQ+9s/2rv3pirt2mYjEZyVg414+ybtOVeV+9lo/Md7j1zoTmS++KEGR+1MAROaLCyUocu/2XEoOraoLs7APoO9LZJsPzQRfHuBSCYq+91+9HDsMoLfisnFbEJkv2rRCAG0rz/JuGMD1JYbjd6ANevdK5dO0bEtsIgThtiAyHwHm6jjtZL0PMH8BwNzMdmsxgCu7fpe6grrec3nWGb0V7txM5Xna6Br+bKeZb2bTWhxgoQGE6EKLAYDFCwAWZjatxQGWZn2ZWrJ6zNueVB5zVBfLvghghHJ7gjlxrRSkbJpr4B/2riee529K1cVXpf57ogzUY556EvnebFMPALj/Sj6A6UkCwGwLcKPU9Amsx3rM255UXuZY3Qe4qetmLEBjepL5LscBbj3V9e1o5fb4OfwO3BEleazHPLy1aJ5yd6EPUXGAFQxb+fXmrVOvzgFWw55yq1cJsIZha7/uAawHANbDnnJUFxtPdb0JCwCye5I5AwCcG3iaXt17A5AxPRte577Lsbq4V4JixL+xysznePFNCYoRTwCZ+RxfHuC7EhQjngAy8zneAOTJAZxO+B34kfIEkJnP8QjwkPIM4GFM75B/VQCPKc8AHsf0DvnyAE8jRABPp5P4qQRsEU8AmfkcXx7gV2GdAc4AZwD8FP8u4RHgWR0nkwl5V1fV7vDs5cnrRlanYmCmBthydS3bbbjqDqGOYGN4GkjslIAt5eUz7eDxdhP3lLsGvbuIzBR7JSiO8GqBPbzlPQDsAQA3gs35ZwCamZOf9CD7AAclCByg6wBh5qkjknE+NF97cVSCwBEAjhD+T178Kay/As27EeaLmSwAAAAASUVORK5CYII=",
+  TOWER: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAACACAMAAACfiN+sAAAAwFBMVEX/+uv/9dL/+sj/zlNQUGQ8PFAePCh4MkZaMnhYMXZXMXVWMHRUL3NTL3FSLnBPLW5OLWxNLGxLK2pIKmdGKWVEKGNDKGNBJ2A/Jl8+JV09JVw7JFs6I1k3Ilc2IlU0IVQyIFIwH1AtHk4qHUsoHUAmHDk1F0AnG0glGkYkGzsiGUMhGUIjGjQhGTIgGEEeFz8dFj4bFjwZFTsgGDAeFy0dFisXFDgbFSgVEzcTEjQRETMQETEPEDENDy8MDy4LDi0gVLfVAAAC4UlEQVR42u2VaXuTQBSFT1jEXVNrXKutC/q41rXu/f//qjCEhOWcOwyZpx/UN0AY5szb+8AtwekAnM4DO85vg388oHP053bDOfA7EvgViXiinxRx2QABCTOLH5HA9xksagbXMFMzUmG+p2/Ct0AWXTrXsYuna9IiBIq+BrEYspkBOZsn+sjgVytGIv+SmSLsLvqgYXMDjx220KLjmuY4AL2TdtTzsPRkuOcY7yeyDW48/Xmw7IBiMB5rqsXv/BRF4Q9hkmeCCa+9OJE3hVc+igZfDBM9zITuYry0KbbYwfMSFcVUE15YFH2sKAI8pgnG1WKM/sMIKcgqCU8lBUOmEebRJgR6pCme6Amn0PAFCPYIk6qoImPINI4kVNRMkVXQQ0N05BWxitIav+hQga5nY9JxOXOYOypHkiTVsRlq0WNJW0+SNCY3lmm/KEnWJo/okYSKZDquCJaof4+06ECSdUyb5y/TOIAtGvSRFj2U5Pmmk9ouynOZNkT0f02LHkioqB8BPZ0h6jrvS6hIpuOJ7kmoSKZxV0JFMm2IcsYcUWBFdyRUJNPBIrUAq1W1UahopYCcCRXdllCRTGO/S29ERfsKyJl92kdyQbyKcEtBRTKtPXFEab1Xb/z6pd98t7sU7VHSst7dpzKV1XdZrsd8wZ4lSpulWb25yjI3DheVHVFZ72lmiJaUqpplK8rrrfpla8d8hRAtq3uStR+3teOlEt2U0Mcv07ghoSKZNkVplva6SIrgE7mbu+0is6LrknXnNB1UV1SLZNoWuc5pu6i0RdckedM5dQe5LnLvI5nGVUmWNZ1Trnf31GTaFo05B9EVCRXJNC5LqEimcUlCRTIdT3RRQn/XZNoQ0Yq06JmEimQazyVUJNN/s+iNhIpk2hDRPpojilZRoOithIpkOp7ok4SKZDqe6LOEimTaENE+0qIvElqRTMcTnUioSKZxwdEMxufN6s75icrHFu3Of9E/LToDc3jecgDiTKUAAAAASUVORK5CYII=",
+  SHORE: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABgCAMAAADipIp7AAAAwFBMVEX////6+v7/8Jb53Mn128ry28vu2s3q2s7m2dDi2NH01pXz1JPy0pHw0I7vzoztzIne2NLZ19TU1tbP1dnJ1dvE1N2/09+60uC30uOy0eSu0Oapz+ilz+mhz+qczuyXze6RzPHryYboxYLnw3/lwXzkv3rivHjhu3bfuXPet3HdtW+My/KFyvWAyfd8yfl4yPooi8fwUDzIPDImhcIkf70je7ohdrYgcrIda60bZqgaY6YYXqIeWqAXWJ0VU5kUUJYlP7U8AAACnklEQVR42s2UiXLUMAyG/4S73Mt9LbRcBcqRcNMsvP9bEcVxHDm2Ey3jiG+mlm1p/H+zmSk+KoMPyugLvFcGJynQwev43p/jE7SezPGfC9ATTYuttJqHm8bcu6lxz1U3Ewt4l8ZE2WoetSe6d1PjnqtuJhawQMBVFwTwKcL2+N9cwLM09ISrYwE+FReYC9hTgD4An3KfSCbwNA094SoX4FMxgbmARQLmJ7bVfAIgpEm3pm8r0hHYpqGnaSVstQ/7U6a/3Zq+rUhHzAnQM2YlppVPmXu/Nk1JRASezNE0ZiWmlU+Ze7/2AmUZen5e4N8oOQGBx1kpfSYTeJSTcoo/gpXzJwZ4mJGggDeDB/kow/AhfYH72ShjsCl9gXvZiAqwKdzNRlSATekL3MlGVIBN6Qvczkcknw/pC9zKSDDfm9EX2OQkkO+P5BXYzOZvcDMvXv50ILcAUwi1cSM/fXy4uYZAElxSBheV0Re4oAzOK6MvcE4ZnFUGZ5TRF/ikjL7AZ2X0Bb4og6/K6At8UwbfldEX+KGMvsBPZfBLGZwSheHUsuIZ3XG4H5d1ztjtip2j2K19BjvTzcpnFL85a59R/OGsfUZxwFn7jANlcFkZXFFGKlBVVb9r/5MNt27v+ksFrkqoDN2+DR3u7X7cXwiuSegDun0bOtzb/bi/EOyRbxICAqy/VOC6gCGADm3ocG73k/5CcChgCKC9J1B5/aWIBA6H96sQo35mgTlEAkcy2uePEtFdX4RUoJeICojBczHJX1/8mr7ACzFJAfFreCknkS9/TF/g1R7UXVg9zd/jLbyWU9eUbVYL7duO/DEcy6nrdql4fndnVhnYJ78PGwkYqeN9BN5IaZOHde52AXgrpa7dyq7rYZUAeX4kKCI2x19SBLr8fkNuDwAAAABJRU5ErkJggg==",
+  COMET: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABICAMAAAAJWw0gAAAAwFBMVEX5/f//+uv0+v/q9//w3Krg8//m5vDS7f+95P+M8P+f2P/dqX/IbjwoFFooEEUnEEUmD0QlD0IkD0EjD0AjDj8iDj4hDj0gDjwgDTsfDTsfDToeDTkeDTgdDTgdDDccDDccDDYbDDUaDDQaCzMZCzIYCzEXCzAWCy8WCi4VCi0UCiwUCisTCisTCSoSCSoSCSkRCSgRCScQCScQCCYPCCUOCCQNCCMNByIMByELByAKBx8KBx4JBh4JBh0IBh0IBhzQ/q3vAAADAklEQVR42s2TC1ubMBSGz1ktLW06N+281NvWbl7qXatuc3P//18th0CTQAIJpMX3ecIhyYHvNUX41zLwVh98CwD8bRn40zLwWgt8DQX8bhn4tQ7QvgUevSvxgJ/rA7WbdAaG/bUCL43Al6bAcxPwuTHw3DLw5AU+hQaeWgYWBXAxWKwPg8BiwPF/E9YUeDQwSHl0Bx9rAg/4YCBTeAiJMQnuLWQK93awZBnvHYE7C4MldyvFKIC6QU0FrFxIBG5NYHJVFG5XBtyUIQ36/b6xA28aQA/DdTkyn3O9AuCqCpnPuQoOXFajCPT7l4GBuQ7OTSgC/V6vNw8IXCjgRYF0SY0nLoIBbm2YEwinAOeu6Pndbvc8CODRKwW6giACZz7oAp1O56wxcOqHzO8QH4jTJtgE0EmApwPRROCHL6mAmg/+b1lS59HEQMt3MxhKFIHvlWBxKRMAScVLKJVJaCo2HASMkEGlAMp4VkQowEwHS6cqOQF748wYLxRmM5jWRxMwt+B0ao0XCk0EptUCPJ+VA9+aIA1sHVX5DQWWBnIFtfjKfAZfPYgMa0m+pb86ngucuBJxTrxwyWdwbIDxgdpKlHDsh5vAkQHGtGmUQRM8csUpn8GhAdrI7iOFQx/c8hkcGEh26CbSOPDBMZ/BRAfpku5FOSYGcGKhrsBkKcCrg0DTfAb7BmgjvVXy931wF9gzwJgyWQrslYH61Dmfwa4Bpk9TgV0P8gIbJoTAjhHMzXn+jgfD0mANcH2nv0Dhj2WmY4Evq2BYGqx/A9qDGCbfMVsIjAkch8MnfSkgiTmyxrG52vvHG3wMRR9jtqoKbOtQg6zigWK1929wgW0vgS2VON7aGnGoxjFVguooQaxStfXrgyLFvnherr8jgc8qtJlVfcSx3lHdz1gmII6e0uT6OxL4pELtWc0PuePWn0XKH0LU/EfYusCmDh1SdtWPlFZoZzSy99M/Yf6n0P8Nix9hUIHNGgIf89BhZVeq2VBX7P3ibph8aGKIw5c1/xEqr8I2BP4DFJ6ivLIcTxAAAAAASUVORK5CYII=",
+  BRAMBLE: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAMAAADlCI9NAAAAjVBMVEX///D/8LT63L7/zXb/y3b+yXX+xnT+xHP+wnP+wHL+vXH+u3D+uXD9tm/9tG79sm39r2z9rWz9q2v9qGr9pmn8pGn8omj8n2f8nWb8m2b8mGX8lmT8lGP7kWL7j2L7jWH7imD7iF/7hl/7hF77gV36f1z6fVz6elv6eFo8jPCWRlqWMjxQKEYePDIoHigONYjdAAACXUlEQVR42u2TCZPTMAyFX1pgl3u5b1pYriZx///PI6nq2pYlJ1GnGGb4ZrSOY+m9lzSLX5XBz8rgR2XwvTL4JoEDc9a0P5/3BdloOLqVIIE5a9qfz/uCbDQcfZUAuk6ukfSe7x8pz8tWXySWBPD9I+V52WorMdpst2ToVx6E7ndd6Jfm05KsNhKjwGZDRn7lAeh+14V+aT4tyeqzBA3wlRfd9/10Jc2Hkqw+SdAAX3nRfd9PV9J8KMnqo4T0sckf44jvj+epj07CnGT1QWJZAN8fz1MfnYQ5yeq9DP1bjatW/jxdwzwVncR7Bt7JkOC4auXP0zXMU9FJvGfgbWXwpjJ4fQ4NcY4EXtlpAnYRvLTSpFhl8MJIwzHq4LmNJscmhGcmGgmTEm5MiAFMSnhqoZGxSOGJBSWARQqPDTQaBi08MqAGMGjhoQE1gEELDwyoAQxauG9ADWDQwnWRNr7O4QGul4MrheDCtqUIRR2RK9yTaBcQ+Z8GFwjhbkRrw/snN+fq4c6BthpYr9dtTdBWZkYA9+8E4J2rAXOAnjgnwOpAH5F19kqAeMg555unA/SZf5rgJHq6guYbB+hVXPxcx84ZASJNTNjPCXA0ZZ1uUQDX6h6FAMzSFID/JkKvnqAYwBU+AR6AeThTANY5bHa73WpK82IBHAXoLQFKz1UIl+0Sf00T8stLe5PDygH0t8M6CwGSTkw8SSlAepbvogC6JsTspefSzrLd4O/ODuCc4HLhAMlufoC0k/xPCQqd2F+Gwfz4ZwJc0H8/J8LF3gBL8scDZEmqBdj/D/C3B/gNRXbprfGE280AAAAASUVORK5CYII=",
+
+};
+
+/* Fixture data from SHARED.md, in catalogue order. */
+const GAMES = [
+  { t: "Celeste Classic", sys: "PICO-8", places: ["This device"], last: "2 hours", plays: 41, note: "Resumes mid-game.", art: "SUMMIT" },
+  { t: "Hollow Knight", sys: "Switch", places: ["This device"], last: "Yesterday", plays: 18, art: "KNIGHT" },
+  { t: "Tetris", sys: "GB", places: ["zao"], last: "3 days", plays: 112, art: "BLOCKS" },
+  { t: "Spelunky", sys: "PC", places: ["This device", "zao"], last: "9 days", plays: 7, art: "CAVERN" },
+  { t: "Lantern Keep", sys: "PC", places: ["This device"], last: "3 weeks", plays: 3, art: "TOWER" },
+  { t: "Tide Pool", sys: "Mega Drive", places: ["zao"], last: "Never", plays: 0, art: "SHORE" },
+  { t: "Comet Courier", sys: "PC", places: ["This device"], last: "2 months", plays: 1, art: null },
+  { t: "Bramble Run", sys: "GBA", places: ["This device"], last: "6 weeks", plays: 5, art: "BRAMBLE" },
+  { t: "Petal Quest", sys: "PICO-8", places: ["This device"], last: "Never", plays: 0, art: "COMET" },
+  { t: "The Legend of Zelda: Oracle of Seasons", sys: "GBC", places: ["This device"], last: "4 months", plays: 22, art: null },
+  { t: "Wario Land 4", sys: "GBA", places: ["This device", "zao"], last: "5 days", plays: 14, art: null },
+  { t: "Super Metroid", sys: "SNES", places: ["This device"], last: "1 year", plays: 9, art: null },
+];
+
+const KEYS = [
+  { col: "r", label: "Network", page: 650, sub: "Wi-Fi", ink: "k" },
+  { col: "g", label: "Identity", page: 690, sub: "Keys", ink: "k" },
+  { col: "y", label: "Settings", page: 600, sub: "Build", ink: "k", glyph: "options" },
+  { col: "b", label: "Index", page: 100, sub: "Pages", ink: "w", glyph: "menu" },
+];
+
+const COLS = 40, ROWS = 24;
+const LIST_TOP = 4, LIST_ROWS = 13;      /* rows 4..16 */
+const BAND_TOP = 17;                     /* rows 17..21 */
+const ART_W = 12, BAND_COL = 12, TEXT_COL = 13, TEXT_W = 27;
+
+const params = new URLSearchParams(location.search);
+const STATE = params.get("state") || "ideal";
+const games = STATE === "ideal" ? GAMES : [];
+
+const ui = {
+  zone: "list",                          /* head | list | keys */
+  game: Math.max(0, Math.min(GAMES.length - 1, (Number(params.get("focus")) || 4) - 1)),
+  place: Object.create(null),            /* game index -> chosen place */
+  key: 0,
+  digits: [2, 0, 0],
+  digit: 0,
+};
+if (params.get("zone")) ui.zone = params.get("zone");
+if (params.get("key")) ui.key = Number(params.get("key"));
+
+/* ---------- the character grid ---------- */
+let G;
+function blank() {
+  G = Array.from({ length: ROWS }, () =>
+    Array.from({ length: COLS }, () => ({ ch: " ", fg: "w", bg: "k" })));
+}
+function fill(r, c0, c1, bg) { for (let c = c0; c <= c1; c++) Object.assign(G[r][c], { bg, ch: " ", mos: null, dh: false }); }
+function text(r, c, s, fg, bg) {
+  for (let i = 0; i < s.length && c + i < COLS; i++) {
+    const cell = G[r][c + i];
+    cell.ch = s[i]; cell.fg = fg; if (bg) cell.bg = bg;
+  }
+}
+function dh(r, c, s, fg, bg) {
+  text(r, c, s, fg, bg);
+  for (let i = 0; i < s.length && c + i < COLS; i++) {
+    G[r][c + i].dh = true;
+    G[r + 1][c + i].ch = " ";
+    if (bg) G[r + 1][c + i].bg = bg;
+  }
+}
+function mosaic(r, c, bits, fg, bg) { Object.assign(G[r][c], { ch: " ", mos: bits, fg, bg }); }
+function pad(s, n) { return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
+function lpad(s, n) { return s.length >= n ? s.slice(0, n) : " ".repeat(n - s.length) + s; }
+function wrap(s, n) {
+  const out = []; let line = "";
+  for (const w of s.split(" ")) {
+    if (!line) line = w;
+    else if (line.length + 1 + w.length <= n) line += " " + w;
+    else { out.push(line); line = w; }
+  }
+  if (line) out.push(line);
+  return out.flatMap(l => l.length <= n ? [l] : l.match(new RegExp(`.{1,${n}}`, "g")));
+}
+
+/* ---------- page 200 ---------- */
+function compose() {
+  blank();
+
+  /* Row 0: header. Requested page, service, page counter, device, clock. */
+  const want = "P" + ui.digits.join("");
+  const headFocus = ui.zone === "head";
+  text(0, 1, want, headFocus ? "k" : "w", headFocus ? "w" : "k");
+  if (headFocus) {
+    G[0][2 + ui.digit].bg = "y";
+  }
+  text(0, 7, "RELAY 200", "w");
+  text(0, 18, "mini", "c");
+  text(0, 34, "21:47", "y");
+
+  /* Rows 1-2: title band. */
+  fill(1, 0, 39, "b"); fill(2, 0, 39, "b");
+  dh(1, 2, "GAMES", "y", "b");
+  const count = games.length === 1 ? "1 game" : `${games.length} games`;
+  text(2, 39 - count.length, count, "c", "b");
+
+  /* Row 3: column heads. */
+  text(3, 0, "Pg", "c"); text(3, 4, "Game", "c"); text(3, 20, "System", "c"); text(3, 31, "Played", "c");
+
+  if (STATE !== "ideal") { composeEmpty(); composeKeys(); return; }
+
+  /* Rows 4-16: the listing. One game per row; a long title continues
+     on the next row, indented, as listings pages did. */
+  let r = LIST_TOP;
+  GAMES.forEach((g, i) => {
+    const focus = ui.zone === "list" && ui.game === i;
+    const bg = focus ? "y" : "k";
+    const lines = g.t.length <= 15 ? [g.t] : (() => {
+      const first = wrap(g.t, 15)[0];
+      return [first, g.t.slice(first.length).trimStart()];
+    })();
+    g.rows = [r, r + lines.length - 1];
+    fill(r, 0, 39, bg);
+    text(r, 0, String(201 + i), focus ? "b" : "y");
+    text(r, 4, pad(lines[0], 15), focus ? "k" : "w");
+    text(r, 20, pad(g.sys, 10), focus ? "b" : "c");
+    text(r, 31, g.last, focus ? "k" : "w");
+    if (lines[1]) {
+      r++;
+      fill(r, 0, 39, bg);
+      text(r, 4, lines[1].slice(0, 36), focus ? "k" : "w");
+    }
+    r++;
+  });
+
+  composeBand(GAMES[ui.game]);
+  composeKeys();
+}
+
+/* Rows 17-21: the focused game. A cover in the side column, then a
+   blue band with title, places, facts. The band starts at a fixed
+   column, so it holds with or without a cover. */
+function composeBand(g) {
+  const i = GAMES.indexOf(g);
+  for (let r = BAND_TOP; r <= 21; r++) fill(r, BAND_COL, 39, "b");
+
+  const cover = COVERS[g.art];
+  if (cover) {
+    for (let r = 0; r < 5; r++) for (let c = 0; c < ART_W; c++) {
+      const cell = cover[r][c];
+      mosaic(BAND_TOP + r, c, cell.bits, cell.fg, cell.bg);
+    }
+  } else {
+    /* No picture: the side column carries the page number instead. */
+    dh(18, 4, String(201 + i), "w", "k");
+  }
+
+  let r = BAND_TOP;
+  if (g.t.length <= TEXT_W) { dh(r, TEXT_COL, g.t, "w", "b"); r += 2; }
+  else { const l = wrap(g.t, TEXT_W); text(r, TEXT_COL, l[0], "w"); text(r + 1, TEXT_COL, l[1] || "", "w"); r += 2; }
+
+  /* Row 19: where it plays. */
+  if (g.places.length > 1) {
+    const chosen = ui.place[i] ?? 0;
+    text(19, TEXT_COL, "Play on", "c");
+    let c = TEXT_COL + 8;
+    g.places.forEach((p, k) => {
+      const on = k === chosen;
+      const label = ` ${p} `;
+      text(19, c, label, on ? "k" : "w", on ? "y" : "b");
+      c += label.length + 1;
+    });
+  } else if (g.places[0] === "zao") {
+    text(19, TEXT_COL, "Streams from zao", "c");
+  } else {
+    text(19, TEXT_COL, "Plays on This device", "c");
+  }
+
+  /* Rows 20-21: facts, then what the keys do here. */
+  const played = g.last === "Never" ? "Never played." : `Last played ${g.last === "Yesterday" ? "yesterday" : g.last + " ago"}.`;
+  text(20, TEXT_COL, played, "w");
+  const plays = g.plays === 0 ? "No plays yet." : g.plays === 1 ? "1 play." : `${g.plays} plays.`;
+  const tail = g.places.length > 1 ? " \u2190\u2192 picks a place." : g.note ? " " + g.note : "";
+  text(21, TEXT_COL, (plays + tail).slice(0, TEXT_W), "c");
+}
+
+/* Other whole-page states: ?state=empty | loading | error */
+function composeEmpty() {
+  const msg = {
+    empty: ["No games on this service yet.", "", "A game is listed here when", "this device or another one", "on the network offers it."],
+    loading: ["Fetching page 200.", "", "The list appears when it", "arrives. Other pages still", "answer."],
+    error: ["Page 200 did not arrive.", "", "The game list could not be", "read. Try again with OK, or", "go to Index 100."],
+  }[STATE] || [];
+  msg.forEach((l, k) => text(6 + k, 4, l, k === 0 ? "y" : "w"));
+  if (STATE === "loading") { text(0, 7, "RELAY 147", "w"); }
+}
+
+/* Rows 22-23: Fastext. Captions with page numbers above four solid
+   keys. The focused key grows up over its caption. */
+function composeKeys() {
+  KEYS.forEach((k, n) => {
+    const c0 = n * 10, c1 = c0 + 9;
+    const focus = ui.zone === "keys" && ui.key === n;
+    fill(23, c0, c1, k.col);
+    text(23, c0 + 1, k.label, k.ink, k.col);
+    /* The device shortcut, as a small black keycap on the key. */
+    if (k.glyph) Object.assign(G[23][c1], { glyph: k.glyph, fg: "w", bg: "k" });
+    if (focus) {
+      fill(22, c0, c1, k.col);
+      text(22, c0 + 1, String(k.page), k.ink, k.col);
+      text(22, c0 + 5, k.sub, k.ink, k.col);
+    } else {
+      text(22, c0 + 1, String(k.page), "y");
+      text(22, c0 + 5, k.sub, "w");
+    }
+  });
+}
+
+/* ---------- covers: real art cut to 2x3 mosaics in eight colours ---------- */
+const PAL = { k: [0,0,0], r: [255,0,0], g: [0,255,0], y: [255,255,0], b: [0,0,255], m: [255,0,255], c: [0,255,255], w: [255,255,255] };
+const PAL_KEYS = Object.keys(PAL);
+const COVERS = {};
+/* Spelunky, drawn for this page: 24 x 15 blocks. */
+const DRAWN = {
+  CAVERN: [
+    "rrrrrrrrrrrrrrrrrrrrrrrr",
+    "rrryrr.rrrrr..rrrr.rryrr",
+    ".rrrr...rrr....rr...rrr.",
+    "..rr.....r..........r...",
+    "..........yy.....y......",
+    ".........yyyy....r......",
+    "........yyyyyy...r......",
+    "..........ww............",
+    ".........wwwww..........",
+    "........ww.w.ww.....y...",
+    "...........w.......yyy..",
+    "..........w.w...........",
+    "..y.rr...ww.ww.rrr.yy.rr",
+    "rrrrrrrrrrrrrrrrrrrrrrrr",
+    "rrryrrrrrrrrryrrrrrrryrr",
+  ],
+};
+function cutDrawn(rows) {
+  const name = { ".": "k" };
+  return cutGrid((x, y) => name[rows[y][x]] || rows[y][x]);
+}
+function cutGrid(colourAt) {
+  const out = [];
+  for (let cy = 0; cy < 5; cy++) {
+    const row = [];
+    for (let cx = 0; cx < 12; cx++) {
+      const named = [];
+      for (let yy = 0; yy < 3; yy++) for (let xx = 0; xx < 2; xx++) named.push(colourAt(cx * 2 + xx, cy * 3 + yy));
+      const tally = {};
+      named.forEach(n => tally[n] = (tally[n] || 0) + 1);
+      const order = Object.keys(tally).sort((p, q) => tally[q] - tally[p]);
+      /* One cell holds two colours; black is the background when present. */
+      const bg = tally.k ? "k" : order[0];
+      const fg = order.find(n => n !== bg) || bg;
+      row.push({ bits: named.map(n => n !== bg), fg, bg });
+    }
+    out.push(row);
+  }
+  return out;
+}
+function nearest(rgb, keys = PAL_KEYS) {
+  let best = keys[0], bd = Infinity;
+  for (const k of keys) {
+    const p = PAL[k];
+    const d = (rgb[0]-p[0])**2 * 0.3 + (rgb[1]-p[1])**2 * 0.59 + (rgb[2]-p[2])**2 * 0.11;
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+function cutCover(img) {
+  /* The side column is 12 x 5 cells: 24 x 15 blocks, each block 4u x 3.3u. */
+  const SW = 24, SH = 15, VW = 96, VH = 50;
+  const a = document.createElement("canvas"); a.width = VW; a.height = VH;
+  const ax = a.getContext("2d");
+  const s = Math.max(VW / img.width, VH / img.height);
+  const w = img.width * s, h = img.height * s;
+  ax.imageSmoothingQuality = "high";
+  ax.drawImage(img, (VW - w) / 2, (VH - h) / 2, w, h);
+  const b = document.createElement("canvas"); b.width = SW; b.height = SH;
+  const bx = b.getContext("2d");
+  bx.imageSmoothingQuality = "high";
+  bx.drawImage(a, 0, 0, SW, SH);
+  const px = bx.getImageData(0, 0, SW, SH).data;
+  /* Teletext colours are three bits: red, green, blue on or off. Each
+     channel is cut at the picture's own mean, so dark art still lands
+     on colour instead of all falling to black. */
+  const mean = [0, 1, 2].map(ch => { let s = 0; for (let o = ch; o < px.length; o += 4) s += px[o]; return s / (SW * SH); });
+  const bit = ["k", "r", "g", "y", "b", "m", "c", "w"];
+  return cutGrid((x, y) => {
+    const o = (y * SW + x) * 4;
+    const on = [0, 1, 2].map(ch => px[o + ch] > Math.max(48, mean[ch] * 1.15) ? 1 : 0);
+    return bit[on[0] + on[1] * 2 + on[2] * 4];
+  });
+}
+function loadCovers() {
+  for (const [k, rows] of Object.entries(DRAWN)) COVERS[k] = cutDrawn(rows);
+  return Promise.all(Object.entries(ART).map(([k, url]) => new Promise(res => {
+    const img = new Image();
+    img.onload = () => { if (!COVERS[k]) COVERS[k] = cutCover(img); res(); };
+    img.onerror = res;
+    img.src = url;
+  })));
+}
+
+/* ---------- render ---------- */
+const page = document.getElementById("page");
+const GLYPHS = {
+  /* The two device shortcuts, drawn in an 8 x 10 cell. */
+  menu: '<svg viewBox="0 0 8 10" aria-hidden="true"><rect x="1.5" y="2" width="5" height="1.2" fill="currentColor"/><rect x="1.5" y="4.4" width="5" height="1.2" fill="currentColor"/><rect x="1.5" y="6.8" width="5" height="1.2" fill="currentColor"/></svg>',
+  options: '<svg viewBox="0 0 8 10" aria-hidden="true"><rect x="3.3" y="1.8" width="1.4" height="1.4" fill="currentColor"/><rect x="3.3" y="4.3" width="1.4" height="1.4" fill="currentColor"/><rect x="3.3" y="6.8" width="1.4" height="1.4" fill="currentColor"/></svg>',
+};
+function render() {
+  compose();
+  let html = "";
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const cell = G[r][c];
+    const st = `--bg:var(--${cell.bg});--fg:var(--${cell.fg})`;
+    if (cell.mos) {
+      html += `<div class="c m" style="${st}">` + cell.mos.map(on => on ? '<i class="on"></i>' : "<i></i>").join("") + "</div>";
+    } else if (cell.glyph) {
+      html += `<div class="c" style="${st}">${GLYPHS[cell.glyph]}</div>`;
+    } else if (cell.ch !== " ") {
+      const ch = cell.ch === "<" ? "&lt;" : cell.ch === "&" ? "&amp;" : cell.ch;
+      html += `<div class="c${cell.dh ? " dh" : ""}" style="${st}"><span>${ch}</span></div>`;
+    } else {
+      html += `<div class="c" style="${st}"></div>`;
+    }
+  }
+  page.innerHTML = html + hits();
+  const f = page.querySelector(`[data-stop="${stopId()}"]`);
+  if (f && document.activeElement !== f) f.focus({ preventScroll: true });
+}
+
+/* Invisible native focus stops over the cells they own. */
+function hit(id, r0, r1, c0, c1, label) {
+  return `<button class="hit" data-stop="${id}" tabindex="-1" aria-label="${label}" style="` +
+    `left:calc(var(--cw)*${c0});top:calc(var(--rh)*${r0});` +
+    `width:calc(var(--cw)*${c1 - c0 + 1});height:calc(var(--rh)*${r1 - r0 + 1})"></button>`;
+}
+function hits() {
+  let h = hit("head", 0, 0, 1, 4, `Page number ${ui.digits.join("")}. Up and down change a digit.`);
+  if (STATE === "ideal") GAMES.forEach((g, i) => {
+    const chosen = g.places[ui.place[i] ?? 0];
+    h += hit("g" + i, g.rows[0], g.rows[1], 0, 39,
+      `Page ${201 + i}, ${g.t}, ${g.sys}, played ${g.last}. Plays on ${chosen}` + (g.places.length > 1 ? `, left and right change the place` : ""));
+  });
+  KEYS.forEach((k, n) => { h += hit("k" + n, 23, 23, n * 10, n * 10 + 9, `${k.label}, page ${k.page}`); });
+  return h;
+}
+function stopId() {
+  return ui.zone === "head" ? "head" : ui.zone === "keys" ? "k" + ui.key : "g" + ui.game;
+}
+
+/* ---------- input: direction, confirm, back, options, menu ---------- */
+function act(a) {
+  const g = GAMES[ui.game];
+  const listed = STATE === "ideal";
+  if (ui.zone === "head") {
+    if (a === "up" || a === "down") {
+      const d = ui.digit, max = d === 0 ? 8 : 9, min = d === 0 ? 1 : 0;
+      let v = ui.digits[d] + (a === "up" ? 1 : -1);
+      ui.digits[d] = v > max ? min : v < min ? max : v;
+    }
+    else if (a === "left") ui.digit = Math.max(0, ui.digit - 1);
+    else if (a === "right") { if (ui.digit < 2) ui.digit++; }
+    else if (a === "back") { ui.digits = [2, 0, 0]; ui.digit = 0; ui.zone = listed ? "list" : "keys"; }
+    else if (a === "down") ui.zone = listed ? "list" : "keys";
+  } else if (ui.zone === "list") {
+    if (a === "up") { if (ui.game === 0) ui.zone = "head"; else ui.game--; }
+    else if (a === "down") { if (ui.game === GAMES.length - 1) ui.zone = "keys"; else ui.game++; }
+    else if ((a === "left" || a === "right") && g.places.length > 1) {
+      const cur = ui.place[ui.game] ?? 0;
+      ui.place[ui.game] = Math.max(0, Math.min(g.places.length - 1, cur + (a === "right" ? 1 : -1)));
+    }
+    else if (a === "back") { ui.zone = "keys"; ui.key = 3; }
+  } else if (ui.zone === "keys") {
+    if (a === "left") ui.key = Math.max(0, ui.key - 1);
+    else if (a === "right") ui.key = Math.min(3, ui.key + 1);
+    else if (a === "up" || a === "back") ui.zone = listed ? "list" : "head";
+  }
+  if (a === "options") { ui.zone = "keys"; ui.key = 2; }
+  if (a === "menu") { ui.zone = "keys"; ui.key = 3; }
+  render();
+}
+/* Browser preview only: the host translates real devices. */
+const MAP = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+  Enter: "confirm", Escape: "back", Backspace: "back", o: "options", m: "menu" };
+document.addEventListener("keydown", e => {
+  const a = MAP[e.key];
+  if (!a) return;
+  e.preventDefault();
+  act(a);
+});
+
+render();
+document.fonts.ready.then(loadCovers).then(render);
+</script>
+</body>
+</html>
