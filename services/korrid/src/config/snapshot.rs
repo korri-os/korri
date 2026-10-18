@@ -327,10 +327,41 @@ fn ensure_fixed_file(
     {
         return Ok(());
     }
-    let canonical = std::str::from_utf8(EMPTY_DOCUMENT_BYTES).expect("canonical UTF-8 document");
+    let initial = std::env::var(INITIAL_MODIFIERS_ENV).ok();
+    let document = initial_document(file_name, initial.as_deref())
+        .map_err(|message| CandidateLoadError::Content { message })?;
     storage
-        .write(&path, canonical)
+        .write(&path, &document)
         .map_err(|error| storage_error(&path, error))
+}
+
+/// Product-chosen modifier records (ADR 0009 device layer) that korrid writes
+/// into a device.yaml it creates. A device.yaml that already exists is never
+/// changed, so the person's own choice always stands.
+pub const INITIAL_MODIFIERS_ENV: &str = "KORRID_INITIAL_MODIFIERS";
+
+/// The bytes of a fixed document korrid creates. Only device.yaml can carry
+/// initial modifier records, given as a JSON object in `initial_modifiers`.
+pub(crate) fn initial_document(
+    file_name: &str,
+    initial_modifiers: Option<&str>,
+) -> Result<String, String> {
+    let canonical = std::str::from_utf8(EMPTY_DOCUMENT_BYTES).expect("canonical UTF-8 document");
+    let Some(json) = initial_modifiers.filter(|value| !value.trim().is_empty()) else {
+        return Ok(canonical.to_owned());
+    };
+    if file_name != DEVICE_FILE_NAME {
+        return Ok(canonical.to_owned());
+    }
+    let modifiers: super::modifiers::ModifierConfigs =
+        serde_json::from_str(json).map_err(|error| {
+            format!("{INITIAL_MODIFIERS_ENV} is not valid modifier records: {error}")
+        })?;
+    if modifiers.is_empty() {
+        return Ok(canonical.to_owned());
+    }
+    serde_yaml::to_string(&BTreeMap::from([("modifiers", &modifiers)]))
+        .map_err(|error| error.to_string())
 }
 
 fn graph_source_config(
@@ -475,4 +506,47 @@ fn fixed_path(root: &str, file_name: &str) -> String {
 
 fn root_string(root: &Path) -> String {
     root.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod initial_document_tests {
+    use super::*;
+
+    const GAMESCOPE: &str = r#"{"@korri:gamescope/gamescope":{"enabled":true}}"#;
+
+    #[test]
+    fn device_yaml_carries_the_product_modifier_records() {
+        let yaml = initial_document(DEVICE_FILE_NAME, Some(GAMESCOPE)).unwrap();
+        let value: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(
+            value["modifiers"]["@korri:gamescope/gamescope"]["enabled"],
+            serde_yaml::Value::Bool(true)
+        );
+        let decoded: super::super::modifiers::ModifierConfigs =
+            serde_yaml::from_value(value["modifiers"].clone()).unwrap();
+        assert_eq!(decoded.len(), 1);
+    }
+
+    #[test]
+    fn other_documents_and_no_records_stay_empty() {
+        let empty = std::str::from_utf8(EMPTY_DOCUMENT_BYTES).unwrap();
+        assert_eq!(
+            initial_document(LIBRARY_FILE_NAME, Some(GAMESCOPE)).unwrap(),
+            empty
+        );
+        assert_eq!(initial_document(DEVICE_FILE_NAME, None).unwrap(), empty);
+        assert_eq!(initial_document(DEVICE_FILE_NAME, Some("")).unwrap(), empty);
+        assert_eq!(
+            initial_document(DEVICE_FILE_NAME, Some("{}")).unwrap(),
+            empty
+        );
+    }
+
+    #[test]
+    fn malformed_records_are_refused_not_ignored() {
+        assert!(initial_document(DEVICE_FILE_NAME, Some("[1]")).is_err());
+        assert!(
+            initial_document(DEVICE_FILE_NAME, Some(r#"{"gamescope":{"enabled":true}}"#)).is_err()
+        );
+    }
 }

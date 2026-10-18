@@ -276,6 +276,25 @@ in
         reconciliation fail closed to Portal ownership.
       '';
     };
+    initialModifiers = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options.enabled = lib.mkOption {
+            type = lib.types.bool;
+            description = "Whether the modifier wraps every launch on this device (ADR 0009 device layer).";
+          };
+        }
+      );
+      default = { };
+      example = {
+        "@korri:gamescope/gamescope".enabled = true;
+      };
+      description = ''
+        Launch modifier records, keyed by contribution ID, that korrid writes
+        into device.yaml when it creates that file. An existing device.yaml is
+        never changed, so a person who turned a modifier off keeps that choice.
+      '';
+    };
     neverFocusAppIds = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -787,6 +806,9 @@ in
         KORRID_UPSTREAMS = nativePeersJson;
         KORRID_SYSTEMD_RUN = "${pkgs.systemd}/bin/systemd-run";
         KORRID_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      }
+      // lib.optionalAttrs (cfg.initialModifiers != { }) {
+        KORRID_INITIAL_MODIFIERS = builtins.toJSON cfg.initialModifiers;
       }
       // lib.optionalAttrs (cfg.streamPrivateStateRoot != null) {
         KORRID_STREAM_PRIVATE_STATE_ROOT = cfg.streamPrivateStateRoot;

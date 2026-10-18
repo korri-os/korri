@@ -56,6 +56,21 @@ assert lib.all (
   ]
 ) names;
 assert recoveryWithoutDefaults;
+# Gamescope wraps every launch by default on product images, and only where
+# the image seeds its plugin; recovery images seed no plugin and no modifier.
+assert lib.all (
+  name:
+  devices.${name}.configuration.config.systemd.services.korrid.environment.KORRID_INITIAL_MODIFIERS
+  == builtins.toJSON { "@korri:gamescope/gamescope".enabled = true; }
+) names;
+assert lib.all (
+  name:
+  !(lib.hasAttrByPath [ "korrid" "environment" "KORRID_INITIAL_MODIFIERS" ]
+    devices.${name}.consoleConfiguration.config.systemd.services)
+) [
+  "r36tmax"
+  "rpminiv2"
+];
 assert !(lib.elem (toString published.korri-plugin-sunshine) (map toString selected.r36tmax));
 # Key-only SSH ships on every device (owner decision, 2026-09-30).
 assert lib.all

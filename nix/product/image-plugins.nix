@@ -25,6 +25,16 @@ let
   };
 in
 {
+  # Owner decision 2026-10-18: every launch runs inside Gamescope by default
+  # (ADR 0008). Only where the image seeds the Gamescope plugin, because an
+  # enabled modifier without its plugin refuses every launch. korrid writes
+  # this into a new device.yaml only; the person turns it off there, or per
+  # system, runner or game.
+  services.korridLinuxDevice.initialModifiers = lib.mkIf (lib.elem (toString
+    (import ./published-plugins.nix { inherit system; }).korri-plugin-gamescope
+  ) (map toString selection.${device})) {
+    "@korri:gamescope/gamescope".enabled = true;
+  };
   sdImage.storePaths = seeded.storePaths;
   sdImage.populateRootCommands = lib.mkAfter seeded.populateRootCommands;
   # This image-owned prerequisite leaves the shared product host unit intact.
