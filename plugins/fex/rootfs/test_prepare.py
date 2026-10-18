@@ -1,6 +1,7 @@
 """Run the real fex-prepare source against a local fixture server, never the internet."""
 import fcntl
 import hashlib
+import os
 import random
 from pathlib import Path
 import subprocess
@@ -166,6 +167,24 @@ class FexPrepareTests(unittest.TestCase):
         self.assertEqual(list(self.rootfs.glob(".tmp-*")), [])
         self.assertTrue(self.ready.is_dir())
         self.assertEqual(len(server.requests), requests)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can remove entries from a read-only directory")
+    def test_unremovable_leftovers_warn_and_still_report_the_ready_directory(self):
+        script = self.script(self.serve())
+        self.assertEqual(self.run_prepare(script).returncode, 0)
+        downloads = self.rootfs / ".downloads"
+        downloads.mkdir()
+        (downloads / ("0" * 64 + ".part")).write_bytes(b"partial")
+        stale = self.rootfs / ".tmp-killed"
+        stale.mkdir()
+        # The user cannot remove entries from a parent it cannot write.
+        self.rootfs.chmod(0o555)
+        self.addCleanup(self.rootfs.chmod, 0o755)
+        result = self.run_prepare(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[-1], str(self.ready))
+        self.assertIn(f"could not remove {downloads}", result.stderr)
+        self.assertIn(f"could not remove {stale}", result.stderr)
 
     def test_clean_ready_directory_does_not_wait_for_the_lock(self):
         script = self.script(self.serve())

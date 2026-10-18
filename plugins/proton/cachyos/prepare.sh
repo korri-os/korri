@@ -42,12 +42,13 @@ if [[ -d "$ready" ]] && ! leftovers; then finish; fi
 mkdir -p "$base" || fail "cannot create $base"
 exec 9>"$base/.lock"
 flock 9
-# Every writer holds the lock, so a work directory now is from an interrupted run.
-for stale in "$base"/.tmp-*; do discard "$stale"; done
+# Every writer holds the lock, so a work directory now is from an interrupted
+# run. Leftovers waste space but do not stop preparation.
+for stale in "$base"/.tmp-*; do discard "$stale" || say "could not remove $stale"; done
 # A run killed after its rename leaves its downloads behind. Another run may
 # also have finished while this one waited for the lock.
 if [[ -d "$ready" ]]; then
-  discard "$downloads"
+  discard "$downloads" || say "could not remove $downloads"
   finish
 fi
 [[ ! -e "$ready" ]] || fail "$ready exists and is not a directory"
