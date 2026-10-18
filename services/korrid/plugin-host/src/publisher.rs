@@ -155,7 +155,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         .input_store_path
         .to_str()
         .ok_or("non-UTF-8 store path")?;
-    let json = process::checked_closure(
+    let json = process::checked_uncapped(
         &nix,
         [
             "--extra-experimental-features",
@@ -185,7 +185,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
     let cache_dir = export.path().join("cache");
     fs::create_dir(&cache_dir).map_err(|e| e.to_string())?;
     let cache_uri = format!("{}?compression=xz", archive::path_to_file_uri(&cache_dir)?);
-    process::checked_closure(
+    process::checked_uncapped(
         &nix,
         [
             "--extra-experimental-features",

@@ -32,9 +32,10 @@ where
     )
 }
 
-/// Package transfers, imports and verification take as long as the package
-/// needs: plugins have no size or time limit. An operator can still interrupt.
-pub fn run_unbounded<I, S>(program: &Path, args: I) -> Result<Output, String>
+/// No deadline, for work whose run time grows with a package but whose output
+/// does not: archive downloads (curl detects stalls) and single-path verify.
+/// Plugins have no time limit. The 1 MiB output cap stays.
+pub fn run_no_deadline<I, S>(program: &Path, args: I) -> Result<Output, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -150,19 +151,19 @@ where
     succeeded(program, run(program, args, timeout)?)
 }
 
-pub fn checked_unbounded<I, S>(program: &Path, args: I) -> Result<String, String>
+pub fn checked_no_deadline<I, S>(program: &Path, args: I) -> Result<String, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    succeeded(program, run_unbounded(program, args)?)
+    succeeded(program, run_no_deadline(program, args)?)
 }
 
-/// For Nix commands whose output grows with a package closure: recursive
-/// path-info listings and per-path progress lines from build, copy, verify
-/// and content-address conversion. Their output has no cap. `None` also
-/// removes the deadline, for work whose run time grows with the closure too.
-pub fn checked_closure<I, S>(
+/// No output cap, for Nix commands whose output grows with a package closure:
+/// recursive path-info listings and per-path progress lines from build, copy,
+/// verify and content-address conversion. `None` also removes the deadline,
+/// for work whose run time grows with the closure too.
+pub fn checked_uncapped<I, S>(
     program: &Path,
     args: I,
     timeout: Option<Duration>,

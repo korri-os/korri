@@ -112,7 +112,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     let package_text = package.to_str().ok_or("invalid package path")?;
     // Resolve across the plugin cache and configured upstream substituters.
     // `copy --from` requires one source to contain the entire closure.
-    process::checked_closure(
+    process::checked_uncapped(
         nix,
         [
             "--extra-experimental-features",
@@ -168,7 +168,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
         verify_args.extend(["--substituter", substituter]);
     }
     verify_args.push(package_text);
-    process::checked_closure(nix, verify_args, None)?;
+    process::checked_uncapped(nix, verify_args, None)?;
     // The receipt must not become durable before downloaded store contents.
     // Nix may register substituted outputs while their data still lives in the
     // filesystem's writeback cache. Sync the whole store filesystem, including
@@ -442,7 +442,7 @@ impl StoreSnapshot {
             validate_store_path(package)?;
             args.push(package.to_str().ok_or("invalid package path")?);
         }
-        let json = process::checked_closure(nix, args, Some(Duration::from_secs(60)))?;
+        let json = process::checked_uncapped(nix, args, Some(Duration::from_secs(60)))?;
         let infos: BTreeMap<String, NarInfo> = serde_json::from_str(&json)
             .map_err(|error| format!("invalid Nix path metadata: {error}"))?;
         for path in infos.keys() {
@@ -511,7 +511,7 @@ pub fn verify_publisher_in(
     validate_store_path(package)?;
     let package_text = package.to_str().ok_or("invalid package path")?;
     if contents == StoreContents::Rehash {
-        process::checked_unbounded(
+        process::checked_no_deadline(
             nix,
             [
                 "--extra-experimental-features",
@@ -785,7 +785,7 @@ pub fn load_graph_for_seed(
 }
 
 fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
-    let closure = process::checked_closure(
+    let closure = process::checked_uncapped(
         nix,
         [
             "--extra-experimental-features",

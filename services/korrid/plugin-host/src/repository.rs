@@ -128,7 +128,7 @@ pub fn download(
         TransferBounds::Limited { timeout, .. } => {
             process::run(curl, args, timeout + Duration::from_secs(2))?
         }
-        TransferBounds::Unlimited { .. } => process::run_unbounded(curl, args)?,
+        TransferBounds::Unlimited { .. } => process::run_no_deadline(curl, args)?,
     };
     if !result.success {
         return Err(format!(

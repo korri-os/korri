@@ -275,7 +275,7 @@ struct CacheInfo {
 pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result<(), String> {
     crate::package::validate_store_path(Path::new(store_path))?;
     let cache = path_to_file_uri(cache_dir)?;
-    let json = crate::process::checked_closure(
+    let json = crate::process::checked_uncapped(
         nix,
         [
             "--extra-experimental-features",
@@ -321,7 +321,7 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
         };
         verify_nar(reader, info.nar_size, &info.nar_hash)?;
     }
-    crate::process::checked_closure(
+    crate::process::checked_uncapped(
         nix,
         [
             "--extra-experimental-features",

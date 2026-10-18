@@ -214,31 +214,31 @@ fn closure_sized_helper_output_has_no_cap_but_other_helpers_keep_it() {
     let shell = Path::new(&shell);
     // Two MiB on stdout and one MiB plus a line on stderr.
     let script = "head -c 2097152 /dev/zero | tr '\\0' x; head -c 1048577 /dev/zero >&2";
-    let stdout = process::checked_closure(shell, ["-c", script], None).unwrap();
+    let stdout = process::checked_uncapped(shell, ["-c", script], None).unwrap();
     assert_eq!(stdout.len(), 2 * 1024 * 1024);
     assert!(stdout.bytes().all(|byte| byte == b'x'));
     assert_eq!(
-        process::checked_closure(shell, ["-c", script], Some(Duration::from_secs(10)))
+        process::checked_uncapped(shell, ["-c", script], Some(Duration::from_secs(10)))
             .unwrap()
             .len(),
         2 * 1024 * 1024
     );
     for capped in [
         process::run(shell, ["-c", script], Duration::from_secs(10)).map(|_| ()),
-        process::run_unbounded(shell, ["-c", script]).map(|_| ()),
+        process::run_no_deadline(shell, ["-c", script]).map(|_| ()),
     ] {
         assert!(capped.unwrap_err().contains("exceeded 1 MiB"));
     }
     // A closure-sized helper given a deadline still honours it.
     assert!(
-        process::checked_closure(shell, ["-c", "sleep 5"], Some(Duration::from_millis(30)))
+        process::checked_uncapped(shell, ["-c", "sleep 5"], Some(Duration::from_millis(30)))
             .unwrap_err()
             .contains("deadline")
     );
 }
 
 #[test]
-fn unbounded_helpers_outlast_a_bounded_deadline_and_keep_other_boundaries() {
+fn no_deadline_helpers_outlast_a_bounded_deadline_and_keep_the_output_cap() {
     let shell = std::env::var("SHELL").expect("test runner supplies its shell");
     let shell = Path::new(&shell);
     // The same command exceeds a bounded deadline but completes unbounded.
@@ -250,12 +250,12 @@ fn unbounded_helpers_outlast_a_bounded_deadline_and_keep_other_boundaries() {
     .unwrap_err()
     .contains("deadline"));
     assert_eq!(
-        process::checked_unbounded(shell, ["-c", "sleep 0.2; printf done"]).unwrap(),
+        process::checked_no_deadline(shell, ["-c", "sleep 0.2; printf done"]).unwrap(),
         "done"
     );
-    assert!(process::checked_unbounded(shell, ["-c", "exit 7"]).is_err());
+    assert!(process::checked_no_deadline(shell, ["-c", "exit 7"]).is_err());
     assert!(
-        process::run_unbounded(shell, ["-c", "while :; do printf '%01000d' 0; done"])
+        process::run_no_deadline(shell, ["-c", "while :; do printf '%01000d' 0; done"])
             .unwrap_err()
             .contains("exceeded 1 MiB")
     );
