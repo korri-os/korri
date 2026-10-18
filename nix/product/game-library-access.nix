@@ -53,6 +53,10 @@ in
     "a+ ${root}/users - - - - u:${user}:--x"
     "d ${account} 2770 korrid ${group} -"
     "a+ ${account} - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
+    # Reconstructible runtime downloads (launch input cacheRoot). Plugin
+    # prepare programs create their subdirectories, which inherit this ACL.
+    "d ${root}/cache 2770 korrid ${group} -"
+    "a+ ${root}/cache - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
   ]
   ++ lib.concatMap (name: [
     "a+ ${root}/roms/${name} - - - - u:${user}:r-x,d:u:${user}:r-x"
