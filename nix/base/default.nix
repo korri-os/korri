@@ -1,6 +1,6 @@
 # Shared Korri product policy. This module chooses neither a board nor an
 # image format and is composed by nix/product/nixos-module.nix.
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 let
   korriCache = import ../cache/identity.nix;
 in
@@ -8,6 +8,12 @@ in
   imports = [ ./wifi.nix ];
 
   networking.networkmanager.enable = true;
+
+  # nixpkgs 2026-09 makes the systemd initrd the default. Every handheld boots
+  # with the scripted initrd today, and its kernel configs carry no TPM driver
+  # (the systemd initrd adds tpm-crb). Keep the proven stage 1 until a device
+  # moves on purpose, with its own boot acceptance.
+  boot.initrd.systemd.enable = lib.mkDefault false;
 
   # Keep physical recovery access, including the RG353M USB serial console.
   # Physical console access grants root. Network SSH is off for image releases;
