@@ -15,7 +15,6 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 pub struct PublishArgs {
@@ -156,7 +155,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         .input_store_path
         .to_str()
         .ok_or("non-UTF-8 store path")?;
-    let json = process::checked(
+    let json = process::checked_closure(
         &nix,
         [
             "--extra-experimental-features",
@@ -166,7 +165,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
             "--json",
             input,
         ],
-        Duration::from_secs(300),
+        None,
     )?;
     #[derive(Deserialize)]
     struct Rewrites {
@@ -186,7 +185,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
     let cache_dir = export.path().join("cache");
     fs::create_dir(&cache_dir).map_err(|e| e.to_string())?;
     let cache_uri = format!("{}?compression=xz", archive::path_to_file_uri(&cache_dir)?);
-    process::checked(
+    process::checked_closure(
         &nix,
         [
             "--extra-experimental-features",
@@ -196,7 +195,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
             &cache_uri,
             &ca_store_path,
         ],
-        Duration::from_secs(600),
+        None,
     )?;
     archive::preflight_cache(&nix, &ca_store_path, &cache_dir)?;
     let converted = package::load_declaration(Path::new(&ca_store_path))?;
