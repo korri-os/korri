@@ -27,6 +27,23 @@ instance drop-in, requires the template's device, terminal, and restart
 rules, requires the packaged agetty and root autologin, and requires the udev
 rule. Earlier drafts of this fix failed that check.
 
+### Root nixpkgs update to `4975466d324710c576dc11ad614684e6bd8cad8e`
+
+The native getty module now puts `--login-program` directly after agetty
+and adds `--issue-file` before `--autologin`. The former check required an
+argument before `--login-program` and none between login and autologin.
+The generated unit retained its dependencies and terminal rules; only that
+command assertion failed.
+
+The check now accepts those native argument positions. It still requires
+packaged agetty and login paths, root autologin, and the serial arguments
+`%I --keep-baud $TERM`. It also requires the empty `ExecStart=` reset and
+exactly one replacement command. No runtime declaration changes.
+
+This physical serial console grants root, as declared by `nix/base/default.nix`
+and `nix/product/requirements.nix`. It is separate from the key-only network
+SSH plugin. This check update changes neither access policy nor permissions.
+
 No kernel, bootloader, WiFi, or eMMC change is part of this repair.
 
 ## Owner-approved temporary SD repair

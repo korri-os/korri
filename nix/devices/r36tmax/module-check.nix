@@ -29,6 +29,7 @@ let
     && config.hardware.deviceTree.overlays == [ ]
     && lib.hasInfix "panel-generic-dsi.c" config.boot.kernelPackages.kernel.postPatch
     && !config.hardware.enableAllHardware
+    && !config.boot.initrd.systemd.enable
     && !config.boot.initrd.allowMissingModules
     && config.boot.initrd.availableKernelModules == [ ]
     && config.boot.initrd.kernelModules == [ ]

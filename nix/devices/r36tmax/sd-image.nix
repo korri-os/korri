@@ -68,6 +68,8 @@ in
     # megaraid, and friends -- and modules-shrunk fails hard on the first one
     # a handheld kernel does not build:
     #   modprobe: FATAL: Module 3w-9xxx not found
+    # Keep the scripted initrd and its SD-only flight-recorder hooks.
+    initrd.systemd.enable = false;
     initrd.availableKernelModules = lib.mkForce [ ];
     initrd.kernelModules = lib.mkForce [ ];
     initrd.includeDefaultModules = false;

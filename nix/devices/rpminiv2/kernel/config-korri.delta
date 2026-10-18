@@ -1,14 +1,14 @@
 # Product = the full ROCKNIX 20260901 Mini V2 `config` plus these changes.
 # Regenerate config-korri with derive-config-korri.py. The build checks the
 # resolved configuration against this contract before compiling the kernel.
-# Nix cross compiler and binutils, proven by the GCC 15 display boot.
-CONFIG_CC_VERSION_TEXT="aarch64-unknown-linux-gnu-gcc (GCC) 15.2.0"
-CONFIG_GCC_VERSION=150200
-CONFIG_AS_VERSION=24400
-CONFIG_LD_VERSION=24400
-CONFIG_PAHOLE_VERSION=130
-# Binutils 2.44 cannot assemble LSUI (arm64/Kconfig requires >= 2.45).
-# CONFIG_AS_HAS_LSUI is not set
+# Owner-approved toolchain probes (2026-09-30, carried 2026-10-18): Nix GCC 15.3 / Binutils 2.46.
+CONFIG_CC_VERSION_TEXT="aarch64-unknown-linux-gnu-gcc (GCC) 15.3.0"
+CONFIG_GCC_VERSION=150300
+CONFIG_AS_VERSION=24600
+CONFIG_LD_VERSION=24600
+CONFIG_PAHOLE_VERSION=131
+# Binutils 2.46 supports LSUI assembly; CONFIG_ARM64_LSUI stays disabled.
+CONFIG_AS_HAS_LSUI=y
 # CONFIG_ARM64_LSUI is not set
 # Kernel cross compiler has no userspace linker in its configure environment.
 # CONFIG_CC_CAN_LINK is not set

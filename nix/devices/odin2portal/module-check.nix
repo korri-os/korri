@@ -14,6 +14,10 @@ assert c.nixpkgs.hostPlatform.system == "aarch64-linux";
 assert c.networking.hostName == "odin2portal";
 assert c.boot.kernelPackages.kernel.version == "7.2";
 assert c.boot.kernelPackages.kernel.modDirVersion == "7.2.0";
+assert lib.all (kernel: kernel.features.efiBootStub && kernel.config.CONFIG_EFI_STUB == "y") [
+  c.boot.kernelPackages.kernel
+  c.specialisation.linux-7_0_2-rescue.configuration.boot.kernelPackages.kernel
+];
 assert c.hardware.deviceTree.name == "qcom/qcs8550-ayn-odin2portal.dtb";
 assert c.boot.loader.systemd-boot.enable;
 assert !c.boot.loader.grub.enable;

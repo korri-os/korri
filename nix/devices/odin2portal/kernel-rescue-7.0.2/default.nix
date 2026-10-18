@@ -31,7 +31,7 @@
   linuxManualConfig,
   stdenv,
   # linuxPackagesFor re-invokes this function through `override` to attach
-  # kernel features; accept and ignore what it passes.
+  # kernel features; forward them to the manual-config builder.
   features ? { },
   ...
 }:
@@ -45,6 +45,10 @@ let
   dtbName = "qcs8550-ayn-odin2portal";
   kernel = linuxManualConfig {
     inherit version stdenv;
+    # NixOS checks this metadata before installing an EFI-stub boot entry.
+    features =
+      assert builtins.elem "CONFIG_EFI_STUB=y" (lib.splitString "\n" (builtins.readFile ./config));
+      features // { efiBootStub = true; };
     modDirVersion = version;
 
     src = fetchurl {

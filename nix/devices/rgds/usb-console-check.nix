@@ -49,8 +49,13 @@ pkgs.runCommand "rgds-usb-console-check" { } ''
   grep -Fx 'Restart=always' "$template"
   grep -Fx 'StandardInput=tty' "$template"
   grep -Fx 'TTYPath=/dev/%I' "$template"
-  # The packaged login command and root autologin must survive.
+  # The drop-in must clear the upstream command and supply exactly one
+  # packaged login command with root autologin and the serial tty arguments.
+  # Native getty arguments can start with --login-program and include
+  # --issue-file before --autologin; allow zero or more arguments in each gap.
   drop_in=${directory}/serial-getty@.service.d/overrides.conf
-  grep -E '^ExecStart=/nix/store/[^ ]+/bin/agetty .*--login-program /nix/store/[^ ]+/bin/login --autologin root' "$drop_in"
+  grep -Fx 'ExecStart=' "$drop_in"
+  test "$(grep -c '^ExecStart=' "$drop_in")" -eq 2
+  grep -E '^ExecStart=/nix/store/[^ ]+/bin/agetty (.* )?--login-program /nix/store/[^ ]+/bin/login (.* )?--autologin root %I --keep-baud [$]TERM$' "$drop_in"
   touch "$out"
 ''
