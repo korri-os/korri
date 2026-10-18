@@ -13,7 +13,12 @@ fn input() -> serde_json::Value {
         "ref": "401710",
         "accountRoot": "/storage/korri/users/default",
         "cacheRoot": "/storage/korri/cache",
-        "files": {"steam-session": "/nix/store/exact-steam/bin/steam-session"},
+        "files": {
+            "steam-session": "/nix/store/exact-steam/bin/steam-session",
+            "@korri:fex/fex-prepare": "/nix/store/exact-fex/bin/fex-prepare",
+            "@korri:fex/config": "/nix/store/exact-fex-config/share/fex-emu",
+            "@korri:proton/cachyos-prepare": "/nix/store/exact-proton/bin/cachyos-prepare",
+        },
         "overrides": {"settings": {}},
     })
 }
@@ -52,7 +57,13 @@ fn steam_prepares_the_session_command_ref_and_account_home_without_a_file() {
         serde_json::json!({
             "command": "/nix/store/exact-steam/bin/steam-session",
             "args": ["401710"],
-            "env": {"STEAM_HOME": "/storage/korri/users/default/steam"},
+            "env": {
+                "STEAM_HOME": "/storage/korri/users/default/steam",
+                "KORRI_CACHE_ROOT": "/storage/korri/cache",
+                "KORRI_FEX_PREPARE": "/nix/store/exact-fex/bin/fex-prepare",
+                "KORRI_FEX_CONFIG": "/nix/store/exact-fex-config/share/fex-emu",
+                "KORRI_PROTON_CACHYOS_PREPARE": "/nix/store/exact-proton/bin/cachyos-prepare",
+            },
             "directories": ["/storage/korri/users/default/steam"],
             "envUnset": [],
         })
@@ -71,6 +82,25 @@ fn steam_refuses_a_missing_or_empty_provider_ref() {
             call_plugin_operation_ts(STEAM_PLUGIN, LAUNCH_PREPARE, &input.to_string()).is_err()
         );
     }
+}
+
+#[test]
+fn steam_refuses_without_the_cache_root_or_a_required_plugin_file() {
+    for key in [
+        "@korri:fex/fex-prepare",
+        "@korri:fex/config",
+        "@korri:proton/cachyos-prepare",
+    ] {
+        let mut input = input();
+        input["files"].as_object_mut().unwrap().remove(key);
+        assert!(
+            call_plugin_operation_ts(STEAM_PLUGIN, LAUNCH_PREPARE, &input.to_string()).is_err(),
+            "{key}"
+        );
+    }
+    let mut input = input();
+    input.as_object_mut().unwrap().remove("cacheRoot");
+    assert!(call_plugin_operation_ts(STEAM_PLUGIN, LAUNCH_PREPARE, &input.to_string()).is_err());
 }
 
 #[test]
