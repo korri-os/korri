@@ -9,7 +9,6 @@ under `@korri:fex/<key>`:
 |---|---|
 | `fex-prepare` | Native program that prepares the pinned x86 rootfs |
 | `config` | FEX configuration directory: `Config.json` and `AppConfig/steamwebhelper.json`, moved unchanged from the Steam plugin |
-| `fex` | nixpkgs FEX `bin/FEX` |
 
 ## `fex-prepare <cache-root>`
 

@@ -3,13 +3,15 @@
 `@korri:proton` ships Proton compatibility tools for runners that require it.
 It declares no runner and no handler. `cachyos` names the one build it carries.
 That name is a file-key prefix and a cache-path segment only. A runner that
-lists this plugin's exact output in its `plugin.nix` `requires` reads these
-files from its launch input under `@korri:proton/<key>`:
+lists this plugin's exact output in its `plugin.nix` `requires` reads this file
+from its launch input under `@korri:proton/<key>`:
 
 | Key | Artifact |
 |---|---|
 | `cachyos-prepare` | Native program that prepares the pinned Proton-CachyOS arm64 build |
-| `cachyos-compatibilitytool` | That build's Steam `compatibilitytool.vdf` |
+
+`cachyos/compatibilitytool.vdf` is not a file key. `cachyos-prepare` installs
+it from its own closure.
 
 `cachyos/pin.nix` holds the pin, moved from the former
 `plugins/steam/packages/proton-cachyos-arm64/default.nix`, and defines the tool

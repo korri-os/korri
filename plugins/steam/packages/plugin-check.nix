@@ -23,8 +23,7 @@ pkgs.runCommand "steam-plugin-package-check"
     assert manifest['services'] == {}
     # Exact outputs of the plugins whose files plugin.ts passes to the session.
     assert manifest['requires'] == [str(fex), str(proton)], manifest['requires']
-    for required, keys in ((fex, ['config', 'fex', 'fex-prepare']),
-                           (proton, ['cachyos-compatibilitytool', 'cachyos-prepare'])):
+    for required, keys in ((fex, ['config', 'fex-prepare']), (proton, ['cachyos-prepare'])):
         files = json.loads((required / 'manifest.json').read_text())['files']
         assert sorted(files) == keys, files
     runner = manifest['files']['steam-session']

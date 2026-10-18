@@ -34,10 +34,9 @@ in
 {
   packages = {
     cachyos-prepare = prepare;
-    cachyos-compatibilitytool = compatibilitytool;
   };
+  # cachyos-prepare installs compatibilitytool.vdf from its own closure.
   files = {
     cachyos-prepare = "${prepare}/bin/cachyos-prepare";
-    cachyos-compatibilitytool = "${compatibilitytool}/share/compatibilitytool.vdf";
   };
 }

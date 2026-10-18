@@ -31,11 +31,9 @@ in
   packages = {
     fex-prepare = prepare;
     fex-config = config;
-    fex = pkgs.fex;
   };
   files = {
     fex-prepare = "${prepare}/bin/fex-prepare";
     config = "${config}/share/fex-emu";
-    fex = "${pkgs.fex}/bin/FEX";
   };
 }

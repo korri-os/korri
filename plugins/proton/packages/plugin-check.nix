@@ -13,6 +13,7 @@ pkgs.runCommand "proton-plugin-package-check"
     python3 - ${plugin} ${cachyos.toolName} <<'PY'
     import json
     from pathlib import Path
+    import re
     import subprocess
     import sys
 
@@ -23,11 +24,13 @@ pkgs.runCommand "proton-plugin-package-check"
     assert manifest['services'] == {}
     assert 'requires' not in manifest
     files = manifest['files']
-    assert sorted(files) == ['cachyos-compatibilitytool', 'cachyos-prepare'], files
-    vdf = Path(files['cachyos-compatibilitytool']).read_text()
-    assert f'"{tool}"' in vdf and '@' not in vdf, vdf
+    assert sorted(files) == ['cachyos-prepare'], files
     prepare = files['cachyos-prepare']
-    assert files['cachyos-compatibilitytool'] in Path(prepare).read_text()
+    # The program installs the vdf it references from its own closure.
+    vdfs = re.findall(r'/nix/store/[^"]+/compatibilitytool[.]vdf', Path(prepare).read_text())
+    assert len(vdfs) == 1, vdfs
+    vdf = Path(vdfs[0]).read_text()
+    assert f'"{tool}"' in vdf and '@' not in vdf, vdf
     for arguments in ([], ['relative'], ['/nonexistent-cache-root']):
         result = subprocess.run([prepare, *arguments], capture_output=True)
         assert result.returncode == 2, (arguments, result)
