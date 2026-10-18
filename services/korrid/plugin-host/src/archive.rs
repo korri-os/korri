@@ -275,7 +275,7 @@ struct CacheInfo {
 pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result<(), String> {
     crate::package::validate_store_path(Path::new(store_path))?;
     let cache = path_to_file_uri(cache_dir)?;
-    let json = crate::process::checked_unbounded(
+    let json = crate::process::checked_closure(
         nix,
         [
             "--extra-experimental-features",
@@ -287,6 +287,7 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
             "--recursive",
             store_path,
         ],
+        None,
     )?;
     let infos: BTreeMap<String, CacheInfo> =
         serde_json::from_str(&json).map_err(|e| format!("invalid Nix path-info: {e}"))?;
@@ -320,7 +321,7 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
         };
         verify_nar(reader, info.nar_size, &info.nar_hash)?;
     }
-    crate::process::checked_unbounded(
+    crate::process::checked_closure(
         nix,
         [
             "--extra-experimental-features",
@@ -337,6 +338,7 @@ pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result
             "1",
             store_path,
         ],
+        None,
     )?;
     Ok(())
 }

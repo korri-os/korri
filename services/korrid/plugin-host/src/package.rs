@@ -112,7 +112,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     let package_text = package.to_str().ok_or("invalid package path")?;
     // Resolve across the plugin cache and configured upstream substituters.
     // `copy --from` requires one source to contain the entire closure.
-    process::checked_unbounded(
+    process::checked_closure(
         nix,
         [
             "--extra-experimental-features",
@@ -135,6 +135,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
             source,
             package_text,
         ],
+        None,
     )?;
     // Realization can reuse paths without locally registered signatures (for
     // example, in a NixOS store image). Unlike build, store verify consults only
@@ -167,7 +168,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
         verify_args.extend(["--substituter", substituter]);
     }
     verify_args.push(package_text);
-    process::checked_unbounded(nix, verify_args)?;
+    process::checked_closure(nix, verify_args, None)?;
     // The receipt must not become durable before downloaded store contents.
     // Nix may register substituted outputs while their data still lives in the
     // filesystem's writeback cache. Sync the whole store filesystem, including
@@ -441,7 +442,7 @@ impl StoreSnapshot {
             validate_store_path(package)?;
             args.push(package.to_str().ok_or("invalid package path")?);
         }
-        let json = process::checked(nix, args, Duration::from_secs(60))?;
+        let json = process::checked_closure(nix, args, Some(Duration::from_secs(60)))?;
         let infos: BTreeMap<String, NarInfo> = serde_json::from_str(&json)
             .map_err(|error| format!("invalid Nix path metadata: {error}"))?;
         for path in infos.keys() {
@@ -784,7 +785,7 @@ pub fn load_graph_for_seed(
 }
 
 fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
-    let closure = process::checked(
+    let closure = process::checked_closure(
         nix,
         [
             "--extra-experimental-features",
@@ -793,7 +794,7 @@ fn closure_of(nix: &Path, package: &Path) -> Result<BTreeSet<PathBuf>, String> {
             "--recursive",
             package.to_str().ok_or("invalid package path")?,
         ],
-        Duration::from_secs(30),
+        Some(Duration::from_secs(30)),
     )?;
     let closure: BTreeSet<PathBuf> = closure.lines().map(PathBuf::from).collect();
     for path in &closure {

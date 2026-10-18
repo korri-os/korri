@@ -15,12 +15,21 @@ pub struct Output {
     pub stderr: String,
 }
 
+/// Helpers print at most this much unless their output grows with a package
+/// closure. Plugins have no size limit, so closure-sized output has no cap.
+const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+
 pub fn run<I, S>(program: &Path, args: I, timeout: Duration) -> Result<Output, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    run_until(program, args, Some(Instant::now() + timeout))
+    run_until(
+        program,
+        args,
+        Some(Instant::now() + timeout),
+        Some(MAX_OUTPUT_BYTES),
+    )
 }
 
 /// Package transfers, imports and verification take as long as the package
@@ -30,10 +39,15 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    run_until(program, args, None)
+    run_until(program, args, None, Some(MAX_OUTPUT_BYTES))
 }
 
-fn run_until<I, S>(program: &Path, args: I, deadline: Option<Instant>) -> Result<Output, String>
+fn run_until<I, S>(
+    program: &Path,
+    args: I,
+    deadline: Option<Instant>,
+    max_output: Option<usize>,
+) -> Result<Output, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -62,7 +76,8 @@ where
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     loop {
-        if let Err(error) = drain(&mut out, &mut stdout).and_then(|_| drain(&mut err, &mut stderr))
+        if let Err(error) = drain(&mut out, &mut stdout, max_output)
+            .and_then(|_| drain(&mut err, &mut stderr, max_output))
         {
             unsafe {
                 libc::kill(-(child.id() as i32), libc::SIGKILL);
@@ -77,8 +92,8 @@ where
                 unsafe {
                     libc::kill(-(child.id() as i32), libc::SIGKILL);
                 }
-                drain(&mut out, &mut stdout)?;
-                drain(&mut err, &mut stderr)?;
+                drain(&mut out, &mut stdout, max_output)?;
+                drain(&mut err, &mut stderr, max_output)?;
                 return Ok(Output {
                     success: status.success(),
                     stdout: String::from_utf8_lossy(&stdout).into(),
@@ -105,13 +120,17 @@ where
     }
 }
 
-fn drain(reader: &mut impl Read, bytes: &mut Vec<u8>) -> Result<(), String> {
+fn drain(
+    reader: &mut impl Read,
+    bytes: &mut Vec<u8>,
+    max_output: Option<usize>,
+) -> Result<(), String> {
     let mut buffer = [0; 8192];
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => return Ok(()),
             Ok(n) => {
-                if bytes.len() + n > 1024 * 1024 {
+                if max_output.is_some_and(|max| bytes.len() + n > max) {
                     return Err("helper output exceeded 1 MiB".into());
                 }
                 bytes.extend_from_slice(&buffer[..n]);
@@ -137,6 +156,23 @@ where
     S: AsRef<OsStr>,
 {
     succeeded(program, run_unbounded(program, args)?)
+}
+
+/// For Nix commands whose output grows with a package closure: recursive
+/// path-info listings and per-path progress lines from build, copy, verify
+/// and content-address conversion. Their output has no cap. `None` also
+/// removes the deadline, for work whose run time grows with the closure too.
+pub fn checked_closure<I, S>(
+    program: &Path,
+    args: I,
+    timeout: Option<Duration>,
+) -> Result<String, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let deadline = timeout.map(|timeout| Instant::now() + timeout);
+    succeeded(program, run_until(program, args, deadline, None)?)
 }
 
 fn succeeded(program: &Path, output: Output) -> Result<String, String> {

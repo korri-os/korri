@@ -209,6 +209,35 @@ fn helper_execution_has_time_output_and_exit_boundaries() {
 }
 
 #[test]
+fn closure_sized_helper_output_has_no_cap_but_other_helpers_keep_it() {
+    let shell = std::env::var("SHELL").expect("test runner supplies its shell");
+    let shell = Path::new(&shell);
+    // Two MiB on stdout and one MiB plus a line on stderr.
+    let script = "head -c 2097152 /dev/zero | tr '\\0' x; head -c 1048577 /dev/zero >&2";
+    let stdout = process::checked_closure(shell, ["-c", script], None).unwrap();
+    assert_eq!(stdout.len(), 2 * 1024 * 1024);
+    assert!(stdout.bytes().all(|byte| byte == b'x'));
+    assert_eq!(
+        process::checked_closure(shell, ["-c", script], Some(Duration::from_secs(10)))
+            .unwrap()
+            .len(),
+        2 * 1024 * 1024
+    );
+    for capped in [
+        process::run(shell, ["-c", script], Duration::from_secs(10)).map(|_| ()),
+        process::run_unbounded(shell, ["-c", script]).map(|_| ()),
+    ] {
+        assert!(capped.unwrap_err().contains("exceeded 1 MiB"));
+    }
+    // A closure-sized helper given a deadline still honours it.
+    assert!(
+        process::checked_closure(shell, ["-c", "sleep 5"], Some(Duration::from_millis(30)))
+            .unwrap_err()
+            .contains("deadline")
+    );
+}
+
+#[test]
 fn unbounded_helpers_outlast_a_bounded_deadline_and_keep_other_boundaries() {
     let shell = std::env::var("SHELL").expect("test runner supplies its shell");
     let shell = Path::new(&shell);

@@ -361,6 +361,80 @@ fn extract_does_not_refuse_an_entry_for_its_declared_size() {
     assert_eq!(error, "truncated archive entry");
 }
 
+/// The former 1 MiB helper cap made cache path-info a hidden limit near
+/// 1,500 paths. A stand-in `nix` prints real-shaped path-info for 3,000
+/// content-addressed paths (over 1 MiB) and accepts `store verify`, so the
+/// test exercises the actual NAR checks without a writable Nix store.
+#[test]
+fn preflight_accepts_cache_path_info_larger_than_one_mebibyte() {
+    use std::os::unix::fs::PermissionsExt;
+    const ALPHABET: &[u8] = b"0123456789abcdfghijklmnpqrsvwxyz";
+    // sha256 of b"nar", as Nix's base64 form.
+    const NAR_HASH: &str = "sha256-waPQq2SYIdtU7E3GaMY0ieoXc4yhcn7SY4ojDt5gXj8=";
+    let root = tempfile::tempdir().unwrap();
+    let cache = root.path().join("cache");
+    fs::create_dir_all(cache.join("nar")).unwrap();
+    let hash = |index: usize| {
+        let mut hash = [b'0'; 32];
+        let mut rest = index;
+        for slot in hash.iter_mut().rev() {
+            *slot = ALPHABET[rest % 32];
+            rest /= 32;
+        }
+        String::from_utf8(hash.to_vec()).unwrap()
+    };
+    let paths: Vec<String> = (0..3000)
+        .map(|index| format!("/nix/store/{}-dependency-{index}", hash(index)))
+        .collect();
+    let mut metadata = serde_json::Map::new();
+    for (index, path) in paths.iter().enumerate() {
+        let url = format!("nar/{}.nar", hash(index));
+        fs::write(cache.join(&url), b"nar").unwrap();
+        let references = if index == 0 {
+            &paths[..]
+        } else {
+            &paths[index..=index]
+        };
+        metadata.insert(
+            path.clone(),
+            serde_json::json!({
+                "ca": "fixed:r:sha256:0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73",
+                "compression": "none",
+                "downloadHash": NAR_HASH,
+                "downloadSize": 3,
+                "narHash": NAR_HASH,
+                "narSize": 3,
+                "references": references,
+                "signatures": [],
+                "url": url,
+            }),
+        );
+    }
+    let metadata = serde_json::Value::Object(metadata).to_string();
+    assert!(metadata.len() > 1024 * 1024, "{} bytes", metadata.len());
+    let json = root.path().join("path-info.json");
+    fs::write(&json, &metadata).unwrap();
+    let nix = root.path().join("nix");
+    fs::write(
+        &nix,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in\n  *path-info*) cat {} ;;\n  *verify*) exit 0 ;;\n  *) exit 9 ;;\nesac\n",
+            json.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&nix, fs::Permissions::from_mode(0o755)).unwrap();
+
+    archive::preflight_cache(&nix, &paths[0], &cache).unwrap();
+
+    // The NAR checks still run on every listed path.
+    fs::write(cache.join(format!("nar/{}.nar", hash(2999))), b"nas").unwrap();
+    assert_eq!(
+        archive::preflight_cache(&nix, &paths[0], &cache).unwrap_err(),
+        "NAR hash mismatch"
+    );
+}
+
 /// extract must validate that the staging directory itself is not a symlink.
 /// Before the fix, a symlink staging root was followed by create_dir_all,
 /// allowing writes outside the caller-provided boundary.

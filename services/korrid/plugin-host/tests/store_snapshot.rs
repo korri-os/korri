@@ -91,3 +91,44 @@ fn a_reference_missing_from_the_metadata_is_refused() {
     assert!(snapshot.closure(Path::new(A)).is_err());
     assert!(snapshot.closure(Path::new(B)).is_err());
 }
+
+/// A store path for the `index`th generated dependency. Its hash part uses
+/// Nix's base-32 alphabet, so it passes store-path validation.
+fn dependency(index: usize) -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdfghijklmnpqrsvwxyz";
+    let mut hash = [b'0'; 32];
+    let mut rest = index;
+    for slot in hash.iter_mut().rev() {
+        *slot = ALPHABET[rest % 32];
+        rest /= 32;
+    }
+    format!(
+        "/nix/store/{}-dependency-{index}",
+        std::str::from_utf8(&hash).unwrap()
+    )
+}
+
+#[test]
+fn closure_metadata_larger_than_one_mebibyte_is_accepted() {
+    // About 700 bytes per path made the former 1 MiB helper cap a hidden
+    // limit near 1,500 paths. Plugins have no size limit.
+    let directory = tempfile::tempdir().unwrap();
+    let dependencies: Vec<String> = (0..3000).map(dependency).collect();
+    let mut root_references: Vec<&str> = dependencies.iter().map(String::as_str).collect();
+    root_references.extend([A, LIBC]);
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(A.into(), info(&root_references));
+    metadata.insert(LIBC.into(), info(&[LIBC]));
+    for path in &dependencies {
+        metadata.insert(path.clone(), info(&[path.as_str(), LIBC]));
+    }
+    let metadata = serde_json::Value::Object(metadata).to_string();
+    assert!(metadata.len() > 1024 * 1024, "{} bytes", metadata.len());
+    let (nix, _) = stand_in(directory.path(), &metadata);
+
+    let snapshot = StoreSnapshot::query(&nix, &[Path::new(A)]).unwrap();
+
+    let closure = snapshot.closure(Path::new(A)).unwrap();
+    assert_eq!(closure.len(), dependencies.len() + 2);
+    assert!(closure.contains(Path::new(&dependencies[2999])));
+}
