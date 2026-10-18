@@ -22,6 +22,13 @@ in
   # dbus-broker needs a reboot-based rollout of its own.
   services.dbus.implementation = lib.mkDefault "dbus";
 
+  # A Korri compositor owns the console VT. NixOS restarts
+  # systemd-vconsole-setup during a live switch whenever kbd or vconsole.conf
+  # changes; with systemd 261 that restart hangs while Sway holds the VT. On
+  # the Mini V2 it stalled the switch's job queue for minutes, so input and
+  # Wi-Fi services never came back. Boot-time console setup is unchanged.
+  systemd.services.reload-systemd-vconsole-setup.enable = lib.mkDefault false;
+
   # Keep physical recovery access, including the RG353M USB serial console.
   # Physical console access grants root. Network SSH is off for image releases;
   # owner-controlled SSH through the plugin host remains separate work.
