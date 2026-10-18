@@ -1,9 +1,11 @@
 """Run the real fex-prepare source against a local fixture server, never the internet."""
+import fcntl
 import hashlib
 import random
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 from fixture_server import FixtureServer
@@ -137,6 +139,43 @@ class FexPrepareTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines()[-1], str(self.ready))
         self.assertEqual(len(server.requests), requests)
+
+    def test_ready_directory_with_leftovers_is_cleaned_under_the_lock(self):
+        server = self.serve()
+        script = self.script(server)
+        self.assertEqual(self.run_prepare(script).returncode, 0)
+        requests = len(server.requests)
+        # A run killed after its rename leaves downloads and work behind.
+        downloads = self.rootfs / ".downloads"
+        downloads.mkdir()
+        (downloads / ("0" * 64 + ".part")).write_bytes(b"partial")
+        stale = self.rootfs / ".tmp-killed/locked"
+        stale.mkdir(parents=True)
+        stale.chmod(0o555)
+        with open(self.rootfs / ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            run = subprocess.Popen(["bash", str(script), str(self.cache)], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True)
+            time.sleep(0.5)
+            self.assertIsNone(run.poll(), "cleanup must wait for the lock")
+            self.assertTrue(downloads.exists())
+        stdout, stderr = run.communicate(timeout=30)
+        self.assertEqual(run.returncode, 0, stderr)
+        self.assertEqual(stdout.splitlines()[-1], str(self.ready))
+        self.assertFalse(downloads.exists())
+        self.assertEqual(list(self.rootfs.glob(".tmp-*")), [])
+        self.assertTrue(self.ready.is_dir())
+        self.assertEqual(len(server.requests), requests)
+
+    def test_clean_ready_directory_does_not_wait_for_the_lock(self):
+        script = self.script(self.serve())
+        self.assertEqual(self.run_prepare(script).returncode, 0)
+        with open(self.rootfs / ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            result = subprocess.run(["bash", str(script), str(self.cache)], capture_output=True,
+                                    text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[-1], str(self.ready))
 
     def test_hash_mismatch_is_refused_and_leaves_nothing(self):
         for name in ("ArchLinux.sqsh", "freedreno.pkg.tar.zst"):

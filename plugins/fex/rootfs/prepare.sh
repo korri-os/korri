@@ -34,15 +34,21 @@ discard() {
 # Remove this run's unfinished work directory on any exit.
 trap '[[ -z "$work" ]] || discard "$work"' EXIT
 
-[[ ! -d "$ready" ]] || finish
+# A ready directory with nothing left over needs no lock.
+leftovers() { [[ -e "$downloads" ]] || compgen -G "$base/.tmp-*" >/dev/null; }
+if [[ -d "$ready" ]] && ! leftovers; then finish; fi
 mkdir -p "$base" || fail "cannot create $base"
 exec 9>"$base/.lock"
 flock 9
-# Another run may have finished while this one waited for the lock.
-[[ ! -d "$ready" ]] || finish
-[[ ! -e "$ready" ]] || fail "$ready exists and is not a directory"
 # Every writer holds the lock, so a work directory now is from an interrupted run.
 for stale in "$base"/.tmp-*; do discard "$stale"; done
+# A run killed after its rename leaves its downloads behind. Another run may
+# also have finished while this one waited for the lock.
+if [[ -d "$ready" ]]; then
+  discard "$downloads"
+  finish
+fi
+[[ ! -e "$ready" ]] || fail "$ready exists and is not a directory"
 
 matches() { printf '%s  %s\n' "$1" "$2" | sha256sum --check --status; }
 # Continue from any bytes already in the partial file. Abort a stalled

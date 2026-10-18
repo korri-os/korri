@@ -28,10 +28,13 @@ value named the tool directory because the file sat directly in
 The tool is not in the plugin closure. `cachyos-prepare` downloads it on the
 device into korrid's reconstructible cache.
 
-1. If `<cache-root>/proton/cachyos/11.0-20260601-slr-arm64/` exists, it prints
-   that path and exits 0. It makes no other check.
-2. It takes `<cache-root>/proton/cachyos/.lock` and removes `.tmp-*` work
-   directories left by an interrupted run.
+1. If `<cache-root>/proton/cachyos/11.0-20260601-slr-arm64/` exists and
+   nothing is left over, it prints that path and exits 0 without the lock. It
+   makes no other check of the ready directory.
+2. Otherwise it takes `<cache-root>/proton/cachyos/.lock` and removes `.tmp-*`
+   work directories left by an interrupted run. If the ready directory exists,
+   it also removes `.downloads` left by a run killed after its rename, prints
+   the path and exits 0.
 3. It downloads the release into `.downloads/<sha256>.part` and checks its
    SHA-256, with the same resume, restart and mismatch rules as `fex-prepare`.
 4. It unpacks the release's single top-level directory into `.tmp-<random>`,

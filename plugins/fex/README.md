@@ -18,10 +18,13 @@ device into korrid's reconstructible cache. `rootfs/pins.nix` holds the pins,
 moved from the former `plugins/steam/packages/fex-rootfs.nix`: the
 ArchLinux 2026-01-08 squashfs and ten Arch Mesa `1:26.1.2-1` overlay packages.
 
-1. If `<cache-root>/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2/` exists, it
-   prints that path and exits 0. It makes no other check.
-2. It takes `<cache-root>/fex/rootfs/.lock`, so concurrent runs download once.
-   It removes `.tmp-*` work directories left by an interrupted run.
+1. If `<cache-root>/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2/` exists and
+   nothing is left over, it prints that path and exits 0 without the lock. It
+   makes no other check of the ready directory.
+2. Otherwise it takes `<cache-root>/fex/rootfs/.lock`, so concurrent runs
+   download once. It removes `.tmp-*` work directories left by an interrupted
+   run. If the ready directory exists, it also removes `.downloads` left by a
+   run killed after its rename, prints the path and exits 0.
 3. It downloads each pin into `<cache-root>/fex/rootfs/.downloads/<sha256>.part`
    and checks its SHA-256. A dropped transfer keeps its partial file, and the
    next run resumes it. If the server cannot resume, or the resumed bytes are
