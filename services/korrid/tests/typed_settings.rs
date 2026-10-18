@@ -63,6 +63,7 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
         files: BTreeMap::new(),
         entry: "plugin.ts".into(),
         sources,
+        requires: Vec::new(),
     }
 }
 
@@ -107,6 +108,7 @@ fn input(settings: serde_json::Value) -> PluginLaunchInput {
         "corePath": "/core",
         "contentPath": "/rom",
         "accountRoot": "/account",
+        "cacheRoot": "/cache",
         "files": {"autoconfig":"/autoconfig"},
         "overrides": {"settings":settings},
     }))
@@ -320,6 +322,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         files: manifest.files,
         entry: manifest.entry,
         sources: manifest.sources,
+        requires: Vec::new(),
     };
     let build = package.package.display().to_string();
     let program = package.files["retroarch"].display().to_string();

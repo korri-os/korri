@@ -580,6 +580,37 @@ impl PluginRegistry {
             })
     }
 
+    /// Files a runner's launch input names: its own package's files under their
+    /// bare keys, plus each exactly required plugin's files under
+    /// `<pluginId>/<key>`. A required output that is not installed and enabled
+    /// refuses the launch. Packages the runner does not require stay hidden.
+    pub fn launch_files(
+        &self,
+        contribution: &str,
+    ) -> Result<BTreeMap<String, std::path::PathBuf>, PluginError> {
+        let package = self.installed_package(contribution)?;
+        let mut files = package.files.clone();
+        for required in &package.requires {
+            let dependency = self
+                .installed
+                .values()
+                .find(|candidate| &candidate.package == required)
+                .ok_or_else(|| PluginError::RequiredPluginUnavailable {
+                    contribution: contribution.into(),
+                    package: required.display().to_string(),
+                })?;
+            for (key, path) in &dependency.files {
+                let key = format!("{}/{key}", dependency.id);
+                if files.insert(key.clone(), path.clone()).is_some() {
+                    return Err(PluginError::Evaluation(format!(
+                        "{contribution} launch file key {key} is ambiguous"
+                    )));
+                }
+            }
+        }
+        Ok(files)
+    }
+
     pub fn native_runner(&self, id: &str) -> Result<&RunnerRecord, PluginError> {
         let runner = self
             .runners
@@ -757,6 +788,13 @@ pub enum PluginError {
     DuplicateContribution(String),
     #[error("group id {0} is also a system id")]
     GroupSystemCollision(String),
+    #[error(
+        "{contribution} requires plugin package {package}, which is not installed and enabled"
+    )]
+    RequiredPluginUnavailable {
+        contribution: String,
+        package: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]

@@ -12,6 +12,7 @@ fn input() -> serde_json::Value {
         "program": "/nix/store/exact-steam/bin/steam-session",
         "ref": "401710",
         "accountRoot": "/storage/korri/users/default",
+        "cacheRoot": "/storage/korri/cache",
         "files": {"steam-session": "/nix/store/exact-steam/bin/steam-session"},
         "overrides": {"settings": {}},
     })

@@ -18,6 +18,7 @@ fn package(root: &Path, name: &str, exports: &str, files: &[&str]) -> EnabledPac
         package,
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
+        requires: Vec::new(),
     }
 }
 

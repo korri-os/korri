@@ -45,6 +45,7 @@ fn installed(root: &Path) -> PluginRegistry {
             "retroarch.ts".into(),
             "settings.ts".into(),
         ],
+        requires: Vec::new(),
     }])
     .unwrap()
 }

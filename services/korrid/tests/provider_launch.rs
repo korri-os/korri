@@ -42,6 +42,7 @@ fn installed(root: &Path) -> PluginRegistry {
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         files: BTreeMap::from([("steam-session".into(), root.join("steam-session"))]),
+        requires: Vec::new(),
     }])
     .unwrap()
 }

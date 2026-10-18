@@ -170,7 +170,7 @@ Zero-service packages can carry the shipped `systems`, `families`, `runners`, `g
 
 `Host::enabled_packages()` and the administrator-only `enabled-packages` command expose a consistent admission snapshot. They perform no receipt repair, package realization or callback effects. If Nix lacks a saved signature, verification can fetch signing metadata from the bound cache and retain it, as activation does. They reject changed approvals, revoked signing keys, unfinished selections, and inconsistent active roots. A cached signature still requires the full bound key. Verification holds the host lock and can be slow for large installed sets; a concurrent install makes the query fail as busy. `restore-all` does not run this query: it applies the same checks to each enabled plugin once while it restores it, and publishes those reports. Install, enable, disable, update and rollback publish through the query.
 
-Each plugin keeps its own receipt. Explicit required-plugin operations can manage several receipts in dependency order. Native libraries remain retained by the selected package's Nix closure. Each runner still owns its own program and native file keys; restoring plugin dependencies does not restore cross-package executable borrowing.
+Each plugin keeps its own receipt. Explicit required-plugin operations can manage several receipts in dependency order. Native libraries remain retained by the selected package's Nix closure. Each runner still owns its program and core file keys. Its launch input also names the files of each plugin its package exactly requires; see **Installed Linux game registry**.
 
 Recovery validates each receipt independently and propagates failure through explicit manifest `requires`. An invalid receipt does not stop an unrelated graph. Korri does not infer dependency order from ordinary Nix closure edges.
 
@@ -244,8 +244,7 @@ The same storage owner creates private `staging/download-<8 alphanumeric charact
 
 After a lifecycle commit, the host publishes an atomic, root-owned snapshot at
 `/run/korri-plugin-host/enabled-packages.json`. It projects the existing report
-fields `id`, `package`, `files`, `entry`, and `sources`; it adds no plugin
-manifest dependency fields. The snapshot contains only approved, enabled, committed selections.
+fields `id`, `package`, `files`, `entry`, `sources`, and `requires`. The snapshot contains only approved, enabled, committed selections.
 The host removes it before any selection mutation or recovery. A failed
 transition cannot leave stale launch authority published. Publisher-configuration
 changes restart the NixOS restore service before korrid.
@@ -264,6 +263,16 @@ resolves its launcher instance and kind. Without a choice it accepts only one
 compatible runtime. The launcher program comes from its instance's package;
 the callback and auxiliary files come from its kind's package. The registry validates references against the enabled declarations. Lifecycle
 selection does not create or enforce cross-plugin dependencies.
+
+`launch_route` gives the runner's `PluginLaunchInput.files` its own package's
+files under their bare keys. It adds the files of each output in that package's
+`requires` under `<pluginId>/<key>`, for example `@korri:fex/fex-prepare`. A
+requirement matches only an enabled selection with that exact store output. If
+one is missing or disabled, korrid refuses the launch before it asks the runner
+anything or starts a unit. Transitive requirements and plugins that the package
+does not require are not exposed. `cacheRoot` is the storage root's `cache`
+directory, derived like `accountRoot`. `nix/product/game-library-access.nix`
+grants the runtime user that directory.
 
 Build-side payload checks (no VM):
 

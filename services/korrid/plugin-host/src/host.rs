@@ -1706,6 +1706,7 @@ impl Host {
                 files: report.files,
                 entry: report.entry,
                 sources: report.sources,
+                requires: report.requires,
             })
             .collect();
         #[cfg(test)]

@@ -113,6 +113,7 @@ fn install(root: &Path, name: &str, source: &str) -> EnabledPackage {
         files: BTreeMap::from([("program".into(), program)]),
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
+        requires: Vec::new(),
     }
 }
 

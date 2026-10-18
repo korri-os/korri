@@ -114,6 +114,7 @@ fn install(root: &Path, id: &str, source: &str, files: &[&str]) -> EnabledPackag
             .collect::<BTreeMap<_, _>>(),
         entry: "plugin.ts".into(),
         sources,
+        requires: Vec::new(),
     }
 }
 

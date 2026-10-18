@@ -84,6 +84,7 @@ fn package_with_files(
         entry: "plugin.ts".into(),
         sources,
         files,
+        requires: Vec::new(),
     }
 }
 fn setup(root: &Path, record: &str) -> (Vec<String>, PluginLaunchInput, LaunchComposition) {

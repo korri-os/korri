@@ -20,6 +20,7 @@ fn registry(root: &std::path::Path, hashes: bool) -> PluginRegistry {
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         files: BTreeMap::from([("runner".into(), root.join("runner"))]),
+        requires: Vec::new(),
     }])
     .unwrap()
 }

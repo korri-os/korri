@@ -39,6 +39,11 @@ pub fn launch_route(
     let package = registry
         .installed_package(&route.runner_id)
         .map_err(|cause| error(cause.to_string()))?;
+    // A missing required plugin refuses here, before the runner is asked
+    // anything and before anything runs.
+    let files = registry
+        .launch_files(&route.runner_id)
+        .map_err(|cause| error(cause.to_string()))?;
     let native = route
         .linux_runner
         .as_ref()
@@ -90,10 +95,10 @@ pub fn launch_route(
         content_path,
         provider_ref,
         account_root: root.join("users/default").display().to_string(),
-        files: package
-            .files
-            .iter()
-            .map(|(key, path)| (key.clone(), path.display().to_string()))
+        cache_root: root.join("cache").display().to_string(),
+        files: files
+            .into_iter()
+            .map(|(key, path)| (key, path.display().to_string()))
             .collect(),
         overrides: Some(PluginLaunchOverrides {
             settings,

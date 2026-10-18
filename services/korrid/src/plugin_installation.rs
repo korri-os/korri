@@ -23,6 +23,8 @@ pub struct EnabledPackage {
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
     pub sources: Vec<String>,
+    /// The manifest's exact required plugin outputs, as the host verified them.
+    pub requires: Vec<PathBuf>,
 }
 
 pub fn encode(selections: &[EnabledPackage]) -> Result<Vec<u8>, String> {

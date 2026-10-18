@@ -91,6 +91,7 @@ fn core_package(root: &Path, name: &str, source: String) -> EnabledPackage {
             "retroarch.ts".into(),
             "settings.ts".into(),
         ],
+        requires: Vec::new(),
     }
 }
 
@@ -132,6 +133,7 @@ pub fn installed(root: &Path) -> PluginRegistry {
             "retroarch.ts".into(),
             "settings.ts".into(),
         ],
+        requires: Vec::new(),
     }])
     .unwrap()
 }

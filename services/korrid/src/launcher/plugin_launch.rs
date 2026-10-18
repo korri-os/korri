@@ -48,6 +48,10 @@ pub struct PluginLaunchInput {
     #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
     pub provider_ref: Option<String>,
     pub account_root: String,
+    /// Reconstructible downloads: the storage root's `cache` directory.
+    pub cache_root: String,
+    /// The runner's own files under their bare keys, plus each exactly
+    /// required, installed and enabled plugin's files under `<pluginId>/<key>`.
     pub files: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<PluginLaunchOverrides>,
