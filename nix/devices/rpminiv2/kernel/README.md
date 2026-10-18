@@ -248,3 +248,19 @@ font used by the accepted handoff. It retains checksum-pinned ROCKNIX GRUB and
 DTB controls, but no longer extracts or installs the ROCKNIX `KERNEL`. It
 includes no device-writing tooling and does not modify the installed Retroid
 loader or internal storage.
+
+## Toolchain update (2026-10-18)
+
+The September nixpkgs update moves the cross toolchain to GCC 15.3 and
+Binutils 2.46. Only the six owner-approved probe values changed in
+`config-korri.delta` (GCC/AS/LD/pahole versions and `AS_HAS_LSUI`); internal
+UFS stays built in with `SCSI_UFS_BSG` off. The rebuilt Images are pinned in
+`verify-image.py`:
+
+| Profile | Image bytes | Image SHA-256 |
+| --- | --- | --- |
+| Product | 57,240,064 | `746ef802a81a3d5becd6840e4a7d211210d77ca8d8b464056204a5892364c0c1` |
+| Recovery | 18,317,824 | `139c28c65a2a7029e3442887751c99e4484a115c560a63e3faa07fb3c18a8b65` |
+
+The recovery Image matches the 2026-09-30 approved build byte for byte.
+Physical acceptance of the product Image is separate.
