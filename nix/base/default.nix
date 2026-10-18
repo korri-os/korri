@@ -15,6 +15,13 @@ in
   # moves on purpose, with its own boot acceptance.
   boot.initrd.systemd.enable = lib.mkDefault false;
 
+  # nixpkgs 2026-09 also makes dbus-broker the default. Changing the system
+  # bus implementation cannot be done on a running system: on the Mini V2 a
+  # live switch timed out reloading the bus and the machine went down. Keep
+  # the reference dbus-daemon so updates stay live-switchable; a move to
+  # dbus-broker needs a reboot-based rollout of its own.
+  services.dbus.implementation = lib.mkDefault "dbus";
+
   # Keep physical recovery access, including the RG353M USB serial console.
   # Physical console access grants root. Network SSH is off for image releases;
   # owner-controlled SSH through the plugin host remains separate work.
