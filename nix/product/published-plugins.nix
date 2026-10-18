@@ -1,5 +1,5 @@
 # Exact immutable publisher outputs, not recipes evaluated with Core.
-# Grounding: build-9514b1b382d3, build-9514b1b382d3-solarus and build-ac8fae593e42-zquest
+# Grounding: build-9514b1b382d3, build-9514b1b382d3-solarus, build-ac8fae593e42-zquest and build-ac8fae593e42
 # paths-SYSTEM.txt and revision.txt from their immutable releases;
 # IDs below come from the current host seed report over each published package.
 # Plugin updates change these pins and matching offline proof assets explicitly.
@@ -14,6 +14,7 @@ let
       korri-plugin-fbneo = "/nix/store/060wwk3q1n6h9ixjqdkrm4vdrwz2fx34-korri-plugin";
       korri-plugin-flycast = "/nix/store/1hyibappvdbx4jmqdsrp5blyyba46wkv-korri-plugin";
       korri-plugin-gambatte = "/nix/store/wqaq8k7vgb7snzl9i8q448d3n913b5h4-korri-plugin";
+      korri-plugin-gamescope = "/nix/store/k9nps5ihl57n39qfbagkxqrk01mjr0ij-korri-plugin";
       korri-plugin-genesis-plus-gx = "/nix/store/8g6n55diwvblwcs3hl35k1n03j7b34yk-korri-plugin";
       korri-plugin-gw = "/nix/store/b44l2y0gcj8h5fqwmhhfq9wszwfdqid1-korri-plugin";
       korri-plugin-handy = "/nix/store/0fx1xk6n4c2lp4k3jrhnzpyk6i9d5vnn-korri-plugin";
@@ -41,6 +42,7 @@ let
       korri-plugin-fbneo = "/nix/store/xmar9arskgwsk7bfldi1x111s7mjlnch-korri-plugin";
       korri-plugin-flycast = "/nix/store/ysp64r0bv0pyvnnk6cj03j7d65xfl32q-korri-plugin";
       korri-plugin-gambatte = "/nix/store/989m522gm214hcjq8b6rgx4z677lvx5c-korri-plugin";
+      korri-plugin-gamescope = "/nix/store/wazywg924hnax2q0hyfyyyp09gaig13k-korri-plugin";
       korri-plugin-genesis-plus-gx = "/nix/store/725vhfqq0zssspafbrkn4ffy0z1g5d3s-korri-plugin";
       korri-plugin-gw = "/nix/store/hr7fccqr7vz02k91i3vjiggq60lzyr3k-korri-plugin";
       korri-plugin-handy = "/nix/store/rbxh6ylhzlyxslxy85m13yiy54d584k2-korri-plugin";

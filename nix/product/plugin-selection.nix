@@ -14,6 +14,10 @@ let
     "solarus"
     "zquest-classic"
     "starter-pack"
+    # Owner decision 2026-10-18: Gamescope ships on every product device.
+    # Installed, it wraps nothing until its device modifier is enabled
+    # (ADR 0009).
+    "gamescope"
     "retroarch"
     "nestopia"
     "snes9x"

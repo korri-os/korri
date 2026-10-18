@@ -21,12 +21,17 @@ The pins come from the immutable publisher batches `build-9514b1b382d3` and
 declaration IDs of the selected packages. Path names and lists alone establish
 no identity or trust.
 
-Both architecture maps contain 24 outputs, all from source
-`9514b1b382d3b963674628308d6a5770987a4bc0`. The first batch republished 23
+Both architecture maps contain 26 outputs. 24 come from source
+`9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
 selected plugins for the discovery v2 plugin contract (system content rules,
 groups and `controls`; no `discovery` export), which the current host requires.
 The second batch adds `@korri:solarus`, which the Starter pack requires next to
 `@korri:fake08`; `plugin-selection.nix` selects it on every product device.
+Two come from source `ac8fae593e42dda3cf4beda0b26f190a28d6b942`: batch
+`build-ac8fae593e42-zquest` replaces the Starter pack (adding Lantern Hollow)
+and adds `@korri:zquest-classic`, which the pack now also requires; batch
+`build-ac8fae593e42` adds `@korri:gamescope`, selected on every product device
+and inactive until its device modifier is enabled (ADR 0009).
 Each pinned path was checked against the batch's `paths-SYSTEM.txt` by
 evaluating the publisher at that commit. Earlier batches remain published but
 are no longer pinned. `published-plugin-metadata.nix` pins the

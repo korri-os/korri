@@ -12,17 +12,20 @@ let
       "sha256-BjC9CnvTh+ODlO7S1/V8HhSyhpuGUlJamctrzd5Yayo="
       "sha256-n/gfhZ4CWD30VvXquUBQkTW6JTuKXT/f/CzldOPi35Y="
       "sha256-Jil4OmZoHllMkBjT2bnYZpvVXudlbCBisgTdKyo7w5Y="
+      "sha256-7CrkIcu1L41VepSHbIoMyC9X0N/n3ScYr/2s522gJUw="
     ];
     x86_64-linux = [
       "sha256-nJZ+40Y/QRYy2ke3Th22b8g872uYFjH/c4ps2/IBrAE="
       "sha256-qgeu2GC3SdJNtJ+BZkpEwIn28Gjvp2ZQb3o1rQ+Lj+o="
       "sha256-O6/jNWL9SfZHqfnl0hSedYj/IV4JAdFKmQbtiPIyleI="
+      "sha256-6mhzwXHpjZlL/bMXGrXXym3/pPH2S2BOuh5q63SYmdw="
     ];
   };
   batches = [
     "build-9514b1b382d3"
     "build-9514b1b382d3-solarus"
     "build-ac8fae593e42-zquest"
+    "build-ac8fae593e42"
   ];
   archives = pkgs.lib.imap0 (
     index: batch:
