@@ -2,7 +2,7 @@
 let
   # The single Nix definition of the tool name, owned by @korri:proton.
   protonToolName = (import ../../proton/cachyos/pin.nix).toolName;
-  native = import ./steam-korri { inherit pkgs protonToolName settings; };
+  native = import ./steam-korri { inherit pkgs settings; };
   settingsSource = pkgs.writeText "vdf-settings.py" (
     pkgs.lib.replaceStrings [ "@protonToolName@" ] [ protonToolName ] (
       builtins.readFile ../session/vdf-settings.py

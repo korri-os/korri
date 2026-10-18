@@ -22,8 +22,9 @@ run downloads the FEX rootfs and Proton-CachyOS into that cache; see
 `plugins/fex/README.md` and `plugins/proton/README.md`. A prepare failure exits
 126 with `runtime download failed`. The session sets `FEX_ROOTFS` to the printed
 rootfs directory and `FEX_APP_CONFIG_LOCATION` to the FEX plugin's `config`
-directory. It links `compatibilitytools.d/proton-cachyos-11.0-20260601-slr-arm64`
-to the printed Proton directory. The manual sign-in window starts after the
+directory. On every launch it links
+`compatibilitytools.d/proton-cachyos-11.0-20260601-slr-arm64` to the printed
+Proton directory; the seed does not. The manual sign-in window starts after the
 prepare, seed and settings steps. The session program still owns the Steam
 client, its FHS environment and the Steam settings.
 

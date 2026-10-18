@@ -32,7 +32,6 @@ class SteamBootstrapTests(unittest.TestCase):
             # Production installation uses patchShebangs as well. A Nix build
             # sandbox deliberately has no /usr/bin/env for the child bootstrap.
             script = script.replace("#!/usr/bin/env bash", f"#!{bash}", 1)
-            script = script.replace("@protonToolName@", TOOL)
             script = script.replace("@vdfSettings@", str(self.root))
             (self.bin / name).write_text(script)
             (self.bin / name).chmod(0o755)
@@ -50,7 +49,6 @@ class SteamBootstrapTests(unittest.TestCase):
             "STEAM_HOME": str(self.home),
             "STEAM_GAMES_ROOT": str(self.home),
             "STEAM_DOT": str(self.dot),
-            "STEAM_PROTON_DIR": str(self.root / "cache/proton/cachyos/fixture"),
         }
         runtime = self.home / "steam-runtime-steamrt-arm64/steamrt3c_platform_test/files/lib/aarch64-linux-gnu"
         runtime.mkdir(parents=True)
@@ -131,22 +129,12 @@ class SteamBootstrapTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.existing_tool.read_text(), "leave this existing tool untouched\n")
 
-    def test_seed_links_the_prepared_proton_directory_under_the_tool_name(self):
-        result = self.run_helper("steam-arm64-seed")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        link = self.home / "compatibilitytools.d" / TOOL
-        self.assertEqual(os.readlink(link), self.env["STEAM_PROTON_DIR"] + "/")
-
-    def test_seed_requires_the_prepared_proton_directory(self):
-        del self.env["STEAM_PROTON_DIR"]
-        result = self.run_helper("steam-arm64-seed")
-        self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("STEAM_PROTON_DIR must be set", result.stderr)
-
     def test_seed_does_not_remove_an_existing_compatibility_tool(self):
         result = self.run_helper("steam-arm64-seed")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.existing_tool.read_text(), "leave this existing tool untouched\n")
+        # The session links the prepared Proton tool on every launch; the seed does not.
+        self.assertEqual(list((self.home / "compatibilitytools.d").iterdir()), [self.existing_tool])
 
 
 if __name__ == "__main__":

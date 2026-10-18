@@ -214,9 +214,11 @@ run_prepare 'Proton-CachyOS' "$KORRI_PROTON_CACHYOS_PREPARE" proton_dir
 export FEX_ROOTFS="$fex_rootfs"
 say 'seed: preparing ARM64 runtime and client'
 if [[ ! -x "$STEAM_HOME/steamrtarm64/steam" ]]; then
-  STEAM_PROTON_DIR="$proton_dir" @helpers@/bin/steam-arm64-seed --apply >>"$STEAM_HOME/logs/session_log.txt" 2>&1 \
+  @helpers@/bin/steam-arm64-seed --apply >>"$STEAM_HOME/logs/session_log.txt" 2>&1 \
     || fail 126 'Steam failed: ARM64 seed failed (see logs/session_log.txt)'
 fi
+# Link on every launch: the seed runs only once per Steam home, and a new
+# Proton pin brings a new tool name and prepared directory.
 mkdir -p "$STEAM_HOME/compatibilitytools.d"
 ln -sfn "$proton_dir" "$STEAM_HOME/compatibilitytools.d/@protonToolName@"
 say 'settings: merging Proton, Steam Input and first-launch seeds'

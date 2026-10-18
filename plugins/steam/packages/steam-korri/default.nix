@@ -1,6 +1,5 @@
 {
   pkgs,
-  protonToolName,
   settings,
 }:
 let
@@ -35,8 +34,6 @@ let
         install -m755 "$helper" "$out/bin/$helper"
         patchShebangs "$out/bin/$helper"
       done
-      substituteInPlace "$out/bin/steam-arm64-seed" \
-        --replace-fail '@protonToolName@' ${pkgs.lib.escapeShellArg protonToolName}
       substituteInPlace "$out/bin/steam-arm64-bootstrap" \
         --replace-fail '@vdfSettings@' '${settings}'
       substituteInPlace "$out/bin/steam-guest-run" \

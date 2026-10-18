@@ -67,7 +67,7 @@ class SteamSessionTests(unittest.TestCase):
         # Prepare diagnostics reach the session's stderr; only the last stdout line counts.
         self.assertIn("fex-prepare: fixture ready", result.stderr)
         seed = json.loads((home / "seed.json").read_text())
-        self.assertEqual(seed, {"rootfs": True, "proton": True, "STEAM_PROTON_DIR": str(proton)})
+        self.assertEqual(seed, {"rootfs": True, "proton": True})
         client = json.loads((home / "client-env.json").read_text())
         self.assertEqual(client["FEX_ROOTFS"], str(rootfs))
         self.assertEqual(client["FEX_APP_CONFIG_LOCATION"], str(self.root / "fex-config") + "/")
@@ -95,6 +95,10 @@ class SteamSessionTests(unittest.TestCase):
     def test_game_exit_waits_for_process_and_stops_steam(self):
         result, home, duration = self.run_session("game")
         self.assertEqual(result.returncode, 0, result.stderr)
+        # An already seeded home still gets the link to the prepared tool.
+        self.assertFalse((home / "seed.json").exists())
+        self.assertEqual(os.readlink(home / "compatibilitytools.d" / TOOL),
+                         str(self.root / "cache/proton/cachyos/fixture"))
         self.assertGreaterEqual(duration, 2)
         self.assertIn("AppID 401710 exited", result.stderr)
         self.assertTrue((home / "shutdown").exists())

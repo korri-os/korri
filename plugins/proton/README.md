@@ -16,8 +16,7 @@ it from its own closure.
 `cachyos/pin.nix` holds the pin, moved from the former
 `plugins/steam/packages/proton-cachyos-arm64/default.nix`, and defines the tool
 name `proton-cachyos-11.0-20260601-slr-arm64` once. Nix substitutes it into
-`compatibilitytool.vdf` and into the Steam plugin's seed, session and VDF
-settings.
+`compatibilitytool.vdf` and into the Steam plugin's session and VDF settings.
 
 `compatibilitytool.vdf` is the legacy file with one change: `install_path` is
 `.`. The file now sits inside the tool directory, and Valve's own template in
