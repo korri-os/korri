@@ -29,23 +29,31 @@ let
   before =
     first: second: text:
     lib.hasInfix second (builtins.elemAt (lib.splitString first text) 1);
+  # Korri grows the root partition in stage 2, before systemd starts, while
+  # the registration file still exists. Upstream (nixpkgs 2026-09) registers
+  # store paths, writes /etc/NIXOS and sets the system profile in its own
+  # register-nix-paths service at sysinit, after that growth.
   nativeInitialization =
     config:
     let
       script = config.boot.postBootCommands;
+      service = config.systemd.services.register-nix-paths;
+      registration = service.script;
     in
     occurrences expand script == 1
-    && occurrences register script == 1
-    && occurrences "touch /etc/NIXOS" script == 1
-    && occurrences profile script == 1
-    && occurrences remove script == 1
-    && lib.hasInfix ''/sys/class/block/'' script
+    && lib.hasInfix "/sys/class/block/" script
     && lib.hasInfix ''/partition")"'' script
     && !(lib.hasInfix "MAJ:MIN" script)
-    && before expand register script
-    && before register "touch /etc/NIXOS" script
-    && before "touch /etc/NIXOS" profile script
-    && before profile remove script;
+    && lib.hasInfix "if [ -f /nix-path-registration ]" script
+    && occurrences register registration == 1
+    && occurrences "touch /etc/NIXOS" registration == 1
+    && occurrences profile registration == 1
+    && occurrences remove registration == 1
+    && before "--load-db" "touch /etc/NIXOS" registration
+    && before "touch /etc/NIXOS" "--set /run/current-system" registration
+    && before "--set /run/current-system" remove registration
+    && lib.elem "sysinit.target" service.wantedBy
+    && service.unitConfig.ConditionPathExists == "/nix-path-registration";
 in
 assert !mbr.sdImage.expandOnBoot && !gpt.sdImage.expandOnBoot;
 assert lib.hasInfix "mkdir -p ./files/boot" mbr.sdImage.populateRootCommands;
