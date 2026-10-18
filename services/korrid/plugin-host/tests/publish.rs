@@ -312,47 +312,53 @@ fn extract_rejects_symlink_entries() {
 // Regression tests for issues U1 (fail before fix)
 // ---------------------------------------------------------------------------
 
-/// extract must reject an archive whose file size on disk exceeds MAX_ARCHIVE_BYTES.
-/// Before the fix, extract opened the file without checking its size at all.
+/// The former archive cap was 2 GiB. Plugins have no size limit, so extract
+/// must accept a larger archive. Trailing sparse zeros after the end-of-archive
+/// blocks give the file that size without using the disk space or reading it.
 #[test]
-fn extract_rejects_over_limit_archive_by_file_size() {
-    use korri_plugin_host::archive::MAX_ARCHIVE_BYTES;
+fn extract_accepts_an_archive_larger_than_the_former_limit() {
+    use std::os::unix::fs::PermissionsExt;
+    const FORMER_ARCHIVE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
     let root = tempfile::tempdir().unwrap();
-    let archive_path = root.path().join("huge.tar");
-    // Produce a sparse file that reports a large size without occupying disk.
-    // We set the logical size to MAX_ARCHIVE_BYTES + 1 via seek+write.
-    {
-        use std::io::Seek;
-        let mut f = File::create(&archive_path).unwrap();
-        f.seek(std::io::SeekFrom::Start(MAX_ARCHIVE_BYTES)).unwrap();
-        f.write_all(&[0u8]).unwrap();
-    }
+    let cache = make_cache_dir(root.path());
+    let archive_path = root.path().join("large.tar");
+    archive::pack(&cache, &archive_path).unwrap();
+    fs::set_permissions(&archive_path, fs::Permissions::from_mode(0o644)).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&archive_path)
+        .unwrap()
+        .set_len(FORMER_ARCHIVE_LIMIT + 1)
+        .unwrap();
     let staging = root.path().join("staged");
     fs::create_dir(&staging).unwrap();
-    let err = archive::extract(&archive_path, &staging).unwrap_err();
-    assert!(
-        err.contains("size") || err.contains("limit") || err.contains("2 GiB"),
-        "expected size-limit error, got: {err}"
-    );
+    archive::extract(&archive_path, &staging).unwrap();
+    assert!(staging
+        .join("nar/00000000000000000000000000000000.nar.xz")
+        .is_file());
 }
 
-/// extract must reject an archive whose file size exactly equals MAX_ARCHIVE_BYTES + 1.
-/// A GitHub asset must be strictly smaller than 2 GiB.
+/// The former expanded cap was 3 GiB. An entry that declares more is copied,
+/// not refused by its header: this one fails only because its bytes are absent.
 #[test]
-fn extract_rejects_archive_at_exactly_limit_plus_one() {
-    use korri_plugin_host::archive::MAX_ARCHIVE_BYTES;
+fn extract_does_not_refuse_an_entry_for_its_declared_size() {
     let root = tempfile::tempdir().unwrap();
-    let archive_path = root.path().join("edge.tar");
+    let archive_path = root.path().join("declared.tar");
     {
-        use std::io::Seek;
-        let mut f = File::create(&archive_path).unwrap();
-        // Exactly one byte over the limit.
-        f.seek(std::io::SeekFrom::Start(MAX_ARCHIVE_BYTES)).unwrap();
-        f.write_all(&[0u8]).unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_path("nix-cache-info").unwrap();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_size(4 * 1024 * 1024 * 1024);
+        header.set_mode(0o644);
+        header.set_cksum();
+        let mut file = File::create(&archive_path).unwrap();
+        file.write_all(header.as_bytes()).unwrap();
+        file.write_all(b"StoreDir: /nix/store\n").unwrap();
     }
     let staging = root.path().join("staged");
     fs::create_dir(&staging).unwrap();
-    assert!(archive::extract(&archive_path, &staging).is_err());
+    let error = archive::extract(&archive_path, &staging).unwrap_err();
+    assert_eq!(error, "truncated archive entry");
 }
 
 /// extract must validate that the staging directory itself is not a symlink.
@@ -489,24 +495,6 @@ fn failed_pack_preserves_existing_output_and_removes_its_temporary_file() {
     assert_eq!(entries(), before);
 }
 
-/// pack must output a file that does not exceed MAX_ARCHIVE_BYTES.
-/// (Packing an arbitrarily large cache would produce an arbitrarily large archive.
-/// We verify the check exists by ensuring small archives succeed and that the
-/// constant is documented and enforced on the extract path.)
-#[test]
-fn pack_output_is_within_archive_size_bound() {
-    use korri_plugin_host::archive::MAX_ARCHIVE_BYTES;
-    let root = tempfile::tempdir().unwrap();
-    let cache = make_cache_dir(root.path());
-    let archive_path = root.path().join("out.tar");
-    archive::pack(&cache, &archive_path).unwrap();
-    let size = fs::metadata(&archive_path).unwrap().len();
-    assert!(
-        size < MAX_ARCHIVE_BYTES,
-        "archive size {size} exceeds MAX_ARCHIVE_BYTES {MAX_ARCHIVE_BYTES}"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Catalog URL validation regression tests
 // ---------------------------------------------------------------------------
@@ -640,18 +628,7 @@ fn publisher_converts_and_packs_korri_tailscale() {
     let staging = root.path().join("staged");
     fs::create_dir(&staging).unwrap();
     archive::extract(&result.archive_path, &staging).unwrap();
-    archive::preflight_cache(
-        Path::new(&nix),
-        &result.ca_store_path,
-        &staging,
-        archive::MAX_NAR_BYTES,
-    )
-    .unwrap();
-    assert!(
-        archive::preflight_cache(Path::new(&nix), &result.ca_store_path, &staging, 64)
-            .unwrap_err()
-            .contains("NAR size limit exceeded")
-    );
+    archive::preflight_cache(Path::new(&nix), &result.ca_store_path, &staging).unwrap();
     let hash = Path::new(&result.ca_store_path)
         .file_name()
         .unwrap()
@@ -689,13 +666,8 @@ fn publisher_converts_and_packs_korri_tailscale() {
             .join("\n")
             + "\n";
         fs::write(path, body).unwrap();
-        let error = archive::preflight_cache(
-            Path::new(&nix),
-            &result.ca_store_path,
-            &changed,
-            archive::MAX_NAR_BYTES,
-        )
-        .unwrap_err();
+        let error =
+            archive::preflight_cache(Path::new(&nix), &result.ca_store_path, &changed).unwrap_err();
         assert!(error.contains(expected), "{error}");
     }
     let nar = fs::read_dir(staging.join("nar"))
@@ -705,13 +677,7 @@ fn publisher_converts_and_packs_korri_tailscale() {
         .unwrap()
         .path();
     fs::write(nar, b"corrupt").unwrap();
-    assert!(archive::preflight_cache(
-        Path::new(&nix),
-        &result.ca_store_path,
-        &staging,
-        archive::MAX_NAR_BYTES
-    )
-    .is_err());
+    assert!(archive::preflight_cache(Path::new(&nix), &result.ca_store_path, &staging).is_err());
 }
 
 fn clone_cache_fixture(source: &Path, destination: &Path) {

@@ -109,13 +109,8 @@ pub fn release_assets(
         }
         let path = asset_dir.join(&name);
         let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-        if !metadata.is_file()
-            || metadata.len() == 0
-            || metadata.len() >= archive::MAX_ARCHIVE_BYTES
-        {
-            return Err(format!(
-                "asset {name} must be a nonempty regular file smaller than 2 GiB"
-            ));
+        if !metadata.is_file() || metadata.len() == 0 {
+            return Err(format!("asset {name} must be a nonempty regular file"));
         }
         let mut file = fs::File::open(&path).map_err(|e| e.to_string())?;
         let mut hash = Sha256::new();
@@ -203,7 +198,7 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         ],
         Duration::from_secs(600),
     )?;
-    archive::preflight_cache(&nix, &ca_store_path, &cache_dir, archive::MAX_NAR_BYTES)?;
+    archive::preflight_cache(&nix, &ca_store_path, &cache_dir)?;
     let converted = package::load_declaration(Path::new(&ca_store_path))?;
     if converted.id() != declaration.id() {
         return Err("conversion changed plugin identity".into());

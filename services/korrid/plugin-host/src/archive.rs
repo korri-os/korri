@@ -1,5 +1,7 @@
-//! Standard Nix file-cache bundles. Tar confinement and byte limits are checked
-//! before Nix imports anything into the system store.
+//! Standard Nix file-cache bundles. Tar confinement, entry counts and actual NAR
+//! sizes and hashes are checked before Nix imports anything into the system
+//! store. Package size is not capped: integrity comes from the archive SHA-256,
+//! content addressing and signatures, not from size.
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
@@ -14,14 +16,8 @@ use std::{
         unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::{Component, Path, PathBuf},
-    time::Duration,
 };
 
-pub const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-/// Total files extracted from the outer tar, whose NARs are still compressed.
-pub const MAX_EXPANDED_BYTES: u64 = 3 * 1024 * 1024 * 1024;
-/// Actual decompressed NAR bytes, not merely the claimed metadata sizes.
-pub const MAX_NAR_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 pub const MAX_ENTRY_COUNT: usize = 100_000;
 
 pub fn path_to_file_uri(path: &Path) -> Result<String, String> {
@@ -40,7 +36,6 @@ pub fn pack(cache_dir: &Path, output_path: &Path) -> Result<String, String> {
         let writer = ArchiveWriter {
             file: temporary.as_file_mut(),
             hash: Sha256::new(),
-            bytes: 0,
         };
         let mut tar = tar::Builder::new(writer);
         let mut paths = Vec::new();
@@ -102,16 +97,11 @@ pub fn pack(cache_dir: &Path, output_path: &Path) -> Result<String, String> {
 struct ArchiveWriter<'a> {
     file: &'a mut File,
     hash: Sha256,
-    bytes: u64,
 }
 impl Write for ArchiveWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if self.bytes.saturating_add(bytes.len() as u64) >= MAX_ARCHIVE_BYTES {
-            return Err(io::Error::other("archive exceeds the size limit"));
-        }
         let written = self.file.write(bytes)?;
         self.hash.update(&bytes[..written]);
-        self.bytes += written as u64;
         Ok(written)
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -123,9 +113,6 @@ impl Write for ArchiveWriter<'_> {
 /// Open directory descriptors keep writes confined even if a path is replaced.
 pub fn extract(archive_path: &Path, staging_dir: &Path) -> Result<(), String> {
     let file = open_regular(archive_path)?;
-    if file.metadata().map_err(|e| e.to_string())?.len() >= MAX_ARCHIVE_BYTES {
-        return Err("archive exceeds the size limit".into());
-    }
     if fs::canonicalize(staging_dir).map_err(|e| format!("invalid staging directory: {e}"))?
         != staging_dir
     {
@@ -147,9 +134,8 @@ pub fn extract(archive_path: &Path, staging_dir: &Path) -> Result<(), String> {
     {
         return Err("staging directory must be empty".into());
     }
-    let mut archive = tar::Archive::new(file.take(MAX_ARCHIVE_BYTES));
+    let mut archive = tar::Archive::new(file);
     let mut seen = HashSet::new();
-    let mut total = 0u64;
     // Raw iteration exposes GNU/PAX headers before the tar library buffers
     // their bodies. Our producer needs only ordinary regular-file headers.
     for item in archive.entries().map_err(|e| e.to_string())?.raw(true) {
@@ -166,10 +152,6 @@ pub fn extract(archive_path: &Path, staging_dir: &Path) -> Result<(), String> {
             return Err("too many archive entries".into());
         }
         let size = entry.header().size().map_err(|e| e.to_string())?;
-        total = total
-            .checked_add(size)
-            .filter(|n| *n <= MAX_EXPANDED_BYTES)
-            .ok_or("tar payload exceeds size limit")?;
         let mut output = create_entry(&root, &path)?;
         let copied = io::copy(&mut entry, &mut output).map_err(|e| e.to_string())?;
         if copied != size {
@@ -288,18 +270,12 @@ struct CacheInfo {
     url: PathBuf,
 }
 
-/// Check real NAR sizes and hashes before system-store import. Metadata alone
-/// cannot enforce a decompression bound because its size fields are untrusted.
-pub fn preflight_cache(
-    nix: &Path,
-    store_path: &str,
-    cache_dir: &Path,
-    max_nar_bytes: u64,
-) -> Result<(), String> {
-    let max_nar_bytes = max_nar_bytes.min(MAX_NAR_BYTES);
+/// Check real NAR sizes and hashes before system-store import. The metadata
+/// size fields are untrusted, so each NAR is decompressed and measured.
+pub fn preflight_cache(nix: &Path, store_path: &str, cache_dir: &Path) -> Result<(), String> {
     crate::package::validate_store_path(Path::new(store_path))?;
     let cache = path_to_file_uri(cache_dir)?;
-    let json = crate::process::checked(
+    let json = crate::process::checked_unbounded(
         nix,
         [
             "--extra-experimental-features",
@@ -311,14 +287,12 @@ pub fn preflight_cache(
             "--recursive",
             store_path,
         ],
-        Duration::from_secs(180),
     )?;
     let infos: BTreeMap<String, CacheInfo> =
         serde_json::from_str(&json).map_err(|e| format!("invalid Nix path-info: {e}"))?;
     if !infos.contains_key(store_path) || infos.len() > MAX_ENTRY_COUNT {
         return Err("invalid cache closure".into());
     }
-    let mut total = 0u64;
     for (path, info) in infos {
         crate::package::validate_store_path(Path::new(&path))?;
         if !info.ca.is_some_and(|value| !value.is_empty()) {
@@ -344,35 +318,9 @@ pub fn preflight_cache(
             "none" => Box::new(file),
             _ => return Err("unsupported NAR compression".into()),
         };
-        let remaining = max_nar_bytes
-            .checked_sub(total)
-            .ok_or("NAR size limit exceeded")?;
-        let mut limited = reader.take(remaining + 1);
-        let mut bytes = 0u64;
-        let mut hash = Sha256::new();
-        let mut buffer = [0u8; 64 * 1024];
-        loop {
-            let count = limited
-                .read(&mut buffer)
-                .map_err(|e| format!("invalid compressed NAR: {e}"))?;
-            if count == 0 {
-                break;
-            }
-            hash.update(&buffer[..count]);
-            bytes += count as u64;
-        }
-        total += bytes;
-        if total > max_nar_bytes {
-            return Err("NAR size limit exceeded".into());
-        }
-        if bytes != info.nar_size {
-            return Err("decompressed NAR size mismatch".into());
-        }
-        if format!("sha256-{}", STANDARD.encode(hash.finalize())) != info.nar_hash {
-            return Err("NAR hash mismatch".into());
-        }
+        verify_nar(reader, info.nar_size, &info.nar_hash)?;
     }
-    crate::process::checked(
+    crate::process::checked_unbounded(
         nix,
         [
             "--extra-experimental-features",
@@ -389,7 +337,72 @@ pub fn preflight_cache(
             "1",
             store_path,
         ],
-        Duration::from_secs(180),
     )?;
     Ok(())
+}
+
+/// Measure one decompressed NAR against its record. There is no size cap.
+/// Reading past the claimed size can only end in a mismatch, so it stops
+/// there: the record's own claim bounds the work.
+fn verify_nar(reader: impl Read, nar_size: u64, nar_hash: &str) -> Result<(), String> {
+    let mut limited = reader.take(nar_size.saturating_add(1));
+    let mut bytes = 0u64;
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0u8; 1024 * 1024];
+    loop {
+        let count = limited
+            .read(&mut buffer)
+            .map_err(|e| format!("invalid compressed NAR: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+        bytes += count as u64;
+    }
+    if bytes != nar_size {
+        return Err("decompressed NAR size mismatch".into());
+    }
+    if format!("sha256-{}", STANDARD.encode(hash.finalize())) != nar_hash {
+        return Err("NAR hash mismatch".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_nar;
+    use std::io::{self, Read};
+
+    /// The former cap on actual decompressed NAR bytes.
+    const FORMER_NAR_LIMIT: u64 = 3 * 1024 * 1024 * 1024;
+
+    #[test]
+    fn a_nar_larger_than_the_former_limit_is_accepted() {
+        // `head -c 3221225473 /dev/zero | sha256sum`, as Nix's base64 form.
+        // The zeros are generated, so the test needs no gigabytes on disk.
+        let hash = "sha256-FSfgLV66WKfIl+GfFs5zeS0qyjHANth41DfgWyrsOw8=";
+        verify_nar(
+            io::repeat(0).take(FORMER_NAR_LIMIT + 1),
+            FORMER_NAR_LIMIT + 1,
+            hash,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_nar_that_differs_from_its_record_is_refused() {
+        // sha256 of b"nar".
+        let hash = "sha256-waPQq2SYIdtU7E3GaMY0ieoXc4yhcn7SY4ojDt5gXj8=";
+        verify_nar(&b"nar"[..], 3, hash).unwrap();
+        assert_eq!(
+            verify_nar(&b"nas"[..], 3, hash).unwrap_err(),
+            "NAR hash mismatch"
+        );
+        for (bytes, size) in [(&b"nar!"[..], 3), (&b"na"[..], 3), (&b"nar"[..], 4)] {
+            assert_eq!(
+                verify_nar(bytes, size, hash).unwrap_err(),
+                "decompressed NAR size mismatch"
+            );
+        }
+    }
 }

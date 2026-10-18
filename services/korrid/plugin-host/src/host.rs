@@ -15,7 +15,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 #[derive(Clone)]
@@ -287,19 +286,13 @@ impl Host {
             &SourceUrl::parse(&record.archive_url)?,
             config.ca_bundle.as_deref(),
             &archive_path,
-            archive::MAX_ARCHIVE_BYTES - 1,
-            Duration::from_secs(180),
+            repository::TransferBounds::Unlimited,
         )?;
         repository::verify_archive_hash(&archive_path, &record.archive_sha256)?;
         let cache = stage.path().join("cache");
         storage::directory(&cache)?;
         archive::extract(&archive_path, &cache)?;
-        archive::preflight_cache(
-            &self.nix,
-            &record.store_path,
-            &cache,
-            archive::MAX_NAR_BYTES,
-        )?;
+        archive::preflight_cache(&self.nix, &record.store_path, &cache)?;
         let package = Path::new(&record.store_path);
         storage::root_link(&self.paths.roots.join("download"), package)?;
         package::import(&self.nix, &archive::path_to_file_uri(&cache)?, package)?;

@@ -1,4 +1,4 @@
-use korri_plugin_host::repository::{fetch_catalog, SourceUrl, MAX_CATALOG_BYTES};
+use korri_plugin_host::repository::{fetch_catalog, SourceUrl, TransferBounds, MAX_CATALOG_BYTES};
 use rcgen::{CertificateParams, IsCa, KeyUsagePurpose};
 use rustls::ServerConfig;
 use std::{
@@ -240,8 +240,10 @@ fn timeout_terminates_a_slow_https_transfer() {
         &server.url,
         Some(&server.ca),
         output.path(),
-        MAX_CATALOG_BYTES,
-        Duration::from_millis(50),
+        TransferBounds::Limited {
+            max_bytes: MAX_CATALOG_BYTES,
+            timeout: Duration::from_millis(50),
+        },
     )
     .unwrap_err();
     assert!(
@@ -263,8 +265,10 @@ fn downloaded_archive_hash_is_measured_before_extraction() {
         &server.url,
         Some(&server.ca),
         output.path(),
-        4096,
-        Duration::from_secs(2),
+        TransferBounds::Limited {
+            max_bytes: 4096,
+            timeout: Duration::from_secs(2),
+        },
     )
     .unwrap();
     korri_plugin_host::repository::verify_archive_hash(
@@ -314,8 +318,10 @@ fn download_stops_at_its_byte_limit_before_catalog_parsing() {
                 &server.url,
                 Some(&server.ca),
                 output.path(),
-                8,
-                Duration::from_secs(2),
+                TransferBounds::Limited {
+                    max_bytes: 8,
+                    timeout: Duration::from_secs(2),
+                },
             );
             if oversized {
                 assert!(result.is_err());
@@ -326,6 +332,25 @@ fn download_stops_at_its_byte_limit_before_catalog_parsing() {
             }
         }
     }
+}
+
+#[test]
+fn archive_downloads_are_not_refused_for_size() {
+    // Larger than every metadata bound. Package archives have no byte cap; the
+    // archive SHA-256 and Nix checks establish integrity instead.
+    let body = vec![b'x'; MAX_CATALOG_BYTES as usize + 1024 * 1024];
+    let expected = body.clone();
+    let server = HttpsServer::start(move |_, _| ok(&body));
+    let output = tempfile::NamedTempFile::new().unwrap();
+    korri_plugin_host::repository::download(
+        &curl(),
+        &server.url,
+        Some(&server.ca),
+        output.path(),
+        TransferBounds::Unlimited,
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(output.path()).unwrap(), expected);
 }
 
 #[test]

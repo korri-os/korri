@@ -207,3 +207,27 @@ fn helper_execution_has_time_output_and_exit_boundaries() {
     .unwrap_err()
     .contains("exceeded 1 MiB"));
 }
+
+#[test]
+fn unbounded_helpers_outlast_a_bounded_deadline_and_keep_other_boundaries() {
+    let shell = std::env::var("SHELL").expect("test runner supplies its shell");
+    let shell = Path::new(&shell);
+    // The same command exceeds a bounded deadline but completes unbounded.
+    assert!(process::run(
+        shell,
+        ["-c", "sleep 0.2; printf done"],
+        Duration::from_millis(30)
+    )
+    .unwrap_err()
+    .contains("deadline"));
+    assert_eq!(
+        process::checked_unbounded(shell, ["-c", "sleep 0.2; printf done"]).unwrap(),
+        "done"
+    );
+    assert!(process::checked_unbounded(shell, ["-c", "exit 7"]).is_err());
+    assert!(
+        process::run_unbounded(shell, ["-c", "while :; do printf '%01000d' 0; done"])
+            .unwrap_err()
+            .contains("exceeded 1 MiB")
+    );
+}

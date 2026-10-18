@@ -35,3 +35,8 @@ path = "src/main.rs"
 [[bin]]
 name = "korri-publish"
 path = "src/publish_main.rs"
+
+# The NAR preflight test hashes more than 3 GiB of generated zeros to prove
+# packages have no size cap. Optimize only the hash so debug tests stay fast.
+[profile.dev.package.sha2]
+opt-level = 3

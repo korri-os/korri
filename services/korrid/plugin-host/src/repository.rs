@@ -1,9 +1,19 @@
-//! HTTPS acquisition. Curl uses explicit protocol, credential, size and time
-//! bounds; certificate validation is never disabled.
+//! HTTPS acquisition. Curl uses explicit protocol and credential policy;
+//! metadata transfers also have size and time bounds. Certificate validation
+//! is never disabled.
 use crate::{catalog::Catalog, process};
 use std::{path::Path, time::Duration};
 
 pub const MAX_CATALOG_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Catalogs and release evidence are small metadata with fixed bounds. Package
+/// archives have none: the archive SHA-256, content addressing and the bound
+/// publisher key establish integrity, not size or transfer time.
+#[derive(Clone, Copy, Debug)]
+pub enum TransferBounds {
+    Limited { max_bytes: u64, timeout: Duration },
+    Unlimited,
+}
 
 pub struct Configuration {
     pub curl: std::path::PathBuf,
@@ -46,8 +56,10 @@ pub fn fetch_catalog(curl: &Path, url: &SourceUrl, ca: Option<&Path>) -> Result<
         url,
         ca,
         temporary.path(),
-        MAX_CATALOG_BYTES,
-        Duration::from_secs(30),
+        TransferBounds::Limited {
+            max_bytes: MAX_CATALOG_BYTES,
+            timeout: Duration::from_secs(30),
+        },
     )?;
     Catalog::from_json(&std::fs::read(temporary.path()).map_err(|e| e.to_string())?)
         .map_err(|e| format!("catalog from {url}: {e}"))
@@ -55,13 +67,13 @@ pub fn fetch_catalog(curl: &Path, url: &SourceUrl, ca: Option<&Path>) -> Result<
 
 /// Output belongs to the caller's private staging directory or private temporary
 /// file. Only the host supplies the executable, CA bundle and transfer bounds.
+/// Connection setup always has its 10-second limit.
 pub fn download(
     curl: &Path,
     url: &SourceUrl,
     ca: Option<&Path>,
     output: &Path,
-    max_bytes: u64,
-    timeout: Duration,
+    bounds: TransferBounds,
 ) -> Result<(), String> {
     let mut args = vec![
         "--disable".into(),
@@ -81,15 +93,19 @@ pub fn download(
         "/dev/null".into(),
         "--no-netrc".into(),
         "--no-netrc-optional".into(),
-        "--max-filesize".into(),
-        max_bytes.to_string(),
         "--connect-timeout".into(),
         "10".into(),
-        "--max-time".into(),
-        timeout.as_secs_f64().to_string(),
         "--output".into(),
         output.to_str().ok_or("output path is not UTF-8")?.into(),
     ];
+    if let TransferBounds::Limited { max_bytes, timeout } = bounds {
+        args.extend([
+            "--max-filesize".into(),
+            max_bytes.to_string(),
+            "--max-time".into(),
+            timeout.as_secs_f64().to_string(),
+        ]);
+    }
     if let Some(ca) = ca {
         args.extend([
             "--cacert".into(),
@@ -97,7 +113,12 @@ pub fn download(
         ]);
     }
     args.extend(["--url".into(), url.as_str().into()]);
-    let result = process::run(curl, args, timeout + Duration::from_secs(2))?;
+    let result = match bounds {
+        TransferBounds::Limited { timeout, .. } => {
+            process::run(curl, args, timeout + Duration::from_secs(2))?
+        }
+        TransferBounds::Unlimited => process::run_unbounded(curl, args)?,
+    };
     if !result.success {
         return Err(format!(
             "HTTPS fetch failed: {}{}",
@@ -105,8 +126,10 @@ pub fn download(
             result.stderr.trim()
         ));
     }
-    if std::fs::metadata(output).map_err(|e| e.to_string())?.len() > max_bytes {
-        return Err(format!("HTTPS response exceeds {max_bytes} bytes"));
+    if let TransferBounds::Limited { max_bytes, .. } = bounds {
+        if std::fs::metadata(output).map_err(|e| e.to_string())?.len() > max_bytes {
+            return Err(format!("HTTPS response exceeds {max_bytes} bytes"));
+        }
     }
     Ok(())
 }

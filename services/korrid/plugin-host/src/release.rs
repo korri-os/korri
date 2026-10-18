@@ -125,8 +125,10 @@ pub fn fetch_paths(
             &url,
             ca,
             output.path(),
-            limit,
-            Duration::from_secs(30),
+            repository::TransferBounds::Limited {
+                max_bytes: limit,
+                timeout: Duration::from_secs(30),
+            },
         )?;
         std::fs::read_to_string(output.path()).map_err(|e| format!("invalid batch {name}: {e}"))
     };

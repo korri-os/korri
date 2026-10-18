@@ -20,6 +20,24 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
+    run_until(program, args, Some(Instant::now() + timeout))
+}
+
+/// Package transfers, imports and verification take as long as the package
+/// needs: plugins have no size or time limit. An operator can still interrupt.
+pub fn run_unbounded<I, S>(program: &Path, args: I) -> Result<Output, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    run_until(program, args, None)
+}
+
+fn run_until<I, S>(program: &Path, args: I, deadline: Option<Instant>) -> Result<Output, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let mut command = Command::new(program);
     command
         .args(args)
@@ -41,7 +59,6 @@ where
             return Err("could not make helper output nonblocking".into());
         }
     }
-    let deadline = Instant::now() + timeout;
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     loop {
@@ -77,7 +94,7 @@ where
                 return Err(format!("helper status failed: {error}"));
             }
         }
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             unsafe {
                 libc::kill(-(child.id() as i32), libc::SIGKILL);
             }
@@ -111,7 +128,18 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let output = run(program, args, timeout)?;
+    succeeded(program, run(program, args, timeout)?)
+}
+
+pub fn checked_unbounded<I, S>(program: &Path, args: I) -> Result<String, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    succeeded(program, run_unbounded(program, args)?)
+}
+
+fn succeeded(program: &Path, output: Output) -> Result<String, String> {
     if !output.success {
         return Err(format!(
             "{} failed: {}{}",

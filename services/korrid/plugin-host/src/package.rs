@@ -112,7 +112,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
     let package_text = package.to_str().ok_or("invalid package path")?;
     // Resolve across the plugin cache and configured upstream substituters.
     // `copy --from` requires one source to contain the entire closure.
-    process::checked(
+    process::checked_unbounded(
         nix,
         [
             "--extra-experimental-features",
@@ -135,7 +135,6 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
             source,
             package_text,
         ],
-        Duration::from_secs(180),
     )?;
     // Realization can reuse paths without locally registered signatures (for
     // example, in a NixOS store image). Unlike build, store verify consults only
@@ -168,7 +167,7 @@ pub fn import(nix: &Path, source: &str, package: &Path) -> Result<(), String> {
         verify_args.extend(["--substituter", substituter]);
     }
     verify_args.push(package_text);
-    process::checked(nix, verify_args, Duration::from_secs(180))?;
+    process::checked_unbounded(nix, verify_args)?;
     // The receipt must not become durable before downloaded store contents.
     // Nix may register substituted outputs while their data still lives in the
     // filesystem's writeback cache. Sync the whole store filesystem, including
@@ -511,7 +510,7 @@ pub fn verify_publisher_in(
     validate_store_path(package)?;
     let package_text = package.to_str().ok_or("invalid package path")?;
     if contents == StoreContents::Rehash {
-        process::checked(
+        process::checked_unbounded(
             nix,
             [
                 "--extra-experimental-features",
@@ -521,7 +520,6 @@ pub fn verify_publisher_in(
                 "--no-trust",
                 package_text,
             ],
-            Duration::from_secs(180),
         )?;
     }
     let namespace = manifest_namespace(package)?;
