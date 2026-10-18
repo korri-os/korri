@@ -1,8 +1,9 @@
 # fex-prepare <cache-root>
 #
 # Download, verify and unpack the pinned FEX x86 rootfs into Korri's
-# reconstructible cache. packages/../plugin.nix substitutes @pins@ (lines of
-# `base|overlay <sha256> <url>`, base first) and @version@ from rootfs/pins.nix.
+# reconstructible cache. plugin.nix substitutes the pins file (lines of
+# `base|overlay <sha256> <url>`, base first) and the version directory from
+# rootfs/pins.nix.
 #
 # Prints the ready directory as the last stdout line. Exit status: 0 ready,
 # 1 download or verify failure, 2 usage. Tool output goes to stderr.

@@ -2,8 +2,8 @@
 #
 # Download, verify and unpack the pinned Proton-CachyOS arm64 build into
 # Korri's reconstructible cache, ready to link from Steam's
-# compatibilitytools.d. plugin.nix substitutes @url@, @sha256@, @version@ and
-# @compatibilitytool@ from cachyos/pin.nix.
+# compatibilitytools.d. plugin.nix substitutes the URL, SHA-256, version
+# directory and compatibilitytool.vdf path from cachyos/pin.nix.
 #
 # Prints the ready directory as the last stdout line. Exit status: 0 ready,
 # 1 download or verify failure, 2 usage. Tool output goes to stderr.
