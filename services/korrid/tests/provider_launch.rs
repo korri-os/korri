@@ -58,12 +58,8 @@ fn installed(root: &Path) -> PluginRegistry {
     fs::create_dir_all(&package).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/steam/plugin.ts");
     fs::copy(source, package.join("plugin.ts")).unwrap();
-    let fex = runtime(root, "fex", &["fex-prepare", "config", "fex"]);
-    let proton = runtime(
-        root,
-        "proton",
-        &["cachyos-prepare", "cachyos-compatibilitytool"],
-    );
+    let fex = runtime(root, "fex", &["fex-prepare", "config"]);
+    let proton = runtime(root, "proton", &["cachyos-prepare"]);
     PluginRegistry::from_installed(vec![
         EnabledPackage {
             id: "@korri:steam".into(),
