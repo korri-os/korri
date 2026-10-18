@@ -596,6 +596,12 @@ export interface PluginLaunchInput {
 	contentPath?: string;
 	ref?: string;
 	accountRoot: string;
+	/** Reconstructible downloads: the storage root's `cache` directory. */
+	cacheRoot: string;
+	/**
+	 * The runner's own files under their bare keys, plus each exactly
+	 * required, installed and enabled plugin's files under `<pluginId>/<key>`.
+	 */
 	files: Record<string, string>;
 	overrides?: PluginLaunchOverrides;
 }

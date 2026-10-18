@@ -225,7 +225,9 @@ Rust/Typeshare `PluginLaunchInput` and `PluginLaunchOutput` treaties. Input
 contains the selected full launcher/kind/runtime IDs, program and core file paths,
 existing account root, the cache root (the storage root's `cache` directory),
 kind-owned manifest files under their bare keys, and each exactly required
-plugin's files under `<pluginId>/<key>`. A file route supplies
+plugin's files under `<pluginId>/<key>`
+(`docs/adr/0010-plugin-runtimes-download-into-the-shared-cache.md` records
+these choices). A file route supplies
 `contentPath`; a provider location supplies `ref` instead, named after
 `GameProviderIdentity.ref`. Neither path invents a file for provider content.
 Output
