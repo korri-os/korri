@@ -40,7 +40,7 @@ function scripted() {
     calls,
     answers,
     client: {
-      acquisitionStatus: async (gameId?: string) => next("status", gameId),
+      acquisitionStatus: async (gameId?: string, runnerId?: string) => next("status", runnerId === undefined ? gameId : [gameId, runnerId]),
       acquisitionStart: async (ids: readonly string[]) => next("start", [...ids]),
       acquisitionCancel: async (id: string) => next("cancel", id),
     },
@@ -132,10 +132,8 @@ test("Missing -> Confirm -> Download -> Downloading with progress -> Unpacking -
   // Polled at the configured cadence; each answer becomes the next Busy.
   korrid.answers.status.push(ok([rootfs({ _tag: "Unpacking" }), proton(missing)]))
   await settle(8)
-  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Unpacking FEX rootfs", gameId: "game:steam:1" })
-  const unpacking = gate.getStatus()
-  expect(unpacking?._tag === "Busy" && unpacking.progress).toBeUndefined()
-  expect(unpacking?._tag === "Busy" && unpacking.actions).toBeUndefined()
+  // Unpacking: a position of nothing and no known end, and nothing to cancel.
+  expect(gate.getStatus()).toEqual({ _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "game:steam:1" })
 
   korrid.answers.status.push(ok([rootfs(ready), proton({ _tag: "Downloading", file: 1, fileCount: 1, bytesDone: 0, bytesTotal: 340_000_000 })]))
   await settle(8)
@@ -224,14 +222,97 @@ test("Cancel on Confirm closes without an RPC; Cancel while downloading calls ca
   korrid.answers.status.push(begun)
   gate.act(actionId(gate.getStatus(), "Download"))
   await settle()
-  korrid.answers.cancel.push(ok([rootfs(missing)]), ok([proton(missing)]))
+  korrid.answers.cancel.push(ok([rootfs(missing)]))
   korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
   expect(gate.act(actionId(gate.getStatus(), "Cancel"))).toBe(true)
   expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Cancelling download…" })
   await settle(8)
-  expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:fex/rootfs", "@korri:proton/cachyos"])
+  // Only the live download is cancelled; a queued artifact has nothing to stop.
+  expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:fex/rootfs"])
   expect(gate.getStatus()).toBeUndefined()
   expect(proceeded).toBe(0)
+})
+
+test("leaving a Problem while another artifact still downloads cancels exactly that one", async () => {
+  for (const leave of ["dismiss", "back"] as const) {
+    const korrid = scripted()
+    korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
+    const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+    let proceeded = 0
+    let abandoned = 0
+    gate.launch(game, () => proceeded++, () => abandoned++)
+    await settle()
+    const mixed = ok([
+      rootfs({ _tag: "Failed", reason: { code: "Stalled", message: "The connection stalled." } }),
+      proton({ _tag: "Downloading", file: 1, fileCount: 1, bytesDone: 10, bytesTotal: 340_000_000 }),
+    ])
+    korrid.answers.start.push(mixed)
+    korrid.answers.status.push(mixed)
+    gate.act(actionId(gate.getStatus(), "Download"))
+    await settle()
+    expect(gate.getStatus()).toMatchObject({ _tag: "Problem", kicker: "Couldn't download FEX rootfs", reason: "The connection stalled." })
+    korrid.answers.cancel.push(ok([proton(missing)]))
+    korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
+    expect(leave === "dismiss" ? gate.dismiss() : gate.back()).toBe(true)
+    await settle(8)
+    expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:proton/cachyos"])
+    expect(gate.getStatus()).toBeUndefined()
+    expect(proceeded).toBe(0)
+    expect(abandoned).toBe(1)
+  }
+})
+
+test("joining work korrid already has under way, then asking for what is still Missing", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs({ _tag: "Unpacking" }), proton(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  let proceeded = 0
+  gate.launch(game, () => proceeded++)
+  await settle()
+  expect(gate.getStatus()).toEqual({ _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "game:steam:1" })
+  korrid.answers.status.push(ok([rootfs(ready), proton(missing)]))
+  await settle(8)
+  // The found work is done; Proton still needs consent and a size.
+  const confirm = gate.getStatus()
+  expect(confirm).toMatchObject({ _tag: "Confirm", kicker: "Needs a download", detail: "Proton-CachyOS, 340 MB" })
+  expect(korrid.calls.filter(call => call.method === "start")).toEqual([])
+  const begun = ok([rootfs(ready), proton({ _tag: "Downloading", file: 1, fileCount: 1, bytesDone: 0, bytesTotal: 340_000_000 })])
+  korrid.answers.start.push(begun)
+  korrid.answers.status.push(begun)
+  gate.act(actionId(confirm, "Download"))
+  await settle()
+  expect(korrid.calls.filter(call => call.method === "start").map(call => call.args)).toEqual([["@korri:proton/cachyos"]])
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Downloading Proton-CachyOS" })
+  korrid.answers.status.push(ok([rootfs(ready), proton(ready)]))
+  await settle(8)
+  expect(proceeded).toBe(1)
+  expect(gate.getStatus()).toBeUndefined()
+})
+
+test("a start korrid accepted but has not begun is waited for, not asked again", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  gate.launch(game, () => {})
+  await settle()
+  korrid.answers.start.push(ok([rootfs(missing)]))
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle(8)
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Starting download…" })
+  gate.dispose()
+})
+
+test("the runner the user chose goes with the status read, and the gate reports an abandoned launch", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  let abandoned = 0
+  gate.launch({ ...game, runnerId: "retroarch/mgba" }, () => {}, () => abandoned++)
+  await settle()
+  expect(korrid.calls[0]).toEqual({ method: "status", args: ["steam:1", "retroarch/mgba"] })
+  gate.act(actionId(gate.getStatus(), "Cancel"))
+  expect(abandoned).toBe(1)
+  expect(gate.getStatus()).toBeUndefined()
 })
 
 test("Back is Cancel on Confirm and while downloading, nothing while unpacking, Dismiss on a Problem", async () => {
@@ -248,7 +329,7 @@ test("Back is Cancel on Confirm and while downloading, nothing while unpacking, 
   korrid.answers.status.push(ok([rootfs({ _tag: "Unpacking" })]))
   gate.launch(game, () => {})
   await settle()
-  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Unpacking FEX rootfs" })
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 } })
   expect(gate.back()).toBe(true)
   expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Unpacking FEX rootfs" })
   expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])

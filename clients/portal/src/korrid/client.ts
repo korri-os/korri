@@ -145,7 +145,7 @@ export interface KorridClient {
    * game id: the artifacts of that game's resolved runner. Without: every
    * artifact of every loaded plugin.
    */
-  acquisitionStatus(gameId?: string): Promise<AcquisitionOutcome>
+  acquisitionStatus(gameId?: string, runnerId?: string): Promise<AcquisitionOutcome>
   /** Idempotent: an active artifact is not restarted; a Failed one resumes. */
   acquisitionStart(artifactIds: readonly string[]): Promise<AcquisitionOutcome>
   /** Stops one download and keeps its partial file for a later resume. */
@@ -662,11 +662,16 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
-    async acquisitionStatus(gameId) {
+    async acquisitionStatus(gameId, runnerId) {
       try {
+        // `runnerId` names the runner whose artifacts to resolve, as
+        // app.session.start takes it; the wire accepts it ahead of the
+        // regenerated request type naming the field.
+        const payload: { gameId?: string; runnerId?: string } = gameId === undefined ? {} : { gameId }
+        if (runnerId !== undefined) payload.runnerId = runnerId
         const response = await callKorrid(baseUrl, capability, {
           _tag: "app.acquisition.status",
-          payload: gameId === undefined ? {} : { gameId },
+          payload,
         })
         return response.outcome
       } catch (error) { return routeUnavailable(error) }
@@ -706,7 +711,8 @@ export interface InMemoryArtifact {
 }
 
 export interface InMemoryKorridClientConfig {
-  /** Artifacts every loaded plugin declares, and which games need which. */
+  /** Artifacts every loaded plugin declares, and which games need which:
+   * keyed by game id, or `<gameId>@<runnerId>` for one runner of a game. */
   readonly artifacts?: readonly InMemoryArtifact[]
   readonly gameArtifacts?: Readonly<Record<string, readonly string[]>>
   /**
@@ -1489,12 +1495,19 @@ export function createInMemoryKorridClient(
         },
       }
     },
-    async acquisitionStatus(gameId) {
+    async acquisitionStatus(gameId, runnerId) {
       if (gameId === undefined) return artifactList()
       if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
         return routeFailure("GameNotFound", "Game is not available")
       }
-      return artifactList(config.gameArtifacts?.[gameId] ?? [], true)
+      // Several runners and no choice: korrid cannot resolve the artifacts.
+      const record = routeRecords.find(record => record.gameId === gameId)
+      if (runnerId === undefined && record !== undefined && record.routes.length > 1 &&
+        record.gameRunner === undefined && Object.keys(record.systemRunners).length === 0) {
+        return routeFailure("RunnerChoiceRequired", "Choose a runner for this game first")
+      }
+      const keyed = runnerId === undefined ? undefined : config.gameArtifacts?.[`${gameId}@${runnerId}`]
+      return artifactList(keyed ?? config.gameArtifacts?.[gameId] ?? [], true)
     },
     async acquisitionStart(artifactIds) {
       for (const id of artifactIds) {

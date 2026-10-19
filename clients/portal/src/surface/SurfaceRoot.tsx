@@ -10,13 +10,13 @@ import type {
   SurfaceHost,
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
 import { createRunnerChooser } from "./runner-chooser"
 import { createControllers, type Controllers } from "../input/controllers"
 import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
-import type { KorridClient } from "../korrid/client"
+import type { KorridClient, SessionStartResult } from "../korrid/client"
 import { settingsFrom } from "./settings-model"
 import type { PortalSurface } from "./surface-registry"
 import {
@@ -90,16 +90,45 @@ export function SurfaceRoot({
   const clockLabel = useClockLabel()
   const launchablesRef = useRef(launchables)
   launchablesRef.current = launchables
-  const runner = useMemo(() => createRunnerChooser(korrid, {
-    startLaunch: (id, runnerId) => launchablesRef.current.startCatalogLaunch(id, runnerId),
-    returnSession: session => launchablesRef.current.returnCatalogSession(session),
-    reload: () => launchablesRef.current.reload(),
-  }), [korrid])
-  const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   // Downloads a launch needs come before reserve/start; the gate is a sibling
   // store, so the launch lifecycle never learns about artifacts.
   const acquisition = useMemo(() => createAcquisitionGate(korrid), [korrid])
   useEffect(() => () => acquisition.dispose(), [acquisition])
+  /**
+   * The shared startup behind the gate: once every artifact the game's runner
+   * needs is Ready, the existing reserve/start lifecycle. Resolves undefined
+   * when the gate closes without launching. korrid refusing a start with
+   * ArtifactsNotReady is the defensive case; the gate checked first, so it
+   * only means the world moved. Ask again.
+   */
+  const gatedStart = useCallback((game: AcquisitionGameRef) => new Promise<SessionStartResult | undefined>(resolve => {
+    const proceed = (): void => {
+      void launchablesRef.current.startCatalogLaunch(game.id, game.runnerId).then(outcome => {
+        if (outcome?._tag === "Err" && outcome.payload.code === "ArtifactsNotReady") {
+          launchablesRef.current.dismissNotice()
+          acquisition.launch(game, proceed, () => resolve(undefined))
+          return
+        }
+        resolve(outcome)
+      })
+    }
+    acquisition.launch(game, proceed, () => resolve(undefined))
+  }), [acquisition])
+  // The chooser speaks korrid ids; the gate's status names the presented entry.
+  const surfaceIdsRef = useRef<ReadonlyMap<string, string>>(new Map())
+  const runner = useMemo(() => createRunnerChooser(korrid, {
+    // The chooser resolves the runner; the gate then resolves that runner's
+    // artifacts, naming the same presented entry the chooser was opened from.
+    startLaunch: (id, runnerId) => {
+      const surfaceId = surfaceIdsRef.current.get(id) ?? id
+      const entry = entryForId(launchablesRef.current.getState(), surfaceId)
+      const title = entry?.kind === "game" ? entry.game.title : id
+      return gatedStart({ id, surfaceId, title, runnerId })
+    },
+    returnSession: session => launchablesRef.current.returnCatalogSession(session),
+    reload: () => launchablesRef.current.reload(),
+  }), [gatedStart, korrid])
+  const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
   const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
   const downloadNeeds = useSyncExternalStore(acquisition.subscribe, acquisition.getNeeds)
   const surfaceInput = useMemo(createInputBus, [])
@@ -183,6 +212,7 @@ export function SurfaceRoot({
     void acquisition.refreshNeeds(localGameIds.split("\n"))
   }, [acquisition, localGameIds])
   const surfaceToKorridId = useMemo(() => localGameIdsBySurfaceId(state), [state])
+  surfaceIdsRef.current = useMemo(() => new Map([...surfaceToKorridId].map(([surfaceId, korridId]) => [korridId, surfaceId])), [surfaceToKorridId])
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
   const model = useMemo(() => {
@@ -227,23 +257,13 @@ export function SurfaceRoot({
             return
           }
           if (current.unavailableSessionStatus !== undefined) return
-          const ref: AcquisitionGameRef = { id: chosen.game.id, surfaceId: id, title: chosen.game.title }
-          // What the launch is once every artifact is Ready: the existing flow.
-          // korrid refusing a start with ArtifactsNotReady is the defensive case;
-          // the gate checked first, so it only means the world moved. Ask again.
-          const proceed = (): void => {
-            if (chosen.game.supportsRunnerSelection) {
-              void runner.open(chosen.game.id, chosen.game.title, "launch")
-              return
-            }
-            void launchablesRef.current.startCatalogLaunch(chosen.game.id).then(outcome => {
-              if (outcome?._tag === "Err" && outcome.payload.code === "ArtifactsNotReady") {
-                launchablesRef.current.dismissNotice()
-                acquisition.launch(ref, proceed)
-              }
-            })
+          // Several runners: the chooser first, then the gate with its choice,
+          // because korrid resolves artifacts per runner. Otherwise the gate now.
+          if (chosen.game.supportsRunnerSelection) {
+            void runner.open(chosen.game.id, chosen.game.title, "launch")
+            return
           }
-          acquisition.launch(ref, proceed)
+          void gatedStart({ id: chosen.game.id, surfaceId: id, title: chosen.game.title })
         }
         const locations = launchLocationsForEntry(entry)
         if (locations.length > 1) {
@@ -261,7 +281,9 @@ export function SurfaceRoot({
         }
         // Only the published startup action cancels a launch. Closing a runner
         // panel (runner:cancel, a sheet's close button or scrim) closes the panel.
+        // Before the startup, the same intent leaves the download gate.
         else if (id === "cancel-launch") {
+          if (acquisition.back()) return
           runner.cancel()
           launchablesRef.current.cancelLaunch()
         }
@@ -289,7 +311,7 @@ export function SurfaceRoot({
       runGameAction: (gameId, actionId) => {
         const current = launchablesRef.current.getState()
         const entry = entryForId(current, gameId)
-        if (!entry || runner.getSnapshot()._tag !== "Closed" || current._tag !== "Ready") return
+        if (!entry || runner.getSnapshot()._tag !== "Closed" || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         if (actionId === "runners") {
           if (current.unavailableSessionStatus !== undefined) return
           const local = localRunnerEntry(entry)

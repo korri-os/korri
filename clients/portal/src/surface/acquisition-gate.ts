@@ -27,28 +27,37 @@ export interface AcquisitionGameRef {
   readonly id: string
   readonly surfaceId: string
   readonly title: string
+  /** The runner whose artifacts to resolve, when the user chose one. */
+  readonly runnerId?: string
+}
+
+/** One gated launch: what to do once every artifact is Ready, and what to do
+ * if the gate closes without getting there. */
+interface GatedLaunch {
+  readonly game: AcquisitionGameRef
+  readonly proceed: () => void
+  readonly abandon: () => void
 }
 
 type Phase =
   | { readonly _tag: "Idle" }
-  | { readonly _tag: "Checking"; readonly game: AcquisitionGameRef; readonly proceed: () => void }
+  | { readonly _tag: "Checking"; readonly launch: GatedLaunch }
   | {
       readonly _tag: "Confirming"
-      readonly game: AcquisitionGameRef
-      readonly proceed: () => void
+      readonly launch: GatedLaunch
       readonly artifacts: readonly ArtifactStatus[]
     }
   | {
       readonly _tag: "Acquiring"
-      readonly game: AcquisitionGameRef
-      readonly proceed: () => void
+      readonly launch: GatedLaunch
       readonly artifacts: readonly ArtifactStatus[]
+      /** Ids this gate asked korrid to start. Work it only found is not here. */
+      readonly requested: ReadonlySet<string>
     }
-  | { readonly _tag: "Cancelling"; readonly game: AcquisitionGameRef }
+  | { readonly _tag: "Cancelling"; readonly launch: GatedLaunch }
   | {
       readonly _tag: "Failed"
-      readonly game: AcquisitionGameRef
-      readonly proceed: () => void
+      readonly launch: GatedLaunch
       readonly artifacts: readonly ArtifactStatus[]
       readonly kicker: string
       readonly reason: string
@@ -63,8 +72,12 @@ export interface AcquisitionGate {
    * unknown), for every game whose runner artifacts are not all Ready. */
   getNeeds(): ReadonlyMap<string, number | undefined>
   subscribe(listener: () => void): () => void
-  /** Check, ask, download, then `proceed` into the launch. No-op while open. */
-  launch(game: AcquisitionGameRef, proceed: () => void): void
+  /**
+   * Check, ask, download, then `proceed` into the launch. `abandon` runs
+   * instead when the gate closes without getting there (Cancel, Dismiss,
+   * Back). No-op while open.
+   */
+  launch(game: AcquisitionGameRef, proceed: () => void, abandon?: () => void): void
   /** A published `acquisition:` action id. True when the gate consumed it. */
   act(actionId: string): boolean
   /** The host's Back while the gate is open. True when the gate consumed it. */
@@ -150,8 +163,10 @@ export function downloadDetail(state: Extract<ArtifactStatus["state"], { _tag: "
 
 /**
  * The Busy status for artifacts korrid is working on. Downloading outranks
- * unpacking, because it is the one with a position to show; with neither,
- * korrid has accepted the start and not yet begun.
+ * unpacking, because it is the one with a position to show. Unpacking has a
+ * position of nothing and no known end, which is what `progress` without a
+ * `total` means in the treaty. With neither, korrid has accepted the start
+ * and not yet begun.
  */
 export function acquiringStatus(
   artifacts: readonly ArtifactStatus[],
@@ -172,10 +187,13 @@ export function acquiringStatus(
   }
   const unpacking = artifacts.find(artifact => artifact.state._tag === "Unpacking")
   if (unpacking) {
-    return { _tag: "Busy", kicker: `Unpacking ${unpacking.title}`, gameId }
+    return { _tag: "Busy", kicker: `Unpacking ${unpacking.title}`, progress: { done: 0 }, gameId }
   }
   return { _tag: "Busy", kicker: "Starting download…", detail: "Waiting for the first bytes", actions: [cancel], gameId }
 }
+
+const isActive = (artifact: ArtifactStatus) =>
+  artifact.state._tag === "Downloading" || artifact.state._tag === "Unpacking"
 
 export function createAcquisitionGate(
   korrid: Pick<KorridClient, "acquisitionStatus" | "acquisitionStart" | "acquisitionCancel">,
@@ -199,33 +217,34 @@ export function createAcquisitionGate(
     label,
     enabled: true,
   })
+  const read = (game: AcquisitionGameRef) => korrid.acquisitionStatus(game.id, game.runnerId)
 
   const statusFor = (next: Phase): SurfaceStatus | undefined => {
     switch (next._tag) {
       case "Idle":
         return undefined
       case "Checking":
-        return { _tag: "Busy", kicker: `Starting ${next.game.title}…`, detail: "Checking what it needs", gameId: next.game.surfaceId }
+        return { _tag: "Busy", kicker: `Starting ${next.launch.game.title}…`, detail: "Checking what it needs", gameId: next.launch.game.surfaceId }
       case "Confirming":
         return {
           _tag: "Confirm",
           kicker: "Needs a download",
           detail: confirmDetail(next.artifacts.filter(artifact => !isReady(artifact))),
           actions: [action("download", "Download"), action("cancel", "Cancel")],
-          gameId: next.game.surfaceId,
+          gameId: next.launch.game.surfaceId,
         }
       case "Acquiring":
-        return acquiringStatus(next.artifacts, next.game.surfaceId, action("cancel", "Cancel"))
+        return acquiringStatus(next.artifacts, next.launch.game.surfaceId, action("cancel", "Cancel"))
       case "Cancelling":
-        return { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.game.surfaceId }
+        return { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.launch.game.surfaceId }
       case "Failed":
         return {
           _tag: "Problem",
           kicker: next.kicker,
           reason: next.reason,
           canRetry: next.retry !== "none",
-          gameId: next.game.surfaceId,
-          gameTitle: next.game.title,
+          gameId: next.launch.game.surfaceId,
+          gameTitle: next.launch.game.title,
         }
     }
   }
@@ -236,9 +255,11 @@ export function createAcquisitionGate(
     status = statusFor(next)
     notify()
   }
-  const close = () => {
+  /** Close without launching: the caller learns through `abandon`. */
+  const abandon = (launch: GatedLaunch) => {
     generation++
     publish({ _tag: "Idle" })
+    launch.abandon()
   }
   const failed = (
     base: Extract<Phase, { _tag: "Checking" | "Confirming" | "Acquiring" }>,
@@ -249,8 +270,7 @@ export function createAcquisitionGate(
     generation++
     publish({
       _tag: "Failed",
-      game: base.game,
-      proceed: base.proceed,
+      launch: base.launch,
       artifacts: base._tag === "Checking" ? [] : base.artifacts,
       kicker,
       reason: failure.message,
@@ -258,22 +278,33 @@ export function createAcquisitionGate(
     })
   }
 
-  const finish = (owner: Extract<Phase, { _tag: "Acquiring" | "Checking" | "Confirming" }>) => {
-    const { proceed } = owner
-    close()
+  const finish = (launch: GatedLaunch) => {
+    generation++
+    publish({ _tag: "Idle" })
     void refreshNeeds()
-    proceed()
+    launch.proceed()
   }
 
-  /** Fold a fresh artifact list into the acquiring phase, or leave it. */
+  /**
+   * Fold a fresh artifact list into the acquiring phase. Everything Ready:
+   * launch. A failure: say so. Nothing moving but Missing artifacts this gate
+   * did not ask for: they still need consent and a size, so ask. Otherwise
+   * keep watching.
+   */
   const settle = (owner: Extract<Phase, { _tag: "Acquiring" }>, artifacts: readonly ArtifactStatus[]) => {
     if (allReady(artifacts)) {
-      finish(owner)
+      finish(owner.launch)
       return
     }
     const broken = artifacts.find(artifact => artifact.state._tag === "Failed")
     if (broken && broken.state._tag === "Failed") {
       failed({ ...owner, artifacts }, `Couldn't download ${broken.title}`, broken.state.reason, "start")
+      return
+    }
+    const waitingOnRequested = artifacts.some(artifact => artifact.state._tag === "Missing" && owner.requested.has(artifact.id))
+    if (!artifacts.some(isActive) && !waitingOnRequested) {
+      generation++
+      publish({ _tag: "Confirming", launch: owner.launch, artifacts })
       return
     }
     publish({ ...owner, artifacts })
@@ -284,7 +315,7 @@ export function createAcquisitionGate(
       await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
       if (!current(operation) || phase._tag !== "Acquiring") return
       const owner = phase
-      const result = await korrid.acquisitionStatus(owner.game.id)
+      const result = await read(owner.launch.game)
       if (!current(operation) || phase._tag !== "Acquiring") return
       if (result._tag === "Err") {
         failed(owner, "Lost sight of the download", result.payload, "start")
@@ -296,11 +327,11 @@ export function createAcquisitionGate(
 
   const start = async (owner: Extract<Phase, { _tag: "Confirming" | "Acquiring" | "Failed" }>) => {
     const operation = ++generation
+    const ids = owner.artifacts.filter(artifact => !isReady(artifact)).map(artifact => artifact.id)
     const acquiring: Extract<Phase, { _tag: "Acquiring" }> = {
-      _tag: "Acquiring", game: owner.game, proceed: owner.proceed, artifacts: owner.artifacts,
+      _tag: "Acquiring", launch: owner.launch, artifacts: owner.artifacts, requested: new Set(ids),
     }
     publish(acquiring)
-    const ids = owner.artifacts.filter(artifact => !isReady(artifact)).map(artifact => artifact.id)
     const result = await korrid.acquisitionStart(ids)
     if (!current(operation) || phase._tag !== "Acquiring") return
     if (result._tag === "Err") {
@@ -311,11 +342,11 @@ export function createAcquisitionGate(
     void observe(operation)
   }
 
-  const check = async (game: AcquisitionGameRef, proceed: () => void) => {
+  const check = async (launch: GatedLaunch) => {
     const operation = ++generation
-    const checking: Extract<Phase, { _tag: "Checking" }> = { _tag: "Checking", game, proceed }
+    const checking: Extract<Phase, { _tag: "Checking" }> = { _tag: "Checking", launch }
     publish(checking)
-    const result = await korrid.acquisitionStatus(game.id)
+    const result = await read(launch.game)
     if (!current(operation) || phase._tag !== "Checking") return
     if (result._tag === "Err") {
       failed(checking, "Couldn't check for downloads", result.payload, "check")
@@ -323,40 +354,52 @@ export function createAcquisitionGate(
     }
     const artifacts = result.payload.artifacts
     if (allReady(artifacts)) {
-      finish(checking)
+      finish(launch)
       return
     }
     // korrid is already working on it (another launch, or a restart mid-way):
-    // observe rather than ask again.
-    if (artifacts.some(artifact => artifact.state._tag === "Downloading" || artifact.state._tag === "Unpacking")) {
-      const acquiring: Extract<Phase, { _tag: "Acquiring" }> = { _tag: "Acquiring", game, proceed, artifacts }
-      publish(acquiring)
+    // observe rather than ask again. What is left Missing is asked for once
+    // that work is done.
+    if (artifacts.some(isActive)) {
+      publish({ _tag: "Acquiring", launch, artifacts, requested: new Set() })
       void observe(operation)
       return
     }
-    publish({ _tag: "Confirming", game, proceed, artifacts })
+    publish({ _tag: "Confirming", launch, artifacts })
   }
 
-  const cancelDownload = async (owner: Extract<Phase, { _tag: "Acquiring" }>) => {
+  /**
+   * Stop every live download korrid keeps the partial file of, then close
+   * without launching. Unpacking is never cancelled. A refused cancel of a
+   * live download is a problem worth stating; nothing else is.
+   */
+  const cancelDownloads = async (launch: GatedLaunch, artifacts: readonly ArtifactStatus[]) => {
     const operation = ++generation
-    publish({ _tag: "Cancelling", game: owner.game })
-    for (const artifact of owner.artifacts) {
-      const tag = artifact.state._tag
-      if (tag !== "Downloading" && tag !== "Missing") continue
+    publish({ _tag: "Cancelling", launch })
+    for (const artifact of artifacts) {
+      if (artifact.state._tag !== "Downloading") continue
       const result = await korrid.acquisitionCancel(artifact.id)
       if (!current(operation)) return
-      // A queued artifact may have nothing to cancel; only a live download's
-      // refusal is a problem worth stating.
-      if (result._tag === "Err" && tag === "Downloading") {
+      if (result._tag === "Err") {
         generation++
         publish({
-          _tag: "Failed", game: owner.game, proceed: owner.proceed, artifacts: owner.artifacts,
+          _tag: "Failed", launch, artifacts,
           kicker: "Couldn't cancel the download", reason: result.payload.message, retry: "none",
         })
         return
       }
     }
-    close()
+    abandon(launch)
+    void refreshNeeds()
+  }
+
+  /** Leave a Problem: stop what is still downloading, then close. */
+  const leaveFailed = (owner: Extract<Phase, { _tag: "Failed" }>) => {
+    if (owner.artifacts.some(artifact => artifact.state._tag === "Downloading")) {
+      void cancelDownloads(owner.launch, owner.artifacts)
+      return
+    }
+    abandon(owner.launch)
     void refreshNeeds()
   }
 
@@ -400,9 +443,9 @@ export function createAcquisitionGate(
         listeners.delete(listener)
       }
     },
-    launch: (game, proceed) => {
+    launch: (game, proceed, abandonLaunch = () => {}) => {
       if (disposed || phase._tag !== "Idle") return
-      void check(game, proceed)
+      void check({ game, proceed, abandon: abandonLaunch })
     },
     act: actionId => {
       if (!actionId.startsWith("acquisition:")) return false
@@ -412,9 +455,9 @@ export function createAcquisitionGate(
       const kind = actionId.slice(actionId.lastIndexOf(":") + 1)
       if (phase._tag === "Confirming") {
         if (kind === "download") void start(phase)
-        else if (kind === "cancel") close()
+        else if (kind === "cancel") abandon(phase.launch)
       } else if (phase._tag === "Acquiring" && kind === "cancel") {
-        void cancelDownload(phase)
+        void cancelDownloads(phase.launch, phase.artifacts)
       }
       return true
     },
@@ -424,13 +467,15 @@ export function createAcquisitionGate(
           return false
         case "Checking":
         case "Confirming":
+          abandon(phase.launch)
+          return true
         case "Failed":
-          close()
+          leaveFailed(phase)
           return true
         case "Acquiring": {
           // Back is Cancel only where Cancel is on offer; unpacking has none.
           const cancel = status?._tag === "Busy" ? status.actions?.find(candidate => candidate.enabled) : undefined
-          if (cancel) void cancelDownload(phase)
+          if (cancel) void cancelDownloads(phase.launch, phase.artifacts)
           return true
         }
         case "Cancelling":
@@ -440,14 +485,13 @@ export function createAcquisitionGate(
     retry: () => {
       if (phase._tag !== "Failed") return false
       const owner = phase
-      if (owner.retry === "check") void check(owner.game, owner.proceed)
+      if (owner.retry === "check") void check(owner.launch)
       else if (owner.retry === "start") void start(owner)
       return true
     },
     dismiss: () => {
       if (phase._tag !== "Failed") return false
-      close()
-      void refreshNeeds()
+      leaveFailed(phase)
       return true
     },
     refreshNeeds,

@@ -13,6 +13,7 @@ import { PicoSurface } from "@korri/pico"
 import { createInputBus } from "../input/bus"
 import { createInMemoryKorridClient, type InMemoryKorridClientConfig } from "../korrid/client"
 import { SurfaceRoot } from "./SurfaceRoot"
+import { runnerRoutes } from "./fixtures/runner-routes"
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const roots: Root[] = []
@@ -105,8 +106,8 @@ test("Play -> Confirm on Pico -> Download -> real progress -> Unpacking -> the s
   expect(busy._tag === "Busy" && busy.progress?.total).toBe(1_160_000_000)
   expect(view.container.querySelector('[role="progressbar"][data-meter="progress"]')).not.toBeNull()
   await waitFor(() => { const s = view.model().status; return s._tag === "Busy" && s.kicker === "Unpacking FEX rootfs" })
-  expect(view.model().status).toEqual({ _tag: "Busy", kicker: "Unpacking FEX rootfs", gameId: "game:hk" })
-  expect(view.container.querySelector('[role="progressbar"]')).toBeNull()
+  expect(view.model().status).toEqual({ _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "game:hk" })
+  expect(view.container.querySelector('[role="progressbar"][data-meter="indeterminate"]')).not.toBeNull()
   // Every artifact Ready: the shared lifecycle takes over with its own Busy.
   await waitFor(() => { const s = view.model().status; return s._tag === "Busy" && s.kicker === "Starting Hollow Knight…" && s.detail === "Opening your session" })
   await waitFor(() => view.model().status._tag === "Browsing")
@@ -172,4 +173,39 @@ test("a game that needs nothing launches at once, as before", async () => {
   await waitFor(() => { const s = view.model().status; return s._tag === "Busy" && s.detail === "Opening your session" })
   await waitFor(() => view.model().status._tag === "Browsing")
   expect(await view.korrid.sessionStatus()).toMatchObject({ _tag: "Ok", payload: { active: { gameId: "hk" } } })
+}, 30_000)
+
+test("a game with several runners and no saved choice: the chooser first, then the gate with the chosen runner", async () => {
+  const chooser: Game = { ...hollow, supportsRunnerSelection: true }
+  const view = await mount({
+    games: [chooser, celeste],
+    gameRoutes: [{ ...runnerRoutes, gameId: "hk", gameRunner: undefined, systemRunners: {} }],
+    // Only one runner's build needs the artifacts.
+    gameArtifacts: { "hk@retroarch/mgba": [rootfs.id], "hk@retroarch/mgba-nightly": [] },
+  })
+  const reads: (string | undefined)[][] = []
+  const status = view.korrid.acquisitionStatus.bind(view.korrid)
+  view.korrid.acquisitionStatus = (gameId, runnerId) => {
+    if (gameId !== undefined) reads.push([gameId, runnerId])
+    return status(gameId, runnerId)
+  }
+  await invoke(() => view.host().launchGame("game:hk"))
+  await waitFor(() => view.model().runnerChoice?._tag === "Ready")
+  // No gate before the choice: korrid cannot resolve artifacts without a runner.
+  expect(view.model().status).toEqual({ _tag: "Browsing" })
+  expect(reads).toEqual([])
+  const choice = view.model().runnerChoice
+  if (!choice || choice._tag === "Closed") throw new Error("expected routes")
+  const launch = choice.routes[0]?.actions[0]
+  if (!launch) throw new Error("expected launch action")
+  await invoke(() => view.host().runAction(launch.id))
+  await waitFor(() => view.model().status._tag === "Confirm")
+  expect(reads).toEqual([["hk", "retroarch/mgba"]])
+  expect(view.model().runnerChoice?._tag).toBe("Closed")
+  expect(view.model().status).toMatchObject({ _tag: "Confirm", detail: "FEX rootfs, 1.2 GB", gameId: "game:hk" })
+  // Cancel here closes the gate and leaves nothing reserved and no chooser panel.
+  await view.back()
+  await waitFor(() => view.model().status._tag === "Browsing")
+  expect(view.model().runnerChoice?._tag).toBe("Closed")
+  expect(await view.korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
 }, 30_000)
