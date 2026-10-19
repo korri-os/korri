@@ -31,9 +31,10 @@ Two come from source `ac8fae593e42dda3cf4beda0b26f190a28d6b942`: batch
 `build-ac8fae593e42-zquest` replaces the Starter pack (adding Lantern Hollow)
 and adds `@korri:zquest-classic`, which the pack now also requires; batch
 `build-ac8fae593e42` added `@korri:gamescope`, selected on every product device.
-Batch `build-d0d960520639` (source `d0d960520639168d26e9fdf58e87240befa00c6f`)
-replaces it with the build that skips fully clipped planes, so nested
-Gamescope no longer aborts when a window moves off screen.
+Batch `build-dea5fd453fc6` (source `dea5fd453fc64d65edcdad1171cec85fb68be1f7`)
+replaces it with the build that skips fully clipped planes and waits for the
+host's configure after an unmap, so nested Gamescope no longer aborts when a
+window moves off screen or is hidden and shown again.
 Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex` and
 `@korri:proton` come from batch `build-e479fd55b3aa` (source
 `e479fd55b3aac624fb67c6f774d493b857f90c1c`); later sources rebuild them to the
