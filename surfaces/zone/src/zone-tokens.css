@@ -261,3 +261,72 @@
   /** @label Stripe, third */
   --zone-stripe-3: var(--zone-mint);
 }
+
+/* ---- panels ----
+ * The panel vocabulary: parallelograms, caps, keycaps, tabs, buttons, the
+ * banner and the foot. Appended as one block so the three parallel workers
+ * merge clean; every line above is untouched. */
+.zone-theme {
+  /** A panel's slant as a multiple of its type size: Mania's panels lean about as far as a capital is tall, whatever their height. Never less than the slant token. @label Lean @min 0 @max 2 @step 0.05 */
+  --zone-lean: 1;
+  /** The room a panel keeps beside its words, beyond the slant. @label Panel padding @min 0 @max 32 @step 1 */
+  --zone-panel-pad: 10px;
+  /** A keycap's diameter as a multiple of its hint type. @label Keycap size @min 1 @max 2.5 @step 0.05 */
+  --zone-keycap-scale: 1.5;
+  /** The tail a keycap's word tab trails past the word, in multiples of its type. @label Keycap tail @min 0 @max 4 @step 0.1 */
+  --zone-keycap-tail: 2.2;
+  /** How far the keycap sits over its word tab, in multiples of its type. @label Keycap overlap @min 0 @max 1 @step 0.05 */
+  --zone-keycap-overlap: 0.3;
+  /** The depth of the banner's two points, as a multiple of its type. @label Banner point @min 0 @max 1.5 @step 0.05 */
+  --zone-banner-point: 0.6;
+  /** The white band through the banner, as a share of its height. @label Banner band height @min 0 @max 1 @step 0.02 */
+  --zone-banner-band-share: 0.26;
+  /** How much of the banner's white band shows through. @label Banner band opacity @min 0 @max 1 @step 0.05 */
+  --zone-banner-band-opacity: 0.3;
+  /** A tab's sub-line as a share of its label. @label Tab sub scale @min 0.3 @max 1 @step 0.05 */
+  --zone-tab-sub-scale: 0.5;
+  /** The tracking of a tab's sub-line. @label Tab sub tracking @min 0 @max 0.2 @step 0.01 */
+  --zone-tab-sub-tracking: 0.06em;
+  /** A cursor triangle beside a button, as a multiple of the button's type. @label Inline triangle @min 0.3 @max 1.5 @step 0.05 */
+  --zone-triangle-inline: 0.7;
+  /** A disabled button's reason line as a share of its label. @label Reason scale @min 0.3 @max 1 @step 0.05 */
+  --zone-type-reason-scale: 0.5;
+  /** How much of a disabled button's panel shows. @label Disabled opacity @min 0 @max 1 @step 0.05 */
+  --zone-disabled-opacity: 0.5;
+  /** The TIME label as a share of the foot's type. @label Timer label scale @min 0.3 @max 1 @step 0.02 */
+  --zone-type-timer-label-scale: 0.74;
+  /** The device tag as a share of the foot's type. @label Device tag scale @min 0.3 @max 1 @step 0.02 */
+  --zone-type-device-scale: 0.6;
+  /** The Wi-Fi badge as a share of the foot's type. @label Badge scale @min 0.3 @max 1 @step 0.02 */
+  --zone-type-badge-scale: 0.56;
+  /** The build string as a share of the foot's type. @label Build scale @min 0.2 @max 1 @step 0.02 */
+  --zone-type-build-scale: 0.4;
+  /** The tracking of the build string. @label Build tracking @min 0 @max 0.2 @step 0.01 */
+  --zone-build-tracking: 0.04em;
+  /** The badge may take this much of the foot before its SSID truncates. @label Badge share @min 0.1 @max 1 @step 0.02 */
+  --zone-badge-share: 46%;
+  /** One signal bar's width. @label Bar width @min 1 @max 12 @step 1 */
+  --zone-bar-width: 4px;
+  /** The gap between signal bars. @label Bar gap @min 0 @max 8 @step 1 */
+  --zone-bar-gap: 2px;
+  /** The tallest signal bar. @label Bars height @min 4 @max 40 @step 1 */
+  --zone-bars-height: 13px;
+  /** How much an unlit signal bar shows. @label Unlit bar opacity @min 0 @max 1 @step 0.05 */
+  --zone-bar-off-opacity: 0.3;
+  /** The foot's panels keep this much room above and below. @label Foot inset @min 0 @max 24 @step 1 */
+  --zone-foot-inset: 8px;
+  /** @label X keycap ink */
+  --zone-key-x-ink: var(--zone-blue);
+  /** @label Y keycap ink */
+  --zone-key-y-ink: var(--zone-orange);
+  /** @label Panel, blue tone */
+  --zone-panel-blue: var(--zone-blue);
+  /** @label Panel, yellow tone */
+  --zone-panel-yellow: var(--zone-yellow);
+  /** @label Panel, white tone */
+  --zone-panel-white: var(--zone-white);
+  /** @label Ink on a yellow or white panel */
+  --zone-panel-light-ink: var(--zone-black);
+  /** @label Unlit signal bar */
+  --zone-bar-off: var(--zone-white);
+}
