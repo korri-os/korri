@@ -271,6 +271,20 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
         state(&AcquisitionCoordinator::default(), root.path(), &registry),
         ArtifactState::Ready { .. }
     ));
+    // Finish the worker before this test simulates external cache deletion.
+    // Publication is already Ready while its async completion is still queued.
+    let mut completed = coordinator.jobs.lock().unwrap()[&base]
+        .lock()
+        .unwrap()
+        .done
+        .clone();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !*completed.borrow() {
+            completed.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
     // The directory, not a stale in-memory success, remains authoritative.
     fs::set_permissions(&ready, fs::Permissions::from_mode(0o755)).unwrap();
     fs::remove_dir_all(&ready).unwrap();
