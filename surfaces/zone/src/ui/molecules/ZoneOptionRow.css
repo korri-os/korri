@@ -1,0 +1,169 @@
+/* A row is a grid of two cells, label and value, with the notes under it.
+ * The label's share is a token; the value takes the rest. Both cells wrap
+ * their words rather than cut them, so a long label makes a taller row and
+ * never a shorter one. */
+.zone-option-row {
+  --zone-option-row-type: clamp(var(--zone-type-row-min), 2.6cqi, var(--zone-type-row));
+  --zone-option-row-label-width: calc((100% - var(--zone-row-gap)) * var(--zone-row-label-share));
+  --zone-option-row-shape: polygon(
+    var(--zone-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-slant)) 100%,
+    0 100%
+  );
+  display: grid;
+  grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
+  column-gap: var(--zone-row-gap);
+  row-gap: calc(var(--zone-row-space) / 2);
+  padding-bottom: var(--zone-row-space);
+  font-size: var(--zone-option-row-type);
+  color: var(--zone-cap);
+}
+
+/* The control is the whole row: one focusable thing per setting. It lays
+ * its two cells on the same columns as the notes under it. */
+.zone-option-row-control {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, var(--zone-option-row-label-width)) minmax(0, 1fr);
+  column-gap: var(--zone-row-gap);
+  align-items: stretch;
+  width: 100%;
+  text-align: left;
+}
+
+/* A cell: white caps with the blue edge on a black parallelogram, a
+ * hairline over it as Mania rules its option rows. */
+.zone-option-row-label,
+.zone-option-row-value {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-height: var(--zone-row-height);
+  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap));
+  border-top: var(--zone-hairline) solid var(--zone-panel);
+  overflow-wrap: anywhere;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+.zone-option-row-label::before,
+.zone-option-row-value::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-option-row-shape);
+}
+
+.zone-option-row-value {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.zone-option-row-text {
+  grid-column: 2;
+  min-width: 0;
+}
+
+/* Focus: the pink offset underline under the label, as a lit button wears.
+ * It sits one layer under the black so the slant stays sharp. */
+.zone-option-row[data-focused] .zone-option-row-label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--zone-focus);
+  clip-path: var(--zone-option-row-shape);
+  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+}
+
+/* A choice's red triangles, breathing toward the value they step. */
+.zone-option-row-step {
+  width: var(--zone-choice-triangle);
+  height: calc(var(--zone-choice-triangle) * var(--zone-triangle-aspect));
+  background: var(--zone-cursor);
+}
+
+.zone-option-row-step-back {
+  grid-column: 1;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+  animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+.zone-option-row-step-forward {
+  grid-column: 3;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+/* Saving: the value is a red caret that blinks until Korri answers. */
+.zone-option-row-caret {
+  grid-column: 2;
+  width: var(--zone-caret);
+  height: calc(var(--zone-caret) * var(--zone-triangle-aspect));
+  background: var(--zone-caret-colour);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  animation: zone-blink var(--zone-blink-time) steps(1) infinite alternate;
+}
+
+/* A destructive action's value is red. */
+.zone-option-row[data-destructive] .zone-option-row-value {
+  color: var(--zone-destructive-ink);
+}
+
+/* The notes under the row: the description on the label's side, the clear
+ * hint on the value's side, Korri's problem across both. They stand on the
+ * ground, so they keep the screen's black outline. */
+.zone-option-row-description {
+  grid-column: 1;
+  padding-left: var(--zone-slant);
+  font-size: var(--zone-type-note);
+  line-height: 1.15;
+}
+
+.zone-option-row-clear {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--zone-row-gap) / 2);
+  font-size: var(--zone-type-note);
+}
+
+.zone-option-row-keycap {
+  display: inline-grid;
+  place-items: center;
+  width: var(--zone-hint-keycap);
+  height: var(--zone-hint-keycap);
+  border: var(--zone-keycap-ring) solid var(--zone-key-ring);
+  border-radius: 50%;
+  background: var(--zone-key);
+  font-size: calc(var(--zone-hint-keycap) * 0.6);
+  text-shadow: none;
+}
+
+.zone-option-row-problem {
+  position: relative;
+  isolation: isolate;
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap));
+  font-size: var(--zone-type-note);
+  line-height: 1.15;
+  color: var(--zone-problem-ink);
+  text-shadow: none;
+}
+
+.zone-option-row-problem::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-option-row-shape);
+}

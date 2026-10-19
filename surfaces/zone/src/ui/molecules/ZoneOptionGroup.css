@@ -1,0 +1,48 @@
+/* Title over rows. The group fills the box it is given; the rows are the
+ * one part that gives way, so a long list scrolls under a title that stays. */
+.zone-option-group {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: var(--zone-group-title-space);
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+/* The title: caps with the blue edge on a black parallelogram, as VIDEO
+ * heads Mania's page. It takes only the width its word needs. */
+.zone-option-group-title {
+  position: relative;
+  isolation: isolate;
+  justify-self: start;
+  margin: 0;
+  padding: calc(var(--zone-row-space) / 2) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  font: inherit;
+  font-size: clamp(var(--zone-type-row), 3cqi, var(--zone-type-group-title));
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+.zone-option-group-title::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: polygon(
+    var(--zone-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-slant)) 100%,
+    0 100%
+  );
+}
+
+/* The scroll region. The pink underline of a focused row reaches past the
+ * row by the drop edge, so the region keeps that much room at its sides. */
+.zone-option-group-rows {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding: 0 var(--zone-drop-edge);
+  scroll-padding-block: var(--zone-row-height);
+}
