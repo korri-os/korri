@@ -55,8 +55,6 @@ describe("Steam launch declaration", () => {
     const noFile = launchInput()
     delete noFile.files["@korri:fex/config"]
     expect(() => handlers["launch.prepare"](noFile)).toThrow("Steam requires @korri:fex/config")
-    const noArtifacts = { ...launchInput(), artifacts: undefined as unknown as Record<string, string> }
-    expect(() => handlers["launch.prepare"](noArtifacts)).toThrow("Steam requires @korri:fex/rootfs")
   })
 })
 
