@@ -303,13 +303,25 @@ for (const selected of [false, true]) {
   })
 }
 
-test("same-frame Back cancels the shared startup without reaching the underlying surface", async () => {
-  const reserve = gate()
-  const view = await mount(false, { sessionReserveGate: reserve.promise })
+test("same-frame Back leaves the launch before anything is reserved, without reaching the underlying surface", async () => {
+  const view = await mount(false)
   await invoke(() => {
     view.host().launchGame("game:wl4")
+    // korrid is still being asked what the game needs: nothing is reserved,
+    // so Back leaves the launch with nothing to cancel.
     view.bus.emit({ type: "back" })
   })
+  expect(view.backs()).toBe(0)
+  expect(view.model().status).toEqual({ _tag: "Browsing" })
+  expect((await view.korrid.sessionStatus())).toEqual({ _tag: "Ok", payload: {} })
+})
+
+test("Back while the reservation is in flight cancels the shared startup without reaching the underlying surface", async () => {
+  const reserve = gate()
+  const view = await mount(false, { sessionReserveGate: reserve.promise })
+  await invoke(() => view.host().launchGame("game:wl4"))
+  await waitFor(() => view.model().status._tag === "Busy" && view.model().status.detail === "Opening your session")
+  await invoke(() => view.bus.emit({ type: "back" }))
   expect(view.backs()).toBe(0)
   expect(view.model().status).toMatchObject({ _tag: "Busy", kicker: "Cancelling launch…" })
   await invoke(reserve.resolve)

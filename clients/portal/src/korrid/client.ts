@@ -48,6 +48,12 @@ import type {
   SourceStatusOutcome,
   PeerListOutcome,
 } from "@contracts/generated/korrid"
+import type {
+  AcquisitionOutcome,
+  AcquisitionRpcRequest,
+  AcquisitionRpcResponse,
+  ArtifactStatus,
+} from "./acquisition-types"
 import {
   FocusOwnership,
   InitialHandoff,
@@ -138,6 +144,16 @@ export interface KorridClient {
   /** Readiness of exactly one native peer, selected by its device key. */
   sourceStatus(devicePublicKey: string): Promise<SourceStatusOutcome>
   peerList(): Promise<PeerListOutcome>
+  /**
+   * Artifacts plugins declared and where each stands on this device. With a
+   * game id: the artifacts of that game's resolved runner. Without: every
+   * artifact of every loaded plugin.
+   */
+  acquisitionStatus(gameId?: string): Promise<AcquisitionOutcome>
+  /** Idempotent: an active artifact is not restarted; a Failed one resumes. */
+  acquisitionStart(artifactIds: readonly string[]): Promise<AcquisitionOutcome>
+  /** Stops one download and keeps its partial file for a later resume. */
+  acquisitionCancel(artifactId: string): Promise<AcquisitionOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
@@ -166,6 +182,24 @@ export async function callKorrid<Request extends RpcRequest>(
   })
   if (!response.ok) throw new KorridHttpError(response.status)
   return (await response.json()) as RpcResponseFor<Request>
+}
+
+/**
+ * GAP — fold into callKorrid at merge. The acquisition tags are not in the
+ * generated RpcRequest union until core's regenerated types land, so this
+ * posts the same wire through the same transport under a local type.
+ */
+async function callAcquisition(
+  baseUrl: string,
+  capability: string,
+  request: AcquisitionRpcRequest,
+): Promise<AcquisitionOutcome> {
+  const response = (await callKorrid(
+    baseUrl,
+    capability,
+    request as unknown as RpcRequest,
+  )) as unknown as AcquisitionRpcResponse
+  return response.outcome
 }
 
 const unreachable = (error: unknown) => ({
@@ -650,10 +684,54 @@ export function createHttpKorridClient(
         return unreachable(error)
       }
     },
+    async acquisitionStatus(gameId) {
+      try {
+        return await callAcquisition(baseUrl, capability, {
+          _tag: "app.acquisition.status",
+          payload: gameId === undefined ? {} : { gameId },
+        })
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async acquisitionStart(artifactIds) {
+      try {
+        return await callAcquisition(baseUrl, capability, {
+          _tag: "app.acquisition.start",
+          payload: { artifactIds: [...artifactIds] },
+        })
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async acquisitionCancel(artifactId) {
+      try {
+        return await callAcquisition(baseUrl, capability, {
+          _tag: "app.acquisition.cancel",
+          payload: { artifactId },
+        })
+      } catch (error) { return routeUnavailable(error) }
+    },
   }
 }
 
+/** One declared artifact as the in-memory brain seeds it. */
+export interface InMemoryArtifact {
+  readonly id: string
+  readonly title: string
+  readonly version?: string
+  readonly bytesTotal?: number
+  /** Starts Ready; absent means Missing until started. */
+  readonly ready?: boolean
+  /** Fail with this plain copy once the download reaches `failAtFraction`. */
+  readonly failure?: { readonly message: string; readonly atFraction?: number }
+}
+
 export interface InMemoryKorridClientConfig {
+  /** Artifacts every loaded plugin declares, and which games need which. */
+  readonly artifacts?: readonly InMemoryArtifact[]
+  readonly gameArtifacts?: Readonly<Record<string, readonly string[]>>
+  /** Simulated download speed. Default 50 MB per tick of `acquisitionTickMs`. */
+  readonly acquisitionBytesPerTick?: number
+  readonly acquisitionTickMs?: number
+  /** Ticks an artifact spends Unpacking before it is Ready. Default 2. */
+  readonly acquisitionUnpackTicks?: number
   readonly behavior?:
     | "ok"
     | "catalog-fail"
@@ -827,6 +905,57 @@ export function createInMemoryKorridClient(
       _tag: "Ok",
       payload: { launchId: expectedLaunchId, state, changed },
     }
+  }
+  // Artifacts: a Missing one downloads in whole ticks once started, unpacks
+  // for a few more, then is Ready. Cancel keeps the bytes for the next start,
+  // the way korrid keeps the .part file.
+  const tickMs = config.acquisitionTickMs ?? 400
+  const bytesPerTick = config.acquisitionBytesPerTick ?? 50_000_000
+  const unpackTicks = config.acquisitionUnpackTicks ?? 2
+  const artifacts = new Map((config.artifacts ?? []).map(seed => [seed.id, {
+    seed,
+    status: {
+      id: seed.id, title: seed.title, version: seed.version ?? "in-memory",
+      ...(seed.bytesTotal === undefined ? {} : { bytesTotal: seed.bytesTotal }),
+      state: seed.ready ? { _tag: "Ready", path: `/cache/${seed.id}` } : { _tag: "Missing" },
+    } as ArtifactStatus,
+    partial: 0,
+    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+  }]))
+  const artifactList = (ids?: readonly string[]): AcquisitionOutcome => ({
+    _tag: "Ok",
+    payload: { artifacts: [...artifacts.values()]
+      .filter(entry => ids === undefined || ids.includes(entry.seed.id))
+      .map(entry => structuredClone(entry.status)) },
+  })
+  const tickArtifact = (id: string, unpackLeft: number) => {
+    const entry = artifacts.get(id)
+    if (!entry) return
+    const { seed } = entry
+    const total = seed.bytesTotal
+    entry.timer = undefined
+    if (entry.status.state._tag === "Downloading") {
+      const done = total === undefined ? entry.partial + bytesPerTick : Math.min(total, entry.partial + bytesPerTick)
+      entry.partial = done
+      const fraction = total === undefined ? 0 : done / total
+      if (seed.failure && fraction >= (seed.failure.atFraction ?? 0.5)) {
+        entry.status = { ...entry.status, state: { _tag: "Failed", reason: { code: "DownloadFailed", message: seed.failure.message } } }
+        return
+      }
+      if (total !== undefined && done >= total) {
+        entry.status = { ...entry.status, state: { _tag: "Unpacking" } }
+      } else {
+        entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: done,
+          ...(total === undefined ? {} : { bytesTotal: total }), bytesPerSecond: bytesPerTick * (1000 / tickMs) } }
+      }
+    } else if (entry.status.state._tag === "Unpacking") {
+      if (unpackLeft <= 0) {
+        entry.status = { ...entry.status, state: { _tag: "Ready", path: `/cache/${seed.id}` } }
+        return
+      }
+      unpackLeft -= 1
+    } else return
+    entry.timer = setTimeout(() => tickArtifact(id, unpackLeft), tickMs)
   }
   const seedSettings = config.settings
   const plugins: SettingsSnapshot["plugins"] = structuredClone(seedSettings?.plugins ?? [
@@ -1382,6 +1511,35 @@ export function createInMemoryKorridClient(
           streamControl: SourceStreamControlState.Enabled,
         },
       }
+    },
+    async acquisitionStatus(gameId) {
+      if (gameId === undefined) return artifactList()
+      if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
+        return routeFailure("GameNotFound", "Game is not available")
+      }
+      return artifactList(config.gameArtifacts?.[gameId] ?? [])
+    },
+    async acquisitionStart(artifactIds) {
+      for (const id of artifactIds) {
+        const entry = artifacts.get(id)
+        if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
+        const tag = entry.status.state._tag
+        if (tag !== "Missing" && tag !== "Failed") continue
+        entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: entry.partial,
+          ...(entry.seed.bytesTotal === undefined ? {} : { bytesTotal: entry.seed.bytesTotal }) } }
+        entry.timer = setTimeout(() => tickArtifact(id, unpackTicks), tickMs)
+      }
+      return artifactList([...artifactIds])
+    },
+    async acquisitionCancel(artifactId) {
+      const entry = artifacts.get(artifactId)
+      if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
+      if (entry.status.state._tag === "Downloading") {
+        clearTimeout(entry.timer)
+        entry.timer = undefined
+        entry.status = { ...entry.status, state: { _tag: "Missing" } }
+      }
+      return artifactList([artifactId])
     },
   }
 }

@@ -11,9 +11,10 @@ import type {
   SurfaceInputAction,
 } from "@contracts/surface/korri-surface"
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { createAcquisitionGate, type AcquisitionGameRef } from "./acquisition-gate"
 import { createRunnerChooser } from "./runner-chooser"
 import { createControllers, type Controllers } from "../input/controllers"
-import type { PortalEntry } from "../launchables/state"
+import { entryKey, type LaunchablesState, type PortalEntry } from "../launchables/state"
 import { createInputBus, type InputBus } from "../input/bus"
 import type { KorridClient } from "../korrid/client"
 import { settingsFrom } from "./settings-model"
@@ -26,6 +27,25 @@ import {
   surfaceModelFrom,
 } from "./surface-model"
 import { useLaunchables } from "./use-launchables"
+
+/** korrid ids of every game this device can launch itself, one per line. */
+function localGameIdsOf(state: LaunchablesState): string {
+  if (state._tag === "Loading") return ""
+  return state.entries
+    .flatMap(entry => (entry.kind === "game" && entry.game.source.isLocal ? [entry.game.id] : []))
+    .sort()
+    .join("\n")
+}
+
+/** Surface id -> korrid id, for the games the acquisition gate can speak about. */
+function localGameIdsBySurfaceId(state: LaunchablesState): ReadonlyMap<string, string> {
+  const ids = new Map<string, string>()
+  if (state._tag === "Loading") return ids
+  for (const entry of state.entries) {
+    if (entry.kind === "game" && entry.game.source.isLocal) ids.set(entryKey(entry), entry.game.id)
+  }
+  return ids
+}
 
 function localRunnerEntry(entry: PortalEntry | undefined): Extract<PortalEntry, { kind: "game" }> | undefined {
   if (entry?.kind === "game" && entry.game.source.isLocal && entry.game.supportsRunnerSelection) return entry
@@ -76,10 +96,20 @@ export function SurfaceRoot({
     reload: () => launchablesRef.current.reload(),
   }), [korrid])
   const runnerChoice = useSyncExternalStore(runner.subscribe, runner.getSnapshot)
+  // Downloads a launch needs come before reserve/start; the gate is a sibling
+  // store, so the launch lifecycle never learns about artifacts.
+  const acquisition = useMemo(() => createAcquisitionGate(korrid), [korrid])
+  useEffect(() => () => acquisition.dispose(), [acquisition])
+  const acquisitionStatus = useSyncExternalStore(acquisition.subscribe, acquisition.getStatus)
+  const downloadNeeds = useSyncExternalStore(acquisition.subscribe, acquisition.getNeeds)
   const surfaceInput = useMemo(createInputBus, [])
   useEffect(() => bus.on(action => {
     // One dispatch decision, before subscriber fanout: cancelling a chooser
     // must not deliver the same Back to the page underneath it.
+    if (acquisition.getStatus() !== undefined) {
+      if (action.type === "back") acquisition.back()
+      return
+    }
     if (launchablesRef.current.getState()._tag === "Choosing") return
     if (launchablesRef.current.getState()._tag === "Starting") {
       if (action.type === "back") {
@@ -93,7 +123,7 @@ export function SurfaceRoot({
       return
     }
     surfaceInput.emit(action)
-  }), [bus, runner, surfaceInput])
+  }), [acquisition, bus, runner, surfaceInput])
   useEffect(() => () => runner.cancel(), [runner])
   const {
     state,
@@ -145,9 +175,28 @@ export function SurfaceRoot({
     }),
     [state, clockLabel, settings, settingsStatus, identityManagement, network, onboardingNeeded, controllerList, networkProblem],
   )
+  // Which local games still need a download is re-read when the set of local
+  // games changes, and by the gate itself after a download it ran.
+  const localGameIds = useMemo(() => localGameIdsOf(state), [state])
+  useEffect(() => {
+    if (localGameIds === "") return
+    void acquisition.refreshNeeds(localGameIds.split("\n"))
+  }, [acquisition, localGameIds])
+  const surfaceToKorridId = useMemo(() => localGameIdsBySurfaceId(state), [state])
   // Chooser transitions are not new catalog observations. Keep that identity
   // so session-return consumers do not discard an outstanding launch request.
-  const model = useMemo(() => ({ ...baseModel, runnerChoice }), [baseModel, runnerChoice])
+  const model = useMemo(() => {
+    const catalog = baseModel.catalog._tag !== "Ready" || downloadNeeds.size === 0 ? baseModel.catalog : {
+      _tag: "Ready" as const,
+      games: baseModel.catalog.games.map(game => {
+        const korridId = surfaceToKorridId.get(game.id)
+        if (korridId === undefined || !downloadNeeds.has(korridId)) return game
+        const bytes = downloadNeeds.get(korridId)
+        return { ...game, download: bytes === undefined ? {} : { bytes } }
+      }),
+    }
+    return { ...baseModel, catalog, status: acquisitionStatus ?? baseModel.status, runnerChoice }
+  }, [baseModel, runnerChoice, acquisitionStatus, downloadNeeds, surfaceToKorridId])
 
   // The host object is stable: it reads the latest state through the closures
   // above rather than capturing a snapshot, so re-creating it on every model
@@ -160,22 +209,41 @@ export function SurfaceRoot({
       },
       launchGame: (id, launchLocationId) => {
         const current = launchablesRef.current.getState()
-        if (runner.getSnapshot()._tag !== "Closed" || current._tag !== "Ready") return
+        if (runner.getSnapshot()._tag !== "Closed" || acquisition.getStatus() !== undefined || current._tag !== "Ready") return
         const entry = entryForId(current, id)
         if (!entry) return
         const confirm = (chosen: PortalEntry) => {
-          if (chosen.kind === "game" && chosen.game.source.isLocal && chosen.game.supportsRunnerSelection) {
-            const active = current.entries.find(entry =>
-              entry.kind === "now-playing" && entry.session.gameId === chosen.game.id &&
-              (entry.session.host === undefined || entry.session.host === chosen.game.host),
-            )
-            if (active?.kind === "now-playing") {
-              confirmEntry(active)
+          if (chosen.kind !== "game" || !chosen.game.source.isLocal) {
+            confirmEntry(chosen)
+            return
+          }
+          // A game already live on this device is returned to, never fetched for.
+          const active = current.entries.find(entry =>
+            entry.kind === "now-playing" && entry.session.gameId === chosen.game.id &&
+            (entry.session.host === undefined || entry.session.host === chosen.game.host),
+          )
+          if (active?.kind === "now-playing") {
+            confirmEntry(active)
+            return
+          }
+          if (current.unavailableSessionStatus !== undefined) return
+          const ref: AcquisitionGameRef = { id: chosen.game.id, surfaceId: id, title: chosen.game.title }
+          // What the launch is once every artifact is Ready: the existing flow.
+          // korrid refusing a start with ArtifactsNotReady is the defensive case;
+          // the gate checked first, so it only means the world moved. Ask again.
+          const proceed = (): void => {
+            if (chosen.game.supportsRunnerSelection) {
+              void runner.open(chosen.game.id, chosen.game.title, "launch")
               return
             }
-            if (current.unavailableSessionStatus !== undefined) return
-            void runner.open(chosen.game.id, chosen.game.title, "launch")
-          } else confirmEntry(chosen)
+            void launchablesRef.current.startCatalogLaunch(chosen.game.id).then(outcome => {
+              if (outcome?._tag === "Err" && outcome.payload.code === "ArtifactsNotReady") {
+                launchablesRef.current.dismissNotice()
+                acquisition.launch(ref, proceed)
+              }
+            })
+          }
+          acquisition.launch(ref, proceed)
         }
         const locations = launchLocationsForEntry(entry)
         if (locations.length > 1) {
@@ -187,6 +255,7 @@ export function SurfaceRoot({
         confirm(entry)
       },
       runAction: id => {
+        if (acquisition.act(id)) return
         if (id.startsWith("cancel-pending:")) {
           launchablesRef.current.cancelPendingLaunch(id.slice("cancel-pending:".length))
         }
@@ -234,13 +303,22 @@ export function SurfaceRoot({
       // the dedicated overlay host that binds these calls to a launch id.
       invokeGameplayControl: () => {},
       dismissGameplayOverlay: () => {},
-      // Korri has nothing new to try after a failed launch, so retrying means
-      // re-reading the world rather than repeating the same request.
-      retry: reload,
-      dismiss: dismissNotice,
-      reload,
+      // A failed download resumes on Retry. Korri has nothing new to try after
+      // a failed launch, so retrying that means re-reading the world rather
+      // than repeating the same request.
+      retry: () => {
+        if (!acquisition.retry()) reload()
+      },
+      dismiss: () => {
+        if (!acquisition.dismiss()) dismissNotice()
+      },
+      reload: () => {
+        reload()
+        void acquisition.refreshNeeds()
+      },
     }),
     [
+      acquisition,
       surfaceInput,
       runner,
       scanWifi,
