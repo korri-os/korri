@@ -21,6 +21,7 @@ if [[ "${1:-}" == "--types-only" && $# == 1 ]]; then
 fi
 cargo fmt --check
 cargo check
+bun test "$ROOT/plugins/steam/plugin.test.ts"
 KORRI_SCRIPT_FIXTURES_IN_SHELL=1 bash "$CRATE/script-fixtures-setup.sh"
 cargo test
 KORRI_CONFIG_REVIEW_IN_SHELL=1 "$CRATE/config-snapshot-review.sh"
@@ -45,6 +46,9 @@ done
 
 cd "$ROOT/clients/portal"
 bun run typecheck
+# The installed Steam declaration consumes the same regenerated Rust treaty.
+bun node_modules/typescript/bin/tsc --ignoreConfig --noEmit --strict --skipLibCheck \
+  --target es2022 --module preserve "$ROOT/plugins/steam/plugin.ts"
 bun test
 
 # Shift is its own package with its own toolchain: check it on its own terms so

@@ -15,6 +15,10 @@ export type NativeInputDeviceClass = "gamepad" | "keyboard" | "mouse" | "touch" 
 
 export type NativeInputEvent = NativeInputInput | NativeInputDeviceAdded | NativeInputDeviceRemoved | NativeInputAction;
 
+export type ProviderReleaseConfidence = "high";
+
+export type ProviderReleaseKind = "provider-ref-release";
+
 /** Initial window handoff history, separate from current focus ownership. */
 export enum InitialHandoff {
 	/** This daemon accepted the launch but has not observed exact screen ownership. */
@@ -610,6 +614,44 @@ export interface PluginSetting {
 	id: string;
 	title: string;
 	enabled: boolean;
+}
+
+export interface ProviderReleaseSource {
+	relativePath: string;
+}
+
+export interface ProviderReleaseTarget {
+	provider: string;
+	ref: string;
+}
+
+export interface ProviderRelease {
+	id: string;
+	title: string;
+	system: string;
+}
+
+export interface ProviderReleaseLaunch {
+	use: string;
+}
+
+/** Legacy provider-ref-release observation, restricted to this first real consumer. */
+export interface ProviderRefReleaseObservation {
+	kind: ProviderReleaseKind;
+	confidence: ProviderReleaseConfidence;
+	source: ProviderReleaseSource;
+	target: ProviderReleaseTarget;
+	release: ProviderRelease;
+	launch: ProviderReleaseLaunch;
+}
+
+export interface ReleaseDiscoveryFile {
+	relativePath: string;
+	text: string;
+}
+
+export interface ReleaseDiscoveryInput {
+	files: ReleaseDiscoveryFile[];
 }
 
 export interface RetroarchSessionTelemetry {

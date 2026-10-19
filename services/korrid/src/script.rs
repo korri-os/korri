@@ -209,7 +209,7 @@ fn evaluate_module(
             match name.as_str() {
                 "name" | "title" | "description" | "providers" | "systems" | "families"
                 | "runners" | "modifiers" | "transports" | "controls" | "groups" | "games"
-                | "services" | "config" => {
+                | "services" | "config" | "discovery" => {
                     data.set(name, value).map_err(|error| error.to_string())?;
                 }
                 // Handlers are callable operation code, never declaration data.
@@ -258,6 +258,15 @@ fn evaluate_module(
         {
             handler(&exports, LAUNCH_PREPARE).map_err(|_| {
                 "native runner kind has no callable launch.prepare handler".to_owned()
+            })?;
+        }
+        if declaration
+            .get("discovery")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|providers| !providers.is_empty())
+        {
+            handler(&exports, "discovery.discover").map_err(|_| {
+                "discovery provider has no callable discovery.discover handler".to_owned()
             })?;
         }
         let result = if let Some(invocation) = invocation {

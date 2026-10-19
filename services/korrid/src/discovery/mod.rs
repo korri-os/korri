@@ -1,6 +1,7 @@
 pub mod attention;
 pub mod coordinator;
 pub mod identify;
+pub mod provider;
 pub mod reconcile;
 pub mod scanner;
 pub mod sources;

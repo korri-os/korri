@@ -206,3 +206,103 @@ fn unpair_removes_only_storage_created_by_pair() {
         }
     }
 }
+
+#[test]
+fn installed_steam_manifest_needs_no_authored_library_or_location() {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let registry = crate::plugin_test_fixtures::steam(package.path());
+    let manifests = root.path().join("users/default/steam/steamapps");
+    fs::create_dir_all(&manifests).unwrap();
+    let manifest = manifests.join("appmanifest_401710.acf");
+    let installed =
+        "\"AppState\" { \"appid\" \"401710\" \"name\" \"Flinthook\" \"StateFlags\" \"4\" }";
+    fs::write(&manifest, installed).unwrap();
+    let writer = DiscoveryCoordinator::new(root.path(), private.path())
+        .with_registry_source(plugin_policy::RegistrySource::Selected(Arc::new(registry)));
+    let options = DiscoveryOptions::default();
+    assert_eq!(writer.rescan(&options).unwrap().added_games, 1);
+    let first = Documents::read(root.path()).unwrap();
+    let snapshot = first.validate().unwrap();
+    let game = &snapshot.library["flinthook"];
+    assert_eq!(game.title.as_deref(), Some("Flinthook"));
+    assert_eq!(game.releases[0].id.0, "steam");
+    assert_eq!(
+        game.releases[0].identity.as_ref().unwrap().value(),
+        "@korri:steam/401710"
+    );
+    assert!(matches!(
+        snapshot.locations["@korri:steam/401710"][0],
+        config::Location::ProviderRef { .. }
+    ));
+    assert!(snapshot.sources.is_empty());
+    writer.rescan(&options).unwrap();
+    assert_eq!(Documents::read(root.path()).unwrap(), first);
+    fs::remove_file(&manifest).unwrap();
+    writer.rescan(&options).unwrap();
+    let absent = Documents::read(root.path()).unwrap().validate().unwrap();
+    assert!(absent.library.contains_key("flinthook"));
+    assert!(!absent.locations.contains_key("@korri:steam/401710"));
+    fs::write(&manifest, installed).unwrap();
+    writer.rescan(&options).unwrap();
+    assert_eq!(Documents::read(root.path()).unwrap(), first);
+    fs::write(&manifest, installed.replace("\"4\"", "\"1026\"")).unwrap();
+    writer.rescan(&options).unwrap();
+    assert!(!Documents::read(root.path())
+        .unwrap()
+        .validate()
+        .unwrap()
+        .locations
+        .contains_key("@korri:steam/401710"));
+}
+
+#[test]
+fn steam_disable_withdraws_owned_locations_but_not_authored_locations() {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let manifests = root.path().join("users/default/steam/steamapps");
+    fs::create_dir_all(&manifests).unwrap();
+    fs::write(
+        manifests.join("appmanifest_401710.acf"),
+        "\"AppState\" { \"appid\" \"401710\" \"name\" \"Flinthook\" \"StateFlags\" \"4\" }",
+    )
+    .unwrap();
+    let writer = DiscoveryCoordinator::new(root.path(), private.path()).with_registry_source(
+        plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::steam(
+            package.path(),
+        ))),
+    );
+    writer.rescan(&DiscoveryOptions::default()).unwrap();
+    // An unrelated authored provider location is never claimed by discovery.
+    let mut device =
+        parse_mapping(&fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap()).unwrap();
+    device
+        .get_mut("locations")
+        .unwrap()
+        .as_mapping_mut()
+        .unwrap()
+        .insert(
+            Value::String("@korri:steam/1".into()),
+            serde_yaml::to_value(vec![
+                serde_json::json!({"provider":"@korri:steam", "ref":"1"}),
+            ])
+            .unwrap(),
+        );
+    fs::write(
+        root.path().join(DEVICE_FILE_NAME),
+        serde_yaml::to_string(&device).unwrap(),
+    )
+    .unwrap();
+    let disabled = DiscoveryCoordinator::new(root.path(), private.path()).with_registry_source(
+        plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin::PluginRegistry::from_installed(vec![]).unwrap(),
+        )),
+    );
+    disabled.rescan(&DiscoveryOptions::default()).unwrap();
+    let snapshot = Documents::read(root.path()).unwrap().validate().unwrap();
+    assert!(snapshot.library.contains_key("flinthook"));
+    assert!(!snapshot.locations.contains_key("@korri:steam/401710"));
+    assert!(snapshot.locations.contains_key("@korri:steam/1"));
+}

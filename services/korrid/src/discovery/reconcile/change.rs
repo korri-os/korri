@@ -256,6 +256,7 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
             }
         }
     }
+    reconcile_providers(report, &mut next, &mut change, &mut release_games);
     change.added_games = next
         .library
         .keys()
@@ -280,6 +281,82 @@ pub fn reconcile(report: &ScanReport, current: &ConfigSnapshot, now: &str) -> Ca
             Some(serde_yaml::to_string(&next_device).expect("serializable device"));
     }
     change
+}
+
+fn reconcile_providers(
+    report: &ScanReport,
+    next: &mut ConfigSnapshot,
+    change: &mut CatalogChange,
+    release_games: &mut BTreeMap<String, String>,
+) {
+    for scan in &report.providers {
+        let seen: BTreeSet<_> = scan
+            .observations
+            .iter()
+            .map(|o| format!("{}/{}", o.target.provider, o.target.provider_ref))
+            .collect();
+        for (key, origins) in &change.origins {
+            if origins.contains(&scan.id) && !seen.contains(key) {
+                if let Some(locations) = next.locations.get_mut(key) {
+                    locations.retain(|location| !matches!(location, Location::ProviderRef { .. }));
+                    if locations.is_empty() {
+                        next.locations.remove(key);
+                    }
+                }
+            }
+        }
+        // Keep the release and game when a manifest disappears, just as missing
+        // files keep their history. ProviderRef has no missing-since field:
+        // absence of its location is the existing unavailable representation.
+        for observation in &scan.observations {
+            let key = format!(
+                "{}/{}",
+                observation.target.provider, observation.target.provider_ref
+            );
+            if !release_games.contains_key(&key) {
+                let id = unique_id(&slug(&observation.release.title), |id| {
+                    next.library.contains_key(id)
+                });
+                next.library.insert(
+                    id.clone(),
+                    LibraryItemPayload {
+                        modifiers: Default::default(),
+                        title: Some(observation.release.title.clone()),
+                        version_of: None,
+                        relation: None,
+                        contains: None,
+                        display: None,
+                        metadata: None,
+                        runner: None,
+                        families: BTreeMap::new(),
+                        runners: BTreeMap::new(),
+                        releases: vec![LibraryReleasePayload {
+                            id: NonEmptyString(observation.release.id.clone()),
+                            system: Some(NonEmptyString(observation.release.system.clone())),
+                            identity: Some(LibraryIdentity::Provider { value: key.clone() }),
+                            display: None,
+                            inheritable: InheritableLayer::default(),
+                        }],
+                    },
+                );
+                release_games.insert(key.clone(), id);
+                change.added_releases += 1;
+            }
+            let locations = next.locations.entry(key.clone()).or_default();
+            if locations.is_empty() {
+                locations.push(Location::ProviderRef {
+                    provider: crate::config::ProviderIdString(observation.target.provider.clone()),
+                    provider_ref: NonEmptyString(observation.target.provider_ref.clone()),
+                });
+                change
+                    .origins
+                    .entry(key)
+                    .or_default()
+                    .insert(scan.id.clone());
+            }
+            // Existing authored provider locations are not discovery-owned.
+        }
+    }
 }
 
 pub(super) fn device_value(snapshot: &ConfigSnapshot) -> serde_yaml::Mapping {

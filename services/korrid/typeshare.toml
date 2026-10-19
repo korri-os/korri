@@ -18,3 +18,7 @@ NativeInputSuspendedKindWire = '"suspended"'
 NativeInputControlWire = "NativeInputInitializationComplete | NativeInputDeviceStateComplete | NativeInputSuspend | NativeInputResume | NativeInputRetired"
 NativeInputRetireKindWire = '"retire"'
 NativeInputRetiredKindWire = '"retired"'
+
+# Exact legacy provider discovery literals, enforced by discovery/provider.rs.
+ProviderReleaseKindWire = '"provider-ref-release"'
+ProviderReleaseConfidenceWire = '"high"'

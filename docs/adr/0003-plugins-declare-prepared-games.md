@@ -8,3 +8,9 @@ Before this, OpenGOAL's prepared Jak files reached the catalog only because the 
 
 - Plugins declare a source over their own data and discovery scans it: one mechanism, but it walks build output again.
 - Prepared files are never games, only the original content is: loses games whose original content is not in any source.
+
+## Narrow amendment
+
+[ADR 0011](0011-steam-installed-manifest-discovery.md) permits enabled Steam
+provider releases from a closed manifest-only scan in plugin data. It does not
+permit scanning prepared files or build output.

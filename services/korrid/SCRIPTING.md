@@ -190,11 +190,11 @@ plugin.ts  ──(oxc: transpile in-process)──▶  JS  ──(QuickJS: evalu
 JSON containing its data exports, not the JavaScript completion value.
 `name` must be a non-empty string. Optional identity exports are `title` and
 `description`. Data export names come from the current producers: `providers`,
-`systems`, `groups`, `games`, `families`, `runners`, `transports`, and
-`controls`. Native launcher/runtime fields follow the instance/kind model
-described below. `discovery` and `sessionControls` are unknown exports and fail
-admission. `services` names native units packaged by `plugin.nix`. The Linux
-host selects those units; the data registry validates the names but does not
+`systems`, `groups`, `games`, `families`, `runners`, `transports`,
+`controls`, and the constrained `discovery` list described below. Native
+launcher/runtime fields follow the instance/kind model described below.
+`sessionControls` is an unknown export and fails admission. `services` names
+native units packaged by `plugin.nix`. The Linux host selects those units; the data registry validates the names but does not
 activate them or change its existing records. `daemons` and the old `contributes`
 wrapper are rejected. No TypeScript export encodes systemd directives.
 
@@ -407,15 +407,18 @@ korrid decodes declarations from installed packages and reads their committed
 enabled selection. No plugin source is bundled into the daemon.
 
 An enabled plugin can contribute providers, systems with content rules, groups,
-declared games, families, runners, transports, and contextual controls. Disabled
-plugins contribute no rules, groups or games. Unsupported declaration fields and
+declared games, families, runners, transports, contextual controls, and the closed
+first-party discovery list. Disabled plugins contribute no rules, groups,
+games or discoveries. Unsupported declaration fields and
 explicit `null` values fail rather than disappearing. Contribution keys retain
 the contributing plugin's identity; records retain strict IDs for route resolution.
 
 ### Content, groups and declared games
 
 These are data exports, never callbacks. Content identification does not need an
-enabled runner. Discovery scans paired sources, never plugin data directories.
+enabled runner. Ordinary discovery scans paired sources, never plugin data
+directories. ADR 0011 permits only the closed first-party provider-manifest
+exception below; it does not permit build-tree scans.
 
 ```ts
 export const systems = {
@@ -499,6 +502,47 @@ and range metadata are validated while the plugin is loaded. An effect is a
 closed identifier such as `@korri:retroarch/open-menu` or an existing Moonlight
 gameplay operation; it cannot contain a process, URL, socket address, or other
 payload.
+
+### Provider manifest discovery is a closed first-party vocabulary
+
+ADR 0011 amends ADR 0003 narrowly. `discovery` is a data list of `{id, title}`
+records. It requires a callable `handlers["discovery.discover"]`; declaration
+evaluation never calls it. Both administrator admission and runtime admission
+use `plugin_discovery.rs`'s closed provider-ID to account-relative-glob table:
+`@korri:steam/installed-apps` → `steam/steamapps/appmanifest_*.acf`. Unknown
+providers, foreign owners, duplicates, empty titles and missing handlers fail
+admission. This is first-party integration, not an open plugin capability.
+Third-party plugins cannot discover from their own data until another real case
+needs it. No plugin may declare a new root or a broader rule.
+
+For an enabled Steam plugin, korrid reads the manifests and calls
+`discovery.discover` with `{files: [{relativePath, text}]}`, one file per call.
+Paths are relative to the Steam home. There is no `readText` callback, filesystem
+API or effect in plugin code. The sandbox and existing execution/input/output
+limits still apply. Rust owns the input and observation types exported through
+Typeshare. The `provider-ref-release` observation retains legacy `kind`,
+`confidence`, `source`, `target`, `release` and `launch`; `source` needs only
+`relativePath`, and optional legacy evidence is not carried in this slice.
+
+korrid admits at most 4,096 manifests per pass and 65,536 bytes per manifest.
+It skips files over those caps and reports daemon stderr and discovery
+diagnostics. It uses descriptor-relative no-follow opens and regular-file
+checks, never recursive scanning or symlink traversal. More than 10,000 entries
+in one manifest directory, unreadable directories or invalid handler output
+preserve previous locations. A missing directory is an empty installed set.
+AppIDs must be numeric and match their manifest filenames, provider IDs must
+belong to Steam, titles must be non-empty, and release, system, source and
+runner must match the admitted Steam case. Steam's pure VDF parser admits only
+StateFlags 4 and excludes explicit non-Game types. Titles come from `name`;
+there is no invented fallback title.
+
+The existing reconciliation writer publishes provider releases and locations.
+Only locations it creates are owned in the existing `origins` journal. Missing,
+uninstalled or disabled apps lose those locations; release history stays
+unavailable. Authored locations stay authored. Startup and
+`app.discovery.rescan` use this same scan. No new persisted fields, configured
+sources, automatic watcher, external Steam libraries or capability model are
+added. ADR 0011 records the legacy citations, deliberate deltas and limits.
 
 ### Effects are a closed first-party vocabulary
 

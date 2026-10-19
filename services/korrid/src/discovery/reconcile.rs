@@ -331,6 +331,8 @@ impl DiscoveryCoordinator {
                 max_sortable_entries: options.max_sortable_entries,
             },
         );
+        scan.providers =
+            crate::discovery::provider::scan(&accounts, &registry, &mut scan.diagnostics);
         scan.accounts = accounts;
         scan.declared_games = registry.declared_games().clone();
         scan.created_storages = private.ownership.created_storages.clone();

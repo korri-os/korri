@@ -4183,6 +4183,7 @@ mod controller_count_tests;
 pub mod host;
 pub mod launcher;
 pub mod plugin;
+pub mod plugin_discovery;
 pub mod plugin_installation;
 pub mod plugin_policy;
 mod plugin_references;
@@ -5369,6 +5370,93 @@ mod tests {
         assert_eq!(
             body["outcome"]["payload"]["code"],
             "FolderSelectionReceiptUnknown"
+        );
+    }
+
+    #[tokio::test]
+    async fn steam_startup_and_rescan_publish_installs_through_library_rpc() {
+        let readable = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let packages = tempfile::tempdir().unwrap();
+        let steamapps = readable.path().join("users/default/steam/steamapps");
+        std::fs::create_dir_all(&steamapps).unwrap();
+        let manifest = |appid: &str, name: &str| {
+            format!(
+                "\"AppState\" {{ \"appid\" \"{appid}\" \"name\" \"{name}\" \"StateFlags\" \"4\" }}"
+            )
+        };
+        std::fs::write(
+            steamapps.join("appmanifest_401710.acf"),
+            manifest("401710", "Flinthook"),
+        )
+        .unwrap();
+        let app = router_with_capability_local_root_provision_and_grants(
+            "right-token",
+            "https://portal.example",
+            readable.path(),
+            private.path(),
+            plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::steam(
+                packages.path(),
+            ))),
+            config::snapshot::ConfigSnapshotCoordinator::new(readable.path()),
+            discovery::FolderSelectionGrantStore::default(),
+            None,
+            None,
+            None,
+        );
+        let idle = wait_for_discovery_idle(app.clone()).await;
+        assert_eq!(idle["outcome"]["payload"]["state"]["_tag"], "Idle");
+        assert!(idle["outcome"]["payload"]["sources"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let list = r#"{"_tag":"app.local-games.list","payload":{}}"#;
+        let games = rpc_body_authorized(app.clone(), list, Some("right-token")).await;
+        assert_eq!(
+            games["outcome"]["payload"]["games"][0]["title"],
+            "Flinthook"
+        );
+        std::fs::write(
+            steamapps.join("appmanifest_360740.acf"),
+            manifest("360740", "Downwell"),
+        )
+        .unwrap();
+        rpc_body_authorized(
+            app.clone(),
+            r#"{"_tag":"app.discovery.rescan","payload":{}}"#,
+            Some("right-token"),
+        )
+        .await;
+        wait_for_discovery_idle(app.clone()).await;
+        let games = rpc_body_authorized(app.clone(), list, Some("right-token")).await;
+        assert_eq!(
+            games["outcome"]["payload"]["games"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        std::fs::remove_file(steamapps.join("appmanifest_401710.acf")).unwrap();
+        rpc_body_authorized(
+            app.clone(),
+            r#"{"_tag":"app.discovery.rescan","payload":{}}"#,
+            Some("right-token"),
+        )
+        .await;
+        wait_for_discovery_idle(app.clone()).await;
+        let games = rpc_body_authorized(app, list, Some("right-token")).await;
+        assert_eq!(
+            games["outcome"]["payload"]["games"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(games["outcome"]["payload"]["games"][0]["title"], "Downwell");
+        assert!(
+            std::fs::read_to_string(readable.path().join("catalog/library.yaml"))
+                .unwrap()
+                .contains("Flinthook")
         );
     }
 

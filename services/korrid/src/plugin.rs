@@ -4,6 +4,7 @@
 //! families, runners, transports and contextual controls. Plugins perform no
 //! effects; this module evaluates, validates and combines their declarations.
 
+use crate::plugin_discovery::ReleaseDiscoveryProvider;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Deserializer};
@@ -291,6 +292,7 @@ pub struct SessionControlRecord {
 
 #[derive(Clone, Debug)]
 pub struct Plugin {
+    discovery: Vec<ReleaseDiscoveryProvider>,
     id: String,
     config: Option<BTreeMap<String, serde_json::Value>>,
     title: String,
@@ -656,6 +658,12 @@ impl PluginRegistry {
         self.plugins.get(plugin_id).map(Plugin::title)
     }
 
+    pub fn discovery_providers(&self) -> impl Iterator<Item = &ReleaseDiscoveryProvider> {
+        self.enabled_plugin_ids
+            .iter()
+            .flat_map(|id| self.plugins[id].discovery.iter())
+    }
+
     pub fn enabled_plugin_ids(&self) -> Vec<&str> {
         self.enabled_plugin_ids.iter().map(String::as_str).collect()
     }
@@ -827,6 +835,8 @@ struct PluginDeclaration {
     groups: BTreeMap<String, GroupRecord>,
     #[serde(default)]
     games: BTreeMap<String, DeclaredGameContribution>,
+    #[serde(default)]
+    discovery: Vec<ReleaseDiscoveryProvider>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     config: Option<BTreeMap<String, serde_json::Value>>,
 }
@@ -1194,7 +1204,10 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         );
     }
 
+    crate::plugin_discovery::validate(&id, &declaration.discovery)
+        .map_err(|reason| invalid_contribution("discovery", &id, &reason))?;
     Ok(Plugin {
+        discovery: declaration.discovery,
         config: declaration.config,
         id,
         title,

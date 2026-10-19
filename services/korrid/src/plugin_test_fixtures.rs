@@ -137,3 +137,23 @@ pub fn installed(root: &Path) -> PluginRegistry {
     }])
     .unwrap()
 }
+
+/// The installed Steam declaration and its real interpreter callback.
+pub fn steam(root: &Path) -> PluginRegistry {
+    let package = root.join("plugin-steam");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(
+        package.join("plugin.ts"),
+        include_str!("../../../plugins/steam/plugin.ts"),
+    )
+    .unwrap();
+    PluginRegistry::from_installed(vec![EnabledPackage {
+        id: "@korri:steam".into(),
+        package: package.clone(),
+        files: BTreeMap::from([("steam-session".into(), package.join("steam-session"))]),
+        entry: "plugin.ts".into(),
+        sources: vec!["plugin.ts".into()],
+        requires: vec![],
+    }])
+    .unwrap()
+}

@@ -77,6 +77,12 @@ pub struct Declaration {
         deserialize_with = "optional_non_null",
         skip_serializing_if = "Option::is_none"
     )]
+    pub discovery: Option<Vec<crate::plugin_discovery::ReleaseDiscoveryProvider>>,
+    #[serde(
+        default,
+        deserialize_with = "optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub groups: Option<BTreeMap<String, serde_json::Value>>,
     #[serde(
         default,
@@ -127,6 +133,10 @@ impl Declaration {
 
     fn validate(&self) -> Result<(), String> {
         validate_id(&self.id())?;
+        crate::plugin_discovery::validate(
+            &self.id(),
+            self.discovery.as_deref().unwrap_or_default(),
+        )?;
         if self
             .title
             .as_ref()

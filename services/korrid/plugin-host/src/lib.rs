@@ -27,3 +27,6 @@ pub mod plugin_references;
 
 #[path = "../../src/script.rs"]
 pub mod script;
+
+#[path = "../../src/plugin_discovery.rs"]
+pub mod plugin_discovery;

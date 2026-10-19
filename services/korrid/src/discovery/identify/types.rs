@@ -160,6 +160,7 @@ impl DeclaredScan {
 /// Everything one discovery pass produced; the input to reconciliation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ScanReport {
+    pub providers: Vec<crate::discovery::provider::ProviderScan>,
     /// Storage records created by discovery, supplied by the document writer.
     pub created_storages: BTreeSet<String>,
     pub declared_games: BTreeMap<String, crate::plugin::DeclaredGame>,
