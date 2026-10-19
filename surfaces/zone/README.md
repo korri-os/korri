@@ -55,7 +55,8 @@ one has been seen to fail on a planted defect.
 | One component per file; every component has a `*.part.tsx` beside it; layers point down | `test/decomposition-gate.test.ts` |
 | Every part default-exports a function and a name; no inline styles; nothing imported outside the treaty, React and `qrcode` | `test/authoring-gate.test.ts` |
 | Each component imports its own CSS; no `@import`; a stylesheet styles only classes its component renders | `test/css-ownership-gate.test.ts` |
-| Raw hex colours and px literals only in `src/zone-tokens.css` and `src/fonts/` | `test/atomic-gate.test.ts` and `test/authoring-gate.test.ts` |
+| Raw hex colours and px literals only in `src/zone-tokens.css` and `src/fonts/`; every token literal, with a knob hint | `test/atomic-gate.test.ts`, `test/authoring-gate.test.ts` |
+| No blur, blend, soft shadow or smooth gradient; a `linear-gradient` is a hard-stop stripe | `test/authoring-gate.test.ts` |
 | Shapes read no state: nothing under `src/ui/` or `src/pages/` imports `src/state/` or reads the host | `test/atomic-gate.test.ts` |
 | Every component file has exactly one component | `test/atomic-gate.test.ts` |
 | White caps on black, yellow on blue, and every other lettering pair reach contrast | `test/contrast-gate.test.ts` |
@@ -72,13 +73,17 @@ src/
   zone-tokens.css     the only file with a raw colour or pixel value; every
                       value is a literal custom property with a knob comment
   zone-fonts.css      Anton, embedded from src/fonts/ (SIL OFL 1.1)
-  zone-motion.css     the one-bounce snap, the triangle nudge, the ring drift
+  zone-motion.css     the one-bounce snap, the triangle nudge, the ring drift;
+                      imported by each component whose stylesheet names one
   zone.css            reset, screen scope and reduced motion; imports nothing
   fonts/              Anton-Regular.ttf and OFL.txt
+  fixtures/           the fixture host and model, and the part frame
   plan/               plan(width, height) per page: pure, thresholds named
   state/              navigation model, messages, requests; pure
   zone-host.ts        the one door to Korri
   use-zone-program.ts the runtime: holds a model, runs update, performs requests
+  use-zone-plan.ts    measures the root and returns plan(width, height)
+  use-zone-idle.ts    the idle timer, a subscription
   ZoneSurface.tsx     the composition root: the only file that reads the treaty
   ui/atoms|molecules|organisms|templates
   pages/
@@ -124,6 +129,37 @@ bun run lint
 ```
 
 ## Decided without asking
+
+- **`zone.css` does not `@import` the other three.** The brief asked for it;
+  the CSS ownership gate (ported from Pico) forbids a CSS import chain because
+  Vite would read those files outside Caliper's take overlay. `src/index.ts`
+  imports tokens, fonts and `zone.css`; each component imports
+  `zone-motion.css` itself when its stylesheet names a keyframe.
+- **The plan's constants live twice.** `src/plan/zone-select.ts` is the one
+  function; `zone-tokens.css` repeats every constant (including the two
+  thresholds) so Caliper shows them as knobs. `test/plan-zone-select.test.ts`
+  holds the two equal, so they cannot drift. Turning a knob in Caliper moves
+  the CSS only; the TS plan does not read CSS.
+- **The root measures, the shell is a shape.** `useZonePlan` reads the root
+  with a ResizeObserver through `useSyncExternalStore` (a measurement, not
+  state) and `ZoneSurface` hands the plan's two discrete answers to
+  `ZoneShell` as `strips` and `band` props. The shell never measures.
+- **Parallelogram slant is a length, not an angle.** `clip-path` polygons take
+  lengths, and Mania's lean looks the same on short and tall panels. The
+  stripe under a card title keeps an angle token (`--zone-stripe-angle`).
+- **Ground opacities stay.** The rings and bands show through at the mockup's
+  opacities, as tokens. They are the ground's own drawing with no edge to
+  blur; everything with lettering on it is solid.
+- **Required layers grow with the work.** The decomposition gate requires a
+  template and an organism part today (`REQUIRED_LAYERS`); the worker that
+  lands the first page, molecule or atom adds it to the list.
+- **Idle resets on model change and on DOM input.** A host button that
+  changes nothing (menu while already on the tabs) does not restart the
+  timer. Recorded in `use-zone-idle.ts`.
+- **The ground's Caliper spill is accepted as Review, not declared.** Its SVG
+  children extend past the box by design and the SVG clips them; declaring
+  forty per-edge exceptions would hide real findings. Its determinism check
+  is `Inconclusive` because the rings drift.
 
 - **Device name tag.** The treaty has no device-name field. The foot's
   device tag will show the device name only when Korri publishes one as a
