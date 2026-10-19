@@ -972,8 +972,21 @@ assert requirements.constants.surfaceId == "pico";
 assert rg353m.services.korri.webSurfaceHost.surfaceId == "pico";
 assert rg353m.systemd.services.korri-chromium-kiosk.environment.KORRI_WEB_SURFACE_URL == "http://127.0.0.1:8099/?surface=pico";
 assert rg353m.services.korridLinuxDevice.address == requirements.constants.korridAddress;
-assert rg353m.services.korri.compositor.kiosk.extraChromiumArgs == [ "--disable-gpu" ];
+assert
+  rg353m.services.korri.compositor.kiosk.extraChromiumArgs == [
+    "--disable-gpu"
+    "--force-prefers-reduced-motion"
+  ];
 assert standalone.config.services.korri.compositor.kiosk.extraChromiumArgs == [ ];
+# Only the RG353M forces reduced motion; the product itself passes no flags.
+assert
+  builtins.fromJSON (
+    builtins.readFile standalone.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
+  ) == [ ];
+assert
+  builtins.fromJSON (
+    builtins.readFile korri.nixosConfigurations.rpminiv2.config.systemd.services.korri-chromium-kiosk.environment.KORRI_CHROMIUM_ARGS_FILE
+  ) == [ ];
 assert
   rg353m.services.korriLinuxHost.compositor.drmDevice
   == "/dev/dri/by-path/platform-display-subsystem-card";

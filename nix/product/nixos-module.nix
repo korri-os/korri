@@ -15,10 +15,7 @@ in
     ../base
     ../device-cache/nixos-module.nix
     (import ../../services/inputd/nix/korri-linux-host-core.nix { inherit korri; })
-    (import ../../clients/portal/nix/nixos-module.nix {
-      inherit korri;
-      chromiumArgs = [ "--force-prefers-reduced-motion" ];
-    })
+    (import ../../clients/portal/nix/nixos-module.nix { inherit korri; })
     (import ../../services/korrid/plugin-host/nixos-module.nix { inherit korri; })
     # Lifted from the RP Mini V2 on 2026-09-30 so every device ships them.
     ./controls.nix

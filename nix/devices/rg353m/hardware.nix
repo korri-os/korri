@@ -53,7 +53,12 @@ in
 
   # Recorded limit: Chromium's GPU path has not been accepted on the RG353M.
   # Keep software rendering local to this device rather than product policy.
-  services.korri.compositor.kiosk.extraChromiumArgs = [ "--disable-gpu" ];
+  # Reduced motion was its thermal measure under software rendering
+  # (docs/acceptance/rg353m-portal-2026-09-06.md); other devices animate.
+  services.korri.compositor.kiosk.extraChromiumArgs = [
+    "--disable-gpu"
+    "--force-prefers-reduced-motion"
+  ];
 
   # Native device testing crossed 68 C at the previous 1.8 GHz ceiling. The
   # 1.104 GHz ceiling sustained GBA below 60 C with schedutil. The product's
