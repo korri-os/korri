@@ -63,6 +63,19 @@ export function ChooseLocation() { return home(fixtureModel, "shelf", fixtureShe
 export function Starting() {
   return home({ ...fixtureModel, status: { _tag: "Busy", kicker: "STARTING", detail: "Preparing the game.", gameId: "hollow" } })
 }
+/** A launch the host can still cancel, as the RP Mini V2 showed on 2026-10-18. */
+export function StartingWithCancel() {
+  return home({
+    ...fixtureModel,
+    status: {
+      _tag: "Busy",
+      kicker: "Starting Hollow…",
+      detail: "Opening your session",
+      gameId: "hollow",
+      actions: [{ id: "cancel", label: "Cancel", enabled: true }],
+    },
+  })
+}
 export function Running() {
   return home({ ...fixtureModel, status: { _tag: "Running", kicker: "PLAYING", gameId: "hollow" } })
 }

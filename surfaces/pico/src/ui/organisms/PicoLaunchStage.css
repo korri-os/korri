@@ -110,7 +110,10 @@
 
 .pico-launch-stage-cell {
 	background: var(--pico-plate);
-	animation: pico-light 1ms steps(1, end) forwards;
+	/* `start`, not `end`: Chromium can hold a finished cell at progress
+	 * 0.9999999999998899 (seen from a 1.08 s delay), and `end` floors that to
+	 * the unlit frame. `start` lights the cell for any progress above zero. */
+	animation: pico-light 1ms steps(1, start) forwards;
 }
 
 .pico-launch-stage[data-phase="running"] .pico-launch-stage-cell {
@@ -160,11 +163,12 @@
 }
 
 /* The art leaves room for the shell (14), the shadow margin (8), the mouth
- * (14) and the 8 the cart starts above its rest, so the top of the cart is
- * never clipped: 44 virtual pixels. */
+ * (14) and the 20 the cart starts above its rest (8 from pico-seat here, 12
+ * from the still cart's own pico-land), so the top of the cart is never
+ * clipped: 56 virtual pixels. */
 .pico-launch-stage-cart {
 	--pico-cart-art-w: 60cqw;
-	--pico-cart-art-h: calc(100cqh - var(--pico-px) * 44);
+	--pico-cart-art-h: calc(100cqh - var(--pico-px) * 56);
 	display: block;
 	translate: 0 calc(var(--pico-px) * 24);
 	animation: pico-seat 1200ms steps(8, end);
