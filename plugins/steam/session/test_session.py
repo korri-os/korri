@@ -190,7 +190,11 @@ class SteamSessionTests(unittest.TestCase):
         def setgid_tree(home):
             (home / "steamapps/common").mkdir(parents=True, exist_ok=True)
             for directory in (home, home / "steamapps", home / "steamapps/common"):
-                directory.chmod(0o2770)
+                try:
+                    directory.chmod(0o2770)
+                except PermissionError:
+                    # The Nix build sandbox refuses setgid, like the game unit.
+                    self.skipTest("this sandbox refuses setgid directories")
 
         result, home, _ = self.run_session("game", setup=setgid_tree)
         self.assertEqual(result.returncode, 0, result.stderr)
