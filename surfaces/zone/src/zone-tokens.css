@@ -324,6 +324,10 @@
   --zone-key-height: 40px;
   /** The room between keys. @label Key gap @min 0 @max 20 @step 1 */
   --zone-key-gap: 6px;
+  /** A key never gets narrower than this; a row wraps instead. @label Key width, least @min 16 @max 80 @step 1 */
+  --zone-key-min: 36px;
+  /** The slant of the keyboard panel itself. @label Keyboard slant @min 0 @max 80 @step 1 */
+  --zone-keyboard-slant: 28px;
   /** The typed slab's caps. @label Slab type @min 12 @max 48 @step 1 */
   --zone-type-slab: 26px;
   /** The typed slab's height. @label Slab height @min 24 @max 100 @step 1 */

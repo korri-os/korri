@@ -16,3 +16,8 @@
 .zone-part-frame[data-shape="wide-short"] {
   height: 28%;
 }
+
+.zone-part-frame[data-shape="tiny"] {
+  width: 18%;
+  height: 24%;
+}
