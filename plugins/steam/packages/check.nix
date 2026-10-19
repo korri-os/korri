@@ -10,6 +10,7 @@ in
 pkgs.runCommand "steam-session-check"
   {
     nativeBuildInputs = with pkgs; [
+      acl
       bash
       shellcheck
       python3

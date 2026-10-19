@@ -1,6 +1,7 @@
 """Run the real session state machine with filesystem IPC and real processes."""
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -218,6 +219,39 @@ class SteamSessionTests(unittest.TestCase):
         status = Path(f"/proc/{pid}/status")
         self.assertTrue(not status.exists() or "State:\tZ" in status.read_text(),
                         "a SIGTERM-ignoring process with SteamAppId survived the session")
+
+    def test_repeated_sigterm_still_kills_leftovers(self):
+        # Prepare the same tree run_session builds, but drive the process.
+        self.run_session("game")
+        home = self.root / "steam"
+        for name in ("shutdown", "forwards", "leftover.pid"):
+            (home / name).unlink(missing_ok=True)
+        env = {
+            **os.environ, "STEAM_HOME": str(home), "HOME": str(self.root),
+            "CLIENT_BEHAVIOR": "leftover-hold", "PREPARE_BEHAVIOR": "ready",
+            "STEAM_BETA": "steamdeck_stable",
+            "KORRI_CACHE_ROOT": str(self.root / "cache"),
+            "KORRI_FEX_PREPARE": str(self.root / "bin/fex-prepare"),
+            "KORRI_FEX_CONFIG": str(self.root / "fex-config"),
+            "KORRI_PROTON_CACHYOS_PREPARE": str(self.root / "bin/cachyos-prepare"),
+        }
+        session = subprocess.Popen(["bash", str(self.root / "session.sh"), "401710"],
+                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: session.poll() is None and session.kill())
+        deadline = time.monotonic() + 30
+        while not (home / "leftover.pid").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        pid = int((home / "leftover.pid").read_text())
+        session.send_signal(signal.SIGTERM)
+        time.sleep(0.3)
+        session.send_signal(signal.SIGTERM)
+        session.communicate(timeout=30)
+        status = Path(f"/proc/{pid}/status")
+        deadline = time.monotonic() + 5
+        while status.exists() and "State:\tZ" not in status.read_text() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertTrue(not status.exists() or "State:\tZ" in status.read_text(),
+                        "a second SIGTERM cut the cleanup short")
 
     def test_setgid_is_cleared_from_the_steam_home(self):
         def setgid_tree(home):

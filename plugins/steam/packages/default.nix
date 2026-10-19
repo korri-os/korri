@@ -16,6 +16,7 @@ let
   sessionRun = pkgs.writeShellApplication {
     name = "steam-session-run";
     runtimeInputs = with pkgs; [
+      acl
       coreutils
       diffutils
       findutils

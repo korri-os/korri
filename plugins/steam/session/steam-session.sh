@@ -104,6 +104,10 @@ kill_leftovers() {
 }
 shutdown() {
   local deadline=$((SECONDS + 15))
+  # A stop delivers SIGTERM more than once: systemd signals the whole unit and
+  # Gamescope's reaper forwards its own. A second TERM must not run the TERM
+  # trap's exit while this cleanup runs, or leftovers keep the unit alive.
+  trap '' TERM INT HUP
   [[ -n "$steam_pid" ]] || return 0
   say 'end: stopping Steam'
   timeout 15 @fhs@/bin/steam-arm64-fhs -shutdown >/dev/null 2>&1 || true
@@ -276,7 +280,20 @@ run_prepare() {
 # refuses an extractor's chmod of such a directory, and Steam's own unpacking
 # fails. Clear the bit on every directory this user owns in the Steam home.
 find "$STEAM_HOME" -xdev -type d -perm -2000 -user "$(id -u)" -exec chmod g-s {} +
-mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-data"
+mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-data" "$STEAM_HOME/steamapps"
+# korrid discovers installed games from steamapps/appmanifest_*.acf (Korri
+# ADR 0011). It is the owner of the account root above this home, and gets
+# no access to a directory this user creates. Grant it listing of the home
+# (korrid opens each path component for reading) and read access to
+# steamapps, nothing more: saves and credentials stay private to this user.
+daemon_uid=$(stat -c %u "$(dirname "$STEAM_HOME")")
+if [[ "$daemon_uid" != "$(id -u)" ]]; then
+  setfacl -m "u:$daemon_uid:rx" "$STEAM_HOME"
+  setfacl -m "u:$daemon_uid:rx" -m "d:u:$daemon_uid:r" "$STEAM_HOME/steamapps"
+  # Manifests that already exist predate the default entry.
+  find "$STEAM_HOME/steamapps" -maxdepth 1 -name 'appmanifest_*.acf' \
+    -exec setfacl -m "u:$daemon_uid:r" {} +
+fi
 # A lock spans settings and the client lifetime. Never edit Steam-owned VDF
 # concurrently with another launch of this session program.
 exec 9>"$STEAM_HOME/.korri-session.lock"
