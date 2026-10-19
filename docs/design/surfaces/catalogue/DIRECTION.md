@@ -6,34 +6,39 @@
 
 | Name | Hex | Use |
 |---|---|---|
-| Newsprint | `#d3d4cd` | the paper; photos multiply into it |
-| Press ink | `#1d2136` | all type, rules, plate edges, the Order form tab |
-| Process magenta | `#b00c62` | the one spot colour: item numbers, current tab, "You left off here", How to order box |
+| Newsprint | `#d3d4cd` | the paper, with two layers of ink-coloured noise: fine fibre and a slow mottle |
+| Press ink | `#1d2136` | all type, rules, keylines, the halftone screen, the Order form tab |
+| Process magenta | `#b00c62` | the one spot colour: item numbers, current tab, "Still open", the How-to-order screen tint |
 | Graphite | `#36373d` | the pencil mark only; never printed |
-| Page back | `#c3c4bc` | the dog-ear, page curls, unselected tabs |
+| Page back | `#c3c4bc` | the folded corner, page curls, unselected tabs |
 | Desk | `#474c55` | the table under the book |
 
 ## Type
 
-- **Geist** (local variable font, embedded as woff2). A plain grotesque at 500–900. It has no serif and no broadsheet manners. Item numbers are set at 900 with tight tracking in magenta. They are the typographic moment. Play facts sit where a price would go: the count in bold and "last …" in small print.
-- **m5x7** (CC0, from Pico's folder) is used only *inside* the four box-art panels I drew. Never for catalogue copy.
+- **Geist** (local variable font, embedded as woff2), the only face. Item numbers at 900 with tight tracking in magenta are the typographic moment; a hair of text-shadow in the same ink stands for a solid spot pressed on soft stock. Titles 750, the system in 650, small print in soft ink. Play facts sit where a price goes: the count bold as the price, the time under it as the unit line ("41 plays / 2 hours ago"). Only an item narrower than 104px gives up that position and runs the facts under the title.
+- The four games with no sample picture (Petal Quest, Super Metroid, Zelda, Wario Land 4) carry flat vector box art drawn at their systems' box ratios, with titles in Geist. No pixel font anywhere.
+
+## Print
+
+Every picture is a **plate**: a 1px keyline, a 3px paper margin, the picture multiplied into the paper, a soft inner edge where ink meets margin, and a 45° halftone screen over it. The running head sits on a thick-and-thin rule. The gutter darkens into the spine with a little show-through. The How-to-order box is a screen tint of the spot colour, not a flat fill.
 
 ## The memorable element
 
-A **graphite pencil loop**. It is drawn twice round, a little off, around whatever has focus. It moves between items and onto the fore-edge tabs. The rest of the page stays quiet print.
+A **graphite pencil loop**, drawn twice round, a little off, around whatever has focus. It reaches 9px past the item; the column gap is wider than that, so it never touches a neighbour. It moves between items and onto the fore-edge tabs. The rest of the page stays quiet print.
+
+## Order on the page
+
+Titles run **A to Z** across each page, left to right then down, ignoring a leading "The" (Zelda files under L). Item numbers are Korri's catalog order, the number you write on the form, and so are not sequential on the page; the left page's foot says so. The featured item is larger but keeps its place in the run.
 
 ## How the skeleton reads from this spread
 
-- Running header: `Order line hummingbird-lake, 72% clear` / `The mini edition. Play facts correct at 21:47`. Season and order line, in the paper's idiom.
-- Fore-edge tabs: Index (front), Games A–M, Games N–Z (magenta, here), and **Order form**, printed in solid ink with the words "device, Wi-Fi, account". The pencil reaches the tabs by moving right off the page. A is the only button needed.
-- Two places print as empty tick boxes ("choose one on the order form"). Celeste has the dog-eared page corner and "You left off here". Comet Courier gets the crossed "No picture" panel.
-- At 640×480 one page shows. The facing page is a labelled sliver at the gutter ("one turn back"). Moving left off the page turns it, and the same item stays circled.
+- Running header: `Order line hummingbird-lake, 72% clear` / `The mini edition. Play facts correct at 21:47`. The clock is one step above the small print, not a status bar.
+- Fore-edge tabs: Index, Games A–M, Games N–Z (magenta, the open page), and **Order form** in solid ink with "device, Wi-Fi, account". The pencil reaches the tabs by moving right off the page; the magenta tab follows the page that is open.
+- Two places print as empty tick boxes ("choose one on the order form"). Celeste's plate has a **folded-down corner** and reads "Still open. Carry on where you stopped." Comet Courier gets the crossed "No picture" panel.
+- At 640×480 one page shows; the facing page is a labelled sliver at the gutter ("one turn back"). Moving left off the page turns it and lands on the item nearest the gutter. Below 520px of height the tabs drop their second line.
 
 ## Text entry: the order form's box-per-letter fields
 
 The Wi-Fi password field is printed like a paper form: **one box per character**. Under it is a printed **letter chart** of four rows (a–z, A–Z, 0–9, symbols). The d-pad moves the pencil on the chart. **A** writes that character into the next empty box. **B** rubs out the last box. A printed "show letters" tick box decides if the boxes show the characters or dots. The pencil goes from the chart to the "Join" line by moving down off the chart.
 
-**QR code:** it is printed in the top corner of the order form as an **"Order by phone" panel**, beside the Wi-Fi and Account sections. It is the fast route for the 40-character identity string and for passwords after the device is online. Scanning it fills the same boxes. The letter chart stays the fallback for a first Wi-Fi join, because the phone cannot reach the device until it has a network. (Assumption: Korri would need to publish such a phone hand-off. Today it does not.)
-
-- The sample art carries baked-in titles for 7 games. Petal Quest, Super Metroid, Zelda and Wario Land 4 have no matching picture, so I drew those four as SVG box art at their own ratios. Comet Courier's picture is not used, because the brief says it has no cover.
-- The stress set in this one screen: a long title (Zelda wraps to 3 lines), a missing cover, zero plays next to 112, and two-place items. Items narrower than 150px move the play facts under the title. Blank, loading and error states are not drawn (one screen only).
+**QR code:** printed in the top corner of the order form as an **"Order by phone" panel**, beside the Wi-Fi and Account sections. It is the fast route for the 40-character identity string and for passwords after the device is online; scanning it fills the same boxes. The letter chart stays the fallback for a first Wi-Fi join. (Assumption: Korri would need to publish such a phone hand-off. Today it does not.)

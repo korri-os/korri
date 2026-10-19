@@ -23,7 +23,7 @@ summarised at the end of this file.
 | Folder | Direction | Skeleton | Status |
 |---|---|---|---|
 | `teletext/` | Broadcast teletext service | Numbered pages, 40×24 cells, Fastext colour row as the last focus stop | Usable |
-| `catalogue/` | Mail-order catalogue | Paper spreads, item numbers, order form at the back | Usable |
+| `catalogue/` | Mail-order catalogue | Paper spreads, item numbers, order form at the back | Usable; refined 2026-10-19 (print texture, plates, A–Z order, loop clearance, vector covers) |
 | `workbench/` | Amiga Workbench 2.x desktop | Overlapping windows and drawers; tile at small sizes | Usable. Cover-derived icons are ruled out (see below); use per-system chassis icons with the title as label |
 | `adventure/` | LucasArts SCUMM room | One painted scene, 3×3 verb grid, inventory; sentence line "Use X with Y" | Under review |
 | `house/` | Little Computer People cutaway | Side-view rooms, a figure walks; one capability per room | Under review |
