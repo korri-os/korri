@@ -277,5 +277,14 @@ export function tvStatusFrom(model: SurfaceModel): TvStatus {
         canRetry: status.canRetry,
         ...(status.gameTitle === undefined ? {} : { title: status.gameTitle }),
       }
+    // Confirm: Boxbuster has no deck for it yet; the TV states the question.
+    default:
+      return {
+        _tag: "Working",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(status.gameId === undefined ? {} : { tapeId: status.gameId }),
+        lines: status.actions.map(action => action.label),
+      }
   }
 }

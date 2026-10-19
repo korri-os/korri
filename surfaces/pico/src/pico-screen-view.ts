@@ -26,7 +26,17 @@ export type PicoScreenView =
       readonly _tag: "Busy"
       readonly kicker: string
       readonly detail?: string
+      /** Bytes done and, when Korri knows it, bytes in all: a real bar. */
+      readonly progress?: { readonly done: number; readonly total?: number }
       readonly actions?: readonly SurfaceAction[]
+      readonly cart?: PicoLaunchCart
+    }
+  /** Korri asks before it acts. The actions are Korri's; Pico renders them. */
+  | {
+      readonly _tag: "Confirm"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
       readonly cart?: PicoLaunchCart
     }
   | {
@@ -58,7 +68,18 @@ export function picoScreenViewFromModel(model: SurfaceModel): PicoScreenView {
         _tag: "Busy",
         kicker: status.kicker,
         ...(status.detail === undefined ? {} : { detail: status.detail }),
+        ...(status.progress === undefined ? {} : { progress: status.progress }),
         ...(status.actions === undefined ? {} : { actions: status.actions }),
+        ...(cart === undefined ? {} : { cart }),
+      }
+    }
+    case "Confirm": {
+      const cart = cartFor(model, status.gameId)
+      return {
+        _tag: "Confirm",
+        kicker: status.kicker,
+        ...(status.detail === undefined ? {} : { detail: status.detail }),
+        actions: status.actions,
         ...(cart === undefined ? {} : { cart }),
       }
     }

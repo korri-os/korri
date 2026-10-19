@@ -76,6 +76,13 @@ export interface SurfaceGame {
   readonly playCount?: number
   /** Summed recorded session length. Absent together with lastPlayedAt. */
   readonly totalPlaytimeSeconds?: number
+  /**
+   * Present when launching this game first needs something downloaded to
+   * this device (a runtime it depends on, not the game itself). `bytes` is the
+   * total still to fetch; absent when Korri does not know the size. Surfaces
+   * format it; Korri never ships a label. Absent when nothing is needed.
+   */
+  readonly download?: { readonly bytes?: number }
 }
 
 /**
@@ -193,10 +200,32 @@ export type SurfaceStatus =
       readonly kicker: string
       /** Optional progress detail. Never an error code or raw output. */
       readonly detail?: string
+      /**
+       * Measured progress, in bytes, when the work has a known position. A
+       * surface draws a real bar from it; without it the work has no known
+       * end and the surface shows only that it is under way. `total` is
+       * absent when Korri knows how far it has got but not how far it goes.
+       */
+      readonly progress?: { readonly done: number; readonly total?: number }
       /** Actions supplied by the host for this work, such as real cancellation.
        * The surface renders them; it never infers cancellation from a label. */
       readonly actions?: readonly SurfaceAction[]
       /** The game this work belongs to, when it belongs to exactly one. */
+      readonly gameId?: string
+    }
+  /**
+   * Korri needs the user's say-so before it does something, such as a large
+   * download. `kicker` is the short question ("Needs a download"); `detail`
+   * names what and how much. The surface renders exactly the host's actions
+   * and reports the chosen one through `runAction`; it never infers which
+   * one agrees or declines from a label.
+   */
+  | {
+      readonly _tag: "Confirm"
+      readonly kicker: string
+      readonly detail?: string
+      readonly actions: readonly SurfaceAction[]
+      /** The game this question belongs to, when it belongs to exactly one. */
       readonly gameId?: string
     }
   /** A launch is live. `gameId` is present when Korri knows which one. */
