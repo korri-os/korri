@@ -14,6 +14,8 @@ struct RunnerReference {
 #[derive(Deserialize)]
 struct References {
     #[serde(default)]
+    artifacts: BTreeMap<String, crate::plugin::ArtifactRecord>,
+    #[serde(default)]
     runners: BTreeMap<String, RunnerReference>,
 }
 
@@ -22,6 +24,16 @@ pub fn validate_files(
     files: &BTreeMap<String, std::path::PathBuf>,
 ) -> Result<(), String> {
     let references: References = serde_json::from_value(declaration).map_err(|e| e.to_string())?;
+    for artifact in references.artifacts.values() {
+        if let Some(key) = &artifact.unpack {
+            if key.contains(['/', '@']) || !files.contains_key(key) {
+                return Err(format!(
+                    "artifact {} requires unpack file in its own package",
+                    artifact.id
+                ));
+            }
+        }
+    }
     for runner in references.runners.values() {
         for key in [runner.program.as_ref(), runner.core.as_ref()]
             .into_iter()

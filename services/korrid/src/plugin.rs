@@ -170,10 +170,34 @@ pub struct ModifierRecord {
     pub id: String,
 }
 
+/// Pinned inputs and the plugin-owned unpack program (ADR 0012).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactRecord {
+    pub id: String,
+    pub version: String,
+    pub files: Vec<ArtifactFile>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub unpack: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub title: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ArtifactFile {
+    pub url: String,
+    pub sha256: String,
+    #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+    pub bytes: Option<u64>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RunnerRecord {
     pub id: String,
+    #[serde(default)]
+    pub artifacts: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
     pub family: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_non_null")]
@@ -301,6 +325,7 @@ pub struct Plugin {
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
+    artifacts: BTreeMap<String, ArtifactRecord>,
     modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -341,6 +366,7 @@ pub struct PluginRegistry {
     systems: BTreeMap<String, SystemRecord>,
     families: BTreeMap<String, FamilyRecord>,
     runners: BTreeMap<String, RunnerRecord>,
+    artifacts: BTreeMap<String, ArtifactRecord>,
     modifiers: BTreeMap<String, ModifierRecord>,
     transports: BTreeMap<String, TransportRecord>,
     session_controls: BTreeMap<String, SessionControlRecord>,
@@ -375,6 +401,7 @@ impl PluginRegistry {
         let mut systems = BTreeMap::new();
         let mut families = BTreeMap::new();
         let mut runners = BTreeMap::new();
+        let mut artifacts = BTreeMap::new();
         let mut modifiers = BTreeMap::new();
         let mut transports = BTreeMap::new();
         let mut session_controls = BTreeMap::new();
@@ -424,6 +451,9 @@ impl PluginRegistry {
                     record.clone(),
                 )?;
             }
+            for record in plugin.artifacts.values() {
+                insert_unique(&mut artifacts, record.id.clone(), record.clone())?;
+            }
             for record in plugin.modifiers.values() {
                 insert_unique(&mut modifiers, record.id.clone(), record.clone())?;
             }
@@ -436,6 +466,18 @@ impl PluginRegistry {
             }
             for record in plugin.session_controls.values() {
                 insert_unique(&mut session_controls, record.id.clone(), record.clone())?;
+            }
+        }
+
+        for runner in runners.values() {
+            for id in &runner.artifacts {
+                if !artifacts.contains_key(id) {
+                    return Err(invalid_contribution(
+                        "runner",
+                        &runner.id,
+                        "artifact is not loaded and enabled",
+                    ));
+                }
             }
         }
 
@@ -510,6 +552,7 @@ impl PluginRegistry {
             systems,
             families,
             runners,
+            artifacts,
             modifiers,
             transports,
             session_controls,
@@ -611,6 +654,28 @@ impl PluginRegistry {
             }
         }
         Ok(files)
+    }
+
+    pub fn artifacts(&self) -> &BTreeMap<String, ArtifactRecord> {
+        &self.artifacts
+    }
+
+    pub fn artifact(&self, id: &str) -> Result<&ArtifactRecord, PluginError> {
+        self.artifacts.get(id).ok_or_else(|| {
+            invalid_contribution("artifact", id, "artifact is not loaded and enabled")
+        })
+    }
+
+    pub fn artifacts_for_runner(&self, id: &str) -> Result<Vec<&ArtifactRecord>, PluginError> {
+        let runner = self
+            .runners
+            .get(id)
+            .ok_or_else(|| invalid_contribution("runner", id, "runner is unavailable"))?;
+        runner
+            .artifacts
+            .iter()
+            .map(|id| self.artifact(id))
+            .collect()
     }
 
     pub fn native_runner(&self, id: &str) -> Result<&RunnerRecord, PluginError> {
@@ -826,6 +891,8 @@ struct PluginDeclaration {
     #[serde(default)]
     runners: BTreeMap<String, RunnerRecord>,
     #[serde(default)]
+    artifacts: BTreeMap<String, ArtifactRecord>,
+    #[serde(default)]
     modifiers: BTreeMap<String, ModifierRecord>,
     #[serde(default)]
     transports: BTreeMap<String, TransportRecord>,
@@ -985,6 +1052,48 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
                     modifier.id
                 ),
             });
+        }
+    }
+
+    for (key, artifact) in &mut declaration.artifacts {
+        let invalid = |reason| invalid_contribution("artifact", key, reason);
+        if !is_provider_segment(key) || artifact.id != plugin_record_id(&id, key) {
+            return Err(invalid("artifact id must match its owner and local key"));
+        }
+        if artifact.version.is_empty()
+            || artifact.version.starts_with('.')
+            || artifact.version.contains('/')
+            || artifact.version.chars().any(char::is_control)
+        {
+            return Err(invalid(
+                "artifact version must be one safe non-hidden path segment",
+            ));
+        }
+        if artifact
+            .unpack
+            .as_ref()
+            .is_some_and(|key| !is_provider_segment(key))
+        {
+            return Err(invalid("unpack must be a bare file key"));
+        }
+        if artifact.files.is_empty() {
+            return Err(invalid("artifact files must not be empty"));
+        }
+        let mut hashes = BTreeSet::new();
+        for file in &mut artifact.files {
+            if !file
+                .sha256
+                .strip_prefix("sha256:")
+                .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return Err(invalid(
+                    "artifact hash must be sha256 followed by 64 hex digits",
+                ));
+            }
+            file.sha256.make_ascii_lowercase();
+            if !hashes.insert(&file.sha256) {
+                return Err(invalid("artifact hashes must not repeat"));
+            }
         }
     }
 
@@ -1216,6 +1325,7 @@ fn normalize_plugin(mut declaration: PluginDeclaration) -> Result<Plugin, Plugin
         systems: declaration.systems,
         families: declaration.families,
         runners: declaration.runners,
+        artifacts: declaration.artifacts,
         modifiers: declaration.modifiers,
         transports: declaration.transports,
         session_controls: declaration.session_controls,
@@ -1867,5 +1977,94 @@ mod tests {
         assert_eq!(registry.declared_hash(&hash).len(), 4);
         assert_eq!(registry.declared_hash(&hash)[0].release_key, "original");
         assert!(registry.declared_hash("sha1:unknown").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod artifact_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn declaration() -> serde_json::Value {
+        json!({"name":"runtime", "artifacts":{"rootfs":{
+            "id":"@test:runtime/rootfs", "version":"2026-10", "files":[{
+                "url":"https://example.com/rootfs.tar", "sha256":format!("sha256:{}", "A".repeat(64)), "bytes":123
+            }], "unpack":"unpack"
+        }}})
+    }
+    fn decode(value: serde_json::Value) -> Result<Plugin, PluginError> {
+        decode_plugin_declaration("@test", &value.to_string())
+    }
+    #[test]
+    fn artifact_declarations_preserve_order_and_normalize_hashes() {
+        let plugin = decode(declaration()).unwrap();
+        assert_eq!(
+            plugin.artifacts["rootfs"].files[0].sha256,
+            format!("sha256:{}", "a".repeat(64))
+        );
+        let source = format!(
+            "export const name='runtime'; export const artifacts={};",
+            declaration()["artifacts"]
+        );
+        assert!(load_plugin_source("@test", &source).is_ok());
+    }
+    #[test]
+    fn artifact_declarations_reject_unsafe_or_ambiguous_records() {
+        for (field, value) in [
+            ("id", json!("@other:runtime/rootfs")),
+            ("id", json!("@test:runtime/other")),
+            ("version", json!("")),
+            ("version", json!(".")),
+            ("version", json!("..")),
+            ("version", json!(".hidden")),
+            ("version", json!("a/b")),
+            ("version", json!("a\0b")),
+            ("unpack", json!("../unpack")),
+            ("unpack", json!("@test:other/unpack")),
+            ("unpack", json!(null)),
+            ("extra", json!(true)),
+            ("files", json!([])),
+        ] {
+            let mut record = declaration();
+            record["artifacts"]["rootfs"][field] = value;
+            assert!(decode(record).is_err(), "{field}");
+        }
+        for version in ["", ".", "..", ".hidden", "a/b", "a\0b"] {
+            let mut value = declaration();
+            value["artifacts"]["rootfs"]["version"] = json!(version);
+            assert!(decode(value).is_err(), "{version:?}");
+        }
+        for hash in [
+            "sha1:abcd".to_owned(),
+            "a".repeat(64),
+            format!("sha256:{}", "z".repeat(64)),
+        ] {
+            let mut value = declaration();
+            value["artifacts"]["rootfs"]["files"][0]["sha256"] = json!(hash);
+            assert!(decode(value).is_err());
+        }
+        let mut value = declaration();
+        let file = value["artifacts"]["rootfs"]["files"][0].clone();
+        value["artifacts"]["rootfs"]["files"] = json!([file, file]);
+        assert!(decode(value).is_err());
+    }
+    #[test]
+    fn runners_resolve_only_enabled_artifacts() {
+        let runtime = decode(declaration()).unwrap();
+        let runner = load_plugin_source("@test", "export const name='player'; export const runners={play:{id:'@test:player/play', command:'play', artifacts:['@test:runtime/rootfs']}};").unwrap();
+        assert!(PluginRegistry::new(
+            vec![runner.clone(), runtime.clone()],
+            ["@test:player".into()]
+        )
+        .is_err());
+        let registry = PluginRegistry::new(
+            vec![runner, runtime],
+            ["@test:player".into(), "@test:runtime".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            registry.artifacts_for_runner("@test:player/play").unwrap()[0].id,
+            "@test:runtime/rootfs"
+        );
     }
 }
