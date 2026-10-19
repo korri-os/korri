@@ -135,8 +135,19 @@
 .pico-launch-stage-cell[data-cell="14"] { animation-delay: 1350ms; }
 .pico-launch-stage-cell[data-cell="15"] { animation-delay: 1440ms; }
 
+/* Without motion the meter shows where it holds: full. Left at its first
+ * frame, sixteen dark cells read as a launch that has stalled. */
+@media (prefers-reduced-motion: reduce) {
+	.pico-launch-stage-cell {
+		background: var(--pico-ok);
+	}
+}
+
 /* The slot: the cartridge stands in it and sinks while the game starts. The
- * mouth covers the cart's lower edge, which is what makes it read as "in". */
+ * mouth covers the cart's lower edge, which is what makes it read as "in".
+ * The slot clips at its own bottom edge, which is the mouth's, so the part of
+ * the cart that has gone in is gone: it never shows below the mouth or over
+ * the rows under the slot. */
 .pico-launch-stage-slot {
 	container: pico-slot / size;
 	position: relative;
@@ -145,11 +156,15 @@
 	align-content: end;
 	width: 100%;
 	min-height: 0;
+	overflow: clip;
 }
 
+/* The art leaves room for the shell (14), the shadow margin (8), the mouth
+ * (14) and the 8 the cart starts above its rest, so the top of the cart is
+ * never clipped: 44 virtual pixels. */
 .pico-launch-stage-cart {
 	--pico-cart-art-w: 60cqw;
-	--pico-cart-art-h: calc(100cqh - var(--pico-px) * 40);
+	--pico-cart-art-h: calc(100cqh - var(--pico-px) * 44);
 	display: block;
 	translate: 0 calc(var(--pico-px) * 24);
 	animation: pico-seat 1200ms steps(8, end);

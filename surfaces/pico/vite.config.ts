@@ -5,8 +5,18 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   // Open Pico in the Caliper app; the app owns the take agent and its settings.
-  // Pico targets the two handhelds, not Caliper's standard phones and screens.
-  plugins: [caliper({ devices: ["rg353m", "odin2portal"] })],
+  // Pico targets the handhelds, not Caliper's standard phones and screens.
+  plugins: [caliper({
+    devices: ["rg353m", "odin2portal", {
+      id: "rpminiv2",
+      name: "RP MINI V2",
+      widthMm: 75,
+      heightMm: 65,
+      cssWidth: 1240,
+      cssHeight: 1080,
+      viewportNote: "From nix/devices/rpminiv2/portal.nix: 1080 x 1240 DSI-1 at transform 90, scale 1. Millimetres inferred from a 3.92 in diagonal.",
+    }],
+  })],
   // Vite answers 403 for host names it does not know. These are this machine's tailnet names.
   server: { allowedHosts: ["zao", "zao.hummingbird-lake.ts.net"] },
 })

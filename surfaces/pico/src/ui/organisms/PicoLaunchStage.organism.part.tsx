@@ -26,6 +26,18 @@ export function NoArtwork() {
   return <PicoLaunchStage kicker={busy.kicker} cart={busy.cart} />
 }
 
+/** A launch the user can still stop: the cart, the slot and one row below. */
+export function WithCancel() {
+  return (
+    <PicoLaunchStage
+      actions={[{ id: "cancel", label: "Cancel", disabled: false, onPress: () => {} }]}
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      detail="Opening your session"
+      kicker="Starting Hollow…"
+    />
+  )
+}
+
 export const name = "Launch Stage"
 export const note = "The cart seats into its slot while the meter fills; states only what Korri published"
 
