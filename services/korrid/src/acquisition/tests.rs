@@ -496,3 +496,97 @@ async fn unpacking_is_observable_and_cannot_be_cancelled() {
         ArtifactState::Ready { .. }
     ));
 }
+
+#[tokio::test]
+async fn two_file_progress_is_cumulative_and_combines_declared_and_observed_sizes() {
+    let first = vec![b'a'; 16_384];
+    let second = b"second file".to_vec();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (release, wait) = std::sync::mpsc::channel();
+    let payloads = [first.clone(), second.clone()];
+    let server = thread::spawn(move || {
+        for (index, bytes) in payloads.into_iter().enumerate() {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut line = String::new();
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .unwrap();
+            if index == 0 {
+                socket.write_all(&bytes).unwrap();
+            } else {
+                socket.write_all(&bytes[..4]).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+                socket.write_all(&bytes[4..]).unwrap();
+            }
+        }
+    });
+    let root = tempfile::tempdir().unwrap();
+    let declaration = serde_json::json!({"name":"runtime", "artifacts":{"payload":{
+        "id":"@test:runtime/payload", "version":"v1", "files":[
+            {"url":format!("http://{address}/first"), "sha256":format!("sha256:{}", hex::encode(Sha256::digest(&first))), "bytes":first.len()},
+            {"url":format!("http://{address}/second"), "sha256":format!("sha256:{}", hex::encode(Sha256::digest(&second)))},
+        ]
+    }}});
+    let plugin =
+        crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();
+    let registry = PluginRegistry::new(vec![plugin], ["@test:runtime".into()]).unwrap();
+    let coordinator = AcquisitionCoordinator {
+        engine: download::DownloadEngine::for_test(Duration::from_secs(5)),
+        ..Default::default()
+    };
+    coordinator
+        .start(
+            root.path(),
+            root.path(),
+            &registry,
+            &["@test:runtime/payload".into()],
+        )
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let ArtifactState::Downloading {
+                file: 2,
+                file_count,
+                bytes_done,
+                bytes_total,
+                ..
+            } = state(&coordinator, root.path(), &registry)
+            {
+                if bytes_done == first.len() as u64 + 4 {
+                    assert_eq!(file_count, 2);
+                    assert_eq!(bytes_total, Some((first.len() + second.len()) as u64));
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    release.send(()).unwrap();
+    assert!(matches!(
+        settled(&coordinator, root.path(), &registry).await,
+        ArtifactState::Ready { .. }
+    ));
+    server.join().unwrap();
+    assert_eq!(
+        fs::read(root.path().join("cache/runtime/payload/v1/first")).unwrap(),
+        first
+    );
+    assert_eq!(
+        fs::read(root.path().join("cache/runtime/payload/v1/second")).unwrap(),
+        second
+    );
+}

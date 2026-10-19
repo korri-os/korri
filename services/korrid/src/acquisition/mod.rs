@@ -275,7 +275,7 @@ async fn acquire(
             biased;
             _ = cancelled.changed() => return Err(Failure::Cancelled),
             path = engine.fetch(file, &downloads, |progress| {
-                if let Some(total) = progress.total { sizes[index] = Some(total); }
+                if sizes[index].is_none() { sizes[index] = progress.total; }
                 job.lock().expect("acquisition job mutex poisoned").state = ArtifactState::Downloading {
                     file: index as u32 + 1, file_count: artifact.files.len() as u32,
                     bytes_done: completed + progress.done, bytes_total: total_bytes(&sizes), bytes_per_second: progress.rate,
