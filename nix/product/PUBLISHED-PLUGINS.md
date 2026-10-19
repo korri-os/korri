@@ -21,7 +21,7 @@ The pins come from the immutable publisher batches `build-9514b1b382d3` and
 declaration IDs of the selected packages. Path names and lists alone establish
 no identity or trust.
 
-Both architecture maps contain 26 outputs. 24 come from source
+Both architecture maps contain 29 outputs. 24 come from source
 `9514b1b382d3b963674628308d6a5770987a4bc0`: the first batch republished 23
 selected plugins for the discovery v2 plugin contract (system content rules,
 groups and `controls`; no `discovery` export), which the current host requires.
@@ -30,8 +30,16 @@ The second batch adds `@korri:solarus`, which the Starter pack requires next to
 Two come from source `ac8fae593e42dda3cf4beda0b26f190a28d6b942`: batch
 `build-ac8fae593e42-zquest` replaces the Starter pack (adding Lantern Hollow)
 and adds `@korri:zquest-classic`, which the pack now also requires; batch
-`build-ac8fae593e42` adds `@korri:gamescope`, selected on every product device
-and inactive until its device modifier is enabled (ADR 0009).
+`build-ac8fae593e42` added `@korri:gamescope`, selected on every product device.
+Batch `build-d0d960520639` (source `d0d960520639168d26e9fdf58e87240befa00c6f`)
+replaces it with the build that skips fully clipped planes, so nested
+Gamescope no longer aborts when a window moves off screen.
+Steam adds three outputs, selected on the RP Mini V2 only. `@korri:fex` and
+`@korri:proton` come from batch `build-e479fd55b3aa` (source
+`e479fd55b3aac624fb67c6f774d493b857f90c1c`); later sources rebuild them to the
+same paths. `@korri:steam` comes from batch `build-96a06b0a82ef` (source
+`96a06b0a82ef7fcb1a5d06d62b0b35f74f116983`), whose exact requirements are those
+FEX and Proton outputs.
 Each pinned path was checked against the batch's `paths-SYSTEM.txt` by
 evaluating the publisher at that commit. Earlier batches remain published but
 are no longer pinned. `published-plugin-metadata.nix` pins the

@@ -40,6 +40,15 @@ let
     "flycast"
   ];
   ds = select [ "melonds" ];
+  # Steam runs Windows games through ARM64 Proton-CachyOS with FEX for x86
+  # helpers. Only the RP Mini V2 has been accepted with it (2026-10-19).
+  # The exact required FEX and Proton plugins are selected with it, because
+  # image seeding creates a receipt only for selected packages.
+  steam = select [
+    "steam"
+    "fex"
+    "proton"
+  ];
   streamingHost = [ plugins.korri-plugin-sunshine ];
   # Key-only SSH on every device (owner decision, 2026-09-30): it is the copy
   # and debug path over the USB network link and Wi-Fi. Root authorization
@@ -50,7 +59,7 @@ in
   rg353m = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
   rgds = shared ++ n64AndDreamcast ++ streamingHost ++ ssh;
   r36tmax = shared ++ ssh;
-  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
+  rpminiv2 = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh ++ steam;
   odin2portal = shared ++ n64AndDreamcast ++ ds ++ streamingHost ++ ssh;
   # The two H700 boards use ROCKNIX's H700 table.
   # No streaming host until an encoder result exists.
