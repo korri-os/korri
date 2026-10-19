@@ -183,6 +183,80 @@ svg.px { display: block; shape-rendering: crispEdges; }
 .win.is-collapsed > :not(.titlebar) { display: none; }
 .win.is-collapsed .titlebar { border-bottom: 0; }
 
+/* ---------- Button gadgets, Prefs-editor style ---------- */
+.btn {
+  display: inline-grid; place-items: center; height: 13px; padding: 0 6px; position: relative;
+  white-space: nowrap; flex: none;
+  border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white);
+}
+.btn:focus { border-color: var(--black) var(--white) var(--white) var(--black); }
+.btn:focus::before { content: ""; position: absolute; inset: 0; border: 1px solid var(--black); }  /* the inner rim of a sunk gadget */
+/* Ghosting: a 50% checker of pen 0 laid over the text, as Workbench disables a gadget */
+.btn.ghost::after { content: ""; position: absolute; inset: 0; background: repeating-conic-gradient(var(--grey) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.req .btn.ghost::after { background: repeating-conic-gradient(var(--white) 0 25%, transparent 0 50%) 0 0 / 2px 2px; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px 4px; align-items: center; }
+.btnrow .lab { padding-right: 2px; }
+.btnrow.ends { justify-content: space-between; }
+.footstack { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--black); }
+.footstack .foot { border-top: 1px solid var(--black); }
+
+/* ---------- The game's own window ---------- */
+.gamepane { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 4px 4px 2px; align-items: flex-start; }
+.coverbox { flex: none; display: inline-block; padding: 1px; border: 1px solid; border-color: var(--black) var(--white) var(--white) var(--black); background: var(--black); }
+.coverbox svg { display: block; }
+.facts { flex: 1 1 110px; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding-top: 1px; }
+.facts .fact { overflow-wrap: anywhere; }
+.facts .btnrow { padding: 2px 0 0; }
+
+/* ---------- String gadget ---------- */
+.str {
+  display: flex; align-items: center; height: 12px; padding: 0 3px; gap: 0;
+  border: 1px solid; border-color: var(--black) var(--white) var(--white) var(--black);
+  background: var(--grey); white-space: nowrap; overflow: hidden; min-width: 120px;
+}
+.str .cur { display: none; width: 5px; height: 8px; background: var(--black); flex: none; }
+.str:focus { background: var(--white); }
+.str:focus .cur { display: block; }
+.dotc { display: inline-block; width: 5px; height: 8px; background: linear-gradient(var(--black), var(--black)) 1px 3px / 3px 3px no-repeat; }
+.strrow { display: flex; align-items: center; gap: 6px; padding: 2px 0 1px; }
+.strrow .count { flex: none; }
+
+/* ---------- List gadget (Wi-Fi networks) ---------- */
+.listwrap { margin: 4px 4px 2px; display: flex; border: 1px solid; border-color: var(--black) var(--white) var(--white) var(--black); }
+.listwrap .rows { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; padding: 1px 0; }
+.listwrap .vscroll { border-left: 1px solid var(--black); }
+.row { display: flex; align-items: center; gap: 4px; height: 11px; padding: 0 3px; white-space: nowrap; width: 100%; }
+.row svg { flex: none; }
+.row .ssid { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.row .slot { width: 9px; flex: none; }
+.row:focus, .row.is-sel { background: var(--blue); color: var(--white); }
+.row:focus .c1, .row.is-sel .c1 { fill: var(--white); }
+.row:focus .c2, .row.is-sel .c2 { fill: var(--black); }
+
+/* ---------- Keyboard window ---------- */
+.keys { display: flex; flex-direction: column; gap: 2px; padding: 3px; align-items: center; }
+.krow { display: flex; gap: 2px; justify-content: center; }
+.key {
+  flex: none; width: 18px; height: 12px; display: grid; place-items: center; position: relative;
+  border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white);
+}
+.key.w2 { width: 38px; } .key.w3 { width: 58px; } .key.w4 { width: 44px; } .key.w5 { width: 32px; }
+.key:focus { border-color: var(--black) var(--white) var(--white) var(--black); }
+.key:focus::before { content: ""; position: absolute; inset: 0; border: 1px solid var(--black); }
+
+/* ---------- System requester: pen 2 face, pen 1 double rule inset 2px, a window's title bar ---------- */
+.req {
+  position: absolute; z-index: 70; display: flex; flex-direction: column;
+  background: var(--white); color: var(--black);
+  border: 1px solid; border-color: var(--white) var(--black) var(--black) var(--white);
+}
+.req[hidden] { display: none; }
+.req .titlebar { background: var(--blue); }
+.req-inner { margin: 3px; border: 1px solid var(--black); outline: 1px solid var(--black); outline-offset: 1px; padding: 5px 8px 4px; display: flex; flex-direction: column; gap: 1px; }
+.req-inner .line { white-space: nowrap; }
+.req-inner .btnrow { padding: 5px 0 0; gap: 12px; }
+.req .str { background: var(--grey); }
+
 /* Workbench's zoom box: outlines that run from the icon to the window */
 .zoombox { position: absolute; z-index: 60; border: 1px solid var(--black); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .zoombox { display: none; } }
@@ -248,6 +322,111 @@ svg.px { display: block; shape-rendering: crispEdges; }
       </div>
       <div class="foot"><div class="status" aria-live="polite"></div><span class="sizegad" data-pix="g-size"></span></div>
     </section>
+
+    <!-- ?state=game: Spelunky's own window (C3, C4, C5, C11) -->
+    <section class="win" data-win="game" aria-label="Spelunky">
+      <div class="titlebar">
+        <button class="gad" data-nav data-act="close" aria-label="Close Spelunky" data-pix="g-close"></button>
+        <button class="wtitle" data-act="front" tabindex="-1" aria-label="Spelunky. Bring to front">Spelunky</button>
+        <button class="gad" data-nav data-act="zoom" aria-label="Zoom Spelunky" data-pix="g-zoom"></button>
+        <button class="gad" data-nav data-act="depth" aria-label="Send Spelunky to back" data-pix="g-depth"></button>
+      </div>
+      <div class="wbody">
+        <div class="pane">
+          <div class="gamepane">
+            <span class="coverbox" id="cover" role="img" aria-label="Spelunky cover: a cave"></span>
+            <div class="facts">
+              <span class="fact">PC</span>
+              <span class="fact">Last played 9 days ago</span>
+              <span class="fact">7 plays</span>
+              <span class="fact">Plays on This device, zao</span>
+              <div class="btnrow" role="group" aria-label="Play on">
+                <span class="lab">Play on</span>
+                <button class="btn" data-nav data-act="place" data-place="This device">This device</button>
+                <button class="btn" data-nav data-act="place" data-place="zao">zao</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="vscroll">
+          <div class="track recessed"><div class="knob raised"></div></div>
+          <button class="gad" data-nav data-act="scroll-up" aria-label="Scroll up" data-pix="g-up"></button>
+          <button class="gad" data-nav data-act="scroll-down" aria-label="Scroll down" data-pix="g-down"></button>
+        </div>
+      </div>
+      <div class="footstack">
+        <div class="btnrow">
+          <button class="btn" data-nav data-act="play-game">Play</button>
+          <button class="btn ghost" data-nav data-act="noop" aria-disabled="true">Information…</button>
+          <button class="btn" data-nav data-act="forget">Forget…</button>
+        </div>
+        <div class="foot"><div class="status" aria-live="polite"><span class="st-name">Spelunky</span><span>2 places</span></div><span class="sizegad" data-pix="g-size"></span></div>
+      </div>
+    </section>
+
+    <!-- ?state=wifi: the Prefs Wi-Fi editor (C12, C13, C21, C22, C23) -->
+    <section class="win" data-win="wifi" aria-label="Wi-Fi editor">
+      <div class="titlebar">
+        <button class="gad" data-nav data-act="close" aria-label="Close Wi-Fi" data-pix="g-close"></button>
+        <button class="wtitle" data-act="front" tabindex="-1" aria-label="Wi-Fi. Bring to front">Wi-Fi</button>
+        <button class="gad" data-nav data-act="zoom" aria-label="Zoom Wi-Fi" data-pix="g-zoom"></button>
+        <button class="gad" data-nav data-act="depth" aria-label="Send Wi-Fi to back" data-pix="g-depth"></button>
+      </div>
+      <div class="wbody">
+        <div class="pane">
+          <div class="listwrap" role="listbox" aria-label="Networks, strongest first">
+            <div class="rows" id="netrows"></div>
+            <div class="vscroll">
+              <div class="track recessed"><div class="knob raised" style="top:0;bottom:0"></div></div>
+              <button class="gad" data-nav data-act="noop" aria-label="Scroll up" data-pix="g-up"></button>
+              <button class="gad" data-nav data-act="noop" aria-label="Scroll down" data-pix="g-down"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footstack">
+        <div class="btnrow">
+          <button class="btn" data-nav data-act="scan">Scan</button>
+          <button class="btn" data-nav data-act="hidden">Hidden network…</button>
+          <button class="btn" data-nav data-act="close">Cancel</button>
+        </div>
+        <div class="foot"><div class="status" aria-live="polite"><span class="st-name">hummingbird-lake</span><span>Connected, 72%</span></div><span class="sizegad" data-pix="g-size"></span></div>
+      </div>
+    </section>
+
+    <!-- The Keyboard window (C29): key gadgets under the string gadget being edited -->
+    <section class="win" data-win="keyboard" aria-label="Keyboard">
+      <div class="titlebar">
+        <button class="gad" data-nav data-act="kb-cancel" aria-label="Close Keyboard" data-pix="g-close"></button>
+        <button class="wtitle" tabindex="-1">Keyboard</button>
+      </div>
+      <div class="keys" id="keys"></div>
+    </section>
+
+    <!-- Requesters: one of these is up at a time, over everything -->
+    <section class="req" data-req="forget" role="alertdialog" aria-label="Forget Spelunky?" hidden>
+      <div class="titlebar"><span class="wtitle">Forget Spelunky?</span></div>
+      <div class="req-inner">
+        <span class="line">Forget Spelunky? Its saved facts are removed.</span>
+        <div class="btnrow ends"><button class="btn" data-nav data-act="req-ok">Forget</button><button class="btn" data-nav data-act="req-cancel">Cancel</button></div>
+      </div>
+    </section>
+    <section class="req" data-req="join" role="dialog" aria-label="Join Kestrel" hidden>
+      <div class="titlebar"><span class="wtitle">Join Kestrel</span></div>
+      <div class="req-inner">
+        <span class="line">Password for Kestrel:</span>
+        <div class="strrow"><button class="str" id="secret" data-nav data-act="noop" aria-label="Password, 6 of 63 characters"><span class="val"></span><span class="cur"></span></button><span class="count" id="count">6/63</span></div>
+        <div class="btnrow ends"><button class="btn" data-nav data-act="req-ok">Join</button><button class="btn" data-nav data-act="req-cancel">Cancel</button></div>
+      </div>
+    </section>
+    <section class="req" data-req="problem" role="alertdialog" aria-label="Could not start" hidden>
+      <div class="titlebar"><span class="wtitle">Could not start</span></div>
+      <div class="req-inner">
+        <span class="line">Spelunky: zao did not answer.</span>
+        <span class="line">Try again, or cancel.</span>
+        <div class="btnrow ends"><button class="btn" data-nav data-act="req-ok">Retry</button><button class="btn" data-nav data-act="req-cancel">Cancel</button></div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -283,6 +462,22 @@ if (FIXTURE === "one") games = [LIBRARY[3]];
 if (FIXTURE === "many") games = Array.from({ length: 60 }, (_, i) => ({ ...LIBRARY[i % 12] }));
 if (FIXTURE === "long") games = [...LIBRARY, { title: "Supercalifragilisticexpialidociousadventure", system: "PC", places: ["This device"], last: null, plays: 0, cover: null }];
 
+/* Screen states, chosen by ?state=idle (default), game, wifi or problem */
+const STATE = new URLSearchParams(location.search).get("state") || "idle";
+
+/* The Wi-Fi list. Korri publishes only the connection (hummingbird-lake, 72%, secured, known);
+   the other rows are illustrative, so the list gadget can be drawn with a selected row. */
+const NETWORKS = [
+  { ssid: "hummingbird-lake", pct: 72, secured: true, known: true },
+  { ssid: "BT-7K2PQ", pct: 61, secured: true },
+  { ssid: "Pret A Manger", pct: 48, secured: false },
+  { ssid: "Kestrel", pct: 35, secured: true },
+  { ssid: "PLUSNET-R3", pct: 20, secured: true },
+];
+
+/* The Spelunky picture (Pico's PICO_ART_CAVERN, 128x60), quantised to the four pens at load */
+const SPELUNKY_PIC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAAA8CAMAAACZ6EL3AAAAkFBMVEX/+sj/3Fr/1yj/vjzSlm6gWih4UChaOCRaHhQ8JBg7JBg7Ixg6Ixc5Ihc4Ihc4IRY3IRY2IBY1IBU0HxUzHxUzHhQyHhQxHRQwHRMvHBMuGxMtGxIsGhIrGhEqGREpGBEoGBAnFxAmFw8lFg8kFQ8jFQ4iFA4eFA4dEQwcEQwcEAsbEAsaDwsZDwoZDgoYDgqBxl/sAAACyUlEQVR42u2U63LTMBCF5QRsLgFap0lpm6RAW6C58f5vh3VbHa9kSaZh1B85M7GP12dXn62JReP0voQXUPxQwiPAxxIeAWYlfA5A1Ukfq2pmzvJ6Zu5qr6vWu3oK4FNacrQ+9s/2rv3pirt2mYjEZyVg414+ybtOVeV+9lo/Md7j1zoTmS++KEGR+1MAROaLCyUocu/2XEoOraoLs7APoO9LZJsPzQRfHuBSCYq+91+9HDsMoLfisnFbEJkv2rRCAG0rz/JuGMD1JYbjd6ANevdK5dO0bEtsIgThtiAyHwHm6jjtZL0PMH8BwNzMdmsxgCu7fpe6grrec3nWGb0V7txM5Xna6Br+bKeZb2bTWhxgoQGE6EKLAYDFCwAWZjatxQGWZn2ZWrJ6zNueVB5zVBfLvghghHJ7gjlxrRSkbJpr4B/2riee529K1cVXpf57ogzUY556EvnebFMPALj/Sj6A6UkCwGwLcKPU9Amsx3rM255UXuZY3Qe4qetmLEBjepL5LscBbj3V9e1o5fb4OfwO3BEleazHPLy1aJ5yd6EPUXGAFQxb+fXmrVOvzgFWw55yq1cJsIZha7/uAawHANbDnnJUFxtPdb0JCwCye5I5AwCcG3iaXt17A5AxPRte577Lsbq4V4JixL+xysznePFNCYoRTwCZ+RxfHuC7EhQjngAy8zneAOTJAZxO+B34kfIEkJnP8QjwkPIM4GFM75B/VQCPKc8AHsf0DvnyAE8jRABPp5P4qQRsEU8AmfkcXx7gV2GdAc4AZwD8FP8u4RHgWR0nkwl5V1fV7vDs5cnrRlanYmCmBthydS3bbbjqDqGOYGN4GkjslIAt5eUz7eDxdhP3lLsGvbuIzBR7JSiO8GqBPbzlPQDsAQA3gs35ZwCamZOf9CD7AAclCByg6wBh5qkjknE+NF97cVSCwBEAjhD+T178Kay/As27EeaLmSwAAAAASUVORK5CYII=";
+
 /* ======================================================================
    Pixel drawing: pens '.' none, k black, w white, b blue, g grey
    ====================================================================== */
@@ -295,11 +490,11 @@ function rows(s) { const r = s.trim().split("\n").map(l => l.trim()); const w = 
 function blit(c, art, x, y) { rows(art).forEach((l, j) => [...l].forEach((ch, i) => { if (ch !== ".") dot(c, x + i, y + j, ch); })); }
 function blitIn(c, art, a) { const r = rows(art); blit(c, art, a.x + Math.floor((a.w - r[0].length) / 2), a.y + Math.floor((a.h - r.length) / 2)); }
 function fromArt(art) { const r = rows(art); const c = canvas(r[0].length, r.length); blit(c, art, 0, 0); return c; }
-function svg(c, label) {
+function svg(c, label, k = 1) { /* k: whole-number scale, so a 128x60 picture can show at 2x and stay on the grid */
   const paths = { c1: "", c2: "", c3: "", c0: "" };
   c.d.forEach((row, y) => { let x = 0; while (x < c.w) { const p = row[x]; if (p === ".") { x++; continue; } let n = 1; while (row[x + n] === p) n++; paths[PEN[p]] += `M${x} ${y}h${n}v1h-${n}z`; x += n; } });
   const body = Object.entries(paths).filter(([, d]) => d).map(([k, d]) => `<path class="${k}" d="${d}"/>`).join("");
-  return `<svg class="px" width="${c.w}" height="${c.h}" viewBox="0 0 ${c.w} ${c.h}" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>${body}</svg>`;
+  return `<svg class="px" width="${c.w * k}" height="${c.h * k}" viewBox="0 0 ${c.w} ${c.h}" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>${body}</svg>`;
 }
 function shadow(c, fw, fh) { rect(c, fw, 2, 2, fh, "k"); rect(c, 2, fh, fw, 2, "k"); }
 
@@ -329,150 +524,15 @@ const MEDIA = {
   },
 };
 
-const ART = {
-  celeste: ["pico", "b", `
-    ..w..........w..
-    .......w........
-    ......www.......
-    .....wwgww......
-    ....wwgggww.....
-    ...kgggggggk....
-    ..kgggggggggk...
-    .kgggggkgggggk..
-    kgggggkgkgggggk.
-    kkkkkkkkkkkkkkkk`],
-  petal: ["pico", "b", `
-    ....www....
-    ...wwwww...
-    .ww.www.ww.
-    wwwwkkkwwww
-    wwwwkgkwwww
-    wwwwkkkwwww
-    .ww.www.ww.
-    ...wwwww...
-    ....www....
-    .....k..kk.
-    .....kkk...
-    .....k.....`],
-  hollow: ["switch", "k", `
-    .w.........w.
-    .w.........w.
-    .ww.......ww.
-    ..ww.....ww..
-    ...wwwwwww...
-    ..wwwwwwwww..
-    .wwwwwwwwwww.
-    .wwkkwwwkkww.
-    .wkkkwwwkkkw.
-    .wkkkwwwkkkw.
-    .wwkkwwwkkww.
-    ..wwwwwwwww..
-    ...wwwwwww...
-    ....bbbbb....
-    ...bbbbbbb...
-    ..bbbbbbbbb..
-    ..bbbbbbbbb..
-    .bbbbbbbbbbb.
-    .bbb.bbb.bbb.`],
-  tetris: ["gb", "w", null, blocks(`
-    T...I
-    TT..I
-    TLLLI
-    .L..I`, { T: "b", L: "g", I: "w" })],
-  spelunky: ["pc", "b", `
-    ......kkkkkk......
-    .....kwwwwwwk.....
-    ....kwwwkkwwwk....
-    ....kwwwkwkwwk....
-    ..kkkkkkkkkkkkkk..
-    ....kggggggggk....
-    ....kgkkggkkgk....
-    ....kggggggggk....
-    ....kgwkkkkwgk....
-    .....kggggggk.....
-    ......kkkkkk......
-    .....kwwkkwwk.....
-    ....kwwwwwwwwk....
-    ....kwkwwwwkwk....
-    kk..kwkwwwwkwk..kk
-    kkkkkkkkkkkkkkkkkk`],
-  lantern: ["pc", "k", `
-    .........g..........
-    ........g.g.........
-    ......ggggggg.......
-    ......gwwwwwg.......
-    ......gwwbwwg.......
-    ......gwbwbwg.......
-    ......gwwbwwg.......
-    ......gwwwwwg.......
-    ......ggggggg.......
-    .......g...g........
-    ....................
-    g.g.g..........g.g.g
-    ggggg....g.....ggggg
-    ggggg...ggg....ggggg
-    ggggg..ggggg...ggggg
-    gggggggggggggggggggg`],
-  tide: ["md", "b", `
-    ....w.....w.........
-    ...www...www........
-    ....................
-    ...ww......ww.......
-    ..w..w....w..w......
-    ww....wwww....ww....
-    ....................
-    .....ww......ww.....
-    ....w..w....w..w....
-    wwww....wwww....wwww
-    ....................
-    ...kk.....kkk.......
-    ..kkkk...kkkkkk..kk.
-    kkkkkkkkkkkkkkkkkkkk`],
-  bramble: ["gba", "w", `
-    ...k...........k......
-    ..kbk.........kbk.....
-    .kbbbk...k...kbbbbk...
-    ..kbk...kbk...kbbk....
-    ...k...kbbbk...kk.....
-    kkkkkkkkkkkkkkkkkkkkkk`],
-  zelda: ["gb", "w", `
-    ....kkkkkk....
-    ..kkwwwbbbkk..
-    .kwwwwwbbbbbk.
-    kwwwkwwbbkbbbk
-    kwwwwwwbbbbbbk
-    .kwwwwwbbbbbk.
-    ..kkkkkkkkkk..
-    ......kk......
-    ......kk......
-    ....kkkkkk....`],
-  wario: ["gba", "b", `
-    ..w........k..........
-    ..........kwk.........
-    .........kwwwk........
-    ........kwwwwwk.......
-    .......kwwkkkwwk......
-    ......kwwwkgkwwwk.....
-    .....kwwwwkgkwwwwk....
-    ....kwwwwwwwwwwwwwk...
-    kkkkkkkkkkkkkkkkkkkkkk`],
-  metroid: ["snes", "k", `
-    w...........................w.
-    ...........wwwwww.............
-    .........wwbbbbbbww.......w...
-    ........wbbwwbbwwbbw..........
-    .......wbbwwwbbwwwbbw.........
-    ..w....wbbbwwbbwwbbbw.........
-    .......wbbbbbbbbbbbbw.........
-    ........wwwwwwwwwwww..........
-    .........w.w....w.w...........
-    .........w..w..w..w.......w...
-    ........w...w..w...w..........
-    ..............................
-    ggggg..................ggggggg
-    gggggggggg.......gggggggggggggg`],
-};
-
+/* Icons are chassis only: the medium with its own blank label or screen. Box art quantised
+   to four pens is noise at icon size (tested twice); the cover shows large only in the
+   game's own window. */
+const SYSTEM_MEDIA = { "PICO-8": ["pico", "b"], Switch: ["switch", "k"], GB: ["gb", "g"], GBC: ["gb", "g"], PC: ["pc", "w"], "Mega Drive": ["md", "g"], GBA: ["gba", "g"], SNES: ["snes", "g"] };
+function chassis(g) {
+  if (!g.cover) return project();
+  const [m, fill] = SYSTEM_MEDIA[g.system] || SYSTEM_MEDIA.PC;
+  return MEDIA[m](fill)[0];
+}
 function project() { /* Workbench's default project icon: a page with a turned corner */
   const c = canvas(20, 26); rect(c, 0, 0, 20, 26, "w"); frame(c, 0, 0, 20, 26, "k");
   for (let j = 0; j < 6; j++) for (let i = 14 + j; i < 20; i++) dot(c, i, j, ".");
@@ -565,18 +625,87 @@ const GADGET = {
     kkkkkk`,
 };
 
-function blocks(coarse, fill) { /* Tetris pieces: each cell a 3x3 block with a black rim */
-  const r = rows(coarse), c = canvas(r[0].length * 3, r.length * 3);
-  r.forEach((l, j) => [...l].forEach((ch, i) => { if (ch !== ".") { frame(c, i * 3, j * 3, 3, 3, "k"); dot(c, i * 3 + 1, j * 3 + 1, fill[ch]); } }));
-  return c.d.map(row => row.join("")).join("\n");
+/* Four-pen quantisation of a picture: per-image luminance stretch, then a 4x4 Bayer ordered
+   dither and the nearest pen in RGB. Runs once, at load, for the game window's cover. */
+const PENS = [[0xAA, 0xAA, 0xAA, "g"], [0, 0, 0, "k"], [0xFF, 0xFF, 0xFF, "w"], [0x66, 0x88, 0xBB, "b"]];
+const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+function quantise(url, w, h, done) {
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = true; ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const lum = i => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const L = []; for (let i = 0; i < d.length; i += 4) L.push(lum(i));
+    const sorted = [...L].sort((a, b) => a - b);
+    const lo = sorted[Math.floor(sorted.length * 0.02)], hi = sorted[Math.floor(sorted.length * 0.98)];
+    const k = 255 / Math.max(1, hi - lo);
+    const c = canvas(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4, t = (BAYER[y % 4][x % 4] / 16 - 0.5) * 96;
+      const px = [0, 1, 2].map(ch => Math.max(0, Math.min(255, (d[i + ch] - lo) * k + t)));
+      let best = "k", bd = Infinity;
+      for (const [r, g, b, p] of PENS) { const dd = (r - px[0]) ** 2 + (g - px[1]) ** 2 + (b - px[2]) ** 2; if (dd < bd) { bd = dd; best = p; } }
+      c.d[y][x] = best;
+    }
+    done(c);
+  };
+  img.src = url;
 }
-function cover(g) {
-  if (!g.cover) return project();
-  const [media, bg, a, b] = ART[g.cover]; const art = a ?? b;
-  const [c, area] = MEDIA[media](bg);
-  blitIn(c, art, area);
+
+/* Wi-Fi list glyphs: bars (4 cells, pen 1 lit, pen 2 unlit), a key, a check mark */
+function bars(pct) {
+  const lit = pct >= 70 ? 4 : pct >= 50 ? 3 : pct >= 30 ? 2 : 1;
+  const c = canvas(11, 8);
+  for (let i = 0; i < 4; i++) rect(c, i * 3, 8 - (i + 1) * 2, 2, (i + 1) * 2, i < lit ? "k" : "w");
   return c;
 }
+const KEY_SM = fromArt(`
+  .kkk.....
+  k...kkkkk
+  k...k.k.k
+  .kkk..k..`);
+const CHECK = fromArt(`
+  ......k
+  .....kk
+  k...kk.
+  kk.kk..
+  .kkk...
+  ..k....`);
+const netrows = document.getElementById("netrows");
+NETWORKS.forEach((n, i) => {
+  const b = document.createElement("button");
+  b.className = "row"; b.dataset.nav = ""; b.dataset.act = "join"; b.dataset.net = i;
+  b.setAttribute("role", "option");
+  b.setAttribute("aria-label", `${n.ssid}, ${n.pct} percent${n.secured ? ", secured" : ", open"}${n.known ? ", known" : ""}`);
+  b.innerHTML = `${svg(bars(n.pct))}<span class="slot">${n.secured ? svg(KEY_SM) : ""}</span><span class="slot">${n.known ? svg(CHECK) : ""}</span><span class="ssid">${n.ssid}</span>`;
+  netrows.appendChild(b);
+});
+
+/* Keyboard window: digits above qwerty, Shift Space Cancel Use on the last row */
+const KEYROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"];
+const keysEl = document.getElementById("keys");
+KEYROWS.forEach(r => {
+  const row = document.createElement("div"); row.className = "krow";
+  [...r].forEach(ch => { const k = document.createElement("button"); k.className = "key"; k.dataset.nav = ""; k.dataset.act = "type"; k.dataset.ch = ch; k.textContent = ch; row.appendChild(k); });
+  keysEl.appendChild(row);
+});
+{
+  const row = document.createElement("div"); row.className = "krow";
+  [["Shift", "shift", "w2"], ["Space", "type", "w3", " "], ["Cancel", "kb-cancel", "w4"], ["Use", "req-ok", "w5"]].forEach(([t, act, cls, ch]) => {
+    const k = document.createElement("button"); k.className = "key " + cls; k.dataset.nav = ""; k.dataset.act = act; if (ch) k.dataset.ch = ch; k.textContent = t; row.appendChild(k);
+  });
+  keysEl.appendChild(row);
+}
+
+/* The secret string gadget: dots only, count beside it */
+let secretLen = 6;
+function renderSecret() {
+  document.querySelector("#secret .val").innerHTML = "<span class=\"dotc\"></span>".repeat(secretLen);
+  document.getElementById("count").textContent = `${secretLen}/63`;
+  document.getElementById("secret").setAttribute("aria-label", `Password, ${secretLen} of 63 characters`);
+}
+renderSecret();
 
 /* Paint fixed icons */
 const FIXED = { drawer: drawer(), device: device(), wifi: fromArt(WIFI), key: fromArt(KEY) };
@@ -598,7 +727,7 @@ games.forEach((g, i) => {
   b.dataset.nav = ""; b.dataset.act = "play"; b.dataset.game = i;
   b.setAttribute("role", "option");
   b.setAttribute("aria-label", `${g.title}, ${g.system}${g.resumable ? ", paused" : ""}. Plays on ${g.places.join(" or ")}.`);
-  b.innerHTML = `<span class="img">${svg(cover(g))}</span><span class="lbl"><span>${g.title}</span></span>${g.resumable ? '<span class="sfx"><span>(paused)</span></span>' : ""}`;
+  b.innerHTML = `<span class="img">${svg(chassis(g))}</span><span class="lbl"><span>${g.title}</span></span>${g.resumable ? '<span class="sfx"><span>(paused)</span></span>' : ""}`;
   grid?.appendChild(b);
 });
 
@@ -631,14 +760,19 @@ function plan(W, H) {
   if (!fits(s) && s > 2 && fits(s - 1)) s -= 1;   // give one step of scale back to buy overlap
   const w = Math.floor(W / s), h = Math.floor(H / s);
   const mode = fits(s) ? "overlap" : "stack";
+  const gx = Math.round(w * 0.235);
   return {
     s, w, h, mode,
     cell: mode === "overlap" ? 104 : 72,      // icon cell width
     rowgap: mode === "overlap" ? 8 : 2,
     sbw: mode === "overlap" ? 15 : 11,
+    coverScale: h >= 300 ? 2 : 1,             // the game window's cover: 2x where the height pays for it
+    kbW: mode === "overlap" ? 212 : w,        // the Keyboard window: centred in overlap, full width in stack
     rects: mode === "overlap" ? {
-      games: { x: Math.round(w * 0.235), y: 17, w: w - Math.round(w * 0.235) - 10, maxH: h - 17 - 8 },
+      games: { x: gx, y: 17, w: w - gx - 10, maxH: h - 17 - 8 },
       prefs: { x: 14, y: Math.round(h * 0.655), w: Math.round(w * 0.47), maxH: h - Math.round(h * 0.655) - 6 },
+      game: { x: gx + 24, y: 38, w: Math.min(w - gx - 24 - 22, 456), maxH: h - 38 - 12 },
+      wifi: { x: 40, y: 30, w: Math.min(330, w - 80), maxH: h - 30 - 100 },
     } : null,
   };
 }
@@ -646,7 +780,8 @@ function plan(W, H) {
 /* ======================================================================
    State that survives any resize: open windows, depth order, focus.
    ====================================================================== */
-const state = { open: { games: true, prefs: true }, order: ["prefs", "games"], zoomed: {}, lastFocus: {} };
+const state = { open: { games: true, prefs: true }, order: ["prefs", "games"], zoomed: {}, lastFocus: {}, req: null };
+/* The keyboard is not in the depth order: it sits at the bottom edge whenever it is open. */
 const screen = document.getElementById("screen");
 const stage = document.getElementById("stage");
 const wins = Object.fromEntries([...document.querySelectorAll(".win")].map(w => [w.dataset.win, w]));
@@ -667,9 +802,23 @@ function layout() {
   const openIds = state.order.filter(id => state.open[id]);
   const docked = P.mode === "stack" ? openIds.filter(id => id !== top) : [];
 
+  // the cover, at the scale the plan allows
+  if (COVER && coverScale !== P.coverScale) { coverScale = P.coverScale; document.getElementById("cover").innerHTML = svg(COVER, null, coverScale); }
+
+  // the Keyboard window first: everything else in stack mode is laid out above it
+  const kb = wins.keyboard;
+  kb.hidden = !state.open.keyboard;
+  let kbH = 0;
+  if (state.open.keyboard) {
+    Object.assign(kb.style, { left: Math.round((P.mode === "overlap" ? P.w * 0.6 : P.w / 2) - P.kbW / 2) + "px", width: P.kbW + "px", top: "", bottom: P.mode === "overlap" ? "4px" : "0px", zIndex: 40 });
+    kbH = Math.round(kb.getBoundingClientRect().height / P.s) + (P.mode === "overlap" ? 4 : 0);
+  }
+  const dockH = P.mode === "stack" ? kbH : 0;
+
   for (const [id, el] of Object.entries(wins)) {
+    if (id === "keyboard") continue;
     el.hidden = !state.open[id];
-    el.classList.toggle("is-front", id === top);
+    el.classList.toggle("is-front", id === top && !state.req);
     el.classList.toggle("is-collapsed", docked.includes(id));
     el.style.zIndex = 10 + state.order.indexOf(id);
     const wt = el.querySelector(".wtitle");
@@ -683,13 +832,25 @@ function layout() {
                          : { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: "auto", maxHeight: r.maxH + "px" });
     } else if (docked.includes(id)) {
       const k = docked.length - 1 - docked.indexOf(id);
-      Object.assign(s, { left: "0px", width: P.w + "px", top: P.h - 12 * (k + 1) + "px", height: "12px", maxHeight: "" });
+      Object.assign(s, { left: "0px", width: P.w + "px", top: P.h - dockH - 12 * (k + 1) + "px", height: "12px", maxHeight: "" });
     } else {
-      Object.assign(s, { left: "0px", width: P.w + "px", top: "11px", height: P.h - 11 - 12 * docked.length + "px", maxHeight: "" });
+      Object.assign(s, { left: "0px", width: P.w + "px", top: "11px", height: P.h - 11 - dockH - 12 * docked.length + "px", maxHeight: "" });
     }
     // depth gadget label follows position
     const depth = el.querySelector('[data-act="depth"]');
-    depth.setAttribute("aria-label", (id === top ? "Send " : "Bring ") + (id === "games" ? "Games" : "Prefs") + (id === top ? " to back" : " to front"));
+    const name = el.querySelector(".wtitle").firstChild.textContent.trim();
+    depth.setAttribute("aria-label", (id === top ? "Send " : "Bring ") + name + (id === top ? " to back" : " to front"));
+  }
+
+  // the requester: its own size, centred in the room above the keyboard, over everything
+  for (const r of document.querySelectorAll(".req")) {
+    const on = state.req === r.dataset.req;
+    r.hidden = !on;
+    if (!on) continue;
+    r.style.minWidth = P.mode === "stack" ? Math.round(P.w * 0.6) + "px" : "";
+    const b = r.getBoundingClientRect(), rw = Math.round(b.width / P.s), rh = Math.round(b.height / P.s);
+    const areaH = P.h - 11 - kbH;
+    Object.assign(r.style, { left: Math.max(0, Math.round((P.w - rw) / 2)) + "px", top: 11 + Math.max(0, Math.round((areaH - rh) / 2)) + "px" });
   }
   updateKnobs();
   // keep focus somewhere visible after a re-layout
@@ -726,8 +887,12 @@ function visible(el) {
 }
 function navigable() {
   const top = front();
+  const req = state.req && document.querySelector(`.req[data-req="${state.req}"]`);
   return [...document.querySelectorAll("[data-nav]")].filter(el => {
     const w = el.closest(".win");
+    const inKb = w?.dataset.win === "keyboard";
+    if (req) { if (!req.contains(el) && !(inKb && state.open.keyboard)) return false; return visible(el); }  // modal: the requester and its keyboard only
+    if (inKb) return state.open.keyboard && visible(el);
     if (w && w.dataset.win !== top && !el.classList.contains("wtitle")) return false;
     if (w && w.classList.contains("is-collapsed") && !el.classList.contains("wtitle")) return false;
     return visible(el);
@@ -745,6 +910,10 @@ function move(dir) {
     const j = { left: i - 1, right: i + 1, up: i - cols, down: i + cols }[dir];
     const sameRow = Math.floor(j / cols) === Math.floor(i / cols);
     if (items[j] && (dir === "up" || dir === "down" || sameRow)) return focus(items[j]);
+  }
+  // up from the keyboard's top row enters the string gadget being edited
+  if (dir === "up" && cur?.classList.contains("key") && cur.parentElement === keysEl.firstElementChild) {
+    const str = document.querySelector('.req:not([hidden]) .str'); if (str) return focus(str);
   }
   const all = navigable().filter(el => el !== cur);
   if (!cur || cur === document.body) return restoreFocus();
@@ -772,9 +941,22 @@ function restoreFocus() {
   const top = front();
   const w = top && wins[top];
   const remembered = top && state.lastFocus[top];
+  const req = state.req && document.querySelector(`.req[data-req="${state.req}"]`);
+  if (req) return focus(req.querySelector("[data-nav]"));
   const el = (remembered && w.contains(remembered) && remembered) || (w && w.querySelector(".pane [data-nav]")) || document.querySelector(".desk-icon");
   if (el) focus(el);
 }
+function openReq(id, focusSel) {
+  state.req = id; layout();
+  const r = document.querySelector(`.req[data-req="${id}"]`);
+  focus(focusSel ? document.querySelector(focusSel) : r.querySelector("[data-nav]"));
+}
+function closeReq() {
+  const was = state.req; state.req = null;
+  if (was === "join") { state.open.keyboard = false; netrows.querySelector(".is-sel")?.classList.remove("is-sel"); }
+  layout(); restoreFocus();
+}
+function setStatus(id, name, text) { wins[id].querySelector(".status").innerHTML = `<span class="st-name">${name}</span><span>${text}</span>`; }
 
 /* ======================================================================
    Actions: confirm opens or activates; back closes the front window
@@ -814,7 +996,44 @@ function activate(el) {
       ? `<span class="st-name">${g.title}</span><span>Plays on ${g.places.join(" or ")}. A requester asks which.</span>`
       : `<span class="st-name">${g.title}</span><span>${g.resumable ? "Resuming" : "Starting"} on ${g.places[0]}</span>`;
   }
-  else if (act === "pref") { info(el); }
+  else if (act === "pref") { if (el.dataset.info === "pref:wifi") { raise("wifi"); layout(); restoreFocus(); } else info(el); }
+  /* the game's own window */
+  else if (act === "place") { setStatus("game", "Spelunky", `Starting on ${el.dataset.place}`); }
+  else if (act === "play-game") { setStatus("game", "Spelunky", `Starting on ${state.lastFocus.game?.dataset.place || "This device"}`); }
+  else if (act === "forget") { openReq("forget"); }
+  /* the Wi-Fi editor */
+  else if (act === "join") {
+    netrows.querySelectorAll(".is-sel").forEach(r => r.classList.remove("is-sel")); el.classList.add("is-sel");
+    const n = NETWORKS[+el.dataset.net];
+    if (!n.secured) { setStatus("wifi", n.ssid, "Connecting to " + n.ssid); return; }
+    state.open.keyboard = true; openReq("join", "#secret");
+  }
+  else if (act === "scan") { setStatus("wifi", "Wi-Fi", "Scanning…"); }
+  else if (act === "hidden") { setStatus("wifi", "Hidden network", "A requester asks the SSID, then the password"); }
+  /* the keyboard */
+  else if (act === "type") { if (secretLen < 63) secretLen++; renderSecret(); }
+  else if (act === "shift") { /* shift state: no change to what is drawn */ }
+  else if (act === "kb-cancel") { closeReq(); }
+  /* requesters */
+  else if (act === "req-cancel") { if (state.req === "problem") setStatus("games", "Spelunky", "could not start on zao"); closeReq(); }
+  else if (act === "req-ok") {
+    const r = state.req;
+    if (r === "forget") { closeReq(); setStatus("game", "Spelunky", "Forgotten. Its saved facts are removed"); }
+    else if (r === "join") { closeReq(); setStatus("wifi", "Kestrel", "Connecting to Kestrel"); }
+    else if (r === "problem") { closeReq(); setStatus("games", "Spelunky", "Starting on zao"); }
+  }
+}
+function back() {
+  if (state.req === "join" && secretLen > 0) { secretLen--; renderSecret(); return; }   // back deletes before the cursor
+  if (state.req) { activate(document.querySelector(`.req[data-req="${state.req}"] [data-act="req-cancel"]`)); return; }
+  closeWin(front());
+}
+function cycleFront() {
+  const open = state.order.filter(id => state.open[id]);
+  if (open.length < 2) return;
+  const top = open[open.length - 1];
+  state.order = [top, ...state.order.filter(x => x !== top)];
+  layout(); restoreFocus();
 }
 function closeWin(id) {
   if (!id) return;
@@ -825,15 +1044,21 @@ function closeWin(id) {
 }
 
 /* The host delivers semantic actions; in the browser the keyboard stands in. */
-const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "confirm", " ": "confirm", Escape: "back", Backspace: "back" };
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "confirm", Escape: "back", Backspace: "back", o: "options", m: "menu" };
 addEventListener("keydown", e => {
-  const a = KEYS[e.key]; if (!a) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // while the Keyboard window is up, a letter key stands in for confirm on that key gadget
+  if (state.open.keyboard && state.req === "join" && /^[a-z0-9 ]$/i.test(e.key)) { e.preventDefault(); activate(keysEl.querySelector(`[data-ch="${e.key.toLowerCase()}"]`) || keysEl.querySelector('[data-ch=" "]')); return; }
+  const a = KEYS[e.key] || (e.key === " " ? "confirm" : null); if (!a) return;
   e.preventDefault();
   if (a === "confirm") activate(document.activeElement);
-  else if (a === "back") closeWin(front());
+  else if (a === "back") back();
+  else if (a === "options") { if (state.req) return; raise("prefs"); layout(); restoreFocus(); }
+  else if (a === "menu") { if (state.req) return; cycleFront(); }
   else move(a);
 });
 
+let COVER = null, coverScale = 0;
 new ResizeObserver(layout).observe(stage);
 document.fonts.ready.then(() => {
   layout();
@@ -842,6 +1067,11 @@ document.fonts.ready.then(() => {
   if (wins.prefs) state.lastFocus.prefs = wins.prefs.querySelector('[data-info="pref:wifi"]');
   info(wins.prefs.querySelector('[data-info="pref:wifi"]'));
   focus(start);
+  /* the named states: each is what the idle screen becomes after the actions it names */
+  if (STATE === "game") { raise("game"); layout(); focus(wins.game.querySelector('[data-place="This device"]')); }
+  else if (STATE === "wifi") { raise("wifi"); activate(netrows.children[3]); focus(keysEl.querySelector('[data-ch="k"]')); }
+  else if (STATE === "problem") { setStatus("games", "Spelunky", "could not start on zao"); openReq("problem"); }
+  quantise(SPELUNKY_PIC, 128, 60, c => { COVER = c; layout(); });
 });
 </script>
 </body>
