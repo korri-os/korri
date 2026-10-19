@@ -205,12 +205,11 @@ class SteamSessionTests(unittest.TestCase):
             (home / name).unlink(missing_ok=True)
         env = {
             **os.environ, "STEAM_HOME": str(home), "HOME": str(self.root),
-            "CLIENT_BEHAVIOR": "leftover-hold", "PREPARE_BEHAVIOR": "ready",
+            "CLIENT_BEHAVIOR": "leftover-hold",
             "STEAM_BETA": "steamdeck_stable",
-            "KORRI_CACHE_ROOT": str(self.root / "cache"),
-            "KORRI_FEX_PREPARE": str(self.root / "bin/fex-prepare"),
             "KORRI_FEX_CONFIG": str(self.root / "fex-config"),
-            "KORRI_PROTON_CACHYOS_PREPARE": str(self.root / "bin/cachyos-prepare"),
+            "KORRI_FEX_ROOTFS": str(self.rootfs),
+            "KORRI_PROTON_CACHYOS": str(self.proton),
         }
         session = subprocess.Popen(["bash", str(self.root / "session.sh"), "401710"],
                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
