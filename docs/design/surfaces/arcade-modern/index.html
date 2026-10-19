@@ -22,7 +22,7 @@
   /* spacing scale: 4 8 12 16 24 32 48, times k = max(.6, min(w/1280, h/720)); JS writes the rounded values */
   --grid: 4px; --k: 1; --kt: 1;   /* --kt: type scale, k clamped to [.6, 1.2] because the panel width stops growing at 380 */
   --sp-4: 4px; --sp-8: 8px; --sp-12: 12px; --sp-16: 16px; --sp-24: 24px; --sp-32: 32px; --sp-48: 48px;
-  --top: 48px; --foot: 48px; --panelW: 333px; --bandH: 0px; --cardW: 320px; --title: 64px; --acardW: 480px; --oy: 30%;
+  --top: 40px; --foot: 38px; --readout: 24px; --svc: 22px; --panelW: 333px; --bandH: 0px; --cardW: 320px; --title: 64px; --acardW: 480px; --oy: 30%;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--pit); }
@@ -41,14 +41,9 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 /* display face: 0 tracking on titles, +.02em on small caps readouts, never wider */
 .caps { letter-spacing: .02em; }
 
-/* ---------- top bar: one thin strip with a banded rule across the full width ---------- */
-#topbar { position: absolute; left: 0; right: 0; top: 0; height: var(--top); z-index: 30;
-  background: linear-gradient(180deg, rgba(6,7,63,.85), rgba(6,7,63,.55)); }
-#topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
-  background: linear-gradient(90deg, var(--focus) 0 34%, var(--sweep) 34% 100%); }
-.corner { position: absolute; top: 0; height: var(--top); display: flex; align-items: baseline; z-index: 31;
-  padding-top: calc((var(--top) - 1em) / 2);
-  font-family: var(--display); font-size: calc(var(--top) * .5); line-height: 1; color: var(--chrome);
+/* ---------- readouts float on the ground: no bars, no strips, a hard 2px pit-navy offset shadow each ---------- */
+.corner { position: absolute; top: var(--sp-16); display: flex; align-items: baseline; z-index: 31;
+  font-family: var(--display); font-size: var(--readout); line-height: 1; color: var(--chrome);
   text-shadow: 2px 2px 0 var(--pit); }
 .corner.tl { left: var(--sp-24); gap: .35em; }
 .corner.tl b { color: var(--focus); font-weight: 900; }
@@ -57,6 +52,7 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 .signal { display: inline-flex; align-items: flex-end; gap: 3px; height: .8em; }
 .signal i { width: .3em; background: var(--pit); border: 1px solid rgba(92,240,255,.6); transform: skewX(-12deg); }
 .signal i:nth-child(1) { height: 40%; } .signal i:nth-child(2) { height: 60%; } .signal i:nth-child(3) { height: 80%; } .signal i:nth-child(4) { height: 100%; }
+.signal { filter: drop-shadow(2px 2px 0 var(--pit)); }
 .signal i.on { background: var(--sweep); box-shadow: 0 0 6px var(--sweep); border-color: var(--sweep); }
 .corner.tr small { font-family: var(--text); font-size: .62em; color: var(--sweep); letter-spacing: 0; }
 
@@ -110,18 +106,14 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 .link { flex: 0 0 auto; align-self: center; padding: 0 var(--sp-4); text-align: center; font-family: var(--display); font-size: calc(12px * var(--kt)); color: var(--hot); position: relative; }
 .link::before { content: ""; position: absolute; left: 2px; right: 2px; top: 100%; height: 3px; background: var(--hot); margin-top: 2px; }
 
-/* band mode: the panel drops under the stage as one strip */
-#screen[data-mode="band"] #panel { left: 0; right: 0; top: auto; bottom: 0; width: auto;
-  padding: var(--sp-16) var(--sp-16) var(--sp-12); flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4) var(--sp-24); }
-#screen[data-mode="band"] #panel::before { clip-path: none; }
-#screen[data-mode="band"] #panel::after { display: none; }
+/* band mode: the same content-width ranking card, dropped under the stage at the left edge; the ground shows to its right */
+#screen[data-mode="band"] #panel { left: var(--sp-16); right: auto; top: auto; bottom: var(--sp-8); width: max-content; max-width: calc(100% - 2 * var(--sp-16));
+  padding: var(--sp-12) var(--sp-32) var(--sp-8) var(--sp-16); flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4) var(--sp-16); }
 #screen[data-mode="band"] .tab { left: var(--sp-16); }
 #screen[data-mode="band"] #p-title { font-size: 24px; max-width: 48%; }
-#screen[data-mode="band"] .entry { order: 1; }
-#screen[data-mode="band"] #places { order: 2; }
 #screen[data-mode="band"] .facts { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-16); font-size: 15px; line-height: 20px; }
 #screen[data-mode="band"] .facts div { display: flex; gap: var(--sp-8); }
-#screen[data-mode="band"] .entry { margin-left: auto; font-size: 14px; line-height: 20px; }
+#screen[data-mode="band"] .entry { flex: 1 0 100%; font-size: 14px; line-height: 20px; }
 #screen[data-mode="band"] #places { flex: 1 0 100%; }
 #screen[data-mode="band"] .hint { font-size: 14px; line-height: 20px; }
 #screen[data-mode="band"] .cab { flex-direction: row; align-items: baseline; gap: var(--sp-8); padding: var(--sp-4) var(--sp-8); }
@@ -214,19 +206,17 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 #msg p { position: absolute; bottom: 14%; left: 0; right: 0; font-size: calc(20px * var(--k)); color: var(--sweep); }
 
 /* ---------- foot: service line ---------- */
-#foot { position: absolute; left: 0; right: 0; bottom: 0; height: var(--foot); display: flex; align-items: baseline; justify-content: space-between; z-index: 30;
-  padding: calc((var(--foot) - var(--foot) * .46) / 2) var(--sp-24) 0; background: linear-gradient(180deg, rgba(6,7,63,0), rgba(6,7,63,.85) 40%); }
-.svc { display: flex; align-items: baseline; gap: var(--sp-24); font-family: var(--display); font-size: calc(var(--foot) * .46); line-height: 1; white-space: nowrap;
-  opacity: .55; transition: opacity .2s; }
+#foot { position: absolute; left: var(--sp-24); right: var(--sp-24); bottom: var(--sp-16); display: flex; align-items: baseline; justify-content: space-between; z-index: 30; }
+.svc { display: flex; align-items: baseline; gap: var(--sp-24); font-family: var(--display); font-size: var(--svc); line-height: 1; white-space: nowrap;
+  opacity: .55; transition: opacity .2s; text-shadow: 2px 2px 0 var(--pit); }
 #screen[data-zone="service"] .svc { opacity: 1; }
 .svc .k { color: var(--hot); }
 .svc .it { color: var(--chrome); padding: var(--sp-4) var(--sp-8); margin: calc(var(--sp-4) * -1) calc(var(--sp-8) * -1); }
 .svc .it.focus { background: var(--focus); color: var(--pit); box-shadow: 0 0 14px var(--focus); clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%); }
-.rom { display: flex; align-items: baseline; gap: var(--sp-12); font-family: var(--text); font-size: calc(var(--foot) * .36); line-height: 1; color: var(--sweep); white-space: nowrap; }
+.rom { display: flex; align-items: baseline; gap: var(--sp-12); font-family: var(--text); font-size: calc(var(--svc) * .78); line-height: 1; color: var(--sweep); white-space: nowrap; text-shadow: 2px 2px 0 var(--pit); }
 .rom b { color: var(--chrome); font-weight: 600; font-family: var(--display); font-size: 1.25em; letter-spacing: .02em; }
-#screen[data-foot="2"] #foot { flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--sp-4); padding-top: 0; }
-#screen[data-foot="2"] .svc { font-size: calc(var(--foot) * .25); }
-#screen[data-foot="2"] .rom { font-size: calc(var(--foot) * .2); align-self: flex-end; }
+#screen[data-foot="2"] #foot { flex-direction: column; align-items: flex-start; gap: var(--sp-8); }
+#screen[data-foot="2"] .rom { align-self: flex-end; }
 
 /* ---------- attract ---------- */
 #attract { position: absolute; inset: 0; display: none; z-index: 20; overflow: hidden; --cardW: var(--acardW); --title: var(--atitle); }
@@ -246,8 +236,8 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 #a-rank .k { color: var(--sweep); }
 #a-rank .v { color: var(--chrome); }
 #a-rank .r { color: var(--focus); margin-right: var(--sp-8); text-shadow: 2px 2px 0 var(--hot); }
-#press { position: absolute; left: 50%; bottom: calc(var(--foot) * .6); transform: translateX(-50%); font-family: var(--display); font-size: calc(var(--title) * .6);
-  color: var(--focus); letter-spacing: .02em; text-shadow: 3px 3px 0 var(--hot), 0 0 18px var(--focus); animation: pulse 1s steps(1) infinite; white-space: nowrap; }
+#press { position: absolute; left: 50%; bottom: var(--sp-16); transform: translateX(-50%); font-family: var(--display); font-size: calc(var(--title) * .6);
+  color: var(--focus); letter-spacing: .02em; text-shadow: 2px 2px 0 var(--pit), 0 0 18px rgba(255,212,26,.6); animation: pulse 1s steps(1) infinite; white-space: nowrap; }
 @keyframes pulse { 50% { opacity: 0; } }
 
 /* still / reduced motion */
@@ -264,7 +254,6 @@ body { font-family: var(--text); color: var(--chrome); -webkit-font-smoothing: a
 </head>
 <body>
 <div id="screen" data-state="select" data-mode="side" data-zone="ring">
-  <div id="topbar"></div>
   <div class="corner tl caps">CREDIT <b id="clock">21:47</b></div>
   <div class="corner tr"><span class="strut">&#8203;</span><span class="signal" aria-label="Wi-Fi 72%"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span><small>hummingbird-lake 72%</small></div>
 
@@ -365,11 +354,13 @@ function plan(w, h, n) {
   const sp = {}; for (const n of [4, 8, 12, 16, 24, 32, 48]) sp[n] = Math.round(n * k);
   const side = w >= SIDE_MIN_W && w / h >= SIDE_MIN_ASPECT;
   const footRows = w >= FOOT_ONE_ROW_MIN_W ? 1 : 2;
-  const top = sp[48], foot = sp[48] * footRows;
+  /* no bars: the top and foot regions are only the floating readouts' own height plus sp16 */
+  const readout = Math.round(24 * kt), svc = Math.round(22 * kt);
+  const top = sp[16] + readout, foot = sp[16] + (footRows === 1 ? svc : svc * 2 + sp[8]);
   const panelW = side ? Math.round(clamp(w * .26, 280, 380)) : 0;
   const visible = w >= FULL_RING_MIN_W ? 12 : 5;
-  return { k, kt, sp, side, top, foot, footRows, panelW, visible, step: visible >= 12 ? 360 / clamp(n, 8, 12) : 55,
-    showFrac: w / h < 1 ? .48 : .36,   /* of the ring region (side) or the stage (band) */
+  return { k, kt, sp, side, top, foot, footRows, readout, svc, panelW, visible, step: visible >= 12 ? 360 / clamp(n, 8, 12) : 55,
+    showFrac: side ? .40 : (w / h < 1 ? .48 : .36),   /* of the ring region (side) or the stage (band) */
     acardW: Math.round(Math.min(w * .40, h * .46 * 4 / 3)), atitle: Math.round(clamp(Math.min(w * .40, h * .46 * 4 / 3) * .2, 26, 72)) };
 }
 let P, SP;
@@ -378,7 +369,7 @@ function applyPlan() {
   const s = screen.style;
   s.setProperty('--k', P.k.toFixed(3)); s.setProperty('--kt', P.kt.toFixed(3));
   for (const n in SP) s.setProperty('--sp-' + n, SP[n] + 'px');
-  s.setProperty('--top', P.top + 'px'); s.setProperty('--foot', P.foot + 'px');
+  s.setProperty('--top', P.top + 'px'); s.setProperty('--foot', P.foot + 'px'); s.setProperty('--readout', P.readout + 'px'); s.setProperty('--svc', P.svc + 'px');
   s.setProperty('--panelW', P.panelW + 'px'); s.setProperty('--acardW', P.acardW + 'px'); s.setProperty('--atitle', P.atitle + 'px');
   screen.dataset.mode = P.side ? 'side' : 'band';
   screen.dataset.foot = P.footRows;
@@ -542,7 +533,7 @@ function renderPanel() {
     return `<div class="cab${lit ? ' lit' : ''}${foc ? ' focus' : ''}"><span class="side caps">${i === 0 ? '1P SIDE' : '2P SIDE'}</span><span class="name">${upper(p)}</span></div>`;
   }).join('<span class="link caps">LINK</span>') : '';
   fitPanelTitle();
-  screen.style.setProperty('--bandH', (P.side ? 0 : panel.offsetHeight) + 'px');
+  screen.style.setProperty('--bandH', (P.side ? 0 : panel.offsetHeight + SP[8]) + 'px');
   layoutRing();
 }
 
@@ -608,6 +599,9 @@ window.audit = () => {
     const l2 = R((focus - 2 + N) % N), r2 = R((focus + 2) % N); out.n12L = Math.round(ix(l, l2)); out.n12R = Math.round(ix(r, r2)); }
   const p = document.getElementById('panel').getBoundingClientRect(); out.panel = rr(p);
   if (screen.dataset.mode === 'side') for (const i of vis) { const b = R(i); if (ix(p, b)) out['underPanel' + i] = Math.round(ix(p, b)); }
+  const ro = ['.corner.tl', '.corner.tr', '#foot'].map(s => document.querySelector(s).getBoundingClientRect());
+  for (const i of vis) { const b = R(i); ro.forEach((r, j) => { if (ix(r, b)) out['hitReadout' + j + '_' + i] = Math.round(ix(r, b)); }); }
+  out.panelGapTop = Math.round(p.top - ro[0].bottom);
   const pl = document.getElementById('plinth').getBoundingClientRect();
   for (const i of vis) { if (i === focus) continue; const t = ring.children[i].querySelector('.num').getBoundingClientRect(); if (ix(t, f) || ix(t, pl)) out['tabHidden' + i] = Math.round(ix(t, f) + ix(t, pl)); }
   if (N > 4) { const ks = [-2, -1, 1, 2].map(k => R(((focus + k) % N + N) % N)); for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) { const o = ix(ks[a], ks[b]); if (o) out['front' + a + b] = Math.round(o); } }
