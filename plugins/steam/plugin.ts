@@ -28,24 +28,15 @@ export const runners = {
   },
 }
 
-// Until contracts/generated/korrid.ts carries `artifacts` (ADR 0012): ready
-// artifact directories keyed `<pluginId>/<key>`, like `files`.
-type LaunchInputWithArtifacts = PluginLaunchInput & {
-  artifacts: Record<string, string>
-}
-
-function requiredPath(
-  paths: Record<string, string> | undefined,
-  key: string,
-): string {
-  const path = paths?.[key]
+function requiredPath(paths: Record<string, string>, key: string): string {
+  const path = paths[key]
   if (!path) {
     throw new Error(`Steam requires ${key} from its required plugin`)
   }
   return path
 }
 
-function prepareLaunch(input: LaunchInputWithArtifacts): PluginLaunchOutput {
+function prepareLaunch(input: PluginLaunchInput): PluginLaunchOutput {
   if (!input.ref) {
     throw new Error("Steam requires a provider ref")
   }
