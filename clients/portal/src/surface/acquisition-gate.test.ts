@@ -27,8 +27,8 @@ const settle = async (times = 4) => { for (let i = 0; i < times; i++) await flus
  * daemon's state would. */
 function scripted() {
   const calls: { method: string; args: unknown }[] = []
-  const answers: Record<string, AcquisitionOutcome[]> = { status: [], start: [], cancel: [] }
-  const last: Partial<Record<string, AcquisitionOutcome>> = {}
+  const answers = { status: [] as AcquisitionOutcome[], start: [] as AcquisitionOutcome[], cancel: [] as AcquisitionOutcome[] }
+  const last: Partial<Record<keyof typeof answers, AcquisitionOutcome>> = {}
   const next = (method: keyof typeof answers, args: unknown): AcquisitionOutcome => {
     calls.push({ method, args })
     const answer = answers[method].shift() ?? last[method]

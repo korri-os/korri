@@ -320,7 +320,7 @@ test("Back while the reservation is in flight cancels the shared startup without
   const reserve = gate()
   const view = await mount(false, { sessionReserveGate: reserve.promise })
   await invoke(() => view.host().launchGame("game:wl4"))
-  await waitFor(() => view.model().status._tag === "Busy" && view.model().status.detail === "Opening your session")
+  await waitFor(() => { const s = view.model().status; return s._tag === "Busy" && s.detail === "Opening your session" })
   await invoke(() => view.bus.emit({ type: "back" }))
   expect(view.backs()).toBe(0)
   expect(view.model().status).toMatchObject({ _tag: "Busy", kicker: "Cancelling launch…" })

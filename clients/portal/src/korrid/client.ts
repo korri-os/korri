@@ -719,7 +719,8 @@ export interface InMemoryArtifact {
   readonly bytesTotal?: number
   /** Starts Ready; absent means Missing until started. */
   readonly ready?: boolean
-  /** Fail with this plain copy once the download reaches `failAtFraction`. */
+  /** Fail once, with this plain copy, when the download reaches `atFraction`
+   * (default half). The next start resumes and completes. */
   readonly failure?: { readonly message: string; readonly atFraction?: number }
 }
 
@@ -727,11 +728,14 @@ export interface InMemoryKorridClientConfig {
   /** Artifacts every loaded plugin declares, and which games need which. */
   readonly artifacts?: readonly InMemoryArtifact[]
   readonly gameArtifacts?: Readonly<Record<string, readonly string[]>>
-  /** Simulated download speed. Default 50 MB per tick of `acquisitionTickMs`. */
-  readonly acquisitionBytesPerTick?: number
-  readonly acquisitionTickMs?: number
-  /** Ticks an artifact spends Unpacking before it is Ready. Default 2. */
-  readonly acquisitionUnpackTicks?: number
+  /**
+   * The simulated download advances one step per status read of the artifact,
+   * so a polled observation is what moves it: deterministic in tests, and at
+   * the host's 1 Hz poll a believable download in the browser. Default 50 MB
+   * a step, then two Unpacking steps before Ready.
+   */
+  readonly acquisitionBytesPerStep?: number
+  readonly acquisitionUnpackSteps?: number
   readonly behavior?:
     | "ok"
     | "catalog-fail"
@@ -906,12 +910,11 @@ export function createInMemoryKorridClient(
       payload: { launchId: expectedLaunchId, state, changed },
     }
   }
-  // Artifacts: a Missing one downloads in whole ticks once started, unpacks
-  // for a few more, then is Ready. Cancel keeps the bytes for the next start,
-  // the way korrid keeps the .part file.
-  const tickMs = config.acquisitionTickMs ?? 400
-  const bytesPerTick = config.acquisitionBytesPerTick ?? 50_000_000
-  const unpackTicks = config.acquisitionUnpackTicks ?? 2
+  // Artifacts: a Missing one downloads a step per observation once started,
+  // unpacks for a few more, then is Ready. Cancel keeps the bytes for the
+  // next start, the way korrid keeps the .part file.
+  const bytesPerStep = config.acquisitionBytesPerStep ?? 50_000_000
+  const unpackSteps = config.acquisitionUnpackSteps ?? 2
   const artifacts = new Map((config.artifacts ?? []).map(seed => [seed.id, {
     seed,
     status: {
@@ -920,42 +923,35 @@ export function createInMemoryKorridClient(
       state: seed.ready ? { _tag: "Ready", path: `/cache/${seed.id}` } : { _tag: "Missing" },
     } as ArtifactStatus,
     partial: 0,
-    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+    failedOnce: false,
+    unpackLeft: 0,
   }]))
-  const artifactList = (ids?: readonly string[]): AcquisitionOutcome => ({
-    _tag: "Ok",
-    payload: { artifacts: [...artifacts.values()]
-      .filter(entry => ids === undefined || ids.includes(entry.seed.id))
-      .map(entry => structuredClone(entry.status)) },
-  })
-  const tickArtifact = (id: string, unpackLeft: number) => {
-    const entry = artifacts.get(id)
-    if (!entry) return
+  const stepArtifact = (entry: NonNullable<ReturnType<typeof artifacts.get>>) => {
     const { seed } = entry
     const total = seed.bytesTotal
-    entry.timer = undefined
     if (entry.status.state._tag === "Downloading") {
-      const done = total === undefined ? entry.partial + bytesPerTick : Math.min(total, entry.partial + bytesPerTick)
+      const done = total === undefined ? entry.partial + bytesPerStep : Math.min(total, entry.partial + bytesPerStep)
       entry.partial = done
       const fraction = total === undefined ? 0 : done / total
-      if (seed.failure && fraction >= (seed.failure.atFraction ?? 0.5)) {
+      if (seed.failure && !entry.failedOnce && fraction >= (seed.failure.atFraction ?? 0.5)) {
+        entry.failedOnce = true
         entry.status = { ...entry.status, state: { _tag: "Failed", reason: { code: "DownloadFailed", message: seed.failure.message } } }
-        return
-      }
-      if (total !== undefined && done >= total) {
+      } else if (total !== undefined && done >= total) {
+        entry.unpackLeft = unpackSteps
         entry.status = { ...entry.status, state: { _tag: "Unpacking" } }
       } else {
         entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: done,
-          ...(total === undefined ? {} : { bytesTotal: total }), bytesPerSecond: bytesPerTick * (1000 / tickMs) } }
+          ...(total === undefined ? {} : { bytesTotal: total }), bytesPerSecond: bytesPerStep } }
       }
     } else if (entry.status.state._tag === "Unpacking") {
-      if (unpackLeft <= 0) {
-        entry.status = { ...entry.status, state: { _tag: "Ready", path: `/cache/${seed.id}` } }
-        return
-      }
-      unpackLeft -= 1
-    } else return
-    entry.timer = setTimeout(() => tickArtifact(id, unpackLeft), tickMs)
+      if (entry.unpackLeft <= 0) entry.status = { ...entry.status, state: { _tag: "Ready", path: `/cache/${seed.id}` } }
+      else entry.unpackLeft -= 1
+    }
+  }
+  const artifactList = (ids?: readonly string[], advance = false): AcquisitionOutcome => {
+    const chosen = [...artifacts.values()].filter(entry => ids === undefined || ids.includes(entry.seed.id))
+    if (advance) for (const entry of chosen) stepArtifact(entry)
+    return { _tag: "Ok", payload: { artifacts: chosen.map(entry => structuredClone(entry.status)) } }
   }
   const seedSettings = config.settings
   const plugins: SettingsSnapshot["plugins"] = structuredClone(seedSettings?.plugins ?? [
@@ -1517,7 +1513,7 @@ export function createInMemoryKorridClient(
       if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
         return routeFailure("GameNotFound", "Game is not available")
       }
-      return artifactList(config.gameArtifacts?.[gameId] ?? [])
+      return artifactList(config.gameArtifacts?.[gameId] ?? [], true)
     },
     async acquisitionStart(artifactIds) {
       for (const id of artifactIds) {
@@ -1527,7 +1523,6 @@ export function createInMemoryKorridClient(
         if (tag !== "Missing" && tag !== "Failed") continue
         entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: entry.partial,
           ...(entry.seed.bytesTotal === undefined ? {} : { bytesTotal: entry.seed.bytesTotal }) } }
-        entry.timer = setTimeout(() => tickArtifact(id, unpackTicks), tickMs)
       }
       return artifactList([...artifactIds])
     },
@@ -1535,8 +1530,6 @@ export function createInMemoryKorridClient(
       const entry = artifacts.get(artifactId)
       if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
       if (entry.status.state._tag === "Downloading") {
-        clearTimeout(entry.timer)
-        entry.timer = undefined
         entry.status = { ...entry.status, state: { _tag: "Missing" } }
       }
       return artifactList([artifactId])
