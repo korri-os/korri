@@ -23,3 +23,36 @@
 **Text entry.** High-score initials entry, extended: a horizontal character strip (A–Z, a–z, 0–9, symbols, SPACE, END) scrolled with left/right and fast-stepped with up/down between groups; A enters the character into the next slot, B deletes the last slot; the entry is shown one character per slot above the strip like a name-entry line, with a blinking cursor on the active slot and the slot count (`12/40`) at the right.
 
 **Cover art.** 7 covers from the Pico fixtures; Petal Quest, Zelda, Wario Land 4 and Super Metroid have no fixture picture and are drawn as 32×24 pixel SVGs in the same idiom. Comet Courier (no cover) gets the house card: black marquee, red top band, blue bottom band, title in marquee type.
+
+## Capability map
+
+C1  Loading: the strip is empty and the heading reads NOW LOADING; Error: a red ROM ERROR heading with the message in white where the table is; Empty: NO GAMES, SEE OPERATOR; Ready: the strip
+C2  Numbered slots in a ring, in catalog order; a section is a blue divider card in the strip with its name; the subtitle is the SYSTEM row; wide art is the DEMO backdrop; no cover gets the house card
+C3  The high-score table: PLAYS, LAST and TIME rows; a resumable game wears the red CONTINUE? banner with the countdown on its slot
+C4  One place: A on the slot plays; two places: down to the 1P/2P rows, up/down picks the side, A plays there; no side is ever chosen for the player
+C5  `options` on a slot opens its own DIP page in place of the table: one row per action, dim when disabled, description on the footer line; a destructive row asks ARE YOU SURE? YES/NO
+C6  Up from the strip reaches the heading; A opens the initials strip under it, and each entered letter drops slots whose title does not contain the text; the ring shrinks to the matches
+C7  The heading becomes the kicker (STARTING…), the detail under it in Silkscreen, the focused slot flashes; the host's actions (CANCEL) sit where INSERT COIN was as stops
+C8  The DEMO layout with the kicker where DEMO was: the game's cover large, its chrome title, the facts line; no PRESS START
+C9  A red banner across the table: the kicker, the gameTitle in chrome, the reason in white; stops under it: RETRY (when canRetry) and EXIT
+C10 RESET, the last row of the SERVICE page in the operator menu, and the only stop on the ROM ERROR screen
+C11 No answer yet
+C12 The operator's SETTINGS page: a test-menu page, group titles as cyan headings, rows "LABEL   VALUE" in Silkscreen, the focused row's description on the footer line
+C13 Test-menu rows: a choice steps with left/right; text and sensitiveText open the initials strip (asterisks, and a CLEAR stop with clearLabel); an action fires on A; destructive: a red banner with the title and message, YES is the confirm label
+C14 Saving: the row's value reads "..." in cyan until it is written; Problem: a red banner with the message, B clears it
+C15 The operator's SERVICE page: one row per device action, dim when disabled; A runs it
+C16 The IDENTITY page's BACKUP row: the password on the initials strip, then the table area shows the QR code at 1× and the secret in 8px white, two lines of 20
+C17 The IDENTITY page's RESTORE row: secret then password on the initials strip, a TRANSFER / DELETE two-stop row, a red banner LINKED CABINETS WILL NOT TRUST THIS ONE, YES/NO
+C18 The IDENTITY page's LINK row: the bunker URI on the initials strip, then the same TRANSFER / DELETE row and red banner as C17
+C19 The IDENTITY page's RETIRED rows, one per key in short form; A offers DELETE, behind a red banner BACKED UP? YES/NO
+C20 The service readout on the top line: Working prints the operation; Problem is a red banner with the message; Switched a banner NEW OWNER with the key in 8px; B dismisses
+C21 The service readout on the top line: HUMMINGBIRD-LAKE 72%, WIRED, or OFFLINE
+C22 The operator's NETWORK page: SCAN row first, then networks strongest first with %, LOCK and KNOWN marks; SCANNING in the readout; Connecting and Failed in the readout with the message, a rejected password reopens the strip; NO ADAPTER when there is none
+C23 A on a network row joins; secured and not known opens the initials strip for the password; the HIDDEN row asks the name then the password
+C24 No answer yet
+C25 First power-on runs the operator's test menu in order: INPUT TEST (each controller shows OK when heard), NETWORK, CABINET NAME, IDENTITY; the last row, EXIT TO GAME, finishes
+C26 CREDIT 21:47 at the top left is clockLabel; the ROM string at the top right is buildLabel
+C27 Attract: 30 s idle hard-cuts to DEMO, one game's cover and chrome title every 4 s in catalog order, PRESS START blinking; any press returns with the focus intact; no attract under reduced motion
+C28 `options` opens the slot's DIP page, `menu` jumps to OPERATOR, `system` opens the SERVICE page; the rest is left/right on the ring, down to the sides and the operator, A and B
+C29 High-score initials entry, extended: a character strip (A–Z, a–z, 0–9, symbols, SPACE, END) scrolled left/right, up/down jumps groups; A enters the next slot, B deletes the last; the line shows above with a blinking cursor and the count (12/40)
+C30 Focus is the yellow slot frame (flashing red), the yellow triangle on a side row, the yellow block on the operator line; the ring slides one slot per press; reduced motion: static frame, no slide, no blink

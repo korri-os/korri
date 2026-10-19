@@ -35,3 +35,36 @@ After 60 s with no input, the guide runs as Prevue did. The grid crawls up one r
 
 ## Text entry: the remote's channel-entry row
 Text entry takes over the bar between the two parts. The clock stays, and the crawl gives way to a one-line keypad strip, like a cable box's on-screen text entry. Left and right step along one row: `a–z`, then `0–9`, then the symbols, then `⌫ space ✓`. Up and down switch the row's case and set (`abc`, `ABC`, `123`, `#+=`). A types the letter, and B deletes it. The value under entry shows in the sidebar in big type, 20 characters per line, so a 40-character identity string reads as two lines. A Wi-Fi password shows as dots, and the newest letter stays visible for 1 s. The grid stays on screen above the strip, dimmed, so the person can still see which channel and which block they are filling in.
+
+## Capability map
+
+C1  Loading: a "PLEASE STAND BY" slate in the preview window and empty navy rows; Error: the slate carries the message and the crawl repeats it; Empty: a "NO LISTINGS" slate; Ready: the grid
+C2  Rows stay the system channels; the time columns were rejected, so the columns become the `section` captions Korri publishes (Continue, This device, zao); a game is the listing at its system and section, title clamped to two lines, cover in the preview window, no cover: the "No picture on file" slate
+C3  The sidebar facts line: Last played, Plays, and Time (the total); the yellow PAUSED flag in the cell for a resumable listing
+C4  The "Plays on" tags in the sidebar: one tag, A on the listing plays there; two tags (pips in the cell), A moves focus to the tags, left/right picks This device or zao, A plays
+C5  `options` on a listing flips the preview window to its own page: actions as rows under the title, dimmed when disabled, description in small print; a destructive one shows an "ARE YOU SURE?" slate first
+C6  Up past channel 1 lands on the bar; A opens the keypad strip; each typed letter hides listings whose title does not contain the text and the column header reads Titles containing "zel"
+C7  A slate in the preview window: the kicker in big yellow, the detail under it; host actions (Cancel) as tags under the promo title; the game's listing keeps the focus
+C8  The preview slate reads the kicker, the listing gets a yellow ON AIR flag, and the crawl says "Now playing Spelunky on zao"
+C9  A slate in the preview window: the kicker, the gameTitle, the reason; tags under the promo: Try again (when canRetry) and Dismiss
+C10 The last block on channel 1 Settings, "Reload the guide"; also the only tag on the Error slate
+C11 No answer yet
+C12 One service channel per settings group, numbered from 1, the group title in its yellow channel tab; each item is a block: label in yellow, value in white; the description shows in the sidebar when focused
+C13 A on a block: a choice cycles its choices and lists them in the sidebar; text and sensitiveText open the keypad strip (dots, and a Clear tag with clearLabel); an action fires; destructive shows a slate with the title, message and confirm-label tag
+C14 Saving: a yellow SAVING flag in the block's corner; Problem: the preview slate carries the message and B dismisses it
+C15 A service channel of its own named Device, after Identity: one block per device action, dimmed when disabled; A runs it
+C16 Channel 3's "Back up" block: the password on the keypad strip, then the preview window shows the QR code and the sidebar prints the secret in big type, 20 characters a line
+C17 Channel 3's "Switch" block, From backup: secret then password on the keypad strip, a TRANSFER / DELETE tag pair, then a yellow slate "Other devices will stop trusting this one" with a Go on tag
+C18 The "Switch" block's second tag, By bunker: the URI on the keypad strip, then the same TRANSFER / DELETE tags and trust-loss slate as C17
+C19 The "Retired keys" block reads the count; A opens them as a stacked cell, one line per key in short form; A on a key offers Delete, after a "Backed up?" slate
+C20 The preview slate: Working with the operation, Problem with the message, Switched with the new owner key in big type; B or a Dismiss tag clears it
+C21 The crawl: "connected to hummingbird-lake 72%", "wired" or "offline"; channel 2 Wi-Fi's first block says the same
+C22 Channel 2 grows one row per network, strongest first: %, padlock when secured, KNOWN flag; the Scan block reads SCANNING; Connecting and Failed run in the crawl, a rejected password reopens the keypad strip; no adapter: one block, "No Wi-Fi on this device"
+C23 A on a network row joins; a secured one not known asks the password on the keypad strip; the "Join a hidden network" block asks the name first, then the password
+C24 No answer yet
+C25 No answer yet
+C26 The clock in the bar, marquee yellow on the left; buildLabel in the sidebar's fine print
+C27 Attract after 60 s: the grid crawls up one row every 4 s and wraps, the preview and sidebar cycle the listings on screen 8 s each, the crawl runs steady; any input returns to the focused listing
+C28 `options` flips the preview to the listing's own page (C5); `menu` jumps to channel 1; `system` jumps to the Device channel; everything else is the four directions, A and B
+C29 Text entry takes over the bar: the clock stays and the crawl becomes a one-line keypad strip; left/right step the row, up/down switch abc/ABC/123/#+=, A types, B deletes; the value shows in the sidebar in big type, dots for a password
+C30 The focused cell is marquee yellow with a white rule, always one on screen; the grid scrolls to keep it in view; under reduced motion rows and the crawl step in whole jumps
