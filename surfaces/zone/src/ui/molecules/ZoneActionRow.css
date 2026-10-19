@@ -1,0 +1,14 @@
+/* Centred, with a gap wide enough for two inline triangles and their nudge
+ * between neighbours. The gap scales with the type; it never shrinks below
+ * the room the triangles need, so the row wraps instead. */
+.zone-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--zone-strip-inset) calc(var(--zone-triangle-inline) * 2em + var(--zone-nudge-far) * 2 + var(--zone-strip-gap));
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 calc(var(--zone-triangle-inline) * 1em + var(--zone-nudge-far));
+  font-size: var(--zone-shell-button-type, var(--zone-type-button-tall));
+}

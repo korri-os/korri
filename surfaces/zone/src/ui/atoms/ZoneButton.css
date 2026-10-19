@@ -1,0 +1,72 @@
+/* Face over reason. The face is two lines of type tall, like a tab, and the
+ * type is the button's own token: tall or short follows the strip through
+ * --zone-shell-button-type when a page sets it. */
+.zone-button {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--zone-shell-button-type, var(--zone-type-button-tall));
+}
+
+.zone-button-face {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: 2em;
+  transition: translate var(--zone-press-time) var(--zone-bounce);
+}
+
+/* The press: the panel sinks into its underline. */
+.zone-button[data-pressed="on"] .zone-button-face {
+  --zone-underline-press: 1;
+  translate: var(--zone-press-sink) var(--zone-press-sink);
+}
+
+.zone-button-body {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Disabled dims the panel and its words, not the cursor beside it. */
+.zone-button[data-disabled="on"] .zone-button-body {
+  opacity: var(--zone-disabled-opacity);
+}
+
+/* The cursor: a triangle at each end, pointing in, centred on the face. */
+.zone-button-cursor-left,
+.zone-button-cursor-right {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  translate: 0 -50%;
+  pointer-events: none;
+}
+
+.zone-button-cursor-left {
+  right: 100%;
+}
+
+.zone-button-cursor-right {
+  left: 100%;
+}
+
+/* Why it cannot be pressed: Korri's words, small, on the ground under the
+ * face. It may truncate; the button above it never does. */
+.zone-button-reason {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  margin-top: var(--zone-drop-edge);
+  font-size: calc(var(--zone-type-reason-scale) * 1em);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

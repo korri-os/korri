@@ -1,6 +1,8 @@
 /* Behind the panel's body (z-index -1) and in front of its drop edge (-3).
  * Standing alone it has no panel shape to read, so it draws the same
- * parallelogram at its own lean. */
+ * parallelogram at its own lean. A pressed button sets --zone-underline-press
+ * to 1 and sinks its panel by the press sink; the underline moves back by
+ * the same amount, so the panel sinks into it and the mark holds still. */
 .zone-underline {
   --zone-underline-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
   position: absolute;
@@ -17,6 +19,8 @@
       0 100%
     )
   );
-  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  translate:
+    calc(var(--zone-drop-edge) * -1 - var(--zone-press-sink) * var(--zone-underline-press, 0))
+    calc(var(--zone-drop-edge) - var(--zone-press-sink) * var(--zone-underline-press, 0));
   pointer-events: none;
 }

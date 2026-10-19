@@ -1,0 +1,58 @@
+/* The tab is as tall as two lines of its type, whatever the strip's height,
+ * so the label and the sub-line sit inside it with room. The shell sets the
+ * type on the strip; alone, the wide tab token. */
+.zone-tab {
+  position: relative;
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: stretch;
+  min-width: 0;
+  height: 2em;
+  font-size: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
+  transition: translate var(--zone-lift-time) var(--zone-bounce);
+}
+
+/* The focused tab lifts. */
+.zone-tab[data-focused="on"] {
+  translate: 0 calc(var(--zone-tab-lift) * -1);
+}
+
+/* Label over sub-line, both centred. The sub-line is the panel's caps at
+ * half size with no edge: a label of a label. */
+.zone-tab-words {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.zone-tab-sub {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  margin-top: 0.15em;
+  color: var(--zone-cap);
+  font-size: calc(var(--zone-tab-sub-scale) * 1em);
+  letter-spacing: var(--zone-tab-sub-tracking);
+  text-overflow: ellipsis;
+  text-shadow: none;
+  white-space: nowrap;
+}
+
+/* The active tab's banner, with the underline shaped to the hexagon when
+ * the tab is focused. The point depth repeats the banner's own formula. */
+.zone-tab-banner {
+  --zone-tab-banner-point: calc(var(--zone-banner-point) * var(--zone-type-banner-scale) * 1em);
+  --zone-panel-shape: polygon(
+    var(--zone-tab-banner-point) 0,
+    calc(100% - var(--zone-tab-banner-point)) 0,
+    100% 50%,
+    calc(100% - var(--zone-tab-banner-point)) 100%,
+    var(--zone-tab-banner-point) 100%,
+    0 50%
+  );
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  min-width: 0;
+}

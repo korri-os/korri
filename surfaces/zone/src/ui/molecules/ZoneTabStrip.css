@@ -1,0 +1,10 @@
+/* A row that may be narrower than its tabs want: the gap is the first to
+ * give, down to a hairline, and the tabs shrink after it. */
+.zone-tab-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(var(--zone-hairline), 1cqw, var(--zone-strip-gap));
+  min-width: 0;
+  max-width: 100%;
+}
