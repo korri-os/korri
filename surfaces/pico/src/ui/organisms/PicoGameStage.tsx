@@ -26,6 +26,7 @@ export function PicoGameStage({
   kicker,
   stats,
   resumable = false,
+  download,
   level = 1,
   children,
 }: {
@@ -36,6 +37,8 @@ export function PicoGameStage({
   readonly kicker?: string
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
   readonly resumable?: boolean
+  /** What playing fetches first, already worded ("1.5 GB DOWNLOAD"). */
+  readonly download?: string
   readonly level?: 1 | 2
   readonly children?: ReactNode
 }) {
@@ -55,6 +58,7 @@ export function PicoGameStage({
         </div>
         <div className="pico-game-stage-facts">
           <PicoGameFacts
+            download={download}
             kicker={kicker}
             level={level}
             resumable={resumable}

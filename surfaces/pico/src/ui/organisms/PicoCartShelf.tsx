@@ -1,6 +1,6 @@
 import "./PicoCartShelf.css"
 import { useEffect, useRef } from "react"
-import { picoStatsFor } from "../../pico-detail-view"
+import { picoDownloadLabel, picoStatsFor } from "../../pico-detail-view"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoTally } from "../atoms/PicoTally"
 import { PicoCart } from "../molecules/PicoCart"
@@ -114,6 +114,7 @@ export function PicoCartShelf({
       <div className="pico-cart-shelf-stage">
         <PicoGameStage
           artUrl={focused.artUrl}
+          download={picoDownloadLabel(focused)}
           id={focused.id}
           kicker={focused.section?.toUpperCase()}
           resumable={focused.resumable}

@@ -20,6 +20,15 @@ function detail(id: string, extra: Partial<ComponentProps<typeof PicoGameDetail>
 export function NoArtOrHistory() { return detail("petal") }
 export function MultipleLocations() { return detail("tetris") }
 export function ChooseLocation() { return detail("tetris", { placing: fixtureShelfGame("tetris") }) }
+/** A game whose first launch fetches a runtime: the size sits with the chips. */
+export function NeedsDownload() {
+  const host = createFixtureHost()
+  const game = picoDetailViewFromGame({ ...fixtureGame("hollow"), download: { bytes: 1_500_000_000 } })
+  return <PicoGameDetail clockLabel={fixtureModel.clockLabel} actions={host.gameActions("hollow")} game={game}
+    onChooseLocation={location => host.launchGame("hollow", location)} onCancelAction={host.dismiss}
+    onConfirmAction={() => host.runGameAction("hollow", "remove")} onPlay={() => host.launchGame("hollow")}
+    onRunAction={action => host.runGameAction("hollow", action.id)} />
+}
 export function ConfirmRemoval() {
   return detail("hollow", { askingAction: createFixtureHost().gameActions("hollow").find(action => action.destructive) })
 }

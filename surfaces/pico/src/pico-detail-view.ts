@@ -22,9 +22,12 @@ export interface PicoDetailView {
    */
   readonly stats: readonly { readonly figure: string; readonly caption: string }[]
   readonly locations?: readonly PicoShelfLocation[]
+  /** "1.5 GB DOWNLOAD" when playing first fetches something; see picoDownloadLabel. */
+  readonly download?: string
 }
 
 export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
+  const download = picoDownloadLabel(game)
   return {
     id: game.id,
     title: game.title,
@@ -32,6 +35,7 @@ export function picoDetailViewFromGame(game: SurfaceGame): PicoDetailView {
     ...(game.coverArtUrl === undefined ? {} : { artUrl: game.coverArtUrl }),
     primaryLabel: game.resumable === true ? "CONTINUE" : "PLAY",
     stats: picoStatsFor(game),
+    ...(download === undefined ? {} : { download }),
     ...(game.launchLocations === undefined || game.launchLocations.length === 0
       ? {}
       : { locations: game.launchLocations }),
@@ -60,6 +64,28 @@ export function picoStatsFor(
     stats.push({ figure: playtimeLabel(game.totalPlaytimeSeconds), caption: "PLAYED" })
   }
   return stats
+}
+
+/**
+ * What a game still has to fetch before it plays, as one chip: "1.5 GB
+ * DOWNLOAD", or "DOWNLOAD NEEDED" when Korri knows that but not how much.
+ * Absent when Korri said nothing, which is every game that plays at once.
+ */
+export function picoDownloadLabel(game: Pick<SurfaceGame, "download">): string | undefined {
+  if (game.download === undefined) return undefined
+  return game.download.bytes === undefined ? "DOWNLOAD NEEDED" : `${picoBytesLabel(game.download.bytes)} DOWNLOAD`
+}
+
+/** "1.5 GB", "612 MB", "48 KB": decimal units, one decimal below ten. */
+export function picoBytesLabel(bytes: number): string {
+  const scale = (value: number, unit: string) => {
+    const text = value < 10 ? value.toFixed(1) : String(Math.round(value))
+    return `${text.endsWith(".0") ? text.slice(0, -2) : text} ${unit}`
+  }
+  if (bytes >= 1e9) return scale(bytes / 1e9, "GB")
+  if (bytes >= 1e6) return scale(bytes / 1e6, "MB")
+  if (bytes >= 1e3) return scale(bytes / 1e3, "KB")
+  return `${Math.round(bytes)} B`
 }
 
 /** Whole hours and minutes, in the terse uppercase Pico speaks everywhere. */

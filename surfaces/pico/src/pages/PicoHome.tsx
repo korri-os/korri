@@ -232,11 +232,26 @@ export function PicoHome({
         />
       ) : null}
 
+      {view._tag === "Confirm" ? (
+        <PicoNotice
+          actions={view.actions.map(action => ({
+            label: action.label,
+            disabled: !action.enabled,
+            onPress: () => onAction?.(action.id),
+          }))}
+          kicker={view.kicker}
+          message={view.detail}
+          title={view.cart?.title}
+          tone="ask"
+        />
+      ) : null}
+
       {view._tag === "Busy" ? (
         <PicoLaunchStage
           cart={view.cart}
           detail={view.detail}
           kicker={view.kicker}
+          progress={view.progress}
           actions={view.actions?.map(action => ({
             id: action.id,
             label: action.label,

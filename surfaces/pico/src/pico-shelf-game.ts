@@ -41,4 +41,9 @@ export interface PicoShelfGame {
    * the one launch mistake a user cannot undo from the couch.
    */
   readonly locations?: readonly PicoShelfLocation[]
+  /**
+   * Present when playing first fetches something to this device. `bytes` is
+   * how much, when Korri knows; the shelf prints it, Korri never does.
+   */
+  readonly download?: { readonly bytes?: number }
 }

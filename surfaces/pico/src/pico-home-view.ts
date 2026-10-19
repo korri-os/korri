@@ -69,6 +69,9 @@ function homeViewFrom(catalog: SurfaceCatalog): PicoHomeView {
               ...(game.totalPlaytimeSeconds === undefined
                 ? {}
                 : { totalPlaytimeSeconds: game.totalPlaytimeSeconds }),
+              ...(game.download === undefined
+                ? {}
+                : { download: game.download.bytes === undefined ? {} : { bytes: game.download.bytes } }),
               ...(game.launchLocations === undefined
                 ? {}
                 : {

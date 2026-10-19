@@ -38,8 +38,56 @@ export function WithCancel() {
   )
 }
 
+/** The download before a first launch: a real bar from Korri's bytes, and Cancel. */
+export function Downloading10() {
+  return (
+    <PicoLaunchStage
+      actions={[{ id: "cancel", label: "Cancel", disabled: false, onPress: () => {} }]}
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      detail="116 MB of 1.2 GB · 6.4 MB/s · 2:43 left"
+      kicker="Downloading FEX rootfs"
+      progress={{ done: 116_000_000, total: 1_160_000_000 }}
+    />
+  )
+}
+
+export function Downloading90() {
+  return (
+    <PicoLaunchStage
+      actions={[{ id: "cancel", label: "Cancel", disabled: false, onPress: () => {} }]}
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      detail="1 GB of 1.2 GB · 6.4 MB/s · 0:18 left"
+      kicker="Downloading FEX rootfs"
+      progress={{ done: 1_044_000_000, total: 1_160_000_000 }}
+    />
+  )
+}
+
+/** Korri knows how far it has got but not how far it goes: a walking band. */
+export function DownloadingUnknownSize() {
+  return (
+    <PicoLaunchStage
+      actions={[{ id: "cancel", label: "Cancel", disabled: false, onPress: () => {} }]}
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      detail="612 MB so far · 6.4 MB/s"
+      kicker="Downloading FEX rootfs"
+      progress={{ done: 612_000_000 }}
+    />
+  )
+}
+
+/** Unpacking cannot be cancelled and has no position: words and the clock. */
+export function Unpacking() {
+  return (
+    <PicoLaunchStage
+      cart={view._tag === "Busy" ? view.cart : undefined}
+      kicker="Unpacking FEX rootfs"
+    />
+  )
+}
+
 export const name = "Launch Stage"
-export const note = "The cart seats into its slot while the meter fills; states only what Korri published"
+export const note = "The cart seats into its slot while the meter fills; with Korri's bytes the same cells are the bar"
 
 const view = picoScreenViewFromModel({
   ...fixtureModel,

@@ -9,13 +9,29 @@ import { PicoCart } from "../molecules/PicoCart"
 const METER = Array.from({ length: 16 }, (_, index) => index)
 
 /**
+ * How the meter reads: on a `clock` the cells fill once and hold, because
+ * Korri gave no position; a `progress` lights one cell per sixteenth done
+ * and blinks the next; `indeterminate` walks a band along, because Korri
+ * gave a position but no end.
+ */
+export type PicoMeterMode = "clock" | "progress" | "indeterminate"
+
+/** Cells lit for `done` of `total`: whole sixteenths, never rounded up. */
+export function picoMeterCells(progress: { readonly done: number; readonly total: number }): number {
+  if (progress.total <= 0) return 0
+  return Math.max(0, Math.min(METER.length, Math.floor((progress.done / progress.total) * METER.length)))
+}
+
+/**
  * The seconds between a press and a game, and the screen while one runs.
  *
  * Starting, the cartridge is pushed down into a slot at the bottom of the
  * screen while a sixteen-cell meter fills. Running, the cart sits seated and
- * the meter is full. The meter is decoration, not progress: Korri publishes no
- * percentage, so the cells fill on a clock and every fact on screen is text
- * Korri wrote. Without a known game there is no cartridge to seat, and the
+ * the meter is full. With no `progress` the meter is decoration: the cells
+ * fill on a clock and every fact on screen is text Korri wrote. With
+ * `progress` the same sixteen cells are the bar: Korri's bytes, in whole
+ * sixteenths, with the cell being filled blinking so a slow download still
+ * shows as alive. Without a known game there is no cartridge to seat, and the
  * slot stays empty rather than showing a stand-in.
  */
 export function PicoLaunchStage({
@@ -23,6 +39,7 @@ export function PicoLaunchStage({
   detail,
   gameTitle,
   cart,
+  progress,
   actions,
   phase = "starting",
 }: {
@@ -30,6 +47,8 @@ export function PicoLaunchStage({
   readonly detail?: string
   readonly gameTitle?: string
   readonly cart?: PicoLaunchCart
+  /** Korri's measured position, in bytes. The words in `detail` say the rest. */
+  readonly progress?: { readonly done: number; readonly total?: number }
   readonly actions?: readonly {
     readonly id: string
     readonly label: string
@@ -40,6 +59,9 @@ export function PicoLaunchStage({
   }[]
   readonly phase?: "starting" | "running"
 }) {
+  const mode: PicoMeterMode = progress === undefined ? "clock" : progress.total === undefined ? "indeterminate" : "progress"
+  const lit = progress?.total === undefined ? undefined : picoMeterCells({ done: progress.done, total: progress.total })
+  const percent = progress?.total === undefined || progress.total <= 0 ? undefined : Math.floor((progress.done / progress.total) * 100)
   const controls = useRef<HTMLUListElement>(null)
   /** The row the cursor was last on, so a lost cursor returns near it. */
   const lastRow = useRef(0)
@@ -64,9 +86,26 @@ export function PicoLaunchStage({
     <section aria-live="polite" className="pico-launch-stage" data-phase={phase}>
       <div className="pico-launch-stage-words">
         <h1 className="pico-launch-stage-kicker">{kicker}</h1>
-        <span aria-hidden className="pico-launch-stage-meter">
+        <span
+          className="pico-launch-stage-meter"
+          data-meter={mode}
+          {...(mode === "clock"
+            ? { "aria-hidden": true }
+            : {
+                role: "progressbar",
+                "aria-label": kicker,
+                ...(percent === undefined
+                  ? {}
+                  : { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.max(0, Math.min(100, percent)) }),
+              })}
+        >
           {METER.map((cell) => (
-            <i className="pico-launch-stage-cell" data-cell={cell} key={cell} />
+            <i
+              className="pico-launch-stage-cell"
+              data-cell={cell}
+              {...(lit === undefined ? {} : { "data-lit": cell < lit ? "on" : cell === lit ? "next" : "off" })}
+              key={cell}
+            />
           ))}
         </span>
         {gameTitle === undefined ? null : (

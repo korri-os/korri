@@ -146,6 +146,52 @@
 	}
 }
 
+/* Progress: Korri's bytes, not a clock. A done cell is lit and still; the
+ * cell being filled blinks on the beat so a download that takes a minute per
+ * cell still shows as alive; the rest wait dark. Nothing here is staggered. */
+.pico-launch-stage-meter[data-meter="progress"] .pico-launch-stage-cell {
+	background: var(--pico-plate);
+	animation: none;
+}
+
+.pico-launch-stage-meter[data-meter="progress"] .pico-launch-stage-cell[data-lit="on"] {
+	background: var(--pico-ok);
+}
+
+.pico-launch-stage-meter[data-meter="progress"] .pico-launch-stage-cell[data-lit="next"] {
+	background: var(--pico-ok);
+	animation: pico-blink 1200ms steps(1, end) infinite;
+}
+
+/* A position with no end: a band of six lit cells walks along, as the busy
+ * meter's does, so the bar never claims a fraction Korri did not give. */
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell {
+	background: var(--pico-ok);
+	animation: pico-blink 1600ms steps(1, end) infinite;
+}
+
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="0"] { animation-delay: -1500ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="1"] { animation-delay: -1400ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="2"] { animation-delay: -1300ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="3"] { animation-delay: -1200ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="4"] { animation-delay: -1100ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="5"] { animation-delay: -1000ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="6"] { animation-delay: -900ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="7"] { animation-delay: -800ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="8"] { animation-delay: -700ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="9"] { animation-delay: -600ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="10"] { animation-delay: -500ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="11"] { animation-delay: -400ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="12"] { animation-delay: -300ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="13"] { animation-delay: -200ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="14"] { animation-delay: -100ms; }
+.pico-launch-stage-meter[data-meter="indeterminate"] .pico-launch-stage-cell[data-cell="15"] { animation-delay: 0ms; }
+
+/* Without motion (pico.css stops every animation) a bar holds its fraction
+ * with the next cell lit, and an endless download shows every cell lit, as
+ * the busy meter does. The waiting cells above outrank the clock's
+ * reduced-motion fill, so they stay dark. */
+
 /* The slot: the cartridge stands in it and sinks while the game starts. The
  * mouth covers the cart's lower edge, which is what makes it read as "in".
  * The slot clips at its own bottom edge, which is the mouth's, so the part of

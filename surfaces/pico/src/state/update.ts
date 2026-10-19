@@ -146,7 +146,7 @@ function step(nav: PicoNavigation, message: PicoMessage, korri: SurfaceModel): P
     case "PressedStatusAction":
       // Only what Korri publishes now, enabled, is authority. A press that
       // lands after the work ended or the action went inert sends nothing.
-      return korri.status._tag === "Busy" &&
+      return (korri.status._tag === "Busy" || korri.status._tag === "Confirm") &&
         (korri.status.actions ?? []).some(action => action.id === message.actionId && action.enabled)
         ? ask(nav, { _tag: "RunAction", actionId: message.actionId })
         : stay(nav)

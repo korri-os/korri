@@ -1,4 +1,5 @@
 import "./PicoGameHero.css"
+import { picoDownloadLabel } from "../../pico-detail-view"
 import type { PicoShelfGame } from "../../pico-shelf-game"
 import { PicoButton } from "../atoms/PicoButton"
 import { PicoGameStage } from "./PicoGameStage"
@@ -25,6 +26,7 @@ export function PicoGameHero({
     <div className="pico-game-hero">
       <PicoGameStage
         artUrl={game.artUrl}
+        download={picoDownloadLabel(game)}
         id={game.id}
         kicker={reason}
         resumable={game.resumable}

@@ -238,6 +238,16 @@ printable ASCII symbol; a secret is masked, and clearing a saved one asks
 first. The same editor (`PicoTextEditor`) takes the caller's actions, so a
 Wi-Fi password gets CONNECT and SHOW, and setup's name gets NEXT.
 
+A first launch that needs a download (ADR 0012) is drawn from the treaty's
+`Confirm`, `Busy.progress` and `SurfaceGame.download`: a yellow card asks with
+Korri's actions; the launch stage's sixteen cells become a real bar from
+Korri's bytes, with the cell being filled blinking, or a walking band when the
+size is unknown; unpacking and any other `Busy` without `progress` keep the
+clock meter; a failure is the red card with Korri's words. A game that still
+needs a download wears its size as a chip beside its play facts, formatted by
+Pico (`picoDownloadLabel`). Back during the question and the download is the
+host's to deliver as Cancel; Pico sends only the actions Korri published.
+
 Everything is reachable with the d-pad, A and B alone, because many handhelds
 send the surface no `system`, `options` or `menu` button. Home's MENU key on
 the floor row opens FIND, SETTINGS and VIEW; those three buttons remain
