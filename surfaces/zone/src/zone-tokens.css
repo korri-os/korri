@@ -65,6 +65,14 @@
   /** How far a pressed button sinks. @label Press sink @min 0 @max 8 @step 1 */
   --zone-press-sink: 3px;
 
+  /* The plan's two thresholds. The plan (src/plan/zone-select.ts) reads its
+   * own constants; these are the same numbers, held equal by test, so a
+   * design tool can see and turn them. */
+  /** Five cards show at or above this width; three below. @label Wide at @min 320 @max 2000 @step 10 */
+  --zone-wide-width: 1000px;
+  /** The strips take their tall heights at or above this. @label Tall at @min 200 @max 1200 @step 10 */
+  --zone-tall-height: 600px;
+
   /* The strips, tall (height >= 600) and short. The plan picks one. */
   /** The tab strip on a tall screen. @label Tab strip, tall @min 40 @max 120 @step 1 */
   --zone-tab-strip-tall: 74px;
