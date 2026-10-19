@@ -242,8 +242,10 @@ A first launch that needs a download (ADR 0012) is drawn from the treaty's
 `Confirm`, `Busy.progress` and `SurfaceGame.download`: a yellow card asks with
 Korri's actions; the launch stage's sixteen cells become a real bar from
 Korri's bytes, with the cell being filled blinking, or a walking band when the
-size is unknown; unpacking and any other `Busy` without `progress` keep the
-clock meter; a failure is the red card with Korri's words. A game that still
+end is unknown (unpacking is `progress` with no `total`); a `Busy` without
+`progress` keeps the clock meter; a failure is the red card with Korri's words
+and RETRY / CANCEL. A `Busy` with no actions shows no BACK hint, because the
+host delivers Back only as an action Korri published. A game that still
 needs a download wears its size as a chip beside its play facts, formatted by
 Pico (`picoDownloadLabel`). Back during the question and the download is the
 host's to deliver as Cancel; Pico sends only the actions Korri published.

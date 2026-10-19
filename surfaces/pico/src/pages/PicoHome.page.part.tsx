@@ -136,8 +136,9 @@ export function DownloadingNearlyDone() {
     },
   })
 }
+/** Unpacking: a position of nothing and no known end, so the band walks. */
 export function Unpacking() {
-  return home({ ...fixtureModel, status: { _tag: "Busy", kicker: "Unpacking FEX rootfs", gameId: "hollow" } })
+  return home({ ...fixtureModel, status: { _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "hollow" } })
 }
 export function DownloadFailed() {
   return home({

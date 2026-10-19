@@ -76,12 +76,13 @@ export function DownloadingUnknownSize() {
   )
 }
 
-/** Unpacking cannot be cancelled and has no position: words and the clock. */
+/** Unpacking cannot be cancelled and has no end Korri can measure: the band walks. */
 export function Unpacking() {
   return (
     <PicoLaunchStage
       cart={view._tag === "Busy" ? view.cart : undefined}
       kicker="Unpacking FEX rootfs"
+      progress={{ done: 0 }}
     />
   )
 }

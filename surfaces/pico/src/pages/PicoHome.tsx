@@ -22,6 +22,9 @@ const SHELF_HINTS = [
 /** With nothing to act on, the only honest hint left is the way out. */
 const QUIET_HINTS = [{ hintKey: "b", label: "BACK" }] as const
 
+/** Nothing to press and no way out until Korri is done. */
+const NO_HINTS = [] as const
+
 const MENU_LABEL = "MENU"
 
 /* The layout's own word, for the VIEW line in the menu. */
@@ -129,6 +132,8 @@ export function PicoHome({
   const offered = menu !== undefined && !asking && (view._tag === "Shelf"
     || view._tag === "Loading" || view._tag === "Empty" || view._tag === "Failed")
   const open = offered && menu.open
+  /* Work with nothing to press (unpacking, stopping) takes no Back either:
+   * the host delivers Back only as an action Korri published. No hint, then. */
   const hints = open
     ? [
         ...(aim === undefined || aim === MENU_LABEL ? [] : [{ hintKey: "a" as const, label: aim }]),
@@ -136,7 +141,8 @@ export function PicoHome({
       ]
     : offered && aim === MENU_LABEL
       ? [{ hintKey: "a" as const, label: MENU_LABEL }, { hintKey: "b" as const, label: "BACK" }]
-      : view._tag === "Shelf" && !asking ? SHELF_HINTS : QUIET_HINTS
+      : view._tag === "Shelf" && !asking ? SHELF_HINTS
+        : view._tag === "Busy" && (view.actions?.length ?? 0) === 0 ? NO_HINTS : QUIET_HINTS
 
   return (
     <PicoScreenShell
@@ -271,13 +277,16 @@ export function PicoHome({
         />
       ) : null}
 
+      {/* Retry and Cancel, as the treaty names them: Cancel leaves the failed
+        * thing, and the host stops whatever it was still doing for it. With
+        * nothing to retry there is nothing to cancel, only to acknowledge. */}
       {view._tag === "Problem" ? (
         <PicoNotice
           actions={
             view.canRetry
               ? [
-                  { label: "TRY AGAIN", onPress: onRetry },
-                  { label: "OK", onPress: onDismiss },
+                  { label: "RETRY", onPress: onRetry },
+                  { label: "CANCEL", onPress: onDismiss },
                 ]
               : [{ label: "OK", onPress: onDismiss }]
           }

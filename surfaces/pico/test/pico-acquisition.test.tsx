@@ -128,15 +128,34 @@ describe("downloading", () => {
 })
 
 describe("unpacking", () => {
-  test("has no bar, no Cancel, and the kicker says what Korri is doing", () => {
+  const unpacking: SurfaceStatus = { _tag: "Busy", kicker: "Unpacking FEX rootfs", progress: { done: 0 }, gameId: "hollow" }
+
+  test("shows the walking band, not a bar filled to the end, with no Cancel and no BACK hint", () => {
     const host = createFixtureHost()
-    const { container } = render(<PicoSurface host={host} model={withStatus({ _tag: "Busy", kicker: "Unpacking FEX rootfs", gameId: "hollow" })} />)
+    const { container } = render(<PicoSurface host={host} model={withStatus(unpacking)} />)
     expect(screen.getByRole("heading", { name: "Unpacking FEX rootfs" })).toBeTruthy()
-    expect(screen.queryByRole("progressbar")).toBeNull()
-    expect(container.querySelector(".pico-launch-stage-meter")?.getAttribute("data-meter")).toBe("clock")
+    const meter = container.querySelector(".pico-launch-stage-meter")
+    expect(meter?.getAttribute("data-meter")).toBe("indeterminate")
+    expect(meter?.querySelectorAll(".pico-launch-stage-cell")).toHaveLength(16)
+    // Nothing claims a fraction: no lit/unlit split, no value, no clock fill.
+    expect(container.querySelectorAll("[data-lit]")).toHaveLength(0)
+    expect(meter?.hasAttribute("aria-valuenow")).toBe(false)
+    expect(container.querySelector('[data-meter="clock"]')).toBeNull()
     expect(screen.queryByRole("button")).toBeNull()
+    expect(screen.queryByText("BACK")).toBeNull()
     host.press("back")
     expect(host.calls).toEqual([])
+  })
+
+  test("any Busy without actions drops the BACK hint; one with Cancel keeps it", () => {
+    const { unmount } = render(<PicoSurface host={createFixtureHost()} model={withStatus({ _tag: "Busy", kicker: "Stopping session…", detail: "Waiting for the host to finish" })} />)
+    expect(screen.queryByText("BACK")).toBeNull()
+    unmount()
+    render(<PicoSurface host={createFixtureHost()} model={withStatus({
+      _tag: "Busy", kicker: "Downloading FEX rootfs", progress: { done: 1, total: 10 }, gameId: "hollow",
+      actions: [{ id: "acquisition:2:cancel", label: "Cancel", enabled: true }],
+    })} />)
+    expect(screen.getByText("BACK")).toBeTruthy()
   })
 })
 
@@ -157,8 +176,8 @@ describe("a failed download", () => {
     expect(card.querySelector(".pico-card")?.getAttribute("data-tone")).toBe("warn")
     expect(screen.getByRole("heading", { name: "Hollow Knight" })).toBeTruthy()
     expect(screen.getByText("The connection stalled. Check the network and try again.")).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "TRY AGAIN" }))
-    fireEvent.click(screen.getByRole("button", { name: "OK" }))
+    fireEvent.click(screen.getByRole("button", { name: "RETRY" }))
+    fireEvent.click(screen.getByRole("button", { name: "CANCEL" }))
     expect(host.calls).toEqual(["retry", "dismiss"])
   })
 

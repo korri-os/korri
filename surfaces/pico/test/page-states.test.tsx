@@ -27,10 +27,11 @@ test("home catalog states state loading, emptiness and the read failure", () => 
 
 test("launch problems only offer retry when the model permits it", () => {
   const retryable = render(<Home.RetryableProblem />)
-  expect(retryable.getByRole("button", { name: "TRY AGAIN" })).toBeDefined()
+  expect(retryable.getByRole("button", { name: "RETRY" })).toBeDefined()
+  expect(retryable.getByRole("button", { name: "CANCEL" })).toBeDefined()
   retryable.unmount()
   const terminal = render(<Home.Problem />)
-  expect(terminal.queryByRole("button", { name: "TRY AGAIN" })).toBeNull()
+  expect(terminal.queryByRole("button", { name: "RETRY" })).toBeNull()
   expect(terminal.getByRole("button", { name: "OK" })).toBeDefined()
 })
 
