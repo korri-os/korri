@@ -1,0 +1,77 @@
+/**
+ * Reset, screen scope and reduced motion only. The tokens (zone-tokens.css)
+ * and the face (zone-fonts.css) are imported beside this file by index.ts;
+ * components import their own styles. Nothing here is a component class.
+ */
+
+.zone-screen *,
+.zone-screen *::before,
+.zone-screen *::after {
+  box-sizing: border-box;
+}
+
+/**
+ * The screen: Zone's painted surface and its size container, owned by the
+ * composition root. The host decides how big a screen is; Zone fills exactly
+ * what it is given and never reaches outside its own root.
+ *
+ * Every word in Zone is caps in the one face. Text standing on the ground
+ * wears the black outline; a panel's own stylesheet swaps it for the blue
+ * edge.
+ */
+.zone-screen {
+  position: relative;
+  container-type: size;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  background: var(--zone-ground);
+  color: var(--zone-cap);
+  font-family: var(--zone-font);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--zone-tracking);
+  line-height: 1;
+  text-shadow:
+    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
+    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
+    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
+    var(--zone-cap-outline) var(--zone-cap-outline) 0 var(--zone-cap-outline-colour);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Controls start from nothing: every button in Zone is drawn by its
+ * component. `:where` keeps this at zero specificity so a component's own
+ * class wins. Focus is drawn by the component too, never by the browser. */
+:where(.zone-screen button) {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  text-shadow: inherit;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+  outline: none;
+}
+
+/**
+ * Motion is decoration here: every state it dresses is already stated by a
+ * shape or a word, so honouring the preference costs nothing. `!important`
+ * because the declarations it overrides sit on components, and this must win
+ * over all of them without knowing their names.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .zone-screen *,
+  .zone-screen *::before,
+  .zone-screen *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

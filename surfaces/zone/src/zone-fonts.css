@@ -1,0 +1,13 @@
+/**
+ * Zone's one face: Anton Regular, SIL Open Font License 1.1 (fonts/OFL.txt).
+ * Tall condensed heavy caps, the closest free face to Mania's chunky menu
+ * lettering. Embedded from the package so a surface shipped alone still has
+ * it; the family name is prefixed so a host page's own Anton cannot collide.
+ */
+@font-face {
+  font-family: "Zone Anton";
+  src: url("./fonts/Anton-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}

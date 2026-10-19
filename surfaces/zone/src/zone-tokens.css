@@ -1,0 +1,255 @@
+/**
+ * Zone's tokens: the one file allowed to state a raw colour or pixel value.
+ *
+ * Three layers:
+ *
+ *  1. The palette. Eight colours from Sonic Mania's menus and nothing else:
+ *     no blend, no gradient, no blur. A drop edge is a hard offset in one of
+ *     them.
+ *  2. Geometry. The parallelogram slant, the drop edge, the strip heights
+ *     and the card band's proportions. Every value here is also a constant in
+ *     src/plan/zone-select.ts; test/plan-zone-select.test.ts holds them equal.
+ *  3. Roles. Components name a role, never a palette colour, so a decision
+ *     like "what colour is a focused edge" is made once, here.
+ *
+ * Every declaration is a literal with a knob hint, so Caliper offers it as a
+ * live control. Outputs are derived in component stylesheets with calc().
+ */
+
+.zone-theme {
+  /* ---- 1. The palette ---- */
+  /** The ground and the stripe band. @label Mint */
+  --zone-mint: #3fe0a0;
+  /** Every panel and card body. @label Black */
+  --zone-black: #000000;
+  /** Caps on a panel. @label White */
+  --zone-white: #ffffff;
+  /** The banner lettering, the HERE tag, the TIME label, the A keycap. @label Yellow */
+  --zone-yellow: #ffd21e;
+  /** The banner, the small orbit ring, the system tag, the well border, the letter edge. @label Blue */
+  --zone-blue: #2d5be8;
+  /** The big orbit ring, its dots, and the lower band. @label Orange */
+  --zone-orange: #f7931e;
+  /** The cursor triangles, the remote tag, the ribbon rule. @label Red */
+  --zone-red: #e8322a;
+  /** The focused card's edge, the lit underline, the B keycap. @label Pink */
+  --zone-pink: #e889b0;
+
+  /* ---- 2. Geometry ---- */
+  /** How far a parallelogram's top edge leads its bottom edge. @label Panel slant @min 0 @max 32 @step 1 */
+  --zone-slant: 12px;
+  /** The angle of the three-colour stripe under a card title. @label Stripe angle @min -90 @max 90 @step 1 */
+  --zone-stripe-angle: -62deg;
+  /** The hard offset of a panel's blue edge and a lit underline. @label Drop edge @min 0 @max 16 @step 1 */
+  --zone-drop-edge: 6px;
+  /** The drop edge of the focused card. @label Focused drop edge @min 0 @max 24 @step 1 */
+  --zone-drop-edge-focus: 9px;
+  /** The pink edge around the focused card. @label Focus edge @min 1 @max 12 @step 1 */
+  --zone-focus-edge: 4px;
+  /** The pink underline under a lit button or tab. @label Underline @min 1 @max 12 @step 1 */
+  --zone-underline: 6px;
+  /** The blue edge behind white caps on a panel. @label Cap edge @min 0 @max 4 @step 1 */
+  --zone-cap-edge: 2px;
+  /** The black outline around white caps on colour. @label Cap outline @min 0 @max 4 @step 1 */
+  --zone-cap-outline: 2px;
+  /** The black extrusion behind the banner's yellow caps. @label Banner extrusion @min 0 @max 8 @step 1 */
+  --zone-banner-extrude: 4px;
+  /** The blue border of a cover well. @label Well edge @min 0 @max 6 @step 1 */
+  --zone-well-edge: 2px;
+  /** The ring around a keycap. @label Keycap ring @min 0 @max 4 @step 1 */
+  --zone-keycap-ring: 2px;
+  /** A hairline rule. @label Hairline @min 1 @max 3 @step 1 */
+  --zone-hairline: 1px;
+  /** How far a tab lifts when focused. @label Tab lift @min 0 @max 12 @step 1 */
+  --zone-tab-lift: 4px;
+  /** How far a pressed button sinks. @label Press sink @min 0 @max 8 @step 1 */
+  --zone-press-sink: 3px;
+
+  /* The strips, tall (height >= 600) and short. The plan picks one. */
+  /** The tab strip on a tall screen. @label Tab strip, tall @min 40 @max 120 @step 1 */
+  --zone-tab-strip-tall: 74px;
+  /** The tab strip on a short screen. @label Tab strip, short @min 32 @max 100 @step 1 */
+  --zone-tab-strip-short: 56px;
+  /** The action row on a tall screen. @label Action strip, tall @min 40 @max 120 @step 1 */
+  --zone-action-strip-tall: 66px;
+  /** The action row on a short screen. @label Action strip, short @min 32 @max 100 @step 1 */
+  --zone-action-strip-short: 52px;
+  /** The foot strip on a tall screen. @label Foot strip, tall @min 32 @max 100 @step 1 */
+  --zone-foot-strip-tall: 58px;
+  /** The foot strip on a short screen. @label Foot strip, short @min 24 @max 80 @step 1 */
+  --zone-foot-strip-short: 46px;
+  /** The room a strip keeps above and below its panels. @label Strip inset @min 0 @max 24 @step 1 */
+  --zone-strip-inset: 8px;
+  /** The horizontal margin of a strip. @label Strip margin @min 0 @max 40 @step 1 */
+  --zone-strip-margin: 22px;
+  /** The smallest horizontal margin of a strip. @label Strip margin, least @min 0 @max 24 @step 1 */
+  --zone-strip-margin-min: 8px;
+  /** The gap between items in a strip. @label Strip gap @min 0 @max 40 @step 1 */
+  --zone-strip-gap: 10px;
+
+  /* The card band. */
+  /** Width over height of a card. @label Card ratio @min 0.5 @max 1.2 @step 0.01 */
+  --zone-card-ratio: 0.78;
+  /** The focused card never grows past this. @label Focused card, max @min 120 @max 800 @step 1 */
+  --zone-card-focus-max: 400px;
+  /** A side card's height as a share of the focused card's. @label Side card scale @min 0.3 @max 1 @step 0.01 */
+  --zone-card-side-scale: 0.68;
+  /** Room above and below the band for the pink edge and the drop edge. @label Band padding @min 0 @max 60 @step 1 */
+  --zone-band-pad: 26px;
+  /** Horizontal margin either side of the band. @label Band margin @min 0 @max 80 @step 1 */
+  --zone-band-margin: 24px;
+  /** The gap between cards on a wide screen. @label Card gap, wide @min 0 @max 60 @step 1 */
+  --zone-card-gap-wide: 20px;
+  /** The gap between cards on a narrow screen. @label Card gap, narrow @min 0 @max 60 @step 1 */
+  --zone-card-gap-narrow: 14px;
+  /** A cursor triangle's width on a wide screen. @label Triangle, wide @min 8 @max 80 @step 1 */
+  --zone-triangle-wide: 36px;
+  /** A cursor triangle's width on a narrow screen. @label Triangle, narrow @min 8 @max 80 @step 1 */
+  --zone-triangle-narrow: 26px;
+  /** Height over width of a cursor triangle. @label Triangle aspect @min 0.5 @max 2 @step 0.05 */
+  --zone-triangle-aspect: 1.1;
+  /** The room between a triangle and the card it points at. @label Triangle gap @min 0 @max 40 @step 1 */
+  --zone-triangle-gap: 16px;
+  /** A triangle's rest distance from its target. @label Nudge, near @min 0 @max 24 @step 1 */
+  --zone-nudge-near: 6px;
+  /** A triangle's far distance when it nudges. @label Nudge, far @min 0 @max 32 @step 1 */
+  --zone-nudge-far: 12px;
+  /** The focused card's padding. @label Card padding @min 0 @max 16 @step 1 */
+  --zone-card-pad: 6px;
+  /** A side card's padding. @label Side card padding @min 0 @max 16 @step 1 */
+  --zone-card-pad-side: 5px;
+
+  /* ---- The type scale ---- */
+  /** The one face. @label Face */
+  --zone-font: "Zone Anton", "Anton", sans-serif;
+  /** Tracking for every word. @label Tracking @min 0 @max 0.1 @step 0.005 */
+  --zone-tracking: 0.02em;
+  /** A tab's caps on a wide screen. @label Tab type, wide @min 10 @max 48 @step 1 */
+  --zone-type-tab-wide: 24px;
+  /** A tab's caps on a narrow screen. @label Tab type, narrow @min 10 @max 48 @step 1 */
+  --zone-type-tab-narrow: 17px;
+  /** The banner's caps as a multiple of the tab's. @label Banner scale @min 1 @max 2 @step 0.05 */
+  --zone-type-banner-scale: 1.3;
+  /** A keycap hint on a wide screen. @label Hint type, wide @min 8 @max 40 @step 1 */
+  --zone-type-hint-wide: 20px;
+  /** A keycap hint on a narrow screen. @label Hint type, narrow @min 8 @max 40 @step 1 */
+  --zone-type-hint-narrow: 15px;
+  /** An action button's caps on a tall screen. @label Button type, tall @min 10 @max 48 @step 1 */
+  --zone-type-button-tall: 24px;
+  /** An action button's caps on a short screen. @label Button type, short @min 10 @max 48 @step 1 */
+  --zone-type-button-short: 19px;
+  /** The foot's caps on a tall screen. @label Foot type, tall @min 10 @max 48 @step 1 */
+  --zone-type-foot-tall: 28px;
+  /** The foot's caps on a short screen. @label Foot type, short @min 10 @max 48 @step 1 */
+  --zone-type-foot-short: 22px;
+  /** The focused card's title as a share of its width. @label Card title share @min 0.05 @max 0.3 @step 0.005 */
+  --zone-type-card-share: 0.125;
+  /** A side card's title as a share of its width. @label Side title share @min 0.05 @max 0.3 @step 0.005 */
+  --zone-type-side-share: 0.115;
+
+  /* ---- Motion ---- */
+  /** How long a snap takes. @label Snap @min 0 @max 1000 @step 10 */
+  --zone-snap-time: 340ms;
+  /** The one-overshoot curve every snap uses. @label Bounce */
+  --zone-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /** A tab's lift. @label Lift time @min 0 @max 500 @step 10 */
+  --zone-lift-time: 180ms;
+  /** A button's press. @label Press time @min 0 @max 500 @step 10 */
+  --zone-press-time: 140ms;
+  /** One leg of a triangle's nudge. @label Nudge time @min 0 @max 2000 @step 50 */
+  --zone-nudge-time: 600ms;
+  /** One turn of the big orbit ring. @label Drift, big ring @min 10 @max 600 @step 10 */
+  --zone-drift-big: 140s;
+  /** One turn of the small orbit ring. @label Drift, small ring @min 10 @max 600 @step 10 */
+  --zone-drift-small: 200s;
+
+  /* ---- The ground's drawing ---- */
+  /** How much of the big ring shows through. @label Big ring opacity @min 0 @max 1 @step 0.05 */
+  --zone-ring-big-opacity: 0.6;
+  /** How much of the small ring shows through. @label Small ring opacity @min 0 @max 1 @step 0.05 */
+  --zone-ring-small-opacity: 0.35;
+  /** How much of the red arc shows through. @label Arc opacity @min 0 @max 1 @step 0.05 */
+  --zone-arc-opacity: 0.4;
+  /** How much of the blue band shows through. @label Blue band opacity @min 0 @max 1 @step 0.05 */
+  --zone-band-blue-opacity: 0.3;
+  /** How much of the orange band shows through. @label Orange band opacity @min 0 @max 1 @step 0.05 */
+  --zone-band-orange-opacity: 0.4;
+  /** How much of a white mark shows through. @label White mark opacity @min 0 @max 1 @step 0.05 */
+  --zone-mark-white-opacity: 0.35;
+  /** How much of a red mark shows through. @label Red mark opacity @min 0 @max 1 @step 0.05 */
+  --zone-mark-red-opacity: 0.5;
+  /** The end triangle at the first or last card. @label Dimmed triangle @min 0 @max 1 @step 0.05 */
+  --zone-triangle-dim: 0.3;
+  /** The build string on the ground. @label Build opacity @min 0 @max 1 @step 0.05 */
+  --zone-build-opacity: 0.75;
+
+  /* ---- 3. Roles ---- */
+  /** @label Ground */
+  --zone-ground: var(--zone-mint);
+  /** @label Panel */
+  --zone-panel: var(--zone-black);
+  /** @label Panel edge */
+  --zone-panel-edge: var(--zone-blue);
+  /** @label Cap */
+  --zone-cap: var(--zone-white);
+  /** @label Cap edge colour */
+  --zone-cap-edge-colour: var(--zone-blue);
+  /** @label Cap outline colour */
+  --zone-cap-outline-colour: var(--zone-black);
+  /** @label Banner */
+  --zone-banner: var(--zone-blue);
+  /** @label Banner ink */
+  --zone-banner-ink: var(--zone-yellow);
+  /** @label Banner extrusion colour */
+  --zone-banner-extrude-colour: var(--zone-black);
+  /** @label Banner band */
+  --zone-banner-band: var(--zone-white);
+  /** @label Focus */
+  --zone-focus: var(--zone-pink);
+  /** @label Cursor */
+  --zone-cursor: var(--zone-red);
+  /** @label Well edge colour */
+  --zone-well-edge-colour: var(--zone-blue);
+  /** @label System tag */
+  --zone-tag-system: var(--zone-blue);
+  /** @label Here tag */
+  --zone-tag-here: var(--zone-yellow);
+  /** @label Here tag ink */
+  --zone-tag-here-ink: var(--zone-black);
+  /** @label Remote tag */
+  --zone-tag-remote: var(--zone-red);
+  /** @label Tag ink */
+  --zone-tag-ink: var(--zone-white);
+  /** @label Ribbon rule */
+  --zone-ribbon-rule: var(--zone-red);
+  /** @label Timer label */
+  --zone-timer-label: var(--zone-yellow);
+  /** @label Signal bars */
+  --zone-badge-strength: var(--zone-mint);
+  /** @label B keycap ink */
+  --zone-key-b-ink: var(--zone-pink);
+  /** @label A keycap ink */
+  --zone-key-a-ink: var(--zone-yellow);
+  /** @label Keycap */
+  --zone-key: var(--zone-black);
+  /** @label Keycap ring colour */
+  --zone-key-ring: var(--zone-white);
+  /** @label Build ink */
+  --zone-build-ink: var(--zone-black);
+  /** @label Big ring */
+  --zone-ring-big: var(--zone-orange);
+  /** @label Small ring */
+  --zone-ring-small: var(--zone-blue);
+  /** @label Arc */
+  --zone-arc: var(--zone-red);
+  /** @label Upper band */
+  --zone-band-upper: var(--zone-blue);
+  /** @label Lower band */
+  --zone-band-lower: var(--zone-orange);
+  /** @label Stripe, first */
+  --zone-stripe-1: var(--zone-orange);
+  /** @label Stripe, second */
+  --zone-stripe-2: var(--zone-blue);
+  /** @label Stripe, third */
+  --zone-stripe-3: var(--zone-mint);
+}

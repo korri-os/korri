@@ -189,7 +189,8 @@ describe("design inputs are addressable", () => {
    * A knob is a literal custom property with a `@label` comment above it. A
    * token written as `calc()` or `clamp()` is an output, and Caliper shows no
    * control for it, so every token in zone-tokens.css must be literal and
-   * every one must carry its knob hint.
+   * every one must carry its knob hint. A role written as `var(--zone-blue)`
+   * is literal: Caliper offers it as a picker of the sibling tokens.
    */
   test("every token in zone-tokens.css is a literal with a knob hint", () => {
     const source = read(join(SRC, "zone-tokens.css"))
@@ -199,7 +200,7 @@ describe("design inputs are addressable", () => {
       const declaration = line.match(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/)
       if (declaration === null) return
       const [, name, value] = declaration
-      if (/\b(?:calc|clamp|min|max|var)\(/.test(value ?? "")) offenders.push(`${name}: computed`)
+      if (/\b(?:calc|clamp|min|max)\(/.test(value ?? "")) offenders.push(`${name}: computed`)
       const hint = lines[index - 1] ?? ""
       if (!/\/\*\*.*@label\b/.test(hint)) offenders.push(`${name}: no @label hint`)
     })

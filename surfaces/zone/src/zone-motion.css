@@ -1,0 +1,53 @@
+/**
+ * Zone's motion vocabulary. Three movements and no more:
+ *
+ *  - the snap: a panel or a card lands with one overshoot bounce. Sizes and
+ *    positions transition with `var(--zone-snap-time) var(--zone-bounce)`;
+ *    something that appears runs `zone-snap`.
+ *  - the nudge: the red cursor triangles breathe toward their target.
+ *  - the drift: the two orbit rings turn, one clockwise and one counter,
+ *    so slowly that only a long look notices.
+ *
+ * A component whose stylesheet names one of these keyframes imports this
+ * file itself. zone.css turns every animation and transition off under
+ * prefers-reduced-motion, so nothing here needs its own media rule.
+ */
+
+/* Something landing: it rises from its own drop edge and overshoots once. */
+@keyframes zone-snap {
+  from {
+    translate: 0 var(--zone-drop-edge);
+    scale: 0.96;
+  }
+  to {
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+/* The left cursor triangle, breathing toward the card on its right. */
+@keyframes zone-nudge-left {
+  from {
+    margin-right: var(--zone-nudge-near);
+  }
+  to {
+    margin-right: var(--zone-nudge-far);
+  }
+}
+
+/* The right cursor triangle, breathing toward the card on its left. */
+@keyframes zone-nudge-right {
+  from {
+    margin-left: var(--zone-nudge-near);
+  }
+  to {
+    margin-left: var(--zone-nudge-far);
+  }
+}
+
+/* One full turn. The ring sets its own duration and direction. */
+@keyframes zone-drift {
+  to {
+    transform: rotate(360deg);
+  }
+}
