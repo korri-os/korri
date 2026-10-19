@@ -90,4 +90,25 @@ describe("the Boxbuster door", () => {
     // The pressed row is now inert, so the cursor moves to one that still acts.
     expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Cancel Skate 3/ }))
   })
+
+  test("offers Download and Cancel for a question Korri asks at the door", () => {
+    const host = createRecordingHost()
+    render(<BoxbusterSurface host={host} model={{
+      ...modelWith({ _tag: "Empty" }),
+      status: {
+        _tag: "Confirm", kicker: "Needs a download", detail: "FEX rootfs and Proton-CachyOS, 1.5 GB",
+        actions: [
+          { id: "acquisition:1:download", label: "Download", enabled: true },
+          { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+        ],
+      },
+    }} />)
+    expect(screen.getByRole("heading").textContent).toBe("Needs a download")
+    expect(screen.getByText("FEX rootfs and Proton-CachyOS, 1.5 GB")).toBeTruthy()
+    const download = screen.getByRole("button", { name: /^Download/ })
+    expect(document.activeElement).toBe(download)
+    fireEvent.click(download)
+    fireEvent.click(screen.getByRole("button", { name: /^Cancel/ }))
+    expect(host.calls).toEqual(["action:acquisition:1:download", "action:acquisition:1:cancel"])
+  })
 })

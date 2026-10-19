@@ -409,6 +409,31 @@ describe("launch status on the TV", () => {
     expect(drawn.last?.held?.tapeId).toBe("wario")
   })
 
+  test("a question Korri asks goes to the TV, and the decks answer it", () => {
+    const host = createRecordingHost()
+    const { drawing, drawn } = recordingDrawing()
+    const asking: SurfaceStatus = {
+      _tag: "Confirm", kicker: "Needs a download", detail: "FEX rootfs, 1.2 GB", gameId: "kirby",
+      actions: [
+        { id: "acquisition:1:download", label: "Download", enabled: true },
+        { id: "acquisition:1:cancel", label: "Cancel", enabled: true },
+      ],
+    }
+    const { container } = render(
+      <BoxbusterSurface host={host} model={modelWith([kirby], asking)} drawing={drawing} />,
+    )
+    expect(spotOf(container)).toBe("viewing")
+    expect(drawn.last?.deckLabels).toEqual(["Download", "Cancel"])
+    expect(drawn.last?.tv).toEqual({
+      _tag: "Working", kicker: "Needs a download", detail: "FEX rootfs, 1.2 GB", tapeId: "kirby",
+      lines: ["Download", "Cancel"],
+    })
+    expect(focused().getAttribute("aria-label")).toBe("Download")
+    fireEvent.click(focused())
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(host.calls).toEqual(["action:acquisition:1:download", "action:acquisition:1:cancel"])
+  })
+
   test("work under way goes to the TV", () => {
     const { drawing, drawn } = recordingDrawing()
     render(
