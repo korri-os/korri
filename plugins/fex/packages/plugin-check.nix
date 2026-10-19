@@ -22,14 +22,14 @@ pkgs.runCommand "fex-plugin-package-check"
     assert manifest['services'] == {}
     assert 'requires' not in manifest
     files = manifest['files']
-    assert sorted(files) == ['config', 'fex-prepare'], files
+    assert sorted(files) == ['config', 'fex-unpack'], files
     config = Path(files['config'])
     assert json.loads((config / 'Config.json').read_text())['Config']['RootFS'] == 'ArchLinux'
     assert (config / 'AppConfig/steamwebhelper.json').is_file()
-    prepare = files['fex-prepare']
-    for arguments in ([], ['relative'], ['/nonexistent-cache-root']):
-        result = subprocess.run([prepare, *arguments], capture_output=True)
-        assert result.returncode == 2, (arguments, result)
+    unpack = files['fex-unpack']
+    for arguments in ([], ['/nonexistent-work-dir'], ['/nonexistent-work-dir', '/nonexistent.sqsh']):
+        result = subprocess.run([unpack, *arguments], capture_output=True)
+        assert result.returncode == 1, (arguments, result)
         assert not result.stdout, result.stdout
     PY
     touch "$out"

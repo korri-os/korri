@@ -1,26 +1,18 @@
-# FEX runtime files. plugin.ts names no artifact; a requiring runner reads
-# these keys. The rootfs is not in the closure: fex-prepare downloads it on
-# the device into korrid's cache root.
+# FEX runtime files. plugin.ts declares the rootfs artifact and names
+# `fex-unpack` as its unpack program; a requiring runner reads `config`. The
+# rootfs is not in the closure: korrid downloads the files plugin.ts pins
+# into its cache and runs fex-unpack on them.
 { pkgs }:
 let
-  pins = import ./rootfs/pins.nix;
-  pinLines = map (pin: "overlay ${pin.sha256} ${pin.url}\n") pins.overlay;
-  pinFile = pkgs.writeText "fex-rootfs-pins" (
-    pkgs.lib.concatStrings ([ "base ${pins.base.sha256} ${pins.base.url}\n" ] ++ pinLines)
-  );
-  prepare = pkgs.writeShellApplication {
-    name = "fex-prepare";
+  unpack = pkgs.writeShellApplication {
+    name = "fex-unpack";
     runtimeInputs = with pkgs; [
       coreutils
-      curl
       gnutar
       squashfsTools
-      util-linux
       zstd
     ];
-    text = pkgs.lib.replaceStrings [ "@pins@" "@version@" ] [ "${pinFile}" pins.version ] (
-      builtins.readFile ./rootfs/prepare.sh
-    );
+    text = builtins.readFile ./rootfs/unpack.sh;
   };
   config = pkgs.runCommand "korri-fex-config" { } ''
     mkdir -p "$out/share"
@@ -29,11 +21,11 @@ let
 in
 {
   packages = {
-    fex-prepare = prepare;
+    fex-unpack = unpack;
     fex-config = config;
   };
   files = {
-    fex-prepare = "${prepare}/bin/fex-prepare";
+    fex-unpack = "${unpack}/bin/fex-unpack";
     config = "${config}/share/fex-emu";
   };
 }

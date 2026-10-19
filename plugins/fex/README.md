@@ -1,47 +1,52 @@
 # FEX
 
 `@korri:fex` ships the FEX x86 emulation runtime for runners that require it.
-It declares no runner and no handler. A runner that lists this plugin's exact
-output in its `plugin.nix` `requires` reads these files from its launch input
-under `@korri:fex/<key>`:
+It declares no runner and no handler.
 
-| Key | Artifact |
+## Files
+
+A runner that lists this plugin's exact output in its `plugin.nix` `requires`
+reads these files from its launch input under `@korri:fex/<key>`:
+
+| Key | File |
 |---|---|
-| `fex-prepare` | Native program that prepares the pinned x86 rootfs |
 | `config` | FEX configuration directory: `Config.json` and `AppConfig/steamwebhelper.json`, moved unchanged from the Steam plugin |
+| `fex-unpack` | Native program that unpacks the verified rootfs files; korrid runs it, runners do not |
 
-## `fex-prepare <cache-root>`
+## Artifact `@korri:fex/rootfs`
 
-The rootfs is not in the plugin closure. `fex-prepare` downloads it on the
-device into korrid's reconstructible cache. `rootfs/pins.nix` holds the pins,
-moved from the former `plugins/steam/packages/fex-rootfs.nix`: the
-ArchLinux 2026-01-08 squashfs and ten Arch Mesa `1:26.1.2-1` overlay packages.
+`plugin.ts` declares the pinned x86 rootfs as the artifact `rootfs`, version
+`archlinux-2026-01-08-mesa-26.1.2`: the ArchLinux 2026-01-08 squashfs
+(1.16 GB) followed by ten Arch Mesa `1:26.1.2-1` overlay packages (0.03 GB),
+each with its URL, `sha256:<hex>` and `bytes` from the server's
+Content-Length. `plugin.ts` is the single source of these pins. The rootfs is
+not in the plugin closure.
 
-1. If `<cache-root>/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2/` exists and
-   nothing is left over, it prints that path and exits 0 without the lock. It
-   makes no other check of the ready directory.
-2. Otherwise it takes `<cache-root>/fex/rootfs/.lock`, so concurrent runs
-   download once. It removes `.tmp-*` work directories left by an interrupted
-   run. If the ready directory exists, it also removes `.downloads` left by a
-   run killed after its rename, prints the path and exits 0.
-3. It downloads each pin into `<cache-root>/fex/rootfs/.downloads/<sha256>.part`
-   and checks its SHA-256. A dropped transfer keeps its partial file, and the
-   next run resumes it. If the server cannot resume, or the resumed bytes are
-   wrong, the run starts that file again. A hash mismatch deletes the file and
-   exits 1.
-4. It unsquashes the base into `.tmp-<random>`, extracts the overlay packages
-   without their package metadata, and checks the Mesa files and the x86_64
-   and i686 Freedreno ICD machine types, as the former Nix build did.
-5. It makes the tree read-only, flushes the filesystem, renames the work
-   directory to the ready directory and deletes `.downloads`. It prints the
-   ready directory as its last stdout line.
+A runner that lists `@korri:fex/rootfs` in its `artifacts` receives the ready
+directory, `<storage-root>/cache/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2/`,
+in its launch input as `artifacts["@korri:fex/rootfs"]`. korrid downloads,
+resumes and verifies the files, runs `fex-unpack` in a work directory, makes
+the tree read-only, flushes it and renames it to the ready directory. See ADR
+0012.
 
-Exit status: 0 ready, 1 download or verify failure, 2 usage. Diagnostics go to
-stderr. curl, squashfs-tools, zstd and tar come from Nix. Nothing is compiled
-on the device.
+## `fex-unpack <work-dir> <squashfs> <overlay>...`
+
+korrid invokes it with the verified files in declared order.
+
+1. It unsquashes the base into `<work-dir>` and makes the tree writable for
+   the overlays.
+2. It extracts each overlay package over it, in order, without the package
+   metadata files.
+3. It checks the Mesa files and the x86_64 and i686 Freedreno ICD machine
+   types, as the former Nix build did.
+
+It writes only under `<work-dir>`. Exit status: 0 ready, 1 failed (including
+usage). Diagnostics go to stderr; stdout carries nothing korrid reads. tar,
+squashfs-tools and zstd come from Nix. Nothing is compiled on the device.
 
 ## Checks
 
-Build these on a build machine, never on a device. `check.nix` runs the prepare
-tests against a local fixture server, `bash -n` and shellcheck.
-`plugin-check.nix` checks the built package for the target system.
+Build these on a build machine, never on a device. `packages/check.nix` runs
+`rootfs/test_unpack.py` against small synthetic archives, `bash -n` and
+shellcheck. `packages/plugin-check.nix` checks the built package for the target
+system.
