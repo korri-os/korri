@@ -40,10 +40,18 @@ if "-applaunch" in sys.argv:
         sys.exit(42)
     if behavior == "update" and not (home / "update-complete").exists():
         sys.exit(70)
+    if behavior == "drop-first" and forwards == 1:
+        # Steam accepted the IPC but acted on nothing, as before sign-in.
+        sys.exit(0)
     (home / ("restart" if behavior == "restart" and forwards == 1 else "launch")).touch()
     sys.exit(0)
 
 (home / "shutdown").unlink(missing_ok=True)
+manifest = home / "package/steam_client_steamdeck_stable_linuxarm64.manifest"
+with (home / "manifest-seen").open("a") as stream:
+    stream.write(manifest.read_text() if manifest.exists() else "missing\n")
+beta = home / "package/beta"
+(home / "beta-seen").write_text(beta.read_text() if beta.exists() else "missing\n")
 (home / "client-env.json").write_text(json.dumps(
     {name: os.environ.get(name) for name in ("FEX_ROOTFS", "FEX_APP_CONFIG_LOCATION")}))
 if behavior == "update":
@@ -59,6 +67,10 @@ while not (home / "shutdown").exists():
         sys.exit(42)
     if (home / "launch").exists():
         (home / "launch").unlink()
+        event("GameAction [AppID 401710, ActionID 1] : LaunchApp changed task to Completed")
+        if manifest.exists():
+            # The client clears its channel and this file during a session.
+            manifest.unlink()
         game = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(2)"],
             env={**os.environ, "SteamAppId": "401710"},

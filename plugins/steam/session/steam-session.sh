@@ -31,6 +31,11 @@ generation=0
 login_deadline=0
 fex_rootfs=""
 proton_dir=""
+forwarded_at=0
+resends=0
+package_dir="$STEAM_HOME/package"
+client_manifest="$package_dir/steam_client_${STEAM_BETA}_linuxarm64.manifest"
+saved_manifest="$STEAM_HOME/.korri/steam_client_${STEAM_BETA}_linuxarm64.manifest"
 
 login_present() {
   local user
@@ -83,8 +88,37 @@ trap shutdown EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# The bootstrapper reads its channel from package/beta and the installed
+# client version from that channel's .manifest. When an update installs, it
+# renames the downloaded manifest to .manifest. The client then switches its
+# own channel to '' and deletes .manifest during the session, so the next start
+# reports installed version 0 and Steam cannot launch games until a second
+# start reinstalls the same client. Keep a copy of the manifest Steam itself
+# installed and put it back before every start.
+save_client_manifest() {
+  [[ -f "$client_manifest" ]] || return 0
+  cmp -s "$client_manifest" "$saved_manifest" && return 0
+  mkdir -p "${saved_manifest%/*}"
+  cp -f "$client_manifest" "$saved_manifest.tmp.$$"
+  mv -f "$saved_manifest.tmp.$$" "$saved_manifest"
+}
+restore_client_channel() {
+  mkdir -p "$package_dir"
+  if [[ "$(cat "$package_dir/beta" 2>/dev/null)" != "$STEAM_BETA" ]]; then
+    printf '%s\n' "$STEAM_BETA" >"$package_dir/beta.tmp.$$"
+    mv -f "$package_dir/beta.tmp.$$" "$package_dir/beta"
+  fi
+  save_client_manifest
+  if [[ ! -f "$client_manifest" && -f "$saved_manifest" &&
+    -f "$package_dir/steam_client_${STEAM_BETA}_linuxarm64.installed" ]]; then
+    say 'start: restoring the installed Steam client manifest'
+    cp -f "$saved_manifest" "$client_manifest.tmp.$$"
+    mv -f "$client_manifest.tmp.$$" "$client_manifest"
+  fi
+}
 start_steam() {
   say 'start: Steam desktop client'
+  restore_client_channel
   mark_logs
   @fhs@/bin/steam-arm64-fhs "${flags[@]}" >>"$STEAM_HOME/logs/session_log.txt" 2>&1 &
   steam_pid=$!
@@ -114,6 +148,7 @@ wait_for_steam_ready() {
   while (( SECONDS < deadline )); do
     check_login
     check_client
+    save_client_manifest
     if (( old_generation != generation )); then
       desktop_since=-1; desktop_pid=""; ready_log=0; updating=0
       old_generation="$generation"
@@ -170,6 +205,7 @@ forward_appid() {
     if (( status == 0 && generation == forward_generation )); then
       launch_generation="$generation"
       launch_deadline=$((SECONDS + 180))
+      forwarded_at=$SECONDS
       return 0
     fi
     if (( status == 42 || generation != forward_generation )); then
@@ -178,6 +214,10 @@ forward_appid() {
       fail 126 'Steam failed: AppID forward failed or timed out'
     fi
   done
+}
+app_installed() {
+  grep -aqE '"StateFlags"[[:space:]]+"4"' \
+    "$STEAM_HOME/steamapps/appmanifest_$appid.acf" 2>/dev/null
 }
 app_process_present() {
   local environ
@@ -200,6 +240,11 @@ run_prepare() {
   printf -v "$result" '%s' "$output"
 }
 
+# The account root is setgid (game-library-access.nix), so every directory
+# created below it inherits the bit. The game unit's RestrictSUIDSGID then
+# refuses an extractor's chmod of such a directory, and Steam's own unpacking
+# fails. Clear the bit on every directory this user owns in the Steam home.
+find "$STEAM_HOME" -xdev -type d -perm -2000 -user "$(id -u)" -exec chmod g-s {} +
 mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-data"
 # A lock spans settings and the client lifetime. Never edit Steam-owned VDF
 # concurrently with another launch of this session program.
@@ -236,11 +281,22 @@ reforwards=0
 forward_appid
 saw_added=0
 saw_removed=0
+acted=0
 say "watch: waiting for AppID $appid"
 while true; do
   check_login
   check_client
+  save_client_manifest
   read_logs
+  if grep -aqE "GameAction \[AppID $appid," <<<"$new_console"; then
+    if (( acted == 0 )) && ! app_installed; then
+      # Steam asks the person to confirm an install, then downloads. Both
+      # can take much longer than a launch.
+      say "watch: AppID $appid is not installed; waiting up to 3600 s for the install"
+      launch_deadline=$((SECONDS + 3600))
+    fi
+    acted=1
+  fi
   if grep -aqE "Game process added[[:space:]]*: AppID $appid([^0-9]|$)" <<<"$new_console"; then
     if (( saw_added == 0 )); then say "watch: AppID $appid started"; fi
     saw_added=1
@@ -254,6 +310,13 @@ while true; do
   fi
   if (( saw_added == 0 && launch_generation != generation )); then
     retry_appid
+    forward_appid
+  fi
+  # A forward that reaches Steam before sign-in completes is dropped without
+  # any GameAction. Send it again, a bounded number of times.
+  if (( saw_added == 0 && acted == 0 && resends < 3 && SECONDS - forwarded_at >= 20 )); then
+    resends=$((resends + 1))
+    say "launch: Steam did not act on AppID $appid; forwarding again ($resends/3)"
     forward_appid
   fi
   if (( saw_added == 0 && SECONDS >= launch_deadline )); then

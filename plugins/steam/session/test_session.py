@@ -18,13 +18,19 @@ def program(path, source):
 
 
 class SteamSessionTests(unittest.TestCase):
-    def run_session(self, behavior, prepare="ready", seeded=True):
+    def run_session(self, behavior, prepare="ready", seeded=True, setup=None, installed=True):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         self.root = root
         home = root / "steam"
         (home / "userdata/123/config").mkdir(parents=True)
+        if installed:
+            (home / "steamapps").mkdir()
+            (home / "steamapps/appmanifest_401710.acf").write_text(
+                '"AppState"\n{\n\t"appid"\t\t"401710"\n\t"StateFlags"\t\t"4"\n}\n')
+        if setup:
+            setup(home)
         if seeded:
             (home / "steamrtarm64").mkdir()
             client = home / "steamrtarm64/steam"
@@ -47,9 +53,10 @@ class SteamSessionTests(unittest.TestCase):
         path.write_text(script)
         started = time.monotonic()
         result = subprocess.run(
-            ["bash", str(path), "401710"], timeout=30, capture_output=True, text=True,
+            ["bash", str(path), "401710"], timeout=60, capture_output=True, text=True,
             env={
                 **os.environ, "STEAM_HOME": str(home), "HOME": str(root), "CLIENT_BEHAVIOR": behavior,
+                "STEAM_BETA": "steamdeck_stable",
                 "PREPARE_BEHAVIOR": prepare,
                 "KORRI_CACHE_ROOT": str(root / "cache"),
                 "KORRI_FEX_PREPARE": str(root / "bin/fex-prepare"),
@@ -136,6 +143,59 @@ class SteamSessionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("startup update observed", result.stderr)
         self.assertTrue((home / "update-complete").exists())
+
+    def test_dropped_forward_is_sent_again(self):
+        result, home, duration = self.run_session("drop-first")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("did not act on AppID 401710; forwarding again (1/3)", result.stderr)
+        self.assertEqual((home / "forwards").read_text(), "2")
+        self.assertGreaterEqual(duration, 20)
+
+    def test_uninstalled_app_waits_for_the_install(self):
+        result, _, _ = self.run_session("game", installed=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("AppID 401710 is not installed; waiting up to 3600 s", result.stderr)
+
+    def test_channel_and_installed_manifest_survive_the_client_deleting_them(self):
+        manifest = '"linuxarm64"\n{\n\t"version"\t\t"1791918634"\n}\n'
+
+        def installed_client(home):
+            (home / "package").mkdir()
+            (home / "package/beta").write_text("\n")
+            (home / "package/steam_client_steamdeck_stable_linuxarm64.installed").write_text("x\n")
+            (home / "package/steam_client_steamdeck_stable_linuxarm64.manifest").write_text(manifest)
+
+        result, home, _ = self.run_session("game", setup=installed_client)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((home / "beta-seen").read_text(), "steamdeck_stable\n")
+        self.assertEqual((home / "manifest-seen").read_text(), manifest)
+        # The client deleted it during the session; the saved copy remains.
+        package = home / "package/steam_client_steamdeck_stable_linuxarm64.manifest"
+        self.assertFalse(package.exists())
+        saved = home / ".korri/steam_client_steamdeck_stable_linuxarm64.manifest"
+        self.assertEqual(saved.read_text(), manifest)
+
+        def deleted_manifest(next_home):
+            installed_client(next_home)
+            (next_home / "package/steam_client_steamdeck_stable_linuxarm64.manifest").unlink()
+            (next_home / ".korri").mkdir()
+            (next_home / ".korri/steam_client_steamdeck_stable_linuxarm64.manifest").write_text(manifest)
+
+        result, home, _ = self.run_session("game", setup=deleted_manifest)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("restoring the installed Steam client manifest", result.stderr)
+        self.assertEqual((home / "manifest-seen").read_text(), manifest)
+
+    def test_setgid_is_cleared_from_the_steam_home(self):
+        def setgid_tree(home):
+            (home / "steamapps/common").mkdir(parents=True, exist_ok=True)
+            for directory in (home, home / "steamapps", home / "steamapps/common"):
+                directory.chmod(0o2770)
+
+        result, home, _ = self.run_session("game", setup=setgid_tree)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for directory in (home, home / "steamapps", home / "steamapps/common"):
+            self.assertFalse(directory.stat().st_mode & 0o2000, directory)
 
     def test_forward_failure_is_classified_and_stops_steam(self):
         result, home, _ = self.run_session("forward-error")

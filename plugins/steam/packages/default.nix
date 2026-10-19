@@ -17,6 +17,7 @@ let
     name = "steam-session-run";
     runtimeInputs = with pkgs; [
       coreutils
+      diffutils
       findutils
       gnugrep
       procps
