@@ -15,9 +15,11 @@ fn input() -> serde_json::Value {
         "cacheRoot": "/storage/korri/cache",
         "files": {
             "steam-session": "/nix/store/exact-steam/bin/steam-session",
-            "@korri:fex/fex-prepare": "/nix/store/exact-fex/bin/fex-prepare",
             "@korri:fex/config": "/nix/store/exact-fex-config/share/fex-emu",
-            "@korri:proton/cachyos-prepare": "/nix/store/exact-proton/bin/cachyos-prepare",
+        },
+        "artifacts": {
+            "@korri:fex/rootfs": "/storage/korri/cache/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2",
+            "@korri:proton/cachyos": "/storage/korri/cache/proton/cachyos/11.0-20260601-slr-arm64",
         },
         "overrides": {"settings": {}},
     })
@@ -26,12 +28,29 @@ fn input() -> serde_json::Value {
 #[test]
 fn steam_declares_only_its_system_and_native_session_runner() {
     let plugin = load_plugin_source("@korri", STEAM_PLUGIN).unwrap();
-    let registry = PluginRegistry::new(vec![plugin], ["@korri:steam".into()]).unwrap();
+    let registry = PluginRegistry::new(
+        vec![
+            plugin,
+            load_plugin_source("@korri", include_str!("../../../plugins/fex/plugin.ts")).unwrap(),
+            load_plugin_source("@korri", include_str!("../../../plugins/proton/plugin.ts"))
+                .unwrap(),
+        ],
+        [
+            "@korri:steam".into(),
+            "@korri:fex".into(),
+            "@korri:proton".into(),
+        ],
+    )
+    .unwrap();
     let runner = &registry.runners()["@korri:steam/steam"];
     assert_eq!(runner.program.as_deref(), Some("steam-session"));
     assert_eq!(
         runner.systems.as_deref(),
         Some(["steam".to_string()].as_slice())
+    );
+    assert_eq!(
+        runner.artifacts,
+        ["@korri:fex/rootfs", "@korri:proton/cachyos"]
     );
     assert!(runner.family.is_none());
     assert!(runner.core.is_none());
@@ -59,10 +78,9 @@ fn steam_prepares_the_session_command_ref_and_account_home_without_a_file() {
             "args": ["401710"],
             "env": {
                 "STEAM_HOME": "/storage/korri/users/default/steam",
-                "KORRI_CACHE_ROOT": "/storage/korri/cache",
-                "KORRI_FEX_PREPARE": "/nix/store/exact-fex/bin/fex-prepare",
+                "KORRI_FEX_ROOTFS": "/storage/korri/cache/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2",
                 "KORRI_FEX_CONFIG": "/nix/store/exact-fex-config/share/fex-emu",
-                "KORRI_PROTON_CACHYOS_PREPARE": "/nix/store/exact-proton/bin/cachyos-prepare",
+                "KORRI_PROTON_CACHYOS": "/storage/korri/cache/proton/cachyos/11.0-20260601-slr-arm64",
             },
             "directories": ["/storage/korri/users/default/steam"],
             "envUnset": [],
@@ -85,22 +103,19 @@ fn steam_refuses_a_missing_or_empty_provider_ref() {
 }
 
 #[test]
-fn steam_refuses_without_the_cache_root_or_a_required_plugin_file() {
-    for key in [
-        "@korri:fex/fex-prepare",
-        "@korri:fex/config",
-        "@korri:proton/cachyos-prepare",
+fn steam_refuses_without_ready_artifacts_or_the_required_configuration_file() {
+    for (map, key) in [
+        ("files", "@korri:fex/config"),
+        ("artifacts", "@korri:fex/rootfs"),
+        ("artifacts", "@korri:proton/cachyos"),
     ] {
         let mut input = input();
-        input["files"].as_object_mut().unwrap().remove(key);
+        input[map].as_object_mut().unwrap().remove(key);
         assert!(
             call_plugin_operation_ts(STEAM_PLUGIN, LAUNCH_PREPARE, &input.to_string()).is_err(),
             "{key}"
         );
     }
-    let mut input = input();
-    input.as_object_mut().unwrap().remove("cacheRoot");
-    assert!(call_plugin_operation_ts(STEAM_PLUGIN, LAUNCH_PREPARE, &input.to_string()).is_err());
 }
 
 #[test]

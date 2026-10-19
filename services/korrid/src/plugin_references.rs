@@ -12,9 +12,15 @@ struct RunnerReference {
 }
 
 #[derive(Deserialize)]
+struct ArtifactReference {
+    id: String,
+    unpack: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct References {
     #[serde(default)]
-    artifacts: BTreeMap<String, crate::plugin::ArtifactRecord>,
+    artifacts: BTreeMap<String, ArtifactReference>,
     #[serde(default)]
     runners: BTreeMap<String, RunnerReference>,
 }

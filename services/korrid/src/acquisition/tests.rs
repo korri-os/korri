@@ -403,3 +403,66 @@ fn unpack_receives_verified_files_in_declared_order_and_never_publishes_failure(
         .to_string_lossy()
         .starts_with(".tmp-")));
 }
+
+#[tokio::test]
+async fn unpacking_is_observable_and_cannot_be_cancelled() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let package = root.path().join("package");
+    fs::create_dir(&package).unwrap();
+    let digest = hex::encode(Sha256::digest(b"data"));
+    fs::write(package.join("plugin.ts"), format!("export const name='runtime'; export const artifacts={{payload:{{id:'@test:runtime/payload',version:'v1',files:[{{url:'https://example.com/data',sha256:'sha256:{digest}'}}],unpack:'unpack'}}}};")).unwrap();
+    let program = package.join("unpack");
+    fs::write(&program, "#!/bin/sh\nprintf begun > \"$1/begun\"\nwhile [ ! -f \"$1/release\" ]; do sleep 0.01; done\ncat \"$2\" > \"$1/data\"\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    let registry =
+        PluginRegistry::from_installed(vec![crate::plugin_installation::EnabledPackage {
+            id: "@test:runtime".into(),
+            package,
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: vec![],
+            files: BTreeMap::from([("unpack".into(), program)]),
+        }])
+        .unwrap();
+    let artifact = registry.artifact("@test:runtime/payload").unwrap();
+    let base = placement::prepare(root.path(), artifact).unwrap();
+    let downloads = placement::downloads(&base).unwrap();
+    fs::write(downloads.join(digest), b"data").unwrap();
+    let coordinator = AcquisitionCoordinator::default();
+    coordinator
+        .start(root.path(), root.path(), &registry, &[artifact.id.clone()])
+        .unwrap();
+    let work = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(work) = fs::read_dir(&base)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| path.join("begun").exists())
+            {
+                break work;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        state(&coordinator, root.path(), &registry),
+        ArtifactState::Unpacking
+    ));
+    let cancelled = coordinator
+        .cancel(root.path(), &registry, &artifact.id)
+        .await
+        .unwrap();
+    assert!(matches!(
+        cancelled.artifacts[0].state,
+        ArtifactState::Unpacking
+    ));
+    fs::write(work.join("release"), b"continue").unwrap();
+    assert!(matches!(
+        settled(&coordinator, root.path(), &registry).await,
+        ArtifactState::Ready { .. }
+    ));
+}

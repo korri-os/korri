@@ -33,7 +33,7 @@ export const runners = { mgba: { id: "@korri:mgba/mgba", program: "retroarch", c
 export const handlers = {
   "launch.prepare": input => ({
     command: input.program,
-    args: [input.files["@korri:fex/fex-prepare"], input.cacheRoot],
+    args: [input.files["@korri:fex/fex-unpack"], input.cacheRoot],
   }),
 }
 "#;
@@ -51,8 +51,8 @@ impl Fixture {
         readable::combined(root.path());
         fs::create_dir_all(root.path().join("roms")).unwrap();
         fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
-        let fex = package(root.path(), "fex", &["fex-prepare", "config"]);
-        let proton = package(root.path(), "proton", &["cachyos-prepare"]);
+        let fex = package(root.path(), "fex", &["fex-unpack", "config"]);
+        let proton = package(root.path(), "proton", &["cachyos-unpack"]);
         let unrelated = package(root.path(), "unrelated", &["secret"]);
         Self {
             root,
@@ -156,13 +156,13 @@ fn a_runner_receives_each_required_plugins_files_under_its_plugin_id() {
             ("retroarch".into(), text(root.join("retroarch"))),
             ("mgba".into(), text(root.join("mgba.so"))),
             (
-                "@korri:fex/fex-prepare".into(),
-                text(root.join("fex-fex-prepare"))
+                "@korri:fex/fex-unpack".into(),
+                text(root.join("fex-fex-unpack"))
             ),
             ("@korri:fex/config".into(), text(root.join("fex-config"))),
             (
-                "@korri:proton/cachyos-prepare".into(),
-                text(root.join("proton-cachyos-prepare"))
+                "@korri:proton/cachyos-unpack".into(),
+                text(root.join("proton-cachyos-unpack"))
             ),
         ])
     );
@@ -175,7 +175,7 @@ fn a_runner_receives_each_required_plugins_files_under_its_plugin_id() {
     let plan = evaluate_snapshot(&source, &input).unwrap();
     assert_eq!(
         plan.args,
-        [text(root.join("fex-fex-prepare")), text(root.join("cache"))]
+        [text(root.join("fex-fex-unpack")), text(root.join("cache"))]
     );
     assert!(
         !root.join("cache").exists(),

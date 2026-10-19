@@ -13,13 +13,13 @@ fn name(artifact: &ArtifactRecord) -> String {
     format!("korri-acquire-{plugin}-{key}.service")
 }
 
-#[cfg(not(test))]
 fn control(
+    systemctl: &Path,
     artifact: &ArtifactRecord,
     verb: &str,
     extra: &[&str],
 ) -> Result<std::process::Output, Failure> {
-    Command::new(std::env::var_os("KORRID_SYSTEMCTL").unwrap_or_else(|| "systemctl".into()))
+    Command::new(systemctl)
         .args(["--system", "--no-ask-password", verb])
         .arg(name(artifact))
         .args(extra)
@@ -28,9 +28,9 @@ fn control(
         .output()
         .map_err(|_| Failure::Unpack)
 }
-#[cfg(not(test))]
-fn active(artifact: &ArtifactRecord) -> Result<bool, Failure> {
+fn active(systemctl: &Path, artifact: &ArtifactRecord) -> Result<bool, Failure> {
     let output = control(
+        systemctl,
         artifact,
         "show",
         &["--property=LoadState", "--property=ActiveState"],
@@ -59,17 +59,29 @@ pub(super) fn reclaim(artifact: &ArtifactRecord) -> Result<(), Failure> {
     #[cfg(test)]
     let _ = artifact;
     #[cfg(not(test))]
-    if active(artifact)? {
+    reclaim_with(&systemctl_path(), artifact)?;
+    Ok(())
+}
+
+fn reclaim_with(systemctl: &Path, artifact: &ArtifactRecord) -> Result<(), Failure> {
+    if active(systemctl, artifact)? {
         // systemctl stop waits for the entire control group to stop. Never
         // discard .tmp-* after a failed stop or an unavailable manager.
-        if !control(artifact, "stop", &[])?.status.success() {
+        if !control(systemctl, artifact, "stop", &[])?.status.success() {
             return Err(Failure::Unpack);
         }
-        if active(artifact)? {
+        if active(systemctl, artifact)? {
             return Err(Failure::Unpack);
         }
     }
     Ok(())
+}
+
+#[cfg(not(test))]
+fn systemctl_path() -> PathBuf {
+    std::env::var_os("KORRID_SYSTEMCTL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| "systemctl".into())
 }
 
 fn unit_arguments(
@@ -139,8 +151,9 @@ pub(super) fn unpack(
     let mut command = {
         // Recovery normally stopped an orphan before creating this work dir.
         // A still-active named unit is never replaced or mistaken for this run.
-        if active(artifact)? {
-            while active(artifact)? {
+        let systemctl = systemctl_path();
+        if active(&systemctl, artifact)? {
+            while active(&systemctl, artifact)? {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             return Err(Failure::Unpack);
@@ -206,5 +219,29 @@ mod tests {
             &artifact()
         )
         .is_err());
+    }
+    #[test]
+    fn orphan_recovery_stops_exact_unit_and_refuses_cleanup_when_stop_fails() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let root = tempfile::tempdir().unwrap();
+        let helper = root.path().join("systemctl");
+        let reply = root.path().join("reply");
+        let calls = root.path().join("calls");
+        for (stop, expected) in [
+            ("exit 1".to_owned(), false),
+            (
+                format!("printf 'LoadState=not-found\\n' > '{}'", reply.display()),
+                true,
+            ),
+        ] {
+            fs::write(&reply, "LoadState=loaded\nActiveState=active\n").unwrap();
+            fs::write(&calls, "").unwrap();
+            fs::write(&helper, format!("#!/bin/sh\nprintf '%s\\n' \"$3 $4\" >> '{}'\ncase \"$3\" in\nshow) cat '{}' ;;\nstop) {stop} ;;\nesac\n", calls.display(), reply.display())).unwrap();
+            fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+            assert_eq!(reclaim_with(&helper, &artifact()).is_ok(), expected);
+            let calls = fs::read_to_string(&calls).unwrap();
+            assert!(calls.contains("stop korri-acquire-fex-rootfs.service"));
+            assert_eq!(calls.lines().count(), if expected { 3 } else { 2 });
+        }
     }
 }

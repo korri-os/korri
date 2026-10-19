@@ -117,16 +117,21 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
         .await
         .unwrap();
     assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
-    tokio::time::sleep(Duration::from_millis(25)).await;
-    let failed = call("app.acquisition.status", json!({}), "acquisition-test")
-        .await
-        .json::<Value>()
-        .await
-        .unwrap();
-    assert_eq!(
-        failed["outcome"]["payload"]["artifacts"][0]["state"]["_tag"],
-        "Failed"
-    );
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let failed = call("app.acquisition.status", json!({}), "acquisition-test")
+                .await
+                .json::<Value>()
+                .await
+                .unwrap();
+            if failed["outcome"]["payload"]["artifacts"][0]["state"]["_tag"] == "Failed" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
     let downloads = root.path().join("cache/runtime/payload/.downloads");
     fs::write(downloads.join(&digest), b"runtime").unwrap();
     call("app.acquisition.start", start, "acquisition-test").await;

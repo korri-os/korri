@@ -31,13 +31,16 @@ const DEVICE: &str = "locations:
 ";
 const RUNNER_ID: &str = "@korri:steam/steam";
 
-/// A required runtime plugin: a declaration with no contributions and named files.
+/// A required runtime plugin: the shipped artifact declaration and named files.
 fn runtime(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
     let package = root.join(format!("plugin-{name}"));
     fs::create_dir_all(&package).unwrap();
     fs::write(
         package.join("plugin.ts"),
-        format!("export const name = \"{name}\"\n"),
+        fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../plugins/{name}/plugin.ts")),
+        )
+        .unwrap(),
     )
     .unwrap();
     EnabledPackage {
@@ -58,9 +61,9 @@ fn installed(root: &Path) -> PluginRegistry {
     fs::create_dir_all(&package).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/steam/plugin.ts");
     fs::copy(source, package.join("plugin.ts")).unwrap();
-    let fex = runtime(root, "fex", &["fex-prepare", "config"]);
-    let proton = runtime(root, "proton", &["cachyos-prepare"]);
-    PluginRegistry::from_installed(vec![
+    let fex = runtime(root, "fex", &["fex-unpack", "config"]);
+    let proton = runtime(root, "proton", &["cachyos-unpack"]);
+    let registry = PluginRegistry::from_installed(vec![
         EnabledPackage {
             id: "@korri:steam".into(),
             package,
@@ -72,7 +75,19 @@ fn installed(root: &Path) -> PluginRegistry {
         fex,
         proton,
     ])
-    .unwrap()
+    .unwrap();
+    for artifact in registry.artifacts().values() {
+        let (owner, key) = artifact.id.split_once('/').unwrap();
+        let name = owner.split_once(':').unwrap().1;
+        fs::create_dir_all(
+            root.join("cache")
+                .join(name)
+                .join(key)
+                .join(&artifact.version),
+        )
+        .unwrap();
+    }
+    registry
 }
 
 #[test]
@@ -167,12 +182,14 @@ fn provider_launch_passes_ref_and_no_content_path_to_the_installed_runner() {
     );
     assert_eq!(plan.directories, [plan.env["STEAM_HOME"].clone()]);
     let path = |name: &str| root.path().join(name).display().to_string();
-    assert_eq!(plan.env["KORRI_CACHE_ROOT"], path("cache"));
-    assert_eq!(plan.env["KORRI_FEX_PREPARE"], path("fex-fex-prepare"));
+    assert_eq!(
+        plan.env["KORRI_FEX_ROOTFS"],
+        input.artifacts["@korri:fex/rootfs"]
+    );
     assert_eq!(plan.env["KORRI_FEX_CONFIG"], path("fex-config"));
     assert_eq!(
-        plan.env["KORRI_PROTON_CACHYOS_PREPARE"],
-        path("proton-cachyos-prepare")
+        plan.env["KORRI_PROTON_CACHYOS"],
+        input.artifacts["@korri:proton/cachyos"]
     );
     assert!(plan.env_unset.is_empty());
     assert!(

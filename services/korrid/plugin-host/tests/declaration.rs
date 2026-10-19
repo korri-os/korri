@@ -116,3 +116,26 @@ fn steam_discovery_data_survives_admission_but_grants_no_native_effects() {
     )
     .is_err());
 }
+
+#[test]
+fn artifacts_survive_admission_without_granting_services_or_file_authority() {
+    let source = "export const name='runtime'; export const artifacts={payload:{id:'@test:runtime/payload',version:'v1',files:[{url:'https://example.com/data',sha256:'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}],unpack:'unpack'}};";
+    let declaration =
+        korri_plugin_host::declaration::Declaration::evaluate("@test", source).unwrap();
+    assert!(declaration.services.is_empty());
+    assert_eq!(
+        declaration.artifacts.as_ref().unwrap()["payload"]["unpack"],
+        "unpack"
+    );
+    let json = serde_json::to_value(declaration).unwrap();
+    assert!(korri_plugin_host::plugin_references::validate_files(
+        json.clone(),
+        &Default::default()
+    )
+    .is_err());
+    korri_plugin_host::plugin_references::validate_files(
+        json,
+        &std::collections::BTreeMap::from([("unpack".into(), "/package/unpack".into())]),
+    )
+    .unwrap();
+}

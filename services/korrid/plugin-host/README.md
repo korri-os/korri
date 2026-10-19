@@ -266,13 +266,18 @@ selection does not create or enforce cross-plugin dependencies.
 
 `launch_route` gives the runner's `PluginLaunchInput.files` its own package's
 files under their bare keys. It adds the files of each output in that package's
-`requires` under `<pluginId>/<key>`, for example `@korri:fex/fex-prepare`. A
+`requires` under `<pluginId>/<key>`, for example `@korri:fex/config`. A
 requirement matches only an enabled selection with that exact store output. If
 one is missing or disabled, korrid refuses the launch before it asks the runner
 anything or starts a unit. Transitive requirements and plugins that the package
 does not require are not exposed. `cacheRoot` is the storage root's `cache`
 directory, derived like `accountRoot`. `nix/product/game-library-access.nix`
-grants the runtime user that directory.
+grants the runtime user that directory. ADR 0012 moves download effects into
+korrid. Plugin `artifacts` declarations reference native `fex-unpack` or
+`cachyos-unpack` file keys only for format-specific unpacking. A runner lists
+its required artifact IDs in `runners.<key>.artifacts`; `PluginLaunchInput.artifacts`
+is a required map containing their ready paths (own bare keys, foreign full IDs).
+The launch gate refuses until every listed artifact is ready.
 
 Build-side payload checks (no VM):
 
