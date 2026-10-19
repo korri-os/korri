@@ -167,3 +167,113 @@ async fn local_rpc_download_retry_and_launch_gate_share_cache_truth() {
     assert_eq!(started["outcome"]["_tag"], "Ok", "{started}");
     server.abort();
 }
+
+#[tokio::test]
+async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start() {
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    async fn call(app: &Router, tag: &str, payload: Value) -> Value {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer acquisition-test")
+                    .header("Origin", "http://127.0.0.1:8099")
+                    .body(Body::from(
+                        json!({"_tag":tag, "payload":payload}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    plugin_test_fixtures::write_gba_library(root.path());
+    fs::create_dir(root.path().join("roms")).unwrap();
+    fs::write(root.path().join("roms/wl4.gba"), b"rom").unwrap();
+    let mut packages = Vec::new();
+    for name in ["first", "second"] {
+        let package = root.path().join(name);
+        fs::create_dir(&package).unwrap();
+        fs::write(package.join("plugin.ts"), format!(r#"
+            export const name = '{name}';
+            export const systems = {{gba:{{id:'gba',content:{{extensions:['gba']}}}}}};
+            export const artifacts = {{payload:{{id:'@test:{name}/payload',version:'v1',files:[{{url:'https://example.com/{name}',sha256:'sha256:{}'}}]}}}};
+            export const runners = {{run:{{id:'@test:{name}/run',program:'run',systems:['gba'],artifacts:['@test:{name}/payload']}}}};
+            export const handlers = {{'launch.prepare': input => ({{command:input.program,args:[]}})}};
+        "#, "a".repeat(64))).unwrap();
+        packages.push(plugin_installation::EnabledPackage {
+            id: format!("@test:{name}"),
+            package: package.clone(),
+            entry: "plugin.ts".into(),
+            sources: vec!["plugin.ts".into()],
+            requires: vec![],
+            files: BTreeMap::from([("run".into(), package.join("run"))]),
+        });
+    }
+    let registry = plugin::PluginRegistry::from_installed(packages).unwrap();
+    let config = root.path().join("host.toml");
+    fs::write(&config, "label = \"acquisition\"\ngames = []\n").unwrap();
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        Some(root.path().into()),
+        root.path().join("private"),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+    )
+    .with_route_registry(root.path().into(), registry);
+    let app = secure_host_routers(
+        runtime,
+        &root.path().join("private"),
+        Some(PortalAccess::new(
+            "acquisition-test",
+            "http://127.0.0.1:8099",
+            PortalPermission::LocalSessions,
+        )),
+    )
+    .0;
+
+    for name in ["first", "second"] {
+        let status = call(
+            &app,
+            "app.acquisition.status",
+            json!({"gameId":"wario-land-4", "runnerId":format!("@test:{name}/run")}),
+        )
+        .await;
+        assert_eq!(status["outcome"]["_tag"], "Ok", "{status}");
+        let artifacts = status["outcome"]["payload"]["artifacts"]
+            .as_array()
+            .unwrap();
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0]["id"], format!("@test:{name}/payload"));
+    }
+    // Omitted selection and an unavailable explicit selection fail identically
+    // at both entry points, before readiness is checked or anything launches.
+    for runner in [None, Some("@test:absent/run")] {
+        let mut payload = json!({"gameId":"wario-land-4"});
+        if let Some(runner) = runner {
+            payload["runnerId"] = json!(runner);
+        }
+        let status = call(&app, "app.acquisition.status", payload.clone()).await;
+        assert_eq!(status["outcome"]["_tag"], "Err", "{status}");
+        let reservation = call(
+            &app,
+            "app.session.reserve",
+            json!({"gameId":"wario-land-4"}),
+        )
+        .await;
+        assert_eq!(reservation["outcome"]["_tag"], "Ok", "{reservation}");
+        payload["expectedLaunchId"] = reservation["outcome"]["payload"]["launchId"].clone();
+        let start = call(&app, "app.session.start", payload).await;
+        assert_eq!(status["outcome"], start["outcome"]);
+    }
+}

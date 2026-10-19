@@ -2157,7 +2157,14 @@ async fn dispatch(
                 let ids = request
                     .game_id
                     .as_ref()
-                    .map(|id| acquisition::game_artifact_ids(root, &registry, id))
+                    .map(|id| {
+                        acquisition::game_artifact_ids(
+                            root,
+                            &registry,
+                            id,
+                            request.runner_id.as_deref(),
+                        )
+                    })
                     .transpose()?;
                 state.acquisition.status(root, &registry, ids.as_deref())
             })();

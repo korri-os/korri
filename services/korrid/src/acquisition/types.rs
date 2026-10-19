@@ -50,6 +50,8 @@ pub struct ArtifactStatus {
 pub struct AcquisitionStatusRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_id: Option<String>,
 }
 #[typeshare]
 #[derive(Clone, Debug, Deserialize, Serialize)]

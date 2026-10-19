@@ -19,16 +19,14 @@ use url::Url;
 pub(super) struct DownloadEngine {
     stall_window: Duration,
     retry_delay: Duration,
-    #[cfg(test)]
-    allow_loopback: bool,
+    addresses: policy::AddressPolicy,
 }
 impl Default for DownloadEngine {
     fn default() -> Self {
         Self {
             stall_window: Duration::from_secs(60),
             retry_delay: Duration::from_secs(2),
-            #[cfg(test)]
-            allow_loopback: false,
+            addresses: policy::AddressPolicy::Public,
         }
     }
 }
@@ -45,25 +43,12 @@ impl DownloadEngine {
         Self {
             stall_window,
             retry_delay: Duration::from_millis(1),
-            allow_loopback: true,
+            addresses: policy::AddressPolicy::AllowLoopback,
         }
-    }
-
-    fn validate(&self, url: &Url) -> Result<(), Failure> {
-        #[cfg(test)]
-        if self.allow_loopback
-            && url.scheme() == "http"
-            && url.host_str() == Some("127.0.0.1")
-            && url.username().is_empty()
-            && url.password().is_none()
-        {
-            return Ok(());
-        }
-        policy::validate(url)
     }
 
     async fn client(&self, url: &Url) -> Result<Client, Failure> {
-        self.validate(url)?;
+        policy::validate(url, self.addresses)?;
         let host = url
             .host_str()
             .ok_or(Failure::UnsafeUrl)?
@@ -85,11 +70,7 @@ impl DownloadEngine {
             return Err(Failure::Network);
         }
         for address in &addresses {
-            #[cfg(test)]
-            if self.allow_loopback && address.ip().is_loopback() {
-                continue;
-            }
-            if !policy::public_address(address.ip()) {
+            if !self.addresses.allows(address.ip()) {
                 return Err(Failure::UnsafeUrl);
             }
         }
@@ -128,20 +109,7 @@ impl DownloadEngine {
                 .get(header::LOCATION)
                 .and_then(|v| v.to_str().ok())
                 .ok_or(Failure::Redirect)?;
-            #[cfg(test)]
-            if self.allow_loopback {
-                if hops >= 5 {
-                    return Err(Failure::Redirect);
-                }
-                let next = url.join(location).map_err(|_| Failure::UnsafeUrl)?;
-                if url.scheme() == "https" && next.scheme() != "https" {
-                    return Err(Failure::UnsafeUrl);
-                }
-                self.validate(&next)?;
-                url = next;
-                continue;
-            }
-            url = policy::redirect(&url, location, hops)?;
+            url = policy::redirect(&url, location, hops, self.addresses)?;
         }
         Err(Failure::Redirect)
     }

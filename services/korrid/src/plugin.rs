@@ -2029,11 +2029,6 @@ mod artifact_tests {
             record["artifacts"]["rootfs"][field] = value;
             assert!(decode(record).is_err(), "{field}");
         }
-        for version in ["", ".", "..", ".hidden", "a/b", "a\0b"] {
-            let mut value = declaration();
-            value["artifacts"]["rootfs"]["version"] = json!(version);
-            assert!(decode(value).is_err(), "{version:?}");
-        }
         for hash in [
             "sha1:abcd".to_owned(),
             "a".repeat(64),

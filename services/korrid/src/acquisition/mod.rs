@@ -282,7 +282,9 @@ async fn acquire(
                 };
             }) => path?,
         };
-        completed += std::fs::metadata(&path)?.len();
+        let bytes = std::fs::metadata(&path)?.len();
+        sizes[index].get_or_insert(bytes);
+        completed += bytes;
         files.push(path);
     }
     {
@@ -410,11 +412,12 @@ pub(crate) fn game_artifact_ids(
     root: &Path,
     registry: &PluginRegistry,
     game_id: &str,
+    runner_id: Option<&str>,
 ) -> Result<Vec<String>, RpcFailure> {
     let (snapshot, _) = crate::config::settings::runner_choice_snapshot(root)
         .map_err(crate::game_routes::settings_failure)?;
     let route =
-        crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, None)
+        crate::config::resolver::resolve_linux_route(root, &snapshot, registry, game_id, runner_id)
             .map_err(|error| crate::route_diagnostic_failure(&error))?;
     Ok(registry
         .artifacts_for_runner(&route.runner_id)

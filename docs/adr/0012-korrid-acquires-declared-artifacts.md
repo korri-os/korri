@@ -47,6 +47,10 @@ Not carried: Repair and UpdateAvailable screens (mockup only; a ready directory 
 
 ## Consequences
 
+`steam-arm64-seed` still downloads Valve's unpinned Steam client with curl;
+that bootstrap is outside the declared artifact mechanism and this decision's
+scope.
+
 The first Steam launch shows Confirm with "1.5 GB", then a real progress bar, then unpacking, then starts. fex-prepare, cachyos-prepare, pins.nix, pin.nix, KORRI_FEX_PREPARE and KORRI_PROTON_CACHYOS_PREPARE go. steam-session reads KORRI_FEX_ROOTFS and KORRI_PROTON_CACHYOS. The plugin-host interface changes; `korri-published-plugins-check` reports the break by design and published plugins are republished with core. A partial download survives a korrid restart on disk and resumes. Downloads run on the launching device only; the capability model stays unbuilt.
 
 
@@ -73,6 +77,8 @@ as korrid's user, with the contribution directory as their only writable path.
 
 `ArtifactsNotReady` is an existing-shape `RpcFailure`: its `code` is
 `ArtifactsNotReady` and its `message` is plain copy. It adds no `artifactIds`
-field. The portal obtains the artifact IDs from `app.acquisition.status`
-before starting a session. This clarification was approved during
-implementation on 2026-10-19.
+field. The portal obtains the artifact IDs from
+`app.acquisition.status { gameId, runnerId? }` before starting a session.
+An explicit `runnerId` uses the same selected-runner resolution as
+`app.session.start`; omission retains the saved/default route rules. This
+clarification was approved during implementation on 2026-10-19.

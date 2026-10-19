@@ -4,6 +4,23 @@ use url::Url;
 
 use super::Failure;
 
+#[derive(Clone, Copy)]
+pub(super) enum AddressPolicy {
+    Public,
+    #[cfg(test)]
+    AllowLoopback,
+}
+
+impl AddressPolicy {
+    pub(super) fn allows(self, ip: IpAddr) -> bool {
+        #[cfg(test)]
+        if matches!(self, Self::AllowLoopback) && ip.is_loopback() {
+            return true;
+        }
+        public_address(ip)
+    }
+}
+
 pub(super) fn public_address(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => {
@@ -26,7 +43,7 @@ pub(super) fn public_address(ip: IpAddr) -> bool {
     }
 }
 
-pub(super) fn validate(url: &Url) -> Result<(), Failure> {
+pub(super) fn validate(url: &Url, addresses: AddressPolicy) -> Result<(), Failure> {
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -40,19 +57,24 @@ pub(super) fn validate(url: &Url) -> Result<(), Failure> {
         {
             Err(Failure::UnsafeUrl)
         }
-        url::Host::Ipv4(ip) if !public_address(ip.into()) => Err(Failure::UnsafeUrl),
-        url::Host::Ipv6(ip) if !public_address(ip.into()) => Err(Failure::UnsafeUrl),
+        url::Host::Ipv4(ip) if !addresses.allows(ip.into()) => Err(Failure::UnsafeUrl),
+        url::Host::Ipv6(ip) if !addresses.allows(ip.into()) => Err(Failure::UnsafeUrl),
         _ => Ok(()),
     }
 }
 
-pub(super) fn redirect(from: &Url, location: &str, hops: usize) -> Result<Url, Failure> {
+pub(super) fn redirect(
+    from: &Url,
+    location: &str,
+    hops: usize,
+    addresses: AddressPolicy,
+) -> Result<Url, Failure> {
     if hops >= 5 {
         return Err(Failure::Redirect);
     }
     let to = from.join(location).map_err(|_| Failure::UnsafeUrl)?;
-    validate(from)?;
-    validate(&to)?;
+    validate(from, addresses)?;
+    validate(&to, addresses)?;
     if from.scheme() == "https" && to.scheme() != "https" {
         return Err(Failure::UnsafeUrl);
     }
@@ -106,7 +128,10 @@ mod tests {
             "https://8.8.8.8/game",
             "https://[2606:4700:4700::1111]/game",
         ] {
-            assert!(validate(&Url::parse(value).unwrap()).is_ok(), "{value}");
+            assert!(
+                validate(&Url::parse(value).unwrap(), AddressPolicy::Public).is_ok(),
+                "{value}"
+            );
         }
         for host in [
             "localhost",
@@ -132,7 +157,11 @@ mod tests {
             "[::ffff:8.8.8.8]",
         ] {
             assert!(
-                validate(&Url::parse(&format!("https://{host}/file")).unwrap()).is_err(),
+                validate(
+                    &Url::parse(&format!("https://{host}/file")).unwrap(),
+                    AddressPolicy::Public
+                )
+                .is_err(),
                 "{host}"
             );
         }
@@ -141,20 +170,41 @@ mod tests {
             "ftp://example.com/file",
             "https://user:pass@example.com/file",
         ] {
-            assert!(validate(&Url::parse(value).unwrap()).is_err());
+            assert!(validate(&Url::parse(value).unwrap(), AddressPolicy::Public).is_err());
         }
     }
     #[test]
     fn redirects_revalidate_every_hop_and_refuse_downgrade_or_sixth_hop() {
         let from = Url::parse("https://example.com/start").unwrap();
         assert_eq!(
-            redirect(&from, "/next", 4).unwrap().as_str(),
+            redirect(&from, "/next", 4, AddressPolicy::Public)
+                .unwrap()
+                .as_str(),
             "https://example.com/next"
         );
-        assert!(redirect(&from, "/next", 5).is_err());
-        assert!(redirect(&from, "http://example.com/file", 0).is_err());
-        assert!(redirect(&from, "https://127.0.0.1/file", 0).is_err());
+        assert!(redirect(&from, "/next", 5, AddressPolicy::Public).is_err());
+        assert!(redirect(&from, "http://example.com/file", 0, AddressPolicy::Public).is_err());
+        assert!(redirect(&from, "https://127.0.0.1/file", 0, AddressPolicy::Public).is_err());
     }
+    #[test]
+    fn loopback_admission_preserves_redirect_limits_and_security_checks() {
+        let from = Url::parse("https://127.0.0.1/start").unwrap();
+        assert!(redirect(&from, "/next", 4, AddressPolicy::AllowLoopback).is_ok());
+        assert!(redirect(&from, "/next", 5, AddressPolicy::AllowLoopback).is_err());
+        for location in [
+            "http://127.0.0.1/next",
+            "https://user:pass@127.0.0.1/next",
+            "https://10.0.0.1/next",
+            "file:///tmp/file",
+        ] {
+            assert!(
+                redirect(&from, location, 0, AddressPolicy::AllowLoopback).is_err(),
+                "{location}"
+            );
+        }
+        assert!(redirect(&from, "/next", 0, AddressPolicy::Public).is_err());
+    }
+
     #[test]
     fn decoded_basenames_cannot_escape_the_work_directory() {
         assert_eq!(

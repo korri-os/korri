@@ -499,6 +499,15 @@ async fn unpacking_is_observable_and_cannot_be_cancelled() {
 
 #[tokio::test]
 async fn two_file_progress_is_cumulative_and_combines_declared_and_observed_sizes() {
+    two_file_progress(true).await;
+}
+
+#[tokio::test]
+async fn completed_chunked_file_fills_an_unknown_artifact_size() {
+    two_file_progress(false).await;
+}
+
+async fn two_file_progress(declare_first_size: bool) {
     let first = vec![b'a'; 16_384];
     let second = b"second file".to_vec();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -517,15 +526,17 @@ async fn two_file_progress_is_cumulative_and_combines_declared_and_observed_size
                     break;
                 }
             }
-            write!(
-                socket,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                bytes.len()
-            )
-            .unwrap();
             if index == 0 {
+                write!(socket, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n", bytes.len()).unwrap();
                 socket.write_all(&bytes).unwrap();
+                socket.write_all(b"\r\n0\r\n\r\n").unwrap();
             } else {
+                write!(
+                    socket,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    bytes.len()
+                )
+                .unwrap();
                 socket.write_all(&bytes[..4]).unwrap();
                 wait.recv_timeout(Duration::from_secs(5)).unwrap();
                 socket.write_all(&bytes[4..]).unwrap();
@@ -533,12 +544,18 @@ async fn two_file_progress_is_cumulative_and_combines_declared_and_observed_size
         }
     });
     let root = tempfile::tempdir().unwrap();
-    let declaration = serde_json::json!({"name":"runtime", "artifacts":{"payload":{
+    let mut declaration = serde_json::json!({"name":"runtime", "artifacts":{"payload":{
         "id":"@test:runtime/payload", "version":"v1", "files":[
             {"url":format!("http://{address}/first"), "sha256":format!("sha256:{}", hex::encode(Sha256::digest(&first))), "bytes":first.len()},
             {"url":format!("http://{address}/second"), "sha256":format!("sha256:{}", hex::encode(Sha256::digest(&second)))},
         ]
     }}});
+    if !declare_first_size {
+        declaration["artifacts"]["payload"]["files"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("bytes");
+    }
     let plugin =
         crate::plugin::decode_plugin_declaration("@test", &declaration.to_string()).unwrap();
     let registry = PluginRegistry::new(vec![plugin], ["@test:runtime".into()]).unwrap();

@@ -303,7 +303,10 @@ artifacts use bare keys; foreign artifacts use `<pluginId>/<key>`, as `files`
 does. The field is required, including for runners with no artifacts (`{}`).
 Only the listed artifacts appear. Actual launch refuses with the existing
 `RpcFailure` code `ArtifactsNotReady` until all required directories exist.
-The caller obtains their IDs and titles from `app.acquisition.status {gameId}`.
+The caller obtains their IDs and titles from
+`app.acquisition.status {gameId, runnerId?}`. An explicit `runnerId` selects the
+same route as `app.session.start`; without it, the saved/default route rules
+apply. Without `gameId`, status lists all enabled artifacts.
 
 An unpack program runs as `<unpack> <work-dir> <file>...`. Files are verified
 inputs in declaration order. The program writes only under `<work-dir>`, exits

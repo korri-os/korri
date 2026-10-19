@@ -43,6 +43,7 @@ export interface AcquisitionStartRequest {
 
 export interface AcquisitionStatusRequest {
 	gameId?: string;
+	runnerId?: string;
 }
 
 /** Initial window handoff history, separate from current focus ownership. */
