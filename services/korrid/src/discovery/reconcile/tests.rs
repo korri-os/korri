@@ -306,3 +306,99 @@ fn steam_disable_withdraws_owned_locations_but_not_authored_locations() {
     assert!(!snapshot.locations.contains_key("@korri:steam/401710"));
     assert!(snapshot.locations.contains_key("@korri:steam/1"));
 }
+
+fn assert_authored_steam_location_after_uninstall_survives(enabled: bool) {
+    let root = tempfile::tempdir().unwrap();
+    let private = tempfile::tempdir().unwrap();
+    let package = tempfile::tempdir().unwrap();
+    let manifests = root.path().join("users/default/steam/steamapps");
+    fs::create_dir_all(&manifests).unwrap();
+    let manifest = manifests.join("appmanifest_401710.acf");
+    fs::write(
+        &manifest,
+        "\"AppState\" { \"appid\" \"401710\" \"name\" \"Flinthook\" \"StateFlags\" \"4\" }",
+    )
+    .unwrap();
+    let writer = DiscoveryCoordinator::new(root.path(), private.path()).with_registry_source(
+        plugin_policy::RegistrySource::Selected(Arc::new(crate::plugin_test_fixtures::steam(
+            package.path(),
+        ))),
+    );
+    let options = DiscoveryOptions::default();
+    let key = "@korri:steam/401710";
+    let scanner = crate::plugin_discovery::STEAM_INSTALLED_APPS;
+    writer.rescan(&options).unwrap();
+    assert!(PrivateState::read(private.path())
+        .unwrap()
+        .ownership
+        .origins[key]
+        .contains(scanner));
+
+    fs::remove_file(&manifest).unwrap();
+    let writer = if enabled {
+        writer
+    } else {
+        writer.with_registry_source(plugin_policy::RegistrySource::Selected(Arc::new(
+            crate::plugin::PluginRegistry::from_installed(vec![]).unwrap(),
+        )))
+    };
+    writer.rescan(&options).unwrap();
+    let absent = Documents::read(root.path()).unwrap().validate().unwrap();
+    assert!(!absent.locations.contains_key(key));
+    assert!(absent.library.contains_key("flinthook"));
+    let stale_claim = PrivateState::read(private.path())
+        .unwrap()
+        .ownership
+        .origins
+        .get(key)
+        .is_some_and(|origins| origins.contains(scanner));
+
+    // The person adds the same location after discovery has withdrawn it.
+    let mut device =
+        parse_mapping(&fs::read_to_string(root.path().join(DEVICE_FILE_NAME)).unwrap()).unwrap();
+    device
+        .get_mut("locations")
+        .unwrap()
+        .as_mapping_mut()
+        .unwrap()
+        .insert(
+            Value::String(key.into()),
+            serde_yaml::to_value(vec![
+                serde_json::json!({"provider":"@korri:steam", "ref":"401710"}),
+            ])
+            .unwrap(),
+        );
+    fs::write(
+        root.path().join(DEVICE_FILE_NAME),
+        serde_yaml::to_string(&device).unwrap(),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        writer.rescan(&options).unwrap();
+        let snapshot = Documents::read(root.path()).unwrap().validate().unwrap();
+        assert!(
+            snapshot.locations.contains_key(key),
+            "authored location was removed: enabled={enabled}, stale ownership after uninstall={stale_claim}"
+        );
+    }
+    assert!(
+        !stale_claim,
+        "withdrawal must release this scanner's ownership"
+    );
+    assert!(!PrivateState::read(private.path())
+        .unwrap()
+        .ownership
+        .origins
+        .get(key)
+        .is_some_and(|origins| origins.contains(scanner)));
+}
+
+#[test]
+fn authored_steam_location_after_uninstall_survives_enabled_rescan() {
+    assert_authored_steam_location_after_uninstall_survives(true);
+}
+
+#[test]
+fn authored_steam_location_after_uninstall_survives_disabled_rescan() {
+    assert_authored_steam_location_after_uninstall_survives(false);
+}

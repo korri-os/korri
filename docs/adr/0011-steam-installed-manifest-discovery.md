@@ -46,10 +46,13 @@ It writes the existing provider library identity and provider-ref device
 location; no new persisted fields, source records, scan-root configuration, or
 catalog files are introduced. The existing private `origins` journal owns only
 locations this scanner creates. A complete pass withdraws absent apps' owned
-provider locations, including when the plugin is disabled. Games and release
-history stay unavailable, as missing file releases do today. Authored locations
-are not claimed or removed. A reinstall restores the location without making a
-second game. The existing daemon-start scan and `app.discovery.rescan` run this
+provider locations, including when the plugin is disabled, and removes this
+scanner's origin claim in the same publication. Games and release history stay
+unavailable, as missing file releases do today. Authored locations are not
+claimed or removed: a person can author the same location after withdrawal,
+and later scans preserve it with Steam enabled or disabled. A reinstall restores
+a missing location without making a second game; an existing authored location
+stays authored. The existing daemon-start scan and `app.discovery.rescan` run this
 same path. No watcher or device work is part of this decision.
 
 ## Legacy grounding and deliberate deltas

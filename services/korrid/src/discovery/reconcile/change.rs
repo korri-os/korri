@@ -295,7 +295,7 @@ fn reconcile_providers(
             .iter()
             .map(|o| format!("{}/{}", o.target.provider, o.target.provider_ref))
             .collect();
-        for (key, origins) in &change.origins {
+        for (key, origins) in &mut change.origins {
             if origins.contains(&scan.id) && !seen.contains(key) {
                 if let Some(locations) = next.locations.get_mut(key) {
                     locations.retain(|location| !matches!(location, Location::ProviderRef { .. }));
@@ -303,8 +303,12 @@ fn reconcile_providers(
                         next.locations.remove(key);
                     }
                 }
+                // Withdrawal ends ownership. A person can author this same
+                // location later without discovery claiming or removing it.
+                origins.remove(&scan.id);
             }
         }
+        change.origins.retain(|_, origins| !origins.is_empty());
         // Keep the release and game when a manifest disappears, just as missing
         // files keep their history. ProviderRef has no missing-since field:
         // absence of its location is the existing unavailable representation.
