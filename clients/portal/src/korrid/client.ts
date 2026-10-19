@@ -47,13 +47,9 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
-} from "@contracts/generated/korrid"
-import type {
   AcquisitionOutcome,
-  AcquisitionRpcRequest,
-  AcquisitionRpcResponse,
   ArtifactStatus,
-} from "./acquisition-types"
+} from "@contracts/generated/korrid"
 import {
   FocusOwnership,
   InitialHandoff,
@@ -182,24 +178,6 @@ export async function callKorrid<Request extends RpcRequest>(
   })
   if (!response.ok) throw new KorridHttpError(response.status)
   return (await response.json()) as RpcResponseFor<Request>
-}
-
-/**
- * GAP — fold into callKorrid at merge. The acquisition tags are not in the
- * generated RpcRequest union until core's regenerated types land, so this
- * posts the same wire through the same transport under a local type.
- */
-async function callAcquisition(
-  baseUrl: string,
-  capability: string,
-  request: AcquisitionRpcRequest,
-): Promise<AcquisitionOutcome> {
-  const response = (await callKorrid(
-    baseUrl,
-    capability,
-    request as unknown as RpcRequest,
-  )) as unknown as AcquisitionRpcResponse
-  return response.outcome
 }
 
 const unreachable = (error: unknown) => ({
@@ -686,26 +664,29 @@ export function createHttpKorridClient(
     },
     async acquisitionStatus(gameId) {
       try {
-        return await callAcquisition(baseUrl, capability, {
+        const response = await callKorrid(baseUrl, capability, {
           _tag: "app.acquisition.status",
           payload: gameId === undefined ? {} : { gameId },
         })
+        return response.outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async acquisitionStart(artifactIds) {
       try {
-        return await callAcquisition(baseUrl, capability, {
+        const response = await callKorrid(baseUrl, capability, {
           _tag: "app.acquisition.start",
           payload: { artifactIds: [...artifactIds] },
         })
+        return response.outcome
       } catch (error) { return routeUnavailable(error) }
     },
     async acquisitionCancel(artifactId) {
       try {
-        return await callAcquisition(baseUrl, capability, {
+        const response = await callKorrid(baseUrl, capability, {
           _tag: "app.acquisition.cancel",
           payload: { artifactId },
         })
+        return response.outcome
       } catch (error) { return routeUnavailable(error) }
     },
   }

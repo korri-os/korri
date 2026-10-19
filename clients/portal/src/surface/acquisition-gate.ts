@@ -13,9 +13,8 @@
  * korrid owns the download, the retries and the partial file. The gate owns
  * nothing but the question, the observation and the words.
  */
-import type { RpcFailure } from "@contracts/generated/korrid"
+import type { ArtifactStatus, RpcFailure } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceStatus } from "@contracts/surface/korri-surface"
-import type { ArtifactStatus } from "../korrid/acquisition-types"
 import type { KorridClient } from "../korrid/client"
 
 /** The cadence the host already observes app.session.status at: 1 Hz. */

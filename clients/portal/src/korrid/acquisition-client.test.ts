@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
-import type { AcquisitionRpcRequest } from "./acquisition-types"
+import type { RpcRequest } from "@contracts/generated/korrid"
 import { createHttpKorridClient, createInMemoryKorridClient } from "./client"
+
+type AcquisitionRpcRequest = Extract<RpcRequest, { _tag: `app.acquisition.${string}` }>
 
 const steam = { id: "hk", title: "Hollow Knight", supportsRunnerSelection: false, source: { label: "This device", isLocal: true } }
 const artifacts = [
