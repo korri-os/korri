@@ -204,6 +204,21 @@ class SteamSessionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(sorted(p.name for p in (self.root / "shm").iterdir()), ["pulse-shm-1"])
 
+    def test_processes_steam_started_are_killed_when_the_session_ends(self):
+        result, home, _ = self.run_session("leftover")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pid = int((home / "leftover.pid").read_text())
+        deadline = time.monotonic() + 5
+        while Path(f"/proc/{pid}").exists() and time.monotonic() < deadline:
+            # Reap it if it is our zombie grandchild's zombie; otherwise wait.
+            state = Path(f"/proc/{pid}/status").read_text() if Path(f"/proc/{pid}/status").exists() else ""
+            if "State:\tZ" in state:
+                break
+            time.sleep(0.1)
+        status = Path(f"/proc/{pid}/status")
+        self.assertTrue(not status.exists() or "State:\tZ" in status.read_text(),
+                        "a SIGTERM-ignoring process with SteamAppId survived the session")
+
     def test_setgid_is_cleared_from_the_steam_home(self):
         def setgid_tree(home):
             (home / "steamapps/common").mkdir(parents=True, exist_ok=True)

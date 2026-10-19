@@ -87,6 +87,21 @@ clean_shared_memory() {
     -o -name "u$uid-ValveIPCSharedObj-Steam" -o -name 'fex-*-stats' \) \
     -delete 2>/dev/null || true
 }
+# Wine helpers such as winedevice.exe catch SIGTERM and wait for a wineserver
+# that is already gone. Under Gamescope they are reparented to its reaper,
+# which then keeps the whole game unit alive until systemd's stop timeout
+# SIGKILLs it. After Steam is gone, kill what is left of the game: every
+# process that Steam started for an app carries SteamAppId in its environment.
+kill_leftovers() {
+  local environ pid
+  for environ in /proc/[0-9]*/environ; do
+    pid=${environ#/proc/}; pid=${pid%/environ}
+    [[ "$pid" != "$$" && "$pid" != "$BASHPID" ]] || continue
+    if grep -azq '^SteamAppId=' "$environ" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  done
+}
 shutdown() {
   local deadline=$((SECONDS + 15))
   [[ -n "$steam_pid" ]] || return 0
@@ -97,6 +112,7 @@ shutdown() {
   # indefinitely on a client that ignored -shutdown.
   kill "$steam_pid" 2>/dev/null || true
   while kill -0 "$steam_pid" 2>/dev/null && (( SECONDS < deadline + 5 )); do sleep 1; done
+  kill_leftovers
   clean_shared_memory
 }
 trap shutdown EXIT

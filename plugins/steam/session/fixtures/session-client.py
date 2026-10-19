@@ -76,6 +76,14 @@ while not (home / "shutdown").exists():
             env={**os.environ, "SteamAppId": "401710"},
         )
         event("Game process added : AppID 401710")
+        if behavior == "leftover":
+            # A Wine helper that ignores SIGTERM and outlives the game.
+            helper = subprocess.Popen(
+                [sys.executable, "-c",
+                 "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"],
+                env={**os.environ, "SteamAppId": "999999"},
+            )
+            (home / "leftover.pid").write_text(str(helper.pid))
         # Removal alone is insufficient: the session must wait for the real
         # process with SteamAppId to exit as well.
         event("Game process removed: AppID 401710")
