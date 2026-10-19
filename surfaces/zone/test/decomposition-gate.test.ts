@@ -27,7 +27,7 @@ type Layer = (typeof LAYERS)[number]
  * with the card band and the tabs, and each worker that adds one adds it here.
  * A layer listed here with no part is a gate failure, not a plan.
  */
-const REQUIRED_LAYERS: readonly Layer[] = ["template", "organism"]
+const REQUIRED_LAYERS: Layer[] = ["template", "organism"]
 
 /**
  * Files that render no surface of their own and therefore own no part.
@@ -211,7 +211,7 @@ describe("the surface is decomposed at every layer, not just the convenient ones
 
   test.each(REQUIRED_LAYERS)(
     "a %s part exists",
-    (layer) => {
+    (layer: Layer) => {
       expect([...layers].sort()).toContain(layer)
     },
   )

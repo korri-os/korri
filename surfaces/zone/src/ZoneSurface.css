@@ -1,0 +1,14 @@
+/* The titles as plain text, until the card band lands. */
+.zone-surface-titles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--zone-strip-gap);
+  margin: 0;
+  padding: var(--zone-strip-inset) var(--zone-strip-margin);
+  list-style: none;
+  font-size: var(--zone-type-button-tall);
+}
+
+.zone-surface-title {
+  flex: 0 0 auto;
+}
