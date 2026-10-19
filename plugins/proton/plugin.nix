@@ -1,42 +1,35 @@
-# Proton compatibility tool files. plugin.ts names no artifact; a requiring
-# runner reads these keys. The tool itself is not in the closure:
-# cachyos-prepare downloads it on the device into korrid's cache root.
+# Proton compatibility tool files. plugin.ts declares the cachyos artifact
+# and names `cachyos-unpack` as its unpack program. The tool itself is not
+# in the closure: korrid downloads the release plugin.ts pins into its cache
+# and runs cachyos-unpack on it.
 { pkgs }:
 let
-  cachyos = import ./cachyos/pin.nix;
+  cachyos = import ./cachyos/tool-name.nix;
   compatibilitytool = pkgs.runCommand "korri-proton-cachyos-compatibilitytool" { } ''
     mkdir -p "$out/share"
     substitute ${./cachyos/compatibilitytool.vdf} "$out/share/compatibilitytool.vdf" \
       --replace-fail @toolName@ ${pkgs.lib.escapeShellArg cachyos.toolName}
   '';
-  prepare = pkgs.writeShellApplication {
-    name = "cachyos-prepare";
+  unpack = pkgs.writeShellApplication {
+    name = "cachyos-unpack";
     runtimeInputs = with pkgs; [
       coreutils
-      curl
       gnugrep
       gnutar
-      util-linux
       xz
     ];
     text =
-      pkgs.lib.replaceStrings
-        [ "@url@" "@sha256@" "@version@" "@compatibilitytool@" ]
-        [
-          cachyos.url
-          cachyos.sha256
-          cachyos.version
-          "${compatibilitytool}/share/compatibilitytool.vdf"
-        ]
-        (builtins.readFile ./cachyos/prepare.sh);
+      pkgs.lib.replaceStrings [ "@compatibilitytool@" ]
+        [ "${compatibilitytool}/share/compatibilitytool.vdf" ]
+        (builtins.readFile ./cachyos/unpack.sh);
   };
 in
 {
   packages = {
-    cachyos-prepare = prepare;
+    cachyos-unpack = unpack;
   };
-  # cachyos-prepare installs compatibilitytool.vdf from its own closure.
+  # cachyos-unpack installs compatibilitytool.vdf from its own closure.
   files = {
-    cachyos-prepare = "${prepare}/bin/cachyos-prepare";
+    cachyos-unpack = "${unpack}/bin/cachyos-unpack";
   };
 }
