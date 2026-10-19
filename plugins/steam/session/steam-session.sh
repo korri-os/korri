@@ -74,6 +74,19 @@ mark_logs() {
   # shellcheck disable=SC2034
   [[ ! -f "$bootstrap_log" ]] || bootstrap_mark=$(stat -c %s "$bootstrap_log")
 }
+# Steam's client and webhelper keep about 26 MiB each in /dev/shm/u<uid>-Shm_*,
+# and Proton's FEX writes /dev/shm/fex-<pid>-stats. A killed session leaves
+# them behind, /dev/shm is shared memory on a device without swap, and on the
+# Mini V2 282 leftovers (2.4 GiB) caused an OOM kill. Remove them before the
+# client starts and after it stops. korrid runs one game session at a time,
+# so no other Steam of this user still uses them.
+clean_shared_memory() {
+  local uid
+  uid=$(id -u)
+  find /dev/shm -maxdepth 1 -user "$uid" \( -name "u$uid-Shm_*" \
+    -o -name "u$uid-ValveIPCSharedObj-Steam" -o -name 'fex-*-stats' \) \
+    -delete 2>/dev/null || true
+}
 shutdown() {
   local deadline=$((SECONDS + 15))
   [[ -n "$steam_pid" ]] || return 0
@@ -83,6 +96,8 @@ shutdown() {
   # The owning game unit has KillMode=control-group. Do not leave it waiting
   # indefinitely on a client that ignored -shutdown.
   kill "$steam_pid" 2>/dev/null || true
+  while kill -0 "$steam_pid" 2>/dev/null && (( SECONDS < deadline + 5 )); do sleep 1; done
+  clean_shared_memory
 }
 trap shutdown EXIT
 trap 'exit 130' INT
@@ -251,6 +266,7 @@ mkdir -p "$STEAM_HOME/logs" "$STEAM_HOME/fex-data"
 exec 9>"$STEAM_HOME/.korri-session.lock"
 flock -n 9 || fail 126 'Steam failed: another Steam session owns STEAM_HOME'
 if pgrep -x steam >/dev/null; then fail 126 'Steam failed: client is already running before settings merge'; fi
+clean_shared_memory
 # bwrap enters its caller's cwd before the guest helper can change directory.
 cd "$STEAM_HOME"
 say 'runtime: preparing the FEX rootfs and Proton-CachyOS (first run downloads them)'

@@ -18,7 +18,8 @@ def program(path, source):
 
 
 class SteamSessionTests(unittest.TestCase):
-    def run_session(self, behavior, prepare="ready", seeded=True, setup=None, installed=True):
+    def run_session(self, behavior, prepare="ready", seeded=True, setup=None, installed=True,
+                    shm=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
@@ -49,6 +50,11 @@ class SteamSessionTests(unittest.TestCase):
         for placeholder in ("fhs", "helpers", "settings"):
             script = script.replace(f"@{placeholder}@", str(root))
         script = script.replace("@protonToolName@", TOOL)
+        # Never touch the host's real shared memory.
+        (root / "shm").mkdir()
+        script = script.replace("/dev/shm", str(root / "shm"))
+        if shm:
+            shm(root / "shm")
         path = root / "session.sh"
         path.write_text(script)
         started = time.monotonic()
@@ -185,6 +191,18 @@ class SteamSessionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("restoring the installed Steam client manifest", result.stderr)
         self.assertEqual((home / "manifest-seen").read_text(), manifest)
+
+    def test_leftover_steam_shared_memory_is_removed(self):
+        uid = os.getuid()
+        names = [f"u{uid}-Shm_0badc0de", f"u{uid}-ValveIPCSharedObj-Steam", "fex-1234-stats"]
+
+        def leftovers(shm):
+            for name in names + ["pulse-shm-1"]:
+                (shm / name).write_text("x")
+
+        result, _, _ = self.run_session("game", shm=leftovers)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sorted(p.name for p in (self.root / "shm").iterdir()), ["pulse-shm-1"])
 
     def test_setgid_is_cleared_from_the_steam_home(self):
         def setgid_tree(home):
