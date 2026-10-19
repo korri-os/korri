@@ -1,0 +1,89 @@
+/* The plan's answers, as the values the strips read. Tall and wide are the
+ * defaults; the two data attributes switch them. */
+.zone-shell {
+  --zone-shell-top: var(--zone-tab-strip-tall);
+  --zone-shell-foot: var(--zone-foot-strip-tall);
+  --zone-shell-foot-type: var(--zone-type-foot-tall);
+  --zone-shell-tab-type: var(--zone-type-tab-wide);
+  --zone-shell-hint-type: var(--zone-type-hint-wide);
+  --zone-shell-margin: clamp(var(--zone-strip-margin-min), 1.6cqw, var(--zone-strip-margin));
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--zone-shell-top) minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+}
+
+.zone-shell[data-strips="short"] {
+  --zone-shell-top: var(--zone-tab-strip-short);
+  --zone-shell-foot: var(--zone-foot-strip-short);
+  --zone-shell-foot-type: var(--zone-type-foot-short);
+}
+
+.zone-shell[data-band="narrow"] {
+  --zone-shell-tab-type: var(--zone-type-tab-narrow);
+  --zone-shell-hint-type: var(--zone-type-hint-narrow);
+}
+
+/* Hint, tabs, hint. The hints keep their corners; the tabs take the middle
+ * and give way first. */
+.zone-shell-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--zone-strip-gap);
+  padding: 0 var(--zone-shell-margin);
+  font-size: var(--zone-shell-tab-type);
+}
+
+.zone-shell-hint-back {
+  justify-self: start;
+  font-size: var(--zone-shell-hint-type);
+}
+
+.zone-shell-hint-confirm {
+  justify-self: end;
+  font-size: var(--zone-shell-hint-type);
+}
+
+.zone-shell-tabs {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: var(--zone-strip-gap);
+  min-width: 0;
+}
+
+/* A size container for the page. Everything inside measures this box, not
+ * the device: a body squeezed by the strips reflows the way a short screen
+ * does. */
+.zone-shell-body {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  container: zone-body / size;
+}
+
+/* Two runs, pushed to the ends. Readouts yield first: each run may shrink,
+ * and what it holds truncates. */
+.zone-shell-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zone-strip-gap);
+  height: var(--zone-shell-foot);
+  padding: 0 var(--zone-shell-margin);
+  font-size: var(--zone-shell-foot-type);
+}
+
+.zone-shell-foot-start,
+.zone-shell-foot-end {
+  display: flex;
+  align-items: center;
+  gap: var(--zone-strip-gap);
+  min-width: 0;
+}
+
+.zone-shell-foot-end {
+  justify-content: flex-end;
+}

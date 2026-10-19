@@ -1,0 +1,18 @@
+/* A box on the ground with a hard outline, so its edge is visible against a
+ * child that paints the same mint. Shapes are shares of the device. */
+.zone-part-frame {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  outline: var(--zone-hairline) solid var(--zone-panel);
+  background: var(--zone-ground);
+}
+
+.zone-part-frame[data-shape="narrow-tall"] {
+  width: 36%;
+}
+
+.zone-part-frame[data-shape="wide-short"] {
+  height: 28%;
+}
