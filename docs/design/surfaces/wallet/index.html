@@ -110,6 +110,10 @@ body{
   border:1.5px solid var(--t); color:var(--t); white-space:nowrap;
 }
 .gate.on{ background:var(--t); color:var(--c) }
+.gates.unchosen .gate{ border-style:dashed }
+.gates.shake{ animation:shake .3s }
+@keyframes shake{ 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+@media (prefers-reduced-motion:reduce){ .gates.shake{ animation:none } }
 /* foot: the tally of plays drawn as a barcode */
 .bars{
   flex:none; height:30px; margin:0 18px 10px; display:flex; align-items:stretch;
@@ -193,7 +197,7 @@ const svg = (k) => `<svg viewBox="0 0 720 120" preserveAspectRatio="xMidYMid sli
 /* ---------- state ---------- */
 const NI = ISSUERS.length;
 let pulled = NI + 3; // Spelunky (index into issuers + games)
-let gate = 0;        // THIS DEVICE
+let gate = -1;       // no gate lit until the person picks one (the treaty forbids a silent default)
 const esc = (s) => s.replace(/[&<>]/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
 
 /* ---------- render passes once ---------- */
@@ -224,7 +228,7 @@ for (const g of GAMES){
     `<div class="strip">${strip}</div>` +
     `<div class="fields"><div class="field"><div class="l">Last played</div><div class="v">${g.last}</div></div>` +
       `<div class="field"><div class="l">Plays</div><div class="v">${g.plays}</div></div>` +
-      `<div class="field gatef"><div class="l">${g.places.length > 1 ? "Choose a gate" : (g.places[0]==="zao" ? "Gate, streams from zao" : "Gate")}</div>` +
+      `<div class="field gatef"><div class="l">${g.places.length > 1 ? "Choose a gate, left or right" : (g.places[0]=="zao" ? "Gate, streams from zao" : "Gate")}</div>` +
       `<div class="gates">${g.places.map((p,i)=>`<span class="gate${g.places.length === 1 ? " on" : ""}" data-i="${i}">${PLACE[p]}</span>`).join("")}</div></div></div>` +
     `<div class="bars ${g.plays ? "" : "empty"}" aria-label="${g.plays} plays">` +
       Array.from({length:g.plays}, ()=>`<i class="b"></i>`).join("") +
@@ -272,6 +276,7 @@ function layout(){
   if (pulled >= NI) pulledEl.querySelectorAll(".gate").forEach((gEl, i) => {
     if (GAMES[pulled - NI].places.length > 1) gEl.classList.toggle("on", i === gate);
   });
+  if (pulled >= NI) pulledEl.querySelector(".gates")?.classList.toggle("unchosen", GAMES[pulled - NI].places.length > 1 && gate < 0);
 
   // pinned issuer cards: always at the top of the pocket; a pulled one opens in place
   let y = 0;
@@ -318,10 +323,11 @@ layout();
 addEventListener("keydown", (e) => {
   const g = GAMES[pulled - NI];
   const last = NI + GAMES.length - 1;
-  if (e.key === "ArrowDown") { pulled = Math.min(last, pulled + 1); gate = 0; layout(); }
-  else if (e.key === "ArrowUp") { pulled = Math.max(0, pulled - 1); gate = 0; layout(); }
-  else if (e.key === "ArrowRight" && g) { gate = Math.min(g.places.length - 1, gate + 1); layout(); }
-  else if (e.key === "ArrowLeft" && g) { gate = Math.max(0, gate - 1); layout(); }
+  if (e.key === "ArrowDown") { pulled = Math.min(last, pulled + 1); gate = -1; layout(); }
+  else if (e.key === "ArrowUp") { pulled = Math.max(0, pulled - 1); gate = -1; layout(); }
+  else if (e.key === "ArrowRight" && g) { gate = gate < 0 ? 0 : Math.min(g.places.length - 1, gate + 1); layout(); }
+  else if (e.key === "ArrowLeft" && g) { gate = gate < 0 ? g.places.length - 1 : Math.max(0, gate - 1); layout(); }
+  else if (e.key === "Enter" && g && g.places.length > 1 && gate < 0) { const gs = document.querySelector(".pulled .gates"); gs.classList.remove("shake"); void gs.offsetWidth; gs.classList.add("shake"); }
   else return;
   e.preventDefault();
 });

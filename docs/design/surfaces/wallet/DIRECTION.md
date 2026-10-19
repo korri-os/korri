@@ -1,6 +1,6 @@
 # Wallet
 
-**Skeleton.** A vertical stack of passes with one pulled forward: up/down moves which pass is pulled, A plays the pulled game pass, left/right picks a gate (THIS DEVICE, ZAO) on a two-place pass, B drops the pass back into the stack. Settings, Wi-Fi and Identity are three issuer cards pinned in the pocket at the top of the stack (inset, narrower than game passes, no cover); their compressed edges carry their live values (mini; hummingbird-lake 72%; 1 person, Backed up), so the route to them is visible from the library.
+**Skeleton.** A vertical stack of passes with one pulled forward: up/down moves which pass is pulled, A plays the pulled game pass, left/right picks a gate (THIS DEVICE, ZAO) on a two-place pass, where no gate is lit until the person picks one (dashed chips until then), B drops the pass back into the stack. Settings, Wi-Fi and Identity are three issuer cards pinned in the pocket at the top of the stack (inset, narrower than game passes, no cover); their compressed edges carry their live values (mini; hummingbird-lake 72%; 1 person, Backed up), so the route to them is visible from the library.
 
 **Memorable element.** The stack compressing around the pulled pass: every other pass shows only its top edge (44 px at 720 high, 32 px at 480), the pulled pass comes forward to full height, 12 px wider, with one hard offset shadow. Passes that do not fit fold to 3 px coloured slivers at the ends of the stack, so the full length of the wallet is always implied.
 
@@ -29,7 +29,7 @@
 C1  Loading: edges without values; Error: a Korri issuer card under Identity carries the message as its field and a Reload chip; Empty: the three issuer cards and a lining line "No passes yet"; Ready: the stack
 C2  Passes in catalog order; a section is a lining-ink label between edges (a pocket tab); subtitle takes the edge row's system slot; wide art fills the strip, else the cover; no cover = title strip
 C3  Fields row on the pulled pass: Last played, Plays, Play time and Gate; the barcode foot is the play tally, one bar per play; the Resume chip on the edge row marks resumable
-C4  A plays the pulled pass through the lit gate; on a two-gate pass no gate is lit until left/right picks one, A with none lit shakes the gates (the mockup lights THIS DEVICE early)
+C4  A plays the pulled pass through the lit gate; on a two-gate pass no gate is lit until left/right picks one, A with none lit shakes the gates
 C5  options flips the pulled pass to its back: gameActions as rows with their description, dimmed when disabled; a destructive row is red-ruled and needs a second confirm chip
 C6  Up past Settings pulls a Find slip from the pocket's top: a thin lining-coloured pass with a text field and the back's keyboard; typed letters fold non-matching passes to slivers
 C7  A notification strip drops under the status row in the pass's own colour: pass name, kicker and detail; host actions (Cancel) as chips at its right; the pass stays pulled
