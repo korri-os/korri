@@ -23,7 +23,7 @@ pkgs.runCommand "steam-plugin-package-check"
     assert manifest['services'] == {}
     # Exact outputs of the plugins whose files plugin.ts passes to the session.
     assert manifest['requires'] == [str(fex), str(proton)], manifest['requires']
-    for required, keys in ((fex, ['config', 'fex-prepare']), (proton, ['cachyos-prepare'])):
+    for required, keys in ((fex, ['config', 'fex-unpack']), (proton, ['cachyos-unpack'])):
         files = json.loads((required / 'manifest.json').read_text())['files']
         assert sorted(files) == keys, files
     runner = manifest['files']['steam-session']
@@ -37,18 +37,17 @@ pkgs.runCommand "steam-plugin-package-check"
     result = subprocess.run([runner, '401710'], env={'STEAM_HOME': home, 'HOME': home},
                             capture_output=True)
     assert result.returncode == 2, result.stderr
-    assert b'KORRI_CACHE_ROOT must be an absolute path' in result.stderr, result.stderr
+    assert b'KORRI_FEX_CONFIG must be an absolute path' in result.stderr, result.stderr
     fex_files = json.loads((fex / 'manifest.json').read_text())['files']
-    proton_files = json.loads((proton / 'manifest.json').read_text())['files']
     runtime = {
-        'STEAM_HOME': home, 'HOME': home, 'KORRI_CACHE_ROOT': home,
-        'KORRI_FEX_PREPARE': '/nonexistent/fex-prepare',
+        'STEAM_HOME': home, 'HOME': home,
         'KORRI_FEX_CONFIG': fex_files['config'],
-        'KORRI_PROTON_CACHYOS_PREPARE': proton_files['cachyos-prepare'],
+        'KORRI_FEX_ROOTFS': '/nonexistent/fex/rootfs/archlinux-2026-01-08-mesa-26.1.2',
+        'KORRI_PROTON_CACHYOS': home,
     }
     result = subprocess.run([runner, '401710'], env=runtime, capture_output=True)
     assert result.returncode == 2, result.stderr
-    assert b'runtime file is missing' in result.stderr, result.stderr
+    assert b'KORRI_FEX_ROOTFS is not a directory' in result.stderr, result.stderr
     PY
     touch "$out"
   ''
