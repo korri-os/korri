@@ -50,6 +50,25 @@ Not carried: Repair and UpdateAvailable screens (mockup only; a ready directory 
 The first Steam launch shows Confirm with "1.5 GB", then a real progress bar, then unpacking, then starts. fex-prepare, cachyos-prepare, pins.nix, pin.nix, KORRI_FEX_PREPARE and KORRI_PROTON_CACHYOS_PREPARE go. steam-session reads KORRI_FEX_ROOTFS and KORRI_PROTON_CACHYOS. The plugin-host interface changes; `korri-published-plugins-check` reports the break by design and published plugins are republished with core. A partial download survives a korrid restart on disk and resumes. Downloads run on the launching device only; the capability model stays unbuilt.
 
 
+### One-off deployment cut
+
+End live sessions and stop the deployed korrid before replacing the old prepare
+programs. Delete only their reconstructible cache:
+
+```sh
+sudo rm -rf -- /var/lib/korri/cache
+```
+
+Then activate the new product module and restart korrid. For a configured
+storage root other than `/var/lib/korri`, use that root's `cache` directory.
+Do not delete `users`, saves, library content, or private daemon state.
+
+This is an operator action, not a daemon migration. Old prepare-owned version
+directories would otherwise be mistaken for Ready. The cost is downloading the
+pinned runtimes again (about 1.5 GB). The new cache belongs to korrid; the runtime
+user receives only read/traverse ACLs. `.downloads` is mode 0700. Unpack units run
+as korrid's user, with the contribution directory as their only writable path.
+
 ## Wire clarification
 
 `ArtifactsNotReady` is an existing-shape `RpcFailure`: its `code` is

@@ -73,6 +73,9 @@ pub(super) fn downloads(base: &Path) -> Result<PathBuf, Failure> {
         }
         Err(error) => return Err(error.into()),
     }
+    // The cache inherits read/traverse ACLs for games. Staged bytes belong
+    // only to korrid, including when reusing a partial download directory.
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))?;
     Ok(path)
 }
 

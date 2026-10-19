@@ -53,10 +53,11 @@ in
     "a+ ${root}/users - - - - u:${user}:--x"
     "d ${account} 2770 korrid ${group} -"
     "a+ ${account} - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
-    # Reconstructible runtime downloads (launch input cacheRoot). Plugin
-    # prepare programs create their subdirectories, which inherit this ACL.
-    "d ${root}/cache 2770 korrid ${group} -"
-    "a+ ${root}/cache - - - - u:${user}:rwx,d:u:${user}:rwx,d:g:${group}:rwx"
+    # Reconstructible artifacts belong to korrid (ADR 0012). The game user
+    # can read and traverse ready artifacts, but cannot replace a contribution.
+    # Upgrade from prepare-owned caches requires the ADR's one-off deletion.
+    "d ${root}/cache 2755 korrid ${group} -"
+    "a+ ${root}/cache - - - - u:${user}:r-x,d:u:${user}:r-x,d:g:${group}:r-x"
   ]
   ++ lib.concatMap (name: [
     "a+ ${root}/roms/${name} - - - - u:${user}:r-x,d:u:${user}:r-x"

@@ -218,6 +218,11 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
     let artifact = registry.artifact("@test:runtime/payload").unwrap();
     let base = placement::prepare(root.path(), artifact).unwrap();
     let downloads = placement::downloads(&base).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        fs::metadata(&downloads).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
     fs::write(downloads.join(&hash), b"data").unwrap();
     let ids = [artifact.id.clone()];
     coordinator
@@ -232,7 +237,6 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
     ));
     let ready = placement::ready_path(root.path(), artifact);
     assert_eq!(fs::read(ready.join("payload file")).unwrap(), b"data");
-    use std::os::unix::fs::PermissionsExt;
     assert_eq!(
         fs::metadata(&ready).unwrap().permissions().mode() & 0o222,
         0
@@ -245,6 +249,18 @@ async fn cache_truth_idempotent_start_retry_and_launch_paths() {
             & 0o222,
         0
     );
+    // Ready is the atomic rename, not completion of post-publication cleanup.
+    // Wait for the writer to release .lock before checking download removal.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if placement::lock(&base).unwrap().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert!(!downloads.exists());
     require_ready(root.path(), &registry, "@test:runtime/run").unwrap();
     assert_eq!(
