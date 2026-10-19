@@ -33,3 +33,35 @@
 - A Wi-Fi password can be 63 characters, so that field takes rows 4 and 5 (80 cells). It never scrolls sideways.
 
 **States.** `?state=empty|loading|error` draws the other whole-page states. `?focus=n` focuses game n. `?zone=keys&key=n` focuses a Fastext key.
+
+## Capability map
+C1  Loading: "Fetching page 200." while the header counter rolls (RELAY 147); Error: "Page 200 did not arrive", OK tries again; Empty: "No games on this service yet."
+C2  Page 200 columns Pg, Game, System, Played; a section a cyan heading row; long titles wrap indented; a 12 x 5 mosaic cover, else the page number double high.
+C3  Band rows 20 and 21: "Last played 9 days ago.", "7 plays.", total time after it; a resumable game adds "Resumes mid-game." in cyan.
+C4  Band row 19: "Play on" with the chosen place a yellow cell, left/right move it, A plays there; one place reads "Plays on This device" or "Streams from zao".
+C5  Page 20n, the game's own page: an action per row, description in cyan beneath; a disabled row loses its yellow number; a destructive row asks again in red.
+C6  Page 250 Find: the entry page's character table fills row 4 and the listing under it keeps only titles holding those letters, each with its page number.
+C7  Busy: the band turns red with the kicker double height and the detail on row 20; Fastext becomes the host's actions, red Cancel first.
+C8  Running: page 20n with the kicker double height on the blue band; the header counter stops at RELAY 20n while the game is live.
+C9  Problem: a red band naming the game on row 19, kicker double height, reason on rows 20 and 21; Fastext becomes red Dismiss and green Retry when it can.
+C10 Reload: ask for the page again: roll 200 on the header and press A, which is also the error page's "Try again with OK".
+C11 Page 20n subpage 2: a route per row (runnerBuild, program), red warning rows under it, the saved route yellow; state on the band; Fastext holds the actions.
+C12 Page 600: each group a cyan heading row; each item a row, label white, value yellow at column 20, description on the next row indented in cyan.
+C13 Choice: left/right roll the yellow value cell; text and secret: the entry page, a secret as mosaic blocks until Show; action: A on the row; confirm: green key, red Cancel.
+C14 Saving: the value cell flashes, as teletext flash does, until it holds; Problem: a red band under the setting with the message, B clears it.
+C15 Page 600's last block under a cyan DEVICE heading: one action per row, run with A.
+C16 Page 690 row "Export backup" opens the entry page for the password; page 691 prints the secret as text across rows and again as a mosaic-block QR beside it.
+C17 Page 692 Restore: the entry page for the secret, then the password, a Transfer/Delete row rolled with left/right, a red trust-loss row, green Confirm key.
+C18 No answer yet
+C19 Page 690 lists each retired key over two rows (64 hex in 40 cells); red Delete appears on Fastext only after the "Backed up" row is set to yes.
+C20 Working: the counter rolls with the operation on the band; Problem: a red band with the message; Switched: the new key over two rows in yellow; B dismisses.
+C21 Page 650's title band: "Offline", "Wired", or "Wi-Fi hummingbird-lake 72%"; the row 22 caption over the red key carries the one word.
+C22 Page 650: a network per row strongest first, mosaic bars, a padlock cell when secured, "known" in cyan; NoAdapter a whole-page message; scanning rolls the counter; the attempt in the band, "OK to type it again"; green Scan.
+C23 A on a network row opens the entry page for its password and joins; the last row "Hidden network" asks the SSID first, then the password.
+C24 Page 300 in mix mode, text over the live picture as a set drew it: cyan group headings, a control per row, toggles and choices rolled left/right, a range shows its number.
+C25 Pages 101 to 104 on first boot: controllers (a row each, green when heard), Wi-Fi (650), device name (entry page), identity; blue key Next, then Done.
+C26 The clock at row 0 column 34 in yellow; the build label on page 600's title band, and row 22 says "600 Build" above the yellow key.
+C27 Nothing: the page stays as it is, as a teletext page did; only the row 0 clock changes.
+C28 options jumps to the yellow Settings key, menu to the blue Index key (both carry a keycap glyph); system does nothing; d-pad, A and B reach every page.
+C29 The entry page: the field on row 4 (rows 4 and 5 for a 63-character password), the 95-character table on rows 8 to 19 walked with the d-pad, A writes, B deletes; Fastext becomes Delete, Space, Show/Hide, Done.
+C30 Focus is reverse video: the yellow row, the yellow cell or the grown Fastext key, always one; pages cut, nothing tweens, reduced motion changes nothing.
