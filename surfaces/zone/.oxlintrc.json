@@ -1,0 +1,103 @@
+// Zone's state architecture, enforced. The README's "State" section explains
+// the shape; test/architecture-lint.test.ts proves each rule fails on a planted
+// violation. Run with --type-aware: rule 4 needs the type checker.
+//
+// Paths start with **/ so the planted violations in test/lint-tripwires match
+// the same rules as src.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript"],
+  // Only the architecture rules below. oxlint's default set is not adopted here.
+  "categories": { "correctness": "off" },
+  "rules": {
+    // 4. A switch over a union handles every member. A Message, Request or
+    //    question added later then fails where it is not handled.
+    "typescript/switch-exhaustiveness-check": ["error", { "considerDefaultExhaustiveForUnions": true }],
+
+    // 3. No component state. Every value is in a model in src/state (the
+    //    navigation and the layers over it), run by
+    //    useZoneProgram. Refs for DOM mechanics stay allowed everywhere. A namespace import
+    //    of React is refused too, so `React.useState` cannot slip past.
+    "no-restricted-imports": ["error", { "paths": [
+      { "name": "react", "importNames": ["useState", "useReducer"], "message": "State lives in the src/state models, run by useZoneProgram. A component takes the value as a prop and reports changes through a callback." }
+    ] }],
+
+    // 2. One door to Korri. Only src/zone-host.ts calls a host command or
+    //    listens to host input. Everything else returns a ZoneRequest or
+    //    dispatches a message. `host.gameActions` is a read, so it is allowed.
+    //    The rule matches the name `host`; renaming the host defeats it.
+    "no-restricted-properties": ["error",
+      { "object": "host", "property": "input", "message": "Only src/zone-host.ts listens to host input." },
+      { "object": "host", "property": "launchGame", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "runAction", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "changeSetting", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "dismissSettingsProblem", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "exportIdentityBackup", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "switchIdentityFromBackup", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "switchIdentityToNip46", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "deleteRetiredIdentity", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "dismissIdentityStatus", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "runGameAction", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "invokeGameplayControl", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "dismissGameplayOverlay", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "retry", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "dismiss", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "reload", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "scanWifi", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "connectWifi", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "connectHiddenWifi", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." },
+      { "object": "host", "property": "finishOnboarding", "message": "Return a ZoneRequest; only src/zone-host.ts calls the host." }
+    ]
+  },
+  "overrides": [
+    {
+      // The door itself, the fixture host that stands in for Korri in previews,
+      // and the Caliper parts that wire a page straight to that fixture host.
+      // A part is a preview with no Korri behind it; the product never runs one.
+      "files": ["**/src/zone-host.ts", "**/src/fixtures/**", "**/src/**/*.part.tsx"],
+      "rules": { "no-restricted-properties": "off" }
+    },
+    {
+      // 1. The core is pure: model, messages, update and what is shown are
+      //    plain functions of plain values. No React, no DOM, no clock, no
+      //    storage. That is what lets a test drive every rule with values.
+      "files": ["**/src/state/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "paths": [
+          { "name": "react", "message": "src/state is pure. React belongs to the runtime hooks." },
+          { "name": "react-dom", "message": "src/state is pure. React belongs to the runtime hooks." },
+          { "name": "react-dom/client", "message": "src/state is pure. React belongs to the runtime hooks." },
+          { "name": "qrcode", "message": "src/state is pure." },
+          { "name": "@contracts/surface/korri-surface", "importNames": ["SurfaceHost", "SurfaceInput"], "message": "src/state never holds the host. Return a ZoneRequest." }
+        ] }],
+        "no-restricted-globals": ["error",
+          { "name": "window", "message": "src/state is pure: no DOM." },
+          { "name": "document", "message": "src/state is pure: no DOM." },
+          { "name": "globalThis", "message": "src/state is pure: no globals." },
+          { "name": "navigator", "message": "src/state is pure: no DOM." },
+          { "name": "localStorage", "message": "src/state is pure: no storage." },
+          { "name": "sessionStorage", "message": "src/state is pure: no storage." },
+          { "name": "setTimeout", "message": "src/state is pure: timers are subscriptions in the runtime hook." },
+          { "name": "setInterval", "message": "src/state is pure: timers are subscriptions in the runtime hook." },
+          { "name": "requestAnimationFrame", "message": "src/state is pure: no frames." },
+          { "name": "queueMicrotask", "message": "src/state is pure: no scheduling." },
+          { "name": "performance", "message": "src/state is pure: no clock." },
+          { "name": "Date", "message": "src/state is pure: no clock." },
+          { "name": "fetch", "message": "src/state is pure: no network." }
+        ]
+      }
+    },
+    {
+      // 3, the allowed state. Only the runtime holds React state: it keeps
+      // each program's model. Everything else is a model in src/state, a
+      // measurement written to the DOM, or a ref for DOM mechanics.
+      // *.part.tsx: Caliper previews, which have no model behind them; their
+      // named states may keep a value so the preview answers input.
+      "files": [
+        "**/src/use-zone-program.ts",
+        "**/src/**/*.part.tsx"
+      ],
+      "rules": { "no-restricted-imports": "off" }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@korri/zone",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Zone — Korri's zone-select surface: game cards on a mint ground.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./zone.css": "./src/zone.css"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware --deny-warnings src",
+    "caliper": "vite"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@simonwjackson/caliper": "^0.1.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/bun": "^1.4.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "oxc-parser": "^0.153.0",
+    "oxc-resolver": "^11.24.2",
+    "oxlint": "^1.87.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "8.3.3"
+  }
+}
