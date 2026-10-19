@@ -1077,7 +1077,7 @@ impl SystemdLaunchUnitBackend {
             // Bind only korri-publish-wayland-socket's single published socket;
             // all control sockets and the rest of /run/user remain inaccessible.
             read_only_binds.push_str(&format!(
-                " {}:/run/{runtime}/wayland-parent",
+                " {}:/run/{runtime}/diagnostics/wayland-parent",
                 socket.display()
             ));
             Some(runtime)
@@ -1131,8 +1131,12 @@ impl SystemdLaunchUnitBackend {
             arguments.extend([
                 format!("--property=RuntimeDirectory={runtime}"),
                 "--property=RuntimeDirectoryMode=0700".into(),
+                // Keep XDG runtime entries in systemd's runtime-user-owned
+                // directory. systemd removes it on stop, including after SIGKILL.
+                // Binding diagnostics over the whole runtime lets private game
+                // subdirectories defeat korrid's unprivileged cleanup.
                 format!(
-                    "--property=BindPaths={}:/run/{runtime}",
+                    "--property=BindPaths={}:/run/{runtime}/diagnostics",
                     self.diagnostics_root.join(launch_id).display()
                 ),
                 // systemd opens stdio before applying mount namespaces
@@ -1146,7 +1150,7 @@ impl SystemdLaunchUnitBackend {
                         .display()
                 ),
                 format!(
-                    "--setenv={}=/run/{runtime}",
+                    "--setenv={}=/run/{runtime}/diagnostics",
                     super::launch_diagnostics::DIRECTORY_ENV
                 ),
                 format!(
@@ -1155,7 +1159,7 @@ impl SystemdLaunchUnitBackend {
                     unsafe { libc::geteuid() }
                 ),
                 format!("--setenv=XDG_RUNTIME_DIR=/run/{runtime}"),
-                "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
+                "--setenv=WAYLAND_DISPLAY=diagnostics/wayland-parent".into(),
             ]);
         }
         arguments.extend(
@@ -1579,7 +1583,7 @@ impl LaunchUnitBackend for SystemdLaunchUnitBackend {
         // Only the host-injected exact-unit environment marker grants access
         // to these files. It survives daemon restarts without a second cache.
         let marker = format!(
-            "{}=/run/korri-game-{launch_id}",
+            "{}=/run/korri-game-{launch_id}/diagnostics",
             super::launch_diagnostics::DIRECTORY_ENV
         );
         let captures_stderr = values
@@ -1996,13 +2000,106 @@ mod startup_diagnostic_tests {
     use std::{fs, os::unix::fs::PermissionsExt};
 
     #[test]
+    fn modifier_completion_and_stop_do_not_clean_the_games_private_runtime_entries() {
+        use crate::launcher::plugin_launch::{LaunchComposition, ResolvedLaunchModifier};
+        use std::os::unix::fs::{symlink, MetadataExt};
+
+        let id = "0123456789abcdef0123456789abcdef";
+        let uid = unsafe { libc::geteuid() };
+        let command = vec![
+            "/bin/korrid".into(),
+            "plugin-launch".into(),
+            "/pkg/plugin.ts".into(),
+            "{}".into(),
+            serde_json::to_string(&LaunchComposition {
+                modifiers: vec![ResolvedLaunchModifier {
+                    modifier_id: "@test:wrapper/main".into(),
+                    manifest: "/pkg/manifest.json".into(),
+                    entry: "plugin.ts".into(),
+                    settings: Default::default(),
+                    config: Default::default(),
+                }],
+                display: None,
+            })
+            .unwrap(),
+        ];
+        // A collected unit and a retained inactive unit both mean Completed.
+        // Leave runtime entries in place: korrid must not depend on their removal.
+        // SIGKILL retains a failed unit until stop/reset-failed cleans it up.
+        for reply in [
+            "LoadState=not-found\n",
+            "LoadState=loaded\nActiveState=inactive\n",
+            "LoadState=loaded\nActiveState=failed\nExecMainCode=2\nExecMainStatus=9\n",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let helper = root.path().join("systemctl");
+            fs::write(&helper, format!("#!/bin/sh\nprintf '{reply}'\n")).unwrap();
+            fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+            let mut backend = SystemdLaunchUnitBackend::new(helper.clone(), helper, uid, unsafe {
+                libc::getegid()
+            })
+            .unwrap()
+            .with_compositor_wayland_socket(Some("/run/published-wayland".into()));
+            backend.diagnostics_root = root.path().join("launches");
+            backend.launch(id, &command, &BTreeMap::new()).unwrap();
+            let arguments = backend
+                .launch_arguments(id, &command, &BTreeMap::new())
+                .unwrap();
+            let runtime = arguments
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--setenv=XDG_RUNTIME_DIR="))
+                .unwrap();
+            let bind = arguments
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--property=BindPaths="))
+                .unwrap();
+            let (source, destination) = bind.split_once(':').unwrap();
+            // Model only the directory bind with a symlink, without mount privileges.
+            // Derive both paths from the real unit arguments so the old whole-runtime
+            // bind puts dconf in the diagnostic source and fails this regression.
+            let runtime = root.path().join(runtime.strip_prefix('/').unwrap());
+            let destination = root.path().join(destination.strip_prefix('/').unwrap());
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            symlink(source, &destination).unwrap();
+            let private = runtime.join("dconf");
+            fs::create_dir(&private).unwrap();
+            fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::write(private.join("user"), "private settings").unwrap();
+            assert_eq!(fs::metadata(&private).unwrap().uid(), backend.runtime_uid);
+            assert_eq!(fs::metadata(&private).unwrap().mode() & 0o777, 0o700);
+            // The unprivileged harness uses its own uid for both processes.
+            // An unreadable sibling models korrid's lack of traversal rights
+            // to another uid's 0700 directory, without requiring chown privileges.
+            let unreadable = runtime.join("private-unreadable");
+            fs::create_dir(&unreadable).unwrap();
+            fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+            let result = if reply.contains("ActiveState=failed") {
+                assert_eq!(
+                    backend.state(id).unwrap_err().kind,
+                    LaunchUnitErrorKind::UnitFailed
+                );
+                backend.stop(id).map(|()| LaunchUnitState::Completed)
+            } else {
+                backend.state(id)
+            };
+            fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
+            assert_eq!(result.unwrap(), LaunchUnitState::Completed);
+            assert!(!backend.diagnostics_root.join(id).exists());
+            assert!(
+                private.exists(),
+                "korrid traversed the game runtime directory"
+            );
+        }
+    }
+
+    #[test]
     fn failed_unit_uses_only_its_own_bounded_redacted_stderr_and_cleans_normal_completion() {
         let root = tempfile::tempdir().unwrap();
         let helper = root.path().join("systemctl");
         let reply = root.path().join("reply");
         fs::write(
             &reply,
-            "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-0123456789abcdef0123456789abcdef\n",
+            "LoadState=loaded\nActiveState=failed\nExecMainCode=1\nExecMainStatus=1\nStatusText=\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-0123456789abcdef0123456789abcdef/diagnostics\n",
         )
         .unwrap();
         fs::write(&helper, format!("#!/bin/sh\ncat '{}'\n", reply.display())).unwrap();
@@ -2066,7 +2163,7 @@ mod diagnostic_file_hardening_tests {
         let root = tempfile::tempdir().unwrap();
         let helper = root.path().join("systemctl");
         let id = "0123456789abcdef0123456789abcdef";
-        fs::write(&helper, format!("#!/bin/sh\nprintf 'LoadState=loaded\\nActiveState=failed\\nExecMainCode=1\\nExecMainStatus=1\\nStatusText=\\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}\\n'\n")).unwrap();
+        fs::write(&helper, format!("#!/bin/sh\nprintf 'LoadState=loaded\\nActiveState=failed\\nExecMainCode=1\\nExecMainStatus=1\\nStatusText=\\nEnvironment=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}/diagnostics\\n'\n")).unwrap();
         fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
         let uid = unsafe { libc::geteuid() };
         let mut backend =

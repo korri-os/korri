@@ -3378,9 +3378,9 @@ mod tests {
         for expected in [
             format!("--property=RuntimeDirectory=korri-game-{id}"),
             "--property=RuntimeDirectoryMode=0700".into(),
-            format!("--property=BindReadOnlyPaths=/run/user/1001/korri-wayland:/run/korri-game-{id}/wayland-parent"),
+            format!("--property=BindReadOnlyPaths=/run/user/1001/korri-wayland:/run/korri-game-{id}/diagnostics/wayland-parent"),
             format!("--setenv=XDG_RUNTIME_DIR=/run/korri-game-{id}"),
-            "--setenv=WAYLAND_DISPLAY=wayland-parent".into(),
+            "--setenv=WAYLAND_DISPLAY=diagnostics/wayland-parent".into(),
         ] { assert!(with_modifiers.contains(&expected), "{with_modifiers:?}"); }
         assert!(launch.contains(&"--setenv=DISPLAY=:0".to_string()));
         // Nested Gamescope runs its own Xwayland in the private /tmp; the
@@ -3412,10 +3412,10 @@ mod tests {
             "--property=StandardError=append:/run/korrid/launches/{id}/stderr"
         )));
         assert!(with_modifiers.contains(&format!(
-            "--property=BindPaths=/run/korrid/launches/{id}:/run/korri-game-{id}"
+            "--property=BindPaths=/run/korrid/launches/{id}:/run/korri-game-{id}/diagnostics"
         )));
         assert!(with_modifiers.contains(&format!(
-            "--setenv=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}"
+            "--setenv=KORRI_LAUNCH_DIAGNOSTICS_DIRECTORY=/run/korri-game-{id}/diagnostics"
         )));
         assert!(!launch
             .iter()

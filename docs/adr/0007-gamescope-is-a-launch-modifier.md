@@ -26,3 +26,18 @@ Gamescope is the first and only consumer of `launch.compose`. The operation
 gets what Gamescope needs and nothing more; ordering among several modifiers
 waits for a second real modifier. Every wrapped launch carries a nested
 compositor and its latency.
+
+## Runtime and diagnostic ownership
+
+A modifier launch uses a real systemd `RuntimeDirectory` as `XDG_RUNTIME_DIR`.
+The runtime user owns it, and systemd removes it on stop, including after
+SIGKILL. korrid binds its separate diagnostic directory at the runtime's
+`diagnostics/` subpath. The published Wayland socket is bound there too.
+
+Do not bind diagnostics over `XDG_RUNTIME_DIR`: games can create runtime-user
+0700 subdirectories such as `dconf/`, which korrid cannot traverse to clean up.
+The diagnostic directory keeps its sticky bit and named-user ACLs, so the
+runtime user can create redaction words but cannot replace or write korrid's
+stderr file. systemd still opens stderr through the host source before it
+applies mount namespaces. This split needs no new korrid privilege or
+`ExecStopPost` cleanup command.
