@@ -907,6 +907,15 @@ in
           return polkit.Result.YES;
         }
       });
+      // Acquisition units cannot be mistaken for live game sessions.
+      polkit.addRule(function(action, subject) {
+        var unit = action.lookup("unit");
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "korrid" &&
+            typeof unit == "string" && /^korri-acquire-[a-z0-9][a-z0-9._-]*-[a-z0-9][a-z0-9._-]*\.service$/.test(unit)) {
+          return polkit.Result.YES;
+        }
+      });
       polkit.addRule(function(action, subject) {
         var unit = action.lookup("unit");
         if (action.id == "org.freedesktop.systemd1.manage-units" &&

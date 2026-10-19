@@ -1,3 +1,5 @@
+Superseded by ADR 0012 on 2026-10-19
+
 # Plugin runtimes download into the shared cache through their own prepare programs
 
 **Owner decision, 2026-10-17.** A plugin downloads its own large third-party

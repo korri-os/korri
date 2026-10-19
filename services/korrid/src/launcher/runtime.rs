@@ -110,6 +110,7 @@ mod tests {
             account_root: "/users/default".into(),
             cache_root: "/cache".into(),
             files: HashMap::new(),
+            artifacts: Default::default(),
             overrides: None,
         }
     }
