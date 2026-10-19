@@ -1,0 +1,64 @@
+/* The hexagon: two points, each as deep as the banner point times the type.
+ * The type is the tab's (the shell's, or the wide token alone) times the
+ * banner scale, so the banner rises above the tabs beside it. The band is a
+ * white parallelogram through the middle at the band opacity; it is the
+ * ground's kind of drawing, with no edge to blur. */
+.zone-banner {
+  --zone-banner-type: calc(var(--zone-type-banner-scale) * var(--zone-shell-tab-type, var(--zone-type-tab-wide)));
+  --zone-banner-point-depth: calc(var(--zone-banner-point) * var(--zone-banner-type));
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0.2em calc(var(--zone-banner-point-depth) + var(--zone-panel-pad));
+  font-size: var(--zone-banner-type);
+  white-space: nowrap;
+}
+
+.zone-banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--zone-banner);
+  clip-path: polygon(
+    var(--zone-banner-point-depth) 0,
+    calc(100% - var(--zone-banner-point-depth)) 0,
+    100% 50%,
+    calc(100% - var(--zone-banner-point-depth)) 100%,
+    var(--zone-banner-point-depth) 100%,
+    0 50%
+  );
+}
+
+.zone-banner-band {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  z-index: -1;
+  height: calc(var(--zone-banner-band-share) * 100%);
+  background: var(--zone-banner-band);
+  opacity: var(--zone-banner-band-opacity);
+  clip-path: polygon(var(--zone-slant) 0, calc(100% - var(--zone-slant)) 0, 100% 100%, 0 100%);
+  translate: 0 -50%;
+}
+
+/* Yellow caps, outlined in black, extruded in black down and right. */
+.zone-banner-caps {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--zone-banner-ink);
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-shadow:
+    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-banner-extrude-colour),
+    var(--zone-cap-outline) 0 0 var(--zone-banner-extrude-colour),
+    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-banner-extrude-colour),
+    0 var(--zone-cap-outline) 0 var(--zone-banner-extrude-colour),
+    calc(var(--zone-banner-extrude) * 0.75) calc(var(--zone-banner-extrude) * 0.75) 0 var(--zone-banner-extrude-colour),
+    var(--zone-banner-extrude) var(--zone-banner-extrude) 0 var(--zone-banner-extrude-colour);
+}

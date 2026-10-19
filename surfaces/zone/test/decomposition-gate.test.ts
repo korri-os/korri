@@ -23,11 +23,12 @@ type Layer = (typeof LAYERS)[number]
 
 /**
  * The layers Zone must be decomposed at today. The foundation lands the ground
- * (an organism) and the shell (a template); pages, molecules and atoms arrive
- * with the card band and the tabs, and each worker that adds one adds it here.
- * A layer listed here with no part is a gate failure, not a plan.
+ * (an organism) and the shell (a template); the panel vocabulary lands the
+ * first atoms and molecules; pages arrive with the zone select, and the
+ * worker that adds one adds it here. A layer listed here with no part is a
+ * gate failure, not a plan.
  */
-const REQUIRED_LAYERS: Layer[] = ["template", "organism"]
+const REQUIRED_LAYERS: Layer[] = ["template", "organism", "molecule", "atom"]
 
 /**
  * Files that render no surface of their own and therefore own no part.

@@ -1,0 +1,57 @@
+/* Sized by the hint type: the shell's, in its corners, or the wide token
+ * when it stands alone. */
+.zone-keycap {
+  --zone-keycap-diameter: calc(var(--zone-keycap-scale) * 1em);
+  font-size: var(--zone-shell-hint-type, var(--zone-type-hint-wide));
+  --zone-keycap-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  display: inline-flex;
+  align-items: center;
+  height: var(--zone-keycap-diameter);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+
+/* The round key: black, a white ring, the letter in the key's ink. */
+.zone-keycap-key {
+  z-index: 1;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--zone-keycap-diameter);
+  height: var(--zone-keycap-diameter);
+  border-radius: 50%;
+  background: var(--zone-key);
+  box-shadow: 0 0 0 var(--zone-keycap-ring) var(--zone-key-ring);
+  font-size: 0.95em;
+  text-shadow: none;
+}
+
+.zone-keycap[data-key="A"] .zone-keycap-key {
+  color: var(--zone-key-a-ink);
+}
+
+.zone-keycap[data-key="B"] .zone-keycap-key {
+  color: var(--zone-key-b-ink);
+}
+
+.zone-keycap[data-key="X"] .zone-keycap-key {
+  color: var(--zone-key-x-ink);
+}
+
+.zone-keycap[data-key="Y"] .zone-keycap-key {
+  color: var(--zone-key-y-ink);
+}
+
+/* The word's tab: starts under the key, trails past the word, and is cut
+ * on the slant at its far end. */
+.zone-keycap-word {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: calc(var(--zone-keycap-diameter) * 0.75);
+  margin-left: calc(var(--zone-keycap-overlap) * -1em);
+  padding: 0 calc(var(--zone-keycap-tail) * 1em) 0 calc(var(--zone-keycap-overlap) * 1em + 0.4em);
+  background: var(--zone-key);
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-keycap-slant)) 100%, 0 100%);
+}

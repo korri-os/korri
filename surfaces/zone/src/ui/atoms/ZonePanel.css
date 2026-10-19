@@ -1,0 +1,74 @@
+/* The slant leads by the lean times the type size and never less than the
+ * slant token, so a 17px tab and a 28px timer lean the same in proportion.
+ * Every other panel shape in Zone (the tab, the keycap's word, the banner's
+ * points) derives from this one length. */
+.zone-panel {
+  --zone-panel-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  --zone-panel-shape: polygon(
+    var(--zone-panel-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-panel-slant)) 100%,
+    0 100%
+  );
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0.3em calc(var(--zone-panel-slant) + var(--zone-panel-pad));
+  color: var(--zone-cap);
+  white-space: nowrap;
+}
+
+/* The body. */
+.zone-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-panel-shape);
+}
+
+/* The drop edge: the same shape, one hard offset down and right, behind
+ * the body. */
+.zone-panel[data-edge="on"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background: var(--zone-panel-edge);
+  clip-path: var(--zone-panel-shape);
+  translate: var(--zone-drop-edge) var(--zone-drop-edge);
+}
+
+.zone-panel[data-tone="blue"]::before {
+  background: var(--zone-panel-blue);
+}
+
+.zone-panel[data-tone="blue"][data-edge="on"]::after {
+  background: var(--zone-panel);
+}
+
+/* Light tones take black ink and no lettering edge: the caps atom reads
+ * --zone-caps-shadow before drawing its own. */
+.zone-panel[data-tone="yellow"],
+.zone-panel[data-tone="white"] {
+  --zone-caps-shadow: none;
+  color: var(--zone-panel-light-ink);
+  text-shadow: none;
+}
+
+.zone-panel[data-tone="yellow"]::before {
+  background: var(--zone-panel-yellow);
+}
+
+.zone-panel[data-tone="white"]::before {
+  background: var(--zone-panel-white);
+}
+
+.zone-panel[data-tone="yellow"][data-edge="on"]::after,
+.zone-panel[data-tone="white"][data-edge="on"]::after {
+  background: var(--zone-panel);
+}

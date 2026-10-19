@@ -1,0 +1,22 @@
+/* Behind the panel's body (z-index -1) and in front of its drop edge (-3).
+ * Standing alone it has no panel shape to read, so it draws the same
+ * parallelogram at its own lean. */
+.zone-underline {
+  --zone-underline-slant: max(var(--zone-slant), calc(var(--zone-lean) * 1em));
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  display: block;
+  background: var(--zone-focus);
+  clip-path: var(
+    --zone-panel-shape,
+    polygon(
+      var(--zone-underline-slant) 0,
+      100% 0,
+      calc(100% - var(--zone-underline-slant)) 100%,
+      0 100%
+    )
+  );
+  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+  pointer-events: none;
+}

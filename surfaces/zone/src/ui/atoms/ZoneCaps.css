@@ -1,0 +1,46 @@
+/* The edge is drawn first so it sits on top: a band of blue down and right
+ * of every stroke. The outline follows as four hard offsets, then three more
+ * past the edge so the blue never meets the ground bare. A panel that wants
+ * none sets --zone-caps-shadow. */
+.zone-caps {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--zone-cap);
+  font-family: var(--zone-font);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--zone-tracking);
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: var(
+    --zone-caps-shadow,
+    var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour),
+    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
+    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
+    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-edge) + var(--zone-cap-outline)) var(--zone-cap-edge) 0 var(--zone-cap-outline-colour),
+    var(--zone-cap-edge) calc(var(--zone-cap-edge) + var(--zone-cap-outline)) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-edge) + var(--zone-cap-outline)) calc(var(--zone-cap-edge) + var(--zone-cap-outline)) 0 var(--zone-cap-outline-colour)
+  );
+}
+
+/* The named sizes read the shell's strip when they stand in one, and the
+ * wide or tall token when they stand alone. */
+.zone-caps[data-size="tab"] {
+  font-size: var(--zone-shell-tab-type, var(--zone-type-tab-wide));
+}
+
+.zone-caps[data-size="hint"] {
+  font-size: var(--zone-shell-hint-type, var(--zone-type-hint-wide));
+}
+
+.zone-caps[data-size="button"] {
+  font-size: var(--zone-type-button-tall);
+}
+
+.zone-caps[data-size="foot"] {
+  font-size: var(--zone-shell-foot-type, var(--zone-type-foot-tall));
+}

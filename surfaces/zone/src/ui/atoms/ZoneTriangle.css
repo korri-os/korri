@@ -1,0 +1,48 @@
+/* A solid triangle: width from the plan's token for the band cursor, or
+ * from the type beside a button; height is the aspect times the width. */
+.zone-triangle {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--zone-triangle-width);
+  height: calc(var(--zone-triangle-width) * var(--zone-triangle-aspect));
+  background: var(--zone-cursor);
+  pointer-events: none;
+}
+
+.zone-triangle[data-size="wide"] {
+  --zone-triangle-width: var(--zone-triangle-wide);
+}
+
+.zone-triangle[data-size="narrow"] {
+  --zone-triangle-width: var(--zone-triangle-narrow);
+}
+
+.zone-triangle[data-size="inline"] {
+  --zone-triangle-width: calc(var(--zone-triangle-inline) * 1em);
+}
+
+/* The near distance is its rest; the nudge, when it runs, takes over the
+ * margin and gives it back under reduced motion. */
+.zone-triangle[data-direction="right"] {
+  margin-right: var(--zone-nudge-near);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.zone-triangle[data-direction="left"] {
+  margin-left: var(--zone-nudge-near);
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+/* The nudge breathes toward the target: a triangle pointing right stands
+ * on its target's left, so it is the motion file's left cursor. */
+.zone-triangle[data-direction="right"][data-nudge="on"] {
+  animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+.zone-triangle[data-direction="left"][data-nudge="on"] {
+  animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+.zone-triangle[data-dimmed="on"] {
+  opacity: var(--zone-triangle-dim);
+}
