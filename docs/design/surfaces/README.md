@@ -29,7 +29,8 @@ summarised at the end of this file.
 | `house/` | Little Computer People cutaway | Side-view rooms, a figure walks; one capability per room | Under review |
 | `prevue/` | Prevue Guide | Fixed split: preview above, grid below | Look kept, grid rejected: a time axis makes no sense for a launcher. Needs a grid whose axes are things a person scans a library by |
 | `msx/` | MSX2 / Metal Gear / 2064: Read Only Memories | File list, dossier, transceiver strip | Under review |
-| `arcade/` | Multi-game cabinet select screen | Slot strip, high-score table as facts, operator menu for settings | Under review |
+| `arcade/` | Multi-game cabinet select screen, 8/16-bit era | Slot strip, high-score table as facts, operator menu for settings | Under review. Kept as is; `arcade-modern/` is its sibling, not its revision |
+| `arcade-modern/` | Naomi-era cabinet attract and select screens, about 1998 to 2002 | Two states: an attract reel of tilted title cards, and a rotating ring with the focused game on a lit plinth, a ranking panel, linked-cabinet places, a test-mode service line | Under review. `shot-attract-1280x720.png` shows the attract state |
 | `mania/` | Sonic Mania menus | Slanted zone cards, three mode tabs, action row | Under review |
 | `wallet/` | Digital passes | Vertical stack, one pass pulled forward, places as gates | Under review |
 
