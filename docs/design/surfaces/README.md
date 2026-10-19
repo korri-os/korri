@@ -63,24 +63,20 @@ any well-made product could wear.
 
 ## Parity bar
 
-Pico is the only surface that covers the whole treaty
-(`contracts/surface/korri-surface.ts`), so "do everything Pico does" is the
-same as "house every field of `SurfaceModel` and every method of
-`SurfaceHost`". A direction that goes forward must have an answer for each:
+The bar is the treaty, `contracts/surface/korri-surface.ts`: every field of
+`SurfaceModel` and every method of `SurfaceHost`. Pico is the proof that the
+bar is reachable, not the template. `CAPABILITIES.md` lists the bar as thirty
+numbered items, C1 to C30, each grounded in the treaty.
 
-- Onboarding: controllers heard, Wi-Fi, name, identity, finish
-- Catalog: browse, find by text, game detail, play history, launch locations
-- Status: Busy with kicker, detail and actions; Problem with retry and dismiss; running
-- Runner choice: routes, saved choices, warnings, actions
-- Settings: groups of items; choice, text, range and action interactions; saving and failed states
-- Device actions and per-game actions
-- Identity: export backup with password (a QR code), switch from backup or NIP-46, delete a retired key
-- Network: connection, scan, join a listed or hidden Wi-Fi with a password
-- Gameplay overlay: controls and groups, a range held while it moves, dismiss
-- Clock, build label, attract or idle
-- Text entry for all of the above with a d-pad, A and B alone
+Parity is by capability, never by page. Every kept direction's
+`DIRECTION.md` ends with a `## Capability map` section: one line per item,
+answered in that surface's own words (its own page, object or control), or
+`No answer yet`. The map may exceed the 40-line limit that applies to the
+rest of `DIRECTION.md`. A direction with gaps is not done; a direction that
+answers every item differently from Pico is doing its job. When the treaty
+grows, every map owes a new line.
 
-Text entry is the item that sinks metaphors, which is why every
+Text entry (C29) is the item that sinks metaphors, which is why every
 `DIRECTION.md` records that decision even though no mockup draws it.
 
 ## Cover art in a 4-colour surface
