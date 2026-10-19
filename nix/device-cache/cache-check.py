@@ -151,7 +151,12 @@ def check(config_path, fixture, shell, system):
                 rejected = run(
                     *build_args("not in cache", prefer=prefer), succeeds=False
                 )
-                assert "Unable to start any build" in rejected.stderr, rejected.stderr
+                # Nix 2.34 says "local builds are disabled"; older Nix said
+                # "Unable to start any build". Both mean max-jobs=0 refused it.
+                assert (
+                    "Unable to start any build" in rejected.stderr
+                    or "local builds are disabled" in rejected.stderr
+                ), rejected.stderr
                 print(
                     f"PASS: cache miss refuses local build, preferLocalBuild={prefer}"
                 )
