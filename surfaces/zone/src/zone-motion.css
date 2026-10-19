@@ -51,3 +51,14 @@
     transform: rotate(360deg);
   }
 }
+
+/* The blink: a caret, or a value waiting on Korri, shows and hides in turn.
+ * Added by the dialogs worker; the three movements above are unchanged. */
+@keyframes zone-blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
