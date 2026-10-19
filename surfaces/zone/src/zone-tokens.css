@@ -260,4 +260,50 @@
   --zone-stripe-2: var(--zone-blue);
   /** @label Stripe, third */
   --zone-stripe-3: var(--zone-mint);
+
+  /* ---- cards ---- */
+  /* Appended by the cards slice: the tag kinds beyond system, here and
+   * remote; the no-art well's stripes; the save card's proportions. */
+  /** The angle of the stripes in a well with no art. @label Well stripe angle @min -90 @max 90 @step 1 */
+  --zone-well-stripe-angle: -28deg;
+  /** How much a greyed well shows through. @label Greyed well @min 0 @max 1 @step 0.05 */
+  --zone-well-greyed-opacity: 0.45;
+  /** The gutter between a tag's slant and its caps. @label Tag padding @min 0 @max 16 @step 1 */
+  --zone-tag-pad: 6px;
+  /** A tag's caps as a share of the card's title size. @label Tag type share @min 0.3 @max 1 @step 0.01 */
+  --zone-tag-type-share: 0.58;
+  /** A tag row's height as a multiple of its caps. @label Tag row height @min 1 @max 2.5 @step 0.05 */
+  --zone-tag-row-height: 1.55;
+  /** The diagonal band under a card title as a share of the title size. @label Card band share @min 0.1 @max 1 @step 0.01 */
+  --zone-card-band-share: 0.42;
+  /** Width over height of a save card. @label Save card ratio @min 0.4 @max 1 @step 0.01 */
+  --zone-save-card-ratio: 0.6;
+  /** The save card's striped header as a share of its height. @label Save header share @min 0.15 @max 0.5 @step 0.01 */
+  --zone-save-header-share: 0.3;
+  /** The save card's header caps as a share of its width. @label Save header type share @min 0.05 @max 0.4 @step 0.005 */
+  --zone-type-save-share: 0.2;
+  /** A save card's cursor triangle as a share of its width. @label Save triangle share @min 0.05 @max 0.4 @step 0.01 */
+  --zone-save-triangle-share: 0.14;
+  /** The caps line of an empty band. @label Empty band type @min 10 @max 64 @step 1 */
+  --zone-type-empty: 28px;
+  /** @label Saved tag */
+  --zone-tag-saved: var(--zone-mint);
+  /** @label Open tag */
+  --zone-tag-open: var(--zone-orange);
+  /** @label Continue tag */
+  --zone-tag-continue: var(--zone-white);
+  /** @label Dark tag ink */
+  --zone-tag-dark-ink: var(--zone-black);
+  /** @label Save header */
+  --zone-save-header: var(--zone-mint);
+  /** @label Save header band */
+  --zone-save-header-band: var(--zone-white);
+  /** @label Save header ink */
+  --zone-save-header-ink: var(--zone-black);
+  /** @label Save header stripe, upper */
+  --zone-save-stripe-upper: var(--zone-yellow);
+  /** @label Save header stripe, lower */
+  --zone-save-stripe-lower: var(--zone-red);
+  /** @label Save header stripe, lowest */
+  --zone-save-stripe-lowest: var(--zone-blue);
 }

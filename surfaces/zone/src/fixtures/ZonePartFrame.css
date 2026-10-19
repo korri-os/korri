@@ -16,3 +16,15 @@
 .zone-part-frame[data-shape="wide-short"] {
   height: 28%;
 }
+
+/* A thumbnail: the smallest box a well or a tag row is asked to fill. */
+.zone-part-frame[data-shape="tiny"] {
+  width: 12%;
+  height: 16%;
+}
+
+/* A side card's box, for a well or a row shown at the size a card gives it. */
+.zone-part-frame[data-shape="card"] {
+  width: 22%;
+  height: 40%;
+}

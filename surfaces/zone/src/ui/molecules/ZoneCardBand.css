@@ -1,0 +1,86 @@
+/* The band fills the body it is given and is the size container every card
+ * in it measures. Width decides the visible count's tokens (the plan's wide
+ * and narrow answers); five is the default. */
+.zone-card-band {
+  --zone-band-n: 5;
+  --zone-band-tri: var(--zone-triangle-wide);
+  --zone-band-gap: var(--zone-card-gap-wide);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  container-type: size;
+}
+
+.zone-card-band[data-visible="3"] {
+  --zone-band-n: 3;
+  --zone-band-tri: var(--zone-triangle-narrow);
+  --zone-band-gap: var(--zone-card-gap-narrow);
+}
+
+/* The plan's sums. The width the cards do not get is the gaps, the two
+ * triangles with their room, and the margins; what is left, divided by the
+ * widths of one focused and (n - 1) side cards as shares of one height, is
+ * the height at which the visible set fits. The focused height is the least
+ * of that, the cap, and the band's height less its padding.
+ *
+ * The track is translated so the focused card's centre sits at the band's
+ * centre: every card before it is a side card, so its centre is the count
+ * of them times a side width and a gap, plus the triangle's room, plus half
+ * a focused width. --zone-band-focus is that count, written by the band. */
+.zone-card-band-track {
+  --zone-band-fixed: calc(
+    (var(--zone-band-n) - 1) * var(--zone-band-gap)
+    + 2 * (var(--zone-band-tri) + var(--zone-triangle-gap))
+    + 2 * var(--zone-band-margin)
+  );
+  --zone-band-fit: calc(
+    (100cqw - var(--zone-band-fixed))
+    / (var(--zone-card-ratio) * (1 + (var(--zone-band-n) - 1) * var(--zone-card-side-scale)))
+  );
+  --zone-card-h: min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad)), var(--zone-band-fit));
+  --zone-band-side-w: calc(var(--zone-card-h) * var(--zone-card-side-scale) * var(--zone-card-ratio));
+  --zone-band-centre: calc(
+    var(--zone-band-focus, 0) * (var(--zone-band-side-w) + var(--zone-band-gap))
+    + var(--zone-band-tri) + var(--zone-triangle-gap)
+    + var(--zone-card-h) * var(--zone-card-ratio) / 2
+  );
+  position: absolute;
+  top: 50%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--zone-band-gap);
+  translate: calc(50cqw - var(--zone-band-centre)) -50%;
+  transition: translate var(--zone-snap-time) var(--zone-bounce);
+  will-change: translate;
+}
+
+/* A slot holds one card. The focused slot keeps the triangles' room either
+ * side; a slot beyond the visible count fades out. */
+.zone-card-band-slot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  transition:
+    margin var(--zone-snap-time) var(--zone-bounce),
+    opacity var(--zone-lift-time) linear;
+}
+
+.zone-card-band-slot[data-focus="true"] {
+  margin: 0 calc(var(--zone-band-tri) + var(--zone-triangle-gap));
+}
+
+.zone-card-band-slot[data-beyond="true"] {
+  opacity: 0;
+}
+
+/* No cards: one caps line in the middle of the band. */
+.zone-card-band-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: var(--zone-type-empty);
+}

@@ -27,7 +27,7 @@ type Layer = (typeof LAYERS)[number]
  * with the card band and the tabs, and each worker that adds one adds it here.
  * A layer listed here with no part is a gate failure, not a plan.
  */
-const REQUIRED_LAYERS: Layer[] = ["template", "organism"]
+const REQUIRED_LAYERS: Layer[] = ["template", "organism", "molecule", "atom"]
 
 /**
  * Files that render no surface of their own and therefore own no part.
@@ -306,12 +306,28 @@ describe("every component has a consumer", () => {
     }
   }
 
+  /**
+   * Built for a page that has not landed. Each entry is a decision with a
+   * date: when the page imports the component, the entry goes. An entry
+   * that names a component some page already imports is itself a failure.
+   */
+  const AWAITING_PAGE: readonly string[] = [
+    // The games page: the band replaces the plain title list in ZoneSurface.
+    "ZoneCardBand",
+    // The save-data page: the vertical save-card select (DIRECTION C16).
+    "ZoneSaveCard",
+  ]
+
   test("no atom, molecule, organism or template is imported by nothing", () => {
     const orphans = componentFiles
       .filter((file) => /\/ui\/(atoms|molecules|organisms|templates)\//.test(file))
       .map((file) => basename(file, ".tsx"))
-      .filter((name) => !importedNames.has(name))
+      .filter((name) => !importedNames.has(name) && !AWAITING_PAGE.includes(name))
     expect(orphans).toEqual([])
+  })
+
+  test("a component awaiting its page is not already consumed", () => {
+    expect(AWAITING_PAGE.filter((name) => importedNames.has(name))).toEqual([])
   })
 
   test("every page is reached from the surface binding", () => {

@@ -227,13 +227,15 @@ describe("eight colours, hard edges", () => {
   /**
    * A linear-gradient is allowed only as a stripe pattern: every stop names
    * two positions, and each stop starts where the one before it ended, so no
-   * two colours ever blend.
+   * two colours ever blend. The first part may be an angle, a side, or an
+   * angle token (`var(--zone-stripe-angle)`), so the lean stays a knob.
    */
   test("every linear-gradient is a hard-stop stripe", () => {
     const offenders = cssFiles.flatMap((file) =>
       [...css(file).matchAll(/linear-gradient\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].flatMap((match) => {
         const parts = (match[1] ?? "").split(/,(?![^(]*\))/).map((part) => part.trim())
-        const stops = parts.filter((part) => !/^(?:-?[\d.]+(?:deg|turn)|to\s)/.test(part))
+        const stops = parts.filter((part, index) =>
+          !/^(?:-?[\d.]+(?:deg|turn)|to\s)/.test(part) && !(index === 0 && /^var\(--[a-z0-9-]*angle\)$/.test(part)))
         const edges = stops.map((stop) => stop.match(/\s(-?[\d.]+%?)\s+(-?[\d.]+%?)$/))
         if (edges.some((edge) => edge === null)) return [`${rel(file)}: ${match[0]} (a stop with one position)`]
         for (let index = 1; index < edges.length; index += 1) {

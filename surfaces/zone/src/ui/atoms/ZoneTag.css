@@ -1,0 +1,78 @@
+/* A tag is a slab of one palette colour with caps in the middle. The slant
+ * of its cut ends is the panel slant, held under half a line so a small
+ * tag on a side card keeps its lean. */
+.zone-tag {
+  --zone-tag-slant: min(var(--zone-slant), 0.55em);
+  --zone-tag-slant-pad: calc(var(--zone-tag-slant) / 2 + var(--zone-tag-pad));
+  flex: 1 1 0;
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  height: 100%;
+  min-height: calc(1em * var(--zone-tag-row-height));
+  padding: 0 var(--zone-tag-pad);
+  overflow: hidden;
+  background: var(--zone-tag-system);
+  color: var(--zone-tag-ink);
+  font-size: var(--zone-tag-type, var(--zone-type-button-tall));
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow:
+    calc(var(--zone-cap-outline) * -0.5) 0 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-outline) * 0.5) 0 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * -0.5) 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * 0.5) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-outline) * 0.5) calc(var(--zone-cap-outline) * 0.5) 0 var(--zone-cap-outline-colour);
+}
+
+/* Joined tags overlap by one slant so the cut of one lies on the cut of the
+ * next. The later tag paints over the earlier one, along the same line. */
+.zone-tag + .zone-tag {
+  margin-left: calc(var(--zone-tag-slant) * -1);
+}
+
+.zone-tag[data-join="first"] {
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--zone-tag-slant)) 100%, 0 100%);
+  padding-right: var(--zone-tag-slant-pad);
+}
+
+.zone-tag[data-join="middle"] {
+  clip-path: polygon(var(--zone-tag-slant) 0, 100% 0, calc(100% - var(--zone-tag-slant)) 100%, 0 100%);
+  padding-right: var(--zone-tag-slant-pad);
+  padding-left: var(--zone-tag-slant-pad);
+}
+
+.zone-tag[data-join="last"] {
+  clip-path: polygon(var(--zone-tag-slant) 0, 100% 0, 100% 100%, 0 100%);
+  padding-left: var(--zone-tag-slant-pad);
+}
+
+/* The kinds. A light tag takes black ink and drops the outline. */
+.zone-tag[data-kind="here"] {
+  background: var(--zone-tag-here);
+  color: var(--zone-tag-here-ink);
+  text-shadow: none;
+}
+
+.zone-tag[data-kind="remote"] {
+  background: var(--zone-tag-remote);
+}
+
+.zone-tag[data-kind="saved"] {
+  background: var(--zone-tag-saved);
+  color: var(--zone-tag-dark-ink);
+  text-shadow: none;
+}
+
+.zone-tag[data-kind="open"] {
+  background: var(--zone-tag-open);
+  color: var(--zone-tag-dark-ink);
+  text-shadow: none;
+}
+
+.zone-tag[data-kind="continue"] {
+  background: var(--zone-tag-continue);
+  color: var(--zone-tag-dark-ink);
+  text-shadow: none;
+}
