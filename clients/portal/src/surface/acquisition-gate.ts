@@ -51,8 +51,15 @@ type Phase =
       readonly _tag: "Acquiring"
       readonly launch: GatedLaunch
       readonly artifacts: readonly ArtifactStatus[]
-      /** Ids this gate asked korrid to start. Work it only found is not here. */
-      readonly requested: ReadonlySet<string>
+      /**
+       * A start this gate sent has not answered yet. korrid makes a Downloading
+       * state the moment it accepts work, so once any observation has come
+       * back, a Missing artifact is not queued: it is not started.
+       */
+      readonly starting: boolean
+      /** Cancel pressed while the start was still pending: honoured when it
+       * answers, against what it reports as Downloading. */
+      readonly cancelRequested: boolean
     }
   | { readonly _tag: "Cancelling"; readonly launch: GatedLaunch }
   | {
@@ -234,7 +241,9 @@ export function createAcquisitionGate(
           gameId: next.launch.game.surfaceId,
         }
       case "Acquiring":
-        return acquiringStatus(next.artifacts, next.launch.game.surfaceId, action("cancel", "Cancel"))
+        return next.cancelRequested
+          ? { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.launch.game.surfaceId }
+          : acquiringStatus(next.artifacts, next.launch.game.surfaceId, action("cancel", "Cancel"))
       case "Cancelling":
         return { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.launch.game.surfaceId }
       case "Failed":
@@ -286,10 +295,11 @@ export function createAcquisitionGate(
   }
 
   /**
-   * Fold a fresh artifact list into the acquiring phase. Everything Ready:
-   * launch. A failure: say so. Nothing moving but Missing artifacts this gate
-   * did not ask for: they still need consent and a size, so ask. Otherwise
-   * keep watching.
+   * Fold an observed artifact list into the acquiring phase. Everything
+   * Ready: launch. A failure: say so. Nothing moving but Missing artifacts:
+   * whether this gate found them so or korrid lost the work it had accepted
+   * (a restart between polls), they still need consent and a size, so ask;
+   * nothing restarts on its own. Otherwise keep watching.
    */
   const settle = (owner: Extract<Phase, { _tag: "Acquiring" }>, artifacts: readonly ArtifactStatus[]) => {
     if (allReady(artifacts)) {
@@ -301,13 +311,12 @@ export function createAcquisitionGate(
       failed({ ...owner, artifacts }, `Couldn't download ${broken.title}`, broken.state.reason, "start")
       return
     }
-    const waitingOnRequested = artifacts.some(artifact => artifact.state._tag === "Missing" && owner.requested.has(artifact.id))
-    if (!artifacts.some(isActive) && !waitingOnRequested) {
+    if (!artifacts.some(isActive)) {
       generation++
       publish({ _tag: "Confirming", launch: owner.launch, artifacts })
       return
     }
-    publish({ ...owner, artifacts })
+    publish({ ...owner, artifacts, starting: false })
   }
 
   const observe = async (operation: number) => {
@@ -328,14 +337,23 @@ export function createAcquisitionGate(
   const start = async (owner: Extract<Phase, { _tag: "Confirming" | "Acquiring" | "Failed" }>) => {
     const operation = ++generation
     const ids = owner.artifacts.filter(artifact => !isReady(artifact)).map(artifact => artifact.id)
-    const acquiring: Extract<Phase, { _tag: "Acquiring" }> = {
-      _tag: "Acquiring", launch: owner.launch, artifacts: owner.artifacts, requested: new Set(ids),
-    }
-    publish(acquiring)
+    publish({ _tag: "Acquiring", launch: owner.launch, artifacts: owner.artifacts, starting: true, cancelRequested: false })
     const result = await korrid.acquisitionStart(ids)
     if (!current(operation) || phase._tag !== "Acquiring") return
+    // A Cancel pressed meanwhile waited for this answer: what korrid now
+    // reports as Downloading is what there is to stop.
+    const acquiring = phase
     if (result._tag === "Err") {
+      if (acquiring.cancelRequested) {
+        abandon(acquiring.launch)
+        void refreshNeeds()
+        return
+      }
       failed(acquiring, "Couldn't start the download", result.payload, "start")
+      return
+    }
+    if (acquiring.cancelRequested) {
+      void cancelDownloads(acquiring.launch, result.payload.artifacts)
       return
     }
     settle(acquiring, result.payload.artifacts)
@@ -361,7 +379,7 @@ export function createAcquisitionGate(
     // observe rather than ask again. What is left Missing is asked for once
     // that work is done.
     if (artifacts.some(isActive)) {
-      publish({ _tag: "Acquiring", launch, artifacts, requested: new Set() })
+      publish({ _tag: "Acquiring", launch, artifacts, starting: false, cancelRequested: false })
       void observe(operation)
       return
     }
@@ -391,6 +409,20 @@ export function createAcquisitionGate(
     }
     abandon(launch)
     void refreshNeeds()
+  }
+
+  /**
+   * Cancel while acquiring. With a start still pending, the intent is kept
+   * and honoured when the start answers, so nothing it began runs on
+   * unstopped; otherwise what is downloading now is stopped at once.
+   */
+  const requestCancel = (owner: Extract<Phase, { _tag: "Acquiring" }>) => {
+    if (owner.cancelRequested) return
+    if (owner.starting) {
+      publish({ ...owner, cancelRequested: true })
+      return
+    }
+    void cancelDownloads(owner.launch, owner.artifacts)
   }
 
   /** Leave a Problem: stop what is still downloading, then close. */
@@ -457,7 +489,7 @@ export function createAcquisitionGate(
         if (kind === "download") void start(phase)
         else if (kind === "cancel") abandon(phase.launch)
       } else if (phase._tag === "Acquiring" && kind === "cancel") {
-        void cancelDownloads(phase.launch, phase.artifacts)
+        requestCancel(phase)
       }
       return true
     },
@@ -475,7 +507,7 @@ export function createAcquisitionGate(
         case "Acquiring": {
           // Back is Cancel only where Cancel is on offer; unpacking has none.
           const cancel = status?._tag === "Busy" ? status.actions?.find(candidate => candidate.enabled) : undefined
-          if (cancel) void cancelDownloads(phase.launch, phase.artifacts)
+          if (cancel) requestCancel(phase)
           return true
         }
         case "Cancelling":

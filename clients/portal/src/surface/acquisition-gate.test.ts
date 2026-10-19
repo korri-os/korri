@@ -36,12 +36,22 @@ function scripted() {
     last[method] = answer
     return answer
   }
+  /** A start the test holds back: korrid has not answered yet. */
+  let holdStart: Promise<void> | undefined
   return {
     calls,
     answers,
+    holdStart: (promise: Promise<void>) => { holdStart = promise },
     client: {
       acquisitionStatus: async (gameId?: string, runnerId?: string) => next("status", runnerId === undefined ? gameId : [gameId, runnerId]),
-      acquisitionStart: async (ids: readonly string[]) => next("start", [...ids]),
+      acquisitionStart: async (ids: readonly string[]) => {
+        calls.push({ method: "start", args: [...ids] })
+        await holdStart
+        const answer = answers.start.shift() ?? last.start
+        if (!answer) throw new Error("no scripted answer for start")
+        last.start = answer
+        return answer
+      },
       acquisitionCancel: async (id: string) => next("cancel", id),
     },
   }
@@ -289,17 +299,104 @@ test("joining work korrid already has under way, then asking for what is still M
   expect(gate.getStatus()).toBeUndefined()
 })
 
-test("a start korrid accepted but has not begun is waited for, not asked again", async () => {
+test("until korrid answers a start, the gate waits; a Missing it reports after is not queued, so the question returns", async () => {
   const korrid = scripted()
   korrid.answers.status.push(ok([rootfs(missing)]))
   const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
   gate.launch(game, () => {})
   await settle()
-  korrid.answers.start.push(ok([rootfs(missing)]))
+  let release!: () => void
+  korrid.holdStart(new Promise<void>(resolve => { release = resolve }))
   gate.act(actionId(gate.getStatus(), "Download"))
   await settle(8)
-  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Starting download…" })
-  gate.dispose()
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Starting download…", actions: [{ label: "Cancel" }] })
+  // korrid makes Downloading the moment it accepts work: a Missing answer
+  // means nothing was started, and nothing is started again without asking.
+  korrid.answers.start.push(ok([rootfs(missing)]))
+  release()
+  await settle(8)
+  expect(gate.getStatus()).toMatchObject({ _tag: "Confirm", detail: "FEX rootfs, 1.2 GB" })
+  expect(korrid.calls.filter(call => call.method === "start")).toHaveLength(1)
+})
+
+test("Cancel while the start is still pending is kept, then stops exactly what the start reports as Downloading", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  let abandoned = 0
+  gate.launch(game, () => {}, () => abandoned++)
+  await settle()
+  let release!: () => void
+  korrid.holdStart(new Promise<void>(resolve => { release = resolve }))
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle()
+  expect(gate.act(actionId(gate.getStatus(), "Cancel"))).toBe(true)
+  const cancelling = gate.getStatus()
+  expect(cancelling).toMatchObject({ _tag: "Busy", kicker: "Cancelling download…" })
+  expect(cancelling?._tag === "Busy" ? cancelling.actions : "no busy").toBeUndefined()
+  // Nothing to cancel yet: korrid has not said what it started.
+  await settle(4)
+  expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Cancelling download…" })
+  korrid.answers.start.push(ok([
+    rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 0, bytesTotal: 1_160_000_000 }),
+    proton({ _tag: "Unpacking" }),
+  ]))
+  korrid.answers.cancel.push(ok([rootfs(missing)]))
+  korrid.answers.status.push(ok([rootfs(missing), proton({ _tag: "Unpacking" })]))
+  release()
+  await settle(8)
+  // The download korrid began is stopped; the unpacking is never cancelled.
+  expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:fex/rootfs"])
+  expect(gate.getStatus()).toBeUndefined()
+  expect(abandoned).toBe(1)
+})
+
+test("Cancel while the start is pending and the start then fails: nothing to stop, the gate closes", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  let abandoned = 0
+  gate.launch(game, () => {}, () => abandoned++)
+  await settle()
+  let release!: () => void
+  korrid.holdStart(new Promise<void>(resolve => { release = resolve }))
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle()
+  gate.act(actionId(gate.getStatus(), "Cancel"))
+  korrid.answers.start.push({ _tag: "Err", payload: { code: "BrainUnreachable", message: "korrid did not answer." } })
+  korrid.answers.status.push(ok([rootfs(missing)]))
+  release()
+  await settle(8)
+  expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])
+  expect(gate.getStatus()).toBeUndefined()
+  expect(abandoned).toBe(1)
+})
+
+test("an acknowledged start later observed Missing (korrid restarted) returns to the question, with no second start", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  let proceeded = 0
+  gate.launch(game, () => proceeded++)
+  await settle()
+  const begun = ok([
+    rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 5_000_000, bytesTotal: 1_160_000_000 }),
+    proton({ _tag: "Downloading", file: 1, fileCount: 1, bytesDone: 0, bytesTotal: 340_000_000 }),
+  ])
+  korrid.answers.start.push(begun)
+  korrid.answers.status.push(begun)
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle(6)
+  expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Downloading FEX rootfs" })
+  korrid.answers.status.push(ok([rootfs(missing), proton(missing)]))
+  await settle(8)
+  expect(gate.getStatus()).toMatchObject({ _tag: "Confirm", detail: "FEX rootfs and Proton-CachyOS, 1.5 GB" })
+  const starts = korrid.calls.filter(call => call.method === "start").length
+  await settle(8)
+  expect(korrid.calls.filter(call => call.method === "start")).toHaveLength(starts)
+  expect(starts).toBe(1)
+  expect(proceeded).toBe(0)
 })
 
 test("the runner the user chose goes with the status read, and the gate reports an abandoned launch", async () => {
