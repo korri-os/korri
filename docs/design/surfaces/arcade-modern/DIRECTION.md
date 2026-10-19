@@ -22,3 +22,37 @@
 **Decisions made here.** Clock readout is `CREDIT 21:47` (not TIME). PRESS START appears only in ATTRACT; SELECT's foot carries the service line. The catalog position is shown as `ENTRY 4 / 12` in the panel (it is the card number, not an invented fact). Comet Courier's house card: navy, red diagonal band, chrome-banded title, light sweep. Petal Quest, Zelda, Wario Land 4 and Super Metroid get flat vector covers in that same idiom; the seven fixture pictures are letterboxed on the card's navy ground, never cropped.
 
 **Text entry.** A name-entry panel slides up from the foot in the showcase's style: a slanted on-screen keyboard (letters, digits, symbols, SPACE, END) in cyan-framed keys; d-pad moves across the keys with the yellow block as cursor, A types, B deletes, `options` toggles upper/lower/symbols, `menu` confirms; the typed string sits in a lit yellow entry bar above the keys with the count (`12/40`) at its right, masked as dots for a Wi-Fi password with `options` held to reveal.
+
+
+## Capability map
+
+C1  Loading: empty ring, NOW LOADING on the plinth; Error: extruded ERROR headline, message in cyan, RESET lit below; Empty: NO GAMES (drawn); Ready: the ring
+C2  Numbered ring cards in catalog order; a section opens with a cyan tab on its first card; subtitle under the panel title; covers letterboxed, no cover = house card
+C3  RANKING panel: PLAYS, LAST PLAYED and a PLAY TIME line; the card's red CONTINUE flag marks resumable
+C4  A on a one-cabinet game plays it; a linked game drops into the LINK · 2 CABINETS pair, A plays on the lit side (1P or 2P SIDE); no side is picked for the person
+C5  options on the focused card opens its GAME TEST MODE: a service list of gameActions, dimmed when disabled, description under the lit row; destructive ask YES / NO
+C6  Up from the ring raises the name-entry panel as a filter: each letter trims the ring to matching titles, ENTRY counts the matches; B clears and closes it
+C7  NOW LOADING on the plinth with the kicker, detail in cyan, the game's card alone on the ring; host actions (CANCEL) as yellow-block items on the service line
+C8  The showcase keeps the running game's card, its extruded title reads the kicker (NOW PLAYING) and the ring stops turning
+C9  An ERROR headline in the showcase: kicker, reason in chrome, gameTitle in yellow; RETRY (when canRetry) and DISMISS as a lit pair like the cabinets
+C10 RESET as the last item of the TEST MODE line, lit by default when the catalog is in Error; A runs reload()
+C11 No answer yet
+C12 TEST MODE › SETTINGS: a service page in the panel's idiom, each group under a RANKING-style header, label in cyan, value in chrome, description under the lit row
+C13 Choice: left/right cycle the value in the yellow block; text/sensitiveText raise the name-entry panel (dots, clearLabel as a key); action: A fires, after YES / NO when it confirms
+C14 Saving: the row's value blinks NOW WRITING in yellow; Problem: a red message line under the row with DISMISS lit
+C15 Device actions head the SETTINGS page as a SYSTEM run above the groups, each a service item; system jumps straight to it
+C16 TEST MODE › IDENTITY › BACKUP: the name-entry panel asks the password, then the showcase card shows the encryptedSecret as a QR with the text under it
+C17 RESTORE: the name-entry panel takes the secret then the password, TRANSFER / DELETE as a 1P / 2P SIDE pair, then YES / NO under THIS CABINET LOSES TRUST
+C18 No answer yet
+C19 RETIRED KEYS: a RANKING-style list of retiredPublicKeys; DELETE on a key asks BACKUP CONFIRMED? YES / NO first
+C20 Working: NOW LOADING with the operation; Problem: the ERROR headline with the message; Switched: SWITCHED headline over the new ownerPublicKey; B dismisses
+C21 Signal badge top-right: four bars and SSID 72% for Wifi; LINK with full bars for Wired; empty bars and NO LINK for Offline
+C22 TEST MODE › NETWORK: networks strongest first with bars, a lock when secured, KNOWN tag; SCANNING… readout; NO NETWORK BOARD when NoAdapter; attempt line under the list, a rejected key reopens the panel
+C23 A on a row joins it, the name-entry panel asking a password when needed; HIDDEN NETWORK is the last row and asks SSID then password
+C24 TEST during play opens GAME TEST MODE over the game: overlay controls, then each group as a sub-page of cycling values; dimmed rows show why, destructive ask YES / NO; EXIT dismisses
+C25 First power-on runs the cabinet's SYSTEM CHECK: INPUT TEST (a controller's row lights when heard), NETWORK, CABINET NAME, IDENTITY; EXIT is finishOnboarding
+C26 CREDIT 21:47 top-left is clockLabel (hidden when absent); buildLabel sits at the foot's right after the mini tag
+C27 Attract: 20 s idle on SELECT cuts to the attract reel; any press returns to SELECT with the previous focus intact
+C28 menu jumps to TEST MODE; options opens the focused game's GAME TEST MODE; system lands on SETTINGS' SYSTEM run; d-pad down reaches all of it: ring › places › service
+C29 The name-entry panel from the foot: slanted cyan-framed keys, yellow block cursor, A types, B deletes, options shifts, menu confirms; yellow entry bar with 12/40 count, dots for a password
+C30 Focus is always the yellow block, the yellow card frame or the cabinet outline; ring rotation eases 0.45 s; prefers-reduced-motion removes attract, pulse, sweep and wipe

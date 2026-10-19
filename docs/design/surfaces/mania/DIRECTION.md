@@ -28,3 +28,37 @@
 **Decisions taken without asking.** Mint ground over yellow (TIME ATTACK/MANIA MODE are the two card-band screens). Anton replaces Rubik. B keycap letter pink, A keycap letter yellow (Mania's A is green, which is not in the palette). The four borrowed covers became stripe wells rather than hand-drawn art. "mini" moved from the tab strip to the foot as a black tag.
 
 **Text entry.** A black parallelogram keyboard panel rises from the foot strip with the same one-bounce snap and covers the action row: four rows of black slanted keys with white caps (letters, digits, a symbols row), the typed string on a white slab above with a red caret triangle, the focused key marked with the pink underline. D-pad moves across keys, A types, B deletes, `options` toggles shift/symbols, `menu` confirms. The 40-character identity string uses the same panel; the slab scrolls horizontally to keep the caret in view.
+
+
+## Capability map
+
+C1  Loading: WAITING cards in the band (COMPETITION's form); Error: the blue dialog cut by black wedges with the message and one RETRY parallelogram; Empty: one NO GAMES card; Ready: the band
+C2  Cards in catalog order; a section is a black header parallelogram above the band, redrawn as focus crosses a run; subtitle takes the tag row; cover uncropped; no cover = stripe well
+C3  Save-card facts on the focused card, as MANIA MODE's CPZ card carries x03: clock glyph + last played, x7 plays, play time under the tags; the CONTINUE ribbon marks resumable
+C4  The action row under the focused card: PLAY HERE / PLAY ON ZAO (CONTINUE HERE when resumable); a one-place game gets one button; A on the card drops into the row
+C5  GAME OPTS. (MANIA MODE's Y keycap): options opens rows for the focused card, label and action parallelograms, dimmed when disabled, description under the row; destructive ask NO / YES
+C6  A on the GAMES banner (or options on the band) raises the keyboard panel as a filter: each letter trims the band to matching cards; B clears and drops it
+C7  The action row becomes one black parallelogram with the kicker, detail under it, and the cover well greys as PAUSED greys the game; host actions (CANCEL) sit beside it as parallelograms
+C8  The band greys and the focused card's action row reads the kicker as one lit parallelogram; cards cannot be entered until Browsing returns
+C9  The OPTIONS dialog: blue panel cut by black wedges, kicker as headline, reason under it, gameTitle in yellow; DISMISS and RETRY (when canRetry) as NO / YES parallelograms
+C10 The same dialog with one RELOAD parallelogram when the catalog is in Error; A runs reload()
+C11 No answer yet
+C12 OPTIONS tab: Mania's OPTIONS rows, each group a black header (as CONTROLS, VIDEO), label parallelogram left, value right, description under the focused row, red underline on focus
+C13 Choice: red triangles flank the value, left/right change it; text/sensitiveText raise the keyboard (dots, X RESET for clearLabel); action rows fire on A, confirmed by the blue NO / YES dialog
+C14 Saving: the value parallelogram blinks until Korri answers; Problem: the blue dialog with the message and one OK parallelogram, A dismisses
+C15 Device actions head the OPTIONS rows as a SYSTEM group of action rows; system jumps to it
+C16 SAVE DATA tab: a vertical save-card select; the BACK UP card asks the password on the keyboard, then its well shows the QR and the secret scrolls on a white slab under it
+C17 The SWITCH card (the NEW card form): keyboard takes the secret then the password, TRANSFER / DELETE as two parallelograms with red triangles, then the dialog THIS DEVICE LOSES TRUST
+C18 No answer yet
+C19 Retired keys are greyed save cards after the owner's card; DELETE on one opens the blue dialog BACKED UP? NO / YES and fires only on YES
+C20 Working: the card's well greys with the operation in a black parallelogram; Problem: the blue dialog with OK; Switched: the owner card redraws with the new key under a SWITCHED ribbon; B dismisses
+C21 The foot badge: SSID, four bars and 72% for Wifi; WIRED with full bars for Wired; OFFLINE with empty bars for Offline
+C22 OPTIONS › WI-FI rows strongest first: SSID left, bars and % right, lock when secured, KNOWN tag; scanning shows --'--"-- dashes; NO WI-FI ADAPTER as one row; the attempt as a line under the list, TRY AGAIN when rejected
+C23 A on a row joins it, the keyboard panel asking the password when needed; HIDDEN NETWORK is the last row and asks the SSID then the password
+C24 PAUSED: red band with the title, game greyscale behind, yellow wedge of overlay controls then each group; values change with red triangles, dimmed rows show why, destructive ask NO / YES; B dismisses
+C25 First boot: a COMPETITION row of WAITING cards that flip to a controller's name when heard, then Wi-Fi and device-name OPTIONS rows, then a NEW save card for identity; last A is finishOnboarding
+C26 TIME 21:47 in the foot is clockLabel (the timer hides when absent); buildLabel is the tiny black string at the foot's right
+C27 Nothing: the two orbit rings keep drifting; no attract and no screensaver
+C28 menu jumps to the tabs; options opens GAME OPTS. for the focused card; system jumps to the SYSTEM group on OPTIONS; up to the tabs, then left/right and A, reaches it all
+C29 The keyboard panel from the foot strip: black slanted keys rise over the action row with the snap, white slab with a red caret; A types, B deletes, options shifts, menu confirms; 40 chars scroll the slab
+C30 Focus is always one of: pink edge and red triangles on a card, pink underline on a button, pink bar and lift on a tab; snaps bounce 340 ms; prefers-reduced-motion stops all motion

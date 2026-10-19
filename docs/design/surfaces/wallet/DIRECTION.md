@@ -22,3 +22,37 @@
 **Text entry.** A pass flips to its back: the back is the same colour, carries the text field across its top (the full 40-character identity string fits at 18 px on a 720 pass, wrapping at 640) and a keyboard grid below it (10 × 4 keys plus a row of Space, Delete, Shift, Done); d-pad moves across the grid, A types, B deletes, holding B flips the pass back without saving; the status row still shows the clock.
 
 **Decided without asking.** Issuer cards are pinned rather than scrolling, so the route stays on screen with Spelunky pulled. Gate names are in caps because the brief names them so; nothing else on the surface is capitalised.
+
+
+## Capability map
+
+C1  Loading: edges without values; Error: a Korri issuer card under Identity carries the message as its field and a Reload chip; Empty: the three issuer cards and a lining line "No passes yet"; Ready: the stack
+C2  Passes in catalog order; a section is a lining-ink label between edges (a pocket tab); subtitle takes the edge row's system slot; wide art fills the strip, else the cover; no cover = title strip
+C3  Fields row on the pulled pass: Last played, Plays, Play time and Gate; the barcode foot is the play tally, one bar per play; the Resume chip on the edge row marks resumable
+C4  A plays the pulled pass through the lit gate; on a two-gate pass no gate is lit until left/right picks one, A with none lit shakes the gates (the mockup lights THIS DEVICE early)
+C5  options flips the pulled pass to its back: gameActions as rows with their description, dimmed when disabled; a destructive row is red-ruled and needs a second confirm chip
+C6  Up past Settings pulls a Find slip from the pocket's top: a thin lining-coloured pass with a text field and the back's keyboard; typed letters fold non-matching passes to slivers
+C7  A notification strip drops under the status row in the pass's own colour: pass name, kicker and detail; host actions (Cancel) as chips at its right; the pass stays pulled
+C8  The strip stays, reading the kicker, and a Running chip replaces Resume on the pulled pass's edge row; up/down still browse
+C9  The strip in the game's colour names gameTitle with the kicker and the reason; Retry (when canRetry) and Dismiss as chips at its right
+C10 The Korri issuer card's Reload chip (C1); also the strip's only chip when the model needs a fresh start
+C11 No answer yet
+C12 The Settings issuer card pulled open in place: each group a run of fields under a width-80 group line, label small, value large, description as a third line on the focused field
+C13 Choice: the value cycles with left/right as gate chips do; text flips the card to its back; sensitiveText shows dots and a Clear chip; action is a chip, confirmed on a back face with the message
+C14 Saving: the field's value reads Saving… in the label weight; Problem: the field turns red-ruled with the message under it and B dismisses it
+C15 Device actions are chips in the Settings card's Actions field, the last row of the card; system pulls the card to that row
+C16 Identity card › Back up chip: the back asks the password, then shows the encryptedSecret as a QR with the text as the card's barcode foot
+C17 Switch chip: the back takes the secret then the password, Transfer / Delete as two gate-style chips, a "This device loses trust" row with its own confirm chip
+C18 No answer yet
+C19 The Retired keys field lists retiredPublicKeys as rows; each Delete chip stays dimmed until that row's Backed up chip is lit
+C20 Working: the card's edge value reads the operation; Problem: the message as a red-ruled field; Switched: People shows the new ownerPublicKey with a Switched chip; B dismisses
+C21 The Wi-Fi card's edge: SSID and 72% for Wifi, Wired for Wired, Offline for Offline
+C22 The pulled Wi-Fi card lists networks strongest first (name, %, lock when secured, Known); Scanning… as the edge value; No Wi-Fi adapter as the only field; the attempt is a field under the list, Try again when rejected
+C23 A on a row flips the card to its back for the password; the Join a hidden network field (drawn) flips to the back for the SSID then the password
+C24 No answer yet
+C25 No answer yet
+C26 The status row: clockLabel left, buildLabel right; either side empties when absent
+C27 Nothing: the stack stays as it is; no attract, no screensaver
+C28 menu pulls the Settings card; options flips the pulled pass to its back; system pulls the Settings card to its Actions row; up/down reach every card and the Find slip
+C29 A pass flips to its back: the text field across its top (40 characters fit at 18 px on a 720 pass) over a 10 × 4 key grid plus Space, Delete, Shift, Done; A types, B deletes, holding B flips back
+C30 Focus is the pulled pass (forward, wider, hard shadow) plus the lit gate chip or lit field; top/height ease 0.18 s; prefers-reduced-motion removes the transition
