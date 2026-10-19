@@ -102,7 +102,7 @@ fn modifier_data_is_retained_without_adding_effect_authority() {
 
 #[test]
 fn steam_discovery_data_survives_admission_but_grants_no_native_effects() {
-    let source = include_str!("../../../../plugins/steam/plugin.ts");
+    let source = include_str!("fixtures/steam.plugin.ts");
     let declaration = Declaration::evaluate("@korri", source).unwrap();
     assert_eq!(
         declaration.discovery.as_ref().unwrap()[0].id,
