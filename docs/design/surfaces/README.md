@@ -10,7 +10,11 @@ Each folder holds one self-contained `index.html` (fonts and pictures inlined;
 opens from a checkout with no server), screenshots at 1280×720 and 640×480,
 and a `DIRECTION.md` with the palette, the typeface and its licence, the
 skeleton in one sentence, the memorable element, and the text-entry decision.
-Font licence texts sit beside the file when a libre face was embedded.
+Font licence texts sit beside the file when a libre face was embedded. A
+mockup whose design includes motion also holds a recorded take per size
+(`take-<w>x<h>.webm` and `.gif`) and its filmstrip, and the motion is specified
+as a table in `DIRECTION.md`; the rules are in the `motion-mockup` skill. A
+mockup without a take has no designed motion, whatever its CSS does.
 
 Every mockup draws the same screen from the same content so skeletons can be
 compared: the library in idle state, twelve games, Spelunky focused with two
