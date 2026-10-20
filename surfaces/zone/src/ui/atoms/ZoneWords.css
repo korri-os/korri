@@ -19,9 +19,14 @@
 }
 
 /* One word: exactly as wide as its letters (ZoneCaps lays out as tight as
- * its line), its line one cap, standing on the words' baseline. */
+ * its line), its line one cap, standing on the words' baseline. The room
+ * ZoneCaps keeps round its letters for accents, ring and drop is painted
+ * (the clip margin holds all of it) but not counted as overflow, so a fit
+ * sees the letters, not the ink's room. */
 .zone-words-word {
   display: inline-block;
+  overflow: clip;
+  overflow-clip-margin: calc(0.3em + var(--zone-caps-room) * var(--zone-px));
   line-height: 1;
 }
 

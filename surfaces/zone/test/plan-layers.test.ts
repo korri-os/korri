@@ -31,6 +31,7 @@ import {
   zonePausedStep,
 } from "../src/plan/paused"
 import { ZONE_BUSY_CUT, zoneBusyCut, zoneSlabCut, zoneStairChamfer } from "../src/plan/slab"
+import { ZONE_SLAB_LINE_EM } from "../src/use-zone-slab-shape"
 
 const tokens = readFileSync(join(import.meta.dir, "..", "src", "zone-tokens.css"), "utf8")
 const token = (name: string) => tokens.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim()
@@ -168,6 +169,13 @@ describe("the one-line chamfer", () => {
     expect(zoneBusyCut(ZONE_BUSY_CUT - 1)).toBe(ZONE_BUSY_CUT - 1)
     expect(zoneBusyCut(ZONE_BUSY_CUT + 1)).toBe(ZONE_BUSY_CUT)
     expect(token("--zone-busy-cut")).toBe(String(ZONE_BUSY_CUT))
+  })
+
+  test("one line of a slab is one line of ZoneWords: the leading the words draw", () => {
+    // Measured in Chromium at 640x480 and 1280x720: lines 1.4 caps apart, the box 1.4 caps a line.
+    const words = readFileSync(join(import.meta.dir, "..", "src", "ui", "atoms", "ZoneWords.css"), "utf8")
+    const leading = /\.zone-words \{[^}]*line-height:\s*([\d.]+);/.exec(words)?.[1]
+    expect(Number(leading)).toBe(ZONE_SLAB_LINE_EM)
   })
 
   test("the cut is a 45 degree stair at the top-left and the bottom-right, whole art px", () => {

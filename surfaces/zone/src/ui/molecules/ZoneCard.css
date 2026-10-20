@@ -62,6 +62,10 @@
  * A focused card lets a word longer than itself stand whole past its edge;
  * a side card draws no title rather than cut such a word. */
 .zone-card-title {
+  /* ZoneWords' line is 1.4 caps with the cap from 0.2 of it: give back
+   * that half-leading over the first line and under the last, so this box
+   * is the caps', as a ZoneCaps line is. */
+  margin-block: -0.2em;
   display: block;
   min-width: 0;
   font-size: calc(var(--zone-card-title-caps) * var(--zone-px) * var(--zone-fit, 1));
@@ -79,6 +83,7 @@
  * by its name, and the title stands whole once the card is focused. */
 .zone-card[data-size="side"] .zone-card-title[data-zone-words-long] {
   max-height: 0;
+  margin-block: 0;
   overflow: hidden;
 }
 

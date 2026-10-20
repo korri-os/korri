@@ -109,6 +109,10 @@
  * line until the fit is at caps-1, then wrapping between words. */
 .zone-title-card-title {
   margin: 0;
+  /* ZoneWords' line is 1.4 caps with the cap from 0.2 of it: give back
+   * that half-leading over the first line and under the last, so this box
+   * is the caps', as a ZoneCaps line is. */
+  margin-block: -0.2em;
   font: inherit;
   font-size: calc(var(--zone-caps-3) * var(--zone-px) * var(--zone-fit, 1));
   line-height: 1;
