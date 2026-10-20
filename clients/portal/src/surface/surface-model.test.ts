@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { PendingLaunchPhase } from "@contracts/generated/korrid"
 import { LaunchablesState, launchSubjectForGame, type LaunchSubject, type PortalEntry } from "../launchables/state"
+import type { GameDownloadFacts } from "./game-downloads"
 import {
   entryForId,
   entryForLaunchLocation,
   gameActionsForEntry,
   surfaceModelFrom,
+  surfaceDownloadFrom,
 } from "./surface-model"
 
 const ready = (
@@ -400,4 +402,43 @@ test("manual choices publish every exact phase, stable same-title labels, retry 
   expect(sent.actions?.map(action => [action.id, action.label])).toEqual(status.actions?.map(action => [action.id, action.label]))
   expect(sent.actions?.[0]?.enabled).toBe(false)
   expect(surfaceModelFrom({ ...state, notice: { _tag: "Launch", message: "Exact cancellation failed" } }).status).toMatchObject({ _tag: "Busy", detail: "Exact cancellation failed" })
+})
+
+describe("a game's download actions (ADR 0013)", () => {
+  const entry: PortalEntry = { kind: "game", game: { id: "mm", title: "Mega Man Rock N Roll", supportsRunnerSelection: false, source: { label: "This device", isLocal: true } } }
+  const idle = { needs: false, active: false, stoppable: false, queued: false, ownReady: false } as const
+  const ids = (facts: GameDownloadFacts, live = false, enabled = true) =>
+    gameActionsForEntry(entry, { facts, live, enabled }).map(action => `${action.id}${action.enabled ? "" : " (dimmed)"}`)
+
+  test("Download while it needs one and nothing is under way; Cancel while anything is; Remove once its own files are here", () => {
+    expect(ids({ ...idle, needs: true, bytes: 500 })).toEqual(["download"])
+    expect(ids({ ...idle, needs: true, active: true, stoppable: true, queued: true })).toEqual(["cancel-download"])
+    expect(ids({ ...idle, needs: true, active: true, stoppable: true, progress: { done: 1, total: 2 } })).toEqual(["cancel-download"])
+    // Only unpacking: Cancel stays on offer, dimmed, and says why.
+    expect(ids({ ...idle, needs: true, active: true, progress: { done: 0 } })).toEqual(["cancel-download (dimmed)"])
+    expect(gameActionsForEntry(entry, { facts: { ...idle, needs: true, active: true }, live: false, enabled: true })[0]?.description)
+      .toBe("Unpacking cannot be stopped. It ends on its own.")
+    expect(ids({ ...idle, ownReady: true })).toEqual(["remove-download"])
+    // Its own files are here but the runtime is missing: both.
+    expect(ids({ ...idle, needs: true, ownReady: true })).toEqual(["download", "remove-download"])
+    // Nothing of its own was ever downloaded: a runtime-only game has nothing to remove.
+    expect(ids(idle)).toEqual([])
+  })
+
+  test("Remove is not offered while the game runs, and every action dims while Korri cannot act", () => {
+    expect(ids({ ...idle, ownReady: true }, true)).toEqual([])
+    expect(ids({ ...idle, needs: true }, false, false)).toEqual(["download (dimmed)"])
+    expect(gameActionsForEntry(entry, { facts: { ...idle, ownReady: true }, live: false, enabled: true })[0]).toMatchObject({
+      label: "Remove download", destructive: true, description: "Deletes its downloaded files from this device. Your saves stay.",
+    })
+  })
+
+  test("a failed try names korrid's words on Download; the treaty's download carries queued and progress", () => {
+    expect(gameActionsForEntry(entry, { facts: { ...idle, needs: true, failure: "The connection stalled." }, live: false, enabled: true })[0]?.description)
+      .toBe("The last try failed. The connection stalled.")
+    expect(surfaceDownloadFrom({ ...idle, needs: true, bytes: 500, active: true, queued: true })).toEqual({ bytes: 500, queued: true })
+    expect(surfaceDownloadFrom({ ...idle, needs: true, active: true, progress: { done: 1, total: 2 } })).toEqual({ progress: { done: 1, total: 2 } })
+    expect(surfaceDownloadFrom({ ...idle, ownReady: true })).toBeUndefined()
+    expect(surfaceDownloadFrom(undefined)).toBeUndefined()
+  })
 })

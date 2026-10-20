@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SurfaceStatus } from "@contracts/surface/korri-surface"
-import type { AcquisitionOutcome, ArtifactStatus } from "@contracts/generated/korrid"
+import type { AcquisitionOutcome, ArtifactStatus } from "../korrid/acquisition-wire"
 import {
   confirmDetail,
   createAcquisitionGate,
@@ -150,8 +150,6 @@ test("Missing -> Confirm -> Download -> Downloading with progress -> Unpacking -
   expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Downloading Proton-CachyOS", progress: { done: 0, total: 340_000_000 }, detail: "0 B of 340 MB" })
 
   korrid.answers.status.push(ok([rootfs(ready), proton(ready)]))
-  // The gate re-reads the device after it finishes, for the download badges.
-  korrid.answers.status.push(ok([rootfs(ready), proton(ready)]))
   await settle(8)
   expect(proceeded).toBe(1)
   expect(gate.getStatus()).toBeUndefined()
@@ -237,7 +235,7 @@ test("Cancel on Confirm closes without an RPC; Cancel while downloading calls ca
   expect(gate.act(actionId(gate.getStatus(), "Cancel"))).toBe(true)
   expect(gate.getStatus()).toMatchObject({ _tag: "Busy", kicker: "Cancelling download…" })
   await settle(8)
-  // Only the live download is cancelled; a queued artifact has nothing to stop.
+  // Only the live download is cancelled; a Missing artifact has nothing to stop.
   expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:fex/rootfs"])
   expect(gate.getStatus()).toBeUndefined()
   expect(proceeded).toBe(0)
@@ -450,21 +448,128 @@ test("a stale action id, from an earlier generation, sends nothing", async () =>
   expect(gate.getStatus()?._tag).toBe("Confirm")
 })
 
-test("needs: one device-wide read when all is Ready, per-game reads otherwise, sizes summed or unknown", async () => {
+test("a download already queued or under way when the gate opens goes to the front and is never cancelled", async () => {
   const korrid = scripted()
-  korrid.answers.status.push(ok([rootfs(ready), proton(ready)]))
-  const gate = createAcquisitionGate(korrid.client)
-  await gate.refreshNeeds(["steam:1", "steam:2", "gba:1"])
-  expect(gate.getNeeds().size).toBe(0)
-  expect(korrid.calls).toEqual([{ method: "status", args: undefined }])
+  // The person asked for the download from the game; the rootfs is running,
+  // Proton waits its turn behind another game's download.
+  const background = ok([
+    rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 50_000_000, bytesTotal: 1_160_000_000 }),
+    proton({ _tag: "Queued" }),
+  ])
+  korrid.answers.status.push(background)
+  korrid.answers.start.push(ok([proton({ _tag: "Queued" })]))
+  let settled = 0
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1, onSettled: () => settled++ })
+  let proceeded = 0
+  let abandoned = 0
+  gate.launch(game, () => proceeded++, () => abandoned++)
+  await settle()
+  // No question: the person already said yes. The queued one is moved up.
+  expect(korrid.calls.filter(call => call.method === "start").map(call => call.args)).toEqual([["@korri:proton/cachyos"]])
+  const busy = gate.getStatus()
+  expect(busy).toMatchObject({ _tag: "Busy", kicker: "Downloading FEX rootfs", actions: [{ label: "Play later", enabled: true }] })
+  // Leaving closes the launch only; the download goes on in the background.
+  expect(gate.act(actionId(busy, "Play later"))).toBe(true)
+  await settle()
+  expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])
+  expect(gate.getStatus()).toBeUndefined()
+  expect(abandoned).toBe(1)
+  expect(proceeded).toBe(0)
+  expect(settled).toBe(1)
 
-  korrid.answers.status.push(
-    ok([rootfs(missing), proton(ready)]),
-    ok([rootfs(missing), proton(ready)]),
-    ok([{ ...rootfs(missing), bytesTotal: undefined }, proton(missing)]),
-    ok([]),
-  )
-  await gate.refreshNeeds()
-  expect([...gate.getNeeds().entries()]).toEqual([["steam:1", 1_160_000_000], ["steam:2", undefined]])
-  expect(korrid.calls.slice(1).map(call => call.args)).toEqual([undefined, "steam:1", "steam:2", "gba:1"])
+  // Back does the same.
+  korrid.answers.status.push(background)
+  gate.launch(game, () => proceeded++, () => abandoned++)
+  await settle()
+  expect(gate.back()).toBe(true)
+  await settle()
+  expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])
+  expect(abandoned).toBe(2)
+})
+
+test("a Problem left while a pre-existing download still runs cancels only what the gate started", async () => {
+  for (const leave of ["dismiss", "back"] as const) {
+    const korrid = scripted()
+    // The rootfs was already downloading in the background; Proton was not.
+    korrid.answers.status.push(ok([
+      rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 10, bytesTotal: 1_160_000_000 }),
+      proton(missing),
+    ]))
+    const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+    gate.launch(game, () => {})
+    await settle()
+    korrid.answers.status.push(ok([rootfs(ready), proton(missing)]))
+    await settle(8)
+    expect(gate.getStatus()).toMatchObject({ _tag: "Confirm", detail: "Proton-CachyOS, 340 MB" })
+    // A second background download of the rootfs (a repair, a new version)
+    // shows up while the gate's own Proton download fails.
+    const mixed = ok([
+      rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 20, bytesTotal: 1_160_000_000 }),
+      proton({ _tag: "Failed", reason: { code: "Stalled", message: "The connection stalled." } }),
+    ])
+    korrid.answers.start.push(mixed)
+    korrid.answers.status.push(mixed)
+    gate.act(actionId(gate.getStatus(), "Download"))
+    await settle()
+    expect(gate.getStatus()).toMatchObject({ _tag: "Problem", kicker: "Couldn't download Proton-CachyOS" })
+    expect(leave === "dismiss" ? gate.dismiss() : gate.back()).toBe(true)
+    await settle(8)
+    expect(korrid.calls.filter(call => call.method === "cancel")).toEqual([])
+    expect(gate.getStatus()).toBeUndefined()
+  }
+})
+
+test("Cancel stops what the gate started, queued as well as downloading, and nothing it found under way", async () => {
+  const korrid = scripted()
+  const dlc = (state: ArtifactStatus["state"]): ArtifactStatus => ({ id: "@game:dlc", title: "Extra levels", version: "1", bytesTotal: 20_000_000, state })
+  // The rootfs was downloading before the gate opened; Proton and the game's
+  // own files are missing.
+  korrid.answers.status.push(ok([rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 10, bytesTotal: 1_160_000_000 }), proton(missing), dlc(missing)]))
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1 })
+  gate.launch(game, () => {})
+  await settle()
+  korrid.answers.status.push(ok([rootfs(ready), proton(missing), dlc(missing)]))
+  await settle(8)
+  // Now the rootfs is downloading again for someone else, which the gate
+  // first sees in its start's answer.
+  const begun = ok([
+    rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 10, bytesTotal: 1_160_000_000 }),
+    proton({ _tag: "Downloading", file: 1, fileCount: 1, bytesDone: 5, bytesTotal: 340_000_000 }),
+    dlc({ _tag: "Queued" }),
+  ])
+  korrid.answers.start.push(begun)
+  korrid.answers.status.push(begun)
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle()
+  expect(korrid.calls.filter(call => call.method === "start").map(call => call.args)).toEqual([["@korri:proton/cachyos", "@game:dlc"]])
+  korrid.answers.cancel.push(ok([proton(missing)]), ok([dlc(missing)]))
+  gate.act(actionId(gate.getStatus(), "Cancel"))
+  await settle(8)
+  expect(korrid.calls.filter(call => call.method === "cancel").map(call => call.args)).toEqual(["@korri:proton/cachyos", "@game:dlc"])
+  expect(gate.getStatus()).toBeUndefined()
+})
+
+test("Cancelling says the partial download is deleted, and the host hears that the gate settled", async () => {
+  const korrid = scripted()
+  korrid.answers.status.push(ok([rootfs(missing)]))
+  let settled = 0
+  const gate = createAcquisitionGate(korrid.client, { pollIntervalMs: 1, onSettled: () => settled++ })
+  gate.launch(game, () => {})
+  await settle()
+  const begun = ok([rootfs({ _tag: "Downloading", file: 1, fileCount: 11, bytesDone: 10, bytesTotal: 1_160_000_000 })])
+  korrid.answers.start.push(begun)
+  korrid.answers.status.push(begun)
+  gate.act(actionId(gate.getStatus(), "Download"))
+  await settle()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const cancel = korrid.client.acquisitionCancel
+  korrid.client.acquisitionCancel = async (id: string) => { await held; return cancel(id) }
+  korrid.answers.cancel.push(ok([rootfs(missing)]))
+  gate.act(actionId(gate.getStatus(), "Cancel"))
+  expect(gate.getStatus()).toEqual({ _tag: "Busy", kicker: "Cancelling download…", detail: "Deleting the partial download", gameId: "game:steam:1" })
+  release()
+  await settle(8)
+  expect(gate.getStatus()).toBeUndefined()
+  expect(settled).toBe(1)
 })

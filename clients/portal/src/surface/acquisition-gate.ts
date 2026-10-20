@@ -12,15 +12,20 @@
  *
  * korrid owns the download, the retries and the partial file. The gate owns
  * nothing but the question, the observation and the words.
+ *
+ * A download the person asked for from the game (ADR 0013) may already be
+ * queued or running when the gate opens. The gate moves it to the front,
+ * because a launch waits for it, but never cancels it: leaving the gate stops
+ * only what the gate itself started. Which games still need what, outside a
+ * launch, is game-downloads.ts.
  */
-import type { ArtifactStatus, RpcFailure } from "@contracts/generated/korrid"
+import type { RpcFailure } from "@contracts/generated/korrid"
 import type { SurfaceAction, SurfaceStatus } from "@contracts/surface/korri-surface"
+import type { ArtifactStatus } from "../korrid/acquisition-wire"
 import type { KorridClient } from "../korrid/client"
 
 /** The cadence the host already observes app.session.status at: 1 Hz. */
 export const ACQUISITION_POLL_INTERVAL_MS = 1000
-/** Per-game status reads during a device-wide refresh run this many at once. */
-const NEEDS_CONCURRENCY = 8
 
 /** The game a launch is about: korrid's id, the surface's id, and its title. */
 export interface AcquisitionGameRef {
@@ -37,6 +42,11 @@ interface GatedLaunch {
   readonly game: AcquisitionGameRef
   readonly proceed: () => void
   readonly abandon: () => void
+  /** Artifacts already queued or under way when the gate first saw them,
+   * and not started by it: someone else's to stop, never the gate's. */
+  readonly held: Set<string>
+  /** Artifacts this gate asked korrid to start. Only these does it cancel. */
+  readonly owned: Set<string>
 }
 
 type Phase =
@@ -75,9 +85,6 @@ type Phase =
 export interface AcquisitionGate {
   /** The status to show in place of the launch status; undefined while idle. */
   getStatus(): SurfaceStatus | undefined
-  /** korrid game id -> bytes still to download (undefined when the size is
-   * unknown), for every game whose runner artifacts are not all Ready. */
-  getNeeds(): ReadonlyMap<string, number | undefined>
   subscribe(listener: () => void): () => void
   /**
    * Check, ask, download, then `proceed` into the launch. `abandon` runs
@@ -93,13 +100,14 @@ export interface AcquisitionGate {
   retry(): boolean
   /** The surface's Dismiss. True when the gate consumed it. */
   dismiss(): boolean
-  /** Re-read what the given games (or the last given) still need. */
-  refreshNeeds(gameIds?: readonly string[]): Promise<void>
   dispose(): void
 }
 
 export interface AcquisitionGateOptions {
   readonly pollIntervalMs?: number
+  /** The gate closed after it changed what is on disk or under way: the
+   * host re-reads what each game still needs. */
+  readonly onSettled?: () => void
 }
 
 const isReady = (artifact: ArtifactStatus) => artifact.state._tag === "Ready"
@@ -199,26 +207,39 @@ export function acquiringStatus(
   return { _tag: "Busy", kicker: "Starting download…", detail: "Waiting for the first bytes", actions: [cancel], gameId }
 }
 
-const isActive = (artifact: ArtifactStatus) =>
-  artifact.state._tag === "Downloading" || artifact.state._tag === "Unpacking"
+/** Queued, downloading or unpacking: korrid has accepted the work. */
+export const isActive = (artifact: ArtifactStatus) =>
+  artifact.state._tag === "Queued" || artifact.state._tag === "Downloading" || artifact.state._tag === "Unpacking"
+
+/** What Cancel can stop: a download under way, or one waiting its turn. */
+const isStoppable = (artifact: ArtifactStatus) =>
+  artifact.state._tag === "Downloading" || artifact.state._tag === "Queued"
+
+/** What this gate started and Cancel can still stop. Never what it found under way. */
+const stoppable = (launch: GatedLaunch, artifacts: readonly ArtifactStatus[]) =>
+  artifacts.filter(artifact => isStoppable(artifact) && launch.owned.has(artifact.id) && !launch.held.has(artifact.id))
+
+/** korrid deletes a cancelled download's partial file (ADR 0013). */
+const CANCELLING_DETAIL = "Deleting the partial download"
 
 export function createAcquisitionGate(
   korrid: Pick<KorridClient, "acquisitionStatus" | "acquisitionStart" | "acquisitionCancel">,
   options: AcquisitionGateOptions = {},
 ): AcquisitionGate {
   const pollIntervalMs = options.pollIntervalMs ?? ACQUISITION_POLL_INTERVAL_MS
+  const settled = () => {
+    if (!disposed) options.onSettled?.()
+  }
   let phase: Phase = { _tag: "Idle" }
   let status: SurfaceStatus | undefined
-  let needs: ReadonlyMap<string, number | undefined> = new Map()
-  let lastNeedIds: readonly string[] = []
   let generation = 0
-  let needsSeq = 0
   let disposed = false
   const listeners = new Set<() => void>()
   const notify = () => {
     for (const listener of listeners) listener()
   }
   const current = (operation: number) => !disposed && operation === generation
+  const currentPhase = (): Phase => phase
   const action = (id: string, label: string): SurfaceAction => ({
     id: `acquisition:${generation}:${id}`,
     label,
@@ -241,11 +262,14 @@ export function createAcquisitionGate(
           gameId: next.launch.game.surfaceId,
         }
       case "Acquiring":
+        // Cancel stops what this gate started. Work it only joined goes on
+        // without the launch, so leaving says that instead.
         return next.cancelRequested
-          ? { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.launch.game.surfaceId }
-          : acquiringStatus(next.artifacts, next.launch.game.surfaceId, action("cancel", "Cancel"))
+          ? { _tag: "Busy", kicker: "Cancelling download…", detail: CANCELLING_DETAIL, gameId: next.launch.game.surfaceId }
+          : acquiringStatus(next.artifacts, next.launch.game.surfaceId,
+            action("cancel", next.starting || stoppable(next.launch, next.artifacts).length > 0 ? "Cancel" : "Play later"))
       case "Cancelling":
-        return { _tag: "Busy", kicker: "Cancelling download…", detail: "Keeping what was downloaded so far", gameId: next.launch.game.surfaceId }
+        return { _tag: "Busy", kicker: "Cancelling download…", detail: CANCELLING_DETAIL, gameId: next.launch.game.surfaceId }
       case "Failed":
         return {
           _tag: "Problem",
@@ -290,7 +314,7 @@ export function createAcquisitionGate(
   const finish = (launch: GatedLaunch) => {
     generation++
     publish({ _tag: "Idle" })
-    void refreshNeeds()
+    settled()
     launch.proceed()
   }
 
@@ -337,16 +361,17 @@ export function createAcquisitionGate(
   const start = async (owner: Extract<Phase, { _tag: "Confirming" | "Acquiring" | "Failed" }>) => {
     const operation = ++generation
     const ids = owner.artifacts.filter(artifact => !isReady(artifact)).map(artifact => artifact.id)
+    for (const id of ids) if (!owner.launch.held.has(id)) owner.launch.owned.add(id)
     publish({ _tag: "Acquiring", launch: owner.launch, artifacts: owner.artifacts, starting: true, cancelRequested: false })
     const result = await korrid.acquisitionStart(ids)
     if (!current(operation) || phase._tag !== "Acquiring") return
     // A Cancel pressed meanwhile waited for this answer: what korrid now
-    // reports as Downloading is what there is to stop.
+    // reports as under way is what there is to stop.
     const acquiring = phase
     if (result._tag === "Err") {
       if (acquiring.cancelRequested) {
         abandon(acquiring.launch)
-        void refreshNeeds()
+        settled()
         return
       }
       failed(acquiring, "Couldn't start the download", result.payload, "start")
@@ -375,11 +400,29 @@ export function createAcquisitionGate(
       finish(launch)
       return
     }
-    // korrid is already working on it (another launch, or a restart mid-way):
-    // observe rather than ask again. What is left Missing is asked for once
-    // that work is done.
+    // What korrid already has under way (a download the person asked for, or
+    // a restart mid-way) is someone else's to stop: remember it, so leaving
+    // never cancels it.
+    for (const artifact of artifacts) {
+      if (isActive(artifact) && !launch.owned.has(artifact.id)) launch.held.add(artifact.id)
+    }
+    // Observe it rather than ask again. What waits in the queue goes to the
+    // front, because this launch waits for it; korrid's start is idempotent
+    // and pauses the background download. What is left Missing is asked for
+    // once that work is done.
     if (artifacts.some(isActive)) {
+      const queued = artifacts.filter(artifact => artifact.state._tag === "Queued").map(artifact => artifact.id)
       publish({ _tag: "Acquiring", launch, artifacts, starting: false, cancelRequested: false })
+      if (queued.length > 0) {
+        const moved = await korrid.acquisitionStart(queued)
+        // `phase` moved on while korrid answered; read it again.
+        const joined = currentPhase()
+        if (!current(operation) || joined._tag !== "Acquiring") return
+        // Refused: the queue still gets there, so keep watching.
+        if (moved._tag === "Ok") settle(joined, artifacts.map(artifact =>
+          moved.payload.artifacts.find(update => update.id === artifact.id) ?? artifact))
+        if (!current(operation)) return
+      }
       void observe(operation)
       return
     }
@@ -387,15 +430,16 @@ export function createAcquisitionGate(
   }
 
   /**
-   * Stop every live download korrid keeps the partial file of, then close
-   * without launching. Unpacking is never cancelled. A refused cancel of a
-   * live download is a problem worth stating; nothing else is.
+   * Stop what this gate started and korrid still has queued or downloading,
+   * then close without launching. korrid deletes the partial file. Unpacking
+   * is never cancelled, and neither is anything the gate found under way. A
+   * refused cancel of a live download is a problem worth stating; nothing
+   * else is.
    */
   const cancelDownloads = async (launch: GatedLaunch, artifacts: readonly ArtifactStatus[]) => {
     const operation = ++generation
     publish({ _tag: "Cancelling", launch })
-    for (const artifact of artifacts) {
-      if (artifact.state._tag !== "Downloading") continue
+    for (const artifact of stoppable(launch, artifacts)) {
       const result = await korrid.acquisitionCancel(artifact.id)
       if (!current(operation)) return
       if (result._tag === "Err") {
@@ -408,13 +452,14 @@ export function createAcquisitionGate(
       }
     }
     abandon(launch)
-    void refreshNeeds()
+    settled()
   }
 
   /**
    * Cancel while acquiring. With a start still pending, the intent is kept
    * and honoured when the start answers, so nothing it began runs on
-   * unstopped; otherwise what is downloading now is stopped at once.
+   * unstopped; otherwise what it started is stopped at once. With nothing of
+   * its own under way, the gate just closes and the download goes on.
    */
   const requestCancel = (owner: Extract<Phase, { _tag: "Acquiring" }>) => {
     if (owner.cancelRequested) return
@@ -422,43 +467,22 @@ export function createAcquisitionGate(
       publish({ ...owner, cancelRequested: true })
       return
     }
+    if (stoppable(owner.launch, owner.artifacts).length === 0) {
+      abandon(owner.launch)
+      settled()
+      return
+    }
     void cancelDownloads(owner.launch, owner.artifacts)
   }
 
-  /** Leave a Problem: stop what is still downloading, then close. */
+  /** Leave a Problem: stop what the gate started and is still under way, then close. */
   const leaveFailed = (owner: Extract<Phase, { _tag: "Failed" }>) => {
-    if (owner.artifacts.some(artifact => artifact.state._tag === "Downloading")) {
+    if (stoppable(owner.launch, owner.artifacts).length > 0) {
       void cancelDownloads(owner.launch, owner.artifacts)
       return
     }
     abandon(owner.launch)
-    void refreshNeeds()
-  }
-
-  async function refreshNeeds(gameIds?: readonly string[]): Promise<void> {
-    if (disposed) return
-    if (gameIds !== undefined) lastNeedIds = gameIds
-    const ids = lastNeedIds
-    const seq = ++needsSeq
-    const next = new Map<string, number | undefined>()
-    const all = await korrid.acquisitionStatus()
-    if (disposed || seq !== needsSeq) return
-    // Only when something on the device is not Ready can any game need a
-    // download, so the common steady state costs one read.
-    if (all._tag === "Ok" && !allReady(all.payload.artifacts) && ids.length > 0) {
-      for (let at = 0; at < ids.length; at += NEEDS_CONCURRENCY) {
-        const slice = ids.slice(at, at + NEEDS_CONCURRENCY)
-        const results = await Promise.all(slice.map(id => korrid.acquisitionStatus(id)))
-        if (disposed || seq !== needsSeq) return
-        results.forEach((result, index) => {
-          if (result._tag !== "Ok") return
-          const missing = result.payload.artifacts.filter(artifact => !isReady(artifact))
-          if (missing.length > 0) next.set(slice[index]!, totalBytes(missing))
-        })
-      }
-    }
-    needs = next
-    notify()
+    settled()
   }
 
   const published = (id: string): SurfaceAction | undefined => {
@@ -468,7 +492,6 @@ export function createAcquisitionGate(
 
   return {
     getStatus: () => status,
-    getNeeds: () => needs,
     subscribe: listener => {
       listeners.add(listener)
       return () => {
@@ -477,7 +500,7 @@ export function createAcquisitionGate(
     },
     launch: (game, proceed, abandonLaunch = () => {}) => {
       if (disposed || phase._tag !== "Idle") return
-      void check({ game, proceed, abandon: abandonLaunch })
+      void check({ game, proceed, abandon: abandonLaunch, held: new Set(), owned: new Set() })
     },
     act: actionId => {
       if (!actionId.startsWith("acquisition:")) return false
@@ -526,11 +549,9 @@ export function createAcquisitionGate(
       leaveFailed(phase)
       return true
     },
-    refreshNeeds,
     dispose: () => {
       disposed = true
       generation++
-      needsSeq++
       listeners.clear()
     },
   }

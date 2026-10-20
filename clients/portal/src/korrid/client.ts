@@ -29,8 +29,6 @@ import type {
   NetworkSnapshot,
   NetworkStatusOutcome,
   OnboardingStatusOutcome,
-  RpcRequest,
-  RpcResponse,
   SessionControl,
   SessionControlFailure,
   SessionControlInvokeOutcome,
@@ -47,9 +45,8 @@ import type {
   SettingsUpdateOutcome,
   SourceStatusOutcome,
   PeerListOutcome,
-  AcquisitionOutcome,
-  ArtifactStatus,
 } from "@contracts/generated/korrid"
+import type { AcquisitionOutcome, ArtifactStatus, RpcRequest, RpcResponse } from "./acquisition-wire"
 import {
   FocusOwnership,
   InitialHandoff,
@@ -142,14 +139,22 @@ export interface KorridClient {
   peerList(): Promise<PeerListOutcome>
   /**
    * Artifacts plugins declared and where each stands on this device. With a
-   * game id: the artifacts of that game's resolved runner. Without: every
-   * artifact of every loaded plugin.
+   * game id: the artifacts of that game's release and of its resolved runner,
+   * once each; the release's own carry `release`. Without: every artifact of
+   * every loaded plugin.
    */
   acquisitionStatus(gameId?: string, runnerId?: string): Promise<AcquisitionOutcome>
-  /** Idempotent: an active artifact is not restarted; a Failed one resumes. */
+  /** Idempotent: an active artifact is not restarted; a Failed one resumes.
+   * A launch's start goes before the background queue, which pauses. */
   acquisitionStart(artifactIds: readonly string[]): Promise<AcquisitionOutcome>
-  /** Stops one download and keeps its partial file for a later resume. */
+  /** Stops one download or takes it off the queue, and deletes its partial file. */
   acquisitionCancel(artifactId: string): Promise<AcquisitionOutcome>
+  /** Queue every artifact of the game's default route that is not Ready, at
+   * the end of the one-at-a-time queue. Answers with the game's artifacts. */
+  acquisitionDownload(gameId: string): Promise<AcquisitionOutcome>
+  /** Delete the release's own artifacts that nothing else in the library names.
+   * Refused while the game runs (ActiveSessionConflict) or downloads. */
+  acquisitionRemove(gameId: string): Promise<AcquisitionOutcome>
 }
 
 const RPC_TIMEOUT_MS = 25_000
@@ -694,6 +699,24 @@ export function createHttpKorridClient(
         return response.outcome
       } catch (error) { return routeUnavailable(error) }
     },
+    async acquisitionDownload(gameId) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.acquisition.download",
+          payload: { gameId },
+        })
+        return response.outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
+    async acquisitionRemove(gameId) {
+      try {
+        const response = await callKorrid(baseUrl, capability, {
+          _tag: "app.acquisition.remove",
+          payload: { gameId },
+        })
+        return response.outcome
+      } catch (error) { return routeUnavailable(error) }
+    },
   }
 }
 
@@ -715,11 +738,15 @@ export interface InMemoryKorridClientConfig {
    * keyed by game id, or `<gameId>@<runnerId>` for one runner of a game. */
   readonly artifacts?: readonly InMemoryArtifact[]
   readonly gameArtifacts?: Readonly<Record<string, readonly string[]>>
+  /** The artifacts each game's release names (ADR 0013), keyed by game id.
+   * They come first in the game's status, marked `release`. */
+  readonly releaseArtifacts?: Readonly<Record<string, readonly string[]>>
   /**
-   * The simulated download advances one step per status read of the artifact,
+   * The simulated download advances one step per status read, of any scope,
    * so a polled observation is what moves it: deterministic in tests, and at
-   * the host's 1 Hz poll a believable download in the browser. Default 50 MB
-   * a step, then two Unpacking steps before Ready.
+   * the host's 1 Hz poll a believable download in the browser. One artifact
+   * moves at a time, through Unpacking to Ready, then the next in the queue.
+   * Default 50 MB a step, then two Unpacking steps before Ready.
    */
   readonly acquisitionBytesPerStep?: number
   readonly acquisitionUnpackSteps?: number
@@ -897,9 +924,10 @@ export function createInMemoryKorridClient(
       payload: { launchId: expectedLaunchId, state, changed },
     }
   }
-  // Artifacts: a Missing one downloads a step per observation once started,
-  // unpacks for a few more, then is Ready. Cancel keeps the bytes for the
-  // next start, the way korrid keeps the .part file.
+  // Artifacts: one queue, one artifact at a time. The head downloads a step
+  // per observation, unpacks for a few more, then is Ready and the next
+  // starts. A launch's start goes before the queue and pauses the head, which
+  // keeps its bytes; Cancel deletes them, the way korrid deletes the .part.
   const bytesPerStep = config.acquisitionBytesPerStep ?? 50_000_000
   const unpackSteps = config.acquisitionUnpackSteps ?? 2
   const artifacts = new Map((config.artifacts ?? []).map(seed => [seed.id, {
@@ -935,11 +963,42 @@ export function createInMemoryKorridClient(
       else entry.unpackLeft -= 1
     }
   }
-  const artifactList = (ids?: readonly string[], advance = false): AcquisitionOutcome => {
-    const chosen = [...artifacts.values()].filter(entry => ids === undefined || ids.includes(entry.seed.id))
-    if (advance) for (const entry of chosen) stepArtifact(entry)
-    return { _tag: "Ok", payload: { artifacts: chosen.map(entry => structuredClone(entry.status)) } }
+  type ArtifactEntry = NonNullable<ReturnType<typeof artifacts.get>>
+  let queue: string[] = []
+  const downloading = (entry: ArtifactEntry): ArtifactStatus["state"] => ({
+    _tag: "Downloading", file: 1, fileCount: 1, bytesDone: entry.partial,
+    ...(entry.seed.bytesTotal === undefined ? {} : { bytesTotal: entry.seed.bytesTotal }),
+  })
+  /** Drop what left the queue, then start the head if it waits. */
+  const promote = () => {
+    queue = queue.filter(id => {
+      const tag = artifacts.get(id)?.status.state._tag
+      return tag === "Queued" || tag === "Downloading" || tag === "Unpacking"
+    })
+    const head = artifacts.get(queue[0] ?? "")
+    if (head?.status.state._tag === "Queued") head.status = { ...head.status, state: downloading(head) }
   }
+  const advanceQueue = () => {
+    const head = artifacts.get(queue[0] ?? "")
+    if (head) stepArtifact(head)
+    promote()
+  }
+  const isWaiting = (entry: ArtifactEntry) => entry.status.state._tag === "Missing" || entry.status.state._tag === "Failed"
+  const artifactList = (ids?: readonly string[], advance = false, release: readonly string[] = []): AcquisitionOutcome => {
+    if (advance) advanceQueue()
+    const chosen = [...artifacts.values()].filter(entry => ids === undefined || ids.includes(entry.seed.id))
+    // The release's own come first, as korrid lists them, each once.
+    chosen.sort((left, right) => Number(release.includes(right.seed.id)) - Number(release.includes(left.seed.id)))
+    return { _tag: "Ok", payload: { artifacts: chosen.map(entry => ({
+      ...structuredClone(entry.status), ...(release.includes(entry.seed.id) ? { release: true as const } : {}),
+    })) } }
+  }
+  const releaseOf = (gameId: string) => config.releaseArtifacts?.[gameId] ?? []
+  const gameArtifactIds = (gameId: string, runnerId?: string) => {
+    const keyed = runnerId === undefined ? undefined : config.gameArtifacts?.[`${gameId}@${runnerId}`]
+    return [...new Set([...releaseOf(gameId), ...(keyed ?? config.gameArtifacts?.[gameId] ?? [])])]
+  }
+  const gameList = (gameId: string, ids = gameArtifactIds(gameId)) => artifactList(ids, false, releaseOf(gameId))
   const seedSettings = config.settings
   const plugins: SettingsSnapshot["plugins"] = structuredClone(seedSettings?.plugins ?? [
     { id: "@korri:mgba", title: "mGBA", enabled: true },
@@ -1496,7 +1555,7 @@ export function createInMemoryKorridClient(
       }
     },
     async acquisitionStatus(gameId, runnerId) {
-      if (gameId === undefined) return artifactList()
+      if (gameId === undefined) return artifactList(undefined, true)
       if (!games.some(game => game.id === gameId) && !routeRecords.some(record => record.gameId === gameId)) {
         return routeFailure("GameNotFound", "Game is not available")
       }
@@ -1506,27 +1565,79 @@ export function createInMemoryKorridClient(
         record.gameRunner === undefined && Object.keys(record.systemRunners).length === 0) {
         return routeFailure("RunnerChoiceRequired", "Choose a runner for this game first")
       }
-      const keyed = runnerId === undefined ? undefined : config.gameArtifacts?.[`${gameId}@${runnerId}`]
-      return artifactList(keyed ?? config.gameArtifacts?.[gameId] ?? [], true)
+      advanceQueue()
+      return gameList(gameId, gameArtifactIds(gameId, runnerId))
     },
     async acquisitionStart(artifactIds) {
+      const entries: ArtifactEntry[] = []
       for (const id of artifactIds) {
         const entry = artifacts.get(id)
         if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
-        const tag = entry.status.state._tag
-        if (tag !== "Missing" && tag !== "Failed") continue
-        entry.status = { ...entry.status, state: { _tag: "Downloading", file: 1, fileCount: 1, bytesDone: entry.partial,
-          ...(entry.seed.bytesTotal === undefined ? {} : { bytesTotal: entry.seed.bytesTotal }) } }
+        entries.push(entry)
       }
+      // The launch's artifacts go first. A download under way that the launch
+      // does not need pauses behind them and keeps its bytes.
+      const head = artifacts.get(queue[0] ?? "")
+      const headTag = head?.status.state._tag
+      const keepHead = head !== undefined &&
+        (headTag === "Unpacking" || (headTag === "Downloading" && artifactIds.includes(head.seed.id)))
+      if (head !== undefined && !keepHead && headTag === "Downloading") {
+        head.status = { ...head.status, state: { _tag: "Queued" } }
+      }
+      const front = keepHead ? [head.seed.id] : []
+      const jump = entries
+        .filter(entry => isWaiting(entry) || entry.status.state._tag === "Queued")
+        .map(entry => entry.seed.id)
+        .filter(id => !front.includes(id))
+      for (const id of jump) {
+        const entry = artifacts.get(id)!
+        entry.status = { ...entry.status, state: { _tag: "Queued" } }
+      }
+      queue = [...front, ...jump, ...queue.filter(id => !jump.includes(id) && !front.includes(id))]
+      promote()
       return artifactList([...artifactIds])
     },
     async acquisitionCancel(artifactId) {
       const entry = artifacts.get(artifactId)
       if (!entry) return routeFailure("ArtifactUnknown", "No plugin declares that artifact")
-      if (entry.status.state._tag === "Downloading") {
+      if (entry.status.state._tag === "Downloading" || entry.status.state._tag === "Queued") {
         entry.status = { ...entry.status, state: { _tag: "Missing" } }
+        entry.partial = 0
+        promote()
       }
       return artifactList([artifactId])
+    },
+    async acquisitionDownload(gameId) {
+      if (!games.some(game => game.id === gameId)) return routeFailure("GameNotFound", "Game is not available")
+      for (const id of gameArtifactIds(gameId)) {
+        const entry = artifacts.get(id)
+        if (!entry || !isWaiting(entry)) continue
+        entry.status = { ...entry.status, state: { _tag: "Queued" } }
+        queue.push(id)
+      }
+      promote()
+      return gameList(gameId)
+    },
+    async acquisitionRemove(gameId) {
+      if (!games.some(game => game.id === gameId)) return routeFailure("GameNotFound", "Game is not available")
+      if (activeSession?.gameId === gameId) {
+        return routeFailure("ActiveSessionConflict", "The game is running.")
+      }
+      const ids = gameArtifactIds(gameId)
+      if (ids.some(id => queue.includes(id))) {
+        return routeFailure("AcquisitionInProgress", "The game is still downloading.")
+      }
+      // Only the release's own, and never one another release still names.
+      const shared = new Set(Object.entries(config.releaseArtifacts ?? {})
+        .filter(([other]) => other !== gameId).flatMap(([, named]) => named))
+      for (const id of releaseOf(gameId)) {
+        const entry = artifacts.get(id)
+        if (!entry || shared.has(id) || entry.status.state._tag !== "Ready") continue
+        entry.status = { ...entry.status, state: { _tag: "Missing" } }
+        entry.partial = 0
+        entry.failedOnce = false
+      }
+      return gameList(gameId)
     },
   }
 }

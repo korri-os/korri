@@ -126,7 +126,7 @@ test("Back on the question is Cancel: nothing starts, nothing is reserved", asyn
   expect(await view.korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
 }, 30_000)
 
-test("Cancel while downloading stops korrid's download and keeps the bytes; the game is not started", async () => {
+test("Cancel while downloading stops korrid's download and deletes the bytes; the game is not started", async () => {
   const view = await mount({ acquisitionBytesPerStep: 100_000_000 })
   await invoke(() => view.host().launchGame("game:hk"))
   await waitFor(() => view.model().status._tag === "Confirm")
@@ -134,13 +134,13 @@ test("Cancel while downloading stops korrid's download and keeps the bytes; the 
   await waitFor(() => { const s = view.model().status; return s._tag === "Busy" && (s.progress?.done ?? 0) > 0 })
   await invoke(() => view.host().runAction(view.action("Cancel")))
   await waitFor(() => view.model().status._tag === "Browsing")
+  // The gate started both, one at a time: the running one and the queued one stop.
   const after = await view.korrid.acquisitionStatus("hk")
   expect(after).toMatchObject({ _tag: "Ok", payload: { artifacts: [{ id: rootfs.id, state: { _tag: "Missing" } }, { id: proton.id, state: { _tag: "Missing" } }] } })
   expect(await view.korrid.sessionStatus()).toEqual({ _tag: "Ok", payload: {} })
-  // The next start resumes from the kept bytes.
-  const resumed = await view.korrid.acquisitionStart([rootfs.id])
-  const state = resumed._tag === "Ok" ? resumed.payload.artifacts[0]?.state : undefined
-  expect(state?._tag === "Downloading" && state.bytesDone).toBeGreaterThan(0)
+  // korrid deleted the partial file: the next start is from zero.
+  const restarted = await view.korrid.acquisitionStart([rootfs.id])
+  expect(restarted._tag === "Ok" ? restarted.payload.artifacts[0]?.state : undefined).toMatchObject({ _tag: "Downloading", bytesDone: 0 })
   await view.korrid.acquisitionCancel(rootfs.id)
 }, 30_000)
 
@@ -186,7 +186,9 @@ test("a game with several runners and no saved choice: the chooser first, then t
   const reads: (string | undefined)[][] = []
   const status = view.korrid.acquisitionStatus.bind(view.korrid)
   view.korrid.acquisitionStatus = (gameId, runnerId) => {
-    if (gameId !== undefined) reads.push([gameId, runnerId])
+    // The game's own screen also asks for its default route's facts, with no
+    // runner; korrid refuses that for this game. Only the gate names a runner.
+    if (gameId !== undefined && runnerId !== undefined) reads.push([gameId, runnerId])
     return status(gameId, runnerId)
   }
   await invoke(() => view.host().launchGame("game:hk"))
