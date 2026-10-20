@@ -24,11 +24,7 @@ use tokio::sync::watch;
 use types::Failure;
 pub use types::{
     AcquireArtifactRequest, AcquireCancelRequest, AcquireJobOutcome, AcquireJobState,
-    AcquireJobStatus, AcquireStatusRequest, AcquisitionCancelRequest, AcquisitionDownloadRequest,
-    AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider, AcquisitionRemoveRequest,
-    AcquisitionSnapshot, AcquisitionStartRequest, AcquisitionStatusRequest, ArtifactState,
-    ArtifactStatus, DetailsOutcome, DetailsRequest, PluginListOutcome, PluginListResponse,
-    SearchOutcome, SearchRequest, SearchResponse,
+    AcquireJobStatus, AcquireSourceChoice, AcquireStatusRequest, AcquisitionCancelRequest, AcquisitionDownloadRequest, AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider, AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest, AcquisitionStatusRequest, ArtifactState, ArtifactStatus, DetailsOutcome, DetailsRequest, PluginListOutcome, PluginListResponse, SearchOutcome, SearchRequest, SearchResponse,
 };
 
 /// One job runs at a time. `waiting` is the person's order, front first; a

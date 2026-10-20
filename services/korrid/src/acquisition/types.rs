@@ -189,11 +189,24 @@ pub struct AcquireCancelRequest {
     pub job_id: String,
 }
 
+/// One eligible paired source, with `DiscoverySource`'s own `id` and `label`.
+#[typeshare]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AcquireSourceChoice {
+    pub id: String,
+    pub label: String,
+}
+
 /// Legacy job states as a tagged union with ADR 0012 progress fields.
+/// `ChooseSource` is terminal: no download started; the host asks the person
+/// and calls `acquire` again with `sourceId`, which starts a new job.
 #[typeshare(serialized_as = "AcquireJobStateWire")]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "_tag")]
 pub enum AcquireJobState {
+    ChooseSource {
+        sources: Vec<AcquireSourceChoice>,
+    },
     Resolving,
     Downloading {
         #[serde(rename = "bytesDone")]

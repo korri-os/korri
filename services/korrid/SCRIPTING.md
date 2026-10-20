@@ -612,6 +612,7 @@ interface AcquireJobStatus {
   state: AcquireJobState
 }
 type AcquireJobState =
+  | { _tag: "ChooseSource"; sources: AcquireSourceChoice[] }  // { id, label }
   | { _tag: "Resolving" }
   | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number }
   | { _tag: "Placing" }
@@ -625,27 +626,28 @@ type AcquireJobState =
 korrid takes the URL, title and system from the claim it holds, never from the
 caller. `details` replaces the held claim's fields. A repeated `acquire` for a
 claim whose newest job is live (`Resolving`, `Downloading`, `Placing`) or
-`Imported` returns that job (legacy `activeByClaim`); after `Failed`,
-`Cancelled` or `Staged` it starts a new job. `acquire-cancel` stops a
+`Imported` returns that job (legacy `activeByClaim`); after `ChooseSource`,
+`Failed`, `Cancelled` or `Staged` it starts a new job. `acquire-cancel` stops a
 `Resolving` or `Downloading` job and removes its staging file; a `Placing` or
 finished job is returned unchanged. Jobs and claims live in memory only. After
 a restart `acquire-status` answers `AcquisitionUnknownJob`, startup removes
 leftover staging files, and Retry starts the download from zero.
 
-Placement is decided before any network request. korrid finds the paired file
-sources whose system, or system group, contains the claim's system. None
-answers `AcquisitionNoSource`. Several answer `AcquisitionSourceChoice`; the
-host asks the person and calls `acquire` again with `sourceId`, the
-`DiscoverySource.id` from `app.discovery.snapshot`. A `sourceId` that is not
-an eligible source answers `AcquisitionCaller`.
+Placement is decided before any network request. korrid alone decides
+eligibility: the paired file sources whose system, or system group, contains
+the claim's system. None answers `AcquisitionNoSource`. One is used. Several
+answer `Ok` with a job in `ChooseSource { sources }`, each entry
+`AcquireSourceChoice { id, label }` with `DiscoverySource`'s own `id` and
+`label`. No download starts, and the state is terminal. The host asks the
+person and calls `acquire` again with `sourceId`, which starts a new job. A
+`sourceId` that is not an eligible source answers `AcquisitionCaller`.
 
 `RpcFailure.code` values for `Err`: `AcquisitionUnavailable` (no local
 registry or discovery on this device), `AcquisitionCaller` (malformed request,
 several or zero provider ids, `fileName` or `sourceId` not usable),
 `AcquisitionUnknownProvider`, `AcquisitionUnknownClaim`,
 `AcquisitionUnknownJob`, `AcquisitionSystemUnknown` (the claim cannot be
-acquired), `AcquisitionNoSource`, `AcquisitionSourceChoice`,
-`ProviderUnreachable` (transport) and `ProviderFailed` (plugin error, invalid
+acquired), `AcquisitionNoSource`, `ProviderUnreachable` (transport) and `ProviderFailed` (plugin error, invalid
 output, exceeded bound). `Failed.reason.code` values: `DownloadNotFinal`
 (`NonFinalDownload`), `DownloadResolutionFailed` (`FailedDownload`),
 `ProviderUnreachable`, `ProviderFailed`, `AcquisitionNoSource` (the source
