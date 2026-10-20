@@ -1563,4 +1563,3 @@ disagrees with a section above, this one holds.
   grid of dots (a screen door) and the 2-px checker as a pattern of its
   own. The references' only stipple (the credits' checker) is as fine. The
   same ZoneVeil is now the one veil everywhere.
-
