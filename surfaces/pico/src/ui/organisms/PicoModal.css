@@ -34,6 +34,30 @@
 	margin: 0;
 }
 
+/* A report: one fact per line, each a stop for the cursor. */
+.pico-modal-report {
+	display: grid;
+	gap: calc(var(--pico-px) * 2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pico-modal-line {
+	padding: calc(var(--pico-px) * 1) calc(var(--pico-px) * 3);
+	overflow-wrap: anywhere;
+	border-left: calc(var(--pico-px) * 2) solid var(--pico-card-kicker);
+}
+
+/* The cursor on a line: the same plate a focused row lifts onto. */
+.pico-modal-line:focus-visible {
+	outline: none;
+	color: var(--pico-row-pick-ink, var(--pico-go-ink));
+	background: var(--pico-row-pick, var(--pico-go));
+	box-shadow: var(--pico-drop) var(--pico-drop) 0 var(--pico-cycle);
+	animation: pico-cycle 600ms steps(1, end) infinite;
+}
+
 .pico-modal-actions {
 	display: grid;
 	gap: calc(var(--pico-px) * 2);
@@ -55,7 +79,8 @@
 		--pico-card-pad: calc(var(--pico-px) * 5) calc(var(--pico-px) * 5) calc(var(--pico-px) * 4);
 	}
 
-	.pico-modal-message {
+	.pico-modal-message,
+	.pico-modal-report {
 		font-size: var(--pico-text-sm);
 	}
 

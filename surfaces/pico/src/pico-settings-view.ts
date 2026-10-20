@@ -41,6 +41,9 @@ export interface PicoConfirmation {
   readonly title: string
   readonly message: string
   readonly confirmLabel: string
+  /** Korri marked the action destructive: the question warns (red). Otherwise
+   * it only asks (yellow), as a review before turning something on does. */
+  readonly destructive?: boolean
 }
 
 export interface PicoSettingRowView {
@@ -273,7 +276,9 @@ function controlFor(item: SurfaceSettingItem): PicoSettingControl {
         kind: "action",
         actionId: interaction.actionId,
         destructive: interaction.destructive === true,
-        ...(interaction.confirmation === undefined ? {} : { confirmation: interaction.confirmation }),
+        ...(interaction.confirmation === undefined ? {} : {
+          confirmation: { ...interaction.confirmation, destructive: interaction.destructive === true },
+        }),
       }
     case "choice": {
       const labels = interaction.choices.map((choice) => choice.label)

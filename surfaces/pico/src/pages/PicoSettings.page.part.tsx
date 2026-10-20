@@ -14,6 +14,7 @@ import {
   wifiSettingsModel,
   wrongPasswordNetwork,
 } from "../fixtures/onboarding"
+import { pluginIds, pluginModels } from "../fixtures/plugin-settings"
 import { performPicoRequest } from "../pico-host"
 import {
   PICO_WIFI_HIDDEN_ACTION,
@@ -27,6 +28,59 @@ import { update } from "../state/update"
 import { usePicoProgram } from "../use-pico-program"
 import { PicoSettings } from "./PicoSettings"
 
+/* The helpers Caliper hands an authored check, typed locally: Pico imports
+ * nothing from Caliper, not even its types (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly canvas: {
+    getByRole(role: string, options: { name: string | RegExp }): HTMLElement
+  }
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+}
+
+/* One press down, as the portal moves focus in a single column
+ * (clients/portal/src/input/spatial-focus.ts): focus without the browser's
+ * scroll, then bring the control into view at the nearest edge. */
+const moveTo = (element: HTMLElement) => {
+  element.focus({ preventScroll: true })
+  element.scrollIntoView({ block: "nearest", inline: "nearest" })
+}
+
+const reportLines = (canvas: CheckTools["canvas"]) =>
+  [...canvas.getByRole("dialog", { name: /Turn on/ }).querySelectorAll<HTMLElement>("li[tabindex='0']")]
+
+export const checks = {
+  PluginsReviewReport: {
+    "the cursor starts on the report's first line": async ({ canvas, expect }: CheckTools) => {
+      const [first] = reportLines(canvas)
+      if (first) moveTo(first)
+      expect(document.activeElement?.textContent).toBe("Warning: Plays sound over the network to paired speakers.")
+    },
+    "down walks every line of the report, then reaches Turn on": async ({ canvas, expect }: CheckTools) => {
+      for (const line of reportLines(canvas)) moveTo(line)
+      expect(document.activeElement?.textContent).toBe("Also uses PipeWire bridge. You approved it before.")
+      moveTo(canvas.getByRole("button", { name: "Turn on" }))
+      expect(document.activeElement?.textContent).toBe("Turn on")
+    },
+  },
+  PluginsRepository: {
+    "the cursor on a plugin offers Install": async ({ canvas, expect }: CheckTools) => {
+      moveTo(canvas.getByRole("button", { name: /Chiptune/ }))
+      expect(document.activeElement?.textContent?.includes("Install")).toBe(true)
+    },
+  },
+  PluginsManyRepositories: {
+    "moving to a spine far down brings it into view": async ({ canvas, expect }: CheckTools) => {
+      const spine = canvas.getByRole("tab", { name: "HOMEBREW.EXAMPLE/KORRI" })
+      moveTo(spine)
+      const list = spine.parentElement
+      const inside = list !== null &&
+        spine.getBoundingClientRect().bottom <= list.getBoundingClientRect().bottom + 1 &&
+        spine.getBoundingClientRect().top >= list.getBoundingClientRect().top - 1
+      expect(inside).toBe(true)
+    },
+  },
+}
+
 export const name = "Settings"
 export const note = "Korri's facts and settings; a destructive action asks first, in Korri's words; text opens Pico's keyboard"
 
@@ -36,13 +90,17 @@ export const note = "Korri's facts and settings; a destructive action asks first
 function Settings({
   model,
   opening = [],
+  openedOn = model,
 }: {
   readonly model: SurfaceModel
   readonly opening?: readonly PicoMessage[]
+  /** What Korri showed while `opening` happened, when the state is what
+   * Korri published next (typing, then saving). */
+  readonly openedOn?: SurfaceModel
 }) {
   const host = createFixtureHost()
   const { model: nav, dispatch } = usePicoProgram<PicoNavigation, PicoMessage, SurfaceModel>(
-    () => opening.reduce((current, message) => update(current, message, model).model, initialNavigation({ _tag: "Settings" })),
+    () => opening.reduce((current, message) => update(current, message, openedOn).model, initialNavigation({ _tag: "Settings" })),
     update,
     model,
     request => performPicoRequest(host, { chooseFont: () => undefined }, request),
@@ -128,6 +186,84 @@ export function WifiFailed() {
 }
 export function WifiNoAdapter() {
   return <Settings model={{ ...wifiSettingsModel, network: noAdapterNetwork }} />
+}
+
+// Settings → Plugins, from the portal's own rows (fixtures/plugin-settings.ts).
+// Each state opens the group it is about, as a person would by moving there.
+function openGroup(model: SurfaceModel, title: string): PicoMessage {
+  const group = picoSettingsViewFromModel(model).groups.findIndex(candidate => candidate.title === title.toUpperCase())
+  return { _tag: "ChoseSettingsGroup", group: Math.max(0, group) }
+}
+const typeText = (text: string): PicoMessage[] =>
+  [...text].map(character => ({ _tag: "TypedText", character }))
+const askRow = (model: SurfaceModel, rowId: string): PicoMessage[] => {
+  const row = picoSettingsViewFromModel(model).groups.flatMap(group => group.rows).find(candidate => candidate.id === rowId)
+  return row?.control.kind === "action" && row.control.confirmation !== undefined
+    ? [{ _tag: "AskedSettingConfirmation", actionId: row.control.actionId, confirmation: row.control.confirmation }]
+    : []
+}
+const RETRO_GROUP = "github.com/ada/retro-plugins"
+
+export function PluginsOfficialOnly() {
+  return <Settings model={pluginModels.officialOnly} opening={[openGroup(pluginModels.officialOnly, "Plugins")]} />
+}
+export function PluginsAdding() {
+  const model = pluginModels.adding
+  return <Settings model={model} openedOn={pluginModels.officialOnly} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://github.com/ada/retro-plugins")]} />
+}
+export function PluginsInvalidAddress() {
+  const model = pluginModels.invalidAddress
+  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("http://github.com/ada")]} />
+}
+export function PluginsUnreachableAddress() {
+  const model = pluginModels.unreachableAddress
+  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://plugins.example.org")]} />
+}
+export function PluginsAlreadyAdded() {
+  const model = pluginModels.alreadyAdded
+  return <Settings model={model} opening={[openGroup(model, "Plugins"), edit(pluginIds.add), ...typeText("https://github.com/ada/retro-plugins")]} />
+}
+export function PluginsHub() {
+  return <Settings model={pluginModels.repositories} opening={[openGroup(pluginModels.repositories, "Plugins")]} />
+}
+export function PluginsRepository() {
+  return <Settings model={pluginModels.repositories} opening={[openGroup(pluginModels.repositories, RETRO_GROUP)]} />
+}
+export function PluginsInspecting() {
+  return <Settings model={pluginModels.inspecting} opening={[openGroup(pluginModels.inspecting, RETRO_GROUP)]} />
+}
+export function PluginsReview() {
+  return <Settings model={pluginModels.reviewing} opening={[openGroup(pluginModels.reviewing, RETRO_GROUP)]} />
+}
+export function PluginsReviewReport() {
+  const model = pluginModels.reviewing
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.chiptuneRow)]} />
+}
+export function PluginsInstalling() {
+  return <Settings model={pluginModels.installing} opening={[openGroup(pluginModels.installing, RETRO_GROUP)]} />
+}
+export function PluginsNeedsReview() {
+  return <Settings model={pluginModels.needsReview} opening={[openGroup(pluginModels.needsReview, RETRO_GROUP)]} />
+}
+export function PluginsConfirmRemove() {
+  const model = pluginModels.repositories
+  return <Settings model={model} opening={[openGroup(model, RETRO_GROUP), ...askRow(model, pluginIds.removeRetro)]} />
+}
+export function PluginsUnreachableRepository() {
+  return <Settings model={pluginModels.repositories} opening={[openGroup(pluginModels.repositories, "broken.example/catalog")]} />
+}
+export function PluginsFromRemovedRepositories() {
+  return <Settings model={pluginModels.repositories} opening={[openGroup(pluginModels.repositories, "Installed from removed repositories")]} />
+}
+export function PluginsOtherInstalled() {
+  return <Settings model={pluginModels.toggleRefused} opening={[openGroup(pluginModels.toggleRefused, "Other installed plugins")]} />
+}
+export function PluginsManyRepositories() {
+  return <Settings model={pluginModels.many} opening={[openGroup(pluginModels.many, "Plugins")]} />
+}
+export function PluginsLongRepositoryName() {
+  const model = pluginModels.many
+  return <Settings model={model} opening={[openGroup(model, "codeberg.org/pixel-collective/korri-handheld-plugins-for-small-screens")]} />
 }
 
 export default function PicoSettingsPagePart() {

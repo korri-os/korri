@@ -12,3 +12,24 @@ export function Selectable() {
   const [current, setCurrent] = useState(0)
   return <PicoTabs current={current} onSelect={setCurrent} tabs={["DEVICE", "PLUGINS", "PERMISSIONS"]} />
 }
+
+/* More sections than fit, some named by long addresses, one with no break
+ * point at all, and two with the same name. */
+const MANY = [
+  "DEVICE",
+  "PLUGINS",
+  "OFFICIAL PLUGINS",
+  "GITHUB.COM/ADA/RETRO-PLUGINS",
+  "CODEBERG.ORG/PIXEL-COLLECTIVE/KORRI-HANDHELD-PLUGINS-FOR-SMALL-SCREENS",
+  "AVERYVERYVERYLONGREPOSITORYNAMEWITHOUTANYBREAKPOINTS",
+  "GITLAB.COM/MIRA/KORRI",
+  "GITLAB.COM/MIRA/KORRI",
+  "INSTALLED FROM REMOVED REPOSITORIES",
+  "OTHER INSTALLED PLUGINS",
+  "GAMES",
+  "SYSTEM INFORMATION",
+]
+
+export function ManyLongSections() {
+  return <PicoTabs current={4} onSelect={() => undefined} tabs={MANY} />
+}

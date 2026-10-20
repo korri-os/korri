@@ -238,6 +238,22 @@ printable ASCII symbol; a secret is masked, and clearing a saved one asks
 first. The same editor (`PicoTextEditor`) takes the caller's actions, so a
 Wi-Fi password gets CONNECT and SHOW, and setup's name gets NEXT.
 
+A confirmation Korri marks destructive is a red card (ARE YOU SURE?); one it
+does not mark only asks, in yellow, and its confirm is not red. A
+confirmation message of several lines is a report to read first, such as
+what a plugin asks for before it is turned on: each line is a stop for the
+cursor, the cursor starts on the first line, and the card scrolls as the
+d-pad walks down to the answers. A one-line message keeps the cursor on
+Cancel. The question carries `data-block-exit`, so the host's directional
+focus cannot leave it for the screen under the scrim.
+
+Plugins arrive as one settings group per repository, so Settings can have
+many sections with long names (a repository's address). A spine wraps such a
+name after a `/` or `.` onto up to three lines, then ends in an ellipsis; in
+a row of spines it takes one line. More spines than fit scroll inside their
+column (or inside two and a half rows, or two fifths of a tall panel), a cut
+spine shows there are more, and the chosen spine is kept in view.
+
 A first launch that needs a download (ADR 0012) is drawn from the treaty's
 `Confirm`, `Busy.progress` and `SurfaceGame.download`: a yellow card asks with
 Korri's actions; the launch stage's sixteen cells become a real bar from

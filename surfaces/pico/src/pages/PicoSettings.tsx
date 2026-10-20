@@ -212,6 +212,7 @@ export function PicoSettings({
       {asking === undefined ? null : (
         <PicoModal
           confirmLabel={asking.confirmation.confirmLabel}
+          destructive={asking.confirmation.destructive !== false}
           message={asking.confirmation.message}
           onCancel={onCancel}
           onConfirm={onConfirm}

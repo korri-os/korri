@@ -7,16 +7,28 @@
 	padding: 0 calc(var(--pico-px) * 3);
 }
 
+/* A long section name (a repository's address) wraps onto up to three lines and
+ * then ends in an ellipsis; it never widens the column past --pico-tab-max.
+ * A parent may set --pico-tab-max and --pico-tab-lines on its own element.
+ * The tab's accessible name keeps the whole name. */
 .pico-tabs-tab {
 	--pico-spine: var(--pico-shell-0);
+	max-width: var(--pico-tab-max, 12em);
 	padding: calc(var(--pico-px) * 3) calc(var(--pico-px) * 5);
 	font-size: var(--pico-text);
 	line-height: 1.1;
 	text-align: start;
 	color: var(--pico-ink-dark);
 	background: var(--pico-spine);
-	white-space: nowrap;
 	translate: calc(var(--pico-px) * -3) 0;
+}
+
+.pico-tabs-label {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: var(--pico-tab-lines, 3);
+	overflow: hidden;
+	overflow-wrap: anywhere;
 }
 
 .pico-tabs-tab[data-shell="1"] { --pico-spine: var(--pico-shell-1); }
