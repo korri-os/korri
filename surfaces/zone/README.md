@@ -884,3 +884,147 @@ The refinement brief (`docs/design/surfaces/zone/REFINEMENT.md`) supersedes
 the "eight colours" and "one face: Anton" rules above. This section records
 the shared pieces the foundation worker built and every choice it made
 without asking. The four screen workers build on them.
+
+### The shared pieces, for the screen workers
+
+| Piece | Where | How to use it |
+|---|---|---|
+| The art pixel | `src/plan/art-px.ts` (`zoneArt`, `zoneArtPx`, `ZONE_ART_ROWS` 240) | `--zone-px = max(1, floor(min(W, H) / 240))` CSS px, a whole number. The root writes it (`useZonePlan`: `data-px` and `--zone-px` on `.zone-screen`); a part outside the root derives the same number in `zone.css`, a `ZonePartFrame` in its own `.zone-part-frame-screen`. A hook that measures its own box reads it with `zoneArtPxOf(element)` (`src/use-zone-plan.ts`). |
+| Lengths | `src/zone-tokens.css` | Every length token is a bare number of art px. Use it as `calc(var(--zone-slant) * var(--zone-px))`; never re-declare a token with a length (`--zone-panel-pad: var(--zone-strip-gap-least)`, not its `calc`). Only the part frames' sizes stay in CSS px. |
+| Plans | `src/plan/zone-select.ts` (`plan`, `planArt`), `top-strip.ts`, `onboarding.ts` | Thresholds and lengths are art px. `plan(width, height)` divides a CSS size first; `planArt(wArt, hArt, px)` takes the grid. `ZonePlan` carries `px`, `wArt`, `hArt`. |
+| Type | `--zone-caps-1/2/3` (10/20/30), `--zone-fact` (18.6667) | Zone Caps' em is its cap, so a font-size of `calc(var(--zone-caps-2) * var(--zone-px))` draws caps-2. Type tokens are multiples of 10. A fact (Jersey 10) is `--zone-fact / --zone-caps-1` ems of the caps around it, which puts one Jersey pixel on one art pixel among caps-1. |
+| Lettering | `ZoneCaps` (`src/ui/atoms/ZoneCaps.tsx`) | `ink`: `white` (default), `hud`, `banner`, `ink`, `danger`; `size`: the strip names or `caps-1/2/3`; `fact` sets Korri's words in Jersey 10 in their own case (replaces `verbatim`). The white ink takes its face from the colour around it; a component that tints its text sets `--zone-caps-shade: currentColor` with the colour so the lower rows follow (already added to every rule that sets a colour). |
+| The fit | `useZoneFit` (`src/use-zone-fit.ts`) | Steps whole caps only (3, 2, 1), snapping a share-of-width size down to the step under it; writes `--zone-fit` and `data-zone-fit`; at caps-1 it marks `data-zone-fit-floor`, where the stylesheet wraps between words or truncates with "…". The old half-size floor argument is gone. |
+| Stairs | `src/plan/stair-clip.ts` | `zoneStairClip(wArt, hArt, { left, right })` (edges `straight`, `slash`, `backslash`, `point`), `zoneStairWedge(size, corner)` for the dialog's and PAUSED's wedges, `zoneStairCircle(d)` for a pixel disc. `useZoneStairClip(ref, edges)` measures a box and writes `--zone-panel-shape`, `--zone-panel-run` and `--zone-panel-point` on it. `ZonePanel`, `ZoneBanner` and the active tab use it; the dialog wedges do not yet. |
+| Grounds | `zone-tokens.css` "the grounds" | `data-ground` = `games`, `options`, `savedata`, `gameopts`, `paused`, `titlecard`, `tally` sets `--zone-ground`, `--zone-ring-a`, `--zone-ring-b`, `--zone-shade`, `--zone-ground-rings`. The root sets it from the page shown; `ZoneShell` and `ZoneGround` take a `ground` prop for a subtree (the GAME OPTS. sheet, the title card, a part). The group extras of 2c are tokens in the refinement block (`--zone-stripe-light`, `--zone-stripe-teal`, `--zone-title-red/blue/green`, `--zone-grey-dark/light`, `--zone-sky`, `--zone-track`, `--zone-danger-shade`). |
+| The ground | `ZoneGround`, `src/use-zone-ground.ts`, `src/plan/ground.ts` | A canvas `wArt` by `hArt` at exactly `--zone-px` a pixel, `image-rendering: pixelated`; `renderZoneGround(painter, t, palette, wArt, hArt)` is pure and seekable. |
+| Chrome | `ZoneBanner`, `ZoneKeycap`, `ZoneUnderline` | The banner is caps-2 banner ink on `#0020B5` with stair points and the red/green lip with four notches (it hangs under the body and takes no room). The keycap is a 15-px pixel disc with a black rim, the letter in B `#EF285A` / A `#639F3D`, the word in white ink on a black tail cut at 45 degrees 3 art px past it. The pink drop is 2 art px, 3 when its control is focused (`--zone-underline-depth: var(--zone-drop-focus)`). |
+
+### Decided without asking: the foundation
+
+- **Zone Caps' em is its cap.** One art px is 100 units and the em is 1000
+  (10 art px), so `caps-1/2/3` are font-sizes of 10, 20 and 30 art px. The
+  ascent holds 3 px of accent headroom (1300), the descent 3 px (300).
+  `line-height: 1` puts the cap exactly in the line and the baseline on a
+  whole art px. `ZoneCaps` pads its box for the accents (0.3em), the tails
+  (0.2em) and the ring and drop (3 art px) and gives the room back with
+  negative margins, so its layout box is the line.
+- **Glyph shapes.** Two corners also notched on B, P and R's bowls and on
+  the digits that curve (2, 3, 5), beyond the brief's list. `/` and `%`
+  step two rows a column: a 1:1 stair ten rows tall needs eleven columns.
+  `#`, `@` and `&` use 1-px strokes where 2 px cannot fit in six columns.
+  Accented capitals are composed from a base and a mark drawn once on the
+  grid (`compose` lines); the marks over I are 4 px wide and overhang its
+  gap. Æ, Œ and Ĳ are 9 wide like M and W. Ð/Đ share one glyph. Every
+  Latin-1 and Latin Extended-A capital is drawn; ŉ and ĸ (no capital
+  form) are not.
+- **The build needs brotli.** `scripts/build-zone-caps.py`'s nix-shell line
+  adds `python3Packages.brotli` to the brief's `fonttools`: fontTools
+  cannot write woff2 without it. It writes `.ttf` too, which the test reads
+  with its own small TrueType reader. The reproducibility test reruns the
+  script into a temporary folder when `nix-shell` is on the PATH and skips
+  (saying so in its name) where it is not.
+- **Jersey 10's size.** Jersey 10 draws one pixel per 75 units of a
+  1400-unit em (its `H` is 525 by 750), so the brief's 14 px x `--zone-px`
+  would put a Jersey pixel on 0.75 of an art pixel. `--zone-fact` is
+  18.6667 art px instead: one Jersey pixel per art pixel, cap 10, x-height
+  8, the same cap as caps-1. A fact sets its line at 0.75 of its em (14 art
+  px), which lands its baseline on a whole art px.
+- **Jersey 10's files.** Subset with pyftsubset to Basic Latin, Latin-1,
+  Latin Extended-A and -B, Latin Extended Additional, general punctuation,
+  the block elements and a few symbols (`Jersey10-latin.woff2`, 18 KB). Its
+  licence keeps the upstream name, `src/fonts/OFL.txt`, so the portal's
+  bundle, which copies that file, still builds (it now ships Jersey's OFL
+  under the name `anton-OFL.txt`; see "Not mine to change").
+- **`verbatim` became `fact`.** Zone Caps has no lower case, so a name
+  kept in its own case can only be Jersey 10; the two callers moved. The
+  rows, dialogs and save cards that mark a fact with `data-case="verbatim"`
+  set it in Jersey 10 at the caps' height too.
+- **The two-tone face is a copy over the words.** `background-clip: text`
+  paints the text shadow over the fill in Chromium, so the ring and drop
+  are a generated copy under the words and the lower rows a copy over them
+  clipped to the last three of ten; both copies have an empty alternative
+  (`content: attr(data-text) / ""`), so a screen reader reads the words
+  once.
+- **The art-px conversion.** Each length token was divided by the art
+  pixel of the device it was tuned for: by 2 for most (640x480 keeps its
+  sizes and 720p grows 1.5x, as Mania's canvas does), by 3 for the
+  720p-only strip heights, rounded, with the brief's numbers where it gives
+  them (drop 2 and 3, underline 2, bars 2 wide and 8 tall). Type tokens
+  went to caps-1, -2 or -3 by role.
+- **Plan thresholds on the art grid.** Wide is `wArt >= 333` (the brief's
+  example). Tall strips are `hArt >= 320`: every landscape screen holds 240
+  to 479 art rows, so 640x480 and 1280x720 both plan as short now (the same
+  canvas height), and a portrait screen is tall. The facts join the action
+  strip below 240 art rows, which only a box under 240 CSS px tall reaches;
+  1280x300 (one CSS px an art px, 300 rows) keeps the facts row. The tab
+  strip is 36 art px short and 40 tall, room for the caps-2 banner and its
+  lip.
+- **The top strip ladder, measured in Chromium at the new type**: one row
+  needs 483 art px, 446 at the least gaps, 339 with keycaps alone; the
+  thresholds are 490, 450, 345 and 170 (words in two rows). At 1280x720
+  (426) the hints keep only their keycaps; at 640x480 (320) the hints take
+  a row of their own with their words.
+- **Tab sub-lines are read, not drawn.** Zone Caps has no size under caps-1,
+  and a caps-1 sub-line would double each tab's width; SETTINGS + WI-FI and
+  IDENTITY stay in the tab's accessible name. Supersedes "Tab subtitle
+  lines".
+- **The tabs shrink only at caps-1.** The strip's fit marks
+  `data-zone-fit-floor`; only then may a tab shrink and truncate
+  (`--zone-tab-shrink`). At 480x800 the three tabs need 286 art px of 240,
+  so SAVE DATA truncates there.
+- **Panels lean at the measured 45 degrees.** The slant is the panel's
+  height less one row; until a panel is measured (a test DOM) it is a
+  smooth parallelogram of 1.5em.
+- **A panel's drop is the ground's shade** (`--zone-panel-edge:
+  var(--zone-shade)`), and the old blue cap edge (`--zone-cap-edge-colour`)
+  is black, so the blue lettering edge is gone everywhere without touching
+  the pages. `--zone-drop-edge` and `--zone-drop-edge-focus` were renamed
+  `--zone-drop` and `--zone-drop-focus`, the brief's names.
+- **PAUSED's ground is the light grey** (`#8C8C8C`), the dark grey its
+  rings: the build string's black reaches 6:1 on it, 3:1 on the dark one.
+- **First boot and FIND stand on the GAMES ground; RUN WITH and OPTIONS'
+  join keyboard on OPTIONS'.** GAME OPTS. leaves the root on GAMES: its
+  sheet is a panel of its own (`ground="gameopts"`) for the GAMES worker.
+- **The ground's rings** stand as shares of the canvas (ring A across the
+  middle, ring B upper right) and carry two dots and one; the old SVG's
+  bands, arc, marks and every ground opacity are gone with their tokens.
+  Supersedes "Ground opacities stay" and "The ground's Caliper spill".
+- **The banner's lip** is a fixed polygon: a 2-art-px bar and four notches
+  4 wide and 2 deep (45 degree stairs) at its centre; `--zone-banner-lip`
+  names its 4-px height.
+- **The keycap's letter** stands 2 art px under the rim's top, the nearest
+  whole pixel to centre (a 10-px cap in a 15-px disc).
+- **Korri's sentences may break a word only at a line's end, with a
+  hyphen** (`overflow-wrap: break-word` with `hyphens: auto`): the busy
+  strip's kicker and detail, the dialog's line, RUN WITH's message and
+  warnings, PAUSED's notes. Every other rule that broke anywhere now keeps
+  words whole.
+- **The canvas allowance** in the authoring gate names two files,
+  `ui/organisms/ZoneGround.tsx` and `use-zone-ground.ts`; a second test
+  fails if either stops drawing, so the allowance cannot outlive its use.
+- **The contrast gate parses the grounds**: each `data-ground` block is
+  judged on its own, and the gate fails if a group the brief names has no
+  block.
+
+### Known gaps, left for the screen workers
+
+- **Fractional type.** Sizes that are shares still land between art
+  pixels where no fit snaps them: the foot's readouts (timer label 0.74,
+  device 0.6, badge 0.56, build 0.4 of the foot type), a tag's 0.58 of the
+  card title (the tag row's fit snaps the row, not each tag), the section
+  caption's share, the save card's well text (`min(14cqw, 30cqh)`), the
+  title card's act word and PAUSED's group labels (0.75). Each needs a caps
+  step or a fact.
+- **The dialog wedges and PAUSED's wedge** are still smooth polygons;
+  `zoneStairWedge` is ready for them.
+- **Rows' own text** (option rows, dialog lines, the busy strip) is Zone
+  Caps through the page font but not `ZoneCaps`, so it has no ink ring; the
+  rows still draw their own one-art-px edge in black.
+- **Korri's sentences are still upper-cased Zone Caps**, not Jersey 10 as
+  written: that is each page's change (reason, detail, description,
+  message, warnings).
+- **Not mine to change: the portal bundle.** `clients/portal/nix/
+  package.nix` copies `surfaces/zone/src/fonts/OFL.txt` as
+  `anton-OFL.txt`; it should copy `OFL.txt` as `jersey10-OFL.txt` and add
+  `ZoneCaps-OFL.txt`. Suggested issue.

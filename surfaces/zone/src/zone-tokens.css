@@ -3,9 +3,10 @@
  *
  * Three layers:
  *
- *  1. The palette. Eight colours from Sonic Mania's menus and nothing else:
- *     no blend, no gradient, no blur. A drop edge is a hard offset in one of
- *     them.
+ *  1. The palette. Colours sampled from Sonic Mania's menus, and one token
+ *     set per screen group (the grounds, at the end of the file) switched
+ *     by `data-ground`. No blend, no smooth gradient, no blur. A drop edge
+ *     is a hard offset in the ground's shade.
  *  2. Geometry. The parallelogram slant, the drop edge, the strip heights
  *     and the card band's proportions. Every value here is also a constant in
  *     src/plan/zone-select.ts; test/plan-zone-select.test.ts holds them equal.

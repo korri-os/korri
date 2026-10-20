@@ -3,7 +3,12 @@
  * stair per art px, every length a whole number of --zone-px.
  */
 import { describe, expect, test } from "bun:test"
-import { zoneStairClip, zoneStairWedge } from "../src/plan/stair-clip"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import { zoneStairCircle, zoneStairClip, zoneStairWedge } from "../src/plan/stair-clip"
+
+const SRC = join(import.meta.dir, "..", "src")
+const flat = (text: string) => text.replace(/\s+/g, " ").replace(/\( /g, "(").replace(/ \)/g, ")")
 
 /** The polygon as short points: `3` is 3 art px from the near side, `-3` is 3 from the far side (100%). */
 function points(polygon: string): string[] {
@@ -84,5 +89,26 @@ describe("zoneStairWedge", () => {
     expect(points(zoneStairWedge(3, "bottom-right"))).toEqual([
       "-1,-3", "-1,-2", "-2,-2", "-2,-1", "-3,-1", "-3,-0", "-0,-0", "-0,-3",
     ])
+  })
+})
+
+describe("the shapes the stylesheets hold are the helper's", () => {
+  const tokens = readFileSync(join(SRC, "zone-tokens.css"), "utf8")
+  const token = (name: string) => tokens.match(new RegExp(`${name}: ([^;]+);`))?.[1]
+
+  test("the keycap's rim and disc are pixel circles 15 and 13 art px across", () => {
+    expect(token("--zone-keycap-rim-shape")).toBe(zoneStairCircle(15))
+    expect(token("--zone-keycap-disc-shape")).toBe(zoneStairCircle(13))
+  })
+
+  test("the keycap's tail is a 12-px bar with a straight start and a 45 degree stair end", () => {
+    const css = flat(readFileSync(join(SRC, "ui", "atoms", "ZoneKeycap.css"), "utf8"))
+    expect(css).toContain(`clip-path: ${zoneStairClip(100, 12, { left: "straight", right: "slash" })};`)
+  })
+
+  test("a pixel circle's rows are symmetric and every point is a share of whole art px", () => {
+    const circle = zoneStairCircle(15)
+    const shares = [...circle.matchAll(/([\d.]+)%/g)].map(match => Number(match[1]) * 15 / 100)
+    for (const share of shares) expect(Math.abs(share - Math.round(share))).toBeLessThan(1e-3)
   })
 })
