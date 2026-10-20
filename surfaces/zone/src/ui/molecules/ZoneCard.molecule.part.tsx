@@ -64,3 +64,47 @@ export function Download() {
 export function DownloadUnknownSize() {
   return <ZoneCard {...spelunky} download={{}} focused />
 }
+
+/* The tag ladder: one to four tags on a side card and on a focused card.
+ * No tag ever loses a letter: the row steps its caps, then keeps its first
+ * tags whole and lets the rest go (the page shows them on the facts line). */
+
+/** Side, one tag: GB. */
+export function SideOneTag() {
+  return <ZoneCard places={[]} size="side" system="GB" title="Tetris" />
+}
+
+/** Side, two tags: SWITCH and HERE. */
+export function SideTwoTags() {
+  return <ZoneCard {...hollowKnight} size="side" />
+}
+
+/** Side, three tags: PICO-8, HERE, CONTINUE. */
+export function SideThreeTags() {
+  return <ZoneCard {...celeste} size="side" />
+}
+
+/** Side, four tags: PC, HERE, ZAO, CONTINUE. */
+export function SideFourTags() {
+  return <ZoneCard {...spelunky} resumable size="side" />
+}
+
+/** Focused, one tag. */
+export function FocusOneTag() {
+  return <ZoneCard focused places={[]} system="GB" title="Tetris" />
+}
+
+/** Focused, two tags. */
+export function FocusTwoTags() {
+  return <ZoneCard {...hollowKnight} focused />
+}
+
+/** Focused, three tags. */
+export function FocusThreeTags() {
+  return <ZoneCard {...celeste} focused />
+}
+
+/** Focused, four tags. */
+export function FocusFourTags() {
+  return <ZoneCard {...spelunky} focused resumable />
+}
