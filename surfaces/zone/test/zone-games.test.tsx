@@ -56,8 +56,9 @@ describe("C1: the catalog's four states", () => {
     expect(document.querySelectorAll(".zone-games-loading .zone-cover-well[data-filled='initials']")).toHaveLength(3)
   })
 
-  test("Error: Korri's message and RELOAD, which asks Korri to read everything again", () => {
+  test("Error: Korri's message under GAMES and RELOAD, which asks Korri to read everything again", () => {
     const { host } = mount(fixtureErrorModel)
+    expect(screen.getByRole("dialog", { name: "Games" })).toBeTruthy()
     expect(screen.getByText("The library could not be read. The disk did not answer.")).toBeTruthy()
     expect(document.activeElement).toBe(button("Reload"))
     click(button("Reload"))

@@ -437,8 +437,8 @@ export function ZoneGames(props: ZoneGamesProps) {
                   <ZoneDialog
                     actions={[{ label: "Reload", onPress: () => onEvent({ _tag: "ChoseReload" }) }]}
                     focused={0}
-                    headline={catalog.message}
-                    lines={[]}
+                    headline="Games"
+                    lines={[catalog.message]}
                   />
                 </div>
               </div>

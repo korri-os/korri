@@ -27,11 +27,17 @@
   );
 }
 
-/* The caption reads up the spine, bottom to top, at a share of the width. */
+/* The caption reads up the spine, bottom to top, at a share of the width:
+ * white caps with the blue edge, as on every panel, cut with an ellipsis at
+ * the top when the spine is too short for it. */
 .zone-section-card-caption {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
+  max-block-size: 100%;
+  max-inline-size: 100%;
   overflow: hidden;
+  color: var(--zone-cap);
   font-size: calc(var(--zone-section-width) * var(--zone-section-type-share));
   line-height: 1;
   white-space: nowrap;

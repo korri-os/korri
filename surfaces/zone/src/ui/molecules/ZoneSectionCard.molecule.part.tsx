@@ -1,4 +1,3 @@
-import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneSectionCard } from "./ZoneSectionCard"
 
 export const name = "Section card"
@@ -17,13 +16,4 @@ export function DeviceName() {
 /** One long word with no break: it truncates up the spine. */
 export function LongCaption() {
   return <ZoneSectionCard caption="Supercalifragilisticexpialidocious-handheld" />
-}
-
-/** In a side card's box. */
-export function InCardBox() {
-  return (
-    <ZonePartFrame shape="card">
-      <ZoneSectionCard caption="zao" />
-    </ZonePartFrame>
-  )
 }
