@@ -253,8 +253,8 @@ impl World {
             .await
             .unwrap();
     }
-    fn acquire(&self, id: &str) -> Result<AcquireJobStatus, crate::RpcFailure> {
-        self.coordinator.acquire(&self.context, &request(id))
+    async fn acquire(&self, id: &str) -> Result<AcquireJobStatus, crate::RpcFailure> {
+        self.coordinator.acquire(&self.context, &request(id)).await
     }
     async fn finish(&self, job: AcquireJobStatus) -> AcquireJobStatus {
         tokio::time::timeout(Duration::from_secs(20), async {
@@ -343,7 +343,7 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
         .unwrap();
     assert_eq!(details.description.as_deref(), Some("A game."));
 
-    let started = world.acquire("2048").unwrap();
+    let started = world.acquire("2048").await.unwrap();
     assert!(matches!(started.state, AcquireJobState::Queued));
     let done = world.finish(started).await;
     let game_id = imported(&done);
@@ -383,7 +383,7 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
 
     // Identical bytes from another claim: one cache directory, one release,
     // the same game, a second provider link. Nothing else is rewritten.
-    let copy = world.finish(world.acquire("copy").unwrap()).await;
+    let copy = world.finish(world.acquire("copy").await.unwrap()).await;
     assert_eq!(imported(&copy), game_id);
     assert_eq!(
         names(&world.cache()),
@@ -405,7 +405,7 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
 
     // Already in the library: Get answers Imported, no second download.
     assert_eq!(world.downloads(), 2);
-    assert_eq!(imported(&world.acquire("2048").unwrap()), game_id);
+    assert_eq!(imported(&world.acquire("2048").await.unwrap()), game_id);
     assert_eq!(world.downloads(), 2);
 }
 
@@ -413,7 +413,7 @@ async fn a_download_is_published_in_the_cache_and_recorded_once_with_the_claim_t
 async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() {
     let world = world();
     world.search().await;
-    let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
+    let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
     let snapshot = world.snapshot();
     let route = config::resolver::resolve_linux_route(
         &world.root,
@@ -453,7 +453,7 @@ async fn the_route_reaches_the_download_by_hash_and_passes_it_as_content_path() 
 async fn remove_download_keeps_the_game_in_history_and_get_downloads_into_it_again() {
     let world = world();
     world.search().await;
-    let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
+    let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
     let ready = world.cache().join(sha_hex(ROM));
     let removal = |world: &World| {
         super::game_artifacts_for_removal(&world.root, &world.context.registry, &game_id).unwrap()
@@ -486,7 +486,7 @@ async fn remove_download_keeps_the_game_in_history_and_get_downloads_into_it_aga
     .is_err());
 
     // Q6: Get from the store downloads again into the same game.
-    let again = world.finish(world.acquire("2048").unwrap()).await;
+    let again = world.finish(world.acquire("2048").await.unwrap()).await;
     assert_eq!(imported(&again), game_id);
     assert!(ready.join("2048.gba").is_file());
     assert_eq!(world.downloads(), 2);
@@ -498,7 +498,7 @@ async fn remove_download_keeps_the_game_in_history_and_get_downloads_into_it_aga
         Route::ok("application/octet-stream", ROM.repeat(2048))
             .paced(1024, Duration::from_millis(50)),
     );
-    let slow = world.acquire("2048").unwrap();
+    let slow = world.acquire("2048").await.unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         while !matches!(world.api().status(&slow.job_id).unwrap().state, AcquireJobState::Downloading { bytes_done, .. } if bytes_done > 0) {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -562,8 +562,8 @@ async fn provider_downloads_wait_their_turn_behind_a_pinned_download_and_cancel_
     .unwrap();
 
     // Behind the pinned download: no provider request yet, state Queued.
-    let first = world.acquire("2048").unwrap();
-    let cancelled = world.acquire("copy").unwrap();
+    let first = world.acquire("2048").await.unwrap();
+    let cancelled = world.acquire("copy").await.unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     for job in [&first, &cancelled] {
         assert!(matches!(
@@ -612,7 +612,7 @@ async fn provider_downloads_wait_their_turn_behind_a_pinned_download_and_cancel_
 async fn cancel_during_download_leaves_no_bytes() {
     let world = world();
     world.search().await;
-    let job = world.acquire("slow").unwrap();
+    let job = world.acquire("slow").await.unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         while !matches!(world.api().status(&job.job_id).unwrap().state, AcquireJobState::Downloading { bytes_done, .. } if bytes_done > 0) {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -621,7 +621,7 @@ async fn cancel_during_download_leaves_no_bytes() {
     .await
     .unwrap();
     // A live job answers a repeated Get.
-    assert_eq!(world.acquire("slow").unwrap().job_id, job.job_id);
+    assert_eq!(world.acquire("slow").await.unwrap().job_id, job.job_id);
     let cancelled = world.api().cancel(&job.job_id).await.unwrap();
     assert!(
         matches!(cancelled.state, AcquireJobState::Cancelled),
@@ -666,12 +666,12 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
         .unwrap_err();
     assert_eq!(unknown.code, "AcquisitionUnknownProvider");
     assert_eq!(
-        world.acquire("2048").unwrap_err().code,
+        world.acquire("2048").await.unwrap_err().code,
         "AcquisitionUnknownClaim"
     );
     world.search().await;
     assert_eq!(
-        world.acquire("nosys").unwrap_err().code,
+        world.acquire("nosys").await.unwrap_err().code,
         "AcquisitionSystemUnknown"
     );
     let mut bad = request("2048");
@@ -680,6 +680,7 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
         world
             .coordinator
             .acquire(&world.context, &bad)
+            .await
             .unwrap_err()
             .code,
         "AcquisitionCaller"
@@ -687,7 +688,7 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
     assert_eq!(world.downloads(), 0);
 
     // Not a file of the claim's system: refused by name, never downloaded.
-    let zip = world.finish(world.acquire("zip").unwrap()).await;
+    let zip = world.finish(world.acquire("zip").await.unwrap()).await;
     assert!(
         matches!(&zip.state, AcquireJobState::Failed { reason } if reason.message.contains("not a game for this system")),
         "{zip:?}"
@@ -698,7 +699,7 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
         ("page", "DownloadNotFinal"),
         ("web", "AcquisitionFailed"),
     ] {
-        let done = world.finish(world.acquire(id).unwrap()).await;
+        let done = world.finish(world.acquire(id).await.unwrap()).await;
         let AcquireJobState::Failed { reason } = &done.state else {
             panic!("{id}: {done:?}");
         };
@@ -707,7 +708,7 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
         for secret in ["http", HOST, "/files", "127.0.0.1", "gone at"] {
             assert!(!reason.message.contains(secret), "{id}: {}", reason.message);
         }
-        let retry = world.acquire(id).unwrap();
+        let retry = world.acquire(id).await.unwrap();
         assert_ne!(retry.job_id, done.job_id);
         world.finish(retry).await;
     }
@@ -722,7 +723,7 @@ async fn refusals_happen_before_any_download_and_failures_are_plain() {
 async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_link() {
     let world = world();
     world.search().await;
-    let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
+    let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
     let staging = placement::game_staging(&world.root, "@test:shop", PROVIDER).unwrap();
     assert_eq!(staging, world.cache().join(".downloads"));
     fs::write(
@@ -766,13 +767,17 @@ async fn a_restart_drops_jobs_cleans_staging_and_get_answers_play_through_the_li
     // Get after the restart answers Play through the provider link, with no
     // claim in memory and no network.
     let requests = world.server.received().len();
-    let job = restarted.acquire(&world.context, &request("2048")).unwrap();
+    let job = restarted
+        .acquire(&world.context, &request("2048"))
+        .await
+        .unwrap();
     assert_eq!(imported(&job), game_id);
     assert_eq!(world.server.received().len(), requests);
     // A claim never held and never acquired still needs search or details.
     assert_eq!(
         restarted
             .acquire(&world.context, &request("copy"))
+            .await
             .unwrap_err()
             .code,
         "AcquisitionUnknownClaim"
@@ -790,7 +795,7 @@ async fn remove_download_refuses_while_the_game_runs() {
 
     let world = world();
     world.search().await;
-    let game_id = imported(&world.finish(world.acquire("2048").unwrap()).await);
+    let game_id = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
     let config = world.root.join("host.toml");
     fs::write(&config, "label = \"downloads\"\ngames = []\n").unwrap();
     let runtime = crate::host::HostRuntime::from_paths_with_backend(
@@ -861,8 +866,8 @@ async fn a_link_moves_to_the_game_that_already_holds_the_bytes() {
         Route::ok("application/octet-stream", other),
     );
     world.search().await;
-    let holder = imported(&world.finish(world.acquire("2048").unwrap()).await);
-    let linked = imported(&world.finish(world.acquire("tetris").unwrap()).await);
+    let holder = imported(&world.finish(world.acquire("2048").await.unwrap()).await);
+    let linked = imported(&world.finish(world.acquire("tetris").await.unwrap()).await);
     assert_ne!(holder, linked);
     // The provider now serves the 2048 bytes for tetris; its old download goes.
     world.server.route(
@@ -876,7 +881,7 @@ async fn a_link_moves_to_the_game_that_already_holds_the_bytes() {
         .remove(&world.root, &world.context.registry, &linked, &removal)
         .await
         .unwrap();
-    let again = world.finish(world.acquire("tetris").unwrap()).await;
+    let again = world.finish(world.acquire("tetris").await.unwrap()).await;
     assert_eq!(imported(&again), holder);
     let snapshot = world.snapshot();
     assert_eq!(
