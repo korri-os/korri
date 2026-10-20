@@ -857,3 +857,8 @@ mod game_tests;
 mod queue_tests;
 #[cfg(test)]
 mod rpc_tests;
+
+#[cfg(test)]
+mod game_download_tests;
+#[cfg(test)]
+mod http_fixture;

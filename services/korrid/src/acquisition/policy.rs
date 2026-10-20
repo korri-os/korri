@@ -63,6 +63,28 @@ pub(super) fn validate(url: &Url, addresses: AddressPolicy) -> Result<(), Failur
     }
 }
 
+/// Which hosts a request may reach. Pinned ADR 0012 artifacts carry their own
+/// hash and use `Any`; provider traffic is limited to the plugin's `hosts`.
+#[derive(Clone, Copy)]
+pub(super) enum Hosts<'a> {
+    Any,
+    Only(&'a [String]),
+}
+
+/// Exact match against declared lowercase DNS names. `url` lower-cases
+/// domains; an IP literal can never match a declared name.
+pub(super) fn declared(url: &Url, hosts: Hosts<'_>) -> Result<(), Failure> {
+    match hosts {
+        Hosts::Any => Ok(()),
+        Hosts::Only(hosts) => match url.host() {
+            Some(url::Host::Domain(host)) if hosts.iter().any(|declared| declared == host) => {
+                Ok(())
+            }
+            _ => Err(Failure::UndeclaredHost),
+        },
+    }
+}
+
 pub(super) fn redirect(
     from: &Url,
     location: &str,
@@ -203,6 +225,37 @@ mod tests {
             );
         }
         assert!(redirect(&from, "/next", 0, AddressPolicy::Public).is_err());
+    }
+
+    #[test]
+    fn declared_hosts_match_exactly() {
+        let hosts = ["www.lexaloffle.com".to_owned()];
+        let only = Hosts::Only(&hosts);
+        for allowed in [
+            "https://www.lexaloffle.com/bbs/",
+            "https://WWW.Lexaloffle.com/bbs/",
+            "http://www.lexaloffle.com:8080/x",
+        ] {
+            assert!(
+                declared(&Url::parse(allowed).unwrap(), only).is_ok(),
+                "{allowed}"
+            );
+        }
+        for refused in [
+            "https://lexaloffle.com/",
+            "https://evil.www.lexaloffle.com/",
+            "https://www.lexaloffle.com.evil.com/",
+            "https://8.8.8.8/",
+            "https://[2606:4700::1111]/",
+        ] {
+            assert_eq!(
+                declared(&Url::parse(refused).unwrap(), only),
+                Err(Failure::UndeclaredHost),
+                "{refused}"
+            );
+        }
+        assert!(declared(&Url::parse("https://a.example/").unwrap(), Hosts::Only(&[])).is_err());
+        assert!(declared(&Url::parse("https://a.example/").unwrap(), Hosts::Any).is_ok());
     }
 
     #[test]
