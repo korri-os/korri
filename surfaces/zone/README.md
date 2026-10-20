@@ -620,3 +620,11 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   bars with it. A disabled row keeps its verb (GO, RUN), dimmed, and
   `ZoneOptionRow` now shows a disabled row's description whether or not
   it is focused, so Korri's reason is always on screen.
+- **GAME OPTS. has no RUN WITH row.** Supersedes "RUN WITH is a row whose
+  value is CHOOSE". The treaty has no host call that opens a runner
+  choice: the RUN WITH page shows only when Korri itself publishes
+  `model.runnerChoice` (usually after the person runs Korri's own game
+  action for runners, which GAME OPTS. lists). The row could never do
+  what its label said, so it, the page's `OpenedRunWith` event and their
+  tests are gone. `navigation.ts` still holds the message for the wire
+  worker to remove; its update test went with the row.

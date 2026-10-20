@@ -111,7 +111,7 @@ export function Resumable() {
   return <Games model={fixtureReadyModel} />
 }
 
-/** options on Spelunky: Korri's actions, the disabled one with its reason, RUN WITH. */
+/** options on Spelunky: Korri's actions, the disabled one dimmed with its reason. */
 export function GameOpts() {
   return <Games model={fixtureReadyModel} opening={[{ _tag: "FocusedCard", index: 3 }, { _tag: "PressedOptions" }]} />
 }

@@ -251,20 +251,6 @@ describe("AnsweredGameAction", () => {
   })
 })
 
-describe("OpenedRunWith", () => {
-  test("closes GAME OPTS. and takes the person to OPTIONS with the game named", () => {
-    const next = after(opts, { _tag: "OpenedRunWith", gameId: "spelunky" }).model
-    expect(next.layers).toEqual([])
-    expect(next.tab).toBe("options")
-    expect(next.optionsRunWith).toBe("spelunky")
-  })
-  test("B from OPTIONS forgets it", () => {
-    const next = run([{ _tag: "OpenedRunWith", gameId: "spelunky" }, { _tag: "PressedBack" }], opts)
-    expect(next.tab).toBe("games")
-    expect(next.optionsRunWith).toBeUndefined()
-  })
-})
-
 describe("ChoseReload", () => {
   test("asks Korri to read everything again while the catalog is in error", () => {
     const failed: SurfaceModel = { ...korri, catalog: { _tag: "Error", message: "No." } }

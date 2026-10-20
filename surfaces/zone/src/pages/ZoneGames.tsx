@@ -82,7 +82,6 @@ export type ZoneGamesEvent =
     }
   | { readonly _tag: "FocusedAnswer"; readonly index: number }
   | { readonly _tag: "AnsweredGameAction"; readonly yes: boolean }
-  | { readonly _tag: "OpenedRunWith"; readonly gameId: string }
   | { readonly _tag: "ChoseReload" }
 
 export interface ZoneGamesProps {
@@ -122,9 +121,6 @@ const TABS: readonly (ZoneTabItem & { readonly id: ZoneGamesTab })[] = [
   { id: "options", label: "Options", sub: "Settings + Wi-Fi" },
   { id: "savedata", label: "Save data", sub: "Identity" },
 ]
-
-/** The row GAME OPTS. adds after Korri's actions: the OPTIONS page's runner choice. */
-const RUN_WITH = "zone-run-with"
 
 /** The three stripe-well cards the band shows while Korri loads: no titles, no tags. */
 const LOADING_CARDS: readonly ZoneBandCard[] = ["", " ", "  "].map((title, index) => ({
@@ -232,7 +228,6 @@ export function ZoneGames(props: ZoneGamesProps) {
       interaction: { kind: "action", actionId: action.id, destructive: action.destructive },
       ...(action.enabled ? {} : { disabled: true }),
     })),
-    { id: RUN_WITH, label: "Run with", value: "Choose", interaction: { kind: "action", actionId: RUN_WITH } },
   ]
 
   const actions: readonly ZoneAction[] = launches.map(launch => ({ id: launch.id, label: launchLabel(launch) }))
@@ -375,7 +370,6 @@ export function ZoneGames(props: ZoneGamesProps) {
                     focusedId={optRows[opts.row]?.id}
                     onFocus={id => report({ _tag: "FocusedGameOpt", index: optRows.findIndex(row => row.id === id) })}
                     onPress={id => {
-                      if (id === RUN_WITH) return onEvent({ _tag: "OpenedRunWith", gameId: game.id })
                       const action = opts.actions.find(candidate => candidate.id === id)
                       if (action === undefined) return
                       onEvent({
