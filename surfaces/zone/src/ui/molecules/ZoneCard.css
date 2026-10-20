@@ -14,6 +14,7 @@
   --zone-card-stripe-h: calc(var(--zone-games-card-stripe) * var(--zone-px));
   --zone-card-tri: var(--zone-band-tri, calc(var(--zone-triangle-wide) * var(--zone-px)));
   --zone-tag-row-base: calc(var(--zone-caps-1) * var(--zone-px));
+  --zone-tag-pad: var(--zone-games-tag-pad);
   position: relative;
   display: flex;
   flex: 0 0 auto;

@@ -1,11 +1,13 @@
+import { useFixtureHold } from "../../fixtures/fixture-moments"
 import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneTally } from "./ZoneTally"
 
 export const name = "Tally"
 export const note = "After a session: SPECIAL STAGE's results, TIME, PLAYS and TOTAL counting up on red bars (M5); any press skips, the next closes"
 
-/** A 72-minute session of Hollow Knight, its eighth, 3H 12M in all: the count-up. */
+/** A 72-minute session of Hollow Knight, its eighth, 3H 12M in all: the count-up, held 900 ms in. */
 export default function Counting() {
+  useFixtureHold(900)
   return (
     <ZoneTally gameId="hollow" plays={8} seconds={4334} title="Hollow Knight" total={11_520} />
   )

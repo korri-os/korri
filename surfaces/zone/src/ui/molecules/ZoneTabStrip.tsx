@@ -12,9 +12,9 @@ export interface ZoneTabItem {
 
 /**
  * The three tabs shoulder to shoulder, the current one as the banner. The
- * gap yields first when the strip is squeezed, then the tabs' type shrinks
- * to fit the row (to half, as a card title does), and only then does each
- * tab's label truncate; no tab is ever dropped.
+ * gap yields first when the strip is squeezed, then the tabs' type steps
+ * down a whole cap, and at caps-1 the tabs take a second row. No tab is
+ * ever dropped, shrunk or cut.
  */
 export function ZoneTabStrip({
   tabs,

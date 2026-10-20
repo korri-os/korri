@@ -1,4 +1,5 @@
 import { fixtureGames } from "../../fixtures/fixture-host"
+import { useFixtureHold } from "../../fixtures/fixture-moments"
 import { ZonePartFrame } from "../../fixtures/ZonePartFrame"
 import { ZoneLaunchCard } from "./ZoneLaunchCard"
 
@@ -10,6 +11,7 @@ const zelda = fixtureGames[9]
 
 /** Celeste Classic, played 23 times: ACT 24, PICO-8 on the tag. */
 export default function Launching() {
+  useFixtureHold(1000)
   return (
     <ZoneLaunchCard act={(celeste?.playCount ?? 0) + 1} system={celeste?.subtitle} title={celeste?.title ?? ""} />
   )
@@ -17,6 +19,7 @@ export default function Launching() {
 
 /** A game never played: ACT 1. */
 export function FirstSession() {
+  useFixtureHold(1000)
   return (
     <ZoneLaunchCard act={1} system="SNES" title="Super Metroid" />
   )
@@ -24,13 +27,15 @@ export function FirstSession() {
 
 /** The longest title: caps-1, wrapped between words. */
 export function LongTitle() {
+  useFixtureHold(1000)
   return (
     <ZoneLaunchCard act={3} system={zelda?.subtitle} title={zelda?.title ?? ""} />
   )
 }
 
-/** Korri let go of the game: the card leaves toward the bottom left. */
+/** Korri let go of the game: the card leaves toward the bottom left (held 200 ms in). */
 export function Leaving() {
+  useFixtureHold(200)
   return (
     <ZoneLaunchCard act={24} leaving system={celeste?.subtitle} title={celeste?.title ?? ""} />
   )
@@ -38,6 +43,7 @@ export function Leaving() {
 
 /** A narrow-tall screen: the disc under the words. */
 export function NarrowTall() {
+  useFixtureHold(1000)
   return (
     <ZonePartFrame shape="narrow-tall">
       <ZoneLaunchCard act={24} system={celeste?.subtitle} title={celeste?.title ?? ""} />

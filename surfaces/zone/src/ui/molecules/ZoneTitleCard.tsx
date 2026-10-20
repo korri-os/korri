@@ -2,7 +2,7 @@ import "./ZoneTitleCard.css"
 import { useRef } from "react"
 import { zoneStairCircle } from "../../plan/stair-clip"
 import { ZONE_TITLE_BANDS, ZONE_TITLE_DISC, zoneTitleBandClip } from "../../plan/title-card"
-import { useZoneFit } from "../../use-zone-fit"
+import { useZoneWordsFit } from "../../use-zone-words-fit"
 import { useZoneMoment, type ZoneMomentBox } from "../../use-zone-moment"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneCaps } from "../atoms/ZoneCaps"
@@ -51,7 +51,7 @@ export function ZoneTitleCard({
   const heading = useRef<HTMLHeadingElement>(null)
   const slab = useRef<HTMLSpanElement>(null)
   const bar = useRef<HTMLSpanElement>(null)
-  useZoneFit(card, [heading], title)
+  useZoneWordsFit(card, heading, title)
   useZoneStairClip(slab, { left: "slash", right: "slash" })
   useZoneStairClip(bar, { left: "slash", right: "straight" })
   useZoneMoment(card, { key: "layout", duration: 0, frame: () => ({}), layout })

@@ -1,7 +1,7 @@
 import "./ZoneCard.css"
 import "../../zone-motion.css"
 import { useRef } from "react"
-import { useZoneFit } from "../../use-zone-fit"
+import { useZoneWordsFit } from "../../use-zone-words-fit"
 import { formatZoneBytes } from "../../plan/bytes"
 import { ZoneCoverWell } from "../atoms/ZoneCoverWell"
 import type { ZoneTagItem } from "../atoms/ZoneTag"
@@ -94,7 +94,7 @@ export function ZoneCard({
 }) {
   const card = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
-  useZoneFit(card, [heading], title)
+  useZoneWordsFit(card, heading, title)
   const several = /\s/.test(title.trim())
   return (
     <button

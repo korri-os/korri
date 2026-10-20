@@ -12,10 +12,11 @@
 }
 
 /* One word: as wide as its letters, at most its line unless the holder
- * lifts the cap. */
+ * lifts the cap. Words never squeeze each other: a line too narrow for
+ * them overflows (which a fit can see) or wraps. */
 .zone-words-word {
   display: inline-flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: var(--zone-words-max, 100%);
 }

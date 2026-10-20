@@ -59,9 +59,11 @@ describe("the yield order: space, then the hints' words, then a second row", () 
 
 describe("the part ladder: hints and tabs never share a row they do not fit", () => {
   // Measured in Chromium in art px (Zone Caps, caps-1 tabs and hints, the
-  // caps-2 banner): one row needs 483 at plan size, 446 at the least gaps
-  // and 339 with the keycaps alone.
-  const ONE_ROW_NEEDS = { inline: 483, tight: 446, keys: 339 } as const
+  // caps-2 banner, each hint's column its own width): one row needs 472 at
+  // plan size, 414 at the least gaps and tab padding and 307 with the
+  // keycaps alone; the two hints with their words need 147.
+  const ONE_ROW_NEEDS = { inline: 472, tight: 414, keys: 307 } as const
+  const HINT_WORDS_NEED = 147
   // The devices and frames, in art px: 1280x720 is 426 wide, 640x480 320,
   // the 480-wide frame 240 (two CSS px an art px), the 360- and 260-wide
   // frames 360 and 260 (one).
@@ -73,15 +75,17 @@ describe("the part ladder: hints and tabs never share a row they do not fit", ()
         expect(width).toBeGreaterThanOrEqual(need)
       } else {
         expect(plan.level).toBe("stacked")
+        if (plan.words) expect(width).toBeGreaterThanOrEqual(HINT_WORDS_NEED)
       }
     })
   }
-  test("720p keeps one row with keycaps alone; 640x480 and the narrow frames take two rows with words", () => {
-    expect(planTopStrip(426)).toMatchObject({ level: "keys", rows: 1 })
+  test("720p keeps the hints' words in one row; 640x480 one row of keycaps; 480x800 two rows with words", () => {
+    expect(planTopStrip(426)).toMatchObject({ level: "tight", rows: 1, words: true })
     expect(planTopStrip(360)).toMatchObject({ level: "keys", rows: 1 })
-    expect(planTopStrip(320)).toMatchObject({ level: "stacked", rows: 2, words: true })
+    expect(planTopStrip(320)).toMatchObject({ level: "keys", rows: 1 })
     expect(planTopStrip(240)).toMatchObject({ level: "stacked", rows: 2, words: true })
-    expect(planTopStrip(160)).toMatchObject({ level: "stacked", rows: 2, words: false })
+    expect(planTopStrip(160)).toMatchObject({ level: "stacked", rows: 2, words: true })
+    expect(planTopStrip(140)).toMatchObject({ level: "stacked", rows: 2, words: false })
   })
 })
 

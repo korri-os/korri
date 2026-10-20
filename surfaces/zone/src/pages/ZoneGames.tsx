@@ -318,14 +318,18 @@ export function ZoneGames(props: ZoneGamesProps) {
   // The focused card's tags its own row could not keep stand at the facts
   // line's start, so the whole set is on screen. DOWNLOAD is a fact already.
   const spillTags = game === undefined ? [] : cardTags(game)
-  const spill = useRef<HTMLDivElement | null>(null)
+  const spill = useRef<HTMLSpanElement | null>(null)
   const spillFrom = (shown: number) => {
-    const tags = spill.current?.querySelectorAll<HTMLElement>(".zone-tag") ?? []
-    tags.forEach((tag, index) => {
-      const kept = index < shown || spillTags[index]?.kind === "download"
-      tag.toggleAttribute("data-tag-hidden", kept)
-    })
-    spill.current?.toggleAttribute("data-empty", [...tags].every(tag => tag.hasAttribute("data-tag-hidden")))
+    // Next task, not inside the band's resize notification: the facts line
+    // is observed too, and changing it there would be a notification lost.
+    setTimeout(() => {
+      const tags = spill.current?.querySelectorAll<HTMLElement>(".zone-tag") ?? []
+      tags.forEach((tag, index) => {
+        const kept = index < shown || spillTags[index]?.kind === "download"
+        tag.toggleAttribute("data-tag-hidden", kept)
+      })
+      spill.current?.toggleAttribute("data-empty", [...tags].every(tag => tag.hasAttribute("data-tag-hidden")))
+    }, 0)
   }
 
   const tabsSlot = (
@@ -402,28 +406,26 @@ export function ZoneGames(props: ZoneGamesProps) {
             {finding && keysAt === "body" ? keyboard : finding ? null : (
               <>
                 <div className="zone-games-factline" inert={layer !== "none"}>
-                  <div className="zone-games-spill" data-empty="" ref={spill}>
-                    {spillTags.map(tag => (
-                      <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />
-                    ))}
-                  </div>
-                  <div className="zone-games-facts" data-empty={!recorded || undefined}>
-                    <ZonePanel edge={false}>
-                      {factLines.length === 0 ? (
-                        // The line keeps its height with no game, so the band does not jump.
-                        <ZoneCaps>{"\u00a0"}</ZoneCaps>
-                      ) : (
-                        <span className="zone-games-fact-run">
-                          {factLines.map(([label, value, known]) => (
-                            <span className="zone-games-fact" key={label}>
-                              <ZoneCaps ink="hud">{label}</ZoneCaps>
-                              {value === undefined ? null : <ZoneCaps fact={known}>{value}</ZoneCaps>}
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </ZonePanel>
-                  </div>
+                  <span className="zone-games-fact-panel">
+                    <span className="zone-games-fact-run">
+                      <span className="zone-games-spill" data-empty="" ref={spill}>
+                        {spillTags.map(tag => (
+                          <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />
+                        ))}
+                      </span>
+                      <span className="zone-games-facts" data-empty={!recorded || undefined}>
+                        {factLines.length === 0 ? (
+                          // The line keeps its height with no game, so the band does not jump.
+                          <ZoneCaps>{"\u00a0"}</ZoneCaps>
+                        ) : factLines.map(([label, value, known]) => (
+                          <span className="zone-games-fact" key={label}>
+                            <ZoneCaps ink="hud">{label}</ZoneCaps>
+                            {value === undefined ? null : <ZoneCaps fact={known}>{value}</ZoneCaps>}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                  </span>
                 </div>
                 <div className="zone-games-actions" data-games-region="actions" inert={layer !== "none"}>
                   {catalog._tag === "Loading" ? (

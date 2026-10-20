@@ -928,7 +928,7 @@
   /** The card's black frame round its well, focused. Art px. @label Card frame @min 0 @max 12 @step 1 */
   --zone-games-card-frame: 4;
   /** A side card's frame. Art px. @label Card frame, side @min 0 @max 12 @step 1 */
-  --zone-games-card-frame-side: 3;
+  --zone-games-card-frame-side: 2;
   /** The stripe under a focused card's title. Art px. @label Card stripe @min 1 @max 16 @step 1 */
   --zone-games-card-stripe: 6;
   /** The stripe under a side card's title. Art px. @label Card stripe, side @min 1 @max 16 @step 1 */
@@ -937,12 +937,24 @@
   --zone-games-card-gap: 2;
   /** The room between two lines of a wrapped title. Art px. @label Title leading @min 0 @max 8 @step 1 */
   --zone-games-title-leading: 2;
-  /** Room between two facts, and between the spilled tags. Art px. @label Fact gap @min 0 @max 24 @step 1 */
-  --zone-games-fact-gap: 8;
-  /** Room between a fact's label and its value. Art px. @label Fact label gap @min 0 @max 12 @step 1 */
-  --zone-games-fact-pair: 4;
+  /** Room between two facts, and between the spilled tags and the facts. Art px. @label Fact gap @min 0 @max 24 @step 1 */
+  --zone-games-fact-gap: 7;
+  /** Room between a fact's label and its value, and between two spilled tags. Art px. @label Fact label gap @min 0 @max 12 @step 1 */
+  --zone-games-fact-pair: 3;
+  /** The facts line's margin either side. Art px. @label Facts margin @min 0 @max 24 @step 1 */
+  --zone-games-fact-margin: 4;
+  /** How far the facts strip's ends lean: one line's height, so 45 degrees. Art px. @label Facts lean @min 0 @max 24 @step 1 */
+  --zone-games-fact-line: 14;
+  /** The facts strip's room over and under its line. Art px. @label Facts padding @min 0 @max 8 @step 1 */
+  --zone-games-fact-pad-y: 2;
   /** A spilled tag's height on the facts line. Art px. @label Spilled tag height @min 10 @max 24 @step 1 */
   --zone-games-spill-h: 14;
+  /** A card tag's room either side of its caps, beyond its cut. Art px. @label Card tag padding @min 0 @max 6 @step 1 */
+  --zone-games-tag-pad: 1;
+  /** A tab's padding over and under its caps; its panel leans by its height. Art px. @label Tab padding @min 0 @max 10 @step 1 */
+  --zone-games-tab-pad-y: 5;
+  /** A tab's padding once the top strip has yielded its gaps. Art px. @label Tab padding, least @min 0 @max 10 @step 1 */
+  --zone-games-tab-pad-y-least: 1;
   /** One loop of the cursor triangles' nudge: two steps, 2 art px apart (M1). @label Nudge loop @min 0ms @max 2000ms @step 20ms */
   --zone-games-nudge-time: 480ms;
 
@@ -972,13 +984,13 @@
   /** The act disc across. Art px. @label Act disc @min 30 @max 80 @step 1 */
   --zone-tc-disc: 52;
   /** The ACT tab's top inside the disc. Art px. @label ACT tab top @min 0 @max 20 @step 1 */
-  --zone-tc-tab-top: 8;
+  --zone-tc-tab-top: 5;
   /** The ACT tab's left inside the disc. Art px. @label ACT tab left @min 0 @max 20 @step 1 */
-  --zone-tc-tab-left: 6;
+  --zone-tc-tab-left: 5;
   /** The ACT tab's room round its caps. Art px. @label ACT tab padding @min 0 @max 6 @step 1 */
   --zone-tc-tab-pad: 1;
   /** How far the act number stands under the disc's middle. Art px. @label Act number drop @min 0 @max 20 @step 1 */
-  --zone-tc-act-drop: 8;
+  --zone-tc-act-drop: 14;
 
   /* The idle attract (M6). */
   /** The attract's HUD and prompt inset from the screen's edge. Art px. @label Attract inset @min 0 @max 32 @step 1 */

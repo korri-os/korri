@@ -1,8 +1,9 @@
 /* A row that may be narrower than its tabs want: the gap is the first to
  * give, down to a hairline; then the tabs' type steps down whole caps by
- * the factor the strip's fit sets (--zone-fit); only at caps-1, when the
- * fit marks its floor, may a tab shrink and its label truncate. The strip spans the room it is given, so
- * the fit measures that room and not its own tabs. */
+ * the factor the strip's fit sets (--zone-fit); at caps-1, when the fit
+ * marks its floor, the tabs wrap onto a second row. A tab never shrinks
+ * and no label is ever cut. The strip spans the room it is given, so the
+ * fit measures that room and not its own tabs. */
 .zone-tab-strip {
   --zone-tab-fit: var(--zone-fit, 1);
   display: flex;
@@ -14,7 +15,9 @@
   max-width: 100%;
 }
 
-/* At caps-1 the type can step no further: the tabs may shrink. */
+/* At caps-1 the type can step no further: the tabs take a second row,
+ * whole, rather than shrink or cut a label. */
 .zone-tab-strip[data-zone-fit-floor] {
-  --zone-tab-shrink: 1;
+  flex-wrap: wrap;
+  row-gap: calc(var(--zone-strip-gap-least) * 2 * var(--zone-px));
 }

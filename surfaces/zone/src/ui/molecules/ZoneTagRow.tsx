@@ -70,13 +70,29 @@ export function ZoneTagRow({
   useLayoutEffect(() => {
     const element = row.current
     if (element === null) return
-    const fit = () => report.current?.(fitZoneTagRow(element))
+    const fit = () => {
+      const shown = fitZoneTagRow(element)
+      report.current?.(shown)
+    }
     fit()
-    if (typeof ResizeObserver === "undefined") return
+    // Zone Caps arrives after the first layout; the row's box does not
+    // change when it does, so the row fits again once the faces are in.
+    let live = true
+    void document.fonts?.ready.then(() => {
+      if (live) fit()
+    })
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        live = false
+      }
+    }
     const observer = new ResizeObserver(fit)
     // The holder's box sets the row's room; the row's own box only follows it.
     observer.observe(element.parentElement ?? element)
-    return () => observer.disconnect()
+    return () => {
+      live = false
+      observer.disconnect()
+    }
     // A row that starts reporting (its card took the focus) fits again.
   }, [key, onShown !== undefined])
   return (

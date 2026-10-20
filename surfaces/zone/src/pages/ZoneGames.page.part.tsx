@@ -1,6 +1,7 @@
 import type { SurfaceModel, SurfaceStatus } from "@contracts/surface/korri-surface"
 import { type ComponentProps, useRef } from "react"
 import { fixtureTitleOf, statusBusyDetail } from "../fixtures/fixture-layers"
+import { useFixtureHold } from "../fixtures/fixture-moments"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import {
   createGamesFixtureHost,
@@ -175,8 +176,9 @@ export function Filtered() {
   )
 }
 
-/** Thirty seconds without input: the title card of the focused game; it cycles every four. */
+/** Thirty seconds without input: the attract, Spelunky's title card at rest (1.5 s into its 6 s turn). */
 export function Idle() {
+  useFixtureHold(1500)
   return <Games model={fixtureReadyModel} opening={[{ _tag: "FocusedCard", index: 3 }, { _tag: "IdleElapsed" }]} />
 }
 

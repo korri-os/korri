@@ -9,7 +9,9 @@
   --zone-tag-slant: min(calc(var(--zone-slant) * var(--zone-px)), 0.55em);
   --zone-tag-slant-pad: calc(var(--zone-tag-slant) / 2 + calc(var(--zone-tag-pad) * var(--zone-px)));
   --zone-tag-caps: calc(var(--zone-caps-1) * var(--zone-px));
-  flex: 1 1 0;
+  /* Each tag starts at its own word's width and the row shares out what is
+   * left, so a long word is never squeezed to make room for a short one. */
+  flex: 1 1 auto;
   display: inline-grid;
   place-items: center;
   min-width: 0;

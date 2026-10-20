@@ -8,6 +8,7 @@ import {
 } from "../../plan/motion"
 import { zoneTallyCounts, zoneTallyRows, zoneTallyValue, type ZoneTallyFacts } from "../../plan/tally"
 import { useZoneFit } from "../../use-zone-fit"
+import { useZoneWordsFit } from "../../use-zone-words-fit"
 import { useZoneMoment } from "../../use-zone-moment"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
 import { ZoneCaps } from "../atoms/ZoneCaps"
@@ -56,7 +57,8 @@ export function ZoneTally({
   const facts: ZoneTallyFacts = { plays, ...(seconds === undefined ? {} : { seconds }), ...(total === undefined ? {} : { total }) }
   const rows = zoneTallyRows(facts)
   const end = zoneTallyCountMs(rows.length)
-  useZoneFit(box, [heading, rowsBox], `${title}|${rows.map(row => zoneTallyValue(row.kind, facts)).join("|")}`)
+  useZoneWordsFit(box, heading, title)
+  useZoneFit(box, [rowsBox], rows.map(row => zoneTallyValue(row.kind, facts)).join("|"))
   useZoneStairClip(slab, { left: "slash", right: "slash" })
   useZoneMoment(box, {
     key: `${gameId}:${plays}:${counted ? "end" : "count"}:${leaving ? "out" : "in"}`,

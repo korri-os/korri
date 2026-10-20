@@ -119,45 +119,64 @@
 }
 
 /* The facts line, as a HUD: the focused card's tags its row could not
- * keep, then Korri's session facts on a black 45 degree panel, HUD labels
- * and white values (Korri's in Jersey 10; the dashes of an unrecorded
- * fact in Zone Caps), all at caps-1. Too long for one line, it wraps
- * between whole facts; nothing is cut. */
+ * keep, then Korri's session facts, on one black 45 degree panel, HUD
+ * labels and white values (Korri's in Jersey 10; the dashes of an
+ * unrecorded fact in Zone Caps), all at caps-1. Too long for one line,
+ * it wraps between whole facts; nothing is cut. */
 .zone-games-factline {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   justify-content: center;
-  gap: calc(var(--zone-games-fact-gap) * var(--zone-px));
   min-width: 0;
-  padding: 0 calc(var(--zone-band-margin) * var(--zone-px));
+  padding: 0 calc(var(--zone-games-fact-margin) * var(--zone-px));
   font-size: calc(var(--zone-caps-1) * var(--zone-px));
 }
 
-.zone-games-spill {
+/* The black strip: its ends lean at 45 degrees over one line's height,
+ * however many lines the facts take, so a wrapped line never widens its
+ * own ends. */
+.zone-games-fact-panel {
+  --zone-games-fact-lean: calc(var(--zone-games-fact-line) * var(--zone-px));
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
-  gap: calc(var(--zone-games-fact-gap) * var(--zone-px));
-  height: calc(var(--zone-games-spill-h) * var(--zone-px));
-}
-
-.zone-games-spill[data-empty] {
-  display: none;
-}
-
-.zone-games-facts {
-  display: flex;
-  justify-content: center;
   min-width: 0;
   max-width: 100%;
+  padding: calc(var(--zone-games-fact-pad-y) * var(--zone-px)) calc(var(--zone-games-fact-lean) + var(--zone-px) * 2);
+}
+
+.zone-games-fact-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-black);
+  clip-path: polygon(var(--zone-games-fact-lean) 0, 100% 0, calc(100% - var(--zone-games-fact-lean)) 100%, 0 100%);
+}
+
+/* The spilled tags and each fact are items of one run, so a long line
+ * breaks between any two of them. */
+.zone-games-facts {
+  display: contents;
 }
 
 .zone-games-fact-run {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
   column-gap: calc(var(--zone-games-fact-gap) * var(--zone-px));
-  row-gap: calc(var(--zone-games-fact-gap) / 2 * var(--zone-px));
+  row-gap: calc(var(--zone-games-fact-pair) * var(--zone-px));
   min-width: 0;
+}
+
+.zone-games-spill {
+  display: inline-flex;
+  gap: calc(var(--zone-games-fact-pair) * var(--zone-px));
+  height: calc(var(--zone-games-spill-h) * var(--zone-px));
+}
+
+.zone-games-spill[data-empty] {
+  display: none;
 }
 
 .zone-games-fact {

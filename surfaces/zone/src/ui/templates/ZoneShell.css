@@ -38,6 +38,8 @@
   --zone-shell-margin: calc(var(--zone-strip-margin-min) * var(--zone-px));
   --zone-shell-tab-type: calc(var(--zone-type-tab-least) * var(--zone-px));
   --zone-shell-hint-type: calc(var(--zone-type-hint-least) * var(--zone-px));
+  /* A tab's padding is space too: a shorter panel leans less far. */
+  --zone-tab-pad-y: var(--zone-games-tab-pad-y-least);
 }
 
 .zone-shell[data-top="keys"],
@@ -64,15 +66,17 @@
 .zone-shell[data-top="stacked-keys"] {
   --zone-shell-hint-room: var(--zone-shell-margin);
   --zone-shell-hint-row: calc(var(--zone-shell-hint-type) * var(--zone-keycap-scale) + calc(var(--zone-strip-inset) * var(--zone-px)));
-  grid-template-rows: calc(var(--zone-shell-hint-row) + var(--zone-shell-top)) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(calc(var(--zone-shell-hint-row) + var(--zone-shell-top)), auto) minmax(0, 1fr) auto;
 }
 
-/* Hint, tabs, hint. The hints keep their corners; the tabs take the middle.
- * A size container on the inline axis, so a tabs slot can size itself
- * against the strip. */
+/* Hint, tabs, hint. The hints keep their corners; the tabs take the middle,
+ * centred on the screen while the sides have room to match and nudged
+ * toward the narrower hint when they do not, so neither hint loses its
+ * word to keep a symmetry. A size container on the inline axis, so a tabs
+ * slot can size itself against the strip. */
 .zone-shell-top {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   gap: var(--zone-shell-gap, calc(var(--zone-strip-gap) * var(--zone-px)));
   padding: 0 var(--zone-shell-margin);
@@ -105,7 +109,7 @@
 .zone-shell[data-top="stacked"] .zone-shell-top,
 .zone-shell[data-top="stacked-keys"] .zone-shell-top {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: var(--zone-shell-hint-row) minmax(0, 1fr);
+  grid-template-rows: var(--zone-shell-hint-row) minmax(var(--zone-shell-top), auto);
   row-gap: 0;
 }
 

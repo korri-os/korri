@@ -1,19 +1,41 @@
-/* The tab is as tall as two lines of its type, whatever the strip's height,
- * so the label and the sub-line sit inside it with room. The shell sets the
- * type on the strip; alone, the wide tab token. A strip that fits its tabs
- * to its width steps the type down whole caps by --zone-tab-fit; a tab
- * keeps its whole width until that fit reaches caps-1 and still overflows
- * (the strip sets --zone-tab-shrink), and only then shrinks and truncates. */
+/* The shell sets the type on the strip; alone, the wide tab token. A strip
+ * that fits its tabs to its width steps the type down whole caps by
+ * --zone-tab-fit. A tab never shrinks and its label is never cut: a strip
+ * with no room left wraps its tabs onto a second row instead. */
 .zone-tab {
   position: relative;
   display: inline-flex;
   --zone-tab-type: calc(var(--zone-shell-tab-type, calc(var(--zone-type-tab-wide) * var(--zone-px))) * var(--zone-tab-fit, 1));
-  flex: 0 var(--zone-tab-shrink, 0) auto;
-  align-items: stretch;
+  flex: 0 0 auto;
+  align-items: center;
   min-width: 0;
-  height: 2em;
   font-size: var(--zone-tab-type);
   transition: translate var(--zone-lift-time) var(--zone-bounce);
+}
+
+/* An inactive tab: a black panel as tall as its caps and its padding,
+ * leaning by that height (the stair polygon and its run are written on it
+ * by useZoneStairClip; a smooth lean until measured). */
+.zone-tab-panel {
+  --zone-tab-run: var(--zone-panel-run, 1.5em);
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  padding:
+    calc(var(--zone-tab-pad-y, var(--zone-games-tab-pad-y)) * var(--zone-px))
+    calc(var(--zone-tab-run) + calc(var(--zone-strip-gap-least) * var(--zone-px)));
+  color: var(--zone-cap);
+  white-space: nowrap;
+}
+
+.zone-tab-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-panel-shape, polygon(1.5em 0, 100% 0, calc(100% - 1.5em) 100%, 0 100%));
 }
 
 /* The focused tab lifts, its pink drop at the focused depth. */
@@ -48,6 +70,7 @@
  * measured on this wrapper (the lip hangs outside it). */
 .zone-tab-banner {
   --zone-banner-base: var(--zone-tab-type);
+  height: 2em;
   position: relative;
   isolation: isolate;
   display: inline-flex;
