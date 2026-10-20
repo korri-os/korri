@@ -86,7 +86,7 @@ describe("claims.search", () => {
         _tag: "ProviderClaim",
         providerId,
         id: "11722",
-        title: "Celeste 1.0 (Fixed for P8 v0.1.2)",
+        title: "Celeste",
         url: "https://www.lexaloffle.com/bbs/?pid=11722#p",
         platform: "pico8",
         thumbnailUrl: "https://www.lexaloffle.com/bbs/thumbs/pico15133.png",
@@ -96,15 +96,26 @@ describe("claims.search", () => {
         _tag: "ProviderClaim",
         providerId,
         id: "86783",
-        title: "Celeste Classic 2",
+        title: "celeste classic 2",
         url: "https://www.lexaloffle.com/bbs/?pid=86783#p",
         platform: "pico8",
         thumbnailUrl: "https://www.lexaloffle.com/bbs/thumbs/pico8_celeste_classic_2-5.png",
         artifact: { kind: "content", system: "pico8", format: { id: "png" } },
       },
     ])
-    // Rows with tag arrays and non-ASCII titles keep their field positions.
-    expect(claims[3]).toMatchObject({ id: "105950", title: "violet" })
+    // The thread title wins over the cart label, which is often a file slug
+    // (row 22 of the recorded page: "violet", "farlandv2", "ccbtt"). Rows with
+    // tag arrays and non-ASCII titles keep their field positions.
+    const titles = Object.fromEntries(claims.map(claim => [claim.id, claim.title]))
+    expect(titles["105950"]).toBe("◆VIOLET")
+    expect(titles["109994"]).toBe("Farland v2")
+    expect(titles["97975"]).toBe("Celeste - Break the Targets")
+  })
+
+  test("falls back to the cart label when the thread title is empty", () => {
+    const page = searchPage.replace("`Pico de Pon`", "``")
+    const claims = search("celeste", [ok(page)]) as Array<{ id: string; title: string }>
+    expect(claims.find(claim => claim.id === "74540")?.title).toBe("Pico de Pon")
   })
 
   test("reads the BBS's own empty answer as no results", () => {
@@ -122,12 +133,12 @@ describe("claims.details", () => {
     expect(details("86783")).toStrictEqual(postRequest("86783"))
   })
 
-  test("reads title, author and the cart file under its two-character folder", () => {
+  test("reads the thread title, author and the cart file under its two-character folder", () => {
     expect(details("86783", [ok(currentPost)])).toStrictEqual({
       _tag: "ProviderClaimDetails",
       providerId,
       id: "86783",
-      title: "Celeste Classic 2",
+      title: "celeste classic 2",
       url: "https://www.lexaloffle.com/bbs/?pid=86783#p",
       description: "PICO-8 BBS cart by noel.",
       downloadPageUrl: "https://www.lexaloffle.com/bbs/cposts/ce/celeste_classic_2-5.p8.png",
@@ -140,9 +151,14 @@ describe("claims.details", () => {
     })
   })
 
+  test("falls back to the cart label when the page has no thread title", () => {
+    const withoutOgTitle = currentPost.replace(/<meta property="og:title"[^>]*>/, "")
+    expect(details("86783", [ok(withoutOgTitle)])).toMatchObject({ title: "Celeste Classic 2" })
+  })
+
   test("still reads an old cart under its numeric folder", () => {
     expect(details("11722", [ok(oldPost)])).toMatchObject({
-      title: "Celeste 1.0 (Fixed for P8 v0.1.2)",
+      title: "Celeste",
       downloadPageUrl: "https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png",
       artifact: { file: { name: "15133.p8.png" } },
     })

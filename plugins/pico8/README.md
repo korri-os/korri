@@ -15,8 +15,8 @@ extensions `p8` and `p8.png`) and runs.
 
 | Operation | Request | Read from the page |
 |---|---|---|
-| `claims.search` | `https://www.lexaloffle.com/bbs/?cat=7&sub=2&mode=carts&orderby=ts&search=<query>&max=50` | The `pdat=[...]` script array: post id, cart title (field 22, else the thread title), thumbnail, author, dates. The BBS's `[no posts found]` line is an empty result. A page with neither fails. |
-| `claims.details` | `https://www.lexaloffle.com/bbs/?pid=<id>` | The first `href` to a `.p8.png`, the title and author beside "Cart File". |
+| `claims.search` | `https://www.lexaloffle.com/bbs/?cat=7&sub=2&mode=carts&orderby=ts&search=<query>&max=50` | The `pdat=[...]` script array: post id, thread title (field 2; the cart label in field 22, often a file slug such as `violet`, is only a fallback), thumbnail, author, dates. The BBS's `[no posts found]` line is an empty result. A page with neither fails. |
+| `claims.details` | `https://www.lexaloffle.com/bbs/?pid=<id>` | The first `href` to a `.p8.png`; the thread title (`og:title`), else the cart label beside "Cart File"; the author. |
 | `artifact.resolve-download` | the claim's post page, unless the URL is already a cart file | `FinalDownload` of `https://www.lexaloffle.com/bbs/cposts/<folder>/<cart>.p8.png`, `image/png`. |
 
 Changes from legacy, all forced by the current BBS:
@@ -27,6 +27,8 @@ Changes from legacy, all forced by the current BBS:
 - The BBS answers an unknown post id with its front page and status 200.
   Legacy then invented a "PICO-8 Cart <id>" result. A post page must now carry
   a cart link or the post container `<div id=p<id>`.
+- Legacy preferred the cart label as the title; it is often a file slug
+  (`violet`, `farlandv2`, `ccbtt`), so the thread title wins now.
 - Legacy read any page without the cart list as no results. That hides a
   markup change, so only `[no posts found]` is empty now.
 

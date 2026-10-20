@@ -222,7 +222,9 @@ function failed(
 // --- BBS search page: the `pdat=[...]` JS array ---------------------------
 
 // Row fields used: 0 post id, 2 thread title, 3 thumbnail path, 6 created,
-// 8 author, 9 updated, 22 cart title. Legacy prefers the cart title.
+// 8 author, 9 updated, 22 cart label. Legacy preferred the cart label, but it
+// is often the cart's file slug ("violet", "farlandv2"), so the thread title
+// the person typed wins and the label is only a fallback.
 function parsePico8SearchEntries(html: string): readonly Pico8BbsEntry[] | null {
   const rows = pdatRows(html)
   if (!rows) return html.includes("[no posts found]") ? [] : null
@@ -230,7 +232,7 @@ function parsePico8SearchEntries(html: string): readonly Pico8BbsEntry[] | null 
     const fields = splitTopLevel(row)
     const id = stringLiteral(fields[0])
     if (!id) return []
-    const title = stringLiteral(fields[22]) ?? stringLiteral(fields[2])
+    const title = nonEmpty(stringLiteral(fields[2])) ?? nonEmpty(stringLiteral(fields[22]))
     if (!title) return []
     return [
       {
@@ -339,6 +341,10 @@ function splitTopLevel(row: string): string[] {
   return fields
 }
 
+function nonEmpty(value: string | undefined): string | undefined {
+  return value && value.trim().length > 0 ? value : undefined
+}
+
 function stringLiteral(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
@@ -363,9 +369,11 @@ function parsePico8Details(html: string, id: string): Pico8CartDetails | null {
   if (!downloadUrl && !new RegExp(`<div id=["']?p${escapeRegExp(id)}\\b`).test(html)) {
     return null
   }
+  // The thread title (og:title) matches the search row's title; the cart
+  // label beside "Cart File" is often a slug, so it is only a fallback.
   const title =
-    titleNearCartFile(html) ??
     metaContent(html, "og:title") ??
+    titleNearCartFile(html) ??
     `PICO-8 Cart ${id}`
   const author = authorNearCartFile(html)
   const filename = downloadUrl ? filenameFromUrl(downloadUrl) : undefined
