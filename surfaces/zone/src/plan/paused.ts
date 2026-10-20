@@ -12,6 +12,8 @@
  *    the wedge reaches past the left edge, so the bottom is all yellow.
  *  - The rows' column: from a little inside the wedge's bottom-left corner
  *    to the right margin, at least ROWS_LEAST wide (all of a narrow page).
+ *    When it starts left of the B BACK hint's width, it rests above the
+ *    hint instead of on it.
  *  - The steps: each row stands one cap further left than the row above
  *    it, down to the last row, over at most STEPS_MOST steps; a longer
  *    list's upper rows stand in line with the top step, so the stair is
@@ -37,6 +39,11 @@ export const ZONE_PAUSED_ROWS_INSET = 8
 /** The rows' column is never narrower than this (or the page, when it is narrower). */
 export const ZONE_PAUSED_ROWS_LEAST = 200
 
+/** The B BACK hint's room at the bottom-left: its width with the page's margin... */
+export const ZONE_PAUSED_HINT_WIDTH = 80
+/** ...and its height with the margin under it. A column that starts left of the hint's width rests above it. */
+export const ZONE_PAUSED_HINT_RISE = 25
+
 /** The most steps the rows take down-left; rows past it stand in line. */
 export const ZONE_PAUSED_STEPS_MOST = 4
 
@@ -47,6 +54,8 @@ export interface ZonePausedPlan {
   readonly wedgeArt: number
   /** Where the rows' column starts from the page's left, art px. */
   readonly rowsLeftArt: number
+  /** How far above the page's foot the rows rest: clear of B BACK when the column reaches over it, art px. */
+  readonly rowsFootArt: number
 }
 
 const clamp = (value: number, least: number, most: number) => Math.max(least, Math.min(most, value))
@@ -58,7 +67,8 @@ export function planPaused(wArt: number, hArt: number): ZonePausedPlan {
   const wedgeArt = Math.max(1, h - ZONE_PAUSED_WEDGE_TOP)
   const fromWedge = Math.max(0, w - wedgeArt) + ZONE_PAUSED_ROWS_INSET
   const rowsLeftArt = Math.max(0, Math.min(fromWedge, w - Math.min(w, ZONE_PAUSED_ROWS_LEAST)))
-  return { bandArt, wedgeArt, rowsLeftArt }
+  const rowsFootArt = rowsLeftArt < ZONE_PAUSED_HINT_WIDTH ? ZONE_PAUSED_HINT_RISE : 0
+  return { bandArt, wedgeArt, rowsLeftArt, rowsFootArt }
 }
 
 /** How many steps a list of `count` rows takes: one fewer than its rows, at most STEPS_MOST. */

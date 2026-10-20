@@ -137,7 +137,7 @@
   flex: 0 0 auto;
   padding: var(--zone-dialog-action-pad) calc(1em + var(--zone-dialog-action-pad) * 2 + calc(var(--zone-panel-pad) * var(--zone-px)));
   line-height: 1;
-  min-width: min(calc(var(--zone-dialog-button-width) * var(--zone-px)), 100%);
+  min-width: calc(var(--zone-dialog-button-width) * var(--zone-px));
   max-width: 100%;
   --zone-underline-depth: var(--zone-drop-focus);
   transition: translate var(--zone-press-time) var(--zone-bounce);

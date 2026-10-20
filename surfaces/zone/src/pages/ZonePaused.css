@@ -116,7 +116,7 @@
   inset: calc(var(--zone-paused-band-at) + var(--zone-paused-margin)) 0 0 var(--zone-paused-rows-left, 40cqi);
   display: flex;
   flex-direction: column;
-  padding: 0 var(--zone-paused-margin) calc(var(--zone-paused-margin) + calc(var(--zone-drop-focus) * var(--zone-px)));
+  padding: 0 var(--zone-paused-margin) calc(var(--zone-paused-margin) + calc(var(--zone-drop-focus) * var(--zone-px)) + var(--zone-paused-rows-foot, 0%));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;

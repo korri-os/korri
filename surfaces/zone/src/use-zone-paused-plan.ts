@@ -1,9 +1,9 @@
 /**
  * Lay PAUSED out on the art grid: measure the page in art px, run
  * `planPaused`, and write the answer on the page as custom properties the
- * stylesheet reads: `--zone-paused-band-h`, `--zone-paused-rows-left` (CSS
- * lengths) and `--zone-paused-wedge-shape` (the wedge's 45 degree stair,
- * `zoneStairWedge`).
+ * stylesheet reads: `--zone-paused-band-h`, `--zone-paused-rows-left` and
+ * `--zone-paused-rows-foot` (CSS lengths) and `--zone-paused-wedge-shape`
+ * (the wedge's 45 degree stair, `zoneStairWedge`).
  *
  * A measurement, not state, as useZoneStairClip's is: nothing re-renders,
  * and the stylesheet keeps a smooth layout for a page never measured (a
@@ -25,6 +25,7 @@ export function useZonePausedPlan(page: RefObject<HTMLElement | null>): void {
       const plan = planPaused(Math.floor(width / px), Math.floor(height / px))
       element.style.setProperty("--zone-paused-band-h", `calc(${plan.bandArt} * var(--zone-px))`)
       element.style.setProperty("--zone-paused-rows-left", `calc(${plan.rowsLeftArt} * var(--zone-px))`)
+      element.style.setProperty("--zone-paused-rows-foot", `calc(${plan.rowsFootArt} * var(--zone-px))`)
       element.style.setProperty("--zone-paused-wedge-shape", zoneStairWedge(plan.wedgeArt, "bottom-right"))
     }
     apply(element.clientWidth, element.clientHeight)
