@@ -530,3 +530,6 @@ model's message, and the model's `update` returns `ZoneRequest`s.
 - **Tokens** are in the `/* ---- layers ---- */` block. The controller-card
   plan's widest and gap equal `--zone-controller-card-max` and
   `--zone-card-gap-wide` (held by `test/zone-onboarding.test.tsx`).
+
+### Polish (decided without asking)
+
