@@ -1,0 +1,121 @@
+/* The card's size is one height: the band hands it down as --zone-card-h,
+ * and a card standing alone takes the plan's focused height from its own
+ * container. Everything else is a share of it: the width by the card ratio,
+ * a side card by the side scale, the title by its share of the width, and
+ * the tags and the band by their shares of the title. */
+.zone-card {
+  --zone-card-base: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-card-scale: 1;
+  --zone-card-share: var(--zone-type-card-share);
+  --zone-card-width: calc(var(--zone-card-base) * var(--zone-card-scale) * var(--zone-card-ratio));
+  --zone-card-type: calc(var(--zone-card-width) * var(--zone-card-share));
+  --zone-card-tri: var(--zone-band-tri, var(--zone-triangle-wide));
+  --zone-tag-row-base: calc(var(--zone-card-type) * var(--zone-tag-type-share));
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: var(--zone-card-width);
+  height: calc(var(--zone-card-base) * var(--zone-card-scale));
+  padding: var(--zone-card-pad);
+  background: var(--zone-panel);
+  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+  text-align: center;
+  transition:
+    width var(--zone-snap-time) var(--zone-bounce),
+    height var(--zone-snap-time) var(--zone-bounce),
+    padding var(--zone-snap-time) var(--zone-bounce),
+    box-shadow var(--zone-lift-time) linear;
+}
+
+.zone-card[data-size="side"] {
+  --zone-card-scale: var(--zone-card-side-scale);
+  --zone-card-share: var(--zone-type-side-share);
+  padding: var(--zone-card-pad-side);
+}
+
+/* Focus: the pink edge around the card and a deeper drop edge. */
+.zone-card[data-focused="true"] {
+  z-index: 1;
+  box-shadow:
+    0 0 0 var(--zone-focus-edge) var(--zone-focus),
+    var(--zone-drop-edge-focus) var(--zone-drop-edge-focus) 0 var(--zone-panel-edge);
+}
+
+/* The title, the band and the tags sit at the foot; the well above them
+ * gives way. */
+.zone-card-body {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: calc(var(--zone-card-type) * 0.12) calc(var(--zone-card-type) * 0.1) calc(var(--zone-card-type) * 0.05);
+}
+
+/* Two lines at most. The fit shrinks the caps (to half) until two lines
+ * hold the title; the box follows the fitted size, so a third line is
+ * never shown. White caps with the blue edge, as on every panel. */
+.zone-card-title {
+  display: block;
+  max-height: calc(var(--zone-card-type) * var(--zone-fit, 1) * 0.98 * 2 + var(--zone-hairline));
+  overflow: hidden;
+  font-size: calc(var(--zone-card-type) * var(--zone-fit, 1));
+  line-height: 0.98;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+/* The orange, blue and mint diagonal band: three colours meeting on hard
+ * lines, each stop starting where the last ended. */
+.zone-card-stripe {
+  display: block;
+  flex: 0 0 auto;
+  height: calc(var(--zone-card-type) * var(--zone-card-band-share));
+  margin: calc(var(--zone-card-type) * 0.1) 0 calc(var(--zone-card-type) * 0.08);
+  background: linear-gradient(
+    var(--zone-stripe-angle),
+    var(--zone-stripe-1) 0 24%,
+    var(--zone-stripe-2) 24% 46%,
+    var(--zone-stripe-3) 46% 100%
+  );
+}
+
+/* The cursor: two red triangles outside the card, shown when it is focused,
+ * breathing toward it. At an end of the band, the triangle with nothing
+ * beyond it dims and stands still. */
+.zone-card-tri {
+  position: absolute;
+  top: 50%;
+  display: none;
+  width: var(--zone-card-tri);
+  height: calc(var(--zone-card-tri) * var(--zone-triangle-aspect));
+  background: var(--zone-cursor);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  translate: 0 -50%;
+  pointer-events: none;
+}
+
+.zone-card[data-focused="true"] .zone-card-tri {
+  display: block;
+}
+
+.zone-card-tri[data-side="left"] {
+  right: 100%;
+  margin-right: var(--zone-nudge-near);
+  animation: zone-nudge-left var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+.zone-card-tri[data-side="right"] {
+  left: 100%;
+  margin-left: var(--zone-nudge-near);
+  scale: -1 1;
+  animation: zone-nudge-right var(--zone-nudge-time) ease-in-out infinite alternate;
+}
+
+.zone-card[data-position="first"] .zone-card-tri[data-side="left"],
+.zone-card[data-position="last"] .zone-card-tri[data-side="right"],
+.zone-card[data-position="only"] .zone-card-tri {
+  opacity: var(--zone-triangle-dim);
+  animation: none;
+}

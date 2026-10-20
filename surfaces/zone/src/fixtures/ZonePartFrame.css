@@ -1,10 +1,7 @@
 /* A box on the ground with a hard outline, so its edge is visible against a
- * child that paints the same mint. Shapes are shares of the device. The box
- * is a size container, as the shell's body is, so a part's container units
- * measure the frame and not the device. */
+ * child that paints the same mint. Shapes are shares of the device. */
 .zone-part-frame {
   position: relative;
-  container-type: size;
   overflow: hidden;
   width: 100%;
   height: 100%;
@@ -20,7 +17,14 @@
   height: 28%;
 }
 
+/* A thumbnail: the smallest box a well or a tag row is asked to fill. */
 .zone-part-frame[data-shape="tiny"] {
-  width: 18%;
-  height: 24%;
+  width: 12%;
+  height: 16%;
+}
+
+/* A side card's box, for a well or a row shown at the size a card gives it. */
+.zone-part-frame[data-shape="card"] {
+  width: 22%;
+  height: 40%;
 }

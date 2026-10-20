@@ -1,0 +1,138 @@
+/* One height, as the zone card: the band's --zone-card-h, or the plan's
+ * focused height when the card stands alone. The width is the save card's
+ * own ratio, taller than a zone card. */
+.zone-save-card {
+  --zone-save-card-height: var(--zone-card-h, min(var(--zone-card-focus-max), calc(100cqh - 2 * var(--zone-band-pad))));
+  --zone-save-card-width: calc(var(--zone-save-card-height) * var(--zone-save-card-ratio));
+  --zone-save-type: calc(var(--zone-save-card-width) * var(--zone-type-save-share));
+  --zone-save-tri: calc(var(--zone-save-card-width) * var(--zone-save-triangle-share));
+  --zone-tag-type: calc(var(--zone-save-type) * var(--zone-tag-type-share));
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: var(--zone-save-card-width);
+  height: var(--zone-save-card-height);
+  padding: var(--zone-card-pad);
+  background: var(--zone-panel);
+  box-shadow: var(--zone-drop-edge) var(--zone-drop-edge) 0 var(--zone-panel-edge);
+  text-align: center;
+  transition: box-shadow var(--zone-lift-time) linear;
+}
+
+.zone-save-card[data-focused="true"] {
+  z-index: 1;
+  box-shadow:
+    0 0 0 var(--zone-focus-edge) var(--zone-focus),
+    var(--zone-drop-edge-focus) var(--zone-drop-edge-focus) 0 var(--zone-panel-edge);
+}
+
+/* The NEW-style header: a mint panel with a yellow stripe above the white
+ * band and a red and a blue stripe below it, each a parallelogram. The
+ * header word sits on the white band in black caps. */
+.zone-save-card-header {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  height: calc(var(--zone-save-card-height) * var(--zone-save-header-share));
+  margin-bottom: var(--zone-card-pad);
+  overflow: hidden;
+  background: var(--zone-save-header);
+}
+
+.zone-save-card-stripe {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: block;
+}
+
+.zone-save-card-stripe[data-stripe="upper"] {
+  top: 0;
+  bottom: 62%;
+  background: var(--zone-save-stripe-upper);
+  clip-path: polygon(38% 0, 64% 0, 92% 100%, 66% 100%);
+}
+
+.zone-save-card-stripe[data-stripe="lower"] {
+  top: 62%;
+  bottom: 0;
+  background: var(--zone-save-stripe-lower);
+  clip-path: polygon(14% 0, 40% 0, 72% 100%, 46% 100%);
+}
+
+.zone-save-card-stripe[data-stripe="lowest"] {
+  top: 62%;
+  bottom: 0;
+  background: var(--zone-save-stripe-lowest);
+  clip-path: polygon(40% 0, 100% 0, 100% 100%, 72% 100%);
+}
+
+.zone-save-card-heading {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0.08em var(--zone-tag-pad);
+  overflow: hidden;
+  background: var(--zone-save-header-band);
+  color: var(--zone-save-header-ink);
+  font-size: calc(var(--zone-save-type) * var(--zone-fit, 1));
+  line-height: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: none;
+}
+
+/* The well's slot: the well fills it, and the two cursor triangles stand
+ * over the well's top and bottom when the card is focused. */
+.zone-save-card-well {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.zone-save-card-tri {
+  position: absolute;
+  left: 50%;
+  z-index: 1;
+  display: none;
+  width: var(--zone-save-tri);
+  height: calc(var(--zone-save-tri) / var(--zone-triangle-aspect));
+  background: var(--zone-cursor);
+  translate: -50% 0;
+  pointer-events: none;
+}
+
+.zone-save-card[data-focused="true"] .zone-save-card-tri {
+  display: block;
+}
+
+.zone-save-card-tri[data-side="up"] {
+  top: var(--zone-card-pad);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.zone-save-card-tri[data-side="down"] {
+  bottom: var(--zone-card-pad);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* A line of text in the well: white caps, sized by the well, wrapping. */
+.zone-save-card-text {
+  display: block;
+  max-width: 100%;
+  padding: 0 0.3em;
+  font-size: min(14cqw, 30cqh);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+/* The foot: one tag at the right, as CPZ sits under its well. */
+.zone-save-card-foot {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-top: var(--zone-card-pad);
+}

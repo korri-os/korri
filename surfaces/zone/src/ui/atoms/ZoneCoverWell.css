@@ -1,0 +1,99 @@
+/* The well fills the box it is given and is a size container, so what
+ * stands in it measures the well, not the screen. In a card's column it is
+ * the one part that gives way: the title and the tags keep their height. */
+.zone-cover-well {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: var(--zone-well-edge) solid var(--zone-well-edge-colour);
+  background: var(--zone-panel);
+  container-type: size;
+}
+
+/* The art keeps its own ratio inside the well: letterboxed on the well's
+ * black, never cropped. Covers are pixel art; the scale stays crisp. */
+.zone-cover-well-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  image-rendering: pixelated;
+}
+
+/* No art: three stripe bands with a black seam, as Mania's title cards. The
+ * colour order is one of six, chosen by the title. Each stop starts where
+ * the last one ended, so no two colours blend. */
+.zone-cover-well[data-filled="initials"] {
+  background: linear-gradient(
+    var(--zone-well-stripe-angle),
+    var(--zone-well-stripe-1) 0 22%,
+    var(--zone-well-stripe-2) 22% 40%,
+    var(--zone-panel) 40% 46%,
+    var(--zone-well-stripe-3) 46% 64%,
+    var(--zone-well-stripe-1) 64% 100%
+  );
+}
+
+.zone-cover-well[data-stripes="0"] {
+  --zone-well-stripe-1: var(--zone-red);
+  --zone-well-stripe-2: var(--zone-orange);
+  --zone-well-stripe-3: var(--zone-blue);
+}
+
+.zone-cover-well[data-stripes="1"] {
+  --zone-well-stripe-1: var(--zone-pink);
+  --zone-well-stripe-2: var(--zone-mint);
+  --zone-well-stripe-3: var(--zone-yellow);
+}
+
+.zone-cover-well[data-stripes="2"] {
+  --zone-well-stripe-1: var(--zone-mint);
+  --zone-well-stripe-2: var(--zone-yellow);
+  --zone-well-stripe-3: var(--zone-orange);
+}
+
+.zone-cover-well[data-stripes="3"] {
+  --zone-well-stripe-1: var(--zone-yellow);
+  --zone-well-stripe-2: var(--zone-red);
+  --zone-well-stripe-3: var(--zone-pink);
+}
+
+.zone-cover-well[data-stripes="4"] {
+  --zone-well-stripe-1: var(--zone-blue);
+  --zone-well-stripe-2: var(--zone-orange);
+  --zone-well-stripe-3: var(--zone-mint);
+}
+
+.zone-cover-well[data-stripes="5"] {
+  --zone-well-stripe-1: var(--zone-orange);
+  --zone-well-stripe-2: var(--zone-pink);
+  --zone-well-stripe-3: var(--zone-blue);
+}
+
+/* The initials: two outlined caps sized by the well, so a tiny well still
+ * shows two letters and a tall one does not run out of width. */
+.zone-cover-well-initials {
+  padding: 0 0.12em;
+  color: var(--zone-cap);
+  font-size: min(38cqw, 60cqh);
+  line-height: 1;
+  text-shadow:
+    calc(var(--zone-cap-outline) * -1) 0 0 var(--zone-cap-outline-colour),
+    var(--zone-cap-outline) 0 0 var(--zone-cap-outline-colour),
+    0 calc(var(--zone-cap-outline) * -1) 0 var(--zone-cap-outline-colour),
+    0 var(--zone-cap-outline) 0 var(--zone-cap-outline-colour),
+    calc(var(--zone-cap-outline) * 1.5) calc(var(--zone-cap-outline) * 1.5) 0 var(--zone-cap-outline-colour);
+}
+
+/* Greyed: the colour drains and the well dims. The edge stays blue so the
+ * well is still a well. */
+.zone-cover-well[data-greyed="true"] {
+  filter: grayscale(1);
+  opacity: var(--zone-well-greyed-opacity);
+}
