@@ -33,6 +33,7 @@ export function Entry() { return store({ view: "Entry", providerId: BBS, typing:
 export function Confirm() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.confirm) }) }
 export function Downloading() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.downloading) }) }
 export function DownloadingSizeUnknown() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.unsized) }) }
+export function Queued() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.queued) }) }
 export function Placing() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.placing) }) }
 export function InLibrary() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.inLibrary) }) }
 export function Stopped() { return store({ view: "Entry", providerId: BBS, typing: undefined }, { details: storeDetails(STORE_GETS.stopped) }) }

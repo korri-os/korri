@@ -36,6 +36,10 @@ export const STORE_GETS = {
     _tag: "Working", kicker: "Downloading Celeste Classic 2", detail: "8 KB so far · 4 KB/s",
     progress: { done: 8_000 }, actions: [action("store:6:cancel", "Cancel")],
   },
+  queued: {
+    _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it",
+    actions: [action("store:9:cancel", "Cancel")],
+  },
   placing: { _tag: "Working", kicker: "Adding to your library…", progress: { done: 0 }, actions: [] },
   inLibrary: { _tag: "InLibrary", detail: "In your library", gameId: "hollow" },
   failed: {

@@ -183,9 +183,18 @@ export function createInMemoryStoreAcquisition(
     }
     set(job, { _tag: "Imported", gameId })
   }
+  /** ADR 0013's queue: one job moves at a time; the rest wait, in order. */
+  const moving = (job: InMemoryJob) => {
+    const tag = job.status.state._tag
+    return tag === "Resolving" || tag === "Downloading" || tag === "Placing"
+  }
+  const queueFree = (except: InMemoryJob) => ![...jobs.values()].some(other => other !== except && moving(other))
   const step = (job: InMemoryJob) => {
     const state = job.status.state
-    if (state._tag === "Resolving") {
+    if (state._tag === "Queued") {
+      const first = [...jobs.values()].find(other => other.status.state._tag === "Queued")
+      if (first === job && queueFree(job)) set(job, { _tag: "Resolving" })
+    } else if (state._tag === "Resolving") {
       if (job.resolveLeft > 0) job.resolveLeft -= 1
       else {
         const total = totalOf(job.claim)
@@ -258,13 +267,20 @@ export function createInMemoryStoreAcquisition(
       await config.acquireGate?.()
       const claim = claimOf(providerId, id)
       const key = claimKey(providerId, id)
+      // An owned cart answers Imported before korrid needs the claim in memory.
+      const owned = inLibrary.get(key)
+      if (owned !== undefined) {
+        const jobId = `job-${++jobSeq}`
+        const status: AcquireJobStatus = { jobId, providerId, id, state: { _tag: "Imported", gameId: owned } }
+        return { _tag: "Ok", payload: status }
+      }
       if (claim === undefined || !held.has(key)) return failure(ACQUISITION_CODE.unknownClaim, "Korri no longer holds this game. Search again.")
       const existing = byClaim.get(key)
       const running = existing === undefined ? undefined : jobs.get(existing)
       // A repeated acquire for a claim whose newest job is live or Imported
       // returns that job; after Failed or Cancelled it is a new try.
       const tag = running?.status.state._tag
-      if (running !== undefined && (tag === "Resolving" || tag === "Downloading" || tag === "Placing" || tag === "Imported")) {
+      if (running !== undefined && (tag === "Queued" || tag === "Resolving" || tag === "Downloading" || tag === "Placing" || tag === "Imported")) {
         return snapshot(running)
       }
       const system = claim.artifact?.system
@@ -283,14 +299,10 @@ export function createInMemoryStoreAcquisition(
           state: { _tag: "Resolving" },
         },
       }
+      // Another download is moving: this one waits its turn.
+      if (!queueFree(job)) set(job, { _tag: "Queued" })
       jobs.set(jobId, job)
       byClaim.set(key, jobId)
-      // Already in the library and the cache: Imported at once, nothing fetched.
-      const known = inLibrary.get(key)
-      if (known !== undefined) {
-        set(job, { _tag: "Imported", gameId: known })
-        return snapshot(job)
-      }
       // The provider will not hand out the file.
       if (claim.unavailable !== undefined) {
         set(job, { _tag: "Failed", reason: { code: ACQUISITION_CODE.resolutionFailed, message: claim.unavailable } })
@@ -308,7 +320,7 @@ export function createInMemoryStoreAcquisition(
       const job = jobs.get(jobId)
       if (job === undefined) return failure(ACQUISITION_CODE.unknownJob, "Korri has no such download.")
       const tag = job.status.state._tag
-      if (tag === "Resolving" || tag === "Downloading") set(job, { _tag: "Cancelled" })
+      if (tag === "Queued" || tag === "Resolving" || tag === "Downloading") set(job, { _tag: "Cancelled" })
       return snapshot(job)
     },
     restart() {

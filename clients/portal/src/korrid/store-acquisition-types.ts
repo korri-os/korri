@@ -100,6 +100,8 @@ export interface AcquireCancelRequest {
 }
 
 export type AcquireJobState =
+  /** Waiting in ADR 0013's one-at-a-time download queue. Cancel works. */
+  | { _tag: "Queued" }
   | { _tag: "Resolving" }
   | { _tag: "Downloading"; bytesDone: number; bytesTotal?: number; bytesPerSecond?: number }
   | { _tag: "Placing" }

@@ -150,6 +150,16 @@ describe("an entry", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull()
   })
 
+  test("waiting in korrid's queue takes the launch stage with Korri's words and Cancel", () => {
+    const { host } = atEntry(storeFixture({ details: storeDetails(STORE_GETS.queued) }))
+    expect(screen.getByText("Waiting to download")).toBeTruthy()
+    expect(screen.getByText("Waiting for the download before it")).toBeTruthy()
+    // No position to show: the meter is the clock, never a bar.
+    expect(document.querySelector(".pico-launch-stage-meter")?.getAttribute("data-meter")).toBe("clock")
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(host.calls.at(-1)).toBe("action:store:9:cancel")
+  })
+
   test("Back from a download goes to the results and asks Korri nothing", () => {
     const { host } = atEntry(storeFixture({ details: storeDetails(STORE_GETS.downloading) }))
     const before = host.calls.length
