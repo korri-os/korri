@@ -104,11 +104,11 @@ export function Empty() {
   return <Typing initial={{ draft: "", caret: 0, layer: "letters", focusedKey: "q" }} maxLength={24} />
 }
 
-/** A column: rows wrap before a key gets too small; every key stays. */
+/** A column: rows wrap before a key gets too small, the panel scrolls to the focused key, and the slab scrolls to the caret. */
 export function Narrow() {
   return (
     <ZonePartFrame shape="narrow-tall">
-      <Typing initial={typed} />
+      <Typing initial={{ draft: fixtureDraft40, caret: 22, layer: "letters", focusedKey: "n" }} maxLength={40} />
     </ZonePartFrame>
   )
 }

@@ -293,7 +293,7 @@
 
   /* The dialog. */
   /** The headline's caps. @label Dialog headline @min 14 @max 80 @step 1 */
-  --zone-type-dialog-headline: 34px;
+  --zone-type-dialog-headline: 40px;
   /** A body line's caps. @label Dialog line @min 10 @max 40 @step 1 */
   --zone-type-dialog-line: 22px;
   /** A dialog button's caps. @label Dialog button @min 12 @max 60 @step 1 */
@@ -345,13 +345,13 @@
 
   /* The title card. */
   /** The title's caps. @label Title type @min 20 @max 160 @step 1 */
-  --zone-type-title: 64px;
+  --zone-type-title: 96px;
   /** The smallest the title shrinks to. @label Title type, least @min 12 @max 80 @step 1 */
   --zone-type-title-min: 24px;
   /** The ACT word in the circle. @label Act word type @min 8 @max 40 @step 1 */
   --zone-type-act-word: 16px;
   /** The act line in the circle. @label Act type @min 12 @max 80 @step 1 */
-  --zone-type-act: 28px;
+  --zone-type-act: 48px;
   /** The orange circle, as a share of the card's height. @label Act circle share @min 0.1 @max 0.6 @step 0.01 */
   --zone-act-circle-share: 0.34;
   /** A diagonal band's thickness, as a share of the card's width. @label Title band share @min 0.02 @max 0.4 @step 0.01 */

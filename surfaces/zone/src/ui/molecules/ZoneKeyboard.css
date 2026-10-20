@@ -2,7 +2,7 @@
  * rows; the count, when there is one, sits at the slab's end. */
 .zone-keyboard {
   --zone-keyboard-type-key: clamp(calc(var(--zone-type-key) * 0.6), 2.4cqi, var(--zone-type-key));
-  --zone-keyboard-type-slab: clamp(var(--zone-type-row-min), 3cqi, var(--zone-type-slab));
+  --zone-keyboard-type-slab: clamp(var(--zone-type-row-min), 4cqi, var(--zone-type-slab));
   --zone-keyboard-key-height: clamp(calc(var(--zone-key-height) * 0.7), 8cqb, var(--zone-key-height));
   --zone-keyboard-shape: polygon(
     var(--zone-slant) 0,
@@ -18,7 +18,10 @@
   column-gap: var(--zone-key-gap);
   row-gap: var(--zone-keyboard-pad);
   width: 100%;
+  max-height: 100%;
   padding: var(--zone-keyboard-pad) calc(var(--zone-keyboard-pad) + var(--zone-keyboard-slant));
+  overflow-y: auto;
+  scrollbar-width: none;
   background: var(--zone-keyboard-panel);
   clip-path: polygon(
     var(--zone-keyboard-slant) 0,
@@ -30,9 +33,12 @@
   animation: zone-snap var(--zone-snap-time) var(--zone-bounce);
 }
 
-/* The typed string on white. It never wraps; it scrolls to the caret. */
+/* The typed string on white. It never wraps; it scrolls to the caret. It
+ * stays at the top while a short panel scrolls its keys. */
 .zone-keyboard-slab {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   grid-column: 1;
   display: flex;
   align-items: center;
@@ -64,6 +70,9 @@
 
 /* How many characters of the most Korri takes. */
 .zone-keyboard-count {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   grid-column: 2;
   font-size: var(--zone-type-note);
 }
@@ -74,11 +83,19 @@
   row-gap: var(--zone-key-gap);
 }
 
-/* A row wraps before any key gets narrower than its least width, so every
- * key stays on the panel at every width. */
+/* Keys are equal: a twelfth of the row less the gaps, never narrower than
+ * the least width and never wider than a key is tall and a half. A row
+ * wraps before any key gets narrower, and the panel scrolls before any key
+ * is lost, so every key stays reachable at every size. */
 .zone-keyboard-row {
+  --zone-keyboard-key-width: clamp(
+    var(--zone-key-min),
+    calc((100% - var(--zone-key-gap) * 11) / 12),
+    calc(var(--zone-key-height) * 1.8)
+  );
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--zone-key-gap);
 }
 
@@ -87,7 +104,7 @@
 .zone-keyboard-key {
   position: relative;
   isolation: isolate;
-  flex: 1 1 var(--zone-key-min);
+  flex: 0 1 var(--zone-keyboard-key-width);
   min-width: var(--zone-key-min);
   height: var(--zone-keyboard-key-height);
   font-size: var(--zone-keyboard-type-key);
@@ -127,16 +144,15 @@
 }
 
 .zone-keyboard-key[data-role="layer"] {
-  flex: 1 1 var(--zone-key-min);
   text-transform: none;
 }
 
 .zone-keyboard-key[data-role="space"] {
-  flex: 4 1 calc(var(--zone-key-min) * 3);
+  flex-basis: calc(var(--zone-keyboard-key-width) * 4 + var(--zone-key-gap) * 3);
 }
 
 .zone-keyboard-key[data-role="wide"] {
-  flex: 2 1 calc(var(--zone-key-min) * 2);
+  flex-basis: calc(var(--zone-keyboard-key-width) * 2 + var(--zone-key-gap));
 }
 
 .zone-keyboard-key[data-current] {

@@ -102,3 +102,8 @@
 .zone-busy-strip-action:disabled {
   opacity: var(--zone-triangle-dim);
 }
+
+/* A destructive action's caps are red, as a destructive row's value is. */
+.zone-busy-strip-action[data-destructive] {
+  color: var(--zone-destructive-ink);
+}

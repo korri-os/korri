@@ -1,8 +1,8 @@
 /* The card: a flat ground that fills its box and clips the bands. The
  * ground and each band name a colour; the map below turns it into a token. */
 .zone-title-card {
-  --zone-title-card-type-title: clamp(var(--zone-type-title-min), 7cqi, var(--zone-type-title));
-  --zone-title-card-type-act: clamp(var(--zone-type-note), 4cqb, var(--zone-type-act));
+  --zone-title-card-type-title: clamp(var(--zone-type-title-min), 7.5cqi, var(--zone-type-title));
+  --zone-title-card-type-act: clamp(var(--zone-type-note), 6cqb, var(--zone-type-act));
   --zone-title-card-type-act-word: clamp(calc(var(--zone-type-act-word) * 0.6), 2.4cqb, var(--zone-type-act-word));
   --zone-title-card-circle: calc(var(--zone-act-circle-share) * 100cqh);
   --zone-title-card-colour: var(--zone-title-ground);
@@ -24,17 +24,22 @@
 .zone-title-card[data-ground="red"] { --zone-title-card-colour: var(--zone-red); }
 .zone-title-card[data-ground="pink"] { --zone-title-card-colour: var(--zone-pink); }
 
-/* Three bands side by side, the whole strip turned to the band angle and
- * twice the card's size so it reaches every corner. The outer two slide
- * along their length, as the reference staggers them. */
+/* Three bands side by side, the whole strip turned so each band falls
+ * from top-left to bottom-right at the band angle, and twice the card's
+ * size so it reaches every corner. The outer two slide along their length,
+ * as the reference staggers them. */
 .zone-title-card-bands {
   position: absolute;
-  inset: -50%;
+  top: 50%;
+  left: 50%;
   display: flex;
   align-items: stretch;
   justify-content: center;
   gap: calc(var(--zone-title-band-share) * 25cqw);
-  rotate: calc(var(--zone-title-band-angle) * -1);
+  width: 200cqmax;
+  height: 200cqmax;
+  translate: -50% -50%;
+  rotate: calc(var(--zone-title-band-angle) - 90deg);
   pointer-events: none;
 }
 
@@ -105,30 +110,35 @@
   );
 }
 
-/* The orange circle with the act on a white slab. */
+/* The orange circle with the act on a white slab. The circle takes its
+ * share of the height, and grows, still round, when the act needs more. */
 .zone-title-card-circle {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: var(--zone-title-card-circle);
-  height: var(--zone-title-card-circle);
+  min-width: var(--zone-title-card-circle);
+  min-height: var(--zone-title-card-circle);
+  aspect-ratio: 1;
+  padding: calc(var(--zone-title-card-circle) * 0.12);
   border-radius: 50%;
   background: var(--zone-act-circle);
 }
 
+/* The act wraps at a space, never inside a word: a long system widens the
+ * circle instead. */
 .zone-title-card-slab {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: calc(var(--zone-row-space) / 2);
-  max-width: 76%;
+  max-width: calc(var(--zone-title-card-circle) * 0.76);
+  min-width: min-content;
   padding: calc(var(--zone-row-space) * 2) var(--zone-row-gap);
   background: var(--zone-act-slab);
   color: var(--zone-act-ink);
   text-align: center;
   text-shadow: none;
-  overflow-wrap: anywhere;
 }
 
 .zone-title-card-act-word {

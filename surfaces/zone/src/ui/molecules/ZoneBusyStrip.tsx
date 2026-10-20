@@ -42,6 +42,7 @@ export function ZoneBusyStrip({
             <button
               className="zone-busy-strip-action"
               data-focused={index === focused || undefined}
+              data-destructive={action.destructive || undefined}
               disabled={!action.enabled}
               key={action.id}
               onClick={onAction === undefined ? undefined : () => onAction(action.id)}

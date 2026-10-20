@@ -1,6 +1,6 @@
 import "./ZoneKeyboard.css"
 import "../../zone-motion.css"
-import { useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 
 export type ZoneKeyboardLayer = "letters" | "shift" | "symbols" | "uri"
 
@@ -33,7 +33,7 @@ const ROWS: Record<ZoneKeyboardLayer, readonly string[]> = {
   letters: ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"],
   shift: ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"],
   symbols: ["1234567890", "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?~`"],
-  uri: ["1234567890", "qwertyuiop", "asdfghjkl:/", "zxcvbnm.-_?=&@"],
+  uri: ["1234567890", "qwertyuiop:/", "asdfghjkl.-_", "zxcvbnm?=&@"],
 }
 
 /** The glyphs on the layer keys: what the layer types, not its name. */
@@ -83,6 +83,7 @@ export function ZoneKeyboard({
   readonly maxLength?: number
   readonly onKey?: (key: ZoneKey) => void
 }) {
+  const panel = useRef<HTMLDivElement | null>(null)
   const slab = useRef<HTMLDivElement | null>(null)
   const mark = useRef<HTMLSpanElement | null>(null)
   const shown = secret ? DOT.repeat(draft.length) : draft
@@ -103,6 +104,11 @@ export function ZoneKeyboard({
     else if (right + room > box.scrollLeft + box.clientWidth) box.scrollLeft = right + room - box.clientWidth
   }, [before, after])
 
+  // A focused key below the fold of a short panel scrolls into view.
+  useEffect(() => {
+    panel.current?.querySelector("[data-focused]")?.scrollIntoView({ block: "nearest" })
+  }, [focusedKey, layer])
+
   const key = (value: ZoneKey, label: string, extra?: string) => {
     const id = zoneKeyId(value)
     return (
@@ -121,7 +127,7 @@ export function ZoneKeyboard({
   }
 
   return (
-    <div className="zone-keyboard" data-layer={layer} role="group" aria-label="Keyboard">
+    <div aria-label="Keyboard" className="zone-keyboard" data-layer={layer} ref={panel} role="group">
       <div className="zone-keyboard-slab" ref={slab}>
         <span className="zone-keyboard-draft">
           {before}
