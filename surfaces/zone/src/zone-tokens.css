@@ -184,6 +184,14 @@
   --zone-font: "Zone Caps", "Zone Jersey 10", sans-serif;
   /** Korri's facts and sentences, in their own case: Jersey 10, then the system's sans. @label Fact face */
   --zone-font-fact: "Zone Jersey 10", sans-serif;
+  /** Korri's names drawn at the caps' size (a game's title, a kicker, a system tag, the clock): in this look, Zone's own face. @label Korri name face */
+  --zone-korri-font: var(--zone-font);
+  /** The case of Korri's names at the caps' size: in this look, upper case as Zone's words. @label Korri name case */
+  --zone-korri-case: uppercase;
+  /** Whether Korri's names at the caps' size wear the two-tone lower rows: in this look, as Zone's words do. @label Korri name shade */
+  --zone-korri-shade: block;
+  /** The lower rows of a Korri name drawn with a gradient (RUN WITH's title): in this look, the white ink's shade. @label Korri name lower rows */
+  --zone-korri-lower: var(--zone-ink-white-shade);
   /** Tracking for every word: none, since each glyph carries its own 1-px gap and tracking would leave the art grid. @label Tracking @min 0 @max 0.1 @step 0.005 */
   --zone-tracking: 0;
   /** caps-1: rows, tabs, tags, hints, buttons. The em in art px; Zone Caps' em is its 10-px cap. @label Caps 1 @min 10 @max 10 @step 10 */
@@ -1255,7 +1263,9 @@
  * root wears one as `data-look`; a Caliper frame names it on `<html>`
  * (vite.config.ts), so each block also matches a theme under a marked
  * ancestor. The blocks above are Retro, the pixel refinement exactly as it
- * stood: Retro adds only its name. Blend sets Korri's facts in Anton.
+ * stood: Retro adds only its name (Korri's names at the caps' size stay
+ * Zone Caps upper case there, as on main). Blend sets Korri's facts in
+ * Anton, and Korri's names at the caps' size in Anton in Korri's case.
  * Modern also sets Zone's own words in Anton with a flat face (the ring and
  * drop stay), and switches what the stylesheets draw smooth: a see-through
  * veil, eased nudges, sub-pixel travel, round discs. Layout sizes never
@@ -1274,6 +1284,14 @@
   --zone-look: blend;
   /** Korri's facts and sentences, in their own case: Anton sized to Jersey 10's cap, then Jersey 10. @label Fact face */
   --zone-font-fact: "Zone Anton Fact", "Zone Jersey 10", sans-serif;
+  /** Korri's names at the caps' size: Anton sized to Zone Caps' cap, in Korri's own case. @label Korri name face */
+  --zone-korri-font: "Zone Anton Caps", "Zone Caps", "Zone Jersey 10", sans-serif;
+  /** Korri's names keep their own case. @label Korri name case */
+  --zone-korri-case: none;
+  /** Korri's names are flat, as every Anton fact. @label Korri name shade */
+  --zone-korri-shade: none;
+  /** A Korri name drawn with a gradient is flat. @label Korri name lower rows */
+  --zone-korri-lower: var(--zone-white);
 }
 
 .zone-theme[data-look="modern"],
@@ -1284,6 +1302,14 @@
   --zone-font: "Zone Anton Caps", "Zone Caps", "Zone Jersey 10", sans-serif;
   /** Korri's facts and sentences, in their own case: Anton sized to Jersey 10's cap, then Jersey 10. @label Fact face */
   --zone-font-fact: "Zone Anton Fact", "Zone Jersey 10", sans-serif;
+  /** Korri's names at the caps' size: Anton sized to Zone Caps' cap, in Korri's own case. @label Korri name face */
+  --zone-korri-font: "Zone Anton Caps", "Zone Caps", "Zone Jersey 10", sans-serif;
+  /** Korri's names keep their own case. @label Korri name case */
+  --zone-korri-case: none;
+  /** Korri's names are flat, as every Anton fact. @label Korri name shade */
+  --zone-korri-shade: none;
+  /** A Korri name drawn with a gradient is flat. @label Korri name lower rows */
+  --zone-korri-lower: var(--zone-white);
   /** The white ink's face is flat: its lower rows are its face. @label White ink shade */
   --zone-ink-white-shade: var(--zone-white);
   /** The danger ink's face is flat. @label Danger ink shade */

@@ -49,6 +49,7 @@ export interface ZoneDialogAction {
  */
 export function ZoneDialog({
   headline,
+  korriHeadline = false,
   lines,
   title,
   actions,
@@ -57,8 +58,10 @@ export function ZoneDialog({
   onFocusAction,
 }: {
   readonly headline: string
+  /** The headline is Korri's (its kicker, its confirmation's title), not Zone's word: the look decides its face and case. */
+  readonly korriHeadline?: boolean
   readonly lines: readonly string[]
-  /** A third line in the HUD's yellow: the game's title. */
+  /** A third line in the HUD's yellow: the game's title (Korri's: the look decides its face and case). */
   readonly title?: string
   /** The buttons, left to right: NO then YES, or Korri's actions in its order. */
   readonly actions: readonly ZoneDialogAction[]
@@ -84,7 +87,7 @@ export function ZoneDialog({
       <span className="zone-dialog-wedge" data-wedge="start" />
       <span className="zone-dialog-wedge" data-wedge="end" />
       <h2 className="zone-dialog-headline" ref={head}>
-        <ZoneWords>{headline}</ZoneWords>
+        <ZoneWords korri={korriHeadline}>{headline}</ZoneWords>
       </h2>
       <div className="zone-dialog-body">
         {lines.map((line, index) => (
@@ -94,7 +97,7 @@ export function ZoneDialog({
           <p className="zone-dialog-title" data-case="verbatim">{title}</p>
         ) : (
           <p className="zone-dialog-title">
-            <ZoneWords ink="hud">{title}</ZoneWords>
+            <ZoneWords ink="hud" korri>{title}</ZoneWords>
           </p>
         )}
       </div>

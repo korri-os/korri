@@ -43,6 +43,7 @@ import { ZoneWords } from "../atoms/ZoneWords"
  */
 export function ZoneBusyStrip({
   kicker,
+  korri = false,
   detail,
   progress,
   actions = [],
@@ -51,6 +52,8 @@ export function ZoneBusyStrip({
   onFocusAction,
 }: {
   readonly kicker: string
+  /** The kicker is Korri's (its status), not Zone's word (LOADING): the look decides its face and case. */
+  readonly korri?: boolean
   readonly detail?: string
   /** Korri's measured progress, in bytes. */
   readonly progress?: ZoneProgress
@@ -87,7 +90,7 @@ export function ZoneBusyStrip({
       <i aria-hidden="true" className="zone-busy-strip-ruler" ref={ruler} />
       <div className="zone-busy-strip-panel" ref={panel}>
         <span className="zone-busy-strip-kicker">
-          <ZoneWords>{kicker}</ZoneWords>
+          <ZoneWords korri={korri}>{kicker}</ZoneWords>
         </span>
         {detail !== undefined && progress === undefined ? <span className="zone-busy-strip-detail">{detail}</span> : null}
         {progress === undefined ? null : (

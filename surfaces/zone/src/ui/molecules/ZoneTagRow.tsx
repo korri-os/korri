@@ -99,7 +99,7 @@ export function ZoneTagRow({
   return (
     <span className="zone-tag-row" ref={row}>
       {tags.map((tag, index) => (
-        <ZoneTag join={joinOf(index, tags.length)} key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />
+        <ZoneTag join={joinOf(index, tags.length)} key={`${tag.kind}:${tag.label}`} kind={tag.kind} korri={tag.korri} label={tag.label} />
       ))}
     </span>
   )

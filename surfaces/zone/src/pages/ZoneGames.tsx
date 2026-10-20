@@ -443,7 +443,7 @@ export function ZoneGames(props: ZoneGamesProps) {
                       )}
                       <span className="zone-games-spill" data-empty="" ref={spill}>
                         {spillTags.map(tag => (
-                          <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} label={tag.label} />
+                          <ZoneTag key={`${tag.kind}:${tag.label}`} kind={tag.kind} korri={tag.korri} label={tag.label} />
                         ))}
                       </span>
                       <span className="zone-games-facts" data-empty={!recorded || undefined}>

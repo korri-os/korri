@@ -24,22 +24,28 @@ import { ZoneCaps, type ZoneInk } from "./ZoneCaps"
  * words (each ZoneCaps' copies have an empty alternative), so a screen
  * reader, an accessible name and `textContent` read them once, whole, and
  * no hidden copy can say what the screen does not.
+ *
+ * `korri` marks the words as Korri's (a game's title, a kicker): each word
+ * is a `korri` ZoneCaps, so the look decides face and case.
  */
 export function ZoneWords({
   ink = "white",
+  korri = false,
   children,
 }: {
   readonly ink?: ZoneInk
+  /** Korri's words at the caps' size: the look's face and case. */
+  readonly korri?: boolean
   readonly children: string
 }) {
   const words = children.split(/\s+/).filter(word => word !== "")
   return (
-    <span className="zone-words">
+    <span className="zone-words" data-face={korri ? "korri" : undefined}>
       {words.map((word, index) => (
         <Fragment key={`${index}:${word}`}>
           {index === 0 ? null : " "}
           <span className="zone-words-word">
-            <ZoneCaps ink={ink}>{word}</ZoneCaps>
+            <ZoneCaps ink={ink} korri={korri}>{word}</ZoneCaps>
           </span>
         </Fragment>
       ))}

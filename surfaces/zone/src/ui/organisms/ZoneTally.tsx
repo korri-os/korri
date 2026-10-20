@@ -92,7 +92,7 @@ export function ZoneTally({
         <span className="zone-tally-head">
           <span aria-hidden="true" className="zone-tally-slab" ref={slab} />
           <span className="zone-tally-title" ref={heading}>
-            <ZoneWords>{title}</ZoneWords>
+            <ZoneWords korri>{title}</ZoneWords>
           </span>
         </span>
         <span className="zone-tally-rows" ref={rowsBox}>

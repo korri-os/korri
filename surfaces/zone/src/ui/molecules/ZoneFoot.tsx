@@ -55,7 +55,7 @@ export function ZoneFoot({
               <ZoneCaps ink="hud">Time</ZoneCaps>
             </span>
             <span className="zone-foot-timer-digits">
-              <ZoneCaps>{clock}</ZoneCaps>
+              <ZoneCaps korri>{clock}</ZoneCaps>
             </span>
           </ZonePanel>
         </span>

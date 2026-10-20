@@ -167,3 +167,16 @@
 .zone-caps[data-face="fact"]::after {
   content: none;
 }
+
+/* Korri's name at the caps' size: the look's face and case. Retro's are
+ * Zone's own (Zone Caps, upper case, the two-tone rows), so Retro draws it
+ * as it drew every word before the looks; Blend and Modern draw it in Anton
+ * in Korri's case, flat (zone-tokens.css, "the looks"). */
+.zone-caps[data-face="korri"] {
+  font-family: var(--zone-korri-font);
+  text-transform: var(--zone-korri-case);
+}
+
+.zone-caps[data-face="korri"]::after {
+  display: var(--zone-korri-shade);
+}

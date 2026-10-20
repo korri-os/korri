@@ -42,9 +42,13 @@
   text-overflow: ellipsis;
   text-shadow: none;
   color: var(--zone-cap);
-  background: linear-gradient(to bottom, var(--zone-cap) 0% 70%, var(--zone-ink-white-shade) 70% 100%) 0 0 / 100% 1em repeat-y;
+  background: linear-gradient(to bottom, var(--zone-cap) 0% 70%, var(--zone-korri-lower) 70% 100%) 0 0 / 100% 1em repeat-y;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  /* The game's title is Korri's: the look's face and case (Retro's are
+   * Zone Caps in upper case, its lower rows the white ink's shade). */
+  font-family: var(--zone-korri-font);
+  text-transform: var(--zone-korri-case);
 }
 
 .zone-run-with-state {

@@ -39,23 +39,32 @@ export type ZoneInk = "white" | "hud" | "banner" | "ink" | "danger"
  * `fact` sets the words in Jersey 10, in their own case, at the fact size:
  * a name, a path, a key or a sentence Korri publishes is data, not a label.
  * Every word is on one line; a word that does not fit truncates with "…".
+ *
+ * `korri` marks Korri's name drawn at the caps' size (a game's title, a
+ * kicker, a system, the clock): the look decides its face and case
+ * (`--zone-korri-font`, `--zone-korri-case`): Zone Caps in upper case in
+ * Retro, as before the looks; Anton in Korri's own case, flat, in Blend
+ * and Modern.
  */
 export function ZoneCaps({
   size = "inherit",
   ink = "white",
   fact = false,
+  korri = false,
   children,
 }: {
   readonly size?: ZoneCapsSize
   readonly ink?: ZoneInk
   /** Korri's words in their own case, in Jersey 10. */
   readonly fact?: boolean
+  /** Korri's name at the caps' size: its face and case are the look's. */
+  readonly korri?: boolean
   readonly children: string
 }) {
   return (
     <span
       className="zone-caps"
-      data-face={fact ? "fact" : "caps"}
+      data-face={fact ? "fact" : korri ? "korri" : "caps"}
       data-ink={ink}
       data-size={size}
       data-text={children}

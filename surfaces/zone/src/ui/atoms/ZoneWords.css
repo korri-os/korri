@@ -18,6 +18,12 @@
   hyphens: none;
 }
 
+/* Korri's words: the look's face and case for the spaces between them too. */
+.zone-words[data-face="korri"] {
+  font-family: var(--zone-korri-font);
+  text-transform: var(--zone-korri-case);
+}
+
 /* One word: exactly as wide as its letters (ZoneCaps lays out as tight as
  * its line), its line one cap, standing on the words' baseline. The room
  * ZoneCaps keeps round its letters for accents, ring and drop is painted

@@ -71,6 +71,8 @@ export type ZoneOptionsPress =
 /** What the NO / YES dialog asks before an action fires. */
 export interface ZoneOptionsConfirm {
   readonly headline: string
+  /** The headline is Korri's confirmation title (a sentence of Korri's), not a row's label. */
+  readonly korriHeadline?: boolean
   readonly lines: readonly string[]
   readonly confirmLabel: string
 }
@@ -216,6 +218,7 @@ function settingPress(item: SurfaceSettingItem): ZoneOptionsPress {
       const confirm: ZoneOptionsConfirm | undefined = interaction.confirmation !== undefined
         ? {
             headline: interaction.confirmation.title,
+            korriHeadline: true,
             lines: [interaction.confirmation.message],
             confirmLabel: interaction.confirmation.confirmLabel,
           }

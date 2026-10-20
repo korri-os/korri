@@ -241,6 +241,7 @@ export function ZoneOptions({
                 ]}
                 focused={dialog.focused}
                 headline={dialog.confirm.headline}
+                korriHeadline={dialog.confirm.korriHeadline === true}
                 lines={dialog.confirm.lines}
                 onFocusAction={index => {
                   if (index === 0 || index === 1) onDialogFocus?.(index)

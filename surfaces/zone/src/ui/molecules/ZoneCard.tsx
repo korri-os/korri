@@ -42,10 +42,10 @@ export const downloadLabel = (download: { readonly bytes?: number }): string =>
   download.bytes === undefined ? "Download" : `Download ${formatZoneBytes(download.bytes)}`
 
 export const cardTags = ({ system, places, resumable, download }: ZoneCardFacts): readonly ZoneTagItem[] => [
-  ...(system === undefined ? [] : [{ kind: "system", label: system } as const]),
+  ...(system === undefined ? [] : [{ kind: "system", label: system, korri: true } as const]),
   ...places.map(place => place.here
     ? { kind: "here", label: "Here" } as const
-    : { kind: "remote", label: place.label } as const),
+    : { kind: "remote", label: place.label, korri: true } as const),
   ...(resumable === true ? [{ kind: "continue", label: "Continue" } as const] : []),
   ...(download === undefined ? [] : [{ kind: "download", label: downloadLabel(download) } as const]),
 ]
@@ -125,7 +125,7 @@ export function ZoneCard({
       <ZoneCoverWell art={art} noise={noise} title={title} />
       <span className="zone-card-body">
         <span className="zone-card-title" ref={heading}>
-          <ZoneWords>{title}</ZoneWords>
+          <ZoneWords korri>{title}</ZoneWords>
         </span>
         <i aria-hidden="true" className="zone-card-stripe" />
         <ZoneTagRow onShown={onTagsShown} tags={cardTags({ title, system, places, resumable, download })} />

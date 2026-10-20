@@ -67,7 +67,7 @@ export function ZoneTitleCard({
         <div className="zone-title-card-name">
           <span aria-hidden="true" className="zone-title-card-slab" ref={slab} />
           <h1 className="zone-title-card-title" ref={heading}>
-            <ZoneWords>{title}</ZoneWords>
+            <ZoneWords korri>{title}</ZoneWords>
           </h1>
         </div>
         <div className="zone-title-card-zone">
@@ -76,7 +76,7 @@ export function ZoneTitleCard({
           </span>
           {system === undefined ? null : (
             <span className="zone-title-card-system">
-              <ZoneTag kind="system" label={system} />
+              <ZoneTag kind="system" korri label={system} />
             </span>
           )}
         </div>

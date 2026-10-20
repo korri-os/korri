@@ -275,7 +275,7 @@ export function ZoneSaveData({
       <div className="zone-save-data" data-busy={status?._tag === "Working" || undefined} ref={root}>
         {status?._tag === "Working" ? (
           <div className="zone-save-data-busy">
-            <ZoneBusyStrip kicker={status.operation} />
+            <ZoneBusyStrip kicker={status.operation} korri />
           </div>
         ) : null}
         <div className="zone-save-data-main">

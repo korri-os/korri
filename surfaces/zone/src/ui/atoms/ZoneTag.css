@@ -38,6 +38,12 @@
     var(--zone-px) var(--zone-px) 0 var(--zone-black);
 }
 
+/* Korri's label (a system, a device): the look's face and case. */
+.zone-tag[data-face="korri"] {
+  font-family: var(--zone-korri-font);
+  text-transform: var(--zone-korri-case);
+}
+
 /* Joined tags overlap by one slant so the cut of one lies on the cut of the
  * next. The later tag paints over the earlier one, along the same line. */
 .zone-tag + .zone-tag {

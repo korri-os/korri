@@ -110,13 +110,13 @@ export function ZoneStatusLayer({
       {status._tag === "Running" && hud ? (
         <div aria-live="polite" className="zone-status-layer-running" role="status">
           <span className="zone-status-layer-hud-kicker">
-            <ZoneCaps ink="hud" size="caps-1">{status.kicker}</ZoneCaps>
+            <ZoneCaps ink="hud" korri size="caps-1">{status.kicker}</ZoneCaps>
           </span>
           <span className="zone-status-layer-hud-line">
             {gameTitle === undefined ? null : (
               <span className="zone-status-layer-hud-title">
                 <ZonePanel edge={false}>
-                  <ZoneCaps size="caps-1">{gameTitle}</ZoneCaps>
+                  <ZoneCaps korri size="caps-1">{gameTitle}</ZoneCaps>
                 </ZonePanel>
               </span>
             )}
@@ -131,11 +131,12 @@ export function ZoneStatusLayer({
           {gameTitle === undefined ? null : (
             <span className="zone-status-layer-busy-game">
               <ZonePanel edge={false}>
-                <ZoneWords ink="hud">{gameTitle}</ZoneWords>
+                <ZoneWords ink="hud" korri>{gameTitle}</ZoneWords>
               </ZonePanel>
             </span>
           )}
           <ZoneBusyStrip
+            korri
             actions={status.actions}
             detail={status.detail}
             focused={(status.actions?.length ?? 0) > 0 ? focus : undefined}
@@ -157,6 +158,7 @@ export function ZoneStatusLayer({
             ]}
             focused={focus}
             headline={status.kicker}
+            korriHeadline
             lines={[status.reason]}
             onFocusAction={onFocusButton}
             title={gameTitle}
@@ -175,6 +177,7 @@ export function ZoneStatusLayer({
             }))}
             focused={focus}
             headline={status.kicker}
+            korriHeadline
             lines={status.detail === undefined ? [] : [status.detail]}
             onFocusAction={onFocusButton}
             title={gameTitle}

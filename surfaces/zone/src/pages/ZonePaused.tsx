@@ -144,7 +144,7 @@ export function ZonePaused({
         <h1 className="zone-paused-title" ref={heading}>
           <ZoneSlab />
           <span className="zone-paused-title-text">
-            <ZoneWords>{title}</ZoneWords>
+            <ZoneWords korri={overlay.title !== undefined}>{title}</ZoneWords>
           </span>
         </h1>
       </header>

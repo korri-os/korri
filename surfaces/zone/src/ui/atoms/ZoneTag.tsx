@@ -16,6 +16,8 @@ export type ZoneTagJoin = "only" | "first" | "middle" | "last"
 export interface ZoneTagItem {
   readonly kind: ZoneTagKind
   readonly label: string
+  /** The label is Korri's (a system, a device's name): the look decides its face and case. */
+  readonly korri?: boolean
 }
 
 /**
@@ -28,9 +30,9 @@ export interface ZoneTagItem {
  * 3, never between. A row that is still too narrow drops its last tags
  * (ZoneTagRow); a tag standing alone truncates with "…".
  */
-export function ZoneTag({ kind, label, join = "only" }: ZoneTagItem & { readonly join?: ZoneTagJoin }) {
+export function ZoneTag({ kind, label, korri = false, join = "only" }: ZoneTagItem & { readonly join?: ZoneTagJoin }) {
   return (
-    <span className="zone-tag" data-join={join} data-kind={kind}>
+    <span className="zone-tag" data-face={korri ? "korri" : undefined} data-join={join} data-kind={kind}>
       {label}
     </span>
   )
