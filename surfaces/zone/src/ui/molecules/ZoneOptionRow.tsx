@@ -32,6 +32,10 @@ import { useZoneHorizontal } from "../../use-zone-horizontal"
  * stands under it whether or not it is focused, so the reason is on screen;
  * A does nothing.
  *
+ * `verbatimValue` and `verbatimLabel` keep a fact's own case (a path, a
+ * version, an SSID, a runner build): what Korri publishes as data is not
+ * a label to set in caps. Zone's own words stay in caps.
+ *
  * `saving` replaces the value with a blinking caret until Korri answers.
  * `problem` is Korri's message, red on its own parallelogram under the row.
  * `description` shows under an enabled row only while it is focused, so a
@@ -53,6 +57,8 @@ export function ZoneOptionRow({
   saving = false,
   disabled = false,
   problem,
+  verbatimLabel = false,
+  verbatimValue = false,
   onPress,
   onStep,
   onFocus,
@@ -68,6 +74,10 @@ export function ZoneOptionRow({
   /** Dimmed and inert to A; the description shows why. */
   readonly disabled?: boolean
   readonly problem?: string
+  /** The label is a fact Korri publishes (a path, an SSID, a program): keep its case. */
+  readonly verbatimLabel?: boolean
+  /** The value is a fact Korri publishes: keep its case. */
+  readonly verbatimValue?: boolean
   /** A on the row: fire the action or raise the keyboard. */
   readonly onPress?: () => void
   /** Left or right on a choice row. */
@@ -106,8 +116,8 @@ export function ZoneOptionRow({
         ref={control}
         type="button"
       >
-        <span className="zone-option-row-label">{label}</span>
-        <span className="zone-option-row-value">
+        <span className="zone-option-row-label" data-case={verbatimLabel ? "verbatim" : undefined}>{label}</span>
+        <span className="zone-option-row-value" data-case={verbatimValue ? "verbatim" : undefined}>
           {steps ? <span className="zone-option-row-step zone-option-row-step-back" /> : null}
           {saving
             ? <span aria-label="Saving" className="zone-option-row-caret" role="img" />

@@ -28,6 +28,7 @@ export function ZoneDialog({
   title,
   actions,
   focused = 0,
+  verbatimTitle = false,
   onFocusAction,
 }: {
   readonly headline: string
@@ -38,6 +39,8 @@ export function ZoneDialog({
   readonly actions: readonly ZoneDialogAction[]
   /** The index of the focused button. */
   readonly focused?: number
+  /** The yellow line is a fact Korri publishes that is not a title (a key): keep its case. */
+  readonly verbatimTitle?: boolean
   /** The host's cursor arrived on a button: its index, left to right. */
   readonly onFocusAction?: (index: number) => void
 }) {
@@ -50,7 +53,9 @@ export function ZoneDialog({
         {lines.map((line, index) => (
           <p className="zone-dialog-line" key={index}>{line}</p>
         ))}
-        {title !== undefined ? <p className="zone-dialog-title">{title}</p> : null}
+        {title !== undefined
+          ? <p className="zone-dialog-title" data-case={verbatimTitle ? "verbatim" : undefined}>{title}</p>
+          : null}
       </div>
       <div className="zone-dialog-actions">
         {actions.map((action, index) => (

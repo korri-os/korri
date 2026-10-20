@@ -16,9 +16,8 @@
   padding-left: var(--zone-slant);
 }
 
-/* A program's name and a build's path are data: they keep their case. */
+/* A program's name and a build's path are data: the row keeps their case. */
 .zone-run-with-route-row {
   display: block;
   min-width: 0;
-  text-transform: none;
 }

@@ -80,6 +80,11 @@
   overflow-wrap: anywhere;
 }
 
+/* A key keeps its own case. */
+.zone-dialog-title[data-case="verbatim"] {
+  text-transform: none;
+}
+
 /* NO and YES, or the one way out. They wrap to two rows before either
  * shrinks below its least width. */
 .zone-dialog-actions {

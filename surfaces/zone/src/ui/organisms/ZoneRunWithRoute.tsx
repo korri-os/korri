@@ -49,6 +49,8 @@ export function ZoneRunWithRoute({
           label={route.program}
           onFocus={onFocus === undefined ? undefined : () => onFocus(rowId)}
           value={route.runnerBuild}
+          verbatimLabel
+          verbatimValue
         />
       </span>
       <ZoneWarningLines lines={route.warnings} />

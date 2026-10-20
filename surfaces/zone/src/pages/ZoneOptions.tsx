@@ -41,7 +41,13 @@ function drawnRow(row: ZoneOptionsRow): ZoneOptionGroupRow {
           <span className="zone-options-network-words">{row.item.value}</span>
         </span>
       )
-  return { ...row.item, ...(valueNode === undefined ? {} : { valueNode }), ...(row.disabled ? { disabled: true } : {}) }
+  return {
+    ...row.item,
+    ...(valueNode === undefined ? {} : { valueNode }),
+    ...(row.disabled ? { disabled: true } : {}),
+    ...(row.keepCase?.label === true ? { verbatimLabel: true } : {}),
+    ...(row.keepCase?.value === true ? { verbatimValue: true } : {}),
+  }
 }
 
 /**

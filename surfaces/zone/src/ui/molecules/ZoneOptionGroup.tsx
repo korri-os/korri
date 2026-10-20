@@ -9,6 +9,10 @@ export interface ZoneOptionGroupRow extends SurfaceSettingItem {
   readonly valueNode?: ReactNode
   /** Dimmed and inert to A; the description says why. */
   readonly disabled?: boolean
+  /** The label is a fact Korri publishes: keep its case. */
+  readonly verbatimLabel?: boolean
+  /** The value is a fact Korri publishes: keep its case. */
+  readonly verbatimValue?: boolean
 }
 
 /**
@@ -62,6 +66,8 @@ export function ZoneOptionGroup({
             saving={status._tag === "Saving" && status.settingId === row.id}
             value={row.value}
             valueNode={row.valueNode}
+            verbatimLabel={row.verbatimLabel}
+            verbatimValue={row.verbatimValue}
           />
         ))}
       </div>

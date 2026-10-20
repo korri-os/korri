@@ -84,6 +84,8 @@ export interface ZoneOptionsRow {
   readonly signal?: ZoneOptionsSignal
   /** Korri cannot do this now: the row is dimmed and its description says why. */
   readonly disabled?: boolean
+  /** Which of the row's words are facts Korri publishes, kept in their own case. */
+  readonly keepCase?: { readonly label?: boolean; readonly value?: boolean }
 }
 
 export interface ZoneOptionsGroup {
@@ -140,6 +142,13 @@ export function zoneNetworkValue(network: SurfaceWifiNetwork): string {
     ...(network.known ? ["KNOWN"] : []),
   ].join(" ")
 }
+
+/**
+ * A Korri label that reads as a path ("/run/media/mini/roms", "~/roms"):
+ * a fact, not a label, so it keeps its case. Any other label of Korri's is
+ * set in caps like Zone's own.
+ */
+export const isPathLabel = (label: string): boolean => /^[/~]/.test(label)
 
 /** Where a choice row stands among its choices; -1 when Korri's value names none. */
 export function choiceIndex(item: SurfaceSettingItem): number {
@@ -205,7 +214,14 @@ function settingsGroups(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   return slices.settings.map((group, index) => {
     const key = `setting:${index}`
     const rows = group.items.flatMap((item): ZoneOptionsRow[] => {
-      const row: ZoneOptionsRow = { id: item.id, group: key, item, press: settingPress(item) }
+      // Korri's value is a fact and keeps its case; its label does when it is a path.
+      const row: ZoneOptionsRow = {
+        id: item.id,
+        group: key,
+        item,
+        press: settingPress(item),
+        keepCase: { value: true, ...(isPathLabel(item.label) ? { label: true } : {}) },
+      }
       return status._tag === "Problem" && status.settingId === item.id
         ? [row, { id: ZONE_OPTIONS_DISMISS, group: key, item: DISMISS_ITEM, press: { _tag: "DismissProblem" } }]
         : [row]

@@ -13,7 +13,7 @@ import { ZoneKeycap } from "../ui/atoms/ZoneKeycap"
 import type { ZoneTagItem } from "../ui/atoms/ZoneTag"
 import { ZoneActionRow } from "../ui/molecules/ZoneActionRow"
 import { ZoneKeyboard, type ZoneKey, type ZoneKeyboardLayer } from "../ui/molecules/ZoneKeyboard"
-import { ZoneOptionGroup } from "../ui/molecules/ZoneOptionGroup"
+import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOptionGroup"
 import { ZoneSaveCard } from "../ui/molecules/ZoneSaveCard"
 import { ZoneTagRow } from "../ui/molecules/ZoneTagRow"
 import { ZoneControllerCard } from "../ui/organisms/ZoneControllerCard"
@@ -75,13 +75,20 @@ function connectionText(network: SurfaceNetwork): string {
 }
 
 /** The WI-FI step's rows: the connection, each network, SCAN and SKIP. */
-function wifiRows(network: SurfaceNetwork | undefined): readonly SurfaceSettingItem[] {
+function wifiRows(network: SurfaceNetwork | undefined): readonly ZoneOptionGroupRow[] {
   const wifi = network?.wifi
   return [
-    ...(network === undefined ? [] : [{ id: ONBOARDING_TARGET.connection, label: "Connection", value: connectionText(network) }]),
+    ...(network === undefined ? [] : [{
+      id: ONBOARDING_TARGET.connection,
+      label: "Connection",
+      value: connectionText(network),
+      // An SSID keeps its case; OFFLINE and WIRED are Zone's words.
+      ...(network.connection._tag === "Wifi" ? { verbatimValue: true } : {}),
+    }]),
     ...(wifi?._tag === "Available" ? wifi.networks.map(item => ({
       id: onboardingNetworkTarget(item.id),
       label: item.ssid,
+      verbatimLabel: true,
       value: `${item.strengthPercent}% ${item.known ? "Saved" : item.secured ? "Locked" : "Open"}`,
       interaction: { kind: "action", actionId: item.id } as const,
     })) : []),
@@ -203,9 +210,10 @@ export function ZoneOnboarding({
   }, [cardCount, step])
 
   const heardOrder = controllers.filter(controller => controller.heard).map(controller => controller.id)
-  const nameRow: SurfaceSettingItem = nameSetting === undefined
+  // Korri's name for the device is a fact: it keeps its case.
+  const nameRow: ZoneOptionGroupRow = nameSetting === undefined
     ? { id: ONBOARDING_TARGET.name, label: "Device name" }
-    : { ...nameSetting, id: ONBOARDING_TARGET.name }
+    : { ...nameSetting, id: ONBOARDING_TARGET.name, verbatimValue: true }
   const nameStatus: SurfaceSettingsStatus = settingsStatus._tag !== "Idle" && settingsStatus.settingId === nameSetting?.id
     ? { ...settingsStatus, settingId: ONBOARDING_TARGET.name } : { _tag: "Idle" }
   const maxLength = nameSetting?.interaction?.kind === "text" ? nameSetting.interaction.maxLength : undefined

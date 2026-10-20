@@ -129,6 +129,11 @@
   overflow-wrap: anywhere;
 }
 
+/* A key is a fact Korri publishes: it keeps its own case. */
+.zone-save-card-text[data-case="verbatim"] {
+  text-transform: none;
+}
+
 /* The foot: one tag at the right, as CPZ sits under its well. */
 .zone-save-card-foot {
   display: flex;

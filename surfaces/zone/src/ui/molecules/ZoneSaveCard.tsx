@@ -9,7 +9,8 @@ import { ZoneTag, type ZoneTagItem } from "../atoms/ZoneTag"
 export type ZoneSaveBody =
   | { readonly kind: "art"; readonly src: string }
   | { readonly kind: "node"; readonly node: ReactNode }
-  | { readonly kind: "text"; readonly text: string }
+  /** `verbatim`: the text is a fact Korri publishes (a key) and keeps its case. */
+  | { readonly kind: "text"; readonly text: string; readonly verbatim?: boolean }
 
 /**
  * The vertical save card of MANIA MODE: the striped NEW-style header, a
@@ -57,7 +58,9 @@ export function ZoneSaveCard({
           ? <ZoneCoverWell art={body.src} title={header} />
           : (
             <ZoneCoverWell title={header}>
-              {body.kind === "text" ? <span className="zone-save-card-text">{body.text}</span> : body.node}
+              {body.kind === "text"
+                ? <span className="zone-save-card-text" data-case={body.verbatim === true ? "verbatim" : undefined}>{body.text}</span>
+                : body.node}
             </ZoneCoverWell>
           )}
       </span>

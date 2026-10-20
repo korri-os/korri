@@ -508,6 +508,10 @@ describe("runner choice", () => {
       "mGBA", "/nix/store/abc-mgba-0.10.3", "BIOS missing: games may not boot", "VBA-M", "This game"]) {
       expect(page.textContent).toContain(words)
     }
+    // A program and its build are facts: they keep their case.
+    const mgba = [...page.querySelectorAll(".zone-option-row")].find(node => node.textContent?.includes("mGBA"))
+    expect(mgba?.querySelector(".zone-option-row-label")?.getAttribute("data-case")).toBe("verbatim")
+    expect(mgba?.querySelector(".zone-option-row-value")?.getAttribute("data-case")).toBe("verbatim")
     // The cursor is in the page; Korri's action ids go back unchanged.
     expect(page.contains(document.activeElement)).toBe(true)
     moveTo(button("Play with mGBA", page))
@@ -539,6 +543,11 @@ describe("settings", () => {
     expect(onScreen("What other devices call this one")).toBe(false)
     moveTo(row("Name"))
     expect(onScreen("What other devices call this one")).toBe(true)
+    // Korri's value is a fact and keeps its case; the label is set in caps.
+    const kept = (node: Element | null | undefined) => node?.getAttribute("data-case") === "verbatim"
+    expect(kept(row("Name").querySelector(".zone-option-row-value"))).toBe(true)
+    expect(kept(row("Name").querySelector(".zone-option-row-label"))).toBe(false)
+    expect(kept(row("Games").querySelector(".zone-option-row-value"))).toBe(true)
     // No name from Korri: the row shows Korri's placeholder, dimmed, in its place.
     const unnamed = HOME.settings.map(group => ({
       ...group,
@@ -706,6 +715,8 @@ describe("identity", () => {
     const { host, press } = mount()
     openSaveData(press)
     const retired = saveCard("Retired")
+    // A key is a fact: it keeps its case on the card.
+    expect(retired.querySelector(".zone-save-card-text")?.getAttribute("data-case")).toBe("verbatim")
     // A on a retired key moves the cursor into its row: BACK UP, then DELETE.
     moveTo(retired)
     confirm()
@@ -723,6 +734,7 @@ describe("identity", () => {
     confirm()
     const ask = screen.getByRole("dialog", { name: "Delete this key?" })
     expect(ask.textContent).toContain("Back it up first.")
+    expect(ask.querySelector(".zone-dialog-title")?.getAttribute("data-case")).toBe("verbatim")
     moveTo(button("Yes", ask))
     confirm()
     // Only after the backup is confirmed.

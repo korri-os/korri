@@ -354,6 +354,15 @@ bun run lint
   nothing on A** (as Pico). A rejected key reopens the keyboard once per
   failure; Korri's reason stands in red in the keyboard's heading, since
   the keyboard covers the row.
+- **Facts keep their case.** `ZoneCaps` has a verbatim mode, and
+  `ZoneOptionRow` takes `verbatimLabel` and `verbatimValue`. Every value
+  Korri publishes on an OPTIONS row keeps its own case (a version, a
+  path, "Configured"), and so do a Korri label that reads as a path
+  (starts with `/` or `~`, `isPathLabel` in `src/plan/options.ts`), RUN
+  WITH's program and build, SSIDs, and keys on SAVE DATA's cards and
+  dialogs. Labels, Zone's own words and Korri's sentences stay in caps.
+  Zone cannot tell a path from a label any other way: the treaty marks
+  neither, so the leading `/` or `~` is the rule.
 - **No body banner.** The active tab wears the one yellow-on-blue banner
   and names the page, as DIRECTION uses the banner once. OPTIONS and SAVE
   DATA draw none in their bodies; the rows and the band take the room.
@@ -406,8 +415,8 @@ bun run lint
   read FROM BACKUP and BUNKER and carry no tag (MANIA MODE's NEW cards have
   no foot either); NOT AVAILABLE is the well of one card headed IDENTITY.
   Tags: NEW is orange (`open`), BACKED UP mint (`saved`), DELETE red
-  (`remote`). A key in a card or a dialog is upper case like every Zone word:
-  bech32 and hex are case-insensitive, so the shortened key still compares.
+  (`remote`). A key in a card or a dialog keeps its own case: it is a fact
+  Korri publishes, not a label (superseded the upper-case rule).
 - **The bunker step opens with `bunker://` typed** on the URI layer. Every
   NIP-46 bunker URI starts with it; DONE with only the prefix goes nowhere.
 - **Whitespace is stripped from a typed backup secret.** NIP-49 backups are
@@ -421,7 +430,8 @@ bun run lint
   a flow over a finished backup dismisses it first. A republished model never
   dismisses (the loop Pico's test guards against).
 - **Dialog words.** Problem: headline IDENTITY over Korri's message verbatim,
-  DISMISS. Switched: SWITCHED over the new key shortened, OK. Disposition:
+  DISMISS. Switched: SWITCHED with the new key shortened as its yellow
+  title line (in its own case), OK. Disposition:
   LOCAL RECORDS, one line, TRANSFER / DELETE with TRANSFER under the cursor.
   Trust: SWITCH KEY? over the brief's line, NO under the cursor. The two
   delete questions carry the key shortened as their yellow title line.
@@ -534,8 +544,9 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   join flow to pick up when it is wired. A SCAN row (`scanWifi`) was added
   beside the brief's SKIP. NEXT on WI-FI lights once the device is online
   (or Korri cannot manage the network); SKIP always goes on.
-- **Network rows show SSIDs in caps**: `ZoneOptionRow` has no verbatim case.
-  Controller names keep their case on the cards.
+- **Network rows keep the SSID's case**, as OPTIONS does (`verbatimLabel`),
+  and the name row keeps Korri's name's case. Controller names keep their
+  case on the cards.
 - **Zero controllers show one WAITING card**, COMPETITION's empty seat.
   Seats are numbered in heard order; 1P blue, 2P red, 3P yellow, 4P mint.
 - **The keyboard's lit key follows DOM focus** through `FocusedKey`

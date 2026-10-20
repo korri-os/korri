@@ -171,6 +171,12 @@
   text-shadow: none;
 }
 
+/* A fact Korri publishes keeps its own case; Zone's own words stay in caps. */
+.zone-option-row-label[data-case="verbatim"],
+.zone-option-row-value[data-case="verbatim"] {
+  text-transform: none;
+}
+
 /* Korri's placeholder in place of an empty value: dimmed, so it never reads as the value. */
 .zone-option-row-text[data-placeholder] {
   opacity: var(--zone-placeholder-opacity);

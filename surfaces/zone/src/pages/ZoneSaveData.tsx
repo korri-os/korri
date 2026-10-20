@@ -112,7 +112,7 @@ function cardsOf(identity: SurfaceIdentityManagement | undefined): readonly Zone
     ...identity.retiredPublicKeys.map((key): ZoneSaveBandCard => ({
       id: `retired:${key}`,
       header: "Retired",
-      body: { kind: "text", text: shortKey(key) },
+      body: { kind: "text", text: shortKey(key), verbatim: true },
     })),
   ]
 }
@@ -197,6 +197,7 @@ export function ZoneSaveData({
     if (count === 2 && (index === 0 || index === 1)) send({ _tag: "FocusedChoice", index })
   }
 
+  // A dialog's yellow line on this page is always a key: it keeps its case.
   const dialog = (headline: string, lines: readonly string[], actions: readonly ZoneDialogAction[], focus: number, title?: string) => (
     <div className="zone-save-data-layer" data-layer="dialog">
       <ZoneDialog
@@ -206,6 +207,7 @@ export function ZoneSaveData({
         lines={lines}
         onFocusAction={heardChoice(actions.length)}
         title={title}
+        verbatimTitle={title !== undefined}
       />
     </div>
   )
@@ -220,7 +222,7 @@ export function ZoneSaveData({
   if (status?._tag === "Problem") {
     layer = dialog("Identity", [status.message], [{ label: "Dismiss", onPress: () => send({ _tag: "DismissedStatus" }) }], 0)
   } else if (status?._tag === "Switched") {
-    layer = dialog("Switched", [shortKey(status.ownerPublicKey)], [{ label: "OK", onPress: () => send({ _tag: "DismissedStatus" }) }], 0)
+    layer = dialog("Switched", [], [{ label: "OK", onPress: () => send({ _tag: "DismissedStatus" }) }], 0, shortKey(status.ownerPublicKey))
   } else {
     switch (flow._tag) {
       case "idle":

@@ -128,6 +128,13 @@ describe("C13 interactions", () => {
     fireEvent.click(row("Rescan game folders"))
     expect(host.calls).toEqual(["action:game-folder-rescan"])
   })
+  test("a path Korri publishes as a label, and every value of Korri's, keep their case; Zone's words do not", () => {
+    mount()
+    const folder = row("/run/media/mini/roms")
+    expect(folder.querySelector(".zone-option-row-label")?.getAttribute("data-case")).toBe("verbatim")
+    expect(folder.querySelector(".zone-option-row-value")?.getAttribute("data-case")).toBe("verbatim")
+    expect(row("Player seats").querySelector(".zone-option-row-label")?.hasAttribute("data-case")).toBe(false)
+  })
   test("action with a confirmation: Korri's title, message and label; NO lit and harmless", () => {
     const host = mount()
     fireEvent.click(row("/run/media/mini/roms"))
