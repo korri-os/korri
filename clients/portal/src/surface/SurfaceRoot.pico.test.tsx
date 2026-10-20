@@ -135,11 +135,14 @@ test("Settings is reachable from Pico's home with the d-pad, A and B, and a game
   await send(bus, { type: "direction", direction: "right" })
   expect(focusedName()).toBe("Tetris")
 
-  // Down reaches MENU; A opens the list on FIND; Down, A opens Settings.
+  // Down reaches MENU; A opens the list on FIND; Down passes GET GAMES (the
+  // portal always offers a store); Down, A opens Settings.
   await send(bus, { type: "direction", direction: "down" })
   expect(focusedName()).toBe("MENU")
   await send(bus, { type: "confirm" })
   expect(focusedName()).toBe("FIND")
+  await send(bus, { type: "direction", direction: "down" })
+  expect(focusedName()).toBe("GET GAMES")
   await send(bus, { type: "direction", direction: "down" })
   expect(focusedName()).toBe("SETTINGS")
   await send(bus, { type: "confirm" })

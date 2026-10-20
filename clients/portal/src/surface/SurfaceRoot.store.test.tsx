@@ -1,0 +1,133 @@
+/**
+ * Getting a game from a provider, end to end: the in-memory brain offers the
+ * three providers in scope, Pico renders what the host publishes, and the
+ * host carries each answer back as RPC, then into the catalog and the shared
+ * launch. Also: a korrid restart under a download, and the store with an
+ * empty library.
+ */
+import { afterEach, expect, test } from "bun:test"
+import { act } from "react"
+import { createRoot, type Root } from "react-dom/client"
+import type { SurfaceHost, SurfaceModel } from "@contracts/surface/korri-surface"
+import { PicoSurface } from "@korri/pico"
+import { createInputBus } from "../input/bus"
+import { createInMemoryKorridClient } from "../korrid/client"
+import { createInMemoryStoreAcquisition, SAMPLE_STORE } from "../korrid/store-acquisition-client"
+import { SurfaceRoot } from "./SurfaceRoot"
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+const roots: Root[] = []
+afterEach(async () => {
+  await act(async () => { for (const root of roots.splice(0)) root.unmount() })
+  document.body.innerHTML = ""
+})
+const waitFor = async (what: string, fn: () => boolean, tries = 1500) => {
+  for (let i = 0; i < tries; i++) {
+    if (fn()) return
+    await act(async () => { await new Promise(done => setTimeout(done, 10)) })
+  }
+  throw new Error(`never saw ${what}`)
+}
+const click = async (element: Element | null | undefined) => {
+  if (!(element instanceof HTMLElement)) throw new Error("nothing to click")
+  await act(async () => element.click())
+}
+const button = (container: HTMLElement, name: string | RegExp) =>
+  [...container.querySelectorAll("button")].find(candidate => {
+    const label = candidate.getAttribute("aria-label") ?? candidate.textContent ?? ""
+    return typeof name === "string" ? label.trim() === name : name.test(label)
+  })
+
+const launched: string[] = []
+
+async function mount() {
+  launched.length = 0
+  const store = createInMemoryStoreAcquisition(SAMPLE_STORE)
+  const korrid = createInMemoryKorridClient({ games: [], store })
+  await korrid.finishOnboarding()
+  let model!: SurfaceModel
+  let host!: SurfaceHost
+  const container = document.createElement("div")
+  document.body.append(container)
+  const root = createRoot(container)
+  roots.push(root)
+  await act(async () => root.render(<SurfaceRoot bus={createInputBus()} korrid={korrid} surface={{
+    id: "acceptance", title: "Acceptance", presentations: ["catalog"],
+    render: props => {
+      model = props.model
+      host = props.host
+      // The host as Pico sees it, with each launch it asks for recorded.
+      const traced: SurfaceHost = { ...props.host, launchGame: (id, at) => { launched.push(id); props.host.launchGame(id, at) } }
+      return <PicoSurface model={props.model} host={traced} />
+    },
+  }} />))
+  await waitFor("the library read", () => model !== undefined && model.catalog._tag !== "Loading")
+  if (model.catalog._tag !== "Empty") throw new Error(`catalog is ${JSON.stringify(model.catalog)} status ${JSON.stringify(model.status)}`)
+  const get = () => {
+    const details = model.store?.details
+    if (details?._tag !== "Ready") throw new Error(`details are ${details?._tag}`)
+    return details.get
+  }
+  return { store, korrid, container, model: () => model, host: () => host, get }
+}
+
+test("from an empty library: GET GAMES, a provider, a search, an entry, Get, Download, then Play", async () => {
+  const view = await mount()
+  await click(button(view.container, /MENU/))
+  await click(button(view.container, "GET GAMES"))
+  await waitFor("providers", () => view.model().store?.providers._tag === "Ready")
+  await click(button(view.container, /Homebrew Hub/))
+  // Not searched yet: the keyboard opens.
+  for (const key of ["2", "0"]) await click(button(view.container, `Type ${key}`))
+  await click(button(view.container, "SEARCH"))
+  await waitFor("results", () => view.model().store?.search._tag === "Ready")
+  await click(button(view.container, "2048, Game Boy"))
+  await waitFor("details", () => view.model().store?.details._tag === "Ready")
+  await click(button(view.container, "GET"))
+  // Curated entries state no size: Confirm says so.
+  await waitFor("confirm", () => view.get()._tag === "Confirm")
+  expect(view.get()).toMatchObject({ detail: "2048, size unknown" })
+  await click(button(view.container, "Download"))
+  await waitFor("downloading", () => view.get()._tag === "Working" && "progress" in view.get())
+  // The download takes the launch stage, with the size korrid now reports.
+  await waitFor("a real bar", () => view.container.querySelector('[role="progressbar"][aria-valuenow]') !== null)
+  await waitFor("in the library", () => view.get()._tag === "InLibrary" && (view.get() as { gameId?: string }).gameId !== undefined, 3000)
+  expect(view.model().catalog).toMatchObject({ _tag: "Ready", games: [{ title: "2048" }] })
+  const gameId = (view.get() as { gameId: string }).gameId
+  const catalog = view.model().catalog
+  expect(catalog._tag === "Ready" && catalog.games.some(game => game.id === gameId)).toBe(true)
+  await click(button(view.container, "▶ PLAY"))
+  // PLAY goes through the catalog's own launch: korrid starts that game.
+  expect(launched).toEqual([gameId])
+  await waitFor("the session", () => view.model().catalog._tag === "Ready" &&
+    (view.model().catalog as { games: readonly { id: string }[] }).games.some((game: { id: string }) => game.id.startsWith("now-playing:")))
+}, 30_000)
+
+test("korrid restarting under a download: Download stopped with Retry, and Retry starts again", async () => {
+  const view = await mount()
+  view.host().openStore()
+  await waitFor("providers", () => view.model().store?.providers._tag === "Ready")
+  view.host().searchStore("@korri:retrobrews", "anguna")
+  await waitFor("results", () => view.model().store?.search._tag === "Ready")
+  const entry = view.model().store?.search
+  if (entry?._tag !== "Ready") throw new Error("no results")
+  view.host().openStoreEntry(entry.entries[0]!.id)
+  await waitFor("details", () => view.model().store?.details._tag === "Ready")
+  const run = (label: string) => {
+    const get = view.get()
+    if (!("actions" in get)) throw new Error(`no actions on ${get._tag}`)
+    view.host().runAction(get.actions.find(candidate => candidate.label === label)!.id)
+  }
+  run("Get")
+  await waitFor("confirm", () => view.get()._tag === "Confirm")
+  run("Download")
+  // Two GBA folders: korrid's ChooseSource job asks which.
+  await waitFor("folder choice", () => view.get()._tag === "Confirm" && (view.get() as { kicker: string }).kicker === "Choose a folder")
+  run("SD card · GBA")
+  await waitFor("downloading", () => view.get()._tag === "Working" && (view.get() as { progress?: { done: number } }).progress !== undefined)
+  view.store.restart()
+  await waitFor("stopped", () => view.get()._tag === "Problem")
+  expect(view.get()).toMatchObject({ kicker: "Download stopped" })
+  run("Retry")
+  await waitFor("asked again", () => view.get()._tag !== "Problem")
+}, 30_000)
