@@ -1,9 +1,11 @@
 //! Acquisition owns downloads, verification and publication; plugins supply data.
 //! Ready is a cache-directory fact. Only active work and failures live in memory.
+pub mod claims;
 mod download;
 mod placement;
 mod policy;
 mod sleep;
+pub mod turns;
 mod types;
 mod unit;
 
@@ -21,9 +23,12 @@ use std::{
 use tokio::sync::watch;
 use types::Failure;
 pub use types::{
-    AcquisitionCancelRequest, AcquisitionDownloadRequest, AcquisitionOutcome,
-    AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest,
-    AcquisitionStatusRequest, ArtifactState, ArtifactStatus,
+    AcquireArtifactRequest, AcquireCancelRequest, AcquireJobOutcome, AcquireJobState,
+    AcquireJobStatus, AcquireStatusRequest, AcquisitionCancelRequest, AcquisitionDownloadRequest,
+    AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider, AcquisitionRemoveRequest,
+    AcquisitionSnapshot, AcquisitionStartRequest, AcquisitionStatusRequest, ArtifactState,
+    ArtifactStatus, DetailsOutcome, DetailsRequest, PluginListOutcome, PluginListResponse,
+    SearchOutcome, SearchRequest, SearchResponse,
 };
 
 /// One job runs at a time. `waiting` is the person's order, front first; a
