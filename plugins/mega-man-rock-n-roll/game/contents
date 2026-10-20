@@ -1,0 +1,6 @@
+# Files the public Linux 1.3 ZIP must yield, read by unpack.py.
+# Columns: mode, sha256:<hex>, path in the ready directory. The ZIP was made
+# on MS-DOS file attributes and carries no Unix modes, so the executable bit
+# comes from this list. data.pck is the release hash in plugin.ts.
+0644 sha256:eb6fc0155b1996c5fcc5b42d6ec3f9c3aea4ba1e9aca5389cd7da8070310bd41 data.pck
+0755 sha256:39f6e78fad452959edc33d9546241cee740be1b90e04b65671adff6f6bba4bac MegaMan_RocknRoll
