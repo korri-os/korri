@@ -353,3 +353,78 @@ bun run lint
   page to be reached from ZoneSurface, which only the wire stage edits. It
   now has an `AWAITING_MOUNT` list (ZoneOptions, ZoneRunWith), checked both
   ways like `AWAITING_PAGE`.
+
+### SAVE DATA page (C16 to C20)
+
+- **The page owns the shell, the binding owns its slots.** `ZoneSaveData`
+  draws `ZoneShell` itself, as the brief says, but takes the tabs, the hints
+  and the foot as a `frame` of slots. The GAMES worker owns the tab strip and
+  the navigation; the stage that mounts the pages fills the frame once for
+  every page. The part fills it with `ZoneTabStrip` (SAVE DATA active),
+  `ZoneKeycap` and `ZoneFoot`, sized by `plan()` of the frame's window.
+- **A page may not import `src/state`, so it declares what it reads.**
+  `ZoneSaveDataFlow` and `ZoneSaveDataEvent` mirror the identity model's
+  `IdentityFlow` and `IdentityMessage`; `test/zone-save-data.test.tsx` holds
+  them assignable, so the binding passes the model's value and dispatches the
+  page's events unchanged.
+- **The part runs the real model through a fixture store.** The atomic gate
+  counts parts as shapes, so the store that runs `update` and answers each
+  request as Korri would lives in `src/fixtures/fixture-save-data.ts`, beside
+  the fixture host. The part imports the store, never `src/state`.
+- **`AWAITING_MOUNT` in the decomposition gate.** "Every page is reached from
+  the surface binding" cannot pass while `ZoneSurface.tsx` belongs to another
+  worker. `ZoneSaveData` is listed there with the same rule as
+  `AWAITING_PAGE`: an entry the binding already reaches fails.
+- **`AWAITING_PAGE` loses five entries, not two.** The page and its organisms
+  import `ZoneSaveCard`, `ZoneQrWell`, `ZoneKeyboard`, `ZoneDialog` and
+  `ZoneBusyStrip`; the gate fails on any consumed entry, so all five go.
+- **Card words.** BACK UP reads THIS KEY in its well; the two SWITCH cards
+  read FROM BACKUP and BUNKER and carry no tag (MANIA MODE's NEW cards have
+  no foot either); NOT AVAILABLE is the well of one card headed IDENTITY.
+  Tags: NEW is orange (`open`), BACKED UP mint (`saved`), DELETE red
+  (`remote`). A key in a card or a dialog is upper case like every Zone word:
+  bech32 and hex are case-insensitive, so the shortened key still compares.
+- **NOT AVAILABLE keeps the banner.** "One card and nothing else" is read as
+  the body's content; the banner is the page's title and stays so the page
+  does not jump between states.
+- **The bunker step opens with `bunker://` typed** on the URI layer. Every
+  NIP-46 bunker URI starts with it; DONE with only the prefix goes nowhere.
+- **Whitespace is stripped from a typed backup secret.** NIP-49 backups are
+  bech32 and hold none; the slab shows the secret in groups of four, so a
+  person copying it by hand may type the gaps.
+- **Back steps back one step, NO abandons.** B on a keyboard step returns to
+  the step before it with its text kept; B on a dialog returns to the step
+  that opened it. NO on the trust loss or either delete question ends the
+  flow and sends nothing. B or DISMISS / OK on Korri's problem or switched
+  dialog, and B on a finished backup, call `dismissIdentityStatus`. Starting
+  a flow over a finished backup dismisses it first. A republished model never
+  dismisses (the loop Pico's test guards against).
+- **Dialog words.** Problem: headline IDENTITY over Korri's message verbatim,
+  DISMISS. Switched: SWITCHED over the new key shortened, OK. Disposition:
+  LOCAL RECORDS, one line, TRANSFER / DELETE with TRANSFER under the cursor.
+  Trust: SWITCH KEY? over the brief's line, NO under the cursor. The two
+  delete questions carry the key shortened as their yellow title line.
+- **One cursor on screen.** While a keyboard or a dialog is up, or the
+  cursor rests on the backup's slab, the band is unmarked: no pink edge, no
+  card triangles, no edge triangles. When Korri's backup arrives the cursor
+  goes to the slab (`FocusedSecret`), which also lets the QR code take the
+  whole well; with the cursor back on BACK UP the QR stands clear of the
+  card's triangles so a reader sees every module.
+- **The slab stands beside the band when the page is wider than tall by
+  1.25** (`ZONE_SAVE_SLAB_BESIDE_ASPECT`), and under it, two shares to one,
+  in a column. The band's height is what makes the QR code scannable, so
+  width pays for the slab wherever it can. On a strip 4 times wider than
+  tall (`ZONE_SAVE_BANNER_FOLD_ASPECT`, 1280x300) the banner folds: the tab
+  strip already names the page. Both are aspect-ratio container queries,
+  held equal to the constants by `test/plan-save-data.test.ts`.
+- **Edge triangles show the band runs on.** Cut cards alone failed at
+  1280x720, where five cards ended flush with both edges; a red triangle at
+  each edge points the way more cards lie and dims on a side with none.
+- **The keyboard reports focus through its organism.** `ZoneKeyboard` and
+  `ZoneDialog` draw the cursor from a prop and have no focus callback;
+  `ZoneSaveEntry` and the page hear React's bubbling focus event and name the
+  key (`zoneKeyId`'s scheme) or the button index. A focus callback on the two
+  molecules would be cleaner.
+- **Retired keys are deleted, never backed up, from this page.** The brief's
+  flow offers DELETE only; `exportIdentityBackup(password, retiredPublicKey)`
+  is in the treaty but has no control here yet.

@@ -1,0 +1,63 @@
+/* The band fills the room it is given and is the size container every save
+ * card in it measures. It clips, and never scrolls: the track's translation
+ * is the only thing that moves the cards, so a focused card that the
+ * browser would scroll into view cannot knock the centring off. */
+.zone-save-band {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: clip;
+  container-type: size;
+}
+
+/* The sums. Every card is one size. Its height is the least of the cap, the
+ * band's height less its padding, and the height at which one card fits the
+ * width inside the margins. The track is translated so the focused card's
+ * centre sits at the band's centre: every card before it is one width and
+ * one gap, then half a width. */
+.zone-save-band-track {
+  --zone-save-band-gap: clamp(var(--zone-card-gap-narrow), 1.6cqw, var(--zone-card-gap-wide));
+  --zone-card-h: min(
+    var(--zone-card-focus-max),
+    calc(100cqh - 2 * var(--zone-band-pad)),
+    calc((100cqw - 2 * var(--zone-band-margin)) / var(--zone-save-card-ratio))
+  );
+  --zone-save-band-w: calc(var(--zone-card-h) * var(--zone-save-card-ratio));
+  --zone-save-band-centre: calc(
+    var(--zone-save-band-focus, 0) * (var(--zone-save-band-w) + var(--zone-save-band-gap))
+    + var(--zone-save-band-w) / 2
+  );
+  position: absolute;
+  top: 50%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--zone-save-band-gap);
+  translate: calc(50cqw - var(--zone-save-band-centre)) -50%;
+  transition: translate var(--zone-snap-time) var(--zone-bounce);
+  will-change: translate;
+}
+
+/* A slot holds one card and hears its click. */
+.zone-save-band-slot {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+/* The way to more cards: a triangle at each edge, over the cut cards. */
+.zone-save-band-more {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  translate: 0 -50%;
+  pointer-events: none;
+}
+
+.zone-save-band-more[data-side="start"] {
+  left: 0;
+}
+
+.zone-save-band-more[data-side="end"] {
+  right: 0;
+}

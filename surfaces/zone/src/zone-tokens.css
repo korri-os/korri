@@ -552,3 +552,20 @@
   /** The widest the NO / YES dialog grows over OPTIONS. @label Options dialog width @min 240 @max 1200 @step 10 */
   --zone-options-dialog-width: 760px;
 }
+
+/* ---- savedata ---- */
+/* The SAVE DATA page: the shares of the band and the backup's slab, and the
+ * slab's lettering. Appended by the save-data worker; the lines above are
+ * untouched. */
+.zone-theme {
+  /** The band's share of a column page while the backup's slab stands under it. @label Save band share */
+  --zone-save-band-share: 2fr;
+  /** The slab's share of a column page under the band's. @label Secret slab share */
+  --zone-save-slab-share: 1fr;
+  /** One line of the secret, 32 characters in 8 groups, in ems of its type. @label Secret line width @min 12 @max 40 @step 0.5 */
+  --zone-secret-line-ems: 21;
+  /** Line height of the secret, as a multiple of its type. @label Secret leading @min 1 @max 2 @step 0.05 */
+  --zone-secret-leading: 1.25;
+  /** The room between two groups of the secret. @label Secret group gap */
+  --zone-secret-group-gap: 0.5em;
+}

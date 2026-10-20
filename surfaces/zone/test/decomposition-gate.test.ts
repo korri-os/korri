@@ -341,13 +341,11 @@ describe("every component has a consumer", () => {
     // and report through callbacks; the wire stage mounts them.
     "ZoneOptions",
     "ZoneRunWith",
+    "ZoneSaveData",
   ]
 
   test("every page is reached from the surface binding", () => {
     const binding = readFileSync(join(SRC, "ZoneSurface.tsx"), "utf8")
-    const pages = componentFiles
-      .filter((file) => file.includes("/pages/"))
-      .map((file) => basename(file, ".tsx"))
     const reachable = new Set<string>()
     const queue = [binding]
     while (queue.length > 0) {
