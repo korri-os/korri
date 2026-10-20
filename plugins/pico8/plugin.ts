@@ -6,6 +6,24 @@
 // "Acquisition providers"). The system `pico8` and its runner are declared by
 // the publisher's fake08 plugin; this file only references the id.
 
+import type {
+  ArtifactAcquisitionHint,
+  DownloadResolution,
+  FailedDownloadReason,
+  NonFinalDownloadReason,
+  PluginDetailsInput,
+  PluginDetailsOutput,
+  PluginHttpRequest,
+  PluginHttpRequests,
+  PluginHttpResponse,
+  PluginResolveDownloadInput,
+  PluginResolveDownloadOutput,
+  PluginSearchInput,
+  PluginSearchOutput,
+  ProviderClaim,
+  ProviderClaimDetails,
+} from "../../contracts/generated/korrid"
+
 export const name = "pico8"
 export const title = "PICO-8 BBS"
 export const description =
@@ -21,126 +39,6 @@ const MAX_SEARCH_RESULTS = 50
 export const providers = {
   [PROVIDER_ID]: { id: PROVIDER_ID, title: "PICO-8 BBS" },
 }
-
-// Local mirror of the legacy result shapes (legacy
-// product/platform/protocol/acquisition/claim.ts, download-resolution.ts)
-// minus `ref`, `playable`, `facets` and `requestHeaders`, as korrid admits
-// them. Replace with contracts/generated/korrid.ts types once they land.
-interface ArtifactAcquisitionHint {
-  readonly kind: "content" | "patch"
-  readonly system?: string
-  readonly format: { readonly id: string; readonly version?: string }
-  readonly file?: {
-    readonly name: string
-    readonly extension?: string
-    readonly mediaType?: string
-    readonly sizeBytes?: number
-  }
-}
-
-interface ProviderClaim {
-  readonly _tag: "ProviderClaim"
-  readonly providerId: string
-  readonly id: string
-  readonly title: string
-  readonly url: string
-  readonly platform?: string
-  readonly thumbnailUrl?: string
-  readonly artifact?: ArtifactAcquisitionHint
-  readonly fetchedAt?: string
-}
-
-interface ProviderClaimDetails {
-  readonly _tag: "ProviderClaimDetails"
-  readonly providerId: string
-  readonly id: string
-  readonly title: string
-  readonly url: string
-  readonly description?: string
-  readonly downloadPageUrl?: string
-  readonly artifact?: ArtifactAcquisitionHint
-  readonly fetchedAt?: string
-}
-
-interface DownloadChoice {
-  readonly id: string
-  readonly fileName?: string
-  readonly size?: string
-  readonly platforms?: string[]
-}
-
-type DownloadResolution =
-  | {
-      readonly _tag: "FinalDownload"
-      readonly providerId: string
-      readonly url: string
-      readonly filename?: string
-      readonly contentType?: string
-    }
-  | {
-      readonly _tag: "NonFinalDownload"
-      readonly providerId: string
-      readonly reason: "interstitial" | "requires-user-action" | "unsupported"
-      readonly url?: string
-      readonly choices?: DownloadChoice[]
-    }
-  | {
-      readonly _tag: "FailedDownload"
-      readonly providerId: string
-      readonly reason:
-        | "provider-error"
-        | "configuration"
-        | "not-found"
-        | "defective-provider"
-      readonly message: string
-    }
-
-// Local mirror of the turn protocol in services/korrid/SCRIPTING.md
-// ("Acquisition providers"), named as in contracts/generated/korrid.ts. Field
-// names follow legacy PluginHttpRequestOptions and PluginHttpResponse.
-// Replace with the generated types once they land on main.
-interface PluginHttpRequest {
-  readonly url: string
-  readonly query?: Readonly<Record<string, string | number | boolean>>
-  readonly headers?: Readonly<Record<string, string>>
-  readonly timeoutMs?: number
-}
-
-interface PluginHttpResponse {
-  readonly status: number
-  readonly ok: boolean
-  readonly url: string
-  readonly headers: Readonly<Record<string, string>>
-  readonly text: string
-}
-
-interface PluginHttpRequests {
-  readonly _tag: "HttpRequests"
-  readonly requests: PluginHttpRequest[]
-}
-
-interface PluginSearchInput {
-  readonly providerId: string
-  readonly query: string
-  readonly responses: PluginHttpResponse[]
-}
-
-interface PluginDetailsInput {
-  readonly providerId: string
-  readonly id: string
-  readonly responses: PluginHttpResponse[]
-}
-
-interface PluginResolveDownloadInput {
-  readonly providerId: string
-  readonly candidateUrl: string
-  readonly fileName?: string
-  readonly responses: PluginHttpResponse[]
-}
-
-type PluginSearchOutput = PluginHttpRequests | ProviderClaim[]
-type PluginDetailsOutput = PluginHttpRequests | ProviderClaimDetails
-type PluginResolveDownloadOutput = PluginHttpRequests | DownloadResolution
 
 const HTML_HEADERS = { accept: "text/html,application/xhtml+xml" } as const
 
@@ -308,14 +206,14 @@ function finalDownload(url: string): DownloadResolution {
 }
 
 function nonFinal(
-  reason: "interstitial" | "requires-user-action" | "unsupported",
+  reason: NonFinalDownloadReason,
   url: string,
 ): DownloadResolution {
   return { _tag: "NonFinalDownload", providerId: PROVIDER_ID, reason, url }
 }
 
 function failed(
-  reason: "provider-error" | "not-found",
+  reason: FailedDownloadReason,
   message: string,
 ): DownloadResolution {
   return { _tag: "FailedDownload", providerId: PROVIDER_ID, reason, message }
