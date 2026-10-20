@@ -439,6 +439,8 @@ export function ShiftCinematicHome({
       <ShiftCineLibraryHero />
     ) : activeAffordance?.kind === "action" ? (
       <ShiftCineActionHero
+        // The store is a destination, not setup: it gets its own word.
+        {...(activeAffordance.action.id === "shift:store" ? { kicker: "Store" } : {})}
         label={activeAffordance.action.label}
         {...(activeAffordance.action.description
           ? { description: activeAffordance.action.description }

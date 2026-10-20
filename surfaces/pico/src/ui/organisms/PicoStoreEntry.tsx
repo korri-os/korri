@@ -42,6 +42,9 @@ export function PicoStoreEntry({
       <PicoGameStage
         id={entry.id}
         stats={[]}
+        statsEmptyLabel={details._tag === "Ready" && (details.get._tag === "InLibrary" || details.get._tag === "Staged")
+          ? "ON THIS DEVICE"
+          : "NOT ON THIS DEVICE"}
         subtitle={subtitle === "" ? undefined : subtitle}
         title={entry.title}
       >
