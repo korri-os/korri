@@ -71,12 +71,7 @@
 }
 
 /* There the facts stand at the strip's start, left of the row. */
-.zone-games-body[data-facts="inline"] /* With no game focused the line keeps its height and draws nothing. */
-.zone-games-factline[data-none] {
-  visibility: hidden;
-}
-
-.zone-games-factline {
+.zone-games-body[data-facts="inline"] .zone-games-factline {
   grid-row: 2;
   grid-column: 1;
   justify-content: flex-start;

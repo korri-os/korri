@@ -1710,3 +1710,13 @@ one holds.
   with no argument, or `Date()`; `new Date(at)` from Korri's own time
   passes. Planted `Date.now()` in `src/plan/` and `new Date()` in
   `src/fixtures/`: each failed it; removed, it passes.
+- **The inline facts selector is whole again.** A comment had been pasted
+  into `.zone-games-body[data-facts="inline"] .zone-games-factline`, so
+  the rule lost its qualifier and its `grid-row: 2; grid-column: 1;
+  justify-content: flex-start` applied to every facts line (and a copy of
+  the `[data-none]` rule sat inside it). Rendered at 640x480, 1280x720,
+  480x800 and 1280x300 it changed nothing (in a row of its own the line is
+  in row 2, column 1 already, and the later centring rule won). At a strip
+  under 240 art rows (1280x200), where the facts join the action strip,
+  the line now starts at the strip's start (its panel at x 4) instead of
+  centred in its column (x 89), as the rule's comment says.
