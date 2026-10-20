@@ -329,9 +329,6 @@ describe("every component has a consumer", () => {
     "ZoneTitleCard",
     // The save-data page: the QR in a save card's well (C16).
     "ZoneQrWell",
-    // The layers organism: the busy strip and the problem dialog (C7, C9).
-    "ZoneBusyStrip",
-    "ZoneDialog",
   ]
 
   test("no atom, molecule, organism or template is imported by nothing", () => {
