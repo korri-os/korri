@@ -1917,7 +1917,8 @@ art and the drawn emblems stay pixel art in every look.
   Anton from `e05b1790f` (sha256-checked), keeps Google Fonts' latin and
   latin-ext ranges plus × … ▲ and every layout feature, and writes
   `Anton-latin.woff2` (45 KB, 1119 glyphs); two runs write the same bytes.
-  Its licence is `Anton-OFL.txt`; `OFL.txt` stays Jersey 10's. The portal
+  Its licence is `Anton-OFL.txt` (the text as e05b1790f carried it, one
+  trailing space removed for `git diff --check`); `OFL.txt` stays Jersey 10's. The portal
   bundle copies it as `licenses/zone-fonts/anton-OFL.txt` and greps it.
 - **Anton has no tabular figures, and the glyphs were not changed.** Its
   digits are 1012 units wide except "1" (677). Adding a `tnum` feature
@@ -1991,4 +1992,3 @@ art and the drawn emblems stay pixel art in every look.
 - ZoneSignal's part throws "ResizeObserver loop" at 640x480 in every
   look, main included (baseline): not caused or fixed here. Suggested
   issue.
-
