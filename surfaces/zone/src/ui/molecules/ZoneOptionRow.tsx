@@ -103,7 +103,6 @@ export function ZoneOptionRow({
         data-korri-horizontal-control={horizontal["data-korri-horizontal-control"]}
         onClick={disabled ? undefined : onPress}
         onFocus={onFocus}
-        onKeyDown={horizontal.onKeyDown}
         ref={control}
         type="button"
       >

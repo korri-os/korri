@@ -21,6 +21,7 @@ import {
   overlayMany,
   overlayNoTitle,
 } from "../src/fixtures/fixture-layers"
+import { sendFixtureDirection } from "../src/fixtures/fixture-directions"
 import { createOverlayProgram } from "../src/fixtures/layer-program"
 import { ZonePaused } from "../src/pages/ZonePaused"
 import {
@@ -259,13 +260,13 @@ describe("ZonePaused", () => {
     expect(program.host.calls.at(-1)).toBe(`control:fill-screen:${JSON.stringify({ kind: "toggle", value: false })}`)
   })
 
-  test("C24: a choice steps with the arrow keys and shows the option's label", () => {
+  test("C24: a choice steps on the portal's left and right and shows the option's label", () => {
     const program = mount(every)
     const filter = row("Screen filter")
     act(() => {
       fireEvent.focus(filter)
     })
-    fireEvent.keyDown(filter, { key: "ArrowRight" })
+    act(() => sendFixtureDirection(filter, "right"))
     expect(program.host.calls).toEqual([`control:screen-filter:${JSON.stringify({ kind: "choice", value: "scanlines" })}`])
     expect(within(row("Screen filter")).getByText("Scanlines")).toBeDefined()
   })

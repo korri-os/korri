@@ -119,6 +119,32 @@ describe("visual decisions live in the stylesheet", () => {
   })
 })
 
+/**
+ * Zone never translates a device (AGENTS.md: the portal is hardware-blind
+ * and does it for every surface). A surface that reads a key, or calls
+ * preventDefault on one, makes the portal's window listener drop it and
+ * skip its repeat and release handling. Fixtures stand in for the portal
+ * in Caliper and are exempt.
+ */
+describe("the surface reads no key", () => {
+  const outsideFixtures = tsxFiles.filter((file) => !rel(file).startsWith("fixtures/"))
+  const code = (file: string) => read(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
+
+  test("no file outside src/fixtures reads event.key, .key ===, keyCode or an arrow key's name", () => {
+    const offenders = outsideFixtures
+      .filter((file) => /\bevent\.key\b|\.key\s*===|\bkeyCode\b|\bArrow(Left|Right|Up|Down)\b/.test(code(file)))
+      .map(rel)
+    expect(offenders).toEqual([])
+  })
+
+  test("no key handler outside src/fixtures calls preventDefault", () => {
+    const offenders = outsideFixtures
+      .filter((file) => /keydown|keyup|onKeyDown|onKeyUp|KeyboardEvent/.test(code(file)) && /preventDefault/.test(code(file)))
+      .map(rel)
+    expect(offenders).toEqual([])
+  })
+})
+
 describe("the surface treaty is the whole contract", () => {
   const IMPORT = /from\s+"([^"]+)"/g
 

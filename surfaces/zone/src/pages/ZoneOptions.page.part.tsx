@@ -17,6 +17,7 @@ import {
   optionsCallbacks,
   type OptionsScript,
 } from "../fixtures/fixture-options"
+import { useFixtureDirections } from "../fixtures/fixture-directions"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
 import type { ZoneOptionsSlices } from "../plan/options"
@@ -70,6 +71,7 @@ function Live({
   program.current ??= createOptionsProgram(korri, script)
   const live = program.current
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
+  useFixtureDirections()
   // The binding measures its root; a preview reads the frame once.
   const layout = plan(innerWidth * share, innerHeight)
   return (

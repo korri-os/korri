@@ -11,6 +11,7 @@ import {
   overlayRange,
   overlayToggle,
 } from "../fixtures/fixture-layers"
+import { useFixtureDirections } from "../fixtures/fixture-directions"
 import { createOverlayProgram } from "../fixtures/layer-program"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { ZonePaused } from "./ZonePaused"
@@ -66,6 +67,7 @@ function Scenario({
   })
   const { dispatch, subscribe, get } = program.current
   const { model, context } = useSyncExternalStore(subscribe, get)
+  useFixtureDirections()
   return (
     <ZonePaused
       answer={model.answer}

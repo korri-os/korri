@@ -89,7 +89,6 @@ export function ZonePausedControl({
         data-korri-horizontal-control={horizontal["data-korri-horizontal-control"]}
         onClick={control.enabled ? onPress : undefined}
         onFocus={onFocus}
-        onKeyDown={horizontal.onKeyDown}
         ref={button}
         type="button"
       >

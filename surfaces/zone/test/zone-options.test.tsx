@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { useRef, useSyncExternalStore } from "react"
+import { sendFixtureDirection } from "../src/fixtures/fixture-directions"
 import { createFixtureHost, type FixtureHost } from "../src/fixtures/fixture-host"
 import {
   createOptionsProgram,
@@ -83,9 +84,10 @@ describe("C12 groups and items", () => {
 describe("C13 interactions", () => {
   test("choice: left and right change it at once", () => {
     const host = mount(fixtureOptions, [{ _tag: "FocusedRow", rowId: fixtureSeatsId }])
-    fireEvent.keyDown(row("Player seats"), { key: "ArrowRight" })
+    // The portal's left and right, as it delivers them to a focused stepper.
+    act(() => sendFixtureDirection(row("Player seats"), "right"))
     expect(host.calls).toEqual([`setting:${fixtureSeatsId}=3`])
-    fireEvent.keyDown(row("Player seats"), { key: "ArrowLeft" })
+    act(() => sendFixtureDirection(row("Player seats"), "left"))
     expect(host.calls).toEqual([`setting:${fixtureSeatsId}=3`, `setting:${fixtureSeatsId}=2`])
   })
   test("text: A raises the keyboard with the value; DONE commits", () => {

@@ -275,6 +275,18 @@ bun run lint
   cannot scroll it under the track's translation.
 - **A on a card had no way out.** `ZoneCard` gained `onPress` and
   `ZoneCardBand` `onChoose`.
+- **Zone reads no key.** `useZoneHorizontal` only marks the element and
+  listens for `korri-semantic-direction`; it has no key handler, so the
+  portal's keyboard adapter keeps its repeat and release handling. In
+  Caliper, where no portal stands in front, `src/fixtures/
+  fixture-directions.ts` turns an arrow key on a focused stepper into the
+  portal's event (the PAUSED, Paused control and OPTIONS parts call it),
+  and the Paused control part carries a Caliper check that dispatches the
+  event. `use-zone-idle` keeps its root `keydown` listener to restart the
+  timer and wake: it reads no key and prevents nothing. The authoring gate
+  fails a file outside `src/fixtures` that reads `event.key`, `.key ===`,
+  `keyCode` or an arrow key's name, or calls `preventDefault` in a key
+  handler.
 - **Waking keeps the exact focus.** `use-zone-idle` no longer wakes on
   `focusin` (a focus move is already a message, and `update` treats any
   message while idle as a wake) and wakes on a key one task later, after the
@@ -320,7 +332,8 @@ bun run lint
   same facts in the foot. An issue is suggested to let a row take a node.
 - **A on a choice steps it forward**, as right does. The real host delivers
   left and right to a control only through `korri-semantic-direction`,
-  which ZoneOptionRow does not listen to yet; A keeps every choice reachable.
+  which ZoneOptionRow listens to while focused; A keeps every choice
+  reachable as well.
 - **A secret's keyboard starts empty.** Korri's value for a secret is its
   word about it ("Configured"), never the secret. DONE on an empty secret
   closes without a request; clearing is the clear key alone.
@@ -472,7 +485,7 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   ground greyed and striped as the game's stand-in, the yellow wedge of
   flat controls then groups. Left and right arrive as the portal's
   `korri-semantic-direction` event on rows marked
-  `data-korri-horizontal-control` (and as arrow keys without a portal).
+  `data-korri-horizontal-control`, never as keys.
 - **First boot.** CONTROLLERS, WI-FI, NAME, IDENTITY under a strip of four
   tags; NEXT on the first three, FINISH on the last. The controller cards'
   grid is `src/plan/onboarding.ts`, measured on the stage.

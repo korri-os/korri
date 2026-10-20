@@ -8,11 +8,43 @@ import {
   controlSave,
   controlVolume,
 } from "../../fixtures/fixture-layers"
+import { useFixtureDirections } from "../../fixtures/fixture-directions"
 import { createOverlayProgram } from "../../fixtures/layer-program"
 import { ZonePausedControl } from "./ZonePausedControl"
 
 export const name = "Paused control"
 export const note = "One row of PAUSED's wedge: a black parallelogram, the label, and what Korri's interaction shows"
+
+/* The helpers Caliper hands an authored check, typed locally: Zone imports
+ * nothing from Caliper (test/authoring-gate.test.ts). */
+interface CheckTools {
+  readonly canvas: { getByRole(role: string, options: { name: RegExp }): HTMLElement }
+  readonly input: { click(element: Element): Promise<void> }
+  readonly expect: (value: unknown) => { toBe(expected: unknown): void }
+  readonly waitFor: (assertion: () => void) => Promise<void>
+}
+
+/* Left and right reach the control the way the portal delivers them
+ * (clients/portal/src/input/spatial-focus.ts), never as keys. Volume is 0
+ * to 100 in steps of 5, at 60. */
+export const checks = {
+  Range: {
+    "the portal's right raises Volume by Korri's step and left lowers it": async ({ canvas, input, expect, waitFor }: CheckTools) => {
+      const volume = () => canvas.getByRole("button", { name: /Volume/ })
+      const value = () => volume().querySelector(".zone-paused-control-text")?.textContent
+      await input.click(volume())
+      const slide = (direction: "left" | "right") =>
+        volume().dispatchEvent(new CustomEvent("korri-semantic-direction", {
+          detail: { direction, repeat: false, releaseExpected: false },
+        }))
+      slide("right")
+      await waitFor(() => expect(value()).toBe("65"))
+      slide("left")
+      slide("left")
+      await waitFor(() => expect(value()).toBe("55"))
+    },
+  },
+}
 
 /** Unexported: one control on the real overlay model, a pretend Korri applying each value. */
 function Scenario({ control, moving }: { readonly control: SurfaceGameplayControl; readonly moving?: number }) {
@@ -23,6 +55,7 @@ function Scenario({ control, moving }: { readonly control: SurfaceGameplayContro
   )
   const { dispatch, subscribe, get } = program.current
   const { model, context } = useSyncExternalStore(subscribe, get)
+  useFixtureDirections()
   const shown = context.controls[0] ?? control
   return (
     <ZonePausedControl
