@@ -1,0 +1,26 @@
+/* The well: black inside a blue edge, the code centred and square. The
+ * well fills the box it is given; the code takes the shorter side. */
+.zone-qr-well {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--zone-qr-pad);
+  border: var(--zone-well-edge) solid var(--zone-well-edge-colour);
+  background: var(--zone-qr-well);
+}
+
+/* The paper is the SVG: white, with the quiet zone inside the viewBox, so
+ * the code reads against the black well at any scale. */
+.zone-qr-well-code {
+  display: block;
+  width: min(100%, 100cqh);
+  height: auto;
+  aspect-ratio: 1;
+  background: var(--zone-qr-paper);
+  fill: var(--zone-qr-ink);
+  shape-rendering: crispEdges;
+}

@@ -1,0 +1,152 @@
+/* The card: a flat ground that fills its box and clips the bands. The
+ * ground and each band name a colour; the map below turns it into a token. */
+.zone-title-card {
+  --zone-title-card-type-title: clamp(var(--zone-type-title-min), 7.5cqi, var(--zone-type-title));
+  --zone-title-card-type-act: clamp(var(--zone-type-note), 6cqb, var(--zone-type-act));
+  --zone-title-card-type-act-word: clamp(calc(var(--zone-type-act-word) * 0.6), 2.4cqb, var(--zone-type-act-word));
+  --zone-title-card-circle: calc(var(--zone-act-circle-share) * 100cqh);
+  --zone-title-card-colour: var(--zone-title-ground);
+  position: relative;
+  container-type: size;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--zone-title-card-colour);
+  color: var(--zone-cap);
+}
+
+.zone-title-card[data-ground="mint"] { --zone-title-card-colour: var(--zone-mint); }
+.zone-title-card[data-ground="black"] { --zone-title-card-colour: var(--zone-black); }
+.zone-title-card[data-ground="white"] { --zone-title-card-colour: var(--zone-white); }
+.zone-title-card[data-ground="yellow"] { --zone-title-card-colour: var(--zone-yellow); }
+.zone-title-card[data-ground="blue"] { --zone-title-card-colour: var(--zone-blue); }
+.zone-title-card[data-ground="orange"] { --zone-title-card-colour: var(--zone-orange); }
+.zone-title-card[data-ground="red"] { --zone-title-card-colour: var(--zone-red); }
+.zone-title-card[data-ground="pink"] { --zone-title-card-colour: var(--zone-pink); }
+
+/* Three bands side by side, the whole strip turned so each band falls
+ * from top-left to bottom-right at the band angle, and twice the card's
+ * size so it reaches every corner. The outer two slide along their length,
+ * as the reference staggers them. */
+.zone-title-card-bands {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: calc(var(--zone-title-band-share) * 25cqw);
+  width: 200cqmax;
+  height: 200cqmax;
+  translate: -50% -50%;
+  rotate: calc(var(--zone-title-band-angle) - 90deg);
+  pointer-events: none;
+}
+
+.zone-title-card-band {
+  --zone-title-card-band-colour: var(--zone-band-upper);
+  flex: 0 0 calc(var(--zone-title-band-share) * 100cqw);
+  background: var(--zone-title-card-band-colour);
+}
+
+.zone-title-card-band:first-child {
+  translate: 0 -18%;
+}
+
+.zone-title-card-band:last-child {
+  translate: 0 18%;
+}
+
+.zone-title-card-band[data-colour="mint"] { --zone-title-card-band-colour: var(--zone-mint); }
+.zone-title-card-band[data-colour="black"] { --zone-title-card-band-colour: var(--zone-black); }
+.zone-title-card-band[data-colour="white"] { --zone-title-card-band-colour: var(--zone-white); }
+.zone-title-card-band[data-colour="yellow"] { --zone-title-card-band-colour: var(--zone-yellow); }
+.zone-title-card-band[data-colour="blue"] { --zone-title-card-band-colour: var(--zone-blue); }
+.zone-title-card-band[data-colour="orange"] { --zone-title-card-band-colour: var(--zone-orange); }
+.zone-title-card-band[data-colour="red"] { --zone-title-card-band-colour: var(--zone-red); }
+.zone-title-card-band[data-colour="pink"] { --zone-title-card-band-colour: var(--zone-pink); }
+
+/* The title and the circle, centred together. */
+.zone-title-card-face {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--zone-title-card-circle) * 0.2);
+  width: 100%;
+  height: 100%;
+  padding: var(--zone-band-margin);
+}
+
+/* The title: caps with the blue edge on a black parallelogram. It wraps
+ * and shrinks; it is never cut. */
+.zone-title-card-title {
+  position: relative;
+  isolation: isolate;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: calc(var(--zone-row-space) * 2) calc(var(--zone-slant) * 2 + var(--zone-row-gap) * 2);
+  font: inherit;
+  font-size: var(--zone-title-card-type-title);
+  line-height: 1;
+  text-align: center;
+  overflow-wrap: anywhere;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+.zone-title-card-title::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: polygon(
+    calc(var(--zone-slant) * 2) 0,
+    100% 0,
+    calc(100% - var(--zone-slant) * 2) 100%,
+    0 100%
+  );
+}
+
+/* The orange circle with the act on a white slab. The circle takes its
+ * share of the height, and grows, still round, when the act needs more. */
+.zone-title-card-circle {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: var(--zone-title-card-circle);
+  min-height: var(--zone-title-card-circle);
+  aspect-ratio: 1;
+  padding: calc(var(--zone-title-card-circle) * 0.12);
+  border-radius: 50%;
+  background: var(--zone-act-circle);
+}
+
+/* The act wraps at a space, never inside a word: a long system widens the
+ * circle instead. */
+.zone-title-card-slab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--zone-row-space) / 2);
+  max-width: calc(var(--zone-title-card-circle) * 0.76);
+  min-width: min-content;
+  padding: calc(var(--zone-row-space) * 2) var(--zone-row-gap);
+  background: var(--zone-act-slab);
+  color: var(--zone-act-ink);
+  text-align: center;
+  text-shadow: none;
+}
+
+.zone-title-card-act-word {
+  font-size: var(--zone-title-card-type-act-word);
+  line-height: 1;
+}
+
+.zone-title-card-act {
+  font-size: var(--zone-title-card-type-act);
+  line-height: 1;
+}

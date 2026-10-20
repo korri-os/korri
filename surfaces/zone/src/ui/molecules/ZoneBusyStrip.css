@@ -1,0 +1,109 @@
+/* The kicker's panel and the actions, side by side. The panel grows and
+ * shrinks; the actions keep their size and wrap under it when the strip is
+ * narrower than both. */
+.zone-busy-strip {
+  --zone-busy-strip-type-kicker: clamp(var(--zone-type-row), 2.8cqi, var(--zone-type-kicker));
+  --zone-busy-strip-type-detail: clamp(var(--zone-type-note), 1.8cqi, var(--zone-type-detail));
+  --zone-busy-strip-shape: polygon(
+    var(--zone-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-slant)) 100%,
+    0 100%
+  );
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--zone-strip-gap);
+  width: 100%;
+  color: var(--zone-cap);
+}
+
+/* The black parallelogram: kicker over detail, both left-aligned. */
+.zone-busy-strip-panel {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--zone-row-space) / 2);
+  min-width: min(100%, calc(var(--zone-busy-height) * 3));
+  min-height: var(--zone-busy-height);
+  padding: var(--zone-row-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+}
+
+.zone-busy-strip-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-busy-strip-shape);
+}
+
+.zone-busy-strip-kicker {
+  font-size: var(--zone-busy-strip-type-kicker);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.zone-busy-strip-detail {
+  font-size: var(--zone-busy-strip-type-detail);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+/* Korri's actions, as buttons beside the panel. */
+.zone-busy-strip-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: var(--zone-strip-gap);
+  font-size: var(--zone-busy-strip-type-kicker);
+}
+
+.zone-busy-strip-action {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-height: var(--zone-busy-height);
+  padding: var(--zone-row-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  line-height: 1;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  transition: translate var(--zone-press-time) var(--zone-bounce);
+}
+
+.zone-busy-strip-action::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-busy-strip-shape);
+}
+
+.zone-busy-strip-action[data-focused]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--zone-focus);
+  clip-path: var(--zone-busy-strip-shape);
+  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+}
+
+.zone-busy-strip-action:active {
+  translate: var(--zone-press-sink) var(--zone-press-sink);
+}
+
+/* Present but inert: Korri's rule is dimmed, never hidden. */
+.zone-busy-strip-action:disabled {
+  opacity: var(--zone-triangle-dim);
+}
+
+/* A destructive action's caps are red, as a destructive row's value is. */
+.zone-busy-strip-action[data-destructive] {
+  color: var(--zone-destructive-ink);
+}

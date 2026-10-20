@@ -1,0 +1,127 @@
+/* The blue panel. Headline, body, buttons: the body is the one row that
+ * gives way, so the buttons stay on screen however long Korri's reason is. */
+.zone-dialog {
+  --zone-dialog-type-headline: clamp(var(--zone-type-dialog-line), 4cqi, var(--zone-type-dialog-headline));
+  --zone-dialog-type-line: clamp(var(--zone-type-note), 2.6cqi, var(--zone-type-dialog-line));
+  --zone-dialog-type-button: clamp(var(--zone-type-row), 3.6cqi, var(--zone-type-dialog-button));
+  --zone-dialog-space: clamp(var(--zone-row-space), 5cqb, var(--zone-dialog-pad));
+  --zone-dialog-shape: polygon(
+    var(--zone-slant) 0,
+    100% 0,
+    calc(100% - var(--zone-slant)) 100%,
+    0 100%
+  );
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  row-gap: var(--zone-dialog-space);
+  width: 100%;
+  max-height: 100%;
+  padding: var(--zone-dialog-space) calc(var(--zone-dialog-pad) + var(--zone-slant));
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--zone-dialog-panel);
+  color: var(--zone-cap);
+  text-align: center;
+}
+
+/* The two black wedges, cut from the top-left and bottom-right corners.
+ * They sit under the words, so a long line may run across them. */
+.zone-dialog-wedge {
+  position: absolute;
+  z-index: -1;
+  width: var(--zone-dialog-wedge-reach);
+  height: var(--zone-dialog-wedge-depth);
+  background: var(--zone-dialog-wedge);
+  pointer-events: none;
+}
+
+.zone-dialog-wedge-start {
+  top: 0;
+  left: 0;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.zone-dialog-wedge-end {
+  right: 0;
+  bottom: 0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.zone-dialog-headline {
+  margin: 0;
+  font: inherit;
+  font-size: var(--zone-dialog-type-headline);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+/* Korri's reason, line by line. It scrolls when the panel is short, and
+ * keeps one line's height so a short panel still shows there is a reason. */
+.zone-dialog-body {
+  min-height: calc(var(--zone-dialog-type-line) * 1.3);
+  overflow-y: auto;
+  scrollbar-width: none;
+  font-size: var(--zone-dialog-type-line);
+  line-height: 1.3;
+}
+
+.zone-dialog-line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The game the trouble belongs to, in yellow. */
+.zone-dialog-title {
+  margin: var(--zone-row-space) 0 0;
+  color: var(--zone-dialog-title-ink);
+  overflow-wrap: anywhere;
+}
+
+/* NO and YES, or the one way out. They wrap to two rows before either
+ * shrinks below its least width. */
+.zone-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--zone-dialog-space) var(--zone-dialog-button-gap);
+  font-size: var(--zone-dialog-type-button);
+}
+
+/* A button: caps with the blue edge on a black parallelogram. */
+.zone-dialog-action {
+  position: relative;
+  isolation: isolate;
+  flex: 0 1 auto;
+  min-width: min(var(--zone-dialog-button-width), 100%);
+  padding: var(--zone-dialog-space) calc(var(--zone-slant) + var(--zone-row-gap) * 2);
+  line-height: 1;
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
+  transition: translate var(--zone-press-time) var(--zone-bounce);
+}
+
+.zone-dialog-action::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--zone-panel);
+  clip-path: var(--zone-dialog-shape);
+}
+
+/* The lit one: the pink underline, offset down and left. */
+.zone-dialog-action[data-focused]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--zone-focus);
+  clip-path: var(--zone-dialog-shape);
+  translate: calc(var(--zone-drop-edge) * -1) var(--zone-drop-edge);
+}
+
+.zone-dialog-action:active {
+  translate: var(--zone-press-sink) var(--zone-press-sink);
+}

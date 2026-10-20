@@ -1,7 +1,10 @@
 /* A box on the ground with a hard outline, so its edge is visible against a
- * child that paints the same mint. Shapes are shares of the device. */
+ * child that paints the same mint. Shapes are shares of the device. The box
+ * is a size container, as the shell's body is, so a part's container units
+ * measure the frame and not the device. */
 .zone-part-frame {
   position: relative;
+  container-type: size;
   overflow: hidden;
   width: 100%;
   height: 100%;
@@ -15,4 +18,9 @@
 
 .zone-part-frame[data-shape="wide-short"] {
   height: 28%;
+}
+
+.zone-part-frame[data-shape="tiny"] {
+  width: 18%;
+  height: 24%;
 }
