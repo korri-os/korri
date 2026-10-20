@@ -52,6 +52,22 @@ can record what each session started from.
 - After an identity switch, the previous owner's saves stay on the device,
   untouched, and stop syncing. They sync again if that person owns the device
   again.
+- The runner plugin declares the save locations of each launch in its launch
+  declaration. korrid snapshots them; the plugin performs no effect.
+- Each person gets their own `account_root` under `users/`, keyed like the play
+  log keys a person (`services/korrid/src/host/play_log.rs`). Today every person
+  shares `users/default` (`services/korrid/src/launcher/linux_plugin.rs:110`).
+  At deploy, a one-off operator migration moves `users/default` to the device
+  owner's folder; no compatibility path stays.
+- Steam games are left to Steam Cloud, and Korri says so for those games. korrid
+  keeps no access to Steam saves (`steam-session.sh` ACLs).
+- The split notice shows on every device of the person that knows about the
+  split, until it is resolved.
+- Picking a side of a split makes a new snapshot with the picked content that
+  names both sides as where it started. It syncs like any session. Two
+  different picks made apart are themselves a split.
+- When the latest snapshot's savestates came from a different runner than the
+  one about to launch, Korri warns that they may not load and allows the launch.
 - Snapshots move only between the person's own devices. A hosted store is out
   of scope until a separate spike.
 - Every runner plugin's games are in scope, not only emulators.
@@ -97,9 +113,8 @@ Savestates of 0.5 to 2 GB make storage and transfer cost real.
 
 Not decided yet, and not to be assumed by an implementation:
 
-- Which files on disk belong to one game's save snapshot, and who declares them.
-- Per-person save folders: `account_root` is `users/default` for everyone today
-  (`services/korrid/src/launcher/linux_plugin.rs:110`).
-- Games whose saves land outside `account_root`, and Steam games.
-- How a split choice reaches the person's other devices.
+- How a runner whose folder is shared by every game names one game's files.
+- Games whose saves land outside `account_root` (OpenGOAL, Fallout 1/2 CE,
+  Skate 3): being checked plugin by plugin, including legacy.
+- The shape of the save-location declaration in the plugin contract.
 - The data model, storage format and wire messages.

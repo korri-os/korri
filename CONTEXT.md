@@ -173,6 +173,10 @@ _Avoid_: cloud save, save folder, save slot
 One game's complete saves for one person, captured as one unit after a game exits. It names the snapshot its session started from and the release it ran. It holds in-game saves, savestates and screenshots.
 _Avoid_: backup, version, save file
 
+**Save location**:
+A place on disk where one launch of a game writes that game's saves. The runner plugin declares it; korrid reads and writes it.
+_Avoid_: save path, save dir, save folder
+
 **Interrupted snapshot**:
 A save snapshot made from what a game wrote before a crash or power loss, not after a clean exit. Korri keeps it and marks it.
 _Avoid_: recovered save, partial save
