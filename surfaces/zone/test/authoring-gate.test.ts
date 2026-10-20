@@ -290,3 +290,20 @@ describe("eight colours, hard edges", () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe("fixtures stay out of the product", () => {
+  /**
+   * src/fixtures holds stand-in data and a fixture d-pad that reads arrow keys
+   * for Caliper. The key-reading gate exempts that folder, so the exemption
+   * is only safe while nothing the product ships imports from it. Parts and
+   * tests may; nothing else may.
+   */
+  test("no product file imports from src/fixtures", () => {
+    const product = allFiles.filter((file) =>
+      /\.(?:ts|tsx)$/.test(file)
+      && !file.endsWith(".part.tsx")
+      && !rel(file).startsWith("fixtures/"))
+    const offenders = product.filter((file) => /from\s+"[^"]*\/fixtures\//.test(read(file))).map(rel)
+    expect(offenders).toEqual([])
+  })
+})
