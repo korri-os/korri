@@ -397,6 +397,92 @@ bun run lint
   now has an `AWAITING_MOUNT` list (ZoneOptions, ZoneRunWith), checked both
   ways like `AWAITING_PAGE`.
 
+### OPTIONS and RUN WITH, refined (options): decided without asking
+
+The refinement brief, section 4, for OPTIONS, Wi-Fi and RUN WITH. These
+supersede the bullets above where they disagree: rows are no longer
+strings only, LOCK and KNOWN are gone, placeholders and disabled rows are
+no longer dimmed with opacity, and Korri's sentences are no longer caps.
+
+- **The band is the scroll.** OPTIONS' body is the sky band
+  (`--zone-options-band`), the full width of the screen with a 3-art-px
+  black lip over and under it, and the lips stand outside the scroll box,
+  so a row the band cannot hold is cut by a lip, never by the tabs. RUN
+  WITH has the same band. 4 art px of ground stand between the band and
+  each strip, so the yellow ground and its rings frame it as Mania's do.
+- **Group titles hold.** A group title is the black wedge flush with the
+  band's left edge (caps-2, caps-1 when it must, `useZoneFit`), its words
+  starting where the rows' words start. It is `position: sticky` at the
+  top of the band, on a band-coloured row (`--zone-option-group-backing`,
+  which OPTIONS sets; other holders keep none), so rows pass under it and
+  are cut on one straight line. While a group's last rows are under its
+  title the title can stand right over the next one; accepted, it lasts
+  one title's height of scroll.
+- **The row measures itself** (`src/use-zone-option-row.ts`, a DOM
+  mechanic like `useZoneFit`): it stacks label over value at or under 224
+  art px (`ZONE_OPTION_ROW_STACK_AT` in `src/plan/options-row.ts`: the
+  brief's 240-art-px screen less the band's 8-art-px inset each side), so
+  GAME OPTS., first boot and RUN WITH get the reflow too. 480x800 stacks;
+  640x480 does not. Stacked, the pink drop hangs under the value panel,
+  the row's foot.
+- **Cells on the grid.** A cell is 14 art px for one line (cap 10, 2 over
+  and under), its slant 13 (45 degrees, from `zoneStairClip`); a cell that
+  wraps keeps the one-line slant, stepped over its height
+  (`zoneOptionClip`), so a slant never meets its words. Caps lines in a row
+  are 12 art px (1.2 of the cap), so wrapped lines stand 2 apart.
+- **Two-tone caps without the copies.** Row labels, Zone's own value
+  words, group titles' fallback and RUN WITH's title draw the white ink's
+  lavender lower rows with a hard-stop gradient clipped to the text, one
+  tile per line, because they wrap (ZoneCaps' copies are one line). On a
+  black panel there is no ring to lose. Group titles use `ZoneCaps` itself.
+- **Cuts.** A fact that does not fit is cut by the row: a path (starts
+  with `/` or `~`) in the middle, keeping its last segment whole and as
+  much of the start as fits; when the last segment alone is too long, its
+  tail from a `-` or `.` ("…retroarch-1.19.1"). Anything else ends in "…"
+  (CSS). The whole fact is written on the focused row's own line under its
+  panels while it is cut, as generated content (no second copy in the DOM;
+  the words stay in the cell for assistive tech). A path on that line may
+  wrap after each `/`. A caps label wraps between words; a single word
+  longer than the line ends in "…" and shows whole the same way.
+- **Wi-Fi words.** `zoneWifiWords`: LOCKED or OPEN, then SAVED when Korri
+  knows the key; `zoneNetworkValue` ("72% LOCKED SAVED") is the one
+  function OPTIONS and first boot call. First boot used to say one word
+  (SAVED over LOCKED over OPEN); both now say the security word and SAVED.
+  OPTIONS draws bars, then the strength in Jersey 10, then the words in
+  caps; its WI-FI rows give the value the larger share
+  (`--zone-options-wifi-label-share`), and SSIDs are facts (Jersey 10).
+- **Bars** are 2/4/6/8 art px, 2 wide, 1 apart, lit white, unlit
+  `--zone-track`, no opacity. ZoneSignal's strength is Jersey 10, white,
+  no longer mint. ZoneSignal takes a new optional `panel` (default on):
+  off, the OPTIONS connection row draws the readouts in its own black
+  value panel instead of a panel inside a panel.
+- **Saving** keeps the value and blinks a red pixel caret at the value
+  panel's end (500 ms each way, `steps(1)`). CONNECTING is Zone's word
+  under the row (caps, `descriptionCaps`).
+- **Steel, not opacity.** A disabled row and a placeholder are drawn in
+  `--zone-steel` (#84A2B5, Mania's OPTIONS ring), never with alpha.
+- **Problems and warnings** are one look: a black panel flush at its
+  start with a 2-art-px `#F75131` bar, leaning at its end, the words white
+  in Jersey 10 as written. ZoneWarningLines draws RUN WITH's warnings and
+  the join keyboard's rejected-key reason; a settings problem under its row
+  draws the same.
+- **Choice triangles** are 4 by 7 art px pixel stairs inside the value
+  panel's ends, nudging in two steps; only rows that step (choices) wear
+  them, so a text or action row's focus is the pink drop alone.
+- **A veil under a layer.** While the keyboard or the NO / YES dialog is
+  open, the band behind it wears a 1-art-px black checker (conic hard
+  stops), so the sky dialog and keyboard stand clear of the sky band.
+- **RUN WITH's banner stands where the tabs stand** (the shell's `tabs`
+  slot: RUN WITH has none), so the band takes the body. The game's title
+  is caps-2 on a black panel (caps-1 when it must); the message is Jersey
+  10 on a black panel; a route gives its build the larger share
+  (`--zone-run-with-label-share`, 0.45). READY was already the
+  `#5A71E7` tag. C11's acceptance test now reads the page's whole shell,
+  since the banner left `.zone-run-with`.
+- **Row props added** (ZoneOptionRow; ZoneOptionGroupRow carries the
+  first): `descriptionCaps` (the description is Zone's own word). Every
+  other prop is as it was.
+
 ### SAVE DATA page (C16 to C20)
 
 - **The page owns the shell, the binding owns its slots.** `ZoneSaveData`
