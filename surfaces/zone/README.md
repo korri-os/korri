@@ -189,3 +189,8 @@ bun run lint
 - **Catalog titles for now.** `ZoneSurface` lists the catalog's game titles
   as plain text in the shell's body until the card band lands, so the
   package renders end to end with a real `SurfaceModel`.
+
+## Layers (status, PAUSED, onboarding)
+
+Work in progress: `ZoneStatusLayer`, `ZonePaused`, `ZoneOnboarding` and
+their pure models `src/state/status.ts`, `overlay.ts`, `onboarding.ts`.
