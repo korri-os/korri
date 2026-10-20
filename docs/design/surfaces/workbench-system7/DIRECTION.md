@@ -68,3 +68,6 @@ C27 After a while the screen goes black with the Finder's zoom rectangles stoppe
 C28 options drops the File menu; menu cycles the front window; system does nothing; back closes the front window or cancels the dialog; every box, button, icon, row, key and tab is a stop.
 C29 A text field is the field; confirm opens a Keyboard window of Key Caps keys under it, the d-pad moves between keys, confirm types at the insertion point, up from the top row enters the field; back deletes, and closes the keyboard on an empty field; Shift, Space, Cancel and Join end the last row.
 C30 Focus is the Finder's selection: the darkened icon with the inverted label, the 3px default ring on a button, a pressed close/zoom box or key, an inverted menu item, tab or radio label, a cyan list row; a dialog traps focus and inactivates the window behind; zoom rectangles dropped under reduced motion.
+C31 Confirm: a Caution alert, the kicker as title, the detail as body, the game named first; buttons in the host's order and words, focus on the first
+C32 The Busy alert gains the Finder's copy bar, filled black to done over total, "1.2 MB of 3.4 MB" under it; no total "1.2 MB read", no bar; no progress the body alone
+C33 The header's second line adds "Needs a 3.4 MB download first" ("Needs a download first" with no size); Get Info adds a bold Download label with the size

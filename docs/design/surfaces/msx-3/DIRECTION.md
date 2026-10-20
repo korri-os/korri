@@ -15,3 +15,39 @@
 **Text entry (not drawn).** The portrait window becomes a character table in fixed Megami Tensei columns (a-z, A-Z, 0-9, symbols), the message box's first line becomes the draft with a block cursor, d-pad moves, A types, B deletes, menu commits; a 40-character identity string wraps onto the box's three lines.
 
 **Decisions taken alone.** A sentence that will not fit three lines loses trailing clauses (the table still shows those facts; see ?case=long). Truncated titles end in a grey "..". The focused row keeps white text; only ▶ carries the accent. Focusing a system line already shows its block read-only; confirm enters it. ?case=many scrolls with a 4 px cut-off row at the edge that has more. Idle motion: ▼ blinks at 1 Hz, the live ▶ nudges 1 px every 2 s, NO PICTURE noise bands drift every 160 ms; steps() only, off under prefers-reduced-motion.
+
+## Capability map
+
+C1  Loading: "Reading the files.", a blinking ■; Error: the message box speaks it; Empty: "No games on file. Settings, Network and Identity are below the line."
+C2  One command line per game, grey ".." when cut, a HELD tag; a section a grey caption line; the cover fills the portrait, noise bands fill a wide one's gaps
+C3  The message box: "Last opened 9 days ago; played 7 times; 3 h 20 m in all."; resumable: the HELD tag and "Celeste Classic is waiting where you left it."
+C4  One place: confirm plays at once; two places: the ▶ moves into the places table, the list keeps a hollow ▷, the person picks a row and confirm plays there
+C5  Left on a game line (or options) turns the portrait into its command block: a ▶ row per action, grey when disabled, the description in the message box
+C6  A Find line above Settings under the dashed line: confirm opens the character table, the column keeps only titles that hold the draft; B clears
+C7  The message box speaks the kicker, then the detail, the ■ blinking; the host's actions (CANCEL) are places table rows; the column stays on its game
+C8  The game's line carries an OPEN tag in the HELD caps and the message box speaks the kicker: "Spelunky is open on zao."
+C9  The message box names the game: "Spelunky did not open. <reason>"; RETRY (when canRetry) and DISMISS are places table rows the ▶ reaches
+C10 "Re-read files", the last row of the Settings block, and a places table row under a read error
+C11 The command block's "Run with" row: a ▶ row per route, program and build, a SAVED tag on the saved one; warnings and the state in the message box
+C12 Settings opens its status block in the portrait: a title line per group, a row "Label value" per item, a stat bar for a level; the description below
+C13 Confirm on a row: a choice steps left/right; text and sensitiveText open the character table (dots, a clearLabel row); an action runs, asking when it must
+C14 Saving: the row's value becomes a blinking ■; Problem: the message box speaks the message and B dismisses it
+C15 An Actions title line at the foot of the Settings block, a ▶ row per device action, grey when disabled; confirm runs one
+C16 The Identity block's "Back up" row: the password in the character table, then the portrait shows the QR code and the message box prints the secret
+C17 Identity's "Switch" row, from backup: secret then password in the table, Transfer / Delete rows, then "Other devices will stop trusting this one. Sure?"
+C18 Identity's "Switch" row, by bunker: the URI in the character table, wrapping over the box's three lines, then the same rows and trust question as C17
+C19 Identity's "Retired keys" row opens a block of keys, one per row in short form; Delete asks "Backed up? A yes, B returns." first
+C20 The message box: Working speaks the operation with the blinking ■, Problem the message, Switched "New owner:" and the key; B dismisses
+C21 The signal tag on the portrait's top border, four green bars; WIRED in the HELD caps; Offline grey bars; the Network block's first row names the SSID and %
+C22 The Network block: Scan, networks strongest first with stat bars, LOCK and KNOWN tags; scanning, Connecting and Failed are spoken; no adapter: "No Wi-Fi here."
+C23 Confirm on a network joins; secured and not known opens the character table for the password, a rejected one reopens it; "Hidden network" asks the name first
+C24 Over the game, the command box titled with the overlay: a ▶ row per control, a toggle its label, a choice steps, a range a stat bar; grey rows say why; B closes
+C25 The opening: the message box speaks each step; the portrait lists controllers, tagged HEARD; Network, name and Identity run as their blocks; "Begin" finishes
+C26 The clock tag on the portrait's top border; "korri 0.4.1 9a1fb22" far right on the places table's title line, in the grey caps
+C27 Nothing beyond the idle motion: the ▼ blinks, the live ▶ nudges, noise bands drift. No attract, no screensaver
+C28 options on a game line opens its command block, menu jumps the ▶ to Settings, system does nothing; left opens the command block too, so the d-pad reaches all
+C29 The portrait becomes a character table in fixed columns, the message box's first line the draft with a block cursor; d-pad moves, A types, B deletes, menu commits
+C30 The magenta ▶ marks focus, always drawn, a grey ▷ the list's place; the column scrolls, a cut-off row at the edge; steps() only, off under reduced motion
+C31 On its game's line, the message box asks the kicker, then the detail; the host's actions are places table rows in the host's order and words, ▶ on the first
+C32 Under the kicker, a green stat bar lit to done over total, "1.2/3.4 GB" beside it; with no total "1.2 GB in", no bar; with no progress the blinking ■ alone
+C33 The message box adds "It needs a 3.4 GB download first." ("It needs a download first." with no size), and the game's line carries a DL tag
