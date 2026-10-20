@@ -108,6 +108,28 @@ describe("raw values live in the tokens", () => {
       .map(([, name]) => name ?? "")
     expect(offenders).toEqual([])
   })
+
+  /**
+   * Three workers append their token blocks to the one file, and a merge once
+   * dropped a closing brace: the next block nested inside the previous rule,
+   * the parser threw it away, and every dialog rendered as bare text. Every
+   * declaration must sit directly inside a `.zone-theme` or `:root` rule.
+   */
+  test("every token block closes before the next opens, so no block is lost", () => {
+    const source = read(join(SRC, TOKENS)).replace(/\/\*[\s\S]*?\*\//g, "")
+    let depth = 0
+    const problems: string[] = []
+    source.split("\n").forEach((line, index) => {
+      const opens = (line.match(/\{/g) ?? []).length
+      const closes = (line.match(/\}/g) ?? []).length
+      if (opens > 0 && depth > 0) problems.push(`line ${index + 1}: a rule opens inside another`)
+      depth += opens - closes
+      if (depth < 0) problems.push(`line ${index + 1}: a rule closes that never opened`)
+      if (depth === 0 && /^\s*--[a-z0-9-]+\s*:/.test(line)) problems.push(`line ${index + 1}: a token outside any rule`)
+    })
+    if (depth !== 0) problems.push(`end of file: ${depth} rule(s) never close`)
+    expect(problems).toEqual([])
+  })
 })
 
 describe("every component file holds exactly one component", () => {

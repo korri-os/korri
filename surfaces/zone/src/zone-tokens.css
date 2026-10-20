@@ -375,6 +375,8 @@
   --zone-panel-light-ink: var(--zone-black);
   /** @label Unlit signal bar */
   --zone-bar-off: var(--zone-white);
+}
+
 /* ---- dialogs ---- */
 /* The dialog and entry vocabulary: option rows, the blue dialog, the busy
  * strip, the keyboard, the QR well and the title card. Appended by the
