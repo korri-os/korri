@@ -385,7 +385,15 @@ export function createStoreAcquisition(
 
   const start = async (key: string, claim: ProviderClaim) => {
     setJob(key, claim, { _tag: "Starting", cancelRequested: false })
-    const result = await korrid.acquisitionAcquire({ providerId: claim.providerId, id: claim.id })
+    const request = { providerId: claim.providerId, id: claim.id }
+    let result = await korrid.acquisitionAcquire(request)
+    // korrid holds claims in memory: after a restart it holds this one again
+    // once details returns it. Read it once, then ask again.
+    if (result._tag === "Err" && result.payload.code === ACQUISITION_CODE.unknownClaim && !disposed &&
+      jobs.get(key)?.job._tag === "Starting") {
+      const reread = await korrid.acquisitionDetails(request)
+      result = reread._tag === "Ok" ? await korrid.acquisitionAcquire(request) : reread
+    }
     const now = jobs.get(key)?.job
     if (disposed || now?._tag !== "Starting") return
     if (result._tag === "Err") {

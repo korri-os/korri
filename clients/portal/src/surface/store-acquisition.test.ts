@@ -401,6 +401,41 @@ test("korrid restarting under a download: Download stopped, Retry starts from ze
   expect((h.get() as { progress: { done: number } }).progress.done).toBeLessThanOrEqual(16_000)
 })
 
+test("a cart already in the library: after a korrid restart, Get answers Play with nothing downloaded", async () => {
+  const h = harness(base([claim("celeste")]))
+  await h.open("celeste")
+  h.press("Get")
+  h.press("Download")
+  await h.until("imported", () => h.get()._tag === "InLibrary")
+  const bytes = h.korrid.downloadedBytes()
+  // A portal that knows nothing of that job, over the same korrid.
+  const calls: string[] = []
+  const again = createStoreAcquisition({
+    ...h.korrid,
+    acquisitionProviders: () => h.korrid.acquisitionProviders(),
+    acquisitionSearch: request => h.korrid.acquisitionSearch(request),
+    acquisitionDetails: request => { calls.push("details"); return h.korrid.acquisitionDetails(request) },
+    acquisitionAcquire: request => { calls.push("acquire"); return h.korrid.acquisitionAcquire(request) },
+  }, { pollIntervalMs: 2 })
+  again.openStore(); await flush()
+  again.search(BBS, ""); await flush(); await flush()
+  again.openEntry(storeEntryId({ providerId: BBS, id: "celeste" })); await flush(); await flush()
+  // korrid restarts under the open entry: jobs and held claims are gone; the
+  // cart, its game and its release stay (section 11).
+  h.korrid.restart()
+  const offer = again.getSnapshot().details
+  if (offer._tag !== "Ready" || offer.get._tag !== "Offer") throw new Error("expected Get")
+  again.act(offer.get.actions[0]!.id)
+  const confirm = again.getSnapshot().details
+  if (confirm._tag !== "Ready" || confirm.get._tag !== "Confirm") throw new Error("expected Confirm")
+  again.act(confirm.get.actions[0]!.id)
+  for (let i = 0; i < 20; i++) await flush()
+  expect(again.getSnapshot().details).toMatchObject({ get: { _tag: "InLibrary", gameId: "store-korripico8-celeste" } })
+  // korrid no longer held the claim: the store read it again, then asked again.
+  expect(calls.slice(-3)).toEqual(["acquire", "details", "acquire"])
+  expect(h.korrid.downloadedBytes()).toBe(bytes)
+})
+
 test("korrid not answering for a moment does not end the watch", async () => {
   const korrid = createInMemoryStoreAcquisition(base([claim("celeste")]))
   let dark = 0
@@ -471,6 +506,7 @@ test("a download keeps going while another entry is open, and shows again on its
 test("the codes the store tells apart are build-3's (SCRIPTING.md)", () => {
   expect(ACQUISITION_CODE).toEqual({
     unknownJob: "AcquisitionUnknownJob",
+    unknownClaim: "AcquisitionUnknownClaim",
     systemUnknown: "AcquisitionSystemUnknown",
     notFinal: "DownloadNotFinal",
     resolutionFailed: "DownloadResolutionFailed",
