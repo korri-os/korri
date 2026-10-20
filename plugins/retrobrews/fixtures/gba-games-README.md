@@ -1,0 +1,94 @@
+# gba-games
+Homebrew Game Boy Advance games:
+
+ - <b>3 WEEKS IN PARADISE</b> by Bootlegger
+ - <b>A WEREWOLF TALE</b> by Genecyst
+ - <b>AIRBALL</b> by Foxy
+ - <b>ANGUNA</b> by Nathan Tolbert, Chris Hildenbrand
+ - <b>ANOTHER WORLD</b> by Foxy
+ - <b>ASTEROIDS [BAGLEY]</b> by Jim Bagley
+ - <b>ASTEROIDS [PRINCE]</b> by Russ Prince
+ - <b>ASTROHAWK</b> by Paul Lay
+ - <b>BALLE</b> by Brunni
+ - <b>BATTLE PICROSS</b> by Sean Reid
+ - <b>BLAST ARENA ADVANCE</b> by Mathew Carr
+ - <b>BLOCKTRAP</b> by Francois Pessaux
+ - <b>BRIDGE RACER</b> by Bootlegger
+ - <b>BUNNY XMAS</b> by Shen Mansell
+ - <b>BUST A MOVE</b> by Russ Prince
+ - <b>BYTES</b> by Ekid
+ - <b>CASTLE MASTER</b> by Quirky
+ - <b>CCCP</b> by Torlus
+ - <b>CHAOS</b> by Quirky
+ - <b>CHAOS - THE BATTLE OF WIZARDS</b> by Quirky
+ - <b>CHIP ADVANCE</b> by Alekmaul
+ - <b>CHOCOBO WORLD DELUXE</b> by Davgav
+ - <b>CLAY SHOOTER</b> by Jim Bagley
+ - <b>CLEANGAME ADVANCE</b> by S. Clarke
+ - <b>CODENAME HACKER</b> by Alekmaul, Lobo, Daydream
+ - <b>COSMIC SMASH CLONE</b> by Jim Bagley
+ - <b>CRYSTAL CLEAR CLONE</b> by Torlus
+ - <b>CYCLONE</b> by Quirky
+ - <b>CYLER</b> by Gener Gabasa
+ - <b>DEFLEKTOR</b> by Foxy
+ - <b>DOOMDARKS REVENGE</b> by Quirky
+ - <b>ELEVATOR</b> by Shen Mansell
+ - <b>ELIMINATOR</b> by Foxy
+ - <b>FACTORY BOTS</b> by Nicholas Scheltema
+ - <b>FRED FIREFIGHTER</b> by Lord Graga
+ - <b>FROGGER</b> by Bootlegger
+ - <b>FROGTRIS</b> by Shen Mansell
+ - <b>GAPMAN</b> by Bootlegger
+ - <b>GBA CARDS</b> by Flavor
+ - <b>GBA TACTICS</b> by Davgav
+ - <b>GOLDRUNNER</b> by Foxy
+ - <b>GOODBOY ADVANCE</b> by Exelotl
+ - <b>GORF</b> by Jess Ragan
+ - <b>HEXAVIRUS</b> by Alelmaul, Mollusk
+ - <b>HIEROGLYPHIC MAN</b> by Shen Mansell
+ - <b>HOLY HELL</b> by Genecyst
+ - <b>IMPACT</b> by Gener Gabasa
+ - <b>JETPACK 2</b> by Mukunda Johnson
+ - <b>JUMPING BARNABE</b> by Alekmaul
+ - <b>JUMPING JIM</b> by Alekmaul
+ - <b>KLAN WARS</b> by Lord Graga
+ - <b>LASER CHESS</b> by Russ Prince
+ - <b>LLAMABOOOST</b> by Lord Graga
+ - <b>LOOP THE LOOP</b> by Shen Mansell
+ - <b>LOOPED</b> by Bootlegger (Jason Bullough)
+ - <b>MATRIX RUNNER</b> by Nicholas Scheltema
+ - <b>MEMORY MUNCHA</b> by Lord Graga
+ - <b>METAL WARRIOR 4: AGENTS OF METAL</b> by Covert Bitops
+ - <b>MONOCHROMANCY</b> by Nicholas Scheltema
+ - <b>MOSHPIT</b> by Shen Mansell
+ - <b>NEBULUS</b> by Foxy
+ - <b>NEGATIVE SPACE</b> by Gener Gabasa, Mia
+ - <b>NINJA SACK</b> by Lord Graga
+ - <b>PAC RUN</b> by Jake Reardon
+ - <b>PAPER SCISSOR ROCKS</b> by Stian Hole
+ - <b>PNAKYS</b> by Torlus
+ - <b>POCKET MEAT</b> by BomberDev
+ - <b>POWER PIG</b> by Genecyst
+ - <b>PUSH-IT</b> by Bootlegger
+ - <b>S WORLD 3</b> by Shen Mansell
+ - <b>SANTA'S SWEATSHOP</b> by Sumiguchi
+ - <b>SHAPES</b> by Gener Gabasa
+ - <b>SNAKE IN THE GRASS</b> by Shen Mansell
+ - <b>SPOUT</b> by Alekmaul
+ - <b>SUPER HAPPY BUNNY EX [X-MAS EDITION]</b> by Shen Mansell
+ - <b>SUPER WINGS</b> by Mukunda Johnson
+ - <b>TAILGUNNER</b> by Gener Gabasa
+ - <b>TETRAVEX</b> by Francois Pessaux
+ - <b>TETRIGRAM</b> by Francois Pessaux
+ - <b>THE LORDS OF MIDNIGHT</b> by Quirky
+ - <b>TIME WALKER</b> by Gener Gabasa
+ - <b>TRON [LORD GRAGA]</b> by Lord Graga
+ - <b>WAIMANU - GRINDING BLOCK ADVENTURE</b> by Sverx
+ - <b>WONKIE GUY</b> by Sean Reid
+ - <b>YAHTZEE [HERG]</b> by Herg
+
+
+
+*Note: The ROMs listed here have been approved for free distribution on this site/project only. If you want to share it, please contact owner/developer. Thanks!
+
+*** This README is part of https://github.com/retrobrews/ project. ***
