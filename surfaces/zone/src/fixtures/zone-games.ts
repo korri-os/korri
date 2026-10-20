@@ -81,6 +81,12 @@ export const fixtureSectionsModel = gamesModel({ _tag: "Ready", games: fixtureSe
 
 export const fixtureOneGameModel = gamesModel({ _tag: "Ready", games: [byId("hollow-knight")] })
 
+/** Wario Land 4 with wide art (2:1) and no cover: the card letterboxes the wide art in its well. */
+export const fixtureWideArtGames: readonly SurfaceGame[] = fixtureLibrary.map(game =>
+  game.id === "wario-land-4" ? { ...game, wideArtUrl: ZONE_ART_BRAMBLE } : game)
+export const fixtureWideArtModel = gamesModel({ _tag: "Ready", games: fixtureWideArtGames })
+export const fixtureWideArtIndex = fixtureWideArtGames.findIndex(game => game.id === "wario-land-4")
+
 /** Forty games: the twelve, then numbered copies, for a band longer than any screen. */
 export const fixtureFortyGames: readonly SurfaceGame[] = Array.from({ length: 40 }, (_, index) => {
   const base = fixtureLibrary[index % fixtureLibrary.length]!

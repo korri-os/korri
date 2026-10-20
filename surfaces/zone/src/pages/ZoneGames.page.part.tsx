@@ -11,6 +11,8 @@ import {
   fixtureOneGameModel,
   fixtureReadyModel,
   fixtureSectionsModel,
+  fixtureWideArtIndex,
+  fixtureWideArtModel,
 } from "../fixtures/zone-games"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
 import { ZoneStatusLayer } from "../ui/organisms/ZoneStatusLayer"
@@ -33,6 +35,7 @@ export const composition = {
   Empty: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "NoCards" }],
   Sections: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "Sections" }],
   OneGame: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "OneCard" }],
+  WideArtOnly: [{ part: "src/ui/atoms/ZoneCoverWell.atom.part.tsx", state: "WideArt" }],
   FortyGames: [{ part: "src/ui/molecules/ZoneCardBand.molecule.part.tsx", state: "FortyCards" }],
   TwoPlaceChoice: [{ part: "src/ui/molecules/ZoneActionRow.molecule.part.tsx", state: "TwoButtons" }],
   BusyOverHome: [{ part: "src/ui/organisms/ZoneStatusLayer.organism.part.tsx", state: "OverPage" }],
@@ -101,6 +104,11 @@ export function Sections() {
 /** One game, centred alone. */
 export function OneGame() {
   return <Games model={fixtureOneGameModel} />
+}
+
+/** Wario Land 4 has wide art and no cover: the wide art, letterboxed in the cover well, not the stripes. */
+export function WideArtOnly() {
+  return <Games model={fixtureWideArtModel} opening={[{ _tag: "FocusedCard", index: fixtureWideArtIndex }]} />
 }
 
 /** Forty games, the twentieth focused. */

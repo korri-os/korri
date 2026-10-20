@@ -43,6 +43,8 @@ afterEach(() => {
 /** 19 Oct 2026, 12:00 UTC: the same day in every time zone from -11 to +11. */
 const LAST_PLAYED = 1_792_411_200_000
 const PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACw="
+/** Wide art only: a different image, so the test sees which one the card drew. */
+const WIDE = "data:image/gif;base64,R0lGODlhAgABAAAAACw="
 
 const HERE = { id: "here", label: "This device" }
 const ZAO = { id: "zao", label: "zao" }
@@ -62,7 +64,7 @@ const GAMES: readonly SurfaceGame[] = [
   { id: "hollow", title: "Hollow Knight", subtitle: "Switch", section: "This device", coverArtUrl: PIXEL },
   { id: "spelunky", title: "Spelunky", subtitle: "PC", section: "This device", launchLocations: [HERE, ZAO] },
   { id: "tetris", title: "Tetris", subtitle: "GB", section: "zao", launchLocations: [ZAO] },
-  { id: "wario", title: "Wario Land 4", subtitle: "GBA", section: "zao", wideArtUrl: PIXEL },
+  { id: "wario", title: "Wario Land 4", subtitle: "GBA", section: "zao", wideArtUrl: WIDE },
 ]
 
 const GAME_ACTIONS: readonly SurfaceAction[] = [
@@ -296,11 +298,12 @@ describe("catalog", () => {
     expect([...document.querySelectorAll(".zone-section-card")].map(spine => spine.textContent))
       .toEqual(["Continue", "This device", "zao"])
     expect(onScreen("PICO-8")).toBe(true)
-    // Cover art fills the well; a game with only wide art, or none, wears the stripe well with initials.
+    // Cover art fills the well; a game with only wide art wears that, letterboxed; none wears the stripe well with initials.
     const well = (title: string) => button(title).querySelector(".zone-cover-well")?.getAttribute("data-filled")
     expect(well("Hollow Knight")).toBe("art")
     expect(well("Spelunky")).toBe("initials")
-    expect(well("Wario Land 4")).toBe("initials")
+    expect(well("Wario Land 4")).toBe("art")
+    expect(button("Wario Land 4").querySelector(".zone-cover-well img")?.getAttribute("src")).toBe(WIDE)
     // The d-pad walks the band.
     moveTo(button("Tetris"))
     expect(document.querySelector(".zone-card[data-focused='true'] .zone-card-title")?.textContent).toBe("Tetris")

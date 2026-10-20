@@ -635,9 +635,10 @@ and system do nothing there.
   tag is empty.
 - **Ground.** The root draws ZoneGround under GAMES, OPTIONS, SAVE DATA and
   RUN WITH; PAUSED and first boot draw their own.
-- **Wide art.** Zone's cards are portrait; `wideArtUrl` is not drawn. A game
-  with only wide art wears the stripe well with initials, as one with no art
-  does (C2).
+- **Wide art.** A game with no cover but wide art wears the wide art,
+  letterboxed in the cover well like any other art (`zoneBandCards` reads
+  `coverArtUrl ?? wideArtUrl`). A cover wins when both exist, since Zone's
+  cards are portrait. The GAMES part's `WideArtOnly` state shows it (C2).
 - **Portal.** Zone is registered as `catalog` and `gameplay-overlay`, aliased
   like Pico in `tsconfig.json`, `vite.config.ts` and `test/happydom.ts`. The
   device bundle (`clients/portal/nix/package.nix`) carries Zone's source,
@@ -656,7 +657,7 @@ d-pad, confirm and back, through `ZoneSurface` and a host that records calls.
 
 ```
 C1  GAMES band: three stripe wells and LOADING, Korri's message under GAMES with RELOAD, NO GAMES, the cards — test: zone-navigation-acceptance "C1 catalog states"
-C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art or the stripe well with initials (wide art is not drawn) — test: zone-navigation-acceptance "C2 browse"
+C2  ZoneCardBand cards: title, subtitle tag, a section spine per section, cover art, else wide art letterboxed, else the stripe well with initials — test: zone-navigation-acceptance "C2 browse"
 C3  facts line LAST PLAYED, PLAYS, TIME under the band; CONTINUE for a resumable game — test: zone-navigation-acceptance "C3 game facts"
 C4  action row: A on a one-place card launches; a choice drops into PLAY HERE / PLAY ON <device> — test: zone-navigation-acceptance "C4 launch"
 C5  GAME OPTS. (OPTS. at the end of the action row; options is its shortcut): Korri's actions as rows, a disabled one with its reason, NO / YES before a destructive one — test: zone-navigation-acceptance "C5 per-game actions"

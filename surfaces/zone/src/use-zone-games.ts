@@ -58,7 +58,8 @@ export function zoneBandCards(games: readonly SurfaceGame[]): readonly ZoneBandC
     system: game.subtitle,
     places: placesOf(game),
     resumable: game.resumable === true,
-    art: game.coverArtUrl,
+    // A game with only wide art wears it, letterboxed in the cover well like any art.
+    art: game.coverArtUrl ?? game.wideArtUrl,
     section: sections[index],
   }))
 }
