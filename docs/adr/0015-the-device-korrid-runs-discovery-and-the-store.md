@@ -51,9 +51,11 @@ to those folders.
   game that discovery or the store adds is launchable by the same process
   with no restart.
 
-This ADR does not rename host mode and does not extend it as a concept
-(AGENTS.md). It moves one capability into the shared path, which is a step
-toward retiring the host/brain split.
+This change extends the host-mode runtime with a library discovery
+coordinator (`HostRuntime::with_library_discovery`). AGENTS.md says not to
+extend host mode. The coordinator waived that rule for this change, pending
+the owner's confirmation. The change does not rename host mode. Retiring the
+host and brain names is tracked separately.
 
 ## Considered Options
 
