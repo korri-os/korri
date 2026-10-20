@@ -297,3 +297,23 @@ describe("C23 join", () => {
     expect(host.calls).toEqual(["connectHiddenWifi:attic"])
   })
 })
+
+describe("one sticky group title at a time", () => {
+  test("every group but the last hands its title off before the next arrives", async () => {
+    const part = await import("../src/pages/ZoneOptions.page.part")
+    render(<part.ManyRows />)
+    const groups = [...document.querySelectorAll(".zone-options-scroll .zone-option-group")]
+    expect(groups.length).toBeGreaterThan(2)
+    expect(groups.map(group => group.hasAttribute("data-followed")))
+      .toEqual(groups.map((_, index) => index < groups.length - 1))
+  })
+  test("a followed group's content ends a title's height (less the gap) sooner, and gives it back", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { join } = await import("node:path")
+    const css = readFileSync(join(import.meta.dir, "..", "src", "ui", "molecules", "ZoneOptionGroup.css"), "utf8")
+    expect(css).toMatch(/\.zone-option-group\[data-followed\] \{[^}]*--zone-option-group-hand-off: max\(0%, calc\(var\(--zone-option-group-title-height, 0%\) - var\(--zone-option-group-hold-gap, 0%\)\)\);[^}]*margin-bottom: var\(--zone-option-group-hand-off\);/)
+    expect(css).toMatch(/\.zone-option-group\[data-followed\] \.zone-option-group-rows \{\s*margin-bottom: calc\(var\(--zone-option-group-hand-off\) \* -1\);/)
+    const page = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneOptions.css"), "utf8")
+    expect(page).toMatch(/--zone-option-group-hold-gap: calc\(var\(--zone-option-group-gap\) \* var\(--zone-px\)\);/)
+  })
+})

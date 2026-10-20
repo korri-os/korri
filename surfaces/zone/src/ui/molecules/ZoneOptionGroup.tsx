@@ -3,6 +3,7 @@ import type { SurfaceSettingItem, SurfaceSettingsStatus } from "@contracts/surfa
 import { type ReactNode, useRef } from "react"
 import { useZoneFit } from "../../use-zone-fit"
 import { useZoneStairClip } from "../../use-zone-stair-clip"
+import { useZoneStickyHold } from "../../use-zone-sticky-hold"
 import { ZoneCaps } from "../atoms/ZoneCaps"
 import { ZoneOptionRow } from "./ZoneOptionRow"
 
@@ -33,7 +34,11 @@ export interface ZoneOptionGroupRow extends SurfaceSettingItem {
  * where the rows' words do. A holder that scrolls the group sets
  * `--zone-option-group-backing` to its own colour: the title's row is then
  * that colour across the box, so a row passing under it is cut on one
- * straight line, as a lip cuts it.
+ * straight line, as a lip cuts it. A scrolling holder also passes
+ * `followed` to every group but the last and sets
+ * `--zone-option-group-hold-gap` (the room to the next group): the title
+ * then holds only while its rows run under it and is gone before the next
+ * title reaches it, so only the current group's title is ever stuck.
  *
  * The group takes the height it is given. Its rows scroll inside it when
  * they do not fit, and a cut-off row at the bottom edge says there is more;
@@ -48,6 +53,7 @@ export function ZoneOptionGroup({
   rows,
   focusedId,
   status = { _tag: "Idle" },
+  followed = false,
   onPress,
   onStep,
   onFocus,
@@ -56,17 +62,21 @@ export function ZoneOptionGroup({
   readonly rows: readonly ZoneOptionGroupRow[]
   readonly focusedId?: string
   readonly status?: SurfaceSettingsStatus
+  /** The holder scrolls the groups and another group follows this one: the title leaves before the next arrives. */
+  readonly followed?: boolean
   readonly onPress?: (settingId: string) => void
   readonly onStep?: (settingId: string, direction: -1 | 1) => void
   readonly onFocus?: (settingId: string) => void
 }) {
   const section = useRef<HTMLElement>(null)
   const heading = useRef<HTMLSpanElement>(null)
+  const titleRow = useRef<HTMLHeadingElement>(null)
   useZoneFit(section, [heading], title)
   useZoneStairClip(heading, { left: "straight", right: "slash" })
+  useZoneStickyHold(section, titleRow)
   return (
-    <section aria-label={title} className="zone-option-group" ref={section}>
-      <h2 className="zone-option-group-title">
+    <section aria-label={title} className="zone-option-group" data-followed={followed || undefined} ref={section}>
+      <h2 className="zone-option-group-title" ref={titleRow}>
         <span className="zone-option-group-wedge" ref={heading}>
           <ZoneCaps>{title}</ZoneCaps>
         </span>

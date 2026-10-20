@@ -11,6 +11,24 @@
   min-height: 0;
 }
 
+/* A group another follows in a scrolling holder (`followed`): its title
+ * is held only while its rows run under it. A sticky title cannot leave
+ * its group's content, so the rows give back the title's height, less the
+ * gap to the next group, from that content (they still draw in full) and
+ * the group gives it back under it: the title leaves as the last row comes
+ * up under it, and is gone by the time the next title reaches the foot of
+ * its place. Only the current group's title is ever stuck. The group
+ * scrolls in its holder, so it is never capped to the room it was given. */
+.zone-option-group[data-followed] {
+  --zone-option-group-hand-off: max(0%, calc(var(--zone-option-group-title-height, 0%) - var(--zone-option-group-hold-gap, 0%)));
+  max-height: none;
+  margin-bottom: var(--zone-option-group-hand-off);
+}
+
+.zone-option-group[data-followed] .zone-option-group-rows {
+  margin-bottom: calc(var(--zone-option-group-hand-off) * -1);
+}
+
 /* The title's row holds at the top of a scrolling box, over the rows that
  * pass under it, in the holder's backing colour (none by default). */
 .zone-option-group-title {

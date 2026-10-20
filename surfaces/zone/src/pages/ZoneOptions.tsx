@@ -183,10 +183,11 @@ export function ZoneOptions({
         <div className="zone-options-band" inert={layer !== "none"}>
           <div className="zone-options-scroll">
             <div className="zone-options-groups">
-              {plan.groups.map(group => (
+              {plan.groups.map((group, index) => (
                 <div className="zone-options-group" data-group={ZONE_OPTIONS_WIFI === group.key ? "wifi" : undefined} key={group.key}>
                   <ZoneOptionGroup
                     focusedId={rowId}
+                    followed={index < plan.groups.length - 1}
                     onFocus={onRowFocus}
                     onPress={onRowPress}
                     onStep={onRowStep}

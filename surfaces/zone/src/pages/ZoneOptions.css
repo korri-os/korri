@@ -47,6 +47,12 @@
   padding-bottom: calc(var(--zone-options-band-pad) * var(--zone-px));
 }
 
+/* Every group but the last hands its title off before the next one
+ * arrives (ZoneOptionGroup `followed`): the gap between groups. */
+.zone-options-groups {
+  --zone-option-group-hold-gap: calc(var(--zone-option-group-gap) * var(--zone-px));
+}
+
 /* WI-FI's values carry bars, a strength and two words: its value panels
  * take the larger share. */
 .zone-options-group[data-group="wifi"] {
