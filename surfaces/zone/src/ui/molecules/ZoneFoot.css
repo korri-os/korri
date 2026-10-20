@@ -1,0 +1,76 @@
+/* Along the bottom of its holder, at the strip height. Inside the shell the
+ * shell's values win; alone, or when a part pins them, the tokens. */
+.zone-foot {
+  --zone-foot-height: var(--zone-shell-foot, var(--zone-foot-strip-tall));
+  --zone-foot-type: var(--zone-shell-foot-type, var(--zone-type-foot-tall));
+  --zone-foot-margin: var(--zone-shell-margin, var(--zone-strip-margin));
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: stretch;
+  gap: clamp(var(--zone-strip-margin-min), 1.6cqw, var(--zone-strip-gap));
+  height: var(--zone-foot-height);
+  padding: var(--zone-foot-inset) var(--zone-foot-margin);
+  font-size: var(--zone-foot-type);
+  line-height: 1;
+}
+
+.zone-foot[data-strips="tall"] {
+  --zone-foot-height: var(--zone-foot-strip-tall);
+  --zone-foot-type: var(--zone-type-foot-tall);
+}
+
+.zone-foot[data-strips="short"] {
+  --zone-foot-height: var(--zone-foot-strip-short);
+  --zone-foot-type: var(--zone-type-foot-short);
+}
+
+/* One row: timer, device, the room between, the badge, the build. The room
+ * is the first to give; the badge's name is the only other thing that
+ * does. */
+.zone-foot-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* TIME in yellow at the label scale, then the digits. */
+.zone-foot-timer {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+}
+
+.zone-foot-timer-label {
+  margin-right: var(--zone-strip-gap);
+  color: var(--zone-timer-label);
+  font-size: calc(var(--zone-type-timer-label-scale) * 1em);
+  text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-outline-colour);
+}
+
+.zone-foot-timer-digits {
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+}
+
+.zone-foot-device {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  font-size: calc(var(--zone-type-device-scale) * 1em);
+}
+
+/* Tiny, black, on the ground: the one lower-case thing in Zone, because a
+ * build hash is not a word. */
+.zone-foot-build {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--zone-build-ink);
+  font-size: calc(var(--zone-type-build-scale) * 1em);
+  letter-spacing: var(--zone-build-tracking);
+  opacity: var(--zone-build-opacity);
+  text-shadow: none;
+  text-transform: none;
+  white-space: nowrap;
+}

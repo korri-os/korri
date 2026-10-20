@@ -27,6 +27,11 @@
   );
 }
 
+/* A published name keeps its case. */
+.zone-caps[data-case="verbatim"] {
+  text-transform: none;
+}
+
 /* The named sizes read the shell's strip when they stand in one, and the
  * wide or tall token when they stand alone. */
 .zone-caps[data-size="tab"] {
