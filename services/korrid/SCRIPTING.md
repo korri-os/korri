@@ -591,8 +591,10 @@ carries an expected digest: legacy carried `expectedDigests` only on
 Local `/rpc`, portal capability only (like `app.acquisition.status`), legacy
 method names. As for every method, the response is `{ _tag, outcome }`; each
 outcome is `{ _tag: "Ok", payload }` or `{ _tag: "Err", payload: RpcFailure }`.
-Only the local brain runs discovery, so a host-mode korrid answers every
-method with `AcquisitionUnavailable`.
+The store runs wherever discovery runs on the device's own library: the
+brain's local library, or a device korrid's installed library root (ADR 0015).
+A korrid with no installed library answers every method with
+`AcquisitionUnavailable`.
 
 | Method | Request type | Outcome type | `Ok` payload |
 |---|---|---|---|
