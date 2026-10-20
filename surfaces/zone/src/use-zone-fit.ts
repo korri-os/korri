@@ -28,6 +28,7 @@
  */
 import { useLayoutEffect, type RefObject } from "react"
 import { zoneArtPxOf } from "./use-zone-plan"
+import { applyZoneStairClip } from "./use-zone-stair-clip"
 import { onZoneAntonLoaded, useZoneLookKey } from "./use-zone-look"
 
 /** The cap, in art px, that one step of Zone Caps adds: caps-1 is 10. */
@@ -62,6 +63,19 @@ export function zoneFitSteps(fontSize: number, px: number): readonly { readonly 
   })
 }
 
+/**
+ * A panel's padding is its slant, which is its measured height
+ * (useZoneStairClip). Words fitted inside one are measured with the panel
+ * as tall as the step makes it: re-cut the panel at each step before the
+ * test, or a step measured with the last step's padding fits, then
+ * overflows once the panel catches up, and the two steps take turns for
+ * ever (Modern's RUN WITH title at 1280x720 did).
+ */
+function shapePanel(element: HTMLElement): void {
+  const panel = element.closest<HTMLElement>(".zone-panel")
+  if (panel !== null) applyZoneStairClip(panel, panel.offsetWidth, panel.offsetHeight, {})
+}
+
 export function fitZoneType(element: HTMLElement): void {
   element.style.setProperty("--zone-fit", "1")
   element.removeAttribute("data-zone-fit-floor")
@@ -70,6 +84,7 @@ export function fitZoneType(element: HTMLElement): void {
   for (const { step, factor } of steps) {
     element.style.setProperty("--zone-fit", factor.toFixed(4))
     element.dataset.zoneFit = String(step)
+    shapePanel(element)
     if (!overflows(element)) return
   }
   element.setAttribute("data-zone-fit-floor", "")
