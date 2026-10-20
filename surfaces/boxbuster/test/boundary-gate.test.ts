@@ -4,7 +4,9 @@
  * A surface may import the treaty and nothing else from Korri, so it can ship
  * from another repository unchanged. Inside Boxbuster, the treaty stops at the
  * root: one component reads the model, one module converts it, and the mount
- * adapter types the entry point. Everything else speaks in tapes and rooms.
+ * adapter types the entry point. The order desk prints Korri's store as the
+ * treaty gives it, so it reads the treaty's store types too. Everything else
+ * speaks in tapes and rooms.
  */
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
@@ -25,7 +27,9 @@ const TREATY = "@contracts/surface/korri-surface"
 
 /** The only files allowed to name a treaty type. */
 const TREATY_READERS = [
+  "BoxbusterOrderDesk.tsx",
   "BoxbusterSurface.tsx",
+  "boxbuster-desk.ts",
   "boxbuster-store-view.ts",
   "mount.tsx",
 ]

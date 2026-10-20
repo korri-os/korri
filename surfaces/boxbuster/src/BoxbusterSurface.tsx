@@ -22,7 +22,6 @@ import { type BoxbusterStoreDrawing, webglStore } from "./BoxbusterStore"
 import { BoxbusterTargets } from "./BoxbusterTargets"
 import { DOOR_SPOT, ORDER_DESK_SPOT, spotsFrom } from "./boxbuster-spots"
 import {
-  deskStoreFrom,
   storeSignature,
   storeViewFrom,
   tapeFactsFrom,
@@ -67,7 +66,7 @@ export function BoxbusterSurface({
     const placed = placeTapes(view.map)
     return { map: view.map, placed, spots: spotsFrom(view.map, placed, { orderDesk: hasDesk }) }
   }, [view, hasDesk])
-  const deskStore = model.store === undefined ? undefined : deskStoreFrom(model.store)
+  const deskStore = model.store
   // Tape facts also read what the store ignores (launch locations, play
   // counts), so they follow the catalog as well as tape placement.
   const tapes = useMemo(

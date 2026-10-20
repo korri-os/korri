@@ -188,6 +188,22 @@ describe("ordering", () => {
     }
   })
 
+  test("an order waiting behind another download is stamped on hold, with Korri's words and Cancel", () => {
+    const queued: SurfaceStoreGet = {
+      _tag: "Working", kicker: "Waiting to download", detail: "Waiting for the download before it",
+      queued: true, actions: [action("store:9:cancel", "Cancel")],
+    }
+    const { host } = atDesk(storeWith({ search: { _tag: "Ready", providerId: BBS, query: "", entries: [celeste] }, details: ready(queued) }))
+    go("PICO-8 BBS")
+    go(/^Celeste Classic 2/)
+    expect(screen.getByText("On hold")).toBeTruthy()
+    expect(screen.getByText("Waiting to download")).toBeTruthy()
+    // Nothing moves while it waits: no counter claims progress.
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    go("Cancel")
+    expect(host.calls.at(-1)).toBe("action:store:9:cancel")
+  })
+
   test("a download is a counter from Korri's bytes with Cancel; Back leaves it running", () => {
     const working: SurfaceStoreGet = {
       _tag: "Working", kicker: "Downloading Celeste Classic 2", detail: "8 KB of 15.9 KB · 8 KB/s · 0:01 left",

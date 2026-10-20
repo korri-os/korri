@@ -3,60 +3,12 @@
  *
  * The desk is the third use of the door board (AGENTS.md): the store journey
  * needs typing and must work from an empty library, and the 3D room can offer
- * neither. Its facts are Korri's, converted once in boxbuster-store-view.ts
- * into the shapes below; where you are at the desk is Boxbuster's (`DeskPlace`).
+ * neither. Its facts are Korri's store, in the treaty's own types, printed
+ * as given; where you are at the desk is Boxbuster's (`DeskPlace`).
  * Pure: the rules for Back and for the keys live here and are tested with
  * plain values.
  */
-
-export interface DeskAction {
-  readonly id: string
-  readonly label: string
-  readonly enabled: boolean
-}
-
-export interface DeskEntry {
-  readonly id: string
-  readonly title: string
-  readonly system?: string
-}
-
-export type DeskProviders =
-  | { readonly _tag: "Loading" }
-  | { readonly _tag: "Problem"; readonly message: string; readonly actions: readonly DeskAction[] }
-  | { readonly _tag: "Ready"; readonly providers: readonly { readonly id: string; readonly title: string }[] }
-
-export type DeskSearch =
-  | { readonly _tag: "Idle" }
-  | { readonly _tag: "Searching"; readonly providerId: string; readonly query: string }
-  | { readonly _tag: "Problem"; readonly providerId: string; readonly query: string; readonly message: string; readonly actions: readonly DeskAction[] }
-  | { readonly _tag: "Ready"; readonly providerId: string; readonly query: string; readonly entries: readonly DeskEntry[] }
-
-export type DeskGet =
-  | { readonly _tag: "Offer"; readonly note?: string; readonly actions: readonly DeskAction[] }
-  | { readonly _tag: "Unavailable"; readonly reason: string }
-  | { readonly _tag: "Confirm"; readonly kicker: string; readonly detail?: string; readonly actions: readonly DeskAction[] }
-  | {
-      readonly _tag: "Working"
-      readonly kicker: string
-      readonly detail?: string
-      readonly progress?: { readonly done: number; readonly total?: number }
-      readonly actions: readonly DeskAction[]
-    }
-  | { readonly _tag: "InLibrary"; readonly detail?: string; readonly gameId?: string }
-  | { readonly _tag: "Problem"; readonly kicker: string; readonly reason: string; readonly actions: readonly DeskAction[] }
-
-export type DeskDetails =
-  | { readonly _tag: "Closed" }
-  | { readonly _tag: "Loading"; readonly entry: DeskEntry }
-  | { readonly _tag: "Problem"; readonly entry: DeskEntry; readonly message: string; readonly actions: readonly DeskAction[] }
-  | { readonly _tag: "Ready"; readonly entry: DeskEntry; readonly description?: string; readonly get: DeskGet }
-
-export interface DeskStore {
-  readonly providers: DeskProviders
-  readonly search: DeskSearch
-  readonly details: DeskDetails
-}
+import type { SurfaceProgress, SurfaceStore, SurfaceStoreSearch } from "@contracts/surface/korri-surface"
 
 /** Where you are at the desk: a page, which provider, and the order form. */
 export interface DeskPlace {
@@ -102,13 +54,13 @@ export function deskType(place: DeskPlace, character: string): DeskPlace {
 export const deskDelete = (place: DeskPlace): DeskPlace => ({ ...place, text: [...place.text].slice(0, -1).join("") })
 
 /** The search Korri holds for this provider, or none. */
-export function deskSearchFor(store: DeskStore, providerId: string | undefined): DeskSearch {
+export function deskSearchFor(store: SurfaceStore, providerId: string | undefined): SurfaceStoreSearch {
   const search = store.search
   return search._tag !== "Idle" && search.providerId === providerId ? search : { _tag: "Idle" }
 }
 
 /** "16 of 32 sixteenths", as the bar draws it: whole cells of `cells`. */
-export function deskCells(progress: { readonly done: number; readonly total?: number }, cells: number): number | undefined {
+export function deskCells(progress: SurfaceProgress, cells: number): number | undefined {
   if (progress.total === undefined || progress.total <= 0) return undefined
   return Math.max(0, Math.min(cells, Math.floor((progress.done / progress.total) * cells)))
 }
