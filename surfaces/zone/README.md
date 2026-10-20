@@ -554,3 +554,11 @@ model's message, and the model's `update` returns `ZoneRequest`s.
   itself at 360, so `ZoneFoot` fits its type the same way after the SSID
   has given way. At 260 the foot reaches the floor and the build string is
   tiny; that is the weakest size.
+- **The title card's circle moves under the title on a card taller than
+  wide** (`ZONE_TITLE_STACK_ASPECT`, 1, in `src/plan/title-card.ts`, held
+  equal to the container query by test). The title wraps only between
+  words (`word-break: keep-all`, balanced lines) and `useZoneFit` shrinks
+  it until its longest word fits. `useZoneFit` gained an optional floor;
+  the title's is a quarter, not half, so a single word wider than the card
+  stays whole (tiny) instead of cut. A column's title type follows 11% of
+  the width, not 7.5%, since the column has height to spare.

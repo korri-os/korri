@@ -75,11 +75,12 @@
   gap: calc(var(--zone-title-card-circle) * 0.2);
   width: 100%;
   height: 100%;
-  padding: var(--zone-band-margin);
+  padding: min(var(--zone-band-margin), 4cqmin);
 }
 
-/* The title: caps with the blue edge on a black parallelogram. It wraps
- * and shrinks; it is never cut. */
+/* The title: caps with the blue edge on a black parallelogram. Its type
+ * shrinks by the card's fit (--zone-fit) until its longest word fits, and
+ * it wraps only between words: a word is never cut or broken. */
 .zone-title-card-title {
   position: relative;
   isolation: isolate;
@@ -87,12 +88,14 @@
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding: calc(var(--zone-row-space) * 2) calc(var(--zone-slant) * 2 + var(--zone-row-gap) * 2);
+  padding: calc(var(--zone-row-space) * 2) calc(var(--zone-slant) * 2 + min(var(--zone-row-gap) * 2, 4cqi));
   font: inherit;
-  font-size: var(--zone-title-card-type-title);
+  font-size: calc(var(--zone-title-card-type-title) * var(--zone-fit, 1));
   line-height: 1;
   text-align: center;
-  overflow-wrap: anywhere;
+  text-wrap: balance;
+  overflow-wrap: normal;
+  word-break: keep-all;
   text-shadow: var(--zone-cap-edge) var(--zone-cap-edge) 0 var(--zone-cap-edge-colour);
 }
 
@@ -108,6 +111,16 @@
     calc(100% - var(--zone-slant) * 2) 100%,
     0 100%
   );
+}
+
+/* Taller than wide (src/plan/title-card.ts, ZONE_TITLE_STACK_ASPECT): the
+ * circle moves under the title, and the title has the card's whole width. */
+@container (aspect-ratio < 1) {
+  .zone-title-card-face {
+    --zone-title-card-type-title: clamp(var(--zone-type-title-min), 11cqi, var(--zone-type-title));
+    --zone-title-card-circle: min(calc(var(--zone-act-circle-share) * 100cqh), 60cqw);
+    flex-direction: column;
+  }
 }
 
 /* The orange circle with the act on a white slab. The circle takes its
