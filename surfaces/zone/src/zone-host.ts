@@ -9,6 +9,7 @@
 import type { SurfaceAction, SurfaceHost } from "@contracts/surface/korri-surface"
 import type { ZoneHostButton } from "./state/messages"
 import type { ZoneRequest } from "./state/requests"
+import { rememberZoneLook } from "./zone-look-preference"
 
 /** Perform one request. */
 export function performZoneRequest(host: SurfaceHost, request: ZoneRequest): void {
@@ -60,6 +61,9 @@ export function performZoneRequest(host: SurfaceHost, request: ZoneRequest): voi
         : host.connectHiddenWifi(request.ssid, request.password)
     case "FinishOnboarding":
       return host.finishOnboarding()
+    // Zone's own preference: kept on the device, never sent to Korri.
+    case "RememberLook":
+      return rememberZoneLook(request.look)
   }
 }
 

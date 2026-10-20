@@ -25,8 +25,10 @@ import type {
   SurfaceSettingGroup,
   SurfaceWifiNetwork,
 } from "@contracts/surface/korri-surface"
-import type { ZoneOptionsKey, ZoneOptionsSlices } from "../plan/options"
-import { focusSystemGroup, optionsStart, update as optionsUpdate, type ZoneOptions, type ZoneOptionsMessage } from "../state/options"
+import { zoneLookStep } from "../plan/look"
+import { ZONE_SYSTEM_LOOK, type ZoneOptionsKey, type ZoneOptionsSlices } from "../plan/options"
+import { focusSystemGroup, optionsLayer, optionsStart, update as optionsUpdate, type ZoneOptions, type ZoneOptionsMessage } from "../state/options"
+import { fixtureShowLook } from "./fixture-look"
 import type { ZoneRequest } from "../state/requests"
 import { RUN_WITH_START, update as runWithUpdate, type ZoneRunWith, type ZoneRunWithMessage } from "../state/run-with"
 
@@ -419,6 +421,20 @@ function fixtureKorri(korri: ZoneOptionsSlices, request: ZoneRequest): ZoneOptio
   }
 }
 
+/**
+ * The wire stage's part for the LOOK row: A or a step on it moves Zone's
+ * look (never a request to Korri), and the frame shows the new look at once.
+ */
+function lookStepped(korri: ZoneOptionsSlices, state: ZoneOptions, message: ZoneOptionsMessage): ZoneOptionsSlices {
+  if (korri.look === undefined || optionsLayer(state) !== "none") return korri
+  const way = message._tag === "PressedRow" && message.rowId === ZONE_SYSTEM_LOOK ? 1
+    : message._tag === "SteppedRow" && message.rowId === ZONE_SYSTEM_LOOK ? message.direction : undefined
+  if (way === undefined) return korri
+  const look = zoneLookStep(korri.look, way)
+  fixtureShowLook(look)
+  return { ...korri, look }
+}
+
 export function createOptionsProgram(
   korri: ZoneOptionsSlices,
   script: readonly OptionsScript[] = [],
@@ -430,7 +446,7 @@ export function createOptionsProgram(
     for (const listener of [...listeners]) listener()
   }
   const run = (message: ZoneOptionsMessage) => {
-    const before = current.korri
+    const before = lookStepped(current.korri, current.state, message)
     const step = optionsUpdate(current.state, message, before)
     let next = before
     for (const request of step.requests) {

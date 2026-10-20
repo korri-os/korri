@@ -141,11 +141,13 @@ pkgs.stdenvNoCC.mkDerivation {
     # emits only what code references, so they are copied here, beside it.
     mkdir -p "$out/licenses/pico-fonts"
     cp ../../surfaces/pico/src/fonts/licenses/*.txt "$out/licenses/pico-fonts/"
-    # Zone's two faces are under the SIL OFL: Zone Caps, drawn for Zone, and
-    # Jersey 10; their texts travel the same way.
+    # Zone's three faces are under the SIL OFL: Zone Caps, drawn for Zone,
+    # Jersey 10 and Anton (the Modern and Blend looks); their texts travel
+    # the same way.
     mkdir -p "$out/licenses/zone-fonts"
     cp ../../surfaces/zone/src/fonts/ZoneCaps-OFL.txt "$out/licenses/zone-fonts/zone-caps-OFL.txt"
     cp ../../surfaces/zone/src/fonts/OFL.txt "$out/licenses/zone-fonts/jersey10-OFL.txt"
+    cp ../../surfaces/zone/src/fonts/Anton-OFL.txt "$out/licenses/zone-fonts/anton-OFL.txt"
     runHook postInstall
   '';
 
@@ -178,6 +180,7 @@ pkgs.stdenvNoCC.mkDerivation {
     grep -Fq 'SIL OPEN FONT LICENSE' "$out/licenses/pico-fonts/tiny5-OFL.txt"
     grep -Fq 'SIL OPEN FONT LICENSE' "$out/licenses/zone-fonts/zone-caps-OFL.txt"
     grep -Fq 'Soft Type Project' "$out/licenses/zone-fonts/jersey10-OFL.txt"
+    grep -Fq 'The Anton Project Authors' "$out/licenses/zone-fonts/anton-OFL.txt"
     runHook postInstallCheck
   '';
 

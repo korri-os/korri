@@ -10,7 +10,7 @@ import { ZoneSaveData } from "./pages/ZoneSaveData"
 import { catalogGames } from "./state/games"
 import { ZONE_TABS, type ZoneTab } from "./state/navigation"
 import { canGoOn, deviceNameSetting, onboardingJoin } from "./state/onboarding"
-import { zoneShown, type ZoneShown, type ZoneSurfaceMessage } from "./state/surface"
+import { withLook, zoneShown, type ZoneShown, type ZoneSurfaceMessage } from "./state/surface"
 import { ZoneKeycap } from "./ui/atoms/ZoneKeycap"
 import { ZoneFoot } from "./ui/molecules/ZoneFoot"
 import { ZoneTabStrip, type ZoneTabItem } from "./ui/molecules/ZoneTabStrip"
@@ -18,6 +18,7 @@ import { ZoneGround, type ZoneGroundName } from "./ui/organisms/ZoneGround"
 import { ZoneLaunchCard } from "./ui/organisms/ZoneLaunchCard"
 import { ZoneStatusLayer } from "./ui/organisms/ZoneStatusLayer"
 import { useZoneSurface, zoneDeviceName, zoneGamesPage, type ZoneSurfaceProgram } from "./use-zone-games"
+import { ZoneLookContext } from "./use-zone-look"
 
 /** The tabs as every page names them. */
 const TABS: readonly ZoneTabItem[] = [
@@ -118,20 +119,29 @@ export function ZoneSurface({ model, host }: { readonly model: SurfaceModel; rea
   const titleOf = (gameId: string) => catalogGames(model.catalog).find(game => game.id === gameId)?.title
 
   return (
-    <div className="zone-theme zone-screen" data-ground={groundOf(shown)} data-layer={nav.layers.at(-1) ?? "none"} data-shown={shown} ref={root}>
-      {OWN_GROUND.includes(shown) ? null : <ZoneGround />}
-      <ZoneStatusLayer
-        focus={state.status.focus}
-        onBusyAction={actionId => send.status({ _tag: "ChoseBusyAction", actionId })}
-        onConfirmAction={actionId => send.status({ _tag: "ChoseConfirmAction", actionId })}
-        onFocusButton={index => send.status({ _tag: "FocusedStatusButton", index })}
-        onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
-        page={zonePage(shown, program, model, host, send)}
-        runningHud={shown !== "paused"}
-        stage={launchStage(shown, program)}
-        status={model.status}
-        titleOf={titleOf}
-      />
+    <div
+      className="zone-theme zone-screen"
+      data-ground={groundOf(shown)}
+      data-layer={nav.layers.at(-1) ?? "none"}
+      data-look={state.look}
+      data-shown={shown}
+      ref={root}
+    >
+      <ZoneLookContext.Provider value={state.look}>
+        {OWN_GROUND.includes(shown) ? null : <ZoneGround />}
+        <ZoneStatusLayer
+          focus={state.status.focus}
+          onBusyAction={actionId => send.status({ _tag: "ChoseBusyAction", actionId })}
+          onConfirmAction={actionId => send.status({ _tag: "ChoseConfirmAction", actionId })}
+          onFocusButton={index => send.status({ _tag: "FocusedStatusButton", index })}
+          onProblemButton={button => send.status({ _tag: "ChoseProblemButton", button })}
+          page={zonePage(shown, program, model, host, send)}
+          runningHud={shown !== "paused"}
+          stage={launchStage(shown, program)}
+          status={model.status}
+          titleOf={titleOf}
+        />
+      </ZoneLookContext.Provider>
     </div>
   )
 }
@@ -174,7 +184,7 @@ function zonePage(
           build={model.buildLabel}
           clock={model.clockLabel}
           device={device}
-          korri={model}
+          korri={withLook(state, model)}
           onClear={() => send.options({ _tag: "PressedClear" })}
           onDialogFocus={index => send.options({ _tag: "FocusedDialogButton", index })}
           onDialogPress={index => send.options({ _tag: "PressedDialogButton", index })}

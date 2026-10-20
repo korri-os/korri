@@ -7,6 +7,7 @@
  * an update with plain values and reads the requests it returned.
  */
 import type { SurfaceGameplayControlValue, SurfaceIdentityDisposition } from "@contracts/surface/korri-surface"
+import type { ZoneLook } from "../plan/look"
 
 export type ZoneRequest =
   | { readonly _tag: "LaunchGame"; readonly gameId: string; readonly locationId?: string }
@@ -40,6 +41,8 @@ export type ZoneRequest =
   | { readonly _tag: "ConnectWifi"; readonly networkId: string; readonly password?: string }
   | { readonly _tag: "ConnectHiddenWifi"; readonly ssid: string; readonly password?: string }
   | { readonly _tag: "FinishOnboarding" }
+  /** Zone's own: keep the look on this device. Korri is never told. */
+  | { readonly _tag: "RememberLook"; readonly look: ZoneLook }
 
 /** One step of a program: the next model, and what to ask for. */
 export interface ZoneStep<Model> {

@@ -44,6 +44,7 @@ import { performZoneRequest, readZoneGameActions, subscribeZoneHostButtons } fro
 import { useZoneIdle } from "./use-zone-idle"
 import { useZonePlan } from "./use-zone-plan"
 import type { ZonePlan } from "./plan/zone-select"
+import { readZoneLook } from "./zone-look-preference"
 import { useZoneProgram } from "./use-zone-program"
 
 /**
@@ -157,7 +158,7 @@ export function useZoneSurface(
 ): ZoneSurfaceProgram {
   const perform = useCallback((request: ZoneRequest) => performZoneRequest(host, request), [host])
   const { model: state, dispatch } = useZoneProgram<ZoneSurfaceState, ZoneSurfaceMessage, SurfaceModel>(
-    () => opening.reduce((current, message) => update(current, message, korri).model, zoneSurfaceStart(korri)),
+    () => opening.reduce((current, message) => update(current, message, korri).model, zoneSurfaceStart(korri, readZoneLook())),
     update,
     korri,
     perform,

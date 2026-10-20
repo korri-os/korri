@@ -7,8 +7,10 @@
  *
  *     every SurfaceSettingGroup, in Korri's order, a DISMISS row under the
  *       one Korri has a problem with
- *     SYSTEM: SurfaceModel.actions as action rows, then BUILD, Korri's build
- *       string read-only (absent when there is neither)
+ *     SYSTEM: SurfaceModel.actions as action rows, then LOOK (Zone's own
+ *       choice of look, MODERN / BLEND / RETRO, never sent to Korri), then
+ *       BUILD, Korri's build string read-only (absent when there is none of
+ *       the three)
  *     WI-FI: the connection (its SSID whole as its description), then NO
  *       WI-FI ADAPTER, or SCAN, the networks
  *       strongest first and HIDDEN NETWORK (absent when Korri cannot manage
@@ -32,9 +34,15 @@ import type {
   SurfaceSettingsStatus,
   SurfaceWifiNetwork,
 } from "@contracts/surface/korri-surface"
+import { ZONE_LOOK_WORDS, ZONE_LOOKS, type ZoneLook } from "./look"
 
-/** The parts of Korri's model the OPTIONS page reads. */
-export type ZoneOptionsSlices = Pick<SurfaceModel, "settings" | "settingsStatus" | "actions" | "network" | "buildLabel">
+/**
+ * The parts of Korri's model the OPTIONS page reads, and Zone's own look,
+ * which the LOOK row shows (absent: no LOOK row).
+ */
+export type ZoneOptionsSlices = Pick<SurfaceModel, "settings" | "settingsStatus" | "actions" | "network" | "buildLabel"> & {
+  readonly look?: ZoneLook
+}
 
 /** What A does on a row. */
 export type ZoneOptionsPress =
@@ -57,6 +65,8 @@ export type ZoneOptionsPress =
   | { readonly _tag: "Scan" }
   | { readonly _tag: "Join"; readonly networkId: string }
   | { readonly _tag: "JoinHidden" }
+  /** A on LOOK steps Zone's look forward, as right does; Korri is never told. */
+  | { readonly _tag: "Look" }
 
 /** What the NO / YES dialog asks before an action fires. */
 export interface ZoneOptionsConfirm {
@@ -117,6 +127,8 @@ export const ZONE_OPTIONS_DISMISS = "zone:dismiss"
 export const ZONE_WIFI_CONNECTION = "zone:wifi:connection"
 /** SYSTEM's read-only BUILD row: Korri's build string, whole (the foot cuts it). */
 export const ZONE_SYSTEM_BUILD = "zone:system-build"
+/** SYSTEM's LOOK row: Zone's own choice, kept on the device. */
+export const ZONE_SYSTEM_LOOK = "zone:system-look"
 export const ZONE_WIFI_ADAPTER = "zone:wifi:adapter"
 export const ZONE_WIFI_SCAN = "zone:wifi:scan"
 export const ZONE_WIFI_HIDDEN = "zone:wifi:hidden"
@@ -301,13 +313,33 @@ function buildRow(build: string): ZoneOptionsRow {
   }
 }
 
+/**
+ * Zone's look as a choice row: its three words, in the axis' order, the
+ * value the look in use. A choice so it steps on left and right (the
+ * portal's `korri-semantic-direction`) and on A; its press is Zone's own.
+ */
+function lookRow(look: ZoneLook): ZoneOptionsRow {
+  return {
+    id: ZONE_SYSTEM_LOOK,
+    group: ZONE_OPTIONS_SYSTEM,
+    item: {
+      id: ZONE_SYSTEM_LOOK,
+      label: "Look",
+      value: ZONE_LOOK_WORDS[look],
+      interaction: { kind: "choice", choices: ZONE_LOOKS.map(id => ({ value: id, label: ZONE_LOOK_WORDS[id] })) },
+    },
+    press: { _tag: "Look" },
+  }
+}
+
 function systemGroup(slices: ZoneOptionsSlices): ZoneOptionsGroup[] {
   const build = slices.buildLabel === undefined || slices.buildLabel === "" ? [] : [buildRow(slices.buildLabel)]
-  if (slices.actions.length === 0 && build.length === 0) return []
+  const look = slices.look === undefined ? [] : [lookRow(slices.look)]
+  if (slices.actions.length === 0 && build.length === 0 && look.length === 0) return []
   return [{
     key: ZONE_OPTIONS_SYSTEM,
     title: "System",
-    rows: [...slices.actions.map(systemRow), ...build],
+    rows: [...slices.actions.map(systemRow), ...look, ...build],
     status: { _tag: "Idle" },
     verbatim: false,
   }]

@@ -10,6 +10,8 @@
  *     status      the status layer over every page (status.ts)
  *     overlay     PAUSED, while Korri presents gameplay (overlay.ts)
  *     onboarding  first boot, while Korri asks for it (onboarding.ts)
+ *     look        the look this device shows Zone in, Zone's own (look.ts);
+ *                 OPTIONS' LOOK row steps it
  *
  * The models stay pure and separate; this file only composes them. A page
  * reports in its own model's words (`Options`, `SaveData`, …) and the
@@ -30,13 +32,15 @@
  * on it, so menu, options and system do nothing while one is shown.
  */
 import type { SurfaceModel } from "@contracts/surface/korri-surface"
-import { zoneNetworkRowId } from "../plan/options"
+import { ZONE_DEFAULT_LOOK, type ZoneLook } from "../plan/look"
+import { zoneNetworkRowId, ZONE_SYSTEM_LOOK, type ZoneOptionsSlices } from "../plan/options"
 import {
   IDENTITY_START,
   update as updateIdentity,
   type IdentityMessage,
   type IdentityModel,
 } from "./identity"
+import { updateLook } from "./look"
 import type { ZoneHostButton } from "./messages"
 import { update as updateNav, ZONE_START, type ZoneNavigation, type ZoneNavMessage } from "./navigation"
 import {
@@ -66,7 +70,11 @@ export interface ZoneSurfaceState {
   readonly status: ZoneStatusModel
   readonly overlay: ZoneOverlayModel
   readonly onboarding: ZoneOnboardingModel
+  readonly look: ZoneLook
 }
+
+/** What OPTIONS reads: Korri's slices and Zone's own look, for its LOOK row. */
+export const withLook = (state: ZoneSurfaceState, korri: SurfaceModel): ZoneOptionsSlices => ({ ...korri, look: state.look })
 
 export type ZoneSurfaceMessage =
   | ZoneHostButton
@@ -109,8 +117,10 @@ export function zoneShown(state: ZoneSurfaceState, korri: SurfaceModel): ZoneSho
 const covered = (korri: SurfaceModel): boolean =>
   korri.status._tag === "Busy" || korri.status._tag === "Problem" || korri.status._tag === "Confirm"
 
-export function zoneSurfaceStart(korri: SurfaceModel): ZoneSurfaceState {
+/** The start, in the look the device kept (zone-look-preference.ts reads it; the default without). */
+export function zoneSurfaceStart(korri: SurfaceModel, look: ZoneLook = ZONE_DEFAULT_LOOK): ZoneSurfaceState {
   const start: ZoneSurfaceState = {
+    look,
     nav: ZONE_START,
     options: optionsStart(korri),
     runWith: RUN_WITH_START,
@@ -165,7 +175,8 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
     case "Games":
       return games(steps, message.message, korri)
     case "Options":
-      steps.put("options", updateOptions(state.options, message.message, korri))
+      lookRow(steps, message.message)
+      steps.put("options", updateOptions(state.options, message.message, withLook(steps.state, korri)))
       if (message.message._tag === "FocusedRow") steps.put("nav", updateNav(steps.state.nav, { _tag: "FocusedPage" }, korri))
       return
     case "RunWith":
@@ -190,11 +201,26 @@ function route(steps: Steps, message: ZoneSurfaceMessage, korri: SurfaceModel): 
   }
 }
 
+/**
+ * OPTIONS' LOOK row is Zone's own: A or a step on it goes to the look, and
+ * Korri hears nothing. The options model still takes the press (it moves
+ * its cursor to the row), and its plan, with the new look, redraws the
+ * row's value at once. Under a keyboard or a dialog the row is not reachable.
+ */
+function lookRow(steps: Steps, message: ZoneOptionsMessage): void {
+  if (optionsLayer(steps.state.options) !== "none") return
+  if (message._tag === "PressedRow" && message.rowId === ZONE_SYSTEM_LOOK) {
+    steps.put("look", updateLook(steps.state.look, { _tag: "SteppedLook", direction: 1 }))
+  } else if (message._tag === "SteppedRow" && message.rowId === ZONE_SYSTEM_LOOK) {
+    steps.put("look", updateLook(steps.state.look, { _tag: "SteppedLook", direction: message.direction }))
+  }
+}
+
 function published(steps: Steps, korri: SurfaceModel): void {
   const message = { _tag: "KorriPublished" } as const
   const state = steps.state
   steps.put("nav", updateNav(state.nav, message, korri))
-  steps.put("options", updateOptions(state.options, message, korri))
+  steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri)))
   steps.put("runWith", updateRunWith(state.runWith, message, korri))
   steps.put("identity", updateIdentity(state.identity, message, korri.identityManagement))
   steps.put("status", updateStatus(state.status, message, korri.status))
@@ -226,7 +252,7 @@ function back(steps: Steps, korri: SurfaceModel): void {
       }
       return
     case "join":
-      steps.put("options", updateOptions(state.options, message, korri))
+      steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri)))
       return
     case "onboarding":
       steps.put("onboarding", updateOnboarding(state.onboarding, message, korri))
@@ -238,7 +264,7 @@ function back(steps: Steps, korri: SurfaceModel): void {
       steps.put("nav", updateNav(state.nav, message, korri))
       return
     case "options":
-      if (!idle(steps.put("options", updateOptions(state.options, message, korri)), state.options)) return
+      if (!idle(steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri))), state.options)) return
       steps.put("nav", updateNav(state.nav, message, korri))
       return
     case "savedata":
@@ -266,7 +292,7 @@ function menu(steps: Steps, korri: SurfaceModel): void {
     case "options":
       switch (optionsLayer(state.options)) {
         case "keyboard":
-          steps.put("options", updateOptions(state.options, message, korri))
+          steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri)))
           return
         case "dialog":
           return
@@ -280,7 +306,7 @@ function menu(steps: Steps, korri: SurfaceModel): void {
       return
     case "join":
       // The join flow's keyboard: menu commits it, as on OPTIONS.
-      steps.put("options", updateOptions(state.options, message, korri))
+      steps.put("options", updateOptions(state.options, message, withLook(steps.state, korri)))
       return
     case "paused":
     case "onboarding":
@@ -331,6 +357,6 @@ function onboarding(steps: Steps, message: ZoneOnboardingMessage, korri: Surface
   const next = steps.put("onboarding", updateOnboarding(steps.state.onboarding, message, korri)).model
   if (message._tag === "OnboardingJoin" && next.join === message.networkId) {
     const rowId = zoneNetworkRowId(message.networkId)
-    steps.put("options", updateOptions(steps.state.options, { _tag: "PressedRow", rowId }, korri))
+    steps.put("options", updateOptions(steps.state.options, { _tag: "PressedRow", rowId }, withLook(steps.state, korri)))
   }
 }

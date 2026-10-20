@@ -19,10 +19,11 @@ import {
   type OptionsScript,
 } from "../fixtures/fixture-options"
 import { useFixtureDirections } from "../fixtures/fixture-directions"
+import { fixtureFrameLook } from "../fixtures/fixture-look"
 import { ZonePartFrame } from "../fixtures/ZonePartFrame"
 import { plan } from "../plan/zone-select"
 import { ZoneGround } from "../ui/organisms/ZoneGround"
-import { ZONE_SYSTEM_BUILD, ZONE_WIFI_CONNECTION, type ZoneOptionsSlices } from "../plan/options"
+import { ZONE_SYSTEM_BUILD, ZONE_SYSTEM_LOOK, ZONE_WIFI_CONNECTION, type ZoneOptionsSlices } from "../plan/options"
 import { ZoneOptions } from "./ZoneOptions"
 
 export const name = "Options"
@@ -56,6 +57,7 @@ export const composition = {
   Hidden: [{ part: "src/ui/organisms/ZoneOptionsEntry.organism.part.tsx", state: "HiddenName" }],
   ConnectionFocused: [{ part: "src/ui/atoms/ZoneSignal.atom.part.tsx", state: "default" }],
   BuildFocused: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "LongPathValue" }],
+  LookFocused: [{ part: "src/ui/molecules/ZoneOptionRow.molecule.part.tsx", state: "ChoiceFocused" }],
 } as const
 
 const type = (text: string): OptionsScript[] =>
@@ -73,7 +75,8 @@ function Live({
   readonly share?: number
 }) {
   const program = useRef<ReturnType<typeof createOptionsProgram> | null>(null)
-  program.current ??= createOptionsProgram(korri, script)
+  // The LOOK row shows the frame's look (fixture-look.ts) and switches it.
+  program.current ??= createOptionsProgram({ ...korri, look: fixtureFrameLook() }, script)
   const live = program.current
   const snapshot = useSyncExternalStore(live.subscribe, live.get)
   useFixtureDirections()
@@ -187,6 +190,11 @@ export function ConnectionFocused() {
 /** The cursor on SYSTEM's BUILD: Korri's build string, whole on the row or on its own line. */
 export function BuildFocused() {
   return <Live korri={{ ...fixtureOptions, settings: [] }} script={[{ _tag: "FocusedRow", rowId: ZONE_SYSTEM_BUILD }]} />
+}
+
+/** SYSTEM's LOOK row focused: Zone's own choice, MODERN / BLEND / RETRO, stepped by left and right (it switches the frame's look). */
+export function LookFocused() {
+  return <Live korri={{ ...fixtureOptions, settings: [] }} script={[{ _tag: "FocusedRow", rowId: ZONE_SYSTEM_LOOK }]} />
 }
 
 export function WifiList() {

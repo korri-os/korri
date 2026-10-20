@@ -229,6 +229,9 @@ function press(state: ZoneOptions, rowId: string, korri: ZoneOptionsSlices, plan
       return wifi(here, pickNetwork(korri, action.networkId))
     case "JoinHidden":
       return wifi(here, joinHidden())
+    // Zone's own look: the surface steps it (state/look.ts); nothing goes to Korri.
+    case "Look":
+      return stay(here)
   }
 }
 
@@ -248,6 +251,8 @@ function stepChoice(
   const row = plan.rows.find(candidate => candidate.id === rowId)
   const interaction = row?.item.interaction
   if (row === undefined || interaction?.kind !== "choice" || interaction.choices.length === 0) return stay(state)
+  // LOOK is Zone's own choice, stepped by the surface, never sent to Korri.
+  if (row.press._tag === "Look") return stay(state)
   if (saving(korri, row.id)) return stay(state)
   const count = interaction.choices.length
   const at = choiceIndex(row.item)
