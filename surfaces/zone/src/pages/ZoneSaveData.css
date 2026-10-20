@@ -94,7 +94,7 @@
   );
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  grid-template-columns: var(--zone-save-backup-beside) minmax(0, calc(var(--zone-save-slab-most) * var(--zone-px)));
+  grid-template-columns: var(--zone-save-backup-beside) minmax(0, calc(var(--zone-save-slab-widest) * var(--zone-px)));
   justify-content: center;
   gap: var(--zone-save-data-space);
   min-height: 0;
