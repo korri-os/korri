@@ -57,12 +57,27 @@
 /* The OPTIONS band: sky, the full width, a black lip over and under it,
  * so a row it cannot hold is cut by a lip. */
 .zone-run-with-band {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   border-block: calc(var(--zone-options-lip) * var(--zone-px)) solid var(--zone-options-lip-colour);
   background: var(--zone-options-band);
+}
+
+/* OPTIONS' band's black wedge at its left, under the rows. */
+.zone-run-with-band::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  width: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  height: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  background: var(--zone-options-lip-colour);
+  clip-path: var(--zone-band-wedge-shape, none);
 }
 
 .zone-run-with-scroll {

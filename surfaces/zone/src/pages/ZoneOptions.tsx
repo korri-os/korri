@@ -20,6 +20,7 @@ import { ZoneOptionGroup, type ZoneOptionGroupRow } from "../ui/molecules/ZoneOp
 import { ZoneTabStrip, type ZoneTabItem } from "../ui/molecules/ZoneTabStrip"
 import { ZoneOptionsEntry } from "../ui/organisms/ZoneOptionsEntry"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
+import { useZoneBandWedge } from "../use-zone-band-wedge"
 
 const TABS: readonly ZoneTabItem[] = [
   { id: "games", label: "Games" },
@@ -127,6 +128,9 @@ export function ZoneOptions({
   const layer = keyboard !== undefined ? "keyboard" : dialog !== undefined ? "dialog" : "none"
 
   const body = useRef<HTMLDivElement | null>(null)
+  // The band's black wedge at its left, as Mania's OPTIONS band.
+  const rowBand = useRef<HTMLDivElement | null>(null)
+  useZoneBandWedge(rowBand)
   const dialogBox = useRef<HTMLDivElement | null>(null)
 
   // Follow the state with DOM focus: the row it names, when the cursor is
@@ -180,7 +184,7 @@ export function ZoneOptions({
       )}
     >
       <div className="zone-options" data-layer={layer} ref={body}>
-        <div className="zone-options-band" inert={layer !== "none"}>
+        <div className="zone-options-band" inert={layer !== "none"} ref={rowBand}>
           <div className="zone-options-scroll">
             <div className="zone-options-groups">
               {plan.groups.map((group, index) => (

@@ -19,13 +19,17 @@ import {
   fixtureNetworkScanning,
   fixtureNetworkWired,
   fixtureOptions,
+  fixtureRunnerReady,
   fixtureSeatsId,
   optionsCallbacks,
   type OptionsProgram,
   type OptionsScript,
 } from "../src/fixtures/fixture-options"
+import { zoneDialogWedgeArt } from "../src/plan/dialog"
 import type { ZoneOptionsSlices } from "../src/plan/options"
+import { zoneStairWedge } from "../src/plan/stair-clip"
 import { ZoneOptions } from "../src/pages/ZoneOptions"
+import { ZoneRunWith } from "../src/pages/ZoneRunWith"
 import { performZoneRequest } from "../src/zone-host"
 import { byWords } from "./words"
 
@@ -332,5 +336,25 @@ describe("one sticky group title at a time", () => {
     expect(css).toMatch(/\.zone-option-group\[data-followed\] \.zone-option-group-rows \{\s*margin-bottom: calc\(var\(--zone-option-group-hand-off\) \* -1\);/)
     const page = readFileSync(join(import.meta.dir, "..", "src", "pages", "ZoneOptions.css"), "utf8")
     expect(page).toMatch(/--zone-option-group-hold-gap: calc\(var\(--zone-option-group-gap\) \* var\(--zone-px\)\);/)
+  })
+})
+
+describe("the band's black wedge", () => {
+  test("OPTIONS' band and RUN WITH's carry the wedge at their left: the dialog's proportion, a 45 degree stair in the bottom-left corner", () => {
+    const sizes = (["clientWidth", "clientHeight"] as const).map(name => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const)
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 320 })
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 150 })
+    try {
+      mount()
+      const band = document.querySelector<HTMLElement>(".zone-options-band")!
+      const leg = zoneDialogWedgeArt(320, 150)
+      expect(band.style.getPropertyValue("--zone-band-wedge-leg")).toBe(String(leg))
+      expect(band.style.getPropertyValue("--zone-band-wedge-shape")).toBe(zoneStairWedge(leg, "bottom-left"))
+      cleanup()
+      render(<ZoneRunWith choice={fixtureRunnerReady} />)
+      expect(document.querySelector<HTMLElement>(".zone-run-with-band")?.style.getPropertyValue("--zone-band-wedge-leg")).toBe(String(leg))
+    } finally {
+      for (const [name, descriptor] of sizes) if (descriptor !== undefined) Object.defineProperty(HTMLElement.prototype, name, descriptor)
+    }
   })
 })

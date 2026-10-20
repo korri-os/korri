@@ -13,6 +13,7 @@ import { ZoneWarningLines } from "../ui/organisms/ZoneWarningLines"
 import { ZoneShell, type ZoneBand, type ZoneStrips } from "../ui/templates/ZoneShell"
 import { useZoneFit } from "../use-zone-fit"
 import { useZoneOptionClips } from "../use-zone-option-row"
+import { useZoneBandWedge } from "../use-zone-band-wedge"
 
 /** Each state of Korri's runner choice wears a tag colour Zone already uses
  * for that kind of news: blue for settled, yellow for at work, orange for
@@ -73,6 +74,9 @@ export function ZoneRunWith({
   readonly onAction?: (actionId: string) => void
 }) {
   const list = useRef<HTMLDivElement | null>(null)
+  // The same band as OPTIONS', with its black wedge at its left.
+  const rowBand = useRef<HTMLDivElement | null>(null)
+  useZoneBandWedge(rowBand)
   const head = useRef<HTMLDivElement | null>(null)
   const title = useRef<HTMLSpanElement | null>(null)
   const tag = choice._tag
@@ -109,7 +113,7 @@ export function ZoneRunWith({
             <ZoneTag kind={STATE_TAGS[choice._tag]} label={choice._tag} />
           </span>
         </div>
-        <div className="zone-run-with-band">
+        <div className="zone-run-with-band" ref={rowBand}>
           <div className="zone-run-with-scroll" data-block-exit="true" ref={list}>
             <div className="zone-run-with-rows">
             <ZoneWarningLines lines={choice.warnings} />

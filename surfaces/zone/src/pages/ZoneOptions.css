@@ -14,12 +14,29 @@
  * cannot hold is cut by a lip, never by the tabs. */
 .zone-options-band {
   position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   border-block: calc(var(--zone-options-lip) * var(--zone-px)) solid var(--zone-options-lip-colour);
   background: var(--zone-options-band);
+}
+
+/* The band's black wedge at its left (Mania's OPTIONS band), standing in
+ * its bottom-left corner under the rows, its long edge a 45 degree stair
+ * (useZoneBandWedge). It stands still while the rows scroll over it; the
+ * sticky group title's band-coloured backing is at the top, clear of it. */
+.zone-options-band::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  width: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  height: calc(var(--zone-band-wedge-leg, 0) * var(--zone-px));
+  background: var(--zone-options-lip-colour);
+  clip-path: var(--zone-band-wedge-shape, none);
 }
 
 /* The one scroll. No scrollbar: a row cut off by a lip says there is

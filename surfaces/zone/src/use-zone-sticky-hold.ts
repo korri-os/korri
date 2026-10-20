@@ -11,9 +11,15 @@
  * asks for it, so the title leaves as its last row comes up and only the
  * current group's title is ever stuck.
  *
+ * It also marks the title `data-stuck` while it holds (it stands lower in
+ * its group than its own place: rows are passing under it). Only then does
+ * it need its holder's backing; a title at rest in the list draws none, so
+ * whatever the band draws behind the rows (OPTIONS' black wedge) shows
+ * round it.
+ *
  * A measurement, not state: nothing re-renders. Writing a length on the
  * group never changes the title's size, so observing the title cannot
- * loop.
+ * loop; marking it stuck changes only its background.
  */
 import { useLayoutEffect, type RefObject } from "react"
 
@@ -24,11 +30,21 @@ export function useZoneStickyHold(group: RefObject<HTMLElement | null>, title: R
     if (box === null || head === null) return
     const apply = (height: number) => box.style.setProperty("--zone-option-group-title-height", `${height}px`)
     apply(head.offsetHeight)
-    if (typeof ResizeObserver === "undefined") return
+    const stuck = () => head.toggleAttribute("data-stuck", head.getBoundingClientRect().top - box.getBoundingClientRect().top > 0.5)
+    stuck()
+    // The scroll the title holds in: the nearest box that scrolls.
+    let scroller: HTMLElement | null = box.parentElement
+    while (scroller !== null && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+    scroller?.addEventListener("scroll", stuck, { passive: true })
+    if (typeof ResizeObserver === "undefined") return () => scroller?.removeEventListener("scroll", stuck)
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) apply(entry.borderBoxSize?.[0]?.blockSize ?? head.offsetHeight)
+      stuck()
     })
     observer.observe(head)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      scroller?.removeEventListener("scroll", stuck)
+    }
   }, [group, title])
 }

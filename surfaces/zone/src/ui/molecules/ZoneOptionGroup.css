@@ -46,6 +46,12 @@
   text-shadow: none;
 }
 
+/* At rest in the list nothing passes under the title: no backing, so the
+ * band's own drawing (OPTIONS' wedge) shows round it. */
+.zone-option-group-title:not([data-stuck]) {
+  background: transparent;
+}
+
 /* The title: caps-2 (caps-1 when it must) on a black panel flush with the
  * group's left edge and leaning at its right, as VIDEO heads Mania's page.
  * Its words start where the rows' words start. */

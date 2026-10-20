@@ -1763,3 +1763,17 @@ one holds.
   on black; it keeps its height (unseen) while no seat is focused, so the
   cards do not move. A waiting seat takes no focus. Part state
   SeatFocused.
+- **OPTIONS' band has its black wedge.** The brief's band is sky "with a
+  black wedge at its left" (2c, 4 OPTIONS 1); it had none. The band (and
+  RUN WITH's, the same band) draws a black right-angled wedge in its
+  bottom-left corner under the rows, its long edge a 45 degree stair from
+  `zoneStairWedge`, its legs the dialog's measured proportion
+  (`zoneDialogWedgeArt`: 0.78 of the band's height, never more than a
+  quarter of its width), written by `useZoneBandWedge`. It stands still
+  while the rows scroll over it. Bottom-left, not top-left as on Mania's
+  screen: the sticky group title holds at the band's top on a band-coloured
+  backing that would cut a top wedge in two. A title at rest in the list
+  now draws no backing (`useZoneStickyHold` marks it `data-stuck` only
+  while rows pass under it), so the wedge shows whole round the titles it
+  meets. Cost: label panels over the wedge lose their black edge against
+  it (their words stay white on black).
