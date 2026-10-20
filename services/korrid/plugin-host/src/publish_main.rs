@@ -48,6 +48,21 @@ fn run(args: Vec<String>) -> Result<(), String> {
             );
             Ok(())
         }
+        ["cache-record", store_path, release_version, platform, cache_url] => {
+            // A record for an exact output in a signed Nix cache. Reads only
+            // the output's declaration; needs no Nix and writes nothing.
+            let record = publisher::cache_record(
+                Path::new(store_path),
+                release_version,
+                platform,
+                cache_url,
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         ["catalog", records @ ..] => {
             let paths = records.iter().map(PathBuf::from).collect::<Vec<_>>();
             std::io::stdout()
@@ -92,6 +107,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             "usage: korri-publish STORE_PATH RELEASE PLATFORM ARCHIVE_URL OUTPUT_DIR\n",
             "       korri-publish declaration NAMESPACE SOURCE_ROOT SOURCE...\n",
             "       korri-publish archive-name STORE_PATH RELEASE PLATFORM\n",
+            "       korri-publish cache-record STORE_PATH RELEASE PLATFORM CACHE_URL\n",
             "       korri-publish catalog RECORD_FILE...\n",
             "       korri-publish verify-release CATALOG ASSET_DIR BASE_URL ID RELEASE PLATFORM..."
         )

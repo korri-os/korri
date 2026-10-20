@@ -1,5 +1,5 @@
 use korri_plugin_host::{
-    catalog::{Catalog, CatalogRecord},
+    catalog::{Artifact, Catalog, CatalogRecord},
     publisher,
 };
 use sha2::{Digest, Sha256};
@@ -28,8 +28,10 @@ fn record(root: &Path, platform: &str) -> CatalogRecord {
         release_version: "plugin-2".into(),
         platform: platform.into(),
         store_path: "/nix/store/00000000000000000000000000000000-tailscale".into(),
-        archive_url: format!("https://example.com/download/{name}"),
-        archive_sha256: hex::encode(Sha256::digest(bytes)),
+        artifact: Artifact::Archive {
+            archive_url: format!("https://example.com/download/{name}"),
+            archive_sha256: hex::encode(Sha256::digest(bytes)),
+        },
     }
 }
 
@@ -127,7 +129,9 @@ fn publication_rejects_wrong_urls_symlinks_oversized_assets_and_release_selectio
         )
     };
     assert!(check(&r, "wrong-release").is_err());
-    r.archive_url = "https://example.com/download/wrong-name.tar".into();
+    if let Artifact::Archive { archive_url, .. } = &mut r.artifact {
+        *archive_url = "https://example.com/download/wrong-name.tar".into();
+    }
     assert!(check(&r, "plugin-2").is_err());
     r = record(root.path(), "x86_64-linux");
     let asset = root

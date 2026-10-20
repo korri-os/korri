@@ -577,7 +577,7 @@ fn failed_pack_preserves_existing_output_and_removes_its_temporary_file() {
 /// "https://" (bare scheme with empty authority) was previously accepted.
 #[test]
 fn catalog_rejects_archive_url_with_empty_host() {
-    use korri_plugin_host::catalog::{Catalog, CatalogRecord};
+    use korri_plugin_host::catalog::{Artifact, Catalog, CatalogRecord};
     fn valid_record() -> CatalogRecord {
         CatalogRecord {
             plugin_id: "@example:network".into(),
@@ -586,8 +586,10 @@ fn catalog_rejects_archive_url_with_empty_host() {
             release_version: "1.0.0".into(),
             platform: "x86_64-linux".into(),
             store_path: "/nix/store/00000000000000000000000000000000-network-1.0.0".into(),
-            archive_url: "https://example.com/a.tar".into(),
-            archive_sha256: "a".repeat(64),
+            artifact: Artifact::Archive {
+                archive_url: "https://example.com/a.tar".into(),
+                archive_sha256: "a".repeat(64),
+            },
         }
     }
     fn catalog_with(records: Vec<CatalogRecord>) -> Vec<u8> {
@@ -601,7 +603,10 @@ fn catalog_rejects_archive_url_with_empty_host() {
         "http://example.com/a.tar",            // wrong scheme
     ] {
         let mut r = valid_record();
-        r.archive_url = bad_url.into();
+        r.artifact = Artifact::Archive {
+            archive_url: bad_url.into(),
+            archive_sha256: "a".repeat(64),
+        };
         assert!(
             Catalog::from_json(&catalog_with(vec![r])).is_err(),
             "expected rejection for archive_url={bad_url:?}"
@@ -696,7 +701,11 @@ fn publisher_converts_and_packs_korri_tailscale() {
     assert_eq!(result.record.platform, platform);
     assert_eq!(result.archive_path.file_name().unwrap(), name.trim());
     assert_eq!(result.record.store_path, result.ca_store_path);
-    assert_eq!(result.record.archive_sha256, result.archive_sha256);
+    assert!(matches!(
+        &result.record.artifact,
+        korri_plugin_host::catalog::Artifact::Archive { archive_sha256, .. }
+            if *archive_sha256 == result.archive_sha256
+    ));
 
     // Extract into a fresh staging dir and verify the layout.
     let staging = root.path().join("staged");

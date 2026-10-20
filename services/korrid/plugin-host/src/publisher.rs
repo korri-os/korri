@@ -4,8 +4,10 @@
 use crate::{
     archive,
     catalog::{
-        validate_archive_url, validate_platform, validate_release_version, Catalog, CatalogRecord,
+        validate_archive_url, validate_platform, validate_release_version, Artifact, Catalog,
+        CatalogRecord,
     },
+    declaration::Declaration,
     package, process,
 };
 use serde::Deserialize;
@@ -103,7 +105,16 @@ pub fn release_assets(
     for platform in platforms {
         let record = catalog.record(id, release, platform)?;
         let name = archive_name(id, release, platform)?;
-        if record.archive_url != format!("{base_url}{name}") {
+        let Artifact::Archive {
+            archive_url,
+            archive_sha256,
+        } = &record.artifact
+        else {
+            return Err(format!(
+                "release asset {name} needs an archive record, not a signed-cache record"
+            ));
+        };
+        if *archive_url != format!("{base_url}{name}") {
             return Err(format!("archive URL does not match uploaded asset {name}"));
         }
         let path = asset_dir.join(&name);
@@ -121,7 +132,7 @@ pub fn release_assets(
             }
             hash.update(&buffer[..count]);
         }
-        if hex::encode(hash.finalize()) != record.archive_sha256 {
+        if hex::encode(hash.finalize()) != *archive_sha256 {
             return Err(format!("archive hash mismatch for {name}"));
         }
         assets.push(name);
@@ -210,8 +221,10 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         release_version: args.release_version.clone(),
         platform: args.platform.clone(),
         store_path: ca_store_path.clone(),
-        archive_url: args.archive_url.clone(),
-        archive_sha256: archive_sha256.clone(),
+        artifact: Artifact::Archive {
+            archive_url: args.archive_url.clone(),
+            archive_sha256: archive_sha256.clone(),
+        },
     };
     record.validate()?;
     Ok(PublishResult {
@@ -220,4 +233,48 @@ pub fn publish(args: &PublishArgs) -> Result<PublishResult, String> {
         archive_sha256,
         record,
     })
+}
+
+/// A signed-cache catalog record for an exact output already published to a
+/// signed Nix cache. Identity, title and description come from the output's
+/// own declaration; nothing is converted, packed or uploaded.
+pub fn cache_record(
+    store_path: &Path,
+    release_version: &str,
+    platform: &str,
+    cache_url: &str,
+) -> Result<CatalogRecord, String> {
+    let declaration = package::load_declaration(store_path)?;
+    cache_record_for(
+        &declaration,
+        store_path,
+        release_version,
+        platform,
+        cache_url,
+    )
+}
+
+/// `cache_record` for a declaration the caller already evaluated from
+/// `store_path`.
+pub fn cache_record_for(
+    declaration: &Declaration,
+    store_path: &Path,
+    release_version: &str,
+    platform: &str,
+    cache_url: &str,
+) -> Result<CatalogRecord, String> {
+    package::validate_store_path(store_path)?;
+    let record = CatalogRecord {
+        plugin_id: declaration.id(),
+        title: declaration.title.clone(),
+        description: declaration.description.clone(),
+        release_version: release_version.into(),
+        platform: platform.into(),
+        store_path: store_path.to_str().ok_or("store path is not UTF-8")?.into(),
+        artifact: Artifact::SignedCache {
+            cache_url: cache_url.into(),
+        },
+    };
+    record.validate()?;
+    Ok(record)
 }
