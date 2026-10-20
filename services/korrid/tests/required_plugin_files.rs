@@ -80,6 +80,7 @@ impl Fixture {
             entry: "plugin.ts".into(),
             sources: vec!["plugin.ts".into()],
             requires,
+            hosts: vec![],
         }
     }
 
@@ -125,6 +126,7 @@ fn package(root: &Path, name: &str, keys: &[&str]) -> EnabledPackage {
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
+        hosts: vec![],
     }
 }
 

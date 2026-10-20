@@ -18,6 +18,9 @@ let
       services ? { },
       requires ? [ ],
       ports ? { },
+      # ADR 0013: exact DNS names a provider plugin may reach. The host validates
+      # them, binds them in the approval digest and enforces them in korrid.
+      hosts ? [ ],
     }:
     let
       isNative =
@@ -66,6 +69,9 @@ let
           // lib.optionalAttrs (requires != [ ]) {
             requires = map toString requires;
           }
+          // lib.optionalAttrs (hosts != [ ]) {
+            inherit hosts;
+          }
         )
       );
       validName =
@@ -99,6 +105,15 @@ let
         && !lib.hasSuffix ".drv" (toString path)
       ) requires
     ) "plugin requires must name at most 128 exact store outputs";
+    assert lib.assertMsg (
+      builtins.length hosts <= 128
+      && builtins.length (lib.unique hosts) == builtins.length hosts
+      && builtins.all (
+        host:
+        builtins.isString host
+        && builtins.match "([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]*[a-z0-9])?" host != null
+      ) hosts
+    ) "plugin hosts must name at most 128 distinct lowercase DNS names";
     pkgs.runCommand "korri-plugin"
       {
         nativeBuildInputs = [ pkgs.python3 ];

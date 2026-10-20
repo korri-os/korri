@@ -42,6 +42,8 @@ pub struct Report {
     pub declaration: Declaration,
     pub native_units: BTreeMap<String, crate::native_unit::NativeUnit>,
     pub ports: crate::firewall::Ports,
+    /// Exact DNS names a provider plugin may reach (ADR 0013). Empty: no network.
+    pub hosts: Vec<String>,
     pub packages: BTreeMap<String, PathBuf>,
     pub files: BTreeMap<String, PathBuf>,
     pub entry: String,
@@ -200,6 +202,8 @@ struct Manifest {
     #[serde(default)]
     ports: crate::firewall::Ports,
     #[serde(default)]
+    hosts: Vec<String>,
+    #[serde(default)]
     requires: Vec<PathBuf>,
 }
 
@@ -265,6 +269,7 @@ fn manifest(package: &Path) -> Result<Manifest, String> {
         crate::native_unit::validate_names(&names.keys().cloned().collect::<Vec<_>>())?;
     }
     manifest.ports.validate()?;
+    validate_hosts(&manifest.hosts)?;
     if manifest.requires.len() > crate::dependencies::MAX_PLUGINS {
         return Err("too many required plugins".into());
     }
@@ -285,6 +290,37 @@ fn manifest(package: &Path) -> Result<Manifest, String> {
         return Err("plugin source inventory must be sorted and unique".into());
     }
     Ok(manifest)
+}
+
+/// The `ports` bound, applied to declared provider hosts.
+pub const MAX_HOSTS: usize = 128;
+
+/// Exact lowercase DNS names of at least two labels: no wildcard, port,
+/// scheme, trailing dot or IP literal (an all-numeric final label).
+pub fn validate_hosts(hosts: &[String]) -> Result<(), String> {
+    let valid = |host: &str| {
+        let labels: Vec<_> = host.split('.').collect();
+        host.len() <= 253
+            && labels.len() >= 2
+            && labels.iter().all(|label| {
+                let bytes = label.as_bytes();
+                !bytes.is_empty()
+                    && bytes.len() <= 63
+                    && bytes
+                        .iter()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+                    && bytes[0] != b'-'
+                    && bytes[bytes.len() - 1] != b'-'
+            })
+            && !labels[labels.len() - 1].bytes().all(|b| b.is_ascii_digit())
+    };
+    if hosts.len() > MAX_HOSTS
+        || hosts.iter().collect::<BTreeSet<_>>().len() != hosts.len()
+        || !hosts.iter().all(|host| valid(host))
+    {
+        return Err("hosts must contain at most 128 distinct lowercase DNS names of at least two labels, with no wildcard, port, scheme, trailing dot or IP literal".into());
+    }
+    Ok(())
 }
 
 pub fn manifest_namespace(package: &Path) -> Result<String, String> {
@@ -589,6 +625,11 @@ fn load_declaration_snapshot(package: &Path) -> Result<(Declaration, SourceSnaps
     if fs::canonicalize(package).map_err(|e| e.to_string())? != package || !package.is_dir() {
         return Err("package must be an exact immutable directory".into());
     }
+    evaluate_package(package)
+}
+
+/// Evaluation after the caller established package authority.
+fn evaluate_package(package: &Path) -> Result<(Declaration, SourceSnapshot), String> {
     let manifest = manifest(package)?;
     let source = SourceSnapshot::package_plugin(package, &manifest.entry, &manifest.sources)?;
     let namespace = manifest.publisher.namespace.clone();
@@ -875,7 +916,20 @@ fn build_report(
     provenance: Provenance,
     closure: Option<&BTreeSet<PathBuf>>,
 ) -> Result<Report, String> {
-    let (declaration, source) = load_declaration_snapshot(package)?;
+    report_from(
+        package,
+        provenance,
+        closure,
+        load_declaration_snapshot(package)?,
+    )
+}
+
+fn report_from(
+    package: &Path,
+    provenance: Provenance,
+    closure: Option<&BTreeSet<PathBuf>>,
+    (declaration, source): (Declaration, SourceSnapshot),
+) -> Result<Report, String> {
     let id = declaration.id();
     provenance.validate(&id)?;
     let unit = unit_name(&id);
@@ -915,6 +969,14 @@ fn build_report(
     if native_units.is_empty() && !manifest.ports.is_empty() {
         return Err("ports require an active service contribution".into());
     }
+    if !manifest.hosts.is_empty()
+        && declaration
+            .providers
+            .as_ref()
+            .is_none_or(|providers| providers.is_empty())
+    {
+        return Err("hosts require a providers contribution".into());
+    }
     let mut managed_names = BTreeSet::new();
     for (name, unit) in &native_units {
         let managed = crate::native_unit::managed_unit_name(name, unit.kind)?;
@@ -953,6 +1015,7 @@ fn build_report(
         declaration,
         native_units,
         ports: manifest.ports,
+        hosts: manifest.hosts,
         packages: manifest.packages,
         files: manifest.files,
         entry: manifest.entry,
@@ -1064,6 +1127,109 @@ mod approval_tests {
             unit,
             &snapshot(package)?,
         )
+    }
+
+    fn provider_package(directory: &Path, hosts: Option<&str>, providers: bool) -> PathBuf {
+        let package = directory.join("package");
+        fs::create_dir_all(&package).unwrap();
+        let exports = if providers {
+            "export const providers = {'@test:shop': {id: '@test:shop', title: 'Shop'}}; export const handlers = {'claims.search': () => [], 'claims.details': () => ({}), 'artifact.resolve-download': () => ({})};"
+        } else {
+            ""
+        };
+        fs::write(
+            package.join("plugin.ts"),
+            format!("export const name = 'shop'; {exports}"),
+        )
+        .unwrap();
+        let hosts = hosts.map_or(String::new(), |hosts| format!(",\"hosts\":{hosts}"));
+        fs::write(
+            package.join("manifest.json"),
+            format!("{{\"publisher\":{{\"namespace\":\"@test\"}},\"entry\":\"plugin.ts\",\"sources\":[\"plugin.ts\"]{hosts}}}"),
+        )
+        .unwrap();
+        package
+    }
+
+    /// A temporary directory is not installation authority, so the test
+    /// supplies the evaluated package the store-path check would admit.
+    fn provider_report(package: &Path) -> Result<Report, String> {
+        report_from(
+            package,
+            Provenance::RawCache {
+                cache_url: "file:///cache".into(),
+            },
+            None,
+            evaluate_package(package)?,
+        )
+    }
+
+    #[test]
+    fn declared_hosts_are_validated_reported_and_bound_in_the_approval() {
+        let directory = tempfile::tempdir().unwrap();
+        let none = provider_report(&provider_package(directory.path(), None, true)).unwrap();
+        assert!(none.hosts.is_empty());
+        let one = provider_report(&provider_package(
+            directory.path(),
+            Some(r#"["www.lexaloffle.com"]"#),
+            true,
+        ))
+        .unwrap();
+        assert_eq!(one.hosts, ["www.lexaloffle.com"]);
+        assert_eq!(
+            serde_json::to_value(&one).unwrap()["hosts"],
+            serde_json::json!(["www.lexaloffle.com"])
+        );
+        let two = provider_report(&provider_package(
+            directory.path(),
+            Some(r#"["www.lexaloffle.com","hh3.gbdev.io"]"#),
+            true,
+        ))
+        .unwrap();
+        // Same path, source and declaration: only the declared hosts differ.
+        assert_ne!(none.approval, one.approval);
+        assert_ne!(one.approval, two.approval);
+
+        for invalid in [
+            r#"["*.example.com"]"#,
+            r#"["Example.com"]"#,
+            r#"["example.com."]"#,
+            r#"["example.com:443"]"#,
+            r#"["https://example.com"]"#,
+            r#"["localhost"]"#,
+            r#"["127.0.0.1"]"#,
+            r#"["[::1]"]"#,
+            r#"["-bad.example.com"]"#,
+            r#"["a.example.com","a.example.com"]"#,
+            r#"[""]"#,
+            r#"null"#,
+        ] {
+            assert!(
+                provider_report(&provider_package(directory.path(), Some(invalid), true)).is_err(),
+                "{invalid}"
+            );
+        }
+        let too_many = format!(
+            "[{}]",
+            (0..=MAX_HOSTS)
+                .map(|n| format!("\"h{n}.example.com\""))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        assert!(
+            provider_report(&provider_package(directory.path(), Some(&too_many), true)).is_err()
+        );
+        let error = provider_report(&provider_package(
+            directory.path(),
+            Some(r#"["example.com"]"#),
+            false,
+        ))
+        .err()
+        .unwrap();
+        assert!(
+            error.contains("hosts require a providers contribution"),
+            "{error}"
+        );
     }
 
     #[test]

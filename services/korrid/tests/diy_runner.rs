@@ -27,6 +27,7 @@ fn installed(root: &Path) -> PluginRegistry {
         entry: "plugin.ts".into(),
         sources: vec!["plugin.ts".into()],
         requires: Vec::new(),
+        hosts: vec![],
     }])
     .unwrap()
 }

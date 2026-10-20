@@ -64,6 +64,7 @@ fn package(root: &Path, name: &str, source: &str) -> EnabledPackage {
         entry: "plugin.ts".into(),
         sources,
         requires: Vec::new(),
+        hosts: vec![],
     }
 }
 
@@ -324,6 +325,7 @@ fn packaged_source_evidence_reaches_the_packaged_callback_configuration_bytes() 
         entry: manifest.entry,
         sources: manifest.sources,
         requires: Vec::new(),
+        hosts: vec![],
     };
     let build = package.package.display().to_string();
     let program = package.files["retroarch"].display().to_string();

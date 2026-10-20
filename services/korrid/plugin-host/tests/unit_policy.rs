@@ -24,6 +24,7 @@ fn report(source: &str) -> package::Report {
         .unwrap(),
         native_units: BTreeMap::from([("daemon".into(), NativeUnit::parse(source).unwrap())]),
         ports: Default::default(),
+        hosts: Vec::new(),
         packages: Default::default(),
         files: Default::default(),
         entry: "plugin.ts".into(),
