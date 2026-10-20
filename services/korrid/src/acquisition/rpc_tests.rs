@@ -279,3 +279,76 @@ async fn acquisition_status_resolves_the_same_explicit_runner_as_session_start()
         assert_eq!(status["outcome"], start["outcome"]);
     }
 }
+
+/// The six game acquisition methods decode at the production `/rpc` boundary
+/// with the portal capability. Only the local brain runs discovery, so a
+/// host-mode device answers each with `AcquisitionUnavailable`, never a panic.
+#[tokio::test]
+async fn game_acquisition_methods_decode_and_need_the_local_brain() {
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let config = root.path().join("host.toml");
+    fs::write(&config, "label = \"acquisition\"\ngames = []\n").unwrap();
+    let runtime = host::HostRuntime::from_paths_with_backend(
+        &config,
+        Some(root.path().into()),
+        root.path().join("private"),
+        Arc::new(host::control::InMemoryLaunchUnitBackend::default()),
+    );
+    let app = secure_host_routers(
+        runtime,
+        &root.path().join("private"),
+        Some(PortalAccess::new(
+            "acquisition-test",
+            "http://127.0.0.1:8099",
+            PortalPermission::LocalSessions,
+        )),
+    )
+    .0;
+    for (tag, payload) in [
+        ("app.acquisition.providers", json!({})),
+        (
+            "app.acquisition.search",
+            json!({"query":"2048","providerIds":["@korri:homebrewhub"]}),
+        ),
+        (
+            "app.acquisition.details",
+            json!({"providerId":"@korri:homebrewhub","id":"2048gb"}),
+        ),
+        (
+            "app.acquisition.acquire",
+            json!({"providerId":"@korri:homebrewhub","id":"2048gb","sourceId":"gb"}),
+        ),
+        ("app.acquisition.acquire-status", json!({"jobId":"x"})),
+        ("app.acquisition.acquire-cancel", json!({"jobId":"x"})),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer acquisition-test")
+                    .header("Origin", "http://127.0.0.1:8099")
+                    .body(Body::from(
+                        json!({"_tag":tag, "payload":payload}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{tag}");
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["outcome"]["_tag"], "Err", "{tag}: {body}");
+        assert_eq!(
+            body["outcome"]["payload"]["code"], "AcquisitionUnavailable",
+            "{tag}"
+        );
+    }
+}

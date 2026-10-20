@@ -1200,6 +1200,18 @@ pub enum RpcRequest {
     AcquisitionDownload(acquisition::AcquisitionDownloadRequest),
     #[serde(rename = "app.acquisition.remove")]
     AcquisitionRemove(acquisition::AcquisitionRemoveRequest),
+    #[serde(rename = "app.acquisition.providers")]
+    AcquisitionProviders(acquisition::AcquisitionPluginsPayload),
+    #[serde(rename = "app.acquisition.search")]
+    AcquisitionSearch(acquisition::SearchRequest),
+    #[serde(rename = "app.acquisition.details")]
+    AcquisitionDetails(acquisition::DetailsRequest),
+    #[serde(rename = "app.acquisition.acquire")]
+    AcquisitionAcquire(acquisition::AcquireArtifactRequest),
+    #[serde(rename = "app.acquisition.acquire-status")]
+    AcquisitionAcquireStatus(acquisition::AcquireStatusRequest),
+    #[serde(rename = "app.acquisition.acquire-cancel")]
+    AcquisitionAcquireCancel(acquisition::AcquireCancelRequest),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingFinishRequest),
     #[serde(rename = "system.onboarding.status")]
@@ -1308,6 +1320,18 @@ pub enum RpcResponse {
     AcquisitionDownload(acquisition::AcquisitionOutcome),
     #[serde(rename = "app.acquisition.remove")]
     AcquisitionRemove(acquisition::AcquisitionOutcome),
+    #[serde(rename = "app.acquisition.providers")]
+    AcquisitionProviders(acquisition::PluginListOutcome),
+    #[serde(rename = "app.acquisition.search")]
+    AcquisitionSearch(acquisition::SearchOutcome),
+    #[serde(rename = "app.acquisition.details")]
+    AcquisitionDetails(acquisition::DetailsOutcome),
+    #[serde(rename = "app.acquisition.acquire")]
+    AcquisitionAcquire(acquisition::AcquireJobOutcome),
+    #[serde(rename = "app.acquisition.acquire-status")]
+    AcquisitionAcquireStatus(acquisition::AcquireJobOutcome),
+    #[serde(rename = "app.acquisition.acquire-cancel")]
+    AcquisitionAcquireCancel(acquisition::AcquireJobOutcome),
     #[serde(rename = "system.onboarding.finish")]
     OnboardingFinish(onboarding::OnboardingStatusOutcome),
     #[serde(rename = "system.onboarding.status")]
@@ -1484,6 +1508,21 @@ impl AppState {
                     message: "Downloads are unavailable on this device.".into(),
                 })?,
             )),
+        }
+    }
+
+    /// Game acquisition needs discovery, which only the local brain runs.
+    fn game_context(&self) -> Result<acquisition::GameContext, RpcFailure> {
+        match &self.mode {
+            ServerMode::Brain(brain) => Ok(acquisition::GameContext {
+                root: brain.local_storage_root.clone(),
+                registry: self.acquisition_context()?.1,
+                discovery: brain.discovery.clone(),
+            }),
+            ServerMode::Host(_) => Err(RpcFailure {
+                code: "AcquisitionUnavailable".into(),
+                message: "Downloads are unavailable on this device.".into(),
+            }),
         }
     }
 
@@ -2277,6 +2316,50 @@ async fn dispatch(
                     .map(acquisition::AcquisitionOutcome::Ok)
                     .unwrap_or_else(acquisition::AcquisitionOutcome::Err),
             )
+        }
+        RpcRequest::AcquisitionProviders(_) => {
+            RpcResponse::AcquisitionProviders(match state.game_context() {
+                Ok(context) => acquisition::PluginListOutcome::Ok(
+                    state.acquisition.providers(&context.registry),
+                ),
+                Err(error) => acquisition::PluginListOutcome::Err(error),
+            })
+        }
+        RpcRequest::AcquisitionSearch(request) => {
+            RpcResponse::AcquisitionSearch(match state.game_context() {
+                Ok(context) => match state.acquisition.search(&context.registry, &request).await {
+                    Ok(response) => acquisition::SearchOutcome::Ok(response),
+                    Err(error) => acquisition::SearchOutcome::Err(error),
+                },
+                Err(error) => acquisition::SearchOutcome::Err(error),
+            })
+        }
+        RpcRequest::AcquisitionDetails(request) => {
+            RpcResponse::AcquisitionDetails(match state.game_context() {
+                Ok(context) => match state.acquisition.details(&context.registry, &request).await {
+                    Ok(response) => acquisition::DetailsOutcome::Ok(response),
+                    Err(error) => acquisition::DetailsOutcome::Err(error),
+                },
+                Err(error) => acquisition::DetailsOutcome::Err(error),
+            })
+        }
+        RpcRequest::AcquisitionAcquire(request) => RpcResponse::AcquisitionAcquire(job_outcome(
+            state
+                .game_context()
+                .and_then(|context| state.acquisition.acquire(&context, &request)),
+        )),
+        RpcRequest::AcquisitionAcquireStatus(request) => {
+            RpcResponse::AcquisitionAcquireStatus(job_outcome(
+                state
+                    .game_context()
+                    .and_then(|_| state.acquisition.acquire_status(&request.job_id)),
+            ))
+        }
+        RpcRequest::AcquisitionAcquireCancel(request) => {
+            RpcResponse::AcquisitionAcquireCancel(job_outcome(match state.game_context() {
+                Ok(_) => state.acquisition.acquire_cancel(&request.job_id).await,
+                Err(error) => Err(error),
+            }))
         }
         RpcRequest::NetworkStatus(_) => RpcResponse::NetworkStatus(state.network.status().await),
         RpcRequest::WifiScan(_) => RpcResponse::WifiScan(state.network.scan().await),
@@ -3297,6 +3380,15 @@ fn settings_snapshot(
             })
             .collect(),
         steam_grid_db_credential: sensitive.steam_grid_db_credential,
+    }
+}
+
+fn job_outcome(
+    result: Result<acquisition::AcquireJobStatus, RpcFailure>,
+) -> acquisition::AcquireJobOutcome {
+    match result {
+        Ok(status) => acquisition::AcquireJobOutcome::Ok(status),
+        Err(error) => acquisition::AcquireJobOutcome::Err(error),
     }
 }
 

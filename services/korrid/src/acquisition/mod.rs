@@ -2,6 +2,7 @@
 //! Ready is a cache-directory fact. Only active work and failures live in memory.
 pub mod claims;
 mod download;
+mod game;
 mod placement;
 mod policy;
 mod sleep;
@@ -14,6 +15,8 @@ use crate::{
     RpcFailure,
 };
 use indexmap::IndexSet;
+
+pub use game::GameContext;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
@@ -24,7 +27,11 @@ use tokio::sync::watch;
 use types::Failure;
 pub use types::{
     AcquireArtifactRequest, AcquireCancelRequest, AcquireJobOutcome, AcquireJobState,
-    AcquireJobStatus, AcquireSourceChoice, AcquireStatusRequest, AcquisitionCancelRequest, AcquisitionDownloadRequest, AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider, AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest, AcquisitionStatusRequest, ArtifactState, ArtifactStatus, DetailsOutcome, DetailsRequest, PluginListOutcome, PluginListResponse, SearchOutcome, SearchRequest, SearchResponse,
+    AcquireJobStatus, AcquireSourceChoice, AcquireStatusRequest, AcquisitionCancelRequest,
+    AcquisitionDownloadRequest, AcquisitionOutcome, AcquisitionPluginsPayload, AcquisitionProvider,
+    AcquisitionRemoveRequest, AcquisitionSnapshot, AcquisitionStartRequest,
+    AcquisitionStatusRequest, ArtifactState, ArtifactStatus, DetailsOutcome, DetailsRequest,
+    PluginListOutcome, PluginListResponse, SearchOutcome, SearchRequest, SearchResponse,
 };
 
 /// One job runs at a time. `waiting` is the person's order, front first; a
@@ -36,6 +43,8 @@ pub struct AcquisitionCoordinator {
     queue: Arc<Mutex<Queue>>,
     engine: download::DownloadEngine,
     sleep: sleep::SleepBlock,
+    /// Game acquisition: provider claims and acquire jobs (ADR 0013).
+    games: game::GameAcquisition,
 }
 #[derive(Default)]
 struct Queue {
@@ -82,6 +91,7 @@ impl AcquisitionCoordinator {
         registry: &PluginRegistry,
     ) -> Result<(), RpcFailure> {
         let mut interrupted = Vec::new();
+        self.games.recover(root, registry).map_err(Failure::rpc)?;
         for artifact in registry.artifacts().values() {
             let base = placement::contribution(root, artifact);
             if !placement::is_ready(&base) {
@@ -546,6 +556,40 @@ async fn discard_partials(base: &Path) -> Result<(), RpcFailure> {
     placement::remove_downloads(base).map_err(Failure::rpc)
 }
 
+/// Game acquisition RPC (ADR 0013); see `game.rs`.
+impl AcquisitionCoordinator {
+    pub fn providers(&self, registry: &PluginRegistry) -> PluginListResponse {
+        self.games.providers(registry)
+    }
+    pub async fn search(
+        &self,
+        registry: &PluginRegistry,
+        request: &SearchRequest,
+    ) -> Result<SearchResponse, RpcFailure> {
+        self.games.search(registry, request).await
+    }
+    pub async fn details(
+        &self,
+        registry: &PluginRegistry,
+        request: &DetailsRequest,
+    ) -> Result<claims::ProviderClaimDetails, RpcFailure> {
+        self.games.details(registry, request).await
+    }
+    pub fn acquire(
+        &self,
+        context: &GameContext,
+        request: &AcquireArtifactRequest,
+    ) -> Result<AcquireJobStatus, RpcFailure> {
+        self.games.acquire(context, request)
+    }
+    pub fn acquire_status(&self, job_id: &str) -> Result<AcquireJobStatus, RpcFailure> {
+        self.games.status(job_id)
+    }
+    pub async fn acquire_cancel(&self, job_id: &str) -> Result<AcquireJobStatus, RpcFailure> {
+        self.games.cancel(job_id).await
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn acquire(
     root: &Path,
@@ -864,5 +908,7 @@ mod game_download_tests;
 mod game_placement_tests;
 #[cfg(test)]
 mod http_fixture;
+#[cfg(test)]
+mod provider_tests;
 #[cfg(test)]
 mod turns_tests;

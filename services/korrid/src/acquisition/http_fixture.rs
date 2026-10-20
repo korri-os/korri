@@ -13,6 +13,8 @@ pub(super) struct Route {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    /// Send the body in pieces of this size with this pause between them.
+    pub pace: Option<(usize, std::time::Duration)>,
 }
 
 impl Route {
@@ -21,13 +23,19 @@ impl Route {
             status: 200,
             headers: vec![("Content-Type".into(), content_type.into())],
             body: body.into(),
+            pace: None,
         }
+    }
+    pub fn paced(mut self, piece: usize, pause: std::time::Duration) -> Self {
+        self.pace = Some((piece, pause));
+        self
     }
     pub fn redirect(location: &str) -> Self {
         Self {
             status: 302,
             headers: vec![("Location".into(), location.into())],
             body: Vec::new(),
+            pace: None,
         }
     }
     pub fn header(mut self, name: &str, value: &str) -> Self {
@@ -90,6 +98,7 @@ impl HttpFixture {
                         status: 404,
                         headers: Vec::new(),
                         body: b"missing".to_vec(),
+                        pace: None,
                     });
                     let mut head = format!("HTTP/1.1 {} Status\r\n", route.status);
                     let declares_length = route
@@ -104,7 +113,23 @@ impl HttpFixture {
                     }
                     head.push_str("Connection: close\r\n\r\n");
                     let _ = socket.write_all(head.as_bytes());
-                    let _ = socket.write_all(&route.body);
+                    match route.pace {
+                        None => {
+                            let _ = socket.write_all(&route.body);
+                        }
+                        Some((piece, pause)) => {
+                            for part in route.body.chunks(piece) {
+                                if socket
+                                    .write_all(part)
+                                    .and_then(|()| socket.flush())
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                                thread::sleep(pause);
+                            }
+                        }
+                    }
                 });
             }
         });

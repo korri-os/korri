@@ -67,6 +67,7 @@ impl Fixture {
                 entry: "plugin.ts".into(),
                 sources: vec!["plugin.ts".into()],
                 requires: vec![],
+                hosts: vec![],
                 files: BTreeMap::from([("run".into(), package.join("run"))]),
             }])
             .unwrap();
